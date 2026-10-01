@@ -88,6 +88,12 @@
       "import": "./dist/document-decoder.js",
       "require": "./dist/document-decoder.js",
       "default": "./dist/document-decoder.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "import": "./dist/protocol.js",
+      "require": "./dist/protocol.js",
+      "default": "./dist/protocol.js"
     }
   },
   "typesVersions": {
@@ -130,6 +136,9 @@
       ],
       "document-decoder": [
         "dist/document-decoder.d.ts"
+      ],
+      "protocol": [
+        "dist/protocol.d.ts"
       ]
     }
   },

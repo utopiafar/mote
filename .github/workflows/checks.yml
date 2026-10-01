@@ -1,6 +1,6 @@
 name: Checks
 on:
-  # MVP: automatic checks are disabled; re-enable this workflow to run manually.
+  # Full integration checks remain manual; component-checks.yml handles affected PR inputs.
   workflow_dispatch:
 permissions:
   contents: read

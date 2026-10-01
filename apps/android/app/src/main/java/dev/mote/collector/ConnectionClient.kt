@@ -77,9 +77,12 @@ class ConnectionClient(private val context: Context) {
             !(body.opt("credentialId") as? String ?: "").matches(Regex("[A-Za-z0-9_.:-]{1,128}"))) throw ConnectionFailure("response")
     }
     private fun verifySelf(server: String, token: String, credentialId: String? = null): JSONObject {
-        val (status, body) = HttpJson.get("$server/api/connections/self", token)
+        val (status, body) = HttpJson.get("$server/api/connections/self", token, ProtocolCompatibility.headers)
         if (status !in 200..299) throw ConnectionFailure(if (status in setOf(401, 403)) "authentication" else "network")
         val credential = body?.optJSONObject("credential") ?: throw ConnectionFailure("response")
+        val node = body.optJSONObject("node")
+        if (body.has("node") && node == null) throw ConnectionFailure("response")
+        ProtocolCompatibility.requireCompatible(node?.opt("protocol"))
         val scope = credential.opt("scope")
         if (scope !in setOf("owner", "collector") || (credentialId != null && (scope != "collector" || credential.opt("id") != credentialId)) ||
             (scope == "collector" && (credential.opt("deviceId") != settings.deviceId || credential.opt("platform") != "android" || credential.opt("serverUrl") != server)) ||

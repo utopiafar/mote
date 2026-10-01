@@ -1,6 +1,6 @@
 # 项目文档索引
 
-当前源码版本为 0.0.72；本次发布范围与验证限制见 [0.0.72 验证记录](validation/0.0.72.md)。早期版本曾从 0.8.0 重置到 0.0.1，因此不能按版本号大小推断文档的新旧；发布背景见 [发布流程](releasing.md)。
+Central（server + web）、macOS、Android 使用各自产品版本；当前版本分别记录在 app package.json 与 Android version.properties。拆分架构与发版操作见 [独立发布架构](release-architecture.md) 和 [发布流程](releasing.md)。早期版本曾从 0.8.0 重置到 0.0.1，历史验收应结合日期阅读。
 
 使用指南描述当前代码，历史验收只证明当次执行的范围，方案记录保留当时的取舍。文档中的“本轮”“已通过”和构建产物路径均应结合该篇日期阅读，不代表本次重新验收。此次修正与代码依据见 [文档复查](documentation-review-2026-09-24.md)。
 
@@ -85,6 +85,7 @@
 | [provider-failures](provider-failures.md) | Provider failures and host retry |
 | [query-output-budget](query-output-budget.md) | 回答截断与输出预算 |
 | [raw-logs](raw-logs.md) | 原始日志与日志中心 |
+| [release-architecture](release-architecture.md) | Monorepo 内独立发布边界、协议与验证 |
 | [releasing](releasing.md) | 发布版本与签名 |
 | [server-configuration](server-configuration.md) | 服务端配置参考 |
 | [sqlite-concurrency](sqlite-concurrency.md) | SQLite process locks |

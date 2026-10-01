@@ -6,6 +6,7 @@ import { RELEASE_KEY_ID, RELEASE_PUBLIC_KEY } from './release-key.js';
 export { RELEASE_KEY_ID, RELEASE_PUBLIC_KEY };
 export const RELEASE_REPOSITORY = 'utopiafar/mote';
 export type ReleaseChannel = 'stable' | 'preview';
+export type ReleaseComponent = 'central' | 'desktop' | 'android';
 export class ReleaseError extends Error {
   constructor(public code: string) { super(code); this.name = 'ReleaseError'; }
 }
@@ -47,13 +48,15 @@ const assetSchema = z.object({
 }).strict();
 const manifestSchema = z.object({
   schemaVersion: z.literal(1), version: z.string().refine(validVersion), channel: z.enum(['stable', 'preview']),
-  repository: repositorySchema, tag: z.string().max(81), publishedAt: z.string().datetime({ offset: true }),
+  component: z.enum(['central', 'desktop', 'android']).optional(),
+  repository: repositorySchema, tag: z.string().max(100), publishedAt: z.string().datetime({ offset: true }),
   notesUrl: z.string().max(2000), assets: z.array(assetSchema).min(1).max(20),
   images: z.array(z.object({ component: z.literal('server'), image: z.string().max(400) }).strict()).max(2).default([]),
 }).strict();
 export type ReleaseManifest = z.infer<typeof manifestSchema>;
 export type ReleaseAsset = z.infer<typeof assetSchema>;
-export type VerifyReleaseOptions = { repository?: string; channel?: ReleaseChannel; version?: string; publicKey?: string; keyId?: string };
+export type VerifyReleaseOptions = { repository?: string; channel?: ReleaseChannel; component?: ReleaseComponent; version?: string; publicKey?: string; keyId?: string };
+const assetComponent = (component: ReleaseComponent) => component === 'central' ? 'server' : component;
 
 export function verifyReleaseEnvelope(raw: Uint8Array | string, options: VerifyReleaseOptions = {}): ReleaseManifest {
   if (Buffer.byteLength(raw) > 262144) return fail('manifest_too_large');
@@ -65,13 +68,16 @@ export function verifyReleaseEnvelope(raw: Uint8Array | string, options: VerifyR
     if (!verify('RSA-SHA256', bytes, { key: options.publicKey ?? RELEASE_PUBLIC_KEY, padding: constants.RSA_PKCS1_PADDING }, signature)) return fail('invalid_manifest_signature');
     const manifest = manifestSchema.parse(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)));
     const repository = options.repository ?? RELEASE_REPOSITORY;
-    if (manifest.repository !== repository || manifest.tag !== `v${manifest.version}` || manifest.notesUrl !== `https://github.com/${repository}/releases/tag/${manifest.tag}`) return fail('release_identity_mismatch');
+    const tag = `${manifest.component ? manifest.component + '-' : ''}v${manifest.version}`;
+    if (manifest.repository !== repository || manifest.tag !== tag || manifest.notesUrl !== `https://github.com/${repository}/releases/tag/${manifest.tag}`) return fail('release_identity_mismatch');
+    if (options.component && manifest.component && manifest.component !== options.component) return fail('release_component_mismatch');
     if (options.version && options.version !== manifest.version) return fail('release_version_mismatch');
     if (options.channel && options.channel !== manifest.channel) return fail('release_channel_mismatch');
     if ((manifest.channel === 'stable') === manifest.version.includes('-')) return fail('release_channel_mismatch');
     if (Date.parse(manifest.publishedAt) > Date.now() + 86400000) return fail('release_timestamp_invalid');
     const names = new Set<string>(), identities = new Set<string>();
     for (const asset of manifest.assets) {
+      if (manifest.component && asset.component !== assetComponent(manifest.component)) return fail('release_component_mismatch');
       if (asset.url !== `https://github.com/${repository}/releases/download/${manifest.tag}/${asset.name}` || names.has(asset.name)) return fail('invalid_release_asset');
       names.add(asset.name);
       const identity = JSON.stringify([asset.component, asset.platform, asset.arch, asset.packageName ?? '', asset.format]);
@@ -80,6 +86,9 @@ export function verifyReleaseEnvelope(raw: Uint8Array | string, options: VerifyR
       if (asset.component === 'desktop' && (asset.platform !== 'darwin' || asset.format !== 'zip' || !asset.bundleId || !asset.signing || (asset.signing === 'developer-id' && !asset.teamId))) return fail('invalid_desktop_asset');
       if (asset.component === 'server' && (asset.platform !== 'source' || asset.arch !== 'all' || asset.format !== 'tar.gz')) return fail('invalid_server_asset');
     }
+    const expectedAsset = options.component ? assetComponent(options.component) : undefined;
+    if (expectedAsset && !manifest.assets.some(asset => asset.component === expectedAsset)) return fail('release_component_mismatch');
+    if (manifest.component && manifest.component !== 'central' && manifest.images.length) return fail('release_component_mismatch');
     for (const image of manifest.images) if (!new RegExp(`^ghcr\\.io/${repository.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}@sha256:[a-f0-9]{64}$`).test(image.image)) return fail('invalid_release_image');
     return manifest;
   } catch (error) { if (error instanceof ReleaseError) throw error; return fail('invalid_release_manifest'); }
@@ -112,27 +121,48 @@ async function boundedBytes(response: Response, max: number): Promise<Buffer> {
 export type CheckReleaseOptions = VerifyReleaseOptions & ReleaseNetworkOptions & { currentVersion?: string };
 export async function checkRelease(options: CheckReleaseOptions = {}): Promise<{ manifest: ReleaseManifest; available: boolean }> {
   const repository = repositorySchema.parse(options.repository ?? RELEASE_REPOSITORY), channel = options.channel ?? 'stable';
+  const component = z.enum(['central', 'desktop', 'android']).parse(options.component ?? 'central');
   const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000);
   const network = { ...options, signal };
-  let version = options.version;
+  let version = options.version, tag: string | undefined;
   try {
     if (!version) {
-      const data = JSON.parse((await boundedBytes(await responseFromGitHub(`https://api.github.com/repos/${repository}/releases${channel === 'stable' ? '/latest' : '?per_page=30'}`, network), 2_000_000)).toString());
-      const releases = channel === 'stable' ? [data] : z.array(z.unknown()).parse(data);
-      const tags = releases.flatMap((raw: unknown) => { const r = z.object({ tag_name: z.string(), draft: z.boolean(), prerelease: z.boolean() }).passthrough().safeParse(raw); if (!r.success || r.data.draft || r.data.prerelease !== (channel === 'preview') || !r.data.tag_name.startsWith('v') || !validVersion(r.data.tag_name.slice(1))) return []; return [r.data.tag_name.slice(1)]; });
-      version = tags.sort((a, b) => compareVersions(b, a))[0];
-      if (!version) return fail('release_not_found');
+      const own: { tag: string; version: string }[] = [], legacy: { tag: string; version: string }[] = [];
+      // GitHub's global /latest can point at a different application. Bound both pages and bytes.
+      for (let page = 1; page <= 10; page++) {
+        const releases = z.array(z.unknown()).max(100).parse(JSON.parse((await boundedBytes(await responseFromGitHub(`https://api.github.com/repos/${repository}/releases?per_page=100&page=${page}`, network), 2_000_000)).toString()));
+        for (const raw of releases) {
+          const r = z.object({ tag_name: z.string(), draft: z.boolean(), prerelease: z.boolean() }).passthrough().safeParse(raw);
+          if (!r.success || r.data.draft || r.data.prerelease !== (channel === 'preview')) continue;
+          const name = r.data.tag_name, prefix = `${component}-v`;
+          const value = name.startsWith(prefix) ? name.slice(prefix.length) : name.startsWith('v') ? name.slice(1) : undefined;
+          if (!value || !validVersion(value) || (channel === 'stable') === value.includes('-')) continue;
+          (name.startsWith(prefix) ? own : legacy).push({ tag: name, version: value });
+        }
+        if (releases.length < 100) break;
+      }
+      const selected = (own.length ? own : legacy).sort((a, b) => compareVersions(b.version, a.version))[0];
+      if (!selected) return fail('release_not_found');
+      ({ version, tag } = selected);
     }
     if (!validVersion(version)) return fail('invalid_version');
-    const raw = await boundedBytes(await responseFromGitHub(`https://github.com/${repository}/releases/download/v${version}/mote-release.json`, network), 262144);
-    const manifest = verifyReleaseEnvelope(raw, { ...options, repository, channel, version });
+    const manifestBytes = (releaseTag: string) => responseFromGitHub(`https://github.com/${repository}/releases/download/${releaseTag}/mote-release.json`, network).then(response => boundedBytes(response, 262144));
+    let raw: Buffer;
+    if (tag) raw = await manifestBytes(tag);
+    else {
+      tag = `${component}-v${version}`;
+      try { raw = await manifestBytes(tag); }
+      catch (error) { if (!(error instanceof ReleaseError) || error.code !== 'release_not_found') throw error; tag = `v${version}`; raw = await manifestBytes(tag); }
+    }
+    const manifest = verifyReleaseEnvelope(raw, { ...options, repository, channel, component, version });
+    if (manifest.tag !== tag) return fail('release_identity_mismatch');
     return { manifest, available: !options.currentVersion || compareVersions(manifest.version, options.currentVersion) > 0 };
   } catch (error) { if (error instanceof ReleaseError) throw error; return fail(signal.aborted ? 'update_request_cancelled' : 'release_check_failed'); }
 }
 export async function downloadReleaseAsset(asset: ReleaseAsset, destination: string, options: ReleaseNetworkOptions & { onProgress?: (received: number, total: number) => void } = {}): Promise<string> {
   assetSchema.parse(asset);
   // Callers must only pass an asset from a verified manifest. Never overwrite arbitrary existing files.
-  if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/releases\/download\/v[^/]+\/[A-Za-z0-9._-]+$/.test(asset.url)) return fail('invalid_release_asset');
+  if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/releases\/download\/(?:central-|desktop-|android-)?v[^/]+\/[A-Za-z0-9._-]+$/.test(asset.url)) return fail('invalid_release_asset');
   try { await lstat(destination); return fail('update_destination_exists'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   const partial = destination + '.partial';
   const file = await open(partial, 'wx', 0o600);

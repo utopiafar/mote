@@ -1,7 +1,8 @@
 import { gzipSync } from 'node:zlib';
 /** Synthetic bounded USTAR fixture; contains no workspace or personal data. */
-export function sourceTar(version = '0.5.0', extra = [], packageVersion = version) {
-  const entries = [{ name: `mote-${version}/package.json`, body: JSON.stringify({ name: 'mote', version: packageVersion, type: 'module' }) }, { name: `mote-${version}/package-lock.json`, body: '{}' }, ...extra], chunks = [];
+export function sourceTar(version = '0.5.0', extra = [], packageVersion = version, rootVersion = version, includeServer = true) {
+  const entries = [{ name: `mote-${version}/package.json`, body: JSON.stringify({ name: 'mote', version: rootVersion, type: 'module' }) }, { name: `mote-${version}/package-lock.json`, body: '{}' },
+    ...(includeServer ? [{name:`mote-${version}/apps/server/package.json`,body:JSON.stringify({name:'@mote/server',version:packageVersion,type:'module'})}] : []), ...extra], chunks = [];
   for (const entry of entries) {
     const header = Buffer.alloc(512), body = Buffer.from(entry.body ?? '');
     const put = (text, at, size) => header.write(text, at, size, 'utf8');

@@ -10,6 +10,14 @@ const body = Buffer.from('generated release bytes\n');
 const artifact = { component: 'server', platform: 'source', arch: 'all', format: 'tar.gz', name: 'mote-server-0.5.0.tar.gz', url: 'https://github.com/utopiafar/mote/releases/download/v0.5.0/mote-server-0.5.0.tar.gz', size: body.length, sha256: createHash('sha256').update(body).digest('hex') };
 const fixture = () => ({ schemaVersion: 1, version: '0.5.0', channel: 'stable', repository: 'utopiafar/mote', tag: 'v0.5.0', notesUrl: 'https://github.com/utopiafar/mote/releases/tag/v0.5.0', publishedAt: '2026-09-14T00:00:00Z', assets: [artifact], images: [{component: 'server', image: 'ghcr.io/utopiafar/mote@sha256:' + 'a'.repeat(64)}] });
 const signed = (value = fixture()) => { const payload = Buffer.from(JSON.stringify(value)); return JSON.stringify({schemaVersion: 1, keyId: RELEASE_KEY_ID, payload: payload.toString('base64'), signature: sign('RSA-SHA256', payload, privateKey).toString('base64')}); };
+const grouped = (component = 'central', version = '0.5.0') => {
+  const tag = `${component}-v${version}`, value = {...fixture(), component, version, tag, notesUrl: `https://github.com/utopiafar/mote/releases/tag/${tag}`};
+  const asset = component === 'central' ? artifact : component === 'desktop' ? {...artifact, component:'desktop', platform:'darwin', arch:'arm64', format:'zip', name:'fixture.zip', bundleId:'dev.mote.collector', signing:'adhoc'} : {...artifact, component:'android', platform:'android', arch:'arm64', format:'apk', name:'fixture.apk', packageName:'dev.mote.collector', versionCode:6, certificateSha256:'b'.repeat(64)};
+  value.assets = [{...asset, url:`https://github.com/utopiafar/mote/releases/download/${tag}/${asset.name}`}];
+  if (component !== 'central') value.images = [];
+  return value;
+};
+const feedEntry = (tag_name, extra = {}) => ({tag_name, draft:false, prerelease:false, ...extra});
 
 test('release identity pins the public key and authenticates raw bytes, metadata and asset locations', async () => {
   assert.equal(RELEASE_PUBLIC_KEY, await readFile(new URL('../../../release/release-public-key.pem', import.meta.url), 'utf8'));
@@ -38,12 +46,55 @@ test('version comparisons do not silently downgrade or misorder prereleases', ()
 test('GitHub check verifies the selected tag and never forwards central credentials', async () => {
   const calls = [];
   const network = async (url, init) => { calls.push(url); assert.equal(new Headers(init.headers).has('authorization'),false); assert.equal(init.redirect,'manual');
-    return String(url).includes('api.github.com') ? Response.json({tag_name:'v0.5.0',draft:false,prerelease:false}) : new Response(signed()); };
+    return String(url).includes('api.github.com') ? Response.json([feedEntry('v0.5.0')]) : new Response(signed()); };
   const result = await checkRelease({currentVersion:'0.4.0',publicKey,fetch:network});
   assert.equal(result.available,true); assert.equal(calls.length,2);
   assert.equal((await checkRelease({currentVersion:'0.6.0',publicKey,fetch:network})).available,false);
   await assert.rejects(checkRelease({publicKey,fetch:async()=>new Response('',{status:404})}),/release_not_found/);
   await assert.rejects(checkRelease({publicKey,fetch:async()=>new Response('',{status:302,headers:{location:'http://169.254.169.254/secret'}})}),/update_host_rejected/);
+});
+
+test('component manifests authenticate their own tag and reject signed assets from another stream', () => {
+  for (const component of ['central','desktop','android']) {
+    assert.equal(verifyReleaseEnvelope(signed(grouped(component)), {publicKey,component}).component, component);
+    assert.throws(()=>verifyReleaseEnvelope(signed(grouped(component)), {publicKey,component:component==='central'?'desktop':'central'}), /release_component_mismatch/);
+    const wrong = {...grouped(component), assets:[...grouped(component).assets, ...grouped(component==='central'?'desktop':'central').assets]};
+    assert.throws(()=>verifyReleaseEnvelope(signed(wrong), {publicKey}), /release_component_mismatch/);
+  }
+  assert.equal(verifyReleaseEnvelope(signed(), {publicKey,component:'central'}).tag, 'v0.5.0');
+  assert.throws(()=>verifyReleaseEnvelope(signed(), {publicKey,component:'desktop'}), /release_component_mismatch/);
+  assert.throws(()=>verifyReleaseEnvelope(signed({...grouped('desktop'),images:fixture().images}), {publicKey}), /release_component_mismatch/);
+});
+
+test('paginated release lookup isolates each application and prefers its stream over legacy tags', async () => {
+  const pages = [Array.from({length:100}, (_,i)=>feedEntry(`android-v9.0.${i}`)), [feedEntry('desktop-v0.5.0'), feedEntry('desktop-v0.6.0'), feedEntry('desktop-v99.0.0',{draft:true}), feedEntry('desktop-v0.7.0-rc.1',{prerelease:true}),feedEntry('central-v8.0.0'),feedEntry('v99.0.0')]];
+  const calls = [], manifest = grouped('desktop','0.6.0');
+  const fetch = async url => { calls.push(String(url)); return String(url).includes('api.github.com') ? Response.json(pages[Number(new URL(url).searchParams.get('page'))-1]) : new Response(signed(manifest)); };
+  const checked = await checkRelease({component:'desktop', currentVersion:'0.5.0', publicKey, fetch});
+  assert.equal(checked.manifest.tag,'desktop-v0.6.0'); assert.equal(checked.available,true); assert.equal(calls.length,3);
+  assert.ok(calls.every(url=>!url.endsWith('/latest')));
+  assert.ok(calls.at(-1).includes('/desktop-v0.6.0/'));
+});
+
+test('release lookup is bounded even when every page contains other applications', async () => {
+  let pages = 0;
+  await assert.rejects(checkRelease({component:'desktop',publicKey,fetch:async()=>{pages++;return Response.json(Array.from({length:100},(_,i)=>feedEntry(`android-v9.0.${i}`)));}}), /release_not_found/);
+  assert.equal(pages,10);
+});
+
+test('explicit component versions fall back only to missing legacy releases and pin the fetched tag', async () => {
+  const calls = [], fetch = async url => { calls.push(String(url)); return String(url).includes('/central-v') ? new Response('',{status:404}) : new Response(signed()); };
+  assert.equal((await checkRelease({version:'0.5.0',publicKey,fetch})).manifest.tag,'v0.5.0'); assert.equal(calls.length,2);
+  await assert.rejects(checkRelease({version:'0.5.0',publicKey,fetch:async()=>new Response(signed())}), /release_identity_mismatch/);
+  let failures = 0;
+  await assert.rejects(checkRelease({version:'0.5.0',publicKey,fetch:async()=>{failures++;return new Response(signed({...grouped(),assets:grouped('desktop').assets}));}}), /release_component_mismatch/);
+  assert.equal(failures,1);
+});
+
+test('preview release lookup orders only the selected stream and expected channel', async () => {
+  const manifest = {...grouped('android','0.6.0-rc.10'),channel:'preview'};
+  const checked = await checkRelease({component:'android',channel:'preview',publicKey,fetch:async url=>String(url).includes('api.github.com')?Response.json([feedEntry('android-v0.6.0-rc.2',{prerelease:true}),feedEntry('android-v0.6.0-rc.10',{prerelease:true}),feedEntry('desktop-v8.0.0-rc.1',{prerelease:true}),feedEntry('android-v1.0.0')]):new Response(signed(manifest))});
+  assert.equal(checked.manifest.version,'0.6.0-rc.10');
 });
 
 test('downloads verify content length and checksum before publishing a private file', async t => {

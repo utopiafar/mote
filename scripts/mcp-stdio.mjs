@@ -13,7 +13,7 @@ import {ListToolsRequestSchema,CallToolRequestSchema,ListResourcesRequestSchema,
 const args=process.argv.slice(2),index=args.indexOf('--connection');
 if(index<0||!args[index+1]){process.stderr.write('Usage: node scripts/mcp-stdio.mjs --connection /absolute/private-connection.json\n');process.exit(1);}
 try{
- const version=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8')).version;
+ const version=JSON.parse(await readFile(new URL('../apps/server/package.json',import.meta.url),'utf8')).version;
  const path=resolve(args[index+1]),fd=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);let config;
  try{const metadata=await fd.stat();if(!metadata.isFile()||metadata.size>16384||(process.platform!=='win32'&&((metadata.mode&0o077)||(process.getuid&&metadata.uid!==process.getuid()))))throw Error('Invalid private connection file');config=JSON.parse(await fd.readFile('utf8'));}finally{await fd.close();}
  config=parseMcpConnection(config);const url=new URL(config.url);

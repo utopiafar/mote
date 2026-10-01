@@ -26,21 +26,28 @@ class UpdateNetwork(private val stopped: () -> Boolean = { false }, private val 
     }
     fun check(config: UpdateConfig): ByteArray {
         config.validate()
-        val endpoint = "https://api.github.com/repos/${config.repository}/releases" + if (config.channel == "stable") "/latest" else "?per_page=30"
-        val json = AppReleaseVerifier.utf8(bytes(endpoint, 2_000_000))
-        val releases = try {
-            StrictJson.validate(json)
-            if (config.channel == "stable") JSONArray().put(JSONObject(json)) else JSONArray(json)
-        } catch (_: Exception) { throw UpdateFailure("response") }
-        val versions = (0 until releases.length()).mapNotNull { index ->
-            val r = releases.optJSONObject(index) ?: return@mapNotNull null
-            val tag = r.optString("tag_name")
-            if (r.opt("draft") != false || r.opt("prerelease") != (config.channel == "preview") || !tag.startsWith('v') || !AppReleaseVerifier.validVersion(tag.drop(1))) null else tag.drop(1)
+        selectedVersion = null; selectedTag = null
+        val own = mutableListOf<Pair<String, String>>(); val legacy = mutableListOf<Pair<String, String>>()
+        // /latest is global across all applications. Scan at most 1,000 releases without following remote links.
+        for (page in 1..10) {
+            val endpoint = "https://api.github.com/repos/${config.repository}/releases?per_page=100&page=$page"
+            val json = AppReleaseVerifier.utf8(bytes(endpoint, 2_000_000))
+            val releases = try { StrictJson.validate(json); JSONArray(json).also { check(it.length() <= 100) } }
+                catch (_: Exception) { throw UpdateFailure("response") }
+            for (index in 0 until releases.length()) {
+                val r = releases.optJSONObject(index) ?: continue
+                val tag = r.optString("tag_name")
+                val version = when { tag.startsWith("android-v") -> tag.drop(9); tag.startsWith('v') -> tag.drop(1); else -> continue }
+                if (r.opt("draft") != false || r.opt("prerelease") != (config.channel == "preview") || !AppReleaseVerifier.validVersion(version) || (config.channel == "preview") != version.contains('-')) continue
+                (if (tag.startsWith("android-v")) own else legacy).add(tag to version)
+            }
+            if (releases.length() < 100) break
         }
-        val version = versions.maxWithOrNull { a, b -> AppReleaseVerifier.compareVersions(a, b) } ?: throw UpdateFailure("not_found")
-        return bytes("https://github.com/${config.repository}/releases/download/v$version/mote-release.json", AppReleaseVerifier.MAX_MANIFEST).also { selectedVersion = version }
+        val selected = (own.ifEmpty { legacy }).maxWithOrNull { a, b -> AppReleaseVerifier.compareVersions(a.second, b.second) } ?: throw UpdateFailure("not_found")
+        return bytes("https://github.com/${config.repository}/releases/download/${selected.first}/mote-release.json", AppReleaseVerifier.MAX_MANIFEST).also { selectedTag = selected.first; selectedVersion = selected.second }
     }
     var selectedVersion: String? = null; private set
+    var selectedTag: String? = null; private set
     fun download(asset: AppReleaseAsset, part: File, progress: (Long) -> Unit) {
         if (part.length() > asset.size) part.delete()
         var offset = part.length()
@@ -152,7 +159,7 @@ class AppUpdateWorker(context: Context, params: WorkerParameters) : Worker(conte
             if (!store.active(operation) || isStopped) return@locked Result.success()
             if (inputData.getString("action") == "check") {
                 store.state("checking", operation); val config = store.config(); val raw = network.check(config)
-                val release = AppReleaseVerifier.verify(raw, store.key(), config, network.selectedVersion)
+                val release = AppReleaseVerifier.verify(raw, store.key(), config, network.selectedVersion, network.selectedTag)
                 val asset = release.asset(applicationContext.packageName) ?: throw UpdateFailure("asset_missing")
                 store.publish(raw, release, asset, operation)
                 val state = if (asset.versionCode <= AndroidUpdateVerifier.installed(applicationContext).longVersionCode) "current"

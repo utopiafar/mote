@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mote.protocol.range.v1",
+  "title": "Mote supported wire protocol range",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["min", "max"],
+  "properties": {
+    "min": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+    "max": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+  },
+  "$comment": "Consumers also require min <= max and overlap with their own supported range."
+}

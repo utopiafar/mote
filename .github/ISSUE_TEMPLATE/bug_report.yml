@@ -6,8 +6,8 @@ body:
     id: version
     attributes:
       label: 版本与平台
-      description: Mote 版本、客户端平台/系统版本、中央节点运行环境。
-      placeholder: Mote 版本 · macOS / Android / Web
+      description: 分别填写客户端版本与 Central 版本、客户端平台/系统版本、中央节点运行环境。
+      placeholder: 客户端版本 · macOS / Android · Central 版本 · 中央运行环境
     validations:
       required: true
   - type: input

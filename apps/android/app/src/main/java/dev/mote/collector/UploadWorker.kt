@@ -18,10 +18,10 @@ object HttpJson {
     fun post(url: String, body: JSONObject, token: String? = null): Pair<Int, JSONObject?> = request("POST", url, body, token)
     fun postBytes(url: String, body: ByteArray, token: String? = null, contentType: String): Pair<Int, JSONObject?> =
         requestBytes("POST", url, body, token, contentType)
-    fun get(url: String, token: String? = null): Pair<Int, JSONObject?> = request("GET", url, null, token)
-    fun request(method: String, url: String, body: JSONObject?, token: String? = null, maxResponseBytes: Int = 256 * 1024): Pair<Int, JSONObject?> =
-        requestBytes(method, url, body?.toString()?.toByteArray(Charsets.UTF_8), token, "application/json", maxResponseBytes)
-    fun requestBytes(method: String, url: String, body: ByteArray?, token: String? = null, contentType: String = "application/json", maxResponseBytes: Int = 256 * 1024): Pair<Int, JSONObject?> {
+    fun get(url: String, token: String? = null, headers: Map<String, String> = emptyMap()): Pair<Int, JSONObject?> = request("GET", url, null, token, headers = headers)
+    fun request(method: String, url: String, body: JSONObject?, token: String? = null, maxResponseBytes: Int = 256 * 1024, headers: Map<String, String> = emptyMap()): Pair<Int, JSONObject?> =
+        requestBytes(method, url, body?.toString()?.toByteArray(Charsets.UTF_8), token, "application/json", maxResponseBytes, headers)
+    fun requestBytes(method: String, url: String, body: ByteArray?, token: String? = null, contentType: String = "application/json", maxResponseBytes: Int = 256 * 1024, headers: Map<String, String> = emptyMap()): Pair<Int, JSONObject?> {
         val started = android.os.SystemClock.elapsedRealtime()
         runCatching { onRequest?.invoke() }
         val connection = URL(url).openConnection() as HttpURLConnection
@@ -35,6 +35,7 @@ object HttpJson {
             connection.doOutput = body != null
             if (body != null) connection.setRequestProperty("Content-Type", contentType)
             connection.setRequestProperty("Accept-Language", MoteI18n.language())
+            headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
             if (IngressV2Protocol.uploadWrite(method, url)) connection.setRequestProperty(IngressV2Protocol.HEADER, IngressV2Protocol.VERSION)
             token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
             if (body != null) {

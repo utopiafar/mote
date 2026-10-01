@@ -1,0 +1,65 @@
+name: Release Desktop
+on:
+  push:
+    tags: ['desktop-v*']
+  # Select the component's exact version tag when running this manually.
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mote-release-desktop-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with: { node-version: '24' }
+      - id: version
+        run: npm run release:verify -- desktop
+  package:
+    needs: version
+    runs-on: macos-15
+    environment: release
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with: { node-version: '24', cache: npm }
+      - run: npm ci
+      - run: npm run models:setup
+      - name: Verify desktop workspaces and generated fixtures
+        run: npm run check:desktop
+      - name: Build and verify Mac DEV application
+        env:
+          MOTE_MAC_SIGNING_MODE: ${{ vars.MOTE_MAC_SIGNING_MODE || 'adhoc' }}
+          CSC_LINK: ${{ secrets.MOTE_MAC_CERTIFICATE_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MOTE_MAC_CERTIFICATE_PASSWORD }}
+          MOTE_APPLE_TEAM_ID: ${{ vars.MOTE_APPLE_TEAM_ID }}
+          MOTE_APPLE_API_KEY_P8: ${{ secrets.MOTE_APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.MOTE_APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.MOTE_APPLE_API_ISSUER }}
+        run: MOTE_MAC_DEVELOPMENT=1 node scripts/release/mac-package.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: { name: release-desktop, path: artifacts/release/*, if-no-files-found: error, retention-days: 7 }
+  publish:
+    needs: [version, package]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with: { node-version: '24' }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: { name: release-desktop, path: artifacts/release }
+      - name: Publish verified desktop DEV release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release/publish.mjs desktop

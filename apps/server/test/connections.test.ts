@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import {parseConnectionInvitation} from '@mote/shared';
+import {parseConnectionInvitation,MOTE_PROTOCOL_RANGE} from '@mote/shared';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {Connections,ConnectionError,type ConnectionFile} from '../src/connections.js';
@@ -32,6 +32,25 @@ async function paired(app:Awaited<ReturnType<typeof buildApp>>['app'],deviceId='
 const note=(deviceId='synthetic-phone')=>({id:randomUUID(),deviceId,deviceName:'Synthetic phone',platform:'android',capturedAt:new Date().toISOString(),text:'Synthetic authored note; no actual personal text.'});
 const source=(id:string,deviceId='synthetic-phone')=>({id,deviceId,name:'Synthetic source',kind:'local-files',platform:'import',retention:'snapshot',enabled:true});
 const item=()=>({externalId:'one',revision:randomUUID(),observedAt:new Date().toISOString(),title:'Synthetic file',text:'Synthetic file evidence',kind:'file',layer:'snapshot'});
+
+test('wire metadata is independent of product versions and preserves strict legacy connection responses',async t=>{
+  const {app}=await fixture(t);
+  const health=(await app.inject('/api/health')).json();
+  assert.equal(health.ok,true);assert.deepEqual(health.protocol,MOTE_PROTOCOL_RANGE);
+  assert.equal('capabilities' in health,false,'Public metadata does not reveal credential authorization');
+  const legacy=(await app.inject({url:'/api/connections/self',headers:headers()})).json();
+  assert.deepEqual(Object.keys(legacy.node).sort(),['profile','version']);
+  for(const version of ['1','2']){
+    const self=(await app.inject({url:'/api/connections/self',headers:{...headers(),'x-mote-protocol-version':version}})).json();
+    assert.deepEqual(self.node.protocol,MOTE_PROTOCOL_RANGE);assert.equal(self.node.version,health.version);
+    assert.deepEqual(self.capabilities,{ingest:true,ingressVersion:2,ownSources:true,archiveRead:true});
+  }
+  const granted=await paired(app);
+  const collector=(await app.inject({url:'/api/connections/self',headers:{...headers(granted.token),'x-mote-protocol-version':'1'}})).json();
+  assert.deepEqual(collector.node.protocol,MOTE_PROTOCOL_RANGE);
+  assert.deepEqual(collector.capabilities,{ingest:true,ingressVersion:2,ownSources:true,archiveRead:false});
+  assert.equal((await app.inject({url:'/api/connections/self',headers:{'x-mote-protocol-version':'1'}})).statusCode,401);
+});
 
 test('owner-only invitation uses explicit canonical HTTPS/loopback origins and contains no owner credential',async t=>{
   const {app}=await fixture(t);

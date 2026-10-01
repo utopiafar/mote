@@ -113,7 +113,7 @@ The Web/embedded console includes a separate 随手记 page. Drafts and immutabl
 
 ## Read API
 
-- `GET /api/health` => `{ok,version}`
+- `GET /api/health` => `{ok,version,protocol:{min,max}}`. Product versions are independent of wire compatibility. Native connection checks request `node.protocol` with `X-Mote-Protocol-Version: 1`; legacy servers without metadata retain v1 behavior. See the [wire contract and compatibility fixtures](../protocol/README.md).
 - `GET /api/status` => `{agent:{configured,provider,model},storage:{bytes,captures,blobs},...}`
 - `GET /api/captures?limit=50&before=<ISO>&after=<ISO>&deviceId=<id>&source=<type>&appId=<exact-id>&collection=<content|activity>` => `{items,nextCursor}`. Items include `id,deviceId,deviceName,platform,capturedAt,durationMs,appId,appName,windowTitle,ocrText,source,mood?,privacy,blobHash,indexingStatus,summary?`.
 - `GET /api/captures/:id/image` authenticated image bytes.

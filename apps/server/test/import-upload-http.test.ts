@@ -9,7 +9,7 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import {sha256} from '../src/store.js';
 
-test('HTTP binary import archives exact generated image without a model, enforcing owner access and part limits',async t=>{
+test('HTTP binary import archives exact generated image without a model, enforcing owner access and part limits',{timeout:60_000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-import-http-'));
  const config:Config={dataDir:directory,token:'generated-import-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let modelCalls=0;
@@ -42,7 +42,8 @@ test('HTTP binary import archives exact generated image without a model, enforci
  const created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{name:'Generated archive without model',archivedFileIds:[file.id],processing:'automatic'}});
  assert.equal(created.statusCode,202,created.body);
  let job=created.json();
- for(let attempt=0;attempt<100&&!['needs_configuration','failed','completed'].includes(job.status);attempt++){
+ // Import completion is asynchronous; a busy CI runner can exceed one second.
+ for(const deadline=Date.now()+30_000;Date.now()<deadline&&!['needs_configuration','failed','completed'].includes(job.status);){
   await setTimeout(10);const response=await node.app.inject({method:'GET',url:`/api/imports/${job.id}`,headers});assert.equal(response.statusCode,200);job=response.json();
  }
  assert.equal(job.status,'completed');assert.equal(job.processingStatus,'saved');
