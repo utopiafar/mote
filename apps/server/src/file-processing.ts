@@ -20,6 +20,7 @@ import {FileProcessorRuntime,isLoopback,type FileProcessor,type TranscriptionPro
 import {MEDIA_CATALOG,type MediaAssets} from './media-assets.js';
 import {fileAttachmentAvailable} from './file-attachments.js';
 import {alignDialogue,applySemanticGroups,TURN_GROUP_PROMPT} from './file-dialogue.js';
+import {defaultFileRecipe,TRANSCRIPT_OUTPUT,type FileRecipeContext} from './file-recipes.js';
 export {HttpTranscriptionProvider,type TranscriptionProvider} from './file-processors.js';
 
 import {migrateFilePolicy,publicFilePolicy,parseFilePolicy,selectFilePolicy,effectiveFileSettings,type AppliedFilePolicy} from './file-policy.js';
@@ -60,7 +61,7 @@ export class FileProcessing {
   private log(event:string,id?:string,fields:EventFields={},level:'debug'|'info'|'warn'|'error'='info') {
     this.options.diagnostics?.record(event,{jobId:id,...fields},level);
   }
-  view(){const {apiKey,localModelApiKey,localWorkerApiKey,...settings}=this.saved.settings;return {revision:this.saved.revision,settings:{...settings,apiKeyConfigured:!!apiKey,localModelApiKeyConfigured:!!localModelApiKey,localWorkerApiKeyConfigured:!!localWorkerApiKey},execution:'central',runtime:'cordis',policy:publicFilePolicy(this.policy()),policyConfigured:!!this.saved.policy,processors:this.runtime.registry.list()};}
+  view(){const {apiKey,localModelApiKey,localWorkerApiKey,...settings}=this.saved.settings;return {revision:this.saved.revision,settings:{...settings,apiKeyConfigured:!!apiKey,localModelApiKeyConfigured:!!localModelApiKey,localWorkerApiKeyConfigured:!!localWorkerApiKey},execution:'central',runtime:'cordis',policy:publicFilePolicy(this.policy()),policyConfigured:!!this.saved.policy,processors:this.runtime.registry.list(),capabilities:{intake:this.runtime.intake.list(),...this.runtime.recipes.list(),outputs:this.runtime.outputs.list()}};}
   private policy(){const policy=structuredClone(this.saved.policy??migrateFilePolicy(this.saved.settings,this.runtime.registry));for(const service of policy.services)if(service.id==='asr-local'&&service.endpoint===managedAsrEndpoint()&&!service.apiKey&&this.options.mediaAssets)service.apiKey=process.env.MOTE_MEDIA_WORKER_TOKEN;return policy;}
   localService(id?:string){if(!id)return {endpoint:this.saved.settings.localEndpoint,apiKey:this.saved.settings.localWorkerApiKey??(this.options.mediaAssets&&this.saved.settings.localEndpoint===managedAsrEndpoint()?process.env.MOTE_MEDIA_WORKER_TOKEN:undefined)};const service=this.policy().services.find(s=>s.id===id);if(!service||service.kind!=='asr'||service.execution!=='local')throw new StoreError(moteText("需要选择已保存的本地录音服务"),400);return service;}
   currentSettings(){return structuredClone(this.saved.settings);}
@@ -68,12 +69,17 @@ export class FileProcessing {
   private configuration(id:string,phase:'pipeline'|'summary'){
     const row=this.files.store.db.prepare("SELECT v.source_id,json_extract(v.manifest,'$.item.mimeType') AS mime,j.policy_json FROM file_versions v LEFT JOIN file_jobs j ON j.capture_id=v.capture_id WHERE v.capture_id=?").get(id);
     if(!row)throw new StoreError('File not found',404);
-    const epoch=JSON.stringify([this.saved.revision,this.options.analysisRevision?.(),this.runtime.registry.list().map(processorContract)]);
+    const epoch=JSON.stringify([this.saved.revision,this.options.analysisRevision?.(),this.runtime.registry.list().map(processorContract),this.runtime.recipes.list(),this.runtime.outputs.list()]);
     if(epoch!==this.configurationEpoch){this.configurationCache.clear();this.configurationEpoch=epoch;}
     const prior=phase==='summary'&&row.policy_json?String(row.policy_json):undefined,key=JSON.stringify([row.source_id,row.mime,prior,phase]);
     const cached=this.configurationCache.get(key);if(cached)return cached;
     const resolved=fileConfiguration(this.saved,String(row.source_id),String(row.mime??'application/octet-stream'),this.runtime.registry,prior?JSON.parse(prior):undefined);
     const result:{fingerprint:string;receipt:Record<string,unknown>}={fingerprint:resolved.fingerprint,receipt:resolved.receipt};
+    const descriptor=this.runtime.registry.list().find(p=>p.id===resolved.receipt.processorId);
+    if(descriptor){
+      try{const plan=this.runtime.recipes.resolve(defaultFileRecipe(descriptor),{semanticTurns:resolved.analysisSettings.semanticTurns});const output=descriptor.output??TRANSCRIPT_OUTPUT;this.runtime.outputs.get(output);result.fingerprint=sha256(JSON.stringify([result.fingerprint,plan.fingerprint,output]));result.receipt={...result.receipt,recipe:plan.recipe,stagePins:plan.pins,output};}
+      catch{result.fingerprint=sha256(JSON.stringify([result.fingerprint,'file-capability-unavailable']));result.receipt={...result.receipt,capabilityUnavailable:true};}
+    }
     if(resolved.managedModels.length&&this.options.mediaAssets&&resolved.analysisSettings.endpoint===managedAsrEndpoint()){
       const versions=Object.fromEntries(resolved.managedModels.map(role=>[role,MEDIA_CATALOG[role].version]));result.fingerprint=sha256(JSON.stringify([result.fingerprint,versions]));result.receipt={...result.receipt,mediaModelVersions:versions};
     }
@@ -104,7 +110,7 @@ export class FileProcessing {
     }else db.prepare("UPDATE file_jobs SET summary_state='waiting',available_at=0,error=NULL WHERE capture_id=? AND (summary_state IN ('failed','running') OR state!='succeeded' AND summary_state='blocked')").run(id);
   }
   private reconcileConfigurations(){
-    const epoch=JSON.stringify([this.saved.revision,this.options.analysisRevision?.(),this.runtime.registry.list().map(processorContract)]);if(this.reconciledEpoch===epoch)return;
+    const epoch=JSON.stringify([this.saved.revision,this.options.analysisRevision?.(),this.runtime.registry.list().map(processorContract),this.runtime.recipes.list(),this.runtime.outputs.list()]);if(this.reconciledEpoch===epoch)return;
     const db=this.files.store.db;
     for(const row of db.prepare("SELECT kind,input FROM execution_steps WHERE kind IN ('files.pipeline','files.summary') AND state NOT IN ('succeeded','cancelled','stale')").all()){
       const input=JSON.parse(String(row.input)),phase=row.kind==='files.summary'?'summary':'pipeline';
@@ -331,6 +337,7 @@ export class FileProcessing {
         }
       }else{
         const processor=this.runtime.registry.get(processorId);
+        try{this.runtime.recipes.resolve(defaultFileRecipe(processor),{semanticTurns:settings.semanticTurns});this.runtime.outputs.get(processor.output??TRANSCRIPT_OUTPUT);}catch{return new ExecutionFailure('blocked','file_capability_unavailable');}
         if(processor.stage!=='extract'||!processor.mediaTypes.some(t=>t.endsWith('/')?mime.startsWith(t):t===mime||t.endsWith('/*')&&mime.startsWith(t.slice(0,-1))))return new ExecutionFailure('blocked','unsupported_format');
         const stages=[processor,...(processor.dialogue?[this.runtime.registry.get(settings.diarizationProcessor)]:[])];
         if(stages.some(stage=>stage.managedModel&&effective.endpoint===managedAsrEndpoint()&&this.options.mediaAssets&&!this.options.mediaAssets.ready(stage.managedModel)))return new ExecutionFailure('blocked','model_missing');
@@ -339,54 +346,69 @@ export class FileProcessing {
   }
   private async runFile(step:ExecutionStep,executionSignal:AbortSignal){
     const id=String(step.input.captureId),{db,revision,job,file,mime,applied,settings,parameters,processorId,localOnly,effective}=this.executionSettings(id,'pipeline');
-      if(job.state!=='succeeded'){
-        const budget=settings.maxAudioMinutes*60000;
-        db.prepare('UPDATE file_jobs SET config_revision=? WHERE capture_id=?').run(revision,id);
-        const started=performance.now();this.log('file.started',id,{operation:'file_process',attempt:job.attempts+1,bytes:file.sizeBytes});
-        try{
-          const signal=AbortSignal.any([executionSignal,this.abort.signal]),processor=this.runtime.registry.get(processorId);
-          if(!processor.mediaTypes.some(t=>t.endsWith('/')?mime.startsWith(t):t===mime||t.endsWith('/*')&&mime.startsWith(t.slice(0,-1)))||processor.stage!=='extract')throw new StoreError('Processor does not accept this format',409);
-          if(applied)db.prepare('UPDATE file_jobs SET policy_json=? WHERE capture_id=?').run(JSON.stringify(applied),id);
-          const input:ProcessorInput={parameters,file:{id,title:file.item.title,mimeType:mime,sizeBytes:file.sizeBytes},settings:effective,signal,maxAudioMs:Math.max(1,budget),readOriginal:()=>ReadableAsync(this.files.bytes(id))};
-          const extractId=await this.step(id,'extract',processor.id,processor.version,[file.sha256,processor.id,processor.version,processorSettingsFingerprint(processor,effective,parameters),this.modelVersion(processor,effective)],revision,async processorSignal=>{
-            const result=transcriptSchema.parse(await processor.process({...input,signal:processorSignal}));if(mime.startsWith('audio/')&&result.durationMs>budget)throw new StoreError('Audio budget exceeded',413);return result;
-          },(transcript:Transcript)=>{
-            if(mime.startsWith('audio/')&&transcript.durationMs>budget)throw new StoreError('Audio budget exceeded',413);
-            db.prepare('UPDATE file_artifacts SET current=0 WHERE capture_id=?').run(id);
-            db.prepare('UPDATE file_jobs SET local_only=? WHERE capture_id=?').run(Number(localOnly),id);
-            db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=?").run(id);
-            const out=this.saveArtifact(id,mime.startsWith('audio/')?'transcript':mime.startsWith('image/')?'image-text':'text',{transcript,durationMs:transcript.durationMs,segments:transcript.segments.length,complete:transcript.coverage!=='partial',coverage:transcript.coverage??'full',processor:processor.id,processorVersion:processor.version,uncorrected:true},revision,transcript);
-            return out;
-          },processor.reuseByContent===true&&job.reuse_allowed!==0);
-          if(processor.dialogue){
-            if(localOnly&&!isLoopback(effective.endpoint))throw new StoreError('Local dialogue requires a local worker',409);
-            const raw=this.transcript(extractId),diarizer=this.runtime.registry.get(settings.diarizationProcessor);
-            if(diarizer.stage!=='diarize'||localOnly&&!diarizer.localOnly||diarizer.localOnly&&!isLoopback(effective.endpoint))throw new StoreError('Dialogue requires a compatible diarization plugin and service',409);
-            const diarizeId=await this.step(id,'diarize',diarizer.id,diarizer.version,[file.sha256,diarizer.id,diarizer.version,processorSettingsFingerprint(diarizer,effective,{speakerCount:settings.speakerCount}),this.modelVersion(diarizer,effective)],revision,processorSignal=>diarizer.process({...input,signal:processorSignal,maxAudioMs:Math.ceil(raw.durationMs)+1000}),(rawDiarization:unknown)=>{
-              const data=diarizationSchema.parse(rawDiarization);
-              db.prepare("UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind IN ('dialogue','corrected-dialogue','summary','speaker-names','calendar-link')").run(id);
-              db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=? AND status='proposed'").run(id);
-              if(Math.abs(data.durationMs-raw.durationMs)>2000)throw new StoreError('Diarization duration does not match the original',502);
-              if(data.expectedSpeakers!==settings.speakerCount)throw new StoreError('Diarization speaker-count constraint was ignored',502);
-              const artifactId=this.saveArtifact(id,'diarization',{...data,samples:data.samples.map(({wavBase64,...sample})=>sample),complete:true},revision);
-              for(const sample of data.samples){const bytes=Buffer.from(sample.wavBase64,'base64');if(bytes.length>768*1024||bytes.subarray(0,4).toString()!=='RIFF'||bytes.subarray(8,12).toString()!=='WAVE')throw new StoreError('Invalid speaker sample',502);this.files.saveAsset(artifactId,`speaker_samples/${sample.speaker}.wav`,'audio/wav',bytes);}
-              return artifactId;
-            });
-            const {complete:_,...diarization}=this.artifact(diarizeId);const aligned=alignDialogue(raw,diarizationSchema.parse({...diarization,samples:[]}));
-            const alignId=await this.step(id,'align','mote.align','1',[extractId,diarizeId],revision,async()=>aligned,result=>this.saveArtifact(id,'dialogue',{transcript:result,complete:true,uncorrected:true,semanticGrouping:false,inputArtifacts:[extractId,diarizeId]},revision,result));
-            if(settings.semanticTurns){
-              await this.step(id,'turns','mote.semantic-turns','1',[alignId,settings.localModelEndpoint,settings.localModelName,revision],revision,async processorSignal=>{
-                if(!this.options.analyze||localOnly&&!settings.localModelName)throw new StoreError('A compatible language model is required for semantic turn grouping',409);
-                const ids=db.prepare('SELECT id FROM file_chunks WHERE artifact_id=? ORDER BY start_ms,ordinal,rowid LIMIT 200').all(alignId).map(row=>String(row.id));const records=this.files.evidence(ids);if(records.length!==aligned.segments.length)throw new StoreError('Semantic grouping currently supports up to 200 turns per file',413);
-                const response=await this.options.analyze(records.map((r,i)=>({...r,ocrText:JSON.stringify({turnIndex:i,...aligned.segments[i]})})),TURN_GROUP_PROMPT,{...effective,...(this.options.analysisSnapshot?{modelSnapshot:structuredClone(this.options.analysisSnapshot(effective,localOnly))}:{})},localOnly,processorSignal,this.analysisHost(id));
-                const {groups}=z.object({groups:z.array(z.array(z.number().int().nonnegative()).min(1)).max(200)}).strict().parse(JSON.parse(response.answer));
-                return applySemanticGroups(aligned,groups);
-              },result=>this.saveArtifact(id,'dialogue',{transcript:result,complete:true,uncorrected:true,semanticGrouping:true,inputArtifacts:[alignId]},revision,result));
+    const budget=settings.maxAudioMinutes*60000,signal=AbortSignal.any([executionSignal,this.abort.signal]),processor=this.runtime.registry.get(processorId);
+    db.prepare('UPDATE file_jobs SET config_revision=? WHERE capture_id=?').run(revision,id);
+    if(applied)db.prepare('UPDATE file_jobs SET policy_json=? WHERE capture_id=?').run(JSON.stringify(applied),id);
+    const outputType=this.runtime.outputs.get(processor.output??TRANSCRIPT_OUTPUT);
+    const decodeOutput=(value:unknown)=>{const payload=outputType.parse(value);return {payload,transcript:transcriptSchema.parse(outputType.project(payload)),kind:outputType.kind};};
+    const input:ProcessorInput={parameters,file:{id,title:file.item.title,mimeType:mime,sizeBytes:file.sizeBytes},settings:effective,signal,maxAudioMs:Math.max(1,budget),readOriginal:()=>ReadableAsync(this.files.bytes(id))};
+    const started=performance.now();this.log('file.started',id,{operation:'file_process',attempt:job.attempts+1,bytes:file.sizeBytes});
+    try{
+      await this.runtime.recipes.run(defaultFileRecipe(processor),{semanticTurns:settings.semanticTurns},(stage,dependencies)=>{
+        const read=(name:string)=>{const artifactId=dependencies[name];if(!artifactId)throw new StoreError('File stage input is missing',409);return artifactId;};
+        const context:FileRecipeContext={input,dependencies,readArtifact:artifactId=>{if(!Object.values(dependencies).includes(artifactId))throw new StoreError('Artifact is outside stage inputs',409);return this.artifact(artifactId);},
+          transform:(type,execute)=>this.step(id,stage.name,stage.stage.id,stage.stage.version,[file.sha256,dependencies,type,revision],revision,execute,value=>{
+            const decoded=this.runtime.outputs.decode(type,value);return this.saveArtifact(id,decoded.kind,{transcript:decoded.transcript,output:{type,payload:decoded.payload},complete:decoded.transcript.coverage!=='partial',coverage:decoded.transcript.coverage??'full',inputArtifacts:Object.values(dependencies)},revision,decoded.transcript);
+          }),
+          builtin:async operation=>{
+            if(operation==='extract')return this.step(id,stage.name,processor.id,processor.version,[file.sha256,processor.id,processor.version,stage.stage,processor.output??TRANSCRIPT_OUTPUT,processorSettingsFingerprint(processor,effective,parameters),this.modelVersion(processor,effective)],revision,
+              async processorSignal=>{
+                const raw=await processor.process({...input,signal:processorSignal}),decoded=decodeOutput(raw);
+                if(mime.startsWith('audio/')&&decoded.transcript.durationMs>budget)throw new StoreError('Audio budget exceeded',413);
+                return processor.output?raw:decoded.transcript;
+              },value=>{
+                const decoded=decodeOutput(value),transcript=decoded.transcript;
+                if(mime.startsWith('audio/')&&transcript.durationMs>budget)throw new StoreError('Audio budget exceeded',413);
+                db.prepare('UPDATE file_artifacts SET current=0 WHERE capture_id=?').run(id);
+                db.prepare('UPDATE file_jobs SET local_only=? WHERE capture_id=?').run(Number(localOnly),id);
+                db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=?").run(id);
+                return this.saveArtifact(id,processor.output?decoded.kind:mime.startsWith('audio/')?'transcript':mime.startsWith('image/')?'image-text':'text',
+                  {transcript,output:{type:processor.output??TRANSCRIPT_OUTPUT,...(processor.output?{payload:decoded.payload}:{})},durationMs:transcript.durationMs,segments:transcript.segments.length,complete:transcript.coverage!=='partial',coverage:transcript.coverage??'full',processor:processor.id,processorVersion:processor.version,uncorrected:true},revision,transcript);
+              },!processor.output&&processor.reuseByContent===true&&job.reuse_allowed!==0);
+            if(operation==='diarize'){
+              const extractId=read('extract'),raw=this.transcript(extractId),diarizer=this.runtime.registry.get(settings.diarizationProcessor);
+              if(diarizer.stage!=='diarize'||localOnly&&!diarizer.localOnly||diarizer.localOnly&&!isLoopback(effective.endpoint))throw new StoreError('Dialogue requires a compatible diarization plugin and service',409);
+              return this.step(id,stage.name,diarizer.id,diarizer.version,[file.sha256,diarizer.id,diarizer.version,stage.stage,processorSettingsFingerprint(diarizer,effective,{speakerCount:settings.speakerCount}),this.modelVersion(diarizer,effective)],revision,
+                processorSignal=>diarizer.process({...input,signal:processorSignal,maxAudioMs:Math.ceil(raw.durationMs)+1000}),value=>{
+                  const data=diarizationSchema.parse(value);
+                  if(Math.abs(data.durationMs-raw.durationMs)>2000)throw new StoreError('Diarization duration does not match the original',502);
+                  if(data.expectedSpeakers!==settings.speakerCount)throw new StoreError('Diarization speaker-count constraint was ignored',502);
+                  db.prepare("UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind IN ('dialogue','corrected-dialogue','summary','speaker-names','calendar-link')").run(id);
+                  db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=? AND status='proposed'").run(id);
+                  const artifactId=this.saveArtifact(id,'diarization',{...data,samples:data.samples.map(({wavBase64,...sample})=>sample),complete:true},revision);
+                  for(const sample of data.samples){const bytes=Buffer.from(sample.wavBase64,'base64');if(bytes.length>768*1024||bytes.subarray(0,4).toString()!=='RIFF'||bytes.subarray(8,12).toString()!=='WAVE')throw new StoreError('Invalid speaker sample',502);this.files.saveAsset(artifactId,`speaker_samples/${sample.speaker}.wav`,'audio/wav',bytes);}
+                  return artifactId;
+                });
             }
-          }
-          if(!this.exists(id,revision))throw new ExecutionFailure('stale','input_changed');this.log('file.completed',id,{operation:'file_process',durationMs:performance.now()-started,attempt:job.attempts+1});
-        }catch(error){const failure=safeError(error),cancelled=!this.exists(id,revision);this.log(cancelled?'file.cancelled':'file.failed',id,{operation:'file_process',durationMs:performance.now()-started,attempt:job.attempts+1,category:cancelled?'cancelled':failure.category,...(!cancelled&&failure.status!==409&&job.attempts<3?{retryAfterMs:30000*Math.pow(2,job.attempts)}:{})},cancelled?'info':failure.status>=500?'error':'warn');throw error;}
-      }
+            if(operation==='align'){
+              const extractId=read('extract'),diarizeId=read('diarize'),{complete:_,...diarization}=this.artifact(diarizeId);
+              const aligned=alignDialogue(this.transcript(extractId),diarizationSchema.parse({...diarization,samples:[]}));
+              return this.step(id,stage.name,stage.stage.id,stage.stage.version,[extractId,diarizeId,stage.stage],revision,async()=>aligned,result=>this.saveArtifact(id,'dialogue',{transcript:result,complete:true,uncorrected:true,semanticGrouping:false,inputArtifacts:[extractId,diarizeId]},revision,result));
+            }
+            const alignId=read('align'),aligned=this.transcript(alignId);
+            return this.step(id,stage.name,stage.stage.id,stage.stage.version,[alignId,stage.stage,settings.localModelEndpoint,settings.localModelName,revision],revision,async processorSignal=>{
+              if(!this.options.analyze||localOnly&&!settings.localModelName)throw new StoreError('A compatible language model is required for semantic turn grouping',409);
+              const ids=db.prepare('SELECT id FROM file_chunks WHERE artifact_id=? ORDER BY start_ms,ordinal,rowid LIMIT 200').all(alignId).map(row=>String(row.id)),records=this.files.evidence(ids);
+              if(records.length!==aligned.segments.length)throw new StoreError('Semantic grouping currently supports up to 200 turns per file',413);
+              const response=await this.options.analyze(records.map((r,i)=>({...r,ocrText:JSON.stringify({turnIndex:i,...aligned.segments[i]})})),TURN_GROUP_PROMPT,{...effective,...(this.options.analysisSnapshot?{modelSnapshot:structuredClone(this.options.analysisSnapshot(effective,localOnly))}:{})},localOnly,processorSignal,this.analysisHost(id));
+              const {groups}=z.object({groups:z.array(z.array(z.number().int().nonnegative()).min(1)).max(200)}).strict().parse(JSON.parse(response.answer));return applySemanticGroups(aligned,groups);
+            },result=>this.saveArtifact(id,'dialogue',{transcript:result,complete:true,uncorrected:true,semanticGrouping:true,inputArtifacts:[alignId]},revision,result));
+          },
+        };return context;
+      },artifactId=>{if(!db.prepare('SELECT 1 FROM file_artifacts WHERE id=? AND capture_id=?').get(artifactId,id))throw new StoreError('File stage returned an unpublished artifact',422);if(!this.exists(id,revision))throw new ExecutionFailure('stale','input_changed');});
+      if(!this.exists(id,revision))throw new ExecutionFailure('stale','input_changed');
+      this.log('file.completed',id,{operation:'file_process',durationMs:performance.now()-started,attempt:job.attempts+1});
+    }catch(error){const failure=safeError(error),cancelled=!this.exists(id,revision);this.log(cancelled?'file.cancelled':'file.failed',id,{operation:'file_process',durationMs:performance.now()-started,attempt:job.attempts+1,category:cancelled?'cancelled':failure.category,...(!cancelled&&failure.status!==409&&job.attempts<3?{retryAfterMs:30000*Math.pow(2,job.attempts)}:{})},cancelled?'info':failure.status>=500?'error':'warn');throw error;}
   }
   private async runSummary(step:ExecutionStep,signal:AbortSignal){
     const id=String(step.input.captureId),{revision,settings,localOnly,effective,processorId}=this.executionSettings(id,'summary');

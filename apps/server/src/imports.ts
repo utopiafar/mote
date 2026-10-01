@@ -20,12 +20,15 @@ import {ExecutionEngine,ExecutionFailure,type ExecutionGrant,type ExecutionStep}
 import {executionEnvelope} from '@mote/shared/execution';
 import {linkOperationParent} from './operation-projection.js';
 import {validBase64} from './base64.js';
+import {ImportIntakeRegistry,installImportIntake} from './import-intake.js';
+import {FileStore} from './files.js';
+import {materialId} from './materials.js';
 
 const MAX_INPUT_BYTES=256*1024*1024,MAX_EXPANDED_BYTES=512*1024*1024,MAX_FILES=4000;
 export type ImportPreparation={operationId?:string;signal?:AbortSignal;workspace:string;inputPaths:string[];instruction:string;previous?:{summary:string;error?:string}};
 export type ImportPreparationResult={summary:string;recordsPath?:string;warnings?:string[];reviewDecision?:ImportReviewDecision};
-export type ImportRuntime={executor?:ExecutionEngine;prepare?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;sourcePacks?:ReadonlyMap<string,{revision:string;prepare:(input:ImportPreparation)=>Promise<ImportPreparationResult>}>;onImported?:(captureIds:string[],importJobId:string)=>Promise<{memoryJobId?:string}>};
-type InternalJob=ImportJob&{processing?:'automatic'|'preview';sourcePackRevision?:string;archiveWarnings?:string[];createFingerprint?:string;preparationRevision?:number;originalsPending?:boolean;expansion?:{originalIds:string[];completedIds:string[]};parserMode?:'plain';workspace:string;inputs:{path:string;fileId:string}[];manifestHash?:string;failurePhase?:'prepare'|'import';memoryNotified?:boolean;blockedArchive?:boolean};
+export type ImportRuntime={executor?:ExecutionEngine;intake?:ImportIntakeRegistry;fileStore?:FileStore;prepare?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;sourcePacks?:ReadonlyMap<string,{revision:string;prepare:(input:ImportPreparation)=>Promise<ImportPreparationResult>}>;onImported?:(captureIds:string[],importJobId:string)=>Promise<{memoryJobId?:string}>};
+type InternalJob=ImportJob&{containerIds?:string[];recordsProcessed?:number;processing?:'automatic'|'preview';sourcePackRevision?:string;archiveWarnings?:string[];createFingerprint?:string;preparationRevision?:number;originalsPending?:boolean;expansion?:{originalIds:string[];completedIds:string[];pins?:Record<string,{id:string;version:string}>};parserMode?:'plain';workspace:string;inputs:{path:string;fileId:string}[];manifestHash?:string;failurePhase?:'prepare'|'import';memoryNotified?:boolean;blockedArchive?:boolean};
 const responseSchema=z.object({summary:z.string().max(20000),recordsPath:z.string().max(4000).optional(),warnings:z.array(z.string().max(2000)).max(200).optional(),reviewDecision:importReviewDecisionSchema.optional()}).strict();
 const message=(error:unknown)=>error instanceof Error?error.message.slice(0,2000):'Import failed';
 const inside=(root:string,path:string)=>{const rel=relative(root,path);return rel===''||(!rel.startsWith(`..${sep}`)&&rel!=='..'&&!isAbsolute(rel));};
@@ -36,13 +39,14 @@ function reviewGate(job:InternalJob,decision:ImportReviewDecision|undefined,info
   if(!decision.reason)return {decision:'confirmation',reason:'The parser did not explain its high-confidence assessment.'};
   if(job.warnings.length&&!informationalWarnings)return {decision:'confirmation',reason:'Processing reported warnings; review the preview before publishing.'};
   if(!job.dispositions||job.dispositions.items.length!==job.files.length)return {decision:'confirmation',reason:'The parser did not account for every original file.'};
-  if(job.dispositions.counts.unsupported||job.dispositions.counts.excluded||!job.dispositions.counts.parsed)return {decision:'confirmation',reason:'Some originals were not parsed as evidence.'};
+  if(job.dispositions.counts.unsupported||job.dispositions.counts.excluded||(!job.dispositions.counts.parsed&&!job.dispositions.counts.processing))return {decision:'confirmation',reason:'Some originals were not parsed as evidence.'};
   return {decision:'automatic',reason:'The parsed records passed host validation with high confidence and no ambiguity.'};
 }
 
 /** Deterministic formats decode locally; models map unfamiliar structures into reviewed records. */
 export class ImportStore {
   private running=new Set<string>();
+  readonly intake:ImportIntakeRegistry;
   /** Cancellation settles the execution lease before an uncooperative worker exits. */
   hasActiveWorker(id:string):boolean{return this.running.has(id);}
   confirmationIdentity(id:string):string{return this.phaseId(this.load(id),'commit');}
@@ -52,6 +56,7 @@ export class ImportStore {
   private isScheduled(id:string){return Boolean(this.store.db.prepare("SELECT 1 FROM execution_steps WHERE kind IN ('imports.prepare','imports.commit') AND json_extract(input,'$.jobId')=? AND state IN ('waiting','running') LIMIT 1").get(id));}
   readonly directory:string;
   constructor(public store:Store,public files:ArchivedFileStore,public sources:SourceStore,private runtime:ImportRuntime={}) {
+    this.intake=runtime.intake??new ImportIntakeRegistry();if(!runtime.intake)installImportIntake(this.intake);
     const directory=join(store.directory,'imports');privateDirectory(directory);this.directory=realpathSync(directory);
     store.db.exec('CREATE TABLE IF NOT EXISTS import_jobs(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,json TEXT NOT NULL)');
     store.db.exec('CREATE TABLE IF NOT EXISTS import_create_requests(request_id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,job_id TEXT NOT NULL)');
@@ -80,6 +85,7 @@ export class ImportStore {
         store.db.prepare("UPDATE execution_steps SET state='stale',error='restored_preview_required',fence=NULL,lease_until=0,updated_at=? WHERE kind IN ('imports.prepare','imports.commit') AND json_extract(input,'$.jobId')=? AND state IN ('waiting','running','blocked')").run(Date.now(),job.id);
         job.preparationRevision=(job.preparationRevision??0)+1;job.status=job.status==='cancelled'?'cancelled':job.blockedArchive?'failed':'queued';job.processingStatus=job.blockedArchive?'blocked':'archived';job.failurePhase='prepare';job.preview=undefined;job.dispositions=undefined;job.reviewDecision=undefined;job.reviewGate=undefined;job.manifestHash=undefined;
         job.progress={total:0,processed:0,imported:0,duplicates:0};
+        job.recordsProcessed=0;if(job.media)job.media=job.media.map(({captureId,processing,searchable,memory,...item})=>item);
         if(missingOriginals)job.error='This backup is missing original files. Upload them again to continue.';
         else if(!job.blockedArchive)job.error='Restored backup: original files are retained. Analyze this import again and review a new preview before continuing.';
       }else if(job.status==='preparing'||job.status==='importing'){
@@ -91,8 +97,33 @@ export class ImportStore {
     }
   }
   private load(id:string):InternalJob{const row=this.store.db.prepare('SELECT json FROM import_jobs WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Import job not found',404);return JSON.parse(row.json);}
-  private public(job:InternalJob):ImportJob{job.operationId=`import:${job.id}`;const operation=this.store.db.prepare('SELECT state FROM operation_progress WHERE id=? AND total>0').get(job.operationId);if(operation)job.execution=executionEnvelope({status:operation.state==='waiting'?'queued':operation.state,attempts:job.execution?.attempts??0,errorCode:job.status==='awaiting_confirmation'?'awaiting_confirmation':job.execution?.failure?.code});const {processing,sourcePackRevision,archiveWarnings,createFingerprint,preparationRevision,originalsPending,expansion,parserMode,workspace,inputs,manifestHash,failurePhase,memoryNotified,blockedArchive,...value}=job;return value;}
+  private public(job:InternalJob):ImportJob{job.operationId=`import:${job.id}`;const operation=this.store.db.prepare('SELECT state FROM operation_progress WHERE id=? AND total>0').get(job.operationId);if(operation)job.execution=executionEnvelope({status:operation.state==='waiting'?'queued':operation.state,attempts:job.execution?.attempts??0,errorCode:job.status==='awaiting_confirmation'?'awaiting_confirmation':job.execution?.failure?.code});const {containerIds,recordsProcessed,processing,sourcePackRevision,archiveWarnings,createFingerprint,preparationRevision,originalsPending,expansion,parserMode,workspace,inputs,manifestHash,failurePhase,memoryNotified,blockedArchive,...value}=job;if(value.media)value.media=value.media.map(item=>this.mediaProgress(job,item));return value;}
   private save(job:InternalJob){job.updatedAt=new Date().toISOString();const json=JSON.stringify(job),old=this.store.db.prepare('SELECT length(CAST(json AS BLOB)) AS bytes FROM import_jobs WHERE id=?').get(job.id) as {bytes:number}|undefined;this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-(old?.bytes??0)));this.store.db.prepare('INSERT INTO import_jobs(id,created_at,updated_at,json) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at,json=excluded.json').run(job.id,job.createdAt,job.updatedAt,json);if(job.createFingerprint)this.store.db.prepare('INSERT OR IGNORE INTO import_create_requests(request_id,fingerprint,job_id) VALUES(?,?,?)').run(job.id,job.createFingerprint,job.id);}
+  private mediaProgress(job:InternalJob,item:NonNullable<ImportJob['media']>[number]){
+    if(!item.captureId||!this.runtime.fileStore)return item;
+    const row=this.store.db.prepare('SELECT state,stage,error FROM file_jobs WHERE capture_id=?').get(item.captureId);
+    if(!row)return {...item,processing:{state:'blocked',stage:'intake',error:'original_missing'},searchable:false};
+    const searchable=Boolean(this.store.db.prepare('SELECT 1 FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND a.current=1 LIMIT 1').get(item.captureId));
+    let memory:NonNullable<ImportJob['media']>[number]['memory'];
+    if(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_memory_requests'").get()){
+      const externalId=this.runtime.fileStore.version(item.captureId).external_id;
+      const requests=this.store.db.prepare('SELECT r.auto_authorized,r.job_id,r.error,j.json FROM material_memory_requests r LEFT JOIN memory_jobs j ON j.id=r.job_id WHERE r.material_id=?').all(materialId(job.sourceId,externalId));
+      const states=requests.map(r=>r.json?String(JSON.parse(String(r.json)).status):r.error?'failed':r.auto_authorized?'waiting':'disabled');
+      const state=states.includes('failed')?'failed':states.includes('waiting_for_model')?'waiting_for_model':states.some(state=>['running','pausing'].includes(state))?'running':states.some(state=>['waiting','queued','waiting_for_input'].includes(state))?'waiting':states.includes('paused')?'paused':states.includes('cancelled')?'cancelled':states.includes('completed')?'completed':requests.length?'disabled':'waiting';
+      memory={state,jobIds:requests.flatMap(r=>r.job_id?[String(r.job_id)]:[])};
+    }
+    return {...item,processing:{state:String(row.state),stage:String(row.stage),...(row.error?{error:String(row.error)}:{})},searchable,memory};
+  }
+  private prefix(fileId:string){for(const part of this.files.bytes(fileId))return part.subarray(0,4096);return Buffer.alloc(0);}
+  private analysisInputs(job:InternalJob){const skipped=new Set([...(job.containerIds??[]),...(job.media??[]).map(item=>item.fileId)]);return job.inputs.filter(input=>!skipped.has(input.fileId));}
+  private dispositions(job:InternalJob,parsed?:ImportDispositions):ImportDispositions|undefined{
+    if(!job.media?.length&&!job.containerIds?.length)return parsed;
+    if(!parsed&&!job.media?.length)return;
+    const items=[...(parsed?.items??[]),...(job.media??[]).map(item=>({fileId:item.fileId,path:this.files.get(item.fileId).relativePath,status:'processing' as const,reason:item.format.reason})),...(job.containerIds??[]).map(fileId=>({fileId,path:this.files.get(fileId).relativePath,status:'container' as const,reason:'Container originals retained; members are accounted separately'}))];
+    const counts:ImportDispositions['counts']={parsed:0,attachment:0,container:0,excluded:0,unsupported:0,processing:0};
+    for(const item of items)counts[item.status]=(counts[item.status]??0)+1;
+    return {items,counts};
+  }
   get(id:string):ImportJob{return this.public(this.load(id));}
   list():ImportJob[]{return (this.store.db.prepare('SELECT json FROM import_jobs ORDER BY created_at DESC LIMIT 100').all() as {json:string}[]).map(r=>this.public(JSON.parse(r.json)));}
   private createdRequest(requestId:string,fingerprint:string):ImportJob|undefined {
@@ -161,25 +192,30 @@ export class ImportStore {
     job.expansion={originalIds:job.files.map(file=>file.id),completedIds:[]};this.save(job);
     await this.expand(job);this.restoreOperation(job);return this.public(this.load(job.id));
   }
-  private async expand(job:InternalJob,grant?:ExecutionGrant){
+  private async expand(job:InternalJob,grant?:ExecutionGrant,signal?:AbortSignal){
     if(!job.expansion)return;this.running.add(job.id);
     const save=()=>grant?grant.commit(()=>this.save(job)):this.save(job);
     try{
       for(const originalId of job.expansion.originalIds){
-        grant?.assert();
+        signal?.throwIfAborted();grant?.assert();
         if(job.expansion.completedIds.includes(originalId))continue;
         const original=this.files.get(originalId);let first:Buffer|undefined;for(const part of this.files.bytes(original.id)){first=part;break;}
-        const isZip=first&&first.length>=4&&first[0]===0x50&&first[1]===0x4b&&((first[2]===3&&first[3]===4)||(first[2]===5&&first[3]===6));
-        if(!isZip||/\.(docx|xlsx|pptx|odt|ods)$/i.test(original.relativePath))continue;
+        const container=this.intake.container({file:original,prefix:first?.subarray(0,4096)??Buffer.alloc(0)});
+        const pinned=job.expansion.pins?.[originalId];
+        if(pinned&&(!container||container.id!==pinned.id||container.version!==pinned.version))throw new StoreError('Pinned import container is unavailable or changed',409);
+        if(!container)continue;
+        (job.expansion.pins??={})[originalId]={id:container.id,version:container.version};save();
         const prefix=original.relativePath+'.contents/',source=job.inputs.find(i=>i.fileId===original.id)!;await this.materialize(source);
         const output=join(job.workspace,'expanded',randomUUID());
         try{
           const other=job.files.filter(file=>!job.expansion!.originalIds.includes(file.id)&&!file.relativePath.startsWith(prefix));
-          const expanded=await formatWork({kind:'zip',path:source.path,output,maxBytes:MAX_EXPANDED_BYTES-other.reduce((sum,file)=>sum+file.sizeBytes,0),maxFiles:MAX_FILES-job.expansion.originalIds.length-other.length});
+          const maxBytes=MAX_EXPANDED_BYTES-other.reduce((sum,file)=>sum+file.sizeBytes,0),maxFiles=MAX_FILES-job.expansion.originalIds.length-other.length;
+          const expanded=await container.expand({path:source.path,output,maxBytes,maxFiles,signal});
+          if(expanded.files.length>maxFiles||expanded.files.some(entry=>!Number.isSafeInteger(entry.bytes)||entry.bytes<0||entry.bytes>MAX_FILE_BYTES)||expanded.files.reduce((sum,entry)=>sum+entry.bytes,0)>maxBytes)throw new StoreError('Expanded container exceeds import limits',413);
           let staged=0;for(const entry of expanded.files){
             const append=()=>{
               const relativePath=archiveRelativePath(prefix+entry.name),prior=job.files.find(file=>file.relativePath===relativePath);
-              const file=this.files.putParts({name:relativePath,relativePath},readParts(entry.path),entry.bytes,grant?()=>grant.assert():undefined);
+              const file=this.files.putParts({name:relativePath,relativePath,...(entry.mimeType?{mimeType:entry.mimeType}:{})},readParts(entry.path),entry.bytes,grant?()=>grant.assert():undefined);
               if(prior){if(prior.hash!==file.hash||prior.id!==file.id)throw new StoreError('Expanded original changed during recovery',409);}
               else{job.files.push(file);job.inputs.push({path:join(job.workspace,'inputs',relativePath),fileId:file.id});job.archive.files++;job.archive.bytes+=file.sizeBytes;job.archive.expandedFiles++;}
               if(grant)this.save(job);
@@ -216,12 +252,12 @@ export class ImportStore {
   private attempt(job:InternalJob):InternalJob {
     const parent=join(job.workspace,'attempts');privateDirectory(parent);
     const workspace=join(parent,randomUUID());privateDirectory(workspace);privateDirectory(join(workspace,'inputs'));
-    return {...job,workspace,inputs:job.inputs.map(input=>({fileId:input.fileId,
+    return {...job,workspace,inputs:this.analysisInputs(job).map(input=>({fileId:input.fileId,
       path:join(workspace,'inputs',archiveRelativePath(relative(join(job.workspace,'inputs'),input.path))) }))};
   }
   /** Parser output stays private to one worker until a fenced preview is published. */
   private async stagePrepared(job:InternalJob,attempt:InternalJob,path:string,signal?:AbortSignal){
-    const mapping=new Map(attempt.inputs.map((input,index)=>[input.path,job.inputs[index]!.path]));
+    const mapping=new Map(attempt.inputs.map(input=>[input.path,job.inputs.find(original=>original.fileId===input.fileId)!.path]));
     const lines:string[]=[];
     for await(const record of this.validatedRecords(path,signal)){
       const canonical=(paths:string[])=>paths.map(value=>{const mapped=mapping.get(value);if(!mapped)throw new StoreError('Prepared record references an unknown input path',409);return mapped;});
@@ -266,13 +302,15 @@ export class ImportStore {
       for(const input of attempt.inputs)await this.materialize(input);
       const decoded=await formatWork({kind:'plain',inputs:attempt.inputs.map(input=>({path:input.path,file:this.files.get(input.fileId)})),createdAt:job.createdAt,manifest:join(attempt.workspace,'prepared.jsonl')},signal);
       signal?.throwIfAborted();grant.assert();
+      if(!decoded.count&&!job.media?.length)return grant.commit(()=>{job.status='unsupported';job.processingStatus='blocked';job.error='Original files are archived; no searchable text or media work was produced.';this.save(job);return this.public(job);});
       const prepared=await this.stagePrepared(job,attempt,join(attempt.workspace,'prepared.jsonl'),signal);
       job.manifestHash=prepared.hash;job.summary='Source document text archived directly; author and original dates remain unspecified.';job.warnings=decoded.warnings;
-      job.preview={count:decoded.count,samples:decoded.samples};job.progress.total=decoded.count;job.status='awaiting_confirmation';job.processingStatus='preview_ready';
-      job.dispositions={counts:{parsed:job.files.length,attachment:0,container:0,excluded:0,unsupported:0},items:job.files.map(file=>({fileId:file.id,path:file.relativePath,status:'parsed',reason:'Deterministic document decoder; no attribution or original date inferred'}))};
+      job.preview={count:decoded.count+(job.media?.length??0),samples:decoded.samples};job.progress.total=job.preview.count;job.status='awaiting_confirmation';job.processingStatus='preview_ready';
+      job.dispositions=this.dispositions(job,{counts:{parsed:attempt.inputs.length,attachment:0,container:0,excluded:0,unsupported:0},items:attempt.inputs.map(input=>this.files.get(input.fileId)).map(file=>({fileId:file.id,path:file.relativePath,status:'parsed',reason:'Deterministic document decoder; no attribution or original date inferred'}))});
       job.reviewDecision=decoded.partial?
         {confidence:'low',ambiguous:false,reason:'Document decoding reported incomplete coverage; review the available text before publishing.'}:
         {confidence:'high',ambiguous:false,reason:'Deterministic document decoding preserved original text without inferred attribution or dates.'};
+      if(job.media?.length)job.summary=moteText('已保留 {0} 个媒体原件，确认接入后按文件处理设置提取内容；当前尚未转写。',job.media.length)+' '+job.summary;
       // Full-coverage document decoders also report known fidelity limits (for
       // example DOCX page layout or unrecalculated XLSX formulas). Keep those
       // visible, but they do not make the extracted text ambiguous.
@@ -283,9 +321,14 @@ export class ImportStore {
   }
   private async prepareNow(id:string,grant:ExecutionGrant,signal?:AbortSignal):Promise<ImportJob>{
     let job=this.load(id);if(this.running.has(id))throw new StoreError('Import is already processing',409);
-    if(job.expansion&&!job.blockedArchive){grant.assert();await this.expand(job,grant);job=this.load(id);if(job.expansion)return this.public(job);}
+    if(job.expansion&&!job.blockedArchive){grant.assert();await this.expand(job,grant,signal);job=this.load(id);if(job.expansion)return this.public(job);}
     if(job.blockedArchive)return this.public(job);
     if(job.progress.processed>0||job.status==='completed')throw new StoreError('Saved records cannot be reanalyzed in the same job',409);
+    if(this.runtime.fileStore&&!job.sourcePackId){
+      grant.commit(()=>{job.media=[];job.containerIds=[];for(const file of job.files){const input={file,prefix:this.prefix(file.id)};if(this.intake.container(input))job.containerIds.push(file.id);else{const format=this.intake.format(input);if(format)job.media.push({fileId:file.id,format});}}this.save(job);});
+      const inputs=this.analysisInputs(job);
+      if((!inputs.length&&job.media?.length)||(job.processing==='automatic'&&!job.instruction.trim()&&inputs.every(input=>/\.(txt|md|markdown|csv|tsv|json|jsonl|ndjson|yaml|yml|log|ics|pdf|docx|xlsx)$/i.test(this.files.get(input.fileId).name))))job.parserMode='plain';
+    }
     if(job.parserMode==='plain')return this.preparePlain(job,grant,signal);
     const pack=job.sourcePackId?this.runtime.sourcePacks?.get(job.sourcePackId):undefined;
     if(job.sourcePackId&&(!pack||pack.revision!==job.sourcePackRevision))return grant.commit(()=>{job.status='needs_configuration';job.processingStatus='blocked';job.error='The pinned Python Source Pack is unavailable or has changed. Start a new import with the installed pack.';this.save(job);return this.public(job);});
@@ -307,10 +350,10 @@ export class ImportStore {
       const path=result.recordsPath??join(attempt.workspace,'records.jsonl');
       if(!existsSync(resolve(attempt.workspace,path)))return grant.commit(()=>{job.status='unsupported';job.processingStatus='blocked';job.error='Original files are archived. No validated records were produced; revise the instructions or retry with a suitable parser.';this.save(job);return this.public(job);});
       const prepared=await this.validateManifest(attempt,path,join(attempt.workspace,'prepared.jsonl'),signal,undefined,true);signal?.throwIfAborted();grant.assert();
-      job.dispositions=prepared.dispositions;job.warnings=[...job.warnings,...prepared.warnings].slice(-200);
-      if(!prepared.count)return grant.commit(()=>{job.status='unsupported';job.processingStatus='blocked';job.error='Original files are archived. No validated records were produced; revise the instructions or retry with a suitable parser.';this.save(job);return this.public(job);});
+      job.dispositions=this.dispositions(job,prepared.dispositions);job.warnings=[...job.warnings,...prepared.warnings].slice(-200);
+      if(!prepared.count&&!job.media?.length)return grant.commit(()=>{job.status='unsupported';job.processingStatus='blocked';job.error='Original files are archived. No validated records were produced; revise the instructions or retry with a suitable parser.';this.save(job);return this.public(job);});
       const canonical=await this.stagePrepared(job,attempt,join(attempt.workspace,'prepared.jsonl'),signal);
-      job.manifestHash=canonical.hash;job.preview={count:prepared.count,samples:prepared.samples};job.progress.total=prepared.count;job.status='awaiting_confirmation';job.processingStatus='preview_ready';job.reviewDecision=result.reviewDecision;job.reviewGate=reviewGate(job,result.reviewDecision);
+      job.manifestHash=canonical.hash;job.preview={count:prepared.count+(job.media?.length??0),samples:prepared.samples};job.progress.total=job.preview.count;job.status='awaiting_confirmation';job.processingStatus='preview_ready';job.reviewDecision=result.reviewDecision;job.reviewGate=reviewGate(job,result.reviewDecision);
       this.publishPrepared(job,grant,canonical.staged);return this.public(job);
     }catch(error){return this.phaseFailure(id,'prepare',grant,signal,error);}
     finally{if(attempt)rmSync(attempt.workspace,{recursive:true,force:true});this.running.delete(id);}
@@ -326,13 +369,27 @@ export class ImportStore {
       const path=join(job.workspace,'prepared.jsonl');if(!job.manifestHash)throw new StoreError('The preview changed; analyze the files again before importing',409);
       await this.validateManifest(job,path,validated,signal,job.manifestHash);signal?.throwIfAborted();grant.assert();
       grant.commit(()=>this.sources.register({id:job.sourceId,name:job.name,kind:'upload',deviceId:'mote-import',platform:'import',retention:'archive',enabled:true}));
+      for(const media of job.media??[]){
+        if(media.captureId)continue;
+        signal?.throwIfAborted();grant.assert();
+        if(!this.intake.available(media.format)||!this.runtime.fileStore)throw new StoreError('The pinned media intake plugin is unavailable; restore it before retrying',409);
+        const file=this.files.get(media.fileId);
+        const record=(captureId:string,duplicate:boolean)=>{
+          grant.assert();this.files.attach(captureId,[file.id]);media.captureId=captureId;
+          linkOperationParent(this.store,`import:${id}`,`file:${captureId}`);
+          if(duplicate)job.progress.duplicates++;else{job.progress.imported++;job.captureIds.push(captureId);}
+          job.progress.processed++;this.save(job);
+        };
+        const ack=await this.runtime.fileStore.archivedRevision(file,job.sourceId,media.format.mimeType,job.createdAt,()=>grant.assert(),captureId=>record(captureId,false));
+        if(ack.duplicate)grant.commit(()=>record(ack.id,true));
+      }
       let index=-1;for await(const record of this.validatedRecords(validated,signal)){
-        index++;if(index<job.progress.processed)continue;signal?.throwIfAborted();grant.assert();const fileIds=[...record.evidencePaths,...record.attachments].map(path=>job.inputs.find(input=>input.path===path)!.fileId);
+        index++;if(index<(job.recordsProcessed??Math.max(0,job.progress.processed-(job.media?.filter(item=>item.captureId).length??0))))continue;signal?.throwIfAborted();grant.assert();const fileIds=[...record.evidencePaths,...record.attachments].map(path=>job.inputs.find(input=>input.path===path)!.fileId);
         await this.sources.upsert(job.sourceId,record.item,()=>grant.assert(),result=>{
           grant.assert();this.files.attach(result.id,fileIds);
           linkOperationParent(this.store,`import:${id}`,`capture:${result.id}`);linkOperationParent(this.store,`import:${id}`,`file:${result.id}`);
           if(result.duplicate)job.progress.duplicates++;else{job.progress.imported++;job.captureIds.push(result.id);}
-          job.progress.processed=index+1;this.save(job);
+          job.recordsProcessed=index+1;job.progress.processed=job.recordsProcessed+(job.media?.filter(item=>item.captureId).length??0);this.save(job);
         });
       }
       if(this.runtime.onImported&&job.captureIds.length&&!job.memoryNotified){
@@ -346,7 +403,9 @@ export class ImportStore {
   private phaseId(job:InternalJob,phase:'prepare'|'commit'){
     // Expansion may append files while a prepare lease is active. Its source ID and
     // preparation revision stay fixed; a new reviewed preview always changes the commit ID.
-    return sha256(JSON.stringify([`import:${job.id}`,phase,phase==='prepare'?[job.preparationRevision??0,job.sourceId,job.instruction,job.parserMode,job.sourcePackId,job.sourcePackRevision]:[job.preparationRevision??0,job.manifestHash??'legacy']]));
+    // Decoder selection is derived during preparation and cannot change the
+    // generation of its own active lease. User edits increment preparationRevision.
+    return sha256(JSON.stringify([`import:${job.id}`,phase,phase==='prepare'?[job.preparationRevision??0,job.sourceId,job.instruction,job.sourcePackId,job.sourcePackRevision]:[job.preparationRevision??0,job.manifestHash??'legacy']]));
   }
   private admitPhase(job:InternalJob,phase:'prepare'|'commit',state:ExecutionStep['state']='waiting',error?:string){
     const id=this.phaseId(job,phase);return this.executor.enqueue(`import:${job.id}`,`imports.${phase}`,{jobId:job.id,phase},{id,generation:{slot:phase,version:id},initial:{state,attempts:['running','succeeded','failed'].includes(state)?1:0,availableAt:0,error},...(phase==='commit'?{dependencies:[this.phaseId(job,'prepare')]}:{})});
@@ -357,6 +416,7 @@ export class ImportStore {
     this.admitPhase(job,'prepare',state,state==='blocked'?(job.status==='needs_configuration'?'model_unconfigured':job.status==='unsupported'?'unsupported_format':'awaiting_activation'):state==='failed'?'import_failed':undefined);
     if(job.status==='awaiting_confirmation'||job.status==='completed'||job.failurePhase==='import')this.admitPhase(job,'commit',job.status==='completed'?'succeeded':job.status==='cancelled'?'cancelled':job.status==='failed'?'failed':'blocked',job.status==='failed'?'import_failed':job.status==='completed'?undefined:'awaiting_confirmation');
     for(const id of job.captureIds){linkOperationParent(this.store,`import:${job.id}`,`capture:${id}`);linkOperationParent(this.store,`import:${job.id}`,`file:${id}`);}
+    for(const item of job.media??[])if(item.captureId)linkOperationParent(this.store,`import:${job.id}`,`file:${item.captureId}`);
     if(job.memoryJobId)linkOperationParent(this.store,`import:${job.id}`,`memory:${job.memoryJobId}`);
   }
   private projectPhase(step:ExecutionStep){

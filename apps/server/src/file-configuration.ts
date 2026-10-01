@@ -8,8 +8,8 @@ export type FileConfiguration={revision:string;settings:FileProcessingSettings;p
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value,(_key,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(key=>[key,v[key]])):v)).digest('hex');
 type Descriptor=Omit<FileProcessor,'process'>;
 export function processorContract(processor:Descriptor){
- const {id,version,stage,mediaTypes,serviceKind,localOnly,contentPolicy,allowSummary,dialogue,managedModel,dependencies}=processor;
- return {id,version,stage,mediaTypes,serviceKind,localOnly,contentPolicy,allowSummary,dialogue,managedModel,dependencies};
+ const {id,version,stage,mediaTypes,serviceKind,localOnly,contentPolicy,allowSummary,dialogue,managedModel,dependencies,output,recipe}=processor;
+ return {id,version,stage,mediaTypes,serviceKind,localOnly,contentPolicy,allowSummary,dialogue,managedModel,dependencies,output,recipe};
 }
 export function processorSettingsFingerprint(processor:Descriptor,settings:FileProcessingSettings,parameters:Record<string,unknown>){
  const keys=processor.dependencies?.settings??Object.keys(settings).sort() as (keyof FileProcessingSettings)[];

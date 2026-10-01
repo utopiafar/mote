@@ -5,7 +5,7 @@ import {rmSync} from 'node:fs';
 import {rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
-import {fileRevisionSchema,FILE_MAX_BYTES,FILE_PART_BYTES,executionEnvelope,type FileRevision,type CaptureRecord,fileEvidenceSchema} from '@mote/shared';
+import {fileRevisionSchema,FILE_MAX_BYTES,FILE_PART_BYTES,executionEnvelope,type FileRevision,type CaptureRecord,type ArchivedFile,fileEvidenceSchema} from '@mote/shared';
 import type {ContextRecord,ContextRange} from '@mote/agent';
 import {Store,StoreError,sha256,type Range} from './store.js';
 import {SourceStore} from './sources.js';
@@ -137,6 +137,21 @@ export class FileStore {
       });return ack;
     });
   }
+  /** Owner intake reuses retained bytes and the same file revision transaction as
+   * collector uploads. No transcription or semantic attribution happens here. */
+  async archivedRevision(file:ArchivedFile,sourceId:string,mimeType:string,observedAt:string,authorize:()=>void,onCommit?:(id:string)=>void){
+    const externalId='file:'+file.relativePath,revision=sha256(JSON.stringify([file.hash,mimeType])),head=this.sources.getItem(sourceId,externalId);
+    let input:FileRevision={sourceId,relativePath:file.relativePath,previousRevision:head?.revision===revision?null:head?.revision??null,
+      item:{externalId,revision,kind:'file',layer:'original',title:file.name,text:'',mimeType,observedAt,deleted:false,
+        document:{fileId:file.id,path:file.relativePath,contentRole:'other',timeBasis:'unknown'}},sha256:file.hash,sizeBytes:file.sizeBytes};
+    const prior=this.store.db.prepare('SELECT manifest FROM file_versions WHERE source_id=? AND external_id=? AND revision=?').get(sourceId,externalId,revision);
+    if(prior)input=JSON.parse(String(prior.manifest));
+    const release=this.store.assets.hold(file.hash);
+    try{
+      if(this.store.assets.get(file.hash).bytes!==file.sizeBytes)throw new StoreError('Archived media byte size changed',409);
+      return await this.revision(input,authorize,id=>{onCommit?.(id);return {id,captureId:id,sourceId,externalId,revision,duplicate:false};});
+    }finally{release();}
+  }
   private commitMetadata(input:FileRevision,captureId:string){
         const previousFile=this.store.db.prepare('SELECT capture_id FROM file_heads WHERE source_id=? AND external_id=?').get(input.sourceId,input.item.externalId) as {capture_id:string}|undefined;
         if(!input.item.deleted&&previousFile&&previousFile.capture_id!==captureId)this.store.invalidateMemoryEvidence(previousFile.capture_id);
@@ -153,7 +168,7 @@ export class FileStore {
   detail(id:string,includeArtifacts=true){
     const v=this.version(id),db=this.store.db,head=db.prepare('SELECT origin_missing FROM file_heads WHERE capture_id=?').get(id) as {origin_missing:number}|undefined;
     const artifacts=includeArtifacts?(db.prepare('SELECT id,kind,created_at,json FROM file_artifacts WHERE capture_id=? AND current=1 ORDER BY created_at').all(id) as {id:string;kind:string;created_at:string;json:string}[]).map(a=>{
-      const {transcript,segments,...data}=JSON.parse(a.json);return {id:a.id,kind:a.kind,createdAt:a.created_at,...data,...(transcript?{durationMs:transcript.durationMs,segments:transcript.segments.length,warnings:transcript.warnings}:segments?{segments:Array.isArray(segments)?segments.length:segments}:{})};
+      const {transcript,segments,output,...data}=JSON.parse(a.json);return {id:a.id,kind:a.kind,createdAt:a.created_at,...data,...(output?{output:{type:output.type}}:{}),...(transcript?{durationMs:transcript.durationMs,segments:transcript.segments.length,warnings:transcript.warnings}:segments?{segments:Array.isArray(segments)?segments.length:segments}:{})};
     }):[];
     const rawJob=db.prepare('SELECT state,stage,attempts,error,summary_state,local_only,available_at AS availableAt,config_revision AS inputVersion FROM file_jobs WHERE capture_id=?').get(id) as ({state:string;stage:string;attempts:number;error:string|null;summary_state:string;local_only:number;availableAt:number;inputVersion:string|null}|undefined);
     const rawSteps=includeArtifacts?db.prepare('SELECT step,processor,version,state,attempts,error,updated_at AS updatedAt FROM file_steps WHERE capture_id=? ORDER BY rowid').all(id) as {step:string;processor:string;version:string;state:string;attempts:number;error:string|null;updatedAt:string}[]:[];

@@ -697,3 +697,5 @@ export class MaterialOrganizerRuntime {
   }
 
 }
+
+declare module '@deepseek-ai/cordis' {interface Context {moteMaterialOrganizers:MaterialOrganizerRegistry;}}
