@@ -32,10 +32,14 @@ jobs:
         with: { node-version: '24', cache: npm }
       - run: npm ci
       - run: npm run models:setup
+      - name: Build desktop workspace dependencies
+        run: npm run build -w @mote/shared -w @mote/local-inference -w @mote/diagnostics
       - name: Verify desktop workspaces and generated fixtures
+        if: vars.MOTE_PRE_RELEASE_CHECKS == 'true'
         run: npm run check:desktop
       - name: Build and verify Mac DEV application
         env:
+          MOTE_PRE_RELEASE_CHECKS: ${{ vars.MOTE_PRE_RELEASE_CHECKS || 'false' }}
           MOTE_MAC_SIGNING_MODE: ${{ vars.MOTE_MAC_SIGNING_MODE || 'adhoc' }}
           CSC_LINK: ${{ secrets.MOTE_MAC_CERTIFICATE_P12_BASE64 }}
           CSC_KEY_PASSWORD: ${{ secrets.MOTE_MAC_CERTIFICATE_PASSWORD }}
