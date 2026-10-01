@@ -1,12 +1,13 @@
 import { moteText, getLocale } from '@mote/shared/i18n';
 import { randomUUID } from 'node:crypto';
 import { parseConnectionInvitation, type ConnectionInvitation } from '@mote/shared/connection';
+import { MOTE_PROTOCOL_HEADERS, ProtocolCompatibilityError, requireCompatibleProtocol, type ProtocolRange } from '@mote/shared/protocol';
 import type { Config, Platform } from './contracts';
 import { validateServerUrl } from './config';
 export interface ConnectionPreview { id: string; serverUrl: string; expiresAt: string }
 export interface ConnectionIdentity {
   credential: { id: string; scope: 'owner' | 'collector'; label: string; deviceId?: string; deviceName?: string; platform?: string; serverUrl?: string };
-  node: { version: string; profile: string };
+  node: { version: string; profile: string; protocol?: ProtocolRange };
   capabilities: { ingest: boolean; ingressVersion?: number; ownSources: boolean; archiveRead: boolean };
 }
 export interface ConnectionStatus { state: 'unchecked' | 'checking' | 'connected' | 'error'; message: string; checkedAt?: string; identity?: ConnectionIdentity }
@@ -40,15 +41,18 @@ async function request(serverUrl: string, path: string, init: RequestInit, fetch
 }
 export async function testConnection(config: Pick<Config, 'serverUrl' | 'token' | 'deviceId'>, fetcher: typeof fetch = fetch): Promise<ConnectionIdentity> {
   if (!config.token) throw new ConnectionError('MISSING_TOKEN', moteText("请先导入连接邀请，或保存访问令牌"));
-  const result = object(await request(config.serverUrl, '/api/connections/self', { headers: { 'Accept-Language': getLocale(), Authorization: 'Bearer ' + config.token } }, fetcher), ['credential', 'node', 'capabilities']);
+  const result = object(await request(config.serverUrl, '/api/connections/self', { headers: { ...MOTE_PROTOCOL_HEADERS, 'Accept-Language': getLocale(), Authorization: 'Bearer ' + config.token } }, fetcher), ['credential', 'node', 'capabilities']);
   const credential = object(result.credential, ['id', 'scope', 'label'], ['deviceId', 'deviceName', 'platform', 'serverUrl']);
   if (!['owner', 'collector'].includes(credential.scope as string)) throw invalid();
-  const node = object(result.node, ['version', 'profile']), capabilities = object(result.capabilities, ['ingest', 'ownSources', 'archiveRead'], ['ingressVersion']);
+  const node = object(result.node, ['version', 'profile'], ['protocol']), capabilities = object(result.capabilities, ['ingest', 'ownSources', 'archiveRead'], ['ingressVersion']);
+  let protocol: ProtocolRange;
+  try { protocol = requireCompatibleProtocol(node.protocol); }
+  catch (error) { if (error instanceof ProtocolCompatibilityError && error.code === 'incompatible_protocol') throw new ConnectionError('PROTOCOL_INCOMPATIBLE', moteText("响应不符合协议")); throw invalid(); }
   if (['ingest', 'ownSources', 'archiveRead'].some(key => typeof capabilities[key] !== 'boolean') || (capabilities.ingressVersion !== undefined && (!Number.isInteger(capabilities.ingressVersion) || (capabilities.ingressVersion as number) < 1)) || (credential.scope === 'collector' && (credential.deviceId !== config.deviceId || capabilities.archiveRead !== false))) throw invalid();
   const cleanCredential: ConnectionIdentity['credential'] = { id: bounded(credential.id, 128), scope: credential.scope as 'owner' | 'collector', label: bounded(credential.label, 200, true) };
   for (const key of ['deviceId', 'deviceName', 'platform', 'serverUrl'] as const) if (credential[key] !== undefined) cleanCredential[key] = bounded(credential[key], key === 'serverUrl' ? 2048 : 200);
   if (cleanCredential.serverUrl && validateServerUrl(cleanCredential.serverUrl) !== config.serverUrl) throw invalid();
-  return { credential: cleanCredential, node: { version: bounded(node.version, 100), profile: bounded(node.profile, 100) }, capabilities: capabilities as unknown as ConnectionIdentity['capabilities'] };
+  return { credential: cleanCredential, node: { version: bounded(node.version, 100), profile: bounded(node.profile, 100), protocol }, capabilities: capabilities as unknown as ConnectionIdentity['capabilities'] };
 }
 export class ConnectionOnboarding {
   private pending?: { preview: ConnectionPreview; invitation: ConnectionInvitation };

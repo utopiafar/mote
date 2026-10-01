@@ -1,0 +1,14 @@
+{
+  "central": {
+    "packages": ["apps/server/package.json", "apps/web/package.json"],
+    "assetComponent": "server"
+  },
+  "desktop": {
+    "packages": ["apps/desktop/package.json"],
+    "assetComponent": "desktop"
+  },
+  "android": {
+    "versionProperties": "apps/android/version.properties",
+    "assetComponent": "android"
+  }
+}

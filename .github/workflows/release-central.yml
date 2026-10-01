@@ -1,0 +1,57 @@
+name: Release Central
+on:
+  push:
+    tags: ['central-v*']
+  # Select the component's exact version tag when running this manually.
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mote-release-central-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with: { node-version: '24' }
+      - id: version
+        run: npm run release:verify -- central
+  package:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with: { node-version: '24', cache: npm }
+      - run: npm ci --ignore-scripts
+      - name: Build and verify central workspaces and generated fixtures
+        run: npm run check:central
+      - name: Package committed central source and verify archive metadata
+        run: node scripts/release/source-package.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: { name: release-central, path: artifacts/release/*, if-no-files-found: error, retention-days: 7 }
+  publish:
+    needs: [version, package]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with: { node-version: '24' }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: { name: release-central, path: artifacts/release }
+      - name: Publish verified central DEV release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release/publish.mjs central

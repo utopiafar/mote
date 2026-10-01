@@ -1,6 +1,5 @@
 {
   "name": "mote",
-  "version": "0.0.77",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -19,7 +18,7 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:local": "npm run check:i18n && npm run build:libs && npm run typecheck && npm test",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.scripts.json",
-    "test": "npm run test --workspaces --if-present && node --test scripts/media-workers.test.mjs scripts/reset-backend-v2.test.mjs scripts/journey-network-proxy.test.mjs && node --import tsx --test scripts/client.test.ts && node scripts/test-central-runner.mjs",
+    "test": "npm run test --workspaces --if-present && node --test scripts/release/*.test.mjs scripts/media-workers.test.mjs scripts/reset-backend-v2.test.mjs scripts/journey-network-proxy.test.mjs && node --import tsx --test scripts/client.test.ts && node scripts/test-central-runner.mjs",
     "test:e2e": "node --import tsx scripts/e2e.ts",
     "test:media-e2e": "node --import tsx scripts/media-e2e.ts",
     "test:container": "node scripts/test-container.mjs",
@@ -39,7 +38,12 @@
     "test:profiles:container": "node scripts/test-profiles-container.mjs",
     "test:tunnel": "node scripts/test-tunnel.mjs",
     "test:tunnel:container": "node scripts/test-tunnel-container.mjs",
-    "desktop:dev": "node scripts/mote.mjs exec --profile dev -- npm run start -w @mote/desktop"
+    "desktop:dev": "node scripts/mote.mjs exec --profile dev -- npm run start -w @mote/desktop",
+    "release:version": "node scripts/release/version.mjs",
+    "release:verify": "node scripts/release/verify-version.mjs",
+    "build:central": "npm run build -w @mote/shared && npm run build -w @mote/agent && npm run build -w @mote/server && npm run build -w @mote/web",
+    "check:central": "npm run build:central && npm run typecheck -w @mote/shared -w @mote/agent -w @mote/server -w @mote/web && npm run test -w @mote/shared -w @mote/agent -w @mote/server -w @mote/web && node scripts/test-central-runner.mjs && node --test scripts/release/*.test.mjs",
+    "check:desktop": "npm run build -w @mote/shared -w @mote/local-inference -w @mote/diagnostics && npm run typecheck -w @mote/shared -w @mote/local-inference -w @mote/diagnostics -w @mote/desktop && npm run test -w @mote/shared -w @mote/local-inference -w @mote/diagnostics -w @mote/desktop && node --test scripts/release/*.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

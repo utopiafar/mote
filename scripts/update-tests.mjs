@@ -27,6 +27,7 @@ test('ordinary Docker profile commands work in a clean checkout without compiled
   await mkdir(join(directory, 'scripts'));
   for (const name of ['mote.mjs', 'profile-lib.mjs', 'media-workers.mjs', 'tunnel-lib.mjs', 'update-deploy.mjs', 'update-private.mjs']) await copyFile(join(repository, 'scripts', name), join(directory, 'scripts', name));
   await copyFile(join(repository, 'package.json'), join(directory, 'package.json'));
+  await mkdir(join(directory,'apps/server'),{recursive:true}); await copyFile(join(repository,'apps/server/package.json'),join(directory,'apps/server/package.json'));
   await copyFile(join(repository, '.env.example'), join(directory, '.env.example'));
   const entry = join(directory, 'scripts/mote.mjs'), args = ['--profile', 'synthetic-clean-checkout', '--home', join(directory, 'profiles')];
   const initialized = JSON.parse(await execute(process.execPath, [entry, 'init', ...args, '--runtime', 'docker'], { capture: true }));
@@ -38,13 +39,38 @@ test('ordinary Docker profile commands work in a clean checkout without compiled
 test('signed release and verified asset prepare a separate source checkout without changing profile data', async () => fixture(async directory => {
   const bytes = sourceTar(), signed = signedManifest(bytes), active = join(directory, 'active'); await mkdir(active); await writeFile(join(active, 'package.json'), JSON.stringify({ version: '0.4.0' }));
   const p = { directory, meta: { runtime: 'native', release: active }, env: { MOTE_TOKEN: 'synthetic-private-credential' } };
-  const checked = await checkProfileUpdate(p, { checkRelease: options => checkRelease({ ...options, publicKey, keyId: 'synthetic-release-key', fetch: async url => new Response(String(url).includes('api.github.com') ? JSON.stringify({ tag_name: 'v0.5.0', draft: false, prerelease: false }) : signed.envelope) }) });
+  const checked = await checkProfileUpdate(p, { checkRelease: options => checkRelease({ ...options, publicKey, keyId: 'synthetic-release-key', fetch: async url => new Response(String(url).includes('api.github.com') ? JSON.stringify([{ tag_name: 'v0.5.0', draft: false, prerelease: false }]) : signed.envelope) }) });
   assert.equal(checked.available, true);
   const result = await prepareProfileUpdate(p, checked, { downloadReleaseAsset: (asset, path) => downloadReleaseAsset(asset, path, { fetch: async () => new Response(bytes) }), build });
   assert.notEqual(result.release, active); assert.equal(result.releaseVersion, '0.5.0'); assert.equal(p.meta.release, active);
   assert.equal((await lstat(join(result.release, '.mote-release.json'))).mode & 0o777, 0o600);
   assert.ok(!(await readFile(join(result.release, '.mote-release.json'), 'utf8')).includes(p.env.MOTE_TOKEN));
   assert.deepEqual(await prepareProfileUpdate(p, checked), result);
+}));
+test('central source identity and stopped installed version use the server package independently of root tooling', async () => fixture(async directory => {
+  const version = '0.5.0', tag = `central-v${version}`;
+  const bytes = sourceTar(version, [], version, '9.0.0');
+  const {manifest:legacy} = signedManifest(bytes, version), manifest = {...legacy,component:'central',tag,notesUrl:`https://github.com/utopiafar/mote/releases/tag/${tag}`,assets:legacy.assets.map(asset=>({...asset,url:`https://github.com/utopiafar/mote/releases/download/${tag}/${asset.name}`}))};
+  const active = join(directory,'active'); await mkdir(join(active,'apps/server'),{recursive:true});
+  await writeFile(join(active,'package.json'),JSON.stringify({version:'9.0.0'})); await writeFile(join(active,'apps/server/package.json'),JSON.stringify({name:'@mote/server',version:'0.4.0'}));
+  const p={directory,meta:{runtime:'native',release:active},env:{}};
+  assert.equal(await profileVersion(p),'0.4.0');
+  let component;
+  const checked=await checkProfileUpdate(p,{checkRelease:async options=>{component=options.component;return {manifest,available:true};}}); assert.equal(component,'central');
+  const prepared=await prepareProfileUpdate(p,checked,{downloadReleaseAsset:(asset,path)=>downloadReleaseAsset(asset,path,{fetch:async()=>new Response(bytes)}),build});
+  assert.equal(await profileVersion({...p,meta:{...p.meta,release:prepared.release,releaseVersion:version}}),version);
+  assert.equal(JSON.parse(await readFile(join(prepared.release,'package.json'),'utf8')).version,'9.0.0');
+  const wrong=sourceTar(version, [], '0.4.0');
+  const wrongManifest={...manifest,assets:manifest.assets.map(asset=>({...asset,size:wrong.length,sha256:createHash('sha256').update(wrong).digest('hex')}))}; let built=false;
+  await assert.rejects(prepareProfileUpdate(p,{manifest:wrongManifest,currentVersion:'0.4.0'},{downloadReleaseAsset:(asset,path)=>downloadReleaseAsset(asset,path,{fetch:async()=>new Response(wrong)}),build:async()=>{built=true;}}),/package identity/); assert.equal(built,false);
+  await assert.rejects(prepareProfileUpdate(p,{manifest:{...manifest,component:'desktop'},currentVersion:'0.4.0'}),/central release/);
+}));
+test('legacy source archives remain installable while grouped archives require the central package', async () => fixture(async directory => {
+  const bytes=sourceTar('0.5.0', [], '0.5.0', '0.5.0', false),{manifest}=signedManifest(bytes),p={directory,meta:{runtime:'native'},env:{}};
+  assert.equal((await prepareProfileUpdate(p,{manifest,currentVersion:'0.4.0'},{downloadReleaseAsset:(asset,path)=>downloadReleaseAsset(asset,path,{fetch:async()=>new Response(bytes)}),build})).releaseVersion,'0.5.0');
+  const tag='central-v0.5.0',grouped={...manifest,component:'central',tag,assets:manifest.assets.map(asset=>({...asset,url:`https://github.com/utopiafar/mote/releases/download/${tag}/${asset.name}`}))};
+  // Use a separate profile release cache so the legacy prepared checkout cannot satisfy a grouped update.
+  await assert.rejects(prepareProfileUpdate({...p,directory:join(directory,'grouped')},{manifest:grouped,currentVersion:'0.4.0'},{downloadReleaseAsset:(asset,path)=>downloadReleaseAsset(asset,path,{fetch:async()=>new Response(bytes)}),build}),{code:'ENOENT'});
 }));
 test('asset corruption and a mismatched package cannot invoke a build or modify the current release', async () => fixture(async directory => {
   const bytes = sourceTar(), { manifest } = signedManifest(bytes), p = { directory, meta: { runtime: 'native', release: '/synthetic-active' }, env: {} }; let built = false;

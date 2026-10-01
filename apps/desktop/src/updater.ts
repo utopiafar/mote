@@ -113,7 +113,7 @@ export class DesktopUpdater {
     this.value.state = 'checking'; this.value.message = moteText("正在检查发布清单和签名…");
     this.task = (async () => {
       try {
-        const result = await this.deps.check({ repository: 'utopiafar/mote', channel: this.value.channel, currentVersion: this.options.currentVersion, signal: controller.signal });
+        const result = await this.deps.check({ repository: 'utopiafar/mote', component: 'desktop', channel: this.value.channel, currentVersion: this.options.currentVersion, signal: controller.signal });
         this.manifest = structuredClone(result.manifest); this.asset = selectReleaseAsset(this.manifest, { component: 'desktop', platform: 'darwin', arch: this.options.arch, format: 'zip' });
         if (this.asset?.bundleId !== 'dev.mote.collector') this.asset = undefined;
         this.staged = undefined; this.archive = undefined;

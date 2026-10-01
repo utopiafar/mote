@@ -201,6 +201,7 @@ class ConnectionActivity : MoteActivity() {
             "pending" -> MoteI18n.text("仍有截图/笔记/来源待同步或已准备提交的草稿，不能切换节点。请先同步原节点。")
             "busy" -> MoteI18n.text("另一次设置操作尚未完成，请稍候再试。")
             "authentication" -> MoteI18n.text("节点拒绝当前凭据，请生成绑定本设备的邀请。")
+            "protocol_incompatible" -> MoteI18n.text("响应不符合协议")
             "identity", "response" -> MoteI18n.text("节点响应或设备身份校验失败，未确认连接；旧配置保留。")
             "rate_limit" -> MoteI18n.text("节点暂时限流，稍后重试。"); "network" -> MoteI18n.text("节点连接失败，请检查地址、网络与 TLS 证书后重试。")
             else -> MoteI18n.text("连接未完成，请检查邀请并重试。")

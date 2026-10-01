@@ -3,6 +3,7 @@ import { type FastifyRequest } from 'fastify';
 import type { FeatureServices } from '../feature-services.js';
 import { moteText } from '../i18n.js';
 import { INGRESS_PROTOCOL_VERSION } from '../ingress.js';
+import { MOTE_PROTOCOL_HEADER, MOTE_PROTOCOL_RANGE } from '@mote/shared';
 
 /** connections: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{config,connectionRate,connections,credential,serverVersion}:Pick<FeatureServices,"config"|"connectionRate"|"connections"|"credential"|"serverVersion">){
@@ -15,6 +16,9 @@ app.post('/api/connections/mcp',{bodyLimit:8192,config:connectionRate},async req
 app.get('/api/connections/self',async req=>{
     const c=credential(req);if(c)connections.assertActive(c);
     const owner=!c,collector=c?.scope==='collector';
-    return {credential:c?{id:c.id,scope:c.scope,label:c.label,serverUrl:c.serverUrl,...(c.deviceId?{deviceId:c.deviceId,deviceName:c.deviceName,platform:c.platform}:{})}:{id:'owner',scope:'owner',label:moteText("节点所有者")},node:{version:serverVersion,profile:config.profile??'legacy'},capabilities:{ingest:owner||collector,ingressVersion:Number(INGRESS_PROTOCOL_VERSION),ownSources:owner||collector,archiveRead:owner||c?.scope==='mcp-read'}};
+    // Existing collectors strictly validate this response. Advertise new metadata
+    // only when the client opts in so already-installed collectors still connect.
+    const protocol = req.headers[MOTE_PROTOCOL_HEADER.toLowerCase()] === undefined ? {} : {protocol:MOTE_PROTOCOL_RANGE};
+    return {credential:c?{id:c.id,scope:c.scope,label:c.label,serverUrl:c.serverUrl,...(c.deviceId?{deviceId:c.deviceId,deviceName:c.deviceName,platform:c.platform}:{})}:{id:'owner',scope:'owner',label:moteText("节点所有者")},node:{version:serverVersion,profile:config.profile??'legacy',...protocol},capabilities:{ingest:owner||collector,ingressVersion:Number(INGRESS_PROTOCOL_VERSION),ownSources:owner||collector,archiveRead:owner||c?.scope==='mcp-read'}};
   });
 }
