@@ -21,7 +21,7 @@ export function writeFileTranscriptChunks(store:Store,captureId:string,artifactI
   for(const [ordinal,segment] of transcript.segments.entries()){
     const original=correction?rows[ordinal]:undefined;
     const {speaker,uncertain,overlap,documentLocation,imageLocation}=segment;
-    const untimed=!correction&&(reuse.kind==='text'||reuse.kind==='image-text');
+    const untimed=!correction&&(segment.untimed||reuse.kind==='text'||reuse.kind==='image-text');
     const start=original?original.start_ms:untimed?null:segment.startMs,end=original?original.end_ms:untimed?null:segment.endMs;
     // A confirmed text edit cannot change location or speaker metadata.
     const metadata=original?.metadata??JSON.stringify({speaker,uncertain,overlap,documentLocation,imageLocation});

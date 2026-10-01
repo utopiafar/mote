@@ -12,7 +12,8 @@ export type Stage = 'ingest'|'index'|'agent'|'source'|'maintenance'|'file';
 export type DiagnosticStage = Stage|'request'|'system'|'unknown';
 export const diagnosticStageFilters=['all','system','request','ingest','index','agent','source','maintenance','file','unknown'] as const;
 export type DiagnosticStageFilter=typeof diagnosticStageFilters[number];
-export type Operation = 'capture'|'note'|'import'|'embedding'|'search'|'timeline'|'evidence'|'activity'|'devices'|'query'|'insight'|'retention'|'extract'|'diarize'|'align'|'turns'|'summary'|'file_upload'|'file_part'|'file_commit'|'file_revision'|'file_process'|'file_settings'|'file_retry';
+type RecordingOperation='recording_metadata'|'recording_discover'|'recording_transcript'|'recording_media'|'recording_decode'|'recording_publish';
+export type Operation = RecordingOperation|'capture'|'note'|'import'|'embedding'|'search'|'timeline'|'evidence'|'activity'|'devices'|'query'|'insight'|'retention'|'extract'|'diarize'|'align'|'turns'|'summary'|'file_upload'|'file_part'|'file_commit'|'file_revision'|'file_process'|'file_settings'|'file_retry';
 export interface AgentTraceContext {
   operationId?: string;
   traceId?: string; requestId?: string; jobId?: string; batchId?: string; batchIndex?: number; attempt?: number;
@@ -23,7 +24,7 @@ export interface AgentTraceInput {
   durationMs?: number; status?: string; payload?: unknown;
 }
 const levels = ['debug','info','warn','error','silent'] as const;
-const operations:Operation[] = ['capture','note','import','embedding','search','timeline','evidence','activity','devices','query','insight','retention','extract','diarize','align','turns','summary','file_upload','file_part','file_commit','file_revision','file_process','file_settings','file_retry'];
+const operations:Operation[] = ['recording_metadata','recording_discover','recording_transcript','recording_media','recording_decode','recording_publish','capture','note','import','embedding','search','timeline','evidence','activity','devices','query','insight','retention','extract','diarize','align','turns','summary','file_upload','file_part','file_commit','file_revision','file_process','file_settings','file_retry'];
 const events = new Set(['server.started','server.stopping','request.started','request.completed','request.failed','queue.snapshot','support.exported','agent.trace','agent.tool_rejected','agent.memory_validation_failed','agent.waiting','agent.heartbeat','file.blocked','file.retry','file.cached','file.cancelled','file.settings','file.step.started','file.step.completed','file.step.failed',...['ingest','index','agent','source','maintenance','file'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
 const routes = new Set(['files','file-sync','file-processing','conversations','configuration','sources','memories','layers','connectors','health','status','captures','notes','image','devices','connections','updates','activity','query','insights','index','export','import','diagnostics','support','web','unknown']);
 const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','deleted','too_large','rate_limited','api_rate_limited','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','daily_budget','local_only','summary_disabled','cancelled']);

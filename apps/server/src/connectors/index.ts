@@ -1,3 +1,7 @@
+import {installRecordingMemory} from './recording-memory.js';
+import {recordingManifest,type RecordingProvider} from './recordings.js';
+import {createFeishuRecordings} from './lark-recordings.js';
+import {createDingtalkRecordings} from './dingtalk-recordings.js';
 import {join} from 'node:path';
 import {moteText} from '../i18n.js';
 import {ConnectorRegistry,type ConnectorManifest,type OwnerRoute} from './registry.js';
@@ -11,11 +15,15 @@ import type {FastifyInstance} from 'fastify';
 
 export type {ConnectorConfig,ConnectorContext} from './types.js';
 export type {ConnectorManifest,ConnectorInstance,ConnectorHost,OwnerRoute,OAuthCallback} from './registry.js';
+export {recordingManifest,RecordingConnector} from './recordings.js';
+export type {RecordingProvider,RecordingAccount,RecordingMetadata} from './recordings.js';
 
-type TestDependencies={google?:GoogleDependencies;gmail?:GoogleDependencies;lark?:LarkRunner};
+export type ConnectorTestDependencies={recordings?:RecordingProvider[];google?:GoogleDependencies;gmail?:GoogleDependencies;lark?:LarkRunner};
 const larkRate={max:60,timeWindow:'1 minute'};
 
-function builtins(testing?:TestDependencies):ConnectorManifest[]{return [
+function builtins(testing?:ConnectorTestDependencies):ConnectorManifest[]{return [
+  recordingManifest('feishu',ctx=>testing?.recordings?.find(p=>p.id==='feishu')??createFeishuRecordings(ctx.config.connectors!.directory)),
+  recordingManifest('dingtalk',ctx=>testing?.recordings?.find(p=>p.id==='dingtalk')??createDingtalkRecordings(ctx.config.connectors!.directory)),
   {apiVersion:1,id:'mcp',sourceKinds:['mcp'],statusKey:'mcp',create:ctx=>{
     const remote=new RemoteMcp(ctx);let inbound:ReturnType<typeof registerMcp>|undefined;
     return {
@@ -80,8 +88,10 @@ function builtins(testing?:TestDependencies):ConnectorManifest[]{return [
 ];}
 
 /** Register built-ins plus trusted deployment modules before any route is mounted. */
-export async function registerConnectors(app:FastifyInstance,context:ConnectorContext,testing?:TestDependencies,additionalManifests:readonly ConnectorManifest[]=[]){
+export async function registerConnectors(app:FastifyInstance,context:ConnectorContext,testing?:ConnectorTestDependencies,additionalManifests:readonly ConnectorManifest[]=[]){
   const ctx={...context,config:{...context.config,connectors:{directory:join(context.config.dataDir,'connectors'),...context.config.connectors}}};
+  const removeMemory=context.memoryStrategies?installRecordingMemory(context.memoryStrategies):undefined;
+  if(removeMemory)app.addHook('onClose',async()=>removeMemory());
   const registry=new ConnectorRegistry(app,ctx);
   for(const manifest of builtins(testing))registry.register(manifest);
   await registry.loadModules(ctx.config.connectors.modules??[]);

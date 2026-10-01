@@ -3,13 +3,13 @@ import {readdirSync,unlinkSync} from 'node:fs';
 import {Readable} from 'node:stream';
 import {basename,join} from 'node:path';
 import {z} from 'zod';
-import type {ArchivedFile} from '@mote/shared';
+import {FILE_MAX_BYTES,type ArchivedFile} from '@mote/shared';
 import {privateDirectory} from './private-storage.js';
 import {Store,StoreError,sha256} from './store.js';
 import type {Asset} from './assets.js';
 
 export const MAX_FILE_BYTES=64*1024*1024;
-const portableFileSchema=z.object({id:z.string().uuid(),hash:z.string().regex(/^[a-f0-9]{64}$/),name:z.string().min(1).max(1000),relativePath:z.string().min(1).max(1000),mimeType:z.string().min(1).max(200),sizeBytes:z.number().int().min(0).max(MAX_FILE_BYTES),createdAt:z.string().datetime({offset:true}),dataBase64:z.string().max(90_000_000)}).strict();
+const portableFileSchema=z.object({id:z.string().uuid(),hash:z.string().regex(/^[a-f0-9]{64}$/),name:z.string().min(1).max(1000),relativePath:z.string().min(1).max(1000),mimeType:z.string().min(1).max(200),sizeBytes:z.number().int().min(0).max(FILE_MAX_BYTES),createdAt:z.string().datetime({offset:true}),dataBase64:z.string().max(Math.ceil(FILE_MAX_BYTES/3)*4)}).strict();
 export type PreparedPortableFile={file:ArchivedFile;bytes:Buffer};
 /** Structural path validation only; content interpretation belongs to the import agent. */
 export function archiveRelativePath(raw:string):string {
@@ -28,6 +28,13 @@ export class ArchivedFileStore {
   }
   put(input:{name:string;mimeType?:string;bytes:Buffer;relativePath?:string}):ArchivedFile {
     return this.putParts(input,[input.bytes],input.bytes.length);
+  }
+  /** Recorder backup shares asset encryption, accounting, export and erasure.
+   * Its host-only media limit matches the existing original-file protocol. */
+  putRecordingMedia(input:{name:string;mimeType:string;bytes:Buffer},authorize:()=>void):ArchivedFile {
+    if(!/^(audio|video)\/[a-z0-9.+-]+$/.test(input.mimeType)||!input.bytes.length||input.bytes.length>FILE_MAX_BYTES)throw new StoreError('Invalid recording media',413);
+    authorize();const relativePath=archiveRelativePath(input.name),asset=this.store.assets.putParts([input.bytes],input.bytes.length,undefined,authorize);
+    return this.savePrepared({relativePath,name:basename(relativePath),mimeType:input.mimeType},input.bytes.length,asset,authorize);
   }
   putParts(input:{name:string;mimeType?:string;relativePath?:string},parts:Iterable<Buffer>,sizeBytes:number,authorize?:()=>void):ArchivedFile {
     if(sizeBytes>MAX_FILE_BYTES)throw new StoreError('A file exceeds the 64 MiB limit',413);
