@@ -26,7 +26,7 @@ export const imageLocationSchema=z.object({
 }).strict();
 export const transcriptSegmentSchema=z.object({
   startMs:z.number().finite().nonnegative(),endMs:z.number().finite().nonnegative(),text:z.string().min(1).max(8000),
-  speaker:z.string().max(100).optional(),uncertain:z.boolean().optional(),overlap:z.boolean().optional(),
+  untimed:z.literal(true).optional(),speaker:z.string().max(100).optional(),uncertain:z.boolean().optional(),overlap:z.boolean().optional(),
   documentLocation:documentLocationSchema.optional(),
   imageLocation:imageLocationSchema.optional(),
   words:z.array(z.object({startMs:z.number().finite().nonnegative(),endMs:z.number().finite().nonnegative(),text:z.string().max(1000),probability:z.number().min(0).max(1).optional()}).strict()).max(8000).optional(),

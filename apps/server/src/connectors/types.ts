@@ -17,6 +17,8 @@ export interface ConnectorConfig {
   syncIntervalMs?: number;
 }
 export interface ConnectorContext {
+  memoryRecipeSettings?:import('../memory-recipe-settings.js').MemoryRecipeSettings;
+  diagnostics?:import('../diagnostics.js').ServerDiagnostics;
   memoryStrategies?: import('../memory-strategies.js').MemoryStrategies;
   sourcePipelines?: import('../source-pipelines.js').SourcePipelineRuntime;
   evidenceReader?: import('../evidence-reader.js').EvidenceReader;

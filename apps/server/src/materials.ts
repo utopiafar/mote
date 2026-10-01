@@ -40,7 +40,7 @@ const draftSchema=z.object({
   coverage:z.object({state:z.enum(['complete','partial','pending']),reason:z.string().max(500).optional()}).strict(),
   /** Named processing outputs let each consumer declare only the dependencies
    * it actually needs. A query may use a partial material while Memory waits. */
-  artifacts:z.array(z.object({key:nameSchema,state:z.enum(['ready','pending','failed','unavailable']),revision:z.string().min(1).max(256).optional(),reason:z.string().max(500).optional(),blockIds:z.array(z.string().min(1).max(128)).max(10000).optional()}).strict()).max(256).optional(),
+  artifacts:z.array(z.object({key:nameSchema,state:z.enum(['ready','pending','failed','unavailable']),revision:z.string().min(1).max(256).optional(),reason:z.string().max(500).optional(),blockIds:z.array(z.string().min(1).max(128)).max(20000).optional()}).strict()).max(256).optional(),
   fidelity:z.object({state:z.enum(['lossless','derived','summary-only']),limitations:z.array(z.string().max(500)).max(20).optional()}).strict(),
   retention:z.object({original:z.enum(['retained','unavailable']),policy:z.enum(['keep','allow-expiry'])}).strict(),
 }).strict();

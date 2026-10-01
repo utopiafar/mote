@@ -4,7 +4,7 @@ import {mkdir,chmod} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {ConnectorError} from './types.js';
 
-export const LARK_VERSION='1.0.57';
+export const LARK_VERSION='1.0.85';
 export type LarkCommand =
   | {kind:'version'|'status'|'install'|'setup'}
   | {kind:'configure';appId:string;secret:string;brand:'feishu'|'lark'}
@@ -12,7 +12,11 @@ export type LarkCommand =
   | {kind:'complete';deviceCode:string}
   | {kind:'calendars';pageToken?:string}
   | {kind:'events';calendarId:string;start:number;end:number}
-  | {kind:'document';document:string};
+  | {kind:'document';document:string}
+  | {kind:'minutes-search';start:string;end:string;pageToken?:string}
+  | {kind:'minutes-metadata';id:string}
+  | {kind:'minutes-transcript';id:string;outputDir:string}
+  | {kind:'minutes-media';id:string;output:string};
 export type LarkRunner=(command:LarkCommand,options?:{signal?:AbortSignal;onOutput?:(chunk:string)=>void})=>Promise<string>;
 
 /** Only fixed operations are executable. Neither the browser nor an agent supplies argv. */
@@ -27,6 +31,10 @@ export function larkArguments(command:LarkCommand):string[]{
     case 'calendars':return ['calendar','calendars','list','--as','user','--format','json','--params',JSON.stringify({page_size:100,...(command.pageToken?{page_token:command.pageToken}:{})})];
     case 'events':return ['calendar','events','instance_view','--as','user','--format','json','--params',JSON.stringify({calendar_id:command.calendarId,start_time:String(command.start),end_time:String(command.end)})];
     case 'document':return ['docs','+fetch','--api-version','v2','--as','user','--doc',command.document,'--doc-format','markdown','--format','json'];
+    case 'minutes-search':return ['minutes','+search','--owner-ids','me','--start',command.start,'--end',command.end,'--page-size','30',...(command.pageToken?['--page-token',command.pageToken]:[]),'--as','user','--format','json'];
+    case 'minutes-metadata':return ['minutes','minutes','get','--params',JSON.stringify({minute_token:command.id}),'--as','user','--format','json'];
+    case 'minutes-transcript':return ['minutes','+detail','--minute-tokens',command.id,'--transcript','--output-dir',command.outputDir,'--as','user','--format','json'];
+    case 'minutes-media':return ['minutes','+download','--minute-tokens',command.id,'--output',command.output,'--as','user','--format','json'];
     case 'install':throw new ConnectorError('lark_command_invalid');
   }
 }
@@ -36,19 +44,20 @@ export function authorizationUrl(value:string):string|undefined{
 export function larkJson(raw:string):any{
   try{const value=JSON.parse(raw);if(value?.ok===false||(typeof value?.code==='number'&&value.code!==0))throw Error();return value;}catch{throw new ConnectorError('lark_response_invalid',502);}
 }
-export function createLarkRunner(directory:string):LarkRunner{
+export function createLarkRunner(directory:string,optionsConfig:{localProfile?:boolean}={}):LarkRunner{
   const root=resolve(directory,'lark-runtime'),configDir=join(root,'config'),runtime=join(root,'package');
   return async(command,options={})=>{
     await mkdir(configDir,{recursive:true,mode:0o700});await chmod(root,0o700);await chmod(configDir,0o700);
     // Do not inherit another agent's identity, credential, profile or policy overrides.
     const env:NodeJS.ProcessEnv={};
     for(const key of ['PATH','HOME','USERPROFILE','SystemRoot','WINDIR','TMPDIR','TMP','TEMP','LANG','LC_ALL','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy','all_proxy','no_proxy'])if(process.env[key])env[key]=process.env[key];
-    Object.assign(env,{LARKSUITE_CLI_CONFIG_DIR:configDir,LARKSUITE_CLI_DATA_DIR:join(root,'credentials'),LARKSUITE_CLI_LOG_DIR:join(root,'logs'),CI:'1',NO_COLOR:'1'});
+    Object.assign(env,{CI:'1',NO_COLOR:'1',LARKSUITE_CLI_NO_UPDATE_NOTIFIER:'1',LARKSUITE_CLI_NO_SKILLS_NOTIFIER:'1'});
+    if(!optionsConfig.localProfile)Object.assign(env,{LARKSUITE_CLI_CONFIG_DIR:configDir,LARKSUITE_CLI_DATA_DIR:join(root,'credentials'),LARKSUITE_CLI_LOG_DIR:join(root,'logs')});
     const local=join(runtime,'node_modules','@larksuite','cli','scripts','run.js');
     const installing=command.kind==='install';
     const executable=installing?'npm':existsSync(local)?process.execPath:'lark-cli';
     const args=installing?['install','--prefix',runtime,`@larksuite/cli@${LARK_VERSION}`,'--registry=https://registry.npmjs.org','--no-audit','--no-fund']:existsSync(local)?[local,...larkArguments(command)]:larkArguments(command);
-    const timeout=['setup','complete'].includes(command.kind)?610000:installing?180000:60000;
+    const timeout=['setup','complete'].includes(command.kind)?610000:installing||command.kind==='minutes-media'?300000:60000;
     return new Promise<string>((ok,fail)=>{
       let stdout='',stderr='',size=0,settled=false;
       const child=spawn(executable,args,{cwd:root,env,shell:false,stdio:['pipe','pipe','pipe'],detached:process.platform!=='win32',windowsHide:true});

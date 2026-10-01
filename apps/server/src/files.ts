@@ -5,7 +5,8 @@ import {rmSync} from 'node:fs';
 import {rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
-import {fileRevisionSchema,FILE_MAX_BYTES,FILE_PART_BYTES,executionEnvelope,type FileRevision,type CaptureRecord,type ArchivedFile,fileEvidenceSchema} from '@mote/shared';
+import {fileRevisionSchema,FILE_MAX_BYTES,FILE_PART_BYTES,executionEnvelope,transcriptSchema,type SourceItem,type Transcript,type FileRevision,type CaptureRecord,type ArchivedFile,fileEvidenceSchema} from '@mote/shared';
+import {writeFileTranscriptChunks} from './file-transcript-chunks.js';
 import type {ContextRecord,ContextRange} from '@mote/agent';
 import {Store,StoreError,sha256,type Range} from './store.js';
 import {SourceStore} from './sources.js';
@@ -104,6 +105,28 @@ export class FileStore {
     return {part,hash,bytes:bytes.length};
   }
   async close(){this.closing.abort();await Promise.allSettled([...this.pending.values()]);}
+  /** Trusted provider intake: retain the original export and publish existing
+   * transcript segments atomically, without scheduling ASR or model work here. */
+  async transcriptRevision(sourceId:string,item:Omit<SourceItem,'revision'|'text'|'layer'>,rawText:string,rawTranscript:Transcript,authorize:()=>void){return this.serialize('transcript:'+sourceId+':'+item.externalId,async()=>{
+    const transcript=transcriptSchema.parse(rawTranscript);
+    if(!transcript.segments.length||transcript.coverage!=='full')throw new StoreError('Provider transcript is incomplete',409);
+    const bytes=Buffer.from(JSON.stringify({version:1,rawText,transcript}));
+    if(bytes.length>16*1024*1024)throw new StoreError('Provider transcript exceeds limit',413);
+    const hash=sha256(bytes),head=this.sources.getItem(sourceId,item.externalId);
+    const prior=head&&this.store.db.prepare('SELECT manifest,object_hash FROM file_versions WHERE capture_id=?').get(head.captureId);
+    if(head&&!head.deleted&&this.store.isCurrentEvidence(head.captureId)&&prior?.object_hash===hash&&head.title===item.title&&head.uri===item.uri&&head.document?.recordedAt===item.document?.recordedAt&&head.document?.timeBasis===item.document?.timeBasis&&head.document?.contentRole===item.document?.contentRole){authorize();return {id:head.captureId,duplicate:true};}
+    const revision=sha256(JSON.stringify([hash,item.title,item.uri,item.document,head?.revision??null]));
+    const asset=this.store.assets.put(bytes);
+    try{return await this.revision({sourceId,relativePath:`recordings/${sha256(item.externalId)}.json`,previousRevision:head?.revision??null,
+      item:{...item,revision,text:'',layer:'original',mimeType:'application/json'},sha256:hash,sizeBytes:bytes.length},()=>authorize(),captureId=>{
+      const artifactId=randomUUID();
+      this.store.db.prepare('INSERT INTO file_artifacts(id,capture_id,kind,created_at,config_revision,json,current) VALUES(?,?,?,?,?,?,1)')
+        .run(artifactId,captureId,'transcript',timestamp(),`provider:${transcript.engine??'unknown'}`,JSON.stringify({transcript,complete:true,coverage:'full',providerSupplied:true}));
+      writeFileTranscriptChunks(this.store,captureId,artifactId,transcript,{kind:'transcript'});
+      this.store.db.prepare("UPDATE file_jobs SET state='succeeded',stage='complete' WHERE capture_id=?").run(captureId);
+      return {id:captureId,duplicate:false};
+    });}finally{asset.release();}
+  });}
   async commit(id:string,authorize:(sourceId:string)=>void,signal?:AbortSignal){return this.serialize('upload:'+id,async()=>{
     const cancellation=AbortSignal.any([this.closing.signal,...(signal?[signal]:[])]);cancellation.throwIfAborted();
     const row=this.session(id,authorize);if(row.ack)return JSON.parse(row.ack);

@@ -18,6 +18,7 @@ import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {SourceStore} from '../src/sources.js';
 import {registerConnectors} from '../src/connectors/index.js';
+import {recordingManifest,type RecordingProvider} from '../src/connectors/recordings.js';
 import {ConnectorRegistry,type ConnectorManifest} from '../src/connectors/registry.js';
 import {RemoteMcp,registerMcp} from '../src/connectors/mcp.js';
 import {GoogleCalendarConnector,calendarBoundary,googleItem,type GoogleDependencies} from '../src/connectors/google.js';
@@ -36,6 +37,17 @@ async function fixture(t:any){
   t.after(async()=>{store.close();await rm(directory,{recursive:true,force:true});});return {ctx,directory,store,sources};
 }
 const item=(text='Synthetic evidence')=>({externalId:'synthetic-item',revision:randomUUID(),observedAt:new Date().toISOString(),title:'Synthetic item',text,kind:'file',layer:'original'});
+
+test('a third-party recording manifest contributes owner routes, source capabilities and generic settings metadata and releases its runtime',async t=>{
+ const {ctx,sources}=await fixture(t),app=Fastify();let accounts=0,closed=0;
+ const provider:RecordingProvider={id:'generated',version:'fixture@1',account:async()=>{accounts++;return {id:'generated-owner'};},discover:async()=>({ids:[]}),metadata:async()=>({id:'generated-recording',title:'Generated',durationMs:0}),transcript:async()=>{throw Error('Unused generated fixture');},media:async()=>{throw Error('Unused generated fixture');},close:async()=>{closed++;}};
+ const registry=new ConnectorRegistry(app,ctx);registry.register(recordingManifest('generated',()=>provider,{label:'Generated recording plugin',setup:{command:'generated login'}}));await registry.start();
+ t.after(async()=>{await registry.close();await app.close();});
+ assert.equal(accounts,0);assert.equal(sources.capabilities.has('generated.recordings'),true);
+ const denied=await app.inject('/api/connectors/status');assert.equal(denied.statusCode,401);
+ const result=await app.inject({url:'/api/connectors/status',headers:{authorization:'Bearer '+owner}});const status=result.json()['generated-recordings'];assert.equal(status.category,'recordings');assert.equal(status.provider,'generated');assert.equal(status.label,'Generated recording plugin');assert.equal(status.setup.command,'generated login');assert.equal(accounts,0);
+ await registry.close();assert.equal(closed,1);assert.equal(sources.capabilities.has('generated.recordings'),false);
+});
 
 test('trusted deployment connector modules register new source kinds and owner routes without core edits',async t=>{
   const {ctx,directory,sources,store}=await fixture(t),modulePath=join(directory,'synthetic-connector.mjs');
