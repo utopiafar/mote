@@ -2,6 +2,7 @@ package dev.mote.collector
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Canvas
@@ -115,19 +116,71 @@ class MoteNavigationIcon(context: Context, private val kind: String, active: Boo
     @Deprecated("Drawable opacity") override fun getOpacity() = PixelFormat.TRANSLUCENT
 }
 
-fun Activity.moteDetailPage(onBack: () -> Unit = { finish() }): LinearLayout {
+/** One primary navigation, including while login or a detail screen is visible. */
+class MotePrimaryNavigation(private val activity: Activity, onSelect: (MotePrimaryTab) -> Unit) : LinearLayout(activity) {
+    private val items = linkedMapOf<MotePrimaryTab, TextView>()
+    init {
+        orientation = HORIZONTAL; setPadding(activity.moteDp(10), activity.moteDp(7), activity.moteDp(10), activity.moteDp(9))
+        setBackgroundColor(Color.WHITE); elevation = activity.moteDp(2).toFloat()
+        contentDescription = MoteI18n.text("主导航")
+        MotePrimaryTab.entries.forEach { tab ->
+            val item = TextView(activity).apply {
+                text = MoteI18n.text(tab.titleKey); textSize = 12f; gravity = Gravity.CENTER; minHeight = activity.moteDp(58)
+                compoundDrawablePadding = activity.moteDp(5); isFocusable = true; tag = "primary:${tab.name}"
+                contentDescription = MoteI18n.text(tab.titleKey); setOnClickListener { onSelect(tab) }
+            }
+            items[tab] = item
+            addView(item, LayoutParams(0, -2, 1f).apply { marginStart = activity.moteDp(2); marginEnd = activity.moteDp(2) })
+        }
+    }
+    fun select(tab: MotePrimaryTab) {
+        items.forEach { (destination, view) ->
+            val active = destination == tab
+            view.isSelected = active; view.setTextColor(if (active) MoteUi.accent else MoteUi.muted)
+            view.background = MoteUi.clickable(activity, if (active) MoteUi.tint else Color.WHITE, 12)
+            view.setCompoundDrawablesWithIntrinsicBounds(null, MoteNavigationIcon(activity, destination.icon, active), null, null)
+        }
+    }
+}
+
+fun Activity.openMoteLocalPage(page: String) {
+    startActivity(Intent(this, MainActivity::class.java).putExtra("page", page)
+        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+}
+
+fun Activity.openMotePrimary(tab: MotePrimaryTab) {
+    if (tab == MotePrimaryTab.ASK) startActivity(Intent(this, AskActivity::class.java).putExtra("page", "ask")
+        .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+    else openMoteLocalPage(tab.localPage)
+}
+
+private fun Activity.detailTab(): MotePrimaryTab? = when (this) {
+    is MainActivity, is CentralActivity -> null
+    is CaptureRecordsActivity -> MotePrimaryTab.LIBRARY
+    is CalendarActionsActivity -> MotePrimaryTab.TODAY
+    else -> MotePrimaryTab.DEVICE
+}
+
+fun Activity.moteDetailPage(primary: MotePrimaryTab? = detailTab(), onBack: () -> Unit = { finish() }): LinearLayout {
     val body = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(moteDp(22), moteDp(12), moteDp(22), moteDp(32))
     }
     val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(MoteUi.background); moteInsets() }
-    root.addView(TextView(this).apply {
+    val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+    header.addView(TextView(this).apply {
         text = MoteI18n.text("‹  返回"); textSize = 15f; setTextColor(MoteUi.accent)
         gravity = Gravity.CENTER_VERTICAL; minHeight = moteDp(48)
         setPadding(moteDp(22), moteDp(4), moteDp(22), moteDp(4))
         contentDescription = MoteI18n.text("返回上一页"); isFocusable = true; setOnClickListener { onBack() }
-    }, LinearLayout.LayoutParams(-1, -2))
+    }, LinearLayout.LayoutParams(0, -2, 1f))
+    if (primary != null) header.addView(MoteUi.button(Button(this).apply {
+        text = MoteI18n.text("记录"); contentDescription = MoteI18n.text("写一条随手记")
+        setOnClickListener { openMoteLocalPage("NOTES") }
+    }), LinearLayout.LayoutParams(-2, -2).apply { marginEnd = moteDp(14) })
+    root.addView(header)
     root.addView(ScrollView(this).apply { isFillViewport = true; addView(body) }, LinearLayout.LayoutParams(-1, 0, 1f))
+    if (primary != null) root.addView(MotePrimaryNavigation(this) { openMotePrimary(it) }.apply { select(primary) })
     setContentView(root)
     return body
 }

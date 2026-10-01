@@ -24,57 +24,59 @@
   <aside class="sidebar" aria-label="主导航" data-i18n-aria-label="">
     <div class="brand"><span class="brand-icon" aria-hidden="true">m</span><strong>mote<span><span data-i18n>你的个人上下文</span></span></strong></div>
     <nav class="main-nav" aria-label="主导航" data-i18n-aria-label="">
-      <div class="sidebar-label"><span data-i18n>本机</span></div>
-      <button class="nav-item selected" data-nav="overview" type="button" aria-current="page"><svg class="icon"><use href="#icon-home"/></svg><span data-i18n>本机采集</span></button>
-      <button class="nav-item" data-nav="records" type="button"><svg class="icon"><use href="#icon-screen"/></svg><span data-i18n>本机记录</span></button>
-      <button class="nav-item" data-nav="sources" type="button"><svg class="icon"><use href="#icon-source"/></svg><span data-i18n>本机来源</span></button>
-      <div class="sidebar-label"><span data-i18n>控制与保护</span></div>
-      <button class="nav-item" data-nav="privacy" type="button"><svg class="icon"><use href="#icon-shield"/></svg><span data-i18n>隐私与权限</span></button>
-      <button class="nav-item" data-nav="connection" type="button"><svg class="icon"><use href="#icon-link"/></svg><span data-i18n>连接与同步</span></button>
-      <button class="nav-item" data-nav="notes" type="button"><svg class="icon"><use href="#icon-note"/></svg><span data-i18n>记录</span></button>
+      <button class="nav-item selected" data-nav="overview" type="button" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#icon-screen"/></svg><span data-i18n>本机采集</span></button>
+      <button class="nav-item" data-nav="records" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-source"/></svg><span data-i18n>本机记录</span></button>
+      <button id="ask-central" class="nav-item" data-nav="ask" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-info"/></svg><span data-i18n>问一问</span></button>
     </nav>
-    <div class="sidebar-bottom"><button class="nav-item" data-nav="statistics" type="button"><span data-i18n>本机状态详情</span></button>
-      <button id="ask-central" class="central-link" type="button"><span data-i18n>问一问</span></button>
-      <button id="central" class="central-link" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-link"/></svg><span><span data-i18n>打开中央工作台</span></span><span class="external-mark" aria-hidden="true">↗</span></button>
-      <button class="nav-item" data-nav="settings" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg><span><span data-i18n>设置</span></span><span id="settings-pending" class="pending-dot" aria-label="有未保存的设置" data-i18n-aria-label="" hidden></span></button>
+    <div class="sidebar-bottom">
+      <button class="nav-item" data-nav="settings" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg><span data-i18n>设置</span><span id="settings-pending" class="pending-dot" aria-label="有未保存的设置" data-i18n-aria-label="" hidden></span></button>
       <div class="local-caption"><span class="local-dot" aria-hidden="true"></span><span id="sidebar-state"><span data-i18n>本地优先 · macOS</span></span></div>
     </div>
   </aside>
+  <header class="workspace-toolbar">
+    <div class="workspace-location"><button id="workspace-back" class="text-button" type="button" hidden><span aria-hidden="true">‹</span><span data-i18n>返回</span></button><span id="workspace-location" aria-live="polite"><span data-i18n>本机采集</span></span></div>
+    <div class="actions"><button id="central" class="text-button" type="button"><span data-i18n>中央工作台</span><span aria-hidden="true"> ↗</span></button><button id="note-action" class="primary" data-nav="notes" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-note"/></svg><span data-i18n>随手记</span></button></div>
+  </header>
   <main id="main-content">
     <div id="background-progress" class="helper" role="status" hidden></div>
     <div id="feedback" role="alert" hidden></div>
 
     <section data-page="overview" class="page overview-page">
-      <header class="page-header"><div><div class="eyebrow"><span data-i18n>你的个人上下文</span></div><h1 tabindex="-1" data-page-title><span data-i18n>本机采集</span></h1><p><span data-i18n>让日常记录安静发生，需要时有迹可循。</span></p></div><span class="tag"><span class="local-dot" aria-hidden="true"></span><span data-i18n>保存在你的设备与节点</span></span></header>
-      <div id="setup-prompt" class="setup-prompt" hidden><span class="setting-icon"><svg class="icon" aria-hidden="true"><use href="#icon-link"/></svg></span><div><strong><span data-i18n>先在本机记录，准备好再连接</span></strong><p><span data-i18n>无需服务端也能采集和保存随手记。连接后按你选择的策略上传。</span></p></div><button class="primary" data-nav="connection" type="button"><span data-i18n>连接节点</span><span aria-hidden="true">→</span></button></div>
-      <section id="central-status" class="central-status" aria-live="polite" aria-label="中央节点连接状态" data-i18n-aria-label="">
-        <span id="central-status-icon" class="central-status-icon"><svg class="icon" aria-hidden="true"><use href="#icon-link"/></svg></span>
-        <div class="central-status-copy"><div class="eyebrow"><span data-i18n>中央节点连接</span></div><h2 id="central-status-title"><span data-i18n>正在读取</span></h2><p id="central-status-message" class="helper"></p><small id="central-status-origin" class="profile-path"></small></div>
-        <div class="central-status-actions"><button id="central-status-action" class="primary" data-nav="connection" type="button"><span data-i18n>查看连接</span></button></div>
+      <header class="page-header"><div><h1 tabindex="-1" data-page-title><span data-i18n>本机采集</span></h1><p><span data-i18n>记录这台设备的日常，先保存到本机，需要时找回内容与来源。</span></p></div></header>
+      <section id="setup-prompt" class="collection-welcome" hidden>
+        <span class="setting-icon"><svg class="icon" aria-hidden="true"><use href="#icon-screen"/></svg></span>
+        <h2><span data-i18n>让这台 Mac，为你安静记录。</span></h2><p><span data-i18n>先选择允许记录的范围。无需连接中央节点，也能采集和保存随手记。</span></p>
+        <button id="setup-primary" class="primary" type="button"><span data-i18n>设置第一次采集</span><span aria-hidden="true"> →</span></button>
+        <button id="setup-current" class="text-button" type="button"><span data-i18n>先使用当前记录范围</span></button>
+        <small><span data-i18n>仅在你点击开始采集后记录；系统权限会在需要时申请。</span></small>
       </section>
-      <section class="status-card" aria-live="polite" aria-label="采集状态" data-i18n-aria-label="">
-        <div class="status-heading"><span id="status-dot" class="dot"></span><h2 id="state"><span data-i18n>正在初始化</span></h2><span class="permission" id="permission"><span data-i18n>权限检查中</span></span></div>
-        <button id="storage-restart" class="secondary" type="button" hidden><span data-i18n>重新打开 Mote 以恢复存储</span></button><p id="message"><span data-i18n>正在读取本地配置与队列…</span></p>
-        <div class="metrics"><div><span><span data-i18n>采集与随手记待传</span></span><strong id="queue-count">0</strong><small><span data-i18n>中央确认接收后移出队列</span></small></div><div><span><span data-i18n>本地队列与 OCR 预留</span></span><strong id="queue-size">0 MB</strong><small><span data-i18n>断网时也能安全保留</span></small></div><div><span><span data-i18n>最近采样</span></span><strong class="time" id="last-capture"><span data-i18n>尚无</span></strong><small><span data-i18n>仅在开始采集后记录</span></small></div></div>
-        <div class="status-actions"><div class="actions"><button id="start" class="primary" type="button"><span data-i18n>开始采集</span></button><button id="stop" class="danger" type="button" disabled><span data-i18n>停止采集</span></button></div><button id="permissions" class="text-button" type="button"><span data-i18n>屏幕录制权限 ↗</span></button></div>
-
-      </section>
-      <section class="panel sync-summary" aria-label="上传状态" data-i18n-aria-label="" aria-live="polite"><div class="sync-summary-main"><span class="setting-icon"><svg class="icon" aria-hidden="true"><use href="#icon-link"/></svg></span><div><div class="eyebrow"><span data-i18n>上传同步 ·</span><span id="sync-policy-label"><span data-i18n>实时</span></span></div><h2 id="sync-state"><span data-i18n>正在读取</span></h2><p id="sync-message" class="helper"></p><p><span data-i18n>上传速率</span> <strong id="upload-speed">0 KiB/s</strong></p><p id="upload-info" class="helper"></p></div></div><div class="actions"><button id="retry" class="secondary" type="button"><span data-i18n>立即上传</span></button><button class="text-button" data-nav="sync" type="button"><span data-i18n>上传设置 →</span></button></div></section>
-      <div class="section-heading"><h2><span data-i18n>继续记录</span></h2><span><span data-i18n>从一条想法，到完整的上下文</span></span></div>
-      <div class="shortcut-grid">
-        <button class="shortcut-card" data-nav="notes" type="button"><span class="shortcut-icon"><svg class="icon" aria-hidden="true"><use href="#icon-note"/></svg></span><strong><span data-i18n>写一条随手记</span></strong><span><span data-i18n>记下想法、心情与灵感</span></span><svg class="icon shortcut-arrow" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
-        <button class="shortcut-card" data-nav="sources" type="button"><span class="shortcut-icon"><svg class="icon" aria-hidden="true"><use href="#icon-source"/></svg></span><strong><span data-i18n>管理本地来源</span></strong><span><span data-i18n>连接文件、目录和日历</span></span><svg class="icon shortcut-arrow" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
-        <button class="shortcut-card" data-nav="activity" type="button"><span class="shortcut-icon"><svg class="icon" aria-hidden="true"><use href="#icon-activity"/></svg></span><strong><span data-i18n>查看本机统计</span></strong><span><span data-i18n>了解采集与队列的状态</span></span><svg class="icon shortcut-arrow" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
+      <div id="collection-workbench">
+        <section class="status-card" aria-live="polite" aria-label="采集状态" data-i18n-aria-label="">
+          <div class="status-heading"><span id="status-dot" class="dot"></span><h2 id="state"><span data-i18n>正在初始化</span></h2><span class="permission" id="permission"><span data-i18n>权限检查中</span></span></div>
+          <button id="storage-restart" class="secondary" type="button" hidden><span data-i18n>重新打开 Mote 以恢复存储</span></button><p id="message"><span data-i18n>正在读取本地配置与队列…</span></p>
+          <div class="status-actions"><div class="actions"><button id="start" class="primary" type="button"><span data-i18n>开始采集</span></button><button id="stop" class="secondary" type="button" disabled><span data-i18n>停止采集</span></button></div><button id="permissions" class="text-button" type="button"><span data-i18n>屏幕录制权限 ↗</span></button></div>
+          <details class="collection-details"><summary><span data-i18n>本机保存状态</span></summary><div class="metrics"><div><span data-i18n>采集与随手记待传</span><strong id="queue-count">0</strong><small data-i18n>中央确认接收后移出队列</small></div><div><span data-i18n>本地队列与 OCR 预留</span><strong id="queue-size">0 MB</strong><small data-i18n>断网时也能安全保留</small></div><div><span data-i18n>最近采样</span><strong class="time" id="last-capture"><span data-i18n>尚无</span></strong><small data-i18n>仅在开始采集后记录</small></div></div></details>
+        </section>
+        <div class="collection-controls" aria-label="采集范围与隐私" data-i18n-aria-label="">
+          <button class="settings-row" data-nav="sources" type="button"><span class="setting-icon"><svg class="icon" aria-hidden="true"><use href="#icon-source"/></svg></span><span class="settings-row-copy"><strong data-i18n>本机来源</strong><span data-i18n>文件、目录和日历</span></span><span class="chevron" aria-hidden="true">›</span></button>
+          <button class="settings-row" data-nav="privacy" type="button"><span class="setting-icon"><svg class="icon" aria-hidden="true"><use href="#icon-shield"/></svg></span><span class="settings-row-copy"><strong data-i18n>隐私与过滤</strong><span data-i18n>允许记录的应用与遮挡范围</span></span><span class="chevron" aria-hidden="true">›</span></button>
+        </div>
+        <section id="central-status" class="central-status" aria-live="polite" aria-label="中央节点连接状态" data-i18n-aria-label="">
+          <span id="central-status-icon" class="central-status-icon"><svg class="icon" aria-hidden="true"><use href="#icon-link"/></svg></span>
+          <div class="central-status-copy"><div class="eyebrow"><span data-i18n>中央节点连接</span></div><h2 id="central-status-title"><span data-i18n>正在读取</span></h2><p id="central-status-message" class="helper"></p><small id="central-status-origin" class="profile-path"></small></div>
+          <button id="central-status-action" class="secondary" data-nav="connection" type="button"><span data-i18n>查看连接</span></button>
+        </section>
+        <section class="panel sync-summary" aria-label="上传状态" data-i18n-aria-label="" aria-live="polite"><div class="sync-summary-main"><div><div class="eyebrow"><span data-i18n>上传同步 ·</span><span id="sync-policy-label"><span data-i18n>实时</span></span></div><h2 id="sync-state"><span data-i18n>正在读取</span></h2><p id="sync-message" class="helper"></p><details class="collection-details"><summary data-i18n>上传详情</summary><p><span data-i18n>上传速率</span> <strong id="upload-speed">0 KiB/s</strong></p><p id="upload-info" class="helper"></p></details></div></div><div class="actions"><button id="retry" class="secondary" type="button"><span data-i18n>立即上传</span></button><button class="text-button" data-nav="sync" type="button"><span data-i18n>上传设置 →</span></button></div></section>
+        <p class="page-footnote"><span data-i18n>关闭窗口后仍驻留菜单栏；停止采集后，已有记录仍按上传策略同步；退出应用后暂停。</span></p>
       </div>
-      <div class="quiet-note"><svg class="icon" aria-hidden="true"><use href="#icon-shield"/></svg><p><span data-i18n>先过滤，再保存。采集范围和隐私规则始终由你决定。</span><br><span><span data-i18n>关闭窗口后仍驻留菜单栏；停止采集后，已有记录仍按上传策略同步；退出应用后暂停。</span></span></p><button class="text-button" data-nav="privacy" type="button"><span data-i18n>管理隐私</span><span aria-hidden="true">→</span></button></div>
     </section>
 
     <section data-page="records" class="page" hidden>
-      <header class="page-header"><div><div class="eyebrow"><span data-i18n>按天回看</span></div><h1 tabindex="-1" data-page-title><span data-i18n>采集记录</span></h1><p><span data-i18n>查看这台设备保存的截图、同步进度与识别文字。</span></p></div></header>
-      <section class="panel records-toolbar"><label><span data-i18n>日期</span><input id="records-day" type="date"></label><label><span data-i18n>记录位置</span><select id="records-location"><option value="local" data-i18n>本机待同步 / 待 OCR</option><option value="central" data-i18n>中央已归档</option></select></label><label><span data-i18n>记录来源</span><select id="records-source"><option value="screen" data-i18n>截图</option><option value="ui_page" data-i18n>页面内容采集</option></select></label><label><span data-i18n>展示方式</span><select id="records-grouping"><option value="sessions" data-i18n>按 Session</option><option value="records" data-i18n>全部截图</option></select></label><label><span data-i18n>展示方式</span><select id="records-layout"><option value="grid" data-i18n>缩略图</option><option value="list" data-i18n>列表</option></select></label><button id="records-refresh" class="secondary" type="button"><span data-i18n>刷新</span></button></section>
-      <p class="helper"><span data-i18n>Session 按本机 / 中央现存截图分别分组：同应用连续采样归为一段，切换应用或间隔超过 5 分钟即分段。起止范围不代表使用时长。</span></p><button id="records-back" class="secondary" type="button" hidden><span data-i18n>‹ 返回 Session</span></button><p id="records-selection" class="helper"></p><p id="records-status" class="helper" role="status"></p><div id="records-grid" class="records-grid"></div>
+      <header class="page-header"><div><div class="eyebrow"><span data-i18n>按天回看</span></div><h1 tabindex="-1" data-page-title><span data-i18n>本机记录</span></h1><p><span data-i18n>查看这台设备保存的截图、同步进度与识别文字。</span></p></div></header>
+      <section class="panel records-toolbar"><label><span data-i18n>日期</span><input id="records-day" type="date"></label><label><span data-i18n>记录来源</span><select id="records-source"><option value="screen" data-i18n>截图</option><option value="ui_page" data-i18n>页面内容采集</option></select></label><button id="records-refresh" class="secondary" type="button"><span data-i18n>刷新</span></button><details class="records-options"><summary data-i18n>显示选项</summary><div class="form-grid"><label><span data-i18n>记录位置</span><select id="records-location"><option value="local" data-i18n>本机待同步 / 待 OCR</option><option value="central" data-i18n>中央已归档</option></select></label><label><span data-i18n>展示方式</span><select id="records-grouping"><option value="sessions" data-i18n>按 Session</option><option value="records" data-i18n>全部截图</option></select></label><label><span data-i18n>展示方式</span><select id="records-layout"><option value="list" data-i18n>列表</option><option value="grid" data-i18n>缩略图</option></select></label></div><p class="helper"><span data-i18n>Session 按本机 / 中央现存截图分别分组：同应用连续采样归为一段，切换应用或间隔超过 5 分钟即分段。起止范围不代表使用时长。</span></p></details></section>
+      <button id="records-back" class="secondary" type="button" hidden><span data-i18n>‹ 返回 Session</span></button><p id="records-selection" class="helper"></p><p id="records-status" class="helper" role="status"></p><div class="records-browser"><div id="records-grid" class="records-grid record-list"></div>      <section id="record-detail" class="panel record-detail" hidden><div class="section-title"><div><h2 id="record-detail-title" tabindex="-1"><span data-i18n>记录详情</span></h2><p id="record-detail-meta"></p></div><button id="record-detail-close" class="text-button" type="button"><span data-i18n>关闭详情</span></button></div><img id="record-detail-image" alt="当前选择的采集截图" data-i18n-alt=""><h3><span data-i18n>识别文字</span></h3><pre id="record-detail-text" class="record-ocr-text"></pre></section></div>
       <div class="records-pagination"><button id="records-previous" class="secondary" type="button" disabled><span data-i18n>上一页</span></button><span id="records-page" class="helper"></span><button id="records-next" class="secondary" type="button" disabled><span data-i18n>下一页</span></button></div>
-      <section id="record-detail" class="panel record-detail" hidden><div class="section-title"><div><h2 id="record-detail-title" tabindex="-1"><span data-i18n>记录详情</span></h2><p id="record-detail-meta"></p></div><button id="record-detail-close" class="text-button" type="button"><span data-i18n>关闭详情</span></button></div><img id="record-detail-image" alt="当前选择的采集截图" data-i18n-alt=""><h3><span data-i18n>识别文字</span></h3><pre id="record-detail-text" class="record-ocr-text"></pre></section>
+
       <p class="page-footnote"><span data-i18n>本机只保留未完成同步或等待 OCR 的图片。已完成的记录可在“中央已归档”查看；关闭采集不会自动删除历史截图。</span></p>
     </section>
 
@@ -110,9 +112,11 @@
         <button class="settings-row" data-nav="about" type="button"><span class="setting-icon"><svg class="icon" aria-hidden="true"><use href="#icon-info"/></svg></span><span class="settings-row-copy"><strong><span data-i18n>关于 Mote</span></strong><span><span data-i18n>版本信息与应用更新</span></span></span><span class="chevron" aria-hidden="true">›</span></button>
         <button id="open-feedback" class="settings-row" type="button"><span class="setting-icon"><svg class="icon" aria-hidden="true"><use href="#icon-note"/></svg></span><span class="settings-row-copy"><strong><span data-i18n>反馈</span></strong><span><span data-i18n>前往 GitHub，可附图片或诊断包</span></span></span><span class="chevron" aria-hidden="true">↗</span></button>
       </div>
+      <div class="settings-group-label"><span data-i18n>状态与诊断</span></div>
+      <div class="settings-menu"><button class="settings-row" data-nav="activity" type="button"><span class="settings-row-copy"><strong data-i18n>本机统计</strong><span data-i18n>查看当前队列、模型与处理状态。</span></span><span class="chevron" aria-hidden="true">›</span></button><button class="settings-row" data-nav="statistics" type="button"><span class="settings-row-copy"><strong data-i18n>本机状态详情</strong><span data-i18n>存储占用与文件分布</span></span><span class="chevron" aria-hidden="true">›</span></button></div>
       <div class="settings-group-label"><span data-i18n>高级</span></div>
       <div class="settings-menu"><button class="settings-row" data-nav="developer" type="button"><span class="setting-icon neutral"><svg class="icon" aria-hidden="true"><use href="#icon-code"/></svg></span><span class="settings-row-copy"><strong><span data-i18n>开发者选项</span></strong><span><span data-i18n>模型参数、性能诊断、支持包与数据迁移</span></span></span><span class="chevron" aria-hidden="true">›</span></button></div>
-      <p class="page-footnote"><span data-i18n>采集过程中，连接和隐私设置会暂时锁定。停止采集后即可修改。</span></p>
+      <p class="page-footnote"><span data-i18n>设置保存后立即生效；采集保持当前开停状态。</span></p>
     </section>
 
 <section data-page="ask" class="page" hidden>

@@ -737,12 +737,12 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         prepareIndex(requireStatistics = true)
         return guarded {
             require(limit in 1..60)
-            require(source in setOf("screen", "media", "notification", "device_event", "note", "activity", "ui_page"))
+            require(source in setOf("", "screen", "media", "notification", "device_event", "note", "activity", "ui_page"))
             val start = java.time.Instant.parse(after); val end = java.time.Instant.parse(before)
             val position = cursor?.let { JSONObject(String(Base64.getUrlDecoder().decode(it), Charsets.UTF_8)) }
             val at = position?.getString("at")?.let(java.time.Instant::parse); val id = position?.getString("id")
             val matching = browseIndex().entries(browseFiles(), ::read).asSequence()
-                .filter { it.optString("source") == source }
+                .filter { source.isBlank() || it.optString("source") == source }
                 .map { it to java.time.Instant.parse(it.getString("capturedAt")) }
                 .filter { (row, date) -> java.time.Instant.parse(row.optString("lastCapturedAt", row.getString("capturedAt"))) >= start && date < end }
                 .sortedWith(compareByDescending<Pair<JSONObject, java.time.Instant>> { it.second }.thenByDescending { it.first.getString("id") }).toList()

@@ -45,9 +45,6 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         ui.button(MoteI18n.text("搜索"), parent = filters) { query = search.text.toString(); source = choices[choice.selectedItemPosition].first; screens.refresh() }
         ui.button(MoteI18n.text("刷新"), parent = filters) { screens.refresh() }
         ui.button(MoteI18n.text("应用活动与媒体")) { activity() }
-        listOf("materials" to "正式资料", "files" to "文件与录音", "sources" to "来源资料", "memories" to "记忆", "timeline" to "片段").forEach { (id, title) ->
-            ui.button(MoteI18n.text(title)) { ui.navigate(id) }
-        }
         val list = ui.card()
         val params = mutableListOf("limit=24")
         if (source.isNotBlank()) params.add("source=" + enc(source))

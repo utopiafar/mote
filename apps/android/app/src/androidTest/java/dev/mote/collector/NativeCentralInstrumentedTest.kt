@@ -69,6 +69,9 @@ class NativeCentralInstrumentedTest {
                     !activity.isWorking && text.none { it.startsWith("正在读取") || it.startsWith("正在连接") } && activity.client != null
                 }
                 scenario.onActivity { activity ->
+                    val tabs = all(activity).filterIsInstance<TextView>().filter { it.tag?.toString()?.startsWith("primary:") == true }
+                    assertEquals(listOf("今天", "资料库", "问一问", "本机"), tabs.map { it.text.toString() })
+                    assertTrue("$page keeps its primary destination", tabs.single { it.tag == "primary:${MoteNavigation.centralTab(page).name}" }.isSelected)
                     assertFalse("$page embeds a WebView", all(activity).any { it is WebView })
                     assertFalse("$page requested another token", contains(activity, "登录并继续"))
                     assertEquals("$page API error", "", all(activity).filterIsInstance<TextView>().first { it.tag == "central-status" }.text.toString())
@@ -143,6 +146,57 @@ class NativeCentralInstrumentedTest {
             waitFor(scenario, "Note synchronized") { contains(it, "Generated offline draft 中文 🐾") && all(it).filterIsInstance<EditText>().any { field -> field.contentDescription == "此刻想留下什么？" && field.text.isEmpty() } }
         }
     }
+
+    @Test fun querySurvivesReturningToLocalPrimaryNavigation() {
+        val main = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)) as MainActivity
+        try {
+            val mainDeadline = System.currentTimeMillis() + 10000; var mainReady = false
+            while (!mainReady && System.currentTimeMillis() < mainDeadline) {
+                instrumentation.runOnMainSync { mainReady = views(main.window.decorView).any { it.tag == "primary:TODAY" } }
+                if (!mainReady) Thread.sleep(50)
+            }
+            assertTrue("Local shell must finish loading", mainReady)
+            fun launchAsk(): AskActivity {
+                val monitor = instrumentation.addMonitor(AskActivity::class.java.name, null, false)
+                try {
+                    instrumentation.runOnMainSync { main.openMotePrimary(MotePrimaryTab.ASK) }
+                    return requireNotNull(monitor.waitForActivityWithTimeout(10000) as? AskActivity)
+                } finally { instrumentation.removeMonitor(monitor) }
+            }
+            fun await(activity: AskActivity, label: String, predicate: (AskActivity) -> Boolean) {
+                val deadline = System.currentTimeMillis() + 20000
+                while (System.currentTimeMillis() < deadline) {
+                    var ready = false; instrumentation.runOnMainSync { ready = predicate(activity) }
+                    if (ready) return
+                    Thread.sleep(50)
+                }
+                fail(label)
+            }
+            val ask = launchAsk()
+            await(ask, "Native login") { contains(it, "中央管理令牌") }
+            instrumentation.runOnMainSync {
+                all(ask).filterIsInstance<EditText>().first { it.contentDescription == "中央管理令牌" }.setText(owner)
+                all(ask).filterIsInstance<Button>().first { it.text.toString() == "登录并继续" }.performClick()
+            }
+            await(ask, "Ask ready") { it.client != null && !it.isWorking && contains(it, "你的问题") }
+            instrumentation.runOnMainSync { all(ask).filterIsInstance<Button>().first { it.text.toString() == "新对话" }.performClick() }
+            await(ask, "New conversation ready") { !it.isWorking && contains(it, "你的问题") }
+            instrumentation.runOnMainSync {
+                all(ask).filterIsInstance<EditText>().first { it.contentDescription == "你的问题" }.setText("Generated primary navigation question")
+                all(ask).filterIsInstance<Button>().first { it.text.toString() == "发送" }.performClick()
+                all(ask).single { it.tag == "primary:DEVICE" }.performClick()
+            }
+            await(ask, "Returning to the existing local shell destroys the central Activity") { it.isDestroyed }
+            instrumentation.waitForIdleSync()
+            val restored = launchAsk()
+            try {
+                await(restored, "Accepted answer survives primary navigation") { contains(it, "Generated native answer") }
+                instrumentation.runOnMainSync { assertFalse(Settings(restored).enabled) }
+            } finally { instrumentation.runOnMainSync { restored.finish() } }
+        } finally { instrumentation.runOnMainSync { main.finish() }; instrumentation.waitForIdleSync() }
+    }
+
     @Test fun pairedCollectorCannotBecomeOwnerButConfiguredOwnerIsReused() {
         val api = CentralClient(origin, owner); val settings = Settings(context)
         val invitation = api.post("/api/connections/invitations", JSONObject().put("serverUrl", origin).put("label", "Generated emulator").put("deviceId", settings.deviceId))

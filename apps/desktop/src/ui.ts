@@ -2,6 +2,7 @@ import {nativeStatusSummary} from './native-status';
 import { renderAskAnswer, renderAskCitation } from './ask-presentation';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import {builtinUiRules} from '@mote/shared';
+import { DesktopNavigation, desktopPages, needsCollectionSetup, type DesktopPage } from './navigation';
 const desktopApi = window.mote;
 document.getElementById('ui-page-builtins')!.addEventListener('click',()=>{byId<HTMLTextAreaElement>('ui-page-rules').value=JSON.stringify(builtinUiRules,null,2);markSettingsDirty();});
 const byId = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -11,8 +12,9 @@ let busy = false;
 const fields = byId<HTMLFieldSetElement>('settings-fields');
 const settingsForm = byId<HTMLFormElement>('settings');
 byId('device-name').addEventListener('input', () => markSettingsDirty());
-const pageNames = ['ask', 'statistics', 'overview', 'notes', 'records', 'sources', 'settings', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity', 'compression', 'permissions'] as const;
-type Page = typeof pageNames[number];
+const pageNames = desktopPages;
+type Page = DesktopPage;
+const navigation = new DesktopNavigation();
 let currentPage: Page = 'overview';
 let settingsDirty = false;
 let captureStorageDirectory = '';
@@ -21,15 +23,17 @@ let wasRunningBeforeSave = false;
 let pageRevision = 0;
 const pageScroll = new Map<Page, number>();
 const settingsPages = new Set<Page>(['connection', 'sync', 'capture', 'privacy', 'developer']);
+let setupReviewed = false;
+try { setupReviewed = localStorage.getItem('mote-desktop-collection-reviewed') === '1'; } catch { /* Collection remains usable without local storage. */ }
 
-function showPage(page: Page, focus = true): void {
-  if (page !== currentPage && settingsDirty && settingsPages.has(currentPage) && !window.confirm(moteText("有未保存的修改。离开并丢弃修改？"))) return;
+function showPage(page: Page, focus = true, preserveSettingsDraft = false): boolean {
+  if (!navigation.navigate(page, () => preserveSettingsDraft || !settingsDirty || !settingsPages.has(currentPage) || window.confirm(moteText("有未保存的修改。离开并丢弃修改？")))) return false;
   if (settingsPages.has(currentPage)) pageScroll.delete(currentPage);
   else pageScroll.set(currentPage, window.scrollY);
   if (page !== currentPage) {
     pageRevision++;
     feedback('');
-    if (initialized && settingsPages.has(currentPage)) fillConfig(currentStatus.config);
+    if (initialized && settingsPages.has(currentPage) && !preserveSettingsDraft) fillConfig(currentStatus.config);
     if (currentPage === 'connection') {
       clearConnectionPreview();
       byId<HTMLTextAreaElement>('connection-input').value = '';
@@ -38,13 +42,19 @@ function showPage(page: Page, focus = true): void {
     }
   }
   currentPage = page;
-  const selected = page === 'privacy' || page === 'connection' ? page : settingsPages.has(page) || page === 'about' || page === 'compression' || page === 'permissions' ? 'settings' : page === 'activity' ? 'overview' : page;
+  const selected = navigation.section;
   for (const element of Array.from(document.querySelectorAll<HTMLElement>('[data-page]'))) element.hidden = element.dataset.page !== page;
   for (const button of Array.from(document.querySelectorAll<HTMLElement>('aside [data-nav]'))) {
     const active = button.dataset.nav === selected;
     button.classList.toggle('selected', active);
     if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
   }
+  const heading = (target: Page) => document.querySelector<HTMLElement>(`[data-page="${target}"] [data-page-title]`)?.textContent?.trim() ?? '';
+  const title = heading(page), sectionTitle = heading(selected);
+  byId('workspace-location').textContent = page === selected ? title : `${sectionTitle} / ${title}`;
+  byId('workspace-back').hidden = !navigation.canGoBack;
+  updateNoteAction();
+  for (const button of Array.from(document.querySelectorAll<HTMLElement>('.back-button'))) button.textContent = `‹ ${heading(navigation.backTarget)}`;
   updateSettingsHint();
   if (focus) document.querySelector<HTMLElement>(`[data-page="${page}"] [data-page-title]`)?.focus({ preventScroll: true });
   window.scrollTo({ top: pageScroll.get(page) || 0, behavior: 'instant' });
@@ -54,11 +64,25 @@ function showPage(page: Page, focus = true): void {
   if (page === 'statistics') void loadStorageStatistics();
   if (page === 'records') void loadRecords();
   if (page === 'overview' && initialized) void desktopApi.status().then(render).catch(() => feedback(moteText("状态读取失败，请重试。")));
+  return true;
 }
 for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-nav]'))) button.addEventListener('click', () => {
-  const page = button.dataset.nav as Page;
+  const page = button.classList.contains('back-button') ? navigation.backTarget : button.dataset.nav as Page;
   if (pageNames.includes(page)) showPage(page);
 });
+byId('workspace-back').addEventListener('click', () => showPage(navigation.backTarget));
+function updateNoteAction(): void {
+  const secondary = currentPage === 'overview' && !byId('setup-prompt').hidden;
+  byId('note-action').classList.toggle('primary', !secondary);
+  byId('note-action').classList.toggle('secondary', secondary);
+}
+function reviewCollectionSetup(): void {
+  setupReviewed = true;
+  try { localStorage.setItem('mote-desktop-collection-reviewed', '1'); } catch { /* This preference is not required for capture. */ }
+  if (currentStatus) render(currentStatus);
+}
+byId('setup-primary').addEventListener('click', () => { if (showPage('privacy')) reviewCollectionSetup(); });
+byId('setup-current').addEventListener('click', () => { reviewCollectionSetup(); byId('start').focus(); });
 function updateSettingsHint(): void {
   byId('settings-save-bar').hidden = !settingsPages.has(currentPage);
   byId('settings-pending').hidden = !settingsDirty;
@@ -76,7 +100,7 @@ byId('settings-reset').addEventListener('click', () => {
 settingsForm.noValidate = true;
 function revealField(element: HTMLElement): void {
   const page = element.closest<HTMLElement>('[data-page]')?.dataset.page as Page | undefined;
-  if (page && pageNames.includes(page)) showPage(page);
+  if (page && pageNames.includes(page)) showPage(page, true, true);
   for (let parent = element.parentElement; parent; parent = parent.parentElement) {
     if (parent instanceof HTMLDetailsElement) parent.open = true;
   }
@@ -85,9 +109,8 @@ function revealField(element: HTMLElement): void {
 }
 document.addEventListener('keydown', event => {
   if ((event.metaKey || event.ctrlKey) && event.key === ',') { event.preventDefault(); showPage('settings'); }
-  if (event.key === 'Escape' && currentPage === 'compression') showPage('developer');
-  else if (event.key === 'Escape' && (settingsPages.has(currentPage) || currentPage === 'about')) showPage('settings');
-  else if (event.key === 'Escape' && currentPage === 'activity') showPage('overview');
+  if (event.key === 'Escape' && currentPage === 'records' && !byId('record-detail').hidden) closeRecordDetail();
+  else if (event.key === 'Escape' && navigation.canGoBack) showPage(navigation.backTarget);
 });
 desktopApi.onNavigate?.(page => { if (pageNames.includes(page)) showPage(page); });
 showPage('overview', false);
@@ -98,6 +121,7 @@ function feedback(message: string, success = false): void {
 function setText(id: string, value: string): void { const element = byId(id); if (element.textContent !== value) element.textContent = value; }
 
 let selectedSession: import('@mote/shared/capture-sessions').CaptureSession | undefined;
+let selectedRecordButton: HTMLButtonElement | undefined;
 let recordsRevision = 0, recordsPage = 0, recordsNext: string | undefined;
 let recordsCursors: (string | undefined)[] = [undefined];
 const recordsDate = new Date();
@@ -175,7 +199,11 @@ async function loadRecords(): Promise<void> {
       const time = document.createElement('time'); time.dateTime = item.capturedAt; time.textContent = new Date(item.capturedAt).toLocaleTimeString(getLocale());
       const state = document.createElement('small'); state.textContent = item.syncError ? moteText("同步需处理 · {0}", ocrLabel(item)) : `${location === 'local' ? item.uploaded ? moteText("图片已同步 · ") : moteText("本机待同步 · ") : ''}${ocrLabel(item)}`;
       if(item.sizeBytes!==undefined)state.textContent+=` · ${(item.sizeBytes/1024).toFixed(1)} KiB`;
-      caption.append(title, time, state); card.append(image, caption); card.addEventListener('click', () => void openRecord(item, location, revision));
+      caption.append(title, time, state); card.append(image, caption); card.addEventListener('click', () => {
+        selectedRecordButton?.classList.remove('selected'); selectedRecordButton?.setAttribute('aria-pressed', 'false');
+        selectedRecordButton = card; card.classList.add('selected'); card.setAttribute('aria-pressed', 'true');
+        void openRecord(item, location, revision);
+      });
       byId('records-grid').append(card); if(item.hasImage) images.push({ element: image, item }); else image.alt=moteText("无图片 · 点击查看采样记录");
     }
     let next = 0, completed = 0, failed = 0;
@@ -204,7 +232,11 @@ byId('records-layout').addEventListener('change',()=>byId('records-grid').classL
 byId('records-refresh').addEventListener('click', resetRecords);
 byId('records-previous').addEventListener('click', () => { if (recordsPage > 0) { recordsPage--; void loadRecords(); } });
 byId('records-next').addEventListener('click', () => { if (recordsNext) { recordsCursors[++recordsPage] = recordsNext; void loadRecords(); } });
-byId('record-detail-close').addEventListener('click', () => { byId('record-detail').hidden = true; byId<HTMLImageElement>('record-detail-image').removeAttribute('src'); });
+function closeRecordDetail(): void {
+  byId('record-detail').hidden = true; byId<HTMLImageElement>('record-detail-image').removeAttribute('src');
+  selectedRecordButton?.classList.remove('selected'); selectedRecordButton?.setAttribute('aria-pressed', 'false'); selectedRecordButton?.focus();
+}
+byId('record-detail-close').addEventListener('click', closeRecordDetail);
 function readInput(id: string): string { return byId<HTMLInputElement>(id).value; }
 function numberInput(id: string): number { return Number(readInput(id)); }
 function fillConfig(config: import('./contracts').PublicConfig): void {
@@ -284,7 +316,10 @@ function render(status: import('./contracts').Status): void {
       : status.sync.pendingRecords > 0
         ? moteText("待同步 {0} 条", status.sync.pendingRecords.toLocaleString(getLocale()))
         : status.sync.message;
-  byId('setup-prompt').hidden = hasCentralConnection;
+  const firstCollection = needsCollectionSetup({ reviewed: setupReviewed, running: status.running, hasCapture: Boolean(status.lastCaptureAt), queuedRecords: status.queueDepth, recoveryRequired: status.state === 'error' || Boolean(status.storage?.recoveryRequired) });
+  byId('setup-prompt').hidden = !firstCollection;
+  byId('collection-workbench').hidden = firstCollection;
+  updateNoteAction();
   byId('central-status').className = `central-status ${centralState}`;
   byId('central-status-icon').className = `central-status-icon ${centralState}`;
   setText('central-status-title', centralTitle);
@@ -427,7 +462,9 @@ byId('start').addEventListener('click', () => {
   void perform(async () => {
     const permissions = await desktopApi.permissionStatus();
     if ((currentStatus.config.defaultCollection === 'content' || Object.values(currentStatus.config.appCollectionRules).includes('content')) && permissions.screen !== 'granted') { window.alert(moteText("屏幕录制尚未授权，请在权限管理中开启。")); showPage('permissions'); return; }
-    render(await desktopApi.start());
+    const status = await desktopApi.start();
+    if (status.running) reviewCollectionSetup();
+    render(status);
   });
 });
 byId('stop').addEventListener('click', () => { wasRunningBeforeSave = false; void desktopApi.stop().then(render).catch(error => feedback((error as Error).message)); });
@@ -446,7 +483,6 @@ desktopApi.onStatus(render);
 void desktopApi.status().then(render).catch(() => feedback(moteText("无法连接采集器进程，请重新打开 Mote。")));
 
 byId('note-attachments').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('notes')));
-byId('ask-central').addEventListener('click', () => showPage('ask'));
 byId('central').addEventListener('click', () => {
   if (!currentStatus?.config.serverUrl) { showPage('connection'); feedback(moteText("先连接你的中央节点，即可打开中央仓库。")); return; }
 
