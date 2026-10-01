@@ -22,7 +22,7 @@ class CalendarActionsActivity : MoteActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private val poll = object : Runnable { override fun run() { if (!task.busy) refresh(); handler.postDelayed(this, 20000) } }
     override fun onCreate(state: Bundle?) {
-        super.onCreate(state); client = CalendarActions(this); task = UiTask(this)
+        super.onCreate(state); client = CalendarActions(this, foreground = true); task = UiTask(this)
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 24, 28, 32) }
         setContentView(ScrollView(this).apply { addView(body) })
         text(body, MoteI18n.text("日程建议"), 26f)

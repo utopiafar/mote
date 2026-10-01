@@ -14,14 +14,16 @@ class BackupActivity : MoteActivity() {
     private val task by lazy { UiTask(this) }
     private lateinit var status: TextView
     private lateinit var secrets: CheckBox
-    private lateinit var ownerToken: EditText
     private var includeToken = false
     private var restoring = false
     @Volatile private var closed = false
     private var prepared: QueueArchive.Prepared? = null
+    private var exportOrigin: String? = null
+    private var exportGeneration = -1L
     override fun onCreate(state: Bundle?) {
         super.onCreate(state); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         includeToken = state?.getBoolean("includeToken") ?: false
+        exportOrigin = state?.getString("exportOrigin"); exportGeneration = state?.getLong("exportGeneration") ?: -1L
         val body = moteDetailPage()
         fun text(value: String, size: Float = 14f) = TextView(this).apply { text = value; textSize = size; setPadding(0, moteDp(10), 0, moteDp(10)) }.also(body::addView)
         fun button(label: String, action: () -> Unit) = Button(this).apply { text = label; setOnClickListener { if (!task.busy) action() } }.also(body::addView)
@@ -37,20 +39,28 @@ class BackupActivity : MoteActivity() {
         button(MoteI18n.text("导入本机记录 ZIP")) { open(13, "application/zip") }
         button(MoteI18n.text("导出本机元数据 JSON")) { create(14, "application/json", "mote-local-metadata.json") }
         text(MoteI18n.text("中央资料导出"), 20f)
-        ownerToken = EditText(this).apply { hint = MoteI18n.text("中央所有者令牌（仅本页使用）"); inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD; isSaveEnabled = false }.also(body::addView)
+        text(MoteI18n.text("中央导出与问答、资料库共用登录状态。"))
+        button(MoteI18n.text("中央登录与账户")) { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "vault")) }
         button(MoteI18n.text("导出中央元数据")) { create(15, "application/gzip", "mote-central-metadata.tar.gz") }
         button(MoteI18n.text("导出中央资料与附件")) { create(16, "application/gzip", "mote-central-data.tar.gz") }
         status = text(MoteI18n.text("导入前可预览；同 ID 记录不会重复添加。"))
         MoteUi.styleTree(body)
     }
-    private fun create(code: Int, mime: String, name: String) = startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(mime).putExtra(Intent.EXTRA_TITLE, name), code)
+    private fun create(code: Int, mime: String, name: String) {
+        if (code in setOf(15, 16)) {
+            task.start(MoteI18n.text("正在读取…"), { status.text = it }, { CentralAccess.requireClient(this).server to CentralSession.get(this).generation }) { result ->
+                result.onSuccess { (origin, generation) -> exportOrigin = origin; exportGeneration = generation
+                    startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(mime).putExtra(Intent.EXTRA_TITLE, name), code)
+                }.onFailure { status.text = it.message }
+            }
+        } else startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(mime).putExtra(Intent.EXTRA_TITLE, name), code)
+    }
     private fun open(code: Int, mime: String) = startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(mime), code)
     @Deprecated("Native document picker")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
-        val centralToken = if (::ownerToken.isInitialized) ownerToken.text.toString().trim() else ""
         when (requestCode) {
             14 -> task.start(MoteI18n.text("正在导出本机记录…"), { status.text = it }, {
                 val q = queue(); val records = org.json.JSONArray()
@@ -58,17 +68,11 @@ class BackupActivity : MoteActivity() {
                 requireNotNull(contentResolver.openOutputStream(uri, "wt")).bufferedWriter().use { it.write(JSONObject().put("format", "mote-local-metadata").put("version", 1).put("records", records).toString()) }
             }) { status.text = if (it.isSuccess) MoteI18n.text("配置已导出") else MoteI18n.text("导出未完成，请重试") }
             15, 16 -> task.start(MoteI18n.text("正在导出中央资料…"), { status.text = it }, {
-                require(centralToken.isNotBlank()) { MoteI18n.text("请填写中央所有者令牌") }
-                val config = Settings(this).read(); config.validateConnection()
+                val client = CentralAccess.requireClient(this)
+                check(client.server == exportOrigin && CentralSession.get(this).generation == exportGeneration) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
                 val mode = if (requestCode == 15) "metadata" else "data"
-                val connection = java.net.URL(config.server.trimEnd('/') + "/api/export-bundle?mode=" + mode).openConnection() as java.net.HttpURLConnection
-                try {
-                    connection.instanceFollowRedirects = false; connection.connectTimeout = 15000; connection.readTimeout = 120000
-                    connection.setRequestProperty("Authorization", "Bearer $centralToken")
-                    check(connection.responseCode == 200) { "HTTP ${connection.responseCode}" }
-                    connection.inputStream.use { input -> requireNotNull(contentResolver.openOutputStream(uri, "wt")).use { output -> input.copyTo(output) } }
-                } finally { connection.disconnect() }
-            }) { status.text = if (it.isSuccess) MoteI18n.text("资料已导出") else MoteI18n.text("导出未完成，请删除不完整文件后重试") }
+                requireNotNull(contentResolver.openOutputStream(uri, "wt")).use { client.download("/api/export-bundle?mode=" + mode, it) }
+            }) { result -> status.text = result.fold({ MoteI18n.text("资料已导出") }, { it.message ?: MoteI18n.text("导出未完成，请删除不完整文件后重试") }) }
             10 -> task.start(MoteI18n.text("正在导出配置…"), { status.text = it }, {
                 val json = ConfigurationArchive.encode(Settings(this).read(), includeToken)
                 requireNotNull(contentResolver.openOutputStream(uri, "wt")).bufferedWriter().use { it.write(json) }
@@ -121,5 +125,5 @@ class BackupActivity : MoteActivity() {
         }
     }
     override fun onDestroy() { closed = true; if (!restoring) prepared?.let { java.util.concurrent.Executors.newSingleThreadExecutor().apply { execute { it.close() }; shutdown() } }; super.onDestroy() }
-    override fun onSaveInstanceState(outState: Bundle) { outState.putBoolean("includeToken", includeToken); super.onSaveInstanceState(outState) }
+    override fun onSaveInstanceState(outState: Bundle) { outState.putBoolean("includeToken", includeToken); outState.putString("exportOrigin", exportOrigin); outState.putLong("exportGeneration", exportGeneration); super.onSaveInstanceState(outState) }
 }

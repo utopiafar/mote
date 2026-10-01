@@ -31,14 +31,15 @@ object CalendarActionRules {
     fun description(id: String, event: JSONObject, operation: String? = null) = MoteI18n.text("{0}\n\n#Mote · 由 Mote 创建\n{1}", event.getString("description"), marker(id) + (operation?.let { "\n[Mote-operation:${UUID.fromString(it)}]" } ?: "")).trim()
 }
 
-class CalendarActions(private val context: Context) {
+class CalendarActions(private val context: Context, private val foreground: Boolean = false) {
     companion object { private val executionLock = Any() }
     private val settings = Settings(context)
     fun permissions() = listOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR).all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
     private fun request(path: String, body: JSONObject? = null): JSONObject {
+        if (foreground) CentralAccess.resolve(context).client?.let { return if (body == null) it.get(path) else it.post(path, body) }
         val c = settings.read(); c.validateConnection()
         val (status, value) = HttpJson.request(if (body == null) "GET" else "POST", c.server.trimEnd('/') + path, body, c.token)
-        if (status !in 200..299 || value == null) throw IllegalStateException(if (status == 403) MoteI18n.text("请在中央网页「行动」设置中授权此设备查看与确认建议") else MoteI18n.text("中央日程操作未完成（{0}），请刷新重试", status))
+        if (status !in 200..299 || value == null) throw IllegalStateException(if (status == 403) MoteI18n.text("请在中央「行动」设置中授权此设备，或登录中央管理会话。") else MoteI18n.text("中央日程操作未完成（{0}），请刷新重试", status))
         return value
     }
     fun list(cursor: Long = 0): JSONObject = ConnectionGuard.sync { request("/api/actions?cursor=$cursor") } ?: error(MoteI18n.text("连接正在切换"))
