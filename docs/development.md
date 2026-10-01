@@ -100,3 +100,7 @@ npm run test:profiles:container
 每个中央环境默认开启有上限的结构化诊断，`MOTE_DEBUG=0`。需要调试时只修改正在测试的 `mote.env`，然后重启对应环境。中央界面的运行诊断、Mac 和 Android 的支持包用于查看版本、连接类别、队列状态、数值指标与固定事件。分享前仍应查看导出内容；不要改为转发原始截图、OCR、随手记、模型 prompt 或 token。
 
 原生 `logs/central.log` 默认只保存固定监督事件；未知 SDK/runtime 输出只保存类型与字节数。每份日志最多 2 MiB、3 份，支持包与中央结构化日志各有自身边界。完整的状态、停止、迁移和回退命令见 [部署说明](deployment.md)。
+
+## 独立版本与发布
+
+保留 npm workspaces。Central（server + web）、macOS、Android 分别维护版本和标签；改动一个端只发布该端。共享依赖和协议改动需要检查所有受影响端，但不会自动生成其他端的发布。操作、发布产物和迁移说明见 [发布流程](releasing.md) 与 [独立发布架构](release-architecture.md)。

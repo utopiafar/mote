@@ -1,9 +1,16 @@
 # 发布版本与签名
 
-> **当前开发阶段（0.0.57 起）**：GitHub 每条发布是 DEV prerelease，仅附 Mac DEV ZIP 和 Android DEV APK。不发布正式客户端、服务端包或哈希/签名附件。DEV 客户端手动下载并安装；中央从源码部署并在升级前备份。CI 仍验证包身份、平台签名及内容完整性。当前 0.0.56 的附件已同样收敛为两个 DEV 包。下面涉及签名清单与自动更新的内容保留为历史机制说明，当前 DEV 发布不使用该通道。见 [当前策略](ui-slate.md)。
+Mote 保留 npm Monorepo，按独立安装/部署单元发布。根 `package.json` 是私有工作区控制入口，不再代表产品版本；共享内部库随使用它的产品从同一提交构建。
 
+| 发布单元 | 版本来源 | 标签 | DEV 公开附件 |
+| --- | --- | --- | --- |
+| Central | server 与 web 的 package.json，两者一致 | `central-vX.Y.Z` | `mote-server-X.Y.Z.tar.gz` 源码包 |
+| macOS | desktop 的 package.json | `desktop-vX.Y.Z` | Mac DEV ZIP |
+| Android | `apps/android/version.properties` | `android-vX.Y.Z` | Android DEV APK |
 
-Mote 的客户端、中央节点和中央前端使用同一个产品版本。发布使用 `vX.Y.Z` Git 标签；撤下的试验 Release 仍可保留历史标签用于追溯。发布入口是 [Release workflow](../.github/workflows/release.yml)，安装与更新入口见 [更新说明](updating.md)。
+三个单元分别走 [Central](../.github/workflows/release-central.yml)、[Desktop](../.github/workflows/release-desktop.yml)、[Android](../.github/workflows/release-android.yml) workflow。只推送要发布的组件标签，只构建、验证和上传该组件的产物。当前依然是 DEV prerelease、手动安装/部署，不恢复签名在线更新，也不发布 GHCR 镜像。架构、协议和迁移边界见 [独立发布架构](release-architecture.md)，安装见 [更新说明](updating.md)。
+
+旧 `vX.Y.Z` Release、标签和 `release/notes/X.Y.Z.md` 保留追溯；新发布不再使用统一标签。初始拆分保持各端原安装版本与 Android 版本码，调整发布流程本身不创建安装包。后续只递增实际发布的组件。
 
 ## 开发早期版本编号
 
@@ -27,7 +34,7 @@ Mote 的客户端、中央节点和中央前端使用同一个产品版本。发
 
 ## 签名配置与历史清单密钥
 
-签名材料保存在 GitHub 仓库的 **release Environment Secrets**。该环境只允许 `v*` 标签的部署。普通分支和 Pull Request 的测试无需签名私钥。Workflow 只写 Secret 名称，通过环境变量或临时文件使用值；临时签名文件在构建结束后清理，不作为 artifact 上传。不要把私钥粘贴到 YAML 或 Release 附件。
+签名材料保存在 GitHub 仓库的 **release Environment Secrets**。该环境允许历史 `v*` 及 `central-v*`、`desktop-v*`、`android-v*` 标签的部署。首次启用独立工作流时，维护者需在 Environment 的 Deployment branches and tags 中添加三个组件标签规则；此设置不在 Git 仓库中，版本验证器仍要求准确的组件版本标签。普通分支和 Pull Request 的测试无需签名私钥。Workflow 只写 Secret 名称，通过环境变量或临时文件使用值；临时签名文件在构建结束后清理，不作为 artifact 上传。不要把私钥粘贴到 YAML 或 Release 附件。
 
 | Secret / Variable | 内容 |
 | --- | --- |
@@ -54,17 +61,31 @@ Mac 默认 adhoc 只提供本期可构建的分发方式，不代表 Apple 认�
 
 ## 当前 DEV 发布流程
 
-1. 同步工作区版本、lockfile、Android versionName/versionCode 与 `release/notes/X.Y.Z.md`。
-2. 运行 `npm run check:local` 和 `node scripts/release/verify-version.mjs`，按改动补做 Android/平台检查。文档修改本身不要求发布新安装包。
-3. 提交代码并推送不可变的 `vX.Y.Z` 标签。Release workflow 核对版本，分别构建 Mac DEV 和 Android development 包。
-4. Mac 使用 `MOTE_MAC_DEVELOPMENT=1` 打包，Android 使用持续维护的签名证书；脚本核验身份、版本、证书/签名及产物完整性。
-5. `scripts/release/publish.mjs` 只上传 Mac DEV ZIP 和 Android DEV APK，并创建 DEV prerelease；构建用 `.asset.json` 不作为公开附件。当前工作流不生成服务端包、签名清单或 GHCR 镜像。
+1. 运行 `npm run release:version -- android patch`（或 `central`、`desktop`，也可给出更高的完整版本）。脚本只修改该发布单元；Central 同步 server/web 和对应 lockfile 条目，Android 单独递增 versionCode。
+2. 编写 `release/notes/<组件>/<版本>.md`，记录这个端的变化与实际验证范围。
+3. 提交/PR 前运行 `npm run check:local`；发布前运行 `npm run release:verify -- android`，并补做该端的平台检查。Central 可运行 `npm run check:central`，macOS 可运行 `npm run check:desktop`；Android 用 Gradle 单元测试、构建与 lint。
+4. 合并后在对应提交推送不可变组件标签，例如 `android-v0.0.78`。手动启动 workflow 也必须选择准确的组件标签，普通分支无法发版。
+5. 对应工作流构建、验证并上传唯一组件产物。Mac 使用 `MOTE_MAC_DEVELOPMENT=1`；Android 使用原证书并核验包名、版本码和 16 KiB 对齐；Central 构建 server/web 后从标签归档所需源码，并验证结构与版本。`.asset.json` 等 CI 校验数据不作为公开附件。
 
-完整测试是提交/PR 检查与发布前验证的职责；当前 Release workflow 的作业为 version、mac、android、publish，不能把构建成功描述为在该工作流执行过所有测试。已发布版本不可覆盖；草稿失败可重试。当前客户端手动下载覆盖安装，中央从源码构建更新，见 [更新指南](updating.md)。
+例如只修 Android：
+
+```sh
+npm run release:version -- android patch
+# 按脚本输出的 notes 路径写发布说明
+npm run check:local
+npm run release:verify -- android
+# 合并后，在已验证提交创建并推送脚本输出的 tag
+git tag android-v0.0.78
+git push origin android-v0.0.78
+```
+
+[Component checks](../.github/workflows/component-checks.yml) 按代码输入和 npm 依赖选择平台检查；协议或共享契约变更检查所有消费者，普通端侧改动只检查该端。完整手动检查仍保留在 [Checks](../.github/workflows/checks.yml)，本地 PR 检查仍为 `check:local`。检查所有端不会创建其他端的发布。
+
+已发布 Release 不可覆盖，失败草稿可以重试。各端版本不能相互比较，也不必同时递增。文档修改本身不要求发布安装包；共享库变化需要判断实际受影响产品并分别发版。中央源码包保留 npm lockfile 和跨工作区依赖，以便在目标机器独立构建。升级步骤见 [更新指南](updating.md)。
 
 ## 信任与密钥轮换
 
-[发布公钥](../release/release-public-key.pem) 随已安装程序固定。清单 envelope 包含 `schemaVersion`、`keyId`、base64 payload 和 RSA-SHA256 签名；签名覆盖原始 UTF-8 payload 字节，避免不同平台 JSON 序列化差异。Payload 指定版本、渠道、GitHub 仓库/标签、每个资产的大小和散列、平台身份以及不可变镜像 digest。
+[发布公钥](../release/release-public-key.pem) 随已安装程序固定。清单 envelope 包含 `schemaVersion`、`keyId`、base64 payload 和 RSA-SHA256 签名；签名覆盖原始 UTF-8 payload 字节，避免不同平台 JSON 序列化差异。旧 payload 指定统一版本；新单组件 payload 额外声明 `component=central|desktop|android`，使用对应组件标签且只包含该组件资产。版本、渠道、仓库/标签、资产大小与散列、平台身份及可选镜像 digest 仍在签名覆盖范围内。更新器按所属发布流读取，并兼容旧清单。当前 DEV workflow 不调用签名清单生成器。
 
 修改更新仓库不会改变信任密钥，任意第三方清单仍不能通过验签。自有 fork 需要建立自己的签名身份，并在首次安装时明确使用对应公钥构建。GitHub Secrets 无法反向导出，维护者应保留受保护的恢复副本；不能通过重新生成密钥来“修复”旧客户端的签名错误。
 

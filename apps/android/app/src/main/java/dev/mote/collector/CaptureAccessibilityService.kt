@@ -76,8 +76,9 @@ class CaptureAccessibilityService : AccessibilityService() {
         return try {
             val all = windows
             val metrics = if (Build.VERSION.SDK_INT >= 30) runCatching { getSystemService(android.view.WindowManager::class.java).maximumWindowMetrics }.getOrNull() else null
-            val barInsets = metrics?.windowInsets?.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.systemBars())
-            val navigationBottom = metrics?.windowInsets?.getInsets(android.view.WindowInsets.Type.navigationBars())?.bottom ?: 0
+            val barInsets = if (Build.VERSION.SDK_INT >= 30) metrics?.windowInsets?.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.systemBars()) else null
+            val navigationBottom = if (Build.VERSION.SDK_INT >= 30) metrics?.windowInsets?.getInsets(android.view.WindowInsets.Type.navigationBars())?.bottom ?: 0 else 0
+            val displayBounds = if (Build.VERSION.SDK_INT >= 30) metrics?.bounds?.let { CaptureBounds(it.left, it.top, it.right, it.bottom) } else null
             val miuiSystemOwner = runCatching {
                 @Suppress("DEPRECATION")
                 val info = packageManager.getApplicationInfo(SystemBarRegion.MIUI_HOME, 0)
@@ -88,9 +89,9 @@ class CaptureAccessibilityService : AccessibilityService() {
                 val name = root?.packageName?.toString()
                 @Suppress("DEPRECATION") root?.recycle()
                 val bounds = android.graphics.Rect(); window.getBoundsInScreen(bounds)
-                val inBar = if (metrics != null && barInsets != null) SystemBarRegion.contains(
+                val inBar = if (displayBounds != null && barInsets != null) SystemBarRegion.contains(
                         CaptureBounds(bounds.left, bounds.top, bounds.right, bounds.bottom),
-                        metrics.bounds.let { CaptureBounds(it.left, it.top, it.right, it.bottom) },
+                        displayBounds,
                         CaptureBounds(barInsets.left, barInsets.top, barInsets.right, barInsets.bottom))
                     else {
                         // Android 10 projection mode has no WindowMetrics API.
@@ -99,9 +100,9 @@ class CaptureAccessibilityService : AccessibilityService() {
                             (bounds.width() >= display.widthPixels * .9 && bounds.height() <= limit && (bounds.top <= 0 || bounds.bottom >= display.heightPixels) ||
                              bounds.height() >= display.heightPixels * .9 && bounds.width() <= limit && (bounds.left <= 0 || bounds.right >= display.widthPixels))
                     }
-                val miuiBar = metrics != null && SystemBarRegion.miuiNavigation(
+                val miuiBar = displayBounds != null && SystemBarRegion.miuiNavigation(
                     CaptureBounds(bounds.left, bounds.top, bounds.right, bounds.bottom),
-                    metrics.bounds.let { CaptureBounds(it.left, it.top, it.right, it.bottom) },
+                    displayBounds,
                     navigationBottom, resources.displayMetrics.density, name, miuiSystemOwner,
                     window.type, window.isActive, window.isFocused)
                 val chrome = (window.type == 3 && name == "com.android.systemui" && !window.isActive && !window.isFocused && inBar) || miuiBar

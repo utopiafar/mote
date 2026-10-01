@@ -49,7 +49,7 @@ export async function initialize(paths, options = {}) {
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   for (const folder of ['data', 'logs', 'backups', 'generated']) await mkdir(join(paths.directory, folder), { mode: 0o700 });
-  const version = JSON.parse(await readFile(join(repository, 'package.json'), 'utf8')).version;
+  const version = JSON.parse(await readFile(join(repository, 'apps/server/package.json'), 'utf8')).version;
   const values = {
     MOTE_PROFILE: paths.profile, MOTE_HOST: '127.0.0.1', MOTE_PORT: String(port), MOTE_DATA_DIR: options['data-dir'] ? dataDir : './data',
     MOTE_TOKEN: randomBytes(32).toString('hex'), MOTE_DATA_KEY: '', MOTE_CONTENT_ENCRYPTION: '0', MOTE_ALLOWED_ORIGINS: paths.profile === 'test' ? 'http://localhost:5174,http://127.0.0.1:5174' : 'http://localhost:5173,http://127.0.0.1:5173',

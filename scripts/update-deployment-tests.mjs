@@ -72,7 +72,8 @@ test('real isolated central update and rollback preserve credentials, generated 
     assert.equal(Object.hasOwn(backupManifest.checksums, 'content-key'), false);
   } finally {
     if (p) { const state = await nativeIdentity(p).catch(() => null); if (state?.running && state.managed) await stopNative(p); }
-    await rm(directory, { recursive: true, force: true });
+    // The stopped supervisor's media setup can briefly finish filesystem writes.
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -98,6 +99,6 @@ test('backup failure before selection restores a running profile but leaves an i
     assert.deepEqual(await readFile(p.metaFile), before);
   } finally {
     if (p) { const state = await nativeIdentity(p).catch(() => null); if (state?.running && state.managed) await stopNative(p); }
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });

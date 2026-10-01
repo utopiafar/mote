@@ -11,9 +11,9 @@ import { createChromiumUpdateFetch } from '../src/electron-update-fetch';
 import { createUpdateNetwork } from '../src/update-network';
 
 const body = Buffer.from('generated streaming archive bytes');
-const version = '9.8.7', assetUrl = `https://github.com/utopiafar/mote/releases/download/v${version}/fixture.zip`;
+const version = '9.8.7', assetUrl = `https://github.com/utopiafar/mote/releases/download/desktop-v${version}/fixture.zip`;
 const asset = { component: 'desktop' as const, platform: 'darwin' as const, arch: 'arm64' as const, format: 'zip' as const, name: 'fixture.zip', url: assetUrl, size: body.length, sha256: createHash('sha256').update(body).digest('hex'), bundleId: 'dev.mote.collector', signing: 'adhoc' as const };
-const manifest: ReleaseManifest = { schemaVersion: 1, version, channel: 'stable', publishedAt: '2026-09-14T00:00:00Z', repository: 'utopiafar/mote', tag: 'v' + version, notesUrl: `https://github.com/utopiafar/mote/releases/tag/v${version}`, assets: [asset], images: [] };
+const manifest: ReleaseManifest = { schemaVersion: 1, component:'desktop', version, channel: 'stable', publishedAt: '2026-09-14T00:00:00Z', repository: 'utopiafar/mote', tag: 'desktop-v' + version, notesUrl: `https://github.com/utopiafar/mote/releases/tag/desktop-v${version}`, assets: [asset], images: [] };
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 3072, publicKeyEncoding: { format: 'pem', type: 'spki' }, privateKeyEncoding: { format: 'pem', type: 'pkcs8' } });
 const payload = Buffer.from(JSON.stringify(manifest));
 const envelope = JSON.stringify({ schemaVersion: 1, keyId: RELEASE_KEY_ID, payload: payload.toString('base64'), signature: sign('RSA-SHA256', payload, privateKey).toString('base64') });
@@ -49,7 +49,7 @@ it('uses injected Chromium for signed checks and streaming downloads with manual
     else if (request.options.url === assetUrl) request.redirect('https://release-assets.githubusercontent.com/fixture-zip');
     else request.respond(Readable.from([body.subarray(0, 8), body.subarray(8)]));
   });
-  const checked = await client.network.check({ version, currentVersion: '1.0.0', publicKey });
+  const checked = await client.network.check({ component:'desktop', version, currentVersion: '1.0.0', publicKey });
   expect(checked.manifest.assets[0]).toEqual(asset); expect(checked.available).toBe(true);
   let received = 0; const destination = join(directory, 'verified.zip');
   await client.network.download(checked.manifest.assets[0], destination, { onProgress: count => { received = count; } });
@@ -61,10 +61,10 @@ it('uses injected Chromium for signed checks and streaming downloads with manual
 
 it('keeps the pinned signature check and rejects redirect targets before any request to another host or HTTP', async () => {
   const signed = transport(request => request.respond(envelope));
-  await expect(signed.network.check({ version })).rejects.toMatchObject({ code: 'invalid_manifest_signature' });
+  await expect(signed.network.check({ component:'desktop', version })).rejects.toMatchObject({ code: 'invalid_manifest_signature' });
   for (const target of ['https://outside.example/archive', 'http://github.com/archive']) {
     const client = transport(request => request.redirect(target));
-    await expect(client.network.check({ version })).rejects.toMatchObject({ code: 'update_host_rejected' });
+    await expect(client.network.check({ component:'desktop', version })).rejects.toMatchObject({ code: 'update_host_rejected' });
     expect(client.requests).toHaveLength(1); expect(client.requests[0].aborted).toBe(true);
   }
 });

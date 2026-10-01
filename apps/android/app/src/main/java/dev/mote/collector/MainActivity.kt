@@ -210,14 +210,14 @@ class MainActivity : MoteActivity() {
         menu(MoteI18n.text("最近记录"), MoteI18n.text("本机保存的内容，离线也能查看"), "capture") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
         menu(MoteI18n.text("随手记"), MoteI18n.text("留住此刻的想法"), "note") { showPage(Page.NOTES) }
         menu(MoteI18n.text("日程建议"), MoteI18n.text("逐条确认，添加到手机已有日历"), "folder") { startActivity(Intent(this, CalendarActionsActivity::class.java)) }
-        menu(MoteI18n.text("中央工作台"), MoteI18n.text("需要独立登录中央；设备配对不授予资料读取权限"), "sync") { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "overview")) }
+        menu(MoteI18n.text("中央工作台"), MoteI18n.text("中央页面共用原生登录，配对凭据仅用于本设备同步。"), "sync") { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "overview")) }
         menu(MoteI18n.text("本机采集"), MoteI18n.text("查看正在收集什么，随时暂停"), "capture") { showPage(Page.SETTINGS) }
     }
 
     private fun buildLibrary() {
         page(Page.LIBRARY, MoteI18n.text("本机记录与中央归档，分别查看"))
         menu(MoteI18n.text("本机记录"), MoteI18n.text("无需中央登录；查看本机保存和待同步内容"), "capture") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
-        menu(MoteI18n.text("中央资料库"), MoteI18n.text("需要独立登录中央；设备配对不授予资料读取权限"), "folder") { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "archive")) }
+        menu(MoteI18n.text("中央资料库"), MoteI18n.text("中央页面共用原生登录，配对凭据仅用于本设备同步。"), "folder") { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "archive")) }
         menu(MoteI18n.text("本机来源"), MoteI18n.text("文件、日历、媒体与通知"), "folder") { showPage(Page.SOURCES) }
     }
 

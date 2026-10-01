@@ -1,6 +1,6 @@
 # 保留设置地更新 Mote
 
-当前开发阶段只发布 **Mac DEV ZIP 和 Android DEV APK**，发布类型为 DEV prerelease。请打开 [GitHub Releases](https://github.com/utopiafar/mote/releases) 选择版本；`releases/latest` 不保证指向最新 prerelease。当前没有 `mote-release.json`、服务端源码包或新 GHCR 镜像附件，保留的签名更新器不能用于获取当前 DEV 版本。
+当前开发阶段按 **Central、macOS、Android** 独立创建 DEV prerelease。请打开 [GitHub Releases](https://github.com/utopiafar/mote/releases)，选择 `central-v…`、`desktop-v…` 或 `android-v…` 对应的发布；各端的版本号不能相互比较。`releases/latest` 不代表某个端的最新 prerelease。当前发布不附 `mote-release.json` 或 GHCR 镜像，保留的签名更新器不能用于获取当前 DEV 版本。
 
 ## Mac App
 
@@ -12,7 +12,7 @@
 
 ## 中央节点
 
-当前从源码部署。先在独立检出目录安装依赖并构建中央与 Web：
+从 `central-vX.Y.Z` 发布下载 `mote-server-X.Y.Z.tar.gz`，解压到独立目录，或检出对应 Git 标签。源码包保留构建所需的 Monorepo 依赖，产品版本读取 `apps/server/package.json`；网页与服务属于同一个 Central 版本。先安装依赖并构建中央与 Web：
 
 ```sh
 npm ci
@@ -32,7 +32,7 @@ node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restor
 
 ## 历史签名更新机制
 
-代码仍保留客户端签名清单下载与安装、中央 `check-update` / `update`、独立更新助手及失败回退。它们要求受内置公钥信任的 manifest 和对应资产；切换仓库不会更换信任根，不能跳过签名、证书或版本校验。当前 DEV 发布不使用该通道。历史验证见 [0.5.1 更新验收](update-validation.md)，当前产物与流程见 [发布说明](releasing.md)。
+代码仍保留客户端签名清单下载与安装、中央 `check-update` / `update`、独立更新助手及失败回退。它们要求受内置公钥信任的 manifest 和对应资产；切换仓库不会更换信任根，不能跳过签名、证书或版本校验。新版验证器识别所属端的独立标签，并保留旧 `vX.Y.Z` 签名清单支持；独立清单必须声明所属组件，不能夹带其他端的资产。旧安装若需要未来的签名更新通道，须先手动升级到支持独立标签的版本。当前 DEV 发布不使用该通道。历史验证见 [0.5.1 更新验收](update-validation.md)，当前产物与流程见 [发布说明](releasing.md)。
 
 ## 验证边界
 

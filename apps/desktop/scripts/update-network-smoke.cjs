@@ -26,8 +26,8 @@ app.whenReady().then(async () => {
   const isolated = session.fromPartition('mote-update-network-fixture', { cache: false });
   isolated.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   const body = Buffer.alloc(256 * 1024, 71), version = '9.8.7';
-  const asset = { component: 'desktop', platform: 'darwin', arch: 'arm64', format: 'zip', name: 'fixture.zip', url: `https://github.com/utopiafar/mote/releases/download/v${version}/fixture.zip`, size: body.length, sha256: sha(body), bundleId: 'dev.mote.collector', signing: 'adhoc' };
-  const manifest = { schemaVersion: 1, version, channel: 'stable', repository: 'utopiafar/mote', tag: 'v' + version, notesUrl: `https://github.com/utopiafar/mote/releases/tag/v${version}`, publishedAt: new Date().toISOString(), assets: [asset], images: [] };
+  const asset = { component: 'desktop', platform: 'darwin', arch: 'arm64', format: 'zip', name: 'fixture.zip', url: `https://github.com/utopiafar/mote/releases/download/desktop-v${version}/fixture.zip`, size: body.length, sha256: sha(body), bundleId: 'dev.mote.collector', signing: 'adhoc' };
+  const manifest = { schemaVersion: 1, component: 'desktop', version, channel: 'stable', repository: 'utopiafar/mote', tag: 'desktop-v' + version, notesUrl: `https://github.com/utopiafar/mote/releases/tag/desktop-v${version}`, publishedAt: new Date().toISOString(), assets: [asset], images: [] };
   const keys = generateKeyPairSync('rsa', { modulusLength: 3072, publicKeyEncoding: { format: 'pem', type: 'spki' }, privateKeyEncoding: { format: 'pem', type: 'pkcs8' } });
   const payload = Buffer.from(JSON.stringify(manifest)), envelope = JSON.stringify({ schemaVersion: 1, keyId: RELEASE_KEY_ID, payload: payload.toString('base64'), signature: sign('RSA-SHA256', payload, keys.privateKey).toString('base64') });
   let mode = 'normal', unexpectedCredentials = false, stoppedStreams = 0, nativeOptions = [];
@@ -49,10 +49,10 @@ app.whenReady().then(async () => {
   const fetcher = createChromiumUpdateFetch(options => { nativeOptions.push(options); return net.request({ ...options, url: origin + new URL(options.url).pathname, session: isolated }); });
   const network = createUpdateNetwork(fetcher);
   console.log(JSON.stringify({phase:'generated-manifest-through-chromium'}));
-  const check = await network.check({ version, publicKey: keys.publicKey, currentVersion: '1.0.0' }); assert(check.available);
+  const check = await network.check({ component: 'desktop', version, publicKey: keys.publicKey, currentVersion: '1.0.0' }); assert(check.available);
   const path = join(directory, 'fixture.zip'); await network.download(check.manifest.assets[0], path); assert.deepEqual(await readFile(path), body); await rm(path);
-  for (const unsafe of ['outside', 'http']) { mode = unsafe; const before = nativeOptions.length; await assert.rejects(network.check({ version, publicKey: keys.publicKey }), error => error.code === 'update_host_rejected'); assert.equal(nativeOptions.length, before + 1); }
-  mode = 'normal'; await assert.rejects(network.check({ version }), error => error.code === 'invalid_manifest_signature');
+  for (const unsafe of ['outside', 'http']) { mode = unsafe; const before = nativeOptions.length; await assert.rejects(network.check({ component: 'desktop', version, publicKey: keys.publicKey }), error => error.code === 'update_host_rejected'); assert.equal(nativeOptions.length, before + 1); }
+  mode = 'normal'; await assert.rejects(network.check({ component: 'desktop', version }), error => error.code === 'invalid_manifest_signature');
   mode = 'corrupt'; await assert.rejects(network.download(asset, join(directory, 'corrupt.zip')), error => error.code === 'asset_checksum_mismatch');
   mode = 'slow'; const controller = new AbortController();
   await assert.rejects(network.download(asset, join(directory, 'cancelled.zip'), { signal: controller.signal, onProgress: () => controller.abort() }), error => error.code === 'update_request_cancelled');
@@ -69,7 +69,7 @@ app.whenReady().then(async () => {
     console.log(JSON.stringify({ phase: 'public-release-check-over-system-network' }));
     let requests = 0;
     const publicNetwork = createUpdateNetwork(createChromiumUpdateFetch(options => { assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'manual'); requests++; return net.request({ ...options, session: isolated }); }));
-    const checked = await publicNetwork.check({ version: publicVersion, currentVersion: '0.5.1', channel: 'stable' }); assert.equal(checked.manifest.version, publicVersion);
+    const checked = await publicNetwork.check({ component: 'desktop', version: publicVersion, currentVersion: '0.5.1', channel: 'stable' }); assert.equal(checked.manifest.version, publicVersion);
     const publicAsset = selectReleaseAsset(checked.manifest, { component: 'desktop', platform: 'darwin', arch: process.arch, format: 'zip' }); assert(publicAsset); const checkRequests = requests;
     console.log(JSON.stringify({ phase: 'public-asset-streaming-download-over-system-network' }));
     const destination = join(directory, publicAsset.name); let received = 0;

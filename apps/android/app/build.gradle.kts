@@ -1,6 +1,11 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+val releaseVersion = Properties().apply {
+    rootProject.file("version.properties").inputStream().use { load(it) }
 }
 val releaseSecrets = listOf("MOTE_ANDROID_KEYSTORE_PATH", "MOTE_ANDROID_KEYSTORE_PASSWORD", "MOTE_ANDROID_KEY_ALIAS", "MOTE_ANDROID_KEY_PASSWORD")
     .associateWith { providers.environmentVariable(it).orNull }
@@ -13,8 +18,8 @@ android {
         applicationId = "dev.mote.collector"
         minSdk = 29
         targetSdk = 36
-        versionCode = 87
-        versionName = "0.0.76"
+        versionCode = releaseVersion.getProperty("versionCode").toInt()
+        versionName = releaseVersion.getProperty("versionName")
         buildConfigField("String", "MOTE_PROFILE", "\"legacy\"")
         buildConfigField("String", "DEFAULT_SERVER", "\"\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

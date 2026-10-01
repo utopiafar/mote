@@ -24,6 +24,11 @@ it('checks, downloads and validates the app while preserving every adjacent prof
   for (const path of files) expect(await readFile(join(directory, path), 'utf8')).toBe('private-synthetic-' + path);
   await value.close();
 });
+it('checks only the desktop release stream while retaining legacy signed manifests', async () => {
+  let selected: string | undefined;
+  const value = await updater(deps({check:async options=>{selected=options?.component;return {manifest,available:true};}}));
+  expect((await value.check()).state).toBe('available'); expect(selected).toBe('desktop');
+});
 it('an invalid signed release cannot be downloaded or installed', async () => {
   let downloaded = false;
   const value = await updater(deps({ check: async () => { throw new ReleaseError('invalid_manifest_signature'); }, download: async () => { downloaded = true; return ''; } }));

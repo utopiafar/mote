@@ -40,6 +40,7 @@ __pycache__/
 /release/*
 !/release/release-public-key.pem
 !/release/signing-policy.json
+!/release/components.json
 !/release/notes/
 !/release/notes/*.md
 !/scripts/release/

@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 import { fileURLToPath } from 'node:url';
 import { loadEnvironment } from '@mote/shared/environment';
 
-const version = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version as string;
+const version = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version as string;
 const plugins = () => [react(), {name:'mote-build-identity', generateBundle(this: {emitFile: (file: {type:'asset';fileName:string;source:string})=>void}) {this.emitFile({type:'asset',fileName:'build-info.json',source:JSON.stringify({version})});}}];
 export default defineConfig(({ command }) => {
   if (command !== 'serve') return { plugins: plugins(), define: {__MOTE_WEB_VERSION__: JSON.stringify(version)} };
