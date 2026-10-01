@@ -53,9 +53,10 @@ export async function initialize(paths, options = {}) {
   const values = {
     MOTE_PROFILE: paths.profile, MOTE_HOST: '127.0.0.1', MOTE_PORT: String(port), MOTE_DATA_DIR: options['data-dir'] ? dataDir : './data',
     MOTE_TOKEN: randomBytes(32).toString('hex'), MOTE_DATA_KEY: '', MOTE_CONTENT_ENCRYPTION: '0', MOTE_ALLOWED_ORIGINS: paths.profile === 'test' ? 'http://localhost:5174,http://127.0.0.1:5174' : 'http://localhost:5173,http://127.0.0.1:5173',
-    MOTE_MODEL: '', MOTE_MODEL_BASE_URL: 'https://api.deepseek.com', MOTE_MODEL_API_KEY: '', MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL: '0',
+    MOTE_MODEL_PROVIDER: 'codex', MOTE_MODEL_PROTOCOL: 'codex-app-server',
+    MOTE_MODEL: 'gpt-6.1-sol', MOTE_MODEL_BASE_URL: '', MOTE_MODEL_API_KEY: '', MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL: '0',
     MOTE_AGENT_CONCURRENCY:'8', MOTE_LLM_CONCURRENCY:'4', MOTE_MEMORY_CONCURRENCY:'3',
-    MOTE_MODEL_REASONING_EFFORT: 'high', MOTE_MODEL_MAX_TOKENS: '65536', MOTE_MODEL_REQUEST_TIMEOUT_MS: '300000', MOTE_AGENT_TIMEOUT_MS: '600000',
+    MOTE_MODEL_REASONING_EFFORT: 'high', MOTE_MODEL_MAX_TOKENS: '65536', MOTE_MODEL_REQUEST_TIMEOUT_MS: '', MOTE_AGENT_TIMEOUT_MS: '',
     MOTE_EMBEDDING_MODEL: '', MOTE_EMBEDDING_BASE_URL: '', MOTE_EMBEDDING_API_KEY: '',
     MOTE_RETENTION_DAYS: '0', MOTE_MAX_STORAGE_MB: '10240', MOTE_MAX_EXPORT_MB: '64', MOTE_INSIGHT_INTERVAL_HOURS: '0',
     MOTE_LOG_DIR: './logs', MOTE_DIAGNOSTICS_ENABLED: '1', MOTE_DEBUG: '0', MOTE_AGENT_TRACE_ENABLED: paths.profile === 'dev' ? '1' : '0', MOTE_LOG_LEVEL: 'info', MOTE_LOG_MAX_MB: '2', MOTE_LOG_MAX_FILES: '3', MOTE_LOG_MAX_ENTRIES: '2000',
@@ -73,7 +74,7 @@ export async function initialize(paths, options = {}) {
     }
     throw Error('A configuration value cannot be represented safely; choose a path without quote delimiters');
   }
-  const body = template.split('\n').filter(l => !l.startsWith('# Legacy single-node') && !l.includes('直接 npm start') && !l.includes('隔离部署先执行')).map(l => {
+  const body = template.split('\n').filter(l => !l.startsWith('# Legacy single-node') && !l.includes('直接 npm start') && !l.includes('隔离部署先执行') && !l.startsWith('MOTE_MODEL_TIMEOUT_MS=')).map(l => {
     const match = /^([A-Z][A-Z0-9_]*)=/.exec(l);
     if (!match || !Object.hasOwn(values, match[1])) return l;
     remaining.delete(match[1]); return line(match[1], values[match[1]]);
