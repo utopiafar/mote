@@ -1,3 +1,4 @@
+import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider.ts';
 import {generatedImageRead,digest,assertRegionSchema} from './image-region-fixture.mjs';
 import {generatedMaterialPages,materialRef} from './material-page-fixture.mjs';
 import test from 'node:test';
@@ -12,9 +13,10 @@ const reader = {search:async()=>[record], timeline:async()=>[record], evidence:a
 const answer = JSON.stringify({answer:`The generated note contains archive evidence. [${record.id}]`, citationIds:[record.id]});
 const send = (res, value) => res.write(`${value.type ? `event: ${value.type}\n` : ''}data: ${JSON.stringify(value)}\n\n`);
 
-function respond(res, protocol, stage, final = answer, actions) {
-  res.writeHead(200, {'Content-Type':'text/event-stream'});
+function respond(res, protocol, stage, final = answer, actions, usage) {
   const tool = actions ? actions[stage] : stage === 0 ? {name:'search_context', args:{query:'synthetic fixture'}} : stage === 1 ? {name:'evidence', args:{ids:[record.id]}} : undefined;
+  if (protocol === 'deepseek') return writeMessagesResponse(res,{stage,tool,text:final,reasoning:true,usage,model:'fixture-model-not-in-catalog'});
+  res.writeHead(200, {'Content-Type':'text/event-stream'});
   if (protocol === 'openai-completions') {
     if (stage === 0) {
       send(res, {id:`fixture-${stage}`,choices:[{index:0,delta:{reasoning_content:'Synthetic reasoning, '},finish_reason:null}]});
@@ -62,19 +64,19 @@ function respond(res, protocol, stage, final = answer, actions) {
   }
 }
 
-async function withProvider(protocol, run, options = {}, actions, final = answer) {
+async function withProvider(protocol, run, options = {}, actions, final = answer, usage) {
   const requests=[];
   const server=createServer(async(req,res)=>{
     let raw='';for await (const chunk of req) raw+=chunk;
     requests.push({url:req.url,headers:req.headers,body:JSON.parse(raw)});
-    respond(res, protocol, requests.length-1, final, actions);
+    respond(res, protocol, requests.length-1, final, actions, usage);
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const agent=createAgent({reader,protocol,baseUrl:`http://127.0.0.1:${server.address().port}${protocol === 'anthropic-messages' ? '' : '/v1'}`,apiKey:'generated-provider-secret',model:'fixture-model-not-in-catalog',timeoutMs:45000,headers:{'x-generated-header':'fixture-header-secret'},extraBody:protocol === 'google-generative-ai' ? {generationConfig:{temperature:0.23}} : {temperature:0.23},...options});
   try {await run(agent,requests);} finally {await agent.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 }
 
-for (const protocol of ['openai-completions','openai-responses','anthropic-messages','google-generative-ai']) {
+for (const protocol of ['deepseek','openai-completions','openai-responses','anthropic-messages','google-generative-ai']) {
   test(`real Harness ${protocol} receives one budget-fitted material result with its continuation`,{timeout:60000},async()=>{
     const fixture=generatedMaterialPages();
     const actions=[{name:'material_catalog',args:{}},{name:'material_read',args:{ref:materialRef,length:10000}}];
@@ -126,18 +128,23 @@ for (const protocol of ['openai-completions','openai-responses','anthropic-messa
       assert.equal(result.citations[0].id,record.id);assert.equal(requests.length,3);
       for (const {body,headers,url} of requests) {
         assert.equal(headers['x-generated-header'],'fixture-header-secret');
-        assert.equal(body.thinking,undefined);assert.equal(body.reasoning_effort,undefined);assert.equal(body.reasoning,undefined);
+        assert.deepEqual(body.thinking,protocol==='deepseek'?{type:'enabled'}:undefined);
+        assert.equal(body.output_config?.effort,protocol==='deepseek'?'high':undefined);
+        assert.equal(body.dsh_session_log,undefined);assert.equal(body.dsh_plugin_packages,undefined);
+        assert.equal(body.reasoning_effort,undefined);assert.equal(body.reasoning,undefined);
         const names = protocol === 'google-generative-ai' ? body.tools.flatMap(item=>item.functionDeclarations.map(tool=>tool.name)) : body.tools.map(tool=>tool.function?.name ?? tool.name);
         assert.deepEqual(names.sort(),[...TOOL_NAMES.filter(name=>name!=='action_catalog'),"skill"].sort());
         assert.equal(protocol === 'google-generative-ai' ? body.generationConfig.temperature : body.temperature,0.23);
         assert.ok(!JSON.stringify(body).includes('fixture-private-token'));
         if (protocol === 'openai-responses') {assert.equal(body.store,false);assert.equal(url,'/v1/responses');}
         if (protocol === 'openai-completions') assert.equal(url,'/v1/chat/completions');
+        if (protocol === 'deepseek') {assert.equal(url,'/v1/messages');assert.equal(headers['x-api-key'],'generated-provider-secret');}
         if (protocol === 'anthropic-messages') {assert.equal(url,'/v1/messages?beta=true');assert.equal(headers['x-api-key'],'generated-provider-secret');}
         if (protocol === 'google-generative-ai') {assert.match(url,/^\/v1\/models\/fixture-model-not-in-catalog:streamGenerateContent\?alt=sse$/);assert.equal(headers['x-goog-api-key'],'generated-provider-secret');assert.equal(body.generationConfig.maxOutputTokens,65536);assert.equal(body.generationConfig.thinkingConfig,undefined);}
       }
       const replay = JSON.stringify(requests[2].body);
       assert.match(replay,/untrusted_personal_context/);
+      if (protocol === 'deepseek') {assert.match(replay,/generated-signature-0/);assert.match(replay,/tool_result/);}
       if (protocol === 'anthropic-messages') {assert.match(replay,/synthetic-signature-0/);assert.match(replay,/tool_result/);}
       if (protocol === 'openai-responses') {assert.match(replay,/encrypted-fixture-0/);assert.match(replay,/function_call_output/);}
       if (protocol === 'google-generative-ai') {assert.ok(replay.includes(Buffer.from('synthetic-google-signature-0').toString('base64')));assert.match(replay,/functionResponse/);}
@@ -187,7 +194,7 @@ test('MiniMax separates reasoning by default and honors an explicit owner output
 });
 
 test('advanced options cannot replace agent boundaries, transport or token caps and errors do not quote values',()=>{
-  for (const extraBody of [{tools:[]},{messages:[]},{input:'secret-marker'}, {system_instruction:'secret-marker'}, {generationConfig:{maxOutputTokens:999999}}, {store:true},{background:true},{previous_response_id:'secret-marker'},JSON.parse('{"__proto__":{"bad":true}}')]) {
+  for (const extraBody of [{tools:[]},{messages:[]},{input:'secret-marker'}, {system_instruction:'secret-marker'}, {generationConfig:{maxOutputTokens:999999}}, {store:true},{dsh_session_log:'secret-marker'},{dsh_plugin_packages:['secret-marker']},{background:true},{previous_response_id:'secret-marker'},JSON.parse('{"__proto__":{"bad":true}}')]) {
     assert.throws(()=>validateModelOptions({extraBody}),error=>error instanceof AgentConfigurationError&&!String(error).includes('secret-marker'));
   }
   for (const headers of [{Host:'secret-marker'},{'content-length':'12'},{'x-invalid':'secret-marker\nforwarded'}]) assert.throws(()=>validateModelOptions({headers}),AgentConfigurationError);
@@ -200,10 +207,31 @@ test('advanced options cannot replace agent boundaries, transport or token caps 
 
 test('DeepSeek auto omits adapter defaults while respecting explicit advanced parameters', {timeout:60000}, async()=>{
   for (const extraBody of [{}, {thinking:{type:'enabled'}}]) {
-    await withProvider('openai-completions',async(agent,requests)=>{
+    await withProvider('deepseek',async(agent,requests)=>{
       await agent.query({question:'Generated DeepSeek auto fixture'});
-      for (const request of requests) {assert.deepEqual(request.body.thinking,extraBody.thinking);assert.equal(request.body.reasoning_effort,undefined);}
+      for (const request of requests) {assert.deepEqual(request.body.thinking,extraBody.thinking);assert.equal(request.body.reasoning_effort,undefined);assert.equal(request.body.output_config?.effort,undefined);}
     },{protocol:'deepseek',reasoningEffort:'auto',extraBody});
+  }
+});
+
+test('native DeepSeek preserves disjoint cache accounting through multiple tool turns', {timeout:60000},async()=>{
+  const usage=[];
+  await withProvider('deepseek',async(agent)=>{
+    await agent.query({question:'Generated cache accounting fixture',onUsage:value=>usage.push(value)});
+    assert.deepEqual(usage.at(-1),{requests:3,reportedRequests:3,inputTokens:330,outputTokens:120,totalTokens:450,cacheReadTokens:60,cacheWriteTokens:30});
+  },{},undefined,answer,{inputTokens:80,outputTokens:40,cacheReadTokens:20,cacheWriteTokens:10});
+});
+
+test('native DeepSeek carries explicit reasoning settings and output limits on every tool request', {timeout:60000},async()=>{
+  for(const reasoningEffort of ['off','low','max']){
+    await withProvider('deepseek',async(agent,requests)=>{
+      await agent.query({question:'Generated native reasoning configuration fixture'});
+      for(const {body} of requests){
+        assert.deepEqual(body.thinking,{type:reasoningEffort==='off'?'disabled':'enabled'});
+        assert.equal(body.output_config?.effort,reasoningEffort==='off'?undefined:reasoningEffort);
+        assert.equal(body.max_tokens,1234);
+      }
+    },{reasoningEffort,maxTokens:1234});
   }
 });
 

@@ -1,10 +1,10 @@
-import {DEFAULT_MODEL_MAX_TOKENS,MODEL_REASONING_EFFORTS,type ModelProtocol} from '@mote/shared/models';
+import {DEFAULT_MODEL_MAX_TOKENS,MODEL_REASONING_EFFORTS,deepSeekMessagesBaseUrl,type ModelProtocol} from '@mote/shared/models';
 import {AgentConfigurationError, type AgentOptions} from './types.js';
 
 const protocols: ModelProtocol[] = ['deepseek', 'openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai', 'codex-app-server'];
 const defaults: Record<ModelProtocol, string> = {
   'codex-app-server': '',
-  deepseek: 'https://api.deepseek.com',
+  deepseek: 'https://api.deepseek.com/anthropic',
   'openai-completions': 'https://api.openai.com/v1',
   'openai-responses': 'https://api.openai.com/v1',
   'anthropic-messages': 'https://api.anthropic.com',
@@ -21,6 +21,7 @@ const forbiddenBody = new Set([
   'maxtokens', 'maxcompletiontokens', 'maxoutputtokens', 'n', 'candidatecount',
   'store', 'background', 'previousresponseid', 'conversation', 'include', 'serviceaccount',
   'apikey', 'baseurl', 'url', 'headers', 'httpoptions', 'fetch',
+  'dshsessionlog', 'dshpluginpackages',
 ]);
 const normalizedKey = (key: string) => key.toLowerCase().replace(/[_-]/g, '');
 type ConnectionOptions = Pick<AgentOptions, 'protocol' | 'provider' | 'model' | 'baseUrl' | 'reasoningEffort' | 'maxTokens' | 'headers' | 'extraBody' | 'requestTimeoutMs' | 'timeoutMs'>;
@@ -69,10 +70,16 @@ export function validateModelOptions(options: ConnectionOptions): void {
 export function modelConnection(options: ConnectionOptions) {
   validateModelOptions(options);
   const protocol = options.protocol ?? 'deepseek';
-  const baseUrl = (options.baseUrl || defaults[protocol]).replace(/\/+$/, '');
+  const suppliedBaseUrl = (options.baseUrl || defaults[protocol]).replace(/\/+$/, '');
+  const baseUrl = protocol === 'deepseek' ? deepSeekMessagesBaseUrl(suppliedBaseUrl) : suppliedBaseUrl;
   const effort = options.reasoningEffort ?? (protocol === 'deepseek' ? 'high' : 'auto');
   const route = protocol === 'deepseek' ? 'deepseek-official' : protocol === 'google-generative-ai' ? 'google' : 'mote-model';
   return {protocol, baseUrl, effort, route};
+}
+
+/** Prevent upstream profile defaults from uploading additional host/session metadata. */
+export function harnessPrivacyEntries(): unknown[] {
+  return ['session-log-deepseek', 'plugin-package-inventory-deepseek'].map(id => ({id, disabled: true}));
 }
 
 /** Route selection is explicit protocol configuration, never semantic dispatch. */
@@ -84,7 +91,8 @@ export function modelRuntimeEntries(options: ConnectionOptions): unknown[] {
   const model = {id: options.model!, name: options.model!, contextWindow: 128_000, maxTokens};
   if (protocol === 'deepseek') return [{id: 'llm-deepseek', config: {
     ...(effort === 'auto' ? {thinking: 'disabled'} : {thinking: effort === 'off' ? 'disabled' : 'enabled', reasoningEffort: effort}),
-    maxTokens, streamIdleTimeoutMs: Math.max(30_000, requestTimeoutMs ?? 30_000), baseURL: baseUrl, models: [model],
+    maxTokens, streamIdleTimeoutMs: Math.max(30_000, requestTimeoutMs ?? 30_000), baseURL: baseUrl,
+    models: [{...model, inputModalities: ['text', 'image']}],
   }}];
   return [
     {id: 'llm-deepseek', disabled: true},

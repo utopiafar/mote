@@ -57,8 +57,13 @@ export async function codexModels(launch:typeof spawn=spawn,options:{executable?
 }
 
 export async function providerModels(settings:ModelSettings,transport:typeof fetch=fetch):Promise<{items:CatalogModel[]}> {
-  const base=settings.baseUrl.replace(/\/+$/,''),headers=new Headers(settings.headers);
-  if(settings.protocol==='anthropic-messages'){
+  let base=settings.baseUrl.replace(/\/+$/,'');
+  // DeepSeek's official model catalog retains its original Bearer endpoint.
+  let officialDeepSeek=false;
+  try{officialDeepSeek=settings.protocol==='deepseek'&&new URL(base).origin==='https://api.deepseek.com';}catch{throw failure();}
+  if(officialDeepSeek)base='https://api.deepseek.com';
+  const headers=new Headers(settings.headers);
+  if(settings.protocol==='anthropic-messages'||settings.protocol==='deepseek'&&!officialDeepSeek){
     if(!headers.has('x-api-key'))headers.set('x-api-key',settings.apiKey);
     if(!headers.has('anthropic-version'))headers.set('anthropic-version','2023-06-01');
   }else if(settings.protocol==='google-generative-ai'){
@@ -66,7 +71,7 @@ export async function providerModels(settings:ModelSettings,transport:typeof fet
   }else if(settings.provider==='azure-openai'){
     if(!headers.has('api-key'))headers.set('api-key',settings.apiKey);
   }else if(settings.apiKey&&!headers.has('authorization'))headers.set('authorization',`Bearer ${settings.apiKey}`);
-  const path=settings.protocol==='anthropic-messages'&&!base.endsWith('/v1')?'/v1/models':'/models';
+  const path=(settings.protocol==='anthropic-messages'||settings.protocol==='deepseek'&&!officialDeepSeek)&&!base.endsWith('/v1')?'/v1/models':'/models';
   const items:CatalogModel[]=[];let cursor:string|undefined;
   const signal=AbortSignal.timeout(20000);
   try{

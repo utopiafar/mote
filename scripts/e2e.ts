@@ -8,13 +8,16 @@ import type { AddressInfo } from 'node:net';
 import sharp from 'sharp';
 import { buildApp } from '../apps/server/src/app.js';
 import type { Config } from '../apps/server/src/config.js';
+import {writeMessagesResponse} from './fixtures/messages-provider.js';
 
 const dir=await mkdtemp(join(tmpdir(),'mote-e2e-'));const id=randomUUID();const noteId=randomUUID();let rounds=0;
 const fixtureModel=createServer(async(req,res)=>{
   let raw='';for await(const c of req)raw+=c;
-  const body=JSON.parse(raw);assert.deepEqual(body.tools.map((t:any)=>t.function.name).sort(),['activity','changes','context_index','devices','evidence','file_chunks','material_catalog','material_read','media_activity','memories','progress_update','read_file_evidence','read_image','search_context','segments','skill','source_history','source_items','sources','timeline']);
-  assert.ok(body.messages.some((m:any)=>typeof m.content==='string'&&m.content.includes('\"language\":\"en\"')), 'The selected language must be explicit in every model request');
-  const replies=(body.messages??[]).filter((message:any)=>message.role==='tool').map((message:any)=>JSON.parse(message.content));
+  const body=JSON.parse(raw);assert.deepEqual(body.tools.map((t:any)=>t.name).sort(),['activity','changes','context_index','devices','evidence','file_chunks','material_catalog','material_read','media_activity','memories','progress_update','read_file_evidence','read_image','search_context','segments','skill','source_history','source_items','sources','timeline']);
+  assert.equal(req.url,'/v1/messages');assert.equal(req.headers['x-api-key'],'synthetic-fixture');
+  assert.equal(body.dsh_session_log,undefined);
+  assert.ok(JSON.stringify(body.messages).includes('\\"language\\":\\"en\\"'), 'The selected language must be explicit in every model request');
+  const replies=(body.messages??[]).flatMap((message:any)=>Array.isArray(message.content)?message.content.filter((block:any)=>block.type==='tool_result').map((block:any)=>JSON.parse(block.content.find((value:any)=>value.type==='text').text)):[]);
   const stage=replies.length;rounds++;
   const catalog=replies[0]?.data?.items??[];
   const screenRef=catalog.find((item:any)=>item.kind==='mote.screen-segment'&&item.origin.deviceId==='synthetic-mac')?.ref;
@@ -27,10 +30,8 @@ const fixtureModel=createServer(async(req,res)=>{
     stage===1?{name:'material_read',arguments:JSON.stringify({ref:screenRef})}:
     stage===2?{name:'material_read',arguments:JSON.stringify({ref:noteRef})}:
     stage===3?{name:'evidence',arguments:JSON.stringify({ids:[id,noteId]})}:null;
-  const delta=tool?{role:'assistant',tool_calls:[{index:0,id:`tool-${stage}`,type:'function',function:tool}]}:{role:'assistant',content:JSON.stringify({answer:`这是合成测试：阅读了 orbital observatory 的资料。[${id}] 也主动记录了复盘笔记。[${noteId}]`,citationIds:[id,noteId]})};
-  res.writeHead(200,{'Content-Type':'text/event-stream'});
-  res.write(`data: ${JSON.stringify({id:`fixture-${stage}`,object:'chat.completion.chunk',choices:[{index:0,delta,finish_reason:null}]})}\n\n`);
-  res.write(`data: ${JSON.stringify({id:`fixture-${stage}`,object:'chat.completion.chunk',choices:[{index:0,delta:{},finish_reason:tool?'tool_calls':'stop'}]})}\n\n`);res.end('data: [DONE]\n\n');
+  writeMessagesResponse(res,{stage,model:'synthetic-fixture',tool:tool?{name:tool.name,args:JSON.parse(tool.arguments)}:undefined,reasoning:true,
+    text:JSON.stringify({answer:`这是合成测试：阅读了 orbital observatory 的资料。[${id}] 也主动记录了复盘笔记。[${noteId}]`,citationIds:[id,noteId]})});
 });
 await new Promise<void>(r=>fixtureModel.listen(0,'127.0.0.1',r));
 const config:Config={dataDir:dir,token:'synthetic-e2e-not-a-real-secret',tokenPath:'unused',host:'127.0.0.1',port:0,contentEncryptionEnabled:true,dataKey:'3c'.repeat(32),maxStorageBytes:10000000,maxExportBytes:10000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'synthetic-fixture',modelBaseUrl:`http://127.0.0.1:${(fixtureModel.address() as AddressInfo).port}/v1`,apiKey:'synthetic-fixture',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};

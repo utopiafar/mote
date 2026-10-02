@@ -7,10 +7,13 @@ import {tmpdir} from 'node:os';
 import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {randomUUID} from 'node:crypto';
+import {createRequire} from 'node:module';
 import assert from 'node:assert/strict';
 import {DeepSeekHarness} from '@deepseek-ai/dsh-sdk-client';
+import {writeMessagesResponse} from './fixtures/messages-provider.js';
 
 const repository=resolve(dirname(fileURLToPath(import.meta.url)),'..');
+const harnessRequire=createRequire(import.meta.resolve('@deepseek-ai/dsh-sdk-client'));
 const quote=(value:string)=>'"'+value.replaceAll('\\','\\\\').replaceAll('"','\\"')+'"';
 const ancestors=(path:string)=>{const values:string[]=[];for(let value=dirname(path);;value=dirname(value)){values.push(value);if(value===dirname(value))return values;}};
 
@@ -26,14 +29,19 @@ export async function preparePrivateImportLaunch(input:{workspace:string;runtime
   const serverDependencies=await realpath(join(repository,'apps/server/node_modules'));
   const compiled=await realpath(join(repository,'packages/shared/dist'));
   const sharedManifest=await realpath(join(repository,'packages/shared/package.json'));
-  const dshManifest=JSON.parse(await readFile(new URL('../node_modules/@deepseek-ai/dsh/package.json',import.meta.url),'utf8')) as {bin:{dsh:string}};
-  const realDsh=join(dependencies,'@deepseek-ai/dsh',dshManifest.bin.dsh);
+  // The shared transport imports this immutable schema module; grant these
+  // exact compiled files without exposing Agent source or the wider checkout.
+  const agentSchema=await realpath(join(repository,'packages/agent/dist/context-tools.js'));
+  const agentManifest=await realpath(join(repository,'packages/agent/package.json'));
+  const dshManifestPath=harnessRequire.resolve('@deepseek-ai/dsh/package.json');
+  const dshManifest=JSON.parse(await readFile(dshManifestPath,'utf8')) as {bin:{dsh:string}};
+  const realDsh=join(dirname(dshManifestPath),dshManifest.bin.dsh);
   // macOS temp paths may enter the SDK as /var/... while realpath returns
   // /private/var/.... Its DSH_HOME and generated plugin imports keep that spelling.
   // Authorize both names of these same selected directories, never their parents.
   const writableRoots=[...new Set([workspace,runtimeRoot,resolve(input.workspace),resolve(input.runtimeRoot)])];
   const directories=[...writableRoots,dependencies,serverDependencies,compiled,'/System/Library','/System/Volumes/Preboot/Cryptexes/OS','/usr/lib','/usr/share/locale','/usr/share/zoneinfo','/private/var/db/timezone','/bin','/usr/bin'];
-  const files=[nodeBinary,sharedManifest,'/dev/null','/dev/random','/dev/urandom','/dev/tty','/private/etc/localtime'];
+  const files=[nodeBinary,sharedManifest,agentSchema,agentManifest,'/dev/null','/dev/random','/dev/urandom','/dev/tty','/private/etc/localtime'];
   const metadata=[...new Set([...directories,...files].flatMap(ancestors))];
   const profile=[
     '(version 1)',
@@ -67,7 +75,7 @@ export async function preparePrivateImportLaunch(input:{workspace:string;runtime
   await writeFile(privatePs,await readFile('/bin/ps'),{mode:0o700});await chmod(privatePs,0o700);
   const signed=await boundedProcess('/usr/bin/codesign',['--force','--sign','-',privatePs],runtimeRoot);
   assert.equal(signed.status,0,'Unable to ad-hoc sign the private non-setuid process inspector');
-  const subprocessLib=dirname(fileURLToPath(import.meta.resolve('@deepseek-ai/dsh-subprocess-local')));
+  const subprocessLib=dirname(harnessRequire.resolve('@deepseek-ai/dsh-subprocess-local'));
   const inspectorFiles=(await readdir(subprocessLib)).filter(name=>/^runner-launch-[\w-]+\.js$/.test(name));
   assert.equal(inspectorFiles.length,1,'Expected the pinned native subprocess inspector bundle');
   const inspectorUrl=pathToFileURL(join(subprocessLib,inspectorFiles[0])).href;
@@ -84,7 +92,7 @@ if(typeof process.execve!=='function')throw Error('A Node runtime with POSIX exe
 const environment={...process.env,HOME:${JSON.stringify(join(runtimeRoot,'home'))},TMPDIR:${JSON.stringify(join(runtimeRoot,'tmp'))}};
 process.execve('/usr/bin/sandbox-exec',['/usr/bin/sandbox-exec','-f',${JSON.stringify(profilePath)},${JSON.stringify(nodeBinary)},'--import',${JSON.stringify(loaderPath)},${JSON.stringify(realDsh)},...process.argv.slice(2)],environment);
 `,{mode:0o600});
-  return {dshBin,profilePath,runtimeRoot,workspace,network:input.relayPort===undefined?'denied':'loopback-relay',relayPort:input.relayPort,readOnlyPaths:[dependencies,serverDependencies,compiled,sharedManifest,nodeBinary]};
+  return {dshBin,profilePath,runtimeRoot,workspace,network:input.relayPort===undefined?'denied':'loopback-relay',relayPort:input.relayPort,readOnlyPaths:[dependencies,serverDependencies,compiled,sharedManifest,agentSchema,agentManifest,nodeBinary]};
 }
 
 async function boundedProcess(command:string,args:string[],cwd:string){
@@ -115,21 +123,19 @@ await writeFile('records.jsonl',JSON.stringify({item,evidencePaths:[${JSON.strin
 assert.equal((await validateRecords('records.jsonl')).valid,true);
 await writeFile('dispositions.json',JSON.stringify({items:[{path:${JSON.stringify(inputPath)},status:'parsed',reason:'generated proof'}]}));
 console.log('GENERATED_RESTRICTED_MANIFEST_VALID');`;
-  const requests:{tools?:{function:{name:string}}[];messages?:{role:string;content:unknown}[]}[]=[],errors:unknown[]=[];
+  const requests:{tools?:{name:string}[];messages?:{role:string;content:unknown}[];dsh_session_log?:unknown;dsh_plugin_packages?:unknown}[]=[],errors:unknown[]=[];
   const server=createServer(async(req,res)=>{
     try{
       let raw='';for await(const chunk of req)raw+=chunk;
       const request=JSON.parse(raw);requests.push(request);
-      assert.equal(req.headers.authorization,'Bearer generated-only');
+      assert.equal(req.headers['x-api-key'],'generated-only');
+      assert.equal(request.dsh_session_log,undefined);assert.equal(request.dsh_plugin_packages,undefined);
       assert.equal(request.model,'fixture-model');
-      assert.ok(['/chat/completions','/v1/chat/completions'].includes(req.url??''));
+      assert.equal(req.url,'/v1/messages');
       const scriptCommand="'"+process.execPath.replaceAll("'","'\\''")+"' generated-convert.mjs";
       const calls=[{name:'skill',args:{name:'document-import'}},{name:'read',args:{file_path:join(workspace,inputPath)}},{name:'write',args:{file_path:join(workspace,'generated-convert.mjs'),content:converter}},{name:'bash',args:{command:scriptCommand}},{name:'read',args:{file_path:join(workspace,'records.jsonl')}}];
       const tool=calls[requests.length-1];
-      const delta=tool?{role:'assistant',tool_calls:[{index:0,id:'generated-'+requests.length,type:'function',function:{name:tool.name,arguments:JSON.stringify(tool.args)}}]}:{role:'assistant',content:JSON.stringify({summary:'已验证一条合成资料。',recordsPath:'records.jsonl',warnings:[]})};
-      res.writeHead(200,{'Content-Type':'text/event-stream'});
-      res.write(`data: ${JSON.stringify({id:'generated',object:'chat.completion.chunk',model:'fixture-model',choices:[{index:0,delta,finish_reason:null}]})}\n\n`);
-      res.end(`data: ${JSON.stringify({id:'generated',choices:[{index:0,delta:{},finish_reason:tool?'tool_calls':'stop'}]})}\n\ndata: [DONE]\n\n`);
+      writeMessagesResponse(res,{stage:requests.length-1,tool,reasoning:true,text:JSON.stringify({summary:'已验证一条合成资料。',recordsPath:'records.jsonl',warnings:[]})});
     }catch(error){errors.push(error);res.writeHead(500).end('Generated provider assertion failed');}
   });
   await new Promise<void>((resolveListen,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolveListen);});
@@ -144,9 +150,9 @@ console.log('GENERATED_RESTRICTED_MANIFEST_VALID');`;
   try{
     const result=await agent.prepare(input,event=>{if(event.method==='session.event'&&event.params&&typeof event.params.event==='object'&&event.params.event&&'type' in event.params.event)observed.push(String(event.params.event.type));});
     assert.deepEqual(errors,[]);assert.equal(requests.length,6);assert.equal(result.recordsPath,'records.jsonl');
-    for(const name of ['skill','read','write','bash'])assert.ok(requests[0].tools?.some(tool=>tool.function.name===name));
-    assert.ok(!requests[0].tools?.some(tool=>tool.function.name==='search_context'));
-    const toolResults=requests.at(-1)?.messages?.filter(message=>message.role==='tool')??[];
+    for(const name of ['skill','read','write','bash'])assert.ok(requests[0].tools?.some(tool=>tool.name===name));
+    assert.ok(!requests[0].tools?.some(tool=>tool.name==='search_context'));
+    const toolResults=requests.at(-1)?.messages?.filter(message=>message.role==='user')??[];
     assert.ok(existsSync(join(workspace,'records.jsonl')),JSON.stringify(toolResults.slice(-2)));
     assert.ok(JSON.stringify(toolResults).includes('GENERATED_RESTRICTED_MANIFEST_VALID'));
     assert.equal(JSON.parse((await readFile(join(workspace,'records.jsonl'),'utf8')).trim()).item.text,text);

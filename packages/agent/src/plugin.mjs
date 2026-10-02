@@ -25,6 +25,11 @@ export function boundedModelFetch(transport, bridge, maximumBytes = 32 * 1024 * 
       const prefix = base.pathname.replace(/\/+$/, '');
       const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
       if (destination.origin !== base.origin || (destination.pathname !== prefix && !destination.pathname.startsWith(prefix + '/')) || method.toUpperCase() !== 'POST') throw new Error('Unexpected model transport destination');
+      // Mote has no remote-file retention contract. The native adapter catches
+      // file-resolution failures and sends the already-authorized image inline.
+      // Refuse before I/O, request admission, or multipart body consumption.
+      if (configuration.protocol === 'deepseek' && destination.pathname === prefix + (prefix.endsWith('/v1') ? '/files' : '/v1/files')) throw new Error('Mote sends DeepSeek images inline without remote file storage');
+      if (configuration.protocol === 'deepseek' && destination.pathname !== prefix + (prefix.endsWith('/v1') ? '/messages' : '/v1/messages')) throw new Error('Unexpected model transport destination');
       const headers = new Headers(input instanceof Request ? input.headers : undefined);
       for (const [key, value] of new Headers(init?.headers)) headers.set(key, value);
       if (configuration.provider === 'azure-openai') {
@@ -36,10 +41,14 @@ export function boundedModelFetch(transport, bridge, maximumBytes = 32 * 1024 * 
       if (typeof raw !== 'string') throw new Error('Model request must contain a JSON body');
       const body = JSON.parse(raw);
       if (configuration.protocol === 'deepseek' && configuration.reasoningEffort === 'auto') {
-        // The legacy adapter cannot omit its own defaults. Remove only those
+        // The adapter cannot omit its own defaults. Remove only those
         // defaults before applying the owner's explicitly supplied parameters.
         delete body.thinking;
         delete body.reasoning_effort;
+        if (body.output_config) {
+          delete body.output_config.effort;
+          if (!Object.keys(body.output_config).length) delete body.output_config;
+        }
       }
       // MiniMax's default inline <think> output would mix reasoning into the
       // final JSON. This changes wire format only, not whether the model thinks.
@@ -50,6 +59,8 @@ export function boundedModelFetch(transport, bridge, maximumBytes = 32 * 1024 * 
         return result;
       };
       const customized = merge(body, configuration.extraBody ?? {});
+      // Defense in depth: profile changes cannot add upload metadata to evidence requests.
+      if (configuration.protocol === 'deepseek') {delete customized.dsh_session_log;delete customized.dsh_plugin_packages;}
       if (configuration.protocol === 'openai-responses') customized.store = false;
       headers.delete('content-length');
       requestInit = {...requestInit, headers, body: JSON.stringify(customized)};

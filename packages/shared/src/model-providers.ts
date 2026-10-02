@@ -10,6 +10,13 @@ export const DEFAULT_AGENT_TIMEOUT_MS = 600_000;
 export const MAX_MODEL_REQUEST_TIMEOUT_MS = 600_000;
 export const MAX_AGENT_TIMEOUT_MS = 3_600_000;
 
+/** Migrate only the two former official DeepSeek roots; custom gateways retain their paths. */
+export function deepSeekMessagesBaseUrl(baseUrl: string): string {
+  const base = baseUrl.replace(/\/+$/, '');
+  return base === 'https://api.deepseek.com' || base === 'https://api.deepseek.com/v1'
+    ? 'https://api.deepseek.com/anthropic' : base;
+}
+
 export interface ModelProviderPreset {
   id: string;
   name: string;
@@ -88,7 +95,7 @@ export interface ModelTestResult {
 export const MODEL_PROVIDER_PRESETS: readonly ModelProviderPreset[] = [
   {id:'codex',get name() { return moteText("本机 Codex"); },group:'local',protocol:'codex-app-server',baseUrl:'',get description() { return moteText("通过中央服务器上的 Codex App Server 调用已登录账户。推理仍由 Codex 服务完成；需安装 Codex CLI 并在服务器登录。"); },docsUrl:'https://developers.openai.com/codex/app-server',reasoningEffort:'auto'},
   { id: 'custom', get name() { return moteText("自定义接口"); }, group: 'custom', protocol: 'openai-completions', baseUrl: '', get description() { return moteText("选择接口协议，填写服务基址和支持工具调用的模型 ID。高级配置可设置请求头和厂商参数。"); }, docsUrl: '', reasoningEffort: 'auto' },
-  { id: 'deepseek', name: 'DeepSeek', group: 'china', protocol: 'deepseek', baseUrl: 'https://api.deepseek.com', get description() { return moteText("DeepSeek 官方接口，保留其推理与多轮工具调用格式。模型 ID 以控制台为准。"); }, docsUrl: 'https://api-docs.deepseek.com/', reasoningEffort: 'high' },
+  { id: 'deepseek', name: 'DeepSeek', group: 'china', protocol: 'deepseek', baseUrl: 'https://api.deepseek.com/anthropic', get description() { return moteText("DeepSeek 官方接口，保留其推理与多轮工具调用格式。模型 ID 以控制台为准。"); }, docsUrl: 'https://api-docs.deepseek.com/', reasoningEffort: 'high' },
   { id: 'qwen', get name() { return moteText("阿里云 / 通义千问"); }, group: 'china', protocol: 'openai-completions', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', get description() { return moteText("使用百炼 API key；工作空间与地域地址可按控制台修改，密钥必须与地域对应。"); }, docsUrl: 'https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope', reasoningEffort: 'auto' },
   { id: 'ark', get name() { return moteText("火山方舟 / 豆包"); }, group: 'china', protocol: 'openai-completions', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', get description() { return moteText("使用方舟 API key；模型栏填写控制台的模型 ID 或推理接入点 ID。"); }, docsUrl: 'https://www.volcengine.com/docs/82379/1795150', reasoningEffort: 'auto' },
   { id: 'glm', get name() { return moteText("智谱 / GLM"); }, group: 'china', protocol: 'openai-completions', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', get description() { return moteText("使用开放平台 API key；选择支持工具调用的模型，思考参数按该模型文档配置。"); }, docsUrl: 'https://docs.bigmodel.cn/cn/guide/capabilities/function-calling', reasoningEffort: 'auto' },

@@ -19,7 +19,7 @@ import { randomUUID } from "node:crypto";
 import { startBridge } from "./bridge.js";
 import { displayTime } from './time.js';
 import { validateInlineCitations } from './citations.js';
-import {modelConnection, modelRuntimeEntries, validateModelOptions} from './model-runtime.js';
+import {modelConnection, modelRuntimeEntries, harnessPrivacyEntries, validateModelOptions} from './model-runtime.js';
 import {bundledSkills,skillContent} from './skills.js';
 export {skillCatalog,SKILL_VERSION} from './skills.js';
 export {createImportAgent} from './import-agent.js';
@@ -70,7 +70,9 @@ export function createRuntimePatch(
         "terminal-pwsh",
         "pty",
         "subprocess",
+        "mcp-resources",
       ].map((id) => ({ id, disabled: true })),
+      ...harnessPrivacyEntries(),
       {
         id: "system-prompt",
         config: {

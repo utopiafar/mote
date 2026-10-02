@@ -10,7 +10,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {bundledSkills,skillContent} from './skills.js';
-import {modelConnection,modelRuntimeEntries,validateModelOptions} from './model-runtime.js';
+import {modelConnection,modelRuntimeEntries,harnessPrivacyEntries,validateModelOptions} from './model-runtime.js';
 import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,type AgentOptions} from './types.js';
 
 export type ImportAgentInput={language?:"zh-CN"|"en";workspace:string;inputPaths:string[];instruction:string;helperPath:string;manifestSchema:unknown;schemaPath?:string;previous?:{summary:string;error?:string}};
@@ -51,6 +51,8 @@ export function apply(ctx){
 }`,{mode:0o600});
       const patch=join(root,'import.patch.json');
       await writeFile(patch,JSON.stringify([
+        ...harnessPrivacyEntries(),
+        {id:'mcp-resources',disabled:true},
         {id:'system-prompt',config:{includeHarnessIdentity:false,includeRuntimeContext:false,personaPrefix:skillContent('document-import')}},
         ...modelRuntimeEntries({...options,model:options.model}),
         {id:'sdk-jsonrpc-server',inject:['sdkAppStartup','loader','moteImportReady']},

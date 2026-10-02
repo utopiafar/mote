@@ -3,6 +3,21 @@ import assert from 'node:assert/strict';
 import {Context} from '@deepseek-ai/cordis';
 import {BackendPluginScope} from '../src/backend-plugin-scope.js';
 
+test('Cordis exporter disposal removes its own sink while a later sibling remains active',async()=>{
+  const root=new Context(),first:string[]=[],second:string[]=[];
+  const disposeFirst=root.logger.exporter({export:message=>{first.push(message.name);}});
+  const disposeSecond=root.logger.exporter({export:message=>{second.push(message.name);}});
+  try{
+    root.logger('generated-before').info('Synthetic lifecycle fixture');
+    disposeFirst();
+    root.logger('generated-after').info('Synthetic lifecycle fixture');
+    assert.deepEqual(first,['generated-before']);assert.deepEqual(second,['generated-before','generated-after']);
+    disposeSecond();
+    root.logger('generated-closed').info('Synthetic lifecycle fixture');
+    assert.equal(second.length,2);
+  }finally{await root.fiber.dispose();}
+});
+
 test('shared backend root keeps sibling plugin lifecycles independent',async()=>{
   const root=new Context(),first=new BackendPluginScope(root),second=new BackendPluginScope(root);
   const released:string[]=[];

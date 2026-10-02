@@ -6,6 +6,20 @@ import type {spawn} from 'node:child_process';
 import {providerModels,codexModels} from '../src/model-catalog.js';
 import type {ModelSettings} from '@mote/shared/models';
 const settings:ModelSettings={provider:'custom',protocol:'openai-completions',model:'',baseUrl:'https://fixture.invalid/v1',apiKey:'generated-secret',headers:{'X-Fixture':'yes'},extraBody:{},reasoningEffort:'auto',maxTokens:8192,modelRequestTimeoutMs:10000,agentTimeoutMs:10000,allowUnauthenticatedLocal:false};
+test('DeepSeek catalogs preserve official Bearer discovery and custom Messages gateway paths',async()=>{
+  for(const baseUrl of ['https://api.deepseek.com','https://api.deepseek.com/v1','https://api.deepseek.com/anthropic','https://fixture.invalid/anthropic','https://fixture.invalid/v1']){
+    const official=baseUrl.startsWith('https://api.deepseek.com');
+    const result=await providerModels({...settings,protocol:'deepseek',baseUrl},(async(url,init)=>{
+      assert.equal(String(url),official?'https://api.deepseek.com/models':baseUrl+(baseUrl.endsWith('/v1')?'/models':'/v1/models'));
+      const headers=new Headers(init?.headers);
+      assert.equal(headers.get('authorization'),official?'Bearer generated-secret':null);
+      assert.equal(headers.get('x-api-key'),official?null:'generated-secret');
+      assert.equal(init?.redirect,'error');
+      return Response.json({data:[{id:'generated-deepseek'}]});
+    }) as typeof fetch);
+    assert.deepEqual(result.items,[{id:'generated-deepseek',name:'generated-deepseek'}]);
+  }
+});
 test('provider catalog supports account headers, pagination, Google names and generation filtering',async()=>{
   let calls=0;
   const result=await providerModels({...settings,protocol:'anthropic-messages',baseUrl:'https://fixture.invalid'},(async(url,init)=>{

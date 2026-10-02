@@ -32,9 +32,11 @@ Mote currently compiles and runs the CPU backend. Vulkan, Metal and MNN are not 
 
 The central query agent uses the official [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) runtime and TypeScript SDK:
 
-- `@deepseek-ai/dsh`, `@deepseek-ai/dsh-sdk-client`, `@deepseek-ai/dsh-tools`: `0.1.5-rc.2`.
-- `@deepseek-ai/cordis`: `4.0.2`.
-- These published packages declare MIT. See the upstream [LICENSE](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/LICENSE) and each installed package's license files, including vendored component notices.
+- `@deepseek-ai/dsh`, `@deepseek-ai/dsh-sdk-client`, `@deepseek-ai/dsh-tools`: `0.2.0-rc.2`.
+- `@deepseek-ai/cordis`: `4.0.4`.
+- These published packages declare MIT. See the upstream [LICENSE](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/LICENSE) and each installed package's license files, including vendored component notices.
+
+The Harness dependency tree also includes optional [LibreOffice Kit](https://github.com/deepseek-ai/dsh-libreoffice-kit), which declares MPL-2.0 and retains its own component notices; it is not enabled in Mote’s minimal query profile.
 
 The integration does not bundle DeepSeek model weights or grant access to a hosted model. The user's separately configured model endpoint and provider terms govern that service.
 
