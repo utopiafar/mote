@@ -36,7 +36,7 @@ API key、自定义请求头和高级请求参数只显示“已配置／未配�
 |---|---|---|---|
 | 本机 Codex / `codex` | Codex App Server | 无 HTTP 地址 | [官方 App Server](https://developers.openai.com/codex/app-server) |
 | 自定义 / `custom` | Chat | 用户填写 | 选择下列已支持协议 |
-| DeepSeek / `deepseek` | DeepSeek | `https://api.deepseek.com` | [API](https://api-docs.deepseek.com/) |
+| DeepSeek / `deepseek` | DeepSeek | `https://api.deepseek.com/anthropic` | [API](https://api-docs.deepseek.com/) |
 | 阿里百炼 / `qwen` | Chat | `https://dashscope.aliyuncs.com/compatible-mode/v1` | [OpenAI 兼容](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope) |
 | 火山方舟 / `ark` | Chat | `https://ark.cn-beijing.volces.com/api/v3` | [接入说明](https://www.volcengine.com/docs/82379/1795150) |
 | 智谱 GLM / `glm` | Chat | `https://open.bigmodel.cn/api/paas/v4` | [工具调用](https://docs.bigmodel.cn/cn/guide/capabilities/function-calling) |
@@ -72,7 +72,7 @@ API key、自定义请求头和高级请求参数只显示“已配置／未配�
 | 协议值 | 用途 |
 |---|---|
 | `codex-app-server` | 通过服务器本机 Codex CLI 的 App Server stdio 协议与本机登录调用 Codex |
-| `deepseek` | DeepSeek 官方适配，处理其思考与多轮工具调用格式 |
+| `deepseek` | DeepSeek 原生 Messages 适配，处理思考签名、多轮工具调用及图片输入 |
 | `openai-completions` | OpenAI Chat Completions，以及实现相同消息、流式和工具格式的兼容服务 |
 | `openai-responses` | OpenAI Responses 格式的文本和工具往返；Mote 固定关闭服务端会话存储参数 |
 | `anthropic-messages` | Anthropic Messages 的消息块、工具调用和流式事件 |
@@ -81,6 +81,10 @@ API key、自定义请求头和高级请求参数只显示“已配置／未配�
 HTTP 模型协议使用 DeepSeek Harness 和 pi-ai；Codex 使用独立 App Server 适配器。两者共享证据工具定义、宿主范围限制与最终引用校验。选择协议不增加模型工具权限。这里只支持上述协议，不是任意请求／响应 JSON 的字段映射器；使用其他协议需要新增适配代码。
 
 BaseURL 应填写服务基址，不是具体推理方法的完整 URL。保留厂商要求的 `/v1`、`/api/v3` 等路径前缀，不要自行给所有厂商补 `/v1`。地址禁止用户名、密码、查询参数和 fragment；远程必须使用 HTTPS，仅 `localhost`、`127.0.0.1`、`[::1]` 允许 HTTP。模型请求拒绝重定向。
+
+Harness 0.2.0-rc.2 的 `deepseek` 协议使用 `/v1/messages`、`x-api-key` 和 `output_config.effort`。已有官方根地址 `https://api.deepseek.com` 或 `/v1` 在运行时转为 `/anthropic`；自定义网关路径保留原值。仍提供 Chat Completions 的网关应显式选择 `openai-completions`。官方模型目录继续通过 Bearer 认证读取 `/models`。
+
+Mote 在查询与导入运行时显式关闭 Harness 会话日志和插件清单上传。图片仍内联发送；原生适配器尝试 Files API 时，Mote 在网络请求前拒绝上传，使用上游的内联回退，因此不会引入额外的远程文件留存。原有图片授权、去重、区域读取及宿主预算继续生效。
 
 远程配置必须填写 API key，即使自定义请求头另有认证字段也不能省略此栏。无需密钥的本机模型必须显式允许免密；“本机”指中央节点所在机器，Docker 的回环地址指容器自身。Mote 不自动启动本地模型服务或下载模型。
 
@@ -166,6 +170,8 @@ MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL=0
 预设地址来自上面的官方资料；项目自动化验证使用本机 HTTP 服务、合成凭据和合成模型响应。本轮未逐一调用厂商实网，协议 fixture 通过不等于所有服务和模型已经完成在线认证或质量验收。
 
 ## 验证
+
+Harness 0.2.0-rc.2 / Cordis 4.0.4 的分模块覆盖、合成全流程结果与兼容性边界见[升级验证记录](harness-upgrade-validation.md)。
 
 自动化覆盖配置持久化、凭据隔离、默认路由、逐次选择、热切换、旧文件兼容和授权。`scripts/test-model-profiles-ui.cjs` 使用独立临时资料库与生成答案验证前端操作、凭据不回显、桌面及窄屏布局。
 

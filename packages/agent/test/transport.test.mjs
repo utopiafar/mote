@@ -6,6 +6,31 @@ import { createAgent, parseAnswer, AgentResponseError } from '../dist/index.js';
 
 const bridge='http://127.0.0.1:1';
 
+test('native DeepSeek rejects Files I/O before admission and preserves inline Messages',async()=>{
+  for(const baseUrl of ['https://fixture.invalid/anthropic','https://fixture.invalid/v1']){
+    let fetches=0,admissions=0;
+    const transport=boundedModelFetch(async(_input,init)=>{fetches++;assert.equal(typeof init.body,'string');return Response.json({ok:true});},bridge,1024,{protocol:'deepseek',baseUrl},undefined,async()=>{admissions++;});
+    const files=baseUrl+(baseUrl.endsWith('/v1')?'/files':'/v1/files');
+    await assert.rejects(transport(files,{method:'POST',body:new FormData()}),/inline/);
+    for(const method of ['GET','DELETE'])await assert.rejects(transport(files+'/generated-id',{method}),/destination/);
+    assert.equal(fetches,0);assert.equal(admissions,0);
+    const messages=baseUrl+(baseUrl.endsWith('/v1')?'/messages':'/v1/messages');
+    await (await transport(messages,{method:'POST',body:JSON.stringify({messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:'image/png',data:'generated'}}]}]})})).text();
+    assert.equal(fetches,1);assert.equal(admissions,1);
+    await assert.rejects(transport('https://other.invalid/v1/messages',{method:'POST',body:'{}'}),/destination/);
+    await assert.rejects(transport(baseUrl+'/unexpected',{method:'POST',body:'{}'}),/destination/);
+    assert.equal(fetches,1);
+  }
+});
+
+test('native DeepSeek strips upload metadata and auto effort, then honors explicit owner parameters',async()=>{
+  let body;
+  const transport=boundedModelFetch(async(_input,init)=>{body=JSON.parse(init.body);return Response.json({ok:true});},bridge,1024,{protocol:'deepseek',baseUrl:'https://fixture.invalid/v1',reasoningEffort:'auto',extraBody:{thinking:{type:'enabled'},output_config:{effort:'max'},dsh_session_log:'generated',dsh_plugin_packages:['generated']}});
+  await (await transport('https://fixture.invalid/v1/messages',{method:'POST',body:JSON.stringify({thinking:{type:'disabled'},output_config:{effort:'high',format:'generated'},dsh_session_log:{private:'generated'},dsh_plugin_packages:['generated'],messages:[]})})).text();
+  assert.equal(body.dsh_session_log,undefined);assert.equal(body.dsh_plugin_packages,undefined);
+  assert.deepEqual(body.thinking,{type:'enabled'});assert.deepEqual(body.output_config,{effort:'max',format:'generated'});
+});
+
 test('oversized unframed streams are canceled before SDK parsing and retries cannot restart the flood', async () => {
   let canceled=false,fetches=0,reads=0;
   const transport=boundedModelFetch(async()=>{

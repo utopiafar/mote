@@ -102,7 +102,7 @@ test('configuration sources track process overrides, selected file and defaults 
   writeFileSync(file,'MOTE_PROFILE=test\nMOTE_DATA_DIR=./vault\nMOTE_MODEL=file-model\nMOTE_MODEL_API_KEY=synthetic-private-model-key\nMOTE_MODEL_BASE_URL=\nMOTE_PORT=47852\nMOTE_RUNTIME=docker\nMOTE_STORAGE_KIND=docker-volume\nMOTE_STORAGE_SOURCE=synthetic-volume\nMOTE_STORAGE_MOUNT=/data\nMOTE_CONFIG_FILE=/synthetic/host/mote.env\nMOTE_PUBLIC_URL=https://mote.example.invalid\n');
   const result=readConfig({MOTE_ENV_FILE:file,MOTE_PORT:'48123'});assert.equal(result.status,0,result.stderr);
   const config=JSON.parse(result.stdout),context=config.configuration;
-  assert.equal(config.port,48123);assert.equal(config.model,'file-model');assert.equal(config.modelBaseUrl,'https://api.deepseek.com');
+  assert.equal(config.port,48123);assert.equal(config.model,'file-model');assert.equal(config.modelBaseUrl,'https://api.deepseek.com/anthropic');
   assert.equal(context.envFile,file);assert.equal(context.hostConfigFile,'/synthetic/host/mote.env');assert.equal(context.baseDir,root);
   assert.equal(context.sources.MOTE_PORT,'environment');assert.equal(context.sources.MOTE_MODEL,'env-file');assert.equal(context.sources.MOTE_MODEL_BASE_URL,undefined);
   assert.equal(context.runtime,'docker');assert.equal(context.storageSource,'synthetic-volume');assert.equal(context.publicUrl,'https://mote.example.invalid');
@@ -145,7 +145,7 @@ test('model provider presets supply explicit protocols, endpoints and compatible
   const root=mkdtempSync(join(tmpdir(),'mote-config-providers-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
   const file=join(root,'mote.env');writeFileSync(file,'MOTE_DATA_DIR=./vault\n');
   const cases = [
-    {provider:'deepseek',protocol:'deepseek',url:'https://api.deepseek.com',reasoning:'high',local:false},
+    {provider:'deepseek',protocol:'deepseek',url:'https://api.deepseek.com/anthropic',reasoning:'high',local:false},
     {provider:'openai',protocol:'openai-responses',url:'https://api.openai.com/v1',reasoning:'auto',local:false},
     {provider:'anthropic',protocol:'anthropic-messages',url:'https://api.anthropic.com',reasoning:'auto',local:false},
     {provider:'gemini',protocol:'google-generative-ai',url:'https://generativelanguage.googleapis.com/v1beta',reasoning:'auto',local:false},

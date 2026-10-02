@@ -8,6 +8,7 @@ import {
   createRuntimePatch,
 } from "../dist/index.js";
 import { startBridge, TOOL_NAMES } from "../dist/bridge.js";
+import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider.ts';
 
 const record = {
   id: "ctx-fixture-1",
@@ -105,6 +106,8 @@ test("runtime composition disables shell and requires verified Mote tools before
     "subprocess",
   ])
     assert.equal(patch.find((row) => row.id === id).disabled, true);
+  for (const id of ['session-log-deepseek','plugin-package-inventory-deepseek','mcp-resources'])
+    assert.equal(patch.find(row=>row.id===id).disabled,true);
   assert.ok(
     patch
       .find((row) => row.id === "sdk-jsonrpc-server")
@@ -190,33 +193,10 @@ test(
                 arguments: JSON.stringify({ ids: [record.id] }),
               }
             : null;
-      const delta = tool
-        ? {
-            role: "assistant",
-            tool_calls: [
-              {
-                index: 0,
-                id: `fixture-call-${stage}`,
-                type: "function",
-                function: tool,
-              },
-            ],
-          }
-        : {
-            role: "assistant",
-            content: JSON.stringify({
-              answer: `You reviewed synthetic orbital observatory notes. [${record.id}]`,
-              citationIds: [record.id],
-            }),
-          };
-      res.writeHead(200, { "Content-Type": "text/event-stream" });
-      res.write(
-        `data: ${JSON.stringify({ id: `fixture-${stage}`, object: "chat.completion.chunk", model: "fixture-model", choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`,
-      );
-      res.write(
-        `data: ${JSON.stringify({ id: `fixture-${stage}`, object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: tool ? "tool_calls" : "stop" }], usage: { prompt_tokens: 80, completion_tokens: 40, total_tokens: 120 } })}\n\n`,
-      );
-      res.end("data: [DONE]\n\n");
+      assert.equal(req.url,'/v1/messages');
+      assert.equal(req.headers['x-api-key'],'synthetic-fixture-key');
+      writeMessagesResponse(res,{stage,tool:tool?{name:tool.name,args:JSON.parse(tool.arguments)}:undefined,reasoning:true,
+        text:JSON.stringify({answer:`You reviewed synthetic orbital observatory notes. [${record.id}]`,citationIds:[record.id]})});
     });
     await new Promise((resolve) => fixture.listen(0, "127.0.0.1", resolve));
     const agent = createAgent({
@@ -247,23 +227,17 @@ test(
       const firstUser=requests[0].messages.find(message=>message.role==='user');
       assert.ok(JSON.stringify(firstUser).includes('Synthetic earlier request'));
       assert.ok(JSON.stringify(firstUser).includes('omittedTurns'));
-      assert.ok(!JSON.stringify(requests[0].messages.filter(message=>message.role==='system')).includes('Synthetic earlier request'));
+      assert.ok(!JSON.stringify(requests[0].system??[]).includes('Synthetic earlier request'));
       for (const body of requests) {
         assert.deepEqual(body.thinking, {type:"enabled"});
-        assert.equal(body.reasoning_effort, "high");
-        const exposed = body.tools.map((tool) => tool.function.name).sort();
+        assert.equal(body.output_config.effort, "high");
+        assert.equal(body.dsh_session_log,undefined);
+        const exposed = body.tools.map((tool) => tool.name).sort();
         assert.deepEqual(exposed, [...TOOL_NAMES.filter(name=>name!=='action_catalog'),"skill"].sort());
-        assert.ok(
-          body.messages
-            .filter((message) => message.role === "system")
-            .every(
-              (message) =>
-                !JSON.stringify(message).includes("Synthetic orbital"),
-            ),
-        );
+        assert.ok(!JSON.stringify(body.system??[]).includes(record.ocrText),'Captured evidence never becomes the trusted system prompt');
       }
       const toolMessages = requests[2].messages.filter(
-        (message) => message.role === "tool",
+        (message) => message.role === "user" && Array.isArray(message.content) && message.content.some(block=>block.type==='tool_result'),
       );
       assert.ok(
         toolMessages.some((message) =>
@@ -340,7 +314,7 @@ test('real Harness repairs invalid final JSON once in the same evidence session'
     res.end(`data: ${JSON.stringify({choices:[{index:0,delta:{},finish_reason:stage===1?'tool_calls':'stop'}]})}\n\ndata: [DONE]\n\n`);
   });
   await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));
-  const agent=createAgent({reader,model:'fixture-model',apiKey:'synthetic-only',baseUrl:`http://127.0.0.1:${fixture.address().port}`,timeoutMs:60000});
+  const agent=createAgent({reader,protocol:'openai-completions',model:'fixture-model',apiKey:'synthetic-only',baseUrl:`http://127.0.0.1:${fixture.address().port}`,timeoutMs:60000});
   try {
     const answer=await agent.query({question:'Find original evidence'});
     assert.equal(requests.length,3);assert.equal(answer.citations[0].id,record.id);
