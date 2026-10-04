@@ -29,7 +29,7 @@ internal object CentralDraftWrites {
     fun <T> barrier(work: () -> T): T = executor.submit<T> { work() }.get()
 }
 
-internal class CentralScreens(val ui: CentralActivity, val body: LinearLayout, private val directory: File) {
+internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, private val directory: File) {
     val client get() = requireNotNull(ui.client)
     private val cipher = SecretBox()
     private val askStore = CentralStateFile(directory, "ask", cipher)
@@ -239,6 +239,8 @@ internal class CentralScreens(val ui: CentralActivity, val body: LinearLayout, p
     }
     fun pollAsk() {
         if (currentPage != "ask" || detailBack != null) return
+        // Returning to a tab must not replay a completed run and clear the next unsent draft.
+        if (!askState.has("pending") && askState.optString("runStatus") in setOf("completed", "cancelled", "failed")) return
         val id = askState.optString("runId").ifBlank { askState.optJSONObject("pending")?.optString("id").orEmpty() }
         if (id.isBlank()) return
         val api = client

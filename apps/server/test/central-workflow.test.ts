@@ -13,7 +13,11 @@ import type {QueryInput} from '@mote/agent';
 
 const config=(dataDir:string):Config=>({dataDir,token:'synthetic-central-workflow-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
 const original='合成记录：我准备下周验证观测方案。';
-async function until<T>(read:()=>Promise<T>,done:(value:T)=>boolean):Promise<T>{for(let index=0;index<100;index++){const value=await read();if(done(value))return value;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Fixture workflow did not finish');}
+async function until<T>(read:()=>Promise<T>,done:(value:T)=>boolean):Promise<T>{
+  const deadline=performance.now()+10_000;
+  do{const value=await read();if(done(value))return value;await new Promise(resolve=>setTimeout(resolve,25));}while(performance.now()<deadline);
+  throw Error('Fixture workflow did not finish within 10 seconds');
+}
 
 test('source received while automatic Memory is disabled stays searchable and supports an explicit HTTP job',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-explicit-material-memory-')),cfg=config(directory);

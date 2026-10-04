@@ -152,53 +152,71 @@ class NativeCentralInstrumentedTest {
     }
 
     @Test fun querySurvivesReturningToLocalPrimaryNavigation() {
-        val main = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)) as MainActivity
-        try {
-            val mainDeadline = System.currentTimeMillis() + 10000; var mainReady = false
-            while (!mainReady && System.currentTimeMillis() < mainDeadline) {
-                instrumentation.runOnMainSync { mainReady = views(main.window.decorView).any { it.tag == "primary:TODAY" } }
-                if (!mainReady) Thread.sleep(50)
-            }
-            assertTrue("Local shell must finish loading", mainReady)
-            fun launchAsk(): AskActivity {
-                val monitor = instrumentation.addMonitor(AskActivity::class.java.name, null, false)
-                try {
-                    instrumentation.runOnMainSync { main.openMotePrimary(MotePrimaryTab.ASK) }
-                    return requireNotNull(monitor.waitForActivityWithTimeout(10000) as? AskActivity)
-                } finally { instrumentation.removeMonitor(monitor) }
-            }
-            fun await(activity: AskActivity, label: String, predicate: (AskActivity) -> Boolean) {
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
+            fun visible(activity: MainActivity) = views(activity.window.decorView).filter { it.isShown }
+            fun await(label: String, predicate: (MainActivity) -> Boolean) {
                 val deadline = System.currentTimeMillis() + 20000
                 while (System.currentTimeMillis() < deadline) {
-                    var ready = false; instrumentation.runOnMainSync { ready = predicate(activity) }
+                    var ready = false; scenario.onActivity { ready = predicate(it) }
                     if (ready) return
                     Thread.sleep(50)
                 }
                 fail(label)
             }
-            val ask = launchAsk()
-            await(ask, "Native login") { contains(it, "中央管理令牌") }
-            instrumentation.runOnMainSync {
-                all(ask).filterIsInstance<EditText>().first { it.contentDescription == "中央管理令牌" }.setText(owner)
-                all(ask).filterIsInstance<Button>().first { it.text.toString() == "登录并继续" }.performClick()
+            fun click(label: String) = scenario.onActivity { activity ->
+                visible(activity).filterIsInstance<TextView>().single { it.isClickable && it.text.toString() == label }.performClick()
             }
-            await(ask, "Ask ready") { it.client != null && !it.isWorking && contains(it, "你的问题") }
-            instrumentation.runOnMainSync { all(ask).filterIsInstance<Button>().first { it.text.toString() == "新对话" }.performClick() }
-            await(ask, "New conversation ready") { !it.isWorking && all(it).filterIsInstance<Button>().any { button -> button.text.toString() == "发送" && button.isEnabled } }
-            instrumentation.runOnMainSync {
-                all(ask).filterIsInstance<EditText>().first { it.contentDescription == "你的问题" }.setText("Generated primary navigation question")
-                all(ask).filterIsInstance<Button>().first { it.text.toString() == "发送" }.performClick()
-                all(ask).single { it.tag == "primary:DEVICE" }.performClick()
-            }
-            await(ask, "Returning to the existing local shell destroys the central Activity") { it.isDestroyed }
-            instrumentation.waitForIdleSync()
-            val restored = launchAsk()
+            val askMonitor = instrumentation.addMonitor(AskActivity::class.java.name, null, true)
+            val centralMonitor = instrumentation.addMonitor(CentralActivity::class.java.name, null, true)
             try {
-                await(restored, "Accepted answer survives primary navigation") { contains(it, "Generated native answer") }
-                instrumentation.runOnMainSync { assertFalse(Settings(restored).enabled) }
-            } finally { instrumentation.runOnMainSync { restored.finish() } }
-        } finally { instrumentation.runOnMainSync { main.finish() }; instrumentation.waitForIdleSync() }
+                click("问一问")
+                await("Native login") { visible(it).any { view -> view.contentDescription == "中央管理令牌" } }
+                scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "中央管理令牌" }.setText(owner) }
+                click("登录并继续")
+                await("Ask ready") { visible(it).any { view -> view.contentDescription == "你的问题" && view.isEnabled } }
+                click("新对话")
+                await("New conversation ready") { visible(it).any { view -> view.contentDescription == "你的问题" && view.isEnabled } }
+                scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("Generated primary navigation question") }
+                click("发送")
+                click("本机"); click("今天"); click("问一问")
+                await("Accepted answer survives primary navigation") { visible(it).filterIsInstance<TextView>().any { view -> view.text.contains("Generated native answer") } }
+                scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("Generated unsent draft") }
+                click("资料库"); click("问一问")
+                Thread.sleep(2000) // Allow the return-to-tab poll timer to run before checking the next draft.
+                scenario.onActivity { activity -> assertEquals("Generated unsent draft", visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.text.toString()) }
+                click("记录")
+                scenario.onActivity { activity -> assertTrue(visible(activity).filterIsInstance<EditText>().any { it.hint.toString() == "记下此刻的想法…" }) }
+                click("问一问")
+                scenario.recreate(); scenario.awaitMainUi()
+                await("Ask draft survives host recreation") { visible(it).filterIsInstance<EditText>().any { view -> view.contentDescription == "你的问题" && view.isEnabled && view.text.toString() == "Generated unsent draft" } }
+                scenario.onActivity { activity ->
+                    assertTrue(visible(activity).filterIsInstance<TextView>().any { it.text.contains("Generated native answer") })
+                    assertEquals(1, visible(activity).filterIsInstance<MotePrimaryNavigation>().size)
+                    assertTrue(visible(activity).single { it.tag == "primary:ASK" }.isSelected)
+                    assertFalse(Settings(activity).enabled)
+                    val question = visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }
+                    assertTrue(question.requestFocus())
+                    activity.getSystemService(android.view.inputmethod.InputMethodManager::class.java).showSoftInput(question, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                }
+                await("Ask keyboard opens") { it.window.decorView.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true }
+                scenario.onActivity { activity ->
+                    val root = activity.window.decorView
+                    val keyboard = root.rootWindowInsets.getInsets(android.view.WindowInsets.Type.ime())
+                    for (item in visible(activity).filter { it.tag?.toString()?.startsWith("primary:") == true }) {
+                        val bounds = android.graphics.Rect(); assertTrue(item.getGlobalVisibleRect(bounds))
+                        assertTrue("Primary navigation remains above the Ask keyboard", bounds.bottom <= root.height - keyboard.bottom + 2)
+                    }
+                    // Draw only this opt-in fixture app's generated views.
+                    val bitmap = android.graphics.Bitmap.createBitmap(root.width, root.height, android.graphics.Bitmap.Config.ARGB_8888)
+                    root.draw(android.graphics.Canvas(bitmap))
+                    java.io.File(context.cacheDir, "native-fixture-ask-tab-keyboard.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                    bitmap.recycle()
+                    activity.onBackPressed()
+                    assertTrue(visible(activity).single { it.tag == "primary:TODAY" }.isSelected)
+                }
+                assertEquals(0, askMonitor.hits); assertEquals(0, centralMonitor.hits)
+            } finally { instrumentation.removeMonitor(askMonitor); instrumentation.removeMonitor(centralMonitor) }
+        }
     }
 
     @Test fun pairedLoginIsSharedByCentralPagesAndLogoutStopsAllAccess() {
