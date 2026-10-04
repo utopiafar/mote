@@ -9,21 +9,46 @@ import {StoreError,type Store} from './store.js';
 import {claimSchema,MemoryStore,MemoryOutputValidationError} from './memory.js';
 import {memoryProfile} from './memory-profiles.js';
 
-const quote=z.object({id:z.string().uuid(),quote:z.string().min(1).max(2000)}).strict();
+const quote=z.object({id:z.string().uuid(),quote:z.string().min(1).max(2000),offset:z.number().int().min(0).max(100000).optional()}).strict();
+/** Attribution and occurrence are separate from the time at which the source was written. */
+export const conversationClaimContext={
+ actor:z.enum(['user','assistant','third_party','unknown']),
+ status:z.enum(['request','decision','plan','reported_outcome','confirmed_outcome','unknown']),
+ basis:z.enum(['direct_expression','assistant_reported','user_confirmed','inferred','unknown']),
+ sourceTime:z.string().datetime({offset:true}).nullable(),
+};
+export const conversationClaimSchema=z.object({statement:z.string().min(1).max(1200),...conversationClaimContext,
+ uncertainty:z.string().max(1000),evidence:z.array(quote).min(1).max(10)}).strict();
+const workRecordSchema=z.object({title:z.string().min(1).max(200),
+ requirements:z.array(conversationClaimSchema).max(12),constraints:z.array(conversationClaimSchema).max(12),
+ decisions:z.array(conversationClaimSchema).max(12),results:z.array(conversationClaimSchema).max(12),
+ validation:z.array(conversationClaimSchema).max(12),openItems:z.array(conversationClaimSchema).max(12),
+ artifactRefs:z.array(conversationClaimSchema.extend({ref:z.string().min(1).max(2000)}).strict()).max(12),
+}).strict();
 export const semanticProductsSchema=z.object({
  summary:z.string().min(1).max(6000),evidence:z.array(quote).max(20),
- events:z.array(z.object({statement:z.string().min(1).max(1200),occurredAt:z.string().datetime({offset:true}).optional(),uncertainty:z.string().max(1000),evidence:z.array(quote).min(1).max(10)}).strict()).max(12),
+ events:z.array(z.object({statement:z.string().min(1).max(1200),occurredAt:z.string().datetime({offset:true}).optional(),uncertainty:z.string().max(1000),evidence:z.array(quote).min(1).max(10),
+  actor:conversationClaimContext.actor.optional(),status:conversationClaimContext.status.optional(),basis:conversationClaimContext.basis.optional(),sourceTime:conversationClaimContext.sourceTime.optional()}).strict()).max(12),
+ workRecords:z.array(workRecordSchema).max(8).optional(),
  memoryCandidates:z.array(claimSchema).max(8),
  actionCues:z.array(z.object({kind:z.enum(['calendar.create','calendar.update','calendar.cancel','calendar.complete']),event:calendarDraftSchema,uncertainty:z.string().max(2000),evidence:z.array(quote).min(1).max(20)}).strict()).max(8),
 }).strict();
 export type SemanticProducts=z.infer<typeof semanticProductsSchema>;
 /** Every consumer reuses these exact L1 ranges. Products never become original evidence. */
-export function parseSemanticProducts(answer:string,records:CaptureRecord[],citationIds?:string[]){
+export function parseSemanticProducts(answer:string,records:CaptureRecord[],citationIds?:string[],authorizedRanges?:{id:string;offset:number;length:number}[]){
  if(Buffer.byteLength(answer)>64000)throw new StoreError('Semantic output exceeds the 64 KB response budget',502);
  const output=semanticProductsSchema.parse(JSON.parse(answer));
  if(new Set(output.actionCues.flatMap(c=>c.evidence.map(e=>e.id))).size>30)throw new StoreError('At most 30 distinct originals may support the bounded action cues',502);
- const spans:{id:string;quote:string;offset?:number}[]=[...output.evidence,...output.events.flatMap(e=>e.evidence),...output.actionCues.flatMap(e=>e.evidence),...output.memoryCandidates.flatMap(e=>e.evidence??[])];
- const ranges=spans.map(span=>{const text=records.find(r=>r.id===span.id)?.ocrText??'',offset=span.offset!==undefined?span.offset:text.indexOf(span.quote);if(offset<0||text.slice(offset,offset+span.quote.length)!==span.quote||(!(span.offset!==undefined)&&text.indexOf(span.quote,offset+1)>=0)||citationIds&&!citationIds.includes(span.id))throw new StoreError('Every semantic quote must exactly match a uniquely located, cited original',502);return {id:span.id,offset,length:span.quote.length};});
+ const workClaims=(output.workRecords??[]).flatMap(record=>[...record.requirements,...record.constraints,...record.decisions,...record.results,...record.validation,...record.openItems,...record.artifactRefs]);
+ const spans:{id:string;quote:string;offset?:number}[]=[...output.evidence,...output.events.flatMap(e=>e.evidence),...workClaims.flatMap(e=>e.evidence),...output.actionCues.flatMap(e=>e.evidence),...output.memoryCandidates.flatMap(e=>e.evidence??[])];
+ const ranges=spans.map(span=>{
+  const record=records.find(r=>r.id===span.id),text=record?.ocrText??'',scope=authorizedRanges?.filter(range=>range.id===span.id)??[{offset:0,length:text.length}];
+  let offset=span.offset;
+  if(offset===undefined){const matches=new Set<number>();for(const range of scope){for(let at=text.indexOf(span.quote,range.offset);at>=0&&at+span.quote.length<=range.offset+range.length;at=text.indexOf(span.quote,at+1)){matches.add(at);if(matches.size>1)break;}if(matches.size>1)break;}if(matches.size===1)offset=[...matches][0];}
+  if(!record||offset===undefined||text.slice(offset,offset+span.quote.length)!==span.quote||!scope.some(range=>range.offset<=offset!&&offset!+span.quote.length<=range.offset+range.length)||citationIds&&!citationIds.includes(span.id))throw new StoreError('Every semantic quote must exactly match a uniquely located, cited original within its authorized range',502);
+  // Preserve the resolved original offset for downstream batches, which may have a different window.
+  span.offset=offset;return {id:span.id,offset,length:span.quote.length};
+ });
  // Stable union coalesces overlapping spans, so downstream checkpoints cannot double count text.
  const evidenceRanges:typeof ranges=[];for(const range of ranges.sort((a,b)=>a.id.localeCompare(b.id)||a.offset-b.offset)){const old=evidenceRanges.at(-1);if(old?.id===range.id&&range.offset<=old.offset+old.length)old.length=Math.max(old.length,range.offset+range.length-old.offset);else evidenceRanges.push({...range});}
  return {...output,evidenceRanges};

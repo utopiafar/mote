@@ -26,6 +26,8 @@ interface State {
   predecessors?: Record<string, string | null>;
   delivered?: Record<string, string>;
   quarantined?: Record<string, RejectedItem>;
+  /** First-send format for immutable revisions, including ACKed versions that a rescan can replay. */
+  codingWireFields?: Record<string, 0 | 1>;
   collectedItems?: number;
   checkpoint?: SourceCheckpoint;
   initialized?: boolean;
@@ -41,6 +43,7 @@ interface State {
 
 const receiptId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const itemKey = (item: Pick<SourceItem, 'externalId' | 'revision'>) => `${item.externalId}\u0000${item.revision}`;
+const codingWireKey = (item: Pick<SourceItem, 'externalId' | 'revision'>) => sourceHash(JSON.stringify([item.externalId,item.revision]));
 
 /** Durable outbox with a latency-sensitive queue and a resumable backfill queue. */
 export class SourceSync {
@@ -65,7 +68,7 @@ export class SourceSync {
         return;
       }
       const next = value as unknown as State;
-      if (next.version !== 2 || !next.known || !Array.isArray(next.pendingRealtime) || !Array.isArray(next.pendingHistory)) throw new Error(moteText("来源同步状态无法读取，请保留文件后修复"));
+      if (next.version !== 2 || !next.known || !Array.isArray(next.pendingRealtime) || !Array.isArray(next.pendingHistory) || next.codingWireFields && Object.values(next.codingWireFields).some(value=>value!==0&&value!==1)) throw new Error(moteText("来源同步状态无法读取，请保留文件后修复"));
       if (next.pendingRealtime.length + next.pendingHistory.length + Object.keys(next.quarantined??{}).length > this.limits.maxEvents) throw new Error(moteText("来源同步状态超过本地队列上限，请恢复网络后重试"));
       this.data = next;
       this.knownItems=Object.values(next.known).filter(value=>!value.item.deleted).length;
@@ -176,9 +179,11 @@ export class SourceSync {
 
   async flush(source: SourceDefinition, request: SourceRequest, signal?: AbortSignal): Promise<'ready' | 'paused'> {
     signal?.throwIfAborted();
-    const registered = await request('/api/sources', source, 'POST', signal) as { id?: unknown; enabled?: unknown };
+    const registered = await request('/api/sources', source, 'POST', signal) as { id?: unknown; enabled?: unknown; capabilities?:{codingEvidenceFieldsVersion?:unknown} };
     if (!registered || registered.id !== source.id || typeof registered.enabled !== 'boolean') throw new Error(moteText("中央来源注册确认无效"));
     if (!registered.enabled) return 'paused';
+    // Refresh every registration: Central can upgrade without restarting this collector.
+    const codingFields=source.kind==='coding-agent'&&registered.capabilities?.codingEvidenceFieldsVersion===1?1:0;
     const scheduler = this.scheduler;
     const deferred=new Set<string>();let rejectedStatus:number|undefined;
     while (this.status().pending) {
@@ -189,7 +194,7 @@ export class SourceSync {
       const batches = this.takeBatches(queue,deferred);
       let bytes=0;
       const measured:SourceRequest=(path,body,method,signal)=>{const pending=request(path,body,method,signal);bytes+=requestBytes(body);return pending;};
-      const outcomes = await Promise.all(batches.map(async batch => { try { return { batch, result: await this.sendBatch(source, batch, measured, signal) }; } catch (error) { return { batch, error }; } }));
+      const outcomes = await Promise.all(batches.map(async batch => { try { return { batch, result: await this.sendBatch(source, batch, measured, signal,codingFields) }; } catch (error) { return { batch, error }; } }));
       let failure: unknown;
       for (const outcome of outcomes) {
         if ('error' in outcome) { if(!failure||failure instanceof UploadSliceYield)failure=outcome.error;continue; }
@@ -227,7 +232,7 @@ export class SourceSync {
     return batches;
   }
 
-  private async sendBatch(source: SourceDefinition, batch: SourceItem[], request: SourceRequest, signal?: AbortSignal): Promise<BatchResult> {
+  private async sendBatch(source: SourceDefinition, batch: SourceItem[], request: SourceRequest, signal?: AbortSignal,codingFields:0|1=0): Promise<BatchResult> {
     const first = batch[0]!;
     if (first.kind === 'file' && first.document?.fileIndex) {
       if(first.localOriginalBase64||first.localOriginal)return {acks:[await this.sendFile(source,first,request,signal)]};
@@ -253,13 +258,31 @@ export class SourceSync {
       }
       return {acks,rejected};
     }
-    const wire = batch.map(({ localOriginalBase64: _, localOriginal:__, ...item }) => item);
+    const wire = await this.codingWire(batch,codingFields);
     // A single item uses the dedicated v2 endpoint; multi-item writes require
     // the v2 batch endpoint and never retry through an older route.
     if (wire.length === 1) return {acks:[this.validateAck(source, await request(`/api/sources/${encodeURIComponent(source.id)}/items`, wire[0], 'PUT', signal), wire[0])]};
     const result=await request(`/api/sources/${encodeURIComponent(source.id)}/items/batch`, { items: wire }, 'POST', signal) as { receipts?: unknown };
     if (!result || !Array.isArray(result.receipts) || result.receipts.length !== batch.length) throw new Error(moteText("中央批量来源确认不完整，已保留待重试版本"));
     return {acks:result.receipts.map((receipt, index) => this.validateAck(source, receipt, wire[index]))};
+  }
+
+  private async codingWire(batch:SourceItem[],version:0|1):Promise<SourceItem[]> {
+    // Pin before the request. An ACK-lost old-node write must retry with the
+    // same bytes after a node upgrade, while untouched revisions use its new capability.
+    const extended=batch.filter(item=>item.document?.coding&&(item.document.coding.channel!==undefined||item.document.coding.attribution!==undefined));
+    if(extended.length)await this.mutate(async()=>{
+      const missing=extended.filter(item=>!Object.hasOwn(this.data.codingWireFields??{},codingWireKey(item)));if(!missing.length)return;
+      const patches:StatePatch[]=missing.map(item=>({section:'codingWireFields',key:codingWireKey(item),value:version}));
+      await this.commit({...this.data},undefined,patches);
+      for(const item of missing)(this.data.codingWireFields??={})[codingWireKey(item)]=version;
+    });
+    return batch.map(({localOriginalBase64:_,localOriginal:__,...item})=>{
+      const coding=item.document?.coding;
+      if(!coding||this.data.codingWireFields?.[codingWireKey(item)]===1)return item;
+      const {channel:___,attribution:____,...legacy}=coding;
+      return {...item,document:{...item.document,coding:legacy}};
+    });
   }
 
   private async sendFile(source: SourceDefinition, item: SourceItem, request: SourceRequest, signal?: AbortSignal): Promise<Record<string, unknown>> {

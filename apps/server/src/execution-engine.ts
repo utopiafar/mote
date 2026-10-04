@@ -18,6 +18,8 @@ export class ExecutionFailure extends Error {
 export interface ExecutionHandler {
  kind:string;pool:string;concurrency:()=>number;
  validate:(step:ExecutionStep)=>boolean;
+ /** Extra authority check for a running parent's dependent publication. */
+ validateGrant?:(step:ExecutionStep)=>boolean;
  resourceKeys?:(step:ExecutionStep)=>string[];
  admit?:(step:ExecutionStep)=>ExecutionFailure|undefined;
  execute:(step:ExecutionStep,signal:AbortSignal,grant:ExecutionGrant)=>Promise<unknown>;
@@ -106,6 +108,8 @@ export class ExecutionEngine {
  /** Stop only this host's work after another writer revoked its durable grant. */
  abortLocal(id:string){this.active.get(id)?.controller.abort();}
  isCurrentGrant(id:string,fence:string){return Boolean(this.store.db.prepare("SELECT 1 FROM execution_steps WHERE id=? AND fence=? AND state='running' AND lease_until>?").get(id,fence,this.now()));}
+ /** A child publication must retain both its parent's lease and input authority. */
+ isCurrentInputGrant(id:string,fence:string){const step=this.get(id),handler=step&&this.handlers.get(step.kind);return Boolean(step&&handler&&this.isCurrentGrant(id,fence)&&handler.validate(step)&&(handler.validateGrant?.(step)??true));}
  hasActive(kind:string){return [...this.active.keys()].some(id=>this.get(id)?.kind===kind);}
  async drain(ids:string[]){
   void this.tick().catch(()=>{});

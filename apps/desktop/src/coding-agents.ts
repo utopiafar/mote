@@ -1,4 +1,5 @@
 import { moteText } from '@mote/shared/i18n';
+import {codingHostEnvelope,type CodingEvidence} from '@mote/shared';
 import {constants} from 'node:fs';
 import {lstat,open,readdir,realpath} from 'node:fs/promises';
 import {homedir} from 'node:os';
@@ -21,19 +22,21 @@ type Context={sessionId:string;cwd?:string;repositoryKey?:string;branch?:string;
 type Cursor={offset:number;anchor:string;ino:number;size?:number;mtimeMs?:number;ctimeMs?:number;quickHash?:string;generation:number;context:Context};
 export type CodingCatalogEntry={relativePath:string;fileId:string;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;contentHash?:string;lastSeenScan:number;syncState:'pending'|'synced'|'error'};
 export type CodingCheckpoint={version:1;files:Record<string,Cursor>;initialized:boolean;catalog?:Record<string,CodingCatalogEntry>;scanNumber?:number;scanStartedAt?:string;nextFile?:string};
-type Event={role:'user'|'assistant'|'tool_call'|'tool_result'|'assistant_delta'|'tool_call_delta';text:string;callId?:string;at?:string};
+type Event={role:'user'|'assistant'|'tool_call'|'tool_result'|'assistant_delta'|'tool_call_delta';text:string;callId?:string;at?:string;channel?:string;attribution?:CodingEvidence['attribution']};
 const time=(v:unknown)=>{const ms=typeof v==='number'?v*1000:typeof v==='string'?Date.parse(v):NaN;return Number.isFinite(ms)?new Date(ms).toISOString():undefined;};
 const textParts=(content:any):string=>typeof content==='string'?content:Array.isArray(content)?content.flatMap(p=>p?.type==='text'||p?.type==='input_text'||p?.type==='output_text'?[String(p.text??'')]:p?.type==='image'||p?.type==='input_image'||p?.type==='image_url'?['[image attachment omitted]']:[]).join('\n'):'';
 /** Decode syntax only; no keywords select topics, intent or memory value. Reasoning and host instructions are not conversation evidence. */
 export function decodeCodingEvent(provider:CodingProvider,row:any,context:Context,wire=false):Event[] {
   if(!row||typeof row!=='object')throw Error('Invalid transcript event');
   const at=time(row.timestamp),events:Event[]=[];
-  const add=(role:Event['role'],text:string,callId?:string)=>{if(text)events.push({role,text,callId,at});};
+  const add=(role:Event['role'],text:string,callId?:string,channel?:unknown)=>{if(text)events.push({role,text,callId,at,
+    ...(typeof channel==='string'&&channel.length&&channel.length<=64?{channel}:{}),
+    ...(['user','assistant','assistant_delta'].includes(role)?{attribution:role==='user'?(codingHostEnvelope(provider,text)?'host':'human'):'agent'}:{})});};
   if(provider==='codex'){
     const p=row.payload;
     if(row.type==='session_meta'&&p){context.sessionId=String(p.id??p.session_id??context.sessionId);context.cwd=typeof p.cwd==='string'?p.cwd:context.cwd;context.parentSessionId=p.parent_thread_id;context.repositoryKey=repositoryCandidate(p.git?.repository_url);context.branch=typeof p.git?.branch==='string'?p.git.branch:undefined;}
     if(row.type!=='response_item'||!p)return [];
-    if(p.type==='message'&&['user','assistant'].includes(p.role))add(p.role,textParts(p.content));
+    if(p.type==='message'&&['user','assistant'].includes(p.role))add(p.role,textParts(p.content),undefined,p.channel);
     if(['function_call','custom_tool_call'].includes(p.type))add('tool_call',JSON.stringify({name:p.name,arguments:p.arguments??p.input}),p.call_id);
     if(['function_call_output','custom_tool_call_output'].includes(p.type))add('tool_result',typeof p.output==='string'?p.output:Array.isArray(p.output)?textParts(p.output)||JSON.stringify(p.output):JSON.stringify(p.output??''),p.call_id);
   }else if(provider==='claude'){
@@ -118,7 +121,7 @@ export async function scanCodingAgent(rootPath:string,provider:CodingProvider,op
             const eventId=hash(`${key}:${cursor.generation}:${cursor.offset}:${eventIndex}`),body=redactSourceText(event.text,options.redactLiterals);
             const pieces:string[]=[];for(let offset=0;offset<body.length;){let end=Math.min(offset+8000,body.length);if(end<body.length&&/[\uD800-\uDBFF]/.test(body[end-1]))end--;pieces.push(body.slice(offset,end));offset=end;}
             const cwd=context.cwd?redactSourceText(context.cwd,options.redactLiterals):undefined;
-            for(const [part,text] of pieces.entries())items.push({externalId:`coding:${provider}:${eventId}:${part}`,kind:'message',layer:options.retention==='reference'?'reference':'snapshot',title:`${codingProviders[provider]} · ${redactSourceText(context.sessionId,options.redactLiterals).slice(0,80)} · ${event.role}`,text:options.retention==='reference'?'':text,mimeType:'text/plain',syncQueue:itemQueue,document:{contentRole:'transcript',timeBasis:event.at?'recorded':'unknown',recordedAt:event.at,coding:{version:1,provider,sessionId:redactSourceText(context.sessionId,options.redactLiterals).slice(0,500),projectIdentity:context.cwd?'workspace':'session',projectKey:hash(context.cwd??`${provider}:${context.sessionId}`),cwd,projectName:cwd?basename(cwd).slice(0,400):undefined,repositoryKey:context.repositoryKey,branch:context.branch?redactSourceText(context.branch,options.redactLiterals).slice(0,500):undefined,eventId,role:event.role,callId:event.callId?redactSourceText(event.callId,options.redactLiterals).slice(0,500):undefined,parentSessionId:context.parentSessionId?redactSourceText(context.parentSessionId,options.redactLiterals).slice(0,500):undefined,part,parts:pieces.length}}});
+            for(const [part,text] of pieces.entries())items.push({externalId:`coding:${provider}:${eventId}:${part}`,kind:'message',layer:options.retention==='reference'?'reference':'snapshot',title:`${codingProviders[provider]} · ${redactSourceText(context.sessionId,options.redactLiterals).slice(0,80)} · ${event.role}`,text:options.retention==='reference'?'':text,mimeType:'text/plain',syncQueue:itemQueue,document:{contentRole:'transcript',timeBasis:event.at?'recorded':'unknown',recordedAt:event.at,coding:{version:1,provider,sessionId:redactSourceText(context.sessionId,options.redactLiterals).slice(0,500),projectIdentity:context.cwd?'workspace':'session',projectKey:hash(context.cwd??`${provider}:${context.sessionId}`),cwd,projectName:cwd?basename(cwd).slice(0,400):undefined,repositoryKey:context.repositoryKey,branch:context.branch?redactSourceText(context.branch,options.redactLiterals).slice(0,500):undefined,eventId,role:event.role,...(event.channel?{channel:event.channel}:{}),...(event.attribution?{attribution:event.attribution}:{}),callId:event.callId?redactSourceText(event.callId,options.redactLiterals).slice(0,500):undefined,parentSessionId:context.parentSessionId?redactSourceText(context.parentSessionId,options.redactLiterals).slice(0,500):undefined,part,parts:pieces.length}}});
           }
           if(result.items.length+items.length>Math.max(limits.items,500)||bytes+raw.length>Math.max(limits.bytes,4*1024*1024)){result.complete=false;break;}
           result.items.push(...items);result.seen.push(...items.map(i=>i.externalId));bytes+=raw.length;

@@ -195,7 +195,8 @@ export class SourcePipelineRuntime {
       const shouldIndex=result.options.index??pipeline.index==='material',isIndexed=Boolean(db.prepare('SELECT 1 FROM material_searchable WHERE material_id=?').get(published.id));
       if(shouldIndex!==isIndexed)this.materials.setSearchable(published.id,shouldIndex);
       const required=result.options.memoryDependencies??pipeline.memoryDependencies??['material'];
-      this.memoryWork.observe(published.id,required,{inputKey:result.checkpoint,change:input.memoryTrigger??'rebuild',
+      const observe=published.changed?this.memoryWork.observe.bind(this.memoryWork):this.memoryWork.observeUnchanged.bind(this.memoryWork);
+      observe(published.id,required,{inputKey:result.checkpoint,change:input.memoryTrigger??'rebuild',
         automatic:result.options.memory??pipeline.memory??false},result.options.settleSeconds*1000);}
     const changed=db.prepare("UPDATE source_pipeline_work SET state='complete',error=NULL,material_ref=? WHERE id=? AND generation=?").run(ref,input.workId,input.generation).changes;
     if(changed!==1)throw new ExecutionFailure('stale','input_changed');

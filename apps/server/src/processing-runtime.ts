@@ -34,7 +34,8 @@ const stepSchema=z.object({name:z.string().regex(/^[\w.-]{1,80}$/),processor:z.s
 export type ProcessingStep=z.input<typeof stepSchema>;
 const lanePolicy=z.object({concurrency:z.number().int().min(1).max(8),dailyCalls:z.number().int().min(0).max(100000),dailyInputCharacters:z.number().int().min(0).max(1000000000).default(1200000)}).strict();
 const policies=z.object({extract:lanePolicy,aggregate:lanePolicy,semantic:lanePolicy,memory:lanePolicy}).strict();
-type Job={id:string;processor:string;version:string;lane:ProcessingLane;inputs:ProcessingInput[];materialInputs:ProcessingMaterialInput[];config:Record<string,unknown>;dependencies:string[];artifactInputs:{id:string;revision:string}[];outputs:string[]};
+type ParentGrant={stepId:string;fence:string};
+type Job={parentGrant?:ParentGrant;id:string;processor:string;version:string;lane:ProcessingLane;inputs:ProcessingInput[];materialInputs:ProcessingMaterialInput[];config:Record<string,unknown>;dependencies:string[];artifactInputs:{id:string;revision:string}[];outputs:string[]};
 const lanes:ProcessingLane[]=['extract','aggregate','semantic','memory'];
 /** Durable DAG with fenced commits and per-lane admission. Cordis owns plugin life;
  * this host owns retries, budgets, lineage, cancellation and transaction boundaries. */
@@ -60,7 +61,7 @@ export class ProcessingRuntime {
     const pluginScope=this.pluginScope;
     this.ready=(async()=>{for(const plugin of plugins)await pluginScope.install(plugin);})();void this.ready.catch(()=>{});
   }
-  enqueue(raw:ProcessingStep[]){
+  enqueue(raw:ProcessingStep[],parentGrant?:ParentGrant){
     const steps=z.array(stepSchema).min(1).max(32).parse(raw),names=new Set(steps.map(s=>s.name));
     if(names.size!==steps.length)throw new StoreError('Duplicate workflow step',409);
     const visiting=new Set<string>(),visited=new Set<string>(),ordered:typeof steps=[];
@@ -76,11 +77,19 @@ export class ProcessingRuntime {
       const inputs=[...new Set(step.inputs)].sort().map(id=>{const version=this.store.archive.fingerprint(id);if(!version)throw new StoreError('Workflow evidence unavailable',409);return {id,fingerprint:version};});
       const config=canonical(step.config) as Record<string,unknown>,dependencies=step.dependsOn.map(n=>ids.get(n)!).sort();
       const id=fingerprint([processor.id,processor.version,inputs,step.materialInputs,config,dependencies,step.artifactInputs]);ids.set(step.name,id);
-      jobs.push({id,processor:processor.id,version:processor.version,lane:processor.lane,inputs,materialInputs:step.materialInputs,config,dependencies,artifactInputs:step.artifactInputs,outputs:[]});
+      jobs.push({...(parentGrant?{parentGrant}:{}),id,processor:processor.id,version:processor.version,lane:processor.lane,inputs,materialInputs:step.materialInputs,config,dependencies,artifactInputs:step.artifactInputs,outputs:[]});
     }
     const db=this.store.db;db.exec('BEGIN IMMEDIATE');try{
       this.store.reserveMetadata(jobs.reduce((n,j)=>n+Buffer.byteLength(JSON.stringify(j))+1024,0));
-      for(const job of jobs){db.prepare("INSERT OR IGNORE INTO processing_jobs(id,lane,state,json) VALUES(?,?,'waiting',?)").run(job.id,job.lane,JSON.stringify(job));}
+      for(const job of jobs){db.prepare("INSERT OR IGNORE INTO processing_jobs(id,lane,state,json) VALUES(?,?,'waiting',?)").run(job.id,job.lane,JSON.stringify(job));
+        // Saved products are reusable across recipes. An interrupted child can
+        // only resume under a freshly authorized parent, never its old lease.
+        const state=this.engine.get(job.id)?.state;
+        if(parentGrant&&state&&state!=='running'&&state!=='succeeded'){
+          db.prepare('UPDATE processing_jobs SET json=? WHERE id=?').run(JSON.stringify(job),job.id);
+          if(['stale','cancelled','blocked','failed'].includes(state))this.engine.retry(job.id);
+        }
+      }
       const operationId='workflow:'+fingerprint(jobs.map(j=>j.id).sort());
       for(const job of jobs)this.engine.enqueue(operationId,'context-dag.'+job.lane,{jobId:job.id},{id:job.id,dependencies:job.dependencies});
       db.exec('COMMIT');return Object.fromEntries(ids);
@@ -121,7 +130,7 @@ export class ProcessingRuntime {
   /** All execution ownership is in the shared engine, including dependency admission. */
   async tick(){if(this.stopping)return;await this.ready;const ids=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE 'context-dag.%' AND (state='waiting' OR (state='running' AND lease_until<=?)) ORDER BY rowid LIMIT 1000").all(this.now()).map(row=>String(row.id));await this.engine.drain(ids);}
   private valid(job:Job){
-    return !this.stopping&&(job.artifactInputs??[]).every(ref=>this.store.archive.revision(ref.id)===ref.revision)&&(job.materialInputs??[]).every(ref=>{const {id,revision}=parseMaterialRef(ref.ref);return this.materials?.get(id)?.revision===revision;})&&job.inputs.every(i=>this.store.archive.fingerprint(i.id)===i.fingerprint)&&job.dependencies.every(dep=>{
+    return !this.stopping&&(!job.parentGrant||job.outputs.length>0||this.engine.isCurrentInputGrant(job.parentGrant.stepId,job.parentGrant.fence))&&(job.artifactInputs??[]).every(ref=>this.store.archive.revision(ref.id)===ref.revision)&&(job.materialInputs??[]).every(ref=>{const {id,revision}=parseMaterialRef(ref.ref);return this.materials?.get(id)?.revision===revision;})&&job.inputs.every(i=>this.store.archive.fingerprint(i.id)===i.fingerprint)&&job.dependencies.every(dep=>{
       const parent=this.engine.get(dep);return parent?.state!=='succeeded'||this.job(dep).outputs.every(out=>this.store.archive.get(out));
     });
   }

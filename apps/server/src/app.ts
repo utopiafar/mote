@@ -76,6 +76,7 @@ import { QueryRuns } from './query-runs.js';
 import { scopeFields,validRange,type QueryScope } from './query-scope.js';
 import { MAX_RAW_READ_BYTES } from './raw-reader.js';
 import { semanticProcessor } from './semantic-extraction.js';
+import { conversationUnderstandingProcessor } from './conversation-understanding.js';
 import { SourcePipelineRuntime } from './source-pipelines.js';
 import { SourceStore } from './sources.js';
 import { Store,StoreError,sha256 } from './store.js';
@@ -258,6 +259,13 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   const perception=new Perception(store,processing.runtime,executor,mediaAssets);
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
   workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return agent.query({...input,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}});},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
+  workflows.registry.register(conversationUnderstandingProcessor({memories,usage:usageLedger,
+    selection:config=>{const selected=modelSettings.select('memory',typeof config?.profileId==='string'?config.profileId:undefined);
+      return {...modelConfiguration(selected.id,{...selected.settings,...(typeof config?.modelOverride==='string'?{model:config.modelOverride}:{})},modelSettings.view().revision),configured:agent.configuredFor(selected.id)};},
+    resolveEvidence:page=>({records:materials.evidence([...new Set(page.spans.flatMap(span=>span.evidenceId?[span.evidenceId]:[]))]),
+      ranges:page.spans.map(span=>({id:span.evidenceId!,offset:span.evidenceOffset!,length:span.pageRange.end-span.pageRange.start}))}),
+    query:input=>queryAgent(input,'query','memories'),
+  }));
   const semanticArtifacts=async(ids:string[],operationId?:string,mode?:'lifecycle')=>{
     const ready:string[]=[];
     for(const id of ids){
@@ -391,7 +399,30 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
       return sha256(JSON.stringify([modelSettings.select('memory',input.modelProfileId).settings,memories.readEvidence(ids)]));
     },
   });
-  const memoryPipeline=new MemoryPipeline({materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:(id,profileId)=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),authoredMaterialOriginalForReuse:(id,ref)=>evidenceReader.authoredMaterialOriginalForReuse(id,ref),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&(!job.automaticGrant||sourcePipelines.memoryAllowed(job.automaticGrant.sourceId)),strategies:memoryStrategies,executor,store,memories,deletionEvidenceAllowedForMemory:(id,profileId)=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),evidenceAllowedForMemory:(id,profileId)=>!evidenceReader.evidenceLocalOnly(id)||usesLocalModel(modelSettings.select('memory',profileId).settings),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings)),required),configuration:(id,model)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);},concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
+  const understandConversation:NonNullable<import('./memory-pipeline.js').MemoryPipelineOptions['understand']>=async input=>{
+    const refs=[...new Set(input.ranges.map(range=>input.materialRefs[range.id]))];
+    if(refs.length!==1||!refs[0])return;
+    const material=materials.get(refs[0]);
+    if(!material||material.kind!=='mote.coding-session'||material.schemaVersion<5)return;
+    const pages=materials.conversationInputs(material.ref,input.ranges);
+    const legacyPin=input.materialInputs.length?undefined:materials.input(material.ref,['conversation']);
+    if(legacyPin&&!legacyPin.ready)throw new ExecutionFailure('blocked','semantic_processing_blocked');
+    const pins=input.materialInputs.length?input.materialInputs:legacyPin?[legacyPin]:[];
+    const configuration=input.job.configuration!;
+    const jobs=workflows.enqueue([{name:'conversation',processor:'mote.coding-conversation-understanding',materialInputs:pages,
+      config:{candidatePolicy:input.candidatePolicy,modelFingerprint:configuration.fingerprint,profileId:configuration.profileId,modelOverride:configuration.model,
+        contextTime:input.job.contextTime??input.job.createdAt,timeZone:input.job.timeZone,language:input.job.language,processingMaterialInputs:pins.map(pin=>({materialId:pin.materialId,required:pin.required,fingerprint:pin.fingerprint,evidenceIds:pin.evidenceIds.filter(id=>input.ranges.some(range=>range.id===id))}))}}],input.parentGrant);
+    linkOperationParent(store,'memory:'+input.job.id,executor.get(jobs.conversation)!.operationId);
+    const abort=()=>executor.abortLocal(jobs.conversation);input.signal.addEventListener('abort',abort,{once:true});
+    try{await executor.drain([jobs.conversation]);input.signal.throwIfAborted();}
+    finally{input.signal.removeEventListener('abort',abort);}
+    const step=executor.get(jobs.conversation)!;
+    if(step.state==='waiting'||step.state==='running')throw new ExecutionFailure('waiting',step.error??'semantic_processing_pending',Math.max(1000,step.availableAt-Date.now()||60000));
+    if(step.state!=='succeeded')throw new ExecutionFailure(step.state==='stale'?'stale':step.state==='failed'?'permanent':'blocked',step.state==='blocked'?'semantic_processing_blocked':step.error??'semantic_processing_failed');
+    const row=store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(jobs.conversation)!;
+    return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
+  };
+  const memoryPipeline=new MemoryPipeline({understand:understandConversation,materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:(id,profileId)=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),authoredMaterialOriginalForReuse:(id,ref)=>evidenceReader.authoredMaterialOriginalForReuse(id,ref),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&(!job.automaticGrant||sourcePipelines.memoryAllowed(job.automaticGrant.sourceId)),strategies:memoryStrategies,executor,store,memories,deletionEvidenceAllowedForMemory:(id,profileId)=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),evidenceAllowedForMemory:(id,profileId)=>!evidenceReader.evidenceLocalOnly(id)||usesLocalModel(modelSettings.select('memory',profileId).settings),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings)),required),configuration:(id,model)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);},concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
   memoryRecipeSettings.onChange=()=>materialMemoryWork.inputs.revokeDisabled();
   memoryRecipeSettings.onApplied=()=>materialMemoryWork.reconcile(memoryPipeline);
   materialMemoryWork.reconcile(memoryPipeline);

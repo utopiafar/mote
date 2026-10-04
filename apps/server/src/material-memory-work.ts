@@ -100,6 +100,11 @@ export class MaterialMemoryWork {
       }
     });
   }
+  /** Refresh output readiness without authorizing a new raw tool-only input. */
+  observeUnchanged(materialId:string,required:readonly string[],observation:MaterialMemoryObservation,settleMs=0){
+    const prior=this.rows(materialId)[0];
+    this.observe(materialId,required,{...observation,inputKey:prior?.input_key||observation.inputKey,change:'rebuild'},settleMs);
+  }
   withdraw(materialId:string){this.transaction(()=>{for(const row of this.rows(materialId))this.revoke(row);this.store.db.prepare('DELETE FROM material_memory_requests WHERE material_id=?').run(materialId);});}
   private selection(row:WorkRow){return this.materials.input(row.material_id,requiredSchema.parse(JSON.parse(row.required_json)));}
   sourceRequirements(ref:string):string[]|undefined {const material=this.materials.get(ref),row=material&&this.rows(material.id)[0];return row?requiredSchema.parse(JSON.parse(row.source_required_json)):undefined;}

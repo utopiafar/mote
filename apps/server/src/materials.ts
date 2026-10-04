@@ -59,6 +59,7 @@ export type MaterialRecord=Omit<MaterialDraft,'blocks'|'members'> & {
   blockCount:number;memberCount:number;textLength:number;assetCount:number;
 };
 export type MaterialReadSpan={blockId:string;kind:'text'|'asset';format?:string;
+  evidenceId?:string;evidenceOffset?:number;
   pageRange:{start:number;end:number};materialRange:{start:number;end:number};
   memberIds:string[];locator?:Record<string,unknown>;asset?:{hash:string;mimeType:string};};
 export type MaterialReadPage={material:MaterialRecord;text:string;textRange:{offset:number;total:number;nextOffset:number|null};spans:MaterialReadSpan[]};
@@ -68,7 +69,7 @@ export type MaterialMemberPage={items:MaterialMember[];nextOffset:number|null;to
 
 type HeadRow={id:string;source_id:string;external_id:string;kind:string;revision:string;sequence:number;retired:number;min_visible_sequence:number;created_at:string;updated_at:string};
 type RevisionRow={manifest:string;revision:string;sequence:number;version_created_at:string;text_length:number;block_count:number;member_count:number;asset_count:number;draft_hash:string|null};
-type BlockRow={block_id:string;kind:'text'|'asset';format:string|null;payload:string;asset_hash:string|null;mime_type:string|null;member_ids:string;locator:string|null;start_offset:number;end_offset:number};
+type BlockRow={block_id:string;anchor_id?:string|null;kind:'text'|'asset';format:string|null;payload:string;asset_hash:string|null;mime_type:string|null;member_ids:string;locator:string|null;start_offset:number;end_offset:number};
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 const parseId=(id:string)=>materialIdSchema.parse(id);
 const parseRevision=(revision:string)=>revisionSchema.parse(revision);
@@ -314,6 +315,27 @@ export class MaterialStore {
   }
   /** CAS identity used by the host even while a privacy tombstone hides reads. */
   revisionForWrite(id:string):string|null {return this.head(id)?.revision??null;}
+  /** A full Coding rebuild can follow any number of append revisions. Compare
+   * the actual projection, using stored payload hashes rather than loading the
+   * historical transcript or relying on an append draft's partial hash. */
+  private sameCodingProjection(head:HeadRow,prior:RevisionRow,draft:MaterialDraft):boolean {
+    if(draft.kind!=='mote.coding-session'||!this.codingLayout(head.id,head.revision)||prior.block_count!==draft.blocks.length||prior.member_count!==draft.members.length)return false;
+    const {blocks:_,members:__,...manifest}=draft,{members:___,...priorManifest}=JSON.parse(prior.manifest);
+    if(JSON.stringify(manifest)!==JSON.stringify(priorManifest))return false;
+    const members=this.store.db.prepare('SELECT id,kind,ref,source_revision,locator FROM material_members WHERE material_id=? AND revision=? ORDER BY idx').all(head.id,head.revision);
+    if(members.length!==draft.members.length||members.some((row,index)=>{const member=draft.members[index]!;return row.id!==member.id||row.kind!==member.kind||row.ref!==member.ref||row.source_revision!==(member.revision??null)||row.locator!==(member.locator?JSON.stringify(member.locator):null);}))return false;
+    const blocks=this.store.db.prepare(`SELECT b.block_id,b.kind,b.format,b.payload_hash,b.asset_hash,b.mime_type,b.member_ids,b.locator,c.json context_json
+      FROM material_block_versions b LEFT JOIN material_evidence_context c ON c.anchor_id=b.anchor_id
+      WHERE b.material_id=? AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?) ORDER BY b.idx`).all(head.id,head.sequence,head.sequence);
+    return blocks.length===draft.blocks.length&&blocks.every((row,index)=>{
+      const block=draft.blocks[index]!,display=block.kind==='text'?block.text:`[asset ${block.id} ${block.mimeType} ${block.hash}]`;
+      // Explicit extra evidence must take the normal validation path.
+      return !block.evidenceIds?.length&&row.block_id===block.id&&row.kind===block.kind&&row.payload_hash===hash(display)&&
+        row.format===(block.kind==='text'?block.format:null)&&row.asset_hash===(block.kind==='asset'?block.hash:null)&&row.mime_type===(block.kind==='asset'?block.mimeType:null)&&
+        row.member_ids===JSON.stringify(block.memberIds)&&row.locator===(block.locator?JSON.stringify(block.locator):null)&&
+        row.context_json===(block.kind==='text'&&block.evidenceContext?JSON.stringify(block.evidenceContext):null);
+    });
+  }
   /** Same draft is idempotent. A changed head requires explicit compare-and-swap. */
   publish(raw:MaterialDraft|MaterialAppendDraft,options:{expectedRevision?:string|null;codingSnapshot?:CodingArchiveSnapshot}={}):MaterialRecord & {changed:boolean} {
     if('mode' in raw)return this.publishAppend(raw,options);
@@ -330,7 +352,16 @@ export class MaterialStore {
     const rebuilding=original&&this.needsRebuild(id,original.revision,original.sequence);
     if(original&&!original.retired&&original.sequence>=original.min_visible_sequence&&!rebuilding){
       const prior=this.version(id,original.revision)!;
-      if((prior.draft_hash??prior.revision)===draftHash)return {...this.record(original,prior),changed:false};
+      if((prior.draft_hash??prior.revision)===draftHash||this.sameCodingProjection(original,prior,draft)){
+        // A raw tool-only append advances archive progress without changing the
+        // model-visible revision. Keep the next append based on that progress.
+        if(options.codingSnapshot){
+          if(options.expectedRevision!==original.revision)throw new StoreError('Material revision changed; refresh and retry',409);
+          this.store.db.prepare('UPDATE material_coding_snapshots SET archive_checkpoint=?,append_epoch=?,head_count=? WHERE material_id=? AND revision=?')
+            .run(options.codingSnapshot.checkpoint,options.codingSnapshot.appendEpoch,options.codingSnapshot.headCount,id,original.revision);
+        }
+        return {...this.record(original,prior),changed:false};
+      }
     }
     const revision=original&&(original.min_visible_sequence>original.sequence||rebuilding)?
       hash(JSON.stringify([draft,options.codingSnapshot?.checkpoint??null,original.min_visible_sequence,original.sequence+1])):draftHash;
@@ -570,11 +601,11 @@ export class MaterialStore {
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(length)||length<1||length>12000)throw new StoreError('Invalid material read range');
     const total=material.textLength;if(offset>total)throw new StoreError('Material read offset exceeds length',416);
     const end=Math.min(total,offset+length),{id,revision}=parseMaterialRef(material.ref);
-    const rows=this.codingLayout(id,revision!)?this.store.db.prepare(`SELECT b.block_id,b.kind,b.format,p.text payload,b.asset_hash,b.mime_type,b.member_ids,b.locator,b.start_offset,b.end_offset
+    const rows=this.codingLayout(id,revision!)?this.store.db.prepare(`SELECT b.block_id,b.anchor_id,b.kind,b.format,p.text payload,b.asset_hash,b.mime_type,b.member_ids,b.locator,b.start_offset,b.end_offset
       FROM material_block_versions b JOIN material_block_payloads p ON p.hash=b.payload_hash
       WHERE b.material_id=? AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?)
         AND b.end_offset>? AND b.start_offset<? ORDER BY b.idx LIMIT 65`).all(id,material.sequence,material.sequence,offset,end) as BlockRow[]:
-      this.store.db.prepare(`SELECT b.block_id,b.kind,b.format,p.text payload,b.asset_hash,b.mime_type,b.member_ids,b.locator,b.start_offset,b.end_offset
+      this.store.db.prepare(`SELECT b.block_id,b.anchor_id,b.kind,b.format,p.text payload,b.asset_hash,b.mime_type,b.member_ids,b.locator,b.start_offset,b.end_offset
       FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash
       WHERE b.material_id=? AND b.revision=? AND b.end_offset>? AND b.start_offset<? ORDER BY b.idx LIMIT 65`).all(id,revision!,offset,end) as BlockRow[];
     const selected=rows.slice(0,64),pageEnd=rows.length>64?Math.min(end,selected.at(-1)!.end_offset):end;
@@ -586,12 +617,27 @@ export class MaterialStore {
       const slice=rendered.slice(start-row.start_offset,stop-row.start_offset);
       const pageStart=text.length;text+=slice;cursor=stop;
       spans.push({blockId:row.block_id,kind:row.kind,...(row.format?{format:row.format}:{}),
+        ...(row.anchor_id?{evidenceId:row.anchor_id,evidenceOffset:start-row.start_offset}:{}),
         pageRange:{start:pageStart,end:text.length},materialRange:{start, end:stop},
         memberIds:JSON.parse(row.member_ids) as string[],...(row.locator?{locator:JSON.parse(row.locator) as Record<string,unknown>}:{}) ,
         ...(row.asset_hash?{asset:{hash:row.asset_hash,mimeType:row.mime_type!}}:{})});
     }
     const nextOffset=cursor<total?cursor:null;
     return {material,text,textRange:{offset,total,nextOffset},spans};
+  }
+
+  /** Host-only conversion from pinned original anchors to bounded model pages. */
+  conversationInputs(ref:string,ranges:readonly {id:string;offset:number;length:number}[]){
+    const material=this.get(ref);if(!material||material.kind!=='mote.coding-session'||material.schemaVersion<5)throw new StoreError('Clean conversation unavailable',409);
+    const result=ranges.map(range=>{
+      const row=this.store.db.prepare(`SELECT b.start_offset,b.end_offset,(b.end_offset-b.start_offset) characters FROM material_block_versions b WHERE b.material_id=? AND b.anchor_id=?
+        AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?)`).get(material.id,range.id,material.sequence,material.sequence);
+      if(!row||range.offset<0||range.length<1||range.offset+range.length>Number(row.characters))throw new StoreError('Conversation original range changed',409);
+      return {ref:material.ref,offset:Number(row.start_offset)+range.offset,length:range.length};
+    }).sort((a,b)=>a.offset-b.offset);
+    const pages:typeof result=[];
+    for(const next of result){const prior=pages.at(-1);if(prior&&next.offset===prior.offset+prior.length&&prior.length+next.length<=12000)prior.length+=next.length;else pages.push(next);}
+    return pages;
   }
 
   /** A presentation plugin can decode one bounded, immutable block without

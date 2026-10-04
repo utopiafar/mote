@@ -66,11 +66,13 @@ test('registered source capabilities distinguish one-time imports without changi
  for(const kind of ['local-files','local-calendar','coding-agent','google-calendar','gmail','lark-docs','lark-calendar','mcp','upload','custom'] as const){
   const source=sources.register({id:'cap-'+kind,name:'Generated '+kind,kind,deviceId:'cap-device',platform:'macos',retention:'reference'});
   assert.equal(source.capabilities?.initialBody,'metadata-only');assert.equal(source.capabilities?.externalWrite,false);
+  assert.equal(source.capabilities?.codingEvidenceFieldsVersion,kind==='coding-agent'?1:undefined);
   if(kind==='mcp'||kind==='upload'){assert.equal(source.capabilities?.lifecycle,'one-shot');assert.equal(source.capabilities?.listening,'none');}
   const ack=await sources.upsert(source.id,{...item(),text:'',layer:'reference'});
   assert.equal(sources.listItems({sourceId:source.id}).items[0].captureId,ack.id);
   assert.equal(store.evidence([ack.id])[0].ocrText,'');
   assert.equal(sources.update(source.id,{enabled:false}).capabilities?.initialBody,'metadata-only');
+  assert.equal(sources.getSource(source.id).capabilities?.codingEvidenceFieldsVersion,kind==='coding-agent'?1:undefined);
   assert.equal(JSON.parse(String(store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(source.id)!.json)).capabilities,undefined);
  }
  const android=sources.register({id:'cap-android',name:'Generated Android',kind:'local-files',deviceId:'cap-device',platform:'android',retention:'reference'});

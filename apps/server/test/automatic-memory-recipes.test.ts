@@ -12,6 +12,7 @@ import {memoryRecipeScope} from '../src/memory-recipe-settings.js';
 
 const personal={id:'mote.personal-memory',version:'2'},coding={id:'mote.coding-memory',version:'1'};
 const body='I felt proud of finishing the prototype. For the prototype retry path I prevented duplicate writes with an idempotency key and verified the retry.';
+const understanding=(input:QueryInput)=>input.question.includes('FINAL UNIFIED RESPONSE CONTRACT:\nInterpret every supplied part');
 async function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-auto-recipes-'));
   const config:Config={dataKey:undefined,dataDir:directory,token:'generated-auto-recipes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
@@ -28,7 +29,8 @@ async function fixture(t:import('node:test').TestContext){
       if(recipe.id===coding.id&&control.failCoding)throw Error('Generated independent review failure');
       values=recipe.id===coding.id?[candidates[1]]:[candidates[0]];
     }
-    return {answer:JSON.stringify({memories:control.emptyResults?[]:values}),citations:[{id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}],trace:[],runId:randomUUID()};
+    const range=input.evidenceRanges?.find(range=>range.id===id),quote=range?evidence.ocrText.slice(range.offset,range.offset+Math.min(range.length,120)):evidence.ocrText.slice(0,120);
+    return {answer:JSON.stringify(understanding(input)?{summary:'Generated bounded conversation interpretation',evidence:[{id,quote,offset:range?.offset??0}],workRecords:[],events:[],memoryCandidates:control.emptyResults?[]:values,actionCues:[]}:{memories:control.emptyResults?[]:values}),citations:[{id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}],trace:[],runId:randomUUID()};
   }}};
   node=await buildApp(config,dependencies);await node.app.ready();
   const configure=async(recipes:typeof personal[]|null,sourceId?:string)=>{
@@ -43,7 +45,7 @@ async function fixture(t:import('node:test').TestContext){
   // claims actual jobs. Tests can then choose a producer or restart before work.
   const queue=async()=>{const p=node.memoryPipeline;node.sourcePipelines.drainMemory({create:input=>p.create(input),get:id=>p.get(id),cancel:id=>p.cancel(id),run:async()=>{}},true,100);await new Promise(resolve=>setImmediate(resolve));};
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
-  return {get node(){return node;},jobs:()=>node.memoryPipeline.list().map(j=>node.memoryPipeline.get(j.id)),calls,control,config,configure,source,add,publish,run,queue,count:(phase:string)=>calls.filter(c=>c.traceContext?.phase===phase).length,async restart(){await node.app.close();node=await buildApp(config,dependencies);await node.app.ready();}};
+  return {get node(){return node;},jobs:()=>node.memoryPipeline.list().map(j=>node.memoryPipeline.get(j.id)),calls,control,config,configure,source,add,publish,run,queue,count:(phase:string)=>calls.filter(c=>c.traceContext?.phase===phase||phase==='extract'&&understanding(c)).length,async restart(){await node.app.close();node=await buildApp(config,dependencies);await node.app.ready();}};
 }
 
 test('owner-selected automatic recipes share one generation, support source overrides and survive restart without replay',async t=>{
@@ -159,7 +161,7 @@ test('automatic source jobs use the owner batch limit and keep existing ranges t
   await f.add('diary','second',false,'1',text);await f.publish();await f.queue();
   const fresh=f.jobs().find(j=>!before.some(old=>old.id===j.id))!;assertBudget(fresh,512);assert.ok(fresh.batches.some(b=>b.evidenceRanges.some(r=>r.length>257)));
   await f.run();assert.ok(f.jobs().every(j=>j.status==='completed'));assert.equal(f.jobs().length,3,'settings changes do not create history jobs');
-  for(const call of f.calls.filter(c=>c.traceContext?.phase==='extract'))assert.ok(call.evidenceRanges!.reduce((n,r)=>n+r.length,0)<=(call.traceContext!.jobId===fresh.id?512:257));
+  for(const call of f.calls.filter(c=>c.traceContext?.phase==='extract'||understanding(c)))assert.ok(call.evidenceRanges!.reduce((n,r)=>n+r.length,0)<=(call.traceContext!.jobId===fresh.id?512:257));
 });
 
 test('the commit boundary rejects revoked automatic permission even without local cancellation notification',async t=>{

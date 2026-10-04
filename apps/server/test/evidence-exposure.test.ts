@@ -205,7 +205,7 @@ test('Coding append retains an active prefix anchor under the current Material s
   t.after(async()=>{await diagnostics.close();store.close();rmSync(directory,{recursive:true,force:true});});
   sources.register({id:'prefix-coding',name:'Generated Coding',kind:'coding-agent',deviceId:'coding-device',platform:'import'});
   const id=materialId('prefix-coding','session'),member={id:'archive-member',kind:'archive',ref:'archive:prefix-coding/session'};
-  const base={id,kind:'mote.coding-session',schemaVersion:1,title:'Generated session',
+  const base={id,kind:'mote.coding-session',schemaVersion:5,title:'Generated session',
     origin:{sourceId:'prefix-coding',externalId:'session',deviceId:'coding-device',firstAt:'2026-09-20T00:00:00.000Z',
       lastAt:'2026-09-20T00:00:00.000Z',provider:'codex',projectKey:'generated-project',sessionId:'session'},
     members:[member],coverage:{state:'partial' as const},fidelity:{state:'derived' as const},retention:{original:'retained' as const,policy:'keep' as const}};
@@ -227,6 +227,49 @@ test('Coding append retains an active prefix anchor under the current Material s
   assert.match((await agent.materialRead!({ref:current.ref})).text,/Generated active prefix/);
   const page=await agent.materialRead!({ref:current.ref,offset:0,length:10});
   assert.deepEqual(page.originalRefs,[prefix],'the current prefix page must cite its active original anchor');
+});
+
+test('bounded Coding products use original conversation dates, expand only covered anchors and reject legacy tool projections',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-coding-product-scope-')),store=new Store(directory),materials=new MaterialStore(store);
+  const runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const sources=new SourceStore(store,runtime),diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),enabled:false});await diagnostics.init();
+  store.archive.enableMaterialLineage();
+  t.after(async()=>{await runtime.close();await diagnostics.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  sources.register({id:'historical-coding',name:'Generated historical Coding',kind:'coding-agent',deviceId:'generated-device',platform:'import'});
+  const observedAt='2001-03-01T00:00:00.000Z',recordedAt='2001-01-01T10:00:00.000Z';
+  const event=(id:string,text:string,role:string='user')=>({externalId:id,revision:'1',observedAt,kind:'message',layer:'original',text,
+    document:{recordedAt,timeBasis:'recorded',contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',sessionId:'historical-session',eventId:id,role,part:0,parts:1}}});
+  await sources.upsertBatch('historical-coding',[event('request','Generated historical decision 🌱'),event('followup','Generated additional context. '.repeat(1000)),event('tool','PRIVATE_HISTORICAL_TOOL_FIXTURE','tool_result')]);await runtime.tick();
+  const material=materials.list().items[0]!,anchors=materials.evidenceIds(material.ref);assert.ok(anchors.length>2);
+  assert.equal(materials.evidence([anchors[0]!])[0]?.capturedAt,observedAt);
+  const artifact=store.archive.save('historical-product','historical-product','1',{kind:'semantic',text:'Generated historical work product',metadata:{complete:true}},[],
+    'fixture.coding-products','1','fixture',[],[],[{ref:material.ref,offset:0,length:256}]);
+  const ref=formatArtifactRef(artifact.id,artifact.revision),scope={after:'2001-01-01T00:00:00.000Z',before:'2001-01-02T00:00:00.000Z',sourceId:'historical-coding',deviceId:'generated-device'};
+  const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials,runtime),agent=reader.agent({diagnostics});
+  const page=await agent.segments!({id:ref,...scope});assert.equal(page.items.length,1);
+  assert.deepEqual(page.items[0]?.members,[anchors[0]],'a bounded product does not disclose every session anchor');
+  assert.equal(page.items[0]?.firstAt,recordedAt);assert.equal(page.items[0]?.lastAt,recordedAt);
+  assert.equal(reader.artifact(ref,scope)?.text,'Generated historical work product');
+  assert.equal((await agent.segments!({id:ref,...scope,deviceId:'other-device'})).items.length,0);
+  assert.equal((await agent.segments!({id:ref,...scope,after:'2001-02-01T00:00:00.000Z',before:'2001-04-01T00:00:00.000Z'})).items.length,0,'import time is not the authored date');
+  const quote=materials.evidence([anchors[0]!])[0]!.ocrText.slice(0,1800),claim=(i:number)=>({statement:'Generated supported claim '+i,actor:'user',status:'decision',basis:'direct_expression',sourceTime:null,uncertainty:'Generated fixture only',evidence:[{id:anchors[0],quote,offset:0}]});
+  const proofHeavy=store.archive.save('proof-heavy-product','proof-heavy-product','1',{kind:'semantic',text:'Generated readable work product',metadata:{complete:true,productsVersion:1,
+    summary:'Generated readable work product',workRecords:[{title:'Generated work',requirements:Array.from({length:12},(_,i)=>claim(i)),constraints:Array.from({length:8},(_,i)=>claim(i+12)),decisions:[],results:[],validation:[],openItems:[],artifactRefs:[]}],
+    events:[],memoryCandidates:[],actionCues:[],evidenceRanges:[{id:anchors[0],offset:0,length:2000}]}},[],
+    'fixture.coding-products','1','fixture',[],[],[{ref:material.ref,offset:0,length:2000}]);
+  assert.ok(JSON.stringify(proofHeavy.metadata).length>24000);
+  const readable=await agent.segments!({id:formatArtifactRef(proofHeavy.id,proofHeavy.revision),...scope});
+  assert.equal(readable.items.length,1,'readable product detail is not dropped merely because exact support quotes are large');
+  assert.match(readable.items[0]!.text,/Generated readable work product/);
+  const legacy=materials.publish({id:materialId('historical-coding','legacy-session'),kind:'mote.coding-session',schemaVersion:4,title:'Generated legacy tool projection',
+    origin:{...material.origin,externalId:'legacy-session',sessionId:'legacy-session'},blocks:[{id:'section-0',kind:'text',format:'markdown-fragment',text:'PRIVATE_LEGACY_TOOL_FIXTURE',memberIds:['archive']}],
+    members:[{id:'archive',kind:'archive',ref:'archive:generated-legacy'}],coverage:{state:'complete'},artifacts:[{key:'conversation',state:'ready'}],fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
+  materials.setSearchable(legacy.id,true);
+  const legacyArtifact=store.archive.save('legacy-product','legacy-product','1',{kind:'semantic',text:'PRIVATE_LEGACY_PRODUCT_FIXTURE',metadata:{complete:true}},[],
+    'fixture.legacy-products','1','fixture',[],[],[{ref:legacy.ref,offset:0,length:10}]);
+  assert.equal((await agent.materialCatalog!({query:'PRIVATE_LEGACY_TOOL_FIXTURE'})).items.length,0);
+  await assert.rejects(agent.materialRead!({ref:legacy.ref}),/Material not found/);
+  assert.equal((await agent.segments!({id:formatArtifactRef(legacyArtifact.id,legacyArtifact.revision)})).items.length,0);
 });
 
 test('a source tombstone revokes model access to prior raw revisions',async t=>{
@@ -306,7 +349,7 @@ test('installed Coding recipe routes query partial materials and gate Memory unt
   memory=false;
   runtime.recipes.registry.uninstallComponent('mote.coding-exposure');
   assert.equal((await agent.materialCatalog!({})).items.length,0,'uninstalled recipe component fails closed');
-  runtime.recipes.registry.installComponent({id:'mote.coding-exposure',version:'2',kind:'exposure'});
+  runtime.recipes.registry.installComponent({id:'mote.coding-exposure',version:'3',kind:'exposure'});
   await sources.upsert('generated-coding-recipe',event(1));await runtime.tick();
   const complete=materials.list().items[0]!;
   assert.equal(complete.coverage.state,'complete');

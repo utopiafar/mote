@@ -29,7 +29,7 @@ export class SourceStore {
     if(growth>0)this.store.reserveMetadata(growth);
     this.save(value);return this.present(value);
   }
-  private present(value:SourceConnection):SourceConnection{return this.capabilities.has(value.kind)?{...value,capabilities:this.capabilities.describe(value)}:{...value,enabled:false,status:{...value.status,state:'error',code:'source_adapter_unavailable'}};}
+  private present(value:SourceConnection):SourceConnection{return this.capabilities.has(value.kind)?{...value,capabilities:{...this.capabilities.describe(value),...(value.kind==='coding-agent'?{codingEvidenceFieldsVersion:1 as const}:{})}}:{...value,enabled:false,status:{...value.status,state:'error',code:'source_adapter_unavailable'}};}
   private save(value:SourceConnection){const {capabilities,...persisted}=value;this.store.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,JSON.stringify(persisted));}
   reportStatus(id:string,status:NonNullable<SourceConnection['status']>){const value=this.getSource(id);this.save({...value,status,updatedAt:new Date().toISOString()});}
   private item(c:CaptureRecord,current:boolean):SourceItemRecord {

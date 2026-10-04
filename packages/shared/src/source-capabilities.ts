@@ -11,8 +11,10 @@ export type SourceCapabilities={
   synchronization:'revisions'|'import-only'|'push-only';
   externalWrite:false;
   initialBody:'metadata-only'|'snapshot';
+  /** Central accepts CodingEvidence channel and attribution fields. Omitted by older nodes. */
+  codingEvidenceFieldsVersion?:1;
 };
-export type SourceCapabilityDescriptor=Omit<SourceCapabilities,'version'|'initialBody'>;
+export type SourceCapabilityDescriptor=Omit<SourceCapabilities,'version'|'initialBody'|'codingEvidenceFieldsVersion'>;
 export class SourceCapabilityRegistry {
   private adapters=new Map<SourceConnection['kind'],Readonly<SourceCapabilityDescriptor>>();
   register(kind:SourceConnection['kind'],descriptor:SourceCapabilityDescriptor){

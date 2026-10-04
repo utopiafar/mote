@@ -15,12 +15,17 @@ import type {Context} from '@deepseek-ai/cordis';
 const event=(id:string,text:string)=>({externalId:id,revision:'1',observedAt:'2026-09-24T01:00:00Z',kind:'message',layer:'snapshot',text,
   document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'shared-session',projectKey:'generated',eventId:id,role:'user',part:0,parts:1}}});
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>resolve=done);return {promise,resolve};};
+const installedCodingVersion=(runtime:SourcePipelineRuntime)=>{
+  const recipe=runtime.registry.get('mote.coding')!.recipe!;
+  return runtime.recipes.resolve(recipe.id,recipe.version).definition.version;
+};
 const codingNextVersion=(ctx:Context)=>{
   codingSourcePlugin(ctx);
   const prior=ctx.moteSourceRecipes.registry.listRecipes().find(recipe=>recipe.definition.id==='mote.coding')!;
-  ctx.effect(()=>ctx.moteSourceRecipes.installRecipe({...prior.definition,version:'7'}));
+  const version=`${prior.definition.version}.fixture-next`;
+  ctx.effect(()=>ctx.moteSourceRecipes.installRecipe({...prior.definition,version}));
   const pipeline=ctx.moteSourcePipelines.get('mote.coding')!;
-  pipeline.version='7';pipeline.recipe={id:'mote.coding',version:'7'};
+  pipeline.version=version;pipeline.recipe={id:'mote.coding',version};
 };
 
 test('exact archive retransmission preserves the published Coding revision and input fingerprint',async t=>{
@@ -119,17 +124,19 @@ test('a newer committed receipt revokes an old worker before material publicatio
 test('installed deterministic Coding recipe upgrades persisted groups without a new receipt',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-recipe-upgrade-'));
   let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const priorVersion=installedCodingVersion(runtime);
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   t.after(()=>rmSync(directory,{recursive:true,force:true}));
   await sources.upsert('coding',event('one','Generated deterministic upgrade'));
   await runtime.tick();const prior=store.db.prepare('SELECT id,generation,recipe_version,state FROM source_pipeline_work').get()!;
-  assert.equal(prior.recipe_version,'6');assert.equal(prior.state,'complete');
+  assert.equal(prior.recipe_version,priorVersion);assert.equal(prior.state,'complete');
   await runtime.close();store.close();
 
   store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingNextVersion]);await runtime.ready;
+  const currentVersion=installedCodingVersion(runtime);assert.notEqual(currentVersion,priorVersion);
   await runtime.tick();const upgraded=store.db.prepare('SELECT generation,recipe_version,state FROM source_pipeline_work').get()!;
   assert.equal(upgraded.generation,Number(prior.generation)+1);
-  assert.equal(upgraded.recipe_version,'7');assert.equal(upgraded.state,'complete');
+  assert.equal(upgraded.recipe_version,currentVersion);assert.equal(upgraded.state,'complete');
   assert.equal(runtime.engine.get(`source.archive-group:${prior.id}:${upgraded.generation}`)?.state,'succeeded');
   assert.equal(materials.list({query:'deterministic upgrade'}).items.length,1);
   await runtime.close();store.close();
@@ -138,6 +145,7 @@ test('installed deterministic Coding recipe upgrades persisted groups without a 
 test('recipe upgrade does not silently replay after out-of-band configuration drift',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-recipe-config-'));
   let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const priorVersion=installedCodingVersion(runtime);
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   t.after(()=>rmSync(directory,{recursive:true,force:true}));
   await sources.upsert('coding',event('one','Generated configuration drift'));
@@ -146,8 +154,9 @@ test('recipe upgrade does not silently replay after out-of-band configuration dr
   await runtime.close();store.close();
 
   store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingNextVersion]);await runtime.ready;
+  assert.notEqual(installedCodingVersion(runtime),priorVersion);
   await runtime.tick();const blocked=store.db.prepare('SELECT generation,recipe_version,state,error FROM source_pipeline_work').get()!;
-  assert.equal(blocked.recipe_version,'6');assert.equal(blocked.state,'blocked');assert.equal(blocked.error,'recipe_config_changed');
+  assert.equal(blocked.recipe_version,priorVersion);assert.equal(blocked.state,'blocked');assert.equal(blocked.error,'recipe_config_changed');
   assert.equal(store.db.prepare("SELECT COUNT(*) n FROM execution_steps WHERE kind='source.archive-group'").get()!.n,1);
   await runtime.close();store.close();
 });
@@ -155,6 +164,7 @@ test('recipe upgrade does not silently replay after out-of-band configuration dr
 test('Coding recipe upgrade reuses the common queue without paying for historical extraction; explicit work remains available',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-upgrade-memory-'));
   let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const priorVersion=installedCodingVersion(runtime);
   let sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   let calls=0;
   const pipeline=()=>{const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials,runtime);
@@ -172,6 +182,7 @@ test('Coding recipe upgrade reuses the common queue without paying for historica
   await memory.close();await runtime.close();store.close();
 
   store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingNextVersion]);await runtime.ready;
+  const currentVersion=installedCodingVersion(runtime);assert.notEqual(currentVersion,priorVersion);
   sources=new SourceStore(store,runtime);memory=pipeline();
   const snapshot=runtime.recipes.snapshot.bind(runtime.recipes);
   // The generated replacement renderer needs a full rebuild of the same raw
@@ -180,6 +191,7 @@ test('Coding recipe upgrade reuses the common queue without paying for historica
   const organize=runtime.recipes.organize.bind(runtime.recipes);
   runtime.recipes.organize=(...args)=>{const draft=organize(...args);return draft?{...draft,title:'Generated new rendering version'}:draft;};
   await runtime.tick();
+  assert.equal(store.db.prepare('SELECT recipe_version FROM source_pipeline_work').get()!.recipe_version,currentVersion);
   const upgraded=materials.get(first.id)!;assert.notEqual(upgraded.revision,first.revision,'the deterministic upgrade really changed the material');
   assert.equal(runtime.memoryWork.readyForMemory(upgraded.ref),true);
   assert.equal(runtime.drainMemory(memory,true),0);assert.equal(calls,1);
