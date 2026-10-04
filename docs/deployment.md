@@ -42,6 +42,8 @@ node scripts/mote.mjs stop --profile prod --home "$HOME/Library/Application Supp
 
 `start` 启动独立后台进程，并等待经过认证的健康检查；`run` 在前台等待，适合进程管理器。`stop` 只向带有本次唯一进程标记的托管进程发送 SIGTERM，拒绝误杀复用 PID 的其它进程。端口占用会报错，不会停止占用者。普通 `start` 不提供系统级崩溃重启；长期部署使用下面的 launchd 或 Docker。
 
+原生启动脚本（包括 `scripts/dev-server.mjs`）为子进程设置 `NODE_USE_ENV_PROXY=1`，Node 下载请求会使用启动环境里的 `HTTP_PROXY` / `HTTPS_PROXY`（或小写同名变量）与 `NO_PROXY`。无需在每个 `mote.env` 中单独开启；代理地址仍由启动环境配置。
+
 原生 stdout/stderr 先经监督进程白名单化：保留固定启动/停止事件，未知 SDK 输出只记流类型与字节数，再写入有上限的 `logs/central.log`，默认每份 2 MiB、总共 3 份；包括单次大输出与反复重启。中央结构化诊断独立写入 `MOTE_LOG_DIR`，使用同样的容量配置，并限制 2000 条记录。`MOTE_DEBUG=0` 默认关闭调试级别。修改参数后重启该环境。
 
 ### 生成与安装 launchd 配置

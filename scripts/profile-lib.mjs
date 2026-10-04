@@ -144,7 +144,8 @@ export function effectiveConfiguration(p) {
 export function isolatedEnvironment(p, extra = {}) {
   const env = { ...process.env };
   for (const key of Object.keys(env)) if (key.startsWith('MOTE_') || key.startsWith('COMPOSE_') || key.startsWith('TUNNEL_') || key.startsWith('CLOUDFLARED_') || key === 'NO_AUTOUPDATE') delete env[key];
-  return { ...env, ...p.env, ...deploymentEnvironment(p), NODE_ENV: p.profile === 'prod' ? 'production' : p.profile === 'test' ? 'test' : 'development', MOTE_ENV_FILE: p.envFile, MOTE_PROFILE: p.profile, MOTE_URL: p.url, MOTE_TOKEN_FILE: join(p.dataDir, 'access-token'), ...extra };
+  // Enable Node fetch to honor inherited HTTP(S)_PROXY and NO_PROXY when the child starts.
+  return { ...env, ...p.env, ...deploymentEnvironment(p), NODE_USE_ENV_PROXY: '1', NODE_ENV: p.profile === 'prod' ? 'production' : p.profile === 'test' ? 'test' : 'development', MOTE_ENV_FILE: p.envFile, MOTE_PROFILE: p.profile, MOTE_URL: p.url, MOTE_TOKEN_FILE: join(p.dataDir, 'access-token'), ...extra };
 }
 export function execute(command, args, { env, cwd = repository, capture = false, timeoutMs = 120000 } = {}) {
   return new Promise((resolvePromise, reject) => {
