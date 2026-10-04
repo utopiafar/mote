@@ -1,4 +1,6 @@
 import {spoolOriginal,originalPart} from './original-spool';
+import {processLocalFile} from './local-file-processing';
+import {extractFileText} from './file-index';
 import {sourceState} from './source-state-store';
 import { moteText, configureLocale, type Locale } from '@mote/shared/i18n';
 import {scanCodingAgent} from './coding-agents';
@@ -16,6 +18,8 @@ import { configureLocalContent, encodeLocalContent, readLocalContent, type Conte
 
 async function execute(request: BackgroundRequest, progress: (value: WorkProgress) => void): Promise<unknown> {
   switch (request.kind) {
+    case 'file-decode': return extractFileText(Buffer.from(request.bytes),request.mime,AbortSignal.timeout(120000));
+    case 'local-file-process': return processLocalFile(request.input,request.mime,AbortSignal.timeout(120000));
     case 'spool-original': return spoolOriginal(request.path,request.directory,request.expected);
     case 'original-part': return originalPart(request.spool,request.part);
     case 'source-state': return sourceState(request.path,request.patches,request.maximum);

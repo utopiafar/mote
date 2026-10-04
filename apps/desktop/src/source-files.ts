@@ -1,4 +1,5 @@
 import {sourceWork} from './background';
+import { defaultLocalFileProcessor, type LocalFileInput } from './local-file-processing';
 import type {OriginalSpool} from './original-spool';
 import {fileDigest,fileMime} from './file-index';
 import { contentAdapter } from './content-adapter';
@@ -44,7 +45,8 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
     if (options.retention !== 'reference' && candidate.size > maximumFile) { result.skipped++; return 'ok'; }
     if (result.items.length >= 2000 || options.retention !== 'reference' && result.items.length>0 && totalBytes + candidate.size > 16 * 1024 * 1024) return 'stop';
     const unchanged = prior && prior.syncState === 'synced' && prior.contentQuickHash === candidate.quickHash && prior.fileId === candidate.fileId && prior.size === candidate.size && prior.mtimeMs === candidate.mtimeMs && prior.ctimeMs === candidate.ctimeMs && prior.quickHash === candidate.quickHash && prior.contentHash;
-    if (unchanged) { catalog?.markContent(candidate.relativePath, prior.contentHash, 'synced'); return 'ok'; }
+    // Revisit legacy pending audio indexes to create their independent processing job.
+    if (unchanged && !(options.retention === 'snapshot' && fileMime(candidate.path).startsWith('audio/'))) { catalog?.markContent(candidate.relativePath, prior.contentHash, 'synced'); return 'ok'; }
     if (options.initialSync === 'new_only' && !previous?.initialized) { catalog?.markContent(candidate.relativePath, candidate.quickHash, 'synced'); return 'ok'; }
     let handle;let spooled:OriginalSpool|undefined;
     try {
@@ -61,7 +63,13 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
         if (stable.mtimeMs !== before.mtimeMs || stable.ctimeMs !== before.ctimeMs || stable.size !== before.size) throw new Error('file is still changing');
       }
       let text = ''; let original: Buffer | undefined; let parsed: import('./content-adapter').ContentReadResult = { text: '', parser: 'none', status: 'ready' as 'ready'|'pending'|'unsupported' };
-      if(options.retention==='archive'&&accessMarkerPath){
+      let localProcessing: LocalFileInput | undefined;
+      if (options.retention === 'snapshot' && accessMarkerPath) {
+        spooled = await sourceWork.run<OriginalSpool>({kind:'spool-original',path:candidate.path,directory:accessMarkerPath+'.index-inputs',expected:{dev:before.dev,ino:before.ino,size:before.size,mtimeMs:before.mtimeMs,ctimeMs:before.ctimeMs}});
+        signal?.throwIfAborted();
+        localProcessing = { path: candidate.path, expected: { dev: before.dev, ino: before.ino, size: before.size, mtimeMs: before.mtimeMs, ctimeMs: before.ctimeMs }, spool:spooled, processor: defaultLocalFileProcessor };
+        parsed = { text: '', parser: 'local-pending', status: 'pending' };
+      } else if(options.retention==='archive'&&accessMarkerPath){
         spooled=await sourceWork.run<OriginalSpool>({kind:'spool-original',path:candidate.path,directory:accessMarkerPath+'.originals',expected:{dev:before.dev,ino:before.ino,size:before.size,mtimeMs:before.mtimeMs,ctimeMs:before.ctimeMs}});
         signal?.throwIfAborted();
       } else if (options.retention !== 'reference') {
@@ -77,7 +85,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
       totalBytes += before.size;
       const accessedAtMs = accessMarkers.record(externalId, before, after), fileMetadata = observedFileMetadata(before, accessedAtMs);
       const contentHash = spooled?.sha256??(original ? fileDigest(original) : candidate.quickHash);
-      result.items.push({ externalId, title: redactSourceText(basename(candidate.path), options.redactLiterals), text, uri: options.redactLiterals.length ? undefined : pathToFileURL(candidate.path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention === 'archive' ? 'original' : options.retention, document: { fileIndex: { version: 1, fileId: externalId, contentVersion: contentHash, mode: options.retention === 'archive' ? 'archive' : options.retention === 'reference' ? 'catalog' : 'index', coverage: !text ? 'none' : text.length === parsed.text.length && parsed.coverage !== 'partial' ? 'full' : 'lightweight', parser: parsed.parser, ...(parsed.warnings?.length?{warnings:parsed.warnings.map(warning=>redactSourceText(warning,options.redactLiterals))}:{}), status: options.retention === 'archive' ? 'pending' : parsed.status, totalCharacters: parsed.text.length, offset: 0, length: text.length, allowRead: options.retention === 'snapshot' && Boolean(options.allowRead) } }, ...(spooled?{localOriginal:spooled}:{}), ...(options.retention === 'archive' && original ? { localOriginalBase64: original.toString('base64') } : {}), metadata: { version: 1, file: fileMetadata }, mimeType: fileMime(candidate.path), deleted: false });
+      result.items.push({ ...(localProcessing ? {localProcessing} : {}), externalId, title: redactSourceText(basename(candidate.path), options.redactLiterals), text, uri: options.redactLiterals.length ? undefined : pathToFileURL(candidate.path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention === 'archive' ? 'original' : options.retention, document: { fileIndex: { version: 1, fileId: externalId, contentVersion: contentHash, mode: options.retention === 'archive' ? 'archive' : options.retention === 'reference' ? 'catalog' : 'index', coverage: !text ? 'none' : text.length === parsed.text.length && parsed.coverage !== 'partial' ? 'full' : 'lightweight', parser: parsed.parser, ...(parsed.warnings?.length?{warnings:parsed.warnings.map(warning=>redactSourceText(warning,options.redactLiterals))}:{}), status: options.retention === 'archive' ? 'pending' : parsed.status, totalCharacters: parsed.text.length, offset: 0, length: text.length, allowRead: options.retention === 'snapshot' && Boolean(options.allowRead) } }, ...(spooled && options.retention === 'archive'?{localOriginal:spooled}:{}), ...(options.retention === 'archive' && original ? { localOriginalBase64: original.toString('base64') } : {}), metadata: { version: 1, file: fileMetadata }, mimeType: fileMime(candidate.path), deleted: false });
       catalog?.markContent(candidate.relativePath, contentHash, 'synced');
       return 'ok';
     } catch { if(spooled)await rm(spooled.directory,{force:true,recursive:true});result.skipped++; result.complete = false; catalog?.markContent(candidate.relativePath, undefined, 'error'); return 'ok'; }

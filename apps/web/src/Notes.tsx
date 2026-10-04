@@ -23,6 +23,7 @@ export function Notes({ api, namespace, revision, onOpen, onSaved }: {
   const syncingRef = useRef(false);
   const mounted = useRef(true);
   const generation = useRef(0);
+  const attachmentRequest = useRef<AbortController | null>(null);
   const load = useCallback(async (next?: string) => {
     const current = ++generation.current;
     setLoading(true); setListError('');
@@ -64,7 +65,7 @@ export function Notes({ api, namespace, revision, onOpen, onSaved }: {
     mounted.current = true;
     try { setDraft(outbox.draft()); setQueued(outbox.items()); setDraftSaved(Boolean(outbox.draft().text)); }
     catch (e) { setError(errorMessage(e)); }
-    return () => { mounted.current = false; generation.current++; };
+    return () => { mounted.current = false; generation.current++; attachmentRequest.current?.abort(); };
   }, [outbox]);
   useEffect(() => { void load(); }, [load, revision]);
   useEffect(() => {
@@ -106,10 +107,11 @@ export function Notes({ api, namespace, revision, onOpen, onSaved }: {
       <label>{moteText("图片与语音附件")}<input type="file" accept="image/*,audio/*" multiple disabled={uploading} onChange={event=>{
         const selected=Array.from(event.target.files??[]);event.target.value='';
         if((draft.attachments?.length??0)+selected.length>10){setError(moteText("最多 10 个附件"));return;}
+        const controller = new AbortController(); attachmentRequest.current = controller;
         setUploading(true);setError('');
         void (async()=>{let next=draft;let deviceId=localStorage.getItem('mote.notes.device.v1');if(!deviceId){deviceId='web:'+crypto.randomUUID();localStorage.setItem('mote.notes.device.v1',deviceId);}
-          for(const file of selected){const id=await uploadNoteAttachment(api,file,deviceId);next={...next,attachments:[...(next.attachments??[]),id]};edit(next);}
-        })().catch(e=>setError(errorMessage(e))).finally(()=>setUploading(false));
+          for(const file of selected){const id=await uploadNoteAttachment(api,file,deviceId,controller.signal);next={...next,attachments:[...(next.attachments??[]),id]};edit(next);}
+        })().catch(e=>{if(!controller.signal.aborted)setError(errorMessage(e));}).finally(()=>{if(!controller.signal.aborted)setUploading(false);if(attachmentRequest.current===controller)attachmentRequest.current=null;});
       }}/></label><p role="status">{uploading?moteText("正在上传附件…"):moteText("已添加 {0} 个附件",draft.attachments?.length??0)}</p>
       <p className="fine-print">{moteText("图片和录音会先归档。是否提取文字或转写录音取决于中央处理设置；请在资料库查看状态。每个附件最多 50 MiB。")}</p>
       <div className="note-composer-actions"><span>{draftSaved && <><Check size={14} /> {' '}{moteText("草稿已保存在本机 ·")}{' '}</>} {draft.text.length.toLocaleString(getLocale())}{' '}{moteText("字")}</span><button className="button primary" disabled={uploading||(!draft.text.trim()&&!draft.attachments?.length)}><CloudUpload size={16} />{moteText("保存并同步")}</button></div>

@@ -54,7 +54,7 @@ export class RecordingConnector {
   if(this.saved.account)this.registerSource();
   for(const phase of phases)this.disposers.push(this.engine.register({kind:this.kind(phase),pool:`recording.${phase}`,concurrency:()=>phase==='media'?1:2,
    timeoutMs:phase==='media'?300000:120000,maxAttempts:5,maxRecoveryWindowMs:24*3600000,
-   validate:step=>this.valid(step),resourceKeys:step=>[`recording:${this.provider.id}:${step.input.account}:${step.input.id??'discovery'}`],
+   validate:step=>this.valid(step),resourceKeys:step=>[`recording:${this.provider.id}:${step.input.account}:${step.input.id??'discovery'}:${phase}`],
    execute:async(step,signal,grant)=>{
     const started=Date.now();this.observe(phase,'started',step);
     try{this.authorize(step,grant);const current=await this.provider.account(signal);if(current.id!==this.saved.account!.id)throw new ExecutionFailure('blocked','recording_account_changed');
@@ -81,6 +81,15 @@ export class RecordingConnector {
  private enqueue(phase:Phase,operationId:string,input:Record<string,unknown>){const bound={...input,epoch:this.saved.epoch,account:hash(this.saved.account!.id),providerVersion:this.provider.version};
   // A failed media backup is one durable work item across discovery rounds.
   // Do not multiply blocked downloads or reset their retry budget every poll.
+  if(phase==='media'){
+   // Reuse earlier transcript-dependent receipts too; upgrading must not multiply failed backups.
+   const prior=this.ctx.store.db.prepare("SELECT id FROM execution_steps WHERE kind=? AND json_extract(input,'$.epoch')=? AND json_extract(input,'$.account')=? AND json_extract(input,'$.providerVersion')=? AND json_extract(input,'$.id')=? LIMIT 1").get(this.kind(phase),bound.epoch,bound.account,bound.providerVersion,String(input.id));
+   if(prior)return this.engine.get(String(prior.id));
+  }
+  if(phase==='transcript'){
+   const prior=this.ctx.store.db.prepare("SELECT id FROM execution_steps WHERE kind=? AND state IN ('waiting','running','failed','blocked') AND json_extract(input,'$.epoch')=? AND json_extract(input,'$.id')=? LIMIT 1").get(this.kind(phase),bound.epoch,String(input.id));
+   if(prior)return this.engine.get(String(prior.id));
+  }
   return this.engine.enqueue(operationId,this.kind(phase),bound,phase==='media'?{id:hash([this.kind(phase),bound])}:{});}
  sync(full=true){if(!this.saved.account||!this.saved.selection.enabled)throw new ConnectorError('recording_not_connected');
   const existing=Number(this.ctx.store.db.prepare("SELECT count(*) n FROM execution_steps WHERE kind=? AND state IN ('waiting','running','blocked','failed') AND json_extract(input,'$.epoch')=?").get(this.kind('discover'),this.saved.epoch)!.n);if(existing)return this.status();
@@ -115,12 +124,14 @@ export class RecordingConnector {
    if(prior)grant.commit(()=>new ArchivedFileStore(this.ctx.store).attach(ack.id,[String(prior.file_id)]));
    return {captureId:ack.id,id};
   }
-  const captureId=String(input.captureId);if(!this.ctx.store.isCurrentEvidence(captureId))throw new ExecutionFailure('stale','recording_evidence_changed');
+  // Media owns its durable receipt before any transcript exists. Both paths recheck deletion and grants.
+  const requireAllowed=()=>{authorize();if(this.ctx.store.db.prepare('SELECT 1 FROM file_forgotten WHERE source_id=? AND external_id=?').get(sourceId,id))throw new ExecutionFailure('stale','recording_evidence_changed');};
+  requireAllowed();
   const existing=this.ctx.store.db.prepare('SELECT file_id FROM recording_media WHERE source_id=? AND external_id=?').get(sourceId,id);
-  if(existing)return {captureId,fileId:String(existing.file_id),id};
+  if(existing)return {fileId:String(existing.file_id),id};
   const media=await this.provider.media(account,metadata,signal);if((await this.provider.account(signal)).id!==account.id)throw new ExecutionFailure('blocked','recording_account_changed');authorize();
-  const archived=new ArchivedFileStore(this.ctx.store),file=archived.putRecordingMedia({name:`recording-${hash([sourceId,id])}.${({'audio/wav':'wav','audio/mp4':'m4a','audio/mpeg':'mp3','audio/flac':'flac','audio/ogg':'ogg'} as Record<string,string>)[media.mimeType]??'audio'}`,mimeType:media.mimeType,bytes:media.bytes},authorize);
-  this.observe(phase,'completed',step,{bytes:media.bytes.length});return {captureId,fileId:file.id,id};
+  const archived=new ArchivedFileStore(this.ctx.store),file=archived.putRecordingMedia({name:`recording-${hash([sourceId,id])}.${({'audio/wav':'wav','audio/mp4':'m4a','audio/mpeg':'mp3','audio/flac':'flac','audio/ogg':'ogg'} as Record<string,string>)[media.mimeType]??'audio'}`,mimeType:media.mimeType,bytes:media.bytes},requireAllowed);
+  this.observe(phase,'completed',step,{bytes:media.bytes.length});return {fileId:file.id,id};
  }
  private commit(phase:Phase,step:ExecutionStep,result:unknown){const value=result as any;
   if(phase==='discover'){
@@ -130,12 +141,15 @@ export class RecordingConnector {
   }else if(phase==='metadata'){
    const at=value.createdAt??value.recordedAt;if(at&&(Date.parse(at)<Date.parse(this.saved.selection.start)||this.saved.selection.end&&Date.parse(at)>Date.parse(this.saved.selection.end)))return;
    this.enqueue('transcript',step.operationId,{id:step.input.id,metadata:value,discovery:step.input.discovery});
-  }else if(phase==='transcript')this.enqueue('media',step.operationId,{id:value.id,captureId:value.captureId,metadata:step.input.metadata});
-  else{
-   if(!this.ctx.store.isCurrentEvidence(value.captureId))throw new ExecutionFailure('stale','recording_evidence_changed');
-   const archived=new ArchivedFileStore(this.ctx.store);archived.attach(value.captureId,[value.fileId]);
+   if(this.saved.selection.backupAudio)this.enqueue('media',step.operationId,{id:step.input.id,metadata:value});
+  }else if(phase==='media'){
+   if(this.ctx.store.db.prepare('SELECT 1 FROM file_forgotten WHERE source_id=? AND external_id=?').get(this.sourceId()!,value.id))throw new ExecutionFailure('stale','recording_evidence_changed');
    this.ctx.store.db.prepare('INSERT OR REPLACE INTO recording_media VALUES(?,?,?)').run(this.sourceId()!,value.id,value.fileId);
-   this.ctx.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'upsert',?)").run(value.captureId,new Date().toISOString());
+   const head=this.ctx.store.db.prepare('SELECT capture_id FROM file_heads WHERE source_id=? AND external_id=?').get(this.sourceId()!,value.id);
+   if(head&&this.ctx.store.isCurrentEvidence(String(head.capture_id))){
+    new ArchivedFileStore(this.ctx.store).attach(String(head.capture_id),[value.fileId]);
+    this.ctx.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'upsert',?)").run(String(head.capture_id),new Date().toISOString());
+   }
   }
  }
  status():RecordingStatus {

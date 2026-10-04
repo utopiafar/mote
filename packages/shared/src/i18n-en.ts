@@ -6012,5 +6012,6 @@ export const english: Readonly<Record<string, string>> = {
   "速度模式": "Speed mode",
   "所选 Codex 模型不支持 Fast 模式，请选择 Standard 或更换模型。": "The selected Codex model does not support Fast mode. Select Standard or choose another model.",
   "Fast 加快受支持模型的响应，保持所选推理强度，但会增加额度或费用消耗。可用性取决于账户、模型和工作区设置。": "Fast speeds up supported models while keeping the selected reasoning effort, but consumes more usage or costs more. Availability depends on your account, model, and workspace settings.",
-  "尚未取得速度档位，可使用测试连接验证。": "Speed tiers are unavailable. Use Test connection to verify support."
+  "尚未取得速度档位，可使用测试连接验证。": "Speed tiers are unavailable. Use Test connection to verify support.",
+  "本机处理中 {0} 个文件；处理等待不计入待发": "Processing {0} files on this device; processing waits are separate from uploads"
 };
