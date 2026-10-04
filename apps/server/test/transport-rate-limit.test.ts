@@ -59,6 +59,6 @@ test('collector transport budgets stay per credential and do not change route au
  assert.equal((await app.inject({url:'/api/file-sync/v1/capabilities',headers:first})).statusCode,429);
  assert.equal((await app.inject({url:'/api/file-sync/v1/capabilities',headers:second})).statusCode,200);
  assert.equal((await app.inject({url:'/api/files',headers:first})).statusCode,200);
- assert.equal((await app.inject({url:'/api/status',headers:first})).statusCode,403,'lane selection must not grant owner routes');
+ assert.equal((await app.inject({url:'/api/status',headers:first})).statusCode,200,'full client rights are independent of transport lane limits');
  assert.equal((await app.inject({url:'/api/status',headers})).statusCode,200);
 });

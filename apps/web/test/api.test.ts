@@ -50,6 +50,16 @@ test('a delayed 401 from a previous connection cannot disconnect a new authentic
   const currentRequest=current.request('/api/status');deliver(new Response('{}',{status:401}));
   await assert.rejects(currentRequest,ApiError);assert.equal(unauthorized,1);
 });
+test('external authorization failures preserve the node login while revoked credentials clear it', async t => {
+  let unauthorized = 0;
+  const api = createApi({token:'synthetic'}, () => unauthorized++);
+  for (const code of ['google_not_connected','unauthorized','connection_revoked']) {
+    const mock = t.mock.method(globalThis, 'fetch', async () => Response.json({error:code}, {status:401}));
+    await assert.rejects(api.request('/api/connectors/google/calendars'), error => error instanceof ApiError && error.code === code);
+    mock.mock.restore();
+    assert.equal(unauthorized, code === 'google_not_connected' ? 0 : code === 'unauthorized' ? 1 : 2);
+  }
+});
 
 test('only model operations use the node deadline plus transport allowance; ordinary requests keep their deadline', async t => {
   const durations:number[]=[],signals:AbortSignal[]=[];

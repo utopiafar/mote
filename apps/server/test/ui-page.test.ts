@@ -28,5 +28,5 @@ test('UI pages ingest, retry, browse, index and export without an image or OCR j
  const activity=await app.inject({method:'POST',url:'/api/captures',headers,payload:{...record,id:randomUUID(),privacy:{...record.privacy,collection:'activity'}}});assert.equal(activity.statusCode,400);
  const invite=await app.inject({method:'POST',url:'/api/connections/invitations',headers,payload:{serverUrl:'https://fixture.invalid',label:'Generated'}});
  const redeem=await app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invite.json().invitation.code,deviceId:'other-page',deviceName:'Other',platform:'android'}});
- const foreign=await app.inject({url:`/api/capture-browser/${record.id}`,headers:{authorization:`Bearer ${redeem.json().token}`}});assert.equal(foreign.statusCode,404);
+ const foreign=await app.inject({url:`/api/capture-browser/${record.id}`,headers:{authorization:`Bearer ${redeem.json().token}`}});assert.equal(foreign.statusCode,200);
 });

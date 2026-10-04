@@ -5,6 +5,8 @@ export interface Connection {
   token: string;
   /** Browser-only expiry for a persisted management session; the server token is unchanged. */
   expiresAt?: number;
+  /** Maximum deadline imposed by the shared native/server session. */
+  serverExpiresAt?: number;
   /** Non-secret identity for tab view state; never sent to the server. */
   viewScope?: string;
 }
@@ -178,7 +180,6 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
       },
     });
     if (!response.ok) {
-      if (response.status === 401 && !init.signal?.aborted && isCurrentConnection()) onUnauthorized?.();
       let message = response.status === 524
         ? moteText("入口等待服务响应超时（524）。请检查节点运行诊断；较慢的模型请求可能超过代理等待上限。")
         : response.status === 413
@@ -202,6 +203,7 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
       } catch {
         /* response might not be JSON */
       }
+      if (response.status === 401 && (!code || ['unauthorized','connection_revoked'].includes(code)) && !init.signal?.aborted && isCurrentConnection()) onUnauthorized?.();
       if (!requestId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) requestId = undefined;
       throw new ApiError(message, response.status, requestId, code, retryAfterMs);
     }

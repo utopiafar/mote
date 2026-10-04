@@ -29,65 +29,21 @@ class CentralNativeContractTest {
     private val origin = "https://central.fixture.invalid"
     private val token = "generated-native-owner-fixture-token-123456"
 
-    @Test fun ownerSessionIsSharedButNeverSentToAnotherOrigin() = temporary { root ->
-        val store = CentralSessionStore(File(root, "session"), encrypted())
-        store.select(origin); assertNull(store.client(origin)); store.signIn(origin, token)
-        val old = store.client(origin)!!; assertNotNull(store.client(origin + "/"))
-        assertNull(store.client("https://other.fixture.invalid"))
-        store.select("https://other.fixture.invalid"); assertNull(store.client(origin))
-        assertThrows(IllegalStateException::class.java) { old.get("/api/configuration") }
-        store.signIn("https://other.fixture.invalid", token)
-        assertThrows(IllegalStateException::class.java) { old.get("/api/configuration") }
+    @Test fun allFeaturesUseTheSameConfiguredLoginIncludingPairedTokens() {
+        val config = CollectorConfig(server = origin, token = token, deviceName = "Generated phone")
+        assertEquals(token, config.connectionToken()); assertTrue(config.hasSyncConnection())
     }
-    @Test fun durationIsEncryptedAndExpiresAcrossRecreation() = temporary { root ->
-        var now = 1000L; val cipher = encrypted(); val file = File(root, "session")
-        val store = CentralSessionStore(file, cipher, { now })
-        store.select(origin); store.signIn(origin, token, 86400000L)
-        assertFalse(String(file.readBytes()).contains(token))
-        val restored = CentralSessionStore(file, cipher, { now }); restored.select(origin)
-        assertNotNull(restored.client(origin)); val old = restored.client(origin)!!
-        now += 86400001L
-        assertThrows(IllegalStateException::class.java) { old.get("/api/status") }
-        assertNull(restored.client(origin)); assertFalse(restored.mayReuse(token))
+    @Test fun signedOutAndExpiredLoginsCannotResumeCollectionOrCentralRequests() {
+        val config = CollectorConfig(server = origin, token = token, deviceName = "Generated phone")
+        for (closed in listOf(config.copy(authSignedOut = true), config.copy(authExpiresAt = 1))) {
+            assertEquals("", closed.connectionToken()); assertFalse(closed.hasSyncConnection())
+        }
+        assertEquals(token, config.copy(authExpiresAt = System.currentTimeMillis() + 86400000).connectionToken())
     }
-    @Test fun appSessionDoesNotPersistOwnerToken() = temporary { root ->
-        val cipher = encrypted(); val file = File(root, "session")
-        val store = CentralSessionStore(file, cipher); store.select(origin); store.signIn(origin, token)
-        assertFalse(file.exists())
-        val restarted = CentralSessionStore(file, cipher); restarted.select(origin); assertNull(restarted.client(origin))
-    }
-    @Test fun logoutSurvivesRestartAndDoesNotAutomaticallyReuseConfiguredToken() = temporary { root ->
-        val cipher = encrypted(); val file = File(root, "session")
-        val store = CentralSessionStore(file, cipher); store.select(origin)
-        assertTrue(store.mayReuse(token)); assertFalse(store.mayReuse(token))
-        store.signIn(origin, token); val old = store.client(origin)!!; store.signOut()
-        assertThrows(IllegalStateException::class.java) { old.get("/api/status") }
-        val restarted = CentralSessionStore(file, cipher); restarted.select(origin)
-        assertNull(restarted.client(origin)); assertFalse(restarted.mayReuse(token))
-    }
-    @Test fun inFlightVerificationCannotRestoreALoggedOutSession() = temporary { root ->
-        val store = CentralSessionStore(File(root, "session"), encrypted()); store.select(origin)
-        val generation = store.generation; store.signOut()
-        assertThrows(IllegalStateException::class.java) { store.signIn(origin, token, expectedGeneration = generation) }
-        assertNull(store.client(origin))
-    }
-    @Test fun changingConfiguredNodeInvalidatesAnAlreadyIssuedClient() = temporary { root ->
-        var selected = origin
-        val store = CentralSessionStore(File(root, "session"), encrypted(), originActive = { it == selected })
-        store.select(origin); store.signIn(origin, token); val old = store.client(origin)!!
-        selected = "https://other.fixture.invalid"
-        assertThrows(IllegalStateException::class.java) { old.get("/api/status") }
-    }
-    @Test fun staleUnauthorizedResponseCannotLogOutANewerSession() = temporary { root ->
-        val store = CentralSessionStore(File(root, "session"), encrypted()); store.select(origin); store.signIn(origin, token)
-        val old = store.generation; store.signIn(origin, token + "new"); store.signOut(old)
-        assertNotNull(store.client(origin))
-    }
-    @Test fun transientBootstrapFailureCanRetryButLogoutCannotBeUndone() = temporary { root ->
-        val store = CentralSessionStore(File(root, "session"), encrypted()); store.select(origin)
-        assertTrue(store.mayReuse(token)); assertFalse(store.mayReuse(token))
-        val generation = store.generation; store.retryReuse(token, generation); assertTrue(store.mayReuse(token))
-        store.signOut(); store.retryReuse(token, generation); assertFalse(store.mayReuse(token))
+    @Test fun appOnlyLoginCannotRestoreAfterProcessRestart() {
+        val config = CollectorConfig(server = origin, token = token, deviceName = "Generated phone")
+        assertEquals(token, config.copy(authProcess = LoginProcess.id).connectionToken())
+        assertEquals("", config.copy(authProcess = "generated-previous-process").connectionToken())
     }
     @Test fun transportOnlyUsesFixedApiOriginAndRedactsCredential() {
         val calls = mutableListOf<String>()
@@ -108,6 +64,19 @@ class CentralNativeContractTest {
         val separate = assertThrows(CentralFailure::class.java) { connector.get("/api/connectors/google/calendars") }
         assertEquals("google_not_connected", separate.code); assertEquals("Generated connector status", separate.message)
         assertEquals(1, invalidations)
+    }
+    @Test fun backgroundTransportPreservesNodeLoginWhenExternalAuthorizationFails() {
+        val previous = HttpJson.onUnauthorized; var invalidations = 0
+        HttpJson.onUnauthorized = { url, credential -> assertEquals("$origin/api/status", url); assertEquals(token, credential); invalidations++ }
+        try {
+            HttpJson.rejectUnauthorized(401, "$origin/api/status", token, "google_not_connected")
+            HttpJson.rejectUnauthorized(403, "$origin/api/status", token, "unauthorized")
+            assertEquals(0, invalidations)
+            for (error in listOf("unauthorized", "connection_revoked", "")) HttpJson.rejectUnauthorized(401, "$origin/api/status", token, error)
+            assertEquals(3, invalidations)
+            HttpJson.rejectUnauthorized(401, "$origin/api/status", "", "unauthorized")
+            assertEquals(3, invalidations)
+        } finally { HttpJson.onUnauthorized = previous }
     }
     @Test fun noteOutboxSurvivesAmbiguousAckAndOnlyRemovesTheExactReceipt() = temporary { root ->
         val cipher = encrypted(); val store = CentralNoteStore(root, cipher)

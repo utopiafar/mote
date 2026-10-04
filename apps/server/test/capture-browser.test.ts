@@ -39,7 +39,7 @@ test('capture details declare native file storage for import sources without exp
   assert.equal(detail.json().requiresMaterialForMemory,true);
   assert.match(detail.json().memoryMaterialRef,/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/,
     'the organizer may already have published a current Material; owner navigation uses its stored relationship');
-  const phone=await paired();assert.equal((await app.inject({url,headers:auth(phone.token)})).statusCode,404);
+  const phone=await paired();assert.equal((await app.inject({url,headers:auth(phone.token)})).statusCode,200);
   const ordinary=capture();await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:ordinary});
   assert.equal((await app.inject({url:`/api/capture-browser/${ordinary.id}`,headers:auth()})).json().fileArchive,undefined);
   assert.equal((await app.inject({url:`/api/capture-browser/${ordinary.id}`,headers:auth()})).json().requiresMaterialForMemory,false);
@@ -75,17 +75,17 @@ test('scoped owner Memory and evidence views retain corrected formal quotes with
   store.delete(id);assert.equal((await app.inject({url:`/api/capture-browser/${anchor.id}`,headers:auth()})).statusCode,404,'removing originals still prevents archive disclosure');
 });
 
-test('capture browser isolates collector lists, details, thumbnails and OCR writes',async t=>{
+test('paired clients browse the full archive and preserve explicit view filters',async t=>{
   const {app,capture,paired}=await fixture(t),phone=await paired(),own=capture(),foreign=capture('other');
   for(const record of [own,foreign])assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:record})).statusCode,201);
   for(const url of ['/api/capture-browser',`/api/capture-browser/${own.id}`,`/api/capture-browser/${own.id}/image?thumbnail=1`])assert.equal((await app.inject(url)).statusCode,401);
-  const list=await app.inject({url:'/api/capture-browser?after=2026-09-13T00:00:00Z&before=2026-09-14T00:00:00Z',headers:auth(phone.token)});
+  const list=await app.inject({url:'/api/capture-browser?deviceId=phone&after=2026-09-13T00:00:00Z&before=2026-09-14T00:00:00Z',headers:auth(phone.token)});
   assert.equal(list.statusCode,200);assert.equal(list.json().totalCount,1);assert.equal(list.json().items[0].id,own.id);
   assert.deepEqual(list.json().items[0].ocr,{status:'pending',reason:'charging'});assert.equal(list.json().items[0].hasImage,true);
   assert.equal('ocrText' in list.json().items[0],false);assert.equal(list.headers['cache-control'],'no-store');
-  assert.equal((await app.inject({url:'/api/capture-browser?deviceId=other',headers:auth(phone.token)})).statusCode,403);
-  for(const suffix of ['', '/image', '/image?thumbnail=1'])assert.equal((await app.inject({url:`/api/capture-browser/${foreign.id}${suffix}`,headers:auth(phone.token)})).statusCode,404);
-  assert.equal((await app.inject({method:'POST',url:`/api/capture-browser/${foreign.id}/ocr`,headers:auth(phone.token),payload:{status:'completed',ocrText:'No access'}})).statusCode,404);
+  assert.equal((await app.inject({url:'/api/capture-browser?deviceId=other',headers:auth(phone.token)})).statusCode,200);
+  for(const suffix of ['', '/image', '/image?thumbnail=1'])assert.equal((await app.inject({url:`/api/capture-browser/${foreign.id}${suffix}`,headers:auth(phone.token)})).statusCode,200);
+  assert.equal((await app.inject({method:'POST',url:`/api/capture-browser/${foreign.id}/ocr`,headers:auth(phone.token),payload:{status:'completed',ocrText:'Generated owner access'}})).statusCode,200);
   for (const scope of ['deviceId=other', 'source=activity']) assert.equal((await app.inject({url:`/api/capture-browser/${own.id}/image?thumbnail=1&${scope}`,headers:auth()})).statusCode,404);
   const thumb=await app.inject({url:`/api/capture-browser/${own.id}/image?thumbnail=1`,headers:auth(phone.token)});
   assert.equal(thumb.statusCode,200);assert.equal(thumb.headers['content-type'],'image/jpeg');assert.equal(thumb.headers['cache-control'],'no-store');
@@ -165,7 +165,7 @@ test('generated Android system events upload with device scope, idempotency, sea
   assert.equal((await app.inject({url:'/api/capture-browser?source=notification',headers})).json().totalCount,1);
   assert.equal((await app.inject({url:'/api/capture-browser?source=device_event',headers})).json().totalCount,1);
   assert.equal(store.activity({}).totalDurationMs,0,'No inferred activity time from notifications or screen events');
-  assert.equal((await app.inject({method:'POST',url:'/api/captures',headers,payload:{...notification,id:randomUUID(),deviceId:'foreign'}})).statusCode,403);
+  assert.equal((await app.inject({method:'POST',url:'/api/captures',headers,payload:{...notification,id:randomUUID(),deviceId:'foreign'}})).statusCode,201);
   const invalid=await app.inject({method:'POST',url:'/api/captures',headers,payload:{...notification,id:randomUUID(),privacy:{...base.privacy,collection:'activity'}}});assert.equal(invalid.statusCode,400);
   const exported=(await app.inject({url:'/api/export',headers:auth()})).json();
   const restored=await fixture(t);const imported=await restored.app.inject({method:'POST',url:'/api/import',headers:auth(),payload:exported});assert.equal(imported.statusCode,200,imported.body);
@@ -179,7 +179,7 @@ test('sync reconciliation is read-only, device-scoped and cannot acknowledge or 
   store.delete(deleted.id);
   const url='/api/capture-browser/reconcile',payload={deviceId:'phone',ids:[own.id,foreign.id,deleted.id,missing]};
   assert.equal((await app.inject({method:'POST',url,payload})).statusCode,401);
-  assert.equal((await app.inject({method:'POST',url,headers,payload:{...payload,deviceId:'other'}})).statusCode,403);
+  assert.equal((await app.inject({method:'POST',url,headers,payload:{...payload,deviceId:'other'}})).statusCode,200);
   const response=await app.inject({method:'POST',url,headers,payload});assert.equal(response.statusCode,200,response.body);
   assert.deepEqual(response.json().items,payload.ids.map((id,index)=>({id,state:index===0?'present':'unavailable'})));
   assert.equal(store.evidence([deleted.id]).length,0);
@@ -201,7 +201,7 @@ test('album and grid browsing use the lightweight projection, scope devices and 
   const originalEvidence=store.evidence.bind(store),originalImage=store.image.bind(store);
   store.evidence=()=>{throw Error('Album/grid must not load evidence');};
   store.image=()=>{throw Error('Album/grid must not read image bytes');};
-  const range='after=2026-09-13T00:00:00Z&before=2026-09-14T00:00:00Z',headers=auth(phone.token);
+  const range='deviceId=phone&after=2026-09-13T00:00:00Z&before=2026-09-14T00:00:00Z',headers=auth(phone.token);
   const first=await app.inject({url:`/api/capture-browser/albums?${range}&limit=2`,headers});
   assert.equal(first.statusCode,200,first.body);assert.equal(first.json().albumCount,3);assert.equal(first.json().totalCount,3);
   assert.equal(first.json().items.length,2);assert.ok(first.json().nextCursor);
@@ -214,7 +214,7 @@ test('album and grid browsing use the lightweight projection, scope devices and 
   for(const key of ['ocr','ocrText','metadata','blobHash','textPreview']) assert.equal(key in grid.json().items[0],false);
   for(const path of ['albums','album-images']) {
     assert.equal((await app.inject({url:`/api/capture-browser/${path}?${range}&appId=a`})).statusCode,401);
-    assert.equal((await app.inject({url:`/api/capture-browser/${path}?${range}&deviceId=other&appId=a`,headers})).statusCode,403);
+    assert.equal((await app.inject({url:`/api/capture-browser/${path}?${range.replace('deviceId=phone','deviceId=other')}&appId=a`,headers})).statusCode,200);
   }
   assert.equal((await app.inject({url:`/api/capture-browser/albums?${range}&cursor=-1`,headers})).statusCode,400);
   assert.equal((await app.inject({url:`/api/capture-browser/album-images?${range}`,headers})).statusCode,400);
@@ -225,20 +225,20 @@ test('album and grid browsing use the lightweight projection, scope devices and 
   assert.equal((await app.inject({url:`/api/capture-browser/albums?${range}`,headers})).statusCode,401);
 });
 
-test('sessions split app returns and five-minute gaps, cross clock buckets, and enforce collector scope',async t=>{
+test('sessions split app returns and five-minute gaps, cross clock buckets, and preserve explicit device filters',async t=>{
   const {app,capture,paired}=await fixture(t),phone=await paired();
   const rows=[['a',899000],['a',900000],['a',1200000],['a',1500001],['b',1500002],['a',1500003]] as const;
   for(const [appId,ms] of rows)assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:{...capture(),appId,appName:appId,capturedAt:new Date(Date.UTC(2026,8,13)+ms).toISOString()}})).statusCode,201);
   assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:{...capture('foreign'),appId:'a',appName:'Generated A'}})).statusCode,201);
-  const url='/api/capture-browser/sessions?after=2026-09-13T00:00:00Z&before=2026-09-14T00:00:00Z';
+  const url='/api/capture-browser/sessions?deviceId=phone&after=2026-09-13T00:00:00Z&before=2026-09-14T00:00:00Z';
   assert.equal((await app.inject(url)).statusCode,401);
   const response=await app.inject({url,headers:auth(phone.token)});assert.equal(response.statusCode,200,response.body);
   const result=response.json();assert.equal(result.sessionCount,4);assert.equal(result.totalCount,6);assert.deepEqual(result.items.map((s:any)=>s.count),[1,1,1,3]);
   assert.ok(result.items.every((s:any)=>s.deviceId==='phone'));
   const images=await app.inject({url:url+'&sessionId='+result.items[3].id,headers:auth(phone.token)});
   assert.equal(images.statusCode,200,images.body);assert.equal(images.json().items.length,3);assert.ok(!images.body.includes('ocrText'));
-  assert.equal((await app.inject({url:url+'&deviceId=foreign',headers:auth(phone.token)})).statusCode,403);
-  const other=(await app.inject({url:url+'&deviceId=foreign',headers:auth()})).json().items[0];
+  assert.equal((await app.inject({url:url.replace('deviceId=phone','deviceId=foreign'),headers:auth(phone.token)})).statusCode,200);
+  const other=(await app.inject({url:url.replace('deviceId=phone','deviceId=foreign'),headers:auth()})).json().items[0];
   assert.equal((await app.inject({url:url+'&sessionId='+other.id,headers:auth(phone.token)})).statusCode,404);
   const first=(await app.inject({url:url+'&limit=2',headers:auth(phone.token)})).json();
   const second=(await app.inject({url:url+'&limit=2&cursor='+first.nextCursor,headers:auth(phone.token)})).json();
@@ -252,23 +252,23 @@ test('session members sharing a timestamp stay separate and pages do not include
   const {app,capture}=await fixture(t),at='2026-09-13T12:00:00.000Z';
   const ids=['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','33333333-3333-4333-8333-333333333333'];
   for(let i=0;i<ids.length;i++)assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:{...capture(),id:ids[i],appId:i===1?'b':'a',appName:i===1?'Generated B':'Generated A',capturedAt:at}})).statusCode,201);
-  const url='/api/capture-browser/sessions?after=2026-09-13T00:00:00Z&before=2026-09-14T00:00:00Z';
+  const url='/api/capture-browser/sessions?deviceId=phone&after=2026-09-13T00:00:00Z&before=2026-09-14T00:00:00Z';
   assert.equal((await app.inject({url,headers:auth()})).json().sessionCount,3);
   for(const id of ids){const page=(await app.inject({url:url+'&sessionId='+id,headers:auth()})).json();assert.deepEqual(page.items.map((r:any)=>r.id),[id]);}
 });
 
- test('derived update cursor is device scoped and collectors cannot alter perception policy',async t=>{
+ test('derived update cursor is device scoped and paired clients share perception permissions',async t=>{
  const {app,capture,paired}=await fixture(t),phone=await paired(),own=capture(),other=capture('other');
  for(const payload of [own,other])assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload})).statusCode,201);
  const response=await app.inject({url:'/api/capture-browser/updates?deviceId=phone&limit=20',headers:auth(phone.token)});
  assert.equal(response.statusCode,200);const page=response.json();assert.deepEqual(page.items.map((i:any)=>i.id),[own.id]);assert(page.nextCursor>0);assert.equal(JSON.stringify(page).includes('imageBase64'),false);
- assert.equal((await app.inject({url:'/api/capture-browser/updates?deviceId=other',headers:auth(phone.token)})).statusCode,403);
- for(const method of ['GET','PUT'] as const)assert.equal((await app.inject({method,url:'/api/perception',headers:auth(phone.token),...(method==='PUT'?{payload:{}}:{})})).statusCode,403);
+ assert.equal((await app.inject({url:'/api/capture-browser/updates?deviceId=other',headers:auth(phone.token)})).statusCode,200);
+ for(const method of ['GET','PUT'] as const){const a=await app.inject({method,url:'/api/perception',headers:auth(phone.token),...(method==='PUT'?{payload:{}}:{})}),b=await app.inject({method,url:'/api/perception',headers:auth(),...(method==='PUT'?{payload:{}}:{})});assert.equal(a.statusCode,b.statusCode);}
  assert.equal((await app.inject({url:'/api/perception',headers:auth()})).json().settings.allowQueryImages,false);
  assert.equal((await app.inject({method:'POST',url:`/api/perception/${own.id}/retry`,headers:auth(),payload:{kind:'semantic'}})).statusCode,400);
  });
 
-test('typed screenshot refs keep owner and collector scope checks before original or cached image reads',async t=>{
+test('typed screenshot refs keep full client permissions and explicit view filters before original or cached image reads',async t=>{
  const {app,capture,paired,image}=await fixture(t),phone=await paired(),record=capture();
  await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:record});
  const ref=encodeURIComponent('CAPTURE:'+record.id.toUpperCase());

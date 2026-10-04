@@ -1,3 +1,4 @@
+import {readAgentCredential} from './login-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -109,7 +110,7 @@ test('Web, MCP and Agent share ranked refs and scoped expansions across 400 gene
 });
 
 test('context routes require owner access and immutable references never silently resolve the head',async t=>{
- const {app,sources,call}=await fixture(t);
+ const {app,sources,call,connections}=await fixture(t);
  sources.register({id:'versions',name:'Generated versions',kind:'custom',deviceId:'generated',platform:'import'});
  const input={externalId:'item',revision:'1',observedAt:'2024-01-01T00:00:00.000Z',title:'Generated',text:'Original immutable version',kind:'message',layer:'original'};
  await sources.upsert('versions',input);const old=sources.getItem('versions','item')!.captureId;
@@ -120,7 +121,8 @@ test('context routes require owner access and immutable references never silentl
  assert.equal((await app.inject({url:'/api/context/search'})).statusCode,401);
  const invitation=(await app.inject({method:'POST',url:'/api/connections/invitations',headers,payload:{serverUrl:'https://synthetic.invalid',label:'fixture'}})).json();
  const credential=(await app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invitation.invitation.code,deviceId:'fixture',deviceName:'fixture',platform:'android'}})).json();
- const collector={authorization:`Bearer ${credential.token}`};
+ const restricted=await readAgentCredential(connections);
+ const collector={authorization:`Bearer ${restricted.token}`};
  for(const url of ['/api/operations','/api/operations/changes','/api/operations/file%3Afixture']){assert.equal((await app.inject({url})).statusCode,401);assert.equal((await app.inject({url,headers:collector})).statusCode,403);}
  for(const url of ['/api/operations?limit=101','/api/operations?cursor=-1','/api/operations?state=unknown','/api/operations/changes?since=9007199254740992'])assert.equal((await app.inject({url,headers})).statusCode,400,url);
  for(const path of ['search','browse','bundle','retrieve'])assert.equal((await app.inject({url:'/api/context/'+path,headers:collector})).statusCode,403,path);

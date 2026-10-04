@@ -16,7 +16,7 @@ object FileEvidencePoller {
         if (!config.hasSyncConnection() || SyncSchedule.waitingReason(context, config) != null) return
         settings.ensureDataOrigin(config)
         for (source in context.localSources().sources().filter { it.enabled && it.allowRead && it.kind == "local-files" && it.retention == "snapshot" }) {
-            val (code, body) = HttpJson.get("${config.server}/api/sources/${source.id}/read-requests", config.token)
+            val (code, body) = HttpJson.get("${config.server}/api/sources/${source.id}/read-requests", config.connectionToken())
             if (code != 200) continue
             val items = body?.optJSONArray("items") ?: continue
             for (i in 0 until minOf(100, items.length())) {
@@ -24,7 +24,7 @@ object FileEvidencePoller {
                 val version = request.getString("contentVersion"); val offset = request.getInt("offset"); val length = request.getInt("length"); check(offset in 0..10000000 && length in 1..16000)
                 val result = JSONObject().put("status", "denied").put("text", "").put("contentVersion", version)
                 val candidate = context.fileArchives().candidate(source.id, request.getString("externalId"))
-                fun authorized() = !ConnectionGuard.reconfiguring() && context.localSources().sources().any { it == source && it.enabled && it.allowRead } && settings.read().let { it.server == config.server && it.token == config.token } && SourceAccess.available(context, source)
+                fun authorized() = !ConnectionGuard.reconfiguring() && context.localSources().sources().any { it == source && it.enabled && it.allowRead } && settings.read().let { it.server == config.server && it.connectionToken().isNotBlank() && it.token == config.token } && SourceAccess.available(context, source)
                 if (request.getString("sourceId") == source.id && candidate != null && authorized() && SourceRules.include(candidate.optString("_relativePath", candidate.getString("title")), source)) {
                     runCatching {
                         val uri = Uri.parse(candidate.getString("uri")); val selected = Uri.parse(source.uri)
@@ -40,7 +40,7 @@ object FileEvidencePoller {
                         }
                     }.onFailure { result.put("status", "unavailable").put("text", "") }
                 }
-                if (authorized()) HttpJson.request("PUT", "${config.server}/api/sources/${source.id}/read-requests/$id", result, config.token)
+                if (authorized()) HttpJson.request("PUT", "${config.server}/api/sources/${source.id}/read-requests/$id", result, config.connectionToken())
             }
         }
     }

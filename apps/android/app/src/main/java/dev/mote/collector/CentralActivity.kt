@@ -31,6 +31,10 @@ open class CentralActivity : MoteActivity() {
     @Volatile private var revision = 0L
     private var resumed = false
     private val pending = java.util.ArrayDeque<Pair<Long, () -> Unit>>()
+    private var browserLoginId: String? = null
+    private var browserVerifier: String? = null
+    private var browserGeneration = -1L
+    private var browserDurationMs = 2592000000L
     private var screens: CentralScreens? = null
     private var pickerOrigin: String? = null
     private var pickerChat = false
@@ -41,9 +45,21 @@ open class CentralActivity : MoteActivity() {
     private var downloadGeneration = -1L
     private val refreshRun = Runnable { if (resumed && page == "ask") screens?.pollAsk() }
 
+    private val refreshLogin = object : Runnable {
+        override fun run() {
+            if (!resumed) return
+            if (client != null && Settings(this@CentralActivity).read().connectionToken().isBlank()) {
+                client = null; screens?.close(); screens?.clearPrivateState(); login()
+            }
+            handler.postDelayed(this, 1000)
+        }
+    }
+
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        browserLoginId = state?.getString("browserLoginId"); browserVerifier = state?.getString("browserVerifier"); browserGeneration = state?.getLong("browserGeneration") ?: -1L
+        browserDurationMs = state?.getLong("browserDurationMs", 2592000000L) ?: 2592000000L
         page = state?.getString("centralPage") ?: intent.getStringExtra("page") ?: "ask"
         pageHistory.addAll(state?.getStringArrayList("pageHistory").orEmpty())
         pickerOrigin = state?.getString("pickerOrigin"); pickerChat = state?.getBoolean("pickerChat") ?: false
@@ -92,6 +108,7 @@ open class CentralActivity : MoteActivity() {
 
     override fun onResume() {
         super.onResume(); resumed = true
+        handler.removeCallbacks(refreshLogin); handler.postDelayed(refreshLogin, 1000)
         work(MoteI18n.text("正在读取本机设置…"), { CentralAccess.resolve(this) }) { selected ->
             val endpoint = selected.server
             if (endpoint.isBlank()) {
@@ -105,13 +122,15 @@ open class CentralActivity : MoteActivity() {
             val authenticated = client == null && selected.client != null
             server = endpoint; client = selected.client
             if (changed || screens == null) screens = CentralScreens(this, body, File(noBackupFilesDir, "central-native/" + SourceRules.hash(endpoint)))
-            if (client == null) { screens?.clearPrivateState(); login() }
+            if (client == null) { screens?.clearPrivateState(); login(); if (browserLoginId != null) pollBrowserLogin() }
             else if (changed || authenticated || body.childCount == 0) navigate(page) else if (page == "ask") scheduleAskPoll()
         }
     }
-    override fun onPause() { resumed = false; handler.removeCallbacks(refreshRun); screens?.close(); super.onPause() }
-    override fun onDestroy() { handler.removeCallbacks(refreshRun); pending.clear(); screens?.close(); super.onDestroy() }
+    override fun onPause() { resumed = false; handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); screens?.close(); super.onPause() }
+    override fun onDestroy() { handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); pending.clear(); screens?.close(); super.onDestroy() }
     override fun onSaveInstanceState(state: Bundle) {
+        state.putLong("browserDurationMs", browserDurationMs)
+        state.putString("browserLoginId", browserLoginId); state.putString("browserVerifier", browserVerifier); state.putLong("browserGeneration", browserGeneration)
         state.putString("centralPage", page); state.putString("pickerOrigin", pickerOrigin); state.putBoolean("pickerChat", pickerChat)
         state.putStringArrayList("pageHistory", ArrayList(pageHistory))
         state.putLong("pickerGeneration", pickerGeneration); state.putString("downloadPath", downloadPath)
@@ -184,13 +203,13 @@ open class CentralActivity : MoteActivity() {
     private fun login() {
         revision++; body.removeAllViews(); collectionBar.visibility = View.GONE; title.text = MoteI18n.text("登录中央节点")
         navigation.select(MoteNavigation.centralTab(page))
-        text(server); text(MoteI18n.text("各中央页面共用此登录。设备配对仅用于采集同步，不授予中央管理权限。"))
+        text(server); text(MoteI18n.text("登录一次即可使用问答、资料库和同步等所有中央功能。"))
         val credential = field(MoteI18n.text("中央管理令牌"), password = true)
         text(MoteI18n.text("登录会话有效期"))
         val lifetime = Spinner(this).apply {
             adapter = ArrayAdapter(this@CentralActivity, android.R.layout.simple_spinner_dropdown_item,
                 listOf(MoteI18n.text("本次应用会话"), MoteI18n.text("1 天"), MoteI18n.text("7 天"), MoteI18n.text("30 天")))
-        }; body.addView(lifetime)
+        }; lifetime.setSelection(3); body.addView(lifetime)
         button(MoteI18n.text("登录并继续"), true) {
             val token = credential.text.toString().trim()
             val duration = listOf(0L, 86400000L, 7 * 86400000L, 30 * 86400000L)[lifetime.selectedItemPosition]
@@ -198,10 +217,45 @@ open class CentralActivity : MoteActivity() {
             work(MoteI18n.text("正在验证令牌…"), {
                 require(token.length in 32..8192 && token.none { it == '\r' || it == '\n' }) { MoteI18n.text("请输入有效的中央所有者令牌") }
                 CentralClient(origin, token).get("/api/configuration")
-                session.signIn(origin, token, duration, generation)
+                val config = Settings(this).read()
+                val grant = CentralClient(origin, token).post("/api/login/session", org.json.JSONObject().put("serverUrl", origin).put("deviceId", Settings(this).deviceId)
+                    .put("deviceName", config.deviceName).put("platform", "android").put("durationMs", duration))
+                session.signIn(origin, grant.getString("token"), duration, generation)
             }) { client = session.client(origin); navigate(page) }
         }
+        button(MoteI18n.text("使用浏览器登录")) { beginBrowserLogin(listOf(0L, 86400000L, 604800000L, 2592000000L)[lifetime.selectedItemPosition]) }
         connectionButton()
+    }
+
+    private fun beginBrowserLogin(durationMs: Long) {
+        val origin = server; val expected = session.generation
+        val verifier = android.util.Base64.encodeToString(ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING)
+        work(MoteI18n.text("正在连接中央节点…"), {
+            val config = Settings(this).read()
+            val (code, value) = HttpJson.post(origin + "/api/login/requests", org.json.JSONObject().put("serverUrl", origin).put("deviceId", Settings(this).deviceId)
+                .put("deviceName", config.deviceName).put("platform", "android").put("challenge", SourceRules.hash(verifier)).put("durationMs", durationMs))
+            check(code == 200); requireNotNull(value).getString("id")
+        }) { id ->
+            check(origin == server && expected == session.generation)
+            browserLoginId = id; browserVerifier = verifier; browserGeneration = expected; browserDurationMs = durationMs
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(origin + "/#/ask?loginRequest=" + id)))
+        }
+    }
+    private fun pollBrowserLogin() {
+        val id = browserLoginId ?: return; val verifier = browserVerifier ?: return; val origin = server
+        work(MoteI18n.text("正在验证令牌…"), {
+            val (code, value) = HttpJson.post(origin + "/api/login/poll", org.json.JSONObject().put("id", id).put("verifier", verifier))
+            if (code !in 200..299) { browserLoginId = null; browserVerifier = null; error(MoteI18n.text("登录会话已变更，请重新打开中央页面。")) }
+            val result = requireNotNull(value)
+            if (result.optBoolean("ready")) {
+                session.signIn(origin, result.getString("token"), browserDurationMs, browserGeneration)
+                runCatching { HttpJson.post(origin + "/api/login/ack", org.json.JSONObject().put("id", id).put("verifier", verifier)) }
+            }
+            result.optBoolean("ready")
+        }) { ready ->
+            if (ready) { browserLoginId = null; browserVerifier = null; client = session.client(origin); navigate(page) }
+            else if (resumed) handler.postDelayed({ if (resumed && browserLoginId == id) pollBrowserLogin() }, 1500)
+        }
     }
 
     internal fun text(value: String, size: Float = 15f, parent: LinearLayout = body): TextView = TextView(this).apply {
@@ -230,6 +284,8 @@ open class CentralActivity : MoteActivity() {
         }
         if (error is CentralFailure && error.status == 401 && error.code in setOf("", "unauthorized")) {
             work(MoteI18n.text("正在退出登录…"), { session.signOut(generation) }) { client = null; screens?.clearPrivateState(); login(); notice(error.message.orEmpty()) }
+        } else if (Settings(this).read().connectionToken().isBlank()) {
+            client = null; screens?.clearPrivateState(); login(); notice(error.message.orEmpty())
         } else if (page == "ask") scheduleAskPoll(5000)
     }
     internal fun scheduleAskPoll(delay: Long = 1500) { handler.removeCallbacks(refreshRun); if (resumed && page == "ask") handler.postDelayed(refreshRun, delay) }

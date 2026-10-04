@@ -1,3 +1,4 @@
+import {connectionToken,requireConnectionToken} from './login-session';
 import { moteText } from '@mote/shared/i18n';
 import {nativeCalendarActions} from './calendar-actions';
 import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
@@ -16,7 +17,7 @@ export function centralApiRequest(url: string, origin: string): boolean {
 export function centralPartition(origin: string): string { return 'persist:mote-central-' + createHash('sha256').update(validateServerUrl(origin)).digest('hex'); }
 export async function openCentralWindow(config: Config): Promise<BrowserWindow> {
   const origin = validateServerUrl(config.serverUrl);
-  if (!config.token) throw new Error(moteText("请先保存中央节点访问令牌"));
+  requireConnectionToken(config);
   const partition = centralPartition(origin), owner = Symbol(partition);
   guardOwners.set(partition, owner);
   const isolated = session.fromPartition(partition);
@@ -26,7 +27,7 @@ export async function openCentralWindow(config: Config): Promise<BrowserWindow> 
   isolated.webRequest.onBeforeSendHeaders((details, callback) => {
     const headers = { ...details.requestHeaders };
     for (const key of Object.keys(headers)) if (key.toLowerCase() === 'authorization') delete headers[key];
-    if (!central.isDestroyed() && !central.webContents.isDestroyed() && details.webContentsId === central.webContents.id && details.frame === central.webContents.mainFrame && centralApiRequest(details.url, origin)) headers.Authorization = `Bearer ${config.token}`;
+    if (!central.isDestroyed() && !central.webContents.isDestroyed() && details.webContentsId === central.webContents.id && details.frame === central.webContents.mainFrame && centralApiRequest(details.url, origin) && connectionToken(config)) headers.Authorization = `Bearer ${connectionToken(config)}`;
     callback({ requestHeaders: headers });
   });
   const downloadListener = (_event: Electron.Event, item: Electron.DownloadItem) => {

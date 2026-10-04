@@ -14,7 +14,12 @@ object HttpJson {
     private val active = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
     fun cancelActive() { active.toList().forEach { runCatching { it.disconnect() } } }
     @Volatile var onRequest: (() -> Unit)? = null
+    @Volatile var onUnauthorized: ((String, String) -> Unit)? = null
     @Volatile var onComplete: ((Long) -> Unit)? = null
+    internal fun rejectUnauthorized(status: Int, url: String, token: String?, error: String?) {
+        if (status == 401 && !token.isNullOrBlank() && error.orEmpty() in setOf("", "unauthorized", "connection_revoked"))
+            runCatching { onUnauthorized?.invoke(url, token) }
+    }
     fun post(url: String, body: JSONObject, token: String? = null): Pair<Int, JSONObject?> = request("POST", url, body, token)
     fun postBytes(url: String, body: ByteArray, token: String? = null, contentType: String): Pair<Int, JSONObject?> =
         requestBytes("POST", url, body, token, contentType)
@@ -62,7 +67,10 @@ object HttpJson {
                 }
                 output.toString("UTF-8")
             }
-            return code to response?.let { runCatching { JSONObject(it) }.getOrNull() }
+            val value = response?.let { runCatching { JSONObject(it) }.getOrNull() }
+            // External connector authorization failures do not invalidate the node login.
+            rejectUnauthorized(code, url, token, value?.optString("error"))
+            return code to value
         } finally { active.remove(connection); connection.disconnect(); runCatching { onComplete?.invoke(android.os.SystemClock.elapsedRealtime() - started) } }
     }
 }
@@ -139,7 +147,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     val body = JSONObject().put("ocrText", ocrUpdate.getString("ocrText")).put("status", ocrUpdate.getString("status"))
                     slice.record(body.toString().toByteArray(Charsets.UTF_8).size.toLong()); remaining--; ocrSinceCapture++
                     SyncSchedule.requireConditions(applicationContext, config)
-                    val (code, response) = HttpJson.post("${config.server}/api/capture-browser/$id/ocr", body, config.token)
+                    val (code, response) = HttpJson.post("${config.server}/api/capture-browser/$id/ocr", body, config.connectionToken())
                     if ((code == 404 && response?.optString("error") == "capture_not_found") || code == 410) {
                         queue.archiveMissing(id); pendingRecordId = null
                         settings.syncStatus("error", MoteI18n.text("中央记录已不可更新；本机保留图片和失败状态，不会重新创建记录"))
@@ -183,7 +191,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                         val body = JSONObject().put("captures", org.json.JSONArray(batch))
                         wireBytes += body.toString().toByteArray(Charsets.UTF_8).size
                         SyncSchedule.requireConditions(applicationContext, config)
-                        HttpJson.post("${config.server}/api/captures/batch", body, config.token)
+                        HttpJson.post("${config.server}/api/captures/batch", body, config.connectionToken())
                     }
                     sent = result.first; response = result.second; individual = false
                 }
@@ -192,7 +200,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     val result = UploadNegotiation.sendShrinking(sent) { batch ->
                         val bundle = CaptureBundle.encode(batch); wireBytes += bundle.size
                         SyncSchedule.requireConditions(applicationContext, config)
-                        HttpJson.postBytes("${config.server}/api/captures/bundle", bundle, config.token, CaptureBundle.CONTENT_TYPE)
+                        HttpJson.postBytes("${config.server}/api/captures/bundle", bundle, config.connectionToken(), CaptureBundle.CONTENT_TYPE)
                     }
                     sent = result.first; response = result.second
                     if (UploadNegotiation.unsupported(response.first)) {
@@ -204,7 +212,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     sent = events.take(1); individual = true
                     wireBytes += sent.first().toString().toByteArray(Charsets.UTF_8).size
                     SyncSchedule.requireConditions(applicationContext, config)
-                    response = HttpJson.post("${config.server}/api/captures", sent.first(), config.token)
+                    response = HttpJson.post("${config.server}/api/captures", sent.first(), config.connectionToken())
                 }
                 slice.record(wireBytes); ocrSinceCapture = 0
                 liveBytes = if (preferNew) liveBytes + wireBytes else 0L
@@ -297,7 +305,7 @@ internal object SyncHeartbeat {
         else if (status == "error") body.put("error", settings.message())
         SyncSchedule.requireConditions(context, config)
         Diagnostics(context).add("heartbeatRequests")
-        val (code, response) = HttpJson.post("${config.server}/api/devices/heartbeat", body, config.token)
+        val (code, response) = HttpJson.post("${config.server}/api/devices/heartbeat", body, config.connectionToken())
         if (code !in 200..299 || response?.optBoolean("ok") != true) SupportEvents.record(context, EventStage.HEARTBEAT, EventJournal.httpFailure(code), httpStatus = code)
         if (code !in 200..299 || response?.optBoolean("ok") != true) {
             Operations.record(context, OperationKind.HEARTBEAT_FAILED, Operations.httpReason(code), httpStatus = code)

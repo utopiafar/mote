@@ -274,6 +274,7 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
   for (const input of Array.from(document.querySelectorAll<HTMLInputElement>('[name=sync-mode]'))) input.checked = input.value === config.syncMode;
   byId<HTMLInputElement>('confirm-local-backlog').checked = false;
   refreshPresets(); updateSyncOptions(); renderMaskEditor(); updateLocalBacklog();
+  updateTokenField();
   settingsDirty = false; updateSettingsHint();
 }
 function renderStorage(): void {
@@ -291,7 +292,13 @@ byId('capture-directory-default').addEventListener('click', () => { captureStora
 byId('capture-directory-open').addEventListener('click', () => void perform(() => desktopApi.openCaptureDirectory()));
 let connectionPreview: import('./connection').ConnectionPreview | undefined;
 function render(status: import('./contracts').Status): void {
+  if(currentStatus&&(currentStatus.config.serverUrl!==status.config.serverUrl||currentStatus.config.tokenConfigured!==status.config.tokenConfigured||currentStatus.config.authSignedOut!==status.config.authSignedOut||currentStatus.config.authExpiresAt!==status.config.authExpiresAt)){
+    askGeneration++;clearTimeout(askTimer);askRun=undefined;askConversation=undefined;askPendingInput=undefined;byId('ask-history').replaceChildren();renderAsk();setText('ask-login-status','');
+  }
   currentStatus = status; renderStorage();
+  byId('node-login-panel').hidden = status.config.tokenConfigured;
+  byId('ask-logout').hidden = !status.config.tokenConfigured;
+  updateTokenField();
   const operations = status.operations ?? [];
   byId('background-progress').hidden = !operations.length;
   byId('background-progress').textContent = operations.map(job => `${job.message}${job.total !== undefined ? ` · ${job.completed ?? 0}/${job.total}` : ''}${job.state === 'running' ? moteText(" · 已用 {0} 秒", Math.floor((Date.now() - job.startedAt) / 1000)) : ''}`).join('；');
@@ -702,7 +709,7 @@ setInterval(() => {
 
 function renderConnection(value: import('./connection').ConnectionStatus): void {
   byId('connection-state').textContent = value.message + (value.checkedAt ? ' · ' + new Date(value.checkedAt).toLocaleTimeString(getLocale()) : '');
-  byId('connection-capabilities').textContent = value.identity ? moteText("权限：{0} · 中央 {1} · 环境 {2}", value.identity.credential.scope === 'collector' ? moteText("此设备采集与自身来源同步") : moteText("管理员"), value.identity.node.version, value.identity.node.profile) : currentStatus?.config.credentialScope === 'collector' ? moteText("已保存采集专用凭据；完整仓库需单独管理员登录。") : '';
+  byId('connection-capabilities').textContent = value.identity ? moteText("权限：{0} · 中央 {1} · 环境 {2}", value.identity.credential.scope === 'collector' ? moteText("管理员") : moteText("管理员"), value.identity.node.version, value.identity.node.profile) : currentStatus?.config.credentialScope === 'collector' ? moteText("登录凭据已安全保存，所有中央功能共用此登录。") : '';
 }
 function clearConnectionPreview(): void { connectionPreview = undefined; byId('connection-confirmation').hidden = true; byId<HTMLInputElement>('connection-confirm-origin').checked = false; }
 function showConnectionPreview(value: import('./connection').ConnectionPreview): void {
@@ -789,6 +796,10 @@ function updateLocalBacklog(): void {
   try { destination = new URL(readInput('server-url')).origin; } catch { /* Blank means local-only. */ }
   byId('local-backlog-copy').textContent = moteText("本机有 {0} 条尚未绑定节点的待传记录，及可能尚未完成保存的随手记。确认后将归属 {1}，按上传策略发送。", currentStatus.sync.pendingRecords, destination);
 }
+function updateTokenField(): void {
+  byId('node-token-field').hidden = Boolean(currentStatus?.config.tokenConfigured && readInput('server-url').trim().replace(/\/$/, '') === currentStatus.config.serverUrl.replace(/\/$/, ''));
+}
+byId('server-url').addEventListener('input', updateTokenField);
 for (const id of ['server-url', 'token']) byId(id).addEventListener('input', () => { byId<HTMLInputElement>('confirm-local-backlog').checked = false; updateLocalBacklog(); });
 
 const presetFields: Record<string, [number, string][]> = {
@@ -1029,7 +1040,7 @@ function renderAsk(): void {
   }
   if (askConversation?.turns.some(turn => turn.result?.citations?.length)) {
     const hint = document.createElement('p'); hint.className = 'helper';
-    hint.textContent = moteText('中央仓库将在 Chrome 打开，未安装时使用默认浏览器。请在浏览器中独立登录管理员账号；采集令牌不会传给浏览器。');
+    hint.textContent = moteText('中央仓库将在浏览器中打开，并接续客户端的登录。');
     messages.append(hint);
   }
   const last = askRun?.events?.at(-1);
@@ -1095,5 +1106,6 @@ byId('ask-refresh').addEventListener('click', () => void refreshAsk());
 byId('ask-more').addEventListener('click', () => void askAction(() => askHistory(true)));
 byId('ask-stop').addEventListener('click', () => void askAction(async () => { if (askRun) { askRun = await askCall('cancel', {id: askRun.id}); renderAsk(); scheduleAskPoll(); } }));
 byId('ask-new').addEventListener('click', () => { if (askBusy || askRun?.status === 'running') return; askGeneration++; clearTimeout(askTimer); askRun = undefined; askConversation = undefined; renderAsk(); });
-byId('ask-login').addEventListener('click', () => { const token = readInput('ask-token'); byId<HTMLInputElement>('ask-token').value = ''; void askAction(async () => { setText('ask-login-status', moteText('正在连接中央节点…')); try { await askCall('login', {token}); } catch (error) { setText('ask-login-status', moteText('问一问需要有效的中央所有者令牌，请登录。')); throw error; } setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl)); askGeneration++; askRun = undefined; askConversation = undefined; renderAsk(); await askHistory(); }); });
-byId('ask-logout').addEventListener('click', () => void askAction(async () => { await askCall('logout'); setText('ask-login-status', moteText('已退出问答登录')); askGeneration++; clearTimeout(askTimer); askRun = undefined; askConversation = undefined; byId('ask-history').replaceChildren(); renderAsk(); }));
+byId('ask-login').addEventListener('click', () => { const token = readInput('ask-token'); byId<HTMLInputElement>('ask-token').value = ''; void askAction(async () => { setText('ask-login-status', moteText('正在连接中央节点…')); try { await askCall('login', {token,durationMs:Number(readInput('ask-lifetime'))}); } catch (error) { setText('ask-login-status', moteText('请先登录中央节点，各页面会共用这次登录。')); throw error; } setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl)); askGeneration++; askRun = undefined; askConversation = undefined; renderAsk(); await askHistory(); }); });
+byId('ask-browser-login').addEventListener('click',()=>void askAction(async()=>{await askCall('login-browser',{durationMs:Number(readInput('ask-lifetime'))});await askHistory();setText('ask-login-status',moteText('已登录 · {0}',currentStatus.config.serverUrl));}));
+byId('ask-logout').addEventListener('click', () => void askAction(async () => { await askCall('logout'); setText('ask-login-status', moteText('已退出中央登录')); askGeneration++; clearTimeout(askTimer); askRun = undefined; askConversation = undefined; byId('ask-history').replaceChildren(); renderAsk(); }));

@@ -62,7 +62,7 @@ class ConnectionClient(private val context: Context) {
         verifySelf(server, response.getString("token"), response.getString("credentialId"))
         settings.saveConnection(server, response.getString("token"), deviceName, debugHttp)
         check(settings.read().let { it.server == server && it.token == response.getString("token") })
-        prefs.edit().putString("credentialId", response.getString("credentialId")).putString("scope", "collector").putString("targetHash", SourceRules.target(server, response.getString("token"))).putString("status", "connected").putLong("at", System.currentTimeMillis()).commit()
+        prefs.edit().putString("credentialId", response.getString("credentialId")).putString("scope", "owner").putString("targetHash", SourceRules.target(server, response.getString("token"))).putString("status", "connected").putLong("at", System.currentTimeMillis()).commit()
         pending.delete(); Operations.record(context, OperationKind.CONNECTION_OK)
     }
     private fun scheduleUploads() {
@@ -72,7 +72,7 @@ class ConnectionClient(private val context: Context) {
         if (!ConnectionGuard.reconfiguring()) runCatching { UploadWorker.schedule(context, settings.read()) }
     }
     private fun validateResponse(body: JSONObject?, server: String) {
-        if (body == null || body.opt("scope") != "collector" || body.opt("serverUrl") != server ||
+        if (body == null || body.opt("scope") !in setOf("owner", "collector") || body.opt("serverUrl") != server ||
             !(body.opt("token") as? String ?: "").matches(Regex("[A-Za-z0-9._~-]{32,2048}")) ||
             !(body.opt("credentialId") as? String ?: "").matches(Regex("[A-Za-z0-9_.:-]{1,128}"))) throw ConnectionFailure("response")
     }
@@ -84,15 +84,15 @@ class ConnectionClient(private val context: Context) {
         if (body.has("node") && node == null) throw ConnectionFailure("response")
         ProtocolCompatibility.requireCompatible(node?.opt("protocol"))
         val scope = credential.opt("scope")
-        if (scope !in setOf("owner", "collector") || (credentialId != null && (scope != "collector" || credential.opt("id") != credentialId)) ||
-            (scope == "collector" && (credential.opt("deviceId") != settings.deviceId || credential.opt("platform") != "android" || credential.opt("serverUrl") != server)) ||
+        if (scope !in setOf("owner", "collector") || (credentialId != null && (scope !in setOf("owner", "collector") || credential.opt("id") != credentialId)) ||
+            (credential.has("deviceId") && (credential.opt("deviceId") != settings.deviceId || credential.opt("platform") != "android" || credential.opt("serverUrl") != server)) ||
             body.optJSONObject("capabilities")?.opt("ingest") != true) throw ConnectionFailure("identity")
         return credential
     }
     fun test(): String = ConnectionGuard.sync {
         val config = settings.read(); PrivacyRules.validateEndpoint(config.server, config.debugHttp, BuildConfig.DEBUG)
         try {
-            val credential = verifySelf(config.server, config.token)
+            val credential = verifySelf(config.server, config.connectionToken())
             val scope = credential.getString("scope")
             prefs.edit().putString("status", "connected").putString("targetHash", SourceRules.target(config.server, config.token)).putString("scope", scope).putLong("at", System.currentTimeMillis()).commit()
             Operations.record(context, OperationKind.CONNECTION_OK); scope

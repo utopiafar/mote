@@ -319,14 +319,16 @@ export function LoginDialog({ destination, onConnected, onClose }: {
     try {
       if (!token.trim()) throw new Error(moteText("请输入管理访问令牌。"));
       const connection = {token: token.trim()};
-      // A collector credential must never unlock owner-only management pages.
+      // Every human client uses the same node permissions.
       await createApi(connection).request("/api/configuration", {signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)])});
-      if (!controller.signal.aborted) onConnected(connection, lifetime);
+      const durationMs=({session:0,'1d':86400000,'7d':604800000,'30d':2592000000})[lifetime];
+      const session=await createApi(connection).request<Connection>('/api/login/session',{method:'POST',body:JSON.stringify({serverUrl:location.origin,deviceId:crypto.randomUUID(),deviceName:'Mote Browser',platform:'other',durationMs}),signal:controller.signal});
+      if (!controller.signal.aborted) onConnected({...session,serverExpiresAt:session.expiresAt}, lifetime);
     } catch (e) {
       if (!controller.signal.aborted) setError(e instanceof ApiError && e.status === 401
         ? moteText("令牌无效或已失效，请检查后重新登录。")
         : e instanceof ApiError && e.status === 403
-          ? moteText("此令牌没有管理权限。请使用中央节点的管理令牌，设备配对凭据不能登录管理页面。")
+          ? moteText("请升级中央节点后再登录。")
           : errorMessage(e));
     } finally { if (!controller.signal.aborted) setBusy(false); active.current = null; }
   }

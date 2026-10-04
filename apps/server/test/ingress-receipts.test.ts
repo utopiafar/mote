@@ -29,11 +29,14 @@ test('receipts promise recoverable input before Coding publication and remain id
   assert.deepEqual(retry.json().receipt,{...first.json().receipt,duplicate:true});
   const second={...item,externalId:'event-2'};
   const oldClient=await node.app.inject({method:'PUT',url:'/api/sources/generated-coding/items',headers:collectorHeaders,payload:second});
-  assert.equal(oldClient.statusCode,426,oldClient.body);
-  assert.equal(oldClient.json().error,'ingress_protocol_upgrade_required');
+  // Full clients share the root Token's acceptance; v2 receipt semantics still apply.
+  assert.equal(oldClient.statusCode,200,oldClient.body);
+  assert.equal(oldClient.json().receipt.state,'received');
+  assert.equal(oldClient.json().receipt.duplicate,false);
   const upgraded=await node.app.inject({method:'PUT',url:'/api/sources/generated-coding/items',headers:{...collectorHeaders,'x-mote-ingress-version':'2'},payload:second});
   assert.equal(upgraded.statusCode,200,upgraded.body);
   assert.equal(upgraded.json().receipt.state,'received');
+  assert.equal(upgraded.json().receipt.duplicate,true);
   const capture={id:randomUUID(),deviceId:'fixture-device',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-09-24T01:00:00Z',durationMs:0,ocrText:'Generated note'};
   const note=await node.app.inject({method:'POST',url:'/api/captures',headers,payload:capture});
   assert.equal(note.statusCode,201,note.body);

@@ -1,3 +1,4 @@
+import {readAgentCredential} from './login-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,writeFileSync,readFileSync} from 'node:fs';
@@ -125,8 +126,8 @@ for(const invalid of ['quote','relation'] as const)test(`plugin output cannot by
  const f=await fixture(t),{products}=await f.add('diary');f.control.badQuote=invalid==='quote';f.control.relation=invalid==='relation';f.control.badRelation=invalid==='relation';f.queue(products.map(m=>m.id));await f.node.lifecycle.tick();assert.equal(f.products().length,0);assert.ok(f.view().error);assert.equal(f.node.memories.get(products[0].id).supersededBy,undefined);
 });
 
-test('collectors cannot select policies, trigger paid history or control integration tasks',async t=>{
- const f=await fixture(t);const {invitation}=f.node.connections.invite({label:'Generated collector',serverUrl:'http://127.0.0.1',deviceId:'generated'}),credential=await f.node.connections.redeem({code:invitation.code,deviceId:'generated',deviceName:'Generated',platform:'android'});
+test('query agents cannot select policies, trigger paid history or control integration tasks',async t=>{
+ const f=await fixture(t);const {invitation}=f.node.connections.invite({label:'Generated collector',serverUrl:'http://127.0.0.1',deviceId:'generated'}),credential=await readAgentCredential(f.node.connections);
  for(const [method,url,payload] of [['GET','/api/memory-integration-recipes'],['GET','/api/memory-integration-settings'],['PUT','/api/memory-integration-settings',{recipe:ref('base')}],['POST','/api/memory-integrations',{}],['POST',`/api/memory-integrations/${randomUUID()}/cancel`],['POST',`/api/memory-integrations/${randomUUID()}/retry`]] as const){const response=await f.api(method,url,payload,credential.token);assert.equal(response.statusCode,403,response.body);}assert.equal(f.calls.length,0);
 });
 

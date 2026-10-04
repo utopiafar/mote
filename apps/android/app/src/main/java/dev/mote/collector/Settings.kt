@@ -8,6 +8,7 @@ import java.util.UUID
 data class CollectorConfig(
     val uiPageMode: String = "screen_only", val uiPageRules: String = "[]",
     val uploadGate: UploadGateConfig = UploadGateConfig(),
+    val authSignedOut: Boolean = false, val authExpiresAt: Long = 0, val authProcess: String = "",
     val server: String = "", val token: String = "", val deviceName: String = Build.MODEL,
     val intervalSeconds: Int = 30, val maxQueueMiB: Int = 256, val wifiOnly: Boolean = true,
     val excludedPackages: String = "", val masks: String = "", val localReviewUrl: String = "",
@@ -26,11 +27,12 @@ data class CollectorConfig(
     val pageRules by lazy { UiPageRules.parse(uiPageRules) }
     val collectionRules by lazy { AppCollectionRules.parse(appCollectionRules) }
     fun effectiveMode() = if (collectionRules.mayCollectContent()) mode else "accessibility"
-    fun hasSyncConnection() = server.isNotBlank() && token.length >= 32
+    fun connectionToken(): String = if (!authSignedOut && (authExpiresAt == 0L || authExpiresAt > System.currentTimeMillis()) && (authProcess.isBlank() || authProcess == LoginProcess.id)) token else ""
+    fun hasSyncConnection() = server.isNotBlank() && connectionToken().length >= 32
     fun syncPolicy() = SyncPolicy(syncMode, syncIntervalMinutes, syncBatchSize)
     fun validateConnection() {
         PrivacyRules.validateEndpoint(server, debugHttp, BuildConfig.DEBUG)
-        require(token.length >= 32) { MoteI18n.text("节点令牌至少需要 32 个字符") }
+        require(connectionToken().length >= 32) { MoteI18n.text("节点令牌至少需要 32 个字符") }
     }
     fun validate() {
         require(uiPageMode in UiPageRules.modes); UiPageRules.parse(uiPageRules)
@@ -83,6 +85,7 @@ class Settings(private val context: Context) {
         val config = CollectorConfig(
         uiPageMode = prefs.getString("uiPageMode", "screen_only")!!, uiPageRules = prefs.getString("uiPageRules", "[]")!!,
         uploadGate = UploadGateConfig(prefs.getBoolean("uploadGateEnabled", true), prefs.getString("uploadGateText", "")!!, prefs.getString("uploadGateFailure", "hold")!!),
+        authSignedOut = prefs.getBoolean("authSignedOut", false), authExpiresAt = prefs.getLong("authExpiresAt", 0), authProcess = prefs.getString("authProcess", "")!!,
         server = prefs.getString("server", BuildConfig.DEFAULT_SERVER)!!,
         token = credentials(prefs.getString("token", null)),
         deviceName = prefs.getString("deviceName", Build.MODEL)!!,
@@ -125,6 +128,7 @@ class Settings(private val context: Context) {
         c.validate()
         val origin = originAfterChange(c)
         val values = mapOf<String, Any>(
+            "authSignedOut" to c.authSignedOut, "authExpiresAt" to c.authExpiresAt, "authProcess" to c.authProcess,
             "uiPageMode" to c.uiPageMode, "uiPageRules" to c.uiPageRules,
             "uploadGateEnabled" to c.uploadGate.enabled, "uploadGateText" to c.uploadGate.blockedText, "uploadGateFailure" to c.uploadGate.failureAction,
             "contentEncryptionEnabled" to c.contentEncryptionEnabled, "uploadedRetentionDays" to c.uploadedRetentionDays,
@@ -161,24 +165,24 @@ class Settings(private val context: Context) {
         }
         /* Configuration is committed as one snapshot; status counters are never rolled back. */
     }
+    fun rejectCredential(url: String, token: String) = synchronized(Settings::class.java) {
+        val current = read()
+        if (token == current.connectionToken() && url.startsWith(current.server.trimEnd('/') + "/api/")) signOut()
+    }
+    fun signOut() = synchronized(Settings::class.java) {
+        if (!prefs.edit().putBoolean("authSignedOut", true).commit()) throw SettingsWriteFailure()
+    }
     fun centralEndpoint(): String = prefs.getString("centralEndpoint", "")!!
     fun saveConnection(server: String, token: String, deviceName: String, debugHttp: Boolean) = synchronized(Settings::class.java) {
-        val next = read().copy(server = server, token = token, deviceName = deviceName, debugHttp = debugHttp)
-        next.validate(); next.validateConnection()
-        val origin = originAfterChange(next)
-        val previousServer = prefs.getString("server", null); val previousToken = prefs.getString("token", null)
-        val previousOrigin = prefs.getString("dataOrigin", null)
-        val previousCentralEndpoint = prefs.getString("centralEndpoint", null)
-        val previousName = prefs.getString("deviceName", null); val previousHttp = prefs.getBoolean("debugHttp", BuildConfig.MOTE_PROFILE == "dev")
-        val saved = prefs.edit().putString("centralEndpoint", server.trim().trimEnd('/')).putString("dataOrigin", origin).putString("server", server.trimEnd('/')).putString("token", Base64.encodeToString(secret.seal(token.toByteArray()), Base64.NO_WRAP))
-            .putString("deviceName", deviceName).putBoolean("debugHttp", debugHttp).commit()
-        if (!saved) {
-            // Restore memory as well as attempt durable rollback; caller retains the encrypted redemption journal.
-            if (!prefs.edit().putString("centralEndpoint", previousCentralEndpoint).putString("dataOrigin", previousOrigin).putString("server", previousServer).putString("token", previousToken).putString("deviceName", previousName).putBoolean("debugHttp", previousHttp).commit()) {
-                enabled = false; status("error", MoteI18n.text("连接设置未能持久恢复，采集已停止；原连接恢复资料仍保留"))
-            }
-            throw SettingsWriteFailure()
-        }
+        val next = read().copy(server = server, token = token, deviceName = deviceName, debugHttp = debugHttp, authSignedOut = false, authExpiresAt = 0, authProcess = "")
+        next.validateConnection(); save(next, confirmCentralEndpoint = true)
+    }
+    fun signIn(server: String, token: String, durationMs: Long) = synchronized(Settings::class.java) {
+        require(durationMs in setOf(0L, 86400000L, 604800000L, 2592000000L))
+        val next = read().copy(server = server, token = token, authSignedOut = false,
+            authExpiresAt = if (durationMs == 0L) 0 else System.currentTimeMillis() + durationMs,
+            authProcess = if (durationMs == 0L) LoginProcess.id else "")
+        next.validateConnection(); save(next, confirmCentralEndpoint = true)
     }
     /** Sticky while records or prepared submissions exist, including after disconnecting. */
     fun dataOrigin(): String {
@@ -222,7 +226,7 @@ class Settings(private val context: Context) {
         private var cachedConfig: CollectorConfig? = null
         private var cachedCiphertext: String? = null
         private var cachedToken = ""
-        private val configurationKeys = setOf("uiPageMode", "uiPageRules", "packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uploadedRetentionDays", "contentEncryptionEnabled", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "jsonlWindowMinutes", "localReview", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "nsfwEnabled", "nsfwSource", "nsfwThreads", "ocrAppModes", "ocrChargingOnly", "ocrMode", "qwenCustomUrl", "qwenMaxSide", "qwenMaxTokens", "qwenPolicy", "qwenTimeout", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
+        private val configurationKeys = setOf("authSignedOut", "authExpiresAt", "authProcess", "uiPageMode", "uiPageRules", "packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uploadedRetentionDays", "contentEncryptionEnabled", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "jsonlWindowMinutes", "localReview", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "nsfwEnabled", "nsfwSource", "nsfwThreads", "ocrAppModes", "ocrChargingOnly", "ocrMode", "qwenCustomUrl", "qwenMaxSide", "qwenMaxTokens", "qwenPolicy", "qwenTimeout", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
 
     }
     fun saveNsfw(value: NsfwConfig) {
@@ -246,3 +250,5 @@ class Settings(private val context: Context) {
 }
 
 fun Context.queue() = QueueStorage(this).openQueue().apply { archiveOrigin = Settings(this@queue).dataOrigin() }
+
+internal object LoginProcess { val id: String = UUID.randomUUID().toString() }

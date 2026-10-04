@@ -1,3 +1,4 @@
+import {readAgentCredential} from './login-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
@@ -25,7 +26,7 @@ test('owner cancellation aborts import parsing, fences late results, survives re
  const wait=async(id:string,status:string)=>{for(let i=0;i<100;i++){const job=await get(id);if(job.status===status)return job;await setTimeout(10);}assert.fail('Import did not reach '+status);};
  const created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{processing:'automatic',files:[{name:'generated.custom',dataBase64:Buffer.from('Generated original').toString('base64')}]}});assert.equal(created.statusCode,202);
  const id=created.json().id;await started;
- const {invitation}=node.connections.invite({serverUrl:'http://127.0.0.1:3456',label:'Generated collector'});const collector=await node.connections.redeem({code:invitation.code,deviceId:'generated',deviceName:'Generated',platform:'macos'});
+ const {invitation}=node.connections.invite({serverUrl:'http://127.0.0.1:3456',label:'Generated collector'});const collector=await readAgentCredential(node.connections);
  for(const [authorization,status] of [['',401],['Bearer '+collector.token,403]] as const)assert.equal((await node.app.inject({method:'POST',url:`/api/imports/${id}/cancel`,headers:{authorization}})).statusCode,status);
  const cancelled=await node.app.inject({method:'POST',url:`/api/imports/${id}/cancel`,headers});assert.equal(cancelled.statusCode,200);assert.equal(cancelled.json().status,'cancelled');assert.equal(signal?.aborted,true);
  const premature=await node.app.inject({method:'POST',url:`/api/imports/${id}/retry`,headers});assert.equal(premature.statusCode,409);assert.equal(premature.json().error,'import_stopping');assert.equal(calls,1);

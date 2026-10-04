@@ -1,3 +1,4 @@
+import {readAgentCredential} from './login-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -93,7 +94,7 @@ test('attachment admission requires owner authorization and exact retained paren
  const f=await fixture(t),authored=await f.author('authorized'),other=await f.author('foreign');
  assert.equal((await f.request(authored.id,authored.originals[0].id,{},{})).statusCode,401);
  const {invitation}=f.node.connections.invite({label:'Generated collector',serverUrl:'http://127.0.0.1:57569',deviceId:'generated-attachments'});
- const collector=await f.node.connections.redeem({code:invitation.code,deviceId:'generated-attachments',deviceName:'Generated',platform:'android'});
+ const collector=await readAgentCredential(f.node.connections);
  assert.equal((await f.request(authored.id,authored.originals[0].id,{mimeType:'image/png'},{authorization:'Bearer '+collector.token})).statusCode,403);
  assert.equal((await f.request(authored.id,other.originals[0].id)).statusCode,404);
  assert.equal((await f.request(authored.id,authored.originals[0].id,{})).statusCode,400);

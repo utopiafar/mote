@@ -113,7 +113,7 @@ test('media evidence references are bounded without truncating interval totals o
   const result=store.mediaActivity();assert.equal(result.totalDurationMs,101000);assert.equal(result.observations,101);assert.equal(result.evidenceIds.length,100);assert.equal(result.evidenceTruncated,true);assert.equal(result.apps[0].evidenceTruncated,true);
 });
 
-test('media API scopes collector reads and writes to its device and exposes a read-only agent reader',async t=>{
+test('media API allows full client reads and writes with explicit device filters and exposes a read-only agent reader',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-media-api-')),token='generated-media-owner-token';
   const config:Config={dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   let reader:ContextReader|undefined;
@@ -124,16 +124,16 @@ test('media API scopes collector reads and writes to its device and exposes a re
   const paired=(await app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invitation.invitation.code,deviceId:'phone',deviceName:'Generated phone',platform:'android'}})).json();
   const collector={authorization:`Bearer ${paired.token}`,'x-mote-ingress-version':'2'},own=record(),foreign=record({deviceId:'another-phone'});
   assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:collector,payload:own})).statusCode,201);
-  assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:collector,payload:foreign})).statusCode,403);
-  assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:owner,payload:foreign})).statusCode,201);
+  assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:collector,payload:foreign})).statusCode,201);
+  assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:owner,payload:foreign})).statusCode,200);
   assert.equal((await app.inject('/api/media-activity')).statusCode,401);
   const all=(await app.inject({url:'/api/media-activity',headers:owner})).json();assert.equal(all.totalDurationMs,40000);
-  const scoped=(await app.inject({url:'/api/media-activity',headers:collector})).json();assert.equal(scoped.totalDurationMs,20000);assert.deepEqual(scoped.evidenceIds,[own.id]);
-  assert.equal((await app.inject({url:'/api/media-activity?deviceId=another-phone',headers:collector})).statusCode,403);
+  const scoped=(await app.inject({url:'/api/media-activity?deviceId=phone',headers:collector})).json();assert.equal(scoped.totalDurationMs,20000);assert.deepEqual(scoped.evidenceIds,[own.id]);
+  assert.equal((await app.inject({url:'/api/media-activity?deviceId=another-phone',headers:collector})).statusCode,200);
   assert.equal((await app.inject({url:'/api/capture-browser?source=media',headers:collector})).json().items[0].media.sessions[0].title,'虚构海边故事');
   for(const query of ['screenLocked=maybe','after=bad','appVisibility=guess','after='+at(20)+'&before='+at(10)])assert.equal((await app.inject({url:'/api/media-activity?'+query,headers:owner})).statusCode,400);
   assert.equal((await app.inject({url:'/api/media-activity?screenLocked=false',headers:owner})).json().totalDurationMs,0);
   assert.deepEqual(await reader!.mediaActivity!({deviceId:'phone'}),scoped);
   await app.inject({method:'DELETE',url:'/api/connections/'+paired.credentialId,headers:owner});
-  assert.equal((await app.inject({url:'/api/media-activity',headers:collector})).statusCode,401);
+  assert.equal((await app.inject({url:'/api/media-activity?deviceId=phone',headers:collector})).statusCode,401);
 });
