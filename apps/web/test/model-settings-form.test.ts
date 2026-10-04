@@ -75,3 +75,12 @@ test('endpoint safety and numeric bounds are checked before any request', () => 
   const local = modelSettingsRequest(snapshot, {...draft, baseUrl: 'http://127.0.0.1:11434/v1', allowUnauthenticatedLocal: true, apiKeyAction: 'clear', headersAction: 'clear', extraBodyAction: 'clear'});
   assert.equal(local.settings.modelRequestTimeoutMs, 120000); assert.equal(local.settings.agentTimeoutMs, 120000);
 });
+
+
+test('Codex speed drafts preserve Fast, default legacy presets to Standard and omit tiers for HTTP',()=>{
+  const codex={...snapshot,settings:{...snapshot.settings,provider:'codex',protocol:'codex-app-server' as const,baseUrl:'',modelRequestTimeoutMs:null,agentTimeoutMs:null}};
+  const legacy=createModelDraft(codex.settings);assert.equal(legacy.serviceTier,'default');assert.equal(modelDraftChanged(legacy,codex.settings),false);
+  assert.equal(modelSettingsRequest(codex,{...legacy,serviceTier:'fast'}).settings.serviceTier,'fast');
+  const saved={...codex.settings,serviceTier:'fast' as const};assert.equal(createModelDraft(saved).serviceTier,'fast');
+  assert.equal(Object.hasOwn(modelSettingsRequest(snapshot,{...createModelDraft(snapshot.settings),serviceTier:'fast'}).settings,'serviceTier'),false);
+});

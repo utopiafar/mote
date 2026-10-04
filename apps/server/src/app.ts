@@ -234,10 +234,10 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     let selected=modelSettings.select('file').settings;
     if(settings.analysisModel){
       const m=settings.analysisModel;if(localOnly&&m.execution!=='local')throw new StoreError(moteText("本地文件不能使用远程语言模型"),409);
-      selected={...selected,provider:'custom',protocol:'openai-completions',baseUrl:m.endpoint,model:m.model,apiKey:m.apiKey??'',headers:{},extraBody:{},allowUnauthenticatedLocal:m.execution==='local',reasoningEffort:'auto'};
+      selected={...selected,provider:'custom',protocol:'openai-completions',baseUrl:m.endpoint,model:m.model,apiKey:m.apiKey??'',headers:{},extraBody:{},allowUnauthenticatedLocal:m.execution==='local',reasoningEffort:'auto',serviceTier:undefined};
     }else if(localOnly){
       if(!settings.localModelName||!['127.0.0.1','localhost','[::1]'].includes(new URL(settings.localModelEndpoint).hostname))throw new StoreError('Configure a local language model for this operation',409);
-      selected={...selected,provider:'custom',protocol:'openai-completions',baseUrl:settings.localModelEndpoint,model:settings.localModelName,apiKey:settings.localModelApiKey??'',headers:{},extraBody:{},allowUnauthenticatedLocal:true,reasoningEffort:'auto'};
+      selected={...selected,provider:'custom',protocol:'openai-completions',baseUrl:settings.localModelEndpoint,model:settings.localModelName,apiKey:settings.localModelApiKey??'',headers:{},extraBody:{},allowUnauthenticatedLocal:true,reasoningEffort:'auto',serviceTier:undefined};
     }
     return structuredClone(selected);
   };

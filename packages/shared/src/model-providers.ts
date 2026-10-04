@@ -3,6 +3,8 @@ export const MODEL_PROTOCOLS = ['deepseek', 'openai-completions', 'openai-respon
 export type ModelProtocol = typeof MODEL_PROTOCOLS[number];
 export const MODEL_REASONING_EFFORTS = ['auto', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
 export type ModelReasoningEffort = typeof MODEL_REASONING_EFFORTS[number];
+export const CODEX_SERVICE_TIERS = ['default', 'fast'] as const;
+export type CodexServiceTier = typeof CODEX_SERVICE_TIERS[number];
 export const DEFAULT_MODEL_MAX_TOKENS = 65_536;
 export const MODEL_OUTPUT_BUDGETS = [8192, 16384, 32768, DEFAULT_MODEL_MAX_TOKENS, 128000] as const;
 export const DEFAULT_MODEL_REQUEST_TIMEOUT_MS = 300_000;
@@ -35,6 +37,8 @@ export interface ModelSettingsParameters {
   baseUrl: string;
   model: string;
   reasoningEffort: ModelReasoningEffort;
+  /** Codex speed selection. Omitted in legacy settings; never sent to HTTP providers. */
+  serviceTier?: CodexServiceTier;
   maxTokens: number;
   /** One provider/model request. Null means not applicable to Codex App Server. */
   modelRequestTimeoutMs: number | null;

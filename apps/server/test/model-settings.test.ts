@@ -307,3 +307,23 @@ test('close drains accepted changes while rejecting new transactions without ret
   assert.throws(() => f.store.current(), errorCode('model_settings_unavailable'));
   assert.equal(f.disposed.length, 0);
 });
+
+
+test('Codex speed presets survive restart and connection probes; HTTP and unknown tiers are rejected', async t => {
+  const codex: ModelSettings = {...environment,provider:'codex',protocol:'codex-app-server',baseUrl:'',apiKey:'',headers:{},extraBody:{},modelRequestTimeoutMs:null,agentTimeoutMs:null};
+  const f=await fixture(t,{environment:codex});
+  assert.equal((await f.store.initialize()).settings.serviceTier,undefined,'legacy settings remain valid');
+  const fast={...input(codex),serviceTier:'fast'};
+  const view=await f.store.updateProfile('fast',{revision:0,name:'Fast fixture',settings:fast});
+  assert.equal(view.profiles?.find(p=>p.id==='fast')?.settings.serviceTier,'fast');
+  await f.store.test({revision:view.revision,settings:fast},'fast');
+  assert.equal(f.probes.at(-1)?.serviceTier,'fast');assert.equal(f.store.select('chat','fast').settings.reasoningEffort,codex.reasoningEffort);
+  await f.store.close();
+  const restart=new ModelSettingsStore(f.options);t.after(()=>restart.close());
+  await restart.initialize();assert.equal(restart.select('memory','fast').settings.serviceTier,'fast');
+  const standard=await restart.updateProfile('fast',{revision:view.revision,name:'Standard fixture',settings:{...fast,serviceTier:'default'}});
+  assert.equal(standard.profiles?.find(p=>p.id==='fast')?.settings.serviceTier,'default');
+  for(const settings of [{...fast,serviceTier:'ultrafast'},{...input(),serviceTier:'fast'},{...input(),serviceTier:'default'}]){
+    await assert.rejects(restart.updateProfile('bad',{revision:standard.revision,name:'Invalid fixture',settings}),errorCode('model_settings_invalid'));
+  }
+});

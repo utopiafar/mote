@@ -27,8 +27,9 @@ async function fake(t,mode='answer'){
   const root=await setup(t),bin=join(root,'fake-codex');
   await writeFile(bin,`#!${process.execPath}
 import readline from 'node:readline';
-import {writeFileSync,appendFileSync} from 'node:fs';
+import {writeFileSync,appendFileSync,readFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(join(root,'runtime-home'))},process.env.CODEX_HOME);
+writeFileSync(${JSON.stringify(join(root,'runtime-config'))},readFileSync(process.env.CODEX_HOME+'/config.toml'));
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 const mode=${JSON.stringify(mode)};let turns=0;
 const usage=sample=>send({method:'thread/tokenUsage/updated',params:{threadId:'thread-fixture',turnId:'turn-fixture',tokenUsage:{total:{inputTokens:sample,outputTokens:sample/2,totalTokens:sample*1.5,cachedInputTokens:sample/5,cacheWriteInputTokens:0,reasoningOutputTokens:sample/10}}}});
@@ -41,7 +42,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(m.params.ephemeral!==true||m.params.approvalPolicy!=='never')process.exit(2);
   if(mode==='import'){if(m.params.dynamicTools.length||m.params.sandbox!=='workspace-write')process.exit(2);}
   else if(m.params.environments.length||m.params.dynamicTools.some(t=>!${JSON.stringify(codexContextTools.map(t=>t.name))}.includes(t.name)&&!(mode==='contribution'&&t.name==='fixture_context')))process.exit(2);
-  send({id:m.id,result:{thread:{id:'thread-fixture'},approvalPolicy:'never',sandbox:{type:mode==='import'?'workspaceWrite':'readOnly'}}});
+  send({id:m.id,result:{thread:{id:'thread-fixture'},serviceTier:mode==='tier-mismatch'?null:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:mode==='import'?'workspaceWrite':'readOnly'}}});
  }else if(m.method==='turn/start'){
   turns++;
   if(['max','medium'].includes(mode)&&m.params.effort!==mode)process.exit(4);
@@ -79,6 +80,28 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
 });
 `,{mode:0o700});env(t,'MOTE_CODEX_BIN',bin);return root;
 }
+test('Codex speed selection reaches the isolated runtime without changing reasoning or tools',async t=>{
+  for(const serviceTier of [undefined,'default','fast'])await t.test(String(serviceTier),async t=>{
+    const root=await fake(t),agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',reasoningEffort:'max',serviceTier,timeoutMs:5000});t.after(()=>agent.close());
+    await writeFile(join(root,'config.toml'),'service_tier = "fast"\n[features]\nplugins = true\n');
+    const result=await agent.query({question:'Generated speed fixture'});
+    assert.equal(result.citations[0].id,record.id);
+    const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse),thread=rpc.find(m=>m.method==='thread/start');
+    assert.equal(thread.params.serviceTier,serviceTier);
+    assert.equal(Object.hasOwn(thread.params,'serviceTier'),serviceTier!==undefined);
+    assert.equal(thread.params.sandbox,'read-only');assert.deepEqual(thread.params.environments,[]);
+    assert.equal(rpc.find(m=>m.method==='turn/start').params.effort,'max');
+    const config=await readFile(join(root,'runtime-config'),'utf8');
+    assert.equal(config.includes('fast_mode = true'),serviceTier==='fast');
+    assert.equal(config.includes('service_tier ='),serviceTier!==undefined);
+    if(serviceTier)assert.ok(config.includes(`service_tier = "${serviceTier}"`));
+    assert.ok(config.includes('plugins = false'));assert.ok(!config.includes('plugins = true'));assert.ok(config.includes('goals = false'));
+  });
+});
+test('Codex refuses an unacknowledged Fast selection instead of silently switching tiers',async t=>{
+  await fake(t,'tier-mismatch');const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',serviceTier:'fast',timeoutMs:5000});t.after(()=>agent.close());
+  await assert.rejects(agent.query({question:'Generated speed mismatch'}),AgentProviderError);
+});
 test('Codex App Server exchanges scoped tools, validates citations and leaves no credential copy',async t=>{
   const root=await fake(t),agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
   const answer=await agent.query({question:'Read the generated record'});
@@ -167,9 +190,11 @@ test('Codex close drains concurrent startup and import uses a separate writable 
   const root=await fake(t,'import'),session=new CodexSession({model:'fixture',timeoutMs:1000},async()=>({}));
   const starting=session.start('Generated test',codexContextTools);void starting.catch(()=>{});await session.close();await assert.rejects(starting,AgentProviderError);
   const workspace=join(root,'staging');await mkdir(workspace);
-  const agent=createImportAgent({protocol:'codex-app-server',model:'fixture',codex:{executable:join(root,'fake-codex'),home:root}});t.after(()=>agent.close());
+  const agent=createImportAgent({protocol:'codex-app-server',model:'fixture',serviceTier:'fast',codex:{executable:join(root,'fake-codex'),home:root}});t.after(()=>agent.close());
   const result=await agent.prepare({workspace,inputPaths:[],instruction:'Synthetic import',helperPath:'fixture',manifestSchema:{}});
   assert.equal(result.summary,'Generated import preview');assert.equal(result.recordsPath,undefined);
+  const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(rpc.find(m=>m.method==='thread/start').params.serviceTier,'fast');
   await assert.rejects(access(await readFile(join(root,'runtime-home'),'utf8')),{code:'ENOENT'});
 });
 

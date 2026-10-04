@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { validateModelOptions } from '@mote/agent';
 import {
-  MAX_AGENT_TIMEOUT_MS, MAX_MODEL_REQUEST_TIMEOUT_MS, MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, MODEL_FEATURES, modelProvider, DEPLOYMENT_MODEL_PROFILE_ID,
+  MAX_AGENT_TIMEOUT_MS, MAX_MODEL_REQUEST_TIMEOUT_MS, MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, CODEX_SERVICE_TIERS, MODEL_FEATURES, modelProvider, DEPLOYMENT_MODEL_PROFILE_ID,
   type ModelProfile, type ModelFeature, type ModelFeatureDefaults,
   type ModelSettings, type ModelSettingsInput, type ModelSettingsView, type ModelTestResult,
 } from '@mote/shared/models';
@@ -19,6 +19,7 @@ const parameters = {
   baseUrl: line(4096),
   model: line(512),
   reasoningEffort: z.enum(MODEL_REASONING_EFFORTS),
+  serviceTier: z.enum(CODEX_SERVICE_TIERS).optional(),
   maxTokens: z.number().int().min(1).max(128_000),
   modelRequestTimeoutMs: z.number().int().min(5000).max(MAX_MODEL_REQUEST_TIMEOUT_MS).nullable(),
   agentTimeoutMs: z.number().int().min(5000).max(MAX_AGENT_TIMEOUT_MS).nullable(),

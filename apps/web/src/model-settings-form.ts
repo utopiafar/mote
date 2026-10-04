@@ -8,6 +8,7 @@ export interface ModelSettingsDraft {
   baseUrl: string;
   model: string;
   reasoningEffort: ModelSettingsPublic['reasoningEffort'];
+  serviceTier: NonNullable<ModelSettingsPublic['serviceTier']>;
   maxTokens: string;
   modelRequestTimeoutSeconds: string;
   agentTimeoutSeconds: string;
@@ -27,6 +28,7 @@ export function createModelDraft(settings: ModelSettingsPublic): ModelSettingsDr
     baseUrl: settings.baseUrl,
     model: settings.model,
     reasoningEffort: settings.reasoningEffort,
+    serviceTier: settings.serviceTier ?? 'default',
     maxTokens: String(settings.maxTokens),
     modelRequestTimeoutSeconds: settings.modelRequestTimeoutMs === null ? '' : String(settings.modelRequestTimeoutMs / 1000),
     agentTimeoutSeconds: settings.agentTimeoutMs === null ? '' : String(settings.agentTimeoutMs / 1000),
@@ -77,6 +79,7 @@ export function modelSettingsRequest(snapshot: ModelSettingsView, draft: ModelSe
     baseUrl: draft.baseUrl.trim(),
     model: draft.model.trim(),
     reasoningEffort: draft.reasoningEffort,
+    ...(draft.protocol==='codex-app-server'?{serviceTier:draft.serviceTier}:{}),
     maxTokens, modelRequestTimeoutMs, agentTimeoutMs,
     allowUnauthenticatedLocal: draft.allowUnauthenticatedLocal,
   };

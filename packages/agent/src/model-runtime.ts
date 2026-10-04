@@ -24,10 +24,11 @@ const forbiddenBody = new Set([
   'dshsessionlog', 'dshpluginpackages',
 ]);
 const normalizedKey = (key: string) => key.toLowerCase().replace(/[_-]/g, '');
-type ConnectionOptions = Pick<AgentOptions, 'protocol' | 'provider' | 'model' | 'baseUrl' | 'reasoningEffort' | 'maxTokens' | 'headers' | 'extraBody' | 'requestTimeoutMs' | 'timeoutMs'>;
+type ConnectionOptions = Pick<AgentOptions, 'protocol' | 'provider' | 'model' | 'baseUrl' | 'reasoningEffort' | 'serviceTier' | 'maxTokens' | 'headers' | 'extraBody' | 'requestTimeoutMs' | 'timeoutMs'>;
 
 /** Keep errors value-free: advanced fields can contain credentials. */
 export function validateModelOptions(options: ConnectionOptions): void {
+  if(options.serviceTier!==undefined&&(options.protocol!=='codex-app-server'||!['default','fast'].includes(options.serviceTier)))throw new AgentConfigurationError('This service tier requires Codex App Server.');
   if(options.protocol==='codex-app-server'&&(options.baseUrl||Object.keys(options.headers??{}).length||Object.keys(options.extraBody??{}).length))throw new AgentConfigurationError('Codex uses its local login and does not accept HTTP endpoints or advanced request parameters.');
   if (options.protocol !== undefined && !protocols.includes(options.protocol)) throw new AgentConfigurationError('Unsupported model protocol.');
   if (options.reasoningEffort !== undefined && !MODEL_REASONING_EFFORTS.includes(options.reasoningEffort)) throw new AgentConfigurationError('Unsupported reasoning effort.');
