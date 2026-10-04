@@ -112,7 +112,7 @@ codex -c 'cli_auth_credentials_store="file"' login
 
 App Server 的动态工具接口为实验接口，兼容性取决于安装的 CLI。配置警告、额外审批请求、未知执行工具和错误返回会终止请求；不会降级为另一个服务商。设置中的“单次模型请求超时”对 Codex Server 不适用：App Server 不把内部模型生成作为 Mote 可见的单次 Provider 请求；Mote 只可选择是否设置“Agent 总运行超时”，它覆盖整个 `turn` 及其中的工具循环，留空则不设置 Mote 总期限。响应字节预算仍由 Mote 限制，输出 token 上限由 Codex 管理，页面的 HTTP 输出预算不传给 Codex。设置页从本机 `model/list` 读取所选模型的 `supportedReasoningEfforts` 和 `defaultReasoningEffort`；`auto` 不指定推理强度，旧设置 `off` 对应 App Server 的 `none`，其余挡位按原值传给 `turn/start.effort`。目录不可用或手动填写目录外模型时，页面仍显示通用选项，具体支持情况须通过测试连接验证。
 
-Codex 预设可独立选择 **速度模式：Standard / Fast**，不会改变推理强度。Fast 可用性取决于账户、模型、工作区和 CLI 版本，且会增加额度或费用消耗；页面按模型目录禁用明确不支持的 Fast，缺少速度目录时可用“测试连接”验证。保存后，查询、Memory、回顾、文件分析和导入均使用该预设的速度模式。Mote 在自己的临时配置中设置 `service_tier`，Fast 还启用 `features.fast_mode`，并将 `serviceTier` 传给 `thread/start`；返回的线程档位不匹配时终止请求。旧预设没有此字段时保留原来的行为，不继承用户 Codex 配置中的 Fast 设置。[官方速度模式说明](https://learn.chatgpt.com/docs/agent-configuration/speed)
+Codex 预设可独立选择 **速度模式：Standard / Fast**，不会改变推理强度。Fast 可用性取决于账户、模型、工作区和 CLI 版本，且会增加额度或费用消耗；页面按模型目录禁用明确不支持的 Fast，缺少速度目录时可用“测试连接”验证。保存后，查询、Memory、回顾、文件分析和导入均使用该预设的速度模式。Mote 在自己的临时配置中设置 `service_tier`，Fast 还启用 `features.fast_mode`，并将 `serviceTier` 传给 `thread/start`；Codex 目录和线程返回的 `priority` 是 Fast 的协议别名，Mote 统一映射为 `fast`；返回的线程档位不匹配时终止请求。旧预设没有此字段时保留原来的行为，不继承用户 Codex 配置中的 Fast 设置。[官方速度模式说明](https://learn.chatgpt.com/docs/agent-configuration/speed)、[配置参考中的档位映射](https://learn.chatgpt.com/docs/config-file/config-reference)
 
 ## 环境配置与保存位置
 

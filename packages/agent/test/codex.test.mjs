@@ -42,7 +42,8 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(m.params.ephemeral!==true||m.params.approvalPolicy!=='never')process.exit(2);
   if(mode==='import'){if(m.params.dynamicTools.length||m.params.sandbox!=='workspace-write')process.exit(2);}
   else if(m.params.environments.length||m.params.dynamicTools.some(t=>!${JSON.stringify(codexContextTools.map(t=>t.name))}.includes(t.name)&&!(mode==='contribution'&&t.name==='fixture_context')))process.exit(2);
-  send({id:m.id,result:{thread:{id:'thread-fixture'},serviceTier:mode==='tier-mismatch'?null:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:mode==='import'?'workspaceWrite':'readOnly'}}});
+  const tierResponses={'tier-mismatch':null,'tier-priority':'priority','tier-default':'default','tier-unknown':'ultrafast'};
+  send({id:m.id,result:{thread:{id:'thread-fixture'},serviceTier:Object.hasOwn(tierResponses,mode)?tierResponses[mode]:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:mode==='import'?'workspaceWrite':'readOnly'}}});
  }else if(m.method==='turn/start'){
   turns++;
   if(['max','medium'].includes(mode)&&m.params.effort!==mode)process.exit(4);
@@ -98,9 +99,21 @@ test('Codex speed selection reaches the isolated runtime without changing reason
     assert.ok(config.includes('plugins = false'));assert.ok(!config.includes('plugins = true'));assert.ok(config.includes('goals = false'));
   });
 });
-test('Codex refuses an unacknowledged Fast selection instead of silently switching tiers',async t=>{
-  await fake(t,'tier-mismatch');const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',serviceTier:'fast',timeoutMs:5000});t.after(()=>agent.close());
-  await assert.rejects(agent.query({question:'Generated speed mismatch'}),AgentProviderError);
+test('Codex accepts the official priority acknowledgement for Fast',async t=>{
+  const root=await fake(t,'tier-priority'),agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',reasoningEffort:'max',serviceTier:'fast',timeoutMs:5000});t.after(()=>agent.close());
+  const answer=await agent.query({question:'Generated priority fixture'});
+  assert.equal(answer.citations[0].id,record.id);
+  const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(rpc.find(m=>m.method==='thread/start').params.serviceTier,'fast');
+  assert.equal(rpc.find(m=>m.method==='turn/start').params.effort,'max');
+});
+test('Codex refuses unacknowledged or different speed tiers instead of silently switching',async t=>{
+  for(const [mode,serviceTier] of [['tier-mismatch','fast'],['tier-default','fast'],['tier-unknown','fast'],['tier-priority','default']])await t.test(`${serviceTier}/${mode}`,async t=>{
+    const root=await fake(t,mode),agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',serviceTier,timeoutMs:5000});t.after(()=>agent.close());
+    await assert.rejects(agent.query({question:'Generated speed mismatch'}),AgentProviderError);
+    const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+    assert.equal(rpc.some(m=>m.method==='turn/start'),false);
+  });
 });
 test('Codex App Server exchanges scoped tools, validates citations and leaves no credential copy',async t=>{
   const root=await fake(t),agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());

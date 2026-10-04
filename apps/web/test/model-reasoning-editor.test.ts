@@ -50,7 +50,7 @@ test('Codex editor saves Fast, blocks unsupported models and clears speed when s
   const bodies:any[]=[];
   const api={request:async(path:string,init?:RequestInit)=>{
     if(init?.method==='PUT'){const body=JSON.parse(String(init.body));bodies.push(body);view={...view,revision:view.revision+1,settings:{...view.settings,...body.settings}};return view;}
-    return path==='/api/model-settings'?view:{items:[{id:'first',name:'First',serviceTiers:['default','fast']},{id:'second',name:'Second',serviceTiers:['default']},{id:'legacy',name:'Legacy'}]};
+    return path==='/api/model-settings'?view:{items:[{id:'first',name:'First',serviceTiers:['priority']},{id:'second',name:'Second',serviceTiers:['default']},{id:'legacy',name:'Legacy'}]};
   },setAgentTimeout:()=>{}} as Api;
   await act(async()=>root.render(React.createElement(ModelSettingsEditor,{api,revision:1,onApplied:()=>{}})));
   await act(async()=>{await new Promise(resolve=>setTimeout(resolve,550));});

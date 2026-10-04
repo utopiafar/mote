@@ -1,6 +1,7 @@
 import {ContextToolError} from './tool-errors.js';
 import {codexFailure,codexUsage} from './codex-protocol.js';
 import type {TokenUsage} from '@mote/shared';
+import {normalizeCodexServiceTier} from '@mote/shared/models';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {mkdtemp,mkdir,symlink,rm,writeFile,access} from 'node:fs/promises';
 import {tmpdir,homedir} from 'node:os';
@@ -95,7 +96,7 @@ export class CodexSession {
         dynamicTools:tools,...(!workspace?{environments:[]}:{}),
       });
       if(typeof thread.thread?.id!=='string'||thread.approvalPolicy!=='never'||thread.sandbox?.type!==(workspace?'workspaceWrite':'readOnly'))throw new AgentProviderError();
-      if(this.options.serviceTier&&thread.serviceTier!==this.options.serviceTier)throw new AgentProviderError();
+      if(this.options.serviceTier&&(typeof thread.serviceTier!=='string'||normalizeCodexServiceTier(thread.serviceTier)!==this.options.serviceTier))throw new AgentProviderError();
       this.threadId=thread.thread.id;
     }catch(error){throw error instanceof AgentNotConfiguredError||error instanceof AgentTimeoutError||error instanceof AgentProviderError?error:new AgentProviderError();}
   }
