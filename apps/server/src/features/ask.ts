@@ -3,9 +3,11 @@ import type { FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { FeatureServices } from '../feature-services.js';
+import type {ServerFeatureScope} from '../feature-host.js';
 
 /** ask: owns its transport, data and command contributions. */
-export function register(app:FastifyInstance,{agent,conversations,modelSettings,queryRuns,queryWithAttachmentsSchema,runQuery}:Pick<FeatureServices,"agent"|"conversations"|"modelSettings"|"queryRuns"|"queryWithAttachmentsSchema"|"runQuery">){
+export function register(app:FastifyInstance,{agent,conversations,modelSettings,queryRuns,queryWithAttachmentsSchema,runQuery}:Pick<FeatureServices,"agent"|"conversations"|"modelSettings"|"queryRuns"|"queryWithAttachmentsSchema"|"runQuery">,scope?:ServerFeatureScope){
+scope?.defer(()=>queryRuns.stop());
 app.get('/api/conversations',async req=>conversations.list(z.object({limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().max(1000).optional()}).strict().parse(req.query)));
 app.get('/api/conversations/:id',async req=>conversations.page(z.object({id:z.string().uuid()}).parse(req.params).id,z.object({limit:z.coerce.number().int().min(1).max(50).default(20),cursor:z.string().optional()}).parse(req.query)));
 app.delete('/api/conversations/:id',async req=>conversations.delete(z.object({id:z.string().uuid()}).parse(req.params).id));

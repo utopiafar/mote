@@ -277,8 +277,21 @@ export class Collector {
       const sample = dedupeScale < 1 ? sanitized.resize({ width: Math.max(1, Math.floor(size.width * dedupeScale)), height: Math.max(1, Math.floor(size.height * dedupeScale)) }) : sanitized;
       const features = mode === 'off' ? undefined : imageFeatures(sample.toBitmap(), sample.getSize().width, sample.getSize().height);
       if (features && duplicateImage(this.lastImageFeatures, features, mode) && this.lastSample?.appId === before.appId && startedAt - this.lastSample.at <= cfg.intervalMs * 2) {
+        const metadata = cfg.metadataEnabled ? await collectRecordMetadata(this.helperPath, this.queue.directory, undefined, abort.signal) : undefined;
+        if (!valid() || metadata?.state?.screenLocked) return;
+        const event: CaptureEvent = {
+          id: randomUUID(), deviceId: cfg.deviceId, deviceName: cfg.deviceName, platform: currentPlatform,
+          capturedAt: new Date(startedAt).toISOString(), durationMs: Math.max(0, Math.min(cfg.intervalMs, startedAt - this.lastSample.at)),
+          appId: before.appId, appName: before.appName, source: 'activity',
+          privacy: { excluded: false, redacted: false, mode: 'none', collection: 'activity' },
+          ...(metadata ? { metadata: { ...metadata, capture: { intervalMs: cfg.intervalMs } } } : {}),
+        };
+        // Image deduplication saves bytes, never measured observations. The queue
+        // may pack exact state samples while retaining every timestamp and duration.
+        await this.queue.enqueue(event);
         this.lastSample = { at: startedAt, appId: before.appId, collection: 'content' };
-        this.state = 'capturing'; this.message = moteText("重复截图已跳过"); this.publish(); return;
+        this.lastCaptureAt = event.capturedAt;
+        this.state = 'capturing'; this.message = moteText("重复截图已跳过"); this.publish(); void this.upload(); return;
       }
       const gate = await reviewUpload(uploadGateConfig(cfg.uploadGate), () => recognizeText(this.helperPath, jpeg, abort.signal));
       if (!valid()) return;

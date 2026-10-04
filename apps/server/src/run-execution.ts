@@ -15,7 +15,9 @@ export class RunExecution {
  readonly engine:ExecutionEngine;
  private pending=new Map<string,Pending>();
  private started=new Set<string>();
- private unregister:()=>void;
+ private unregister:()=>void|Promise<void>;
+ private stopped=false;
+ private stopping?:Promise<void>;
  private ownerId=randomUUID();
  private heartbeat?:ReturnType<typeof setInterval>;
  private observed=new Set<string>();
@@ -52,6 +54,7 @@ export class RunExecution {
   throw new StoreError('Run receipt has no canonical execution step',409);
  }
  start(id:string,work:Pending['work'],options:RunDeadline={},journal?:()=>void){
+  if(this.stopped)throw new StoreError('Feature is closed',503);
   this.renewOwner();this.startHeartbeat();this.started.add(this.id(id));let finish!:()=>void;const done=new Promise<void>(resolve=>finish=resolve),pending:Pending={work,done,finish};this.pending.set(id,pending);
   const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
   try{journal?.();
@@ -83,6 +86,8 @@ export class RunExecution {
  private finish(id:string){const pending=this.pending.get(id);if(!pending)return;clearTimeout(pending.timer);this.pending.delete(id);pending.finish();queueMicrotask(()=>{void this.engine.drain([this.id(id)]).finally(()=>this.started.delete(this.id(id))).catch(()=>{});});}
  async wait(id:string){this.sync(id);await this.pending.get(id)?.done;await this.engine.drain([this.id(id)]);}
  async close(){for(const id of [...this.pending.keys()])this.sync(id);await Promise.all([...this.pending.values()].map(value=>value.done));await this.engine.drain([...this.started]);this.started.clear();clearInterval(this.heartbeat);this.heartbeat=undefined;this.store.db.prepare('DELETE FROM run_execution_owners WHERE id=?').run(this.ownerId);}
+ /** Revoke only this feature's work; other owners and shared pools remain live. */
+ stop(){if(this.stopping)return this.stopping;this.stopped=true;for(const id of [...this.pending.keys()]){const step=this.step(id);if(step&&['waiting','running'].includes(step.state))this.engine.cancel(step.id);this.sync(id);}this.stopping=(async()=>{await this.close();await this.unregister();})();return this.stopping;}
  /** Teardown only after close; shared engines retain the same lifetime as the app. */
  dispose(){this.unregister();}
 }

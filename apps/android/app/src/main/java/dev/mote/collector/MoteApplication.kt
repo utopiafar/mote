@@ -27,7 +27,6 @@ class MoteApplication : Application() {
         })
         Notifications.create(this)
         com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(this)
-        FileEvidencePoller.start(this)
         QueueStorage.recovering = true
         LocalStateRepository.get(this)
         Executors.newSingleThreadExecutor().apply {

@@ -124,10 +124,13 @@ export class MemoryLifecycle {
     // Turns (including repeated conversation IDs) are increments for working memory.
     return Number((extension.stream==='artifact'?this.store.db.prepare('SELECT count(*) AS n FROM artifact_events WHERE seq>?').get(cursor):extension.stream==='evidence'?this.store.db.prepare('SELECT count(*) AS n FROM changes WHERE seq>?').get(cursor):this.store.db.prepare('SELECT count(*) AS n FROM memory_events WHERE stream=? AND seq>?').get(extension.stream,cursor))!.n);
   }
-  view(){const settings=this.settings();return {settings,trigger:'increment threshold OR maximum wait',storage:'text',extensions:[...this.extensions.values()].map(e=>{
-    const state=this.state(e.id),p=settings[e.id],pendingChanges=this.count(e,state.cursor),dueAt=state.drainThrough?this.now():state.lastSuccess+(p.maxWaitHours??Math.min(p.intervalHours,1))*3600000;
+  private dueAt(id:LifecycleExtension['id'],p:LifecycleSettings['insights'],state:State){return state.lastSuccess+(id==='insights'?p.intervalHours:(p.maxWaitHours??Math.min(p.intervalHours,1)))*3600000;}
+  private ready(id:LifecycleExtension['id'],p:LifecycleSettings['insights'],state:State,pending:number,now:number){return pending>0&&(id==='insights'?pending>=p.minChanges&&now>=this.dueAt(id,p,state):pending>=p.minChanges||now>=this.dueAt(id,p,state));}
+  view(){const settings=this.settings();return {settings,trigger:'insights: interval AND increment threshold; memory: increment threshold OR maximum wait',storage:'text',extensions:[...this.extensions.values()].map(e=>{
+    const state=this.state(e.id),p=settings[e.id],pendingChanges=this.count(e,state.cursor),dueAt=state.drainThrough?this.now():this.dueAt(e.id,p,state);
     return {id:e.id,version:e.version,stream:e.stream,pendingChanges,dueAt,retryAt:state.retryAt,cursor:state.cursor,failures:state.failures,maxAttempts:e.maxAttempts,error:state.error,manualRetryRequired:state.manualRetryRequired??false,
-      drainThrough:state.drainThrough,status:state.cancelled||state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled'?'cancelled':!p.enabled&&!state.active?.manual?'disabled':this.running.has(e.id)?'running':state.manualRetryRequired||e.maxAttempts&&state.failures>=e.maxAttempts?'failed':(state.retryAt??0)>this.now()?'retry_wait':state.active?'pending':!this.configured()?'waiting_for_model':pendingChanges===0?'waiting_for_increment':pendingChanges>=p.minChanges||this.now()>=dueAt?'ready':'waiting_for_interval',
+      trigger:e.id==='insights'?'interval AND increment threshold':'increment threshold OR maximum wait',
+      drainThrough:state.drainThrough,status:state.cancelled||state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled'?'cancelled':!p.enabled&&!state.active?.manual?'disabled':this.running.has(e.id)?'running':state.manualRetryRequired||e.maxAttempts&&state.failures>=e.maxAttempts?'failed':(state.retryAt??0)>this.now()?'retry_wait':state.active?'pending':!this.configured()?'waiting_for_model':pendingChanges===0?'waiting_for_increment':this.ready(e.id,p,state,pendingChanges,this.now())?'ready':e.id==='insights'&&pendingChanges<p.minChanges?'waiting_for_increment':'waiting_for_interval',
       active:state.active?{id:state.active.id,manual:state.active.manual===true,operationId:this.executor?'workflow:lifecycle:'+state.active.id:undefined,through:state.active.through,items:state.active.ids.length,startedAt:state.active.startedAt,checkpoint:state.active.checkpoint}:undefined,lastRun:state.lastRun};})};}
   tick(){
     if(this.closed)return Promise.resolve();
@@ -148,8 +151,7 @@ export class MemoryLifecycle {
         if(!state.drainThrough){
           const pending=this.count(extension,state.cursor);
           if(pending===0)return;
-          const maximumWait=(p.maxWaitHours??Math.min(p.intervalHours,1))*3600000;
-          if(pending<p.minChanges&&now<state.lastSuccess+maximumWait)return;
+          if(!this.ready(extension.id,p,state,pending,now))return;
           // Freeze a bounded extraction round. Arrivals after this watermark wait
           // for the next round; one window per tick keeps other workflows fair.
           if(extension.id==='extraction')state.drainThrough=Number(this.store.db.prepare(`SELECT max(seq) AS seq FROM (SELECT seq FROM ${extension.stream==='artifact'?'artifact_events':'changes'} WHERE seq>? ORDER BY seq LIMIT ?)`).get(state.cursor,p.maxItems*settings.drainWindows)?.seq)||undefined;

@@ -76,14 +76,18 @@ class ConnectionInstrumentedTest {
                     views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString() == MoteI18n.text("本机") }.performClick()
                     views(activity.window.decorView).single { it.isShown && it.tag == "menu:${MoteI18n.text("连接与同步")}" }.performClick()
                 }
-                scenario.awaitUiText("synthetic-owner-token-no-network-123456789")
+                scenario.awaitUiText("https://generated-new.invalid")
                 scenario.onActivity { activity ->
                     val fields = mutableListOf<android.widget.EditText>()
                     fun walk(v: android.view.View) { if (v is android.widget.EditText) fields += v; if (v is android.view.ViewGroup) repeat(v.childCount) { walk(v.getChildAt(it)) } }
                     walk(activity.window.decorView)
                     val server = fields.single { it.hint?.toString() == "https://mote.example.com" }
                     val token = fields.single { it.hint?.toString() == MoteI18n.text("建议通过邀请获取本设备凭据") }
-                    assertTrue(token.text.isNotEmpty()); server.setText("https://another-generated.invalid"); assertTrue(token.text.isEmpty())
+                    assertTrue(token.text.isEmpty()); assertEquals(android.view.View.GONE, token.visibility)
+                    server.setText("https://another-generated.invalid"); assertTrue(token.isShown); assertTrue(token.text.isEmpty())
+                    token.setText("generated-draft-token-12345678901234567890")
+                    server.setText("https://third-generated.invalid"); assertTrue(token.text.isEmpty())
+                    assertEquals("https://generated-new.invalid", Settings(context).read().server)
                 }
             }
         } finally {
@@ -95,7 +99,7 @@ class ConnectionInstrumentedTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val before = Settings(context).read(); val camera = context.checkSelfPermission(Manifest.permission.CAMERA)
         val raw = JSONObject().put("format", "mote.connection").put("version", 1).put("serverUrl", "https://generated.invalid")
-            .put("code", "A".repeat(43)).put("expiresAt", Instant.now().plusSeconds(600).toString())
+            .put("code", "A".repeat(43)).put("expiresAt", Instant.ofEpochMilli(System.currentTimeMillis() + 600_000).toString())
         val uri = "mote://connect?data=" + Base64.getUrlEncoder().withoutPadding().encodeToString(raw.toString().toByteArray())
         ActivityScenario.launch<ConnectionActivity>(Intent(context, ConnectionActivity::class.java).setData(Uri.parse(uri))).awaitUiText(MoteI18n.text("确认连接此节点")).use { scenario ->
             scenario.onActivity { activity ->
@@ -172,7 +176,7 @@ class ConnectionInstrumentedTest {
                 assertEquals("identity", assertThrows(ConnectionFailure::class.java) { client.test() }.category)
                 assertEquals(before, settings.read()); assertFalse(pending.exists())
                 val invitation = ConnectionInvitation.parse(JSONObject().put("format", "mote.connection").put("version", 1).put("serverUrl", node)
-                    .put("code", "A".repeat(43)).put("expiresAt", Instant.now().plusSeconds(600).toString()).toString(), true, true)
+                    .put("code", "A".repeat(43)).put("expiresAt", Instant.ofEpochMilli(System.currentTimeMillis() + 600_000).toString()).toString(), true, true)
                 val start = requests.size
                 assertEquals("response", assertThrows(ConnectionFailure::class.java) { client.connect(invitation, "Generated owner", true) }.category)
                 assertEquals(listOf("/api/connections/redeem"), requests.drop(start))

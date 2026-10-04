@@ -14,11 +14,16 @@ afterEach(async () => { for (const manager of managers) await manager.close(); f
 async function endpoint(dropFirstAck = false) {
   const reads: unknown[] = [],readReplies:any[]=[];
   const items: SourceItem[] = []; const registered: unknown[] = []; let id = ''; let dropNext = dropFirstAck;
+  const sessions=new Map<string,any>();
   const server = createServer(async (req, res) => {
     expect(req.headers['x-mote-ingress-version']).toBe('2');
     const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(chunk);
     if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url?.endsWith('/read-requests')?{items:reads}:{revision:null}));return;}
+    res.setHeader('Content-Type','application/json');
+    if(req.url?.includes('/uploads/')&&req.url.includes('/parts/')){const bytes=Buffer.concat(chunks),part=Number(req.url.split('/').at(-1));res.end(JSON.stringify({part,hash:(await import('../src/source-sync')).sourceHash(bytes),bytes:bytes.length}));return;}
     const manifest = JSON.parse(Buffer.concat(chunks).toString()); const body = manifest.item ?? manifest;
+    if(req.url==='/api/file-sync/v1/uploads'){const uploadId=body.revision;sessions.set(uploadId,manifest);res.end(JSON.stringify({uploadId,partBytes:4194304,parts:[]}));return;}
+    if(req.url?.endsWith('/commit')){const m=sessions.get(req.url.split('/').at(-2)!);items.push(m.item);if(dropNext){dropNext=false;res.destroy();return;}res.end(JSON.stringify({...sourceAck(id,m.item,'file-revision',items.length>1),sha256:m.sha256,sizeBytes:m.sizeBytes}));return;}
     res.setHeader('Content-Type', 'application/json');
     if(req.url?.includes('/read-requests/')){readReplies.push(body);reads.length=0;res.end('{}');}
     else if (req.url?.endsWith('/items/batch')) { res.statusCode = 404; res.end('{}'); }
@@ -49,7 +54,7 @@ describe('native source lifecycle with local HTTP fixtures', () => {
     await writeFile(file, '新节点合成内容'); await app.changeConnection({ serverUrl: second.url, token: 'other-synthetic-token', deviceId: 'synthetic-device' }); await app.sync();
     expect(second.items).toHaveLength(0);
     await app.update(source.id, { ...source, enabled: true }); await app.sync();
-    expect(second.items).toHaveLength(1); expect(second.items[0].text).toBe(''); await (app as any).processFiles(); await app.flushPending(new AbortController().signal); expect(second.items.at(-1)?.text).toBe('新节点合成内容'); expect(second.items[0].revision).not.toBe(first.items[0].revision);
+    expect(second.items).toHaveLength(1); expect(second.items[0].text).toBe('');  await app.flushPending(new AbortController().signal); expect(second.items.at(-1)?.text).toBe(''); expect(second.items[0].revision).not.toBe(first.items[0].revision);
   });
   it('turning off deletion tracking drops a previously queued tombstone instead of replaying it', async () => {
     const server = await endpoint(); const folder = join(directory, 'selected'); await mkdir(folder); const file = join(folder, 'a.md'); await writeFile(file, 'synthetic');
@@ -76,7 +81,7 @@ it('loads paused durable pending bodies before permitting a connection change an
   let value = await manager(endpointValue.url); await value.addFiles(file, DEFAULT_SOURCE_OPTIONS); await value.sync();
   const source = value.status()[0].source; await value.update(source.id, { ...source, enabled: false }); await value.sync(); await value.close();
   value = await manager(endpointValue.url); await value.sync(); expect(value.connectionActivity().pending).toBe(1);
-  const release = await value.holdConnection(); await value.sync(true); expect(value.connectionActivity()).toEqual({ pending: 1, processingPending: 1, inFlight: false }); release();
+  const release = await value.holdConnection(); await value.sync(true); expect(value.connectionActivity()).toEqual({ pending: 1, processingPending: 0, inFlight: false }); release();
 });
 
 it('checkpoints pending source bodies before credential persistence and recovers identical revisions after restart', async () => {
@@ -146,10 +151,6 @@ it('flushes durable pending source versions while watcher scans are still runnin
 });
 
 
-it('serves file evidence from the durable directory catalog immediately after restart',async()=>{
- const server=await endpoint(),folder=join(directory,'catalog');await mkdir(folder);const text='Generated long file evidence '.repeat(700);await writeFile(join(folder,'first.txt'),text);await writeFile(join(folder,'last.txt'),'Generated short file');
- let value=await manager(server.url);await value.addFiles(folder,{...DEFAULT_SOURCE_OPTIONS,indexMode:'lightweight',allowRead:true});await value.sync();
- const source=value.status()[0].source,original=server.items.find(item=>item.title==='first.txt')!;expect(original).toBeTruthy();await value.close();
- server.reads.push({id:'11111111-1111-4111-8111-111111111111',sourceId:source.id,externalId:original.externalId,revision:original.revision,contentVersion:original.document!.fileIndex!.contentVersion,offset:9000,length:100});
- value=await manager(server.url);await value.sync();await (value as any).processFiles();expect(server.readReplies[0]).toMatchObject({status:'ready',text:text.slice(9000,9100)});
+it('does not serve a device-decoded file range after restart',async()=>{
+ const server=await endpoint(),folder=join(directory,'catalog');await mkdir(folder);await writeFile(join(folder,'first.txt'),'Generated long evidence '.repeat(700));let value=await manager(server.url);await value.addFiles(folder,{...DEFAULT_SOURCE_OPTIONS,indexMode:'lightweight',allowRead:true});await value.sync();await value.close();value=await manager(server.url);await value.sync();expect(server.readReplies).toEqual([]);expect(value.status()[0].processingPending).toBe(0);
 });

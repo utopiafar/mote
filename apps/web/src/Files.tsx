@@ -11,7 +11,7 @@ import {AnswerMarkdown} from './AnswerMarkdown';
 import {containDialogFocus} from './dialog-focus';
 
 type FileRow={cancellation?:{canCancel:boolean;wait:'running'|'unknown'|null};processingPolicy?:{applied:any;current:any};captureId:string;sourceId:string;sizeBytes:number;hasOriginal:boolean;originMissing:boolean;item:{document?:{fileIndex?:import('@mote/shared').FileIndex};text?:string;title:string;layer:string;observedAt:string;mimeType?:string};job:null|{state:string;error?:string;summary_state:string;local_only?:number;execution?:import('@mote/shared').ExecutionEnvelope};steps?:{step:string;state:string;attempts:number;execution?:import('@mote/shared').ExecutionEnvelope}[];artifacts:{id:string;kind:string;complete?:boolean;sections?:{answer:string;citationIds:string[]}[]}[]};
-const errors:Record<string,string>={archive_only:moteText("仅归档原件"),model_missing:moteText("等待安装本地模型"),processor_not_configured:moteText("处理插件或本地模型尚未配置"),not_configured:moteText("请配置中央处理服务"),unsupported_format:moteText("此格式仅归档原件"),provider_failed:moteText("转写服务未完成，请检查服务后重试"),processing_limit:moteText("超过处理大小或单文件时长限制"),summary_failed:moteText("摘要生成失败，可单独重试")};
+const errors:Record<string,string>={snapshot_input_expired:moteText("快照的临时输入已清理，请重新同步来源文件后重试。"),archive_only:moteText("仅归档原件"),model_missing:moteText("等待安装本地模型"),processor_not_configured:moteText("处理插件或本地模型尚未配置"),not_configured:moteText("请配置中央处理服务"),unsupported_format:moteText("此格式仅归档原件"),provider_failed:moteText("转写服务未完成，请检查服务后重试"),processing_limit:moteText("超过处理大小或单文件时长限制"),summary_failed:moteText("摘要生成失败，可单独重试")};
 const states:Record<string,string>={waiting:moteText("等待处理"),running:moteText("处理中"),succeeded:moteText("已完成"),blocked:moteText("等待配置或格式支持"),failed:moteText("处理失败"),cancelled:moteText("已取消")};
 
 export function Files({api,onOpen}:{api:Api;onOpen:(id:string)=>void}){
@@ -130,4 +130,4 @@ function FileDetailContents({api,id,startMs=0,onOpen}:{api:Api;id:string;startMs
  {error&&<p role="alert" className="error-banner">{error}</p>}</section>;
 }
 
-function fileAvailability(file:FileRow):string {const index=file.item.document?.fileIndex;return file.hasOriginal?moteText("原件已归档"):index?.status==='pending'?moteText("索引待处理，原件留本机"):index?.coverage==='full'?moteText("全文索引就绪"):index?.coverage==='lightweight'?moteText("轻量索引就绪"):moteText("已登记目录");}
+function fileAvailability(file:FileRow):string {const index=file.item.document?.fileIndex;return file.hasOriginal?moteText("原件已归档"):index?.status==='blocked'?moteText("隐私规则无法应用，输入未上传"):index?.status==='pending'?moteText("中央索引待处理，原件不归档"):index?.coverage==='full'?moteText("全文索引就绪"):index?.coverage==='lightweight'?moteText("轻量索引就绪"):moteText("已登记目录");}

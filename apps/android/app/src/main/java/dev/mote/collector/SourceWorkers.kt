@@ -88,6 +88,15 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         store.registered(source.id, target)
                     }
                     if (SourceAdapters.default.forKind(source.kind).queueKind == SourceQueueKind.FILE_ARCHIVE) {
+                        if (explicit && source.retention == "snapshot") {
+                            SyncSchedule.requireConditions(applicationContext, config)
+                            val (recoveryCode, recovery) = HttpJson.get("${config.server}/api/file-sync/v1/recovery?sourceId=${android.net.Uri.encode(source.id)}", config.connectionToken())
+                            slice.record(0)
+                            if (recoveryCode == 200 && recovery?.optJSONArray("items") != null) {
+                                if (!stillSelected()) return Result.retry()
+                                applicationContext.fileArchives().requestSnapshotRecovery(source, recovery.getJSONArray("items"))
+                            }
+                        }
                         var finished = false
                         while (submitted < 20 && !slice.exhausted) {
                             finished = FileUpload.sync(applicationContext, source, config, slice, ::stillSelected); submitted++
@@ -159,24 +168,9 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
     }
 }
 
-/** Local-only derived content has its own durable journal and scheduling lane. */
+/** Older schedules may still fire after upgrade; all file interpretation is central. */
 class LocalFileIndexWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
-    override fun doWork(): Result = ConnectionGuard.sync {
-        val store = applicationContext.localSources()
-        for (source in store.sources().filter { it.enabled && it.binaryFiles() && it.retention == "snapshot" }) {
-            if (isStopped) return@sync Result.retry()
-            if (!SourceAccess.available(applicationContext, source)) continue
-            repeat(4) { runCatching {
-                applicationContext.fileArchives().processOne(source,
-                    { applicationContext.contentResolver.openInputStream(android.net.Uri.parse(it.getString("uri"))) ?: error("File unavailable") },
-                    { FileSources(applicationContext).metadata(android.net.Uri.parse(it.getString("uri")), source)?.let { current -> applicationContext.fileArchives().signature(current) == applicationContext.fileArchives().signature(org.json.JSONObject(it.toString()).apply { remove("_relativePath") }) } == true },
-                    { !isStopped && !ConnectionGuard.reconfiguring() && store.sources().any { it == source && it.enabled } })
-            } }
-        }
-        SourceWork.upload(applicationContext)
-        if (store.sources().any { it.enabled && it.retention == "snapshot" && it.binaryFiles() && SourceAccess.available(applicationContext, it) && applicationContext.fileArchives().processingReady(it.id) }) SourceWork.processFiles(applicationContext, continuation = true)
-        Result.success()
-    } ?: Result.retry()
+    override fun doWork(): Result = Result.success()
 }
 
 object SourceWork {
@@ -216,8 +210,8 @@ object SourceWork {
     fun upload(context: Context, explicit: Boolean = false) = UploadWorker.schedule(context, Settings(context).read(), explicit)
     fun processFiles(context: Context, continuation: Boolean = false) {
         val manager = WorkManager.getInstance(context)
-        manager.enqueueUniqueWork("mote-file-processing", if (continuation) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<LocalFileIndexWorker>().setInitialDelay(if (continuation) 1 else 0, TimeUnit.SECONDS).build())
-        manager.enqueueUniquePeriodicWork("mote-file-processing-periodic", ExistingPeriodicWorkPolicy.KEEP, PeriodicWorkRequestBuilder<LocalFileIndexWorker>(15, TimeUnit.MINUTES).build())
+        manager.cancelUniqueWork("mote-file-processing")
+        manager.cancelUniqueWork("mote-file-processing-periodic")
     }
     internal fun enqueueUpload(context: Context, config: CollectorConfig, explicit: Boolean, continuation: Boolean = false, delaySeconds: Long = 0) {
         if (context.localSources().sources().none { it.enabled }) return

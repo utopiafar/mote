@@ -9,18 +9,20 @@ import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
 import {SourceItemRecipeCatalog} from '../src/source-item-recipe.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
+import {ExecutionEngine} from '../src/execution-engine.js';
 
 async function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-material-query-routing-'));
   const store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store);
+  const executor=new ExecutionEngine(store);materials.bindIndexEngine(executor);
   const recipes=new SourceItemRecipeCatalog(store,'1');
   const diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),enabled:false});await diagnostics.init();
-  t.after(async()=>{await diagnostics.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  t.after(async()=>{await diagnostics.close();await executor.close();store.close();rmSync(directory,{recursive:true,force:true});});
   sources.register({id:'fixture-query-routing',name:'Generated source',kind:'custom',deviceId:'fixture-device',platform:'import',retention:'archive'});
   return {store,sources,materials,recipes,diagnostics};
 }
 
-function publish(materials:MaterialStore,externalId:string,captureId:string,kind:'message'|'file',text:string,processed?:string){
+async function publish(materials:MaterialStore,externalId:string,captureId:string,kind:'message'|'file',text:string,processed?:string){
   const id=materialId('fixture-query-routing',externalId);
   const blocks:MaterialDraft['blocks']=[{id:'source-record',kind:'text',format:'plain',text,memberIds:[captureId]}];
   if(processed)blocks.push({id:'processed',kind:'text',format:'plain',text:processed,memberIds:[captureId]});
@@ -29,6 +31,7 @@ function publish(materials:MaterialStore,externalId:string,captureId:string,kind
     members:[{id:captureId,kind:'capture',ref:`capture:${captureId}`}],coverage:{state:'complete'},
     fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
   materials.setSearchable(id,true);
+  await materials.index!.tick();
   return material;
 }
 
@@ -43,7 +46,7 @@ test('published source-item Material replaces raw discovery while a new head kee
   assert.deepEqual((await agent.sourceItems!({sourceId:'fixture-query-routing'})).items.map(row=>row.id),[first.id]);
   assert.deepEqual((await agent.timeline({limit:10}) as {items:{id:string}[]}).items.map(row=>row.id),[first.id]);
 
-  const material=publish(materials,'doc-1',first.id,'message','GENERATED_SHARED_SOURCE','GENERATED_PROCESSED_ONLY');
+  const material=await publish(materials,'doc-1',first.id,'message','GENERATED_SHARED_SOURCE','GENERATED_PROCESSED_ONLY');
   const anchors=new Set(materials.evidenceIds(material.ref));assert.equal(anchors.size,2);
   const shared=await agent.search({query:'GENERATED_SHARED_SOURCE'});
   assert.equal(shared.length,1);assert.ok(anchors.has(shared[0].id));assert.notEqual(shared[0].id,first.id);
@@ -76,7 +79,7 @@ test('file Material card preserves source filters, exact expansion and raw pagin
     text:'GENERATED_OLDER_FILE',kind:'file',layer:'original'});
   const newer=await sources.upsert('fixture-query-routing',{externalId:'newer-file',revision:'v1',observedAt:'2026-09-20T00:01:00.000Z',
     text:'GENERATED_NEWER_FILE',kind:'file',layer:'original'});
-  const material=publish(materials,'newer-file',newer.id,'file','GENERATED_NEWER_FILE');
+  const material=await publish(materials,'newer-file',newer.id,'file','GENERATED_NEWER_FILE');
   const anchor=materials.evidenceIds(material.ref)[0];assert.ok(anchor);
   const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials,undefined,recipes);
   const agent=reader.agent({diagnostics});

@@ -103,6 +103,9 @@ export interface QueryInput {
   /** Host-only lineage of derived context already included in taskContext. Used
    * solely for disclosure authorization/revocation; never evidence seeds or tools. */
   derivedContextEvidenceIds?:readonly string[];
+  /** Host-only original lineage for opening cards or derived task context. Never
+   * grants original reads or appears in the model context envelope. */
+  contextEvidenceDependencies?:import('@mote/shared').EvidenceDependencies;
   /** Host-only bounded observation and coverage snapshot for one insight version. */
   insightSnapshot?: import('@mote/shared').InsightSnapshot;
   /** Host-only read grant for original action proposals. No mutation capability is exposed. */

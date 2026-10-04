@@ -1,9 +1,17 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {skillCatalog} from '@mote/agent';
-import {staticReportHtml,insightResult} from '../src/insights.js';
+import {staticReportHtml,insightResult,validateInsightOutput} from '../src/insights.js';
 
 const id='11111111-1111-4111-8111-111111111111',missing='22222222-2222-4222-8222-222222222222';
+test('plain text and malformed JSON request repair instead of completing without a report',()=>{
+ for(const answer of ['Generated ordinary prose','{broken JSON','{}','null','{"title":"Generated","markdown":"","html":"<p>Empty</p>"}']){
+  const value={answer,citations:[],trace:[],runId:'generated-invalid-report'};
+  assert.throws(()=>insightResult(value),{statusCode:502});
+  assert.equal(validateInsightOutput(value)?.code,'insight_shape');
+ }
+ assert.equal(validateInsightOutput({answer:JSON.stringify({title:'Generated',markdown:'No evidence in this generated window.',html:'<p>No evidence in this generated window.</p>'}),citations:[],trace:[],runId:'generated-valid-report'}),undefined);
+});
 test('stored report provenance identifies the selected insight policy version',()=>{
   const result=insightResult({answer:JSON.stringify({title:'Generated recap',markdown:`A bounded observation [${id}]`,html:`<p>A bounded observation [${id}]</p>`}),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:'Generated fixture'}],trace:[],runId:'generated-run'});
   assert.equal(result.artifact?.skillId,'personal-insight');

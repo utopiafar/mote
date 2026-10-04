@@ -27,18 +27,20 @@ internal class SystemEventCollector(private val context: Context, private val wo
         MediaPrivacy.powerAllowed(c, Diagnostics.battery(context))
 
     fun notification(sbn: StatusBarNotification, removed: Boolean, reason: Int? = null) {
+        // Dismissal is outside the owner's collection contract. Do not even
+        // inspect notification extras or mutate the deduplication cache.
+        if (removed) return
         val c = settings.read()
         if (!c.notificationCollectionEnabled || !allowed(c) || sbn.packageName == context.packageName) return
         val mode = MediaPrivacy.mode(sbn.packageName, c)
         if (mode == AppCollectionMode.OFF) return
         // Never read textual extras for an activity-only app.
         val n = sbn.notification
-        val payload = JSONObject().put("action", if (removed) "removed" else "posted")
+        val payload = JSONObject().put("action", "posted")
             .put("notificationKey", SourceRules.hash(sbn.key)).put("postedAt", Instant.ofEpochMilli(sbn.postTime).toString())
             .put("ongoing", sbn.isOngoing).put("groupSummary", n.flags and Notification.FLAG_GROUP_SUMMARY != 0)
-        reason?.let { payload.put("removalReason", it) }
         n.category?.let { payload.put("category", it.take(200)) }
-        if (!removed && mode == AppCollectionMode.CONTENT) {
+        if (mode == AppCollectionMode.CONTENT) {
             n.channelId?.let { payload.put("channelId", it.take(300)) }
             val extras = n.extras
             mapOf("title" to Notification.EXTRA_TITLE, "text" to Notification.EXTRA_TEXT,
@@ -54,14 +56,10 @@ internal class SystemEventCollector(private val context: Context, private val wo
         event.getJSONObject("metadata").put("notification", payload)
         submit(c, event) {
             val key = payload.getString("notificationKey")
-            // Repeated platform delivery is deduplicated, distinct updates and removals remain events.
+            // Repeated delivery is deduplicated; updates retain their own observation.
             val hash = SourceRules.hash(payload.toString())
-            if (!removed && seen[key] == hash) false else {
-                if (removed) seen.remove(key) else {
-                    if (seen.containsKey(key)) payload.put("action", "updated")
-                    seen[key] = hash
-                }; true
-            }
+            val action=NotificationObservations.accept(seen,key,hash)
+            if(action==null)false else {payload.put("action",action);true}
         }
     }
 

@@ -30,7 +30,7 @@ export function staticReportHtml(html:string,evidenceIds:string[]):string {
 }
 
 export function insightResult(result:QueryResult):InsightResult {
-  let value:unknown;try{value=JSON.parse(result.answer);}catch{return result;}
+  let value:unknown;try{value=JSON.parse(result.answer);}catch{throw new StoreError('Insight report has an invalid structure; retry generation',502);}
   const parsed=reportSchema.safeParse(value);
   if(!parsed.success)throw new StoreError('Insight report has an invalid structure; retry generation',502);
   const ids=result.citations.map(c=>c.id);

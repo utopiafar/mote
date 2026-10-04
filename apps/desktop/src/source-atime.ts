@@ -27,6 +27,8 @@ export class FileAccessMarkers {
     this.observed[id] = { identity, readAtimeMs: after.atimeMs, reportedAtimeMs };
     return reportedAtimeMs;
   }
+  /** A catalog hit is still an observation; retain its self-read timestamp marker. */
+  retain(key:string):void{const id=sourceHash(key),prior=this.entries[id];if(prior)this.observed[id]=prior;}
   async persist(complete: boolean): Promise<void> {
     // A partial scan retains unseen markers; a complete scan removes old entries to stay bounded.
     const entries = complete ? this.observed : { ...this.entries, ...this.observed };

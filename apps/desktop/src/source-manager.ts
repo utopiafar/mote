@@ -1,7 +1,6 @@
 import {ensureStorageFormat,DESKTOP_STORAGE_VERSION} from './storage-format';
 import { connectionToken, requireConnectionToken, sourceConnectionBinding, type LoginSettings } from './login-session';
 import {nativeStatusView} from './native-status';
-import {fileProcessingWork} from './background';
 import { meteredBody } from './upload-meter';
 import { moteText, statusMessage } from '@mote/shared/i18n';
 import { type EventJournal, failureCode, httpFailure, TransportFailure } from './support';
@@ -35,8 +34,6 @@ export class LocalSourceManager {
   private engines = new Map<string, SourceSync>();
   private task?: Promise<void>;
   private uploadTask?:Promise<void>;
-  private processingTask?:Promise<void>;
-  private processingController?:AbortController;
   private uploadController?:AbortController;
   private taskForced = false;
   private forceRequested = false;
@@ -76,11 +73,11 @@ export class LocalSourceManager {
     // Include paused sources when guarding a node change: they can still own durable pending bodies.
     for (const source of this.sources) { const engine = new SourceSync(join(this.directory, 'nodes', this.binding, source.id + '.json')); await engine.initialize(); this.engines.set(source.id, engine); }
     await this.refreshWatchers();
-    this.timer = setInterval(() => { void this.refreshWatchers(); void this.sync(false); void this.processFiles(); }, 5000); this.timer.unref();
+    this.timer = setInterval(() => { void this.refreshWatchers(); void this.sync(false); }, 5000); this.timer.unref();
     void this.sync(false);
   }
   status(): SourceStatus[] { return this.sources.map<SourceStatus>(source => ({ state: source.enabled ? 'idle' : 'paused', message: source.enabled ? moteText("等待首次同步") : moteText("本机已暂停"), pending: 0, items: 0, skipped: 0, ...this.states.get(source.id), ...this.engines.get(source.id)?.status(), source: structuredClone(source), ...(!source.enabled ? { state: 'paused' as const, message: moteText("本机已暂停") } : {}) })).map(row => ({...row, message: statusMessage(row.blocked?moteText("中央记录冲突或已删除，本机副本保留待处理。"):row.message), facts:nativeStatusView({pending:row.pending+(row.blocked??0),lastAcknowledgedAt:row.lastAcknowledgedAt,syncState:!this.connection.serverUrl||!connectionToken(this.connection)?'unconfigured':row.blocked&&row.state!=='syncing'?'blocked':row.state==='permission_required'?'blocked':row.state==='syncing'?'uploading':row.state==='idle'&&row.pending>0?'waiting':row.state,errorCode:row.blocked?'retained_conflict':row.state==='permission_required'?'permission_required':row.state==='error'?'source_unavailable':null,scanComplete:row.scanComplete,knownItems:row.items,skipped:row.skipped})})); }
-  connectionActivity(): { pending: number; processingPending: number; inFlight: boolean } { return { pending: [...this.engines.values()].reduce((sum, engine) => sum + engine.status().pending, 0), processingPending: [...this.engines.values()].reduce((sum,engine)=>sum+engine.status().processingPending,0), inFlight: Boolean(this.task || this.uploadTask || this.processingTask || this.permissionTask) }; }
+  connectionActivity(): { pending: number; processingPending: number; inFlight: boolean } { return { pending: [...this.engines.values()].reduce((sum, engine) => sum + engine.status().pending, 0), processingPending: [...this.engines.values()].reduce((sum,engine)=>sum+engine.status().processingPending,0), inFlight: Boolean(this.task || this.uploadTask || this.permissionTask) }; }
   async holdConnection(): Promise<() => void> {
     if (this.connectionHeld || this.permissionTask) throw new Error(moteText("本地来源授权尚未结束，请稍后重试连接"));
     this.connectionHeld = true;
@@ -221,6 +218,8 @@ export class LocalSourceManager {
           if (!policy.ready) { await engine.stage(scan, adapter.tracksDeletions && source.trackDeletions,undefined,source.initialSync); Object.assign(status, engine.status(), { state: 'idle', message: policy.message }); }
           else {
             const request = this.request(signal);
+            await this.prepareSource(source,request,signal);
+            await this.recoverSnapshot(source,engine,request,signal);
             const { state: ready } = await engine.syncScan(scan, adapter.tracksDeletions && source.trackDeletions, sourceDefinition(source), request, signal, () => this.prepareSource(source, request, signal));
             Object.assign(status, engine.status(), { state: ready === 'paused' ? 'paused' : 'idle', message: ready === 'paused' ? moteText("中央已暂停该来源；待上传版本保留在本机") : scan.complete ? moteText("已同步；后台定时检查变化") : moteText("已同步可读取项；扫描不完整，未判断删除") });
           }
@@ -239,33 +238,6 @@ export class LocalSourceManager {
       } finally { if (unqueuedScan) await this.engines.get(source.id)?.discardUnqueuedOriginals(unqueuedScan.items); }
     }
   }
-  private processFiles(): Promise<void> | undefined {
-    if (this.stopped || this.connectionHeld || this.processingTask) return this.processingTask;
-    const controller = new AbortController(); this.processingController = controller;
-    const binding = this.binding, signal = controller.signal;
-    const run = async () => {
-      for (const source of this.sources.filter(source => source.enabled && source.retention === 'snapshot')) {
-        if (signal.aborted) return;
-        const engine = this.engines.get(source.id);
-        if (!engine || !this.readable.has(source.id)) continue;
-        try { await engine.processPending(source, signal, () => !signal.aborted && this.binding === binding && this.sources.includes(source) && source.enabled); }
-        catch { if (signal.aborted) return; }
-      }
-    if(this.connection.serverUrl&&connectionToken(this.connection)&&this.nodeBinding.matches(this.connection))for(const source of this.sources.filter(s=>s.enabled&&this.adapters.get(s.kind).readEvidence&&s.allowRead&&s.retention==='snapshot')){
-      try{const request=this.request(signal),pending=await request('/api/sources/'+source.id+'/read-requests',undefined,'GET',signal) as {items:import('@mote/shared').FileReadRequest[]};
-        const locations = new Map(this.fileLocations.get(source.id) ?? []);
-        const checkpoint = this.engines.get(source.id)?.fileCheckpoint();
-        if (source.kind === 'local-files' && checkpoint) {
-          const root = (await stat(checkpoint.root)).isDirectory() ? checkpoint.root : dirname(checkpoint.root);
-          for (const entry of Object.values(checkpoint.catalog)) locations.set('file:' + sourceHash([entry.fileId, entry.birthtimeMs].join(':')), join(root, entry.relativePath));
-        }
-        for(const read of pending.items){const result=await this.adapters.get(source.kind).readEvidence!(source,read,locations,signal);await request('/api/sources/'+source.id+'/read-requests/'+read.id,result,'PUT',signal);}
-      }catch{if(signal.aborted)return;}
-    }
-    };
-    const task = this.processingTask = run().finally(() => { if (this.processingTask === task) this.processingTask = undefined; if (this.processingController === controller) this.processingController = undefined; });
-    return task;
-  }
   private request(signal: AbortSignal): SourceRequest {
     return async (path, body, method, requestSignal) => {
       if (!this.connection.serverUrl || !connectionToken(this.connection) || !this.nodeBinding.matches(this.connection)) throw new Error(moteText("本地来源没有匹配的中央连接"));
@@ -273,6 +245,17 @@ export class LocalSourceManager {
       if (!response.ok) { await response.body?.cancel().catch(() => undefined); throw new TransportFailure(response.status === 401 ? moteText("中央认证失败，请检查令牌") : response.status === 409 ? moteText("中央来源已暂停，请在中央来源页恢复") : moteText("中央同步失败，已保留本地版本，稍后重试"), httpFailure(response.status), response.status); }
       return JSON.parse(await readResponseText(response, 1024 * 1024));
     };
+  }
+  /** Recovery is transport work: local-only scans never contact the central node. */
+  private async recoverSnapshot(source:LocalSource,engine:SourceSync,request:SourceRequest,signal:AbortSignal):Promise<void>{
+    if(source.kind!=='local-files'||source.retention!=='snapshot')return;
+    let count=0;
+    try{const response=await request('/api/file-sync/v1/recovery?sourceId='+encodeURIComponent(source.id),undefined,'GET',signal) as {items?:import('./source-sync').SnapshotRecovery[]};
+      if(Array.isArray(response.items)&&response.items.length<=200&&response.items.every(item=>typeof item.externalId==='string'&&typeof item.revision==='string'))count=await engine.requestSnapshotRecovery(response.items);
+    }catch(error){if(signal.aborted)throw error;return;/* Older nodes can still receive ordinary revisions. */}
+    if(!count)return;
+    const now=Date.now(),adapter=this.adapters.get(source.kind),scan=await this.adapters.scan({source,signal,checkpoint:engine.checkpoint(),fileCheckpoint:engine.fileCheckpoint(),priorityPaths:[],fileLocations:this.fileLocations.get(source.id)??new Map(),stateDirectory:this.directory,helperPath:this.helperPath,scope:{start:new Date(now-30*86400000).toISOString(),end:new Date(now+90*86400000).toISOString()}});
+    try{signal.throwIfAborted();await engine.stage(scan,adapter.tracksDeletions&&source.trackDeletions,undefined,source.initialSync);}finally{await engine.discardUnqueuedOriginals(scan.items);}
   }
   private async prepareSource(source: LocalSource, request: SourceRequest, signal: AbortSignal): Promise<void> {
     if (!this.metadataDirty.has(source.id)) return;
@@ -306,7 +289,7 @@ export class LocalSourceManager {
       combined.throwIfAborted();
       // Snapshot source membership, then rotate one bounded transport slice per
       // source. Large originals retain their server-acknowledged parts on yield.
-      let pending=[...this.sources]; let failure: unknown;
+      let pending=[...this.sources]; let failure: unknown;const recovered=new Set<string>();
       while(pending.length){
         const again:LocalSource[]=[];
         for (const source of pending) {
@@ -315,10 +298,14 @@ export class LocalSourceManager {
           // check revokes the right to send already journaled versions.
           if (!source.enabled || !this.readable.has(source.id) || this.states.get(source.id)?.state === 'paused') continue;
           const engine = this.engines.get(source.id)!;
-          if (!engine.status().pending && !this.metadataDirty.has(source.id)) continue;
           const request = this.request(combined);
           try {
-          await this.prepareSource(source, request, combined);
+          if(!recovered.has(source.id)){
+            if(!engine.status().pending&&!this.metadataDirty.has(source.id)&&source.retention!=='snapshot')continue;
+            await this.prepareSource(source, request, combined);
+            await this.recoverSnapshot(source,engine,request,combined);recovered.add(source.id);
+          }
+          if(!engine.status().pending)continue;
           const slice = await engine.flushSlice(sourceDefinition(source), request, combined);
           const previous = this.states.get(source.id);
           this.states.set(source.id, { source, skipped: 0, ...previous, ...engine.status(), state: slice.state === 'paused' ? 'paused' : slice.state==='yielded'?'syncing':'idle', message: slice.state === 'paused' ? moteText("中央已暂停，待传版本保留在本机") : slice.state==='yielded'?moteText("部分内容已上传，等待下一轮同步"):moteText("已同步；后台继续检查本地变化") });
@@ -339,6 +326,6 @@ export class LocalSourceManager {
   }
   private markMetadataDirty(id: string): void { if (!this.metadataDirty.size) this.metadataDirtyAt = new Date().toISOString(); this.metadataDirty.add(id); }
   private async persist(): Promise<void> { await atomicSourceJson(join(this.directory, 'sources.json'), { version: DESKTOP_STORAGE_VERSION, sources: this.sources, metadataDirty: [...this.metadataDirty], metadataDirtyAt: this.metadataDirtyAt }); }
-  private async interrupt(): Promise<void> { this.controller?.abort(); this.uploadController?.abort(); this.processingController?.abort(); await fileProcessingWork.close(); await Promise.allSettled([this.task,this.uploadTask,this.processingTask]); }
+  private async interrupt(): Promise<void> { this.controller?.abort(); this.uploadController?.abort(); await Promise.allSettled([this.task,this.uploadTask]); }
   async close(): Promise<void> { this.stopped = true; if (this.timer) clearInterval(this.timer); this.watcher.close(); this.permissionController?.abort(); await Promise.allSettled([this.interrupt(), this.permissionTask]); }
 }

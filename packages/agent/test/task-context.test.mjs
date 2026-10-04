@@ -17,6 +17,13 @@ test('opening memory hints are separate from cited evidence and include verifica
  assert.match(envelope.memoryLeadInstruction,/Cite delivered original ids, not memory ids/);
  assert.equal(envelope.untrustedEvidence,undefined);
 });
+test('host context lineage is retained for fences without being disclosed to the model or granting citation reads',async t=>{
+ const id='6f28159f-242b-5442-9a0c-a17958985a52',deps={version:1,complete:true,ids:[id]},lead={id:'generated-memory',title:'Generated',statement:'Generated decision',uncertainty:'Fixture',status:'published',tier:'episode',createdAt:'2026-09-18T00:00:00Z'};
+ const input={question:'Generated',contextEvidenceDependencies:deps,openingMemories:[lead],conversation:{turns:[{question:'Generated earlier',answer:'Generated answer',createdAt:lead.createdAt,scope:{}}],omittedTurns:0,evidenceDependencies:deps}};
+ const envelope=buildContextEnvelope(input,[]);assert.equal(envelope.conversation.evidenceDependencies,undefined);assert.equal(JSON.stringify(envelope).includes(id),false);
+ const bridge=await startBridge(reader,input,6);t.after(()=>bridge.close());assert.deepEqual(bridge.evidenceDependencies,deps);assert.equal(bridge.records.has(id),false,'lineage cannot confer citation authority');
+ const missing=await startBridge(reader,{question:'Generated',openingMemories:[lead],contextEvidenceDependencies:{version:1,complete:true,ids:[]}},6);t.after(()=>missing.close());assert.equal(missing.evidenceDependencies.complete,false,'nonempty derived lead cannot claim empty complete lineage');
+});
 import {startBridge} from '../dist/bridge.js';
 import {parseAnswer} from '../dist/index.js';
 const record={id:'6f28159f-242b-5442-9a0c-a17958985a52',capturedAt:'2026-09-18T00:00:00Z',deviceId:'fixture',appName:'Generated',ocrText:'a'.repeat(9000)+'NEEDLE the gate opens at 14:30. '+'b'.repeat(3000)};

@@ -94,7 +94,7 @@ test('interrupted runs recover as failures, and deleted evidence clears public s
 test('execution entrypoints attribute insight, memory and isolated file analysis without inspecting prompt text',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-attribution-entrypoints-'));let failFile=false,closedFiles=0;
   const emit=(input:Parameters<QueryAgent['query']>[0])=>input.onUsage?.({requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0});
-  const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{emit(input);return {answer:input.skill==='memory-extraction'?JSON.stringify({memories:[]}):'Generated report',citations:[],trace:[],runId:randomUUID()};}};
+  const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{emit(input);return {answer:input.skill==='memory-extraction'?JSON.stringify({memories:[]}):input.skill==='personal-insight'?JSON.stringify({title:'Generated report',markdown:'Generated report',html:'<p>Generated report</p>'}):'Generated report',citations:[],trace:[],runId:randomUUID()};}};
   const {app,processing,store}=await buildApp(config(dir),{agent,createModelAgent:async()=>({configured:true,close:async()=>{closedFiles++;},query:async input=>{emit(input);if(failFile)throw Error('Generated model failure');return {answer:'Generated file summary',citations:[],trace:[],runId:randomUUID()};}})});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
   const insight=await app.inject({method:'POST',url:'/api/insights',headers,payload:{}});assert.equal(insight.statusCode,200,insight.body);

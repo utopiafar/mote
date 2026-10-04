@@ -7,7 +7,7 @@ import org.junit.Test
 
 class UiPageRulesTest {
     @Test fun sharedConformance() {
-        val cases=JSONArray(javaClass.getResource("/conformance.json")!!.readText())
+        val cases=JSONArray();for(path in listOf("/conformance.json","/builtin-coverage.json")){val batch=JSONArray(javaClass.getResource(path)!!.readText());for(i in 0 until batch.length())cases.put(batch.getJSONObject(i))}
         for(i in 0 until cases.length()) {
             val f=cases.getJSONObject(i); if(f.getString("platform")!="android")continue
             val result=UiPageRules.extract(f.getJSONObject("snapshot"),UiPageRules.parse(f.getJSONArray("rules").toString()))

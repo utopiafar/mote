@@ -496,6 +496,7 @@ export class MaterialOrganizerRuntime {
     store.db.prepare("INSERT OR IGNORE INTO settings(key,value) SELECT 'material-organizer-cursor',CAST(coalesce(max(seq),0) AS TEXT) FROM changes").run();
     this.sourceItemRecipes=new SourceItemRecipeCatalog(store,sourceItem.version);
     this.executor=executor??new ExecutionEngine(store);
+    materials.bindIndexEngine(this.executor);
     this.unregister=this.executor.register({kind:ORGANIZER_STEP,pool:'material-organizer',concurrency:()=>8,
       resourceKeys:step=>[`material:${(step.input as OrganizerJobInput).materialId}`],
       validate:step=>!this.closed&&this.valid(step),
@@ -701,6 +702,7 @@ export class MaterialOrganizerRuntime {
       await this.executor.drain([...new Set([...stepIds,...waiting.map(row=>row.id)])]);
       await this.executor.drain(this.retryReadyRetirements());
       for(const id of stepIds){const failure=this.failures.get(id);if(failure)throw failure;}
+      await this.materials.index?.tick();
       return count;
     }finally{this.running=false;}
   }

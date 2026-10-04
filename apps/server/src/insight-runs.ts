@@ -69,4 +69,5 @@ export class InsightRuns {
     }finally{this.commitGuards.delete(id);}
   }
   async close(){await this.execution.close();}
+  async stop(){await this.execution.stop();}
 }

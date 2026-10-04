@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import {captureSchema,uiRulesSchema,uiSnapshotSchema,extractUiPage,uiPageText,builtinUiRules} from '../dist/index.js';
-const fixtures=JSON.parse(readFileSync(new URL('../../../adapters/ui/fixtures/conformance.json',import.meta.url)));
+const fixtures=[...JSON.parse(readFileSync(new URL('../../../adapters/ui/fixtures/conformance.json',import.meta.url))),...JSON.parse(readFileSync(new URL('../../../adapters/ui/fixtures/builtin-coverage.json',import.meta.url)))];
 for(const f of fixtures)test(`UI adapter conformance: ${f.name}`,()=>{
  const page=extractUiPage(uiSnapshotSchema.parse(f.snapshot),uiRulesSchema.parse(f.rules),f.platform);
  assert.deepEqual(page?{status:page.status,ids:page.nodes.map(n=>n.id)}:null,f.expected);
@@ -21,3 +21,5 @@ test('rule runtime rejects action/code keys, duplicate IDs, missing selectors an
  const s=structuredClone(f.snapshot);s.nodes[0].parentId='2';assert.equal(uiSnapshotSchema.safeParse(s).success,false);
  assert.deepEqual(builtinUiRules,uiRulesSchema.parse(JSON.parse(readFileSync(new URL('../../../adapters/ui/builtin.json',import.meta.url)))));
 });
+
+test('every live builtin rule has an authored generated snapshot and bounded negative coverage',()=>{for(const rule of builtinUiRules){const cases=fixtures.filter(f=>f.name.startsWith('builtin-'+rule.id+'-'));assert.ok(cases.length>=6,rule.id);for(const f of cases)assert.deepEqual(f.rules,[rule]);assert.equal(rule.complete,false,'Visible accessibility fixture cannot establish whole-page completeness');}});

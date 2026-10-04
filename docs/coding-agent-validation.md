@@ -1,5 +1,7 @@
 # Coding Agent 验收记录（2026-09-17）
 
+2026-10-05 补充：完整有界会话概要、后期纠正与早期约束的生成数据及真实本地 Codex Server 验收见 [决策落实回归记录](audits/decision-closure-2026-10-05.md)。本页保留历史测试范围，不能作为新版本或新处理架构的验收结论。
+
 ## 合成验证
 
 - Node 24 构建所有 workspace，通过 TypeScript 检查。

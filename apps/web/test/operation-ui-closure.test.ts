@@ -8,9 +8,32 @@ import {Actions} from '../src/Actions.js';
 import {Processing} from '../src/Processing.js';
 import {affectedResource} from '../src/operation-feed.js';
 import type {Api} from '../src/api.js';
+import {resources} from '../src/resource-cache.js';
 configureLocale(()=> 'zh-CN');
 async function fixture(t:any){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),before=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){before.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,value] of before){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,d:dom.window.document};}
 const button=(d:Document,label:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(b=>b.textContent===label)!;
+test('calendar confirmation pins the reviewed version and requires a new review after another client updates it',async t=>{
+ const {root,d}=await fixture(t);let version=1,title='Generated original schedule';const writes:{version:number;event:{title:string}}[]=[];
+ const api={request:async(path:string,options?:{body?:string})=>{
+  if(path.startsWith('/api/operations/changes'))return new Promise(()=>{});
+  if(path.endsWith('/confirm')){writes.push(JSON.parse(options!.body!));return {status:'approved'};}
+  if(path.startsWith('/api/actions?'))return {items:[{id:'generated',version,kind:'calendar.update',status:'proposed',event:{title,start:'2099-01-01T10:00:00Z',end:'2099-01-01T11:00:00Z',timeZone:'UTC',allDay:false,location:'',description:''},related:{event:{title:'Generated prior',start:null,end:null},target:{deviceId:'fixture',calendarId:'generated'}},evidence:[]}],total:1,nextCursor:null,targets:[],settings:{enabled:false,timeZone:'UTC',reviewDeviceIds:[]},progress:{configured:true,running:false,jobs:[],error:null}};
+  return {items:[]};
+ },setAgentTimeout:()=>{}} as Api;
+ await act(async()=>root.render(React.createElement(Actions,{api,onOpen:()=>{}})));
+ await act(async()=>button(d,'核对变更').click());
+ const dialog=()=>d.querySelector<HTMLFormElement>('[role="dialog"]')!;
+ assert.equal(dialog().querySelector<HTMLInputElement>('input[required]')!.value,title);
+ version=2;title='Generated correction from another client';await act(async()=>resources(api).get('/api/actions?cursor=0').refresh());
+ assert.equal(dialog().querySelector<HTMLInputElement>('input[required]')!.value,'Generated original schedule','polling must not silently replace reviewed fields');
+ assert.equal(button(d,'确认变更').disabled,true);
+ await act(async()=>dialog().dispatchEvent(new d.defaultView!.Event('submit',{bubbles:true,cancelable:true})));
+ assert.equal(writes.length,0,'a stale review cannot send the newer version with older fields');
+ await act(async()=>button(d,'重新核对最新建议').click());
+ assert.equal(dialog().querySelector<HTMLInputElement>('input[required]')!.value,title);
+ await act(async()=>dialog().dispatchEvent(new d.defaultView!.Event('submit',{bubbles:true,cancelable:true})));
+ assert.equal(writes.length,1);assert.equal(writes[0].version,2);assert.equal(writes[0].event.title,title);
+});
 test('Actions consumes operation changes through the shared resource and explains blocked/cancelled analysis safely',async t=>{
  const {root,d}=await fixture(t);let resolve!:(value:unknown)=>void,reads=0,changed=false;const change=new Promise(r=>{resolve=r;});
  const api={request:async(path:string)=>{if(path.startsWith('/api/operations/changes'))return change;if(path.startsWith('/api/actions?')){reads++;return {items:[],total:0,nextCursor:null,targets:[],settings:{enabled:true,timeZone:'UTC',reviewDeviceIds:[]},progress:{configured:true,running:false,jobs:changed?[{status:'blocked',count:3},{status:'cancelled',count:2}]:[{status:'pending',count:5}],error:changed?'PRIVATE ENGINE RAW ERROR':null,errorCode:changed?'action_analysis_failed':null}};}return {items:[],nextCursor:null};},setAgentTimeout:()=>{}} as Api;
@@ -26,4 +49,14 @@ test('Operation detail identifies Actions and both embedding steps, routes to Ac
 test('Actions and optional Indexer operation IDs invalidate affected domains without reloading unrelated settings',()=>{
  const actions=new Set(['workflow:actions:generated']);assert.equal(affectedResource('/api/actions?cursor=4',actions,false),true);assert.equal(affectedResource('/api/actions',new Set(['workflow:lifecycle:generated']),false),false);assert.equal(affectedResource('/api/actions',new Set(),true),true);
  for(const id of ['capture:generated','file:generated']){for(const path of ['/api/files/generated','/api/capture-browser/generated','/api/operations/'+encodeURIComponent(id)])assert.equal(affectedResource(path,new Set([id]),false),true);assert.equal(affectedResource('/api/model-settings',new Set([id]),false),false);}
+ const index=new Set(['material-index:generated']);for(const path of ['/api/materials/generated','/api/materials?limit=12','/api/agent-view/material-read?ref=generated'])assert.equal(affectedResource(path,index,false),true);assert.equal(affectedResource('/api/model-settings',index,false),false);
+});
+test('failed material index operations offer an index-only retry and route to the library',async t=>{
+ const {root,d}=await fixture(t),writes:string[]=[],navigation:string[]=[];
+ const operation={id:'material-index:generated',kind:'material-index',state:'failed',total:1,notScheduled:0,counts:{waiting:0,running:0,blocked:0,failed:1,cancelled:0,succeeded:0,stale:0,skipped:0},updatedAt:Date.now()};
+ const api={request:async(path:string,init?:RequestInit)=>{if(init?.method==='POST'){writes.push(path);return {indexing:{state:'pending'}};}if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:1,reset:false,hasMore:false};if(path.startsWith('/api/processing?'))return {jobs:[],processors:[],limit:30};if(path==='/api/operations')return {items:[operation]};return {operation,steps:[{id:'generated',kind:'material.index',state:'failed',attempts:1,dependencies:[],current:true}],nextCursor:null};},setAgentTimeout:()=>{}} as Api;
+ await act(async()=>root.render(React.createElement(Processing,{api,onNavigate:page=>navigation.push(page)})));
+ await act(async()=>button(d,'查看详情').click());assert.match(d.querySelector('[aria-label="任务详情"]')!.textContent!,/资料检索索引/);
+ await act(async()=>button(d,'仅重试检索索引').click());assert.deepEqual(writes,['/api/materials/generated/index/retry']);
+ await act(async()=>button(d,'打开来源与处理操作').click());assert.deepEqual(navigation,['library']);
 });

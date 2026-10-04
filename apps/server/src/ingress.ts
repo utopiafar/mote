@@ -26,6 +26,8 @@ export function collectorTransportRequest(method:string,route:string):boolean {
     '/api/sources/:id/item':['GET','HEAD'],
     '/api/file-sync/v1/capabilities':['GET','HEAD'],
     '/api/file-sync/v1/head':['GET','HEAD'],
+    '/api/file-sync/v1/recovery':['GET','HEAD'],
+    '/api/file-sync/v1/recovery/:id/uploads':['POST'],
     '/api/file-sync/v1/uploads/:id':['GET','HEAD'],
     '/api/devices/heartbeat':['POST'],
   };
@@ -92,6 +94,10 @@ export class IngressService {
   fileBegin(input:unknown,authorize:(sourceId:string)=>void){
     const upload=this.files.begin(input,authorize);
     return {...upload,ack:upload.ack?fileAcknowledgement(upload.ack as FileAck):null};
+  }
+  fileRecovery(id:string,authorize:(sourceId:string)=>void){
+    const upload=this.files.beginSnapshotRecovery(id,authorize);
+    return {...upload,ack:upload.ack?fileAcknowledgement(upload.ack):null};
   }
   fileUpload(id:string,authorize:(sourceId:string)=>void){
     const upload=this.files.upload(id,authorize);

@@ -40,10 +40,10 @@ export async function installServerFeatures(host:ServerFeatureHost,services:Feat
   await host.install({id:'mote.devices',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.devices'));devicesEntry(app,services);});
   await host.install({id:'mote.media',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.media'));mediaEntry(app,services);});
   await host.install({id:'mote.memory',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.memory'));memoryEntry(app,services,scope);});
-  await host.install({id:'mote.imports',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.imports'));importsEntry(app,services);});
-  await host.install({id:'mote.ask',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.ask'));askEntry(app,services);});
+  await host.install({id:'mote.imports',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.imports'));importsEntry(app,services,scope);});
+  await host.install({id:'mote.ask',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.ask'));askEntry(app,services,scope);});
   await host.install({id:'mote.usage',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.usage'));usageEntry(app,services);});
-  await host.install({id:'mote.insights',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.insights'));insightsEntry(app,services);});
+  await host.install({id:'mote.insights',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.insights'));insightsEntry(app,services,scope);});
   await host.install({id:'mote.diagnostics',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.diagnostics'));diagnosticsEntry(app,services);});
   await host.install({id:'mote.agent-view',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.agent-view'));agentView(app,services);});
   await host.install({id:'mote.features',version:'1',components:[]},app=>{app.get('/api/features',async()=>featureInventory(host,services));});

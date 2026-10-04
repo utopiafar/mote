@@ -1,5 +1,7 @@
 # Reproducible medium-horizon memory evaluation
 
+For the 2026-10-05 nonzero integration and executable history/empty-history acceptance, see [the decision regression record](audits/decision-closure-2026-10-05.md). It records actual published relations and fixed behavior checks separately from this historical medium-horizon protocol and its model judgments.
+
 The fixture is entirely invented: **林舟**, an engineer maintaining the **ORBIT** offline synchronizer. It covers **45 days, 24 records per day, 1,080 originals** (45 authored journal entries plus 1,035 passive window observations). It never reads personal screenshots, device records, or an existing Mote vault.
 
 Run the deterministic archive and execution checks:

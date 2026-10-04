@@ -93,10 +93,6 @@ class MediaCollectionService : NotificationListenerService() {
         runCatching { events.notification(sbn, false) }
             .onFailure { settings.status("error", MoteI18n.text("系统通知无法读取，部分事件可能缺失")) }
     }
-    override fun onNotificationRemoved(sbn: android.service.notification.StatusBarNotification, rankingMap: RankingMap, reason: Int) {
-        runCatching { events.notification(sbn, true, reason) }
-            .onFailure { settings.status("error", MoteI18n.text("系统通知移除事件无法读取")) }
-    }
     private fun eligible(): Boolean = runCatching {
         val c = settings.read()
         platformConnected && connected && settings.enabled && c.mediaCollectionEnabled && c.metadataEnabled &&

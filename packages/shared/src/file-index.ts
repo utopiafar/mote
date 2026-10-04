@@ -1,11 +1,12 @@
 import {z} from 'zod';
-/** Positions are UTF-16 text offsets in the device parser's versioned output. */
+/** Positions are UTF-16 text offsets in the central parser's versioned output. */
 export const fileIndexSchema=z.object({
  version:z.literal(1),fileId:z.string().min(1).max(200),contentVersion:z.string().regex(/^[a-f0-9]{64}$/),
  mode:z.enum(['catalog','index','archive']),coverage:z.enum(['none','full','lightweight','excerpt']),
  warnings:z.array(z.string().max(1000)).max(30).optional(),
- parser:z.string().min(1).max(100),status:z.enum(['ready','pending','unsupported']),
+ parser:z.string().min(1).max(100),status:z.enum(['ready','pending','unsupported','blocked']),
  totalCharacters:z.number().int().min(0).max(10000000),offset:z.number().int().min(0).max(10000000).default(0),
+ maxIndexCharacters:z.number().int().min(1).max(100000).optional(),
  length:z.number().int().min(0).max(100000),allowRead:z.boolean().default(false),
 }).strict();
 export type FileIndex=z.infer<typeof fileIndexSchema>;

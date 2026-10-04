@@ -7,6 +7,7 @@ import { registerSourceMaterialView } from '../source-material-view.js';
 /** materials: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{materialOrganizer,materials}:Pick<FeatureServices,"materialOrganizer"|"materials">,scope?:ServerFeatureScope){
  scope?.every(5000,()=>materialOrganizer.tick(200));scope?.defer(()=>materialOrganizer.close());
+ scope?.defer(()=>materials.index?.close());
 app.addHook('onReady',async()=>{void scope?.run(()=>materialOrganizer.tick(200));});
 registerMaterialRoutes(app,materials,materialOrganizer);
 registerSourceMaterialView(app,materials);

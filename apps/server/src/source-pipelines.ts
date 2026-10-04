@@ -63,6 +63,7 @@ export class SourcePipelineRuntime {
   constructor(readonly store:Store,readonly materials:MaterialStore,plugins:Plugin[]=[],root?:Context,executor?:ExecutionEngine,memoryWork?:MaterialMemoryWork){
     this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
     this.engine=executor??new ExecutionEngine(store);this.ownsEngine=!executor;
+    materials.bindIndexEngine(this.engine);
     this.archive=new SourceArchive(store);this.pluginScope.provide('moteSourcePipelines',this.registry);this.pluginScope.provide('moteSourceRecipes',this.recipes);
     store.db.exec(`CREATE TABLE IF NOT EXISTS source_pipeline_bindings(source_id TEXT PRIMARY KEY,pipeline_id TEXT NOT NULL,storage TEXT);
       CREATE TABLE IF NOT EXISTS source_pipeline_work(id TEXT PRIMARY KEY,source_id TEXT NOT NULL,pipeline_id TEXT NOT NULL,version TEXT NOT NULL,group_key TEXT NOT NULL,state TEXT NOT NULL,error TEXT,updated_at INTEGER NOT NULL,material_ref TEXT,generation INTEGER NOT NULL DEFAULT 0,archive_checkpoint TEXT,memory_trigger TEXT NOT NULL,
@@ -183,8 +184,7 @@ export class SourcePipelineRuntime {
     let ref:string|null=null;
     if(result.draft){if(this.materials.revisionForWrite(result.draft.id)!==result.priorRevision)throw new ExecutionFailure('stale','material_changed');
       const published=this.materials.publish(result.draft,{expectedRevision:result.priorRevision,codingSnapshot:result.codingSnapshot});ref=published.ref;
-      const shouldIndex=result.options.index??pipeline.index==='material',isIndexed=Boolean(db.prepare('SELECT 1 FROM material_searchable WHERE material_id=?').get(published.id));
-      if(shouldIndex!==isIndexed)this.materials.setSearchable(published.id,shouldIndex);
+      this.materials.setSearchable(published.id,result.options.index??pipeline.index==='material');
       const required=result.options.memoryDependencies??pipeline.memoryDependencies??['material'];
       const observe=published.changed?this.memoryWork.observe.bind(this.memoryWork):this.memoryWork.observeUnchanged.bind(this.memoryWork);
       observe(published.id,required,{inputKey:result.checkpoint,change:input.memoryTrigger??'rebuild',
@@ -302,6 +302,7 @@ export class SourcePipelineRuntime {
         .map(step=>[step!.id,step!.state,step!.attempts,step!.availableAt].join(':')).join('|');
       if(before===after)break;
     }
+    await this.materials.index?.tick();
     return rows.length;
   }
   options(sourceId:string){const row=this.store.db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(sourceId);return configuration.parse(row?JSON.parse(String(row.json)):{});}

@@ -3,10 +3,21 @@ import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {createHash} from 'node:crypto';
 import sharp from 'sharp';
-import {createAgent} from '../dist/index.js';
+import {createAgent,parseAnswer} from '../dist/index.js';
 import {startBridge} from '../dist/bridge.js';
+import {generatedImageRead,digest} from './image-region-fixture.mjs';
 const record={id:'b54d3aaa-4ca3-5073-bb47-ad2db6e84a13',capturedAt:'2026-09-18T00:00:00Z',appName:'Fixture',deviceId:'fixture',sourceType:'screen',ocrText:'Generated OCR',blobHash:'a'.repeat(64)};
 async function invoke(b,tool,args,ack=true){const res=await fetch(b.url+'/'+tool,{method:'POST',headers:{Authorization:'Bearer '+b.token,'Content-Type':'application/json'},body:JSON.stringify(args)});const result={status:res.status,body:await res.json()};if(ack&&result.body.imageDelivery)b.imageDelivery(result.body.imageDelivery,true);return result;}
+test('direct image metadata, pending and failed delivery never authorize visual citations; acknowledged pixels do',async t=>{
+ const bytes=await sharp({create:{width:8,height:8,channels:3,background:'#abcabc'}}).png().toBuffer(),id=record.id;
+ const reader={search:async()=>[],timeline:async()=>[],evidence:async()=>[],activity:async()=>({}),devices:async()=>[],readImage:async args=>generatedImageRead(bytes,args)};
+ const b=await startBridge(reader,{question:'Generated direct image',directImages:[{id,name:'Generated image',mimeType:'image/png',hash:digest(bytes),sizeBytes:bytes.length}]},12);t.after(()=>b.close());
+ const cite=()=>parseAnswer(JSON.stringify({answer:`Generated visual claim [${id}]`,citationIds:[id]}),b.records);
+ assert.throws(cite,{reason:'unretrieved_citation'});assert.deepEqual(b.evidenceDependencies.ids,[]);
+ assert.equal((await invoke(b,'read_image',{id,view:'metadata'})).status,200);assert.throws(cite,{reason:'unretrieved_citation'});assert.deepEqual(b.evidenceDependencies.ids,[]);assert.equal(b.evidenceDependencies.complete,false,'metadata-derived answers cannot assert empty complete lineage');
+ const pending=await invoke(b,'read_image',{id},false);assert.throws(cite,{reason:'unretrieved_citation'});b.imageDelivery(pending.body.imageDelivery,false);assert.throws(cite,{reason:'unretrieved_citation'});assert.deepEqual(b.evidenceDependencies.ids,[]);
+ const delivered=await invoke(b,'read_image',{id},false);b.imageDelivery(delivered.body.imageDelivery,true);assert.equal(cite().citations[0].id,id);assert.equal(b.records.get(id).ocrText,'');assert.deepEqual(b.evidenceDependencies.ids,[id]);assert.equal(b.evidenceDependencies.complete,true,'confirmed pixels resolve the metadata original without breaking later dialogue');
+});
 test('failed local image delivery releases concurrent readers and permits a fresh first image',async t=>{
  const data=(await sharp({create:{width:8,height:8,channels:3,background:'#abcabc'}}).png().toBuffer()).toString('base64');let reads=0;
  const reader={search:async()=>[record],timeline:async()=>({items:([record]),nextCursor:null}),evidence:async()=>[record],activity:async()=>({}),devices:async()=>[],readImage:async()=>{reads++;return {mimeType:'image/png',data};}};

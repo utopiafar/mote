@@ -14,6 +14,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.WorkManager
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.Before
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.net.InetAddress
@@ -26,6 +28,14 @@ import java.util.concurrent.TimeUnit
 /** Generated invitation and loopback responses only; no camera, screenshot or model is used. */
 @RunWith(AndroidJUnit4::class)
 class PairingNavigationInstrumentedTest {
+    private lateinit var previousLanguage: String
+    @Before fun selectFixtureLanguage() {
+        previousLanguage = MoteI18n.preference()
+        MoteI18n.select(InstrumentationRegistry.getInstrumentation().targetContext, "zh-CN")
+    }
+    @After fun restoreLanguage() {
+        MoteI18n.select(InstrumentationRegistry.getInstrumentation().targetContext, previousLanguage)
+    }
     private fun views(root: View): List<View> = buildList {
         add(root)
         if (root is ViewGroup) repeat(root.childCount) { addAll(views(root.getChildAt(it))) }
@@ -130,7 +140,8 @@ class PairingNavigationInstrumentedTest {
                 scenario.awaitUiText(node)
                 scenario.onActivity { activity ->
                     assertEquals(node, editor(activity, "https://mote.example.com").text.toString())
-                    assertEquals(newToken, editor(activity, "建议通过邀请获取本设备凭据").text.toString())
+                    assertTrue(editor(activity, "建议通过邀请获取本设备凭据").text.isEmpty())
+                    assertEquals(View.GONE, editor(activity, "建议通过邀请获取本设备凭据").visibility)
                     assertFalse(saveVisible(activity))
                     activity.onBackPressed(); assertFalse(saveVisible(activity))
                     menu(activity, "连接与同步")

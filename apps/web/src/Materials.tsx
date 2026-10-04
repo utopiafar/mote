@@ -5,11 +5,11 @@ import {useResource} from './useResource';
 import {FeatureView} from './features/runtime';
 import {AnswerMarkdown} from './AnswerMarkdown';
 import {memoryMaterialRoute} from './memory-source-route';
-export type Material={id:string;ref:string;revision:string;kind:string;schemaVersion:number;title:string;sequence:number;textLength:number;blockCount:number;coverage:{state:string;reason?:string};origin:{sourceId:string;provider?:string;sessionId?:string};artifacts?:{key:string;state:string;reason?:string}[];retention:{original:string};memorySource?:{status:'ready'|'waiting'|'unavailable'|'too_large';evidenceIds:string[]}};
+export type Material={id:string;ref:string;revision:string;kind:string;schemaVersion:number;title:string;sequence:number;textLength:number;blockCount:number;coverage:{state:string;reason?:string};origin:{sourceId:string;provider?:string;sessionId?:string};artifacts?:{key:string;state:string;reason?:string}[];indexing?:{state:'disabled'|'pending'|'running'|'indexed'|'failed';reason?:string};retention:{original:string};memorySource?:{status:'ready'|'waiting'|'unavailable'|'too_large';evidenceIds:string[]}};
 type ReadPage={material:Material;text:string;textRange:{offset:number;total:number;nextOffset:number|null}};
 type Scope={deviceId?:string;after?:string;before?:string};
 export function MaterialDetail({api,material,onOpen,agent=false,scope={}}:{api:Api;material:Material;onOpen:(ref:string)=>void;agent?:boolean;scope?:Scope}){
-  const [offset,setOffset]=useState(0),[tab,setTab]=useState('body');
+  const [offset,setOffset]=useState(0),[tab,setTab]=useState('body'),[indexBusy,setIndexBusy]=useState(false),[indexError,setIndexError]=useState('');
   // Each range is pinned to the selected revision. Identity is also the React key.
   const scopeQuery=new URLSearchParams(scope).toString();
   const read=useResource<ReadPage>(api,agent?`/api/agent-view/material-read?ref=${encodeURIComponent(material.ref)}&offset=${offset}&${scopeQuery}`:`/api/materials/${encodeURIComponent(material.id)}/read?revision=${material.revision}&offset=${offset}&length=4000`,5000);
@@ -20,7 +20,11 @@ export function MaterialDetail({api,material,onOpen,agent=false,scope={}}:{api:A
   const historical=current.error===undefined&&current.data&&current.data.revision!==material.revision;
   const memorySource=!agent&&!historical&&current.error===undefined&&current.data?.ref===material.ref?current.data.memorySource:undefined;
   const retry=()=>{read.refresh();current.refresh();};
+  const retryIndex=async()=>{setIndexBusy(true);setIndexError('');try{await api.request(`/api/materials/${encodeURIComponent(material.id)}/index/retry`,{method:'POST'});retry();}catch(error){setIndexError(errorMessage(error));}finally{setIndexBusy(false);}};
   return <article className="panel panel-pad material-detail"><h2>{selected.title}</h2><p><code>{selected.kind}</code> · {moteText('版本 {0}',selected.sequence)} · {selected.coverage.state}</p>
+    {['pending','running'].includes(selected.indexing?.state??'')&&<p role="status">{moteText('资料已发布，检索索引正在处理中。')}</p>}
+    {selected.indexing?.state==='failed'&&<p role="status">{moteText('检索索引未完成，正文可正常查看。')}{!agent&&!historical&&current.error===undefined&&current.data?.ref===material.ref&&<button className="button" disabled={indexBusy} onClick={()=>void retryIndex()}>{moteText('仅重试检索索引')}</button>}</p>}
+    {indexError&&<p role="alert">{indexError}</p>}
     {historical&&<p role="status">{moteText('这是历史版本，当前资料已更新。')} <button className="button" onClick={()=>onOpen(current.data!.ref)}>{moteText('查看当前版本')}</button></p>}
     {memorySource?.status==='ready'&&<a className="button" href={memoryMaterialRoute(selected.ref)}>{moteText('仅从这份正式资料提取记忆')}</a>}
     {memorySource&&memorySource.status!=='ready'&&<p role="status">{moteText('这份正式资料暂不能单独提取记忆，请查看来源与处理状态。')}</p>}

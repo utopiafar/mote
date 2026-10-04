@@ -205,8 +205,11 @@ export async function startBridge(
   const token = randomBytes(32).toString("hex");
   const trace: ToolTrace[] = [];
   const records = new Map<string, ContextRecord>();
-  const disclosedIds=new Set(bounds.conversation?.evidenceDependencies?.ids??[]);
-  let completeLineage=!bounds.conversation||bounds.conversation.evidenceDependencies?.complete===true;
+  const disclosedIds=new Set([...(bounds.conversation?.evidenceDependencies?.ids??[]),...(bounds.contextEvidenceDependencies?.ids??[]),...(bounds.derivedContextEvidenceIds??[])]);
+  let completeLineage=(!bounds.conversation||bounds.conversation.evidenceDependencies?.complete===true)&&
+    (!bounds.contextEvidenceDependencies||bounds.contextEvidenceDependencies.complete)&&
+    (!bounds.openingMemories?.length||bounds.contextEvidenceDependencies?.complete===true&&bounds.contextEvidenceDependencies.ids.length>0)&&
+    (!bounds.taskContext?.previousSummary&&!bounds.taskContext?.turns?.length||bounds.contextEvidenceDependencies?.complete===true);
   const restricted = bounds.evidenceIds !== undefined;
   const limits=retrievalLimits(bounds);
   const permitted = new Map<string,ContextRecord>();
@@ -237,9 +240,11 @@ export async function startBridge(
     !/^[0-9a-f-]{36}$/i.test(image.id)||!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||
     !/^[a-f0-9]{64}$/.test(image.hash)||!Number.isSafeInteger(image.sizeBytes)||image.sizeBytes<1||image.sizeBytes>8*1024*1024||image.name.length>500))throw hostError('Invalid direct image attachments');
   if(restricted&&directImages.length)throw hostError('Extraction sessions cannot receive dialogue images');
+  const directImageRecords=new Map<string,ContextRecord>();
+  const metadataImageIds=new Set<string>();
   for(const image of directImages){
     const record:ContextRecord={id:image.id,capturedAt:bounds.contextTime??new Date().toISOString(),appName:image.name,ocrText:'',sourceType:'user_attachment',summary:'User attached image',metadata:{mimeType:image.mimeType}};
-    rememberEvidence(records,record);disclosedIds.add(image.id);
+    directImageRecords.set(image.id,record);
   }
   const discovered=new Set(records.keys());
   const pinnedMaterials=new Set<string>();
@@ -248,14 +253,14 @@ export async function startBridge(
   for(const image of directImages)expanded.add(image.id);
   // Query-local byte identities only: never skip the reader's fresh authorization
   // or merge the source attribution of two selections containing the same image.
-  type ImageDelivery={selection:{id:string;attachmentId?:string};imageView?:ImageViewTrace;token:string;confirmed:boolean;ready:Promise<void>;settle:()=>void;timer:ReturnType<typeof setTimeout>};
+  type ImageDelivery={selection:{id:string;attachmentId?:string};record:ContextRecord;imageView?:ImageViewTrace;token:string;confirmed:boolean;ready:Promise<void>;settle:()=>void;timer:ReturnType<typeof setTimeout>};
   const disclosedImages=new Map<string,ImageDelivery>();
   let closing=false;
   const imageDelivery=(token:string,delivered:boolean)=>{
     const entry=[...disclosedImages].find(([,value])=>value.token===token);
     if(!entry){if(delivered)throw hostError('Image delivery receipt expired');return;}
     const [key,value]=entry;clearTimeout(value.timer);
-    if(delivered)value.confirmed=true;else disclosedImages.delete(key);
+    if(delivered){value.confirmed=true;if(!records.has(value.selection.id))rememberEvidence(records,value.record);disclosedIds.add(value.selection.id);}else disclosedImages.delete(key);
     if(value.imageView)value.imageView.delivery=delivered?'prepared':'failed';
     value.settle();
   };
@@ -457,7 +462,7 @@ export async function startBridge(
         for(;;){
           if(closing||res.destroyed)return;
           const direct=directImages.some(image=>image.id===args.id);
-          const record=direct?records.get(args.id):(await reader.evidence({ids:[args.id]}))[0],scope=range({},bounds);
+          const record=direct?directImageRecords.get(args.id):(await reader.evidence({ids:[args.id]}))[0],scope=range({},bounds);
           const document=documentSchema.safeParse((record?.provenance as {document?:unknown}|undefined)?.document),at=record&&sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
           if(!record||!direct&&(scope.deviceId&&record.deviceId!==scope.deviceId||scope.after&&Date.parse(at!)<Date.parse(scope.after)||scope.before&&Date.parse(at!)>=Date.parse(scope.before)))throw hostError('Image is outside scope or deleted');
           if(args.attachmentId!==undefined&&(direct||typeof args.attachmentId!=='string'||!document.success||!document.data.attachments?.some(attachment=>attachment.id===args.attachmentId)))throw hostError('Select an image attachment declared by the expanded parent evidence');
@@ -483,7 +488,10 @@ export async function startBridge(
           };
           if(metadata){
             if(image.data!==undefined||imageView?.output)throw hostError('Metadata must not include image bytes');
-            sendImageResult({source:'untrusted_personal_context',...selection,imageView:publicView,imageBudget:imageBudget(),hostBudget:hostBudget()},{tool,arguments:selection,count:1,imageView:publicView});return;
+            sendImageResult({source:'untrusted_personal_context',...selection,imageView:publicView,imageBudget:imageBudget(),hostBudget:hostBudget()},{tool,arguments:selection,count:1,imageView:publicView});
+            // Metadata alone cannot claim empty complete disclosure. A later
+            // confirmed pixel read supplies this original's actual lineage.
+            metadataImageIds.add(selection.id);return;
           }
           if(!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||typeof image.data!=='string'||!image.data.length||image.data.length>12*1024*1024)throw hostError('Invalid image output');
           const bytes=Buffer.from(image.data,'base64'),sha256=createHash('sha256').update(bytes).digest('hex'),key=image.mimeType+':'+sha256;
@@ -510,13 +518,15 @@ export async function startBridge(
             // forever. A late success is refused, so it cannot disclose a stale
             // reservation after a waiting reader has taken over.
             const timer=setTimeout(()=>imageDelivery(token,false),30_000);timer.unref();
-            delivery={selection,imageView:publicView,token,confirmed:false,ready,settle,timer};disclosedImages.set(key,delivery);
+            delivery={selection,record:project({...record,ocrText:''},0,0,bounds.timeZone),imageView:publicView,token,confirmed:false,ready,settle,timer};disclosedImages.set(key,delivery);
           }
           if(firstSelection&&publicView)publicView.delivery='already_disclosed';
           sendImageResult({source:'untrusted_personal_context',...selection,...(publicView?{imageView:publicView}:{}),...(firstSelection?{
             imageDisclosure:{status:'already_disclosed',sha256,mimeType:image.mimeType,firstSelection,...(existing?.imageView?{firstImageView:existing.imageView}:{})},
             message:'These exact image bytes were already supplied in this query. Use the earlier image with this selection’s own source attribution.',
-          }:{image:{mimeType:image.mimeType,data:image.data},imageDelivery:delivery!.token}),imageBudget:imageBudget(),hostBudget:hostBudget()},{tool,arguments:selection,count:1,...(publicView?{imageView:publicView}:{})});return;
+          }:{image:{mimeType:image.mimeType,data:image.data},imageDelivery:delivery!.token}),imageBudget:imageBudget(),hostBudget:hostBudget()},{tool,arguments:selection,count:1,...(publicView?{imageView:publicView}:{})});
+          if(existing?.confirmed){if(!records.has(selection.id))rememberEvidence(records,project({...record,ocrText:''},0,0,bounds.timeZone));disclosedIds.add(selection.id);}
+          return;
         }
       }
       let value: unknown;
@@ -761,7 +771,7 @@ export async function startBridge(
     trace,
     records,
     seedEvidence,
-    get evidenceDependencies(){return {version:1 as const,complete:completeLineage,ids:[...disclosedIds]};},
+    get evidenceDependencies(){return {version:1 as const,complete:completeLineage&&[...metadataImageIds].every(id=>disclosedIds.has(id)),ids:[...disclosedIds]};},
     get deliveredCharacters(){return deliveredCharacters;},
     get ready() {
       return ready;

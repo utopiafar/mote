@@ -20,6 +20,7 @@ import {codingSourcePlugin} from '../src/coding-source-plugin.js';
 import {formatArtifactRef} from '@mote/shared';
 import {SourceItemRecipeCatalog} from '../src/source-item-recipe.js';
 import {MaterialMemoryWork} from '../src/material-memory-work.js';
+import {ExecutionEngine} from '../src/execution-engine.js';
 
 
 /** Complete generated storage fixture; the reader still enforces its original-evidence policy. */
@@ -56,6 +57,8 @@ test('query discovery uses published screen views while selected originals remai
     coverage:{state:'pending',reason:'ocr_pending'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}};
   const material=materials.publish(draft),reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials);
   materials.setSearchable(material.id,true);
+  const indexEngine=new ExecutionEngine(store);materials.bindIndexEngine(indexEngine);await materials.index!.tick();
+  t.after(()=>indexEngine.close());
   let runContext:object|undefined={};const firstRun=runContext,queryContext=new AsyncLocalStorage<object>();
   const agent=reader.agent({diagnostics,allowQueryImages:()=>true,currentGrantContext:()=>queryContext.getStore()??runContext});
   const restrictedMemoryId=randomUUID();

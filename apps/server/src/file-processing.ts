@@ -148,7 +148,7 @@ export class FileProcessing {
     for(const row of db.prepare("SELECT id FROM execution_steps WHERE operation_id=? AND state NOT IN ('succeeded','cancelled','stale')").all('file:'+id))this.engine.cancel(String(row.id));
     }finally{this.manualCancellation=false;}
     db.prepare("UPDATE file_jobs SET state=CASE WHEN state='succeeded' THEN state ELSE 'cancelled' END,summary_state=CASE WHEN summary_state='succeeded' THEN summary_state ELSE 'cancelled' END,error='cancelled' WHERE capture_id=?").run(id);
-    this.log('file.cancelled',id,{operation:'file_process'});return {state:'cancelled',...this.cancellation(id)};
+    this.files.releaseSnapshotInput(id);this.log('file.cancelled',id,{operation:'file_process'});return {state:'cancelled',...this.cancellation(id)};
   }
   /** Publication is cancelled immediately; an issued processor may still finish remotely. */
   private async waitForProcessor<T>(id:string,execute:(signal:AbortSignal)=>Promise<T>,preserveCancellation=false):Promise<T>{
@@ -225,6 +225,7 @@ export class FileProcessing {
     const state=step.state==='waiting'&&step.error&&step.error!=='daily_budget'?'failed':step.state,db=this.files.store.db;
     if(phase==='summary'){db.prepare('UPDATE file_jobs SET summary_state=?,error=? WHERE capture_id=?').run(state,['running','succeeded','blocked'].includes(state)&&step.error!=='processor_still_running'?null:step.error??null,id);return;}
     db.prepare('UPDATE file_jobs SET state=?,attempts=?,available_at=?,error=? WHERE capture_id=?').run(state,step.attempts,step.availableAt,step.error??null,id);
+    if(['failed','cancelled','stale'].includes(state)&&['unsupported_format','processing_limit','cancelled','input_changed'].includes(step.error??''))this.files.releaseSnapshotInput(id);
     if(state==='succeeded'){db.prepare("UPDATE file_jobs SET stage='indexed',summary_state='waiting' WHERE capture_id=?").run(id);this.enqueue(id,'summary',step.id);}
   }
   private optionalSummary(id:string){try{const {settings,processorId}=this.executionSettings(id,'summary');return this.runtime.registry.get(processorId).allowSummary===false||!settings.summarize;}catch{return false;}}
@@ -242,7 +243,7 @@ export class FileProcessing {
   prepare(){
     if(this.stopping)return [];
     if(this.options.mediaAssets?.ready('dialogue'))this.files.store.db.prepare("UPDATE file_jobs SET state='waiting',error=NULL,available_at=0 WHERE auto_eligible=1 AND state='blocked' AND error='model_missing'").run();
-    this.reconcileConfigurations();
+    this.files.sweepSnapshotInputs();this.reconcileConfigurations();
     // A confirmed response can release a newer configuration that waited behind it.
     // Unknown calls retain their row, and user-cancelled jobs never match this transition.
     for(const row of this.files.store.db.prepare("SELECT capture_id FROM file_jobs WHERE error='processor_still_running' AND (state='blocked' OR summary_state='blocked')").all())if(!this.processorWaits(String(row.capture_id)).length)this.files.store.db.prepare("UPDATE file_jobs SET state=CASE WHEN state='blocked' THEN 'waiting' ELSE state END,summary_state=CASE WHEN summary_state='blocked' THEN 'waiting' ELSE summary_state END,error=NULL,available_at=0 WHERE capture_id=?").run(row.capture_id);
@@ -252,6 +253,7 @@ export class FileProcessing {
   async tick(){await this.runtime.ready;const revision=this.saved.revision,first=this.prepare();await this.engine.drain(first);if(revision!==this.saved.revision)return;const summaries=first.flatMap(id=>{const step=this.engine.get(id);return step?this.engine.list({operationId:step.operationId,kind:'files.summary',limit:100}).items.map(s=>s.id):[];});await this.engine.drain([...this.prepare(),...summaries]);}
   private exists(id:string,revision:string,phase:'pipeline'|'summary'='pipeline'){
     if(this.stopping||!this.files.store.db.prepare('SELECT 1 FROM file_versions WHERE capture_id=?').get(id)||!fileAttachmentAvailable(this.files.store,id))return false;
+    const file=this.files.detail(id,false);if(file.item.layer==='snapshot'&&((!this.files.sources.getSource(file.sourceId).enabled||this.files.sources.getSource(file.sourceId).retention==='reference')||this.files.sources.getItem(file.sourceId,file.item.externalId)?.revision!==file.item.revision))return false;
     const expected=revision;
     return expected===this.configuration(id,phase).fingerprint;
   }
@@ -319,10 +321,11 @@ export class FileProcessing {
           const category=this.runtime.registry.get(processorId).allowSummary===false&&localOnly?'local_only':'summary_disabled';this.log('file.blocked',id,{operation:'summary',category});return new ExecutionFailure('blocked',category);
         }
       }else{
+        if(this.files.detail(id,false).item.layer==='snapshot'&&!this.files.store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=? AND expires>?').get(id,Date.now())&&!this.files.store.db.prepare("SELECT 1 FROM file_steps s JOIN file_artifacts a ON a.id=s.artifact_id WHERE s.capture_id=? AND s.step='extract' AND s.state='succeeded' AND a.config_revision=? AND json_extract(a.json,'$.snapshot')=1").get(id,this.configuration(id,'pipeline').fingerprint))return new ExecutionFailure('blocked','snapshot_input_expired');
         const processor=this.runtime.registry.get(processorId);
         try{this.runtime.recipes.resolve(defaultFileRecipe(processor),{semanticTurns:settings.semanticTurns});this.runtime.outputs.get(processor.output??TRANSCRIPT_OUTPUT);}catch{return new ExecutionFailure('blocked','file_capability_unavailable');}
         if(processor.stage!=='extract'||!processor.mediaTypes.some(t=>t.endsWith('/')?mime.startsWith(t):t===mime||t.endsWith('/*')&&mime.startsWith(t.slice(0,-1))))return new ExecutionFailure('blocked','unsupported_format');
-        const stages=[processor,...(processor.dialogue?[this.runtime.registry.get(settings.diarizationProcessor)]:[])];
+        const stages=[processor,...(this.files.detail(id,false).item.layer!=='snapshot'&&processor.dialogue?[this.runtime.registry.get(settings.diarizationProcessor)]:[])];
         if(stages.some(stage=>stage.managedModel&&effective.endpoint===managedAsrEndpoint()&&this.options.mediaAssets&&!this.options.mediaAssets.ready(stage.managedModel)))return new ExecutionFailure('blocked','model_missing');
       }
     }catch(error){return error instanceof ExecutionFailure?error:new ExecutionFailure('blocked','processor_not_configured');}
@@ -334,9 +337,24 @@ export class FileProcessing {
     if(applied)db.prepare('UPDATE file_jobs SET policy_json=? WHERE capture_id=?').run(JSON.stringify(applied),id);
     const outputType=this.runtime.outputs.get(processor.output??TRANSCRIPT_OUTPUT);
     const decodeOutput=(value:unknown)=>{const payload=outputType.parse(value);return {payload,transcript:transcriptSchema.parse(outputType.project(payload)),kind:outputType.kind};};
-    const input:ProcessorInput={parameters,file:{id,title:file.item.title,mimeType:mime,sizeBytes:file.sizeBytes},settings:effective,signal,maxAudioMs:Math.max(1,budget),readOriginal:()=>ReadableAsync(this.files.bytes(id))};
+    const input:ProcessorInput={parameters,file:{id,title:file.item.title,mimeType:mime,sizeBytes:file.sizeBytes},settings:effective,signal,maxAudioMs:Math.max(1,budget),readOriginal:()=>ReadableAsync(this.files.processingBytes(id))};
     const started=performance.now();this.log('file.started',id,{operation:'file_process',attempt:job.attempts+1,bytes:file.sizeBytes});
     try{
+      if(file.item.layer==='snapshot'){
+        await this.step(id,'extract',processor.id,processor.version,[file.sha256,processor.id,processor.version,revision],revision,
+          async processorSignal=>decodeOutput(await processor.process({...input,signal:processorSignal})).transcript,
+          value=>{
+            const full=transcriptSchema.parse(value);if(mime.startsWith('audio/')&&full.durationMs>budget)throw new StoreError('Audio budget exceeded',413);
+            const text=full.segments.map(segment=>segment.text).join('\n');if(text.length>10000000)throw new StoreError('Snapshot text exceeds limit',413);
+            this.files.saveSnapshotText(id,text);
+            let remaining=file.item.document?.fileIndex?.maxIndexCharacters??100000;
+            const segments:Transcript['segments']=[];for(const segment of full.segments){if(remaining<=0)break;const kept=segment.text.slice(0,remaining);segments.push({...segment,text:kept,words:undefined});remaining-=kept.length+1;}
+            const transcript:Transcript={...full,segments,coverage:text.length>(file.item.document?.fileIndex?.maxIndexCharacters??100000)?'partial':full.coverage};
+            this.files.publishSnapshotIndex(id,text.length,segments.map(segment=>segment.text).join('\n').length,processor.id,full.coverage==='partial',full.warnings);
+            return this.saveArtifact(id,mime.startsWith('audio/')?'transcript':mime.startsWith('image/')?'image-text':'text',{transcript,complete:transcript.coverage!=='partial',coverage:transcript.coverage??'full',processor:processor.id,processorVersion:processor.version,snapshot:true,totalCharacters:text.length},revision,transcript);
+          });
+        if(!this.exists(id,revision))throw new ExecutionFailure('stale','input_changed');this.files.releaseSnapshotInput(id);return;
+      }
       await this.runtime.recipes.run(defaultFileRecipe(processor),{semanticTurns:settings.semanticTurns},(stage,dependencies)=>{
         const read=(name:string)=>{const artifactId=dependencies[name];if(!artifactId)throw new StoreError('File stage input is missing',409);return artifactId;};
         const context:FileRecipeContext={input,dependencies,readArtifact:artifactId=>{if(!Object.values(dependencies).includes(artifactId))throw new StoreError('Artifact is outside stage inputs',409);return this.artifact(artifactId);},

@@ -31,6 +31,8 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.addContentTypeParser('application/octet-stream',{parseAs:'buffer',bodyLimit:FILE_PART_BYTES},(_req,body,done)=>done(null,body));
   app.get('/api/file-sync/v1/capabilities',async()=>files.capabilities());
   app.get('/api/file-sync/v1/head',{config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>{const q=z.object({sourceId:z.string().min(1).max(128),externalId:z.string().min(1).max(1000)}).strict().parse(req.query);authorize(req,q.sourceId);return {revision:files.sources.getItem(q.sourceId,q.externalId)?.revision??null,forgotten:!!files.store.db.prepare('SELECT 1 FROM file_forgotten WHERE source_id=? AND external_id=?').get(q.sourceId,q.externalId)};});
+  app.get('/api/file-sync/v1/recovery',{config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>{const q=z.object({sourceId:z.string().min(1).max(128)}).strict().parse(req.query);authorize(req,q.sourceId);return files.snapshotRecovery(q.sourceId);});
+  app.post('/api/file-sync/v1/recovery/:id/uploads',{bodyLimit:1024,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>{z.object({}).strict().parse(req.body??{});return ingress.fileRecovery(fileId(req),check(req));});
   app.post('/api/file-sync/v1/manifests',{bodyLimit:8*1024*1024,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>measure('file_revision',()=>ingress.fileManifests(req.body,check(req))));
   app.post('/api/file-sync/v1/uploads',{bodyLimit:32768},async req=>measure('file_upload',()=>ingress.fileBegin(req.body,check(req))));
   app.get('/api/file-sync/v1/uploads/:id',async req=>ingress.fileUpload(id(req),check(req)));
