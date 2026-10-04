@@ -45,7 +45,11 @@ class MainActivity : MoteActivity() {
     private var pendingSubmission: Map<String, String>? = null
     private lateinit var saveHint: TextView
     private lateinit var pagesHost: FrameLayout
-    private val pages = linkedMapOf<Page, ScrollView>()
+    private val pages = linkedMapOf<Page, View>()
+    private lateinit var homeHeader: LinearLayout
+    private var centralContent: CentralContent? = null
+    private var centralState: Bundle? = null
+    private var pendingCentralResult: Triple<Int, Int, Intent?>? = null
     private val scrollPositions = mutableMapOf<Page, Int>()
     private lateinit var navigation: MotePrimaryNavigation
     private lateinit var todaySummary: TextView
@@ -154,6 +158,7 @@ class MainActivity : MoteActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         if (Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { navigateBack() }
         settings = Settings(this)
+        centralState = savedInstanceState?.getBundle("centralContent")
         val retained = lastNonConfigurationInstance as? RetainedDraft
         val loading = moteDetailPage()
         val label = TextView(this).apply { text = MoteI18n.text("正在读取本机设置…") }; loading.addView(label); loading.addView(ProgressBar(this))
@@ -174,6 +179,7 @@ class MainActivity : MoteActivity() {
             setOnClickListener { showPage(Page.NOTES) }
         })
         header.addView(quickNote, LinearLayout.LayoutParams(-2, dp(48)))
+        homeHeader = header
         root.addView(header)
         pagesHost = FrameLayout(this)
         root.addView(pagesHost, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -195,7 +201,7 @@ class MainActivity : MoteActivity() {
         buildOverview()
         buildSettings()
         val restoredPage = savedInstanceState?.getString("page")?.let { value -> Page.entries.find { it.name == value } } ?: intent.getStringExtra("page")?.let { value -> Page.entries.find { it.name == value } } ?: Page.OVERVIEW
-        val initialPage = if (restoredPage == Page.ASK) Page.OVERVIEW else restoredPage
+        val initialPage = restoredPage
         ensurePage(initialPage)
         baseline = controlValues()
         retained?.let { retained ->
@@ -203,7 +209,11 @@ class MainActivity : MoteActivity() {
         }
         initializing = false
         showPage(initialPage)
-        if (restoredPage == Page.ASK) showPage(Page.ASK)
+        pendingCentralResult?.let { (request, result, data) ->
+            pendingCentralResult = null
+            ensurePage(Page.ASK)
+            centralContent?.activityResult(request, result, data)
+        }
         refreshStatus()
     }
 
@@ -980,6 +990,11 @@ class MainActivity : MoteActivity() {
     @Deprecated("Platform consent result API retained for the minimal native Activity")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode in setOf(71, 72, 73)) {
+            if (initializing) pendingCentralResult = Triple(requestCode, resultCode, data)
+            else { ensurePage(Page.ASK); centralContent?.activityResult(requestCode, resultCode, data) }
+            return
+        }
         if (requestCode == 105 && resultCode == RESULT_OK && data != null) {
             val quality = data.getIntExtra("quality", 75); val side = data.getIntExtra("maxSide", 1280)
             if (quality in 40..95 && side in 640..2560) {
@@ -1161,6 +1176,7 @@ class MainActivity : MoteActivity() {
     override fun onResume() {
         super.onResume()
         resumed = true
+        if (currentPage == Page.ASK) centralContent?.resume()
         notePoll?.let { handler.removeCallbacks(it); handler.post(it) }
         updatePermissionStatuses()
         RuntimeSettings.observeProjectionConsent { if (::server.isInitialized) resumeProjectionAfterSettings() }
@@ -1185,13 +1201,14 @@ class MainActivity : MoteActivity() {
     }
     override fun onPause() {
         resumed = false
+        centralContent?.pause()
         localStateJob?.cancel(); localStateJob = null
         RuntimeSettings.observeProjectionConsent(null); RuntimeSettings.observeConfiguration(null)
         handler.removeCallbacks(refresh); notePoll?.let(handler::removeCallbacks)
         super.onPause()
     }
     override fun onStop() { super.onStop() }
-    override fun onDestroy() { statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
+    override fun onDestroy() { centralContent?.close(); statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)
 
     private fun help(title: String, message: String) {
@@ -1226,7 +1243,14 @@ class MainActivity : MoteActivity() {
             when (page) {
                 Page.OVERVIEW -> buildToday()
                 Page.LIBRARY -> buildLibrary()
-                Page.ASK -> Unit // The primary destination is the real conversation Activity.
+                Page.ASK -> {
+                    val central = CentralContent(this, centralState, openLocalPage = { showPage(Page.valueOf(it)) })
+                    centralContent = central
+                    central.root.visibility = View.GONE
+                    central.root.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                    pages[Page.ASK] = central.root
+                    pagesHost.addView(central.root, FrameLayout.LayoutParams(-1, -1))
+                }
                 Page.NOTES -> buildNotes()
                 Page.SOURCES -> buildSources()
                 Page.SETTINGS -> { buildOverview(); buildSettings() }
@@ -1239,12 +1263,6 @@ class MainActivity : MoteActivity() {
     }
 
     private fun showPage(page: Page, discardConfirmed: Boolean = false) {
-        if (page == Page.ASK && !initializing) {
-            // A central conversation is a separate screen; keep the current native
-            // page and any unsaved draft intact for Back, without an extra landing page.
-            startActivity(Intent(this, AskActivity::class.java))
-            return
-        }
         if (!initializing && page != currentPage && !discardConfirmed && pageControlValues().any { (key, value) -> baseline[key] != value && (!applyingSettings || pendingSubmission?.get(key) != value) }) {
             MoteDialogBuilder(this).setTitle(MoteI18n.text("有未保存的更改"))
                 .setMessage(MoteI18n.text("离开并丢弃修改？"))
@@ -1257,16 +1275,20 @@ class MainActivity : MoteActivity() {
         if (currentPage != page) {
             if (pageControlValues().isNotEmpty()) discardPageDraft()
             else pages[currentPage]?.let { scrollPositions[currentPage] = it.scrollY }
+            if (currentPage == Page.ASK) centralContent?.pause()
             currentFocus?.clearFocus()
             getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(pagesHost.windowToken, 0)
         }
+        val enteringAsk = page == Page.ASK && currentPage != page
         currentPage = page
+        homeHeader.visibility = if (page == Page.ASK) View.GONE else View.VISIBLE
         pages.forEach { (key, view) ->
             view.visibility = if (key == page) View.VISIBLE else View.GONE
             view.importantForAccessibility = if (key == page) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         }
         navigation.select(MoteNavigation.localTab(page.name))
-        pages[page]?.let { scroll -> scroll.post { scroll.scrollTo(0, scrollPositions[page] ?: 0) } }
+        (pages[page] as? ScrollView)?.let { scroll -> scroll.post { scroll.scrollTo(0, scrollPositions[page] ?: 0) } }
+        if (enteringAsk && resumed) centralContent?.resume()
         updateSaveBar()
         if (page == Page.LIBRARY) loadLocalLibrary()
     }
@@ -1284,6 +1306,7 @@ class MainActivity : MoteActivity() {
     private fun navigateBack() {
         if (initializing) { finish(); return }
         when {
+            currentPage == Page.ASK && centralContent?.back() == true -> Unit
             currentPage.parent != null -> showPage(Page.valueOf(currentPage.parent!!))
             currentPage != Page.OVERVIEW -> showPage(Page.OVERVIEW)
             else -> finish()
@@ -1292,6 +1315,9 @@ class MainActivity : MoteActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("page", currentPage.name)
+        outState.putBundle("centralContent", Bundle().also { state ->
+            centralContent?.saveState(state) ?: centralState?.let(state::putAll)
+        })
         super.onSaveInstanceState(outState)
     }
 

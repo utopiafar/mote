@@ -65,7 +65,11 @@ class NavigationInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.setInTouchMode(true)
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-            for (label in listOf("资料库", "本机", "今天", "本机", "资料库", "今天")) {
+            val originalNavigation = arrayOfNulls<View>(1)
+            scenario.onActivity { originalNavigation[0] = views(it.window.decorView).single { view -> view is MotePrimaryNavigation } }
+            val askMonitor = instrumentation.addMonitor(AskActivity::class.java.name, null, true)
+            val centralMonitor = instrumentation.addMonitor(CentralActivity::class.java.name, null, true)
+            try { for (label in listOf("资料库", "问一问", "本机", "今天", "问一问", "资料库", "今天")) {
                 instrumentation.waitForIdleSync()
                 var x = 0f; var y = 0f
                 scenario.onActivity { activity ->
@@ -81,9 +85,14 @@ class NavigationInstrumentedTest {
                 scenario.onActivity { activity ->
                     assertTrue("$label must select on one touch", views(activity.window.decorView).filterIsInstance<TextView>()
                         .single { it.isShown && it.isClickable && it.text.toString() == label }.isSelected)
-                    assertFalse(views(activity.window.decorView).filterIsInstance<EditText>().any { it.isShown })
+                    assertSame(originalNavigation[0], views(activity.window.decorView).single { it is MotePrimaryNavigation })
+                    if (label != "问一问") assertFalse(views(activity.window.decorView).filterIsInstance<EditText>().any { it.isShown })
+                    assertFalse(activity.isFinishing)
                 }
             }
+            assertEquals("Ask must switch inside MainActivity", 0, askMonitor.hits)
+            assertEquals("Primary tabs must not launch central Activities", 0, centralMonitor.hits)
+            } finally { instrumentation.removeMonitor(askMonitor); instrumentation.removeMonitor(centralMonitor) }
         }
     }
 
@@ -92,13 +101,22 @@ class NavigationInstrumentedTest {
         val settings = Settings(context); val previous = settings.read()
         org.junit.Assume.assumeTrue("Fresh generated development fixture only", context.packageName == "dev.mote.collector.dev" && previous.token.isBlank() && !settings.enabled && context.queue().depth() == 0)
         settings.save(previous.copy(server = "", token = ""), confirmCentralEndpoint = true)
-        try { ActivityScenario.launch(AskActivity::class.java).use { scenario ->
+        try { ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
+            scenario.onActivity { tab(it, "问一问") }
             scenario.onActivity { activity ->
                 val tabs = views(activity.window.decorView).filterIsInstance<TextView>().filter { it.tag?.toString()?.startsWith("primary:") == true }
                 assertEquals(listOf("今天", "资料库", "问一问", "本机"), tabs.map { it.text.toString() })
                 assertTrue(tabs.single { it.text == "问一问" }.isSelected)
                 assertFalse(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text == "打开对话" })
+                assertFalse(views(activity.window.decorView).any { it.isShown && it.contentDescription == "返回上一页" })
                 assertFalse(Settings(activity).enabled)
+            }
+            scenario.recreate(); scenario.awaitMainUi()
+            scenario.onActivity { activity ->
+                assertTrue(views(activity.window.decorView).single { it.tag == "primary:ASK" }.isSelected)
+                activity.onBackPressed()
+                assertTrue(views(activity.window.decorView).single { it.tag == "primary:TODAY" }.isSelected)
+                assertFalse(activity.isFinishing)
             }
         } } finally { settings.save(previous, confirmCentralEndpoint = true) }
     }
@@ -171,6 +189,28 @@ class NavigationInstrumentedTest {
                 assertEquals(saved.intervalSeconds.toString(),editor(activity,"30").text.toString())
                 assertEquals(saved,Settings(activity).read());assertFalse(Settings(activity).enabled)
             }
+        }
+    }
+
+    @Test fun askTabUsesTheSameUnsavedSettingsConfirmation() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
+            scenario.onActivity { activity ->
+                tab(activity, "本机"); menu(activity, "采集与存储")
+                editor(activity, "30").setText("47")
+                views(activity.window.decorView).single { it.tag == "primary:ASK" }.performClick()
+                assertTrue(views(activity.window.decorView).single { it.tag == "primary:DEVICE" }.isSelected)
+            }
+            instrumentation.waitForIdleSync()
+            instrumentation.runOnMainSync {
+                android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap { views(it) }
+                    .filterIsInstance<TextView>().single { it.isShown && it.text.toString() == "继续编辑" }.performClick()
+            }
+            scenario.onActivity { activity -> assertEquals("47", editor(activity, "30").text.toString()) }
+            navigate(scenario, "问一问")
+            scenario.onActivity { activity -> assertTrue(views(activity.window.decorView).single { it.tag == "primary:ASK" }.isSelected) }
+            navigate(scenario, "本机")
+            scenario.onActivity { activity -> menu(activity, "采集与存储"); assertEquals(Settings(activity).read().intervalSeconds.toString(), editor(activity, "30").text.toString()) }
         }
     }
 
@@ -300,8 +340,8 @@ class NavigationInstrumentedTest {
         require(QuickNotes.draft(context).read().text.isEmpty())
         val directory = File(context.filesDir, "generated-ui").apply { mkdirs() }
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-            // AskActivity has its own generated native rendering fixture; Main no longer owns a jump page.
-            listOf("今天" to "overview", "记录" to "notes", "资料库" to "library", "本机来源" to "sources", "本机" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings", "本机存储" to "storage-settings", "图像与文字识别" to "processing-settings").forEach { (label, file) ->
+            // Every primary destination is rendered inside the same generated MainActivity.
+            listOf("今天" to "overview", "问一问" to "ask", "记录" to "notes", "资料库" to "library", "本机来源" to "sources", "本机" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings", "本机存储" to "storage-settings", "图像与文字识别" to "processing-settings").forEach { (label, file) ->
                 scenario.onActivity {
                     when {
                         file == "sources" -> { tab(it, "本机"); menu(it, label) }
@@ -310,6 +350,14 @@ class NavigationInstrumentedTest {
                     }
                 }
                 instrumentation.waitForIdleSync()
+                if (file == "ask") {
+                    val deadline = SystemClock.elapsedRealtime() + 10000; var ready = false
+                    while (!ready && SystemClock.elapsedRealtime() < deadline) {
+                        scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.tag == "central-title" && it.text.isNotBlank() } }
+                        if (!ready) Thread.sleep(50)
+                    }
+                    assertTrue("Embedded Ask must finish loading for the generated rendering", ready)
+                }
                 scenario.onActivity { activity ->
                     assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
                     val view = activity.window.decorView
