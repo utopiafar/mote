@@ -15,7 +15,8 @@ data class LocalSource(
     val retention: String = "snapshot", val enabled: Boolean = true,
     val calendarId: Long? = null, val uri: String? = null, val tree: Boolean = false,
     val extensions: String = "md,txt,json,csv,ics", val excluded: String = "",
-    val daysBefore: Int = 30, val daysAfter: Int = 90, val intervalMinutes: Int = 60, val initialSync: String = "all", val maxFileMiB: Int = 512, val lightweightIndex: Boolean = false, val allowRead: Boolean = false
+    val daysBefore: Int = 30, val daysAfter: Int = 90, val intervalMinutes: Int = 60, val initialSync: String = "all", val maxFileMiB: Int = 512, val lightweightIndex: Boolean = false, val allowRead: Boolean = false,
+    val centralProcessingConsent: Boolean = false
 ) {
     fun validate() {
         require(id.matches(Regex("[A-Za-z0-9_.:-]{1,128}")) && name.isNotBlank() && name.length <= 200) { MoteI18n.text("检查来源名称") }
@@ -25,7 +26,7 @@ data class LocalSource(
         require(maxFileMiB in 1..512)
         SourceRules.extensions(extensions); SourceRules.patterns(excluded)
     }
-    fun json() = JSONObject().put("lightweightIndex", lightweightIndex).put("allowRead", allowRead).put("id", id).put("name", name).put("kind", kind).put("retention", retention).put("enabled", enabled)
+    fun json() = JSONObject().put("centralProcessingConsent", centralProcessingConsent).put("lightweightIndex", false).put("allowRead", allowRead).put("id", id).put("name", name).put("kind", kind).put("retention", retention).put("enabled", enabled)
         .put("calendarId", calendarId).put("uri", uri).put("tree", tree).put("extensions", extensions).put("excluded", excluded)
         .put("maxFileMiB", maxFileMiB).put("initialSync", initialSync).put("daysBefore", daysBefore).put("daysAfter", daysAfter).put("intervalMinutes", intervalMinutes)
     fun registration(deviceId: String) = JSONObject().put("id", id).put("name", name).put("kind", kind).put("deviceId", deviceId)
@@ -34,7 +35,7 @@ data class LocalSource(
         fun from(v: JSONObject) = LocalSource(v.getString("id"), v.getString("name"), v.getString("kind"), v.getString("retention"), v.getBoolean("enabled"),
             if (v.has("calendarId")) v.getLong("calendarId") else null, if (v.has("uri")) v.getString("uri") else null,
             v.getBoolean("tree"), v.getString("extensions"), v.getString("excluded"),
-            v.getInt("daysBefore"), v.getInt("daysAfter"), v.getInt("intervalMinutes"), v.getString("initialSync"), v.getInt("maxFileMiB"), v.getBoolean("lightweightIndex"), v.getBoolean("allowRead")).also { it.validate() }
+            v.getInt("daysBefore"), v.getInt("daysAfter"), v.getInt("intervalMinutes"), v.getString("initialSync"), v.getInt("maxFileMiB"), false, v.getBoolean("allowRead"), if (!v.has("centralProcessingConsent")) false else v.get("centralProcessingConsent") as? Boolean ?: error(MoteI18n.text("来源上传确认必须为布尔值"))).also { it.validate() }
     }
 }
 

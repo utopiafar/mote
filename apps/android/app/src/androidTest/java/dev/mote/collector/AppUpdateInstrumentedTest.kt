@@ -43,16 +43,16 @@ class AppUpdateInstrumentedTest {
         try {
             val own = File(context.applicationInfo.sourceDir).copyTo(File(directory, "own.apk"))
             val current = AndroidUpdateVerifier.installed(context).longVersionCode
-            val asset = AppReleaseAsset("mote.apk", "https://github.com/utopiafar/mote/releases/download/v0.5.0/mote.apk", own.length(), NsfwModelStore.sha256(own), context.packageName, current, AndroidUpdateVerifier.certificates(context).single())
+            val asset = AppReleaseAsset("mote.apk", "https://github.com/utopiafar/mote/releases/download/v0.5.0/mote.apk", own.length(), UpdateArtifactValidation.sha256(own), context.packageName, current, AndroidUpdateVerifier.certificates(context).single())
             // Lower baseline only in this verifier test; production installation always reads PackageManager.
             AndroidUpdateVerifier.verify(context, own, asset, current - 1)
             assertEquals("not_newer", assertThrows(UpdateFailure::class.java) { AndroidUpdateVerifier.verify(context, own, asset) }.code)
             assertEquals("certificate", assertThrows(UpdateFailure::class.java) { AndroidUpdateVerifier.verify(context, own, asset.copy(certificateSha256 = "0".repeat(64)), current - 1) }.code)
             val other = File(instrumentation.context.applicationInfo.sourceDir)
-            val wrongPackage = asset.copy(size = other.length(), sha256 = NsfwModelStore.sha256(other))
+            val wrongPackage = asset.copy(size = other.length(), sha256 = UpdateArtifactValidation.sha256(other))
             assertEquals("package", assertThrows(UpdateFailure::class.java) { AndroidUpdateVerifier.verify(context, other, wrongPackage, current - 1) }.code)
             java.io.RandomAccessFile(own, "rw").use { it.seek(128); val value = it.readByte(); it.seek(128); it.writeByte(value.toInt() xor 1) }
-            val tampered = asset.copy(sha256 = NsfwModelStore.sha256(own))
+            val tampered = asset.copy(sha256 = UpdateArtifactValidation.sha256(own))
             assertEquals("apk_signature", assertThrows(UpdateFailure::class.java) { AndroidUpdateVerifier.verify(context, own, tampered, current - 1) }.code)
         } finally { directory.deleteRecursively() }
     }
@@ -75,7 +75,7 @@ class AppUpdateInstrumentedTest {
         val store = AppUpdateStore(context); val beforeFile = File(context.filesDir, "update-retention-before.json")
         val model = File(context.noBackupFilesDir, "models/update-fixture-sentinel.bin")
         fun snapshot() = JSONObject().put("settings", SourceRules.hash(Settings(context).read().toString())).put("device", SourceRules.hash(Settings(context).deviceId))
-            .put("queue", SourceRules.hash(context.queue().peek()!!.toString())).put("draft", SourceRules.hash(QuickNotes.draft(context).read()!!.text)).put("model", NsfwModelStore.sha256(model))
+            .put("queue", SourceRules.hash(context.queue().peek()!!.toString())).put("draft", SourceRules.hash(QuickNotes.draft(context).read()!!.text)).put("model", UpdateArtifactValidation.sha256(model))
         when (phase) {
             "prepare" -> {
                 require(AndroidUpdateVerifier.installed(context).longVersionCode == 6L)

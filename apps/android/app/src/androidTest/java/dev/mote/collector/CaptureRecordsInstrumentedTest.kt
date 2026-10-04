@@ -233,8 +233,7 @@ class CaptureRecordsInstrumentedTest {
         // Diagnostics deliberately exercises the reviewed-pair path; early discard is covered separately.
         val base = settings.read().copy(server = url, token = token, debugHttp = true, wifiOnly = false, imageDedupeDiagnosticsEnabled = true,
             syncMode = "manual", syncChargingOnly = false, syncBatteryNotLow = false,
-            chargingOnly = false, masks = "", localReviewUrl = "",
-            nsfw = settings.read().nsfw.copy(enabled = false))
+            chargingOnly = false, masks = "")
         fun run(mode: String, metadata: Boolean, changes: List<Int>) {
             val config = base.copy(imageDedupeMode = mode, metadataEnabled = metadata)
             settings.save(config); assertEquals(mode, Settings(context).read().imageDedupeMode)
@@ -298,7 +297,7 @@ class CaptureRecordsInstrumentedTest {
     @Test fun batteryCaptureKeepsMaskedImageForCentralOcrWithoutChangingOriginalEvent() = fixture { context, settings, ids ->
         shell("dumpsys battery unplug"); shell("dumpsys battery set status 3")
         waitUntil { !Diagnostics.battery(context).second }
-        val config = settings.read().copy(chargingOnly = false, metadataEnabled = false, masks = "0,0,0.2,1", nsfw = settings.read().nsfw.copy(enabled = false))
+        val config = settings.read().copy(chargingOnly = false, metadataEnabled = false, masks = "0,0,0.2,1")
         val pipeline = CapturePipeline(context) { }
         try {
             settings.enabled = true

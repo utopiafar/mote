@@ -14,7 +14,6 @@ export type BackgroundRequest =
   | { kind: 'json-read'; path: string }
   | { kind: 'browse'; records: { id: string; at: string }[]; after: string; before: string; offset: number; limit: number }
   | { kind: 'hash'; bytes: Uint8Array }
-  | { kind: 'vision'; bytes: Uint8Array; width: number; height: number; maxSide: number }
   | { kind: 'mask'; bytes: Uint8Array; width: number; height: number; rectangles: Rectangle[] }
   | { kind: 'jpeg'; bytes: Uint8Array; width: number; height: number; quality: number }
   | { kind: 'preview'; bytes: Uint8Array; thumbnail: boolean }

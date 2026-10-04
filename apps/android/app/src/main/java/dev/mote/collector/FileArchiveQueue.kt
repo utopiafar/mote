@@ -10,7 +10,7 @@ import java.time.Instant
 import java.util.UUID
 
 /** Local per-file journal. A pending manifest and its bytes never change during retry. */
-class FileArchiveQueue(private val directory: File, private val cipher: ByteCipher, private val processors: LocalFileProcessors = LocalFileProcessors.default) {
+class FileArchiveQueue(private val directory: File, private val cipher: ByteCipher) {
     companion object { const val PART_BYTES = 4 * 1024 * 1024; const val MAX_BYTES = 512L * 1024 * 1024; private val lock = Any() }
     init { directory.mkdirs() }
     private fun root(id: String): File { require(id.matches(Regex("[A-Za-z0-9_.:-]{1,128}"))); return File(directory, id).apply { mkdirs() } }
@@ -66,7 +66,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     fun configure(source: LocalSource): JSONObject = synchronized(lock) {
         state(source.id)
         val state = state(source.id)
-        val policy = SourceRules.hash(listOf(source.uri, source.tree, source.maxFileMiB, source.extensions, source.excluded, source.retention, source.lightweightIndex, source.allowRead, "central-snapshot-v1").joinToString("\u0000"))
+        val policy = SourceRules.hash(listOf(source.uri, source.tree, source.maxFileMiB, source.extensions, source.excluded, source.retention, source.allowRead, "central-snapshot-v1").joinToString("\u0000"))
         if (state.optString("policy") != policy) {
             rows(source.id).forEach { row ->
                 // An exclusion edit must not turn old new-only baseline files into uploads.
@@ -92,7 +92,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
             if (path.exists()) {
                 val row = read(path)
                 if (!row.has("pending") && !row.optBoolean("baseline") && row.optString("revision") == item.getString("revision") && row.optString("contentPolicy") == state(source.id).optString("policy") && allowed(source, row.getJSONObject("candidate"))) {
-                    require(item.getString("captureId").matches(Regex("[a-fA-F0-9-]{36}")) && item.getString("sha256").matches(Regex("[a-f0-9]{64}")) && item.getLong("sizeBytes") in 0..16L * 1024 * 1024)
+                    require(item.getString("captureId").matches(Regex("[a-fA-F0-9-]{36}")) && item.getString("sha256").matches(Regex("[a-f0-9]{64}")) && item.getLong("sizeBytes") in 0..MAX_BYTES)
                     Instant.parse(item.getString("observedAt"))
                     row.put("snapshotRecovery", JSONObject(item.toString()).put("candidateSignature", row.optString("signature").ifBlank { row.optJSONObject("snapshotRecovery")?.optString("candidateSignature") ?: "" })); row.remove("signature"); row.remove("nextPrepareAt"); saveRow(source.id, row)
                 }
@@ -160,17 +160,32 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
         if (row.has("pending")) row else { state.remove("activeKey"); saveState(id, state); null }
     }
     /** Open is called for archive or transient snapshot bytes, after stability and baseline checks. */
-    fun prepare(source: LocalSource, open: (JSONObject) -> InputStream, unchanged: (JSONObject) -> Boolean, now: Long = System.currentTimeMillis(), anchor: ((String) -> String?)? = null): JSONObject? = synchronized(lock) {
+    fun prepare(source: LocalSource, open: (JSONObject) -> InputStream, unchanged: (JSONObject) -> Boolean, now: Long = System.currentTimeMillis(), anchor: ((String) -> String?)? = null): JSONObject? {
+        val selected = synchronized(lock) {
         configure(source)
-        next(source.id)?.let { assertCurrent(source, it); return@synchronized it }
+        next(source.id)?.let { assertCurrent(source, it); return it }
         val row = markers(source.id).asSequence().mapNotNull { marker ->
             val file = File(root(source.id), "item-${marker.name.removePrefix("todo-")}.enc")
             if (!file.exists()) { marker.delete(); null } else read(file).let { row ->
                 if (!allowed(source, row.getJSONObject("candidate"))) { discard(source.id, row); null }
                 else row.also { if (!dirty(it)) marker.delete() }
             }
-        }.firstOrNull { dirty(it) && now >= it.optLong("nextPrepareAt") && (source.retention == "reference" || it.getJSONObject("candidate").optBoolean("deleted") || now - it.optLong("stableSince", now) >= 60000) } ?: return@synchronized null
-        if (!row.has("revision") && anchor != null) anchor(row.getJSONObject("candidate").getString("externalId"))?.let { row.put("revision", it); saveRow(source.id, row) }
+        }.firstOrNull { dirty(it) && now >= it.optLong("nextPrepareAt") && (source.retention == "reference" || it.getJSONObject("candidate").optBoolean("deleted") || now - it.optLong("stableSince", now) >= 60000) } ?: return null
+        val state = state(source.id)
+        Triple(row.toString(), state.getString("policy"), state.getString("generation"))
+        }
+        val selectedRow = JSONObject(selected.first)
+        // This callback may query central state and read configuration. Never run
+        // external code under the archive lock; Settings.save checks this queue.
+        val anchoredRevision = if (!selectedRow.has("revision")) anchor?.invoke(selectedRow.getJSONObject("candidate").getString("externalId")) else null
+        return synchronized(lock) {
+        val state = state(source.id)
+        if (state.optString("policy") != selected.second || state.optString("generation") != selected.third) return@synchronized null
+        val currentFile = itemFile(source.id, selectedRow.getJSONObject("candidate").getString("externalId"))
+        if (!currentFile.exists()) return@synchronized null
+        val row = read(currentFile)
+        if (row.toString() != selected.first) return@synchronized null
+        anchoredRevision?.let { row.put("revision", it); saveRow(source.id, row) }
         val candidate = row.getJSONObject("candidate"); val item = JSONObject(candidate.toString()).apply { remove("_relativePath") }; SourcePrivacyGate.validate(source, item); val spool = File(root(source.id), "spool")
         spool.deleteRecursively(); spool.mkdirs()
         var size = candidate.optJSONObject("metadata")?.optJSONObject("file")?.optLong("sizeBytes", 0) ?: 0L
@@ -184,7 +199,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
                         val buffer = ByteArray(PART_BYTES); var length = 0
                         while (length < buffer.size) { val n = input.read(buffer, length, buffer.size - length); if (n < 0) break; if (n == 0) continue; length += n }
                         if (length == 0) break
-                        size += length; check(size <= minOf(if (source.retention == "snapshot") 16L * 1024 * 1024 else MAX_BYTES, source.maxFileMiB * 1024L * 1024)) { MoteI18n.text("文件超过此来源的大小上限") }
+                        size += length; check(size <= minOf(MAX_BYTES, source.maxFileMiB * 1024L * 1024)) { MoteI18n.text("文件超过此来源的大小上限") }
                         val used = directory.walkTopDown().filter { it.isFile }.sumOf { it.length() }
                         check(used + length + 64 < 1024L * 1024 * 1024) { MoteI18n.text("文件暂存达到 1 GiB 上限") }
                         val bytes = buffer.copyOf(length); digest.update(bytes)
@@ -211,6 +226,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
             row.remove("nextPrepareAt"); row.remove("snapshotRecovery"); row.put("contentPolicy", state(source.id).getString("policy"))
             saveRow(source.id, row); row
         } catch (error: Exception) { spool.deleteRecursively(); row.put("nextPrepareAt", now + 60000); saveRow(source.id, row); throw error }
+        }
     }
     fun part(id: String, part: Int): ByteArray = synchronized(lock) { require(part >= 0); cipher.open(File(File(root(id), "spool"), part.toString()).readBytes()) }
     fun acknowledge(id: String, row: JSONObject, ack: JSONObject) = synchronized(lock) {

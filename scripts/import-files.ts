@@ -7,10 +7,10 @@ import { scanSourceFiles } from '../apps/desktop/src/source-files.js';
 import { DEFAULT_SOURCE_OPTIONS, normalizeSourceOptions, redactSourceText, type SourceDefinition, type SourceRequest } from '../apps/desktop/src/source-types.js';
 import {initializeCliIngressState} from './cli-ingress-state.js';
 const args = process.argv.slice(2);
-const usage = 'Usage: npm run import:files -- --root /explicit/folder-or-file [--extensions .md,.txt,.json,.csv,.ics] [--retention snapshot|reference|archive] [--initial-sync all|new_only] [--exclude relative/path,...] [--redact-literal exact-text] [--track-deletions] [--dry-run] [--watch]\nOnly explicitly selected files; no symlinks or hidden traversal. Reference sends metadata only, archive sends originals. Deletion tracking is opt-in; historical versions remain. Select a node with MOTE_ENV_FILE or the profile CLI.';
+const usage = 'Usage: npm run import:files -- --root /explicit/folder-or-file [--extensions .md,.txt,.json,.csv,.ics] [--retention snapshot|reference|archive] [--initial-sync all|new_only] [--exclude relative/path,...] [--redact-literal exact-text] [--track-deletions] [--allow-transient-upload] [--dry-run] [--watch]\nOnly explicitly selected files; no symlinks or hidden traversal. Reference sends metadata only; snapshot sends complete files for central processing then deletes temporary originals; archive retains originals. Snapshot transmission requires --allow-transient-upload. Deletion tracking is opt-in; historical versions remain. Select a node with MOTE_ENV_FILE or the profile CLI.';
 if (args.includes('--help')) { console.info(usage); process.exit(0); }
 const values = new Map<string, string[]>();
-const flags = new Set(['--dry-run', '--watch', '--track-deletions']);
+const flags = new Set(['--dry-run', '--watch', '--track-deletions', '--allow-transient-upload']);
 const valued = new Set(['--root', '--extensions', '--retention', '--initial-sync', '--exclude', '--redact-literal']);
 for (let i = 0; i < args.length; i++) {
   const arg = args[i]!;
@@ -25,9 +25,10 @@ if ((await lstat(selectedPath)).isSymbolicLink()) throw new Error('Selected root
 const root = await realpath(selectedPath);
 const options = normalizeSourceOptions({ ...DEFAULT_SOURCE_OPTIONS,
   extensions: (get('--extensions') || DEFAULT_SOURCE_OPTIONS.extensions.join(',')).split(',').map(s => s.trim()),
-  retention: get('--retention') || 'snapshot', initialSync:get('--initial-sync')||'all', trackDeletions: values.has('--track-deletions'),
+  centralProcessingConsent:values.has('--allow-transient-upload'), retention: get('--retention') || 'snapshot', initialSync:get('--initial-sync')||'all', trackDeletions: values.has('--track-deletions'),
   excludedPaths: (get('--exclude') || '').split(',').filter(Boolean), redactLiterals: values.get('--redact-literal') || [],
 });
+if(options.retention==='snapshot'&&!values.has('--dry-run')&&!options.centralProcessingConsent)throw new Error('Snapshot sends complete file bytes to central processing. Confirm with --allow-transient-upload.');
 const deviceId = 'files-' + sourceHash(hostname() + ':' + resolvedConnection.profile).slice(0, 24);
 const id = 'files-' + sourceHash(deviceId + ':' + root).slice(0, 32);
 const source: SourceDefinition = { id, deviceId, name: redactSourceText(basename(root), options.redactLiterals).slice(0, 200) || '本地文件', kind: 'local-files', platform: 'import', retention: options.retention, initialSync:options.initialSync, enabled: true };
@@ -65,7 +66,7 @@ try {
     await engine.ensurePolicy(policy);await engine.ensureAdapterVersion(2);
   }
   async function scan(): Promise<void> {
-    const result = await scanSourceFiles(root, options, controller.signal, request ? statePath + '.atime.json' : undefined);
+    const result = await scanSourceFiles(root, options, controller.signal, request ? statePath + '.atime.json' : undefined, undefined, engine?.fileCheckpoint());
     let count = result.items.length;
     if (request && engine) {
       const prepare = async () => {
@@ -81,7 +82,7 @@ try {
       if (state === 'paused') { console.info('Central source is paused; pending revisions retained locally.'); return; }
 
     }
-    console.info(`${request ? 'Received' : 'Would send'} ${count} changed UTF-8 text files; skipped ${result.skipped}; deletion scan ${result.complete && options.trackDeletions ? 'enabled' : 'not applied'}.`);
+    console.info(`${request ? 'Received' : 'Would send'} ${count} changed files; skipped ${result.skipped}; deletion scan ${result.complete && options.trackDeletions ? 'enabled' : 'not applied'}.`);
   }
   do {
     try { await scan(); }

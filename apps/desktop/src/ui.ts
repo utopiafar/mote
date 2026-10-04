@@ -127,8 +127,9 @@ let recordsCursors: (string | undefined)[] = [undefined];
 const recordsDate = new Date();
 byId<HTMLInputElement>('records-day').value = `${recordsDate.getFullYear()}-${String(recordsDate.getMonth() + 1).padStart(2, '0')}-${String(recordsDate.getDate()).padStart(2, '0')}`;
 const ocrNames = { get pending() { return moteText("等待 OCR"); }, get completed() { return moteText("OCR 已完成"); }, get disabled() { return moteText("OCR 已关闭"); }, get failed() { return moteText("OCR 待重试"); }, get unknown() { return moteText("OCR 状态未知"); } };
-function ocrLabel(value: import('./capture-browser').BrowserCapture): string {
+function ocrLabel(value: import('./capture-browser').BrowserCapture, location: import('./capture-browser').CaptureLocation = 'central'): string {
   if(value.source==='ui_page')return moteText("页面内容采集");
+  if(location==='local')return moteText("本机截图 · 完整内容由中央识别");
   return value.ocr.status === 'pending' && value.ocr.reason === 'charging' ? moteText("待接通电源后 OCR") : ocrNames[value.ocr.status];
 }
 function resetRecords(): void { selectedSession = undefined; recordsPage = 0; recordsCursors = [undefined]; void loadRecords(); }
@@ -136,8 +137,8 @@ async function openRecord(item: import('./capture-browser').BrowserCapture, loca
   const panel = byId('record-detail'); panel.hidden = false;
   panel.setAttribute('aria-busy', 'true');
   byId('record-detail-title').textContent = item.appName || moteText("截图");
-  byId('record-detail-meta').textContent = `${new Date(item.capturedAt).toLocaleString(getLocale())} · ${ocrLabel(item)}`;
-  byId('record-detail-text').textContent = moteText("正在读取识别文字…");
+  byId('record-detail-meta').textContent = `${new Date(item.capturedAt).toLocaleString(getLocale())} · ${ocrLabel(item, location)}`;
+  byId('record-detail-text').textContent = moteText("正在读取记录详情…");
   byId<HTMLImageElement>('record-detail-image').removeAttribute('src');
   byId('record-detail-title').focus(); panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
   const id = item.id; panel.dataset.recordId = id;
@@ -145,8 +146,8 @@ async function openRecord(item: import('./capture-browser').BrowserCapture, loca
   try {
     const detail = await desktopApi.captureDetail(location, id);
     if (revision !== recordsRevision || panel.dataset.recordId !== id || panel.hidden) return;
-    byId('record-detail-meta').textContent = `${new Date(detail.capturedAt).toLocaleString(getLocale())} · ${detail.deviceName || ''} · ${ocrLabel(detail)}${detail.syncError ? ' · ' + detail.syncError : ''}`;
-    byId('record-detail-text').textContent = detail.ocrText || (detail.ocr.status === 'completed' ? moteText("未识别到文字。") : ocrLabel(detail));
+    byId('record-detail-meta').textContent = `${new Date(detail.capturedAt).toLocaleString(getLocale())} · ${detail.deviceName || ''} · ${ocrLabel(detail, location)}${detail.syncError ? ' · ' + detail.syncError : ''}`;
+    byId('record-detail-text').textContent = detail.ocrText || (detail.ocr.status === 'completed' ? moteText("未识别到文字。") : ocrLabel(detail, location));
     detailRead = true;
     byId<HTMLImageElement>('record-detail-image').alt = moteText("正在加载原图…");
     if (!detail.hasImage) { byId<HTMLImageElement>('record-detail-image').alt=moteText("此采样没有图片"); return; }
@@ -197,7 +198,7 @@ async function loadRecords(): Promise<void> {
       const caption = document.createElement('div'); caption.className = 'record-card-caption';
       const title = document.createElement('strong'); title.textContent = item.appName || moteText("截图");
       const time = document.createElement('time'); time.dateTime = item.capturedAt; time.textContent = new Date(item.capturedAt).toLocaleTimeString(getLocale());
-      const state = document.createElement('small'); state.textContent = item.syncError ? moteText("同步需处理 · {0}", ocrLabel(item)) : `${location === 'local' ? moteText("本机待同步 · ") : ''}${ocrLabel(item)}`;
+      const state = document.createElement('small'); state.textContent = item.syncError ? moteText("同步需处理 · {0}", ocrLabel(item, location)) : `${location === 'local' ? moteText("本机待同步 · ") : ''}${ocrLabel(item, location)}`;
       if(item.sizeBytes!==undefined)state.textContent+=` · ${(item.sizeBytes/1024).toFixed(1)} KiB`;
       caption.append(title, time, state); card.append(image, caption); card.addEventListener('click', () => {
         selectedRecordButton?.classList.remove('selected'); selectedRecordButton?.setAttribute('aria-pressed', 'false');
@@ -252,9 +253,7 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
     'queue-mb': config.maxQueueBytes / 1024 / 1024, 'queue-events': config.maxQueueEvents,
     'default-collection': config.defaultCollection, 'sync-interval': config.syncIntervalMinutes, 'sync-batch': config.syncBatchSize,
     masks: JSON.stringify(config.masks, null, 2),
-    idle: config.idlePauseSeconds, 'privacy-model-url': config.privacyModelUrl,
-    'review-policy': config.reviewPolicy, 'review-max-tokens': config.reviewMaxTokens, 'review-max-side': config.reviewMaxSide, 'nsfw-threads': config.nsfwThreads,
-    'nsfw-timeout': config.nsfwTimeoutMs / 1000, 'nsfw-source': config.nsfwSource, 'nsfw-custom-url': config.nsfwCustomUrl,
+    idle: config.idlePauseSeconds,
   };
   for (const [id, value] of Object.entries(values)) byId<HTMLInputElement>(id).value = String(value);
   byId<HTMLInputElement>('metadata-enabled').checked = config.metadataEnabled;
@@ -263,7 +262,6 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
   byId<HTMLInputElement>('diagnostics-enabled').checked = config.diagnosticsEnabled;
   byId<HTMLInputElement>('pause-on-battery').checked = config.pauseOnBattery;
   byId<HTMLInputElement>('login').checked = currentStatus.environment?.defaultProfile === false ? false : config.openAtLogin;
-  byId<HTMLInputElement>('nsfw-enabled').checked = false;
   byId<HTMLInputElement>('gate-enabled').checked = config.uploadGate?.enabled ?? true;
   byId<HTMLTextAreaElement>('gate-text').value = (config.uploadGate?.blockedText ?? []).join('\n');
   byId<HTMLSelectElement>('gate-failure').value = config.uploadGate?.failureAction ?? 'hold';
@@ -278,7 +276,7 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
 function renderStorage(): void {
   byId('storage-restart').hidden = !currentStatus?.storage?.recoveryRequired;
   byId<HTMLInputElement>('capture-directory').value = captureStorageDirectory || currentStatus?.storage?.defaultDirectory || moteText("默认位置（当前环境目录）");
-  byId('capture-directory-state').textContent = currentStatus?.storage?.cleanupPending ? moteText("新目录已生效；旧副本尚未清理，请连接原磁盘后重新打开 Mote。") : captureStorageDirectory !== (currentStatus?.config.captureStorageDirectory || '') ? moteText("保存设置后迁移本机已有记录，过程中会自动暂停并恢复。") : moteText("这里保存本机待同步、待 OCR 的截图。中央已归档图片仍保存在中央节点。");
+  byId('capture-directory-state').textContent = currentStatus?.storage?.cleanupPending ? moteText("新目录已生效；旧副本尚未清理，请连接原磁盘后重新打开 Mote。") : captureStorageDirectory !== (currentStatus?.config.captureStorageDirectory || '') ? moteText("保存设置后迁移本机已有记录，过程中会自动暂停并恢复。") : moteText("这里保存本机待同步的截图。完整内容识别与已归档图片保存在中央节点。");
 }
 byId('storage-restart').addEventListener('click', () => void desktopApi.restartForStorageRecovery());
 byId('capture-directory-choose').addEventListener('click', () => void perform(async () => {
@@ -373,40 +371,20 @@ function render(status: import('./contracts').Status): void {
   if (status.lastUploadAt) uploadInfo.push(moteText("最近上传 {0}", new Date(status.lastUploadAt).toLocaleTimeString(getLocale(), { hour12: false })));
   setText('upload-info', uploadInfo.join(' · '));
   if (!status.encryptedTokenStorage) byId('token-hint').textContent = moteText("系统加密存储不可用，无法保存令牌。");
-  if (status.nsfw) {
-    const nsfw = status.nsfw;
-    const modelNames = { missing: moteText("模型尚未下载"), partial: moteText("模型可继续下载"), ready: moteText("模型已通过 SHA-256 校验"), invalid: moteText("模型校验失败"), verifying: moteText("正在校验模型") };
-    const processNames = { stopped: moteText("推理尚未启动"), starting: moteText("正在启动独立推理进程"), ready: moteText("离线推理已就绪"), running: moteText("正在本机推理"), error: moteText("推理中断，可自动恢复") };
-    byId('model-state').textContent = nsfw.downloading && nsfw.modelState !== 'verifying' ? moteText("正在下载模型") : modelNames[nsfw.modelState];
-    byId('inference-state').textContent = processNames[nsfw.inferenceState];
-    byId<HTMLProgressElement>('model-progress').value = nsfw.totalBytes ? Math.min(1, nsfw.bytes / nsfw.totalBytes) : 0;
-    const details = [`${(nsfw.bytes / 1024 / 1024).toFixed(1)} / ${(nsfw.totalBytes / 1024 / 1024).toFixed(1)} MiB`, 'CPU · llama.cpp · Qwen3.5-0.8B'];
-    if (nsfw.downloadSource) details.push(moteText("来源 {0}", nsfw.downloadSource));
-    if (nsfw.lastAllowed !== undefined) details.push(moteText("最近审查：{0}", nsfw.lastAllowed ? moteText("通过") : moteText("已过滤")));
-    if (nsfw.lastDurationMs !== undefined) details.push(`${nsfw.lastDurationMs} ms`);
-    details.push(moteText("本次运行已过滤 {0} 张", nsfw.blockedCount));
-    byId('model-detail').textContent = details.join(' · ');
-    byId('model-error').textContent = nsfw.error || (status.config.nsfwEnabled && nsfw.modelState !== 'ready' ? moteText("千问视觉审查已开启；完整内容需先下载或导入模型。仅活动采样不使用模型。") : moteText("截图仅在本机独立进程中推理，不发送给下载来源或外部模型。"));
-    byId<HTMLButtonElement>('model-download').disabled = busy || status.running || nsfw.downloading;
-    byId<HTMLButtonElement>('model-cancel').disabled = busy || !nsfw.downloading;
-    byId<HTMLButtonElement>('model-import').disabled = busy || status.running || nsfw.downloading;
-    byId<HTMLButtonElement>('model-reload').disabled = busy || status.running || nsfw.downloading;
-  }
+
   if (status.diagnostics) {
     const d = status.diagnostics, latest = d.latest;
     const rows = [d.enabled ? moteText("诊断开启 · {0} 条数值样本", d.sampleCount) : moteText("诊断关闭"), moteText("保存 {0} · 过滤 {1} · 失败 {2}", d.counters.saved, d.counters.blocked, d.counters.failed), moteText("图像累计 {0} MiB · 已上传请求体约 {1} MiB", (d.counters.imageBytes / 1048576).toFixed(2), (d.counters.uploadedBytes / 1048576).toFixed(2))];
     if (latest) rows.push(moteText("主进程 RSS {0} MiB · 累计 CPU {1} s", (latest.rssBytes / 1048576).toFixed(1), ((latest.cpuUserMicros + latest.cpuSystemMicros) / 1000000).toFixed(1)), moteText("设备电量 {0} · {1} · {2}", latest.batteryPercent === undefined ? moteText("不可用") : latest.batteryPercent.toFixed(0) + '%', latest.onBattery === undefined ? moteText("供电信息不可用") : latest.onBattery ? moteText("电池供电") : moteText("外部电源"), new Date(latest.at).toLocaleTimeString(getLocale())));
-    if (d.counters.saved + d.counters.blocked > 0) rows.push(moteText("累计本地推理 {0} s · OCR {1} s", (d.counters.inferenceMs / 1000).toFixed(1), (d.counters.ocrMs / 1000).toFixed(1)));
+    if (d.counters.saved + d.counters.blocked > 0) rows.push(moteText("累计截图文字隐私审查 {0} s", (d.counters.ocrMs / 1000).toFixed(1)));
     if (d.error) rows.push(d.error);
     byId('diagnostics-detail').textContent = rows.join('\n');
   }
   const statistics = [
     moteText("待上传 {0} / {1} 条 · 队列 {2} / {3} MiB（{4}%）", status.queueDepth.toLocaleString(getLocale()), status.config.maxQueueEvents.toLocaleString(getLocale()), (status.queueBytes / 1048576).toFixed(2), (status.config.maxQueueBytes / 1048576).toFixed(0), (100 * status.queueBytes / status.config.maxQueueBytes).toFixed(1)),
     moteText("采样间隔 {0} 秒 · 图像最大边 {1} px · JPEG 质量 {2}", status.config.intervalMs / 1000, status.config.captureMaxSide, status.config.jpegQuality),
-    moteText("本地模型 {0} MiB · 当前进程已过滤 {1} 张", ((status.nsfw?.bytes || 0) / 1048576).toFixed(1), status.nsfw?.blockedCount || 0),
   ];
-  if (status.nsfw?.lastDurationMs !== undefined) statistics.push(moteText("最近审查 {0} ms · 模型加载 {1} ms · 视觉编码 {2} ms · 生成 {3} token", status.nsfw.lastDurationMs, status.nsfw.lastLoadMs ?? '—', status.nsfw.lastVisionMs ?? '—', status.nsfw.lastTokens ?? '—'));
-  if (status.diagnostics?.enabled) { const c = status.diagnostics.counters; statistics.push(moteText("诊断累计：保存 {0} · 过滤 {1} · 失败 {2} · 推理 {3} s · OCR {4} s", c.saved, c.blocked, c.failed, (c.inferenceMs / 1000).toFixed(1), (c.ocrMs / 1000).toFixed(1)), moteText("累计上传请求体约 {0} MiB；不代表远端存储量。", (c.uploadedBytes / 1048576).toFixed(2))); }
+  if (status.diagnostics?.enabled) { const c = status.diagnostics.counters; statistics.push(moteText("诊断累计：保存 {0} · 过滤 {1} · 失败 {2} · 截图文字隐私审查 {3} s", c.saved, c.blocked, c.failed, (c.ocrMs / 1000).toFixed(1)), moteText("累计上传请求体约 {0} MiB；不代表远端存储量。", (c.uploadedBytes / 1048576).toFixed(2))); }
   else statistics.push(moteText("数值诊断未开启；如需持续处理计数、资源与耗时，请在开发者设置中启用。"));
   byId('collection-statistics').replaceChildren(...statistics.map(text => { const p = document.createElement('p'); p.textContent = text; return p; }));
   if (!initialized) { fillConfig(status.config); initialized = true; }
@@ -452,10 +430,7 @@ byId('settings').addEventListener('submit', event => {
       masks,
       idlePauseSeconds: numberInput('idle'),
       uploadGate: {enabled:byId<HTMLInputElement>('gate-enabled').checked,blockedText:readInput('gate-text').split('\n').map(s=>s.trim()).filter(Boolean),failureAction:readInput('gate-failure') as 'drop'|'hold'|'allow'},
-      privacyModelUrl: readInput('privacy-model-url').trim(), openAtLogin: byId<HTMLInputElement>('login').checked,
-      nsfwEnabled: byId<HTMLInputElement>('nsfw-enabled').checked, reviewPolicy: readInput('review-policy'), reviewMaxTokens: numberInput('review-max-tokens'), reviewMaxSide: numberInput('review-max-side'),
-      nsfwThreads: numberInput('nsfw-threads'), nsfwTimeoutMs: numberInput('nsfw-timeout') * 1000,
-      nsfwSource: readInput('nsfw-source') as import('./contracts').Config['nsfwSource'], nsfwCustomUrl: readInput('nsfw-custom-url').trim(),
+      openAtLogin: byId<HTMLInputElement>('login').checked,
       ...(token ? { token } : {}),
     });
     } finally { settingsApplying = false; wasRunningBeforeSave = false; }
@@ -480,10 +455,6 @@ byId('export-metadata').addEventListener('click',()=>void perform(()=>desktopApi
 byId('export-central').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('vault')));
 byId('export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportQueue(); if (!result.canceled) feedback(moteText("队列备份已保存至 {0}", result.path), true); }));
 byId('import').addEventListener('click', () => void perform(async () => { const result = await desktopApi.importQueue(); if (!result.canceled) feedback(moteText("已导入 {0} 条待上传记录，重复记录自动跳过。", result.imported), true); }));
-byId('model-download').addEventListener('click', () => void perform(async () => { render(await desktopApi.downloadModel()); feedback(moteText("模型下载已开始，支持断点续传；截图不会发送给下载源。"), true); }));
-byId('model-cancel').addEventListener('click', () => void perform(async () => render(await desktopApi.cancelModelDownload())));
-byId('model-import').addEventListener('click', () => void perform(async () => { const result = await desktopApi.importModel(); if (!result.canceled) feedback(moteText("模型导入与 SHA-256 校验完成。"), true); }));
-byId('model-reload').addEventListener('click', () => void perform(async () => { render(await desktopApi.reloadModel()); feedback(moteText("模型已重新校验；下一次采样将启动新的推理进程。"), true); }));
 desktopApi.onStatus(render);
 void desktopApi.status().then(render).catch(() => feedback(moteText("无法连接采集器进程，请重新打开 Mote。")));
 
@@ -581,22 +552,30 @@ let localSourceRows: import('./source-types').SourceStatus[] = [];
 let sourceEditingId: string | undefined;
 let sourceBusy = false;
 function sourceOptions(): import('./source-types').SourceOptions {
-  return { initialSync: readInput('source-initial-sync') as 'all' | 'new_only', indexMode:readInput('source-index-mode') as 'full'|'lightweight',allowRead:byId<HTMLInputElement>('source-allow-read').checked,retention: readInput('source-retention') as 'snapshot' | 'reference' | 'archive', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) };
+  return { centralProcessingConsent:true, initialSync: readInput('source-initial-sync') as 'all' | 'new_only', indexMode:'full',allowRead:readInput('source-retention')==='snapshot'&&byId<HTMLInputElement>('source-allow-read').checked,retention: readInput('source-retention') as 'snapshot' | 'reference' | 'archive', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) };
 }
 function editSource(id?: string): void {
   sourceEditingId = id;
   const source = localSourceRows.find(s => s.source.id === id)?.source;
   byId('source-editor-title').textContent = source ? moteText("编辑：") + source.name : moteText("新来源的保留与过滤规则");
   byId('source-save-edit').hidden = !source; byId('source-cancel-edit').hidden = !source;
-  if (!source) return;
+  if (!source) { refreshSourceTextOptions(); return; }
   const editor = byId('source-editor-title').closest('details');
   if (editor) editor.open = true;
   byId('source-editor-title').scrollIntoView({ block: 'start', behavior: 'instant' });
   byId('source-retention').focus({ preventScroll: true });
-  byId<HTMLSelectElement>('source-initial-sync').value=source.initialSync??'all'; byId<HTMLSelectElement>('source-retention').value = source.retention;byId<HTMLSelectElement>('source-index-mode').value=source.indexMode??'full';byId<HTMLInputElement>('source-allow-read').checked=source.allowRead??false; byId<HTMLInputElement>('source-interval').value = String(source.intervalSeconds);
+  byId<HTMLSelectElement>('source-initial-sync').value=source.initialSync??'all'; byId<HTMLSelectElement>('source-retention').value = source.retention;byId<HTMLInputElement>('source-allow-read').checked=source.allowRead??false; byId<HTMLInputElement>('source-interval').value = String(source.intervalSeconds);
   byId<HTMLInputElement>('source-deletions').checked = source.trackDeletions; byId<HTMLInputElement>('source-extensions').value = source.extensions.join(',');
   byId<HTMLTextAreaElement>('source-excludes').value = source.excludedPaths.join('\n'); byId<HTMLTextAreaElement>('source-redacts').value = source.redactLiterals.join('\n'); refreshPresets();
+  refreshSourceTextOptions();
 }
+function refreshSourceTextOptions(): void {
+  const source=localSourceRows.find(row=>row.source.id===sourceEditingId)?.source;
+  const visible=(!source||source.kind==='local-files')&&readInput('source-retention')==='snapshot';
+  byId('source-file-text-options').hidden=!visible;
+  byId<HTMLInputElement>('source-allow-read').disabled=!visible;
+}
+byId('source-retention').addEventListener('change',refreshSourceTextOptions);
 let sourcesReading = false;
 async function refreshSources(): Promise<void> {
   if (sourcesReading) return;
@@ -607,9 +586,9 @@ async function refreshSources(): Promise<void> {
   if (!rows.length) { const p = document.createElement('p'); p.className = 'helper'; p.textContent = moteText("尚未连接本地来源。选择只包含你希望归档资料的目录。"); list.append(p); }
   for (const row of rows) {
     const card = document.createElement('article'); card.className = 'source-card';
-    const title = document.createElement('strong'); title.textContent = `${row.source.kind === 'local-calendar' ? moteText("日历") : row.source.kind === 'coding-agent' ? moteText("编码对话") : moteText("文件")} · ${row.source.name} · ${row.source.retention === 'reference' ? moteText("仅文件目录") : row.source.retention === 'archive' ? moteText("原件归档") : moteText("内容索引，原件留本机")}`;
+    const title = document.createElement('strong'); title.textContent = `${row.source.kind === 'local-calendar' ? moteText("日历") : row.source.kind === 'coding-agent' ? moteText("编码对话") : moteText("文件")} · ${row.source.name} · ${row.source.retention === 'reference' ? moteText("仅文件目录") : row.source.retention === 'archive' ? moteText("原件归档") : row.source.kind==='local-files'?moteText("中央提取正文，不保留原件"):moteText("内容快照")}`;
     const detail = document.createElement('p'); detail.className = 'helper profile-path'; detail.textContent = row.source.path || moteText("所选系统日历");
-    const status = document.createElement('p'); status.className = 'helper'; status.textContent = moteText("{0} · {1} 项 · 待传 {2} · 跳过 {3}{4}", row.source.enabled ? row.message : moteText("本机已暂停"), row.items, row.pending, row.skipped, row.lastSyncAt ? moteText(" · 最近同步 ") + new Date(row.lastSyncAt).toLocaleString(getLocale()) : '') + (row.facts ? `\n${nativeStatusSummary(row.facts)}` : '') + (row.processingPending ? '\n' + moteText("本机处理中 {0} 个文件；处理等待不计入待发",row.processingPending) : '');
+    const status = document.createElement('p'); status.className = 'helper'; status.textContent = moteText("{0} · {1} 项 · 待传 {2} · 跳过 {3}{4}", row.source.enabled ? row.message : moteText("本机已暂停"), row.items, row.pending, row.skipped, row.lastSyncAt ? moteText(" · 最近同步 ") + new Date(row.lastSyncAt).toLocaleString(getLocale()) : '') + (row.facts ? `\n${nativeStatusSummary(row.facts)}` : '');
     const actions = document.createElement('div'); actions.className = 'actions';
     const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'secondary'; edit.textContent = moteText("编辑规则"); edit.addEventListener('click', () => editSource(row.source.id));
     const pause = document.createElement('button'); pause.type = 'button'; pause.className = 'secondary'; pause.textContent = row.source.enabled ? moteText("暂停本机同步") : moteText("恢复本机同步"); pause.disabled = sourceBusy;
@@ -811,10 +790,6 @@ const presetFields: Record<string, [number, string][]> = {
   'source-interval': [[60, moteText("每分钟")], [300, moteText("每 5 分钟")], [900, moteText("每 15 分钟")], [3600, moteText("每小时")]],
   'jpeg-quality': [[65, moteText("65 · 节省空间")], [75, moteText("75 · 默认")], [80, moteText("80 · 均衡")], [90, moteText("90 · 清晰")]],
   'capture-max-side': [[1280, '1280 px'], [1600, moteText("1600 px · 默认")], [1920, '1920 px'], [2560, '2560 px']],
-  'review-max-tokens': [[128, moteText("128 · 简短审查")], [256, moteText("256 · 默认")], [512, moteText("512 · 较长输出")]],
-  'review-max-side': [[256, moteText("256 px · 轻量")], [512, moteText("512 px · 默认")], [768, moteText("768 px · 细节")], [1024, moteText("1024 px · 更清晰")]],
-  'nsfw-threads': [[1, moteText("1 · 最少资源")], [2, moteText("2 · 默认")], [4, moteText("4 · 更快处理")], [8, moteText("8 · 更多资源")]],
-  'nsfw-timeout': [[30, moteText("30 秒")], [60, moteText("1 分钟")], [120, moteText("2 分钟")], [180, moteText("3 分钟")]],
   'diagnostic-interval': [[15, moteText("每 15 秒")], [60, moteText("每分钟")], [300, moteText("每 5 分钟")]],
 };
 function refreshPresets(): void {

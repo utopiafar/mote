@@ -5,13 +5,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DurableQueue } from '../src/queue';
-import type { NsfwGate } from '../src/contracts';
 import { defaultConfig } from '../src/config';
 import { captureAck } from './fixtures';
 
 const fixtureConfig=()=>({...defaultConfig(),syncMode:'realtime' as const,syncIntervalMinutes:15,syncBatchSize:20,packedUpload:false});
 
-const mocks = vi.hoisted(() => ({ page: vi.fn(), capture: vi.fn(), foreground: vi.fn(), metadata: vi.fn(), idleState: vi.fn(), active: vi.fn(), ocr: vi.fn(), idle: vi.fn(), permission: vi.fn(), power: vi.fn() }));
+const mocks = vi.hoisted(() => ({ notifications: vi.fn(), page: vi.fn(), capture: vi.fn(), foreground: vi.fn(), metadata: vi.fn(), idleState: vi.fn(), active: vi.fn(), ocr: vi.fn(), idle: vi.fn(), permission: vi.fn(), power: vi.fn() }));
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events');
   class GeneratedImage {
@@ -29,7 +28,7 @@ vi.mock('electron', async () => {
     systemPreferences: { getMediaAccessStatus: mocks.permission },
   };
 });
-vi.mock('../src/native', () => ({ runHelper:mocks.page, activeApplication: mocks.active, foregroundApplication: mocks.foreground, recognizeText: mocks.ocr, readPowerState: mocks.power }));
+vi.mock('../src/native', () => ({ readVisibleNotifications:mocks.notifications, runHelper:mocks.page, activeApplication: mocks.active, foregroundApplication: mocks.foreground, recognizeText: mocks.ocr, readPowerState: mocks.power }));
 
 vi.mock('../src/record-metadata', () => ({ collectRecordMetadata: mocks.metadata }));
 
@@ -41,7 +40,7 @@ let collector: Collector | undefined;
 const application = { appId: 'dev.mote.fixture', appName: 'Generated Fixture', pid: 1, visibleAppIds: ['dev.mote.fixture'], unknownVisibleWindows: false };
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'mote-pipeline-test-'));
-  vi.clearAllMocks();
+  vi.clearAllMocks(); mocks.notifications.mockResolvedValue([]);
   mocks.idle.mockReturnValue(0); mocks.idleState.mockReturnValue('active');
   mocks.foreground.mockResolvedValue({ appId: application.appId, appName: application.appName, pid: application.pid });
   mocks.metadata.mockResolvedValue({ version: 1, observedAt: '2026-09-14T01:00:00Z', collector: { version: 'synthetic' }, device: { osVersion: 'synthetic' }, state: { screenLocked: false } }); mocks.permission.mockReturnValue('granted');
@@ -62,10 +61,10 @@ afterEach(async () => {
   (powerMonitor as unknown as EventEmitter).removeAllListeners();
   await rm(directory, { recursive: true, force: true }); vi.unstubAllGlobals();
 });
-async function makeCollector(extra: object = {}, gate?: NsfwGate) {
-  const config = { ...fixtureConfig(), token: 'synthetic-token', nsfwEnabled: false, ...extra };
+async function makeCollector(extra: object = {}) {
+  const config = { ...fixtureConfig(), token: 'synthetic-token', ...extra };
   const queue = new DurableQueue(directory, config); await queue.initialize();
-  collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, () => undefined, gate);
+  collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, () => undefined);
   return { collector, queue };
 }
 
@@ -81,7 +80,7 @@ it('one manual flush drains 400 historical notes while admitting a new note betw
    phases.push('source-part-0');fresh.capturedAt=new Date().toISOString();await queue.enqueue(fresh);await between();
    expect(sent).toContain(fresh.id);expect(sent.indexOf(fresh.id)).toBe(25);phases.push('source-part-1');await between();sourcePending=0;
  }};
- collector=new Collector(config,queue,'/fixture/no-real-helper',()=>true,()=>undefined,undefined,undefined,undefined,sources as any);
+ collector=new Collector(config,queue,'/fixture/no-real-helper',()=>true,()=>undefined,undefined,undefined,sources as any);
  await collector.upload(true);expect(queue.stats().depth).toBe(0);expect(new Set(sent).size).toBe(401);expect(phases.slice(0,4)).toEqual(['captures','source-part-0','captures','source-part-1']);expect(collector.status().sync.pendingRecords).toBe(0);
 // This fixture performs 401 durable writes and ACKs; keep disk latency out of the ordering contract.
 },120000);
@@ -115,14 +114,6 @@ describe.skipIf(process.platform !== 'darwin')('collector pipeline with generate
     await collector.start(); await collector.settleCapture();
     expect(mocks.capture).toHaveBeenCalledTimes(1); expect(mocks.ocr).not.toHaveBeenCalled(); expect(queue.stats().depth).toBe(0);
   });
-  it('does not invoke legacy local visual review endpoints', async () => {
-    const fakeFetch = vi.fn(async (url: string) => new Response(JSON.stringify(url.includes('/review') ? { allow: true } : {}), { status: 200 }));
-    vi.stubGlobal('fetch', fakeFetch);
-    const { collector, queue } = await makeCollector({ privacyModelUrl: 'http://127.0.0.1:8787/review' });
-    await collector.start(); await collector.settleCapture();
-    expect(mocks.ocr).not.toHaveBeenCalled();
-    expect(fakeFetch.mock.calls.some(args => args[0].includes('/review'))).toBe(false);
-  });
   it('pauses before capture while idle or locked and stops clearly if permissions are revoked', async () => {
     mocks.idle.mockReturnValue(301);
     const { collector, queue } = await makeCollector();
@@ -134,13 +125,6 @@ describe.skipIf(process.platform !== 'darwin')('collector pipeline with generate
     collector.stop();
     expect(collector.status().running).toBe(false);
   });
-  it.each(['deny', 'failure'])('holds legacy Qwen execution even when its stored setting is enabled (%s)', async outcome => {
-    const gate = { ensureReady: async () => {}, status: () => undefined, reset: () => {}, close: () => {}, classify: vi.fn(async () => { if (outcome === 'failure') throw new Error('synthetic inference timeout'); return { allow: false, blocked: true }; }) } as unknown as NsfwGate;
-    const { collector, queue } = await makeCollector({ nsfwEnabled: true, masks: [{ x: 0, y: 0, width: 1, height: 1 }] }, gate);
-    await collector.start(); await collector.settleCapture();
-    expect(queue.stats().depth).toBe(1); expect(mocks.ocr).not.toHaveBeenCalled();expect(gate.classify).not.toHaveBeenCalled();
-  });
-
   it('only pauses on battery when the user explicitly enables that optimization', async () => {
     const { collector, queue } = await makeCollector({ pauseOnBattery: true });
     await collector.start(); await collector.settleCapture();
@@ -153,14 +137,13 @@ describe.skipIf(process.platform !== 'darwin')('collector pipeline with generate
 describe.skipIf(process.platform !== 'darwin')('per-application collection boundaries', () => {
   it('records activity without any screenshot, window enumeration, OCR, permission prompt or model even when screen access is denied', async () => {
     mocks.permission.mockReturnValue('denied');
-    const gate = { ensureReady: vi.fn(async () => { throw new Error('model absent'); }), status: () => undefined, reset: () => {}, close: () => {}, classify: vi.fn() } as unknown as NsfwGate;
-    const { collector, queue } = await makeCollector({ nsfwEnabled: true, appCollectionRules: { [application.appId]: 'activity' } }, gate);
+    const { collector, queue } = await makeCollector({ appCollectionRules: { [application.appId]: 'activity' } });
     await collector.start(); await collector.settleCapture();
     const archive = await queue.exportArchive(); expect(archive.records).toHaveLength(1); expect(archive.blobs).toEqual({});
     const event = archive.records[0].event;
     expect(event.source).toBe('activity'); expect(event.privacy.collection).toBe('activity'); expect(event.metadata?.capture).toEqual({ intervalMs: 15000 });
     for (const key of ['ocrText', 'title', 'windowTitle', 'imageMime', 'imageBase64', 'mood', 'provenance']) expect(event).not.toHaveProperty(key);
-    expect(mocks.capture).not.toHaveBeenCalled(); expect(mocks.active).not.toHaveBeenCalled(); expect(mocks.ocr).not.toHaveBeenCalled(); expect(gate.ensureReady).not.toHaveBeenCalled(); expect(gate.classify).not.toHaveBeenCalled();
+    expect(mocks.capture).not.toHaveBeenCalled(); expect(mocks.active).not.toHaveBeenCalled(); expect(mocks.ocr).not.toHaveBeenCalled();
   });
   it.each(['off', 'explicit off', 'unknown'])('records nothing for %s without reading content', async mode => {
     if (mode === 'unknown') mocks.foreground.mockRejectedValue(new Error('identity unavailable'));
@@ -184,7 +167,7 @@ describe.skipIf(process.platform !== 'darwin')('per-application collection bound
       mocks.foreground.mockResolvedValue({ appId: 'dev.off', appName: 'Off fixture', pid: 2 }); await sample();
       mocks.foreground.mockResolvedValue(application); await sample();
       collector.stop(); await collector.settleCapture();
-      const changed = { ...fixtureConfig(), token: 'synthetic-token', nsfwEnabled: false, defaultCollection: 'content' as const }; collector.updateConfig(changed); now += 15000; await collector.start(); await collector.settleCapture();
+      const changed = { ...fixtureConfig(), token: 'synthetic-token', defaultCollection: 'content' as const }; collector.updateConfig(changed); now += 15000; await collector.start(); await collector.settleCapture();
       const events = (await queue.exportArchive()).records.map(r => r.event);
       expect(events.flatMap(e=>e.stateSeries?.samples.map(s=>s.durationMs)??[e.durationMs])).toEqual([0,15000,0,0]);expect(events.map(e=>e.source)).toEqual(['activity','screen']);
     } finally { clock.mockRestore(); }
@@ -248,13 +231,13 @@ describe('capture and synchronization are independent', () => {
   });
   it('counts source versions with screenshots for one batch decision and drains both channels', async () => {
     const { event, image } = await import('./fixtures');
-    const config = { ...fixtureConfig(), token: 'synthetic-token', nsfwEnabled: false, syncMode: 'batch' as const, syncBatchSize: 2 };
+    const config = { ...fixtureConfig(), token: 'synthetic-token', syncMode: 'batch' as const, syncBatchSize: 2 };
     const queue = new DurableQueue(directory, config); await queue.initialize(); const capturedAt = new Date().toISOString();
     await queue.enqueue({ ...event(), capturedAt }, image);
     let sourcePending = 1;
     const flush = vi.fn(async () => { sourcePending = 0; });
     const sources = { pendingStats: () => ({ pendingRecords: sourcePending, oldestPendingAt: capturedAt, hasUpdates: false }), nodeBinding: { unbound: () => false }, flushPending: flush };
-    collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, () => undefined, undefined, undefined, undefined, sources as any);
+    collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, () => undefined, undefined, undefined, sources as any);
     vi.mocked(fetch).mockImplementation(async (_url, init) => new Response(JSON.stringify(captureAck(JSON.parse(await new Response(init!.body).text()).id)), { status: 201 }));
     await collector.upload(); expect(fetch).toHaveBeenCalledTimes(1); expect(flush).toHaveBeenCalledTimes(1);
     expect(collector.status().sync).toMatchObject({ pendingRecords: 0, state: 'idle' });
@@ -273,7 +256,7 @@ it('releases metadata-only source updates at their interval deadline while recor
   const sources = { pendingStats: () => ({ pendingRecords: 0, pendingUpdates, oldestUpdateAt: new Date(initial).toISOString(), hasUpdates: Boolean(pendingUpdates) }), nodeBinding: { unbound: () => false }, flushPending: flush };
   const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
   try {
-    collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, () => undefined, undefined, undefined, undefined, sources as any);
+    collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, () => undefined, undefined, undefined, sources as any);
     await collector.upload(); expect(flush).not.toHaveBeenCalled(); expect(collector.status().sync).toMatchObject({ state: 'waiting', pendingRecords: 0 });
     now += 15 * 60000; await collector.upload(); expect(flush).toHaveBeenCalledTimes(1); expect(collector.status().sync.state).toBe('idle');
   } finally { clock.mockRestore(); }
@@ -282,7 +265,7 @@ it('caps only the heartbeat aggregate at the wire limit while local status keeps
   const config = { ...fixtureConfig(), token: 'synthetic-aggregate-token' };
   const queue = new DurableQueue(directory, config); await queue.initialize();
   const sources = { pendingStats: () => ({ pendingRecords: 1_000_020, pendingUpdates: 0, hasUpdates: false }), nodeBinding: { unbound: () => false } };
-  collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, () => undefined, undefined, undefined, undefined, sources as any);
+  collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, () => undefined, undefined, undefined, sources as any);
   expect(collector.status().sync.pendingRecords).toBe(1_000_020);
   await (collector as any).sendHeartbeat();
   const call = vi.mocked(fetch).mock.calls.find(args => String(args[0]).endsWith('/api/devices/heartbeat'));
@@ -294,7 +277,7 @@ it('keeps held source records in local totals without repeatedly announcing or a
   const config = { ...fixtureConfig(), token: 'synthetic-held-source-token' };
   const queue = new DurableQueue(directory, config); await queue.initialize(); const flush = vi.fn(); const statuses: any[] = [];
   const sources = { pendingStats: () => ({ pendingRecords: 4, eligibleRecords: 0, heldRecords: 4, pendingUpdates: 0, eligibleUpdates: 0, heldUpdates: 0, hasUpdates: false, heldReason: '本地来源已暂停，待传版本保留在本机' }), nodeBinding: { unbound: () => false }, flushPending: flush };
-  collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, status => statuses.push(status), undefined, undefined, undefined, sources as any);
+  collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, status => statuses.push(status), undefined, undefined, sources as any);
   await collector.upload(); await collector.upload();
   expect(flush).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
   expect(collector.status().sync).toMatchObject({ state: 'waiting', pendingRecords: 4, message: '本地来源已暂停，待传版本保留在本机' });
@@ -323,7 +306,7 @@ describe.skipIf(process.platform !== 'darwin')('immediate settings with generate
     const hold=collector.suspendForSettings();
     await vi.waitFor(()=>expect(requestSignal!.aborted).toBe(true),{timeout:500});
     const release=await hold;await heartbeat;expect(collector.connectionActivity().inFlight).toBe(false);
-    collector.updateConfig({...fixtureConfig(),serverUrl:'',token:undefined,nsfwEnabled:false});await release();
+    collector.updateConfig({...fixtureConfig(),serverUrl:'',token:undefined});await release();
   });
 
   it('waits for an old capture, discards it, applies the new mask and timer, then resumes only prior running intent', async () => {
@@ -335,7 +318,7 @@ describe.skipIf(process.platform !== 'darwin')('immediate settings with generate
     await new Promise(resolve => setTimeout(resolve, 35)); expect(held).toBe(false);
     release([{ display_id: '1', thumbnail: nativeImage.createFromBitmap(Buffer.alloc(64, 77), { width: 4, height: 4 }) }]);
     const resume = await holding; expect(queue.stats().depth).toBe(0); expect(collector.status().running).toBe(false);
-    const config = { ...fixtureConfig(), serverUrl: '', token: undefined, nsfwEnabled: false, syncMode: 'manual' as const, intervalMs: 300000, masks: [{ x: 0, y: 0, width: 1, height: 1 }] };
+    const config = { ...fixtureConfig(), serverUrl: '', token: undefined, syncMode: 'manual' as const, intervalMs: 300000, masks: [{ x: 0, y: 0, width: 1, height: 1 }] };
     collector.updateConfig(config); await resume(); await collector.settleCapture();
     expect(collector.status().running).toBe(true);
     const stored = Object.values((await queue.exportArchive()).blobs).map(value => Buffer.from(value, 'base64')); expect(stored).toHaveLength(1);
@@ -349,7 +332,7 @@ describe.skipIf(process.platform !== 'darwin')('immediate settings with generate
     const resume = await collector.suspendForSettings();
     if (mode === 'stop during save') collector.stop();
     if (mode === 'shutdown during save') collector.shutdown();
-    else collector.updateConfig({ ...fixtureConfig(), serverUrl: '', nsfwEnabled: false });
+    else collector.updateConfig({ ...fixtureConfig(), serverUrl: '' });
     await resume(); expect(collector.status().running).toBe(false); expect(mocks.capture).not.toHaveBeenCalled();
     if (mode === 'shutdown during save') { await expect(collector.start()).rejects.toThrow(); await collector.upload(true); await collector.retry(); expect(vi.mocked(fetch).mock.calls.filter(args => String(args[0]).includes('/api/captures'))).toHaveLength(0); }
   });
@@ -392,9 +375,9 @@ describe.skipIf(process.platform!=='darwin')('UI page collection privacy and scr
  it('stores a complete page with no screenshot permission, image or OCR; survives restart',async()=>{
   mocks.page.mockResolvedValue({snapshot:pageSnapshot});mocks.permission.mockReturnValue('denied');
   const {collector,queue}=await makeCollector({syncMode:'manual',uiPageMode:'ui_preferred',uiPageRules:[pageRule]});await collector.start();await collector.settleCapture();
-  const archive=await queue.exportArchive();expect(archive.records).toHaveLength(1);expect(archive.blobs).toEqual({});expect(archive.records[0].event.source).toBe('ui_page');expect(archive.records[0].event.ocrText).toBe('GENERATED PAGE BODY');
+  const archive=await queue.exportArchive();expect(archive.records).toHaveLength(2);expect(archive.blobs).toEqual({});const page=archive.records.find(r=>r.event.source==='ui_page')!;expect(page.event.ocrText).toBe('GENERATED PAGE BODY');expect(archive.records.find(r=>r.event.source==='activity')!.event.durationMs).toBe(0);
   expect(mocks.capture).not.toHaveBeenCalled();expect(mocks.ocr).not.toHaveBeenCalled();
-  const reopened=new DurableQueue(directory,fixtureConfig());await reopened.initialize();expect((await reopened.next())?.record.event.metadata?.uiPage?.adapterId).toBe(pageRule.id);
+  const reopened=new DurableQueue(directory,fixtureConfig());await reopened.initialize();expect((await reopened.exportArchive()).records.find(r=>r.event.source==='ui_page')?.event.metadata?.uiPage?.adapterId).toBe(pageRule.id);
  });
  it.each(['off','activity'])('does not read nodes for %s privacy',async collection=>{
   const {collector}=await makeCollector({uiPageMode:'hybrid',uiPageRules:[pageRule],appCollectionRules:{[application.appId]:collection}});await collector.start();await collector.settleCapture();expect(mocks.page).not.toHaveBeenCalled();
@@ -409,6 +392,41 @@ describe.skipIf(process.platform!=='darwin')('UI page collection privacy and scr
   mocks.page.mockResolvedValue({snapshot:pageSnapshot});const {collector,queue}=await makeCollector({uiPageMode:mode,uiPageRules:[{...pageRule,complete:false}]});await collector.start();await collector.settleCapture();expect(mocks.capture).toHaveBeenCalledTimes(1);expect((await queue.exportArchive()).records.map(r=>r.event.source).sort()).toEqual(['screen','ui_page']);
  });
  it('page_only does not capture pixels for unsupported pages',async()=>{
-  mocks.page.mockResolvedValue({status:'unsupported'});const {collector,queue}=await makeCollector({uiPageMode:'page_only',uiPageRules:[pageRule]});await collector.start();await collector.settleCapture();expect(mocks.capture).not.toHaveBeenCalled();expect(queue.stats().depth).toBe(0);
+  mocks.page.mockResolvedValue({status:'unsupported'});const {collector,queue}=await makeCollector({uiPageMode:'page_only',uiPageRules:[pageRule]});await collector.start();await collector.settleCapture();expect(mocks.capture).not.toHaveBeenCalled();expect((await queue.exportArchive()).records.map(r=>r.event.source)).toEqual(['activity']);
+ });
+});
+
+describe.skipIf(process.platform!=='darwin')('capture user journeys',()=>{
+ it('applies literal text rules to notifications before persistence or upload',async()=>{
+  mocks.notifications.mockResolvedValue(['GENERATED FORBIDDEN NOTIFICATION']);
+  const {collector,queue}=await makeCollector({syncMode:'manual',notificationCollectionEnabled:true,defaultCollection:'content',appCollectionRules:{},uiPageMode:'page_only',uploadGate:{enabled:true,blockedText:['FORBIDDEN'],failureAction:'hold'}});
+  await collector.start();await collector.settleCapture();
+  const archive=await queue.exportArchive();expect(archive.records.every(r=>r.event.source==='activity')).toBe(true);expect(archive.records.some(r=>r.event.metadata?.notification)).toBe(false);
+  // Removing the rule admits a later fresh observation, not the previously blocked text.
+  collector.stop();await collector.settleCapture();collector.updateConfig({...collector.status().config,token:'synthetic-token',uploadGate:{enabled:true,blockedText:[],failureAction:'hold'}} as any);
+  await collector.start();await collector.settleCapture();
+  const notification=(await queue.exportArchive()).records.find(r=>r.event.source==='notification');expect(notification?.event.metadata?.notification?.text).toContain('FORBIDDEN');
+ });
+ it.each(['page_only','ui_preferred'])('keeps measured activity when %s replaces screenshots',async mode=>{
+  mocks.page.mockResolvedValue({snapshot:pageSnapshot});const clock=vi.spyOn(Date,'now');const start=Date.parse('2026-10-05T00:00:00Z');clock.mockReturnValue(start);
+  const {collector,queue}=await makeCollector({syncMode:'manual',uiPageMode:mode,uiPageRules:[pageRule]});
+  try{
+   await collector.start();await collector.settleCapture();
+   for(let i=1;i<=2;i++){clock.mockReturnValue(start+i*15000);clearTimeout((collector as any).timer);await (collector as any).capture();}
+   const records=(await queue.exportArchive()).records;
+   expect(records.filter(r=>r.event.source==='ui_page')).toHaveLength(3);expect(records.filter(r=>r.event.source==='ui_page').every(r=>r.event.durationMs===0)).toBe(true);
+   const samples=records.filter(r=>r.event.source==='activity').flatMap(r=>r.event.stateSeries?.samples??[{at:r.event.capturedAt,durationMs:r.event.durationMs}]);
+   expect(samples.map(s=>s.durationMs)).toEqual([0,15000,15000]);expect(mocks.capture).not.toHaveBeenCalled();
+   mocks.foreground.mockResolvedValue({...application,appId:'dev.other'});mocks.active.mockResolvedValue({...application,appId:'dev.other',visibleAppIds:['dev.other']});clock.mockReturnValue(start+45000);clearTimeout((collector as any).timer);await (collector as any).capture();
+   expect((await queue.exportArchive()).records.find(r=>r.event.appId==='dev.other')?.event.durationMs).toBe(0);
+  }finally{clock.mockRestore();}
+ });
+ it('hybrid pages add no duplicate measured interval',async()=>{
+  mocks.page.mockResolvedValue({snapshot:pageSnapshot});const clock=vi.spyOn(Date,'now');const start=Date.parse('2026-10-05T00:00:00Z');clock.mockReturnValue(start);
+  const {collector,queue}=await makeCollector({syncMode:'manual',uiPageMode:'hybrid',uiPageRules:[pageRule]});
+  try{await collector.start();await collector.settleCapture();clock.mockReturnValue(start+15000);clearTimeout((collector as any).timer);await (collector as any).capture();
+   const records=(await queue.exportArchive()).records;expect(records.some(r=>r.event.source==='activity')).toBe(false);
+   const duration=records.flatMap(r=>r.event.stateSeries?.samples??[{durationMs:r.event.durationMs}]).reduce((total,s)=>total+s.durationMs,0);expect(duration).toBe(15000);
+  }finally{clock.mockRestore();}
  });
 });

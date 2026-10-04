@@ -345,8 +345,8 @@ class CaptureRecordsActivity : MoteActivity() {
         val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(12), 0, 0, 0) }
         row.addView(labels, if (grid) LinearLayout.LayoutParams(-1, -2) else LinearLayout.LayoutParams(0, -2, 1f))
         text(labels, "${time(item.getString("capturedAt"))} · ${item.optString("appName").ifBlank { item.optString("appId").ifBlank { if (item.optString("source") == "media") MoteI18n.text("媒体会话状态") else if (item.optString("source") == "device_event") MoteI18n.text("设备状态") else MoteI18n.text("桌面 / 系统画面") } }}", 15f)
-        text(labels, if (item.optString("source") in SystemEventRules.sources) SystemEventRules.label(item) else if (item.optString("source") == "media") CapturePreview.mediaLabel(item) else CapturePreview.ocrLabel(item), 12f)
-        if (!remote) text(labels, when (item.optString("syncError")) { "archive_missing" -> MoteI18n.text("中央记录不可更新 · 本机图片已保留"); "ocr_conflict" -> MoteI18n.text("OCR 更新冲突 · 本机图片和文字已保留"); "upload_conflict" -> MoteI18n.text("记录内容冲突 · 本机副本已保留"); else -> if (item.optBoolean("uploaded")) if (item.optLong("retainedUntil") > 0) MoteI18n.text("已同步 · 本机保留至 {0}", java.time.Instant.ofEpochMilli(item.getLong("retainedUntil")).atZone(java.time.ZoneId.systemDefault()).toLocalDate()) else MoteI18n.text("图片已同步 · 本机保留待更新 OCR") else MoteI18n.text("保存在本机 · 待同步") }, 12f)
+        text(labels, if (item.optString("source") in SystemEventRules.sources) SystemEventRules.label(item) else if (item.optString("source") == "media") CapturePreview.mediaLabel(item) else CapturePreview.ocrLabel(item, remote), 12f)
+        if (!remote) text(labels, when (item.optString("syncError")) { "archive_missing" -> MoteI18n.text("中央记录不可更新 · 本机图片已保留"); "ocr_conflict" -> MoteI18n.text("OCR 更新冲突 · 本机图片和文字已保留"); "upload_conflict" -> MoteI18n.text("记录内容冲突 · 本机副本已保留"); else -> if (item.optBoolean("uploaded")) if (item.optLong("retainedUntil") > 0) MoteI18n.text("已同步 · 本机保留至 {0}", java.time.Instant.ofEpochMilli(item.getLong("retainedUntil")).atZone(java.time.ZoneId.systemDefault()).toLocalDate()) else MoteI18n.text("已同步 · 本机副本等待保留期清理") else MoteI18n.text("保存在本机 · 待同步") }, 12f)
         if (item.has("sizeBytes")) text(labels, "${String.format(java.util.Locale.ROOT, "%.1f", item.optLong("sizeBytes") / 1024.0)} KiB", 12f)
         item.optString("textPreview").takeIf(String::isNotBlank)?.let { text(labels, it.take(if (grid) 48 else 100), 12f) }
         return image
@@ -394,7 +394,7 @@ class CaptureRecordsActivity : MoteActivity() {
                         record.optString("syncError").takeIf(String::isNotBlank)?.let { text(content, MoteI18n.text("同步需要处理：{0}", it), 14f) }
                         return@runOnUiThread
                     }
-                    text(content, CapturePreview.ocrLabel(record), 14f)
+                    text(content, CapturePreview.ocrLabel(record, remote), 14f)
                     if (bitmap != null) content.addView(ImageView(this).apply { setImageBitmap(bitmap); adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = MoteI18n.text("采集图片") }, LinearLayout.LayoutParams(-1, -2))
                     else text(content, MoteI18n.text("图片暂不可用。"), 14f)
                     text(content, MoteI18n.text("识别文字"), 17f)

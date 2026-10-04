@@ -86,12 +86,15 @@ internal object CapturePreview {
             }
         }
     }
-    fun ocrLabel(record: JSONObject): String = when (record.optJSONObject("ocr")?.optString("status", "unknown") ?: "unknown") {
+    fun ocrLabel(record: JSONObject, remote: Boolean = true): String {
+        if (!remote) return when (record.optString("source")) { "ui_page" -> MoteI18n.text("页面内容采集"); "activity" -> MoteI18n.text("应用活动"); "note" -> MoteI18n.text("随手记"); else -> MoteI18n.text("本机截图 · 完整内容由中央识别") }
+        return when (record.optJSONObject("ocr")?.optString("status", "unknown") ?: "unknown") {
         "pending" -> MoteI18n.text("OCR 待处理{0}", if (record.optJSONObject("ocr")?.optString("reason") == "charging") MoteI18n.text(" · 等待充电") else "")
         "completed" -> MoteI18n.text("OCR 已完成")
         "disabled" -> MoteI18n.text("OCR 已关闭")
         "failed" -> MoteI18n.text("OCR 失败")
         else -> MoteI18n.text("OCR 状态未知（历史记录）")
+    }
     }
     fun decode(bytes: ByteArray, maxSide: Int): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

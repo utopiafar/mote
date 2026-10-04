@@ -1,6 +1,6 @@
 # Mote 电脑采集器
 
-当前使用说明更新于 2026-10-04。本次 MVP 清理采用桌面存储格式 3，旧配置、队列、草稿和来源状态明确拒绝读取，不执行运行时升级迁移。文中带历史版本或日期的验收记录保留当时原文，仅说明历史结果，不代表本次执行或当前升级兼容承诺。
+当前使用说明更新于 2026-10-05。本次 MVP 清理采用桌面存储格式 3，旧配置、队列、草稿和来源状态明确拒绝读取，不执行运行时升级迁移。文中带历史版本或日期的验收记录保留当时原文，仅说明历史结果，不代表本次执行或当前升级兼容承诺。
 
 当前客户端按概览、随手记、本地来源、设置分层。支持未连接中央时先在本机采集，上传方式在「设置 → 上传与同步」选择实时、定时、积攒一批或仅手动；频率、容量、电量和画质提供预设，隐私设置提供已安装应用选择器与遮挡示意编辑。详见 [统一采集与上传行为](collection-and-sync.md)。
 
@@ -8,19 +8,17 @@
 
 ## 构建与运行
 
-最低 macOS 13.3（当前验证为 Apple Silicon Mac）。构建需要 Node.js 24、npm 11、CMake 3.22+ 和 Apple Command Line Tools（`xcode-select --install`）。在仓库根目录执行：
+最低 macOS 13.3（当前验证为 Apple Silicon Mac）。构建需要 Node.js 24、npm 11 和 Apple Command Line Tools（`xcode-select --install`）。在仓库根目录执行：
 
 ```sh
 npm install
-npm run models:setup
-npm run build -w @mote/local-inference
 npm run build -w @mote/diagnostics
 npm run build -w @mote/shared
 npm run build -w @mote/desktop
 npm run start -w @mote/desktop
 ```
 
-开发迭代可用 `npm run dev -w @mote/desktop`。构建会编译 TypeScript、复制界面资源，用 `swiftc` 生成当前 Mac 架构的 `native/bin/mote-helper` 与独立更新助手 `mote-updater`，并从固定 `vendor/llama.cpp` 编译 CPU 静态链接的 `native/bin/mote-qwen`。首次原生编译需要几分钟；可用 `MOTE_CMAKE`、`MOTE_NINJA`、`MOTE_BUILD_JOBS` 指定构建工具与并发度。屏幕截图不需要辅助功能权限，不查询或存储窗口标题；可选的页面文字采集另需 Accessibility 授权，见 [页面采集](ui-page-capture.md)。
+开发迭代可用 `npm run dev -w @mote/desktop`。构建会编译 TypeScript、复制界面资源，用 `swiftc` 生成当前 Mac 架构的 `native/bin/mote-helper` 与独立更新助手 `mote-updater`。屏幕截图不需要辅助功能权限，不查询或存储窗口标题；可选的页面文字采集另需 Accessibility 授权，见 [页面采集](ui-page-capture.md)。
 
 生成可运行应用目录：
 
@@ -28,7 +26,7 @@ npm run start -w @mote/desktop
 npm run package -w @mote/desktop
 ```
 
-当前 DEV 包用 `MOTE_MAC_DEVELOPMENT=1 node scripts/release/mac-package.mjs` 生成；文件名按根 `package.json` 版本和当前架构生成，位于 `artifacts/release/`。普通 `npm run package -w @mote/desktop` 仍可生成本地 App。默认 ad-hoc 签名；Developer ID 与公证需配置 Apple 凭据，不能把本机构建当作已公证。当前公开发布只有 DEV ZIP，见 [发布流程](releasing.md)。
+当前 DEV 包用 `MOTE_MAC_DEVELOPMENT=1 node scripts/release/mac-package.mjs` 生成；文件名按 `apps/desktop/package.json` 版本和当前架构生成，位于 `artifacts/release/`。普通 `npm run package -w @mote/desktop` 仍可生成本地 App。默认 ad-hoc 签名；Developer ID 与公证需配置 Apple 凭据，不能把本机构建当作已公证。当前公开发布只有 DEV ZIP，见 [发布流程](releasing.md)。
 
 Windows/Linux 可编译 TypeScript、运行界面和队列逻辑，但采集按钮被禁用。MVP 尚未接入其可靠前台/可见窗口身份与 OCR，不能以无过滤截图代替。
 
@@ -101,7 +99,7 @@ default 以外的 profile 不注册系统默认登录项，避免 macOS 丢失�
 
 邀请兑换只接受当前 owner scope，并绑定当前设备；该身份具备完整中央权限。退役 collector 和只读 MCP 凭据不能用于采集器登录。「测试已保存连接」可查看中央版本、profile 和权限。当前客户端以统一登录接续中央浏览器页面，管理员凭据不会放进 URL；短期登录请求或一次性兑换票据可用于完成浏览器登录。连接必须通过当前身份与协议确认，缺协议元数据或不兼容版本会拒绝，不再继续连接旧中央。
 
-「本机统计」展示队列条目/容量/占比、采样间隔、图像尺寸和质量、模型文件容量，以及最近推理、模型加载、视觉编码与 token 数。开启「开发者诊断与资源优化」后，还显示累计保存/过滤/失败、推理/OCR 耗时和上传请求体估算。CPU/RSS 仅为被采样主进程数值，电量为整台设备值；它们不等于整个 App 的功耗，上传请求体也不等于中央磁盘占用。诊断默认关闭，统计不读取更多个人内容。
+「本机统计」展示队列条目/容量/占比、采样间隔、图像尺寸和质量。开启「开发者诊断与资源优化」后，还显示累计保存/过滤/失败、文字规则识别耗时和上传请求体估算。CPU/RSS 仅为被采样主进程数值，电量为整台设备值；它们不等于整个 App 的功耗，上传请求体也不等于中央磁盘占用。诊断默认关闭，统计不读取更多个人内容。
 
 历史 0.6.0 验证使用生成数据、临时 profile 和独立真实中央进程，未访问个人屏幕、日历或真实 Keychain 项。桌面 109 项回归与 Swift / TypeScript 构建通过；原生界面 fixture 验证 JSON/URI/文件/二维码预览、确认、挂起时禁止假取消、失败保留设置、管理员令牌隔离、跨节点待传阻止及同源重新授权恢复。真实中央 fixture 验证设备绑定、权限隔离、撤销后笔记与来源队列重新授权恢复、原版本与正文保持及 ACK。可复现：
 
@@ -180,9 +178,9 @@ node apps/desktop/scripts/source-fixture.cjs /private/path/connection.json
 
 采样数据是观察证据，不是执行指令。电脑端只负责明确配置的过滤、传输和时间测量；主题理解、任务识别和检索工具选择由中央 Agent 完成，不在端点写关键词路由。
 
-## 保留的本机视觉运行时
+## 中央处理与本机隐私审查
 
-Qwen 权重管理和固定 llama.cpp 引擎保留用于独立运行时及当前本机处理能力，生产截图路径不调用端侧 Qwen 审查。已删除没有调用方的本机视觉审查工具；当前隐私文字规则仍使用 Apple Vision。旧模型参数、来源与历史验收见 [端侧运行时说明](local-inference.md)，当前采集行为以 [上传审查](central-perception.md) 为准。
+客户端不再提供 Qwen 模型管理、视觉推理进程或本机文件解码器，安装包也不构建或携带这些引擎。截图明确文字规则仍使用 Apple Vision；页面和通知已包含文字，直接执行用户配置的确定性规则。文件内容及音频统一上传中央处理，保存方式和完整文件上传范围在来源设置中确认。旧模型文件不会在升级时擅自删除。历史模型说明见 [端侧运行时记录](local-inference.md)。
 
 ## Mac 中央页面与随手记
 

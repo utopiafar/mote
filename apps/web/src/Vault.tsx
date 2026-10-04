@@ -69,8 +69,9 @@ export function Vault({
     await action("import", async () => {
       const raw = await file.text();
       const archive = JSON.parse(raw);
-      if (archive.version !== 1 || !Array.isArray(archive.captures))
-        throw new Error(moteText("请选择 Mote v1 JSON 归档文件。"));
+      const sections=['captures','sources','sourceHeads','sourceVersions','memories','memoryDeletions','files','captureFiles','perceptionResults','todos'];
+      if (!archive || archive.version !== 2 || !sections.every(key=>Array.isArray(archive[key])))
+        throw new Error(moteText("请选择 Mote v2 JSON 归档文件。"));
       const result = await api.request<{
         imported: number;
         duplicates: number;
@@ -199,7 +200,7 @@ export function Vault({
             </div>
             <div>
               <h3>{moteText("导入归档")}</h3>
-              <p>{moteText("合并 Mote v1 JSON 归档，验证校验值并跳过重复记录。")}</p>
+              <p>{moteText("合并 Mote v2 JSON 归档，验证校验值并跳过重复记录。")}</p>
             </div>
             <button
               className="button subtle"

@@ -338,7 +338,7 @@ async function recoverGeneration(){
     // Same production request function as the HTTP route, without its tick side
     // effect. Both the Agent admission wrapper and factory independently block
     // provider calls, including a timer arriving during this validation.
-    const created=requestMemoryIntegration({recipe:recovery.integrationRecipe,memoryIds:recoverySource.checkpoint.inputs.map((input:any)=>input.id)},{lifecycle:node!.lifecycle,memories:node!.memories,pipeline:node!.memoryPipeline});assert.notEqual(created.id,recovery.oldWindowId);
+    const created=requestMemoryIntegration({recipe:recovery.integrationRecipe,inputs:recoverySource.checkpoint.inputs.map((input:any)=>{const current=node!.memories.get(input.id);return {id:current.id,version:current.version!,fingerprint:current.fingerprint};})},{lifecycle:node!.lifecycle,memories:node!.memories,pipeline:node!.memoryPipeline});assert.notEqual(created.id,recovery.oldWindowId);
     const active=JSON.parse(String(node!.store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='consolidation'").get()!.json)).active,next=JSON.parse(active.checkpoint);assert.equal(active.id,created.id);assert.deepEqual(next.selection.binding,report.recovery.newBinding);assert.deepEqual(next.inputs,recoverySource.checkpoint.inputs);assert.deepEqual(next.model,recoverySource.checkpoint.model);
     assert.deepEqual(extractionSnapshot(node!.store.db),recoverySource.jobSnapshot);assert.equal(String(node!.store.db.prepare("SELECT value FROM settings WHERE key='memory-integration-selection'").get()!.value),recoverySource.integrationSelection);assert.equal(report.calls.length,0);
     report.recovery.sourceValidation={newWindowId:created.id,originalTextSegments:report.originalTextSegments,newVersionPinned:true,completedExtractionsUnchanged:true,oldDefaultSelectionUnchanged:true,providerFactoryBlocked:true,agentAdmissionBlocked:true,modelCatalogSkipped:true,outerCalls:0};await close();await assertRecoverySourceUnchanged();return;
@@ -355,7 +355,7 @@ async function generate(){
 async function integrate(recipe=defaultMemoryIntegrationRecipe){
   report.beforeIntegration=memories();const eligible=report.beforeIntegration.filter((m:any)=>m.status==='published'&&!m.supersededBy&&m.admission?.layer==='memory');
   assert.ok(eligible.every((m:any)=>(m.domain??'personal')==='personal'),'Wave 1 only supports personal integration');stage='integration';
-  if(eligible.length){const integration=await request('POST','/api/memory-integrations',{recipe,memoryIds:eligible.map((m:any)=>m.id)});if(recovery)assert.notEqual(integration.id,recovery.oldWindowId);await node!.lifecycle.tick();
+  if(eligible.length){const integration=await request('POST','/api/memory-integrations',{recipe,inputs:eligible.map((m:any)=>{const current=node!.memories.get(m.id);return {id:current.id,version:current.version!,fingerprint:current.fingerprint};})});if(recovery)assert.notEqual(integration.id,recovery.oldWindowId);await node!.lifecycle.tick();
     const state=node!.lifecycle.view().extensions.find(e=>e.id==='consolidation')!;report.integration={request:integration,state};assert.equal(state.active,undefined,JSON.stringify(state));assert.ok(!state.error,JSON.stringify(state));
   }else report.integration={status:'not-applicable',reason:'No eligible input cards; no forced Memory or integration call.'};
   report.afterIntegration=memories();for(const memory of report.afterIntegration){assert.equal(memory.status,'published');assert.ok(memory.reviewReceipt);}

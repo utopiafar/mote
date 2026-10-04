@@ -1,5 +1,5 @@
 import type {MemoryIntegrationSettings} from './memory-integration-settings.js';
-import {requestMemoryIntegration} from './memory-integration.js';
+import {MemoryIntegrationSelectionError,requestMemoryIntegration} from './memory-integration.js';
 import type {MemoryRecipeSettings} from './memory-recipe-settings.js';
 import type {FastifyInstance} from 'fastify';
 import {randomUUID} from 'node:crypto';
@@ -48,7 +48,10 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
   app.get('/api/memory-integration-recipes',async()=>({items:memoryPipeline.strategies.listIntegrations()}));
   app.get('/api/memory-integration-settings',async()=>memoryIntegrationSettings.view());
   app.put('/api/memory-integration-settings',{bodyLimit:4096},async req=>memoryIntegrationSettings.configure(req.body));
-  app.post('/api/memory-integrations',{bodyLimit:8192},async(req,reply)=>{const result=requestMemoryIntegration(req.body,{lifecycle,memories,pipeline:memoryPipeline});void lifecycle.tick().catch(()=>{});return reply.code(202).send(result);});
+  app.post('/api/memory-integrations',{bodyLimit:8192},async(req,reply)=>{
+    try{const result=requestMemoryIntegration(req.body,{lifecycle,memories,pipeline:memoryPipeline});void lifecycle.tick().catch(()=>{});return reply.code(202).send(result);}
+    catch(error){if(error instanceof MemoryIntegrationSelectionError)return reply.code(error.statusCode).send({error:error.code,message:error.message,requestId:req.id});throw error;}
+  });
   app.post('/api/memory-integrations/:id/cancel',async req=>lifecycle.cancel('consolidation',jobId(req.params)));
   app.post('/api/memory-integrations/:id/retry',async(req,reply)=>{const result=lifecycle.retry('consolidation',jobId(req.params));void lifecycle.tick().catch(()=>{});return reply.code(202).send(result);});
   app.get('/api/memory-recipes',async()=>({items:memoryPipeline.strategies.list()}));

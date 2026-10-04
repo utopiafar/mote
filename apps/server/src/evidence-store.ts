@@ -10,9 +10,11 @@ import {StorageLedger} from './storage-ledger.js';
 import {isStateExtension,samples as stateSamples} from '@mote/shared/state-series';
 import { moteText } from './i18n.js';
 import {textSearch} from './text-search.js';
-import {fileSchema} from './file-schema.js';
+import {fileSchema,migrateSnapshotIndexProjection} from './file-schema.js';
 import {systemEventText,sourceContentTime} from '@mote/shared';
 import {MemoryDeletions} from './memory-deletions.js';
+import {notificationEvidenceText} from './notification-evidence.js';
+import {exportPortableMaterials,preparePortableMaterials,restorePortableMaterials,portableMaterialEstimate} from './material-portable.js';
 import {memorySchema} from './memory-schema.js';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
@@ -140,6 +142,7 @@ export class EvidenceStore {
     initializeReadModels(this.db);
     initializeSourceCatalog(this.db);
     this.archive=new EvidenceArchive(this);
+    migrateSnapshotIndexProjection(this.db);
     this.ledger=new StorageLedger(this.db);
     this.ledger.bytes();
     // Remove only orphan content-addressed files left by interrupted writes/transactions.
@@ -150,6 +153,9 @@ export class EvidenceStore {
     const ocr=ocrRow?JSON.parse(String(ocrRow.json)):undefined;
     const jobs=row.blob_hash?this.db.prepare("SELECT kind,state,error FROM perception_jobs WHERE capture_id=? AND kind='ocr'").all(row.id):[];
     const original=JSON.parse(row.json);
+    original.ocrText=notificationEvidenceText(original);
+    const snapshotIndex=this.db.prepare('SELECT json FROM file_snapshot_index WHERE capture_id=?').get(row.id);
+    if(snapshotIndex&&original.provenance?.document)original.provenance.document.fileIndex=JSON.parse(String(snapshotIndex.json));
     const ocrJob=!original.ocrText&&captureOcrState(original).status==='disabled'?jobs.find(j=>j.kind==='ocr'):undefined;
     const enabled=this.db.prepare("SELECT json_extract(value,'$.enabled') AS enabled FROM settings WHERE key='perception'").get()?.enabled!==0;
     const {transcript:_,text:ocrText,...ocrMetadata}=ocr??{};
@@ -278,7 +284,7 @@ export class EvidenceStore {
     }catch(error){this.db.exec('ROLLBACK');this.sweep();throw error;}
   }
   async importArchive(raw:unknown) {
-    const archive=raw as {version?:number;captures?:unknown[];sources?:unknown[];sourceHeads?:unknown[];sourceVersions?:unknown[];memories?:unknown[];memoryDeletions?:unknown[];files?:unknown[];captureFiles?:unknown[];perceptionResults?:unknown[];todos?:unknown[]};
+    const archive=raw as {version?:number;captures?:unknown[];sources?:unknown[];sourceHeads?:unknown[];sourceVersions?:unknown[];memories?:unknown[];memoryDeletions?:unknown[];files?:unknown[];captureFiles?:unknown[];perceptionResults?:unknown[];todos?:unknown[];materials?:unknown};
     if(archive?.version!==2||!Array.isArray(archive.captures)||archive.captures.length>20000)throw new StoreError('Expected Mote archive version 2 (maximum 20,000 records per import)');
     for(const key of ['sources','sourceHeads','sourceVersions','memories','memoryDeletions','files','captureFiles','perceptionResults','todos'] as const)if(!Array.isArray(archive[key]))throw new StoreError('Archive v2 requires all canonical sections');
     const connections=(archive.sources??[]).map(v=>{const {createdAt,updatedAt,status,...fields}=v as Record<string,unknown>;const value=sourceConnectionSchema.parse(fields);return {...value,createdAt:z.string().datetime({offset:true}).parse(createdAt),updatedAt:z.string().datetime({offset:true}).parse(updatedAt)};});
@@ -294,6 +300,7 @@ export class EvidenceStore {
     }
     const todoEntries=z.array(archivedTodoSchema).max(100000).parse(archive.todos??[]);
     const memoryEntries=z.array(memorySchema).max(100000).parse(archive.memories??[]);
+    const portableMaterials=preparePortableMaterials(archive.materials);
     const archivedFiles=new ArchivedFileStore(this),portableFiles=archivedFiles.preparePortable(archive.files??[]);
     const fileLinks=z.array(z.object({captureId:z.string().uuid(),fileId:z.string().uuid()}).strict()).max(100000).parse(archive.captureFiles??[]);
     const captureIds=new Set(prepared.map(p=>p.input.id)),fileIds=new Set(portableFiles.map(p=>p.file.id));
@@ -323,8 +330,19 @@ export class EvidenceStore {
           for(const table of ['captures_fts','captures_trigram']){this.db.prepare(`DELETE FROM ${table} WHERE rowid=(SELECT rowid FROM captures WHERE id=?)`).run(row.capture_id);this.db.prepare(`INSERT INTO ${table}(rowid,id,text) VALUES((SELECT rowid FROM captures WHERE id=?),?,?)`).run(row.capture_id,row.capture_id,searchText(record)+'\n'+(record.summary??''));}
         }
       }
-      for(const m of memoryEntries){if(m.evidenceIds.some(id=>!this.evidence([id]).length))throw new StoreError('Memory archive is missing supporting evidence');for(const e of m.evidence??[]){const record=this.evidence([e.id])[0];if(!m.evidenceIds.includes(e.id)||!record||(e.quote!==undefined&&(e.offset===undefined||e.length!==e.quote.length||record.ocrText.slice(e.offset,e.offset+e.length)!==e.quote)))throw new StoreError('Memory archive evidence quote mismatch');}this.db.prepare('INSERT OR IGNORE INTO memories(id,created_at,json) VALUES(?,?,?)').run(m.id,m.createdAt,JSON.stringify({...m,status:'stale',staleReason:'restored_archive'}));for(const id of m.evidenceIds)this.db.prepare('INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(m.id,id);}
-      if(archive.memoryDeletions!==undefined)new MemoryDeletions(this,ids=>this.evidence(ids)).restore(archive.memoryDeletions);
+      const materials=restorePortableMaterials(this,portableMaterials);
+      const readEvidence=(ids:string[])=>[...this.evidence(ids),...(materials?.evidence(ids,true)??[])];
+      for(const m of memoryEntries){
+        if(m.evidenceIds.some(id=>!readEvidence([id]).length))throw new StoreError('Memory archive is missing supporting evidence');
+        for(const e of m.evidence??[]){const record=readEvidence([e.id])[0];if(!m.evidenceIds.includes(e.id)||!record||(e.quote!==undefined&&(e.offset===undefined||e.length!==e.quote.length||record.ocrText.slice(e.offset,e.offset+e.length)!==e.quote)))throw new StoreError('Memory archive evidence quote mismatch');}
+        const json=JSON.stringify({...m,status:'stale',staleReason:'restored_archive'}),prior=this.db.prepare('SELECT json FROM memories WHERE id=?').get(m.id);
+        const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)])):value;
+        const proof=(value:Record<string,unknown>)=>{const {status:_,staleReason:__,updatedAt:___,...fields}=value;return JSON.stringify(canonical(fields));};
+        if(prior&&proof(JSON.parse(String(prior.json)))!==proof(m))throw new StoreError('Memory archive conflicts with an existing version',409);
+        this.db.prepare('INSERT OR IGNORE INTO memories(id,created_at,json) VALUES(?,?,?)').run(m.id,m.createdAt,json);
+        for(const id of m.evidenceIds)this.db.prepare('INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(m.id,id);
+      }
+      if(archive.memoryDeletions!==undefined)new MemoryDeletions(this,readEvidence).restore(archive.memoryDeletions);
       // Merging individually valid archives must still respect the destination's total limits.
       if(Number(this.db.prepare('SELECT COUNT(*) AS n FROM source_connections').get()!.n)>500)throw new StoreError('Maximum 500 sources',413);
       for(const {requestHash,...task} of todoEntries){
@@ -603,12 +621,12 @@ export class EvidenceStore {
     const stats=this.stats() as {logicalBytes:number;captures:number};
     const archivedFiles=new ArchivedFileStore(this);
     // Portable v1 embeds a blob for EACH observation. Account for expanded repetitions before allocation.
-    const estimated=Number((this.db.prepare('SELECT COALESCE(SUM(length(CAST(c.json AS BLOB)) + 4 * ((COALESCE(b.bytes,0) + 2) / 3) + 240),0) AS n FROM captures c LEFT JOIN blobs b ON b.hash=c.blob_hash').get() as {n:number}).n)+archivedFiles.portableEstimate()+200;
+    const estimated=Number((this.db.prepare('SELECT COALESCE(SUM(length(CAST(c.json AS BLOB)) + 4 * ((COALESCE(b.bytes,0) + 2) / 3) + 240),0) AS n FROM captures c LEFT JOIN blobs b ON b.hash=c.blob_hash').get() as {n:number}).n)+archivedFiles.portableEstimate()+portableMaterialEstimate(this)+200;
     if(estimated>maxBytes||stats.captures>20000)throw new StoreError('Archive too large for HTTP export; use npm run backup for a consistent database backup',413);
     const rows=this.db.prepare('SELECT * FROM captures ORDER BY captured_at,id').all() as unknown as Row[];
     const captures=rows.map(row=>{const c=JSON.parse(row.json);return {...c,receivedAt:row.received_at,...(row.blob_hash?{imageMime:row.mime,imageBase64:this.readBlob(row.blob_hash).toString('base64')}:{}),blobHash:row.blob_hash};});
     const memoryDeletions=this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_deletions'").get()?new MemoryDeletions(this,ids=>this.evidence(ids)).export():[];
-    const archive={memoryDeletions,todos:this.db.prepare('SELECT json,request_hash FROM todos ORDER BY id').all().map(row=>({...JSON.parse(String(row.json)),requestHash:row.request_hash})),perceptionResults:this.db.prepare("SELECT capture_id,kind,json,current FROM perception_results WHERE kind='ocr'").all(),version:2,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
+    const archive={materials:exportPortableMaterials(this),memoryDeletions,todos:this.db.prepare('SELECT json,request_hash FROM todos ORDER BY id').all().map(row=>({...JSON.parse(String(row.json)),requestHash:row.request_hash})),perceptionResults:this.db.prepare("SELECT capture_id,kind,json,current FROM perception_results WHERE kind='ocr'").all(),version:2,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
     if(Buffer.byteLength(JSON.stringify(archive))>maxBytes)throw new StoreError('Expanded archive exceeds the export limit; use npm run backup',413);
     return archive;
   }

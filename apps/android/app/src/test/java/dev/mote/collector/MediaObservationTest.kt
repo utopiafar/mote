@@ -11,7 +11,7 @@ class MediaObservationTest {
         .put("sessionId", id).put("appId", app).put("appName", "Fixture Player").put("playbackState", state)
         .put("appVisibility", "background").put("playbackType", "local").put("title", "Generated chapter")
         .put("artist", "Fixture author").put("album", "Fixture album").put("displaySubtitle", "Chapter 2").put("mediaId", "fixture-only")
-    private fun config() = CollectorConfig(deviceName = "Fixture phone", nsfw = NsfwConfig(), mediaCollectionEnabled = true)
+    private fun config() = CollectorConfig(deviceName = "Fixture phone", mediaCollectionEnabled = true)
     private fun event(sessions: List<JSONObject>, duration: Long = 0, collection: String = "content", status: String = "available") = JSONObject()
         .put("id", UUID.randomUUID().toString()).put("deviceId", "fixture-device").put("capturedAt", "2026-09-15T00:00:30Z")
         .put("source", "media").put("durationMs", duration)

@@ -48,6 +48,7 @@ const draftSchema=z.object({
 }).strict();
 
 export type MaterialDraft=z.infer<typeof draftSchema>;
+export const materialManifestSchema=draftSchema.omit({blocks:true,members:true}).extend({members:z.array(memberSchema).optional()});
 const appendDraftSchema=draftSchema.omit({blocks:true}).extend({mode:z.literal('append'),baseRevision:revisionSchema,
   reuseBlocks:z.number().int().nonnegative(),blocks:z.array(blockSchema)}).strict();
 export type MaterialAppendDraft=z.infer<typeof appendDraftSchema>;
@@ -273,9 +274,13 @@ export class MaterialStore {
     return {...status,ready:status.ready&&evidenceIds.length>0&&evidenceIds.every(id=>this.isCurrentEvidence(id)),materialId:material.id,required,evidenceIds,
       fingerprint:hash(JSON.stringify([material.id,required,mapped?artifacts.map(a=>[a!.key,a!.revision??null,a!.blockIds]):material.ref,evidenceIds]))};
   }
-  evidence(ids:string[]):CaptureRecord[]{return ids.flatMap(id=>{
+  /** includeRetired is only for host archive proof validation; product readers
+   * always use the default visibility and retirement fences. */
+  evidence(ids:string[],includeRetired=false):CaptureRecord[]{return ids.flatMap(id=>{
     const anchor=this.store.db.prepare('SELECT * FROM material_evidence WHERE id=?').get(id);if(!anchor)return [];
-    const material=this.get(formatMaterialRef(String(anchor.material_id),String(anchor.revision)));if(!material)return [];
+    let material=this.get(formatMaterialRef(String(anchor.material_id),String(anchor.revision)));
+    if(!material&&includeRetired){const head=this.head(String(anchor.material_id)),version=this.version(String(anchor.material_id),String(anchor.revision));if(head&&version)material=this.record(head,version);}
+    if(!material)return [];
     const block=this.codingLayout(material.id,material.revision)?this.store.db.prepare(`SELECT p.text,b.start_offset FROM material_block_versions b
       JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.from_revision=? AND b.block_id=? AND b.anchor_id=?`)
       .get(material.id,material.revision,anchor.block_id,id):this.store.db.prepare(`SELECT p.text,b.start_offset FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash

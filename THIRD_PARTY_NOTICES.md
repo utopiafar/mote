@@ -1,12 +1,12 @@
 # Third-party sources and notices
 
-The Qwen runtime and notices are retained, but production screenshot collection currently bypasses that VLM. Current central OCR/ASR dependencies are pinned in `scripts/requirements-ocr.txt` and `scripts/requirements-audio.txt`, and model artifacts in `apps/server/src/media-assets.ts`; their installation and execution boundaries are documented in [central media processing](docs/ocr-asr-implementation-plan.md).
+As of 0.0.82, Android and macOS no longer build or distribute the Qwen runtime or local file decoders. Historical Qwen manifests, experimental scripts and license notices remain in the repository. Current central OCR/ASR dependencies are pinned in `scripts/requirements-ocr.txt` and `scripts/requirements-audio.txt`, and model artifacts in `apps/server/src/media-assets.ts`; their installation and execution boundaries are documented in [central media processing](docs/ocr-asr-implementation-plan.md).
 
 This file identifies major runtime and model sources used by Mote. Exact JavaScript dependencies are recorded in `package-lock.json`; Android dependencies are declared in `apps/android/app/build.gradle.kts`. Preserve the licenses and notices shipped by those dependencies in redistributed binaries. This document is not a replacement for their complete license texts or transitive dependency notices.
 
-## Local Qwen vision-language model
+## Historical Qwen vision-language model and experimental tooling
 
-Mote uses the Qwen3.5-0.8B model and its image projector in GGUF format, distributed separately from the application package. The original [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) and the [Unsloth GGUF repository](https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/tree/6ab461498e2023f6e3c1baea90a8f0fe38ab64d0) declare **Apache-2.0**. Preserve the model attribution and [Apache License 2.0](licenses/Apache-2.0.txt) with redistributed weights. Mote does not train or alter these weights.
+The historical client runtime used Qwen3.5-0.8B and its GGUF image projector. Experimental download tooling remains; current application packages neither require nor include the engine or weights. The original [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) and the [Unsloth GGUF repository](https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/tree/6ab461498e2023f6e3c1baea90a8f0fe38ab64d0) declare **Apache-2.0**. Preserve the model attribution and [Apache License 2.0](licenses/Apache-2.0.txt) with redistributed weights. Mote does not train or alter these weights.
 
 The canonical artifact inventory is [models/qwen-manifest.json](models/qwen-manifest.json). Its primary [ModelScope source](https://modelscope.cn/models/unsloth/Qwen3.5-0.8B-GGUF) is pinned to revision `88467eb7c8e3b6e7894c794f373050d4dbc6ae8a`; its Hugging Face fallback is pinned to `6ab461498e2023f6e3c1baea90a8f0fe38ab64d0`. These repositories have different revision identifiers but supply the same pinned artifact bytes:
 
@@ -19,14 +19,14 @@ Downloads and offline imports must match both fixed hashes. A private NAS or ano
 
 ## llama.cpp native runtime
 
-Both endpoint applications compile the CPU implementation from [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp/tree/1744c6bde8d687ce9774b3b54e688eee0bfdf5b7), pinned to commit `1744c6bde8d687ce9774b3b54e688eee0bfdf5b7`. The engine includes llama.cpp, ggml and mtmd image processing components. Source preparation is performed by [scripts/setup-vision.sh](scripts/setup-vision.sh); downloading model weights is a separate operation.
+The retired endpoint applications compiled the CPU implementation from [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp/tree/1744c6bde8d687ce9774b3b54e688eee0bfdf5b7), pinned to commit `1744c6bde8d687ce9774b3b54e688eee0bfdf5b7`. The engine includes llama.cpp, ggml and mtmd image processing components. Source preparation is performed by [scripts/setup-vision.sh](scripts/setup-vision.sh); downloading model weights is a separate operation.
 
 - llama.cpp: [MIT license](licenses/llama.cpp-LICENSE.txt), copyright The ggml authors; preserve the [upstream license](https://github.com/ggml-org/llama.cpp/blob/1744c6bde8d687ce9774b3b54e688eee0bfdf5b7/LICENSE) and relevant source notices.
 - stb image decoder: preserve its [license options and notice](licenses/stb-image-LICENSE.txt).
 - nlohmann/json used by the desktop helper: preserve its [MIT license](licenses/nlohmann-json-LICENSE.txt).
 - Compiler and platform runtime dependencies retain their own notices. This list does not replace the third-party license files shipped in the pinned upstream source.
 
-Mote currently compiles and runs the CPU backend. Vulkan, Metal and MNN are not enabled or linked as Mote inference backends.
+Current Android and macOS application packages do not compile or link this engine.
 
 ## DeepSeek Harness
 
@@ -63,6 +63,5 @@ The table lists principal direct libraries, not a complete software bill of mate
 | Google ML Kit text recognition | [ML Kit terms and privacy](https://developers.google.com/ml-kit/terms), Google SDK distribution terms; not described as an Apache-licensed model |
 | Apple Vision / AppKit / ScreenCaptureKit APIs | Provided by macOS and the Apple SDK; no Apple model weights or operating-system framework binaries are copied into this repository |
 
-| PDF.js (pdfjs-dist) 5.4.149 | [mozilla/pdf.js](https://github.com/mozilla/pdf.js), Apache-2.0; local PDF text extraction |
-| Mammoth | [mwilliamson/mammoth.js](https://github.com/mwilliamson/mammoth.js), BSD-2-Clause; local DOCX text extraction |
-| PdfBox-Android 2.0.27.0 | [TomRoush/PdfBox-Android](https://github.com/TomRoush/PdfBox-Android), Apache-2.0; local Android PDF text extraction |
+| PDF.js (pdfjs-dist) 5.4.149 | [mozilla/pdf.js](https://github.com/mozilla/pdf.js), Apache-2.0; central PDF text extraction |
+| Mammoth | [mwilliamson/mammoth.js](https://github.com/mwilliamson/mammoth.js), BSD-2-Clause; central DOCX text extraction |

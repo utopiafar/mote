@@ -50,7 +50,7 @@ export function MemoryIntegration({api,candidate,verificationPending=false}:{api
            !currentIntegrationCandidate(fresh)||fresh.id!==candidate.id||fresh.version!==candidate.version||fresh.fingerprint!==candidate.fingerprint){
           setError(moteText('所选记忆已变化，请刷新后重新选择。'));return;
         }
-        const result=await api.request<{id:string}>('/api/memory-integrations',{method:'POST',body:JSON.stringify({recipe:{id:chosen.id,version:chosen.version},memoryIds:[candidate.id]}),signal:controller.signal});
+        const result=await api.request<{id:string}>('/api/memory-integrations',{method:'POST',body:JSON.stringify({recipe:{id:chosen.id,version:chosen.version},inputs:[{id:candidate.id,version:candidate.version!,fingerprint:candidate.fingerprint!}]}),signal:controller.signal});
         if(controller.signal.aborted||activeApi.current!==api)return;
         setRun({api,id:result.id,title:candidate.title});
       }else{

@@ -67,9 +67,9 @@ class ImageDedupeDiagnosticsInstrumentedTest {
             waitUntil("unplug fixture battery") { !Diagnostics.battery(context).second }
             val base = settings.read().copy(server = "", token = "", syncMode = "manual", wifiOnly = false,
                 screenCollectionEnabled = true, notificationCollectionEnabled = false, deviceEventCollectionEnabled = false, mediaCollectionEnabled = false,
-                chargingOnly = false, batteryPauseBelowPct = 0, localReviewUrl = "", metadataEnabled = false,
+                chargingOnly = false, batteryPauseBelowPct = 0, metadataEnabled = false,
                 masks = "0,0,0.25,1", excludedPackages = "", appCollectionRules = AppCollectionRules.CONTENT_DEFAULT,
-                imageDedupeMode = "balanced", imageDedupeDiagnosticsEnabled = false, nsfw = settings.read().nsfw.copy(enabled = false))
+                imageDedupeMode = "balanced", imageDedupeDiagnosticsEnabled = false)
             settings.save(base); settings.enabled = true
             fun capture(config: CollectorConfig, gray: Int, privateColor: Int = Color.RED, source: String = "screen"): JSONObject {
                 val at = start.plusSeconds(++sequence).toString()

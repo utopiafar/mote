@@ -184,6 +184,11 @@ export class LocalSourceManager {
   private async run(force: boolean, signal: AbortSignal): Promise<void> {
     for (const source of this.sources) {
       if (!source.enabled || signal.aborted) continue;
+      if(source.kind==='local-files'&&source.retention==='snapshot'&&!source.centralProcessingConsent){
+        this.readable.delete(source.id);
+        this.states.set(source.id,{source,state:'paused',message:moteText("请编辑来源并确认完整文件上传到中央处理，处理后不保留中央原件。"),pending:0,items:0,skipped:0});
+        continue;
+      }
       const last = this.states.get(source.id);
       if (!force && !this.dirtySources.has(source.id) && last?.lastSyncAt && Date.now() - Date.parse(last.lastSyncAt) < source.intervalSeconds * 1000) continue;
       // Failed attempts use a bounded retry interval as well; a timer never floods an unavailable node.
@@ -296,7 +301,7 @@ export class LocalSourceManager {
           combined.throwIfAborted();
           // Discovery and processing may run concurrently; only a failed access
           // check revokes the right to send already journaled versions.
-          if (!source.enabled || !this.readable.has(source.id) || this.states.get(source.id)?.state === 'paused') continue;
+          if (!source.enabled || source.kind==='local-files'&&source.retention==='snapshot'&&!source.centralProcessingConsent || !this.readable.has(source.id) || this.states.get(source.id)?.state === 'paused') continue;
           const engine = this.engines.get(source.id)!;
           const request = this.request(combined);
           try {

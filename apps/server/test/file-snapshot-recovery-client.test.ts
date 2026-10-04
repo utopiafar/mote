@@ -63,12 +63,12 @@ test('a revoked source cannot restore expired input through Desktop manual sync'
  await first.value.sync(true);await first.value.flushPending(new AbortController().signal);await node.processing.tick();identity(first.id,first.manifest);assert.equal(first.value.pendingStats().pendingRecords,0);assert.equal(node.store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_inputs').get()!.n,0);assert.equal(node.files.chunks(first.id).length,0);assert.equal(paths.slice(before).some(path=>path.includes('/recovery/')&&path.endsWith('/uploads')),false);
 });
 
-test('changed read permission and index limit create a current restricted revision instead of restoring an old grant',async()=>{
+test('narrowing read permission creates a current restricted revision and ignores retired lightweight limits',async()=>{
  const first=await firstUpload({...DEFAULT_SOURCE_OPTIONS,allowRead:true,indexMode:'full'});expire(first.id);await node.processing.tick();assert.equal(first.input.item.document.fileIndex.allowRead,true);
  const before=paths.length,selectedSource=first.value.status()[0].source;
  await first.value.update(first.sourceId,{...selectedSource,allowRead:false,indexMode:'lightweight'});await first.value.sync(true);assert.equal(first.value.pendingStats().pendingRecords,1);await first.value.flushPending(new AbortController().signal);
  const rows=node.store.db.prepare('SELECT capture_id,manifest FROM file_versions ORDER BY rowid').all();assert.equal(rows.length,2);const current=rows[1],manifest=JSON.parse(String(current.manifest));assert.notEqual(current.capture_id,first.id);assert.notEqual(manifest.item.revision,first.input.item.revision);assert.equal(manifest.previousRevision,first.input.item.revision);assert.equal(manifest.sha256,first.input.sha256);
- assert.equal(manifest.item.document.fileIndex.allowRead,false);assert.equal(manifest.item.document.fileIndex.maxIndexCharacters,8000);assert.equal(node.sources.getItem(first.sourceId,manifest.item.externalId)!.captureId,current.capture_id);assert.equal(paths.slice(before).some(path=>path.includes('/recovery/')&&path.endsWith('/uploads')),false);
+ assert.equal(manifest.item.document.fileIndex.allowRead,false);assert.equal(manifest.item.document.fileIndex.maxIndexCharacters,100000);assert.equal(node.sources.getItem(first.sourceId,manifest.item.externalId)!.captureId,current.capture_id);assert.equal(paths.slice(before).some(path=>path.includes('/recovery/')&&path.endsWith('/uploads')),false);
  await node.processing.tick();assert.equal(node.files.detail(String(current.capture_id)).job!.state,'succeeded');assert.equal(node.store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_text').get()!.n,0);assert.equal(node.files.chunks(first.id).length,0);
 });
 

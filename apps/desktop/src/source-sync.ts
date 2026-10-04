@@ -4,7 +4,7 @@ import {sourceStatePatch,type StatePatch} from './source-state-store';
 import { moteText } from '@mote/shared/i18n';
 import { createHash } from 'node:crypto';
 import { sourceWork } from './background';
-import type { LocalFileInput } from './local-file-processing';
+import type { LegacyLocalFileInput as LocalFileInput } from './source-types';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import type { LocalFileCheckpoint, SourceCheckpoint, SourceDefinition, SourceItem, SourceRequest, SourceScan, ScannedItem } from './source-types';
 import { PriorityScheduler } from './priority-scheduler';
@@ -116,7 +116,7 @@ export class SourceSync {
   async requestSnapshotRecovery(items:SnapshotRecovery[]):Promise<number>{
     return this.mutate(async()=>{
       const pending=new Set([...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)].map(item=>item.externalId));
-      const matches=items.filter(item=>receiptId.test(item.captureId)&&/^[a-f0-9]{64}$/.test(item.sha256)&&Number.isSafeInteger(item.sizeBytes)&&item.sizeBytes>=0&&item.sizeBytes<=16*1024*1024&&Number.isFinite(Date.parse(item.observedAt))&&!pending.has(item.externalId)&&this.data.known[sourceHash(item.externalId)]?.revision===item.revision&&this.data.known[sourceHash(item.externalId)]?.policy===this.data.policy);
+      const matches=items.filter(item=>receiptId.test(item.captureId)&&/^[a-f0-9]{64}$/.test(item.sha256)&&Number.isSafeInteger(item.sizeBytes)&&item.sizeBytes>=0&&item.sizeBytes<=512*1024*1024&&Number.isFinite(Date.parse(item.observedAt))&&!pending.has(item.externalId)&&this.data.known[sourceHash(item.externalId)]?.revision===item.revision&&this.data.known[sourceHash(item.externalId)]?.policy===this.data.policy);
       if(!matches.length)return 0;
       const known={...this.data.known};for(const item of matches){const key=sourceHash(item.externalId);known[key]={...known[key],contentHash:'',discoveryHash:undefined};}
       // Re-enumerate authorized files instead of trusting a remote filesystem path.
@@ -149,13 +149,11 @@ export class SourceSync {
     const baseline = new Set(next.baseline ?? []);
     const stage = (raw: ScannedItem) => {
       const { syncQueue, localProcessing, ...item } = raw;
+      if(localProcessing)throw Error('Local file interpretation is retired; upload immutable input for central processing');
       const {localOriginal, ...identity} = item;
       const key = sourceHash(item.externalId), previous = knownChanges.get(key)??next.known[key], contentHash = sourceHash(JSON.stringify({...identity, ...(localOriginal ? {originalSha256:localOriginal.sha256} : {})}));
-      if ((localProcessing ? previous?.discoveryHash ?? previous?.contentHash : previous?.contentHash) === contentHash) return;
-      if (localProcessing) {
-        if (item.layer !== 'snapshot' || item.kind !== 'file' || !item.document?.fileIndex || item.localOriginal || item.localOriginalBase64 || item.deleted) throw Error('Unauthorized local processing input');
-        next.localProcessing = { ...next.localProcessing, [key]: { input: structuredClone(localProcessing), item, discoveryHash: contentHash, policy: next.policy, nextAttemptAt: 0 } };
-      } else if (next.localProcessing?.[key]) { next.localProcessing = { ...next.localProcessing }; delete next.localProcessing[key]; }
+      if (previous?.contentHash === contentHash) return;
+      if (next.localProcessing?.[key]) { next.localProcessing = { ...next.localProcessing }; delete next.localProcessing[key]; }
       const recovery=next.snapshotRecoveries?.[key],bytes=localOriginal?undefined:item.localOriginalBase64?Buffer.from(item.localOriginalBase64,'base64'):undefined;
       const recoveryMatches=recovery&&recovery.identityHash===snapshotMetadataIdentity(item)&&previous?.policy===next.policy&&item.layer==='snapshot'&&!item.deleted&&recovery.revision===previous?.revision&&(localOriginal?.sha256??(bytes?sourceHash(bytes):undefined))===recovery.sha256&&(localOriginal?.sizeBytes??bytes?.length)===recovery.sizeBytes;
       const revision = recoveryMatches?recovery.revision:sourceHash(contentHash + ':' + (previous?.revision ?? '')), queued: SourceItem = { ...item, revision, observedAt:recoveryMatches?recovery.observedAt:observedAt,...(recoveryMatches?{snapshotRecovery:{captureId:recovery.captureId,sha256:recovery.sha256,sizeBytes:recovery.sizeBytes}}:{}) };
@@ -165,7 +163,7 @@ export class SourceSync {
       // content index. A local directory catalog only skips discovery work;
       // SourceSync still needs its durable known map for revision deduplication.
       const localCatalog = scan.checkpoint && 'root' in scan.checkpoint && 'catalog' in scan.checkpoint;
-      if (!scan.checkpoint || localCatalog) knownChanges.set(key,{ policy:next.policy,contentHash, ...(localProcessing ? {discoveryHash:contentHash} : {}), revision, item: { ...item, text: '', localOriginalBase64: undefined, localOriginal:undefined } });
+      if (!scan.checkpoint || localCatalog) knownChanges.set(key,{ policy:next.policy,contentHash, revision, item: { ...item, text: '', localOriginalBase64: undefined, localOriginal:undefined } });
       changes++;
     };
     for (const [index, item] of scan.items.entries()) { if (index % 16 === 0) await yieldTurn(); if (!baseline.has(item.externalId)) stage(item); }

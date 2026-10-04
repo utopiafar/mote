@@ -113,19 +113,19 @@ class FileSnapshotRecoveryTest {
         assertEquals(0, opens); assertNull(queue.next(source.id))
     }
 
-    @Test fun narrowerReadAndIndexPolicyCannotRestoreThePriorGrantEvenWhenBytesAreIdentical() {
+    @Test fun narrowerReadPolicyCannotRestoreThePriorGrantEvenWhenBytesAreIdentical() {
         val queue = FileArchiveQueue(folder.newFolder(), cipher)
-        val wide = source.copy(allowRead = true, lightweightIndex = false)
+        val wide = source.copy(allowRead = true)
         observed(queue, wide); val first = prepare(queue, wide)
         val revision = manifest(first).getJSONObject("item").getString("revision")
         queue.acknowledge(source.id, first, ack(first))
-        val narrow = source.copy(allowRead = false, lightweightIndex = true)
+        val narrow = source.copy(allowRead = false)
         observed(queue, narrow); queue.requestSnapshotRecovery(narrow, request(first))
         val pending = queue.prepare(narrow, { ByteArrayInputStream(bytes) }, { true }, 61000, anchor = { revision })!!
         val m = manifest(pending); val index = m.getJSONObject("item").getJSONObject("document").getJSONObject("fileIndex")
         assertNotEquals(revision, m.getJSONObject("item").getString("revision"))
         assertEquals(revision, m.getString("previousRevision")); assertEquals(manifest(first).getString("sha256"), m.getString("sha256"))
-        assertFalse(index.getBoolean("allowRead")); assertEquals(8000, index.getInt("maxIndexCharacters"))
+        assertFalse(index.getBoolean("allowRead")); assertEquals(100000, index.getInt("maxIndexCharacters"))
         assertFalse(pending.getJSONObject("pending").has("recoveryCaptureId"))
     }
 

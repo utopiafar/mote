@@ -31,7 +31,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with: { node-version: '24', cache: npm }
       - run: npm ci
-      - run: npm run models:setup
       - name: Build desktop workspace dependencies
         run: npm run build -w @mote/shared -w @mote/local-inference -w @mote/diagnostics
       - name: Verify desktop workspaces and generated fixtures

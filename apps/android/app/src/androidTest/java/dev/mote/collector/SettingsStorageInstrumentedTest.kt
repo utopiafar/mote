@@ -110,7 +110,7 @@ class SettingsStorageInstrumentedTest {
     @Test fun activeSettingsApplyWithoutManualStopAndConcurrentStopIsRespected() {
         val settings = Settings(context); val original = settings.read()
         try {
-            val baseline = original.copy(server = "", token = "", mode = "accessibility", syncMode = "manual", nsfw = original.nsfw.copy(enabled = false))
+            val baseline = original.copy(server = "", token = "", mode = "accessibility", syncMode = "manual")
             settings.save(baseline); settings.enabled = true // No capture service is connected in this fixture.
             val next = baseline.copy(intervalSeconds = 47, jpegQuality = 81, captureMaxSide = 1440, masks = "0,0,1,0.08")
             assertFalse(apply(next).projectionConsentRequired)
@@ -173,7 +173,7 @@ class SettingsStorageInstrumentedTest {
             .put("privacy", JSONObject().put("excluded", false)).put("imageMime", "image/png").put("ocrText", "generated fixture")
             .put("ocr", JSONObject().put("status", "completed"))
         try {
-            val config = original.copy(server = "", token = "", syncMode = "manual", nsfw = original.nsfw.copy(enabled = false))
+            val config = original.copy(server = "", token = "", syncMode = "manual")
             settings.save(config); val origin = settings.dataOrigin(); val stale = context.queue()
             stale.enqueue(event, image, 2000000)
             val storedImage = File(initial.path).listFiles()!!.single { it.extension == "blob" }.readBytes()

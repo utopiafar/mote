@@ -31,13 +31,23 @@ export class MemoryDeletions {
   restore(raw:unknown){
     const values=z.array(memoryDeletionSchema).max(100000).parse(raw);
     for(const value of values){
-      if(value.dependencies.some(id=>!this.store.db.prepare('SELECT 1 FROM captures WHERE id=?').get(id)))throw new StoreError('Memory deletion archive is missing its original dependencies');
+      if(value.dependencies.some(id=>!this.read([id]).length))throw new StoreError('Memory deletion archive is missing its original dependencies');
       const actualKeys=[...new Set(value.dependencies.flatMap(id=>this.keys(id)))].sort(),actualLineage=[...new Set(value.dependencies.flatMap(id=>this.lineage(id)))].sort();
       if(JSON.stringify([...new Set(value.originKeys)].sort())!==JSON.stringify(actualKeys)||JSON.stringify([...new Set(value.lineageKeys)].sort())!==JSON.stringify(actualLineage))throw new StoreError('Memory deletion archive original identity mismatch');
       const actualSources=this.sourceIds(value.dependencies);
       if(value.sourceLineageComplete&&actualSources.some(id=>!value.derivationSourceIds.includes(id)))throw new StoreError('Memory deletion archive source lineage mismatch');
       value.derivationSourceIds=[...new Set([...value.derivationSourceIds,...actualSources])].sort();
-      const originals=[...this.read(value.dependencies).map(r=>r.ocrText),...value.dependencies.flatMap(id=>this.store.db.prepare('SELECT text FROM file_chunks WHERE capture_id=?').all(id).map(row=>String(row.text)))];
+      // A deleted Memory may quote the formal, structured projection of these
+      // originals. Its routing dependencies intentionally resolve to captures,
+      // while its exact quote remains an immutable Material block.
+      const inputs=JSON.stringify(value.dependencies),anchors=this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence_dependencies'").get()?this.store.db.prepare(`SELECT anchor_id FROM material_evidence_dependencies
+        WHERE anchor_id IN (SELECT anchor_id FROM material_evidence_dependencies WHERE evidence_id IN (SELECT value FROM json_each(?))) GROUP BY anchor_id
+        HAVING sum(CASE WHEN evidence_id IN (SELECT value FROM json_each(?)) THEN 0 ELSE 1 END)=0`).all(inputs,inputs).map(row=>String(row.anchor_id)):[];
+      const ids=[...value.dependencies,...anchors],originals:string[]=[];
+      // Archive verification must cover every proof through the same bounded
+      // read API; a large Material cannot lose quotes after the first 200 IDs.
+      for(let offset=0;offset<ids.length;offset+=200)originals.push(...this.read(ids.slice(offset,offset+200)).map(r=>r.ocrText));
+      for(const id of value.dependencies)originals.push(...this.store.db.prepare('SELECT text FROM file_chunks WHERE capture_id=?').all(id).map(row=>String(row.text)));
       if(value.originalTexts.some(text=>text&&!originals.some(original=>original.includes(text))))throw new StoreError('Memory deletion archive original text mismatch');
       const prior=this.store.db.prepare('SELECT json FROM memory_deletions WHERE id=?').get(value.id),json=JSON.stringify(value);
       if(prior&&prior.json!==json)throw new StoreError('Memory deletion archive conflicts with an existing intent',409);

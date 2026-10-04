@@ -75,7 +75,7 @@ test('five stub calls share frozen generation/review/Ask times and preserve real
   assert.equal(node.memoryPipeline.create(request).totalBatches,0,'same semantic checkpoint is reusable');
   const different=node.memoryPipeline.create({...request,contextTime:later});assert.equal(different.totalBatches,1,'a different context time is a different checkpoint');node.memoryPipeline.cancel(different.id);
   semantic=later;
-  requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,memoryIds:[oldId]},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});
+  requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,inputs:[{id:oldId,version:node.memories.get(oldId).version,fingerprint:node.memories.get(oldId).fingerprint}]},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});
   assert.equal(samples,1);
   const state=JSON.parse(String(node.store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='consolidation'").get()!.json));
   assert.equal(state.active.contextTime,later);assert.ok(state.active.startedAt>=start);
@@ -170,7 +170,7 @@ for(const manual of [false,true])test(`${manual?'manual':'automatic'} lifecycle 
 test('integration windows missing their frozen clock are refused without sampling a new clock',async t=>{
   let samples=0;const calls:QueryInput[]=[];
   const {node}=await appFixture(t,async input=>{calls.push(input);return empty('{"memories":[]}');},()=>{samples++;return later;});
-  const card=await timedCard(node);requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,memoryIds:[card.id]},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});assert.equal(samples,1);
+  const card=await timedCard(node);requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,inputs:[{id:card.id,version:card.version,fingerprint:card.fingerprint}]},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});assert.equal(samples,1);
   node.store.db.prepare("UPDATE memory_lifecycle_state SET json=json_set(json_remove(json,'$.active.contextTime'),'$.active.startedAt',?) WHERE id='consolidation'").run(Date.parse(early));
   await assert.rejects(node.lifecycle.tick(),/Unsupported lifecycle window/);assert.equal(samples,1);assert.equal(calls.length,0);
 });
@@ -180,7 +180,7 @@ test('a queued integration survives closing and reopening its SQLite vault witho
   const dependencies={backgroundWorker:false,semanticContextTime:()=>{samples++;return semantic;},agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{calls.push(input);return empty('{"memories":[]}');}}};
   let node=await buildApp(config(directory),dependencies);disabled(node);
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
-  const card=await timedCard(node),queued=requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,memoryIds:[card.id]},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});
+  const card=await timedCard(node),queued=requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,inputs:[{id:card.id,version:card.version,fingerprint:card.fingerprint}]},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});
   assert.equal(samples,1);await node.app.close();semantic=later;
   node=await buildApp(config(directory),dependencies);
   assert.equal(node.lifecycle.view().extensions.find(e=>e.id==='consolidation')!.active?.id,queued.id);

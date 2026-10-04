@@ -53,8 +53,9 @@ async function fixture(t:any){
   const products=node.memories.extract(fixtureMemoryResult(node.memories,{answer:JSON.stringify({memories:claims}),citations:[{id:evidence.id,capturedAt:evidence.capturedAt,appName:'Generated',excerpt:original}],trace:[],runId:randomUUID()}),'generated',{requireAdmission:true}).items;
   return {source,products};
  };
- const queue=(ids:string[],recipe='base')=>requestMemoryIntegration({recipe:ref(recipe),memoryIds:ids},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});
- return {get node(){return node;},control,calls,add,api,queue,async restart(changed=false){await node.app.close();let next=config;if(changed){const changedPath=join(directory,'changed-integrator.mjs');writeFileSync(changedPath,readFileSync(modulePath,'utf8').replace('GENERATED_INTEGRATOR_1','Changed without a version'));next={...config,connectors:{...config.connectors!,modules:[changedPath]}};}node=await buildApp(next,nodeDependencies);await node.app.ready();},products:()=>node.memories.list().map(m=>node.memories.get(m.id)).filter(m=>m.tier==='consolidated'),view:()=>node.lifecycle.view().extensions.find(e=>e.id==='consolidation')!};
+ const pins=(ids:string[])=>ids.map(id=>{const m=node.memories.get(id);return {id,version:m.version!,fingerprint:m.fingerprint};});
+ const queue=(ids:string[],recipe='base')=>requestMemoryIntegration({recipe:ref(recipe),inputs:pins(ids)},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});
+ return {get node(){return node;},control,calls,add,api,queue,pins,async restart(changed=false){await node.app.close();let next=config;if(changed){const changedPath=join(directory,'changed-integrator.mjs');writeFileSync(changedPath,readFileSync(modulePath,'utf8').replace('GENERATED_INTEGRATOR_1','Changed without a version'));next={...config,connectors:{...config.connectors!,modules:[changedPath]}};}node=await buildApp(next,nodeDependencies);await node.app.ready();},products:()=>node.memories.list().map(m=>node.memories.get(m.id)).filter(m=>m.tier==='consolidated'),view:()=>node.lifecycle.view().extensions.find(e=>e.id==='consolidation')!};
 }
 
 test('installed integration recipes independently replace generation and review through the owner API',async t=>{
@@ -62,7 +63,7 @@ test('installed integration recipes independently replace generation and review 
  assert.equal((await f.api('GET','/api/memory-integration-recipes')).json().items.filter((r:any)=>r.id.startsWith('fixture.')).length,3);
  f.node.memories.publish(products[0].id);
  for(const recipe of ['base','review-replaced','integrator-replaced']){
-  const response=await f.api('POST','/api/memory-integrations',{recipe:ref(recipe),memoryIds:products.map(m=>m.id)});assert.equal(response.statusCode,202,response.body);await f.node.lifecycle.tick();assert.equal(f.view().error,undefined);assert.equal(f.view().active,undefined);
+  const response=await f.api('POST','/api/memory-integrations',{recipe:ref(recipe),inputs:f.pins(products.map(m=>m.id))});assert.equal(response.statusCode,202,response.body);await f.node.lifecycle.tick();assert.equal(f.view().error,undefined);assert.equal(f.view().active,undefined);
  }
  assert.equal(f.calls.length,12);assert.equal(f.products().length,6);assert.ok(f.calls.every(c=>c.skill==='memory-integration'&&!c.evidenceIds),JSON.stringify(f.calls.map(c=>({skill:c.skill,evidenceIds:c.evidenceIds}))));
  assert.equal(f.calls.filter(c=>c.question.startsWith('GENERATED_INTEGRATOR_1')).length,4);assert.equal(f.calls.filter(c=>c.question.startsWith('GENERATED_INTEGRATOR_2')).length,2);
@@ -70,6 +71,17 @@ test('installed integration recipes independently replace generation and review 
  for(const m of f.products()){assert.equal(m.status,'published');assert.equal(m.integration?.review.fingerprint,m.reviewReceipt?.strategy?.fingerprint);assert.deepEqual(m.evidenceIds,products[0].evidenceIds);assert.ok(m.relatedMemoryIds?.length);}
  assert.equal(f.node.memories.get(products[0].id).status,'published');assert.equal(f.node.memories.get(products[0].id).supersededBy,undefined,'no replacement was requested by this recipe');
  const before=f.calls.length;await f.restart();await f.node.lifecycle.tick();assert.equal(f.calls.length,before,'installation and restart do not replay historical cards');
+});
+test('manual integration atomically admits only the selected version and fingerprint, never a concurrent owner correction',async t=>{
+ const f=await fixture(t),{products}=await f.add('selection-race'),ids=products.map(m=>m.id),selected=f.pins(ids);
+ f.node.memories.publish(ids[0]);
+ const stale=await f.api('POST','/api/memory-integrations',{recipe:ref('base'),inputs:selected});assert.equal(stale.statusCode,409,stale.body);assert.match(stale.body,/所选记忆已变化/);assert.equal(f.view().active,undefined);assert.equal(f.calls.length,0);
+ const current=f.pins(ids),wrong=await f.api('POST','/api/memory-integrations',{recipe:ref('base'),inputs:current.map(input=>({...input,fingerprint:'f'.repeat(64)}))});assert.equal(wrong.statusCode,409,wrong.body);assert.equal(f.view().active,undefined);
+ const unpinned=await f.api('POST','/api/memory-integrations',{recipe:ref('base'),memoryIds:ids});assert.equal(unpinned.statusCode,400,unpinned.body);assert.equal(f.view().active,undefined);
+ const request=f.node.lifecycle.request.bind(f.node.lifecycle);let locked=false;
+ f.node.lifecycle.request=(...args)=>{locked=f.node.store.db.isTransaction;return request(...args);};
+ f.queue(ids);assert.equal(locked,true,'selection reads and lifecycle admission share the write lock');assert.equal(f.node.store.db.isTransaction,false);
+ await f.node.lifecycle.tick();assert.equal(f.products().length,1);assert.equal(f.view().error,undefined);
 });
 
 test('reviewed integration automatically supersedes both domains without invalidating its own checkpoint',async t=>{

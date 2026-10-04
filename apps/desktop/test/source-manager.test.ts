@@ -154,3 +154,14 @@ it('flushes durable pending source versions while watcher scans are still runnin
 it('does not serve a device-decoded file range after restart',async()=>{
  const server=await endpoint(),folder=join(directory,'catalog');await mkdir(folder);await writeFile(join(folder,'first.txt'),'Generated long evidence '.repeat(700));let value=await manager(server.url);await value.addFiles(folder,{...DEFAULT_SOURCE_OPTIONS,indexMode:'lightweight',allowRead:true});await value.sync();await value.close();value=await manager(server.url);await value.sync();expect(server.readReplies).toEqual([]);expect(value.status()[0].processingPending).toBe(0);
 });
+
+it('an existing snapshot source with no central upload consent stays held across restart and ordinary sync',async()=>{
+ const server=await endpoint(true),path=join(directory,'generated-consent.txt');await writeFile(path,'Generated private input');
+ let app=await manager(server.url);await app.addFiles(path,DEFAULT_SOURCE_OPTIONS);await app.sync();await app.close();
+ const configPath=join(directory,'private-state','sources.json'),config=JSON.parse(await readFile(configPath,'utf8'));
+ delete config.sources[0].centralProcessingConsent;config.sources[0].indexMode='lightweight';await writeFile(configPath,JSON.stringify(config));
+ const before=server.items.length;app=await manager(server.url);await app.sync();await app.flushPending(new AbortController().signal);
+ expect(server.items).toHaveLength(before);expect(app.status()[0]).toMatchObject({state:'paused',source:{indexMode:'full',centralProcessingConsent:false}});
+ await app.update(app.status()[0].source.id,{...app.status()[0].source,centralProcessingConsent:true});await app.sync();
+ expect(server.items.length).toBeGreaterThan(before);expect(app.status()[0].source.centralProcessingConsent).toBe(true);
+});

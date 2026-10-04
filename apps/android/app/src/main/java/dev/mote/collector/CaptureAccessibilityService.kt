@@ -150,7 +150,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         if (config.uiPageMode != "screen_only" && config.pageRules.any { it.getString("platform") == "android" && it.getString("appId") == snapshot.foreground }) {
             collectPage(snapshot,config); return
         }
-        if (config.uiPageMode == "page_only") return
+        if (config.uiPageMode == "page_only") { pipeline!!.submitPageActivity(snapshot, config); return }
         captureScreen(snapshot,config)
     }
     private fun captureScreen(snapshot: WindowSnapshot, config: CollectorConfig) {
@@ -208,10 +208,13 @@ class CaptureAccessibilityService : AccessibilityService() {
     private fun collectPage(snapshot: WindowSnapshot, config: CollectorConfig) {
         inFlight=true
         val generation=configurationGeneration
+        val sampledAt=Instant.now().toString()
+        val observedAtMs=android.os.SystemClock.elapsedRealtime()
         val activity=if(pagePackage==snapshot.foreground) pageActivity else ""
         ConnectionGuard.processing.incrementAndGet()
         try { pageWorker.execute {
             var suppressScreen=false
+            var privacyRejected=false
             try {
                 val appId=snapshot.foreground ?: return@execute
                 fun valid() = !destroyed && generation==configurationGeneration && !ConnectionGuard.changing() && settings.enabled && settings.read()==config && CapturePipeline.unlocked(this) && windowSnapshot()==snapshot && (pagePackage!=appId || pageActivity==activity)
@@ -240,8 +243,8 @@ class CaptureAccessibilityService : AccessibilityService() {
                 if(!sameWindow)return@execute
                 val page=UiPageRules.extract(pageSnapshot,rules) ?: return@execute
                 val allText=UiPageRules.text(pageSnapshot)
-                if(UploadGate.review(config.uploadGate){allText}!="allow"){suppressScreen=true;settings.status("paused",MoteI18n.text("页面隐私审查未通过，已跳过"));return@execute}
-                val at=Instant.now().toString()
+                if(UploadGate.review(config.uploadGate){allText}!="allow"){suppressScreen=true;privacyRejected=true;pipeline?.pause(MoteI18n.text("页面隐私审查未通过，已跳过"));return@execute}
+                val at=sampledAt
                 val event=org.json.JSONObject().put("id",java.util.UUID.randomUUID().toString()).put("deviceId",settings.deviceId)
                     .put("deviceName",config.deviceName).put("platform","android").put("capturedAt",at).put("durationMs",0)
                     .put("appId",appId).put("appName",CollectorMetadata.appName(this,appId)).put("source","ui_page").put("ocrText",UiPageRules.text(page))
@@ -254,7 +257,13 @@ class CaptureAccessibilityService : AccessibilityService() {
             } catch (_: Exception) { settings.status("paused",MoteI18n.text("页面读取失败，等待下一次采样")) }
             finally {
                 ConnectionGuard.processing.decrementAndGet()
-                handler.post { if(generation==configurationGeneration){inFlight=false;if(!suppressScreen && config.uiPageMode!="page_only") captureScreen(snapshot,config)} }
+                handler.post { if(generation==configurationGeneration){
+                    inFlight=false
+                    if (!privacyRejected && (suppressScreen || config.uiPageMode=="page_only") &&
+                        windowSnapshot()==snapshot && pipeline?.canCapture(config,snapshot)==true)
+                        pipeline!!.submitPageActivity(snapshot,config,sampledAt,observedAtMs)
+                    else if(!suppressScreen && config.uiPageMode!="page_only") captureScreen(snapshot,config)
+                } }
             }
         } } catch (_: java.util.concurrent.RejectedExecutionException) { inFlight=false; ConnectionGuard.processing.decrementAndGet() }
     }

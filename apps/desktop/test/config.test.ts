@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ConfigStore, defaultConfig, publicConfig, updateConfig, validateLocalModelUrl, validateServerUrl } from '../src/config';
+import { ConfigStore, defaultConfig, publicConfig, updateConfig, validateServerUrl } from '../src/config';
 
 let directory: string;
 beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-config-test-')); });
@@ -13,7 +13,6 @@ describe('configuration security', () => {
     expect(validateServerUrl('http://127.0.0.1:47832/')).toBe('http://127.0.0.1:47832');
     expect(validateServerUrl('https://mote.example')).toBe('https://mote.example');
     for (const url of ['http://192.168.1.2', 'http://localhost.example', 'https://user:secret@host.test', 'https://host.test/api', 'https://host.test?token=secret', 'file:///etc/passwd']) expect(() => validateServerUrl(url)).toThrow();
-    expect(() => validateLocalModelUrl('https://mote.example/review')).toThrow();
   });
   it('requires a strong remote token and validates finite masks and cadence', () => {
     const config = defaultConfig();
@@ -64,4 +63,14 @@ it('rejects old and incomplete saved configuration instead of filling fields or 
  for(const value of [{version:1,config},{version:3,config:{...config,credentialScope:'collector'}},{version:3,config:{...config,credentialScope:'mcp'}},{version:3,config:{...config,excludedAppIds:['dev.private']}},{version:3,config:Object.fromEntries(Object.entries(config).filter(([key])=>key!=='appCollectionRules'))}]){
   const raw=JSON.stringify(value);await writeFile(join(directory,'config.json'),raw);await expect(store.load()).rejects.toThrow('Unsupported desktop storage format');expect(await readFile(join(directory,'config.json'),'utf8')).toBe(raw);
  }
+});
+
+
+it('retires model settings from an installed client while rejecting explicit obsolete controls',async()=>{
+ const store=new ConfigStore(directory,{available:()=>true,encrypt:Buffer.from,decrypt:value=>value.toString()}), config=defaultConfig();
+ const prior={version:3,config:{...config,nsfwEnabled:true,reviewPolicy:'retired fixture policy',privacyModelUrl:'http://127.0.0.1:1/review'}};
+ await writeFile(join(directory,'config.json'),JSON.stringify(prior));
+ const loaded=await store.load();expect(loaded.deviceId).toBe(config.deviceId);expect(loaded.uploadGate).toEqual(config.uploadGate);
+ for(const key of ['nsfwEnabled','reviewPolicy','privacyModelUrl']){expect(loaded).not.toHaveProperty(key);expect(JSON.parse(await readFile(join(directory,'config.json'),'utf8')).config).not.toHaveProperty(key);}
+ expect(()=>updateConfig(config,{...config,nsfwEnabled:true} as any)).toThrow('已停用');
 });

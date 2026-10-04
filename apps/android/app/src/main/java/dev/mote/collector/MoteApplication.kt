@@ -26,7 +26,8 @@ class MoteApplication : Application() {
             override fun onActivityDestroyed(activity: android.app.Activity) = Unit
         })
         Notifications.create(this)
-        com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(this)
+        // Remove jobs left by releases with the retired local visual model.
+        androidx.work.WorkManager.getInstance(this).cancelUniqueWork("mote-nsfw-download")
         QueueStorage.recovering = true
         LocalStateRepository.get(this)
         Executors.newSingleThreadExecutor().apply {

@@ -78,5 +78,5 @@ test('import-files dry run scans a generated file without contacting a node',asy
   const file=join(directory,'generated.txt');await writeFile(file,'Generated CLI source text.');
   const script=fileURLToPath(new URL('./import-files.ts',import.meta.url));
   const {stdout}=await promisify(execFile)(process.execPath,['--import','tsx',script,'--root',file,'--dry-run'],{cwd:fileURLToPath(new URL('../',import.meta.url))});
-  assert.match(stdout,/Would send 1 changed UTF-8 text files/);
+  assert.match(stdout,/Would send 1 changed files/);
 });

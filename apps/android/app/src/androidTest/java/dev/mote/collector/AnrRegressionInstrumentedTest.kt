@@ -48,8 +48,7 @@ class AnrRegressionInstrumentedTest {
         WorkManager.getInstance(context).cancelAllWork().result.get(20, TimeUnit.SECONDS)
         val settings = Settings(context)
         original = settings.read()
-        settings.save(original!!.copy(server = "", token = "", syncMode = "manual", diagnosticsEnabled = false,
-            nsfw = original!!.nsfw.copy(enabled = false)))
+        settings.save(original!!.copy(server = "", token = "", syncMode = "manual", diagnosticsEnabled = false))
     }
 
     @After fun restoreSettings() {

@@ -6,18 +6,18 @@
 
 共同字段：`id`、`deviceId`、`deviceName`、`platform=android`、`capturedAt`（观察时间）、`durationMs=0`、`privacy`。`metadata.version=1`，`collector.method=notification_listener`；`metadata.observation` 包含随机观察会话 ID 和开机后的单调时钟毫秒数。进程/连接中断不补造历史。
 
-- `source=notification`，`metadata.notification`：`action=posted|updated|removed`、通知键 SHA-256、平台发布时间、`ongoing`、`groupSummary`、可选应用声明的 `category`。完整内容模式记录可获取的通道、标题、正文、展开正文、补充文字和最多 20 行正文。字段有长度上限；不序列化任意 extras、图片、PendingIntent 或操作按钮。移除事件只带状态和系统原因代码，不重复正文。
+- `source=notification`，`metadata.notification`：`action=posted|updated`、通知键 SHA-256、平台发布时间、`ongoing`、`groupSummary`、可选应用声明的 `category`。完整内容模式记录可获取的通道、标题、正文、展开正文、补充文字和最多 20 行正文。字段有长度上限；不序列化任意 extras、图片、PendingIntent 或操作按钮。不采集通知移除事件。
 - `source=device_event`，`metadata.deviceEvent`：`action=screen_on|screen_off|user_present|state_observed`，以及系统报告的 `keyguardLocked`、`screenInteractive`。广播到达时观察，熄屏后一秒再检查，并在服务的 30 秒周期检查状态变化。`state_observed` 不是精确锁定时刻；`screen_off` 不表示已锁定。
 
-平台第一次投递的通知标为 `posted`（首次观察，可能已经存在），同键后续变化标为 `updated`；进程内最多缓存 512 个键的指纹，完全相同的重复投递不重复入队。服务断开、停止和重新配置后重置观察状态。不从通知关键词推断导航、消息意图或用户行为，模型通过只读检索解释原始证据。
+平台第一次投递的通知标为 `posted`（首次观察，可能已经存在），同键后续变化标为 `updated`；进程内最多缓存 512 个键的指纹，完全相同的重复投递不重复入队；同一通知键的新内容保留为独立更新，历史正文不会被覆盖。服务断开、停止和重新配置后重置观察状态。不从通知关键词推断导航、消息意图或用户行为，模型通过只读检索解释原始证据。
 
 ## 控制与权限
 
 新增通知、设备事件两个独立开关，升级默认关闭，由用户开启并开始采集。通知使用权四类不再被 Manifest 禁用；旧系统保存的筛选可能需要用户重新授权或逐类开启。所有采集共用一条 Mote 状态通知和停止按钮。Mote 自身通知不再回流采集，避免递归。
 
-通知遵循应用规则：`off` 完全跳过，`activity` 不读取文本 extras 或通道，`content` 保存系统实际提供的字段。设备级状态不归因于某个应用。提交前再次验证配置、采集状态、权限、节点切换和电量策略。事件必要字段独立于可选设备遥测开关。
+通知遵循应用规则：`off` 完全跳过，`activity` 不读取文本 extras 或通道，`content` 保存系统实际提供的字段。完整通知文本执行用户配置的精确文字上传规则；明确命中则丢弃，审查无法完成则按失败策略暂存、丢弃或放行。待复核记录不会被自动同步、重新入队或备份恢复释放。设备级状态不归因于某个应用。提交前再次验证配置、采集状态、权限、节点切换和电量策略。事件必要字段独立于可选设备遥测开关。
 
-Android/HyperOS 可以隐藏敏感通知、限制工作资料或终止服务；缺失不表示没有事件。未回放现有通知或锁屏历史。通知移除不代表已阅读，系统 category 不证明用户正在执行对应活动。
+Android/HyperOS 可以隐藏敏感通知、限制工作资料或终止服务；缺失不表示没有事件。未回放现有通知或锁屏历史。通知发布或更新不代表已阅读，系统 category 不证明用户正在执行对应活动。
 
 ## 浏览体验
 

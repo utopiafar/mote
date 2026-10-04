@@ -55,7 +55,7 @@ class ProfileSupportInstrumentedTest {
                 is org.json.JSONArray -> repeat(value.length()) { strings(value.opt(it)) }
             } }
             strings(body)
-            for (privateValue in listOf(fixture.token, fixture.deviceName, fixture.nsfw.policy, "private fixture note", "private mood", id, fixture.server)) { assertFalse(report.contains(privateValue)); assertFalse(exportedStrings.any { it.contains(privateValue) }) }
+            for (privateValue in listOf(fixture.token, fixture.deviceName, "private fixture note", "private mood", id, fixture.server)) { assertFalse(report.contains(privateValue)); assertFalse(exportedStrings.any { it.contains(privateValue) }) }
             val count = body.getJSONArray("events").length(); assertTrue(count > 0)
             settings.save(fixture.copy(diagnosticsEnabled = false)); SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE)
             assertEquals(count, SupportEvents.journal(context).read().length())

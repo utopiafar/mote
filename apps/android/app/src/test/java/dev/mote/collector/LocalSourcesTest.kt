@@ -20,9 +20,29 @@ class LocalSourcesTest {
     @Test fun `current local source fields are mandatory and never silently upgraded`() {
         val current = source().json()
         assertEquals(current.toString(), LocalSource.from(current).json().toString())
-        for (key in listOf("tree", "extensions", "excluded", "daysBefore", "daysAfter", "intervalMinutes", "initialSync", "maxFileMiB", "lightweightIndex", "allowRead")) {
+        for (key in listOf("tree", "extensions", "excluded", "daysBefore", "daysAfter", "intervalMinutes", "initialSync", "maxFileMiB", "allowRead")) {
             assertThrows(org.json.JSONException::class.java) { LocalSource.from(JSONObject(current.toString()).apply { remove(key) }) }
         }
+    }
+    @Test fun oldSnapshotPreferencesRequireExplicitCentralProcessingConfirmation() {
+        val legacy = source().json().apply { remove("centralProcessingConsent"); put("lightweightIndex", true) }
+        val restored = LocalSource.from(legacy)
+        assertFalse(restored.centralProcessingConsent)
+        assertFalse(restored.lightweightIndex)
+        assertTrue(LocalSource.from(restored.copy(centralProcessingConsent = true).json()).centralProcessingConsent)
+    }
+    @Test fun centralUploadConsentNeverAcceptsCoercedStringsOrNumbers() {
+        for (value in listOf("true", "false", 1, 0, JSONObject.NULL))
+            assertThrows(Exception::class.java) { LocalSource.from(source().json().put("centralProcessingConsent", value)) }
+        assertFalse(LocalSource.from(source().json().put("centralProcessingConsent", false)).centralProcessingConsent)
+        assertTrue(LocalSource.from(source().json().put("centralProcessingConsent", true)).centralProcessingConsent)
+    }
+    @Test fun unconfirmedSourceCannotMakeAggregateSyncLookCompleteAfterEarlierAck() {
+        val source = source(); val metadata = JSONObject().put("registered", true).put("status", "synced")
+        assertTrue(SyncHealth.sourceRequiresAttention(source, metadata, 0))
+        assertFalse(SyncHealth.sourceRequiresAttention(source.copy(enabled = false), metadata, 0))
+        assertFalse(SyncHealth.sourceRequiresAttention(source.copy(centralProcessingConsent = true), metadata, 0))
+        assertTrue(SyncHealth.sourceRequiresAttention(source.copy(centralProcessingConsent = true), metadata.put("status", "permission"), 1))
     }
     @Test fun `file size limits survive serialization and reject invalid values`() {
         val value = source().copy(maxFileMiB = 17)

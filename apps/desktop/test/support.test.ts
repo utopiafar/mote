@@ -36,10 +36,9 @@ it('classifies explicit transport/type codes without reading a sensitive error m
   expect(httpFailure(401)).toBe('AUTH'); expect(httpFailure(409)).toBe('CONFLICT'); expect(httpFailure(503)).toBe('SERVER');
 });
 it('support export includes safe counters and fixed events, never arbitrary status/config content', () => {
-  const c = defaultConfig(); c.deviceName = 'private device'; c.token = 'private token'; c.reviewPolicy = 'private policy'; c.serverUrl = 'https://private-host.example';
+  const c = defaultConfig(); c.deviceName = 'private device'; c.token = 'private token'; c.serverUrl = 'https://private-host.example';
   const status = { running:false, state:'paused', message:'private OCR', lastUploadError:'private note', queueDepth:2, queueBytes:90, encryptedTokenStorage:true,
     config:publicConfig(c), diagnostics:{ enabled:true, sampleCount:1, fileBytes:22, error:'private error', counters:{ saved:1, secret:'private counter' }, latest:{ rssBytes:100, message:'private latest', cpuUserMicros:Infinity } },
-    nsfw:{ error:'private model reason', bytes:12, lastDurationMs:3, blockedCount:1, modelId:'private model', downloadSource:'private URL' },
   } as unknown as Status;
   const output = JSON.stringify(buildSupportBundle(resolveProfile(['--profile=dev'], {}, '/private/user'), '0.2.1', status, [{ atMs: 1, stage:'UPLOAD', code:'AUTH', httpStatus:401 }]));
   expect(output).not.toContain('private'); expect(output).not.toContain(c.deviceId); expect(output).not.toContain('Infinity');

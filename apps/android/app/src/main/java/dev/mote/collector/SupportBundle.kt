@@ -35,8 +35,7 @@ object SupportEvents {
                 .put("intervalSeconds", it.intervalSeconds).put("maxQueueMiB", it.maxQueueMiB).put("wifiOnly", it.wifiOnly)
                 .put("projectionMode", it.mode == "projection").put("jpegQuality", it.jpegQuality).put("captureMaxSide", it.captureMaxSide)
                 .put("chargingOnly", it.chargingOnly).put("batteryPauseBelowPct", it.batteryPauseBelowPct)
-                .put("localReviewConfigured", it.localReviewUrl.isNotBlank()).put("nsfwEnabled", it.nsfw.enabled)
-                .put("reviewMaxSide", it.nsfw.reviewMaxSide).put("threads", it.nsfw.threads).put("timeoutMs", it.nsfw.timeoutMs)
+                .put("uploadGateEnabled", it.uploadGate.enabled)
         }
         val samples = runCatching { NumericSupport.sanitize(JSONObject(Diagnostics(context).export()).getJSONArray("samples")) }.getOrElse { JSONArray() }
         return JSONObject().put("version", 1).put("app", metadata).put("state", state).put("configuration", safeConfig)

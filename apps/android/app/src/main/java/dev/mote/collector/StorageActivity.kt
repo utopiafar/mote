@@ -26,7 +26,7 @@ class StorageActivity : MoteActivity() {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         body = moteDetailPage()
         text(body, MoteI18n.text("图片保存位置"), 27f)
-        text(body, MoteI18n.text("本机保存待同步、待 OCR 与保留期内的记录和图片。上传后仍可回看，到期才清理。"))
+        text(body, MoteI18n.text("本机保存待同步与保留期内的记录和图片。中央确认上传后仍可回看，到期才清理。"))
         text(body, MoteI18n.text("选择内部应用空间，或系统提供的本机／存储卡应用空间。迁移会自动暂停处理、复制并验证已有记录，然后继续原来的采集与同步。模型、草稿、设置及来源缓存保留在内部空间。"))
         inventory = TextView(this).apply { textSize = 15f }; body.addView(inventory)
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(content)
@@ -71,7 +71,7 @@ class StorageActivity : MoteActivity() {
     private fun confirm(choice: QueueStorageChoice) {
         if (working || ConnectionGuard.reconfiguring()) return
         MoteDialogBuilder(this).setTitle(MoteI18n.text("迁移本机保存位置"))
-            .setMessage(MoteI18n.text("迁移到{0}：\n{1}\n\n已有图片、待 OCR 结果和队列记录会一起迁移。验证成功后切换位置并清理旧副本。中央归档位置保持不变。", choice.title, choice.base.absolutePath))
+            .setMessage(MoteI18n.text("迁移到{0}：\n{1}\n\n已有图片和队列记录会一起迁移。验证成功后切换位置并清理旧副本。中央归档位置保持不变。", choice.title, choice.base.absolutePath))
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("迁移并应用")) { _, _ -> migrate(choice) }.show()
     }
     private fun migrate(choice: QueueStorageChoice) {

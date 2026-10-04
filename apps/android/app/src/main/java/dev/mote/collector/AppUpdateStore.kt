@@ -54,7 +54,7 @@ class UpdateNetwork(private val stopped: () -> Boolean = { false }, private val 
         if (offset < asset.size) {
             val r = response(asset.url, offset)
             try {
-                if (r.responseCode == 206) NsfwModelStore.validateRange(r.getHeaderField("Content-Range"), offset, asset.size) else offset = 0
+                if (r.responseCode == 206) UpdateArtifactValidation.validateRange(r.getHeaderField("Content-Range"), offset, asset.size) else offset = 0
                 if (r.contentLengthLong >= 0 && r.contentLengthLong != asset.size - offset) throw UpdateFailure("asset_size")
                 if (part.parentFile!!.usableSpace < asset.size - offset + 32L * 1024 * 1024) throw UpdateFailure("storage")
                 FileOutputStream(part, offset > 0).use { out -> r.inputStream.use { input ->
@@ -67,7 +67,7 @@ class UpdateNetwork(private val stopped: () -> Boolean = { false }, private val 
         }
         checkStopped()
         if (part.length() != asset.size) throw IOException("Incomplete update")
-        if (NsfwModelStore.sha256(part) != asset.sha256) { part.delete(); throw UpdateFailure("checksum") }
+        if (UpdateArtifactValidation.sha256(part) != asset.sha256) { part.delete(); throw UpdateFailure("checksum") }
     }
     private fun checkStopped() { if (stopped()) throw InterruptedIOException("Update cancelled") }
     private fun response(source: String, offset: Long = 0): HttpURLConnection {
@@ -97,7 +97,7 @@ object AndroidUpdateVerifier {
         if (asset.packageName != context.packageName) throw UpdateFailure("package")
         if (asset.versionCode <= installedVersion) throw UpdateFailure("not_newer")
         if (certificates(context) != setOf(asset.certificateSha256)) throw UpdateFailure("certificate")
-        if (file.length() != asset.size || NsfwModelStore.sha256(file) != asset.sha256) throw UpdateFailure("checksum")
+        if (file.length() != asset.size || UpdateArtifactValidation.sha256(file) != asset.sha256) throw UpdateFailure("checksum")
         val result = try { ApkVerifier.Builder(file).setMinCheckedPlatformVersion(Build.VERSION.SDK_INT).setMaxCheckedPlatformVersion(Build.VERSION.SDK_INT).build().verify() } catch (_: Exception) { throw UpdateFailure("apk_signature") }
         if (!result.isVerified || result.signerCertificates.map { digest(it.encoded) }.toSet() != setOf(asset.certificateSha256)) throw UpdateFailure("apk_signature")
         val archive = context.packageManager.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES) ?: throw UpdateFailure("package")

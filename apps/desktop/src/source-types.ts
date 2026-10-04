@@ -29,10 +29,12 @@ export interface LocalFileCheckpoint {
 /** A registered adapter owns its versioned checkpoint shape; SourceSync persists it atomically with the outbox. */
 export type SourceCheckpoint = LocalFileCheckpoint | import('./coding-agents').CodingCheckpoint | { version: number; [key: string]: unknown };
 export type ScannedItem = Omit<SourceItem, 'revision' | 'observedAt'> & {
-  localProcessing?: import('./local-file-processing').LocalFileInput;
+  /** Read only to retire obsolete processing inputs during an adapter upgrade. */
+  localProcessing?: LegacyLocalFileInput;
   /** Client-only routing hint; SourceSync strips it before persistence and upload. */
   syncQueue?: 'realtime' | 'history';
 };
+export interface LegacyLocalFileInput { path: string; expected: import("./original-spool").OriginalIdentity; spool?: import("./original-spool").OriginalSpool; processor: { id: string; version: number } }
 export interface SourceScan {
   checkpoint?: SourceCheckpoint;
   /** Changed directory rows; checkpoint.catalog is omitted from incremental scans. */
@@ -43,6 +45,8 @@ export interface SourceScan {
   scope?: { start: string; end: string };
 }
 export interface SourceOptions {
+  /** Explicit owner confirmation that snapshot file bytes are sent for central processing. */
+  centralProcessingConsent?: boolean;
   indexMode?: 'full'|'lightweight'; allowRead?:boolean;
   initialSync?: 'all' | 'new_only';
   retention: SourceRetention; intervalSeconds: number; trackDeletions: boolean;
@@ -64,12 +68,13 @@ export interface SourceStatus {
 export interface CalendarChoice { id: string; title: string }
 export type SourceRequest = (path: string, body: unknown, method: 'GET' | 'POST' | 'PUT' | 'PATCH', signal?: AbortSignal) => Promise<unknown>;
 export const DEFAULT_SOURCE_OPTIONS: SourceOptions = {
-  initialSync: 'all', retention: 'snapshot', intervalSeconds: 300, trackDeletions: false,
+  centralProcessingConsent: true, initialSync: 'all', retention: 'snapshot', intervalSeconds: 300, trackDeletions: false,
   extensions: ['.md', '.txt', '.json', '.csv', '.ics', '.pdf', '.docx', '.wav', '.mp3', '.m4a'], excludedPaths: [], redactLiterals: [],
 };
 export function normalizeSourceOptions(input: unknown): SourceOptions {
   if (!input || typeof input !== 'object') throw new Error(moteText("来源配置无效"));
   const v = input as SourceOptions;
+  if(v.centralProcessingConsent!==undefined&&typeof v.centralProcessingConsent!=='boolean')throw new Error('Invalid central processing consent');
   if(v.initialSync!==undefined&&!['all','new_only'].includes(v.initialSync))throw new Error(moteText("首次同步范围无效"));
   if (!['snapshot', 'reference', 'archive'].includes(v.retention) || !Number.isInteger(v.intervalSeconds) || v.intervalSeconds < 30 || v.intervalSeconds > 3600 || typeof v.trackDeletions !== 'boolean') throw new Error(moteText("来源同步间隔为 30–3600 秒，保留方式为快照或引用"));
   const list = (value: unknown, max: number) => {
@@ -82,7 +87,8 @@ export function normalizeSourceOptions(input: unknown): SourceOptions {
   if (excludedPaths.some(p => p.startsWith('/') || p.split('/').some(x => !x || x === '.' || x === '..'))) throw new Error(moteText("排除路径必须是所选目录内的相对路径"));
   if(v.retention==='archive'&&Array.isArray(v.redactLiterals)&&v.redactLiterals.length)throw new Error(moteText("原件归档不能应用文字遮盖，请选择内容索引。"));
   if(v.indexMode!==undefined&&!['full','lightweight'].includes(v.indexMode)||v.allowRead!==undefined&&typeof v.allowRead!=='boolean')throw new Error('Invalid file index policy');
-  return {indexMode:v.indexMode??'full',allowRead:v.allowRead??false, initialSync:v.initialSync??'all', retention: v.retention, intervalSeconds: v.intervalSeconds, trackDeletions: v.trackDeletions, extensions, excludedPaths, redactLiterals: list(v.redactLiterals, 1000) };
+  // Accept an older preference when reading configuration, but central owns indexing.
+  return {centralProcessingConsent:v.centralProcessingConsent??false,indexMode:'full',allowRead:v.retention==='snapshot'&&(v.allowRead??false), initialSync:v.initialSync??'all', retention: v.retention, intervalSeconds: v.intervalSeconds, trackDeletions: v.trackDeletions, extensions, excludedPaths, redactLiterals: list(v.redactLiterals, 1000) };
 }
 export function redactSourceText(text: string, literals: string[]): string {
   for (const literal of [...literals].sort((a, b) => b.length - a.length)) text = text.split(literal).join(moteText("[已遮盖]"));

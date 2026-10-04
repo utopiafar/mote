@@ -54,7 +54,10 @@ internal class SystemEventCollector(private val context: Context, private val wo
         val event = envelope(c, "notification", mode).put("appId", sbn.packageName.take(300))
             .put("appName", CollectorMetadata.appName(context, sbn.packageName))
         event.getJSONObject("metadata").put("notification", payload)
-        submit(c, event) {
+        val gate = if (mode == AppCollectionMode.CONTENT) UploadGate.review(c.uploadGate) { NotificationObservations.text(payload) } else "allow"
+        if (gate == "drop") return
+        event.getJSONObject("privacy").put("mode", "none").put("reason", if (gate == "hold") "upload review pending" else "explicit notification text rules")
+        submit(c, event, reviewHeld = gate == "hold") {
             val key = payload.getString("notificationKey")
             // Repeated delivery is deduplicated; updates retain their own observation.
             val hash = SourceRules.hash(payload.toString())
@@ -99,7 +102,7 @@ internal class SystemEventCollector(private val context: Context, private val wo
                 .put("collector", JSONObject().put("method", "notification_listener"))
                 .put("observation", JSONObject().put("sessionId", session).put("elapsedRealtimeMs", SystemClock.elapsedRealtime())))
     }
-    private fun submit(c: CollectorConfig, event: JSONObject, accept: () -> Boolean) {
+    private fun submit(c: CollectorConfig, event: JSONObject, reviewHeld: Boolean = false, accept: () -> Boolean) {
         if (pending.incrementAndGet() > 128) { pending.decrementAndGet(); reportFailure(); return }
         val epoch = MediaCollection.epoch.get()
         worker.post {
@@ -109,7 +112,7 @@ internal class SystemEventCollector(private val context: Context, private val wo
                     val before = LinkedHashMap(seen); val previousState = lastState
                     if (!accept()) return@sync
                     try {
-                        context.queue().enqueue(event, null, c.maxQueueMiB * 1024L * 1024L)
+                        context.queue().enqueue(event, null, c.maxQueueMiB * 1024L * 1024L, reviewHeld = reviewHeld)
                     } catch (error: Exception) { seen.clear(); seen.putAll(before); lastState = previousState; throw error }
                     UploadWorker.schedule(context, c)
                 }
