@@ -282,7 +282,7 @@ class ConnectionInstrumentedTest {
                     File(context.filesDir, "connection-stats-ui.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
                 }
             }
-            File(context.filesDir, "connection-live-result.json").writeText(JSONObject().put("deviceIdentityPreserved", true).put("redeemReplayRejected", true).put("collectorAdminDenied", true)
+            File(context.filesDir, "connection-live-result.json").writeText(JSONObject().put("deviceIdentityPreserved", true).put("redeemReplayRejected", true).put("ownerAdminAllowed", true)
                 .put("otherOriginPendingBlocked", true).put("revokedHeartbeat401Visible", true).put("sameOriginRePairPreservedPreparedNote", true)
                 .put("screenAcknowledged", 1).put("notesAcknowledged", 2).put("duplicateQueueNotCounted", true).put("diagnosticsDisabled", true).put("contentFreeStats", true).toString())
         } finally {

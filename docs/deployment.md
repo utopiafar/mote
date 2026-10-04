@@ -6,7 +6,7 @@
 
 ## 环境与私有目录
 
-需要 Node.js 24。以下命令从仓库根目录执行。统一入口是 `node scripts/mote.mjs`，也可用 `npm run mote --`。默认选择 **dev**，即使 shell 继承了 `MOTE_PROFILE=prod` 也不会改变目标；正式节点必须显式传 `--profile prod`。也可使用 1–32 位小写字母、数字、下划线或连字符的独立环境名；其它名字默认使用开发端口，建议初始化时显式指定空闲 `--port`。`legacy` 不属于部署 CLI 管理范围。
+需要 Node.js 24。以下命令从仓库根目录执行。统一入口是 `node scripts/mote.mjs`，也可用 `npm run mote --`。默认选择 **dev**，即使 shell 继承了 `MOTE_PROFILE=prod` 也不会改变目标；正式节点必须显式传 `--profile prod`。也可使用 1–32 位小写字母、数字、下划线或连字符的独立环境名；其它名字默认使用开发端口，建议初始化时显式指定空闲 `--port`。CLI 拒绝 `legacy` 环境名；直接进程的默认环境名是 `default`，两者的默认入口不同。
 
 | 环境 | 默认 API 端口 | 默认配置 | 数据与日志 |
 |---|---:|---|---|
@@ -18,7 +18,7 @@
 
 初始化为每个环境生成独立的 256 bit 随机令牌，私有目录权限 0700、配置权限 0600；已存在的环境会拒绝覆盖。只有 `token` 命令主动显示令牌。`profile.json` 记录运行方式、代码版本路径或镜像、卷名与升级快照，不含令牌。
 
-CLI 清除继承的 `MOTE_*`、`COMPOSE_*` 后注入所选环境。`MOTE_ENV_FILE` 显式指定配置文件时，中央与导入脚本只读该文件；路径不存在会报错。相对 `MOTE_DATA_DIR`、`MOTE_LOG_DIR` 基于该配置文件所在目录。dev/test 拒绝 47832，并要求数据和日志路径留在各自目录内。旧安装直接运行 `npm start` 时仍沿用根目录 `.env` 与 `data/`，不会被迁移或停止。
+CLI 清除继承的 `MOTE_*`、`COMPOSE_*` 后注入所选环境。`MOTE_ENV_FILE` 显式指定配置文件时，中央与导入脚本只读该文件；路径不存在会报错。相对 `MOTE_DATA_DIR`、`MOTE_LOG_DIR` 基于该配置文件所在目录。dev/test 拒绝 47832，并要求数据和日志路径留在各自目录内。直接运行 `npm start` 不再自动加载根 `.env`，必须显式设置 `MOTE_ENV_FILE` 或 `MOTE_DATA_DIR` 之一；默认 `MOTE_PROFILE=default`。只有显式选择的配置文件会被读取，数据路径也可以相对该文件或启动基准目录解析。CLI 不会自动接管或停止手动启动的进程。
 
 `node scripts/mote.mjs config --profile prod --home /srv/mote/profiles` 可在启动前查看配置。运行后，中央「服务端配置」页面显示进程实际使用的值。原生新环境可用 `init --profile prod --data-dir /absolute/local-disk/mote` 选择资料目录；Docker 新环境用 `init --profile prod --runtime docker --volume mote-personal-data` 选择卷名，不能靠 `MOTE_DATA_DIR` 改变 Docker 挂载。
 
@@ -101,20 +101,24 @@ TLS overlay 使用固定 Caddy 2.11.4 Alpine 镜像；与中央在独立 Compose
 
 ## 升级与回退
 
-升级和回退会短暂停机，采集端保留未确认的本地队列。先确认新的 release 已构建或镜像已拉取，使用版本目录/不可变镜像，不要在旧 release 中直接覆盖代码。
+本轮是 **MVP 破坏升级**：中央 `backend_epoch=3`，Desktop/Android 本机格式 3，模型 registry version 2，HTTP 便携归档 version 2。旧 schema、客户端队列/配置、旧模型及文件处理配置、旧内容包装和旧便携包不会自动转换。请先在旧版本完成必要导出、停止全部写入并保留完整旧目录、凭据及密钥，随后使用新空目录；明确放弃旧资料时才按 [兼容清理操作](audits/compatibility-cleanup-2026-10-04.md#升级操作和风险) 执行 reset。当前程序不能替旧程序读取和备份旧格式。
 
-### 历史签名发行版更新机制
+新空环境可使用 `node scripts/mote.mjs init --profile prod --home /srv/mote-epoch3/profiles`，再重新配置当前模型、文件 policy、来源和客户端连接。若在已备份且停止的原目录明确放弃旧资料，可执行 `npm run reset:mvp-vault -- --data-dir /absolute/old-vault --confirm-clear`；该命令会清空资料及旧模型/文件处理配置。它保留令牌、content-key 和 connectors，不能把旧 collector 凭据改成 owner；旧 collector 文件需另行备份并移走后重新配对，见上述实施记录。
 
-当前 Central DEV 发布提供中央源码包，但不提供签名清单或 GHCR 镜像；本节保留签名更新契约，不能用于获取当前 DEV 版本。当前升级请使用下节的手动源码构建或自行构建 Docker 镜像，再运行 `upgrade`。
+以下 `upgrade` / `rollback` 事务用于同一存储代际内的部署切换，不能把它当作跨代迁移。升级和回退会短暂停机，本代采集端保留未确认的本地队列。先确认新的 release 已构建或镜像已拉取，使用版本目录/不可变镜像，不要在旧 release 中直接覆盖代码。
 
-0.5.0 起，已初始化的独立 profile 可检查并安装 GitHub Release。中央「服务端配置」页面也可检查最新版本并给出当前环境的操作命令；HTTP 接口不会启动 shell、选择本机路径或直接安装。检查是手动触发，同一分钟内共享同一次结果，不在中央启动时自动联网。旧的 `legacy` 根目录安装只显示发行信息，需要先按本文建立独立部署后再使用更新命令。
+### 签名清单更新通道
+
+当前 Central DEV 发布提供中央源码包，但不提供签名清单或 GHCR 镜像；本节说明当前签名更新契约，不能用于获取当前 DEV 版本。清单必须声明组件，并使用该组件的 `central-vX.Y.Z` / `desktop-vX.Y.Z` / `android-vX.Y.Z` 标签；旧统一 `vX.Y.Z` 标签不受支持。当前升级请使用下节的手动源码构建或自行构建 Docker 镜像，再运行 `upgrade`。
+
+已初始化的独立 profile 可以检查并安装符合当前契约的可信签名 Release。中央「服务端配置」页面也可检查最新版本并给出当前环境的操作命令；HTTP 接口不会启动 shell、选择本机路径或直接安装。检查是手动触发，同一分钟内共享同一次结果，不在中央启动时自动联网。非 CLI 托管进程需先由管理员建立明确的独立部署；检查接口不会自动认领根目录安装。
 
 从 Git 源码运行签名更新 CLI 前，宿主机需要 Node 24，并在可信检出目录执行 `npm ci --ignore-scripts`、`npm run build:libs` 以准备验证器及其锁定依赖。Docker 的普通 `init/start/stop/compose/backup/upgrade/rollback` 命令不依赖宿主 `node_modules`；`check-update/update` 才加载签名验证器。
 
 ```sh
 node scripts/mote.mjs check-update --profile prod --home /srv/mote/profiles
 # 可明确固定目标版本；省略 --version 时检查所选渠道最新版本
-node scripts/mote.mjs update --profile prod --home /srv/mote/profiles --version 0.5.0
+node scripts/mote.mjs update --profile prod --home /srv/mote/profiles --version X.Y.Z
 ```
 
 版本号只是示例；目标必须高于当前安装的版本，已是该版本时不会重装或降级。尚无签名发行版、GitHub 限流、签名失效或包校验失败都会明确报错，不退回下载任意代码。当前原生进程的版本优先通过已认证的本机节点确认；Docker 使用该 profile 容器实际镜像的版本，不能把执行 CLI 的代码目录版本当成容器版本。
@@ -127,28 +131,28 @@ node scripts/mote.mjs update --profile prod --home /srv/mote/profiles --version 
 
 Docker 更新只拉取已签名 manifest 中的 `ghcr.io/仓库@sha256:...`，验证本地 RepoDigest 后切换。不会使用漂移的 `latest` tag，也不把宿主 profile 凭据交给镜像拉取进程。公开发行依赖的 registry 可用性需要部署机器具备网络访问。
 
-更新保留现有 `mote.env`、访问令牌、数据目录/卷、连接器凭据与 Tunnel 配置。回退时归档回到升级前快照，当前连接器凭据、日历选择和来源连接配置另作私有移交；Google 增量游标会清空，下一轮重新构建有界窗口，避免跳过已回退的数据。这份临时私有移交不进入可携带的备份文件，完成后删除。服务没有自动重启安装、自动降级或自动回退策略。
+同代更新保留现有 `mote.env`、访问令牌、数据目录/卷、连接器凭据与 Tunnel 配置；本次跨代不能直接沿用旧资料库或旧配置文件。回退时归档回到升级前快照，当前连接器凭据、日历选择和来源连接配置另作私有移交；Google 增量游标会清空，下一轮重新构建有界窗口，避免跳过已回退的数据。这份临时私有移交不进入可携带的备份文件，完成后删除。服务没有自动重启安装、自动降级或自动回退策略。
 
 ### 手动准备的版本
 
-中央发布标签为 `central-vX.Y.Z`，server 与 web 同版本部署；下载该标签的 `mote-server-X.Y.Z.tar.gz` 或检出源码后独立构建。无需升级 Mac 或 Android。其他端的标签和版本不用于选择中央部署。
+中央发布标签为 `central-vX.Y.Z`，server 与 web 同版本部署；下载该标签的 `mote-server-X.Y.Z.tar.gz` 或检出源码后独立构建。同代中央版本更新无需同步升级 Mac 或 Android；本次跨代各端都须使用当前格式实现。其他端的标签和版本不用于选择中央部署。
 
 原生示例：
 
 ```sh
 # 在另一个检出目录完成 npm ci 和中央/Web 构建
-node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --release /srv/mote/releases/0.5.0
+node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --release /srv/mote/releases/next
 ```
 
 Docker 示例：
 
 ```sh
 # 先 docker pull 已发布镜像，或在新代码目录构建带新 tag 的镜像
-docker build --tag mote-central:0.5.0 .
-node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --image mote-central:0.5.0
+docker build --tag mote-central:next .
+node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --image mote-central:next
 ```
 
-升级先停止该环境、生成 `backups/pre-upgrade-*` 一致快照，再切换代码路径或本地镜像 ID，等待健康检查。备份或私有连接器移交准备失败、且资料和版本选择均未变更时，会恢复此前正在运行的服务；原本已停止的环境仍保持停止。切换或资料迁移开始后，失败会保留快照与选择记录，不会自动让旧代码打开可能已迁移的数据库。`profile.json` 的 `previous` 记录回退目标，镜像保存实际 image ID，避免旧 tag 被覆盖后指向新代码。
+升级先停止该环境、生成 `backups/pre-upgrade-*` 一致快照，再切换代码路径或本地镜像 ID，等待健康检查。备份或私有连接器移交准备失败、且资料和版本选择均未变更时，会恢复此前正在运行的服务；原本已停止的环境仍保持停止。切换或恢复资料开始后，失败会保留快照与选择记录，不会自动让旧代码打开不兼容的数据库。当前切换没有跨代 schema 转换。`profile.json` 的 `previous` 记录回退目标，镜像保存实际 image ID，避免旧 tag 被覆盖后指向新代码。
 
 ```sh
 node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restore-data
@@ -156,22 +160,24 @@ node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restor
 
 回退先验证旧快照，另存当前仓库的 `pre-rollback-*` 备份，恢复升级前的数据和版本。**升级后新增资料不会出现在回退后的活动仓库中**，但会保存在额外快照，以及原生的 `data.before-rollback-*` 目录或 Docker 原来的命名卷中。CLI 不删除这些保留副本，可验收后导出需要的数据再迁入。只保留一级直接回退元数据；备份目录中更早的快照仍在。
 
+跨代回滚需要旧程序配套完整旧备份，不能让旧程序直接打开 epoch 3，也不能让本代程序打开旧库。reset/newdir 后的资料与旧库彼此独立；先保留两代目录，按 [清理实施记录](audits/compatibility-cleanup-2026-10-04.md#升级操作和风险) 手动选择。
+
 使用 launchd 的环境：先 `launchctl bootout` 停止自动管理，再执行升级或回退；验收后用 CLI `stop` 停止临时后台实例，再 `launchctl bootstrap` 原 plist，使 launchd 重新接管新版本。不要在 job 正在自动重启时迁移数据。
 
 ## 备份、恢复和迁移
 
-对话历史保存在中央 SQLite 数据库，随完整离线备份和恢复迁移。中央界面的 HTTP JSON 导出仍只包含原始资料、来源与记忆，不包含对话历史。
+本代对话历史保存在中央 SQLite 数据库，随完整离线备份恢复。中央界面的 HTTP 便携归档为完整 version 2，包含原始资料、来源与记忆，不包含对话历史；旧 version 1 或缺集合字段的包拒绝导入。离线快照和 HTTP 便携归档是不同契约，均不承担旧格式自动转换。
 
-小资料库可在中央界面导出/导入 JSON；导出包含原文、图片、文件原件及附件关系，按私密数据保管。文件 ID 在恢复后保持不变，加密原件按目标仓库的密钥重新加密。JSON 不包含导入工作目录、运行脚本或批处理任务；恢复后的派生记忆需要重新核验。超过 HTTP 导出限制的仓库使用离线备份：
+本代小资料库可在中央界面导出/导入完整 JSON 便携归档；导出包含原文、图片、文件原件及附件关系，按私密数据保管。文件 ID 在恢复后保持不变，加密原件按目标仓库的密钥重新加密。JSON 不包含导入工作目录、运行脚本或批处理任务；恢复后的派生记忆需要重新核验。超过 HTTP 导出限制的仓库使用离线备份：
 
 ```sh
 node scripts/mote.mjs stop --profile prod --home /srv/mote/profiles
 node scripts/mote.mjs backup --profile prod --home /srv/mote/profiles --out /srv/mote-backups/mote-2026-09-13
 ```
 
-CLI 复用 `scripts/backup.ts`：SQLite backup API 生成一致数据库，按资产目录复制当前格式的截图与文件原件（新资产为 `files/objects/` 分片，旧格式兼容读取），写 SHA-256 manifest。不复制导入脚本和临时工作目录；未完成的导入在备份中标记为需要重新分析，保留已经入库的证据 ID。恢复到新目录后按新仓库位置重建输入路径，重新生成预览并确认；已保存的记录去重，Memory 仍按实际新增证据处理。原生 `server.pid` 活跃时拒绝备份；Docker 必须已停止，先复制该环境卷到私有临时目录再备份，因此需预留约两份仓库的临时/备份磁盘空间。临时复制会在结束后清理。
+CLI 复用 `scripts/backup.ts`：SQLite backup API 生成一致数据库，只对 epoch 3 的完整当前库按资产目录复制截图与文件原件（`files/objects/` 分片，仅 `.plain` / `.aes` 后缀），不读取旧 `blobs/`、`files/<hash>`、source-archive manifest 或旧内容包装，写 SHA-256 manifest。不复制导入脚本和临时工作目录；未完成的导入在备份中标记为需要重新分析，保留已经入库的证据 ID。恢复到新目录后按新仓库位置重建输入路径，重新生成预览并确认；已保存的记录去重，Memory 仍按实际新增证据处理。原生 `server.pid` 活跃时拒绝备份；Docker 必须已停止，先复制该环境卷到私有临时目录再备份，因此需预留约两份仓库的临时/备份磁盘空间。临时复制会在结束后清理。
 
-在另一台机器初始化新的空环境，然后恢复：
+在另一台机器初始化本代新的空环境，然后恢复本代完整离线备份：
 
 ```sh
 node scripts/mote.mjs init --profile prod --home /srv/mote-new/profiles --runtime docker
@@ -180,7 +186,7 @@ node scripts/mote.mjs restore --profile prod --home /srv/mote-new/profiles --fro
 node scripts/mote.mjs start --profile prod --home /srv/mote-new/profiles
 ```
 
-恢复会验证 manifest、文件类型、所有 SHA-256，并二次校验复制结果；活动服务、非空数据目录/卷都会拒绝。Docker 恢复需已准备好 profile 选择的本地镜像。恢复不复制 `server.pid`、令牌、模型 API key 或数据加密 key；新节点使用自己的访问令牌。验证记录数量、原文、图片和时间线，再修改客户端 URL/令牌。保留旧节点备份直到迁移验收完成。
+恢复会验证当前备份 manifest、文件类型、所有 SHA-256，并二次校验复制结果。启动仍要求数据库 epoch 3，不能通过恢复旧快照绕过格式边界。活动服务、非空数据目录/卷都会拒绝。Docker 恢复需已准备好 profile 选择的本地镜像。恢复不复制 `server.pid`、令牌、模型 API key 或数据加密 key；新节点使用自己的访问令牌。验证记录数量、原文、图片和时间线，再修改客户端 URL/令牌。保留旧节点备份直到迁移验收完成。
 
 内容加密默认关闭，`MOTE_DATA_KEY` 本身不再开启加密；可以在开发者页面或首次启动时用 `MOTE_CONTENT_ENCRYPTION=1` 主动开启，界面保存的选择优先。`MOTE_DATA_KEY` 是可选的 64 位十六进制 AES-256-GCM 图片及文件原件密钥；显式开启且未配置时会生成资料库私有的 `content-key` 文件。存在密文时必须单独备份原环境密钥或该文件，离线内容备份不携带密钥。解析文本、元数据与导入工作产物保持明文。尚有密文时不要更换原密钥；丢失密钥不能通过重新下载模型或更换访问令牌恢复内容。已有内容可在开发者页面一次性批量解密，详见[内容存储设置](content-storage.md)。
 

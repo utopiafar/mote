@@ -1,6 +1,6 @@
 # Android 采集与同步开销优化
 
-> 当前截图路径已暂停 Qwen/VLM，完整 OCR 在中央处理。本机 OCR 仅为非空文字规则服务，旧充电任务保留兼容。下文模型与完整本机 OCR 的说明及测试计数属于当时优化记录；当前行为见 [上传审查](central-perception.md)。同步协议与确定性去重机制仍适用。
+> 当前截图路径已暂停 Qwen/VLM，完整 OCR 在中央处理。本机 native OCR 仅为当前隐私规则的 capture gate 服务；本机延迟/充电补 OCR 及补上传队列已删除。下文模型、完整本机 OCR、迁移和旧上传回退说明及测试计数属于当时优化记录，不能作为当前行为或本次验收；当前行为见 [上传审查](central-perception.md)、[上传调度](upload-scheduling.md) 和 [兼容性清理记录](audits/compatibility-cleanup-2026-10-04.md)。现行确定性去重、授权与 ACK 保护仍保留。
 
 本文保留按 2026-09-16 的 [架构对比讨论](https://chatgpt.com/share/6aaa0c78-a5e0-83e8-b965-3e5ca92b2f00) 实现非 Qwen 推理侧的优化。没有修改 Qwen 模型、提示、推理参数、进程重载、JNI 输入协议或后端，也没有替换隐私模型。
 

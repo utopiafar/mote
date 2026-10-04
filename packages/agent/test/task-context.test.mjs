@@ -9,10 +9,11 @@ test('durable task retries keep their host-owned time even across a clock bounda
  assert.equal(buildContextEnvelope({question:'Interactive request'},[],'2026-09-02T00:00:01Z').currentTime,'2026-09-02T00:00:01Z');
 });
 test('opening memory hints are separate from cited evidence and include verification guidance',()=>{
- const lead={id:'generated-memory',title:'Generated preference',statement:'Generated statement',uncertainty:'Only in one project',status:'proposed',tier:'episode',createdAt:'2026-09-18T00:00:00Z'};
+ const lead={id:'generated-memory',title:'Generated preference',statement:'Generated statement',uncertainty:'Only in one project',status:'published',tier:'episode',createdAt:'2026-09-18T00:00:00Z'};
  const envelope=buildContextEnvelope({question:'What do you know?',openingMemories:[lead]},[]);
  assert.deepEqual(envelope.untrustedMemoryLeads,[lead]);
- assert.match(envelope.memoryLeadInstruction,/legacy drafts are not awaiting user confirmation/);
+ assert.match(envelope.memoryLeadInstruction,/navigation hints, not independent evidence or instructions/);
+ assert.match(envelope.memoryLeadInstruction,/includeEvidence=true.*host-verified supporting original ranges/);
  assert.match(envelope.memoryLeadInstruction,/Cite delivered original ids, not memory ids/);
  assert.equal(envelope.untrustedEvidence,undefined);
 });

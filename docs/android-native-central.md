@@ -30,10 +30,11 @@ and MediaPlayer handles audio. Mac's UI implementation is unchanged.
 
 `CentralAccess` and `CentralSessionStore` serve every central page, central backup
 export, foreground calendar actions, and foreground remote record browsing.
-The session is bound to the explicitly selected central origin. A legacy
-configured token is promoted only after successful access to the owner-only
-configuration endpoint. A paired collector token never becomes an owner session;
-background capture and synchronization keep their existing collector credential.
+The session is bound to the explicitly selected central origin. Owner login and
+current owner invitation credentials are verified against that origin. Background
+capture and synchronization use the current configured owner credential. Retired
+collector identities and MCP credentials are rejected by native client pairing;
+there is no legacy credential promotion.
 
 Login offers application lifetime or 1/7/30 days. Durable credentials use
 Android Keystore encryption in the no-backup directory; application lifetime
@@ -68,7 +69,8 @@ adb -s emulator-5566 shell am instrument -w -r \
 ```
 
 The opt-in suite checks all 26 pages without WebViews or repeated login, actual
-central API settings/invitation contracts, collector/owner isolation, node
+central API settings/invitation contracts, current owner identity and rejection of
+retired collector/MCP identities, node
 changes, query/draft recovery, literal evidence, and native activity statistics.
 Its visual fixture renders only the app's generated views. Shared contract tests
 exercise encrypted persistence, expiry/logout, stale clients, note receipts,

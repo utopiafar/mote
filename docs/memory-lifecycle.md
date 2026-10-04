@@ -15,7 +15,7 @@ All four automatic workflows require **pending changes AND (the count threshold 
 | Insight review | 24 hours | 100 | 1,000 |
 | Conversation working memory | 1 hour | 8 turns | 20 |
 
-System management → model settings → 记忆与洞察 persists these settings immediately through `/api/memory-settings`. Each workflow can be disabled separately. The old environment insight interval only seeds the initial persisted interval; subsequent policy edits live in the database. Explicit zero previously meant manual-only; installations upgrading to this lifecycle receive the new documented defaults. With the default settings above, all four workflows have an effective maximum wait of one hour. A small backlog can therefore run without reaching the count threshold; an empty journal does not call a model. Set each workflow’s `enabled=false` to make it manual-only.
+System management → model settings → 记忆与洞察 persists these settings immediately through `/api/memory-settings`. Each workflow can be disabled separately. A new format 3 vault starts with the declared lifecycle defaults; the retired environment insight interval and historical lifecycle cursors are not converted or replayed. Subsequent policy edits live in the database. With the default settings above, all four workflows have an effective maximum wait of one hour. A small backlog can therefore run without reaching the count threshold; an empty journal does not call a model. Set each workflow’s `enabled=false` to make it manual-only.
 
 A bounded snapshot consumes a contiguous prefix of an arrival journal, not an occurrence-time window. Late uploads therefore remain eligible even when their authored dates are months old. Duplicate uploads do not create new increments. Updates and deletions are increments; invalidated originals are skipped. File processing completion writes another increment, so files that were not ready at the earlier check are revisited. New arrivals during a run remain after its watermark.
 
@@ -48,4 +48,4 @@ No physical capture or personal screenshot is needed by these tests. Live semant
 
 Completed fixture and live results, costs, repaired failures and unperformed checks: [0.0.31 validation](memory-validation-0.0.31.md).
 
-Automatic activation, legacy migration and persistent owner deletion intent are specified in [Memory updates](memory-updates.md#automatic-activation-and-deletion-intent-2026-09-27). Query-time bounded source disclosure is specified in [Memory source disclosure](memory-source-disclosure.md).
+Current automatic activation and persistent owner deletion intent are specified in [Memory updates](memory-updates.md#automatic-activation-and-deletion-intent-2026-09-27). Retired lifecycle schemas require the explicit [MVP upgrade procedure](audits/compatibility-cleanup-2026-10-04.md). Query-time bounded source disclosure is specified in [Memory source disclosure](memory-source-disclosure.md).

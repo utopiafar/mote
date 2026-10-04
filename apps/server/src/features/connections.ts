@@ -5,7 +5,7 @@ import { type FastifyRequest } from 'fastify';
 import type { FeatureServices } from '../feature-services.js';
 import { moteText } from '../i18n.js';
 import { INGRESS_PROTOCOL_VERSION } from '../ingress.js';
-import { MOTE_PROTOCOL_HEADER, MOTE_PROTOCOL_RANGE } from '@mote/shared';
+import { MOTE_PROTOCOL_RANGE } from '@mote/shared';
 
 /** connections: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{config,connectionRate,connections,connectionIdentity,serverVersion}:Pick<FeatureServices,"config"|"connectionRate"|"connections"|"connectionIdentity"|"serverVersion">){
@@ -28,10 +28,9 @@ app.delete('/api/connections/:id',{config:connectionRate},async req=>connections
 app.post('/api/connections/mcp',{bodyLimit:8192,config:connectionRate},async req=>connections.mintMcp(req.body,config.connectors));
 app.get('/api/connections/self',async req=>{
     const c=connectionIdentity(req);if(c)connections.assertActive(c);
-    const owner=!c||connections.isOwner(c),collector=false;
-    // Existing collectors strictly validate this response. Advertise new metadata
-    // only when the client opts in so already-installed collectors still connect.
+    const owner=!c||connections.isOwner(c);
+    // Current native clients require explicit protocol metadata.
     const protocol = {protocol:MOTE_PROTOCOL_RANGE};
-    return {credential:c?{id:c.id,scope:owner?'owner':c.scope,label:c.label,serverUrl:c.serverUrl,...(c.deviceId?{deviceId:c.deviceId,deviceName:c.deviceName,platform:c.platform}:{})}:{id:'owner',scope:'owner',label:moteText("节点所有者")},node:{version:serverVersion,profile:config.profile??'default',...protocol},capabilities:{ingest:owner||collector,ingressVersion:Number(INGRESS_PROTOCOL_VERSION),ownSources:owner||collector,archiveRead:owner||c?.scope==='mcp-read'}};
+    return {credential:c?{id:c.id,scope:owner?'owner':c.scope,label:c.label,serverUrl:c.serverUrl,...(c.deviceId?{deviceId:c.deviceId,deviceName:c.deviceName,platform:c.platform}:{})}:{id:'owner',scope:'owner',label:moteText("节点所有者")},node:{version:serverVersion,profile:config.profile??'default',...protocol},capabilities:{ingest:owner,ingressVersion:Number(INGRESS_PROTOCOL_VERSION),ownSources:owner,archiveRead:owner||c?.scope==='mcp-read'}};
   });
 }

@@ -4,7 +4,7 @@
 
 ## 在 App 中连接
 
-先把中央节点升级到 0.6.0，再升级客户端。旧版手工连接仍然可用；新邀请接口要求新版中央。
+中央与客户端应使用本次同代实现。存储格式 3 的破坏升级需先按 [升级说明](audits/compatibility-cleanup-2026-10-04.md#升级操作和风险) 备份并处理旧数据。当前手工 owner 令牌入口保留，旧 collector 身份不会转换为 owner。
 
 1. 用所有者令牌打开中央界面的「设备」页，在「添加设备与 Chatbot」填写手机或电脑可访问的 HTTPS 地址。配置了 `MOTE_PUBLIC_URL` 时优先填入该地址；Cloudflare Tunnel 可以提供入口。手机的 `localhost` 指手机自身，二维码不会自动建立隧道。
 2. 填写连接名称。首次连接使用「新设备」；旧版迁移、凭据撤销后重连或重试一次未保存成功的兑换，选择原设备身份。
@@ -15,7 +15,7 @@
 
 中央列表可按连接名称单独撤销，并保留归档资料。隐藏 MCP 配置或离开页面不会撤销凭据；邀请需要点击「取消邀请」才能提前失效。若设备尚未来得及上报心跳，中央仍会从连接记录中提供该设备的重新配对选项。
 
-采集凭据只允许本设备写入截图、随手记、心跳，以及注册、调整、写入和读取本设备的来源。它不能浏览中央完整时间线、运行中央 Agent 查询、导出资料、删除记录、读取诊断、配置节点或管理其它连接。Mac 内嵌中央浏览界面需要另外登录所有者账户；配对本身不会授予这些权限。已有手工输入的所有者令牌继续有效，因此建议完成配对后从采集端移除不再需要的所有者凭据。
+当前邀请签发独立、可撤销的 owner 凭据，具有同步、全归档浏览、Agent 查询、导出、删除和中央管理权限。绑定设备信息用于核验连接身份，不会将 owner 的浏览权限缩小为本设备。客户端只接受当前 owner 身份；MCP 凭据不能用于原生客户端登录。
 
 ## 创建与兑换
 
@@ -54,7 +54,7 @@ Content-Type: application/json
 {"code":"<invitation-code>","deviceId":"existing-device-id","deviceName":"我的手机","platform":"android"}
 ```
 
-`platform` 支持 `android`、`macos`、`windows`、`linux` 和 `other`。响应为 `{serverUrl, token, credentialId, scope:"collector"}`。客户端应只将该 token 用于已确认的 `serverUrl`，不跟随重定向传递凭据。现有采集协议的通用 `other` 客户端使用 `platform:"import"`；当前 Android 和 Mac 直接使用各自平台名称。
+`platform` 支持 `android`、`macos`、`windows`、`linux` 和 `other`。兑换响应为 `{serverUrl, token, credentialId, scope:"owner"}`；随后通过 `/api/connections/self` 验证节点、设备及必需的协议元数据，验证完成再保存凭据。客户端应只将该 token 用于已确认的 `serverUrl`，不跟随重定向传递凭据。现有采集协议的通用 `other` 客户端使用 `platform:"import"`；当前 Android 和 Mac 直接使用各自平台名称。
 
 `serverUrl` 必须是所有者显式填写的 HTTPS origin；仅 `localhost`、`127.0.0.1`、`[::1]` 允许 HTTP。地址不能包含用户名、密码、路径、查询或片段。服务端不会从 `Host` 或转发请求头猜测地址，也不会替所有者探测这个地址。
 
@@ -62,12 +62,12 @@ Content-Type: application/json
 
 ## 检查与撤销
 
-- `GET /api/connections/self`：所有者或独立凭据可读取自身 `credential`、节点 `node:{version,profile}` 及 `capabilities:{ingest,ownSources,archiveRead}`。不返回 token 或 token 哈希，可用作客户端连接测试。
+- `GET /api/connections/self`：所有者或独立凭据可读取自身 `credential`、节点 `node:{version,profile,protocol}` 及 `capabilities:{ingest,ownSources,archiveRead}`。不返回 token 或 token 哈希，可用作客户端连接测试。原生客户端必须验证当前 owner、设备身份和协议范围。
 - `GET /api/connections`：仅所有者；返回 `items` 和 `mcp:{enabled,writeEnabled,writeSourceIds}`。每项只有身份、标签、创建／撤销时间、设备信息、范围和基于公开连接 ID 的遮罩提示。
 - `DELETE /api/connections/:id`：仅所有者；持久撤销该凭据，重复撤销同一记录仍成功，返回 `{revoked:true,id}`。
 - `POST /api/connections/invitations/revoke`，body `{code}`：仅所有者；幂等取消尚未兑换的邀请。code 不放入 URL。已兑换的邀请应通过连接 ID 撤销其凭据。
 
-采集请求的 `deviceId` 必须与凭据一致；已存在的 capture ID、来源 ID 也必须属于该设备。来源列表和版本查询始终限制为该设备。采集接口不允许通过自造 `provenance` 冒充来源版本；来源内容走受限的 `/api/sources/:id/items`。查询 Agent 继续只有读取工具，没有新增写入能力。
+配对中的设备 ID 必须与绑定邀请一致，重新授权已有设备必须由所有者明确选择该身份。owner 的归档权限不会按设备隐式收窄；浏览时可显式选择设备筛选。来源版本通过 `/api/sources/:id/items` 写入，仍需符合当前 schema、版本和幂等确认。查询 Agent 继续只有读取工具，没有新增写入能力。
 
 ## MCP 配置
 
@@ -83,7 +83,7 @@ Content-Type: application/json
 
 必须先按现有节点启动要求配置至少 32 字符的 `MOTE_MCP_READ_TOKEN`，再开启 `MOTE_MCP_ENABLED`。写入还需要至少 32 字符的 `MOTE_MCP_WRITE_TOKEN`、`MOTE_MCP_WRITE_ENABLED` 和非空 `MOTE_MCP_WRITE_SOURCE_IDS`；修改后重启中央。未开启时创建连接返回带说明的 `409 mcp_disabled` 或 `409 mcp_write_disabled`。发给聊天客户端的是新生成的独立凭据，不是这些静态配置 token。静态 token 继续遵循原设置，需要通过配置轮换，不能在独立连接列表中撤销。
 
-这份 JSON 适用于支持 Streamable HTTP 与自定义 Bearer 请求头的 MCP 客户端。只支持 OAuth 授权的聊天产品不能直接使用此配置；本功能不提供 MCP OAuth 授权服务器。需要本地 stdio 的客户端可按 [连接器文档](connectors.md) 配置桥接：将中央下载的 `mote-mcp.json` 放到本机私有位置，在 macOS/Linux 执行 `chmod 600 /绝对路径/mote-mcp.json`，再使用 `node scripts/mcp-stdio.mjs --connection /绝对路径/mote-mcp.json`。桥接同时兼容旧的 `{url,token}` 文件，不会执行导入 JSON 中的 `command` 或 `args`；不支持的结构会被拒绝。
+这份 JSON 适用于支持 Streamable HTTP 与自定义 Bearer 请求头的 MCP 客户端。只支持 OAuth 授权的聊天产品不能直接使用此配置；本功能不提供 MCP OAuth 授权服务器。需要本地 stdio 的客户端可按 [连接器文档](connectors.md) 配置桥接：将中央下载的 `mote-mcp.json` 放到本机私有位置，在 macOS/Linux 执行 `chmod 600 /绝对路径/mote-mcp.json`，再使用 `node scripts/mcp-stdio.mjs --connection /绝对路径/mote-mcp.json`。桥接只接受当前 `mcpServers.mote` HTTP 配置，拒绝旧的 `{url,token}` 文件，不会执行导入 JSON 中的 `command` 或 `args`。
 
 ## 持久性与边界
 

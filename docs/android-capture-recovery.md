@@ -1,5 +1,7 @@
 # Android capture recovery and central navigation
 
+> Historical capture-recovery and device validation below describe 0.0.63–0.0.66, not a new test run. Format 3 now rejects old settings and queues instead of migrating them. Current Android central pages use native Views and a verified owner session, with Ask embedded in MainActivity; see [native central UI](android-native-central.md) and the [MVP upgrade record](audits/compatibility-cleanup-2026-10-04.md).
+
 ## Queue regression in 0.0.63–0.0.65
 
 The material-stage addition in `e4fed23` introduced a batch-wide privacy floor. It required every activity-only output to use `source=activity`, although media and notification records also support `privacy.collection=activity`. A valid record could therefore persist in the stage inbox, fail commit, and fail every subsequent queue open.

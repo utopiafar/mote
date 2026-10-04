@@ -361,7 +361,7 @@
   "撤销立即阻止后续请求，已归档资料保持不变。": "Revocation immediately blocks future requests. Archived data is preserved.",
   "刷新连接": "Refresh connections",
   "正在读取连接…": "Loading connections…",
-  "还没有独立连接。旧版手填中央令牌的设备仍然可用；迁移后会显示在这里。": "No separate connections yet. Devices using a manually entered owner token still work and appear here after migration.",
+  "还没有独立连接。生成邀请或 MCP 配置即可添加。": "No separate connections yet. Generate an invitation or MCP configuration to add one.",
   "已撤销": "Revoked",
   "外部 Chatbot": "External chatbot",
   "· 创建于": "· Created",

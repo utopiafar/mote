@@ -7,6 +7,7 @@ import { parseEnv } from 'node:util';
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createServer } from 'node:net';
+import { DatabaseSync } from 'node:sqlite';
 import { validateTunnel, tunnelTokenPath, dockerTunnelUser, removeTunnelSidecars, assertTunnelToken } from './tunnel-lib.mjs';
 
 export const repository = resolve(fileURLToPath(new URL('../', import.meta.url)));
@@ -324,13 +325,20 @@ export async function verifiedBackup(backup) {
   if ((await stat(manifestPath)).size > 16 * 1024 * 1024) throw Error('Backup manifest exceeds 16 MiB');
   const manifest = await readJson(manifestPath);
   if (manifest.version !== 1 || !manifest.checksums || !Object.hasOwn(manifest.checksums, 'mote.sqlite')) throw Error('Invalid backup manifest');
+  if (manifest.storageEpoch !== 3) throw Error('Unsupported backup storage epoch; restore older backups with their matching older binary');
   for (const [name, hash] of Object.entries(manifest.checksums)) {
-    const part=/^files\/objects\/[a-f0-9]{64}\/(0|[1-9][0-9]{0,2})(?:\.plain|\.aes)?$/.exec(name);
-    if (!(name === 'mote.sqlite' || /^blobs\/[a-f0-9]{64}$/.test(name) || /^files\/[a-f0-9]{64}(?:\.plain|\.aes)?$/.test(name) || (part && Number(part[1]) < 128)) || !/^[a-f0-9]{64}$/.test(hash)) throw Error('Unsafe backup manifest entry');
+    const part=/^files\/objects\/[a-f0-9]{64}\/(0|[1-9][0-9]{0,2})(?:\.plain|\.aes)$/.exec(name);
+    const sourceBatch=/^source-archive\/[a-f0-9]{64}\/[a-f0-9]{64}(?:\.plain|\.aes)$/.test(name);
+    if (!(name === 'mote.sqlite' || sourceBatch || (part && Number(part[1]) < 128)) || !/^[a-f0-9]{64}$/.test(hash)) throw Error('Unsafe backup manifest entry');
     const info = await lstat(join(directory, name));
     if (!info.isFile() || info.nlink !== 1 || (await realpath(join(directory, name))) !== join(directory, name)) throw Error('Backup links are not allowed');
     if (await sha(join(directory, name)) !== hash) throw Error('Backup checksum mismatch; active data was not changed');
   }
+  const db = new DatabaseSync(join(directory, 'mote.sqlite'), { readOnly: true });
+  try {
+    const settings=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'").get();
+    if (!settings || db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value !== '3') throw Error('Unsupported backup database epoch; existing destination data was not changed');
+  } finally { db.close(); }
   return { directory, names: Object.keys(manifest.checksums), checksums: manifest.checksums };
 }
 export async function restoreProfile(p, backup) {

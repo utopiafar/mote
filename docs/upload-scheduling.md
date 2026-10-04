@@ -8,9 +8,13 @@ Capture turns are bounded by 25 entries, approximately 4 MiB of encoded payload 
 
 A partial original keeps its outbox entry and immutable local parts. On the next slice, the central upload receipt identifies already accepted parts; only missing parts are sent. The local original is removed only after the final matching version ACK. Cancellation or a failed transport request is not converted into a successful yield. The process-local byte counters may restart, but server part receipts and the local outbox remain durable.
 
-Batch capture 413 responses split the batch recursively; a single oversized record remains an error with its ID preserved. Only 404/405 route absence uses the legacy single-capture endpoint. 401/403/429 never switch upload endpoints, and malformed/mismatched ACKs remain errors.
+Batch capture 413 responses reduce the batch; desktop splits recursively and Android retries a smaller bundle. A single oversized record remains an error with its ID preserved. The client's explicit `packedUpload` setting selects the current transport: desktop uses JSON batch and Android uses gzip bundle when enabled; disabling it selects the current single-capture endpoint directly. Single uploads retain the same ingress receipt and ID checks.
+
+404/405 route absence is an upload failure and never switches to another endpoint. 401/403/429 also preserve the selected transport, and malformed/mismatched ACKs remain errors. This removal of endpoint negotiation is recorded in [compatibility cleanup](audits/compatibility-cleanup-2026-10-04.md).
 
 ## Validation and remaining boundaries
+
+The following records describe existing generated fixture coverage and earlier validation. This documentation update did not rerun those checks; the current cleanup run is recorded separately in [compatibility cleanup](audits/compatibility-cleanup-2026-10-04.md).
 
 Generated tests cover a 20 MiB original yielding to 400 dated notes, process reconstruction and exact final bytes, cancellation, byte-based real-time/history service, 401/403/429, 413 splitting, and one manual collector flush of 400 historical notes plus a new note inserted between source turns. The larger durable-write fixtures use a 30-second test timeout; their original five-second harness limit was exceeded under parallel filesystem load without an assertion failure.
 

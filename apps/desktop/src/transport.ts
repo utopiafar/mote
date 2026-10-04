@@ -28,7 +28,6 @@ export async function uploadCapture(config: Config, event: CaptureEvent, image?:
     await response.body?.cancel().catch(() => undefined);
     if (response.status === 401 || response.status === 403) throw new TransportFailure(moteText("中央节点拒绝访问，请检查令牌；队列已保留"), 'AUTH', response.status);
     if (response.status === 409) throw new TransportFailure(moteText("中央节点报告事件 ID 冲突；队列已保留，请检查服务端"), 'CONFLICT', response.status);
-    if (response.status === 400 && event.ocr) throw new TransportFailure(moteText("当前截图协议未被接受，请先确认中央节点已升级至 0.0.2 或更新版本；队列已保留"), 'RESPONSE', 400);
     throw new TransportFailure(moteText("中央节点返回 HTTP {0}；队列已保留", response.status), httpFailure(response.status), response.status);
   }
   try { requireIngressReceipt(JSON.parse(await readResponseText(response, 16384)),{kind:'capture',id:event.id}); }
