@@ -2,6 +2,9 @@ import {moteText} from '@mote/shared/i18n';
 /** Display follows protocol codes, never provider text or semantic matching. The
  * server's allowedActions remains the authority for recovery controls. */
 const messages:Record<string,string>={
+ snapshot_input_expired:'快照的临时输入已清理，请重新同步来源文件后重试。',
+ context_lineage_incomplete:'这段历史的证据范围不完整，无法安全发送给远程模型。请新建对话，或改用本地模型并重新提供证据。',
+ context_evidence_restricted:'这段历史包含当前不可向所选模型披露的资料。请改用本地模型，或新建对话并重新选择可用证据。',
  import_directory_missing:'中央服务器上的目录不存在或文件已移动，请检查路径后重新提交。',
  import_directory_unreadable:'中央服务器无法读取该目录，请检查访问权限后重新提交。',
  import_directory_required:'该路径不是目录，请填写中央服务器上可读取的目录。',

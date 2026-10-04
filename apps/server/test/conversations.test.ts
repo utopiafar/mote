@@ -12,7 +12,7 @@ import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 
 const token='generated-conversation-owner-token',headers={authorization:`Bearer ${token}`};
-const answer=(text='Generated assistant reply')=>({answer:text,citations:[],trace:[],runId:randomUUID()});
+const answer=(text='Generated assistant reply')=>({answer:text,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[] as string[]}});
 const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 const agent=(query:QueryAgent['query']):QueryAgent=>({configured:true,query,close:async()=>{}});
 
@@ -31,7 +31,7 @@ test('server conversations survive restart, preserve follow-up dialogue and allo
   const next=await running.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId,question:'继续解释它'}});
   assert.equal(next.statusCode,200);assert.equal(next.json().conversationId,conversationId);assert.notEqual(next.json().turnId,turnId);
   assert.equal(seen[1].deviceId,undefined);assert.equal(seen[1].after,undefined);assert.equal(seen[1].before,undefined);assert.equal(seen[1].timeZone,scope.timeZone);
-  assert.deepEqual(seen[1].conversation,{turns:[{question:'关于我那份合成观测笔记',answer:'Synthetic first answer',scope,createdAt:seen[1].conversation!.turns[0].createdAt}],omittedTurns:0});
+  assert.deepEqual(seen[1].conversation,{turns:[{question:'关于我那份合成观测笔记',answer:'Synthetic first answer',scope,createdAt:seen[1].conversation!.turns[0].createdAt}],omittedTurns:0,evidenceDependencies:{version:1,complete:true,ids:[]}});
   const detail=(await running.app.inject({url:`/api/conversations/${conversationId}`,headers})).json();
   assert.equal(detail.turnCount,2);assert.deepEqual(detail.turns.map((turn:any)=>turn.question),['关于我那份合成观测笔记','继续解释它']);
   assert.equal(detail.turns[0].result.answer,'Synthetic first answer');
@@ -110,7 +110,7 @@ test('capture deletion removes derived history content and prevents in-flight an
   const dir=mkdtempSync(join(tmpdir(),'mote-conversation-privacy-'));
   const seen:QueryInput[]=[];let hold=false,started!:()=>void,complete!:(result:ReturnType<typeof answer>)=>void;
   const began=new Promise<void>(resolve=>{started=resolve;});
-  const {app,store}=await buildApp(config(dir),{agent:agent(async input=>{seen.push(input);if(hold){started();return new Promise(resolve=>{complete=resolve;});}return answer('Generated derived sensitive sentinel');})});
+  const {app,store}=await buildApp(config(dir),{agent:agent(async input=>{seen.push(input);if(hold){started();return new Promise(resolve=>{complete=resolve;});}return {...answer('Generated derived sensitive sentinel'),evidenceDependencies:{version:1,complete:true,ids:[record.id]}};})});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
   const record={id:randomUUID(),deviceId:'fixture',deviceName:'Fixture',platform:'import',capturedAt:'2026-09-01T00:00:00Z',source:'note',ocrText:'Generated evidence',durationMs:0};
   await store.ingest(record);

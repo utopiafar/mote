@@ -4,6 +4,8 @@ import {z} from 'zod';
 import {StoreError,type Store} from './store.js';
 import {installEvidenceDependencies} from './evidence-dependencies.js';
 import {materialDependencyStatus,materialRequirementsSchema,type MaterialInputPin} from './material-readiness.js';
+import {materialIndexRuntime,type MaterialIndexRuntime,type MaterialIndexStatus} from './material-index.js';
+import type {ExecutionEngine} from './execution-engine.js';
 
 const MATERIAL_PREFIX='mat_';
 const materialIdSchema=z.string().regex(/^mat_[a-f0-9]{64}$/);
@@ -57,6 +59,7 @@ export type MaterialBlock=MaterialDraft['blocks'][number];
 export type MaterialRecord=Omit<MaterialDraft,'blocks'|'members'> & {
   ref:string;revision:string;sequence:number;createdAt:string;updatedAt:string;
   blockCount:number;memberCount:number;textLength:number;assetCount:number;
+  indexing:MaterialIndexStatus;
 };
 export type MaterialReadSpan={blockId:string;kind:'text'|'asset';format?:string;
   evidenceId?:string;evidenceOffset?:number;
@@ -93,6 +96,7 @@ export function parseMaterialRef(value:string):{id:string;revision?:string} {
 
 /** Immutable formal material revisions. All content is evidence, never agent instructions. */
 export class MaterialStore {
+  index?:MaterialIndexRuntime;
   constructor(readonly store:Store){
     store.db.exec(`
       CREATE TABLE IF NOT EXISTS material_searchable(material_id TEXT PRIMARY KEY REFERENCES material_heads(id) ON DELETE CASCADE);
@@ -110,7 +114,11 @@ export class MaterialStore {
         id TEXT PRIMARY KEY,source_id TEXT NOT NULL,external_id TEXT NOT NULL,kind TEXT NOT NULL,
         revision TEXT NOT NULL,sequence INTEGER NOT NULL,retired INTEGER NOT NULL DEFAULT 0,
         device_id TEXT,first_at TEXT,last_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,min_visible_sequence INTEGER NOT NULL DEFAULT 1);
-      CREATE TRIGGER IF NOT EXISTS material_search_delete BEFORE DELETE ON material_heads BEGIN DELETE FROM material_fts WHERE rowid=old.rowid; END;
+      CREATE TABLE IF NOT EXISTS material_index_garbage(kind TEXT NOT NULL,row_id INTEGER NOT NULL,PRIMARY KEY(kind,row_id));
+      DROP TRIGGER IF EXISTS material_search_delete;
+      CREATE TRIGGER material_search_delete BEFORE DELETE ON material_heads BEGIN
+        INSERT OR IGNORE INTO material_index_garbage VALUES('head',old.rowid);
+      END;
       CREATE INDEX IF NOT EXISTS material_heads_source ON material_heads(source_id,updated_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS material_heads_recent ON material_heads(retired,updated_at DESC,id DESC);
       CREATE TABLE IF NOT EXISTS material_revisions(
@@ -158,8 +166,9 @@ export class MaterialStore {
           AND NOT EXISTS(SELECT 1 FROM material_blocks WHERE payload_hash=old.payload_hash)
           AND NOT EXISTS(SELECT 1 FROM material_block_versions WHERE payload_hash=old.payload_hash);
       END;
-      CREATE TRIGGER IF NOT EXISTS material_block_version_delete AFTER DELETE ON material_block_versions BEGIN
-        DELETE FROM material_fts_blocks WHERE rowid=old.id;
+      DROP TRIGGER IF EXISTS material_block_version_delete;
+      CREATE TRIGGER material_block_version_delete AFTER DELETE ON material_block_versions BEGIN
+        INSERT OR IGNORE INTO material_index_garbage VALUES('block',old.id);
         DELETE FROM material_block_payloads WHERE hash=old.payload_hash
           AND NOT EXISTS(SELECT 1 FROM material_blocks WHERE payload_hash=old.payload_hash)
           AND NOT EXISTS(SELECT 1 FROM material_block_versions WHERE payload_hash=old.payload_hash);
@@ -171,6 +180,12 @@ export class MaterialStore {
           (SELECT material_id FROM material_members WHERE kind='capture' AND ref='capture:'||old.id);
       END;
     `);
+    store.db.exec(`CREATE TABLE IF NOT EXISTS material_index_requests(
+      material_id TEXT PRIMARY KEY REFERENCES material_heads(id) ON DELETE CASCADE,
+      revision TEXT NOT NULL,enabled INTEGER NOT NULL,generation INTEGER NOT NULL,
+      state TEXT NOT NULL,error TEXT);
+      INSERT OR IGNORE INTO material_index_requests SELECT h.id,h.revision,1,1,'indexed',NULL
+        FROM material_heads h JOIN material_searchable s ON s.material_id=h.id;`);
     installEvidenceDependencies(store);
   }
 
@@ -208,23 +223,39 @@ export class MaterialStore {
         ...(tail.context_json?{evidenceContext:evidenceContextSchema.parse(JSON.parse(tail.context_json))}:{})}:null};
   }
 
+  bindIndexEngine(engine:ExecutionEngine){return this.index=materialIndexRuntime(this,engine);}
+  /** Physical index cleanup is an independent, bounded projection sweep. The
+   * durable outbox lets privacy deletion succeed when an FTS table is damaged. */
+  pruneIndexes(limit=200){
+    const db=this.store.db;if(db.isTransaction)return;
+    try{
+      db.exec('BEGIN IMMEDIATE');
+      for(const row of db.prepare('SELECT kind,row_id FROM material_index_garbage LIMIT ?').all(limit)){
+        db.prepare(row.kind==='head'?'DELETE FROM material_fts WHERE rowid=?':'DELETE FROM material_fts_blocks WHERE rowid=?').run(row.row_id);
+        db.prepare('DELETE FROM material_index_garbage WHERE kind=? AND row_id=?').run(row.kind,row.row_id);
+      }
+      db.exec('COMMIT');
+    }catch{if(db.isTransaction)db.exec('ROLLBACK');/* Retain the cleanup outbox for a later sweep. */}
+  }
+  indexStatus(id:string):MaterialIndexStatus {
+    const row=this.store.db.prepare('SELECT revision,state,error FROM material_index_requests WHERE material_id=?').get(id);
+    return row?{revision:String(row.revision),state:row.state as MaterialIndexStatus['state'],...(row.error?{reason:String(row.error)}:{})}:{state:'disabled'};
+  }
+  /** Publication only records intent. Search authority is withdrawn immediately;
+   * the independent execution step restores it after the whole index commits. */
   setSearchable(id:string,enabled:boolean){
-    const row=this.store.db.prepare('SELECT rowid,revision,sequence FROM material_heads WHERE id=?').get(id) as {rowid:number;revision:string;sequence:number}|undefined;if(!row)return;
-    if(this.codingLayout(id,row.revision)){
-      if(!enabled){this.store.db.prepare('DELETE FROM material_searchable WHERE material_id=?').run(id);return;}
-      this.store.db.prepare('INSERT OR IGNORE INTO material_searchable VALUES(?)').run(id);
-      const pending=this.store.db.prepare(`SELECT b.id,p.text FROM material_block_versions b JOIN material_block_payloads p ON p.hash=b.payload_hash
-        WHERE b.material_id=? AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?)
-        AND NOT EXISTS(SELECT 1 FROM material_fts_blocks f WHERE f.rowid=b.id)`).all(id,row.sequence,row.sequence) as {id:number;text:string}[];
-      const insert=this.store.db.prepare('INSERT INTO material_fts_blocks(rowid,text) VALUES(?,?)');
-      for(const block of pending)insert.run(block.id,block.text);
-      return;
-    }
-    this.store.db.prepare('DELETE FROM material_fts WHERE rowid=?').run(row.rowid);
-    if(!enabled){this.store.db.prepare('DELETE FROM material_searchable WHERE material_id=?').run(id);return;}
-    this.store.db.prepare('INSERT OR IGNORE INTO material_searchable VALUES(?)').run(id);
-    const text=this.store.db.prepare('SELECT p.text,b.format FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.revision=? ORDER BY b.idx').all(id,row.revision).map(r=>String(r.text)+(r.format==='markdown-fragment'?'':'\n')).join('');
-    this.store.db.prepare('INSERT INTO material_fts(rowid,material_id,text) VALUES(?,?,?)').run(row.rowid,id,text);
+    const db=this.store.db,row=db.prepare('SELECT revision FROM material_heads WHERE id=?').get(id);if(!row)return;
+    const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+    try{
+      const prior=db.prepare('SELECT revision,enabled,generation FROM material_index_requests WHERE material_id=?').get(id);
+      if(prior?.revision===row.revision&&Boolean(prior.enabled)===enabled){if(own)db.exec('COMMIT');return;}
+      if(!prior)this.store.reserveMetadata(512);
+      db.prepare('DELETE FROM material_searchable WHERE material_id=?').run(id);
+      db.prepare(`INSERT INTO material_index_requests VALUES(?,?,?,?,?,NULL) ON CONFLICT(material_id) DO UPDATE SET
+        revision=excluded.revision,enabled=excluded.enabled,generation=excluded.generation,state=excluded.state,error=NULL`)
+        .run(id,row.revision,Number(enabled),Number(prior?.generation??0)+1,enabled?'pending':'disabled');
+      if(own)db.exec('COMMIT');
+    }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   evidenceIds(ref:string,blockIds?:readonly string[]){const material=this.get(ref);if(!material)return [];
     if(this.codingLayout(material.id,material.revision))return (this.store.db.prepare(`SELECT anchor_id FROM material_block_versions
@@ -284,7 +315,7 @@ export class MaterialStore {
       artifacts:manifest.artifacts?.map(artifact=>artifact.blockIds&&!artifact.blockIds.some(id=>invalidBlocks!.has(id))?artifact:{...artifact,state:'pending' as const,reason:'source_evidence_changed'})}:{}),
       ref:formatMaterialRef(head.id,row.revision),revision:row.revision,sequence:row.sequence,
       createdAt:head.created_at,updatedAt:row.version_created_at,blockCount:row.block_count,memberCount:row.member_count,
-      textLength:row.text_length,assetCount:row.asset_count};
+      textLength:row.text_length,assetCount:row.asset_count,indexing:this.indexStatus(head.id)};
   }
   get(ref:string):MaterialRecord|undefined {
     const {id,revision}=parseMaterialRef(ref),head=this.head(id);
@@ -390,10 +421,9 @@ export class MaterialStore {
         db.prepare('INSERT INTO material_revisions VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,revision,sequence,manifestJson,now,0,draft.blocks.length,draft.members.length,draft.blocks.filter(b=>b.kind==='asset').length,draftHash);
         const coding=draft.kind==='mote.coding-session';
         if(head&&this.codingLayout(id,head.revision))db.prepare('UPDATE material_block_versions SET until_sequence=? WHERE material_id=? AND until_sequence IS NULL').run(sequence,id);
-        if(coding)db.prepare('DELETE FROM material_fts WHERE rowid=(SELECT rowid FROM material_heads WHERE id=?)').run(id);
         if(coding)db.prepare('INSERT INTO material_coding_snapshots VALUES(?,?,?,?,?)').run(id,revision,options.codingSnapshot?.checkpoint??null,
           options.codingSnapshot?.appendEpoch??null,options.codingSnapshot?.headCount??null);
-        const searchable=Boolean(db.prepare('SELECT 1 FROM material_searchable WHERE material_id=?').get(id));
+        const searchable=Boolean(db.prepare('SELECT 1 FROM material_index_requests WHERE material_id=? AND enabled=1').get(id));
         const lineageIds=new Set(draft.members.filter(member=>member.kind==='archive'||member.kind==='capture').map(member=>member.id));
         const insertPayload=db.prepare('INSERT OR IGNORE INTO material_block_payloads VALUES(?,?)');
         const insertBlock=db.prepare('INSERT INTO material_blocks VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
@@ -403,7 +433,6 @@ export class MaterialStore {
         const insertContext=db.prepare('INSERT OR IGNORE INTO material_evidence_context VALUES(?,?)');
         const insertDependency=db.prepare('INSERT OR IGNORE INTO material_evidence_dependencies VALUES(?,?)');
         const retained=new Set<string>();
-        const insertFtsBlock=db.prepare('INSERT INTO material_fts_blocks(rowid,text) VALUES(?,?)');
         for(const [index,block] of draft.blocks.entries()){
           const display=block.kind==='text'?block.text:`[asset ${block.id} ${block.mimeType} ${block.hash}]`;
           const payloadHash=hash(display);insertPayload.run(payloadHash,display);
@@ -415,10 +444,9 @@ export class MaterialStore {
             WHERE b.material_id=? AND b.revision=? AND b.block_id=? AND b.identity_hash=? AND e.invalidated=0`).get(id,head.revision,block.id,identity):undefined;
           const anchor=block.kind==='text'&&block.memberIds.some(memberId=>lineageIds.has(memberId))?String(prior?.anchor_id??this.anchor(id,revision,block.id)):null;
           if(coding){
-            const inserted=insertVersion.run(id,revision,sequence,null,index,block.id,block.kind,block.kind==='text'?block.format:null,payloadHash,
+            insertVersion.run(id,revision,sequence,null,index,block.id,block.kind,block.kind==='text'?block.format:null,payloadHash,
               block.kind==='asset'?block.hash:null,block.kind==='asset'?block.mimeType:null,JSON.stringify(block.memberIds),
               block.locator?JSON.stringify(block.locator):null,offset,end,anchor);
-            if(searchable&&block.kind==='text')insertFtsBlock.run(Number(inserted.lastInsertRowid),display);
           }else insertBlock.run(id,revision,index,block.id,block.kind,block.kind==='text'?block.format:null,payloadHash,
             block.kind==='asset'?block.hash:null,block.kind==='asset'?block.mimeType:null,
             JSON.stringify(block.memberIds),block.locator?JSON.stringify(block.locator):null,offset,end,anchor,identity);
@@ -434,7 +462,7 @@ export class MaterialStore {
         db.prepare('UPDATE material_revisions SET text_length=?,asset_count=? WHERE material_id=? AND revision=?').run(offset,assetCount,id,revision);
         for(const anchor of this.evidenceIds(id))if(!retained.has(anchor))this.store.invalidateMemoryEvidence(anchor);
         db.prepare('UPDATE material_heads SET revision=?,sequence=?,kind=?,retired=0,device_id=?,first_at=?,last_at=?,updated_at=? WHERE id=?').run(revision,sequence,draft.kind,draft.origin.deviceId??null,draft.origin.firstAt??null,draft.origin.lastAt??null,now,id);
-        if(searchable&&!coding)this.setSearchable(id,true);
+        this.setSearchable(id,searchable);
         if(ownTransaction)db.exec('COMMIT');
         return {...this.get(formatMaterialRef(id,revision))!,changed:true};
       }catch(error){if(ownTransaction&&db.isTransaction)db.exec('ROLLBACK');throw error;}
@@ -502,25 +530,23 @@ export class MaterialStore {
       db.prepare('UPDATE material_block_versions SET until_sequence=? WHERE material_id=? AND idx>=? AND until_sequence IS NULL')
         .run(sequence,draft.id,draft.reuseBlocks);
       for(const row of replaced)this.store.invalidateMemoryEvidence(row.anchor_id);
-      const searchable=Boolean(db.prepare('SELECT 1 FROM material_searchable WHERE material_id=?').get(draft.id));
+      const searchable=Boolean(db.prepare('SELECT 1 FROM material_index_requests WHERE material_id=? AND enabled=1').get(draft.id));
       const insertPayload=db.prepare('INSERT OR IGNORE INTO material_block_payloads VALUES(?,?)');
       const insertVersion=db.prepare(`INSERT INTO material_block_versions(material_id,from_revision,from_sequence,until_sequence,idx,block_id,kind,format,
         payload_hash,asset_hash,mime_type,member_ids,locator,start_offset,end_offset,anchor_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
       const insertEvidence=db.prepare('INSERT INTO material_evidence(id,material_id,revision,block_id) VALUES(?,?,?,?)');
       const insertContext=db.prepare('INSERT INTO material_evidence_context VALUES(?,?)');
       const insertDependency=db.prepare('INSERT OR IGNORE INTO material_evidence_dependencies VALUES(?,?)');
-      const insertFts=db.prepare('INSERT INTO material_fts_blocks(rowid,text) VALUES(?,?)');
       let offset=prefix?.end_offset??0;
       for(const [i,block] of draft.blocks.entries()){
         const idx=draft.reuseBlocks+i;if(block.id!==`section-${idx}`)throw new StoreError('Coding append block order changed',409);
         const text=(block as Extract<MaterialBlock,{kind:'text'}>).text,payloadHash=hash(text),anchor=this.anchor(draft.id,revision,block.id);
         insertPayload.run(payloadHash,text);
-        const end=offset+text.length,inserted=insertVersion.run(draft.id,revision,sequence,null,idx,block.id,'text','markdown-fragment',
+        const end=offset+text.length;insertVersion.run(draft.id,revision,sequence,null,idx,block.id,'text','markdown-fragment',
           payloadHash,null,null,JSON.stringify(block.memberIds),block.locator?JSON.stringify(block.locator):null,offset,end,anchor);
         insertEvidence.run(anchor,draft.id,revision,block.id);
         if(block.kind==='text'&&block.evidenceContext)insertContext.run(anchor,JSON.stringify(block.evidenceContext));
         for(const input of this.blockDependencies(block,draft.members))insertDependency.run(anchor,input);
-        if(searchable)insertFts.run(Number(inserted.lastInsertRowid),text);
         offset=end;
       }
       const insertMember=db.prepare('INSERT INTO material_members VALUES(?,?,?,?,?,?,?,?)');
@@ -529,6 +555,7 @@ export class MaterialStore {
       db.prepare('UPDATE material_revisions SET text_length=? WHERE material_id=? AND revision=?').run(offset,draft.id,revision);
       db.prepare('UPDATE material_heads SET revision=?,sequence=?,kind=?,retired=0,device_id=?,first_at=?,last_at=?,updated_at=? WHERE id=?')
         .run(revision,sequence,draft.kind,draft.origin.deviceId??null,draft.origin.firstAt??null,draft.origin.lastAt??null,now,draft.id);
+      this.setSearchable(draft.id,searchable);
       if(ownTransaction)db.exec('COMMIT');return {...this.get(formatMaterialRef(draft.id,revision))!,changed:true};
     }catch(error){if(ownTransaction&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
@@ -667,5 +694,5 @@ export class MaterialStore {
     }catch(error){if(ownTransaction&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   /** Explicit privacy erasure removes all revisions, payloads unique to them and asset refs. */
-  forget(id:string):boolean {parseId(id);this.setSearchable(id,false);for(const anchor of this.store.db.prepare('SELECT id FROM material_evidence WHERE material_id=?').all(id))this.store.invalidateMemoryEvidence(String(anchor.id),true);const result=this.store.db.prepare('DELETE FROM material_heads WHERE id=?').run(id);return result.changes>0;}
+  forget(id:string):boolean {parseId(id);this.setSearchable(id,false);for(const anchor of this.store.db.prepare('SELECT id FROM material_evidence WHERE material_id=?').all(id))this.store.invalidateMemoryEvidence(String(anchor.id),true);const result=this.store.db.prepare('DELETE FROM material_heads WHERE id=?').run(id);this.pruneIndexes();return result.changes>0;}
 }

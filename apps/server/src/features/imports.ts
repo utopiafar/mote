@@ -6,10 +6,12 @@ import type { FeatureServices } from '../feature-services.js';
 import { registerImportUploads } from '../import-uploads.js';
 import { ImportInputError } from '../imports.js';
 import { StoreError } from '../store.js';
+import type {ServerFeatureScope} from '../feature-host.js';
 
 /** imports: owns its transport, data and command contributions. */
-export function register(app:FastifyInstance,{archivedFiles,config,evidenceReader,importTasks,imports,jobId,launchImport,store}:Pick<FeatureServices,"archivedFiles"|"config"|"evidenceReader"|"importTasks"|"imports"|"jobId"|"launchImport"|"store">){
-registerImportUploads(app,store,archivedFiles);
+export function register(app:FastifyInstance,{archivedFiles,config,evidenceReader,importTasks,imports,jobId,launchImport,store}:Pick<FeatureServices,"archivedFiles"|"config"|"evidenceReader"|"importTasks"|"imports"|"jobId"|"launchImport"|"store">,scope?:ServerFeatureScope){
+scope?.defer(()=>imports.stop());
+const uploads=registerImportUploads(app,store,archivedFiles);scope?.defer(()=>uploads.close());
 app.get('/api/import-capabilities',async()=>imports.intake.list());
 app.get('/api/imports',async()=>({items:imports.list()}));
 app.get('/api/import-source-packs',async()=>({items:(config.importPythonPacks??[]).map(({id,version,description})=>({id,version,...(description?{description}:{})}))}));

@@ -40,7 +40,7 @@ object LocalFileIndex {
     fun pending(item: JSONObject, inputVersion: String, source: LocalSource) {
         item.put("text", "").put("document", JSONObject().put("fileIndex", JSONObject().put("version", VERSION)
             .put("fileId", SourceRules.hash(item.getString("externalId"))).put("contentVersion", inputVersion)
-            .put("mode", "index").put("coverage", "none").put("status", "pending").put("parser", "local-pending")
+            .put("mode", "index").put("coverage", "none").put("status", "pending").put("parser", "central-pending").put("maxIndexCharacters", if (source.lightweightIndex) 8000 else 100000)
             .put("totalCharacters", 0).put("offset", 0).put("length", 0).put("allowRead", source.allowRead)))
     }
     data class Parsed(val text: String, val parser: String, val status: String = "ready")
@@ -62,15 +62,7 @@ object LocalFileIndex {
                 }
             }; return Parsed("", "docx", "unsupported")
         }
-        if (mime.startsWith("audio/")) {
-            return runCatching {
-                val connection = URL("http://127.0.0.1:9009/transcribe").openConnection() as HttpURLConnection
-                try { connection.requestMethod = "POST"; connection.instanceFollowRedirects = false; connection.connectTimeout = 2000; connection.readTimeout = 600000; connection.doOutput = true; connection.setRequestProperty("Content-Type", "application/octet-stream"); connection.setRequestProperty("X-Mote-Offline", "1"); connection.setFixedLengthStreamingMode(bytes.size); connection.outputStream.use { it.write(bytes) }; check(connection.responseCode == 200)
-                    val transcript = JSONObject(connection.inputStream.use { String(LocalFileIndex.bytes(it), Charsets.UTF_8) }); val segments = transcript.getJSONArray("segments")
-                    Parsed((0 until segments.length()).joinToString("\n") { val s = segments.getJSONObject(it); "[${s.getLong("startMs")}-${s.getLong("endMs")} ms] ${s.optString("speaker")} ${s.getString("text")}" }, "local-audio")
-                } finally { connection.disconnect() }
-            }.getOrElse { Parsed("", "local-audio", "pending") }
-        }
+        if (mime.startsWith("audio/")) return Parsed("", "central-pending", "pending")
         if (mime.startsWith("text/") || name.substringAfterLast('.').lowercase() in setOf("md", "txt", "csv", "json", "ics")) return Parsed(Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString(), "utf8")
         return Parsed("", "unavailable", "unsupported")
     }

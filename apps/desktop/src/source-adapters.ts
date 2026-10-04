@@ -2,7 +2,6 @@ import { join } from 'node:path';
 import { sourceWork } from './background';
 import { scanSourceFiles } from './source-files';
 import { calendarHelper, decodeCalendarScan } from './source-calendar';
-import { readSourceEvidence } from './file-evidence';
 import type { CodingCheckpoint } from './coding-agents';
 import type { LocalFileCheckpoint, LocalSource, SourceCheckpoint, SourceScan } from './source-types';
 
@@ -64,9 +63,8 @@ export function builtInSourceAdapters(): SourceAdapterRegistry {
         const scan = await sourceWork.run<SourceScan>({ kind: 'coding-scan', root: source.path!, provider: source.agent!, options: source, checkpoint: checkpoint as CodingCheckpoint | undefined });
         return { version: 1, scan };
       } })
-    .register({ kind: 'local-files', version: 1, watchesPath: true, tracksDeletions: true, allowsArchive: true,
+    .register({ kind: 'local-files', version: 2, watchesPath: true, tracksDeletions: true, allowsArchive: true,
       validateConfiguration(source) { if (typeof source.path !== 'string') throw new Error('Invalid file source'); },
-      readEvidence: readSourceEvidence,
       async scan({ source, signal, stateDirectory, fileLocations, fileCheckpoint, priorityPaths }) {
         const scan = await scanSourceFiles(source.path!, source, signal, join(stateDirectory, 'access-markers', source.id + '.json'), fileLocations, fileCheckpoint, priorityPaths, true);
         return { version: 1, scan };

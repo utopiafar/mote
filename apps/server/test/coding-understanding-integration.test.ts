@@ -105,9 +105,10 @@ test('tool-only append advances private archive without renewing automatic under
 });
 
 test('long Coding conversations cover every original character through bounded interpretations without tail-only truncation',{timeout:30000},async t=>{
- const covered:{id:string;offset:number;length:number}[]=[];let calls=0;
+ const covered:{id:string;offset:number;length:number}[]=[];let calls=0,overviewCalls=0;
  const node=await appFixture(t,async(input,reader)=>{
-  calls++;assert.ok(isUnderstanding(input),'empty per-range candidates must be reused');const originals=await supplied(input,reader),range=input.evidenceRanges![0];
+  if(input.question.startsWith('Build a running overview')){overviewCalls++;await supplied(input,reader);return {answer:JSON.stringify({summary:'Generated full-session overview: concise written decisions remain an early constraint; final correction: device checks are still unknown.'}),citations:[],trace:[],runId:randomUUID()};}
+  calls++;assert.ok(isUnderstanding(input),'empty per-range candidates must be reused');assert.ok(overviewCalls>1,'all pages must be covered before any per-range candidate');assert.match(input.taskContext?.previousSummary??'',/early constraint.*final correction/);const originals=await supplied(input,reader),range=input.evidenceRanges![0];
   assert.ok(input.evidenceRanges!.reduce((sum,item)=>sum+item.length,0)<=12000);
   covered.push(...input.evidenceRanges!);const record=originals.find(item=>item.id===range.id)!,quote=record.ocrText.slice(range.offset,range.offset+Math.min(range.length,180));
   return response(range.id,quote,{summary:'Generated bounded conversation range; later outcome unknown',evidence:[{id:range.id,quote,offset:range.offset}],workRecords:[],events:[],memoryCandidates:[],actionCues:[]});

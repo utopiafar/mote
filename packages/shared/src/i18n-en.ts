@@ -6067,5 +6067,18 @@ export const english: Readonly<Record<string, string>> = {
   "选择文件，或将文件和文件夹拖到这里": "Choose files, or drop files and folders here",
   "文件夹层级或条目数超过上限，请拆分后导入。": "The folder exceeds the depth or entry limit. Split it before importing.",
   "无法读取文件夹中的条目，请重新选择文件夹。": "A folder entry could not be read. Select the folder again.",
-  "所选文件夹中没有可上传的文件。": "The selected folder contains no files to upload."
+  "所选文件夹中没有可上传的文件。": "The selected folder contains no files to upload.",
+  "记忆达到增量门槛或最大等待时间时运行；自动洞察需要周期与增量门槛同时达到。每分钟检查一次，进行中的窗口沿用启动时的设置。": "Memory runs at its increment threshold or maximum wait; automatic insights require both the interval and increment threshold. Checks run once per minute; active windows keep their initial settings.",
+  "最短周期（小时）": "Minimum interval (hours)",
+  "建议已更新，请重新核对后确认。": "This proposal changed. Review the latest version before confirming.",
+  "重新核对最新建议": "Review the latest proposal",
+  "这段历史的证据范围不完整，无法安全发送给远程模型。请新建对话，或改用本地模型并重新提供证据。": "This history has incomplete evidence lineage and cannot be safely sent to a remote model. Start a new conversation, or use a local model and provide the evidence again.",
+  "这段历史包含当前不可向所选模型披露的资料。请改用本地模型，或新建对话并重新选择可用证据。": "This history contains evidence that cannot currently be disclosed to the selected model. Use a local model, or start a new conversation and select permitted evidence.",
+  "快照的临时输入已清理，请重新同步来源文件后重试。": "The temporary snapshot input has been cleared. Sync the source file again before retrying.",
+  "资料已发布，检索索引正在处理中。": "The material is published. Its search index is being processed.",
+  "检索索引未完成，正文可正常查看。": "The search index is incomplete. The material text remains readable.",
+  "仅重试检索索引": "Retry search indexing only",
+  "资料检索索引": "Material search indexing",
+  "隐私规则无法应用，输入未上传": "Privacy rules could not be applied; input was not uploaded",
+  "中央索引待处理，原件不归档": "Central indexing pending; original is not archived"
 };

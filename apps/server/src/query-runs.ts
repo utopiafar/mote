@@ -68,4 +68,5 @@ export class QueryRuns {
     throw new StoreError(failure?.message??'Query did not complete',409);
   }
   async close(){await this.execution.close();}
+  async stop(){await this.execution.stop();}
 }

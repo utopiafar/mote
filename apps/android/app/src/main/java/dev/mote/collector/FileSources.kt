@@ -158,7 +158,8 @@ object FileUpload {
         if (!manifest.has("sha256")) {
             val ack = send(EventStage.FILE_UPLOAD, "/api/file-sync/v1/revisions", "PUT", manifest.toString().toByteArray(Charsets.UTF_8)); checkSelection(); queue.acknowledge(source.id, row, ack); return queue.pendingCount(source.id) == 0
         }
-        val begun = send(EventStage.FILE_UPLOAD, "/api/file-sync/v1/uploads", "POST", manifest.toString().toByteArray(Charsets.UTF_8))
+        val recoveryCaptureId = row.getJSONObject("pending").optString("recoveryCaptureId")
+        val begun = send(EventStage.FILE_UPLOAD, if (recoveryCaptureId.isNotBlank()) "/api/file-sync/v1/recovery/$recoveryCaptureId/uploads" else "/api/file-sync/v1/uploads", "POST", (if (recoveryCaptureId.isNotBlank()) "{}" else manifest.toString()).toByteArray(Charsets.UTF_8))
         val uploadId = begun.getString("uploadId"); check(uploadId.matches(Regex("[a-fA-F0-9-]{36}"))); check(begun.getInt("partBytes") == FileArchiveQueue.PART_BYTES)
         begun.optJSONObject("ack")?.let { ack -> checkSelection(); queue.acknowledge(source.id, row, ack); return queue.pendingCount(source.id) == 0 }
         val parts = begun.getJSONArray("parts"); val received = (0 until parts.length()).map { parts.getJSONObject(it).getInt("part") }.toSet()

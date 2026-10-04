@@ -23,6 +23,7 @@ import {validBase64} from './base64.js';
 import {ImportIntakeRegistry,installImportIntake} from './import-intake.js';
 import {FileStore} from './files.js';
 import {materialId} from './materials.js';
+import {withExecutionCancellation} from './execution-cancellation.js';
 
 const MAX_INPUT_BYTES=256*1024*1024,MAX_EXPANDED_BYTES=512*1024*1024,MAX_FILES=4000;
 export class ImportInputError extends StoreError {
@@ -55,6 +56,11 @@ export class ImportStore {
   confirmationIdentity(id:string):string{return this.phaseId(this.load(id),'commit');}
   private creating=new Map<string,{fingerprint:string;promise:Promise<ImportJob>}>();
   private executor:ExecutionEngine;
+  private closed=false;
+  private closing?:Promise<void>;
+  private lifetime=new AbortController();
+  private creationJobs=new Set<Promise<ImportJob>>();
+  private unregister:Array<()=>void|Promise<void>>=[];
   private phaseWaiters=new Map<string,Set<()=>void>>();
   private isScheduled(id:string){return Boolean(this.store.db.prepare("SELECT 1 FROM execution_steps WHERE kind IN ('imports.prepare','imports.commit') AND json_extract(input,'$.jobId')=? AND state IN ('waiting','running') LIMIT 1").get(id));}
   readonly directory:string;
@@ -64,13 +70,13 @@ export class ImportStore {
     store.db.exec('CREATE TABLE IF NOT EXISTS import_jobs(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,json TEXT NOT NULL)');
     store.db.exec('CREATE TABLE IF NOT EXISTS import_create_requests(request_id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,job_id TEXT NOT NULL)');
     this.executor=runtime.executor??new ExecutionEngine(store);
-    for(const phase of ['prepare','commit'] as const)this.executor.register({kind:`imports.${phase}`,pool:'imports',concurrency:()=>1,maxAttempts:1,timeoutMs:2147483647,validate:step=>{
+    for(const phase of ['prepare','commit'] as const)this.unregister.push(this.executor.register({kind:`imports.${phase}`,pool:'imports',concurrency:()=>1,maxAttempts:1,timeoutMs:2147483647,validate:step=>{
       const row=store.db.prepare('SELECT json FROM import_jobs WHERE id=?').get(String(step.input.jobId)) as {json:string}|undefined;
-      return Boolean(row&&step.input.phase===phase&&step.id===this.phaseId(JSON.parse(row.json) as InternalJob,phase));
+      return Boolean(!this.closed&&row&&step.input.phase===phase&&step.id===this.phaseId(JSON.parse(row.json) as InternalJob,phase));
     },execute:async(step,signal,grant)=>{
       const result=await (phase==='prepare'?this.prepareNow(String(step.input.jobId),grant,signal):this.confirmNow(String(step.input.jobId),grant,signal));
       if(['failed','unsupported','needs_configuration'].includes(result.status))throw new ExecutionFailure(result.status==='needs_configuration'?'blocked':'permanent',result.status==='needs_configuration'?'model_unconfigured':result.status==='unsupported'?'unsupported_format':'import_failed');return result;
-    },commit:(_step,result)=>{const job=this.load((result as ImportJob).id);if(phase==='prepare'&&job.status==='awaiting_confirmation')this.admitPhase(job,'commit','blocked','awaiting_confirmation');},project:step=>this.projectPhase(step),classify:()=>new ExecutionFailure('permanent','import_failed')});
+    },commit:(_step,result)=>{const job=this.load((result as ImportJob).id);if(phase==='prepare'&&job.status==='awaiting_confirmation')this.admitPhase(job,'commit','blocked','awaiting_confirmation');},project:step=>this.projectPhase(step),classify:()=>new ExecutionFailure('permanent','import_failed')}));
     // Paths are derived from this vault, never from a backed-up absolute workspace.
     for(const row of store.db.prepare('SELECT id,json FROM import_jobs').all() as {id:string;json:string}[]){
       const job=JSON.parse(row.json) as InternalJob;
@@ -138,14 +144,16 @@ export class ImportStore {
     return job?this.public(job):undefined;
   }
   async create(raw:unknown):Promise<ImportJob> {
+    if(this.closed)throw new StoreError('Import feature is closed',503);
     const request=importRequestSchema.parse(raw);
-    if(!request.requestId)return this.createRequest(request);
+    if(!request.requestId)return this.trackCreation(this.createRequest(request));
     const fingerprint=sha256(JSON.stringify(request)),pending=this.creating.get(request.requestId);
     if(pending){if(pending.fingerprint!==fingerprint)throw new StoreError('Import request ID already belongs to a different request',409);return pending.promise;}
     const existing=this.createdRequest(request.requestId,fingerprint);if(existing)return existing;
-    const promise=this.createRequest(request,fingerprint);this.creating.set(request.requestId,{fingerprint,promise});
+    const promise=this.trackCreation(this.createRequest(request,fingerprint));this.creating.set(request.requestId,{fingerprint,promise});
     try{return await promise;}finally{if(this.creating.get(request.requestId)?.promise===promise)this.creating.delete(request.requestId);}
   }
+  private trackCreation(work:Promise<ImportJob>){this.creationJobs.add(work);void work.finally(()=>this.creationJobs.delete(work)).catch(()=>{});return work;}
   private async createRequest(request:ImportRequest,createFingerprint?:string):Promise<ImportJob> {
     const configuredPack=request.sourcePackId?this.runtime.sourcePacks?.get(request.sourcePackId):undefined;
     if(request.sourcePackId&&!configuredPack)throw new StoreError('Requested Python Source Pack is not installed on this node',409);
@@ -162,7 +170,8 @@ export class ImportStore {
       const source=realpathSync(resolve(request.directory!)),vault=realpathSync(this.store.directory);
       if(inside(source,vault)||inside(vault,source))throw new StoreError('Choose a directory outside the Mote data directory');
       if(!lstatSync(source).isDirectory())throw new ImportInputError('import_directory_required',moteText('该路径不是目录，请填写中央服务器上可读取的目录。'));
-      const walk=async(directory:string,depth:number):Promise<void>=>{if(depth>30)throw new StoreError('Directory nesting exceeds 30 levels',413);for(const name of (await readdir(directory)).sort()){
+      const walk=async(directory:string,depth:number):Promise<void>=>{this.lifetime.signal.throwIfAborted();if(depth>30)throw new StoreError('Directory nesting exceeds 30 levels',413);for(const name of (await readdir(directory)).sort()){
+        this.lifetime.signal.throwIfAborted();
         const path=join(directory,name),info=await lstat(path,{bigint:true});if(info.isSymbolicLink())throw new StoreError('Directory imports cannot follow symbolic links');
         if(info.isDirectory())await walk(path,depth+1);else if(info.isFile()){
           const size=Number(info.size);if(size>MAX_FILE_BYTES||total+size>MAX_INPUT_BYTES||entries.length>=MAX_FILES)throw new StoreError('Directory exceeds import size limits',413);
@@ -176,6 +185,7 @@ export class ImportStore {
         throw error;
       }
     }
+    this.lifetime.signal.throwIfAborted();
     if(!entries.length)throw new StoreError('No files were supplied');
     if(new Set(entries.map(e=>e.name)).size!==entries.length)throw new StoreError('File paths must be unique within an import');
     // Directory enumeration yields; another host may have accepted this request meanwhile.
@@ -183,6 +193,7 @@ export class ImportStore {
     const now=new Date().toISOString(),id=request.requestId??randomUUID(),workspace=join(this.directory,id);privateDirectory(workspace);privateDirectory(join(workspace,'inputs'));
     const job:InternalJob={preparationRevision:0,recordsProcessed:0,...(createFingerprint?{createFingerprint}:{}),...(request.sourcePackId?{sourcePackId:request.sourcePackId,sourcePackRevision:configuredPack!.revision}:{}),...(request.processing==='automatic'&&!request.sourcePackId&&!request.instruction.trim()&&entries.every(entry=>/\.(txt|md|markdown|csv|tsv|json|jsonl|ndjson|yaml|yml|log|ics|pdf|docx|xlsx)$/i.test(entry.name))?{parserMode:'plain' as const}:{}),processing:request.processing,id,name:request.name??(entries.length===1?basename(entries[0].name):moteText("导入 {0} 个文件", entries.length)),instruction:request.instruction,sourceId:'',status:'queued',processingStatus:'archived',createdAt:now,updatedAt:now,files:[],summary:'',warnings:[],archive:{files:0,bytes:0,expandedFiles:0},progress:{total:0,processed:0,imported:0,duplicates:0},captureIds:[],workspace,inputs:[]};
     const stage=(entry:{name:string;bytes?:Buffer;fileId?:string;mimeType?:string;path?:string;sizeBytes?:number;identity?:string})=>{
+      this.lifetime.signal.throwIfAborted();
       if(job.inputs.length>=MAX_FILES)throw new StoreError('Expanded archive exceeds 4000 files',413);
       const path=join(workspace,'inputs',archiveRelativePath(entry.name));if(job.inputs.some(i=>i.path===path))throw new StoreError('Archive contains duplicate file paths');
       const description={name:entry.name,relativePath:entry.name,mimeType:entry.mimeType};const file=entry.fileId?this.files.get(entry.fileId):entry.path?this.files.putParts(description,readParts(entry.path,entry.identity),entry.sizeBytes!):this.files.put({...description,bytes:entry.bytes!});
@@ -193,17 +204,18 @@ export class ImportStore {
     else{
       job.originalsPending=true;job.blockedArchive=true;this.save(job);this.running.add(id);
       try{for(const entry of entries){stage(entry);this.save(job);await yieldTurn();}delete job.originalsPending;job.blockedArchive=false;}
-      catch(error){job.status='failed';job.processingStatus='blocked';job.error='Original archiving stopped: '+message(error);this.save(job);throw error;}
+      catch(error){job.status=this.closed?'cancelled':'failed';job.processingStatus='blocked';job.error=this.closed?undefined:'Original archiving stopped: '+message(error);this.save(job);throw error;}
       finally{this.running.delete(id);}
     }
     job.sourceId=`import.${sha256(JSON.stringify(job.files.map(f=>[f.relativePath,f.hash]).sort())).slice(0,32)}`;
     // An explicit new upload may be reviewed again after deletion; old queued revisions remain tombstoned.
     if(this.store.db.prepare('SELECT 1 FROM source_versions v LEFT JOIN captures c ON c.id=v.capture_id WHERE v.source_id=? AND c.id IS NULL LIMIT 1').get(job.sourceId))job.sourceId+=`.${id.slice(0,8)}`;
     job.expansion={originalIds:job.files.map(file=>file.id),completedIds:[]};this.save(job);
-    await this.expand(job);this.restoreOperation(job);return this.public(this.load(job.id));
+    await this.expand(job,undefined,this.lifetime.signal);this.lifetime.signal.throwIfAborted();this.restoreOperation(job);return this.public(this.load(job.id));
   }
   private async expand(job:InternalJob,grant?:ExecutionGrant,signal?:AbortSignal){
     if(!job.expansion)return;this.running.add(job.id);
+    signal??=this.lifetime.signal;
     const save=()=>grant?grant.commit(()=>this.save(job)):this.save(job);
     try{
       for(const originalId of job.expansion.originalIds){
@@ -220,10 +232,15 @@ export class ImportStore {
         try{
           const other=job.files.filter(file=>!job.expansion!.originalIds.includes(file.id)&&!file.relativePath.startsWith(prefix));
           const maxBytes=MAX_EXPANDED_BYTES-other.reduce((sum,file)=>sum+file.sizeBytes,0),maxFiles=MAX_FILES-job.expansion.originalIds.length-other.length;
-          const expanded=await container.expand({path:source.path,output,maxBytes,maxFiles,signal});
+          const expansion=container.expand({path:source.path,output,maxBytes,maxFiles,signal});
+          // An uncooperative container cannot keep disposal open or publish a
+          // late result. Remove any late temporary output when it settles too.
+          void expansion.finally(()=>{if(signal!.aborted)rmSync(output,{recursive:true,force:true});}).catch(()=>{});
+          const expanded=await withExecutionCancellation(signal,()=>expansion);signal.throwIfAborted();
           if(expanded.files.length>maxFiles||expanded.files.some(entry=>!Number.isSafeInteger(entry.bytes)||entry.bytes<0||entry.bytes>MAX_FILE_BYTES)||expanded.files.reduce((sum,entry)=>sum+entry.bytes,0)>maxBytes)throw new StoreError('Expanded container exceeds import limits',413);
           let staged=0;for(const entry of expanded.files){
             const append=()=>{
+              signal!.throwIfAborted();grant?.assert();
               const relativePath=archiveRelativePath(prefix+entry.name),prior=job.files.find(file=>file.relativePath===relativePath);
               const file=this.files.putParts({name:relativePath,relativePath,...(entry.mimeType?{mimeType:entry.mimeType}:{})},readParts(entry.path),entry.bytes,grant?()=>grant.assert():undefined);
               if(prior){if(prior.hash!==file.hash||prior.id!==file.id)throw new StoreError('Expanded original changed during recovery',409);}
@@ -236,10 +253,11 @@ export class ImportStore {
           job.expansion.completedIds.push(originalId);save();
         }finally{rmSync(output,{recursive:true,force:true});}
       }
-      delete job.expansion;job.status='queued';job.processingStatus='archived';job.blockedArchive=false;job.error=undefined;save();
+      signal.throwIfAborted();delete job.expansion;job.status='queued';job.processingStatus='archived';job.blockedArchive=false;job.error=undefined;save();
     }catch(error){
       if(grant)this.store.assets.sweep();
       if(error instanceof ExecutionFailure&&error.category==='stale')return;
+      if(signal.aborted){if(!grant){job.status='cancelled';job.processingStatus='blocked';job.error=undefined;save();}return;}
       // A fenced per-file transaction may have rolled back after mutating this copy.
       if(grant)job=this.load(job.id);
       job.status='failed';job.processingStatus='blocked';job.failurePhase='prepare';job.blockedArchive=error instanceof StoreError&&error.statusCode===422;job.error=`Original files were saved, but archive expansion failed: ${message(error)}`;job.warnings=[...job.warnings,job.error].slice(-200);
@@ -444,6 +462,7 @@ export class ImportStore {
     if(!['waiting','running'].includes(step.state)){const waiters=this.phaseWaiters.get(step.id);this.phaseWaiters.delete(step.id);for(const resolve of waiters??[])resolve();}
   }
   private async runPhase(id:string,phase:'prepare'|'commit'){
+    if(this.closed)throw new StoreError('Import feature is closed',503);
     if(this.running.has(id)||this.isScheduled(id))throw new StoreError('Import is already processing',409);
     const job=this.load(id),stepId=this.admitPhase(job,phase),step=this.executor.get(stepId)!;
     if(step.state==='succeeded')return this.public(this.load(id));
@@ -452,10 +471,12 @@ export class ImportStore {
     void this.executor.tick().catch(()=>this.executor.fail(stepId,'import_failed'));await done;await this.executor.drain([stepId]);return this.public(this.load(id));
   }
   async prepare(id:string,resumeCancelled=false):Promise<ImportJob>{
+    if(this.closed)throw new StoreError('Import feature is closed',503);
     const job=this.load(id);if(job.status==='cancelled'&&!resumeCancelled)return this.public(job);if(job.progress.processed>0||job.status==='completed')throw new StoreError('Saved records cannot be reanalyzed in the same job',409);
     const result=await this.runPhase(id,'prepare');return result.status==='awaiting_confirmation'&&result.reviewGate?.decision==='automatic'?this.confirm(id):result;
   }
   async confirm(id:string,resumeCancelled=false):Promise<ImportJob>{
+    if(this.closed)throw new StoreError('Import feature is closed',503);
     const job=this.load(id);if(job.status==='cancelled'&&!resumeCancelled)return this.public(job);if(job.status==='completed')return this.public(job);
     if(job.status!=='awaiting_confirmation'&&!(['failed','cancelled'].includes(job.status)&&job.failurePhase==='import'))throw new StoreError('Analyze and review a preview before confirming the import',409);
     return this.runPhase(id,'commit');
@@ -472,6 +493,12 @@ export class ImportStore {
     return this.public(current);
   }
   async retry(id:string):Promise<ImportJob>{const job=this.load(id);return job.failurePhase==='import'?this.confirm(id,true):this.prepare(id,true);}
+  stop(){
+    if(this.closing)return this.closing;this.closed=true;this.lifetime.abort();
+    const ids=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind IN ('imports.prepare','imports.commit') AND state IN ('waiting','running','blocked')").all().map(row=>String(row.id));
+    for(const id of ids)this.executor.cancel(id);
+    this.closing=(async()=>{await Promise.all(this.unregister.map(unregister=>unregister()));await this.executor.drain(ids);await Promise.allSettled([...this.creationJobs]);})();return this.closing;
+  }
   delete(id:string){
     const job=this.load(id);if(this.running.has(id)||this.isScheduled(id)||job.status==='preparing'||job.status==='importing')throw new StoreError('Wait for this import to stop before deleting it',409);
     const otherJobs=(this.store.db.prepare('SELECT json FROM import_jobs WHERE id!=?').all(id) as {json:string}[]).map(row=>JSON.parse(row.json) as InternalJob);

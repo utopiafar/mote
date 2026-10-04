@@ -177,6 +177,22 @@ test('current multi-block Material offers one bounded extraction route; stale an
  await act(async()=>root.render(React.createElement(MaterialDetail,{api,material:old,onOpen:()=>{}})));
  assert.equal(d.querySelector('.material-detail a[href*="memoryMaterial="]'),null,'historical pinned version cannot borrow the current link');
 });
+test('index failure keeps the published body readable and retries only the current owner index',async t=>{
+ const {root,document:d}=await fixture(t),writes:string[]=[];
+ const material:Material={id:'mat_'+'e'.repeat(64),ref:'material:generated@indexed',revision:'indexed',kind:'generated',schemaVersion:1,title:'Generated index failure',sequence:1,textLength:14,blockCount:1,coverage:{state:'complete'},origin:{sourceId:'generated'},retention:{original:'retained'},indexing:{state:'failed',reason:'index_failed'}};
+ let shown=material;
+ const api=apiWith((path,init)=>{
+  if(init?.method==='POST'){writes.push(path);shown={...material,indexing:{state:'pending'}};return {indexing:shown.indexing};}
+  if(path.includes('/read?')||path.includes('/material-read?'))return {material:shown,text:'Published body',textRange:{offset:0,total:14,nextOffset:null}};
+  return shown;
+ });
+ await act(async()=>root.render(React.createElement(MaterialDetail,{api,material,onOpen:()=>{}})));
+ assert.match(d.body.textContent!,/Published body/);assert.match(d.body.textContent!,/检索索引未完成/);
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='仅重试检索索引')!.click());
+ assert.deepEqual(writes,[`/api/materials/${material.id}/index/retry`]);assert.match(d.body.textContent!,/Published body/);assert.match(d.body.textContent!,/检索索引正在处理中/);
+ shown={...material};await act(async()=>root.render(React.createElement(MaterialDetail,{api,material,agent:true,onOpen:()=>{}})));
+ assert.match(d.body.textContent!,/Published body/);assert.equal(Array.from(d.querySelectorAll('button')).some(b=>b.textContent==='仅重试检索索引'),false,'query-agent views never expose index mutation');
+});
 test('agent material views cannot fall back to owner routes when a corrected reference becomes unavailable',async t=>{
  const {root,document:d}=await fixture(t);let unavailable=false;const paths:string[]=[];
  const material:Material={id:ids[0],ref:'material:generated@v1',revision:'v1',kind:'mote.file',schemaVersion:1,title:'Generated agent material',sequence:1,textLength:6,blockCount:1,coverage:{state:'full'},origin:{sourceId:'generated'},retention:{original:'retained'}};

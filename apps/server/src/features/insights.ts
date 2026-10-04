@@ -6,9 +6,11 @@ import type { FeatureServices } from '../feature-services.js';
 import { modelProfileIdSchema } from '../model-settings.js';
 import { scopeFields,validRange } from '../query-scope.js';
 import { StoreError } from '../store.js';
+import type {ServerFeatureScope} from '../feature-host.js';
 
 /** insights: owns its transport, data and command contributions. */
-export function register(app:FastifyInstance,{agent,isClosing,diagnostics,insight,insightRequestSchema,insightRuns,modelSettings,store}:Pick<FeatureServices,"agent"|"isClosing"|"diagnostics"|"insight"|"insightRequestSchema"|"insightRuns"|"modelSettings"|"store">){
+export function register(app:FastifyInstance,{agent,isClosing,diagnostics,insight,insightRequestSchema,insightRuns,modelSettings,store}:Pick<FeatureServices,"agent"|"isClosing"|"diagnostics"|"insight"|"insightRequestSchema"|"insightRuns"|"modelSettings"|"store">,scope?:ServerFeatureScope){
+scope?.defer(()=>insightRuns.stop());
 app.post('/api/insight-runs',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
     const body=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional(),prompt:z.string().trim().max(8000).optional(),requestId:z.string().uuid()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body);
     const {requestId,...input}=body;

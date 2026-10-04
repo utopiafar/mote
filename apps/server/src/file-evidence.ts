@@ -12,7 +12,7 @@ export class FileEvidenceRequests {
  private current(captureId:string){const capture=this.sources.store.evidence([captureId])[0];const p=capture?.provenance;
   if(!p||p.deleted||!p.document?.fileIndex)throw new StoreError('File index not found',404);
   const source=this.sources.getSource(p.sourceId),head=this.sources.getItem(p.sourceId,p.externalId);
-  if(!source.enabled||head?.revision!==p.revision||!p.document.fileIndex.allowRead)throw new StoreError('File version or permission changed',409);
+  if(!source.enabled||source.retention==='reference'||head?.revision!==p.revision||!p.document.fileIndex.allowRead)throw new StoreError('File version or permission changed',409);
   return {capture,p,index:p.document.fileIndex,source};
  }
  pending(sourceId:string){this.sweep();if(!this.sources.getSource(sourceId).enabled)return {items:[]};return {items:this.rows().filter(r=>r.request.sourceId===sourceId&&!r.result).map(r=>r.request)};}
@@ -33,6 +33,10 @@ export class FileEvidenceRequests {
   if(!existing&&this.rows().length>=100)throw new StoreError('Too many evidence requests',429);
   const selected=existing?.request??request;
   if(!existing)this.sources.store.db.prepare('INSERT INTO file_read_requests VALUES(?,?,?,?,?,NULL)').run(request.id,p.sourceId,id,Date.now()+300000,JSON.stringify(request));
+  // Snapshot text was interpreted centrally, after transient upload. Range reads
+  // remain gated by the current source, revision and explicit allowRead grant.
+  const retained=this.sources.store.db.prepare('SELECT object_hash FROM file_snapshot_text WHERE capture_id=?').get(id);
+  if(retained&&!existing?.result){this.current(id);const text=this.sources.store.assets.read(String(retained.object_hash)).toString('utf8');await this.complete(p.sourceId,selected.id,{status:'ready',text:text.slice(offset,offset+length),contentVersion:index.contentVersion});}
   const deadline=Date.now()+1000;
   do{this.current(id);const result=this.rows().find(r=>r.request.id===selected.id)?.result;if(result)return result.status==='ready'?{status:'ready',record:this.sources.store.evidence([result.captureId])[0]}:result;await delay(50);}while(Date.now()<deadline);
   return {status:'unavailable',reason:'device_pending',requestId:selected.id,location:p.uri};

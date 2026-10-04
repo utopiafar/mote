@@ -34,6 +34,7 @@ export class FileStore {
   async serialize<T>(key:string,action:()=>Promise<T>):Promise<T>{const prior=this.pending.get(key)??Promise.resolve();const next=prior.catch(()=>{}).then(action);this.pending.set(key,next);try{return await next;}finally{if(this.pending.get(key)===next)this.pending.delete(key);}}
   private allowed(input:FileRevision){
     const source=this.sources.getSource(input.sourceId);
+    if(source.retention==='reference'&&input.item.layer!=='reference')throw new StoreError('This source accepts references only',409);
     if(!source.enabled)throw new StoreError('Source paused',409);
     if(source.retention!=='archive'&&input.item.layer==='original')throw new StoreError('Source must explicitly select original archive retention',409);
     if(this.store.db.prepare('SELECT 1 FROM file_forgotten WHERE source_id=? AND external_id=?').get(input.sourceId,input.item.externalId))throw new StoreError('File was forgotten; explicitly allow this file before syncing again',410);
@@ -69,19 +70,27 @@ export class FileStore {
     }
     const results=[];
     for(const input of normalized){
-      try{const ack=input.item.layer==='original'&&!input.item.deleted?this.begin(input,authorize):await this.revision(input,authorize);results.push({externalId:input.item.externalId,revision:input.item.revision,state:'uploadId' in ack?'missing_original':ack.duplicate?'existing':'accepted',...('uploadId' in ack?{upload:ack}:{ack})});}
+      try{const ack=input.sha256&&!input.item.deleted?this.begin(input,authorize):await this.revision(input,authorize);results.push({externalId:input.item.externalId,revision:input.item.revision,state:'uploadId' in ack?'missing_original':ack.duplicate?'existing':'accepted',...('uploadId' in ack?{upload:ack}:{ack})});}
       catch(error){if(!(error instanceof StoreError))throw error;results.push({externalId:input.item.externalId,revision:input.item.revision,state:'rejected',status:error.statusCode});}
     }
     return {results};
   }
   begin(raw:unknown,authorize:(sourceId:string)=>void){
     const input=fileRevisionSchema.parse(raw);authorize(input.sourceId);this.allowed(input);
-    if(input.item.layer!=='original'||input.item.deleted)throw new StoreError('Upload sessions require an original file');
+    if(!input.sha256||!['original','snapshot'].includes(input.item.layer)||input.item.deleted)throw new StoreError('Upload sessions require an original file');
     const manifest=JSON.stringify(input),fingerprint=sha256(manifest);
     const committed=this.store.db.prepare('SELECT * FROM file_versions WHERE source_id=? AND external_id=? AND revision=?').get(input.sourceId,input.item.externalId,input.item.revision) as Version|undefined;
-    if(committed){if(committed.manifest!==manifest)throw new StoreError('Revision content conflicts',409);return {uploadId:committed.capture_id,partBytes:FILE_PART_BYTES,parts:[],ack:{id:committed.capture_id,captureId:committed.capture_id,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:committed.object_hash,sha256:input.sha256,sizeBytes:input.sizeBytes,duplicate:true}};}
+    if(committed){if(committed.manifest!==manifest)throw new StoreError('Revision content conflicts',409);if(!this.needsSnapshotInput(committed))return {uploadId:committed.capture_id,partBytes:FILE_PART_BYTES,parts:[],ack:{id:committed.capture_id,captureId:committed.capture_id,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:committed.object_hash,sha256:input.sha256,sizeBytes:input.sizeBytes,duplicate:true}};}
     const old=this.store.db.prepare('SELECT * FROM file_uploads WHERE fingerprint=?').get(fingerprint) as Upload|undefined;
-    if(old)return this.upload(old.id,authorize);
+    if(old){
+      if(old.ack&&committed&&this.needsSnapshotInput(committed)){
+        if(Number(this.store.db.prepare('SELECT COUNT(*) AS n FROM file_uploads WHERE ack IS NULL').get()!.n)>=64)throw new StoreError('Too many unfinished file uploads',429);
+        this.store.db.prepare('DELETE FROM file_parts WHERE upload_id=?').run(old.id);
+        this.store.db.prepare('UPDATE file_uploads SET ack=NULL,created_at=? WHERE id=?').run(timestamp(),old.id);
+        rmSync(join(this.uploads,old.id),{recursive:true,force:true});privateDirectory(join(this.uploads,old.id));
+      }
+      return this.upload(old.id,authorize);
+    }
     if(Number(this.store.db.prepare('SELECT COUNT(*) AS n FROM file_uploads WHERE ack IS NULL').get()!.n)>=64)throw new StoreError('Too many unfinished file uploads',429);
     this.store.reserveMetadata(Buffer.byteLength(manifest)+4096);
     const id=randomUUID();privateDirectory(join(this.uploads,id));
@@ -147,7 +156,19 @@ export class FileStore {
     const input=fileRevisionSchema.parse(raw);return this.serialize('item:'+input.sourceId+':'+input.item.externalId,async()=>{
       authorize(input.sourceId);this.allowed(input);
       const prior=this.store.db.prepare('SELECT * FROM file_versions WHERE source_id=? AND external_id=? AND revision=?').get(input.sourceId,input.item.externalId,input.item.revision) as Version|undefined;
-      if(prior){if(prior.manifest!==JSON.stringify(input))throw new StoreError('Revision content conflicts',409);return {id:prior.capture_id,captureId:prior.capture_id,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:prior.object_hash,sha256:input.sha256,sizeBytes:input.sizeBytes,duplicate:true};}
+      if(prior){
+        if(prior.manifest!==JSON.stringify(input))throw new StoreError('Revision content conflicts',409);
+        if(onCommit&&this.needsSnapshotInput(prior)){
+          this.store.reserveMetadata(512);const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
+          try{
+            this.store.db.prepare('INSERT INTO file_snapshot_inputs VALUES(?,?,?) ON CONFLICT(capture_id) DO UPDATE SET object_hash=excluded.object_hash,expires=excluded.expires').run(prior.capture_id,input.sha256!,Date.now()+86400000);
+            // Resupply never undoes an explicit cancellation. A retry clears that state separately.
+            this.store.db.prepare("UPDATE file_jobs SET state='waiting',attempts=0,available_at=0,error=NULL WHERE capture_id=? AND error='snapshot_input_expired' AND state='blocked'").run(prior.capture_id);
+            const ack=onCommit(prior.capture_id);if(own)this.store.db.exec('COMMIT');return ack;
+          }catch(error){if(own)this.store.db.exec('ROLLBACK');throw error;}
+        }
+        return {id:prior.capture_id,captureId:prior.capture_id,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:prior.object_hash,sha256:input.sha256,sizeBytes:input.sizeBytes,duplicate:true};
+      }
       if(this.store.db.prepare('SELECT 1 FROM source_versions WHERE source_id=? AND external_id=? AND revision=?').get(input.sourceId,input.item.externalId,input.item.revision))throw new StoreError('Revision belongs to a different ingestion protocol',409);
       const head=this.sources.getItem(input.sourceId,input.item.externalId);
       if((head?.revision??null)!==input.previousRevision)throw new StoreError('Revision predecessor mismatch; upload previous revision first',409);
@@ -178,14 +199,37 @@ export class FileStore {
   private commitMetadata(input:FileRevision,captureId:string){
         const previousFile=this.store.db.prepare('SELECT capture_id FROM file_heads WHERE source_id=? AND external_id=?').get(input.sourceId,input.item.externalId) as {capture_id:string}|undefined;
         if(!input.item.deleted&&previousFile&&previousFile.capture_id!==captureId)this.store.invalidateMemoryEvidence(previousFile.capture_id);
-        const hash=input.item.deleted?null:input.sha256??null;
+        const hash=input.item.deleted||input.item.layer!=='original'?null:input.sha256??null;
         if(hash)this.store.db.prepare('INSERT OR IGNORE INTO file_objects VALUES(?,?,?)').run(hash,input.sizeBytes,Math.ceil(input.sizeBytes/FILE_PART_BYTES));
         this.store.db.prepare('INSERT INTO file_versions VALUES(?,?,?,?,?,?)').run(captureId,input.sourceId,input.item.externalId,input.item.revision,JSON.stringify(input),hash);
         // File predecessors establish order even when a device clock moves backwards.
         this.store.db.prepare('UPDATE source_heads SET capture_id=?,observed_at=?,deleted=? WHERE source_id=? AND external_id=?').run(captureId,input.item.observedAt,Number(input.item.deleted),input.sourceId,input.item.externalId);
         if(input.item.deleted)this.store.db.prepare('UPDATE file_heads SET origin_missing=1 WHERE source_id=? AND external_id=?').run(input.sourceId,input.item.externalId);
         else this.store.db.prepare('INSERT INTO file_heads VALUES(?,?,?,0) ON CONFLICT(source_id,external_id) DO UPDATE SET capture_id=excluded.capture_id,origin_missing=0').run(input.sourceId,input.item.externalId,captureId);
-        if(hash)this.store.db.prepare('INSERT INTO file_jobs(capture_id) VALUES(?)').run(captureId);
+        if(input.sha256&&!input.item.deleted&&input.item.layer==='snapshot')this.store.db.prepare('INSERT INTO file_snapshot_inputs VALUES(?,?,?)').run(captureId,input.sha256,Date.now()+86400000);
+        if(input.sha256&&!input.item.deleted)this.store.db.prepare('INSERT INTO file_jobs(capture_id) VALUES(?)').run(captureId);
+  }
+  private needsSnapshotInput(v:Version){
+    const input=JSON.parse(v.manifest) as FileRevision;
+    if(input.item.layer!=='snapshot'||!input.sha256||this.sources.getItem(v.source_id,v.external_id)?.revision!==v.revision)return false;
+    const job=this.store.db.prepare('SELECT state,error,config_revision FROM file_jobs WHERE capture_id=?').get(v.capture_id);
+    if(!job||['succeeded','cancelled'].includes(String(job.state)))return false;
+    if(this.store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=? AND expires>?').get(v.capture_id,Date.now()))return false;
+    if(job.state==='blocked'&&job.error==='snapshot_input_expired')return true;
+    // A crash after extraction publication can finish the pipeline using its durable artifact.
+    return !this.store.db.prepare("SELECT 1 FROM file_steps s JOIN file_artifacts a ON a.id=s.artifact_id WHERE s.capture_id=? AND s.step='extract' AND s.state='succeeded' AND a.config_revision=? AND json_extract(a.json,'$.snapshot')=1").get(v.capture_id,job.config_revision);
+  }
+  /** Deterministic transport requests only; clients reapply their current source/privacy grants. */
+  snapshotRecovery(sourceId:string){
+    const source=this.sources.getSource(sourceId);if(!source.enabled||source.retention!=='snapshot')return {items:[]};
+    const rows=this.store.db.prepare("SELECT v.* FROM file_versions v JOIN file_heads h ON h.capture_id=v.capture_id JOIN file_jobs j ON j.capture_id=v.capture_id WHERE v.source_id=? AND h.origin_missing=0 AND json_extract(v.manifest,'$.item.layer')='snapshot' AND json_extract(v.manifest,'$.sha256') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM file_snapshot_inputs i WHERE i.capture_id=v.capture_id AND i.expires>?) AND (j.state='waiting' OR j.state='blocked' AND j.error='snapshot_input_expired') ORDER BY v.rowid LIMIT 200").all(sourceId,Date.now()) as Version[];
+    return {items:rows.filter(v=>this.needsSnapshotInput(v)).map(v=>{const m=JSON.parse(v.manifest) as FileRevision;return {captureId:v.capture_id,externalId:v.external_id,revision:v.revision,sha256:m.sha256!,sizeBytes:m.sizeBytes,observedAt:m.item.observedAt};})};
+  }
+  beginSnapshotRecovery(id:string,authorize:(sourceId:string)=>void){
+    const v=this.version(id);authorize(v.source_id);const manifest=JSON.parse(v.manifest) as FileRevision;this.allowed(manifest);
+    const source=this.sources.getSource(v.source_id);
+    if(source.retention!=='snapshot'||manifest.item.layer!=='snapshot'||!manifest.sha256||this.sources.getItem(v.source_id,v.external_id)?.revision!==v.revision)throw new StoreError('Snapshot input recovery is not current or authorized',409);
+    return this.begin(manifest,authorize);
   }
   version(id:string){const v=this.store.db.prepare('SELECT * FROM file_versions WHERE capture_id=?').get(id) as Version|undefined;if(!v)throw new StoreError('File not found',404);return v;}
   detail(id:string,includeArtifacts=true){
@@ -197,7 +241,8 @@ export class FileStore {
     const rawSteps=includeArtifacts?db.prepare('SELECT step,processor,version,state,attempts,error,updated_at AS updatedAt FROM file_steps WHERE capture_id=? ORDER BY rowid').all(id) as {step:string;processor:string;version:string;state:string;attempts:number;error:string|null;updatedAt:string}[]:[];
     const job=rawJob?{...rawJob,execution:executionEnvelope({state:rawJob.state,attempts:rawJob.attempts,errorCode:rawJob.error??undefined,availableAt:rawJob.availableAt,inputVersion:rawJob.inputVersion??undefined})}:null;
     const steps=rawSteps.map(step=>({...step,execution:executionEnvelope({state:step.state,attempts:step.attempts,errorCode:step.error??undefined,definitionVersion:step.version,updatedAt:step.updatedAt})}));
-    return {captureId:id,...JSON.parse(v.manifest),hasOriginal:!!v.object_hash,originMissing:!!head?.origin_missing,job,artifacts,steps};
+    const manifest=JSON.parse(v.manifest),index=this.store.evidence([id])[0]?.provenance?.document?.fileIndex;if(index&&manifest.item.layer==='snapshot')manifest.item.document={...manifest.item.document,fileIndex:index};
+    return {captureId:id,...manifest,hasOriginal:!!v.object_hash,originMissing:!!head?.origin_missing,job,artifacts,steps};
   }
   saveAsset(artifactId:string,name:string,mime:string,bytes:Buffer){
     if(!/^speaker_samples\/SPEAKER_[0-9]{1,2}\.wav$/.test(name)||bytes.length>768*1024)throw new StoreError('Invalid artifact asset');
@@ -225,6 +270,11 @@ export class FileStore {
   *bytes(id:string,start=0,end?:number):Generator<Buffer>{const v=this.version(id);if(!v.object_hash)throw new StoreError('Original is not archived',404);
     for(const bytes of this.store.assets.bytes(v.object_hash,start,end)){this.version(id);yield bytes;}
   }
+  /** Host-only temporary input; query original tools continue to use bytes(). */
+  *processingBytes(id:string){const v=this.version(id);if(v.object_hash){yield* this.bytes(id);return;}const input=this.store.db.prepare('SELECT object_hash,expires FROM file_snapshot_inputs WHERE capture_id=?').get(id);if(!input||Number(input.expires)<=Date.now())throw new StoreError('Snapshot processing input expired',410);for(const bytes of this.store.assets.bytes(String(input.object_hash))){if((!this.sources.getSource(v.source_id).enabled||this.sources.getSource(v.source_id).retention==='reference')||this.sources.getItem(v.source_id,v.external_id)?.revision!==v.revision)throw new StoreError('Snapshot source or version changed',409);yield bytes;}}
+  releaseSnapshotInput(id:string){if(this.store.db.prepare('DELETE FROM file_snapshot_inputs WHERE capture_id=?').run(id).changes)this.store.assets.sweep();}
+  publishSnapshotIndex(id:string,total:number,length:number,parser:string,partial=false,warnings:string[]=[]){const capture=this.store.evidence([id])[0];if(!capture?.provenance?.document?.fileIndex)return;const index={...capture.provenance.document.fileIndex,status:'ready',parser,totalCharacters:total,length,coverage:total>length||partial?'lightweight':total?'full':'none',...(warnings.length?{warnings}:{} )};this.store.db.prepare("UPDATE captures SET json=json_set(json,'$.provenance.document.fileIndex',json(?)) WHERE id=?").run(JSON.stringify(index),id);}
+  saveSnapshotText(id:string,text:string){const index=JSON.parse(this.version(id).manifest).item.document?.fileIndex;if(!index?.allowRead)return;const asset=this.store.assets.put(Buffer.from(text));try{this.store.db.prepare('INSERT OR REPLACE INTO file_snapshot_text VALUES(?,?)').run(id,asset.hash);}finally{asset.release();}}
   stream(id:string,start=0,end?:number){return Readable.from(this.bytes(id,start,end));}
   chunks(id:string,offset=0,limit=100){this.version(id);return (this.store.db.prepare(`SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND ${activeChunks} ORDER BY c.start_ms,c.ordinal,c.rowid LIMIT ? OFFSET ?`).all(id,Math.min(limit,200),offset) as Chunk[]).map(c=>this.chunkRecord(c));}
   speakerAttributions(captureId:string,artifactId:string){
@@ -263,7 +313,14 @@ export class FileStore {
   }
 
   forget(id:string){const v=this.version(id);this.store.db.prepare('INSERT OR IGNORE INTO file_forgotten VALUES(?,?)').run(v.source_id,v.external_id);const ids=this.store.db.prepare('SELECT capture_id FROM file_versions WHERE source_id=? AND external_id=?').all(v.source_id,v.external_id) as {capture_id:string}[];for(const r of ids)this.store.delete(r.capture_id);this.sweep();return {deleted:ids.length};}
-  sweep(){
+  sweepSnapshotInputs(){
+    const db=this.store.db;
+    const stale=`capture_id NOT IN (SELECT h.capture_id FROM file_heads h JOIN source_connections s ON s.id=h.source_id WHERE json_extract(s.json,'$.enabled')=1 AND json_extract(s.json,'$.retention')!='reference' AND h.origin_missing=0)`;
+    const removed=db.prepare(`DELETE FROM file_snapshot_inputs WHERE expires<=? OR ${stale}`).run(Date.now()).changes;
+    const retired=db.prepare(`DELETE FROM file_snapshot_text WHERE ${stale}`).run().changes;if(removed||retired)this.store.assets.sweep();
+  }
+  sweep(){this.sweepSnapshotInputs();
+
     for(const u of this.store.db.prepare('SELECT id FROM file_uploads WHERE ack IS NOT NULL OR created_at<?').all(new Date(Date.now()-7*86400000).toISOString()) as {id:string}[]){rmSync(join(this.uploads,u.id),{recursive:true,force:true});this.store.db.prepare('DELETE FROM file_uploads WHERE id=?').run(u.id);}
     this.store.db.exec('DELETE FROM file_objects WHERE hash NOT IN (SELECT object_hash FROM file_versions WHERE object_hash IS NOT NULL UNION SELECT object_hash FROM file_assets)');
     this.store.assets.sweep();

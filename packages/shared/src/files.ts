@@ -13,6 +13,7 @@ export const fileRevisionSchema=z.object({
   relativePath:z.string().max(4000).default(''),
 }).strict().superRefine((v,c)=>{
   if(v.item.kind!=='file'||(!['snapshot'].includes(v.item.layer)&&v.item.text)||!['original','reference','snapshot'].includes(v.item.layer)||v.item.layer==='snapshot'&&!v.item.document?.fileIndex)c.addIssue({code:'custom',message:'Files require empty text and original/reference layer'});
+  if(v.item.layer==='snapshot'&&v.sha256&&(v.sizeBytes>16*1024*1024||v.item.text||v.item.document?.fileIndex?.status!=='pending'||v.item.document?.fileIndex?.contentVersion!==v.sha256))c.addIssue({code:'custom',message:'Snapshot processing input must be pending, empty and at most 16 MiB'});
   if(v.item.layer==='reference'&&v.sha256)c.addIssue({code:'custom',message:'References cannot include a content digest'});
   if(!v.item.deleted&&v.item.layer==='original'&&(!v.sha256||v.sizeBytes>FILE_MAX_BYTES))c.addIssue({code:'custom',message:'Original file requires a digest and must fit file limit'});
 });

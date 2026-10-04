@@ -114,11 +114,13 @@ test('simultaneous Ask sessions isolate default Memory and catalog times',{timeo
 test('Ask samples before model queuing and every working summary inherits the same time',{timeout:15000},async t=>{
   const entered=deferred(),release=deferred(),thirdSample=deferred();let samples=0,semantic=early;const calls:QueryInput[]=[];
   t.after(()=>release.resolve());
-  const {node}=await appFixture(t,async input=>{calls.push(input);if(input.question==='Generated blocker'){entered.resolve();await release.promise;}return empty(input.skill==='working-memory'?'Generated complete summary':'Generated answer');},()=>{samples++;if(samples===3)thirdSample.resolve();return semantic;});
+  const {node}=await appFixture(t,async input=>{calls.push(input);if(input.skill==='working-memory')assert.deepEqual(input.contextEvidenceDependencies,{version:1,complete:true,ids:[]});if(input.question==='Generated blocker'){entered.resolve();await release.promise;}return empty(input.skill==='working-memory'?'Generated complete summary':'Generated answer');},()=>{samples++;if(samples===3)thirdSample.resolve();return semantic;});
   node.featureServices.interactiveGate.configure(1);
   const conversations=node.featureServices.conversations;
   let conversationId:string|undefined;
-  for(let i=0;i<5;i++)conversationId=conversations.append(conversationId?conversations.get(conversationId):undefined,{question:'Generated prefix '+i},empty('X'.repeat(2000))).conversationId;
+  // These owner-generated prefixes read no original evidence. Their complete
+  // empty lineage is explicit, as a real host receipt would record it.
+  for(let i=0;i<5;i++)conversationId=conversations.append(conversationId?conversations.get(conversationId):undefined,{question:'Generated prefix '+i},{...empty('X'.repeat(2000)),evidenceDependencies:{version:1,complete:true,ids:[]}}).conversationId;
   const settings=node.lifecycle.settings();node.lifecycle.configure({...settings,contextCharacters:4000,summaryCharacters:1000});
   const compacted=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated follow-up',conversationId}});assert.equal(compacted.statusCode,200,compacted.body);
   assert.ok(calls.some(input=>input.skill==='working-memory'));assert.ok(calls.every(input=>input.contextTime===early));assert.equal(samples,1);

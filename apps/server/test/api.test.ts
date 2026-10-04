@@ -68,7 +68,7 @@ test('deleting evidence during an insight run cannot recreate a saved private in
 
 test('queries and insights validate and preserve device and display time zone scope',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-query-scope-'));const config=testConfig(dir);const seen:any[]=[];
-  const {app}=await buildApp(config,{agent:{configured:true,query:async args=>{seen.push(args);return {answer:'synthetic scope',citations:[],trace:[],runId:randomUUID()};},close:async()=>{}}});
+  const {app}=await buildApp(config,{agent:{configured:true,query:async args=>{seen.push(args);return {answer:args.skill==='personal-insight'?JSON.stringify({title:'Generated scope report',markdown:'synthetic scope',html:'<p>synthetic scope</p>'}):'synthetic scope',citations:[],trace:[],runId:randomUUID()};},close:async()=>{}}});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
   const headers={authorization:`Bearer ${config.token}`};
   for(const url of ['/api/query','/api/insights']){

@@ -188,11 +188,12 @@ export function registerMcp(app:FastifyInstance,ctx:ConnectorContext) {
 
 const targetSchema=z.object({url:z.string().max(2000),token:z.string().min(1).max(4096).refine(v=>!/[\r\n\0]/.test(v)).optional()});
 export const discoverySchema=targetSchema.strict();
-export const remoteImportSchema=targetSchema.extend({sourceId:z.string().max(128),resourceUris:z.array(z.string().min(1).max(4000)).max(30).optional(),tool:z.object({name:z.string().min(1).max(200),arguments:z.record(z.unknown()).default({}),confirmedReadOnly:z.literal(true)}).strict().optional()}).strict().refine(v=>Boolean(v.resourceUris?.length)!==Boolean(v.tool),'Choose resources or one explicitly selected read-only tool');
+export const remoteImportSchema=targetSchema.extend({sourceId:z.string().max(128),resourceUris:z.array(z.string().min(1).max(4000)).max(30).refine(v=>new Set(v).size===v.length,'Duplicate resource URI').optional(),tool:z.object({name:z.string().min(1).max(200),arguments:z.record(z.unknown()).default({}),confirmedReadOnly:z.literal(true)}).strict().optional()}).strict().refine(v=>Boolean(v.resourceUris?.length)!==Boolean(v.tool),'Choose resources or one explicitly selected read-only tool');
 type Target=z.infer<typeof targetSchema>;
 export class RemoteMcp {
   private active=new Set<Client>();private jobs=new Set<Promise<unknown>>();private closed=false;
-  constructor(private ctx:ConnectorContext){}
+  private imports=new Map<string,Promise<unknown>>();
+  constructor(private ctx:ConnectorContext){ctx.store.db.exec('CREATE TABLE IF NOT EXISTS mcp_import_manifests(source_id TEXT NOT NULL REFERENCES source_connections(id) ON DELETE CASCADE,identity TEXT NOT NULL,members TEXT NOT NULL,PRIMARY KEY(source_id,identity))');}
   private async connect(target:Target) {
     if(this.closed)throw new ConnectorError('connector_closed',503);
     const endpoint=remoteUrl(target.url,this.ctx.config.connectors?.allowLocalMcp);
@@ -218,7 +219,12 @@ export class RemoteMcp {
       return {resources,tools};
     }finally{this.active.delete(client);await client.close();}
   }
-  import(raw:unknown){return this.track(this.performImport(raw));}
+  async import(raw:unknown){
+    const input=remoteImportSchema.parse(raw),prior=this.imports.get(input.sourceId)??Promise.resolve();
+    const work=prior.catch(()=>{}).then(()=>this.performImport(input));this.imports.set(input.sourceId,work);
+    void work.finally(()=>{if(this.imports.get(input.sourceId)===work)this.imports.delete(input.sourceId);}).catch(()=>{});
+    return this.track(work);
+  }
   private async performImport(raw:unknown) {
     if(this.closed)throw new ConnectorError('connector_closed',503);
     const input=remoteImportSchema.parse(raw),source=this.ctx.sources.getSource(input.sourceId);
@@ -228,13 +234,15 @@ export class RemoteMcp {
     this.ctx.sources.reportStatus(source.id,{state:'syncing'});
     try {
       const chunks:{externalId:string;title:string;text:string;mimeType:string;uri?:string}[]=[];
+      const manifests=new Map<string,{uri:string;members:string[]}>();
+      for(const uri of input.resourceUris??[])manifests.set(digest(`${input.url}\nresource:${uri}`),{uri,members:[]});
       if(input.resourceUris&&source.retention==='reference'){
         const selected=new Set(input.resourceUris),metadata=new Map<string,{name:string;mimeType?:string}>();let cursor:string|undefined;
         if(client.getServerCapabilities()?.resources)for(let page=0;page<10;page++){
           const result=await client.listResources({cursor},{timeout:20000});for(const resource of result.resources)if(selected.has(resource.uri))metadata.set(resource.uri,resource);
           cursor=result.nextCursor;if(!cursor||metadata.size===selected.size)break;
         }
-        for(const uri of input.resourceUris){const info=metadata.get(uri);chunks.push({externalId:digest(`${input.url}\n${uri}\n0`),title:(info?.name??'MCP reference').slice(0,2000),text:'',mimeType:info?.mimeType??'text/plain',uri:`mcp://${digest(input.url).slice(0,24)}/${digest(uri)}`});}
+        for(const uri of input.resourceUris){const info=metadata.get(uri),externalId=digest(`${input.url}\n${uri}\n0`);chunks.push({externalId,title:(info?.name??'MCP reference').slice(0,2000),text:'',mimeType:info?.mimeType??'text/plain',uri:`mcp://${digest(input.url).slice(0,24)}/${digest(uri)}`});manifests.get(digest(`${input.url}\nresource:${uri}`))!.members.push(externalId);}
       }
       else if(input.resourceUris)for(const uri of input.resourceUris){
         const result=await client.readResource({uri},{timeout:20000});
@@ -242,6 +250,7 @@ export class RemoteMcp {
           if(!('text'in entry)||typeof entry.text!=='string')throw new ConnectorError('mcp_binary_resource_not_supported',415);
           if(entry.text.length>100000)throw new ConnectorError('mcp_resource_too_large',413);
           chunks.push({externalId:digest(`${input.url}\n${uri}\n${index}`),title:uri.slice(0,2000),text:entry.text,mimeType:entry.mimeType??'text/plain'});
+          manifests.get(digest(`${input.url}\nresource:${uri}`))!.members.push(chunks.at(-1)!.externalId);
           if(chunks.length>100)throw new ConnectorError('mcp_resource_limit',413);
         }
       }
@@ -257,17 +266,41 @@ export class RemoteMcp {
         if(text.length>100000)throw new ConnectorError('mcp_resource_too_large',413);
         chunks.push({externalId:digest(`${input.url}\ntool:${input.tool.name}\n${JSON.stringify(input.tool.arguments)}`),title:input.tool.name,text,mimeType:'text/plain'});
       }
-      for(const chunk of chunks){
-        if(this.closed)throw new ConnectorError('connector_closed',503);
+      const assertActive=()=>{if(this.closed)throw new ConnectorError('connector_closed',503);};
+      const prepare=(chunk:typeof chunks[number],deleted=false):SourceItem=>{
         const prior=this.ctx.sources.getItem(source.id,chunk.externalId);
         const layer=source.retention==='reference'?'reference':'snapshot';
-        const item:SourceItem={...chunk,revision:'pending',text:layer==='reference'?'':chunk.text,observedAt:new Date().toISOString(),kind:'file',layer,deleted:false};
+        const item:SourceItem={...chunk,revision:'pending',text:deleted||layer==='reference'?'':chunk.text,observedAt:new Date().toISOString(),kind:'file',layer,deleted};
         const identity=(value:Partial<SourceItem>)=>JSON.stringify({externalId:value.externalId,title:value.title,text:value.text,mimeType:value.mimeType,uri:value.uri,kind:value.kind,layer:value.layer,deleted:value.deleted??false});
         const hash=digest(identity(item));
         // Reuse an unchanged head; returning to older content creates a new revision linked to the head.
         const priorHash=prior?digest(identity(prior)):undefined;
         item.revision=prior&&priorHash===hash?prior.revision:digest(`${hash}\n${prior?.revision??''}`);
-        const result=await this.ctx.sources.upsert(source.id,item);result.duplicate?duplicates++:imported++;
+        return item;
+      };
+      // Each successful resource read is a complete membership snapshot. Only
+      // that explicitly selected resource may retract its missing tail parts.
+      for(const [identity,manifest] of manifests){
+        assertActive();
+        const row=this.ctx.store.db.prepare('SELECT members FROM mcp_import_manifests WHERE source_id=? AND identity=?').get(source.id,identity);
+        const previous=row?z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(100).parse(JSON.parse(String(row.members))):
+          Array.from({length:100},(_,index)=>digest(`${input.url}\n${manifest.uri}\n${index}`)).filter(id=>Boolean(this.ctx.sources.getItem(source.id,id)));
+        const selected=new Set(manifest.members),items=chunks.filter(chunk=>selected.has(chunk.externalId)).map(chunk=>prepare(chunk));
+        for(const externalId of previous)if(!selected.has(externalId)){
+          const prior=this.ctx.sources.getItem(source.id,externalId);
+          if(prior&&!prior.deleted)items.push(prepare({externalId,title:prior.title??manifest.uri.slice(0,2000),text:'',mimeType:prior.mimeType??'text/plain',...(prior.uri?{uri:prior.uri}:{})},true));
+        }
+        const members=JSON.stringify(manifest.members),save=()=>{
+          assertActive();this.ctx.store.reserveMetadata(Math.max(0,Buffer.byteLength(members)-Buffer.byteLength(String(row?.members??'')))+(row?0:256));
+          this.ctx.store.db.prepare('INSERT INTO mcp_import_manifests VALUES(?,?,?) ON CONFLICT(source_id,identity) DO UPDATE SET members=excluded.members').run(source.id,identity,members);
+        };
+        if(items.length){
+          const result=await this.ctx.sources.upsertBatch(source.id,items,assertActive,(_receipt,index)=>{if(index===items.length-1)save();});
+          for(const receipt of result.receipts)receipt.duplicate?duplicates++:imported++;
+        }else{const db=this.ctx.store.db;db.exec('BEGIN IMMEDIATE');try{assertActive();if(!this.ctx.sources.getSource(source.id).enabled)throw new ConnectorError('mcp_source_invalid');save();db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}}
+      }
+      if(input.tool)for(const chunk of chunks){
+        assertActive();const result=await this.ctx.sources.upsert(source.id,prepare(chunk),assertActive);result.duplicate?duplicates++:imported++;
       }
       this.ctx.sources.reportStatus(source.id,{state:'idle',lastSyncAt:new Date().toISOString()});return {imported,duplicates};
     }catch(error){this.ctx.sources.reportStatus(source.id,{state:'error',code:'mcp_import_failed'});throw error instanceof ConnectorError?error:new ConnectorError('mcp_import_failed',502);}

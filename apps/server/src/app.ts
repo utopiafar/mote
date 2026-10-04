@@ -24,12 +24,14 @@ import { agentDeadline } from './agent-deadline.js';
 import { installAgentFeatures } from './agent-feature-host.js';
 import { ArchivedFileStore } from './archived-files.js';
 import { codingSourcePlugin } from './coding-source-plugin.js';
+import { CodingConversationContext } from './coding-conversation-context.js';
 import { ConcurrencyGate } from './concurrency.js';
 import { repositoryRoot,type Config } from './config.js';
 import { ConnectionError,Connections,type ConnectionCredential } from './connections.js';
 import { registerConnectors } from './connectors/index.js';
 import { ContentStorageService } from './content-storage.js';
 import { Conversations } from './conversations.js';
+import { combineDependencies,resolveDependencies } from './conversation-lineage.js';
 import { ServerDiagnostics,safeError,type AgentTraceContext } from './diagnostics.js';
 import { EvidenceReader } from './evidence-reader.js';
 import { EvidenceExposurePolicy } from './evidence-exposure.js';
@@ -67,7 +69,7 @@ import { MINIMUM_MODEL_INPUT_RESERVATION_TOKENS,ModelBudgets } from './model-bud
 import { ModelCatalogError } from './model-catalog.js';
 import { modelConfiguration } from './model-configuration.js';
 import { ModelSettingsError,ModelSettingsStore,modelProfileIdSchema } from './model-settings.js';
-import { openingMemories } from './opening-memory.js';
+import { openingMemoryContext } from './opening-memory.js';
 import { linkOperationParent } from './operation-projection.js';
 import { Perception } from './perception.js';
 import { ProcessingRuntime } from './processing-runtime.js';
@@ -162,9 +164,26 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   const assertRequestActive=(req:FastifyRequest)=>{const c=connectionIdentity(req);if(c)connections.assertActive(c);};
   const sourceOwner=(req:FastifyRequest,id:string)=>{assertRequestActive(req);const c=credential(req);if(c)connections.assertOwnSource(c,id);};
   const context=(records:CaptureRecord[])=>evidenceReader.context(records);
+  const contextDependencies=(input:QueryInput|undefined)=>resolveDependencies(store,combineDependencies([
+    ...(input?.conversation?[input.conversation.evidenceDependencies??{version:1 as const,complete:false,ids:[]}]:[]),
+    ...(input?.contextEvidenceDependencies?[input.contextEvidenceDependencies]:[]),
+    ...(input?.derivedContextEvidenceIds?[{version:1 as const,complete:true,ids:[...input.derivedContextEvidenceIds]}]:[]),
+  ]));
+  const contextFailure=(code:'context_lineage_incomplete'|'context_evidence_restricted')=>Object.assign(new StoreError(code,409),{code});
   const assertModelEvidence=(settings:import('@mote/shared/models').ModelSettings,input:QueryInput|undefined)=>{
     if(input?.derivedContextEvidenceIds?.some(id=>!evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(settings)))))throw new StoreError('Derived context evidence is no longer permitted for this model',409);
     if(!usesLocalModel(settings)&&[...(input?.evidenceIds??[]),...(input?.directImages??[]).map(image=>image.id)].some(id=>evidenceReader.evidenceLocalOnly(id)))throw new StoreError('Local-only evidence requires a local model',409);
+    const conversationText=Boolean(input?.conversation?.workingMemory?.text||input?.conversation?.turns.some(turn=>!turn.evidenceDeleted&&turn.answer));
+    const taskText=Boolean(input?.taskContext?.previousSummary||input?.taskContext?.turns?.length);
+    if(!usesLocalModel(settings)&&((conversationText&&input?.conversation?.evidenceDependencies?.complete!==true)||((taskText||input?.openingMemories?.length)&&input?.contextEvidenceDependencies?.complete!==true)||input?.openingMemories?.length&&!input?.contextEvidenceDependencies?.ids.length))throw contextFailure('context_lineage_incomplete');
+    const dependencies=contextDependencies(input),policy=new EvidenceExposurePolicy([],()=>usesLocalModel(settings));
+    for(const id of dependencies?.ids??[]){
+      // Derived nodes are retained in the fence alongside their resolved original
+      // ancestors. They never grant a raw read; current originals carry policy.
+      const original=memories.readEvidence([id])[0];
+      if(original){if(!evidenceReader.deletionContextAllowed(id,policy))throw contextFailure('context_evidence_restricted');}
+      else if(!store.db.prepare('SELECT 1 FROM memories WHERE id=? UNION SELECT 1 FROM context_artifacts WHERE id=? UNION SELECT 1 FROM file_artifacts WHERE id=?').get(id,id,id))throw contextFailure('context_evidence_restricted');
+    }
   };
   const agentFeatures=await installAgentFeatures(backendContext,evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
     exposurePolicy:new EvidenceExposurePolicy([],()=>modelLocality.getStore()===true),
@@ -257,13 +276,15 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   const queryRuns=new QueryRuns(store,{executor,concurrency:()=>runtimeSettings.execution().interactiveConcurrency});
   const insightRuns=new InsightRuns(store,{executor,evidenceReader});
   const workflows=new ProcessingRuntime(store,[],{},Date.now,executor,materials,backendContext);
+  const memoryConfiguration=(id?:string,model?:string)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);};
+  const codingContext=new CodingConversationContext(store,materials,input=>queryAgent(input,'query','memories'),memoryConfiguration);
   const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:[...new Set([...(config.backendPluginModules??[]),...(config.fileProcessorModules??[])])],analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,pluginContext:backendContext,mediaAssets});
   try{await processing.runtime.ready;}catch(error){await processing.close();await workflows.close();await sourcePipelines.close();await executor.close();await backendContext.fiber.dispose();await modelSettings.close();await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
 
   const perception=new Perception(store,processing.runtime,executor,mediaAssets);
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
   workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return agent.query({...input,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}});},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
-  workflows.registry.register(conversationUnderstandingProcessor({memories,usage:usageLedger,
+  workflows.registry.register(conversationUnderstandingProcessor({memories,usage:usageLedger,resolveContext:id=>codingContext.get(id),
     selection:config=>{const selected=modelSettings.select('memory',typeof config?.profileId==='string'?config.profileId:undefined);
       return {...modelConfiguration(selected.id,{...selected.settings,...(typeof config?.modelOverride==='string'?{model:config.modelOverride}:{})},modelSettings.view().revision),configured:agent.configuredFor(selected.id)};},
     resolveEvidence:page=>({records:materials.evidence([...new Set(page.spans.flatMap(span=>span.evidenceId?[span.evidenceId]:[]))]),
@@ -355,6 +376,7 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     if(activeQueries.size>=1000)throw new StoreError('Agent queue is full; retry shortly',429);
     const profile=modelSettings.select(input.responseMode==='memory-extraction'||input.skill==='memory-extraction'||input.skill==='coding-memory'||moduleId==='memories'?'memory':input.skill==='personal-insight'?'insight':'chat',input.modelProfileId);
     input={...input,language:input.language??requestLocale.getStore()??'zh-CN',modelProfileId:profile.id,modelOverride:input.modelOverride??profile.settings.model};
+    if(input.contextEvidenceDependencies)input={...input,contextEvidenceDependencies:resolveDependencies(store,input.contextEvidenceDependencies)};
     const configuration=modelConfiguration(profile.id,{...profile.settings,model:input.modelOverride!},modelSettings.view().revision);
     const traceContext:AgentTraceContext={...input.traceContext,traceId:randomUUID(),requestId:diagnostics.requestId(),operation,moduleId,profileId:profile.id,provider:profile.settings.provider,protocol:profile.settings.protocol,model:input.modelOverride??profile.settings.model};
     const startedAt=Date.now();let lastActivity=startedAt;
@@ -379,17 +401,18 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed).then(result=>{
       taskSignal?.throwIfAborted();
       assertModelEvidence(profile.settings,input);
+      const evidenceDependencies=resolveDependencies(store,combineDependencies([contextDependencies(input),result.evidenceDependencies]));
       // A long-running review may overlap routine imports and derived-layer updates.
       // Only an original actually disclosed to this run being deleted can make
       // its answer unsafe to publish; other archive changes belong to later runs.
       if(store.deletionRevision()!==revision){
-        const used=new Set([...(input.derivedContextEvidenceIds??[]),...(result.evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
+        const used=new Set([...(input.derivedContextEvidenceIds??[]),...(contextDependencies(input)?.ids??[]),...(evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
         for(const row of store.db.prepare("SELECT id FROM changes WHERE seq>? AND operation='delete'").iterate(revision)){
-          if(used.has(String(row.id)))throw new StoreError('Evidence used by this answer was deleted during the run',409);
+          if(!evidenceDependencies?.complete||used.has(String(row.id)))throw new StoreError('Evidence used by this answer was deleted during the run',409);
         }
       }
       trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
-      return {...result,configuration,usage:meter.finish('completed')};
+      return {...result,...(evidenceDependencies?{evidenceDependencies}:{}),configuration,usage:meter.finish('completed')};
     }).catch(error=>{meter.finish('failed');trace({type:'query.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:typeof (error as {reason?:unknown})?.reason==='string'?(error as {reason:string}).reason:undefined}});throw error;}),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
     activeQueries.add(promise);void promise.finally(()=>{deadline.dispose();clearInterval(heartbeat);activeQueries.delete(promise);}).catch(()=>{});return promise;
   }
@@ -408,10 +431,15 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     if(refs.length!==1||!refs[0])return;
     const material=materials.get(refs[0]);
     if(!material||material.kind!=='mote.coding-session'||material.schemaVersion<5)return;
+    let conversationContextId:string|undefined;
+    if(material.textLength>12000&&materials.evidenceIds(material.ref).every(id=>input.job.evidenceIds.includes(id))){
+      const contextInput={ref:material.ref,pins:input.materialInputs,configuration:input.job.configuration!,contextTime:input.job.contextTime,timeZone:input.job.timeZone,language:input.job.language,signal:input.signal};
+      await codingContext.prepare(contextInput);conversationContextId=codingContext.key(contextInput);
+    }
     const pages=materials.conversationInputs(material.ref,input.ranges);
     const configuration=input.job.configuration!;
     const jobs=workflows.enqueue([{name:'conversation',processor:'mote.coding-conversation-understanding',materialInputs:pages,
-      config:{candidatePolicy:input.candidatePolicy,modelFingerprint:configuration.fingerprint,profileId:configuration.profileId,modelOverride:configuration.model,
+      config:{candidatePolicy:input.candidatePolicy,conversationContextId,modelFingerprint:configuration.fingerprint,profileId:configuration.profileId,modelOverride:configuration.model,
         contextTime:input.job.contextTime,timeZone:input.job.timeZone,language:input.job.language,processingMaterialInputs:input.materialInputs.map(pin=>({materialId:pin.materialId,required:pin.required,fingerprint:pin.fingerprint,evidenceIds:pin.evidenceIds.filter(id=>input.ranges.some(range=>range.id===id))}))}}],input.parentGrant);
     linkOperationParent(store,'memory:'+input.job.id,executor.get(jobs.conversation)!.operationId);
     const abort=()=>executor.abortLocal(jobs.conversation);input.signal.addEventListener('abort',abort,{once:true});
@@ -423,7 +451,7 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     const row=store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(jobs.conversation)!;
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
   };
-  const memoryPipeline=new MemoryPipeline({understand:understandConversation,materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:(id,profileId)=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&(!job.automaticGrant||sourcePipelines.memoryAllowed(job.automaticGrant.sourceId)),strategies:memoryStrategies,executor,store,memories,deletionEvidenceAllowedForMemory:(id,profileId)=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),evidenceAllowedForMemory:(id,profileId)=>!evidenceReader.evidenceLocalOnly(id)||usesLocalModel(modelSettings.select('memory',profileId).settings),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings)),required),configuration:(id,model)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);},concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
+  const memoryPipeline=new MemoryPipeline({understand:understandConversation,materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:(id,profileId)=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&(!job.automaticGrant||sourcePipelines.memoryAllowed(job.automaticGrant.sourceId)),strategies:memoryStrategies,executor,store,memories,deletionEvidenceAllowedForMemory:(id,profileId)=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),evidenceAllowedForMemory:(id,profileId)=>!evidenceReader.evidenceLocalOnly(id)||usesLocalModel(modelSettings.select('memory',profileId).settings),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings)),required),configuration:memoryConfiguration,concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
   memoryRecipeSettings.onChange=()=>materialMemoryWork.inputs.revokeDisabled();
   memoryRecipeSettings.onApplied=()=>materialMemoryWork.reconcile(memoryPipeline);
   materialMemoryWork.reconcile(memoryPipeline);
@@ -488,11 +516,11 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
       const previousIds=previous?.turns.slice(-20).flatMap(turn=>turn.attachments?.map(attachment=>attachment.id)??[])??[];
       const previousAvailable=previousIds.filter(id=>{try{return Boolean(files.detail(id).hasOriginal);}catch{return false;}});
       const directImages=queryImages([...new Set([...attachmentIds,...previousAvailable.slice(-4)])]);
-      const [memoryLeads,conversation]=await Promise.all([
-        openingMemories(archiveReader,question,{...scope,contextTime}),
+      const [opening,conversation]=await Promise.all([
+        modelLocality.run(usesLocalModel(selectedProfile.settings),()=>openingMemoryContext(archiveReader,question,{...scope,contextTime})),
         previous?working.prepare(previous,lifecycle.settings(),question,input=>queryAgent({...input,contextTime,traceContext:{...input.traceContext,operationId},executionLane:'interactive',modelProfileId,modelOverride,signal},'query','conversations'),execution):undefined,
       ]);
-      const result=await queryAgent({traceContext:{operationId},executionLane:'interactive',question,...scope,contextTime,modelProfileId,modelOverride,onProgress,signal,directImages,openingMemories:memoryLeads,...(conversation?{conversation}:{})});
+      const result=await queryAgent({traceContext:{operationId},executionLane:'interactive',question,...scope,contextTime,modelProfileId,modelOverride,onProgress,signal,directImages,openingMemories:opening.leads,contextEvidenceDependencies:opening.evidenceDependencies,...(conversation?{conversation}:{})});
       signal?.throwIfAborted();
       return ()=>({...result,...conversations.append(previous,{question,...scope,attachments:directImages.filter(image=>attachmentIds.includes(image.id)).map(({id,name,mimeType})=>({id,name,mimeType}))},result)});
     } catch(error) {
@@ -563,5 +591,5 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     memoryReviews.clear();
     try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}
   });
-  return {app,featureServices,featureHost,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,featureServices,featureHost,codingContext,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
 }

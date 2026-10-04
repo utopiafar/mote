@@ -28,6 +28,8 @@ export class AssetStore {
  connect(){
   const db=this.store.db;
   for(const [table,id,hash] of [
+   ['file_snapshot_inputs',"'snapshot-input:'||capture_id",'object_hash'],
+   ['file_snapshot_text',"'snapshot-text:'||capture_id",'object_hash'],
    ['file_versions',"'file:'||capture_id",'object_hash','chunks','0'],
    ['file_assets',"'artifact:'||artifact_id||':'||name",'object_hash','chunks','0'],
    ['captures',"'capture:'||id",'blob_hash'],

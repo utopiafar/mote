@@ -17,7 +17,7 @@ async function fixture(t:TestContext,agent:QueryAgent){
 }
 test('review launch acknowledges immediately, survives reconnect, reports real tools, and is idempotent',async t=>{
   let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);let calls=0;
-  const result={answer:'Generated report',citations:[],trace:[],runId:randomUUID()};
+  const result={answer:JSON.stringify({title:'Generated report',markdown:'Generated report',html:'<p>Generated report</p>'}),citations:[],trace:[],runId:randomUUID()};
   const {app,insightRuns,store}=await fixture(t,{configured:true,query:async(input:QueryInput)=>{calls++;input.onProgress?.({stage:'tool',tool:'timeline',count:4,...{arguments:{secret:'never-store'},reasoning:'never-store'}});await gate;return result;},close:async()=>release()});
   const payload={requestId:randomUUID(),prompt:'Synthetic report request',timeZone:'Asia/Shanghai'};
   const response=await app.inject({method:'POST',url:'/api/insight-runs',headers,payload});assert.equal(response.statusCode,202,response.body);assert.equal(response.json().status,'running');
@@ -27,14 +27,14 @@ test('review launch acknowledges immediately, survives reconnect, reports real t
   assert.equal((await app.inject({method:'POST',url:'/api/insight-runs',headers,payload:{...payload,requestId:randomUUID()}})).statusCode,429);
   assert.equal((await app.inject({url:'/api/insight-runs',headers})).json().items[0].id,payload.requestId);
   release();await insightRuns.close();
-  const completed=(await app.inject({url:'/api/insight-runs/'+payload.requestId,headers})).json();assert.equal(completed.status,'completed');assert.equal(completed.result.answer,result.answer);
-  const lateCancel=await app.inject({method:'POST',url:`/api/insight-runs/${payload.requestId}/cancel`,headers});assert.equal(lateCancel.json().status,'completed');assert.equal(lateCancel.json().result.answer,result.answer);
+  const completed=(await app.inject({url:'/api/insight-runs/'+payload.requestId,headers})).json();assert.equal(completed.status,'completed');assert.equal(completed.result.answer,'Generated report');assert.equal(completed.result.artifact.title,'Generated report');
+  const lateCancel=await app.inject({method:'POST',url:`/api/insight-runs/${payload.requestId}/cancel`,headers});assert.equal(lateCancel.json().status,'completed');assert.equal(lateCancel.json().result.answer,'Generated report');
   store.db.exec('DELETE FROM insights');assert.equal(insightRuns.detail(payload.requestId).result,undefined,'deleted reports are never revived by job polling');
 });
 test('a review publishes when another original arrives during model generation',async t=>{
   let entered!:()=>void,release!:()=>void;
   const running=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
-  const {app,insightRuns,store}=await fixture(t,{configured:true,query:async()=>{entered();await gate;return {answer:'Generated report',citations:[],trace:[],runId:randomUUID()};},close:async()=>release()});
+  const {app,insightRuns,store}=await fixture(t,{configured:true,query:async()=>{entered();await gate;return {answer:JSON.stringify({title:'Generated report',markdown:'Generated report',html:'<p>Generated report</p>'}),citations:[],trace:[],runId:randomUUID()};},close:async()=>release()});
   const id=randomUUID(),response=await app.inject({method:'POST',url:'/api/insight-runs',headers,payload:{requestId:id}});
   assert.equal(response.statusCode,202);await running;
   await store.ingest({id:randomUUID(),deviceId:'generated-device',deviceName:'Generated device',platform:'macos',source:'activity',appId:'fixture.app',appName:'Generated activity',capturedAt:new Date(Date.now()-60000).toISOString(),durationMs:30000,privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}});

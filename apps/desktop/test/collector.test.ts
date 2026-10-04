@@ -362,15 +362,27 @@ describe.skipIf(process.platform !== 'darwin')('immediate settings with generate
 });
 
 describe.skipIf(process.platform !== 'darwin')('exact deduplication with generated images', () => {
+  it('retains every repeated observation and its measured time through queue restart',async()=>{
+    let at=Date.parse('2026-10-01T00:00:00Z');const clock=vi.spyOn(Date,'now').mockImplementation(()=>at);
+    try{
+      const {collector,queue}=await makeCollector({syncMode:'manual',imageDedupeMode:'exact',intervalMs:30000});
+      await collector.start();await collector.settleCapture();
+      for(let i=0;i<4;i++){at+=30000;clearTimeout((collector as any).timer);await (collector as any).capture();}
+      const archive=await queue.exportArchive();expect(Object.keys(archive.blobs)).toHaveLength(1);
+      const samples=archive.records.flatMap(record=>record.event.stateSeries?.samples??[{at:record.event.capturedAt,durationMs:record.event.durationMs}]);
+      expect(samples).toHaveLength(5);expect(samples.map(v=>v.at)).toEqual(Array.from({length:5},(_,i)=>new Date(Date.parse('2026-10-01T00:00:00Z')+i*30000).toISOString()));expect(samples.reduce((n,sample)=>n+sample.durationMs,0)).toBe(120000);
+      const reopened=new DurableQueue(directory,fixtureConfig());await reopened.initialize();expect((await reopened.exportArchive()).records.flatMap(record=>record.event.stateSeries?.samples??[record.event])).toHaveLength(5);expect(mocks.ocr).not.toHaveBeenCalled();
+    }finally{clock.mockRestore();}
+  });
   it.each(['off', 'exact'])('honors %s mode and never merges different applications', async mode => {
     const { collector, queue } = await makeCollector({ syncMode: 'manual', imageDedupeMode: mode });
     await collector.start(); await collector.settleCapture();
     clearTimeout((collector as any).timer); await (collector as any).capture();
-    expect(queue.stats().depth).toBe(mode === 'exact' ? 1 : 2);
+    expect(queue.stats().depth).toBe(2);
     mocks.active.mockResolvedValue({ ...application, appId: 'dev.mote.other' });
     mocks.foreground.mockResolvedValue({ ...application, appId: 'dev.mote.other' });
     clearTimeout((collector as any).timer); await (collector as any).capture();
-    expect(queue.stats().depth).toBe(mode === 'exact' ? 2 : 3);
+    expect(queue.stats().depth).toBe(3);
   });
 });
 

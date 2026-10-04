@@ -7,6 +7,7 @@ import { defaultConfig } from '../src/config';
 import { DEFAULT_SOURCE_OPTIONS } from '../src/source-types';
 import { SourceAdapterRegistry } from '../src/source-adapters';
 import {sourceAck} from './fixtures';
+import {fileTransport} from './file-transport';
 let directory: string, managers: LocalSourceManager[] = [];
 beforeEach(async () => { directory = await realpath(await mkdtemp(join(tmpdir(), 'mote-managed-sources-'))); vi.stubGlobal('fetch', vi.fn()); });
 afterEach(async () => { for (const app of managers) await app.close(); managers = []; await rm(directory, { recursive: true, force: true }); vi.unstubAllGlobals(); });
@@ -57,11 +58,12 @@ it('keeps scanning/staging files locally with no connection, restores them, and 
   const release = await app.holdConnection(); await app.prepareInitialConnection(target); await app.nodeBinding.commit(target, true, true); await app.changeConnection(target); release();
   await app.sync(true); expect(fetch).not.toHaveBeenCalled(); expect(app.pendingStats().pendingRecords).toBe(1);
   const received: any[] = [];
-  vi.mocked(fetch).mockImplementation(async (_url, init) => { if(init!.method==='GET')return new Response(JSON.stringify({revision:null}));const manifest = JSON.parse(await new Response(init!.body).text());const body=manifest.item??manifest; received.push(body); return new Response(JSON.stringify(init!.method === 'PUT' ? sourceAck(app.status()[0].source.id,body,'file-revision') : { ...body, id: app.status()[0].source.id }), { status: 200 }); });
+  const transport=fileTransport(()=>app.status()[0].source.id,item=>{received.push(item);});
+  vi.mocked(fetch).mockImplementation(async (_url,init)=>{const handled=await transport(String(_url),init);if(handled)return handled;const body=JSON.parse(await new Response(init!.body).text());return new Response(JSON.stringify({...body,id:app.status()[0].source.id}));});
   await app.flushPending(new AbortController().signal);
-  expect(app.pendingStats().pendingRecords).toBe(0); expect(received.find(body => body.document?.fileIndex)?.text).toBe(''); expect(app.status()[0].processingPending).toBe(1);
-  await (app as any).processFiles(); await app.flushPending(new AbortController().signal);
-  expect(received.find(body => body.text)?.text).toBe('original generated offline version');
+  expect(app.pendingStats().pendingRecords).toBe(0); expect(received.find(body => body.document?.fileIndex)?.text).toBe(''); expect(app.status()[0].processingPending).toBe(0);
+   await app.flushPending(new AbortController().signal);
+  expect(received.every(body=>body.text==='')).toBe(true);
   expect(vi.mocked(fetch).mock.calls.every(([,init])=>(init?.headers as Record<string,string>)['X-Mote-Ingress-Version']==='2')).toBe(true);
   await expect(app.nodeBinding.commit({ ...target, serverUrl: 'https://other.example' }, true, true)).rejects.toThrow();
 });
@@ -99,8 +101,9 @@ it('persists the first unsynchronized source-metadata timestamp across restarts 
 it('continues local discovery during a blocked upload and commits both versions exactly once',async()=>{
  const config={...defaultConfig(),token:'generated-concurrent-token',syncMode:'manual' as const},file=join(directory,'live.txt');await writeFile(file,'first generated version');const app=await create(config);await app.addFiles(file,DEFAULT_SOURCE_OPTIONS);await app.sync(true);
  let release!:()=>void,started!:()=>void;const gate=new Promise<void>(resolve=>release=resolve),ready=new Promise<void>(resolve=>started=resolve);const bodies:any[]=[];
- vi.mocked(fetch).mockImplementation(async(url,init)=>{const path=String(url).replace(config.serverUrl,''),body=init?.body?JSON.parse(await new Response(init.body).text()):undefined;if(init?.method==='GET')return new Response(JSON.stringify({revision:null}));if(path==='/api/sources')return new Response(JSON.stringify(body));if(init?.method==='PATCH')return new Response(JSON.stringify({...body,id:app.status()[0].source.id}));const record=body.item??body;bodies.push(record);if(bodies.length===1){started();await gate;}return new Response(JSON.stringify(sourceAck(app.status()[0].source.id,record,'file-revision')));});
+ const transport=fileTransport(()=>app.status()[0].source.id,async record=>{bodies.push(record);if(bodies.length===1){started();await gate;}});
+ vi.mocked(fetch).mockImplementation(async(url,init)=>{const handled=await transport(String(url),init);if(handled)return handled;const body=init?.body?JSON.parse(await new Response(init.body).text()):undefined;return new Response(JSON.stringify({...body,id:app.status()[0].source.id}));});
  const upload=app.flushPending(new AbortController().signal);await ready;
  try{await writeFile(file,'second generated version');void app.sync(true);await vi.waitFor(()=>expect(app.pendingStats().pendingRecords).toBe(2),{timeout:5000,interval:25});expect(app.connectionActivity().inFlight).toBe(true);}finally{release();}
- await upload;expect(bodies.map(body=>body.text)).toEqual(['','']);expect(bodies[0].document.fileIndex.contentVersion).not.toBe(bodies[1].document.fileIndex.contentVersion);expect(app.status()[0].processingPending).toBe(1);expect(app.pendingStats().pendingRecords).toBe(0);
+ await upload;expect(bodies.map(body=>body.text)).toEqual(['','']);expect(bodies[0].document.fileIndex.contentVersion).not.toBe(bodies[1].document.fileIndex.contentVersion);expect(app.status()[0].processingPending).toBe(0);expect(app.pendingStats().pendingRecords).toBe(0);
 });

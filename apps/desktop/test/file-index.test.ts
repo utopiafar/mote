@@ -9,10 +9,10 @@ import {randomUUID} from 'node:crypto';
 it('stable identity survives rename, lightweight indexes preserve version, revoked and changed reads fail closed',async()=>{
  const root=await realpath(await mkdtemp(join(tmpdir(),'mote-index-')));try{
  const path=join(root,'one.txt'),text='Generated evidence '.repeat(1000);await writeFile(path,text);const locations=new Map<string,string>();const options={...DEFAULT_SOURCE_OPTIONS,indexMode:'lightweight' as const,allowRead:true};
- const first=(await scanSourceFiles(root,options,undefined,undefined,locations)).items[0];expect(first.document?.fileIndex?.coverage).toBe('lightweight');expect(first.text.length).toBe(8000);
+ const first=(await scanSourceFiles(root,options,undefined,undefined,locations)).items[0];expect(first.document?.fileIndex?.status).toBe('pending');expect(first.text.length).toBe(0);expect(first.document?.fileIndex?.maxIndexCharacters).toBe(8000);
  await rename(path,join(root,'two.txt'));const second=(await scanSourceFiles(root,options,undefined,undefined,locations)).items[0];expect(second.externalId).toBe(first.externalId);
  const source:LocalSource={...options,id:'generated-source',deviceId:'fixture',name:'Generated',kind:'local-files',platform:'macos',enabled:true,path:root};const request={id:randomUUID(),sourceId:source.id,externalId:second.externalId,revision:'r1',contentVersion:second.document!.fileIndex!.contentVersion,offset:9000,length:100};
- expect(await readSourceEvidence(source,request,locations)).toMatchObject({status:'ready',text:text.slice(9000,9100)});
+ expect(await readSourceEvidence(source,request,locations)).toMatchObject({status:'unavailable',text:''});
  expect((await readSourceEvidence({...source,allowRead:false},request,locations)).status).toBe('denied');await writeFile(join(root,'two.txt'),'changed');expect((await readSourceEvidence(source,request,locations)).status).toBe('version_changed');
  }finally{await rm(root,{recursive:true,force:true});}
 });

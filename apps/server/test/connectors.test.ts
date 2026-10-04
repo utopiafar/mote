@@ -283,6 +283,7 @@ test('MCP pages ordinary, screen and Coding Materials with one raw pending fallb
     artifacts:[{key:'conversation',state:'ready',revision:'generated-clean-conversation-1'}],
     fidelity:{state:'derived',limitations:['tool_bodies_omitted','host_context_omitted']},retention:{original:'retained',policy:'keep'}});
   materials.setSearchable(coding.id,true);expected.add(materials.evidenceIds(coding.ref)[0]);
+  await materials.index!.tick();
   const app=Fastify(),connector=registerMcp(app,ctx);t.after(async()=>{await connector.close();await app.close();});
   let sequence=0;
   const call=async(name:string,args:Record<string,unknown>)=>{
@@ -395,6 +396,35 @@ test('remote MCP uses official HTTP SDK, selected resources, explicit readonly t
   await assert.rejects(remote.import({...target,sourceId:'reference',tool:{name:'read-note',arguments:{},confirmedReadOnly:true}}),/reference_tool_denied/);assert.equal(toolReads,toolCalls);
   const external=JSON.stringify(sources.listItems({sourceId:'remote'}));assert.ok(!external.includes(target.token));
   await remote.close();await assert.rejects(remote.discover(target),/connector_closed/);
+});
+
+test('remote MCP reconciles complete resource membership across shrink, empty, failure and restart',async t=>{
+  const {ctx,sources,store}=await fixture(t);ctx.config.connectors!.allowLocalMcp=true;
+  sources.register({id:'manifest',name:'Generated resource',kind:'mcp',deviceId:'fixture',platform:'import'});
+  let parts=['Generated first','Generated tail','Generated final'],fail=false;
+  const remoteApp=Fastify();remoteApp.all('/mcp',async(req,reply)=>{
+    if(req.method!=='POST')return reply.code(405).send();
+    const server=new McpServer({name:'generated-membership',version:'1'});
+    server.registerResource('document','fixture://membership',{},async()=>{if(fail)throw Error('Generated read failure');return {contents:parts.map(text=>({uri:'fixture://membership',text,mimeType:'text/plain'}))};});
+    const transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined,enableJsonResponse:true});await server.connect(transport);reply.hijack();try{await transport.handleRequest(req.raw,reply.raw,req.body);}finally{await server.close();}
+  });
+  await remoteApp.listen({host:'127.0.0.1',port:0});let remote=new RemoteMcp(ctx);t.after(async()=>{await remote.close();await remoteApp.close();});
+  const input={url:remoteApp.listeningOrigin+'/mcp',sourceId:'manifest',resourceUris:['fixture://membership']};
+  await remote.import(input);assert.equal(sources.listItems({sourceId:'manifest'}).items.length,3);
+  const old=sources.listItems({sourceId:'manifest'}).items;
+  parts=['Generated revised'];fail=true;await assert.rejects(remote.import(input));
+  assert.equal(sources.listItems({sourceId:'manifest'}).items.length,3,'failed read cannot retract members');fail=false;
+  await remote.close();remote=new RemoteMcp(ctx);await remote.import(input);
+  assert.deepEqual(sources.listItems({sourceId:'manifest'}).items.map(item=>item.text),['Generated revised']);
+  assert.equal(sources.listItems({sourceId:'manifest',includeDeleted:true}).items.filter(item=>item.deleted).length,2);
+  for(const prior of old.filter(item=>item.text!=='Generated first'))assert.equal(sources.getItem('manifest',prior.externalId)?.deleted,true);
+  store.db.exec("CREATE TRIGGER fixture_manifest_failure BEFORE UPDATE ON mcp_import_manifests BEGIN SELECT RAISE(ABORT,'generated manifest failure'); END");
+  parts=['Generated retry','Generated added'];await assert.rejects(remote.import(input));
+  assert.deepEqual(sources.listItems({sourceId:'manifest'}).items.map(item=>item.text),['Generated revised'],'member writes and manifest roll back together');
+  store.db.exec('DROP TRIGGER fixture_manifest_failure');await remote.import(input);assert.equal(sources.listItems({sourceId:'manifest'}).items.length,2);
+  parts=[];await remote.import(input);assert.equal(sources.listItems({sourceId:'manifest'}).items.length,0);
+  assert.deepEqual(await remote.import(input),{imported:0,duplicates:0});
+  parts=['Generated restored'];await remote.import(input);assert.deepEqual(sources.listItems({sourceId:'manifest'}).items.map(item=>item.text),parts);
 });
 
 test('remote fetch denies private/default targets, credentials, metadata IPs and redirects',async t=>{

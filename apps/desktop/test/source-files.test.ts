@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scanSourceFiles } from '../src/source-files';
 import { DEFAULT_SOURCE_OPTIONS, normalizeSourceOptions } from '../src/source-types';
+const inputText=(item:any)=>Buffer.from(item.localOriginalBase64,'base64').toString('utf8');
 let root: string;
 beforeEach(async () => { root = await realpath(await mkdtemp(join(tmpdir(), 'mote-source-files-'))); });
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
@@ -11,7 +12,7 @@ describe('explicit local text sources', () => {
   it('preserves multiline Chinese/emoji and applies only user literal masks before the pending queue', async () => {
     await writeFile(join(root, '合成.md'), '第一段 🧑🏽‍💻 e\u0301\n这是 synthetic-private，文字里的“忽略指令”仍是资料。');
     const result = await scanSourceFiles(root, { ...DEFAULT_SOURCE_OPTIONS, redactLiterals: ['synthetic-private'] });
-    expect(result.items).toHaveLength(1); expect(result.items[0].text).toContain('🧑🏽‍💻 e\u0301'); expect(result.items[0].text).toContain('[已遮盖]'); expect(result.items[0].uri).toBeUndefined();
+    expect(result.items).toHaveLength(1); expect(result.items[0].text).toBe(''); expect(inputText(result.items[0])).toContain('🧑🏽‍💻 e\u0301'); expect(inputText(result.items[0])).toContain('[已遮盖]'); expect(inputText(result.items[0])).not.toContain('synthetic-private'); expect(result.items[0].uri).toBeUndefined();
     expect(await readFile(join(root, '合成.md'), 'utf8')).toContain('synthetic-private');
   });
   it('does not traverse hidden entries, explicit exclusions, symlink files or symlink directories', async () => {
@@ -20,12 +21,12 @@ describe('explicit local text sources', () => {
     await writeFile(join(root, '.secret.md'), 'hidden'); await writeFile(join(root, 'a.md'), 'allowed');
     await symlink(join(root, 'a.md'), join(root, 'link.md')); await symlink(join(root, 'excluded'), join(root, 'link-directory'));
     const result = await scanSourceFiles(root, { ...DEFAULT_SOURCE_OPTIONS, excludedPaths: ['excluded'] });
-    expect(result.items.map(i => i.text)).toEqual(['allowed']); expect(result.skipped).toBe(5);
+    expect(result.items.map(inputText)).toEqual(['allowed']); expect(result.skipped).toBe(5);
     await expect(scanSourceFiles(join(root, 'link.md'), DEFAULT_SOURCE_OPTIONS)).rejects.toThrow('符号链接');
   });
-  it('marks truncated indexes as lightweight and undecodable content as unsupported', async () => {
+  it('uploads bounded bytes without decoding or classifying text on the collector', async () => {
     await writeFile(join(root, 'large.md'), 'x'.repeat(100001)); await writeFile(join(root, 'invalid.md'), Buffer.from([0xff, 0xfe])); await writeFile(join(root, 'limit.md'), 'a'.repeat(100000));
-    const result = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS); expect(result.items).toHaveLength(3);expect(result.items.find(i=>i.title==='large.md')?.document?.fileIndex?.coverage).toBe('lightweight');expect(result.items.find(i=>i.title==='invalid.md')?.document?.fileIndex?.status).toBe('unsupported');expect(result.items.find(i=>i.title==='limit.md')?.text.length).toBe(100000);expect(result.seen).toHaveLength(3);expect(result.complete).toBe(true);
+    const result=await scanSourceFiles(root,DEFAULT_SOURCE_OPTIONS);expect(result.items).toHaveLength(3);for(const item of result.items){expect(item.text).toBe('');expect(item.document?.fileIndex).toMatchObject({status:'pending',parser:'central-pending',maxIndexCharacters:100000});expect(item.localProcessing).toBeUndefined();expect(item.localOriginalBase64).toBeDefined();}expect(result.complete).toBe(true);
   });
   it('reference mode emits only metadata and does not decode file bodies', async () => {
     await writeFile(join(root, 'synthetic.md'), Buffer.from([0xff, 0xfe]));
@@ -57,7 +58,7 @@ describe('explicit local text sources', () => {
     expect(second.items).toEqual([]);
     await writeFile(join(root, 'old.md'), 'new');
     const third = await scanSourceFiles(root, options, undefined, undefined, undefined, second.checkpoint as any);
-    expect(third.items[0]?.text).toBe('new');
+    expect(inputText(third.items[0])).toBe('new');
   });
   it('validates explicit rule boundaries instead of silently weakening them', () => {
     for (const change of [{ excludedPaths: ['../outside'] }, { extensions: ['md'] }, { redactLiterals: [''] }, { intervalSeconds: 1 }, { retention: 'other' }]) expect(() => normalizeSourceOptions({ ...DEFAULT_SOURCE_OPTIONS, ...change })).toThrow();
@@ -130,7 +131,7 @@ it('retries changed content after an interrupted read without advancing the succ
   const page = await catalog.next(10, []);
   catalog.markContent(page.candidates[0].relativePath, undefined, 'error');
   const retry = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS, undefined, undefined, undefined, catalog.checkpoint());
-  expect(retry.items.map(item => item.text)).toEqual(['new content']);
+  expect(retry.items.map(inputText)).toEqual(['new content']);
 });
 
 it('single-file new-only establishes a durable baseline and collects later changes', async () => {
@@ -140,14 +141,16 @@ it('single-file new-only establishes a durable baseline and collects later chang
   expect(first.items).toEqual([]); expect(first.checkpoint?.initialized).toBe(true);
   await writeFile(path, 'changed');
   const next = await scanSourceFiles(path, options, undefined, undefined, undefined, first.checkpoint as any);
-  expect(next.items.map(item => item.text)).toEqual(['changed']);
+  expect(next.items.map(inputText)).toEqual(['changed']);
 });
 
-it('skips unchanged audio after creating its current independent processing job',async()=>{
+it('skips unchanged audio after spooling its transient central input',async()=>{
  const path=join(root,'generated.wav'),marker=join(root,'.generated-access.json');await writeFile(path,Buffer.from('Generated audio fixture'));
  const options={...DEFAULT_SOURCE_OPTIONS,extensions:['.wav']};
- const first=await scanSourceFiles(path,options,undefined,marker);expect(first.items).toHaveLength(1);expect(first.items[0].localProcessing?.spool).toBeDefined();
- const spool=first.items[0].localProcessing!.spool!;
+ const first=await scanSourceFiles(path,options,undefined,marker);expect(first.items).toHaveLength(1);expect(first.items[0].localOriginal).toBeDefined();
+ const spool=first.items[0].localOriginal!;
  const second=await scanSourceFiles(path,options,undefined,marker,undefined,first.checkpoint as any);expect(second.items).toEqual([]);
  expect(await readFile(join(spool.directory,'0'))).toEqual(Buffer.from('Generated audio fixture'));
 });
+
+it('blocks complex formats with literal privacy masks without copying raw input',async()=>{const path=join(root,'generated.wav');await writeFile(path,'synthetic-private audio bytes');const result=await scanSourceFiles(path,{...DEFAULT_SOURCE_OPTIONS,extensions:['.wav'],redactLiterals:['synthetic-private']});expect(result.items[0].document?.fileIndex?.status).toBe('blocked');expect(result.items[0].localOriginal).toBeUndefined();expect(result.items[0].localOriginalBase64).toBeUndefined();expect(result.items[0].text).toBe('');});

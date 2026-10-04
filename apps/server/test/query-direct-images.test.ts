@@ -22,7 +22,7 @@ test('an explicitly attached chat image is readable on demand and remains availa
     const meta=await reader.readImage!({id:ids[0],view:'metadata'});assert.equal(meta.data,undefined);assert.equal(meta.imageView!.original.sha256,hash);
     const region=await reader.readImage!({id:ids[0],expectedImageSha256:hash,region:{x:0,y:0,width:1,height:2}});assert.equal(region.imageView!.output!.width,1);assert.equal(region.imageView!.original.sha256,hash);
 
-    return {answer:'Generated image inspected',citations:[],trace:[],runId:randomUUID()};
+    return {answer:'Generated image inspected',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids}};
   }})});
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
   const bytes=await sharp({create:{width:2,height:2,channels:3,background:'#224466'}}).png().toBuffer();
@@ -47,8 +47,11 @@ test('the Agent bridge grants only the listed direct image without a screenshot 
   const {startBridge}=await import('../../../packages/agent/dist/bridge.js');
   const bridge=await startBridge(reader,{question:'Inspect this image',directImages:[{id,name:'Generated image',mimeType:'image/png',hash:'a'.repeat(64),sizeBytes:23}]},4);
   t.after(()=>bridge.close());
+  assert.equal(bridge.records.has(id),false,'attachment metadata cannot authorize a citation');
   const response=await fetch(bridge.url+'/read_image',{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify({id})});
-  assert.equal(response.status,200,await response.text());
+  assert.equal(response.status,200);const image=await response.json() as {imageDelivery:string};
+  assert.equal(bridge.records.has(id),false,'prepared pixels need a successful adapter receipt');
+  bridge.imageDelivery(image.imageDelivery,true);
   const citation=parseAnswer(JSON.stringify({answer:`Generated image [${id}]`,citationIds:[id]}),bridge.records).citations[0];
   assert.equal(citation.id,id);
   assert.equal((await fetch(bridge.url+'/read_image',{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify({id:randomUUID()})})).status,400);

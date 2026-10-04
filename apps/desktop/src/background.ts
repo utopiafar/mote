@@ -5,8 +5,6 @@ import type { Rectangle } from './contracts';
 
 export interface WorkProgress { message: string; completed?: number; total?: number }
 export type BackgroundRequest =
-  | {kind:'file-decode';bytes:Uint8Array;mime:string}
-  | {kind:'local-file-process';input:import('./local-file-processing').LocalFileInput;mime:string}
   | {kind:'spool-original';path:string;directory:string;expected:import('./original-spool').OriginalIdentity}
   | {kind:'original-part';spool:import('./original-spool').OriginalSpool;part:number}
   | {kind:'source-state';path:string;patches?:import('./source-state-store').StatePatch[];maximum?:number}
@@ -67,4 +65,3 @@ export const imageWork = new BackgroundLane();
 export const previewWork = new BackgroundLane();
 
 export const sourceWork = new BackgroundLane();
-export const fileProcessingWork = new BackgroundLane();

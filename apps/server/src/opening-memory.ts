@@ -1,11 +1,13 @@
 import type {ContextReader,QueryInput} from '@mote/agent';
+import type {EvidenceDependencies} from '@mote/shared';
 
 type Lead=NonNullable<QueryInput['openingMemories']>[number];
 type Scope=Pick<QueryInput,'after'|'before'|'deviceId'|'contextTime'>;
 
 /** Use the same privacy-aware reader as model tools; never place original records in the opening prompt. */
-export async function openingMemories(reader:ContextReader,question:string,scope:Scope):Promise<Lead[]> {
-  if(!reader.memories)return [];
+export async function openingMemoryContext(reader:ContextReader,question:string,scope:Scope):Promise<{leads:Lead[];evidenceDependencies:EvidenceDependencies}> {
+  const evidenceDependencies:EvidenceDependencies={version:1,complete:true,ids:[]};
+  if(!reader.memories)return {leads:[],evidenceDependencies};
   const bounds={after:scope.after,before:scope.before,deviceId:scope.deviceId,asOf:scope.contextTime,layer:'memory' as const};
   const search=question.trim().length<=160?question.trim():'';
   const pages=await Promise.all([
@@ -28,7 +30,16 @@ export async function openingMemories(reader:ContextReader,question:string,scope
     if(memory.status!=='published'&&memory.status!=='proposed')continue;
     if(memory.admission&&typeof memory.admission==='object'&&(memory.admission as {layer?:unknown}).layer!=='memory')continue;
     if(typeof memory.title!=='string'||typeof memory.statement!=='string'||typeof memory.createdAt!=='string')continue;
+    const ids=memory.evidenceIds;
+    if(!Array.isArray(ids)||!ids.length||ids.some(id=>typeof id!=='string'))evidenceDependencies.complete=false;
+    else evidenceDependencies.ids.push(...ids as string[]);
     selected.push({id,title:memory.title.slice(0,160),statement:memory.statement.slice(0,700),uncertainty:typeof memory.uncertainty==='string'?memory.uncertainty.slice(0,300):'',status:memory.status,tier:memory.tier==='consolidated'?'consolidated':'episode',createdAt:memory.createdAt});
   }
-  return selected;
+  evidenceDependencies.ids=[...new Set(evidenceDependencies.ids)];
+  return {leads:selected,evidenceDependencies};
+}
+
+/** Owner preview: only the public cards, without model execution. */
+export async function openingMemories(reader:ContextReader,question:string,scope:Scope):Promise<Lead[]> {
+  return (await openingMemoryContext(reader,question,scope)).leads;
 }

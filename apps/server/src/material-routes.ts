@@ -19,6 +19,11 @@ const memberQuery=z.object({revision:revision.optional(),offset:z.coerce.number(
 export function registerMaterialRoutes(app:FastifyInstance,materials:MaterialStore,organizers?:MaterialOrganizerRuntime){
   if(organizers)app.get('/api/materials/status',async()=>organizers.status());
   app.get('/api/materials',async req=>materials.list(listQuery.parse(req.query)));
+  app.post('/api/materials/:id/index/retry',async req=>{
+    const materialId=id.parse((req.params as {id:string}).id);
+    if(!materials.index)throw new StoreError('Material indexing is unavailable',503);
+    const indexing=materials.index.retry(materialId);void materials.index.tick();return {indexing};
+  });
   app.get('/api/materials/:id',async req=>{
     const material=materials.get(id.parse((req.params as {id:string}).id));
     if(!material)throw new StoreError('Material not found',404);

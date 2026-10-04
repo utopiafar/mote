@@ -1,0 +1,2001 @@
+[
+  {
+    "name": "builtin-wechat-web-android-visible",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "wechat-web-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.tencent.mm",
+        "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+        "required": [
+          {
+            "role": "android.webkit.WebView"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "role": "android.webkit.WebView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.tencent.mm",
+      "appVersion": "fixture-1",
+      "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "android.webkit.WebView",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.view.View",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  },
+  {
+    "name": "builtin-wechat-web-android-wrong-app",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "wechat-web-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.tencent.mm",
+        "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+        "required": [
+          {
+            "role": "android.webkit.WebView"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "role": "android.webkit.WebView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "dev.mote.generated.other",
+      "appVersion": "fixture-1",
+      "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "android.webkit.WebView",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.view.View",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-wechat-web-android-wrong-page",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "wechat-web-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.tencent.mm",
+        "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+        "required": [
+          {
+            "role": "android.webkit.WebView"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "role": "android.webkit.WebView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.tencent.mm",
+      "appVersion": "fixture-1",
+      "activity": "dev.mote.GeneratedOtherPage",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "android.webkit.WebView",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.view.View",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-wechat-web-android-missing-structure",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "wechat-web-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.tencent.mm",
+        "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+        "required": [
+          {
+            "role": "android.webkit.WebView"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "role": "android.webkit.WebView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.tencent.mm",
+      "appVersion": "fixture-1",
+      "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+      "nodes": [],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-wechat-web-android-empty-content",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "wechat-web-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.tencent.mm",
+        "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+        "required": [
+          {
+            "role": "android.webkit.WebView"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "role": "android.webkit.WebView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.tencent.mm",
+      "appVersion": "fixture-1",
+      "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "android.webkit.WebView",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.view.View",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-wechat-web-android-truncated",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "wechat-web-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.tencent.mm",
+        "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+        "required": [
+          {
+            "role": "android.webkit.WebView"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "role": "android.webkit.WebView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.tencent.mm",
+      "appVersion": "fixture-1",
+      "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "android.webkit.WebView",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.view.View",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": true
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  },
+  {
+    "name": "builtin-wechat-web-android-unrelated-node",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "wechat-web-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.tencent.mm",
+        "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+        "required": [
+          {
+            "role": "android.webkit.WebView"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "role": "android.webkit.WebView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.tencent.mm",
+      "appVersion": "fixture-1",
+      "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "android.webkit.WebView",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.view.View",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        },
+        {
+          "id": "generated-noise",
+          "role": "android.widget.Button",
+          "resourceId": "generated-noise",
+          "text": "Generated unrelated navigation",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 10,
+            "height": 10
+          }
+        }
+      ],
+      "truncated": false
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  },
+  {
+    "name": "builtin-wechat-web-android-outside-content-container",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "wechat-web-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.tencent.mm",
+        "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+        "required": [
+          {
+            "role": "android.webkit.WebView"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "role": "android.webkit.WebView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.tencent.mm",
+      "appVersion": "fixture-1",
+      "activity": "com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "android.webkit.WebView",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.view.View",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-zhihu-content-android-visible",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "zhihu-content-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.zhihu.android",
+        "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+        "required": [
+          {
+            "resourceId": "com.zhihu.android:id/view_content"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "resourceId": "com.zhihu.android:id/view_content"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.zhihu.android",
+      "appVersion": "fixture-1",
+      "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "android.view.View",
+          "text": "",
+          "resourceId": "com.zhihu.android:id/view_content",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.view.View",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  },
+  {
+    "name": "builtin-zhihu-content-android-wrong-app",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "zhihu-content-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.zhihu.android",
+        "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+        "required": [
+          {
+            "resourceId": "com.zhihu.android:id/view_content"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "resourceId": "com.zhihu.android:id/view_content"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "dev.mote.generated.other",
+      "appVersion": "fixture-1",
+      "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "android.view.View",
+          "text": "",
+          "resourceId": "com.zhihu.android:id/view_content",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.view.View",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-zhihu-content-android-wrong-page",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "zhihu-content-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.zhihu.android",
+        "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+        "required": [
+          {
+            "resourceId": "com.zhihu.android:id/view_content"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "resourceId": "com.zhihu.android:id/view_content"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.zhihu.android",
+      "appVersion": "fixture-1",
+      "activity": "dev.mote.GeneratedOtherPage",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "android.view.View",
+          "text": "",
+          "resourceId": "com.zhihu.android:id/view_content",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.view.View",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-zhihu-content-android-missing-structure",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "zhihu-content-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.zhihu.android",
+        "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+        "required": [
+          {
+            "resourceId": "com.zhihu.android:id/view_content"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "resourceId": "com.zhihu.android:id/view_content"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.zhihu.android",
+      "appVersion": "fixture-1",
+      "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+      "nodes": [],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-zhihu-content-android-empty-content",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "zhihu-content-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.zhihu.android",
+        "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+        "required": [
+          {
+            "resourceId": "com.zhihu.android:id/view_content"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "resourceId": "com.zhihu.android:id/view_content"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.zhihu.android",
+      "appVersion": "fixture-1",
+      "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "android.view.View",
+          "text": "",
+          "resourceId": "com.zhihu.android:id/view_content",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.view.View",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-zhihu-content-android-truncated",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "zhihu-content-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.zhihu.android",
+        "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+        "required": [
+          {
+            "resourceId": "com.zhihu.android:id/view_content"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "resourceId": "com.zhihu.android:id/view_content"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.zhihu.android",
+      "appVersion": "fixture-1",
+      "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "android.view.View",
+          "text": "",
+          "resourceId": "com.zhihu.android:id/view_content",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.view.View",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": true
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  },
+  {
+    "name": "builtin-zhihu-content-android-unrelated-node",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "zhihu-content-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.zhihu.android",
+        "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+        "required": [
+          {
+            "resourceId": "com.zhihu.android:id/view_content"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "resourceId": "com.zhihu.android:id/view_content"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.zhihu.android",
+      "appVersion": "fixture-1",
+      "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "android.view.View",
+          "text": "",
+          "resourceId": "com.zhihu.android:id/view_content",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.view.View",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        },
+        {
+          "id": "generated-noise",
+          "role": "android.widget.Button",
+          "resourceId": "generated-noise",
+          "text": "Generated unrelated navigation",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 10,
+            "height": 10
+          }
+        }
+      ],
+      "truncated": false
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  },
+  {
+    "name": "builtin-zhihu-content-android-outside-content-container",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "zhihu-content-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.zhihu.android",
+        "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+        "required": [
+          {
+            "resourceId": "com.zhihu.android:id/view_content"
+          }
+        ],
+        "select": {
+          "role": "android.view.View"
+        },
+        "ancestor": {
+          "resourceId": "com.zhihu.android:id/view_content"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.zhihu.android",
+      "appVersion": "fixture-1",
+      "activity": "com.zhihu.android.mixshortcontainer.MixShortContainerActivity",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "android.view.View",
+          "text": "",
+          "resourceId": "com.zhihu.android:id/view_content",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.view.View",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-xhs-note-android-visible",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "xhs-note-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.xingin.xhs",
+        "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
+        "required": [
+          {
+            "role": "android.widget.TextView"
+          }
+        ],
+        "select": {
+          "role": "android.widget.TextView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.xingin.xhs",
+      "appVersion": "fixture-1",
+      "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.widget.TextView",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  },
+  {
+    "name": "builtin-xhs-note-android-wrong-app",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "xhs-note-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.xingin.xhs",
+        "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
+        "required": [
+          {
+            "role": "android.widget.TextView"
+          }
+        ],
+        "select": {
+          "role": "android.widget.TextView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "dev.mote.generated.other",
+      "appVersion": "fixture-1",
+      "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.widget.TextView",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-xhs-note-android-wrong-page",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "xhs-note-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.xingin.xhs",
+        "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
+        "required": [
+          {
+            "role": "android.widget.TextView"
+          }
+        ],
+        "select": {
+          "role": "android.widget.TextView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.xingin.xhs",
+      "appVersion": "fixture-1",
+      "activity": "dev.mote.GeneratedOtherPage",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.widget.TextView",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-xhs-note-android-missing-structure",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "xhs-note-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.xingin.xhs",
+        "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
+        "required": [
+          {
+            "role": "android.widget.TextView"
+          }
+        ],
+        "select": {
+          "role": "android.widget.TextView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.xingin.xhs",
+      "appVersion": "fixture-1",
+      "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
+      "nodes": [],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-xhs-note-android-empty-content",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "xhs-note-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.xingin.xhs",
+        "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
+        "required": [
+          {
+            "role": "android.widget.TextView"
+          }
+        ],
+        "select": {
+          "role": "android.widget.TextView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.xingin.xhs",
+      "appVersion": "fixture-1",
+      "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.widget.TextView",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-xhs-note-android-truncated",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "xhs-note-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.xingin.xhs",
+        "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
+        "required": [
+          {
+            "role": "android.widget.TextView"
+          }
+        ],
+        "select": {
+          "role": "android.widget.TextView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.xingin.xhs",
+      "appVersion": "fixture-1",
+      "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.widget.TextView",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": true
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  },
+  {
+    "name": "builtin-xhs-note-android-unrelated-node",
+    "platform": "android",
+    "rules": [
+      {
+        "id": "xhs-note-android",
+        "version": "1",
+        "platform": "android",
+        "appId": "com.xingin.xhs",
+        "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
+        "required": [
+          {
+            "role": "android.widget.TextView"
+          }
+        ],
+        "select": {
+          "role": "android.widget.TextView"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.xingin.xhs",
+      "appVersion": "fixture-1",
+      "activity": "com.xingin.matrix.notedetail.NoteDetailActivity",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "android.widget.TextView",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        },
+        {
+          "id": "generated-noise",
+          "role": "android.widget.Button",
+          "resourceId": "generated-noise",
+          "text": "Generated unrelated navigation",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 10,
+            "height": 10
+          }
+        }
+      ],
+      "truncated": false
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  },
+  {
+    "name": "builtin-wechat-macos-visible-visible",
+    "platform": "macos",
+    "rules": [
+      {
+        "id": "wechat-macos-visible",
+        "version": "1",
+        "platform": "macos",
+        "appId": "com.tencent.xinWeChat",
+        "required": [
+          {
+            "role": "AXStaticText"
+          }
+        ],
+        "select": {
+          "role": "AXStaticText"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.tencent.xinWeChat",
+      "appVersion": "fixture-1",
+      "activity": "",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "AXStaticText",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  },
+  {
+    "name": "builtin-wechat-macos-visible-wrong-app",
+    "platform": "macos",
+    "rules": [
+      {
+        "id": "wechat-macos-visible",
+        "version": "1",
+        "platform": "macos",
+        "appId": "com.tencent.xinWeChat",
+        "required": [
+          {
+            "role": "AXStaticText"
+          }
+        ],
+        "select": {
+          "role": "AXStaticText"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "dev.mote.generated.other",
+      "appVersion": "fixture-1",
+      "activity": "",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "AXStaticText",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-wechat-macos-visible-missing-structure",
+    "platform": "macos",
+    "rules": [
+      {
+        "id": "wechat-macos-visible",
+        "version": "1",
+        "platform": "macos",
+        "appId": "com.tencent.xinWeChat",
+        "required": [
+          {
+            "role": "AXStaticText"
+          }
+        ],
+        "select": {
+          "role": "AXStaticText"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.tencent.xinWeChat",
+      "appVersion": "fixture-1",
+      "activity": "",
+      "nodes": [],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-wechat-macos-visible-empty-content",
+    "platform": "macos",
+    "rules": [
+      {
+        "id": "wechat-macos-visible",
+        "version": "1",
+        "platform": "macos",
+        "appId": "com.tencent.xinWeChat",
+        "required": [
+          {
+            "role": "AXStaticText"
+          }
+        ],
+        "select": {
+          "role": "AXStaticText"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.tencent.xinWeChat",
+      "appVersion": "fixture-1",
+      "activity": "",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "AXStaticText",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-wechat-macos-visible-truncated",
+    "platform": "macos",
+    "rules": [
+      {
+        "id": "wechat-macos-visible",
+        "version": "1",
+        "platform": "macos",
+        "appId": "com.tencent.xinWeChat",
+        "required": [
+          {
+            "role": "AXStaticText"
+          }
+        ],
+        "select": {
+          "role": "AXStaticText"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.tencent.xinWeChat",
+      "appVersion": "fixture-1",
+      "activity": "",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "AXStaticText",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": true
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  },
+  {
+    "name": "builtin-wechat-macos-visible-unrelated-node",
+    "platform": "macos",
+    "rules": [
+      {
+        "id": "wechat-macos-visible",
+        "version": "1",
+        "platform": "macos",
+        "appId": "com.tencent.xinWeChat",
+        "required": [
+          {
+            "role": "AXStaticText"
+          }
+        ],
+        "select": {
+          "role": "AXStaticText"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.tencent.xinWeChat",
+      "appVersion": "fixture-1",
+      "activity": "",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "AXStaticText",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        },
+        {
+          "id": "generated-noise",
+          "role": "AXButton",
+          "resourceId": "generated-noise",
+          "text": "Generated unrelated navigation",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 10,
+            "height": 10
+          }
+        }
+      ],
+      "truncated": false
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  },
+  {
+    "name": "builtin-feishu-macos-visible-visible",
+    "platform": "macos",
+    "rules": [
+      {
+        "id": "feishu-macos-visible",
+        "version": "1",
+        "platform": "macos",
+        "appId": "com.electron.lark",
+        "required": [
+          {
+            "role": "AXStaticText"
+          }
+        ],
+        "select": {
+          "role": "AXStaticText"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.electron.lark",
+      "appVersion": "fixture-1",
+      "activity": "",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "AXStaticText",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  },
+  {
+    "name": "builtin-feishu-macos-visible-wrong-app",
+    "platform": "macos",
+    "rules": [
+      {
+        "id": "feishu-macos-visible",
+        "version": "1",
+        "platform": "macos",
+        "appId": "com.electron.lark",
+        "required": [
+          {
+            "role": "AXStaticText"
+          }
+        ],
+        "select": {
+          "role": "AXStaticText"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "dev.mote.generated.other",
+      "appVersion": "fixture-1",
+      "activity": "",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "AXStaticText",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-feishu-macos-visible-missing-structure",
+    "platform": "macos",
+    "rules": [
+      {
+        "id": "feishu-macos-visible",
+        "version": "1",
+        "platform": "macos",
+        "appId": "com.electron.lark",
+        "required": [
+          {
+            "role": "AXStaticText"
+          }
+        ],
+        "select": {
+          "role": "AXStaticText"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.electron.lark",
+      "appVersion": "fixture-1",
+      "activity": "",
+      "nodes": [],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-feishu-macos-visible-empty-content",
+    "platform": "macos",
+    "rules": [
+      {
+        "id": "feishu-macos-visible",
+        "version": "1",
+        "platform": "macos",
+        "appId": "com.electron.lark",
+        "required": [
+          {
+            "role": "AXStaticText"
+          }
+        ],
+        "select": {
+          "role": "AXStaticText"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.electron.lark",
+      "appVersion": "fixture-1",
+      "activity": "",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "AXStaticText",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": false
+    },
+    "expected": null
+  },
+  {
+    "name": "builtin-feishu-macos-visible-truncated",
+    "platform": "macos",
+    "rules": [
+      {
+        "id": "feishu-macos-visible",
+        "version": "1",
+        "platform": "macos",
+        "appId": "com.electron.lark",
+        "required": [
+          {
+            "role": "AXStaticText"
+          }
+        ],
+        "select": {
+          "role": "AXStaticText"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.electron.lark",
+      "appVersion": "fixture-1",
+      "activity": "",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "AXStaticText",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        }
+      ],
+      "truncated": true
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  },
+  {
+    "name": "builtin-feishu-macos-visible-unrelated-node",
+    "platform": "macos",
+    "rules": [
+      {
+        "id": "feishu-macos-visible",
+        "version": "1",
+        "platform": "macos",
+        "appId": "com.electron.lark",
+        "required": [
+          {
+            "role": "AXStaticText"
+          }
+        ],
+        "select": {
+          "role": "AXStaticText"
+        },
+        "complete": false
+      }
+    ],
+    "snapshot": {
+      "appId": "com.electron.lark",
+      "appVersion": "fixture-1",
+      "activity": "",
+      "nodes": [
+        {
+          "id": "1",
+          "role": "Root",
+          "text": "",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          }
+        },
+        {
+          "id": "2",
+          "role": "AXStaticText",
+          "text": "Generated public fixture",
+          "resourceId": "",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 30
+          },
+          "parentId": "1"
+        },
+        {
+          "id": "generated-noise",
+          "role": "AXButton",
+          "resourceId": "generated-noise",
+          "text": "Generated unrelated navigation",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 10,
+            "height": 10
+          }
+        }
+      ],
+      "truncated": false
+    },
+    "expected": {
+      "status": "partial",
+      "ids": [
+        "2"
+      ]
+    }
+  }
+]

@@ -8,10 +8,15 @@ import { sourceAck } from './fixtures';
 let root: string; let server: Server; let url: string; let items: Record<string, unknown>[]; let fail: boolean;
 beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), 'mote-source-cli-'))); items = []; fail = false;
+  const sessions=new Map<string,any>();
   server = createServer(async (req, res) => {
     const buffers: Buffer[] = []; for await (const chunk of req) buffers.push(chunk);
     if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({revision:null}));return;}
-    const manifest = JSON.parse(Buffer.concat(buffers).toString()); const body = manifest.item ?? manifest; res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Type','application/json');
+    if(req.url?.includes('/parts/')){const bytes=Buffer.concat(buffers);res.end(JSON.stringify({part:Number(req.url.split('/').at(-1)),hash:(await import('../src/source-sync')).sourceHash(bytes),bytes:bytes.length}));return;}
+    const manifest = JSON.parse(Buffer.concat(buffers).toString()); const body = manifest.item ?? manifest;
+    if(req.url==='/api/file-sync/v1/uploads'){sessions.set(body.revision,manifest);res.end(JSON.stringify({uploadId:body.revision,partBytes:4194304,parts:[]}));return;}
+    if(req.url?.endsWith('/commit')){const m=sessions.get(req.url.split('/').at(-2)!);items.push(m.item);if(fail){res.destroy();return;}res.end(JSON.stringify({...sourceAck(m.sourceId,m.item,'file-revision'),sha256:m.sha256,sizeBytes:m.sizeBytes}));return;}
     if (req.method === 'POST') res.end(JSON.stringify(body));
     else if (req.method === 'PATCH') res.end(JSON.stringify({ ...body, id: req.url!.split('/').at(-1) }));
     else { items.push(body); if (fail) { res.destroy(); return; } res.end(JSON.stringify(sourceAck(manifest.sourceId??req.url!.split('/')[3],body,body.kind==='file'?'file-revision':'source-item'))); }
@@ -31,7 +36,7 @@ async function run(profile: string, args: string[] = [], token = 'synthetic-cli-
 it('CLI independently syncs the same source for two profiles, then skips acknowledged unchanged versions', async () => {
   await mkdir(join(root, 'selected')); await writeFile(join(root, 'selected', 'a.md'), '合成 CLI 🧑🏽‍💻');
   for (const profile of ['dev', 'test']) { expect((await run(profile)).output).toContain('Received 1 changed'); expect((await run(profile)).output).toContain('Received 0 changed'); }
-  expect(items).toHaveLength(4); expect(items.filter(item=>item.text).map(item=>item.text)).toEqual(['合成 CLI 🧑🏽‍💻','合成 CLI 🧑🏽‍💻']);
+  expect(items).toHaveLength(2); expect(items.every(item=>item.text==='')).toBe(true);
 }, 15000);
 it('CLI restores an unacknowledged revision after failed process, then tracks explicit deletion and restoration', async () => {
   await mkdir(join(root, 'selected')); const file = join(root, 'selected', 'a.md'); await writeFile(file, '合成离线版本');
@@ -39,7 +44,7 @@ it('CLI restores an unacknowledged revision after failed process, then tracks ex
   fail = false; expect((await run('dev', ['--track-deletions'])).code).toBe(0); expect(items[0]).toEqual(items[1]);
   await rm(file); expect((await run('dev', ['--track-deletions'])).code).toBe(0); expect(items.at(-1)?.deleted).toBe(true);
   await writeFile(file, '合成离线版本'); expect((await run('dev', ['--track-deletions'])).code).toBe(0);
-  expect(items.at(-1)?.revision).not.toBe(items[0].revision); expect(items.at(-1)?.text).toBe('合成离线版本');
+  expect(items.at(-1)?.revision).not.toBe(items[0].revision); expect(items.at(-1)?.text).toBe('');
 }, 15000);
 it('CLI recovers a lock whose former process has exited, while preserving acknowledged state', async () => {
   await mkdir(join(root, 'selected')); await writeFile(join(root, 'selected', 'a.md'), '合成 crash lock');
@@ -47,14 +52,14 @@ it('CLI recovers a lock whose former process has exited, while preserving acknow
   const stateDir = join(imported.directory, 'file-sync'); const stateFile = (await readdir(stateDir)).find(file => file.endsWith('.json.sqlite'))!.replace(/\.sqlite$/,'');
   const child = spawn(process.execPath, ['-e', 'process.exit(0)']); await new Promise(done => child.once('exit', done));
   await writeFile(join(stateDir, stateFile + '.lock'), String(child.pid));
-  expect((await run('dev')).output).toContain('Received 0 changed'); expect(items).toHaveLength(2);
+  expect((await run('dev')).output).toContain('Received 0 changed'); expect(items).toHaveLength(1);
 }, 15000);
 it('CLI credential change at the same URL isolates old pending text and submits only the current scan', async () => {
   await mkdir(join(root, 'selected')); const file = join(root, 'selected', 'a.md'); await writeFile(file, 'old synthetic private text');
   fail = true; expect((await run('dev')).code).not.toBe(0);
   fail = false; await writeFile(file, 'new synthetic current text');
   expect((await run('dev', [], 'other-synthetic-token')).code).toBe(0);
-  expect(items).toHaveLength(3); expect(items[2].text).toBe('new synthetic current text');
+  expect(items).toHaveLength(2); expect(items[1].text).toBe('');expect(items[1].document).not.toEqual(items[0].document);
 }, 15000);
 it('CLI dry-run writes no sync state, while reference mode sends no body', async () => {
   await mkdir(join(root, 'selected')); await writeFile(join(root, 'selected', 'a.md'), '合成引用正文');

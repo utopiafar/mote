@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {existsSync,mkdirSync,mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import Fastify from 'fastify';
@@ -12,6 +12,7 @@ import {buildApp} from '../src/app.js';
 import {createInsightSnapshot} from '../src/insight-snapshots.js';
 import {contextBundle} from '../src/context-bundle.js';
 import type {Config} from '../src/config.js';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 test('server feature disposal revokes routes without deleting retained data',async t=>{
   const app=Fastify(),root=new Context(),host=new ServerFeatureHost(root,app);let retained=1;
   const fiber=await host.install({id:'fixture.feature',version:'1',components:[]},server=>server.get('/fixture',async()=>({retained})));
@@ -77,4 +78,66 @@ test('feature scope stops recurring work and releases resources exactly once',as
  await new Promise(resolve=>setTimeout(resolve,25));assert.ok(ticks>0);
  await host.dispose('fixture.lifecycle');const stopped=ticks;await new Promise(resolve=>setTimeout(resolve,25));
  assert.equal(ticks,stopped);assert.equal(closes,1);assert.equal((await app.inject('/lifecycle')).statusCode,503);
+});
+
+test('Ask, Insight and Import disposal cancels owned execution and fences uncooperative late results',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-feature-stop-'));
+ const config:Config={dataDir:directory,token:'generated-feature-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ let release!:()=>void,entered!:()=>void,importSignal:AbortSignal|undefined;
+ const held=new Promise<void>(resolve=>release=resolve),started=new Promise<void>(resolve=>entered=resolve);
+ const node=await buildApp(config,{prepareImport:async input=>{importSignal=input.signal;entered();await held;throw Error('Generated late parser failure');}});
+ t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});await node.app.ready();
+ const queryId=randomUUID(),insightId=randomUUID();let querySignal:AbortSignal|undefined,insightSignal:AbortSignal|undefined;
+ node.featureServices.queryRuns.start(queryId,{},async(_observe,signal)=>{querySignal=signal;await held;return {conversationId:randomUUID(),turnId:randomUUID()};});
+ node.insightRuns.start(insightId,{},async(_observe,signal)=>{insightSignal=signal;await held;return {runId:randomUUID(),answer:'Generated late report',citations:[],trace:[]};});
+ const imported=await node.imports.create({files:[{name:'generated.txt',dataBase64:Buffer.from('Generated input').toString('base64')}],instruction:'Generate a preview',processing:'preview'});
+ const preparing=node.imports.prepare(imported.id);await started;await new Promise(resolve=>setImmediate(resolve));
+ await Promise.all(['mote.ask','mote.insights','mote.imports'].map(feature=>node.featureHost.dispose(feature)));
+ assert.equal(querySignal?.aborted,true);assert.equal(insightSignal?.aborted,true);assert.equal(importSignal?.aborted,true);
+ assert.equal(node.featureServices.queryRuns.get(queryId).status,'cancelled');assert.equal(node.insightRuns.get(insightId).status,'cancelled');assert.equal(node.imports.get(imported.id).status,'cancelled');
+ assert.throws(()=>node.featureServices.queryRuns.start(randomUUID(),{},async()=>({conversationId:randomUUID(),turnId:randomUUID()})),{statusCode:503});
+ await assert.rejects(node.imports.prepare(imported.id),{statusCode:503});
+ const headers={authorization:'Bearer '+config.token};
+ for(const path of ['/api/query-runs','/api/insight-runs','/api/imports'])assert.equal((await node.app.inject({url:path,headers})).statusCode,503);
+ assert.equal((await node.app.inject({url:'/api/devices',headers})).statusCode,200,'unrelated feature remains live');
+ release();await preparing;await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(node.store.insights().length,0);assert.equal(node.insightRuns.get(insightId).status,'cancelled');assert.equal(node.imports.get(imported.id).status,'cancelled');
+});
+
+test('Import scope cancels initial container expansion and removes late temporary output while retaining the original',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-feature-container-stop-'));
+ const config:Config={dataDir:directory,token:'generated-feature-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const node=await buildApp(config);t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});await node.app.ready();
+ let entered!:()=>void,release!:()=>void,settled!:()=>void,signal:AbortSignal|undefined,output='';
+ const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve),finished=new Promise<void>(resolve=>settled=resolve);
+ node.imports.intake.registerContainer({id:'fixture.uncooperative-container',version:'1',priority:100,probe:()=>true,
+  expand:async input=>{signal=input.signal;output=input.output;entered();await held;mkdirSync(output,{recursive:true});
+   const path=join(output,'late.txt');writeFileSync(path,'Generated late expanded content');settled();return {files:[{name:'late.txt',path,bytes:31}]};}});
+ const creating=node.imports.create({files:[{name:'generated.container',dataBase64:Buffer.from('Generated original container').toString('base64')}],processing:'preview'});
+ const rejected=assert.rejects(creating,{name:'AbortError'});await started;
+ await node.featureHost.dispose('mote.imports');await rejected;
+ assert.equal(signal?.aborted,true);assert.equal(node.imports.list()[0]?.status,'cancelled');
+ assert.equal(node.imports.list()[0]?.archive.files,1,'the explicitly uploaded original stays archived');
+ assert.equal(existsSync(output),false);release();await finished;await yieldTurn();
+ assert.equal(existsSync(output),false,'temporary output from an ignored cancellation is swept after settlement');
+ assert.equal(node.imports.list()[0]?.archive.files,1,'late container results cannot publish new archived files');
+});
+
+test('Import scope disposes a running binary-upload worker and retains resumable acknowledged parts',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-feature-upload-stop-'));
+ const config:Config={dataDir:directory,token:'generated-feature-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const node=await buildApp(config);t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});await node.app.ready();
+ const headers={authorization:'Bearer '+config.token},body=Buffer.alloc(8*1024*1024,71);
+ const begun=(await node.app.inject({url:'/api/import-uploads',method:'POST',headers,payload:{name:'generated-large.bin',sizeBytes:body.length}})).json();
+ for(let part=0;part<2;part++)assert.equal((await node.app.inject({url:`/api/import-uploads/${begun.id}/parts/${part}`,method:'PUT',headers:{...headers,'content-type':'application/octet-stream'},payload:body.subarray(part*begun.partBytes,(part+1)*begun.partBytes)})).statusCode,200);
+ let entered!:()=>void,signal:AbortSignal|undefined;const started=new Promise<void>(resolve=>entered=resolve);
+ const originals=node.featureServices.archivedFiles,putUpload=originals.putUpload.bind(originals);
+ originals.putUpload=async(...args)=>{signal=args[4];entered();return putUpload(...args);};
+ const committing=node.app.inject({url:`/api/import-uploads/${begun.id}/commit`,method:'POST',headers});await started;
+ await node.featureHost.dispose('mote.imports');const response=await committing;
+ assert.equal(signal?.aborted,true);assert.notEqual(response.statusCode,200);
+ assert.equal(node.store.db.prepare('SELECT count(*) n FROM archived_files').get()!.n,0);
+ assert.equal(node.store.db.prepare('SELECT count(*) n FROM asset_pins').get()!.n,0);
+ assert.equal(node.store.db.prepare('SELECT count(*) n FROM import_upload_parts').get()!.n,2);
+ assert.equal((await node.app.inject({url:'/api/import-uploads',method:'POST',headers,payload:{name:'new.bin',sizeBytes:0}})).statusCode,503);
 });

@@ -337,10 +337,12 @@ test('chunk search finds boundary text and excludes superseded tails while pinne
     coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}};
   const first=materials.publish(draft,{codingSnapshot:{checkpoint:'first',appendEpoch:0,headCount:2}});
   materials.setSearchable(id,true);
+  await materials.index!.tick();
   assert.equal(materials.list({query:'cde'}).items[0]?.revision,first.revision);
   const append:MaterialAppendDraft={...draft,mode:'append',baseRevision:first.revision,reuseBlocks:1,
     blocks:[{id:'section-1',kind:'text',format:'markdown-fragment',text:'xyz',memberIds:['archive']}]};
   const second=materials.publish(append,{expectedRevision:first.revision,codingSnapshot:{checkpoint:'second',appendEpoch:0,headCount:3}});
+  await materials.index!.tick();
   assert.throws(()=>materials.publish(append,{expectedRevision:first.revision,
     codingSnapshot:{checkpoint:'stale',appendEpoch:0,headCount:4}}),{statusCode:409});
   assert.equal(materials.read(first.ref).text,'abcdef');assert.equal(materials.read(second.ref).text,'abcxyz');
