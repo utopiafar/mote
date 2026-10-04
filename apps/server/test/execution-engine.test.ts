@@ -85,3 +85,17 @@ test('an expired lease cannot publish a permanent failure before recovery',async
  const id=engine.enqueue('expired-failure','fixture',{});await engine.drain([id]);
  assert.equal(engine.get(id)!.state,'succeeded');assert.equal(engine.get(id)!.attempts,2);assert.equal(engine.get(id)!.error,undefined);
 });
+
+test('handler disposal interrupts local work and preserves queued, blocked and terminal tasks',async t=>{
+ const {engine}=await fixture(t);let entered!:()=>void,release!:()=>void,signal!:AbortSignal,commits=0;
+ const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
+ const unregister=engine.register({...base,execute:async(_step,current)=>{signal=current;entered();await held;},commit:()=>{commits++;}});
+ const running=engine.enqueue('running','fixture',{}),queued=engine.enqueue('queued','fixture',{}),blocked=engine.enqueue('blocked','fixture',{}, {initial:{state:'blocked',attempts:0,availableAt:0,error:'model_missing'}}),cancelled=engine.enqueue('cancelled','fixture',{});
+ engine.cancel(cancelled);const run=engine.tick();await started;await unregister();await run;
+ assert.equal(signal.aborted,true);assert.equal(engine.closed,false);
+ assert.equal(engine.get(running)!.state,'waiting');assert.equal(engine.get(running)!.error,'interrupted');
+ assert.equal(engine.get(queued)!.state,'waiting');assert.equal(engine.get(queued)!.attempts,0);
+ assert.equal(engine.get(blocked)!.state,'blocked');assert.equal(engine.get(blocked)!.error,'model_missing');
+ assert.equal(engine.get(cancelled)!.state,'cancelled');release();await new Promise(resolve=>setImmediate(resolve));assert.equal(commits,0);
+ engine.register({...base});await engine.drain([running,queued]);assert.equal(engine.get(running)!.state,'succeeded');assert.equal(engine.get(queued)!.state,'succeeded');
+});

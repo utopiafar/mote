@@ -12,7 +12,23 @@ import {FileStore} from '../src/files.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {ImportUploads} from '../src/import-uploads.js';
 import {legacyAsset} from './fixtures/legacy-asset.js';
-function fixture(t:any){const dir=mkdtempSync(join(tmpdir(),'mote-assets-')),store=new Store(dir,{dataKey:'fc'.repeat(32),contentEncryptionEnabled:true});t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});return store;}
+function fixture(t:any,encrypted=true){const dir=mkdtempSync(join(tmpdir(),'mote-assets-')),store=new Store(dir,{dataKey:'fc'.repeat(32),contentEncryptionEnabled:encrypted});t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});return store;}
+
+for(const encrypted of [false,true])test(`asset checksums preserve empty, single-part and multi-part originals (${encrypted?'encrypted':'plain'})`,t=>{
+ const store=fixture(t,encrypted),archived=new ArchivedFileStore(store);
+ for(const size of [0,1,FILE_PART_BYTES,FILE_PART_BYTES+1]){
+  const bytes=Buffer.alloc(size,37),hash=sha256(bytes),asset=store.assets.putParts([bytes.subarray(0,13),bytes.subarray(13)],size,hash);
+  const checksums=store.db.prepare('SELECT part,checksum FROM asset_parts WHERE hash=? ORDER BY part').all(hash);
+  assert.equal(asset.hash,hash);assert.equal(asset.parts,Math.ceil(size/FILE_PART_BYTES));
+  assert.deepEqual(checksums.map(row=>row.checksum),Array.from({length:asset.parts},(_,part)=>sha256(bytes.subarray(part*FILE_PART_BYTES,(part+1)*FILE_PART_BYTES))));
+  assert.deepEqual(store.assets.read(hash),bytes);
+  const duplicate=store.assets.put(bytes);assert.equal(duplicate.hash,hash);assert.equal(duplicate.parts,asset.parts);duplicate.release();
+  const file=archived.put({name:`generated-${size}.bin`,bytes});assert.deepEqual(archived.read(file.id),bytes);asset.release();
+  if(size){store.contentEncryption.write(join(store.assets.directory,hash,'0'),Buffer.alloc(Math.min(size,FILE_PART_BYTES),38));assert.throws(()=>archived.read(file.id),/checksum mismatch/);}
+ }
+ assert.throws(()=>store.assets.putParts([Buffer.from('Generated mismatch')],18,'0'.repeat(64)),/checksum mismatch/);
+ assert.throws(()=>store.assets.putParts([Buffer.from('Generated mismatch')],19),/checksum mismatch/);
+});
 
 test('hundreds of long-period observations, import and directory original share one asset without sharing identity or deletion',async t=>{
  const store=fixture(t),archived=new ArchivedFileStore(store),sources=new SourceStore(store),files=new FileStore(store,sources);

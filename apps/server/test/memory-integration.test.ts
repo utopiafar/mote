@@ -95,6 +95,11 @@ test('selection changes process only subsequent events; disable preserves produc
  const f=await fixture(t),old=await f.add('old');
  const first=(await f.api('PUT','/api/memory-integration-settings',{recipe:ref('base')})).json();assert.ok(first.afterSequence>0);
  const same=(await f.api('PUT','/api/memory-integration-settings',{recipe:ref('base')})).json();assert.deepEqual(same,first);
+ assert.equal(f.node.memoryIntegrationSettings.current(f.node.memoryIntegrationSettings.selection()),true);
+ const selection=f.node.memoryIntegrationSettings.selection();
+ assert.equal(f.node.memoryIntegrationSettings.current({...selection,activation:randomUUID()}),false);
+ assert.equal(f.node.memoryIntegrationSettings.current({...selection,afterSequence:selection.afterSequence+1}),false);
+ assert.equal(f.node.memoryIntegrationSettings.current({...selection,binding:null}),false);
  const s=f.node.lifecycle.settings();f.node.lifecycle.configure({...s,consolidation:{...s.consolidation,enabled:true}});await f.node.lifecycle.tick();assert.equal(f.calls.length,0);
  const next=await f.add('next');await f.node.lifecycle.tick();assert.equal(f.calls.length,2);assert.deepEqual(f.products()[0].relatedMemoryIds,next.products.map(m=>m.id));
  await f.api('PUT','/api/memory-integration-settings',{recipe:null});await f.add('disabled');await f.node.lifecycle.tick();assert.equal(f.calls.length,2);assert.equal(f.products().length,1);

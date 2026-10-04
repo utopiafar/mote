@@ -16,7 +16,10 @@ test('metadata supplies verified original geometry without pixels; native crop h
  assert.deepEqual(result.imageView!.region,region);assert.equal(result.imageView!.output!.sha256,hash(output));assert.notEqual(result.imageView!.output!.sha256,hash(bytes));
  const expected=await sharp(bytes).extract({left:2,top:3,width:9,height:14}).raw().toBuffer();assert.deepEqual(await sharp(output).raw().toBuffer(),expected);
  assert.equal((await imageOutput(bytes,'image/png',input,()=>true)).imageView!.viewId,result.imageView!.viewId);
- assert.equal((await imageOutput(bytes,'image/png',{id},()=>true)).data,bytes.toString('base64'),'original bytes remain unchanged');
+ const original=await imageOutput(bytes,'image/png',{id},()=>true);
+ assert.equal(original.data,bytes.toString('base64'),'original bytes remain unchanged');
+ assert.equal(original.imageView!.output!.sha256,hash(Buffer.from(original.data!,'base64')));
+ assert.equal(original.imageView!.output!.sha256,original.imageView!.original.sha256);
 });
 
 test('regions reject invalid geometry, missing hashes, stale versions and corrupt or excessive originals',async()=>{

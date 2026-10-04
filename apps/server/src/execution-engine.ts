@@ -37,6 +37,7 @@ type Row={id:string;operation_id:string;kind:string;pool:string;input:string;sta
 const view=(row:Row):ExecutionStep=>({id:row.id,operationId:row.operation_id,kind:row.kind,pool:row.pool,input:JSON.parse(row.input),state:row.state,attempts:row.attempts,availableAt:row.available_at,...(row.error?{error:row.error}:{})});
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,v])=>[key,canonical(v)])):value;
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const interrupted=new Error('Execution interrupted');
 
 /** The host owns admission, retry, cancellation, leases and commit fences. */
 export class ExecutionEngine {
@@ -61,8 +62,9 @@ export class ExecutionEngine {
   installOperationProjection(store);
  }
  get closed(){return this.stopping;}
- register(handler:ExecutionHandler){if(this.handlers.has(handler.kind))throw Error('Duplicate execution handler');this.handlers.set(handler.kind,handler);return async()=>{if(this.handlers.get(handler.kind)===handler)this.handlers.delete(handler.kind);const running=[...this.active.values()].filter(value=>value.kind===handler.kind);for(const value of running)value.controller.abort();await Promise.allSettled(running.map(value=>value.task));};}
+ register(handler:ExecutionHandler){if(this.handlers.has(handler.kind))throw Error('Duplicate execution handler');this.handlers.set(handler.kind,handler);return async()=>{if(this.handlers.get(handler.kind)!==handler)return;this.handlers.delete(handler.kind);const running=[...this.active.values()].filter(value=>value.kind===handler.kind);for(const value of running)value.controller.abort(interrupted);await Promise.allSettled(running.map(value=>value.task));};}
  enqueue(operationId:string,kind:string,input:Record<string,unknown>,options:OperationMembership&{id?:string;dependencies?:string[];initial?:{state:ExecutionState;attempts:number;availableAt:number;error?:string}}={}){
+  if(this.stopping)throw new StoreError('Execution engine is closed',503);
   const handler=this.handlers.get(kind);if(!handler)throw new StoreError('Execution handler unavailable',409);
   input=canonical(input) as Record<string,unknown>;
   const json=JSON.stringify(input);if(json.length>32768)throw new StoreError('Execution input exceeds metadata limit',413);
@@ -199,12 +201,13 @@ export class ExecutionEngine {
    }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
   }catch(error){
    const failure=error instanceof ExecutionFailure?error:error instanceof ProviderFailure?new ExecutionFailure(error.details.category,error.details.code,error.details.retryAfterMs):handler.classify?.(error)??new ExecutionFailure('transient','processor_failed');
-   let state:ExecutionState=this.stopping?'waiting':failure.category==='blocked'?'blocked':failure.category==='stale'?'stale':failure.category==='waiting'?'waiting':failure.category==='permanent'||step.attempts>=(handler.maxAttempts??4)?'failed':'waiting';
-   const at=this.now(),availableAt=this.stopping?0:at+(failure.retryAfterMs??Math.min(3600000,1000*2**(step.attempts-1)));
-   const recoveryDeadline=failure.category==='transient'&&!this.stopping?(Number(row.recovery_deadline)||at+Math.max(1,Math.min(handler.maxRecoveryWindowMs??6*3600000,30*86400000))):Number(row.recovery_deadline)||0;
-   let code=this.stopping?'interrupted':failure.code;
-   if(state==='waiting'&&failure.category==='transient'&&recoveryDeadline&&availableAt>=recoveryDeadline){state='failed';code='recovery_window_exhausted';}
-   if(db.prepare("UPDATE execution_steps SET state=?,error=?,available_at=?,recovery_deadline=?,fence=NULL,updated_at=? WHERE id=? AND fence=? AND state='running' AND lease_until>?").run(state,code,availableAt,recoveryDeadline,at,row.id,fence,at).changes)this.project(row.id);
+   const stopping=this.stopping||signal.reason===interrupted;
+   let state:ExecutionState=stopping?'waiting':failure.category==='blocked'?'blocked':failure.category==='stale'?'stale':failure.category==='waiting'?'waiting':failure.category==='permanent'||step.attempts>=(handler.maxAttempts??4)?'failed':'waiting';
+   const at=this.now(),availableAt=stopping?0:at+(failure.retryAfterMs??Math.min(3600000,1000*2**(step.attempts-1)));
+   const recoveryDeadline=failure.category==='transient'&&!stopping?(Number(row.recovery_deadline)||at+Math.max(1,Math.min(handler.maxRecoveryWindowMs??6*3600000,30*86400000))):Number(row.recovery_deadline)||0;
+   let code=stopping?'interrupted':failure.code;
+   if(!stopping&&state==='waiting'&&failure.category==='transient'&&recoveryDeadline&&availableAt>=recoveryDeadline){state='failed';code='recovery_window_exhausted';}
+   if(db.prepare("UPDATE execution_steps SET state=?,error=?,available_at=?,recovery_deadline=?,fence=NULL,updated_at=? WHERE id=? AND fence=? AND state='running' AND lease_until>?").run(state,code,availableAt,recoveryDeadline,at,row.id,fence,at).changes)handler.project?.(this.get(row.id)!);
   }finally{clearTimeout(deadline);clearInterval(renewal);}
   await yieldTurn();
  }
@@ -225,7 +228,7 @@ export class ExecutionEngine {
    // The program retries the failed step on replay; only it consumes a retry slot.
    classify:()=>new ExecutionFailure('permanent','step_failed'),
   });
-  const abort=()=>this.cancel(options.id);options.signal.addEventListener('abort',abort,{once:true});
+  const abort=()=>{if(this.stopping||options.signal.reason===interrupted)this.active.get(options.id)?.controller.abort(interrupted);else this.cancel(options.id);};options.signal.addEventListener('abort',abort,{once:true});
   try{
    this.enqueue(options.operationId,kind,options.input,{id:options.id,generation:options.generation,optional:options.optional,initial:{state:options.cached?'succeeded':'waiting',attempts:options.initialAttempts??0,availableAt:0}});
    const current=this.get(options.id)!;
@@ -239,7 +242,7 @@ export class ExecutionEngine {
    if(step.state==='blocked')throw new ExecutionFailure('blocked',step.error??'step_blocked');
    if(step.state==='failed')throw new ExecutionFailure('transient',step.error??'step_failed');
    throw new ExecutionFailure('waiting','step_pending',Math.max(1000,step.availableAt-this.now()));
-  }finally{options.signal.removeEventListener('abort',abort);unregister();}
+  }finally{options.signal.removeEventListener('abort',abort);await unregister();}
  }
- async close(){this.stopping=true;for(const active of this.active.values())active.controller.abort();await Promise.allSettled([...this.active.values()].map(a=>a.task));await Promise.allSettled([...this.programs.values()]);}
+ async close(){this.stopping=true;for(const active of this.active.values())active.controller.abort(interrupted);await Promise.allSettled([...this.active.values()].map(a=>a.task));await Promise.allSettled([...this.programs.values()]);}
 }

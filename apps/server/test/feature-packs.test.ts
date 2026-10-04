@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import Fastify from 'fastify';
 import {Context} from '@deepseek-ai/cordis';
-import {ServerFeatureHost} from '../src/feature-host.js';
+import {ServerFeatureHost,ServerFeatureScope} from '../src/feature-host.js';
 import {buildApp} from '../src/app.js';
 import {createInsightSnapshot} from '../src/insight-snapshots.js';
 import {contextBundle} from '../src/context-bundle.js';
@@ -76,8 +76,16 @@ test('feature scope stops recurring work and releases resources exactly once',as
  await host.install({id:'fixture.lifecycle',version:'1',components:[]},(server,scope)=>{scope.every(5,()=>{ticks++;});scope.defer(()=>{closes++;});server.get('/lifecycle',async()=>({ticks}));});
  await app.ready();t.after(async()=>{await host.close();await app.close();await root.fiber.dispose();});
  await new Promise(resolve=>setTimeout(resolve,25));assert.ok(ticks>0);
- await host.dispose('fixture.lifecycle');const stopped=ticks;await new Promise(resolve=>setTimeout(resolve,25));
- assert.equal(ticks,stopped);assert.equal(closes,1);assert.equal((await app.inject('/lifecycle')).statusCode,503);
+ host.stop();const stopped=ticks;await new Promise(resolve=>setTimeout(resolve,25));
+ assert.equal(ticks,stopped);assert.equal(closes,0);assert.ok(host.registry.inventory().capabilities.length>0);assert.equal((await app.inject('/lifecycle')).statusCode,503);
+ await host.dispose('fixture.lifecycle');assert.equal(closes,1);
+});
+
+test('stopping a feature blocks admission but keeps resources until disposal',async()=>{
+ const scope=new ServerFeatureScope();let work=0,disposed=0;
+ scope.defer(()=>{disposed++;});scope.stop();
+ await scope.run(()=>{work++;});assert.equal(work,0);assert.equal(disposed,0);
+ await Promise.all([scope.close(),scope.close()]);assert.equal(disposed,1);
 });
 
 test('Ask, Insight and Import disposal cancels owned execution and fences uncooperative late results',async t=>{

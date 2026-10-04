@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "模型、记忆、文件处理与飞书设置可直接保存并生效；其他偏好通过部署草稿修改并重启。离开有未保存修改的配置页面时会先提醒。": "Model, memory, file processing and Feishu settings apply on save. Other preferences use a deployment draft and restart. Unsaved changes prompt before leaving a configuration page.",
+  "文件与语音": "Files and speech",
+  "本地语音模型、转写与文件处理策略": "Local speech models, transcription and file processing policies",
   "未提供文字识别状态，无法判断是否已处理。": "OCR status was not provided; processing completion is unknown.",
   "高级：遮挡 JSON": "Advanced: mask JSON",
   "本机数据格式已退役，请清除应用存储后重新设置。": "This local data format is retired. Clear app storage and set up again.",

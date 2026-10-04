@@ -50,7 +50,7 @@ export class AssetStore {
  private directories(){privateDirectory(this.store.directory);privateDirectory(join(this.store.directory,'files'));privateDirectory(this.directory);}
  get(hash:string):Asset{if(!/^[a-f0-9]{64}$/.test(hash))throw new StoreError('Invalid asset hash');const row=this.store.db.prepare('SELECT * FROM assets WHERE hash=?').get(hash);if(!row)throw new StoreError('Asset unavailable',404);if(row.format!=='chunks'||!Number.isSafeInteger(row.bytes)||Number(row.bytes)<0||Number(row.bytes)>FILE_MAX_BYTES||!Number.isSafeInteger(row.parts)||Number(row.parts)<0||Number(row.parts)>128)throw new StoreError('Invalid asset metadata',500);return row as Asset;}
  hold(hash:string){const id=randomUUID();this.store.db.prepare('INSERT INTO asset_pins VALUES(?,?,?)').run(id,hash,Date.now()+86400000);return ()=>{this.store.db.prepare('DELETE FROM asset_pins WHERE id=?').run(id);};}
- put(bytes:Buffer){return this.putParts([bytes],bytes.length,hashOf(bytes));}
+ put(bytes:Buffer){return this.putParts([bytes],bytes.length);}
  /** Prepare immutable upload parts outside the event loop and outside SQLite.
   * The pin protects a deduplicated destination and staging from concurrent GC. */
  async putUpload(directory:string,parts:{part:number;hash:string;bytes:number}[],expectedBytes:number,expectedHash:string|undefined,signal?:AbortSignal):Promise<Asset & {release:()=>void}>{
@@ -99,7 +99,9 @@ export class AssetStore {
   this.directories();
   const staging=join(this.directory,(expectedHash??'0'.repeat(64))+'.'+randomUUID()+'.tmp');privateDirectory(staging);
   const digest=createHash('sha256');let size=0,part=0,pending=Buffer.alloc(0);const checksums:string[]=[];
-  const write=(bytes:Buffer)=>{checksums.push(hashOf(bytes));this.store.contentEncryption.write(join(staging,String(part++)),bytes);};
+  // A single stored part has the same checksum as the complete asset.
+  const singlePart=expectedBytes>0&&expectedBytes<=FILE_PART_BYTES;
+  const write=(bytes:Buffer)=>{if(!singlePart)checksums.push(hashOf(bytes));this.store.contentEncryption.write(join(staging,String(part++)),bytes);};
   try{
    for(const chunk of chunks){
     if(!Buffer.isBuffer(chunk)||size+chunk.length>expectedBytes)throw new StoreError('Asset exceeds declared size',409);
@@ -110,6 +112,7 @@ export class AssetStore {
    }
    if(pending.length)write(pending);const hash=digest.digest('hex');
    if(size!==expectedBytes||expectedHash&&hash!==expectedHash)throw new StoreError('Asset checksum mismatch',409);
+   if(singlePart)checksums.push(hash);
    authorize?.();const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');let release:(()=>void)|undefined,installed=false;
    try{
     authorize?.();
