@@ -111,6 +111,6 @@ export async function imageOutput(bytes:Buffer,declaredMime:string,input:ImageRe
  }
  if(!permitted())throw denied();
  if(output.length>IMAGE_MAX_BYTES)throw new ContextToolError('image_output_too_large','The selected image exceeds the output byte limit. Choose a smaller region.','correct_arguments',{maxOutputBytes:IMAGE_MAX_BYTES});
- imageView.output={sha256:createHash('sha256').update(output).digest('hex'),width:region?.width??width,height:region?.height??height,mimeType:outputMime,sizeBytes:output.length};
+ imageView.output={sha256:region?createHash('sha256').update(output).digest('hex'):sha256,width:region?.width??width,height:region?.height??height,mimeType:outputMime,sizeBytes:output.length};
  return {mimeType:outputMime,data:output.toString('base64'),imageView};
 }

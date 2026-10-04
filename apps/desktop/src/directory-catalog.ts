@@ -109,10 +109,10 @@ export class DirectoryCatalog {
           if(info.isSymbolicLink()){skipped++;continue;}
           if(info.isDirectory()){this.state.pendingDirectories.push(path);continue;}
           if(!info.isFile()){skipped++;continue;}
-          const fileId=`${info.dev}:${info.ino}`;
-          candidates.push({path,relativePath,fileId,birthtimeMs:info.birthtimeMs,size:info.size,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,quickHash:quickHash(fileId,info.size,info.mtimeMs,info.ctimeMs)});
+          const fileId=`${info.dev}:${info.ino}`,fingerprint=quickHash(fileId,info.size,info.mtimeMs,info.ctimeMs);
+          candidates.push({path,relativePath,fileId,birthtimeMs:info.birthtimeMs,size:info.size,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,quickHash:fingerprint});
           this.remember(relativePath);
-          this.state.catalog[relativePath]={...(this.state.catalog[relativePath]??{}),relativePath,fileId,size:info.size,birthtimeMs:info.birthtimeMs,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,quickHash:quickHash(fileId,info.size,info.mtimeMs,info.ctimeMs),lastSeenScan:this.state.scanNumber,syncState:this.state.catalog[relativePath]?.syncState??'pending'};
+          this.state.catalog[relativePath]={...(this.state.catalog[relativePath]??{}),relativePath,fileId,size:info.size,birthtimeMs:info.birthtimeMs,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,quickHash:fingerprint,lastSeenScan:this.state.scanNumber,syncState:this.state.catalog[relativePath]?.syncState??'pending'};
           this.state.nextFile=relativePath;
         }
       }

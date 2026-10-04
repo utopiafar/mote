@@ -68,8 +68,7 @@ export class ArchivedFileStore {
 
   get(id:string):ArchivedFile {const row=this.store.db.prepare('SELECT json FROM archived_files WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Archived file not found',404);return JSON.parse(row.json);}
   read(id:string):Buffer {
-    const file=this.get(id),original=this.store.assets.read(file.hash);
-    if(sha256(original)!==file.hash)throw new StoreError('Archived file checksum mismatch',500);return original;
+    return this.store.assets.read(this.get(id).hash);
   }
   *bytes(id:string){const file=this.get(id);for(const part of this.store.assets.bytes(file.hash)){this.get(id);yield part;}}
   stream(id:string){return Readable.from(this.bytes(id));}
