@@ -27,6 +27,7 @@ export interface LocalFileCheckpoint {
 /** A registered adapter owns its versioned checkpoint shape; SourceSync persists it atomically with the outbox. */
 export type SourceCheckpoint = LocalFileCheckpoint | import('./coding-agents').CodingCheckpoint | { version: number; [key: string]: unknown };
 export type ScannedItem = Omit<SourceItem, 'revision' | 'observedAt'> & {
+  localProcessing?: import('./local-file-processing').LocalFileInput;
   /** Client-only routing hint; SourceSync strips it before persistence and upload. */
   syncQueue?: 'realtime' | 'history';
 };
@@ -49,6 +50,7 @@ export interface LocalSource extends SourceDefinition, SourceOptions {
   path?: string; calendarId?: string; agent?: 'claude' | 'codex' | 'kimi';
 }
 export interface SourceStatus {
+  processingPending?: number;
   blocked?: number;
   failures?: {externalId:string;title:string;status:number}[];
   facts?: import('@mote/shared/native-status').NativeStatusView;

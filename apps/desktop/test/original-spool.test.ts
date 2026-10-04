@@ -9,6 +9,7 @@ import {SourceSync} from '../src/source-sync';
 import {DEFAULT_SOURCE_OPTIONS,type SourceDefinition,type SourceRequest,type LocalFileCheckpoint} from '../src/source-types';
 import {configureLocalContent} from '../src/local-content';
 import {sourceAck} from './fixtures';
+const digest=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
 const dirs:string[]=[];
 afterEach(async()=>{configureLocalContent({enabled:false});for(const dir of dirs.splice(0))await rm(dir,{force:true,recursive:true});});
 async function fixture(){const dir=await realpath(await mkdtemp(join(tmpdir(),'mote-spool-')));dirs.push(dir);return dir;}
@@ -23,9 +24,9 @@ it('20 MiB history yields to 400 dated notes, resumes across restart and never a
   if(url==='/api/sources')return body;
   if(url.startsWith('/api/sources/notes/items')){const items=(body as any).items??[body];events.push('notes:'+items.length);return {receipts:items.map((item:any)=>sourceAck(small.id,item))};}
   if(url.startsWith('/api/file-sync/v1/head?'))return {revision:null};
-  if(url==='/api/file-sync/v1/uploads'){revision=(body as any).item.revision;return {uploadId:'large',partBytes:4194304,parts:[...parts.keys()].map(part=>({part}))};}
-  if(method==='PUT'){const part=Number(url.split('/').at(-1));expect(parts.has(part)).toBe(false);parts.set(part,Buffer.from(body as Uint8Array));events.push('part:'+part);return {};}
-  if(url.endsWith('/commit')){events.push('commit');return sourceAck(source.id,{externalId:scan.items[0].externalId,revision},'file-revision');}
+  if(url==='/api/file-sync/v1/uploads'){revision=(body as any).item.revision;return {uploadId:'large',partBytes:4194304,parts:[...parts].map(([part,bytes])=>({part,hash:digest(bytes),bytes:bytes.length}))};}
+  if(method==='PUT'){const part=Number(url.split('/').at(-1));expect(parts.has(part)).toBe(false);parts.set(part,Buffer.from(body as Uint8Array));events.push('part:'+part);return {part,hash:digest(parts.get(part)!),bytes:parts.get(part)!.length};}
+  if(url.endsWith('/commit')){events.push('commit');return {...sourceAck(source.id,{externalId:scan.items[0].externalId,revision},'file-revision'),sha256:spool.sha256,sizeBytes:bytes.length};}
   throw Error(url);
  };
  const first=await large.flushSlice(source,request);expect(first.state).toBe('yielded');expect(first.bytes).toBeLessThan(4*1024*1024+10000);expect(large.status().pending).toBe(1);expect(parts.size).toBe(1);await access(spool.directory);
@@ -52,10 +53,10 @@ it('streams an encrypted 20 MiB immutable original across restart, resumes missi
   if(url==='/api/file-sync/v1/capabilities')return {version:1,partBytes:4194304};
   if(url==='/api/file-sync/v1/uploads'){
    expect(JSON.stringify(body)).not.toContain(spool.directory);expect(JSON.stringify(body)).not.toContain('localOriginal');revision=(body as any).item.revision;
-   return {uploadId:'fixture',partBytes:4194304,parts:[...parts.keys()].map(part=>({part}))};
+   return {uploadId:'fixture',partBytes:4194304,parts:[...parts].map(([part,bytes])=>({part,hash:digest(bytes),bytes:bytes.length}))};
   }
-  if(method==='PUT'){const part=Number(url.split('/').at(-1));sent.push(part);parts.set(part,Buffer.from(body as Uint8Array));if(part===1&&lose){lose=false;throw Error('ACK lost');}return {};}
-  if(url.endsWith('/commit'))return sourceAck(source.id,{externalId:scan.items[0].externalId,revision},'file-revision');
+  if(method==='PUT'){const part=Number(url.split('/').at(-1));sent.push(part);parts.set(part,Buffer.from(body as Uint8Array));if(part===1&&lose){lose=false;throw Error('ACK lost');}return {part,hash:digest(parts.get(part)!),bytes:parts.get(part)!.length};}
+  if(url.endsWith('/commit'))return {...sourceAck(source.id,{externalId:scan.items[0].externalId,revision},'file-revision'),sha256:spool.sha256,sizeBytes:bytes.length};
   throw Error(url);
  };
  await expect(sync.flush(source,request)).rejects.toThrow('ACK lost');await access(spool.directory);
@@ -74,4 +75,20 @@ it('commits large directory files individually without rolling back a completed 
  const opts={...DEFAULT_SOURCE_OPTIONS,retention:'archive' as const},markers=join(dir,'markers.json');let checkpoint:LocalFileCheckpoint|undefined;const names:string[]=[];
  for(let n=0;n<4;n++){const scan=await scanSourceFiles(root,opts,undefined,markers,undefined,checkpoint);names.push(...scan.items.map(item=>item.title));checkpoint=scan.checkpoint as LocalFileCheckpoint;for(const item of scan.items)if(item.localOriginal)await rm(item.localOriginal.directory,{force:true,recursive:true});if(scan.complete)break;}
  expect(names.sort()).toEqual(['a.txt','b.txt']);
+});
+it('rejects mismatched part and archive receipts without clearing the journal or its private original',async()=>{
+ const dir=await fixture(),path=join(dir,'a.txt');await writeFile(path,'Generated original');
+ const scan=await scanSourceFiles(path,{...DEFAULT_SOURCE_OPTIONS,retention:'archive'},undefined,join(dir,'markers')),spool=scan.items[0].localOriginal!;
+ const sync=new SourceSync(join(dir,'state'));await sync.initialize();await sync.stage(scan,false);
+ const source:SourceDefinition={id:'fixture',name:'Generated',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'archive',enabled:true};
+ let wrongPart=true,revision='',commits=0;
+ const request:SourceRequest=async(url,body,method)=>{
+  if(url==='/api/sources')return source;
+  if(url.includes('/head?'))return {revision:null};
+  if(url.endsWith('/uploads')){revision=(body as any).item.revision;return {uploadId:'fixture',partBytes:4194304,parts:[]};}
+  if(method==='PUT'){const bytes=Buffer.from(body as Uint8Array);return {part:0,hash:wrongPart?'wrong':digest(bytes),bytes:bytes.length};}
+  commits++;return {...sourceAck(source.id,{externalId:scan.items[0].externalId,revision},'file-revision'),sha256:'wrong',sizeBytes:spool.sizeBytes};
+ };
+ await expect(sync.flush(source,request)).rejects.toThrow('part acknowledgement');expect(commits).toBe(0);await access(spool.directory);
+ wrongPart=false;await expect(sync.flush(source,request)).rejects.toThrow('archive acknowledgement');expect(sync.status().pending).toBe(1);await access(spool.directory);
 });

@@ -19,12 +19,12 @@ const selection={enabled:true,start:'2026-09-01T00:00:00Z',end:'2026-10-01T00:00
 const wav=Buffer.concat([Buffer.from('RIFF0000WAVE'),Buffer.alloc(200)]);
 async function fixture(t:import('node:test').TestContext){
  const directory=await mkdtemp(join(tmpdir(),'mote-recording-fixture-'));
- const state={account:'generated-owner',text:raw,ids:['r1','r1'],mediaFails:false,pages:false,cycle:false,held:undefined as undefined|Promise<void>,switchAfterRead:false};
+ const state={account:'generated-owner',text:raw,ids:['r1','r1'],mediaFails:false,transcriptFails:false,pages:false,cycle:false,held:undefined as undefined|Promise<void>,switchAfterRead:false};
  const calls:{phase:string;id?:string;start?:string;end?:string}[]=[],models:QueryInput[]=[];
  const provider:RecordingProvider={id:'feishu',version:'generated@1',account:async()=>({id:state.account,name:'Generated owner'}),
   discover:async(_account,range)=>{calls.push({phase:'discover',...range});return {ids:range.cursor?['r2']:state.ids,...(state.cycle?{next:range.cursor==='a'?'b':'a'}:state.pages&&!range.cursor?{next:'second'}:{})};},
   metadata:async(_account,id)=>{calls.push({phase:'metadata',id});return {id,title:'Generated diary',recordedAt:'2026-09-20T00:00:00Z',durationMs:5000};},
-  transcript:async()=>{calls.push({phase:'transcript'});if(state.held)await state.held;if(state.switchAfterRead)state.account='another-generated-owner';return {rawText:state.text,transcript:feishuTranscript(state.text,5000)};},
+  transcript:async()=>{calls.push({phase:'transcript'});if(state.held)await state.held;if(state.transcriptFails)throw new ExecutionFailure('blocked','generated_transcript_unavailable');if(state.switchAfterRead)state.account='another-generated-owner';return {rawText:state.text,transcript:feishuTranscript(state.text,5000)};},
   media:async()=>{calls.push({phase:'media'});if(state.mediaFails)throw new ExecutionFailure('blocked','generated_media_permission');return {mimeType:'audio/wav',bytes:wav};},
  };
  const config:Config={dataDir:directory,token:'generated-recording-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
@@ -39,6 +39,23 @@ async function fixture(t:import('node:test').TestContext){
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  return {get node(){return node;},config,directory,state,calls,models,request,flush,async connect(){await request('POST','/connect');return request('PUT','/selection',selection);},async restart(){await node.app.close();node=await buildApp(config,deps);await node.app.ready();},async memory(){node.sourcePipelines.drainMemory(node.memoryPipeline,true,100);await Promise.all(node.memoryPipeline.list().filter(j=>['queued','running'].includes(j.status)).map(j=>node.memoryPipeline.run(j.id)));}};
 }
+
+test('media backup survives missing transcripts and restart; later transcript attaches the existing original without downloading again',async t=>{
+ const f=await fixture(t);f.state.transcriptFails=true;await f.connect();await f.flush();
+ let status=await f.request('GET');assert.equal(status.counts.transcripts,0);assert.equal(status.counts.audio,1);assert.equal(status.counts.failed,1);
+ const media=f.node.store.db.prepare('SELECT file_id FROM recording_media').get()!;assert.deepEqual(new ArchivedFileStore(f.node.store).read(String(media.file_id)),wav);
+ await f.restart();f.state.transcriptFails=false;await f.request('POST','/retry');await f.flush();status=await f.request('GET');
+ assert.equal(status.counts.transcripts,1);assert.equal(status.counts.audio,1);assert.equal(f.calls.filter(call=>call.phase==='media').length,1);
+ const item=(await f.request('GET','/items')).items[0];assert.equal(item.audio.id,String(media.file_id));assert.ok(new ArchivedFileStore(f.node.store).listForCapture(item.captureId).some(file=>file.id===String(media.file_id)));
+});
+test('a running transcript does not hold the media resource',async t=>{
+ const f=await fixture(t);let release!:()=>void;f.state.held=new Promise<void>(resolve=>release=resolve);await f.connect();
+ try{
+  for(let n=0;n<200;n++){await f.node.executor.tick();const status=await f.request('GET');if(status.counts.audio===1)break;await new Promise(resolve=>setTimeout(resolve,5));}
+  const status=await f.request('GET');assert.equal(status.counts.transcripts,0);assert.equal(status.counts.audio,1);assert.ok(status.steps.some((step:any)=>step.phase==='transcript'&&step.state==='running'));
+ }finally{release();}
+ await f.flush();
+});
 
 test('recording intake produces complete material and Memory, bypasses ASR, preserves vendor deletion and deduplicates repeated history',async t=>{
  const f=await fixture(t);await f.connect();await f.flush();let status=await f.request('GET');assert.equal(status.counts.transcripts,1);assert.equal(status.counts.audio,1);assert.equal(status.counts.pending,0);

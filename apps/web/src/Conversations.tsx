@@ -51,6 +51,7 @@ export function Conversations({api, configured, devices, renderAnswer}: {
   const [error, setError] = useState(''), [historyError, setHistoryError] = useState('');
   const [pendingQuestion, setPendingQuestion] = useState(''), [confirmDelete, setConfirmDelete] = useState(false);
   const operation = useRef<AbortController | null>(null), historyRequest = useRef<AbortController | null>(null);
+  const attachmentRequest=useRef<AbortController|null>(null);
   const selectionMade=useRef(false),olderRequest=useRef<AbortController|null>(null);
   const history=useResource<HistoryPage>(api,'/api/conversations?limit=30'),recentRuns=useResource<{items:QueryRun[]}>(api,'/api/query-runs');
   const feedError=useOperationUpdates(api);
@@ -72,7 +73,7 @@ export function Conversations({api, configured, devices, renderAnswer}: {
     finally { if (!controller.signal.aborted) setLoadingPage(false); }
   }
   useEffect(()=>{selectionMade.current=false;setSelectedId(null);setOlderTurns([]);setOlderCursor(undefined);setItems([]);setCursor(null);setRun(null);setBusy(false);setQuestion('');setAttachments([]);setUploading(false);setPendingQuestion('');setError('');setHistoryError('');setLoadingOlder(false);setLoadingPage(false);
-    return()=>{operation.current?.abort();historyRequest.current?.abort();olderRequest.current?.abort();};},[api]);
+    return()=>{operation.current?.abort();attachmentRequest.current?.abort();historyRequest.current?.abort();olderRequest.current?.abort();};},[api]);
   useEffect(()=>{if(history.data){setItems(history.data.items);setCursor(history.data.nextCursor??null);}else if(history.error){setItems([]);setCursor(null);}},[history.data,history.error]);
   useEffect(()=>{if(!recentRuns.data||selectionMade.current)return;selectionMade.current=true;
     const recent=recentRuns.data.items.find(r=>r.status==='running')??recentRuns.data.items[0];
@@ -161,16 +162,17 @@ export function Conversations({api, configured, devices, renderAnswer}: {
     if(selected.some(file=>!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>8*1024*1024||file.size===0)){
       setError(moteText("聊天图片仅支持 PNG、JPEG、WebP，每张不超过 8 MiB。"));return;
     }
+    const controller=new AbortController();attachmentRequest.current=controller;
     setUploading(true);setError('');
     try{
       let deviceId=localStorage.getItem('mote.chat.device.v1');
       if(!deviceId){deviceId=`web:${crypto.randomUUID()}`;localStorage.setItem('mote.chat.device.v1',deviceId);}
       for(const file of selected){
-        const id=await uploadChatImage(api,file,deviceId);
+        const id=await uploadChatImage(api,file,deviceId,controller.signal);
         setAttachments(current=>current.some(item=>item.id===id)?current:[...current,{id,name:file.name,mimeType:file.type}]);
       }
-    }catch(e){setError(errorMessage(e));}
-    finally{setUploading(false);if(attachmentInput.current)attachmentInput.current.value='';}
+    }catch(e){if(!controller.signal.aborted)setError(errorMessage(e));}
+    finally{if(!controller.signal.aborted){setUploading(false);if(attachmentInput.current)attachmentInput.current.value='';}if(attachmentRequest.current===controller)attachmentRequest.current=null;}
   }
   async function remove() {
     if (!conversation || operation.current) return;

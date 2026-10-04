@@ -2,12 +2,15 @@ import {rm} from 'node:fs/promises';
 import {sourceStatePatch,type StatePatch} from './source-state-store';
 import { moteText } from '@mote/shared/i18n';
 import { createHash } from 'node:crypto';
-import { sourceWork } from './background';
+import { sourceWork, fileProcessingWork } from './background';
+import type { LocalFileInput, LocalFileResult } from './local-file-processing';
+import { redactSourceText, type SourceOptions } from './source-types';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import type { LocalFileCheckpoint, SourceCheckpoint, SourceDefinition, SourceItem, SourceRequest, SourceScan, ScannedItem } from './source-types';
 import { PriorityScheduler } from './priority-scheduler';
 import {UploadSlice,UploadSliceYield,requestBytes} from './upload-slice';
 import {requireIngressReceipt} from './ingress-protocol';
+import {fileIndexSchema} from '@mote/shared';
 
 export const sourceHash = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
 export async function atomicSourceJson(path: string, value: unknown): Promise<void> { await sourceWork.run({ kind: 'json-write', path, value }); }
@@ -16,7 +19,8 @@ type QueueName = 'realtime' | 'history';
 function isFileCheckpoint(value: SourceCheckpoint | undefined): value is LocalFileCheckpoint {
   return Boolean(value && value.version === 1 && typeof (value as LocalFileCheckpoint).root === 'string');
 }
-interface Known { contentHash: string; revision: string; item: ScannedItem }
+interface Known { contentHash: string; discoveryHash?: string; revision: string; item: ScannedItem }
+interface ProcessingJob { input: LocalFileInput; item: ScannedItem; discoveryHash: string; policy?: string; nextAttemptAt: number }
 interface RejectedItem { item: SourceItem; status: number }
 interface BatchResult { acks: Record<string, unknown>[]; rejected?: RejectedItem[] }
 interface State {
@@ -35,6 +39,7 @@ interface State {
   policy?: string;
   adapterVersion?: number;
   known: Record<string, Known>;
+  localProcessing?: Record<string, ProcessingJob>;
   pendingRealtime: SourceItem[];
   pendingHistory: SourceItem[];
   lastSyncAt?: string;
@@ -83,18 +88,18 @@ export class SourceSync {
   }
   initialized() { return Boolean(this.data.initialized); }
   private pendingItems(): SourceItem[] { return [...this.data.pendingRealtime, ...this.data.pendingHistory]; }
-  status(): { blocked: number; failures: {externalId:string;title:string;status:number}[]; pending: number; realtimePending: number; historyPending: number; items: number; lastSyncAt?: string; lastAcknowledgedAt?: string; oldestPendingAt?: string } {
+  status(): { processingPending: number; blocked: number; failures: {externalId:string;title:string;status:number}[]; pending: number; realtimePending: number; historyPending: number; items: number; lastSyncAt?: string; lastAcknowledgedAt?: string; oldestPendingAt?: string } {
     const pending = this.pendingItems();
     const rejected=Object.values(this.data.quarantined??{});
-    return { blocked:rejected.length,failures:rejected.slice(0,100).map(({item,status})=>({externalId:item.externalId,title:item.title,status})),oldestPendingAt: pending.reduce<string | undefined>((oldest, item) => !oldest || item.observedAt < oldest ? item.observedAt : oldest, undefined), pending: pending.length, realtimePending: this.data.pendingRealtime.length, historyPending: this.data.pendingHistory.length, items: this.data.collectedItems ?? this.knownItems, lastSyncAt: this.data.lastSyncAt, lastAcknowledgedAt:this.data.lastAcknowledgedAt };
+    return { processingPending:Object.keys(this.data.localProcessing??{}).length, blocked:rejected.length,failures:rejected.slice(0,100).map(({item,status})=>({externalId:item.externalId,title:item.title,status})),oldestPendingAt: pending.reduce<string | undefined>((oldest, item) => !oldest || item.observedAt < oldest ? item.observedAt : oldest, undefined), pending: pending.length, realtimePending: this.data.pendingRealtime.length, historyPending: this.data.pendingHistory.length, items: this.data.collectedItems ?? this.knownItems, lastSyncAt: this.data.lastSyncAt, lastAcknowledgedAt:this.data.lastAcknowledgedAt };
   }
   async checkpointTo(path: string): Promise<void> { const previous=await sourceWork.run<Record<string,unknown>|undefined>({kind:'source-state',path});await sourceWork.run({kind:'source-state',path,patches:sourceStatePatch(previous??{},this.data as unknown as Record<string,unknown>)}); }
 
   async ensurePolicy(policy:string):Promise<void>{return this.mutate(()=>this.ensurePolicyInternal(policy));}
   private async ensurePolicyInternal(policy: string): Promise<void> {
     if (this.data.policy === policy) return;
-    const next = { ...this.data, checkpoint: undefined, delivered: undefined, predecessors: undefined, quarantined: undefined, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '' }])), pendingRealtime: [], pendingHistory: [] } as State;
-    const retired = [...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)];
+    const next = { ...this.data, checkpoint: undefined, localProcessing: undefined, delivered: undefined, predecessors: undefined, quarantined: undefined, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '', discoveryHash: undefined }])), pendingRealtime: [], pendingHistory: [] } as State;
+    const retired = [...Object.values(this.data.localProcessing??{}).map(job=>({...job.item,localProcessing:job.input})),...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)];
     await this.commit(next);
     await this.discardUnqueuedOriginals(retired);
   }
@@ -113,13 +118,16 @@ export class SourceSync {
   }
 
   async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString(), initialSync: 'all' | 'new_only' = 'all', defaultQueue: QueueName = scan.queue ?? 'realtime'): Promise<number> {
+    const retired = Object.values(this.data.localProcessing??{}).map(job=>({...job.item,localProcessing:job.input}));
     try { return await this.mutate(()=>this.stageInternal(scan, trackDeletions, observedAt, initialSync, defaultQueue)); }
-    finally { await this.discardUnqueuedOriginals(scan.items); }
+    finally { await this.discardUnqueuedOriginals([...scan.items,...retired]); }
   }
 
   async discardUnqueuedOriginals(items: ScannedItem[]): Promise<void> {
-    const retained = new Set([...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)].flatMap(item => item.localOriginal ? [item.localOriginal.directory] : []));
-    for (const item of items) if (item.localOriginal && !retained.has(item.localOriginal.directory)) await rm(item.localOriginal.directory, {force:true, recursive:true}).catch(() => {});
+    const inputs = Object.values(this.data.localProcessing??{}).map(job=>({...job.item,localProcessing:job.input}));
+    const directories = (item: ScannedItem) => [item.localOriginal?.directory,item.localProcessing?.spool?.directory].filter((value): value is string=>Boolean(value));
+    const retained = new Set([...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item),...inputs].flatMap(directories));
+    for (const directory of items.flatMap(directories)) if (!retained.has(directory)) await rm(directory, {force:true, recursive:true}).catch(() => {});
   }
 
   private async stageInternal(scan: SourceScan, trackDeletions: boolean, observedAt: string, initialSync: 'all' | 'new_only', defaultQueue: QueueName): Promise<number> {
@@ -133,17 +141,21 @@ export class SourceSync {
     if (scan.complete) next.initialized = true;
     const baseline = new Set(next.baseline ?? []);
     const stage = (raw: ScannedItem) => {
-      const { syncQueue, ...item } = raw;
+      const { syncQueue, localProcessing, ...item } = raw;
       const {localOriginal, ...identity} = item;
       const key = sourceHash(item.externalId), previous = knownChanges.get(key)??next.known[key], contentHash = sourceHash(JSON.stringify({...identity, ...(localOriginal ? {originalSha256:localOriginal.sha256} : {})}));
-      if (previous?.contentHash === contentHash) return;
+      if ((localProcessing ? previous?.discoveryHash ?? previous?.contentHash : previous?.contentHash) === contentHash) return;
+      if (localProcessing) {
+        if (item.layer !== 'snapshot' || item.kind !== 'file' || !item.document?.fileIndex || item.localOriginal || item.localOriginalBase64 || item.deleted) throw Error('Unauthorized local processing input');
+        next.localProcessing = { ...next.localProcessing, [key]: { input: structuredClone(localProcessing), item, discoveryHash: contentHash, policy: next.policy, nextAttemptAt: 0 } };
+      } else if (next.localProcessing?.[key]) { next.localProcessing = { ...next.localProcessing }; delete next.localProcessing[key]; }
       const revision = sourceHash(contentHash + ':' + (previous?.revision ?? '')), queued: SourceItem = { ...item, revision, observedAt };
       if ((syncQueue ?? defaultQueue) === 'history') next.pendingHistory.push(queued); else next.pendingRealtime.push(queued);
       // Coding checkpoints own their append cursor and do not need a second
       // content index. A local directory catalog only skips discovery work;
       // SourceSync still needs its durable known map for revision deduplication.
       const localCatalog = scan.checkpoint && 'root' in scan.checkpoint && 'catalog' in scan.checkpoint;
-      if (!scan.checkpoint || localCatalog) knownChanges.set(key,{ contentHash, revision, item: { ...item, text: '', localOriginalBase64: undefined, localOriginal:undefined } });
+      if (!scan.checkpoint || localCatalog) knownChanges.set(key,{ contentHash, ...(localProcessing ? {discoveryHash:contentHash} : {}), revision, item: { ...item, text: '', localOriginalBase64: undefined, localOriginal:undefined } });
       changes++;
     };
     for (const [index, item] of scan.items.entries()) { if (index % 16 === 0) await yieldTurn(); if (!baseline.has(item.externalId)) stage(item); }
@@ -159,11 +171,46 @@ export class SourceSync {
     if (next.pendingRealtime.length + next.pendingHistory.length + Object.keys(next.quarantined??{}).length > this.limits.maxEvents) throw new Error(moteText("来源待同步队列已满（4000 项 / 32 MiB），请恢复网络后重试"));
     if (scan.catalogChanges && !isFileCheckpoint(scan.checkpoint)) throw new Error('File catalog changes require a file checkpoint');
     if (scan.checkpoint) { next.checkpoint = scan.catalogChanges&&isFileCheckpoint(scan.checkpoint)?{...scan.checkpoint,catalog:isFileCheckpoint(this.data.checkpoint)?this.data.checkpoint.catalog:{}}:scan.checkpoint; next.collectedItems = (next.collectedItems ?? 0) + changes; }
-    if([...next.pendingRealtime,...next.pendingHistory].reduce((n,item)=>n+(item.localOriginal?.sizeBytes??(item.localOriginalBase64?Math.floor(item.localOriginalBase64.length*3/4):0)),0)>512*1024*1024)throw Error('Original outbox exceeds 512 MiB; upload pending files before scanning more');
+    if(Object.values(next.localProcessing??{}).reduce((sum,job)=>sum+(job.input.spool?.sizeBytes??0),0)+[...next.pendingRealtime,...next.pendingHistory].reduce((n,item)=>n+(item.localOriginal?.sizeBytes??(item.localOriginalBase64?Math.floor(item.localOriginalBase64.length*3/4):0)),0)>512*1024*1024)throw Error('Original outbox exceeds 512 MiB; upload pending files before scanning more');
     await this.commit(next, this.limits.maxBytes,[...sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>),...Array.from(knownChanges,([key,value])=>({section:'known',key,value})),...(scan.catalogChanges??[]).map(change=>({section:'catalog',...change}))]);
     for(const [key,value] of knownChanges){const previous=this.data.known[key];this.knownItems+=Number(!value.item.deleted)-Number(Boolean(previous&&!previous.item.deleted));this.data.known[key]=value;}
     if(scan.catalogChanges&&isFileCheckpoint(this.data.checkpoint))for(const {key,value} of scan.catalogChanges){if(value)this.data.checkpoint.catalog[key]=value;else delete this.data.checkpoint.catalog[key];}
     return changes;
+  }
+
+  /** Bounded independent processing pass. Missing modules/services leave jobs durable with backoff. */
+  async processPending(options: SourceOptions, signal?: AbortSignal, selected: () => boolean = () => true,
+                       process = (input: LocalFileInput, mime: string) => fileProcessingWork.run<LocalFileResult>({kind:'local-file-process',input,mime}),
+                       now = Date.now(), limit = 4): Promise<number> {
+    if (options.retention !== 'snapshot') return 0;
+    let completed = 0;
+    const jobs = Object.entries(this.data.localProcessing ?? {}).filter(([,job]) => job.nextAttemptAt <= now && !this.pendingItems().some(item => item.externalId === job.item.externalId)).slice(0,limit);
+    for (const [key, job] of jobs) {
+      signal?.throwIfAborted(); if (!selected()) return completed;
+      let result: LocalFileResult | undefined;
+      try { result = await process(job.input,job.item.mimeType ?? 'application/octet-stream'); }
+      catch { signal?.throwIfAborted(); }
+      signal?.throwIfAborted();
+      await this.mutate(async () => {
+        if (!selected() || this.data.localProcessing?.[key] !== job || this.data.policy !== job.policy || this.data.known[key]?.discoveryHash !== job.discoveryHash) return;
+        const localProcessing = { ...this.data.localProcessing };
+        if (!result || result.status === 'pending') { localProcessing[key] = {...job,nextAttemptAt:now + 300000}; await this.commit({...this.data,localProcessing}); return; }
+        const fullText = redactSourceText(result.text,options.redactLiterals), text = fullText.slice(0,options.indexMode === 'lightweight' ? 8000 : 100000);
+        const item: ScannedItem = { ...job.item,text,document:{...job.item.document,fileIndex:{...job.item.document!.fileIndex!,contentVersion:result.contentVersion,
+          parser:result.parser,status:result.status,coverage:!text?'none':text.length===fullText.length&&result.coverage!=='partial'?'full':'lightweight',totalCharacters:fullText.length,length:text.length,
+          ...(result.warnings?.length?{warnings:result.warnings.map(value=>redactSourceText(value,options.redactLiterals))}:{})}} };
+        if (!fileIndexSchema.safeParse(item.document?.fileIndex).success) { localProcessing[key] = {...job,nextAttemptAt:now + 300000}; await this.commit({...this.data,localProcessing}); return; }
+        const previous = this.data.known[key]!, contentHash = sourceHash(JSON.stringify(item)), revision = sourceHash(contentHash + ':' + previous.revision);
+        delete localProcessing[key];
+        const next = {...this.data,localProcessing,pendingRealtime:[...this.data.pendingRealtime,{...item,revision,observedAt:new Date(now).toISOString()}]};
+        if (next.pendingRealtime.length + next.pendingHistory.length + Object.keys(next.quarantined??{}).length > this.limits.maxEvents) return;
+        const known: Known = { contentHash,discoveryHash:job.discoveryHash,revision,item:{...item,text:''} };
+        await this.commit(next,this.limits.maxBytes,[...sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>),{section:'known',key,value:known}]);
+        this.data.known[key] = known; completed++;
+      });
+    }
+    await this.discardUnqueuedOriginals(jobs.map(([,job])=>({...job.item,localProcessing:job.input})));
+    return completed;
   }
 
   async syncScan(scan: SourceScan, trackDeletions: boolean, source: SourceDefinition, request: SourceRequest, signal?: AbortSignal, prepare?: () => Promise<void>): Promise<{ changes: number; state: 'ready' | 'paused' }> {
@@ -293,9 +340,20 @@ export class SourceSync {
     const original = localOriginalBase64 ? Buffer.from(localOriginalBase64, 'base64') : undefined, manifest = { sourceId: source.id, previousRevision: previousRevision || null, item: wire, sizeBytes: item.metadata?.file?.sizeBytes ?? 0, ...(localOriginal?{sha256:localOriginal.sha256}:original ? { sha256: sourceHash(original) } : {}) };
     let ack: Record<string, unknown>;
     if (original||localOriginal) {
-      const upload = await request('/api/file-sync/v1/uploads', manifest, 'POST', signal) as { uploadId: string; ack?: Record<string, unknown>; partBytes: number; parts: { part: number }[] };
+      const upload = await request('/api/file-sync/v1/uploads', manifest, 'POST', signal) as { uploadId: string; ack?: Record<string, unknown>; partBytes: number; parts: { part: number; hash: string; bytes: number }[] };
       if (upload.ack) ack = upload.ack;
-      else { if (upload.partBytes !== 4194304) throw Error('Unsupported file part size'); for (let offset = 0; offset < (localOriginal?.sizeBytes??original!.length); offset += upload.partBytes) { const part = offset / upload.partBytes; if (!upload.parts.some(p => p.part === part)) await request('/api/file-sync/v1/uploads/' + upload.uploadId + '/parts/' + part, localOriginal?Buffer.from(await sourceWork.run<Uint8Array>({kind:'original-part',spool:localOriginal,part})):original!.subarray(offset, offset + upload.partBytes), 'PUT', signal); } ack = await request('/api/file-sync/v1/uploads/' + upload.uploadId + '/commit', {}, 'POST', signal) as Record<string, unknown>; }
+      else {
+        if (upload.partBytes !== 4194304 || !Array.isArray(upload.parts) || typeof upload.uploadId !== 'string' || !upload.uploadId) throw Error('Unsupported file upload session');
+        for (let offset = 0; offset < (localOriginal?.sizeBytes??original!.length); offset += upload.partBytes) {
+          const part = offset / upload.partBytes, bytes = localOriginal?Buffer.from(await sourceWork.run<Uint8Array>({kind:'original-part',spool:localOriginal,part})):original!.subarray(offset, offset + upload.partBytes), hash = sourceHash(bytes);
+          const existing = upload.parts.find(value=>value.part===part);
+          if (existing?.hash === hash && existing.bytes === bytes.length) continue;
+          const receipt = await request('/api/file-sync/v1/uploads/' + encodeURIComponent(upload.uploadId) + '/parts/' + part, bytes, 'PUT', signal) as {part?:number;hash?:string;bytes?:number};
+          if (receipt?.part !== part || receipt.hash !== hash || receipt.bytes !== bytes.length) throw Error('File part acknowledgement does not match the queued original');
+        }
+        ack = await request('/api/file-sync/v1/uploads/' + encodeURIComponent(upload.uploadId) + '/commit', {}, 'POST', signal) as Record<string, unknown>;
+      }
+      if (ack.sha256 !== manifest.sha256 || ack.sizeBytes !== (localOriginal?.sizeBytes??original!.length)) throw Error('File archive acknowledgement does not match the queued original');
     } else ack = await request('/api/file-sync/v1/revisions', manifest, 'PUT', signal) as Record<string, unknown>;
     return this.validateAck(source, ack, item);
   }

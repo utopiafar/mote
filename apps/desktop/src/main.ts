@@ -264,7 +264,7 @@ else {
     };
     const connectionChange = async <T>(operation: () => Promise<T>, sameNodeInvitation = false, confirmedInitial = false): Promise<T> => pausedSettings(async () => {
       const source = localSources!.connectionActivity();
-      assertConnectionChangeSafe({ running: clientStatus().running, inFlight: collector.connectionActivity().inFlight, queued: queue.stats().depth, preparedNote: noteDrafts.hasPrepared(), sourcePending: source.pending, sourceInFlight: source.inFlight }, sameNodeInvitation || (confirmedInitial && unboundBacklog()));
+      assertConnectionChangeSafe({ running: clientStatus().running, inFlight: collector.connectionActivity().inFlight, queued: queue.stats().depth, preparedNote: noteDrafts.hasPrepared(), sourcePending: source.pending + source.processingPending, sourceInFlight: source.inFlight }, sameNodeInvitation || (confirmedInitial && unboundBacklog()));
       return operation();
     });
     const requireRecovery = (message: string): void => { recoveryRequired = message; collector.requireRecovery(message); void localSources!.close(); };
@@ -390,7 +390,7 @@ else {
     handle('mote:coding-agents', () => discoverCodingAgents());
     handle('mote:source-coding', (provider, options) => serialize(() => { if (provider !== 'claude' && provider !== 'codex' && provider !== 'kimi') throw new Error(moteText("不支持的 Coding Agent")); return localSources!.addCodingAgent(provider, options); }));
     handle('mote:sources', () => localSources!.status());
-    handle('mote:source-sync', async () => { await localSources!.sync(true); await collector.retry(); });
+    handle('mote:source-sync', async () => { const scan = localSources!.sync(true); await collector.retry(); await scan; await collector.retry(); });
     handle('mote:calendar-authorize', () => serialize(() => localSources!.authorizeCalendar()));
     handle('mote:source-calendar', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error(moteText("日历选择无效")); await localSources!.addCalendar(id, options); }));
     handle('mote:source-update', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error(moteText("来源选择无效")); await localSources!.update(id, options); }));
@@ -464,7 +464,7 @@ else {
     handle('mote:review-pending', () => queue!.reviewPending());
     handle('mote:review-reject', async (id:unknown) => { if(typeof id!=='string')throw Error('Invalid review ID');await queue!.rejectReview(id); });
     handle('mote:review-approve', async (id:unknown) => { if(typeof id!=='string')throw Error('Invalid review ID');await queue!.approveReview(id); });
-    handle('mote:retry', async () => { await localSources!.sync(true); await collector.retry(); return clientStatus(); });
+    handle('mote:retry', async () => { const scan = localSources!.sync(true); await collector.retry(); await scan; await collector.retry(); return clientStatus(); });
     const requireStopped = async () => {
       if (clientStatus().running) throw new Error(moteText("请先停止采集，再修改本地模型"));
       await collector.settleCapture();

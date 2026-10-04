@@ -118,7 +118,6 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             }
             stage = EventStage.QUEUE
             val queue = applicationContext.queue()
-            runCatching { PerceptionSync.pull(applicationContext, settings, config, queue) }
             settings.syncStatus("uploading", MoteI18n.text("正在同步本机记录"))
             if (!inputData.getBoolean("continuation", false)) SourceWork.enqueueUpload(applicationContext, config, explicit)
             Diagnostics(applicationContext).add("uploadSessions")
@@ -169,6 +168,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 if (events.isEmpty()) {
                     if (queue.nextOcrUpdate() != null) { ocrSinceCapture = 0; continue }
                     finishStatus()
+                    runCatching { PerceptionSync.pull(applicationContext, settings, config, queue) }
                     runCatching { SyncHeartbeat.send(applicationContext, settings, config, queue) }
                     return Result.success()
                 }
@@ -252,6 +252,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             }
             retainTurn()
             stage = EventStage.HEARTBEAT
+            runCatching { PerceptionSync.pull(applicationContext, settings, config, queue) }
             if (!queue.pendingSync().hasWork) finishStatus()
             runCatching { SyncHeartbeat.send(applicationContext, settings, config, queue) }
             // A successful chunk may continue the same explicit operation; failures never retry in manual mode.

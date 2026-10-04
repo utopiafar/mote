@@ -80,6 +80,10 @@ try {
       const synced = await engine.syncScan(result, options.trackDeletions, source, request, controller.signal, prepare);
       count = synced.changes; const state = synced.state;
       if (state === 'paused') { console.info('Central source is paused; pending revisions retained locally.'); return; }
+      // Metadata receipt is durable before optional local decoding starts.
+      await engine.processPending(options, controller.signal);
+      await engine.flush(source, request, controller.signal);
+      if (engine.status().processingPending) console.info(`${engine.status().processingPending} local processing jobs retained; rerun or use --watch to retry.`);
     }
     console.info(`${request ? 'Received' : 'Would send'} ${count} changed UTF-8 text files; skipped ${result.skipped}; deletion scan ${result.complete && options.trackDeletions ? 'enabled' : 'not applied'}.`);
   }
