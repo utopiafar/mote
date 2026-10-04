@@ -192,3 +192,26 @@ test('directory failure stays in its own queue entry and edit restores settings 
  assert.equal(d.querySelector('.imports-page > [role=alert]'),null);assert.equal(button(d,'选择文件').disabled,false);assert.match(d.querySelector('.import-queue-item')!.textContent!,/目录不存在/);
  await act(async()=>button(d,'修改目录').click());assert.equal(d.querySelector<HTMLInputElement>('input[placeholder="/data/imports/my-notes"]')!.value,'/generated/missing');assert.equal(d.querySelectorAll('.import-queue-item').length,0);
 });
+
+test('folder drop expands entries before admission, blocks partial submission and displays relative paths',async t=>{
+ const {root,d}=await fixture(t),names:string[]=[],writes:any[]=[];let read!:(entries:unknown[])=>void;
+ const api=apiWith((path,init)=>{
+  if(path==='/api/imports'&&init?.method==='POST'){writes.push(JSON.parse(String(init.body)));return importJob();}
+  if(path==='/api/import-uploads'){const input=JSON.parse(String(init!.body));names.push(input.name);return {id:input.id,fileId:'archived:'+input.id,partBytes:4,parts:[]};}
+  return {items:[]};
+ });
+ await act(async()=>root.render(view(api)));
+ const folder={name:'generated-folder',isDirectory:true,isFile:false,createReader:()=>{let first=true;return {readEntries:(done:typeof read)=>{if(first){first=false;read=done;}else done([]);}};}};
+ const event=new window.Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(event,'dataTransfer',{value:{items:[{kind:'file',webkitGetAsEntry:()=>folder,getAsFile:()=>new File(['placeholder'],'generated-folder')}],files:[]}});
+ await act(async()=>d.querySelector('.file-drop')!.dispatchEvent(event));assert.equal(button(d,'加入导入队列').disabled,true);assert.match(d.body.textContent!,/正在读取所选文件/);assert.equal(names.length,0);
+ await act(async()=>read([{name:'nested',isDirectory:true,isFile:false,createReader:()=>{let first=true;return {readEntries:(done:typeof read)=>{done(first?[{name:'note.txt',isDirectory:false,isFile:true,file:(done:(file:File)=>void)=>done(new File(['generated'],'note.txt'))}]:[]);first=false;}};}}]));
+ await until(()=>!button(d,'加入导入队列').disabled);assert.match(d.querySelector('.selected-files')!.textContent!,/generated-folder\/nested\/note.txt/);await submit(d);await until(()=>writes.length===1);assert.deepEqual(names,['generated-folder/nested/note.txt']);
+});
+
+test('folder picker keeps relative paths and late drop results cannot leak into a different node',async t=>{
+ const {root,d}=await fixture(t),api=apiWith(()=>({items:[]}));await act(async()=>root.render(view(api)));
+ const picker=d.querySelector<HTMLInputElement>('input[webkitdirectory]')!;const file=new File(['generated'],'same.txt');Object.defineProperty(file,'webkitRelativePath',{value:'picked/nested/same.txt'});Object.defineProperty(picker,'files',{value:[file]});await act(async()=>picker.dispatchEvent(new window.Event('change',{bubbles:true})));
+ assert.match(d.querySelector('.selected-files')!.textContent!,/picked\/nested\/same.txt/);
+ let read!:(entries:unknown[])=>void;const event=new window.Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(event,'dataTransfer',{value:{items:[{kind:'file',webkitGetAsEntry:()=>({name:'late',isDirectory:true,isFile:false,createReader:()=>({readEntries:(done:typeof read)=>read=done})}),getAsFile:()=>null}],files:[]}});
+ await act(async()=>d.querySelector('.file-drop')!.dispatchEvent(event));const nextApi=apiWith(()=>({items:[]}));await act(async()=>root.render(view(nextApi)));await act(async()=>read([]));assert.equal(d.querySelector('.selected-files'),null);assert.equal(d.querySelector('[role=status]'),null);
+});
