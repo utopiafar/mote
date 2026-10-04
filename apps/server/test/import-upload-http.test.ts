@@ -1,3 +1,4 @@
+import {readAgentCredential} from './login-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -25,7 +26,7 @@ test('HTTP binary import archives exact generated image without a model, enforci
  assert.equal(put.statusCode,200,put.body);
  assert.equal(put.json().hash,sha256(bytes));
  const {invitation}=node.connections.invite({serverUrl:'http://127.0.0.1:3456',label:'Generated collector'});
- const collector=await node.connections.redeem({code:invitation.code,deviceId:'generated-collector',deviceName:'Generated',platform:'macos'});
+ const collector=await readAgentCredential(node.connections);
  for(const [authorization,status] of [['',401],['Bearer '+collector.token,403]] as const){
   const denied=await node.app.inject({method:'PUT',url,headers:{authorization,'content-type':'application/octet-stream'},payload:bytes});
   assert.equal(denied.statusCode,status,denied.body);

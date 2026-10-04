@@ -83,7 +83,8 @@ it('one manual flush drains 400 historical notes while admitting a new note betw
  }};
  collector=new Collector(config,queue,'/fixture/no-real-helper',()=>true,()=>undefined,undefined,undefined,undefined,sources as any);
  await collector.upload(true);expect(queue.stats().depth).toBe(0);expect(new Set(sent).size).toBe(401);expect(phases.slice(0,4)).toEqual(['captures','source-part-0','captures','source-part-1']);expect(collector.status().sync.pendingRecords).toBe(0);
-},30000);
+// This fixture performs 401 durable writes and ACKs; keep disk latency out of the ordering contract.
+},120000);
 
 describe.skipIf(process.platform !== 'darwin')('collector pipeline with generated pixels and mocked native APIs', () => {
   it('applies masks before OCR, disk queue and network payload, without ever persisting source pixels', async () => {

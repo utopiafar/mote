@@ -6,11 +6,11 @@ import { Check, Copy, Download, Link2, QrCode, RefreshCw, ShieldCheck, Unplug, X
 import { connectionServerUrl, type ConnectionInvitation, type ServerConfiguration } from '@mote/shared';
 import { type Api, type Device, ago, dateTime, errorMessage } from './api';
 
-type Credential = {id:string;label:string;scope:'collector'|'mcp-read'|'mcp-write';createdAt:string;revokedAt?:string;deviceId?:string;deviceName?:string;platform?:string;serverUrl:string;tokenHint:string};
+type Credential = {id:string;label:string;scope:'owner'|'collector'|'mcp-read'|'mcp-write';createdAt:string;revokedAt?:string;expiresAt?:string;deviceId?:string;deviceName?:string;platform?:string;serverUrl:string;tokenHint:string};
 type Inventory = {items:Credential[];mcp:{enabled:boolean;writeEnabled:boolean;writeSourceIds:string[]}};
 type InvitationResponse = {invitation:ConnectionInvitation;uri:string};
 type McpResponse = {credential:Credential;config:{mcpServers:Record<string,{type:string;url:string;headers:{Authorization:string}}>}};
-const scopes = {'collector':moteText("采集与自身来源"),'mcp-read':moteText("MCP · 只读资料"),'mcp-write':moteText("MCP · 指定来源写入")};
+const scopes = {'owner':moteText("完整客户端权限"),'collector':moteText("完整客户端权限"),'mcp-read':moteText("MCP · 只读资料"),'mcp-write':moteText("MCP · 指定来源写入")};
 
 function downloadFile(name:string, content:Blob) {
   const url=URL.createObjectURL(content),anchor=document.createElement('a');
@@ -88,9 +88,9 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
     await refresh(signal);
   });}
   const loopback=(()=>{try{return ['localhost','127.0.0.1','[::1]'].includes(new URL(endpoint).hostname);}catch{return false;}})();
-  const activeCount=inventory?.items.filter(item=>!item.revokedAt).length??0;
+  const activeCount=inventory?.items.filter(item=>!item.revokedAt&&(!item.expiresAt||Date.parse(item.expiresAt)>Date.now())).length??0;
   const knownDevices=[...new Map([
-    ...(inventory?.items.filter(item=>item.scope==='collector'&&item.deviceId).map(item=>[item.deviceId!,{deviceId:item.deviceId!,deviceName:item.deviceName||item.label}] as const)??[]),
+    ...(inventory?.items.filter(item=>['owner','collector'].includes(item.scope)&&item.deviceId).map(item=>[item.deviceId!,{deviceId:item.deviceId!,deviceName:item.deviceName||item.label}] as const)??[]),
     ...devices.map(device=>[device.deviceId,device] as const),
   ]).values()];
   return <section className="panel connections" aria-labelledby="connections-title">
@@ -105,9 +105,9 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
     {loopback&&<p className="connection-warning">{moteText("当前是本机地址，手机扫码后会指向手机自己。跨设备连接请先填入可访问的 HTTPS 域名；本机地址可用于同一台电脑或明确配置了端口转发的开发环境。")}</p>}
     <nav className="segmented-nav connection-mode" aria-label={moteText("连接类型")}><button className={method==='device'?'active':''} onClick={()=>setMethod('device')}>{moteText("连接设备")}</button><button className={method==='chatbot'?'active':''} onClick={()=>setMethod('chatbot')}>{moteText("连接 Chatbot")}</button></nav><div className="connection-methods">
       <div className="connection-method" hidden={method!=='device'}><h3><QrCode size={18}/>{moteText("手机、Mac 与其他采集端")}</h3>
-        <p>{moteText("每份邀请仅能使用一次，10 分钟后失效。连接后得到独立采集凭据，不包含中央管理令牌。")}</p>
+        <p>{moteText("每份邀请仅能使用一次，10 分钟后失效。连接后得到独立客户端凭据，拥有与节点令牌相同的完整权限。")}</p>
         <label>{moteText("设备身份")}<select aria-label={moteText("邀请设备身份")} value={deviceId} disabled={!!busy} onChange={event=>setDeviceId(event.target.value)}><option value="">{moteText("首次连接的新设备")}</option>{knownDevices.map(device=><option key={device.deviceId} value={device.deviceId}>{device.deviceName} · {device.deviceId}</option>)}</select></label>
-        <small>{moteText("从旧版手填令牌迁移或重新配对，请选择原设备以保留身份。成功配对后会替换该设备之前的采集凭据。")}</small>
+        <small>{moteText("从旧版手填令牌迁移或重新配对，请选择原设备以保留身份。成功配对后会替换该设备之前的客户端凭据。")}</small>
         <button className="button primary" disabled={!!busy||!label.trim()} onClick={createInvitation}><QrCode size={16}/>{busy==='invite'?moteText("正在生成…"):invite?moteText("重新生成二维码"):moteText("生成设备二维码")}</button>
       </div>
       <div className="connection-method" hidden={method!=='chatbot'}><h3><ShieldCheck size={18}/>{moteText("连接其他 Chatbot · MCP")}</h3>
@@ -126,6 +126,6 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
     </div>}
     {mcp&&<div className="connection-mcp" aria-label={moteText("MCP 连接配置")}><h3>{moteText("保存此 MCP 配置")}</h3><p>{moteText("专用凭据仅在此次生成时显示。离开页面后仍有效；丢失时可以撤销并重新生成。")}</p><textarea readOnly aria-label="MCP JSON" value={JSON.stringify(mcp.config,null,2)} spellCheck={false}/><div className="connection-actions"><button className="button" onClick={()=>void copy(JSON.stringify(mcp.config,null,2))}><Copy size={15}/>{moteText("复制 MCP JSON")}</button><button className="button" onClick={()=>downloadFile('mote-mcp.json',new Blob([JSON.stringify(mcp.config,null,2)],{type:'application/json'}))}><Download size={15}/>{moteText("下载 MCP JSON")}</button><button className="button subtle" onClick={()=>setMcp(undefined)}>{moteText("已保存，隐藏凭据")}</button></div></div>}
     <div className="section-heading connection-list-heading"><div><h3>{moteText("已授权的连接")}</h3><p>{moteText("撤销立即阻止后续请求，已归档资料保持不变。")}</p></div><button className="button subtle" disabled={!!busy} onClick={()=>void action('refresh',refresh)}><RefreshCw size={15}/>{moteText("刷新连接")}</button></div>
-    {!inventory?inventoryResource.loading?<p>{moteText("正在读取连接…")}</p>:null:!inventory.items.length?<p className="fine-print">{moteText("还没有独立连接。旧版手填中央令牌的设备仍然可用；迁移后会显示在这里。")}</p>:<ul className="connection-list">{inventory.items.map(item=><li key={item.id}><div><strong>{item.label}</strong><span className={`badge ${item.revokedAt?'muted':'green'}`}>{item.revokedAt?moteText("已撤销"):scopes[item.scope]}</span><p>{item.deviceName||moteText("外部 Chatbot")}{item.platform?` · ${item.platform}`:''}{' '}{moteText("· 创建于")}{' '}{dateTime(item.createdAt)}</p><code>{item.tokenHint} {item.deviceId?`· ${item.deviceId}`:''}</code>{item.revokedAt&&<small>{moteText("撤销于")}{' '}{ago(item.revokedAt)}</small>}</div>{!item.revokedAt&&(revoking===item.id?<div className="connection-revoke"><span>{moteText("停止此连接的后续同步？")}</span><button className="button danger" disabled={!!busy} onClick={()=>revoke(item.id)}>{moteText("确认撤销")}</button><button className="button subtle" disabled={!!busy} onClick={()=>setRevoking('')}>{moteText("取消")}</button></div>:<button className="button subtle" disabled={!!busy} onClick={()=>setRevoking(item.id)}><Unplug size={15}/>{moteText("撤销")}</button>)}</li>)}</ul>}
+    {!inventory?inventoryResource.loading?<p>{moteText("正在读取连接…")}</p>:null:!inventory.items.length?<p className="fine-print">{moteText("还没有独立连接。旧版手填中央令牌的设备仍然可用；迁移后会显示在这里。")}</p>:<ul className="connection-list">{inventory.items.map(item=><li key={item.id}><div><strong>{item.label}</strong><span className={`badge ${item.revokedAt?'muted':'green'}`}>{item.revokedAt?moteText("已撤销"):scopes[item.scope]}</span><p>{item.deviceName||moteText("外部 Chatbot")}{item.platform?` · ${item.platform}`:''}{' '}{moteText("· 创建于")}{' '}{dateTime(item.createdAt)}</p><code>{item.tokenHint} {item.deviceId?`· ${item.deviceId}`:''}</code>{item.revokedAt&&<small>{moteText("撤销于")}{' '}{ago(item.revokedAt)}</small>}</div>{!item.revokedAt&&(revoking===item.id?<div className="connection-revoke"><span>{moteText("停止此连接的后续访问与同步？")}</span><button className="button danger" disabled={!!busy} onClick={()=>revoke(item.id)}>{moteText("确认撤销")}</button><button className="button subtle" disabled={!!busy} onClick={()=>setRevoking('')}>{moteText("取消")}</button></div>:<button className="button subtle" disabled={!!busy} onClick={()=>setRevoking(item.id)}><Unplug size={15}/>{moteText("撤销")}</button>)}</li>)}</ul>}
   </section>;
 }

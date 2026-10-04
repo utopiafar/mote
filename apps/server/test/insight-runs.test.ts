@@ -1,3 +1,4 @@
+import {readAgentCredential} from './login-fixture.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -57,7 +58,7 @@ test('owner HTTP cancellation aborts a review and fences late reports without re
  const gate=new Promise<void>(r=>release=r),started=new Promise<void>(r=>entered=r);
  const {app,store,insightRuns,connections}=await fixture(t,{configured:true,query:async input=>{calls++;signal=input.signal;entered();await gate;return {answer:'Generated late report',citations:[],trace:[],runId:randomUUID()};},close:async()=>release()});
  const id=randomUUID();assert.equal((await app.inject({method:'POST',url:'/api/insight-runs',headers,payload:{requestId:id}})).statusCode,202);await started;
- const {invitation}=connections.invite({serverUrl:'http://127.0.0.1:3456',label:'Generated collector'}),collector=await connections.redeem({code:invitation.code,deviceId:'fixture',deviceName:'Generated',platform:'macos'});
+ const {invitation}=connections.invite({serverUrl:'http://127.0.0.1:3456',label:'Generated collector'}),collector=await readAgentCredential(connections);
  for(const [authorization,code] of [['',401],['Bearer '+collector.token,403]] as const)assert.equal((await app.inject({method:'POST',url:`/api/insight-runs/${id}/cancel`,headers:{authorization}})).statusCode,code);
  const response=await app.inject({method:'POST',url:`/api/insight-runs/${id}/cancel`,headers});assert.equal(response.statusCode,200);assert.equal(response.json().status,'cancelled');assert.equal(signal?.aborted,true);
  release();await insightRuns.close();assert.equal(insightRuns.get(id).status,'cancelled');assert.equal(store.insights().length,0);assert.equal(calls,1);

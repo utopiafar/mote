@@ -121,7 +121,7 @@ object FileUpload {
         try {
             connection.instanceFollowRedirects = false; connection.requestMethod = method; connection.connectTimeout = 15000; connection.readTimeout = 30000
             connection.setRequestProperty("Accept-Language", MoteI18n.language())
-            connection.setRequestProperty("Authorization", "Bearer ${config.token}")
+            connection.setRequestProperty("Authorization", "Bearer ${config.connectionToken()}")
             if (IngressV2Protocol.uploadWrite(method, config.server.trimEnd('/') + path)) connection.setRequestProperty(IngressV2Protocol.HEADER, IngressV2Protocol.VERSION)
             if (body != null) { connection.doOutput = true; connection.setRequestProperty("Content-Type", if (binary) "application/octet-stream" else "application/json"); connection.setFixedLengthStreamingMode(body.size); connection.outputStream.use { out -> var offset = 0; while (offset < body.size) { val count = minOf(64 * 1024, body.size - offset); out.write(body, offset, count); offset += count; UploadMeter.add(count.toLong()) } } }
             status = connection.responseCode

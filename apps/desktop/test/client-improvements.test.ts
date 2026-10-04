@@ -49,12 +49,11 @@ it('keeps queued captures when a v2 batch route is unavailable', async () => {
   await expect(uploadCaptureBatch({...defaultConfig(), token:'fixture'}, [{event: capture}])).rejects.toMatchObject({httpStatus:404});
   expect(urls.map(url => new URL(url).pathname)).toEqual(['/api/captures/batch']);
 });
-it('keeps ask credentials scoped to one origin and blocks arbitrary endpoints', async () => {
+it('uses the canonical node login including legacy paired credentials and stops after logout or expiry', async () => {
   const client = new AskClient(), config = {...defaultConfig(), credentialScope:'collector' as const, token:'device'.repeat(8)};
   const fetcher = vi.fn(async () => Response.json({items:[]})); vi.stubGlobal('fetch', fetcher);
-  await expect(client.request(config, 'history')).rejects.toThrow('所有者'); expect(fetcher).not.toHaveBeenCalled();
-  await client.request(config, 'login', {token:'owner'.repeat(8)});
-  await client.request(config, 'history'); expect(fetcher.mock.calls[0][1].headers.Authorization).toBe('Bearer ' + 'owner'.repeat(8));
+  await client.request(config, 'history');expect(fetcher.mock.calls[0][1].headers.Authorization).toBe('Bearer '+config.token);
   await expect(client.request(config, 'run', {id:'../configuration'})).rejects.toThrow('Invalid ID');
-  await expect(client.request({...config, serverUrl:'https://other.example'}, 'history')).rejects.toThrow('所有者');
+  for(const closed of [{...config,authSignedOut:true},{...config,authExpiresAt:1},{...config,token:undefined}])await expect(client.request(closed,'history')).rejects.toThrow('登录');
+  expect(fetcher).toHaveBeenCalledTimes(1);
 });

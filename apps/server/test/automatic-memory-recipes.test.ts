@@ -1,3 +1,4 @@
+import {readAgentCredential} from './login-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -175,7 +176,7 @@ test('the commit boundary rejects revoked automatic permission even without loca
   assert.equal(f.jobs().find(j=>j.recipes![0].id===coding.id)!.status,'completed');
 });
 
-test('enablement and revocation commit atomically and collector credentials cannot change either',async t=>{
+test('enablement and revocation commit atomically and query agent credentials cannot change either',async t=>{
   const f=await fixture(t);f.source('diary');await f.configure([personal,coding]);await f.add('diary','first');
   const before=f.node.memoryRecipeSettings.view(),hook=f.node.memoryRecipeSettings.onChange;
   f.node.memoryRecipeSettings.onChange=()=>{hook?.();throw Error('Generated config failure');};
@@ -184,7 +185,7 @@ test('enablement and revocation commit atomically and collector credentials cann
   assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE revoked_at IS NOT NULL').get()!.n,0);
   f.node.memoryRecipeSettings.onChange=hook;
   const {invitation}=f.node.connections.invite({serverUrl:'http://127.0.0.1:3456',label:'Generated collector'});
-  const credential=await f.node.connections.redeem({code:invitation.code,deviceId:'generated-other-device',deviceName:'Generated',platform:'macos'});
+  const credential=await readAgentCredential(f.node.connections);
   for(const method of ['GET','PUT'] as const){const response=await f.node.app.inject({method,url:'/api/memory-recipe-settings',headers:{authorization:'Bearer '+credential.token},...(method==='PUT'?{payload:{recipes:[]}}:{})});assert.equal(response.statusCode,403);}
   f.node.store.logicalBytes();
   assert.ok(Number(f.node.store.db.prepare("SELECT bytes FROM storage_ledger WHERE name='memory_recipe_settings'").get()!.bytes)>0);

@@ -56,7 +56,7 @@ test('source view transport requires owner authorization and explicit immutable 
   assert.equal((await node.app.inject(url)).statusCode,401);assert.equal((await node.app.inject({url,headers})).statusCode,200);
   assert.equal((await node.app.inject({url:`/api/materials/${record.id}/source-view`,headers})).statusCode,400);
   const {invitation}=node.connections.invite({label:'Generated collector',serverUrl:'http://127.0.0.1',deviceId:'generated'});const collector=await node.connections.redeem({code:invitation.code,deviceId:'generated',deviceName:'Generated',platform:'android'});
-  assert.equal((await node.app.inject({url,headers:{authorization:'Bearer '+collector.token}})).statusCode,403);
+  assert.equal((await node.app.inject({url,headers:{authorization:'Bearer '+collector.token}})).statusCode,200);
 });
 test('imported authored messages retain distinct source times through organization and the owner reading view',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-source-time-view-')),token='generated-source-time-owner-token';

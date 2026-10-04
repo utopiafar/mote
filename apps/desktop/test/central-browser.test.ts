@@ -54,3 +54,9 @@ it('rejects invalid evidence input instead of silently opening the home page', a
   }
   expect(chrome).not.toHaveBeenCalled(); expect(fallback).not.toHaveBeenCalled();
 });
+it('hands off an expiring login code while preserving the requested evidence and keeping the bearer out of URLs',async()=>{
+ const chrome=vi.fn(),fallback=vi.fn();const ticket='x'.repeat(43);
+ await openCentralBrowser('https://central.example','ask','darwin',chrome,fallback,'capture:11111111-2222-4333-8444-555555555555',ticket);
+ const url=new URL(chrome.mock.calls[0][0]),params=new URLSearchParams(url.hash.split('?')[1]);
+ expect(params.get('loginTicket')).toBe(ticket);expect(params.get('evidence')).toBe('capture:11111111-2222-4333-8444-555555555555');expect(url.search).toBe('');expect(params.has('token')).toBe(false);
+});

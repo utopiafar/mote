@@ -76,14 +76,14 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         val registrationBody = source.registration(settings.deviceId)
                         slice.record(registrationBody.toString().toByteArray(Charsets.UTF_8).size.toLong())
                         SyncSchedule.requireConditions(applicationContext, config)
-                        val (code, registration) = HttpJson.post("${config.server}/api/sources", registrationBody, config.token)
+                        val (code, registration) = HttpJson.post("${config.server}/api/sources", registrationBody, config.connectionToken())
                         if (code !in 200..299 || registration?.optString("id") != source.id) { Operations.record(applicationContext, OperationKind.SOURCE_FAILED, Operations.httpReason(code), httpStatus = code); store.status(source.id, "http"); failed = true; continue }
                         if (!registration.optBoolean("enabled", true)) { store.status(source.id, "paused"); continue }
                         if (!stillSelected()) return Result.retry()
                         val patch = org.json.JSONObject().put("name", source.name).put("initialSync", source.initialSync).put("retention", source.retention)
                         slice.record(patch.toString().toByteArray(Charsets.UTF_8).size.toLong())
                         SyncSchedule.requireConditions(applicationContext, config)
-                        val (patchCode, updated) = HttpJson.request("PATCH", "${config.server}/api/sources/${source.id}", patch, config.token)
+                        val (patchCode, updated) = HttpJson.request("PATCH", "${config.server}/api/sources/${source.id}", patch, config.connectionToken())
                         if (patchCode !in 200..299 || updated?.optString("id") != source.id) { Operations.record(applicationContext, OperationKind.SOURCE_FAILED, Operations.httpReason(patchCode), httpStatus = patchCode); store.status(source.id, "http"); failed = true; continue }
                         store.registered(source.id, target)
                     }
@@ -100,12 +100,12 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         val body = store.next(source.id, target) ?: break
                         if (!slice.admit(body.toString().toByteArray(Charsets.UTF_8).size)) break
                         SyncSchedule.requireConditions(applicationContext, config)
-                        val (code, ack) = HttpJson.request("PUT", "${config.server}/api/sources/${source.id}/items", body, config.token)
+                        val (code, ack) = HttpJson.request("PUT", "${config.server}/api/sources/${source.id}/items", body, config.connectionToken())
                         if (code == 409 || code == 410) {
                             Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.HTTP, httpStatus = code)
                             val paused = code == 409 && runCatching {
                                 SyncSchedule.requireConditions(applicationContext, config)
-                                val (lookupCode, listing) = HttpJson.get("${config.server}/api/sources", config.token)
+                                val (lookupCode, listing) = HttpJson.get("${config.server}/api/sources", config.connectionToken())
                                 lookupCode == 200 && IngressV2Protocol.sourcePaused(source.id, listing)
                             }.getOrElse { if (it is SyncConditionsUnavailable) throw it else false }
                             store.status(source.id, if (paused) "paused" else "ack")
@@ -128,7 +128,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                     Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.HTTP, httpStatus = error.httpStatus)
                     val paused = error.httpStatus == 409 && runCatching {
                         SyncSchedule.requireConditions(applicationContext, config)
-                        val (lookupCode, listing) = HttpJson.get("${config.server}/api/sources", config.token)
+                        val (lookupCode, listing) = HttpJson.get("${config.server}/api/sources", config.connectionToken())
                         lookupCode == 200 && IngressV2Protocol.sourcePaused(source.id, listing)
                     }.getOrElse { if (it is SyncConditionsUnavailable) throw it else false }
                     store.status(source.id, if (paused) "paused" else "ack")
