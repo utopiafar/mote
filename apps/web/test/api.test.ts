@@ -123,3 +123,10 @@ test('API request throttling and provider throttling retain distinct localized m
  }
  assert.equal(unauthorized,0);
 });
+
+test('API exposes bounded retry delay from transport headers or structured errors',async t=>{
+ for(const [header,body,expected] of [['2',{},2000],[null,{retryAfterMs:250},250],['invalid',{retryAfterMs:-1},undefined]] as const){
+  const mocked=t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({error:'api_rate_limited',...body}),{status:429,headers:header?{'Retry-After':header}:{}}));
+  await assert.rejects(createApi({token:'fixture'}).request('/api/imports'),error=>{assert.ok(error instanceof ApiError);assert.equal(error.retryAfterMs,expected);return true;});mocked.mock.restore();
+ }
+});

@@ -45,6 +45,7 @@ import { pageLabels,readPage,routes,type Page } from './navigation';
 import { canonicalDestination,readWorkspaceRoute,workspaceHash } from './workspace-route';
 import { primaryDestination,WorkspaceNavigation } from './WorkspaceNavigation';
 import { readResource,resources } from './resource-cache';
+import { importQueue } from './import-queue';
 import { clearSession,persistSession,readPeriod,savePeriod,type Period,readSessionLifetime,readStoredSession,saveSessionLifetime,type SessionLifetime } from "./session";
 import { CentralStatusPill,ErrorNotice,EvidenceDialog,LoginDialog,Spinner } from './shell-components';
 import "./styles.css";
@@ -196,6 +197,17 @@ function App() {
     setRevision((value) => value + 1);
     setTimelineRevision((value) => value + 1);
   }, [api]);
+  useEffect(() => {
+    if (!api) return;
+    const queue=importQueue(api);
+    queue.start();
+    let completed=queue.getSnapshot().completedVersion;
+    const unsubscribe=queue.subscribe(()=>{
+      const next=queue.getSnapshot().completedVersion;
+      if(next!==completed){completed=next;refresh();}
+    });
+    return ()=>{unsubscribe();queue.close();};
+  }, [api,refresh]);
   useEffect(() => {
     if (!api || !verified) return;
     let active = true;

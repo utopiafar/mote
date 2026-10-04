@@ -2,6 +2,9 @@ import {moteText} from '@mote/shared/i18n';
 /** Display follows protocol codes, never provider text or semantic matching. The
  * server's allowedActions remains the authority for recovery controls. */
 const messages:Record<string,string>={
+ import_directory_missing:'中央服务器上的目录不存在或文件已移动，请检查路径后重新提交。',
+ import_directory_unreadable:'中央服务器无法读取该目录，请检查访问权限后重新提交。',
+ import_directory_required:'该路径不是目录，请填写中央服务器上可读取的目录。',
  ocr_worker_unavailable:'本地 OCR 服务正在准备，恢复后将自动继续。',
  model_profile_missing:'所选模型配置不存在，请重新选择。',
  model_profile_read_only:'部署配置为只读，请复制为新预设后编辑。',

@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json && cp src/import-parser.mjs dist/import-parser.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test --test-concurrency=4 test/*.test.ts"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.4",

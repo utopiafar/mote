@@ -142,6 +142,7 @@ export class ApiError extends Error {
     public status: number,
     public requestId?: string,
     public code?: string,
+    public retryAfterMs?: number,
   ) {
     super(message);
   }
@@ -187,6 +188,9 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
             : moteText("请求未完成（{0}）", response.status);
       let requestId = response.headers.get("X-Request-Id") ?? undefined;
       let code: string | undefined;
+      const retryAfter=response.headers.get('Retry-After');
+      const retrySeconds=retryAfter&&/^\d+$/.test(retryAfter)?Number(retryAfter):undefined;
+      let retryAfterMs=retrySeconds!==undefined&&Number.isSafeInteger(retrySeconds)&&retrySeconds>=0?retrySeconds*1000:undefined;
       try {
         const value = await response.json();
         const candidate=value.reason??value.code??(typeof value.error==='object'?value.error?.code:value.error);
@@ -194,11 +198,12 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
         if (typeof value.message === "string") message = value.message;
         else if (typeof value.error === "string") message = value.error;
         if (!requestId && typeof value.requestId === "string") requestId = value.requestId;
+        if(retryAfterMs===undefined&&Number.isSafeInteger(value.retryAfterMs)&&value.retryAfterMs>=0)retryAfterMs=value.retryAfterMs;
       } catch {
         /* response might not be JSON */
       }
       if (!requestId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) requestId = undefined;
-      throw new ApiError(message, response.status, requestId, code);
+      throw new ApiError(message, response.status, requestId, code, retryAfterMs);
     }
     return response;
   }
