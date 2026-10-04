@@ -2,8 +2,14 @@
 
 Android previously embedded the central web app through `CentralWebSession` in
 `CentralActivity` and `AskActivity`. The four entry points exposed the web app's
-remaining management pages. Those Activities now use Kotlin and Android Views;
-the WebView wrapper and its session/draft protocol have been removed.
+remaining management pages. Central content now uses Kotlin and Android Views; the WebView wrapper and its
+session/draft protocol have been removed. `CentralContent` is shared by the
+central deep-link Activity and MainActivity's Ask tab. Tapping Ask swaps content
+inside the existing home window and keeps the same bottom navigation, without
+launching another Activity or showing a root-level Back arrow. Switching tabs
+retains the conversation and unsent draft, pauses answer polling while hidden,
+and resumes it on return. Back from Ask returns to Today after any central detail
+history is exhausted; rotation restores the selected tab and encrypted draft.
 
 The native navigation covers all 26 central pages:
 
