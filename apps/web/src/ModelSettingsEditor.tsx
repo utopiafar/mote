@@ -3,7 +3,7 @@ import {useUnsavedChanges} from './unsaved';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import React,{useEffect, useRef, useState} from 'react';
 import {Check, ExternalLink, KeyRound, LoaderCircle, RotateCcw, Save, SlidersHorizontal, TestTube2} from 'lucide-react';
-import {DEFAULT_MODEL_MAX_TOKENS, MODEL_OUTPUT_BUDGETS, MODEL_PROVIDER_PRESETS, MODEL_REASONING_EFFORTS, type ModelSettingsView, type ModelTestResult} from '@mote/shared/models';
+import {DEFAULT_MODEL_MAX_TOKENS, MODEL_OUTPUT_BUDGETS, MODEL_PROVIDER_PRESETS, MODEL_REASONING_EFFORTS, normalizeCodexServiceTier, type ModelSettingsView, type ModelTestResult} from '@mote/shared/models';
 import {ApiError, errorMessage, type Api} from './api';
 import {createModelDraft, modelDraftChanged, modelSettingsRequest, retainedCredentialsNeedConfirmation, type CredentialAction, type ModelSettingsDraft} from './model-settings-form';
 import {codexReasoningChoices,type CatalogModel} from './model-reasoning';
@@ -93,7 +93,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
   async function run(kind: 'save' | 'test' | 'restore') {
     if (!active || busy) return;
     const selectedModel=catalog.find(model=>model.id===active.draft.model);
-    if(kind!=='restore'&&active.draft.protocol==='codex-app-server'&&active.draft.serviceTier==='fast'&&selectedModel?.serviceTiers&&!selectedModel.serviceTiers.includes('fast')){
+    if(kind!=='restore'&&active.draft.protocol==='codex-app-server'&&active.draft.serviceTier==='fast'&&selectedModel?.serviceTiers&&!selectedModel.serviceTiers.some(tier=>normalizeCodexServiceTier(tier)==='fast')){
       setError(moteText("所选 Codex 模型不支持 Fast 模式，请选择 Standard 或更换模型。"));return;
     }
     const choices=codexReasoningChoices(selectedModel);
@@ -133,7 +133,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
   }
   const draft = active?.draft, saved = active?.latest.settings;
   const selectedCatalogModel=draft?.protocol==='codex-app-server'?catalog.find(model=>model.id===draft.model):undefined;
-  const fastSupported=!selectedCatalogModel?.serviceTiers||selectedCatalogModel.serviceTiers.includes('fast');
+  const fastSupported=!selectedCatalogModel?.serviceTiers||selectedCatalogModel.serviceTiers.some(tier=>normalizeCodexServiceTier(tier)==='fast');
   const codexChoices=codexReasoningChoices(selectedCatalogModel);
   const codexEffortSupported=draft?.reasoningEffort==='auto'||codexChoices.options.some(option=>option.value===draft?.reasoningEffort);
   const preset = MODEL_PROVIDER_PRESETS.find(p => p.id === draft?.provider);
