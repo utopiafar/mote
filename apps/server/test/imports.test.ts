@@ -304,3 +304,11 @@ test('cancel before prepare remains stopped until explicit retry, including dire
  assert.equal(calls,0);assert.equal(files.read(job.files[0].id).toString(),'Generated original');
  await imports.retry(job.id);assert.equal(calls,1);
 });
+
+test('missing and non-directory sources return actionable codes before creating an import',async t=>{
+ const {imports}=fixture(t),directory=mkdtempSync(join(tmpdir(),'mote-directory-errors-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
+ await assert.rejects(imports.create({directory:join(directory,'missing')}),{statusCode:422,code:'import_directory_missing'});
+ const path=join(directory,'generated.txt');writeFileSync(path,'Generated original');
+ await assert.rejects(imports.create({directory:path}),{statusCode:422,code:'import_directory_required'});
+ assert.equal(imports.list().length,0);
+});
