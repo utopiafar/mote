@@ -6063,5 +6063,9 @@ export const english: Readonly<Record<string, string>> = {
   "从旧版手填令牌迁移或重新配对，请选择原设备以保留身份。成功配对后会替换该设备之前的客户端凭据。": "Select the existing device to preserve its identity when migrating a manually entered token or pairing again. Successful pairing replaces its previous client credentials.",
   "停止此连接的后续访问与同步？": "Stop future access and sync for this connection?",
   "此凭据不具备客户端权限，请升级中央节点或重新登录。": "This credential does not grant client access. Upgrade the central node or sign in again.",
-  "本机处理中 {0} 个文件；处理等待不计入待发": "Processing {0} files on this device; processing waits are separate from uploads"
+  "本机处理中 {0} 个文件；处理等待不计入待发": "Processing {0} files on this device; processing waits are separate from uploads",
+  "选择文件，或将文件和文件夹拖到这里": "Choose files, or drop files and folders here",
+  "文件夹层级或条目数超过上限，请拆分后导入。": "The folder exceeds the depth or entry limit. Split it before importing.",
+  "无法读取文件夹中的条目，请重新选择文件夹。": "A folder entry could not be read. Select the folder again.",
+  "所选文件夹中没有可上传的文件。": "The selected folder contains no files to upload."
 };

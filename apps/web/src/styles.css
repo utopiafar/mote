@@ -4051,3 +4051,5 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .import-upload-detail .import-queue-actions{margin-top:18px}.import-upload-detail>.muted{font-size:12px;line-height:1.7;margin:22px 0 0}.import-source-path{overflow-wrap:anywhere;font-size:13px;line-height:1.8;margin-top:22px}
 @media(max-width:760px){.import-queue-list .workspace-list-heading,.import-queue-list .import-queue-hint,.import-queue-list .import-history-heading{width:100%}.import-queue-item{width:calc(50% - 4px);margin:0;min-width:0}.import-queue-item .workspace-select{width:100%}.import-queue-list{max-height:340px}.import-history-heading{margin:10px 0 4px}}
 @media(max-width:420px){.import-queue-item,.import-queue-list>.workspace-select{width:100%}}
+
+.import-folder-picker{position:relative;cursor:pointer;margin-top:12px}.import-folder-picker input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}.import-folder-picker:has(input:disabled){opacity:.5;cursor:wait}

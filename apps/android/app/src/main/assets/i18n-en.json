@@ -1,4 +1,7 @@
 {
+  "未提供文字识别状态，无法判断是否已处理。": "OCR status was not provided; processing completion is unknown.",
+  "高级：遮挡 JSON": "Advanced: mask JSON",
+  "本机数据格式已退役，请清除应用存储后重新设置。": "This local data format is retired. Clear app storage and set up again.",
   "整理所选记忆": "Consolidate selected memory",
   "从这条记忆开始整理": "Consolidate from this memory",
   "从当前精选记忆开始，模型会按需检索你仍可读取的相关资料和原文；结果可能为空，也可能产生经独立审核的新记忆。": "Starting from this selected memory, the model may retrieve related records and originals you can still access. It may produce no new memory or a new memory after independent review.",
@@ -6060,7 +6063,8 @@
   "停止此连接的后续访问与同步？": "Stop future access and sync for this connection?",
   "此凭据不具备客户端权限，请升级中央节点或重新登录。": "This credential does not grant client access. Upgrade the central node or sign in again.",
   "本机处理中 {0} 个文件；处理等待不计入待发": "Processing {0} files on this device; processing waits are separate from uploads",
-  "本机数据格式已退役，请清除应用存储后重新设置。": "This local data format is retired. Clear app storage and set up again.",
-  "高级：遮挡 JSON": "Advanced: mask JSON",
-  "未提供文字识别状态，无法判断是否已处理。": "OCR status was not provided; processing completion is unknown."
+  "选择文件，或将文件和文件夹拖到这里": "Choose files, or drop files and folders here",
+  "文件夹层级或条目数超过上限，请拆分后导入。": "The folder exceeds the depth or entry limit. Split it before importing.",
+  "无法读取文件夹中的条目，请重新选择文件夹。": "A folder entry could not be read. Select the folder again.",
+  "所选文件夹中没有可上传的文件。": "The selected folder contains no files to upload."
 }
