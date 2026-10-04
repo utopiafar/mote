@@ -79,6 +79,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
       const protocol=patch.protocol??previous.draft.protocol;
       const effort=patch.reasoningEffort??previous.draft.reasoningEffort;
       return {...previous, draft: {...previous.draft, ...(destinationChanged ? {allowCredentialReuse: false} : {}), ...patch,
+        ...(protocol!=='codex-app-server'?{serviceTier:'default'}:{}),
         ...(protocol!=='codex-app-server'&&['minimal','medium','xhigh','ultra'].includes(effort)?{reasoningEffort:'auto'}:{})}};
     });
     setError(''); setNotice(''); setProbe(undefined); setRestoreReview(false);
@@ -92,6 +93,9 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
   async function run(kind: 'save' | 'test' | 'restore') {
     if (!active || busy) return;
     const selectedModel=catalog.find(model=>model.id===active.draft.model);
+    if(kind!=='restore'&&active.draft.protocol==='codex-app-server'&&active.draft.serviceTier==='fast'&&selectedModel?.serviceTiers&&!selectedModel.serviceTiers.includes('fast')){
+      setError(moteText("所选 Codex 模型不支持 Fast 模式，请选择 Standard 或更换模型。"));return;
+    }
     const choices=codexReasoningChoices(selectedModel);
     if(kind!=='restore'&&active.draft.protocol==='codex-app-server'&&choices.known&&active.draft.reasoningEffort!=='auto'&&!choices.options.some(option=>option.value===active.draft.reasoningEffort)){
       setError(moteText("当前推理强度不受所选 Codex 模型支持，请重新选择。"));return;
@@ -129,6 +133,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
   }
   const draft = active?.draft, saved = active?.latest.settings;
   const selectedCatalogModel=draft?.protocol==='codex-app-server'?catalog.find(model=>model.id===draft.model):undefined;
+  const fastSupported=!selectedCatalogModel?.serviceTiers||selectedCatalogModel.serviceTiers.includes('fast');
   const codexChoices=codexReasoningChoices(selectedCatalogModel);
   const codexEffortSupported=draft?.reasoningEffort==='auto'||codexChoices.options.some(option=>option.value===draft?.reasoningEffort);
   const preset = MODEL_PROVIDER_PRESETS.find(p => p.id === draft?.provider);
@@ -159,6 +164,9 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
             <div className="preference-grid">{credentialChoice('apiKeyAction', moteText("API key 操作"), active.snapshot.settings.apiKeyConfigured)}{draft.apiKeyAction === 'replace' && <label className="preference-field">{moteText("新的 API key")}<input aria-label={moteText("新的 API key")} type="password" autoComplete="new-password" spellCheck={false} value={draft.apiKey} onChange={e => change({apiKey: e.target.value})} placeholder={moteText("输入此服务的 API key")}/><small>{moteText("只保留在当前页面内存，保存后清空输入。")}</small></label>}</div>
           </div>}
           <div className="preference-grid">
+            {draft.protocol==='codex-app-server'&&<label className="preference-field">{moteText("速度模式")}<select aria-label={moteText("速度模式")} value={draft.serviceTier} onChange={e=>change({serviceTier:e.target.value as ModelSettingsDraft['serviceTier']})}>
+              <option value="default">Standard</option><option value="fast" disabled={!fastSupported}>Fast{!fastSupported?` · ${moteText("当前模型不支持")}`:''}</option>
+            </select><small>{moteText("Fast 加快受支持模型的响应，保持所选推理强度，但会增加额度或费用消耗。可用性取决于账户、模型和工作区设置。")}{!selectedCatalogModel?.serviceTiers&&' '+moteText("尚未取得速度档位，可使用测试连接验证。")}</small></label>}
             <label className="preference-field">{moteText("推理强度")}<select aria-label={moteText("推理强度")} value={draft.reasoningEffort} onChange={e => change({reasoningEffort: e.target.value as ModelSettingsDraft['reasoningEffort']})}>
               {draft.protocol==='codex-app-server'&&codexChoices.known?<>
                 <option value="auto">{reasoningNames.auto}{selectedCatalogModel?.defaultReasoningEffort?` · ${moteText("目录建议默认")}: ${selectedCatalogModel.defaultReasoningEffort}`:''}</option>
@@ -195,6 +203,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
       {([
         [moteText("服务"), MODEL_PROVIDER_PRESETS.find(p => p.id === saved.provider)?.name || saved.provider], [moteText("模型"), saved.model || moteText("未设置（问答与模型回顾关闭）")],
         [moteText("协议"), protocolNames[saved.protocol]], [moteText("服务地址"), saved.baseUrl], [moteText("推理强度"), reasoningNames[saved.reasoningEffort]],
+        ...(saved.protocol==='codex-app-server'?[[moteText("速度模式"),saved.serviceTier==='fast'?'Fast':'Standard']]:[]),
         [moteText("输出上限 / 超时"), saved.protocol==='codex-app-server'?moteText("Codex 管理输出；Agent 总运行超时 {0}", saved.agentTimeoutMs===null?moteText("未设置"):saved.agentTimeoutMs/1000+' 秒'):moteText("{0}；单次模型请求 {1} 秒；Agent 总运行 {2} 秒", saved.maxTokens+' tokens', saved.modelRequestTimeoutMs===null?moteText("未设置"):saved.modelRequestTimeoutMs/1000, saved.agentTimeoutMs===null?moteText("未设置"):saved.agentTimeoutMs/1000)],
         ['API key', saved.apiKeyConfigured ? moteText("已配置") : moteText("未配置")], [moteText("自定义请求头"), saved.headersConfigured ? moteText("已配置") : moteText("未配置")], [moteText("高级请求参数"), saved.extraBodyConfigured ? moteText("已配置") : moteText("未配置")],
       ] as const).map(([label, value]) => <div className="effective-field" key={label}><div><strong>{label}</strong></div><div>{value}</div></div>)}

@@ -1,6 +1,6 @@
 import {MODEL_REASONING_EFFORTS,type ModelReasoningEffort} from '@mote/shared/models';
 
-export interface CatalogModel {id:string;name:string;reasoningEfforts?:string[];defaultReasoningEffort?:string}
+export interface CatalogModel {id:string;name:string;reasoningEfforts?:string[];defaultReasoningEffort?:string;serviceTiers?:string[]}
 
 /** Codex names `none` on the wire; older Mote settings store the same request as `off`. */
 export function codexEffortValue(effort:string):ModelReasoningEffort|undefined {

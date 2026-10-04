@@ -117,7 +117,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
                     val choices = enums[key]
                     if (choices != null) {
                         ui.text(caption, 13f, target)
-                        val spinner = Spinner(ui).apply { adapter = ArrayAdapter(ui, android.R.layout.simple_spinner_dropdown_item, choices)
+                        val spinner = Spinner(ui).apply { adapter = ArrayAdapter(ui, android.R.layout.simple_spinner_dropdown_item, if (key == "serviceTier") choices.map { if (it == "fast") "Fast" else "Standard" } else choices)
                             setSelection(choices.indexOf(raw.toString()).coerceAtLeast(0)) }; target.addView(spinner)
                         reads[key] = { choices[spinner.selectedItemPosition] }; continue
                     }
@@ -138,7 +138,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
         }
         return { JSONObject().apply { reads.forEach { (key, read) ->
             val next = read(); if (next !== KeepValue && (key !in secrets || next.toString().isNotBlank())) put(key, next)
-        } } }
+        }; if (has("protocol") && optString("protocol") != "codex-app-server") remove("serviceTier") } }
     }
     private fun edit(title: String, path: String, value: JSONObject, method: String = "PUT", completed: (JSONObject) -> Unit = { screens.refresh() }) {
         body.removeAllViews(); screens.setBack { screens.refresh() }; ui.text(title, 23f)
@@ -208,7 +208,9 @@ internal class CentralAdmin(private val screens: CentralScreens) {
             }
         }
     }
-    private fun cleanSettings(value: JSONObject) = pick(value, "provider", "protocol", "baseUrl", "model", "reasoningEffort", "maxTokens", "modelRequestTimeoutMs", "agentTimeoutMs", "allowUnauthenticatedLocal")
+    private fun cleanSettings(value: JSONObject) = pick(value, "provider", "protocol", "baseUrl", "model", "reasoningEffort", "serviceTier", "maxTokens", "modelRequestTimeoutMs", "agentTimeoutMs", "allowUnauthenticatedLocal").apply {
+        if (optString("protocol") == "codex-app-server" && !has("serviceTier")) put("serviceTier", "default")
+    }
     private fun modelDefaults(value: JSONObject) {
         body.removeAllViews(); screens.setBack { models() }
         val profiles = value.getJSONArray("profiles"); val ids = (0 until profiles.length()).map { profiles.getJSONObject(it).getString("id") }
@@ -608,11 +610,13 @@ internal class CentralAdmin(private val screens: CentralScreens) {
         private val secrets = setOf("apiKey", "token", "secret", "clientSecret", "localModelApiKey", "localWorkerApiKey")
         private val enums = mapOf("protocol" to listOf("deepseek", "openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai", "codex-app-server"),
             "reasoningEffort" to listOf("auto", "off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
+            "serviceTier" to listOf("default", "fast"),
             "level" to listOf("debug", "info", "warn", "error", "silent"), "currency" to listOf("USD", "CNY"), "access" to listOf("read", "write"), "brand" to listOf("feishu", "lark"))
         fun pick(value: JSONObject, vararg keys: String) = JSONObject().apply { keys.forEach { key -> if (value.has(key)) put(key, value.get(key)) } }
         private val labels = mapOf(
             "title" to "标题", "name" to "名称", "description" to "描述", "enabled" to "启用", "status" to "状态", "state" to "状态",
             "provider" to "服务商", "protocol" to "协议", "baseUrl" to "服务地址", "model" to "模型", "reasoningEffort" to "推理强度",
+            "serviceTier" to "速度模式",
             "maxTokens" to "最大生成 token", "apiKey" to "API Key（留空保留）", "modelRequestTimeoutMs" to "模型请求超时（毫秒）",
             "agentTimeoutMs" to "Agent 超时（毫秒）", "interactiveConcurrency" to "交互并发", "agentConcurrency" to "Agent 并发",
             "llmConcurrency" to "模型并发", "memoryConcurrency" to "记忆并发", "enabled" to "启用", "debug" to "调试日志",

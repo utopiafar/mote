@@ -3,7 +3,7 @@ import {spawn} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import type {ModelSettings} from '@mote/shared/models';
 import {StoreError} from './store.js';
-export interface CatalogModel {id:string;name:string;reasoningEfforts?:string[];defaultReasoningEffort?:string}
+export interface CatalogModel {id:string;name:string;reasoningEfforts?:string[];defaultReasoningEffort?:string;serviceTiers?:string[]}
 export class ModelCatalogError extends StoreError {constructor(){super(moteText("无法读取模型列表。请检查节点上的服务、凭据及目录接口；仍可手动填写模型 ID。"),502);}}
 const failure=()=>new ModelCatalogError();
 
@@ -44,6 +44,10 @@ export async function codexModels(launch:typeof spawn=spawn,options:{executable?
                   return typeof effort==='string'&&/^[a-z]{2,32}$/.test(effort)?[effort]:[];
                 }))]:undefined;
               items.push({id:model.model,name:typeof model.displayName==='string'?model.displayName.slice(0,512):model.model,
+                ...(Array.isArray(model.serviceTiers)?{serviceTiers:[...new Set<string>(model.serviceTiers.flatMap((entry:unknown)=>{
+                  const id=entry&&typeof entry==='object'?(entry as {id?:unknown}).id:undefined;
+                  return typeof id==='string'&&/^[a-z]{2,32}$/.test(id)?[id]:[];
+                }))]}:Array.isArray(model.additionalSpeedTiers)?{serviceTiers:['default',...model.additionalSpeedTiers.filter((id:unknown)=>typeof id==='string'&&/^[a-z]{2,32}$/.test(id))]}:{}),
                 ...(reasoningEfforts?{reasoningEfforts}:{}),
                 ...(typeof model.defaultReasoningEffort==='string'&&/^[a-z]{2,32}$/.test(model.defaultReasoningEffort)?{defaultReasoningEffort:model.defaultReasoningEffort}:{})});
             }

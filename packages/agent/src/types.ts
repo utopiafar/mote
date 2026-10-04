@@ -1,7 +1,7 @@
 import {ProviderFailure,type ProviderFailureDetails} from '@mote/shared';
 import type {CaptureInput,SourceDocument,fileEvidenceSchema} from '@mote/shared';
 import type {MoteSkillId} from './skills.js';
-import type {ModelProtocol,ModelReasoningEffort} from '@mote/shared/models';
+import type {ModelProtocol,ModelReasoningEffort,CodexServiceTier} from '@mote/shared/models';
 export interface ContextRecord {
   id: string;
   capturedAt: string;
@@ -94,6 +94,7 @@ export interface AgentOptions {
   maxToolCalls?: number;
   maxTokens?: number;
   reasoningEffort?: ModelReasoningEffort;
+  serviceTier?: CodexServiceTier;
 }
 
 export interface QueryInput {
