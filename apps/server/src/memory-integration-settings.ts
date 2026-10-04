@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {Store,StoreError,sha256} from './store.js';
+import {Store,StoreError} from './store.js';
 import type {MemoryStrategies} from './memory-strategies.js';
 import {memoryIntegrationBindingSchema,memoryStrategyRefSchema} from './memory-strategy-contract.js';
 import {defaultMemoryIntegrationRecipe} from './memory-integration-policy.js';
@@ -20,7 +20,7 @@ export class MemoryIntegrationSettings {
   private save(value:MemoryIntegrationSelection){const json=JSON.stringify(value);this.store.reserveMetadata(Buffer.byteLength(json)+128);this.store.db.prepare('INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(settingKey,json);}
   selection(){return memoryIntegrationSelectionSchema.parse(JSON.parse(String(this.store.db.prepare('SELECT value FROM settings WHERE key=?').get(settingKey)!.value)));}
   view(){const selection=this.selection();let available=false;if(selection.binding)try{this.strategies.resolvePinnedIntegration(selection.binding);available=true;}catch{}return {...selection,available};}
-  current(selection:MemoryIntegrationSelection){return sha256(JSON.stringify(this.selection()))===sha256(JSON.stringify(selection));}
+  current(selection:MemoryIntegrationSelection){return JSON.stringify(this.selection())===JSON.stringify(selection);}
   configure(raw:unknown){
     const input=z.object({recipe:memoryStrategyRefSchema.nullable()}).strict().parse(raw);
     let binding:MemoryIntegrationSelection['binding'];try{binding=input.recipe?this.strategies.resolveIntegration(input.recipe).binding:null;}catch{throw new StoreError('Memory integration recipe is unavailable',409);}
