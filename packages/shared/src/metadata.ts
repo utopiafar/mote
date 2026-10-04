@@ -48,7 +48,6 @@ export const deviceEventSchema = z.object({
 /** Processing state is part of the record, independent of optional device telemetry. */
 export const ocrSchema = z.object({
   status: z.enum(['pending', 'completed', 'disabled', 'failed']),
-  reason: z.literal('charging').optional(),
   updatedAt: timestamp.optional(),
 }).strict();
 export type OcrResult = z.infer<typeof ocrSchema>;
@@ -56,8 +55,6 @@ export type OcrState = Omit<OcrResult, 'status'> & { status: OcrResult['status']
 export function captureOcrState(record: {source: string; ocr?: OcrResult; ocrText?: string; metadata?: RecordMetadata}): OcrState {
   if (record.source !== 'screen') return {status: 'not_applicable'};
   if (record.ocr) return record.ocr;
-  if (record.ocrText?.trim()) return {status: 'completed'};
-  if (record.metadata?.capture?.ocrEnabled === false) return {status: 'disabled'};
   return {status: 'unknown'};
 }
 

@@ -42,7 +42,7 @@ try {
   const status=await measured('mote_status',{});assert.equal(status.archive.captures,2);
   const reader={
     search:async(args:any)=>{const page=await measured('mote_search',{...args,limit:args.limit??10});return page.items.map(asRecord);},
-    timeline:async(args:any)=>{const page=await measured('mote_search',{...args,limit:args.limit??10});return page.items.map(asRecord);},
+    timeline:async(args:any)=>{const page=await measured('mote_search',{...args,limit:args.limit??10});return ({items:(page.items.map(asRecord)),nextCursor:null});},
     evidence:async(args:any)=>{const page=await measured('mote_read',{refs:args.ids.map((id:string)=>`capture:${id}`),offset:args.offset??0,length:args.length??4000});return page.items.map((item:any)=>({id:item.id,capturedAt:item.origin?.capturedAt??new Date().toISOString(),appName:item.origin?.appName??'Generated Agent',deviceId:item.origin?.deviceId??'generated',ocrText:item.text}));},
     activity:async()=>({}),devices:async()=>[],
   };

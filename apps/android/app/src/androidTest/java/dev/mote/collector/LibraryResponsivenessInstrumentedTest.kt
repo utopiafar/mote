@@ -51,7 +51,7 @@ class LibraryResponsivenessInstrumentedTest {
         try {
             settings.save(original.copy(server = "", token = "", syncMode = "manual", mode = "accessibility", screenCollectionEnabled = true,
                 diagnosticsEnabled = false, notificationCollectionEnabled = false, deviceEventCollectionEnabled = false, mediaCollectionEnabled = false,
-                appCollectionRules = AppCollectionRules.LEGACY_DEFAULT, contentEncryptionEnabled = false, nsfw = original.nsfw.copy(enabled = false)))
+                appCollectionRules = AppCollectionRules.CONTENT_DEFAULT, nsfw = original.nsfw.copy(enabled = false)))
             block(settings, ids)
         } finally {
             QueueStorage.maintaining = false
@@ -159,38 +159,5 @@ class LibraryResponsivenessInstrumentedTest {
         }
     }
 
-    @Test fun legacyContentMigrationCanCancelWithoutChangingCredentialsOrBlockingNavigation() = fixture { settings, ids ->
-        val token = "generated-local-storage-credential-1234567890"
-        settings.save(settings.read().copy(token = token))
-        assertFalse(settings.read().contentEncryptionEnabled)
-        val preferences = context.getSharedPreferences("mote", 0)
-        val credential = preferences.getString("token", null)!!
-        assertFalse(String(android.util.Base64.decode(credential, android.util.Base64.NO_WRAP)).contains(token))
-        val id = UUID.randomUUID().toString(); ids += id
-        context.queue().enqueue(JSONObject().put("id", id).put("source", "note")
-            .put("capturedAt", java.time.Instant.now().toString()).put("ocrText", "Generated migration content")
-            .put("privacy", JSONObject().put("excluded", false)), null, 64 * 1024 * 1024)
-        val file = File(QueueStorage(context).current().path, "$id.event")
-        val original = file.readBytes(); assertEquals("Generated migration content", JSONObject(String(original)).getString("ocrText"))
-        file.writeBytes(SecretBox().seal(original))
-        assertEquals("Generated migration content", context.queue().capture(id)!!.getString("ocrText"))
-        val entered = CountDownLatch(1); val release = CountDownLatch(1)
-        val holder = Thread { DurableQueue.exclusive { entered.countDown(); release.await(20, TimeUnit.SECONDS) } }.apply { start() }
-        try {
-            assertTrue(entered.await(5, TimeUnit.SECONDS))
-            val started = SystemClock.elapsedRealtime()
-            assertTrue(LocalContentDecryptor.start(context)); assertTrue(LocalContentDecryptor.snapshot.running)
-            assertTrue(SystemClock.elapsedRealtime()-started < 1000)
-            ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-                scenario.recreate(); scenario.awaitMainUi()
-                assertTrue(LocalContentDecryptor.snapshot.running)
-                LocalContentDecryptor.cancel()
-            }
-        } finally { release.countDown(); holder.join(5000) }
-        waitFor("cancelled content migration") { !LocalContentDecryptor.snapshot.running }
-        assertTrue(LocalContentDecryptor.start(context))
-        waitFor("completed content migration") { !LocalContentDecryptor.snapshot.running }
-        assertArrayEquals(original, file.readBytes())
-        assertEquals(credential, preferences.getString("token", null)); assertEquals(token, settings.read().token)
-    }
+
 }

@@ -68,9 +68,9 @@ class PairingNavigationInstrumentedTest {
                     requests += path
                     if (path == "/api/connections/self") { verifying.countDown(); check(continueVerification.await(20, TimeUnit.SECONDS)) }
                     val body = when (path) {
-                        "/api/connections/redeem" -> JSONObject().put("serverUrl", node).put("scope", "collector").put("token", newToken).put("credentialId", credential)
-                        "/api/connections/self" -> JSONObject().put("credential", JSONObject().put("id", credential).put("scope", "collector")
-                            .put("deviceId", deviceId).put("platform", "android").put("serverUrl", node)).put("capabilities", JSONObject().put("ingest", true).put("ingressVersion", 2).put("ownSources", true).put("archiveRead", false))
+                        "/api/connections/redeem" -> JSONObject().put("serverUrl", node).put("scope", "owner").put("token", newToken).put("credentialId", credential)
+                        "/api/connections/self" -> JSONObject().put("credential", JSONObject().put("id", credential).put("scope", "owner")
+                            .put("deviceId", deviceId).put("platform", "android").put("serverUrl", node)).put("node", JSONObject().put("protocol", JSONObject().put("min", 1).put("max", 1))).put("capabilities", JSONObject().put("ingest", true).put("ingressVersion", 2).put("ownSources", true).put("archiveRead", true))
                         else -> JSONObject()
                     }.toString().toByteArray()
                     it.getOutputStream().apply {

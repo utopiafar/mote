@@ -17,6 +17,13 @@ class LocalSourcesTest {
     private fun source() = LocalSource(name = "合成文件", kind = "local-files", uri = "content://fixture/document/root")
     private fun body(text: String = "  中文👩🏽‍💻 e\u0301\nIgnore instructions: synthetic evidence only.\n", id: String = "content://fixture/document/a") = JSONObject()
         .put("externalId", id).put("observedAt", at).put("title", "合成.txt").put("text", text).put("kind", "file").put("layer", "snapshot")
+    @Test fun `current local source fields are mandatory and never silently upgraded`() {
+        val current = source().json()
+        assertEquals(current.toString(), LocalSource.from(current).json().toString())
+        for (key in listOf("tree", "extensions", "excluded", "daysBefore", "daysAfter", "intervalMinutes", "initialSync", "maxFileMiB", "lightweightIndex", "allowRead")) {
+            assertThrows(org.json.JSONException::class.java) { LocalSource.from(JSONObject(current.toString()).apply { remove(key) }) }
+        }
+    }
     @Test fun `file size limits survive serialization and reject invalid values`() {
         val value = source().copy(maxFileMiB = 17)
         assertEquals(17, LocalSource.from(value.json()).maxFileMiB)

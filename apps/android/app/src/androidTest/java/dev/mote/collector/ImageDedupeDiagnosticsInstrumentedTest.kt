@@ -50,6 +50,8 @@ class ImageDedupeDiagnosticsInstrumentedTest {
         finally { bitmap.recycle() }
     }
 
+
+
     @Test fun pipelineKeepsMaskedAcceptedReferenceShowsMeasurementsAndDeletesLocalPairs() {
         val context = instrumentation.targetContext; val settings = Settings(context)
         require(context.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
@@ -65,9 +67,9 @@ class ImageDedupeDiagnosticsInstrumentedTest {
             waitUntil("unplug fixture battery") { !Diagnostics.battery(context).second }
             val base = settings.read().copy(server = "", token = "", syncMode = "manual", wifiOnly = false,
                 screenCollectionEnabled = true, notificationCollectionEnabled = false, deviceEventCollectionEnabled = false, mediaCollectionEnabled = false,
-                chargingOnly = false, batteryPauseBelowPct = 0, ocrChargingOnly = true, localReviewUrl = "", metadataEnabled = false,
-                masks = "0,0,0.25,1", excludedPackages = "", appCollectionRules = AppCollectionRules.LEGACY_DEFAULT,
-                imageDedupeMode = "balanced", imageDedupeDiagnosticsEnabled = false, contentEncryptionEnabled = false, nsfw = settings.read().nsfw.copy(enabled = false))
+                chargingOnly = false, batteryPauseBelowPct = 0, localReviewUrl = "", metadataEnabled = false,
+                masks = "0,0,0.25,1", excludedPackages = "", appCollectionRules = AppCollectionRules.CONTENT_DEFAULT,
+                imageDedupeMode = "balanced", imageDedupeDiagnosticsEnabled = false, nsfw = settings.read().nsfw.copy(enabled = false))
             settings.save(base); settings.enabled = true
             fun capture(config: CollectorConfig, gray: Int, privateColor: Int = Color.RED, source: String = "screen"): JSONObject {
                 val at = start.plusSeconds(++sequence).toString()
@@ -165,7 +167,6 @@ class ImageDedupeDiagnosticsInstrumentedTest {
             val cleanupIds = (ids + remaining).distinct()
             cleanupIds.forEach { id ->
                 context.queue().capture(id)?.let { context.queue().acknowledge(id)
-                    if (context.queue().capture(id) != null) { context.queue().completeOcr(id, "", "failed", 64 * 1024 * 1024); context.queue().acknowledgeOcr(id) }
                 }
             }
             shell("dumpsys battery reset")

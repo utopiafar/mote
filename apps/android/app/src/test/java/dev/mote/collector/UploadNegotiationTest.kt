@@ -11,14 +11,13 @@ class UploadNegotiationTest {
         assertEquals(200,result.second.first)
     }
     @Test fun rejectionDoesNotNegotiateAndSingleOversizeIsRetained() {
-        for(status in listOf(401,403,429,500)) {
+        for(status in listOf(401,403,404,405,429,500)) {
             var calls=0
             val result=UploadNegotiation.sendShrinking(listOf(1,2,3)) { calls++;status to "rejected" }
-            assertEquals(1,calls);assertEquals(3,result.first.size);assertFalse(UploadNegotiation.unsupported(status))
+            assertEquals(1,calls);assertEquals(3,result.first.size)
         }
         var attempts=0
         val result=UploadNegotiation.sendShrinking(listOf(1)) { attempts++;413 to "oversize" }
-        assertEquals(1,attempts);assertEquals(413,result.second.first);assertFalse(UploadNegotiation.unsupported(413))
-        assertTrue(UploadNegotiation.unsupported(404));assertTrue(UploadNegotiation.unsupported(405))
+        assertEquals(1,attempts);assertEquals(413,result.second.first)
     }
 }

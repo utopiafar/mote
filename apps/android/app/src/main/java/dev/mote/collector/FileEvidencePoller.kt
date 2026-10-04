@@ -14,7 +14,6 @@ object FileEvidencePoller {
         if (QueueStorage.recovering || ConnectionGuard.reconfiguring()) return
         val settings = Settings(context); val config = settings.read()
         if (!config.hasSyncConnection() || SyncSchedule.waitingReason(context, config) != null) return
-        settings.ensureDataOrigin(config)
         for (source in context.localSources().sources().filter { it.enabled && it.allowRead && it.kind == "local-files" && it.retention == "snapshot" }) {
             val (code, body) = HttpJson.get("${config.server}/api/sources/${source.id}/read-requests", config.connectionToken())
             if (code != 200) continue

@@ -12,7 +12,8 @@ import java.net.URL
 import java.time.Instant
 
 fun Context.fileArchives(): FileArchiveQueue {
-    IngressV2Migration.ensure(this)
+
+    LocalDataFormat.requireCurrent(this)
     return FileArchiveQueue(File(noBackupFilesDir, "file-archives"), localContentCipher())
 }
 fun LocalSource.binaryFiles() = SourceAdapters.default.forKind(kind).queueKind == SourceQueueKind.FILE_ARCHIVE

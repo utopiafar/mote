@@ -1,3 +1,4 @@
+import {formatEvidenceRef} from '@mote/shared';
 import {memorySourceRoute} from './memory-source-route';
 import { decodeSourceText,captureOcrState,parseEvidenceRef,systemEventText,type CapturePreview } from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
@@ -255,7 +256,7 @@ export function CaptureCard({
   const ocr = ocrPresentation('textPreview' in capture ? capture.ocr : captureOcrState(capture), text);
   const media = 'textPreview' in capture ? capture.media : capture.metadata?.media;
   return (
-    <button className="capture-card" onClick={() => onOpen(capture.id)} aria-label={moteText("查看 {0} · {1} 的记录", capture.appName || moteText("未识别应用"), dateTime(capture.capturedAt))}>
+    <button className="capture-card" onClick={() => onOpen(formatEvidenceRef('capture',capture.id))} aria-label={moteText("查看 {0} · {1} 的记录", capture.appName || moteText("未识别应用"), dateTime(capture.capturedAt))}>
       <AuthImage api={api} capture={capture} />
       <div className="capture-card-body">
         <div className="capture-caption">
@@ -381,8 +382,9 @@ export function EvidenceDialog({
   onDeleted: () => void;
   onOpen: (id:string) => void;
 }) {
-  const captureRef=parseEvidenceRef(id)?.kind==='capture';
-  const {data:capture,error:readError}=useResource<Capture>(api,captureRef?`/api/capture-browser/${encodeURIComponent(id)}`:null);
+  const parsedRef=parseEvidenceRef(id),captureRef=parsedRef?.kind==='capture';
+  const captureId=captureRef?parsedRef.id:undefined;
+  const {data:capture,error:readError}=useResource<Capture>(api,captureRef?`/api/capture-browser/${encodeURIComponent(captureId!)}`:null);
   useOperationUpdates(api);
   const [mutationError,setError]=useState('');
   const error=mutationError||(readError?errorMessage(readError):'');
@@ -403,7 +405,7 @@ export function EvidenceDialog({
   async function remove() {
     setBusy(true);
     try {
-      await api.request(`/api/captures/${encodeURIComponent(id)}`, {
+      await api.request(`/api/captures/${encodeURIComponent(captureId!)}`, {
         method: "DELETE",
       });
       resources(api).invalidate(key=>/^\/api\/(capture-browser|captures|files|memories|source-items|sources)([/?]|$)/.test(key));
@@ -466,8 +468,8 @@ export function EvidenceDialog({
               {capture.blobHash && <OriginalImage key={capture.id} api={api} capture={capture}/>}
               <div className="evidence-text"><EvidenceState/>
                 <div className="evidence-source-actions">{currentMaterialRef?<button className="button" onClick={()=>onOpen(currentMaterialRef)}>{moteText('查看正式资料并提取记忆')}</button>:
-                  capture.requiresMaterialForMemory?<p className="muted">{moteText('此来源的原始记录需通过正式资料提取记忆。')} <a href="#/library/materials">{moteText('查看正式资料')}</a></p>:
-                  capture.revisionState!=='historical'&&<a className="button" href={memorySourceRoute(capture.id)}>{moteText("仅从这条资料提取记忆")}</a>}</div>
+                  capture.requiresMaterialForMemory?<p className="muted">{moteText('此来源的原始记录需通过正式资料提取记忆。')} <a href="#/library?view=materials">{moteText('查看正式资料')}</a></p>:
+                  capture.revisionState!=='historical'&&<a className="button" href={memorySourceRoute(formatEvidenceRef('capture',capture.id))}>{moteText("仅从这条资料提取记忆")}</a>}</div>
                 <span className="eyebrow">{presentation?.textLabel}</span>
                 <h3>{capture.windowTitle || sourceLabels[capture.source] || moteText("原始上下文")}</h3>
                 {capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span><p>{ocr.description}</p></div>}
@@ -509,7 +511,7 @@ export function EvidenceDialog({
                     </dd>
                   </div>
                 </dl>
-                {capture.metadata?.attachments?.map(id=><button className="button subtle" key={id} onClick={()=>onOpen(id)}>{moteText("查看附件")} · {id.slice(0,8)}</button>)}
+                {capture.metadata?.attachments?.map(id=><button className="button subtle" key={id} onClick={()=>onOpen(formatEvidenceRef('capture',id))}>{moteText("查看附件")} · {id.slice(0,8)}</button>)}
                 <Metadata stateSeries={capture.stateSeries} metadata={capture.metadata} source={capture.provenance?.metadata} modifiedAt={capture.provenance?.modifiedAt}/>
                 <SourceDocumentDetails api={api} document={capture.provenance?.document}/>
                 {capture.privacy.reason && (
@@ -584,7 +586,7 @@ export function AnswerView({
             {answer.citations.map((cite, index) => (
               <button
                 key={cite.id}
-                onClick={() => onOpen(cite.id)}
+                onClick={() => onOpen(formatEvidenceRef('capture',cite.id))}
                 className="citation"
               >
                 <span className="citation-number">{index + 1}</span>

@@ -1,7 +1,7 @@
 import {fork} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {StoreError} from './store.js';
-export type AssetPreparation={directory:string;staging:string;destinationRoot:string;hash?:string;bytes:number;partBytes:number;parts:{part:number;hash:string;bytes:number}[];encryption:{enabled:boolean;legacyEncrypted:boolean;key?:string}};
+export type AssetPreparation={directory:string;staging:string;destinationRoot:string;hash?:string;bytes:number;partBytes:number;parts:{part:number;hash:string;bytes:number}[];encryption:{enabled:boolean;key?:string}};
 export type PreparedAsset={hash:string;checksums:string[];destination?:{dev:number;ino:number;mtimeMs:number}};
 let active=0;const queue:(()=>void)[]=[];
 /** File bytes, crypto and durable staging run in at most two child processes.

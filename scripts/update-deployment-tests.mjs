@@ -28,8 +28,8 @@ test('real isolated central update and rollback preserve credentials, generated 
     const saved = note(), screen = capture(); await request(p, '/api/notes', { method: 'POST', body: saved, status: 201 }); await request(p, '/api/captures', { method: 'POST', body: screen, status: 201 });
     const invitation=await request(p,'/api/connections/invitations',{method:'POST',body:{serverUrl:p.url,label:'Generated update-preservation device'}});
     const paired=await request(p,'/api/connections/redeem',{method:'POST',token:'',body:{code:invitation.invitation.code,deviceId:'synthetic-paired-update',deviceName:'Synthetic paired device',platform:'android'}});
-    const bytes = sourceTar(version), asset = { component: 'server', platform: 'source', arch: 'all', format: 'tar.gz', name: `mote-server-${version}.tar.gz`, url: `https://github.com/utopiafar/mote/releases/download/v${version}/mote-server-${version}.tar.gz`, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length };
-    const manifest = { version, tag: `v${version}`, assets: [asset], images: [] };
+    const bytes = sourceTar(version), asset = { component: 'server', platform: 'source', arch: 'all', format: 'tar.gz', name: `mote-server-${version}.tar.gz`, url: `https://github.com/utopiafar/mote/releases/download/central-v${version}/mote-server-${version}.tar.gz`, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length };
+    const manifest = { component:'central', version, tag: `central-v${version}`, assets: [asset], images: [] };
     // The production downloader verifies the generated artifact; build adapter copies current compiled
     // central code into the distinct fixture release. This is an actual process test, not an npm/network build.
     const prepared = await prepareProfileUpdate(p, { manifest, currentVersion: originalVersion }, { downloadReleaseAsset: (selected, path) => downloadReleaseAsset(selected, path, { fetch: async () => new Response(bytes) }), build: async path => {

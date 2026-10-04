@@ -11,9 +11,9 @@ let directory: string;
 beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-profile-test-')); });
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 const secrets = { available: () => true, encrypt: (s: string) => Buffer.from(`fixture encryption:${s}`), decrypt: (b: Buffer) => b.toString().slice('fixture encryption:'.length) };
-it('preserves the exact legacy path and safely resolves explicit dev/test/prod profiles', () => {
-  expect(resolveProfile([], {}, '/private/old')).toMatchObject({ name: 'legacy', legacy: true, dataDirectory: '/private/old', defaultServerUrl: 'http://127.0.0.1:47832' });
-  expect(resolveProfile(['--profile=legacy'], {}, '/private/old').dataDirectory).toBe('/private/old');
+it('uses the canonical default path and safely resolves explicit dev/test/prod profiles', () => {
+  expect(resolveProfile([], {}, '/private/old')).toMatchObject({ name: 'default', defaultProfile: true, dataDirectory: '/private/old', defaultServerUrl: 'http://127.0.0.1:47832' });
+  expect(()=>resolveProfile(['--profile=legacy'], {}, '/private/old')).toThrow('legacy profile');
   expect(resolveProfile(['--profile', 'dev'], { MOTE_PROFILE: 'prod' }, '/private/old')).toMatchObject({ dataDirectory: '/private/old-profiles/dev', defaultServerUrl: 'http://127.0.0.1:47842' });
   expect(resolveProfile([], { MOTE_PROFILE: 'test' }, '/private/old').defaultServerUrl).toMatch(/47852$/);
   for (const value of ['', '../old', '/tmp', 'DEV', 'a'.repeat(33)]) expect(() => resolveProfile([`--profile=${value}`], {}, '/private/old')).toThrow();
@@ -33,7 +33,7 @@ it('never seeds dev with the daily local node or credentials from an overridden 
 });
 it('isolates stable identity, encrypted credentials, drafts, outbox and events; saved credentials win over bootstrap', async () => {
   const states = [];
-  for (const name of ['legacy', 'dev', 'test']) {
+  for (const name of ['default', 'dev', 'test']) {
     const profile = resolveProfile([`--profile=${name}`], {}, join(directory, 'original'));
     const seed = () => profileDefaults(profile, { MOTE_PROFILE: profile.name, MOTE_URL: profile.defaultServerUrl, MOTE_TOKEN: `synthetic token for ${name}` });
     const store = new ConfigStore(profile.dataDirectory, secrets, seed); const config = await store.load(); await store.save(config);

@@ -3,8 +3,9 @@ const {app}=require('electron');
 const {mkdtempSync,writeFileSync,readFileSync,mkdirSync,rmSync}=require('node:fs');
 const {join,resolve}=require('node:path');const {tmpdir}=require('node:os');const assert=require('node:assert/strict');
 const profile=mkdtempSync(join(tmpdir(),'mote-language-ui-'));
-app.setPath('userData',profile);process.env.MOTE_PROFILE='legacy';delete process.env.MOTE_URL;delete process.env.MOTE_TOKEN;delete process.env.MOTE_ENV_FILE;
-writeFileSync(join(profile,'config.json'),JSON.stringify({version:1,config:{...require('../dist/config').defaultConfig(),serverUrl:'',deviceName:'Synthetic Mac',ocrEnabled:false,metadataEnabled:false}}));
+app.setPath('userData',profile);process.env.MOTE_PROFILE='default';delete process.env.MOTE_URL;delete process.env.MOTE_TOKEN;delete process.env.MOTE_ENV_FILE;
+writeFileSync(join(profile,'config.json'),JSON.stringify({version:3,config:{...require('../dist/config').defaultConfig(),serverUrl:'',deviceName:'Synthetic Mac',metadataEnabled:false}}));
+writeFileSync(join(profile,'storage-format.json'),JSON.stringify({version:3}),{mode:0o600});
 const output=resolve(__dirname,'../release/i18n-fixture');mkdirSync(output,{recursive:true});
 const timeout=setTimeout(()=>app.exit(1),45000);let started=false;
 app.on('browser-window-created',(_event,window)=>{

@@ -56,30 +56,9 @@ test('failed or revoked approvals cannot publish a usable grant; pending request
  for(let i=0;i<100;i++)f.handoffs.create(input);assert.throws(()=>f.handoffs.create(input));
  assert.throws(()=>new LoginHandoffs(f.connections).poll({id,verifier}));
 });
-test('legacy paired hashes acquire full rights without rotation or exposing credentials',async t=>{
- const f=await fixture(t),grant=await f.connections.session(serverUrl,'Generated', {deviceId:'generated-phone',deviceName:'Generated phone',platform:'android'});
- const state=f.saved();state.credentials[0].scope='collector';
- const legacy=new Connections(f.store,f.sources,{file:{read:async()=>state,write:async()=>{}}});await legacy.init();t.after(()=>legacy.close());
- const identity=legacy.authenticate('Bearer '+grant.token)!;assert.equal(identity.scope,'collector');assert.equal(legacy.isOwner(identity),true);
- legacy.assertCollectorRoute(identity,'POST','/api/configuration');legacy.assertCollectorRoute(identity,'GET','/api/capture-browser/captures/foreign');
-});
-test('real API shares full rights with root Token and rejects anonymous or MCP login approval',async t=>{
- const f=await fixture(t);
- const cfg:Config={dataDir:f.root,token:owner,tokenPath:join(f.root,'token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxStorageBytes:30*1024*1024,maxExportBytes:4*1024*1024,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://fixture.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,connectors:{directory:join(f.root,'connectors'),mcpEnabled:true,mcpReadToken:'generated-read-mcp-token-123456789'}};
- const agent:QueryAgent={configured:false,query:async()=>{throw Error('No live models');},close:async()=>{}};
- const {app}=await buildApp(cfg,{store:f.store,connections:f.connections,agent});f.cleanup.app=()=>app.close();
- const session=await app.inject({method:'POST',url:'/api/login/session',headers:headers(),payload:{...input,challenge:undefined,durationMs:86400000}});assert.equal(session.statusCode,200);
- const grant=session.json();assert.equal((await app.inject({url:'/api/configuration',headers:headers(grant.token)})).statusCode,200);
- const request=await app.inject({method:'POST',url:'/api/login/requests',payload:input});assert.equal(request.statusCode,200);const {id}=request.json();
- assert.equal((await app.inject({method:'POST',url:`/api/login/requests/${id}/approve`})).statusCode,401);
- const mcp=await f.connections.mintMcp({serverUrl,label:'Generated query agent',access:'read'},cfg.connectors);
- assert.equal((await app.inject({method:'POST',url:`/api/login/requests/${id}/approve`,headers:mcp.config.mcpServers.mote.headers})).statusCode,403);
- // Polling every 1.5 seconds must remain below its own limit.
- for(let i=0;i<41;i++)assert.equal((await app.inject({method:'POST',url:'/api/login/poll',payload:{id,verifier}})).statusCode,200);
- assert.equal((await app.inject({method:'POST',url:`/api/login/requests/${id}/approve`,headers:headers(grant.token)})).statusCode,200);
- const ticket=await app.inject({method:'POST',url:'/api/login/ticket',headers:headers(grant.token),payload:{}});assert.equal(ticket.statusCode,200);
- const exchange=await app.inject({method:'POST',url:'/api/login/exchange',payload:ticket.json()});assert.equal(exchange.statusCode,200);assert.equal(exchange.json().token,grant.token);assert.equal(exchange.json().expiresAt,grant.expiresAt);
- assert.equal((await app.inject({method:'POST',url:'/api/login/logout',headers:headers(grant.token)})).statusCode,200);
- assert.equal((await app.inject({url:'/api/configuration',headers:headers(grant.token)})).statusCode,401);
- assert.equal((await app.inject({url:'/api/configuration',headers:headers()})).statusCode,200);
+test('retired collector credentials are refused without rewriting their saved hashes',async t=>{
+ const f=await fixture(t);await f.connections.session(serverUrl,'Generated',{deviceId:'generated-phone',deviceName:'Generated phone',platform:'android'});
+ const state=f.saved();state.credentials[0].scope='collector';const original=JSON.stringify(state);let writes=0;
+ const retired=new Connections(f.store,f.sources,{file:{read:async()=>state,write:async()=>{writes++;}}});
+ await assert.rejects(retired.init(),{code:'connection_storage_invalid'});assert.equal(JSON.stringify(state),original);assert.equal(writes,0);
 });

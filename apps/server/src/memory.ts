@@ -6,7 +6,7 @@ import {z} from 'zod';
 import {validateInlineCitations,SOURCE_TIME_INSTRUCTIONS,skillCatalog} from '@mote/agent';
 import {fileEvidenceSchema,sourceContentTime,noteCapture,type CaptureRecord,type QueryResult} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
-import {CODING_MEMORY_CONTRACT,codingMemorySchema,memoryAdmissionSchema,memoryRelationSchema,type Memory,type MemoryEvidence,type EvidenceRange,type MemoryReviewReceipt} from './memory-schema.js';
+import {CODING_MEMORY_CONTRACT,codingMemorySchema,memorySchema,memoryAdmissionSchema,memoryRelationSchema,type Memory,type MemoryEvidence,type EvidenceRange,type MemoryReviewReceipt} from './memory-schema.js';
 export type {Memory,MemoryEvidence,EvidenceRange} from './memory-schema.js';
 
 const spanSchema=z.object({id:z.string().uuid(),offset:z.number().int().min(0).max(100000).optional(),length:z.number().int().min(1).max(12000).optional(),quote:z.string().min(1).max(12000)}).strict();
@@ -40,45 +40,31 @@ export type MemoryExtractOptions={integration?:Memory['integration'];strategy?:M
 const initializedStores=new WeakSet<Store>();
 export class MemoryStore {
   readonly deletions:MemoryDeletions;
-  constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id)){this.deletions=new MemoryDeletions(store,this.readEvidence);if(!initializedStores.has(store)){this.ensureIndex();this.ensureCatalog();this.activateReviewedLegacy();initializedStores.add(store);}}
-  private activateReviewedLegacy(){
-    for(const row of this.store.db.prepare("SELECT id FROM memories WHERE json_extract(json,'$.status')='proposed' AND json_extract(json,'$.reviewReceipt.policy')='bounded-exact-review@1'").all()){
-      try{const memory=this.get(String(row.id));if(memory.reviewReceipt?.reviewRunId&&memory.reviewReceipt.decision!=='empty'&&memory.evidence?.length&&memory.evidence.every(e=>{const record=this.readEvidence([e.id])[0];return record&&e.contentHash===memoryEvidenceFingerprint(record)&&e.quote!==undefined&&e.offset!==undefined&&record.ocrText.slice(e.offset,e.offset+e.quote.length)===e.quote;}))this.publish(memory.id,memory.version??1);}catch(error){if(!(error instanceof StoreError))throw error;}
-    }
-    // A legacy draft without a reusable verdict must not be permanently skipped
-    // by the completed extraction checkpoint when the owner reruns that range.
-    this.store.db.exec("DELETE FROM memory_checkpoints WHERE evidence_id IN (SELECT d.evidence_id FROM memory_dependencies d JOIN memories m ON m.id=d.memory_id WHERE json_extract(m.json,'$.status')='proposed')");
-  }
+  constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id)){this.deletions=new MemoryDeletions(store,this.readEvidence);if(!initializedStores.has(store)){this.ensureIndex();this.ensureCatalog();initializedStores.add(store);}}
   private ensureIndex(){
     this.store.db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(id UNINDEXED,text,tokenize='trigram');
       CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN INSERT INTO memories_fts(id,text) VALUES(new.id,json_extract(new.json,'$.title')||' '||json_extract(new.json,'$.statement')||' '||json_extract(new.json,'$.uncertainty')); END;
       CREATE TRIGGER IF NOT EXISTS memories_fts_delete AFTER DELETE ON memories BEGIN DELETE FROM memories_fts WHERE id=old.id; END;
       CREATE TRIGGER IF NOT EXISTS memories_fts_update AFTER UPDATE ON memories BEGIN DELETE FROM memories_fts WHERE id=old.id; INSERT INTO memories_fts(id,text) VALUES(new.id,json_extract(new.json,'$.title')||' '||json_extract(new.json,'$.statement')||' '||json_extract(new.json,'$.uncertainty')); END;
-      INSERT INTO memories_fts(id,text) SELECT id,json_extract(json,'$.title')||' '||json_extract(json,'$.statement')||' '||json_extract(json,'$.uncertainty') FROM memories WHERE id NOT IN (SELECT id FROM memories_fts);`);
+`);
   }
   /** Metadata-only read model; maintained in the same transaction as every memory write. */
   private ensureCatalog(){
     const db=this.store.db;
-    const projection=(v:string)=>`json_object('id',${v}.id,'title',json_extract(${v}.json,'$.title'),'admission',json_extract(${v}.json,'$.admission'),'reviewRunId',json_extract(${v}.json,'$.reviewRunId'),'domain',coalesce(json_extract(${v}.json,'$.domain'),'personal'),'coding',json_extract(${v}.json,'$.coding'),'scopeRefs',json_extract(${v}.json,'$.scopeRefs'),'tier',coalesce(json_extract(${v}.json,'$.tier'),'episode'),'kind',coalesce(json_extract(${v}.json,'$.kind'),'episodic'),'status',json_extract(${v}.json,'$.status'),'createdAt',${v}.created_at,'revision',json_extract(${v}.json,'$.fingerprint'),'version',coalesce(json_extract(${v}.json,'$.version'),1),'relations',json_extract(${v}.json,'$.relations'),'supersededBy',json_extract(${v}.json,'$.supersededBy'),'supersededAt',json_extract(${v}.json,'$.supersededAt'),'validFrom',json_extract(${v}.json,'$.validFrom'),'validUntil',json_extract(${v}.json,'$.validUntil'),'correction',json_extract(${v}.json,'$.correction'),'evidenceCount',json_array_length(${v}.json,'$.evidenceIds'))`;
-    const insert=(v:string)=>`INSERT OR REPLACE INTO memory_catalog SELECT ${v}.id,${v}.created_at,json_extract(${v}.json,'$.status'),coalesce(json_extract(${v}.json,'$.tier'),'episode'),coalesce(json_extract(${v}.json,'$.kind'),'episodic'),coalesce(json_extract(${v}.json,'$.admission.layer'),'legacy'),${projection(v)};`;
+    const projection=(v:string)=>`json_object('id',${v}.id,'title',json_extract(${v}.json,'$.title'),'admission',json_extract(${v}.json,'$.admission'),'reviewRunId',json_extract(${v}.json,'$.reviewRunId'),'domain',json_extract(${v}.json,'$.domain'),'coding',json_extract(${v}.json,'$.coding'),'scopeRefs',json_extract(${v}.json,'$.scopeRefs'),'tier',json_extract(${v}.json,'$.tier'),'kind',json_extract(${v}.json,'$.kind'),'status',json_extract(${v}.json,'$.status'),'createdAt',${v}.created_at,'revision',json_extract(${v}.json,'$.fingerprint'),'version',json_extract(${v}.json,'$.version'),'relations',json_extract(${v}.json,'$.relations'),'supersededBy',json_extract(${v}.json,'$.supersededBy'),'supersededAt',json_extract(${v}.json,'$.supersededAt'),'validFrom',json_extract(${v}.json,'$.validFrom'),'validUntil',json_extract(${v}.json,'$.validUntil'),'correction',json_extract(${v}.json,'$.correction'),'evidenceCount',json_array_length(${v}.json,'$.evidenceIds'))`;
+    const insert=(v:string)=>`INSERT OR REPLACE INTO memory_catalog SELECT ${v}.id,${v}.created_at,json_extract(${v}.json,'$.status'),json_extract(${v}.json,'$.tier'),json_extract(${v}.json,'$.kind'),json_extract(${v}.json,'$.admission.layer'),${projection(v)};`;
     const scope=(v:string)=>`INSERT INTO memory_scopes SELECT ${v}.id,json_extract(e.value,'$.id'),coalesce(json_extract(e.value,'$.deviceId'),''),CASE json_extract(e.value,'$.timeBasis') WHEN 'occurred' THEN coalesce(json_extract(e.value,'$.occurredAt'),json_extract(e.value,'$.recordedAt'),json_extract(e.value,'$.capturedAt')) ELSE coalesce(json_extract(e.value,'$.recordedAt'),json_extract(e.value,'$.capturedAt')) END FROM json_each(${v}.json,'$.evidence') e;`;
     db.exec(`CREATE TABLE IF NOT EXISTS memory_catalog(id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,created_at TEXT NOT NULL,status TEXT NOT NULL,tier TEXT NOT NULL,kind TEXT NOT NULL,layer TEXT NOT NULL,json TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS memory_catalog_page ON memory_catalog(status,created_at DESC,id DESC);
       CREATE TABLE IF NOT EXISTS memory_scopes(memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,evidence_id TEXT NOT NULL,device_id TEXT NOT NULL,at TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS memory_scope_parent ON memory_scopes(memory_id,device_id,at);
-      DROP TRIGGER IF EXISTS memory_catalog_insert; DROP TRIGGER IF EXISTS memory_catalog_update;
       CREATE TRIGGER IF NOT EXISTS memory_catalog_insert AFTER INSERT ON memories BEGIN ${insert('new')} ${scope('new')} END;
       CREATE TRIGGER IF NOT EXISTS memory_catalog_update AFTER UPDATE OF json ON memories BEGIN ${insert('new')} DELETE FROM memory_scopes WHERE memory_id=new.id; ${scope('new')} END;
       CREATE TRIGGER IF NOT EXISTS memory_evidence_edited AFTER UPDATE OF json ON captures WHEN new.json!=old.json BEGIN
         UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed') WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=new.id);
       END;
       CREATE TRIGGER IF NOT EXISTS memory_evidence_removed BEFORE DELETE ON captures BEGIN DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=old.id); END;`);
-    if(!db.prepare("SELECT 1 FROM settings WHERE key='memory-catalog-v2'").get()){
-      db.exec(`BEGIN IMMEDIATE; INSERT OR REPLACE INTO memory_catalog SELECT m.id,m.created_at,json_extract(m.json,'$.status'),coalesce(json_extract(m.json,'$.tier'),'episode'),coalesce(json_extract(m.json,'$.kind'),'episodic'),coalesce(json_extract(m.json,'$.admission.layer'),'legacy'),${projection('m')} FROM memories m;
-        DELETE FROM memory_scopes;
-        INSERT INTO memory_scopes SELECT m.id,json_extract(e.value,'$.id'),coalesce(json_extract(e.value,'$.deviceId'),''),CASE json_extract(e.value,'$.timeBasis') WHEN 'occurred' THEN coalesce(json_extract(e.value,'$.occurredAt'),json_extract(e.value,'$.recordedAt'),json_extract(e.value,'$.capturedAt')) ELSE coalesce(json_extract(e.value,'$.recordedAt'),json_extract(e.value,'$.capturedAt')) END FROM memories m,json_each(m.json,'$.evidence') e;
-        INSERT INTO settings VALUES('memory-catalog-v2','1'); COMMIT;`);
-    }
+
   }
   isCurrentEvidence(id:string):boolean {
     const record=this.readEvidence([id])[0];
@@ -100,7 +86,7 @@ export class MemoryStore {
     return file.success&&file.data.chunkId===id&&file.data.captureId!==id;
   }
   dependencyIds(id:string):string[]{const record=this.readEvidence([id])[0],file=fileEvidenceSchema.safeParse(record?.fileEvidence);return file.success?[id,file.data.captureId]:[id];}
-  page(args:{includeHistory?:boolean;asOf?:string;sourceId?:string;projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string;id?:string;query?:string;tier?:Memory['tier'];kind?:Memory['kind'];status?:Memory['status'];layer?:'observation'|'memory'|'legacy';cursor?:string;level?:'overview'|'detail';limit?:number;includeStale?:boolean;deviceId?:string;after?:string;before?:string}={}) {
+  page(args:{includeHistory?:boolean;asOf?:string;sourceId?:string;projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string;id?:string;query?:string;tier?:Memory['tier'];kind?:Memory['kind'];status?:Memory['status'];layer?:'observation'|'memory';cursor?:string;level?:'overview'|'detail';limit?:number;includeStale?:boolean;deviceId?:string;after?:string;before?:string}={}) {
     const conditions:string[]=[],values:(string|number)[]=[],limit=Math.max(1,Math.min(args.limit??30,100));
     if(!args.includeStale)conditions.push("status!='stale'");
     if(!args.includeHistory){const at=args.asOf??new Date().toISOString();conditions.push("(json_extract(json,'$.supersededBy') IS NULL OR julianday(json_extract(json,'$.supersededAt'))>julianday(?))");values.push(at);conditions.push("(json_extract(json,'$.validFrom') IS NULL OR julianday(json_extract(json,'$.validFrom'))<=julianday(?)) AND (json_extract(json,'$.validUntil') IS NULL OR julianday(json_extract(json,'$.validUntil'))>julianday(?))");values.push(at,at);}
@@ -136,7 +122,7 @@ export class MemoryStore {
   }
   list(args:Parameters<MemoryStore['page']>[0]={}){return this.page(args).items;}
   text(id:string){const m=this.get(id);return `# ${m.title}\n\n${m.statement}\n\n## Uncertainty\n\n${m.uncertainty}\n\n## Provenance\n\nStatus: ${m.status}\nTier: ${m.tier??'episode'}\nKind: ${m.kind??'episodic'}\nModel: ${m.model}\nSkill: ${m.skillVersion??'unknown'}\n\n${(m.evidence??[]).map(e=>`- ${e.id} (${e.occurredAt??e.recordedAt??e.capturedAt})${e.quote?'\n  '+e.quote.replaceAll('\n','\n  '):''}`).join('\n')}\n`;}
-  get(id:string):Memory{const row=this.store.db.prepare('SELECT json FROM memories WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Memory not found',404);return {version:1,...JSON.parse(row.json)};}
+  get(id:string):Memory{const row=this.store.db.prepare('SELECT json FROM memories WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Memory not found',404);return memorySchema.parse(JSON.parse(row.json));}
   private validatedClaims=new Map<string,unknown>();
   extract(result:QueryResult,model:string,options:MemoryExtractOptions={}) {
     let input:unknown;try{input=JSON.parse(result.answer);}catch{throw new MemoryOutputValidationError('json','Model returned an invalid memory format; no memories were saved');}
@@ -162,8 +148,8 @@ export class MemoryStore {
         if(!record||!this.isCurrentEvidence(id)||memoryEvidenceFingerprint(record)!==expected)throw new StoreError('Memory evidence changed during extraction',409);
       }
       const validateClaims=()=>parsed.data.memories.map((m,candidateIndex)=>{
-        if(options.requireAdmission&&(!m.admission||!m.evidence))throw new MemoryOutputValidationError('schema','Admission and exact evidence are required');
-        if(options.requireAdmission&&options.tier==='consolidated'&&(m.admission?.layer!=='memory'||!m.relatedMemoryIds?.length))throw new MemoryOutputValidationError('schema','Consolidation requires selected memory and precise input lineage');
+        if((!m.admission||!m.evidence))throw new MemoryOutputValidationError('schema','Admission and exact evidence are required');
+        if(options.tier==='consolidated'&&(m.admission?.layer!=='memory'||!m.relatedMemoryIds?.length))throw new MemoryOutputValidationError('schema','Consolidation requires selected memory and precise input lineage');
         if(m.relatedMemoryIds?.some(id=>!options.relatedMemoryIds?.includes(id)))throw new MemoryOutputValidationError('scope','Related memory is outside supplied candidates');
         if(options.tier!=='consolidated'&&m.relatedMemoryIds?.length)throw new MemoryOutputValidationError('schema','Episode cannot declare consolidation lineage');
         if(m.validFrom&&m.validUntil&&Date.parse(m.validFrom)>=Date.parse(m.validUntil))throw new MemoryOutputValidationError('schema','Memory validity dates are reversed');
@@ -216,13 +202,13 @@ export class MemoryStore {
         }else for(const id of ids){const ranges=options.evidenceRanges?.filter(range=>range.id===id);if(ranges?.length)for(const range of ranges)evidence.push(reference(records.get(id)!,{offset:range.offset,length:range.length}));else evidence.push(reference(records.get(id)!));}
         for(const relation of m.relations??[]){
           const target=this.get(relation.memoryId);
-          if(target.status==='stale'||target.supersededBy||target.fingerprint!==relation.fingerprint||(target.version??1)!==relation.version||target.evidenceIds.some(id=>!this.isCurrentEvidence(id)))throw new StoreError('Related memory changed during extraction',409);
+          if(target.status==='stale'||target.supersededBy||target.fingerprint!==relation.fingerprint||target.version!==relation.version||target.evidenceIds.some(id=>!this.isCurrentEvidence(id)))throw new StoreError('Related memory changed during extraction',409);
           if(!target.evidenceIds.some(id=>ids.includes(id)))throw new MemoryOutputValidationError('scope','A memory relationship requires retrieved original evidence from its target');
-          if((target.domain??'personal')!==domain)throw new MemoryOutputValidationError('scope','Memory relationship cannot cross domains');
+          if(target.domain!==domain)throw new MemoryOutputValidationError('scope','Memory relationship cannot cross domains');
           if(domain==='coding'&&target.coding?.scope!=='shared'&&m.coding?.scope==='shared')throw new MemoryOutputValidationError('scope','A project memory cannot be automatically replaced by global advice');
           if(domain==='coding'&&((target.coding?.scope==='session'&&m.coding?.scope!=='session')||target.scopeRefs?.some(old=>!scopeRefs.some(next=>next.projectKey===old.projectKey&&next.repositoryKey===old.repositoryKey))||scopeRefs.some(next=>!target.scopeRefs?.some(old=>next.projectKey===old.projectKey&&next.repositoryKey===old.repositoryKey&&(target.coding?.scope!=='session'||next.sessionId===old.sessionId&&next.provider===old.provider)))))throw new MemoryOutputValidationError('scope','Memory relationship cannot broaden project scope');
         }
-        return {...m,evidenceIds:ids,evidence,domain,...(scopeRefs.length?{scopeRefs}:{})};
+        return {...m,admission:m.admission!,evidenceIds:ids,evidence,domain,...(scopeRefs.length?{scopeRefs}:{})};
       });
       const claims=(this.validatedClaims.get(cacheKey) as ReturnType<typeof validateClaims>|undefined)??validateClaims();
       if(!this.validatedClaims.has(cacheKey)){
@@ -236,13 +222,13 @@ export class MemoryStore {
       if(!options.validateOnly&&this.store.db.prepare('SELECT 1 FROM memory_deletions LIMIT 1').get()&&!receipt?.deletionSnapshot)throw new StoreError('Memory requires current deletion review before commit',409);
       for(const m of claims){
         const parents=m.relatedMemoryIds??[];
-        if(options.requireAdmission&&options.tier==='consolidated'){
-          for(const id of parents){const parent=this.get(id);if(parent.status==='stale'||(parent.domain??'personal')!==m.domain||!parent.evidenceIds.some(e=>m.evidenceIds.includes(e)))throw new MemoryOutputValidationError('scope','Each parent must contribute original evidence');}
+        if(options.tier==='consolidated'){
+          for(const id of parents){const parent=this.get(id);if(parent.status==='stale'||parent.domain!==m.domain||!parent.evidenceIds.some(e=>m.evidenceIds.includes(e)))throw new MemoryOutputValidationError('scope','Each parent must contribute original evidence');}
           if(parents.some(id=>this.get(id).statement===m.statement))throw new MemoryOutputValidationError('schema','Consolidation must add value, not copy an input');
         }
         const fingerprint=sha256(JSON.stringify([...(options.integration?[options.integration]:[]),...(options.strategy?[options.strategy]:[]),options.tier??'episode',m.admission??null,m.coding??null,...(m.relations?.length||m.validFrom||m.validUntil?[m.relations??null,m.validFrom??null,m.validUntil??null]:[]),m.statement,[...m.evidenceIds].sort(),m.evidence.map(e=>[e.id,e.contentHash,e.offset,e.length])]));
         const duplicate=this.store.db.prepare("SELECT json FROM memories WHERE json_extract(json,'$.fingerprint')=? AND json_extract(json,'$.status')!='stale'").get(fingerprint) as {json:string}|undefined;
-        if(duplicate){const existing=JSON.parse(duplicate.json) as Memory;if(existing.status==='proposed'&&receipt?.reviewRunId&&receipt.resultHash){existing.reviewReceipt=receipt;existing.reviewRunId=receipt.reviewRunId;this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(existing),existing.id);items.push(this.publish(existing.id,existing.version??1));}else items.push(existing);continue;}
+        if(duplicate){const existing=JSON.parse(duplicate.json) as Memory;if(existing.status==='proposed'&&receipt?.reviewRunId&&receipt.resultHash){existing.reviewReceipt=receipt;existing.reviewRunId=receipt.reviewRunId;this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(existing),existing.id);items.push(this.publish(existing.id,existing.version));}else items.push(existing);continue;}
         const value:Memory={...m,integration:options.integration,strategy:options.strategy,version:1,id:randomUUID(),tier:options.tier??'episode',kind:m.kind??'episodic',relatedMemoryIds:m.relatedMemoryIds,reviewRunId:options.reviewRunId,reviewReceipt:options.reviewReceipt,createdAt:now,status:'proposed',model:options.reviewReceipt?.model??result.usage?.model??model,runId:result.runId,skillVersion:options.skillVersion??MEMORY_SKILL_VERSION,fingerprint};
         if(Number((this.store.db.prepare('SELECT COUNT(*) AS n FROM memories').get() as {n:number}).n)>=100000)throw new StoreError('Memory limit reached; remove unused memories before extracting more',507);
         this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));
@@ -262,9 +248,9 @@ export class MemoryStore {
     if(m.relations?.length&&version===undefined)throw new StoreError('A reviewed memory version is required before applying relationships',409);
     const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');try{
       for(const relation of m.relations??[]){const target=this.get(relation.memoryId);if(target.status==='stale'||target.supersededBy||target.fingerprint!==relation.fingerprint||target.version!==relation.version||target.evidenceIds.some(id=>!this.isCurrentEvidence(id)))throw new StoreError('Related memory changed; review the relationship again',409);
-        if(relation.kind==='supersedes'){target.supersededBy=m.id;target.supersededAt=m.validFrom??m.reviewReceipt?.contextTime??new Date().toISOString();target.version=(target.version??1)+1;target.updatedAt=new Date().toISOString();this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(target)));this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(target),target.id);}
+        if(relation.kind==='supersedes'){target.supersededBy=m.id;target.supersededAt=m.validFrom??m.reviewReceipt?.contextTime??new Date().toISOString();target.version=target.version+1;target.updatedAt=new Date().toISOString();this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(target)));this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(target),target.id);}
       }
-      m.status='published';m.version=(m.version??1)+1;m.updatedAt=new Date().toISOString();this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(m),id);if(own)this.store.db.exec('COMMIT');return m;
+      m.status='published';m.version=m.version+1;m.updatedAt=new Date().toISOString();this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(m),id);if(own)this.store.db.exec('COMMIT');return m;
     }catch(error){if(own)this.store.db.exec('ROLLBACK');throw error;}
   }
   /** An explicit owner correction is original user evidence, never an automatic model overwrite. */
@@ -273,15 +259,15 @@ export class MemoryStore {
     const original=this.get(id);if(original.version!==input.version||original.supersededBy)throw new StoreError('Memory changed; refresh before correcting',409);
     if(input.validUntil&&Date.parse(input.validFrom??new Date().toISOString())>=Date.parse(input.validUntil))throw new StoreError('Correction validity dates are reversed',400);
     const noteId=randomUUID(),memoryId=randomUUID(),now=new Date().toISOString();
-    const text=input.statement;const capture=noteCapture({client:'web',id:noteId,deviceId:'mote-owner-review',deviceName:'Mote owner review',platform:'import',capturedAt:now,text,metadata:{version:1,observedAt:now,collector:{method:'manual'},memoryCorrection:{memoryId:id,domain:original.domain??'personal',scopeRefs:original.scopeRefs??[],...(original.coding?{coding:{...original.coding,validation:'user_confirmed'}}:{})}}});
+    const text=input.statement;const capture=noteCapture({client:'web',id:noteId,deviceId:'mote-owner-review',deviceName:'Mote owner review',platform:'import',capturedAt:now,text,metadata:{version:1,observedAt:now,collector:{method:'manual'},memoryCorrection:{memoryId:id,domain:original.domain,scopeRefs:original.scopeRefs??[],...(original.coding?{coding:{...original.coding,validation:'user_confirmed'}}:{})}}});
     let saved:Memory|undefined;
     await this.store.ingest(capture,()=>{
       if(Number(this.store.db.prepare('SELECT COUNT(*) n FROM memories').get()!.n)>=100000)throw new StoreError('Memory limit reached; remove unused memories before correcting',507);
       const current=this.get(id);if(current.version!==input.version||current.supersededBy)throw new StoreError('Memory changed while saving correction',409);
       const evidence=this.readEvidence([noteId])[0];if(!evidence)throw new StoreError('Correction evidence unavailable',409);
-      saved={id:memoryId,version:1,domain:original.domain??'personal',scopeRefs:original.scopeRefs,coding:original.coding?{...original.coding,validation:'user_confirmed'}:undefined,tier:original.tier,kind:original.kind,title:input.title,statement:input.statement+' ['+noteId+']',uncertainty:input.uncertainty,validFrom:input.validFrom??now,validUntil:input.validUntil,evidenceIds:[noteId],evidence:[reference(evidence,{offset:0,length:text.length,quote:text})],createdAt:now,status:'published',model:'owner',runId:'owner-correction:'+noteId,skillVersion:'owner-correction@1',admission:{layer:original.admission?.layer??'memory',reason:'Explicit owner correction',scope:original.admission?.scope??original.coding?.applicability??'Correction of the selected memory only',attribution:'user'},fingerprint:sha256(JSON.stringify([id,current.fingerprint,input,noteId])),relations:[{kind:'supersedes',memoryId:id,fingerprint:current.fingerprint,version:current.version??1}],correction:{memoryId:id,fingerprint:current.fingerprint,noteId}};
+      saved={id:memoryId,version:1,domain:original.domain,scopeRefs:original.scopeRefs,coding:original.coding?{...original.coding,validation:'user_confirmed'}:undefined,tier:original.tier,kind:original.kind,title:input.title,statement:input.statement+' ['+noteId+']',uncertainty:input.uncertainty,validFrom:input.validFrom??now,validUntil:input.validUntil,evidenceIds:[noteId],evidence:[reference(evidence,{offset:0,length:text.length,quote:text})],createdAt:now,status:'published',model:'owner',runId:'owner-correction:'+noteId,skillVersion:'owner-correction@1',admission:{layer:original.admission.layer,reason:'Explicit owner correction',scope:original.admission.scope,attribution:'user'},fingerprint:sha256(JSON.stringify([id,current.fingerprint,input,noteId])),relations:[{kind:'supersedes',memoryId:id,fingerprint:current.fingerprint,version:current.version}],correction:{memoryId:id,fingerprint:current.fingerprint,noteId}};
       this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(saved))+1024);this.store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(memoryId,now,JSON.stringify(saved));this.store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(memoryId,noteId);
-      current.supersededBy=memoryId;current.supersededAt=saved.validFrom;current.version=(current.version??1)+1;current.updatedAt=now;this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(current),id);
+      current.supersededBy=memoryId;current.supersededAt=saved.validFrom;current.version=current.version+1;current.updatedAt=now;this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(current),id);
     });return saved!;
   }
   delete(id:string){

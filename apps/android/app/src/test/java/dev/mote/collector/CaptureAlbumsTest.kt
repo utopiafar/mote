@@ -22,7 +22,7 @@ class CaptureAlbumsTest {
     private fun event(at: String, app: String = "fixture.app") = JSONObject()
         .put("id", UUID.randomUUID().toString()).put("source", "screen").put("capturedAt", at)
         .put("appId", app).put("appName", "Generated App").put("imageMime", "image/jpeg")
-        .put("ocrText", "GENERATED_OCR".repeat(1000)).put("ocr", JSONObject().put("status", "pending"))
+        .put("ocrText", "GENERATED_OCR".repeat(1000)).put("ocr", JSONObject().put("status", "completed"))
         .put("privacy", JSONObject().put("excluded", false))
     private fun fixture(test: (File, CountingCipher) -> Unit) {
         val root = Files.createTempDirectory("mote-albums").toFile()
@@ -59,21 +59,7 @@ class CaptureAlbumsTest {
         assertEquals(3, queue.albumPage(after, before).getInt("albumCount"))
         assertEquals(1, queue.albumImages("2026-09-14T12:15:00Z", "2026-09-14T12:30:00Z", "a").getInt("totalCount"))
     }
-    @Test fun missingOrDamagedIndexRebuildsWithoutReadingImagesAndDeletionDropsThumbnail() = fixture { root, cipher ->
-        val source = File(root, "source"); val queue = DurableQueue(source, cipher)
-        val item = event("2026-09-14T12:00:00Z"); val id = item.getString("id")
-        queue.enqueue(item, byteArrayOf(1), 100_000_000)
-        queue.cacheThumbnail(id, byteArrayOf(4, 5), 100_000_000)
-        val target = File(root, "restarted"); copy(source, target)
-        target.listFiles()!!.filter { it.name.startsWith(".browse-") }.forEach { it.writeText("corrupt derived fixture") }
-        cipher.records = 0
-        val restarted = DurableQueue(target, cipher)
-        assertEquals(1, restarted.albumPage(after, before).getInt("totalCount")); assertEquals(1, cipher.records)
-        assertArrayEquals(byteArrayOf(4, 5), restarted.thumbnail(id))
-        restarted.acknowledge(id); restarted.completeOcr(id, "", "completed", 100_000_000); restarted.acknowledgeOcr(id)
-        assertEquals(0, restarted.albumPage(after, before).getInt("totalCount")); assertNull(restarted.thumbnail(id))
-        assertFalse(target.listFiles()!!.any { it.extension in setOf("thumb", "blob") })
-    }
+
     @Test fun incomingCapturesDoNotShiftGridPagination() = fixture { root, cipher ->
         val queue = DurableQueue(root, cipher)
         repeat(3) { i -> queue.enqueue(event("2026-09-14T12:00:0${i}Z"), byteArrayOf(1), 100_000_000) }
@@ -94,5 +80,21 @@ class CaptureAlbumsTest {
         val restarted = DurableQueue(target, cipher)
         assertEquals("changed.app", restarted.albumPage(after, before).getJSONArray("items").getJSONObject(0).getString("appId"))
         assertNotNull(restarted.image(item.getString("id")))
+    }
+
+    @Test fun missingOrDamagedIndexRebuildsWithoutReadingImagesAndDeletionDropsThumbnail() = fixture { root, cipher ->
+        val source = File(root, "source"); val queue = DurableQueue(source, cipher)
+        val item = event("2026-09-14T12:00:00Z"); val id = item.getString("id")
+        queue.enqueue(item, byteArrayOf(1), 100_000_000)
+        queue.cacheThumbnail(id, byteArrayOf(4, 5), 100_000_000)
+        val target = File(root, "restarted"); copy(source, target)
+        target.listFiles()!!.filter { it.name.startsWith(".browse-") }.forEach { it.writeText("corrupt derived fixture") }
+        cipher.records = 0
+        val restarted = DurableQueue(target, cipher)
+        assertEquals(1, restarted.albumPage(after, before).getInt("totalCount")); assertEquals(1, cipher.records)
+        assertArrayEquals(byteArrayOf(4, 5), restarted.thumbnail(id))
+        restarted.acknowledge(id)
+        assertEquals(0, restarted.albumPage(after, before).getInt("totalCount")); assertNull(restarted.thumbnail(id))
+        assertFalse(target.listFiles()!!.any { it.extension in setOf("thumb", "blob") })
     }
 }

@@ -491,7 +491,6 @@ export class MaterialOrganizerRuntime {
       CREATE TRIGGER IF NOT EXISTS material_file_chunk_remove AFTER DELETE ON file_chunks BEGIN
         INSERT INTO changes(id,operation,changed_at) VALUES(old.capture_id,'supersede',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
       END;`);
-    if(!(store.db.prepare('PRAGMA table_info(material_organizer_inputs)').all() as {name:string}[]).some(row=>row.name==='material_id'))store.db.exec('ALTER TABLE material_organizer_inputs ADD COLUMN material_id TEXT');
     // Installation may find an existing archive. Rebuild it deterministically
     // through backfill; only changes after installation count as new intake.
     store.db.prepare("INSERT OR IGNORE INTO settings(key,value) SELECT 'material-organizer-cursor',CAST(coalesce(max(seq),0) AS TEXT) FROM changes").run();

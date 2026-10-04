@@ -23,9 +23,9 @@ import {alignDialogue,applySemanticGroups,TURN_GROUP_PROMPT} from './file-dialog
 import {defaultFileRecipe,TRANSCRIPT_OUTPUT,type FileRecipeContext} from './file-recipes.js';
 export {HttpTranscriptionProvider,type TranscriptionProvider} from './file-processors.js';
 
-import {migrateFilePolicy,publicFilePolicy,parseFilePolicy,selectFilePolicy,effectiveFileSettings,type AppliedFilePolicy} from './file-policy.js';
+import {createDefaultFilePolicy,publicFilePolicy,parseFilePolicy,selectFilePolicy,effectiveFileSettings,type AppliedFilePolicy} from './file-policy.js';
 
-type Saved={revision:string;settings:FileProcessingSettings;policy?:FilePolicy};
+type Saved={revision:string;settings:FileProcessingSettings;policy:FilePolicy};
 type Job={capture_id:string;state:string;stage:string;attempts:number;summary_state:string;local_only:number;policy_json:string|null;reuse_allowed:number};
 type Step={fingerprint:string;state:string;artifact_id:string|null;attempts:number};
 const managedAsrEndpoint=()=>process.env.MOTE_MEDIA_ASR_ENDPOINT??'http://127.0.0.1:9009/transcribe';
@@ -34,21 +34,19 @@ export type SummarizeFiles=(records:ContextRecord[],signal?:AbortSignal)=>Promis
 export class FileProcessing {
   private saved:Saved;private path:string;readonly engine:ExecutionEngine;private owned:boolean;private execution=new AsyncLocalStorage<{step:ExecutionStep;signal:AbortSignal;deadline:number}>();private abort=new AbortController();private stopping=false;
   private activeProcessorCalls=new Set<string>();private manualCancellation=false;
-  private rememberedRevision?:string;private reconciledEpoch?:string;private configurationEpoch?:string;private configurationCache=new Map<string,{fingerprint:string;receipt:Record<string,unknown>}>();
+  private reconciledEpoch?:string;private configurationEpoch?:string;private configurationCache=new Map<string,{fingerprint:string;receipt:Record<string,unknown>}>();
   readonly runtime:FileProcessorRuntime;
   private unregister:Array<()=>Promise<void>>=[];
   constructor(readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{executor?:ExecutionEngine;contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry;pluginContext?:Context;plugins?:Plugin[];modules?:string[];analyze?:FileAnalysis;analysisSnapshot?:(settings:Parameters<FileAnalysis>[2],localOnly:boolean)=>ModelSettings;analysisRevision?:()=>number;diagnostics?:ServerDiagnostics;mediaAssets?:MediaAssets}={}){
     installEvidenceDependencies(files.store);
     this.path=join(files.store.directory,'file-processing.json');
     const prior=existsSync(this.path)?JSON.parse(readFileSync(this.path,'utf8')):undefined;
-    if(prior?.settings){delete prior.settings.dailyAudioMinutes;prior.settings.maxAudioMinutes??=120;if(process.env.MOTE_MEDIA_ASR_ENDPOINT&&prior.settings.localEndpoint==='http://127.0.0.1:9009/transcribe'&&!prior.settings.localWorkerApiKey)prior.settings.localEndpoint=managedAsrEndpoint();
-      for(const service of prior.policy?.services??[])if(service.id==='asr-local'&&service.endpoint==='http://127.0.0.1:9009/transcribe'&&!service.apiKey)service.endpoint=managedAsrEndpoint();}
-    this.saved=prior?z.object({revision:z.string(),settings:fileProcessingSchema,policy:filePolicySchema.optional()}).parse(prior):{revision:'initial',settings:fileProcessingSchema.parse({localEndpoint:managedAsrEndpoint(),endpoint:managedAsrEndpoint()})};
-    files.store.db.exec("CREATE TABLE IF NOT EXISTS file_configuration_aliases(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,phase TEXT NOT NULL,revision TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(capture_id,phase,revision)); CREATE TABLE IF NOT EXISTS file_configuration_snapshots(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,fingerprint TEXT NOT NULL,receipt TEXT NOT NULL,PRIMARY KEY(capture_id,fingerprint))");
-    files.store.db.exec("CREATE TABLE IF NOT EXISTS file_processor_waits(resource_key TEXT PRIMARY KEY,capture_id TEXT NOT NULL,token TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('running','unknown'))); UPDATE file_processor_waits SET state='unknown' WHERE state='running'");
     this.runtime=new FileProcessorRuntime(provider,options.plugins,options.modules,options.contextProcessors,options.pluginContext);
+    this.saved=prior?z.object({revision:z.string(),settings:fileProcessingSchema,policy:filePolicySchema}).strict().parse(prior):{revision:'initial',settings:fileProcessingSchema.parse({localEndpoint:managedAsrEndpoint(),endpoint:managedAsrEndpoint()}),policy:createDefaultFilePolicy(this.runtime.registry,managedAsrEndpoint())};
+    files.store.db.exec("CREATE TABLE IF NOT EXISTS file_configuration_snapshots(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,fingerprint TEXT NOT NULL,receipt TEXT NOT NULL,PRIMARY KEY(capture_id,fingerprint))");
+    files.store.db.exec("CREATE TABLE IF NOT EXISTS file_processor_waits(resource_key TEXT PRIMARY KEY,capture_id TEXT NOT NULL,token TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('running','unknown'))); UPDATE file_processor_waits SET state='unknown' WHERE state='running'");
+
     this.engine=options.executor??new ExecutionEngine(files.store);this.owned=!options.executor;
-    files.store.db.exec("UPDATE file_jobs SET state='waiting' WHERE state='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE operation_id='file:'||file_jobs.capture_id AND kind='files.pipeline'); UPDATE file_jobs SET summary_state='waiting' WHERE summary_state='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE operation_id='file:'||file_jobs.capture_id AND kind='files.summary'); UPDATE file_steps SET state='waiting' WHERE state='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE operation_id='file:'||file_steps.capture_id)");
     for(const phase of ['pipeline','summary'] as const)this.unregister.push(this.engine.register({kind:'files.'+phase,pool:'files.'+phase,concurrency:()=>1,timeoutMs:()=>this.saved.settings.timeoutMs,
       resourceKeys:step=>{const hash=phase==='pipeline'&&files.store.db.prepare('SELECT object_hash FROM file_versions WHERE capture_id=?').get(String(step.input.captureId))?.object_hash;return hash?['file-extraction:'+sha256(JSON.stringify([hash,step.input.revision]))]:[];},
       validate:step=>this.exists(String(step.input.captureId),String(step.input.revision),phase),
@@ -61,8 +59,8 @@ export class FileProcessing {
   private log(event:string,id?:string,fields:EventFields={},level:'debug'|'info'|'warn'|'error'='info') {
     this.options.diagnostics?.record(event,{jobId:id,...fields},level);
   }
-  view(){const {apiKey,localModelApiKey,localWorkerApiKey,...settings}=this.saved.settings;return {revision:this.saved.revision,settings:{...settings,apiKeyConfigured:!!apiKey,localModelApiKeyConfigured:!!localModelApiKey,localWorkerApiKeyConfigured:!!localWorkerApiKey},execution:'central',runtime:'cordis',policy:publicFilePolicy(this.policy()),policyConfigured:!!this.saved.policy,processors:this.runtime.registry.list(),capabilities:{intake:this.runtime.intake.list(),...this.runtime.recipes.list(),outputs:this.runtime.outputs.list()}};}
-  private policy(){const policy=structuredClone(this.saved.policy??migrateFilePolicy(this.saved.settings,this.runtime.registry));for(const service of policy.services)if(service.id==='asr-local'&&service.endpoint===managedAsrEndpoint()&&!service.apiKey&&this.options.mediaAssets)service.apiKey=process.env.MOTE_MEDIA_WORKER_TOKEN;return policy;}
+  view(){const {apiKey,localModelApiKey,localWorkerApiKey,...settings}=this.saved.settings;return {revision:this.saved.revision,settings:{...settings,apiKeyConfigured:!!apiKey,localModelApiKeyConfigured:!!localModelApiKey,localWorkerApiKeyConfigured:!!localWorkerApiKey},execution:'central',runtime:'cordis',policy:publicFilePolicy(this.policy()),policyConfigured:true,processors:this.runtime.registry.list(),capabilities:{intake:this.runtime.intake.list(),...this.runtime.recipes.list(),outputs:this.runtime.outputs.list()}};}
+  private policy(){const policy=structuredClone(this.saved.policy);for(const service of policy.services)if(service.id==='asr-local'&&service.endpoint===managedAsrEndpoint()&&!service.apiKey&&this.options.mediaAssets)service.apiKey=process.env.MOTE_MEDIA_WORKER_TOKEN;return policy;}
   localService(id?:string){if(!id)return {endpoint:this.saved.settings.localEndpoint,apiKey:this.saved.settings.localWorkerApiKey??(this.options.mediaAssets&&this.saved.settings.localEndpoint===managedAsrEndpoint()?process.env.MOTE_MEDIA_WORKER_TOKEN:undefined)};const service=this.policy().services.find(s=>s.id===id);if(!service||service.kind!=='asr'||service.execution!=='local')throw new StoreError(moteText("需要选择已保存的本地录音服务"),400);return service;}
   currentSettings(){return structuredClone(this.saved.settings);}
   private modelVersion(processor:FileProcessor,settings:FileProcessingSettings){return processor.managedModel&&this.options.mediaAssets&&settings.endpoint===managedAsrEndpoint()?MEDIA_CATALOG[processor.managedModel].version:'';}
@@ -90,15 +88,6 @@ export class FileProcessing {
     if(this.configurationCache.size>=512)this.configurationCache.delete(this.configurationCache.keys().next().value!);
     this.configurationCache.set(key,result);return result;
   }
-  private rememberLegacyConfigurations(){
-    if(this.rememberedRevision===this.saved.revision)return;
-    const db=this.files.store.db;
-    for(const row of db.prepare("SELECT kind,input FROM execution_steps WHERE kind IN ('files.pipeline','files.summary') AND state NOT IN ('succeeded','cancelled','stale') AND json_extract(input,'$.revision')=?").all(this.saved.revision)){
-      const input=JSON.parse(String(row.input)),phase=row.kind==='files.summary'?'summary':'pipeline';
-      if(db.prepare('SELECT 1 FROM file_versions WHERE capture_id=?').get(input.captureId)&&!db.prepare('SELECT 1 FROM file_configuration_aliases WHERE capture_id=? AND phase=? AND revision=?').get(input.captureId,phase,input.revision)){this.files.store.reserveMetadata(256);db.prepare('INSERT INTO file_configuration_aliases VALUES(?,?,?,?)').run(input.captureId,phase,input.revision,this.configuration(input.captureId,phase).fingerprint);}
-    }
-    this.rememberedRevision=this.saved.revision;
-  }
   private requeueChanged(id:string,phase:'pipeline'|'summary'){
     const db=this.files.store.db;
     for(const row of db.prepare("SELECT id,input FROM execution_steps WHERE operation_id=? AND kind=? AND state NOT IN ('succeeded','cancelled','stale')").all('file:'+id,'files.'+phase)){
@@ -119,7 +108,7 @@ export class FileProcessing {
     this.reconciledEpoch=epoch;
   }
   update(raw:unknown){
-    const input=z.object({revision:z.string(),settings:z.record(z.unknown()),policy:z.unknown().optional()}).strict().parse(raw);
+    const input=z.object({revision:z.string(),settings:z.record(z.unknown()),policy:z.unknown()}).strict().parse(raw);
     if(input.revision!==this.saved.revision)throw new StoreError('Processing settings changed; refresh before saving',409);
     const next={...input.settings};delete next.apiKeyConfigured;delete next.localModelApiKeyConfigured;delete next.localWorkerApiKeyConfigured;
     for(const [key,endpoint] of [['apiKey','endpoint'],['localModelApiKey','localModelEndpoint'],['localWorkerApiKey','localEndpoint']] as const){
@@ -127,14 +116,13 @@ export class FileProcessing {
       if(next[key]===null||next[key]==='')delete next[key];
     }
     const settings=fileProcessingSchema.parse(next);
-    if(this.saved.policy&&input.policy===undefined&&Object.keys(settings).some(k=>!['enabled','maxAudioMinutes','timeoutMs'].includes(k)&&JSON.stringify(settings[k as keyof FileProcessingSettings])!==JSON.stringify(this.saved.settings[k as keyof FileProcessingSettings])))throw new StoreError(moteText("已启用类型方案，请使用新版处理设置页面修改策略"),409);
-    const policy=input.policy===undefined?this.saved.policy:parseFilePolicy(input.policy,this.saved.policy??migrateFilePolicy(this.saved.settings,this.runtime.registry),this.runtime.registry);
-    const saved:Saved={revision:randomUUID(),settings,...(policy?{policy}:{})},temp=this.path+'.'+randomUUID()+'.tmp';
+    const policy=parseFilePolicy(input.policy,this.saved.policy,this.runtime.registry);
+    const saved:Saved={revision:randomUUID(),settings,policy},temp=this.path+'.'+randomUUID()+'.tmp';
     const before=new Map<string,string>();
     for(const row of this.files.store.db.prepare("SELECT capture_id,state,summary_state FROM file_jobs WHERE state IN ('waiting','blocked','failed','running') OR summary_state IN ('waiting','failed','running')").all())for(const phase of ['pipeline','summary'] as const){
       const id=String(row.capture_id);if(phase==='pipeline'&&row.state==='succeeded'||phase==='summary'&&row.state==='succeeded'&&!['waiting','failed','running'].includes(String(row.summary_state)))continue;before.set(id+':'+phase,this.configuration(id,phase).fingerprint);
     }
-    this.rememberLegacyConfigurations();
+
     try{writeFileSync(temp,JSON.stringify(saved),{mode:0o600,flag:'wx'});const fd=openSync(temp,'r');try{fsyncSync(fd);}finally{closeSync(fd);}renameSync(temp,this.path);}finally{rmSync(temp,{force:true});}
     this.saved=saved;
     for(const [key,fingerprint] of before){const phase=key.endsWith(':pipeline')?'pipeline':'summary',id=key.slice(0,-phase.length-1);if(fingerprint!==this.configuration(id,phase).fingerprint)this.requeueChanged(id,phase);}
@@ -203,7 +191,7 @@ export class FileProcessing {
   explain(id:string){
     const file=this.files.detail(id),job=this.files.store.db.prepare('SELECT policy_json,config_revision FROM file_jobs WHERE capture_id=?').get(id);
     return {hasOriginal:file.hasOriginal,snapshots:this.files.store.db.prepare('SELECT fingerprint,receipt FROM file_configuration_snapshots WHERE capture_id=? ORDER BY rowid DESC LIMIT 100').all(id).map(row=>({fingerprint:row.fingerprint,...JSON.parse(String(row.receipt))})),applied:job?.policy_json?JSON.parse(String(job.policy_json)) as AppliedFilePolicy:null,
-      legacyRevision:job?.config_revision??null,current:selectFilePolicy(this.policy(),file.sourceId,file.item.mimeType??'application/octet-stream',this.saved.revision)};
+      executionFingerprint:job?.config_revision??null,current:selectFilePolicy(this.policy(),file.sourceId,file.item.mimeType??'application/octet-stream',this.saved.revision)};
   }
   match(raw:unknown){const q=z.object({sourceId:z.string().min(1).max(128),mimeType:z.string().regex(/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/)}).strict().parse(raw);return selectFilePolicy(this.policy(),q.sourceId,q.mimeType,this.saved.revision);}
   private previews=new Map<string,{revision:string;expires:number;items:{id:string;fingerprint:string}[]}>();
@@ -254,7 +242,7 @@ export class FileProcessing {
   prepare(){
     if(this.stopping)return [];
     if(this.options.mediaAssets?.ready('dialogue'))this.files.store.db.prepare("UPDATE file_jobs SET state='waiting',error=NULL,available_at=0 WHERE auto_eligible=1 AND state='blocked' AND error='model_missing'").run();
-    this.rememberLegacyConfigurations();this.reconcileConfigurations();
+    this.reconcileConfigurations();
     // A confirmed response can release a newer configuration that waited behind it.
     // Unknown calls retain their row, and user-cancelled jobs never match this transition.
     for(const row of this.files.store.db.prepare("SELECT capture_id FROM file_jobs WHERE error='processor_still_running' AND (state='blocked' OR summary_state='blocked')").all())if(!this.processorWaits(String(row.capture_id)).length)this.files.store.db.prepare("UPDATE file_jobs SET state=CASE WHEN state='blocked' THEN 'waiting' ELSE state END,summary_state=CASE WHEN summary_state='blocked' THEN 'waiting' ELSE summary_state END,error=NULL,available_at=0 WHERE capture_id=?").run(row.capture_id);
@@ -264,7 +252,7 @@ export class FileProcessing {
   async tick(){await this.runtime.ready;const revision=this.saved.revision,first=this.prepare();await this.engine.drain(first);if(revision!==this.saved.revision)return;const summaries=first.flatMap(id=>{const step=this.engine.get(id);return step?this.engine.list({operationId:step.operationId,kind:'files.summary',limit:100}).items.map(s=>s.id):[];});await this.engine.drain([...this.prepare(),...summaries]);}
   private exists(id:string,revision:string,phase:'pipeline'|'summary'='pipeline'){
     if(this.stopping||!this.files.store.db.prepare('SELECT 1 FROM file_versions WHERE capture_id=?').get(id)||!fileAttachmentAvailable(this.files.store,id))return false;
-    const expected=this.files.store.db.prepare('SELECT fingerprint FROM file_configuration_aliases WHERE capture_id=? AND phase=? AND revision=?').get(id,phase,revision)?.fingerprint??revision;
+    const expected=revision;
     return expected===this.configuration(id,phase).fingerprint;
   }
   artifact(id:string){const row=this.files.store.db.prepare('SELECT json FROM file_artifacts WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Processing input artifact is missing',409);return JSON.parse(row.json);}
@@ -307,17 +295,12 @@ export class FileProcessing {
     const stored=db.prepare('SELECT * FROM file_jobs WHERE capture_id=?').get(id) as Job|undefined;if(!stored)throw new StoreError('File job unavailable',404);
     const job={...stored,state:phase==='summary'?'succeeded':'waiting',attempts:Math.max(0,(this.execution.getStore()?.step.attempts??stored.attempts)-1)},file=this.files.detail(id),mime=file.item.mimeType??'application/octet-stream';
       if(!base.enabled)throw new ExecutionFailure('blocked','not_configured');
-      let applied:AppliedFilePolicy|undefined,settings=base,parameters:Record<string,string|number|boolean|null>={};
+      let applied:AppliedFilePolicy,settings=base,parameters:Record<string,string|number|boolean|null>={};
       let processorId:string|undefined,localOnly=false,effective=base;
       try{
-        applied=job.state==='succeeded'&&job.policy_json?JSON.parse(job.policy_json):this.saved.policy?selectFilePolicy(this.saved.policy,file.sourceId,mime,revision):undefined;
-        if(applied){
-          processorId=applied.profile.processorId;parameters=applied.profile.parameters;
-          if(processorId!=='archive')settings=effectiveFileSettings(applied,this.policy(),base,this.runtime.registry);
-        }else{
-          const override=base.sourceProfiles[file.sourceId],defaults:Record<string,string>={audio:base.audioProcessor,text:'text.utf8',image:base.imageProcessor};
-          processorId=override&&override!=='inherit'?override:base.typeProfiles[mime]??base.typeProfiles[mime.split('/')[0]+'/*']??(DOCUMENT_MIME_TYPES.some(type=>type===mime)?'document.generic':defaults[mime.split('/')[0]]);
-        }
+        applied=job.state==='succeeded'&&job.policy_json?JSON.parse(job.policy_json):selectFilePolicy(this.saved.policy,file.sourceId,mime,revision);
+        processorId=applied!.profile.processorId;parameters=applied!.profile.parameters;
+        if(processorId!=='archive')settings=effectiveFileSettings(applied!,this.policy(),base,this.runtime.registry);
         if(!processorId||processorId==='archive'){this.log('file.blocked',id,{category:processorId==='archive'?'archive_only':'unsupported_format'},processorId==='archive'?'info':'warn');db.prepare('UPDATE file_jobs SET policy_json=? WHERE capture_id=?').run(applied?JSON.stringify(applied):null,id);throw new ExecutionFailure('blocked',processorId==='archive'?'archive_only':'unsupported_format');}
         const processor=this.runtime.registry.get(processorId);
         localOnly=job.state==='succeeded'?!!job.local_only:processor.contentPolicy==='local-only';

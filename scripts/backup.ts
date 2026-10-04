@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 
 const args = process.argv.slice(2);
 const usage = 'Stop the central node first. Usage: npm run backup -- --data ./data --out /absolute/new-backup-directory';
-if (args.includes('--help')) { console.info(usage + '\nBacks up SQLite, referenced image/file originals, processing layers and checksums. Plaintext, encrypted and legacy content keep their stored formats. Import scripts/workspaces and tokens/keys are excluded; unfinished imports must be analyzed again after restore. Preserve MOTE_DATA_KEY or the vault content-key file separately when encryption has been used.'); process.exit(0); }
+if (args.includes('--help')) { console.info(usage + '\nBacks up storage epoch 3 SQLite, referenced chunked originals, source archive batches, processing layers and checksums. Current .plain and .aes content keeps its stored format. Older vaults require their matching older binary or a stopped full-directory backup. Import scripts/workspaces and tokens/keys are excluded; unfinished imports must be analyzed again after restore. Preserve MOTE_DATA_KEY or the vault content-key file separately when encryption has been used.'); process.exit(0); }
 function argument(name: string, fallback?: string) {
   const index = args.indexOf(name);
   if (index < 0 && fallback !== undefined) return fallback;
@@ -56,7 +56,7 @@ async function ordinarySource(path: string) {
 async function selectedContentPath(base: string): Promise<string> {
   // Match the mixed-format reader without opening or decrypting content. A present
   // unsafe preferred variant is an error, never permission to follow a fallback.
-  for (const suffix of ['.plain', '.aes', '']) {
+  for (const suffix of ['.plain', '.aes']) {
     const path = base + suffix;
     try { await lstat(join(source, path)); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; throw error; }
@@ -70,35 +70,17 @@ try {
   await ordinarySource(join(source, 'mote.sqlite'));
   const db = new DatabaseSync(join(source, 'mote.sqlite'), { readOnly: true });
   try {
-    const rows = db.prepare('SELECT hash FROM blobs').all() as { hash: unknown }[];
-    const fileRows = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='file_blobs'").get()
-      ? db.prepare('SELECT hash FROM file_blobs').all() as { hash: unknown }[] : [];
-    const fileObjects = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='file_objects'").get()
-      ? db.prepare('SELECT hash,parts FROM file_objects').all() as {hash:unknown;parts:unknown}[] : [];
-    const assets=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='assets'").get()?db.prepare('SELECT hash,parts,format FROM assets WHERE hash IN (SELECT hash FROM asset_references)').all() as {hash:string;parts:number;format:string}[]:[];
-    const unified=new Set(assets.map(asset=>asset.hash)),paths:string[]=[];
+    const hasSettings=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'").get();
+    if(!hasSettings||db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value!=='3')throw new Error('Unsupported Mote vault epoch. Back up older vaults with their matching older binary or a stopped full-directory copy. Existing source data was preserved.');
+    const assets=db.prepare('SELECT hash,parts,format FROM assets WHERE hash IN (SELECT hash FROM asset_references)').all() as {hash:string;parts:number;format:string}[];
+    const paths:string[]=[];
     for(const asset of assets){
       if(!/^[a-f0-9]{64}$/.test(asset.hash)||!Number.isSafeInteger(asset.parts)||asset.parts<0||asset.parts>128)throw new Error('Invalid asset metadata');
-      if(asset.format==='chunks')for(let part=0;part<asset.parts;part++)paths.push(await selectedContentPath(`files/objects/${asset.hash}/${part}`));
-      else if(asset.format==='image-legacy')paths.push('blobs/'+asset.hash);
-      else if(asset.format==='archive-legacy')paths.push(await selectedContentPath('files/'+asset.hash));
-      else throw new Error('Invalid asset format');
+      if(asset.format!=='chunks')throw new Error('Invalid asset format; epoch 3 requires chunked originals');
+      for(let part=0;part<asset.parts;part++)paths.push(await selectedContentPath(`files/objects/${asset.hash}/${part}`));
     }
     // Restored databases are data, never authority to read arbitrary vault files.
-    for (const { hash } of rows) {
-      if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid blob hash in backup source');
-      if(!unified.has(hash))paths.push('blobs/'+hash);
-    }
-    for (const { hash } of fileRows) {
-      if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid file hash in backup source');
-      if(!unified.has(hash))paths.push(await selectedContentPath('files/'+hash));
-    }
-    for(const object of fileObjects){
-      if(typeof object.hash!=='string'||!/^[a-f0-9]{64}$/.test(object.hash)||typeof object.parts!=='number'||!Number.isSafeInteger(object.parts)||object.parts<0||object.parts>128)throw new Error('Invalid file object in backup source');
-      if(unified.has(object.hash))continue;
-      for(let part=0;part<object.parts;part++)paths.push(await selectedContentPath(`files/objects/${object.hash}/${part}`));
-    }
-    try{for(const folder of await readdir(join(source,'source-archive'))){if(!/^[a-f0-9]{64}$/.test(folder))throw new Error('Invalid archive directory');for(const name of await readdir(join(source,'source-archive',folder))){if(!/^(manifest|[a-f0-9]{64})(\.plain|\.aes)$/.test(name))throw new Error('Invalid archive file');paths.push('source-archive/'+folder+'/'+name);}}}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+    try{for(const folder of await readdir(join(source,'source-archive'))){if(!/^[a-f0-9]{64}$/.test(folder))throw new Error('Invalid archive directory');for(const name of await readdir(join(source,'source-archive',folder))){if(!/^[a-f0-9]{64}(\.plain|\.aes)$/.test(name))throw new Error('Invalid archive file');paths.push('source-archive/'+folder+'/'+name);}}}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
     for(const path of paths)await ordinarySource(join(source,path));
     await backup(db, join(out, 'mote.sqlite'));
     await chmod(join(out, 'mote.sqlite'), 0o600);
@@ -145,6 +127,6 @@ try {
     }
   } finally { db.close(); }
   checksums['mote.sqlite'] = await sum(join(out, 'mote.sqlite'));
-  await writeFile(join(out, 'backup-manifest.json'), JSON.stringify({ version: 1, createdAt: new Date().toISOString(), checksums, note: 'Referenced image and file originals are included in their selected stored formats; checksums retain explicit .plain, .aes or legacy filenames. Import workspaces/scripts, tokens and encryption keys are excluded. Unfinished imports require a fresh analysis and preview after restore. Preserve MOTE_DATA_KEY or the vault content-key file separately when encryption has been used, including after disabling new encrypted writes.' }, null, 2), { mode: 0o600, flag: 'wx' });
+  await writeFile(join(out, 'backup-manifest.json'), JSON.stringify({ version: 1, storageEpoch:3, createdAt: new Date().toISOString(), checksums, note: 'Storage epoch 3 referenced chunked originals and source archive batches are included in their selected stored formats; checksums retain explicit .plain and .aes filenames. Import workspaces/scripts, tokens and encryption keys are excluded. Unfinished imports require a fresh analysis and preview after restore. Preserve MOTE_DATA_KEY or the vault content-key file separately when encryption has been used, including after disabling new encrypted writes.' }, null, 2), { mode: 0o600, flag: 'wx' });
   console.info(`Consistent vault backup written to ${out}. Restore into an empty data directory; separately restore the original MOTE_DATA_KEY or content-key when encryption has been used.`);
 } catch (error) { await rm(out, { recursive: true, force: true }); throw error; }

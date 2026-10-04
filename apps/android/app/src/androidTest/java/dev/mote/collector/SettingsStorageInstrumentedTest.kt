@@ -38,6 +38,29 @@ class SettingsStorageInstrumentedTest {
         assertTrue("settings callback", complete.await(30, TimeUnit.SECONDS))
         return result!!.getOrThrow()
     }
+    @Test fun freshSettingsWriteCompleteCurrentSnapshotAndRejectMissingFields() {
+        val name = "generated-settings-${UUID.randomUUID()}"
+        val directory = File(context.cacheDir, name).apply { mkdirs() }
+        val generated = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun getNoBackupFilesDir(): File = directory
+            override fun getSharedPreferences(ignored: String, mode: Int): SharedPreferences = context.getSharedPreferences(name, mode)
+        }
+        try {
+            val settings = Settings(generated); val config = settings.read()
+            val prefs = generated.getSharedPreferences("mote", 0)
+            assertEquals(3, prefs.getInt("configurationFormat", 0))
+            assertEquals(AppCollectionRules.DEFAULT, config.appCollectionRules)
+            assertEquals(AppCollectionRules.DEFAULT, prefs.getString("appCollectionRules", null))
+            assertEquals("", settings.dataOrigin()); assertTrue(prefs.contains("dataOrigin"))
+            assertTrue(prefs.contains("uploadedRetentionDays") && prefs.contains("packedUpload") && prefs.contains("uploadGateEnabled"))
+            assertFalse(prefs.contains("contentEncryptionEnabled") || prefs.contains("ocrChargingOnly"))
+            prefs.edit().remove("dataOrigin").commit()
+            assertThrows(IllegalStateException::class.java) { settings.read() }
+            prefs.edit().putString("dataOrigin", "").remove("appCollectionRules").commit()
+            assertThrows(IllegalStateException::class.java) { Settings(generated) }
+        } finally { context.deleteSharedPreferences(name); directory.deleteRecursively() }
+    }
     @Test fun startupRecoveryGateDoesNotBlockMainThreadOnQueueLock() {
         val locked = CountDownLatch(1); val release = CountDownLatch(1)
         QueueStorage.recovering = true
@@ -89,7 +112,7 @@ class SettingsStorageInstrumentedTest {
         try {
             val baseline = original.copy(server = "", token = "", mode = "accessibility", syncMode = "manual", nsfw = original.nsfw.copy(enabled = false))
             settings.save(baseline); settings.enabled = true // No capture service is connected in this fixture.
-            val next = baseline.copy(intervalSeconds = 47, jpegQuality = 81, captureMaxSide = 1440, masks = "0,0,1,0.08", ocrChargingOnly = true)
+            val next = baseline.copy(intervalSeconds = 47, jpegQuality = 81, captureMaxSide = 1440, masks = "0,0,1,0.08")
             assertFalse(apply(next).projectionConsentRequired)
             assertEquals(next, settings.read()); assertTrue(settings.enabled); assertFalse(ConnectionGuard.changing())
             val entered = CountDownLatch(1); val release = CountDownLatch(1)
@@ -150,7 +173,7 @@ class SettingsStorageInstrumentedTest {
             .put("privacy", JSONObject().put("excluded", false)).put("imageMime", "image/png").put("ocrText", "generated fixture")
             .put("ocr", JSONObject().put("status", "completed"))
         try {
-            val config = original.copy(server = "", token = "", syncMode = "manual", contentEncryptionEnabled = false, nsfw = original.nsfw.copy(enabled = false))
+            val config = original.copy(server = "", token = "", syncMode = "manual", nsfw = original.nsfw.copy(enabled = false))
             settings.save(config); val origin = settings.dataOrigin(); val stale = context.queue()
             stale.enqueue(event, image, 2000000)
             val storedImage = File(initial.path).listFiles()!!.single { it.extension == "blob" }.readBytes()

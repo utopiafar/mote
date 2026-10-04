@@ -2,6 +2,8 @@
 
 This records the focused client batch, not a release or a full-suite result.
 
+> Historical 0.0.61 validation follows. Current format 3 has retired local OCR backfill and collector credentials; native clients use verified owner credentials. The current scheduling, exact ACK and unknown-processing boundaries remain. Final compatibility cleanup and regression results are in the [MVP implementation record](audits/compatibility-cleanup-2026-10-04.md).
+
 ## Implemented
 
 - Desktop managed source scanning and upload now have separate tasks and abort controllers. Source state mutations are serialized, while network waits do not hold that serialization queue. A scan can stage the next revision while an earlier revision waits for its ACK; existing resumable scan checkpoints and deletion rules remain intact.

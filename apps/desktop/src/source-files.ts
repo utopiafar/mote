@@ -45,8 +45,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
     if (options.retention !== 'reference' && candidate.size > maximumFile) { result.skipped++; return 'ok'; }
     if (result.items.length >= 2000 || options.retention !== 'reference' && result.items.length>0 && totalBytes + candidate.size > 16 * 1024 * 1024) return 'stop';
     const unchanged = prior && prior.syncState === 'synced' && prior.contentQuickHash === candidate.quickHash && prior.fileId === candidate.fileId && prior.size === candidate.size && prior.mtimeMs === candidate.mtimeMs && prior.ctimeMs === candidate.ctimeMs && prior.quickHash === candidate.quickHash && prior.contentHash;
-    // Revisit legacy pending audio indexes to create their independent processing job.
-    if (unchanged && !(options.retention === 'snapshot' && fileMime(candidate.path).startsWith('audio/'))) { catalog?.markContent(candidate.relativePath, prior.contentHash, 'synced'); return 'ok'; }
+    if (unchanged) { catalog?.markContent(candidate.relativePath, prior.contentHash, 'synced'); return 'ok'; }
     if (options.initialSync === 'new_only' && !previous?.initialized) { catalog?.markContent(candidate.relativePath, candidate.quickHash, 'synced'); return 'ok'; }
     let handle;let spooled:OriginalSpool|undefined;
     try {

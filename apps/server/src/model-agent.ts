@@ -1,5 +1,5 @@
 import { createAgent, AgentNotConfiguredError, AgentTimeoutError, AgentResponseError, type ContextReader, type AgentOptions } from '@mote/agent';
-import { DEFAULT_AGENT_TIMEOUT_MS, DEFAULT_MODEL_MAX_TOKENS, DEFAULT_MODEL_REQUEST_TIMEOUT_MS, modelProvider, type ModelSettings, type ModelTestResult, type ModelProfile } from '@mote/shared/models';
+import { DEFAULT_AGENT_TIMEOUT_MS, DEFAULT_MODEL_MAX_TOKENS, DEFAULT_MODEL_REQUEST_TIMEOUT_MS, modelProvider, DEPLOYMENT_MODEL_PROFILE_ID, type ModelSettings, type ModelTestResult, type ModelProfile } from '@mote/shared/models';
 import type { Config } from './config.js';
 import type { QueryAgent } from './app.js';
 import type { PreparedModelSettings } from './model-settings.js';
@@ -13,16 +13,16 @@ export type ModelAgentFactory = (settings: ModelSettings, reader: ContextReader)
 export const createModelAgent = async (settings:ModelSettings, reader:ContextReader, codex?:AgentOptions['codex'],runModel?:AgentOptions['runModel'],admitModelRequest?:AgentOptions['admitModelRequest']):Promise<QueryAgent> => createAgent({ ...settings, reader, runModel, admitModelRequest, requestTimeoutMs: settings.modelRequestTimeoutMs, agentTimeoutMs: settings.agentTimeoutMs, codex });
 
 /** A registry generation is immutable. ReloadableAgent leases it for the entire query. */
-export async function createModelRegistry(profiles:ModelProfile[], reader:ContextReader, factory:ModelAgentFactory, initial?:QueryAgent):Promise<QueryAgent> {
+export async function createModelRegistry(profiles:ModelProfile[], reader:ContextReader, factory:ModelAgentFactory, initial?:QueryAgent,defaultProfileId=DEPLOYMENT_MODEL_PROFILE_ID):Promise<QueryAgent> {
   const agents=new Map<string,QueryAgent>();
   try {
-    for(const profile of profiles)agents.set(profile.id,profile.id==='default'&&initial?initial:await factory(profile.settings,reader));
+    for(const profile of profiles)agents.set(profile.id,profile.id===defaultProfileId&&initial?initial:await factory(profile.settings,reader));
   } catch(error) {await Promise.allSettled([...agents.values()].map(agent=>agent.close()));throw error;}
   return {
     configured:[...agents.values()].some(agent=>agent.configured),
     configuredFor:id=>Boolean(agents.get(id)?.configured),
     async query(input){
-      const id=input.modelProfileId??'default',agent=agents.get(id),profile=profiles.find(p=>p.id===id);
+      const id=input.modelProfileId??defaultProfileId,agent=agents.get(id),profile=profiles.find(p=>p.id===id);
       if(!agent||!profile||!agent.configured)throw new AgentNotConfiguredError();
       const {modelProfileId:_,modelOverride,...request}=input;
       const model=modelOverride??profile.settings.model;
@@ -45,7 +45,8 @@ export function modelSettingsFromConfig(config: Config): ModelSettings {
     reasoningEffort: config.modelReasoningEffort ?? (protocol === 'deepseek' ? 'high' : 'auto'),
     maxTokens: config.modelMaxTokens ?? DEFAULT_MODEL_MAX_TOKENS,
     modelRequestTimeoutMs: config.modelRequestTimeoutMs ?? (protocol === 'codex-app-server' ? null : DEFAULT_MODEL_REQUEST_TIMEOUT_MS),
-    agentTimeoutMs: config.agentTimeoutMs ?? (protocol === 'codex-app-server' ? null : config.modelTimeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS),
+    agentTimeoutMs: config.agentTimeoutMs ?? (protocol === 'codex-app-server' ? null : DEFAULT_AGENT_TIMEOUT_MS),
+    serviceTier:protocol==='codex-app-server'?'default':undefined,
     allowUnauthenticatedLocal: config.allowUnauthenticatedLocal,
   };
 }
@@ -56,7 +57,7 @@ export function applyModelSettings(config: Config, settings: ModelSettings): voi
   config.modelHeaders = structuredClone(settings.headers); config.modelExtraBody = structuredClone(settings.extraBody);
   config.modelReasoningEffort = settings.reasoningEffort; config.modelMaxTokens = settings.maxTokens;
   config.modelRequestTimeoutMs = settings.modelRequestTimeoutMs; config.agentTimeoutMs = settings.agentTimeoutMs;
-  config.modelTimeoutMs = settings.agentTimeoutMs ?? undefined; config.allowUnauthenticatedLocal = settings.allowUnauthenticatedLocal;
+  config.allowUnauthenticatedLocal = settings.allowUnauthenticatedLocal;
 }
 
 type Generation = { agent: QueryAgent; active: number; retired: boolean; closing?: Promise<void> };
@@ -108,7 +109,7 @@ export class ReloadableAgent implements QueryAgent {
 
 /** This reader is intentionally independent from the archive, source store and indexer. */
 export async function testModelConnection(settings: ModelSettings, factory: ModelAgentFactory = createModelAgent): Promise<ModelTestResult> {
-  const started = Date.now(), id = 'mote-model-connection-test';
+  const started = Date.now(), id = '7a8f56d1-45de-47b7-90bb-5e84d411c3d6';
   const record = { id, capturedAt: '2026-01-01T00:00:00.000Z', appName: 'Mote synthetic connection test', ocrText: 'This generated test record confirms a read-only model tool round trip. No personal archive is connected.' };
   const reader: ContextReader = {
     search: async () => [record], timeline: async () => ({ items: [record], nextCursor: null, totalCount: 1 }),

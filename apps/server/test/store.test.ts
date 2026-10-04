@@ -88,7 +88,7 @@ test('archive import validates checksums and rolls back all entries on a late co
   assert.deepEqual(await target.importArchive(archive),{imported:1,duplicates:0});
   assert.deepEqual(await target.importArchive(archive),{imported:0,duplicates:1});
   await assert.rejects(target.importArchive({...archive,captures:[{...archive.captures[0],blobHash:'invalid'}]}),/checksum/);
-  await assert.rejects(target.importArchive({version:1,captures:[{...f,id:randomUUID()}, {...f,ocrText:'conflict'}]}),/different content/);
+  await assert.rejects(target.importArchive({...archive,captures:[{...f,id:randomUUID()}, {...f,ocrText:'conflict'}]}),/different content/);
   assert.equal((target.stats() as {captures:number}).captures,1);
 });
 test('deletion respects shared blobs and invalidates derived insights',async t=>{

@@ -1,4 +1,5 @@
 import {test} from 'node:test';
+import {formatEvidenceRef} from '@mote/shared';
 import assert from 'node:assert/strict';
 import {startBridge} from '../dist/bridge.js';
 import {generatedMaterialPages,materialRef as ref} from './material-page-fixture.mjs';
@@ -22,7 +23,7 @@ test('one material call fits full serialized provenance and grants only its deli
   assert.equal(read.body.hostBudget.remainingCalls,38,'only catalog and one model tool call count');
   assert.deepEqual(bridge.trace.at(-1).materialPage,{readAttempts:2,requestedLength:10000,returnedLength:5000,budgetLimited:true});
   const omitted=fixture.originals[1].id;assert.ok(fixture.grants.has(omitted),'the reader simulates a pre-delivery internal source grant');
-  assert.deepEqual(read.body.data.originalRefs,[fixture.originals[0].id]);
+  assert.deepEqual(read.body.data.originalRefs,[formatEvidenceRef('capture',fixture.originals[0].id)]);
   assert.equal(bridge.evidenceDependencies.ids.includes(omitted),false);
   assert.equal((await call('evidence',{ids:[omitted]})).status,400);
   let imageReads=0;fixture.reader.readImage=async()=>{imageReads++;throw Error('must not read omitted image');};
@@ -37,7 +38,7 @@ for(const archive of [false,true])test(`budget pages retain UTF-16 offsets, span
     const result=await call('material_read',{ref,offset,length:10000});assert.equal(result.status,200);reads++;
     const page=result.body.data;assert.equal(page.textRange.offset,offset);assert.equal(page.text,fixture.text.slice(offset,offset+page.text.length));
     for(const span of page.spans){assert.equal(span.materialRange.start,offset+span.pageRange.start);assert.equal(span.materialRange.end,offset+span.pageRange.end);assert.equal(span.memberIds[0],archive?'generated-archive':`generated-member-${span.blockId.split('-').at(-1)}`);}
-    const expected=fixture.blocks.filter(block=>block.end>offset&&block.start<offset+page.text.length).map(block=>block.originalId);
+    const expected=fixture.blocks.filter(block=>block.end>offset&&block.start<offset+page.text.length).map(block=>formatEvidenceRef('capture',block.originalId));
     assert.deepEqual(page.originalRefs,expected);joined+=page.text;
     if(page.textRange.nextOffset===null)break;
     assert.equal(page.textRange.nextOffset,offset+page.text.length);offset=page.textRange.nextOffset;

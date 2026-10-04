@@ -1,3 +1,4 @@
+import {fixtureMemoryResult,fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,readFileSync,realpathSync,rmSync,writeFileSync} from 'node:fs';
@@ -24,7 +25,7 @@ const backupScript=fileURLToPath(new URL('../../../scripts/backup.ts',import.met
 const takeBackup=(source:string,out:string)=>execFileSync(process.execPath,[backupScript,'--data',source,'--out',out],{stdio:'pipe'});
 const empty=()=>({answer:JSON.stringify({memories:[]}),citations:[],trace:[],runId:randomUUID()});
 
-test('combined migration backup restores original identities, Memory history and interrupted execution without replaying completed work',async t=>{
+test('current epoch 3 backup restores original identities, Memory history and interrupted execution without replaying completed work',async t=>{
  const root=realpathSync(mkdtempSync(join(tmpdir(),'mote-combined-restore-'))),source=join(root,'source'),before=join(root,'before-migration'),snapshot=join(root,'snapshot'),target=join(root,'restored'),rollback=join(root,'rollback'),key='31'.repeat(32);
  const original=new Store(source,{dataKey:key,contentEncryptionEnabled:true}),sources=new SourceStore(original),archived=new ArchivedFileStore(original),memories=new MemoryStore(original);
  const stores=[original],engines:ExecutionEngine[]=[],pipelines:MemoryPipeline[]=[],queries:QueryRuns[]=[],insights:InsightRuns[]=[];
@@ -33,14 +34,14 @@ test('combined migration backup restores original identities, Memory history and
  const record=(revision:string,text:string)=>({externalId:'generated-note',revision,observedAt:'2025-01-01T00:00:00Z',kind:'message',layer:'original',text});
  const first=await sources.upsert('generated-source',record('v1','Generated earlier statement.'));
  const current=await sources.upsert('generated-source',record('v2','Generated current scoped preference.'));
- const bytes=Buffer.from('Generated encrypted legacy original\n'.repeat(180)),legacy=archived.put({name:'legacy.txt',bytes});legacyAsset(original,legacy.hash,'archive-legacy');
- const candidate=memories.extract({answer:JSON.stringify({memories:[{title:'Generated memory',statement:`Generated preference [${current.id}]`,uncertainty:'Fixture only',evidenceIds:[current.id],evidence:[{id:current.id,quote:record('v2','Generated current scoped preference.').text}]}]}),citations:[{id:current.id,capturedAt:'2025-01-01T00:00:00Z',appName:'Generated',excerpt:''}],trace:[],runId:randomUUID()},'fixture').items[0];
+ const bytes=Buffer.from('Generated encrypted legacy original\n'.repeat(180)),legacy=archived.put({name:'legacy.txt',bytes});
+ const candidate=memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'Generated memory',statement:`Generated preference [${current.id}]`,uncertainty:'Fixture only',evidenceIds:[current.id],evidence:[{id:current.id,quote:record('v2','Generated current scoped preference.').text}]}]}),citations:[{id:current.id,capturedAt:'2025-01-01T00:00:00Z',appName:'Generated',excerpt:''}],trace:[],runId:randomUUID()}),'fixture').items[0];
  const prior=memories.publish(candidate.id);
  // Pre-upgrade Memory records had no version field. The backup predates all execution tables.
- original.db.prepare("UPDATE memories SET json=json_remove(json,'$.version') WHERE id=?").run(prior.id);
+
  const preMemory=String(original.db.prepare('SELECT json FROM memories WHERE id=?').get(prior.id)!.json);takeBackup(source,before);
- original.assets.migrate(legacy.hash);assert.equal(original.assets.get(legacy.hash).format,'chunks');assert.deepEqual(archived.read(legacy.id),bytes);
- const corrected=await memories.correct(prior.id,{version:1,title:'Generated owner correction',statement:'The generated preference applies only to the fixture project.'});
+ assert.equal(original.assets.get(legacy.hash).format,'chunks');assert.deepEqual(archived.read(legacy.id),bytes);
+ const corrected=await memories.correct(prior.id,{version:prior.version,title:'Generated owner correction',statement:'The generated preference applies only to the fixture project.'});
  sources.register({id:'generated-phone',name:'Generated phone original',kind:'local-files',deviceId:'phone-fixture',platform:'android',retention:'archive'});
  const binary=Buffer.alloc(4*1024*1024+17,23),fileStore=new FileStore(original,sources),manifest={sourceId:'generated-phone',previousRevision:null,item:{externalId:'generated://binary',revision:'binary-v1',observedAt:'2025-02-01T00:00:00Z',title:'Generated binary',kind:'file',layer:'original',text:'',mimeType:'application/octet-stream',deleted:false},sizeBytes:binary.length,sha256:sha256(binary)};
  const session=fileStore.begin(manifest,()=>{});for(let i=0;i<2;i++)fileStore.part(session.uploadId,i,binary.subarray(i*4*1024*1024,(i+1)*4*1024*1024),()=>{});const fileAck=await fileStore.commit(session.uploadId,()=>{});
@@ -52,7 +53,7 @@ test('combined migration backup restores original identities, Memory history and
  const attach=archived.attach.bind(archived);let interrupt=true;archived.attach=(id,ids)=>{if(interrupt&&original.evidence([id])[0].provenance?.externalId==='two'){interrupt=false;throw Error('Generated interrupted confirmation');}attach(id,ids);};
  const partialResult=await imports.confirm(partial.id);archived.attach=attach;assert.equal(partialResult.progress.processed,1);
  const long=await sources.upsert('generated-source',{...record('v1','x'.repeat(600)),externalId:'generated-long'});let configured=true;
- const pipeline=new MemoryPipeline({store:original,memories,executor:engine,batchCharacters:256,model:()=> 'fixture',configured:()=>configured,query:async()=>{configured=false;return empty();}});pipelines.push(pipeline);
+ const pipeline=fixtureMemoryPipeline({store:original,memories,executor:engine,batchCharacters:256,model:()=> 'fixture',configured:()=>configured,query:async()=>{configured=false;return empty();}});pipelines.push(pipeline);
  const memoryJob=pipeline.create({evidenceIds:[long.id]});const pausedMemory=await pipeline.run(memoryJob.id);assert.equal(pausedMemory.completedBatches,1);await pipeline.close();
  const interruptedBatch=pausedMemory.batches.find(batch=>batch.status==='pending')!;
  original.db.prepare("UPDATE execution_steps SET state='running',attempts=1,lease_until=?,fence='generated-memory-fence' WHERE id=?").run(Date.now()+3600000,interruptedBatch.id);
@@ -90,7 +91,7 @@ test('combined migration backup restores original identities, Memory history and
  const restoredImport=new ImportStore(restored,restoredFiles,restoredSources,{executor,prepare:parser});assert.equal(restoredImport.get(partial.id).status,'queued');executor.project(obsoleteImportStep);assert.equal(restoredImport.get(partial.id).status,'queued','obsolete phase projection cannot overwrite the new preview generation');assert.deepEqual(restoredImport.get(partial.id).captureIds,partialResult.captureIds);await assert.rejects(restoredImport.confirm(partial.id),{statusCode:409});
  assert.equal((await restoredImport.confirm(completed.id)).status,'completed');assert.deepEqual(restored.db.prepare('SELECT id,attempts,state FROM execution_steps WHERE operation_id=?').all('import:'+completed.id),completeImportSteps);
  await restoredImport.retry(partial.id);const resumed=await restoredImport.confirm(partial.id);assert.equal(resumed.status,'completed');assert.equal(resumed.progress.duplicates,1);assert.equal(resumed.progress.imported,1);
- const offsets:number[]=[];const resumedPipeline=new MemoryPipeline({store:restored,memories:restoredMemory,executor,batchCharacters:256,model:()=> 'fixture',configured:()=>true,query:async input=>{offsets.push(input.evidenceRanges[0].offset);return empty();}});pipelines.push(resumedPipeline);
+ const offsets:number[]=[];const resumedPipeline=fixtureMemoryPipeline({store:restored,memories:restoredMemory,executor,batchCharacters:256,model:()=> 'fixture',configured:()=>true,query:async input=>{offsets.push(input.evidenceRanges[0].offset);return empty();}});pipelines.push(resumedPipeline);
  assert.equal((await resumedPipeline.retry(memoryJob.id)).status,'completed');assert.deepEqual(offsets,[256,512]);assert.equal(new Operations(restored).detail('memory:'+memoryJob.id).operation.state,'succeeded');
  assert.equal(new Operations(restored).detail(queryStep).operation.state,'failed');assert.equal(new Operations(restored).detail('import:'+completed.id).operation.state,'succeeded');
  // Rollback is a fresh restore of the pre-migration snapshot, never overwriting the upgraded vault.

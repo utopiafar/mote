@@ -1,3 +1,4 @@
+import {formatEvidenceRef} from '@mote/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { navigationScopeSchema } from '../context-navigation.js';
@@ -44,5 +45,5 @@ app.post('/api/imports/:id/confirm',async(req,reply)=>{
 app.post('/api/imports/:id/retry',async(req,reply)=>{const id=jobId(req.params);imports.get(id);if(importTasks.has(id)||imports.hasActiveWorker(id))return reply.code(409).send({error:'import_stopping',message:'Import processing is still stopping. Retry shortly.',requestId:req.id});launchImport(id,()=>imports.retry(id));return reply.code(202).send(imports.get(id));});
 app.get('/api/archived-files/:id',async req=>archivedFiles.get(jobId(req.params)));
 app.get('/api/archived-files/:id/content',async(req,reply)=>{const id=jobId(req.params),file=archivedFiles.get(id);return reply.type('application/octet-stream').header('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.name).replace(/'/g,'%27')}`).header('Content-Security-Policy',"default-src 'none'; sandbox").send(archivedFiles.stream(id));});
-app.get('/api/captures/:id/archived-files',async req=>{const record=evidenceReader.evidence([(req.params as {id:string}).id],navigationScopeSchema.parse(req.query))[0];if(!record)throw new StoreError('Capture not found',404);return {items:archivedFiles.listForCapture(record.id)};});
+app.get('/api/captures/:id/archived-files',async req=>{const record=evidenceReader.evidence([formatEvidenceRef('capture',z.string().uuid().parse((req.params as {id:string}).id))],navigationScopeSchema.parse(req.query))[0];if(!record)throw new StoreError('Capture not found',404);return {items:archivedFiles.listForCapture(record.id)};});
 }

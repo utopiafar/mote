@@ -14,7 +14,7 @@ import {MemoryReviewCache} from '../apps/server/src/memory-review-cache.js';
 const directory=mkdtempSync(join(tmpdir(),'mote-review-policy-live-')),store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
 sources.register({id:'synthetic',name:'Generated review fixtures',kind:'custom',deviceId:'generated',platform:'import'});
 const model=process.env.MOTE_TEST_CODEX_MODEL??'gpt-5.6-luna',cache=new MemoryReviewCache();
-const agent=createAgent({provider:'codex',protocol:'codex-app-server',model,reasoningEffort:'low',agentTimeoutMs:300000,reader:{search:async()=>[],timeline:async()=>[],evidence:async({ids})=>store.evidence(ids),activity:async()=>({}),devices:async()=>[]}});
+const agent=createAgent({provider:'codex',protocol:'codex-app-server',model,reasoningEffort:'low',agentTimeoutMs:300000,reader:{search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async({ids})=>store.evidence(ids),activity:async()=>({}),devices:async()=>[]}});
 const calls:{phase:string;durationMs:number;usage:unknown}[]=[],reports:unknown[]=[];let phase='baseline';
 async function query(input:QueryInput){assert.ok(calls.length<20,'Live call budget exceeded');const start=Date.now();console.log(JSON.stringify({stage:'model-start',phase,call:calls.length+1}));let usage:unknown=null;const result=await agent.query({...input,onUsage:value=>{usage=value;input.onUsage?.(value);}});calls.push({phase,durationMs:Date.now()-start,usage});return result;}
 const cases=[

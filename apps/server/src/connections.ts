@@ -12,7 +12,7 @@ const deviceId=z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/);
 const label=z.string().trim().min(1).max(120);
 const platform=z.enum(['android','macos','windows','linux','other']);
 const timestamp=z.string().datetime();
-const credentialSchema=z.object({id:z.string().uuid(),label,scope:z.enum(['owner','collector','mcp-read','mcp-write']),createdAt:timestamp,revokedAt:timestamp.optional(),expiresAt:timestamp.optional(),serverUrl:z.string().max(2048),hash:z.string().regex(/^[a-f0-9]{64}$/),deviceId:deviceId.optional(),deviceName:z.string().min(1).max(200).optional(),platform:platform.optional(),writeSourceIds:z.array(z.string().min(1).max(128)).max(500).optional()}).strict();
+const credentialSchema=z.object({id:z.string().uuid(),label,scope:z.enum(['owner','mcp-read','mcp-write']),createdAt:timestamp,revokedAt:timestamp.optional(),expiresAt:timestamp.optional(),serverUrl:z.string().max(2048),hash:z.string().regex(/^[a-f0-9]{64}$/),deviceId:deviceId.optional(),deviceName:z.string().min(1).max(200).optional(),platform:platform.optional(),writeSourceIds:z.array(z.string().min(1).max(128)).max(500).optional()}).strict();
 const savedSchema=z.object({version:z.literal(1),credentials:z.array(credentialSchema).max(500)}).strict();
 export type ConnectionCredential=z.infer<typeof credentialSchema>;
 type Saved=z.infer<typeof savedSchema>;
@@ -38,7 +38,7 @@ export class Connections {
     this.file=options?.file??new PrivateFile<Saved>(join(store.directory,'connectors'),'client-connections.json');this.clock=options?.clock??Date.now;
   }
   async init(){
-    try{const raw=await this.file.read();if(raw!==undefined){const saved=savedSchema.parse(raw);const ids=new Set(),hashes=new Set(),activeDevices=new Set();for(const c of saved.credentials){serverUrl(c.serverUrl);if(ids.has(c.id)||hashes.has(c.hash)||(c.scope==='collector'&&(!c.deviceId||!c.deviceName||!c.platform))||(c.scope==='mcp-write'&&!c.writeSourceIds?.length))throw Error();ids.add(c.id);hashes.add(c.hash);if(c.scope==='collector'&&!c.revokedAt){if(activeDevices.has(c.deviceId))throw Error();activeDevices.add(c.deviceId);}}this.credentials=saved.credentials;}}
+    try{const raw=await this.file.read();if(raw!==undefined){const saved=savedSchema.parse(raw);const ids=new Set(),hashes=new Set(),activeDevices=new Set();for(const c of saved.credentials){serverUrl(c.serverUrl);if(ids.has(c.id)||hashes.has(c.hash)||(c.scope==='mcp-write'&&!c.writeSourceIds?.length))throw Error();ids.add(c.id);hashes.add(c.hash);}this.credentials=saved.credentials;}}
     catch{throw new ConnectionError('connection_storage_invalid',503,moteText("连接凭据文件无法读取，请保留数据并检查中央节点文件权限。"));}
   }
   private serialize<T>(run:()=>Promise<T>):Promise<T>{const work=this.sequence.catch(()=>{}).then(()=>{if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央节点正在关闭，请稍后重试。"));return run();});this.sequence=work;return work;}
@@ -70,7 +70,7 @@ export class Connections {
       if(known&&!invitation.authorizedDeviceId)throw new ConnectionError('device_already_registered',409,moteText("此设备 ID 已在中央登记；请由所有者选择该设备并生成绑定邀请。"));
       const token=randomBytes(32).toString('base64url'),now=new Date(this.clock()).toISOString();
       const credential:ConnectionCredential={id:randomUUID(),label:invitation.label,scope:'owner',createdAt:now,serverUrl:invitation.serverUrl,hash:digest(token),deviceId:input.deviceId,deviceName:input.deviceName,platform:input.platform};
-      const next=this.credentials.map(c=>['owner','collector'].includes(c.scope)&&c.deviceId===input.deviceId&&!c.revokedAt?{...c,revokedAt:now}:c);
+      const next=this.credentials.map(c=>c.scope==='owner'&&c.deviceId===input.deviceId&&!c.revokedAt?{...c,revokedAt:now}:c);
       await this.persist([...next,credential]);
       this.invitations.delete(key);
       return {serverUrl:invitation.serverUrl,token,credentialId:credential.id,scope:'owner' as const};
@@ -100,8 +100,8 @@ export class Connections {
     if(write&&(!config.mcpWriteEnabled||!sourceIds?.length))return;
     return {write,sourceIds,authorize:()=>this.assertActive(c)};
   }
-  /** Legacy paired credentials retain their hashes and acquire the same rights as owner tokens. */
-  isOwner(c:ConnectionCredential){return c.scope==='owner'||c.scope==='collector';}
+  /** Owner credentials are the explicit central-management authority. */
+  isOwner(c:ConnectionCredential){return c.scope==='owner';}
   async session(server:string,label:string,device?:{deviceId:string;deviceName:string;platform:z.infer<typeof platform>},durationMs=30*86400000){
     const url=serverUrl(server);platform.parse(device?.platform??'other');
     if(device){deviceId.parse(device.deviceId);if(!device.deviceName.trim()||device.deviceName.length>200)throw new ConnectionError('invalid_device',400,'Invalid device');}

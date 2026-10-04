@@ -182,7 +182,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
             body.removeAllViews(); screens.setBack { screens.refresh() }
             ui.text(MoteI18n.text("模型配置"), 24f)
             ui.button(MoteI18n.text("功能默认模型")) { modelDefaults(value) }
-            val profiles = value.optJSONArray("profiles") ?: JSONArray()
+            val profiles = value.getJSONArray("profiles")
             for (i in 0 until profiles.length()) {
                 val profile = profiles.getJSONObject(i); val id = profile.getString("id"); val card = ui.card()
                 ui.text(profile.optString("name") + " · " + profile.getJSONObject("settings").optString("model"), 19f, card)
@@ -190,11 +190,11 @@ internal class CentralAdmin(private val screens: CentralScreens) {
                     ui.button(MoteI18n.text("编辑"), parent = card) {
                         val settings = cleanSettings(profile.getJSONObject("settings")).put("apiKey", "").put("headers", JSONObject.NULL).put("extraBody", JSONObject.NULL)
                         val request = JSONObject().put("revision", value.getLong("revision")).put("settings", settings)
-                        if (id != "default") request.put("name", profile.getString("name"))
-                        edit(MoteI18n.text("模型配置"), if (id == "default") "/api/model-settings" else "/api/model-settings/profiles/" + enc(id), request)
+                        request.put("name", profile.getString("name"))
+                        edit(MoteI18n.text("模型配置"), "/api/model-settings/profiles/" + enc(id), request)
                     }
                     ui.button(MoteI18n.text("删除"), parent = card) { screens.confirm(MoteI18n.text("删除"), MoteI18n.text("删除后无法恢复。")) {
-                        ui.work(MoteI18n.text("正在删除…"), { api.delete(if (id == "default") "/api/model-settings" else "/api/model-settings/profiles/" + enc(id), JSONObject().put("revision", value.getLong("revision"))) }) { models() }
+                        ui.work(MoteI18n.text("正在删除…"), { api.delete("/api/model-settings/profiles/" + enc(id), JSONObject().put("revision", value.getLong("revision"))) }) { models() }
                     } }
                 }
                 ui.button(MoteI18n.text("复制为新预设"), parent = card) {
@@ -209,13 +209,13 @@ internal class CentralAdmin(private val screens: CentralScreens) {
         }
     }
     private fun cleanSettings(value: JSONObject) = pick(value, "provider", "protocol", "baseUrl", "model", "reasoningEffort", "serviceTier", "maxTokens", "modelRequestTimeoutMs", "agentTimeoutMs", "allowUnauthenticatedLocal").apply {
-        if (optString("protocol") == "codex-app-server" && !has("serviceTier")) put("serviceTier", "default")
+        if (getString("protocol") == "codex-app-server") require(getString("serviceTier") in setOf("default", "fast"))
     }
     private fun modelDefaults(value: JSONObject) {
         body.removeAllViews(); screens.setBack { models() }
         val profiles = value.getJSONArray("profiles"); val ids = (0 until profiles.length()).map { profiles.getJSONObject(it).getString("id") }
         val names = (0 until profiles.length()).map { profiles.getJSONObject(it).getString("name") }
-        val defaults = value.getJSONObject("defaults"); val models = value.optJSONObject("defaultModels") ?: JSONObject()
+        val defaults = value.getJSONObject("defaults"); val models = value.getJSONObject("defaultModels")
         val fields = linkedMapOf<String, Pair<Spinner, EditText>>()
         for (feature in defaults.keys()) {
             ui.text(label(feature), 19f)
@@ -351,7 +351,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
                 ui.work(MoteI18n.text("正在保存…"), { api.patch("/api/todos/" + enc(row.getString("id")), JSONObject().put("version", row.getInt("version")).put("status", "completed")) }) { screens.refresh() }
             }
             val refs = row.optJSONArray("evidenceIds") ?: JSONArray()
-            for (i in 0 until refs.length()) ui.button(MoteI18n.text("查看原文依据"), parent = card) { library.evidence(refs.getString(i)) }
+            for (i in 0 until refs.length()) ui.button(MoteI18n.text("查看原文依据"), parent = card) { library.captureEvidence(refs.getString(i)) }
         }
     }
     private fun processing() {
@@ -415,7 +415,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
                 if (row.has("path")) agent(row.getString("path"))
                 else if (row.optString("expand") == "source_items") {
                     library.paged("/api/agent-view/source-items?sourceId=" + enc(row.getString("id")) + "&limit=12", card) { item, child ->
-                        ui.text(item.optString("title"), parent = child); ui.button(MoteI18n.text("查看原文"), parent = child) { library.evidence(item.optString("ref", item.optString("id"))) }
+                        ui.text(item.optString("title"), parent = child); ui.button(MoteI18n.text("查看原文"), parent = child) { library.evidence(item.getString("ref")) }
                     }
                 } else agentDetail(row, path)
             }
@@ -436,9 +436,9 @@ internal class CentralAdmin(private val screens: CentralScreens) {
             for (i in 0 until items.length()) {
                 val item = items.getJSONObject(i)
                 val evidence = item.optJSONArray("evidence") ?: JSONArray()
-                for (j in 0 until evidence.length()) ui.button(MoteI18n.text("查看原文依据")) { library.evidence(evidence.getJSONObject(j).getString("id")) }
+                for (j in 0 until evidence.length()) ui.button(MoteI18n.text("查看原文依据")) { library.captureEvidence(evidence.getJSONObject(j).getString("id")) }
                 val members = item.optJSONArray("members") ?: JSONArray()
-                for (j in 0 until members.length()) ui.button(MoteI18n.text("查看原文依据") + " " + (j + 1)) { library.evidence(members.getString(j)) }
+                for (j in 0 until members.length()) ui.button(MoteI18n.text("查看原文依据") + " " + (j + 1)) { library.captureEvidence(members.getString(j)) }
                 item.optJSONObject("textRange")?.let { range ->
                     if (!range.isNull("nextOffset")) ui.button(MoteI18n.text("下一页")) { agentDetail(row, path, range.getInt("nextOffset")) }
                 }
@@ -567,7 +567,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
                 ui.button(MoteI18n.text("断开连接"), parent = card) { ui.work(MoteI18n.text("正在处理…"), { api.delete(path) }) { recordings() } }
                 ui.button(MoteI18n.text("最近归档的录音"), parent = card) {
                     library.paged(path + "/items", card) { item, child ->
-                        ui.button(item.optString("title"), parent = child) { library.evidence(item.getString("captureId")) }
+                        ui.button(item.optString("title"), parent = child) { library.captureEvidence(item.getString("captureId")) }
                         item.optJSONObject("audio")?.let { audio -> ui.button(MoteI18n.text("播放录音"), parent = child) {
                             screens.playAudio("/api/archived-files/" + enc(audio.getString("id")) + "/content", child)
                         } }

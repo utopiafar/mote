@@ -46,7 +46,7 @@ test('table citations open the verified original and retain focus across answer 
   t.after(async()=>{await act(async()=>root.unmount());dom.window.close();for(const [key,previous]of globals){if(previous)Object.defineProperty(globalThis,key,previous);else Reflect.deleteProperty(globalThis,key);}});
   await act(async()=>root.render(React.createElement(AnswerMarkdown,{answer:value,onOpen})));
   const button=dom.window.document.querySelector<HTMLButtonElement>('td .inline-citation')!;button.focus();
-  await act(async()=>button.click());assert.deepEqual(opened,[id]);
+  await act(async()=>button.click());assert.deepEqual(opened,['capture:'+id]);
   await act(async()=>root.render(React.createElement(AnswerMarkdown,{answer:{...value,citations:[...value.citations]},onOpen})));
   assert.equal(dom.window.document.querySelector('td .inline-citation'),button);
   assert.equal(dom.window.document.activeElement,button);

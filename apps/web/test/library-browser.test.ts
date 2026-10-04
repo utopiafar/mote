@@ -44,7 +44,7 @@ test('one collection selector leads directly into rows and source details withou
   assert.match(d.querySelector('.library-detail')!.textContent!,/generated\/note.txt/);
   assert.match(d.querySelector('.library-detail')!.textContent!,/Generated untrusted evidence/);
   assert.equal(d.querySelector('.library-detail script'),null);
-  assert.ok(reads.includes('/api/capture-browser/capture%3A'+id));
+  assert.ok(reads.includes('/api/capture-browser/'+id));
   await act(async()=>button(d,'打开完整详情').click());assert.deepEqual(opened,['capture:'+id]);
   await act(async()=>button(d,'返回资料列表').click());
   assert.equal(d.querySelector('.library-browser')?.classList.contains('has-selection'),false);

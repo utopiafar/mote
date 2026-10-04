@@ -31,11 +31,7 @@ class LargeLibraryInstrumentedTest {
         val root = File(context.cacheDir, "library-performance-${UUID.randomUUID()}").apply { mkdirs() }
         val measurements = JSONObject().put("records", 2000).put("distinctImages", 100)
         try {
-            var legacyDecryptions = 0
-            val actual = LocalContentCipher(object : ByteCipher {
-                override fun seal(bytes: ByteArray): ByteArray = error("Default plaintext writes must not encrypt")
-                override fun open(bytes: ByteArray): ByteArray { legacyDecryptions++; return SecretBox().open(bytes) }
-            })
+            val actual = LocalContentCipher()
             var reads = 0
             val cipher = object : ByteCipher {
                 override fun seal(bytes: ByteArray) = actual.seal(bytes)
@@ -102,9 +98,8 @@ class LargeLibraryInstrumentedTest {
                     reference.getString("id"), reference.getString("blob"), pending, 100_000_000)) }
             } }
             val moveMs = SystemClock.elapsedRealtime() - began
-            measurements.put("move500Ms", moveMs).put("legacyDecryptions", legacyDecryptions)
+            measurements.put("move500Ms", moveMs)
             assertEquals(500, pending.inventory().images); assertEquals(500, restarted.inventory().images)
-            assertEquals(0, legacyDecryptions)
             assertTrue("500 generated-image moves should finish within 30 seconds: $moveMs", moveMs < 30000)
             assertTrue(File(cold, "${reference.getString("id")}.event").readText().startsWith("{"))
         } finally {

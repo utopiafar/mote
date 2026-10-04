@@ -1,3 +1,4 @@
+import {modelView} from './fixtures/model-settings';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React,{act} from 'react';
@@ -16,23 +17,23 @@ import {ApiError,dateTime,type Api} from '../src/api.js';
 const ids=['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'];
 function deferred(){let resolve!:(value:any)=>void,reject!:(value:unknown)=>void;const promise=new Promise<any>((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 async function fixture(t:any){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),backups=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){backups.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}dom.window.localStorage.setItem('mote.language','zh-CN');const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of backups){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,document:dom.window.document};}
-function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/model-settings')return {settings:{agentTimeoutMs:120000},profiles:[]};if(path==='/api/memory-jobs')return {items:[]};if(path==='/api/execution-settings')return {queues:{agents:{active:0,waiting:0,limit:1},llm:{active:0,waiting:0,limit:1}}};if(path==='/api/file-processing')return null;if(path==='/api/connectors/status')return {};return await read(path,init);},setAgentTimeout:()=>{}} as Api;}
+function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/model-settings')return modelView();if(path==='/api/memory-jobs')return {items:[]};if(path==='/api/execution-settings')return {queues:{agents:{active:0,waiting:0,limit:1},llm:{active:0,waiting:0,limit:1}}};if(path==='/api/file-processing')return null;if(path==='/api/connectors/status')return {};return await read(path,init);},setAgentTimeout:()=>{}} as Api;}
 const memory=(id:string)=>({id,title:'Generated '+id[0],statement:'Current evidence '+id[0],status:'published',createdAt:'2020-01-01T00:00:00Z',evidenceIds:[]});
 test('Memory history uses summary counts and uncertainty links the same verified citations as its statement',async t=>{
  const {root,document:d}=await fixture(t),opened:string[]=[];
  const record={...memory(ids[0]),statement:`Known statement [${ids[0]}]`,uncertainty:`Known limit [${ids[0]}]. Unknown [${ids[1]}]. Literal \`[${ids[0]}]\`. <script>untrusted()</script>`,evidence:Array.from({length:4},()=>({id:ids[0],capturedAt:'2020-01-01T00:00:00Z',receivedAt:'2020-01-01T00:00:00Z',contentHash:'generated',quote:'Generated proof'}))};
- const completed={id:'generated-history',status:'completed',createdAt:'2020-01-01T00:00:00Z',updatedAt:'2020-01-01T00:00:00Z',evidenceIds:[],memoryIds:[],memoryCount:1,totalBatches:1,completedBatches:1,failedBatches:0,skippedChunks:0,skillVersion:'generated'};
- const legacy={...completed,id:'generated-legacy-history',memoryCount:undefined};
+ const completed={id:'generated-history',status:'completed',createdAt:'2020-01-01T00:00:00Z',updatedAt:'2020-01-01T00:00:00Z',evidenceIds:[],memoryIds:[],memoryCount:1,totalBatches:1,completedBatches:1,failedBatches:0,skippedChunks:0,skillVersion:'generated',inputPlans:{total:0,waiting:0,blocked:0,stale:0,completed:0},recipeProgress:[]};
+ const second={...completed,id:'generated-second-history',memoryCount:0};
  const api=apiWith(path=>path.startsWith('/api/memories?')?{items:[record],nextCursor:null}:path.startsWith('/api/memories/')?record:{}),read=api.request;
- api.request=async(path,init)=>path==='/api/memory-jobs'?{items:[completed,legacy]} as any:read(path,init);
+ api.request=async(path,init)=>path==='/api/memory-jobs'?{items:[completed,second]} as any:read(path,init);
  await act(async()=>root.render(React.createElement(Memories,{api,range:{},onOpen:id=>opened.push(id)})));
  const history=Array.from(d.querySelectorAll('.memory-job-history button'));
- assert.match(history[0].textContent!,/1 条记忆$/);assert.doesNotMatch(history[1].textContent!,/0 条记忆$/,'older services do not turn omitted IDs into a zero count');
+ assert.match(history[0].textContent!,/1 条记忆$/);assert.match(history[1].textContent!,/0 条记忆$/);
  await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
  const notes=Array.from(d.querySelectorAll('.review-notes')).find(n=>n.querySelector('h3')?.textContent==='判断的边界')!;
  const link=notes.querySelector<HTMLButtonElement>('.inline-citation')!;
  assert.equal(link.textContent,'来源 4','duplicate evidence IDs keep the existing last-index numbering');
- await act(async()=>link.click());assert.deepEqual(opened,[ids[0]]);
+ await act(async()=>link.click());assert.deepEqual(opened,['capture:'+ids[0]]);
  assert.match(notes.textContent!,new RegExp('Unknown \\['+ids[1]+'\\]'));
  assert.equal(notes.querySelector('code')?.textContent,'['+ids[0]+']');assert.equal(notes.querySelector('script'),null);
  assert.deepEqual(record.evidence.map(x=>x.id),Array(4).fill(ids[0]));
@@ -96,7 +97,7 @@ test('manual consolidation rejects changed or expired cards and fences a late re
  const makeApi=(defer:boolean)=>({request:async(path:string,init?:RequestInit)=>{
    if(path==='/api/memory-settings')return {settings:{consolidation:{enabled:false,maxItems:1}},extensions:[{id:'consolidation',status:'waiting_for_increment',failures:0}]};
    if(path==='/api/memory-integration-recipes')return {items:[{id:'mote.memory-integration',version:'2',available:true}]};
-   if(path==='/api/model-settings')return {settings:{model:'generated-model',agentTimeoutMs:300000}};
+   if(path==='/api/model-settings')return modelView();
    if(path==='/api/memories/'+candidate.id){reads++;return defer?late.promise:fresh;}
    if(path==='/api/memory-integrations'&&init?.method==='POST'){posts++;return {id:ids[1]};}
    throw Error('Unexpected fixture path '+path);
@@ -132,7 +133,7 @@ test('current featured Memory detail offers the manual consolidation entry, whil
  await act(async()=>d.querySelector('.workspace-select')!.dispatchEvent(new window.MouseEvent('click',{bubbles:true})));
  assert.ok(Array.from(d.querySelectorAll('.memory-detail button')).some(b=>b.textContent==='从这条记忆开始整理'));
  assert.match(d.querySelector('#manual-memory-integration')!.textContent!,/仅选择此卡作为整合起点/);
- assert.equal(Array.from(d.querySelectorAll('#manual-memory-integration button')).find(b=>b.textContent==='整理这条记忆')!.disabled,true,'the Memory feature default is unconfigured in this fixture');
+ assert.equal(Array.from(d.querySelectorAll('#manual-memory-integration button')).find(b=>b.textContent==='整理这条记忆')!.disabled,false,'the current feature default is configured');
  shown={...item,validUntil:'2020-01-01T00:00:00Z'};
  await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories/')));
  assert.equal(Array.from(d.querySelectorAll('.memory-detail button')).some(b=>b.textContent==='从这条记忆开始整理'),false);
@@ -146,6 +147,7 @@ test('material corrections hide cached prose while pending and explicitly link h
  const material:Material={id:ids[0],ref:'material:generated@v1',revision:'v1',kind:'generated',schemaVersion:1,title:'Generated material',sequence:1,textLength:20,blockCount:1,coverage:{state:'full'},origin:{sourceId:'generated'},retention:{original:'retained'}};
  const next={...material,ref:'material:generated@v2',revision:'v2',sequence:2};
  const api=apiWith(path=>{
+   if(path.includes('/source-view?'))return {items:[{blockId:'generated',type:'text',text:'旧的生成正文',offset:0,total:7,continued:false}],next:null};
    if(path.includes('/read?')){assert.match(path,/revision=v1/);if(state==='pending')throw new ApiError('Generated rebuild',409);return {material,text:'旧的生成正文',textRange:{offset:0,total:7,nextOffset:null}};}
    if(state==='revoked')throw new ApiError('Generated revoked',403);
    return state==='rebuilt'?next:state==='pending'?{...material,coverage:{state:'pending',reason:'source_evidence_changed'}}:material;
@@ -163,7 +165,7 @@ test('current multi-block Material offers one bounded extraction route; stale an
  const {root,document:d}=await fixture(t),id='mat_'+'a'.repeat(64),revision='b'.repeat(64),ref=`material:${id}@${revision}`;
  const material:Material={id,ref,revision,kind:'mote.file',schemaVersion:1,title:'Generated two-block material',sequence:1,textLength:30,blockCount:2,coverage:{state:'complete'},origin:{sourceId:'generated'},retention:{original:'retained'}};
  const anchors=[ids[0],ids[1]];let current={...material,memorySource:{status:'ready' as const,evidenceIds:anchors}};
- const api=apiWith(path=>path.includes('/read?')?{material,text:'Generated formal body',textRange:{offset:0,total:21,nextOffset:null}}:current);
+ const api=apiWith(path=>path.includes('/source-view?')?{material:current,items:[{blockId:'generated',type:'text',text:'Generated formal body',offset:0,total:21,continued:false}],next:null}:path.includes('/read?')?{material,text:'Generated formal body',textRange:{offset:0,total:21,nextOffset:null}}:current);
  await act(async()=>root.render(React.createElement(MaterialDetail,{api,material,onOpen:()=>{}})));
  const link=d.querySelector<HTMLAnchorElement>('.material-detail a[href*="memoryMaterial="]');assert.ok(link);
  assert.match(link.href,/memoryMaterial=material%3Amat_[a-f0-9]{64}%40[b]{64}/);
@@ -250,7 +252,7 @@ test('budget editor preserves a stale draft on conflict and reloads before savin
 
 test('model selectors share configuration reads and fence late provider catalogs',async t=>{
  const {ModelSelector}=await import('../src/ModelSelector.js');const {root,document:d}=await fixture(t),old=deferred(),fresh=deferred();let settingsReads=0;
- const api={request:async(path:string)=>{if(path==='/api/model-settings'){settingsReads++;return {settings:{agentTimeoutMs:120000},profiles:[{id:'a',name:'A',settings:{agentTimeoutMs:120000,model:'model-a'}},{id:'b',name:'B',settings:{agentTimeoutMs:120000,model:'model-b'}}],defaults:{query:'a'}};}return path.includes('/a/')?old.promise:fresh.promise;},setAgentTimeout:()=>{}} as Api;
+ const api={request:async(path:string)=>{if(path==='/api/model-settings'){settingsReads++;return {settings:{agentTimeoutMs:120000},profiles:[{id:'a',name:'A',settings:{agentTimeoutMs:120000,model:'model-a'}},{id:'b',name:'B',settings:{agentTimeoutMs:120000,model:'model-b'}}],defaults:{query:'a'},defaultModels:{}};}return path.includes('/a/')?old.promise:fresh.promise;},setAgentTimeout:()=>{}} as Api;
  const render=(value:string)=>React.createElement(React.Fragment,null,...[0,1].map(key=>React.createElement(ModelSelector,{key,api,feature:'query',value,onChange:()=>{},onModelChange:()=>{}})));
  await act(async()=>root.render(render('a')));assert.equal(settingsReads,1);assert.equal(new Set(Array.from(d.querySelectorAll('datalist')).map(x=>x.id)).size,2);
  await act(async()=>root.render(render('b')));await act(async()=>fresh.resolve({items:[{id:'fresh',name:'Fresh generated model'}]}));await act(async()=>old.resolve({items:[{id:'stale',name:'STALE generated model'}]}));
@@ -309,9 +311,9 @@ test('full record uses a visible heading and unnamed text content without losing
  const text=Array.from({length:6},(_,index)=>`生成段落 ${index+1}：  保留空格与原文 🌉 <b>plain evidence</b> & text.\n<img src=x onerror="window.__evidenceExecuted=true"><script>window.__evidenceExecuted=true</script>`).join('\n\n');
  const capture={id:ids[0],source:'note',platform:'macos',capturedAt:'2026-09-27T00:00:00Z',appName:'Generated note',deviceName:'Fixture Mac',ocrText:text,durationMs:0,indexingStatus:'indexed',privacy:{excluded:false,redacted:false}};
  const api=apiWith(path=>{assert.equal(path,`/api/capture-browser/${ids[0]}`);return capture;});
- await act(async()=>root.render(React.createElement(EvidenceDialog,{id:ids[0],api,onClose:()=>{},onDeleted:()=>{},onOpen:()=>{}})));
+ await act(async()=>root.render(React.createElement(EvidenceDialog,{id:'capture:'+ids[0],api,onClose:()=>{},onDeleted:()=>{},onOpen:()=>{}})));
  const body=d.querySelector('.evidence-text pre')!;
- assert.match(d.querySelector<HTMLAnchorElement>('.evidence-text a')!.href,/library\/memories\?memorySource=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/);
+ assert.match(d.querySelector<HTMLAnchorElement>('.evidence-text a')!.href,/library\?view=memories&memorySource=capture%3Aaaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/);
  assert.equal(body.previousElementSibling?.tagName,'H4');assert.equal(body.previousElementSibling?.textContent,'记录全文');
  assert.equal(body.textContent,text);assert.equal(body.getAttribute('aria-label'),null);assert.equal(body.getAttribute('aria-labelledby'),null);
  assert.equal(body.querySelector('b, img, script'),null);assert.equal(body.closest('[aria-hidden=true], [inert]'),null);
@@ -322,18 +324,18 @@ test('registered source originals navigate through verified Material mapping and
  const ref=`material:mat_${'a'.repeat(64)}@${'b'.repeat(64)}`;
  const capture={id:ids[0],source:'file',platform:'import',capturedAt:'2026-09-27T00:00:00Z',appName:'Generated upload',deviceName:'Fixture',ocrText:'Generated original',durationMs:0,indexingStatus:'indexed',privacy:{excluded:false,redacted:false},revisionState:'current',requiresMaterialForMemory:true,memoryMaterialRef:ref};
  let mapped=true;const api=apiWith(path=>{assert.equal(path,`/api/capture-browser/${ids[0]}`);return mapped?capture:{...capture,memoryMaterialRef:undefined};});
- await act(async()=>root.render(React.createElement(EvidenceDialog,{id:ids[0],api,onClose:()=>{},onDeleted:()=>{},onOpen:ref=>opened.push(ref)})));
+ await act(async()=>root.render(React.createElement(EvidenceDialog,{id:'capture:'+ids[0],api,onClose:()=>{},onDeleted:()=>{},onOpen:ref=>opened.push(ref)})));
  assert.equal(d.querySelector('.evidence-text a[href*="memorySource="]'),null);
  await act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='查看正式资料并提取记忆')!.click());
  assert.deepEqual(opened,[ref]);
  mapped=false;await act(async()=>resources(api).invalidate(key=>key===`/api/capture-browser/${ids[0]}`));
  assert.equal(d.querySelector('.evidence-text a[href*="memorySource="]'),null);
- assert.match(d.querySelector<HTMLAnchorElement>('.evidence-text a[href="#/library/materials"]')!.textContent!,/查看正式资料/);
+ assert.match(d.querySelector<HTMLAnchorElement>('.evidence-text a[href="#/library?view=materials"]')!.textContent!,/查看正式资料/);
 });
 
-for(const legacy of [false,true])test(`failed speaker separation keeps raw transcript readable with ${legacy?'legacy':'applied'} summary-disabled policy`,async t=>{
+test('failed speaker separation keeps raw transcript readable with current summary-disabled policy',async t=>{
  const {root,document:d}=await fixture(t),mutations:any[]=[];let dialogue=false;
- const value=()=>({captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated recording',mimeType:'audio/wav',observedAt:'2026-09-27T00:00:00Z'},job:{state:dialogue?'succeeded':'failed',error:dialogue?'cancelled':'provider_failed',summary_state:dialogue?'cancelled':'waiting',local_only:1},processingPolicy:{applied:legacy?null:{revision:'generated',profile:{name:'Generated local',processorId:'generated',summarize:false},rule:{type:'audio/*'}},current:{profile:{name:'Generated local',summarize:false},rule:{type:'audio/*'}},legacyRevision:legacy?'generated-config-fingerprint':null},steps:[{step:'extract',state:'succeeded',attempts:1},{step:'diarize',state:dialogue?'succeeded':'failed',attempts:dialogue?5:4}],artifacts:[{id:'raw-generated',kind:'transcript'},...(dialogue?[{id:'dialogue-generated',kind:'dialogue'}]:[])]});
+ const value=()=>({captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated recording',mimeType:'audio/wav',observedAt:'2026-09-27T00:00:00Z'},job:{state:dialogue?'succeeded':'failed',error:dialogue?'cancelled':'provider_failed',summary_state:dialogue?'cancelled':'waiting',local_only:1},processingPolicy:{applied:{revision:'generated',profile:{name:'Generated local',processorId:'generated',summarize:false},rule:{type:'audio/*'}},current:{profile:{name:'Generated local',summarize:false},rule:{type:'audio/*'}}},steps:[{step:'extract',state:'succeeded',attempts:1},{step:'diarize',state:dialogue?'succeeded':'failed',attempts:dialogue?5:4}],artifacts:[{id:'raw-generated',kind:'transcript'},...(dialogue?[{id:'dialogue-generated',kind:'dialogue'}]:[])]});
  const api=apiWith((path,init)=>{if(path.endsWith('/reviews'))return {items:[]};if(path.endsWith('/retry')){mutations.push(JSON.parse(String(init?.body)));return {};}if(path.includes('/chunks?'))return {items:[{id:'generated-chunk',ocrText:dialogue?'Generated dialogue':'Generated raw <b>words</b>',fileEvidence:{startMs:0}}],nextOffset:null};assert.equal(path,'/api/files/'+ids[0]);return value();});
  await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
  const click=async(label:string)=>act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent===label)!.click());
@@ -441,7 +443,7 @@ test('Library Memory keeps its selected card and integration panel across a 30-s
    if(path==='/api/memory-recipes')return {items:[]};
    return {};
  });
- const baseRequest=api.request;api.request=async(path,init)=>path==='/api/model-settings'?{settings:{model:'generated-model',agentTimeoutMs:300000}}:baseRequest(path,init);
+ const baseRequest=api.request;api.request=async(path,init)=>path==='/api/model-settings'?modelView():baseRequest(path,init);
  t.mock.timers.enable({apis:['setInterval','Date'],now:Date.parse('2026-09-28T00:00:00Z')});
  function LibraryShell({period,deviceId}:{period:string;deviceId?:string}){
    const [revision,setRevision]=React.useState(0);
@@ -472,7 +474,7 @@ test('Library Memory keeps its selected card and integration panel across a 30-s
 test('single-record memory extraction uses explicit evidence and chosen recipe without rolling range',async t=>{
  const {root,document:d}=await fixture(t),writes:any[]=[];
  const source={id:ids[0],source:'note',capturedAt:'2026-09-28T00:00:00Z',windowTitle:'Generated chosen record',ocrText:'Generated isolated content'};
- window.history.replaceState(null,'','#/library/memories?memorySource='+ids[0]);
+ window.history.replaceState(null,'','#/library?view=memories&memorySource=capture%3A'+ids[0]);
  const api=apiWith((path,init)=>{if(init?.method==='POST'){writes.push(JSON.parse(String(init.body)));throw Error('Generated submit retained for inspection');}if(path.startsWith('/api/capture-browser/'))return source;if(path==='/api/memory-recipes')return {items:[{id:'mote.personal-memory',version:'2',available:true}]};if(path.startsWith('/api/memories?'))return {items:[],nextCursor:null};throw Error('Unexpected fixture path '+path);});
  const read=api.request;api.request=async(path,init)=>{if(init?.method==='POST'){writes.push(JSON.parse(String(init.body)));throw Error('Generated submit retained for inspection');}return read(path,init);};
  await act(async()=>root.render(React.createElement(Memories,{api,range:{after:'2020-01-01T00:00:00Z',before:'2020-01-02T00:00:00Z',deviceId:'other-device'},rangeSelectionKey:'today',onOpen:()=>{}})));
@@ -485,7 +487,7 @@ test('single-record memory extraction uses explicit evidence and chosen recipe w
 });
 test('single-Material selection sends only its current anchors and refuses a stale pinned revision',async t=>{
  const {root,document:d}=await fixture(t),materialId='mat_'+'a'.repeat(64),revision='b'.repeat(64),ref=`material:${materialId}@${revision}`,writes:any[]=[];
- window.history.replaceState(null,'','#/library/memories?memoryMaterial='+encodeURIComponent(ref));
+ window.history.replaceState(null,'','#/library?view=memories&memoryMaterial='+encodeURIComponent(ref));
  let current={id:materialId,ref,revision,title:'Generated two-block R09',memorySource:{status:'ready',evidenceIds:ids}};
  const api=apiWith(path=>{if(path===`/api/materials/${materialId}`)return current;if(path==='/api/memory-recipes')return {items:[{id:'mote.coding-memory',version:'2',available:true}]};if(path.startsWith('/api/memories?'))return {items:[],nextCursor:null};throw Error('Unexpected fixture path '+path);});
  const read=api.request;api.request=async(path,init)=>{if(init?.method==='POST'){writes.push(JSON.parse(String(init.body)));throw Error('Generated submit retained for inspection');}return read(path,init);};
@@ -509,8 +511,8 @@ test('a single-Material job opens its old-dated result outside the current week 
  const range={after:'2026-09-20T00:00:00Z',before:'2026-09-27T00:00:00Z',deviceId:'generated-device'};
  const result={...memory(ids[0]),title:'Generated June result',createdAt:'2026-09-27T00:00:00Z',evidence:[{id:ids[0],capturedAt:'2026-06-03T01:00:00Z',receivedAt:'2026-09-27T00:00:00Z',contentHash:'generated',quote:'Generated June evidence'}]};
  const current={...memory(ids[1]),title:'Generated current-week list card'},late=deferred(),detailReads:string[]=[];let delay=false,writes=0;
- const job={id:'generated-old-date-job',status:'completed',createdAt:'2026-09-27T00:00:00Z',updatedAt:'2026-09-27T00:00:00Z',evidenceIds:[ids[0]],totalBatches:1,completedBatches:1,failedBatches:0,skippedChunks:0,memoryIds:[result.id],skillVersion:'generated'};
- window.history.replaceState(null,'','#/library/memories?memoryMaterial='+encodeURIComponent(ref));
+ const job={id:'generated-old-date-job',status:'completed',createdAt:'2026-09-27T00:00:00Z',updatedAt:'2026-09-27T00:00:00Z',evidenceIds:[ids[0]],totalBatches:1,completedBatches:1,failedBatches:0,skippedChunks:0,memoryIds:[result.id],skillVersion:'generated',memoryCount:[result.id].length,inputPlans:{total:0,waiting:0,blocked:0,stale:0,completed:0},recipeProgress:[]};
+ window.history.replaceState(null,'','#/library?view=memories&memoryMaterial='+encodeURIComponent(ref));
  const read=(path:string)=>{
   if(path===`/api/materials/${materialId}`)return {id:materialId,ref,revision,title:'Generated June Material',memorySource:{status:'ready',evidenceIds:[ids[0]]}};
   if(path==='/api/memory-recipes')return {items:[{id:'mote.coding-memory',version:'2',available:true}]};
@@ -550,7 +552,7 @@ test('a single-Material job opens its old-dated result outside the current week 
 test('explicit memory source rejects invalid or revoked records and fences a late previous preview',async t=>{
  const {root,document:d}=await fixture(t),late=deferred();let writes=0;
  const api=apiWith((path,init)=>{if(init?.method==='POST'){writes++;return {};}if(path.includes('/api/capture-browser/'+ids[0]))return late.promise;if(path.includes('/api/capture-browser/'+ids[1]))throw new ApiError('Generated access revoked',403);if(path.startsWith('/api/memories?'))return {items:[],nextCursor:null};if(path==='/api/memory-recipes')return {items:[]};return {};});
- const change=(value:string)=>{window.history.replaceState(null,'','#/library/memories?memorySource='+value);window.dispatchEvent(new window.HashChangeEvent('hashchange'));};
+ const change=(value:string)=>{window.history.replaceState(null,'','#/library?view=memories&memorySource=capture%3A'+value);window.dispatchEvent(new window.HashChangeEvent('hashchange'));};
  change(ids[0]);await act(async()=>root.render(React.createElement(Memories,{api,range:{},onOpen:()=>{}})));
  const button=()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='提取所选资料的记忆')!;assert.equal(button().disabled,true);
  await act(async()=>change(ids[1]));await act(async()=>late.resolve({id:ids[0],windowTitle:'STALE SOURCE',ocrText:'STALE BODY',capturedAt:'2026-09-28T00:00:00Z'}));
@@ -587,7 +589,7 @@ test('source drawer decodes only declared organizer text once and separates acti
  const envelope=JSON.stringify({captureId:ids[1],capturedAt:'2026-09-27T00:00:00Z',source:'file',text});
  let declaration:string|undefined='source-record-json-v1',raw=envelope;
  const api=apiWith(()=>({id:ids[0],source:'file',platform:'import',capturedAt:'2026-09-27T00:00:00Z',appName:'Generated',ocrText:raw,evidencePresentation:declaration,privacy:{},revisionState:'current',requiresMaterialForMemory:true,memoryMaterialRef:`material:mat_${'a'.repeat(64)}@${'b'.repeat(64)}`}));
- await act(async()=>root.render(React.createElement(EvidenceDialog,{id:ids[0],api,onClose:()=>{},onDeleted:()=>{},onOpen:()=>{}})));
+ await act(async()=>root.render(React.createElement(EvidenceDialog,{id:'capture:'+ids[0],api,onClose:()=>{},onDeleted:()=>{},onOpen:()=>{}})));
  const body=()=>d.querySelector('.evidence-text>pre')!;
  assert.equal(body().textContent,text);assert.equal(body().querySelector('script'),null);
  const action=d.querySelector('.evidence-source-actions')!;assert.ok(action.querySelector('button'));assert.equal(action.nextElementSibling?.className,'eyebrow');assert.equal(body().previousElementSibling?.tagName,'H4');

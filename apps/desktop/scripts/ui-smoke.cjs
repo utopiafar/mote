@@ -13,8 +13,9 @@ const { QueueStorage } = require('../dist/queue-storage');
 // A clean generated profile prevents reading existing settings or personal screenshots.
 const profile = mkdtempSync(join(tmpdir(), 'mote-ui-fixture-'));
 app.setPath('userData', profile);
-process.env.MOTE_PROFILE = 'legacy'; delete process.env.MOTE_URL; delete process.env.MOTE_TOKEN; delete process.env.MOTE_ENV_FILE;
-writeFileSync(join(profile, 'config.json'), JSON.stringify({ version: 1, config: { ...defaultConfig(), serverUrl: '', deviceName: 'Synthetic Mac', ocrEnabled: false, metadataEnabled: false } }), { mode: 0o600 });
+process.env.MOTE_PROFILE = 'default'; delete process.env.MOTE_URL; delete process.env.MOTE_TOKEN; delete process.env.MOTE_ENV_FILE;
+writeFileSync(join(profile, 'config.json'), JSON.stringify({ version:3, config: { ...defaultConfig(), serverUrl: '', deviceName: 'Synthetic Mac', metadataEnabled: false } }), { mode: 0o600 });
+writeFileSync(join(profile,'storage-format.json'),JSON.stringify({version:3}),{mode:0o600});
 const sourceFile = join(profile, 'synthetic-source.md');
 writeFileSync(sourceFile, '合成原生来源 UI：仅用于测试 🧑🏽‍💻');
 dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [sourceFile] });
@@ -124,7 +125,7 @@ app.on('browser-window-created', (_event, window) => {
       assert.equal(feedbackUrl.pathname, '/utopiafar/mote/issues/new');
       assert.equal(feedbackUrl.searchParams.get('template'), 'bug_report.yml');
       assert(feedbackUrl.searchParams.get('version').includes(app.getVersion()));
-      assert.equal(feedbackUrl.searchParams.get('environment'), '桌面客户端 · legacy');
+      assert.equal(feedbackUrl.searchParams.get('environment'), '桌面客户端 · default');
       assert.equal(decodeURIComponent(externalUrls[0]).includes('Synthetic Mac'), false);
       // Simulate only the renderer running state; the collector never starts in this fixture.
       // Settings must remain editable while capturing, independently of actual native capture.
@@ -223,7 +224,7 @@ app.on('browser-window-created', (_event, window) => {
       await js(`new Promise(resolve=>setTimeout(resolve,100))`); assert(await js(`document.querySelector('#review-pending').textContent.includes('没有待复核记录')`));
 
       await navigate('capture');
-      await js(`document.querySelector('#ocr-charging').checked = true; document.querySelector('#ocr-charging').dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('#interval-preset').value = '60'; document.querySelector('#interval-preset').dispatchEvent(new Event('change', { bubbles: true }));`);
+      await js(`document.querySelector('#interval-preset').value = '60'; document.querySelector('#interval-preset').dispatchEvent(new Event('change', { bubbles: true }));`);
       await js(`document.querySelector('#settings').requestSubmit()`);
       await settingsIdle('save capture settings');
       await navigate('sync');
@@ -241,7 +242,7 @@ app.on('browser-window-created', (_event, window) => {
         if (updated.config.deviceName === 'UI Fixture Renamed') break;
       }
       assert.equal(updated.config.deviceName, 'UI Fixture Renamed');
-      assert.equal(updated.config.ocrOnlyWhileCharging, true); assert.equal(updated.config.syncMode, 'manual'); assert.equal(updated.config.intervalMs, 60000); assert.deepEqual(updated.config.masks, [{ x: .7, y: 0, width: .25, height: .2 }]);
+      assert.equal(updated.config.syncMode, 'manual'); assert.equal(updated.config.intervalMs, 60000); assert.deepEqual(updated.config.masks, [{ x: .7, y: 0, width: .25, height: .2 }]);
       assert.equal(updated.running, false); assert.equal(updated.config.defaultCollection, 'activity'); assert.deepEqual(updated.config.appCollectionRules, { 'dev.mote.synthetic.private': 'off' }); assert.equal(updated.config.metadataEnabled, false);
       const savedNote = await window.webContents.executeJavaScript('window.mote.noteDraft().then(draft => window.mote.saveNote({...draft,text:"Synthetic native app note",mood:"calm",revision:draft.revision+1}))');
       assert.match(savedNote.id, /^[a-f0-9-]{36}$/);
@@ -329,7 +330,7 @@ app.on('browser-window-created', (_event, window) => {
       const hash = imageHash(generatedJpeg), day = new Date(), fixtureRecords = [];
       for (let index = 0; index < 31; index++) fixtureRecords.push({ event: { id: randomUUID(), deviceId: status.config.deviceId, deviceName: '合成截图设备', platform: 'macos', capturedAt: new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12, 0, index).toISOString(), durationMs: 0, appId: 'dev.mote.fixture', appName: '合成截图', imageMime: 'image/jpeg', ocrText: '合成 OCR <script>不可执行的证据</script>', ocr: { status: 'completed' }, source: 'screen', privacy: { excluded: false, redacted: false, mode: 'local', reason: 'generated fixture only' } }, blobHash: hash, blobBytes: generatedJpeg.length, attempts: 0, nextAttemptAt: 0 });
       const fixtureArchive = join(profile, 'generated-records.json');
-      writeFileSync(fixtureArchive, JSON.stringify({ format: 'mote-desktop-queue', version: 1, records: fixtureRecords, blobs: { [hash]: generatedJpeg.toString('base64') } }));
+      writeFileSync(fixtureArchive, JSON.stringify({ format: 'mote-desktop-queue', version: 3, records: fixtureRecords, blobs: { [hash]: generatedJpeg.toString('base64') } }));
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fixtureArchive] });
       assert.equal((await js('window.mote.importQueue()')).imported, 31);
       const captureBrowser = require('../dist/capture-browser');

@@ -1,3 +1,4 @@
+import {formatEvidenceRef} from '@mote/shared';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {AsyncLocalStorage} from 'node:async_hooks';
@@ -35,7 +36,7 @@ test('real server candidate grants cannot bypass bridge disclosure after a mater
       const catalog=await call('material_catalog',{});assert.equal(catalog.status,200);assert.equal(catalog.body.data.items[0].ref,material.ref);
       const before=bridge.deliveredCharacters,page=await call('material_read',{ref:material.ref,length:10000});
       assert.equal(page.status,200);assert.equal(page.body.data.text.length,5000);assert.equal(page.body.data.textRange.nextOffset,5000);
-      assert.deepEqual(page.body.data.originalRefs,[ids[0]]);assert.equal(bridge.trace.at(-1)!.materialPage!.readAttempts,2);
+      assert.deepEqual(page.body.data.originalRefs,[formatEvidenceRef('capture',ids[0])]);assert.equal(bridge.trace.at(-1)!.materialPage!.readAttempts,2);
       assert.equal(bridge.deliveredCharacters,before+JSON.stringify(page.body).length);
       assert.deepEqual((await reader.evidence({ids:[ids[1]]})).map(record=>record.id),[ids[1]],'the rejected larger candidate really established the server screen grant');
       assert.equal((await reader.readImage!({id:ids[1]})).mimeType,'image/png','the internal reader grant is sufficient for its own image method, but not the bridge');

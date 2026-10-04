@@ -56,7 +56,7 @@ class BulkDedupeInstrumentedTest {
         val ids = mutableListOf<String>()
         try {
             manager.cancelAllWork().result.get()
-            settings.save(original.copy(server = "", token = "", syncMode = "manual", ocrChargingOnly = true))
+            settings.save(original.copy(server = "", token = "", syncMode = "manual"))
             val bitmap = Bitmap.createBitmap(96, 160, Bitmap.Config.ARGB_8888)
             val start = Instant.parse("2026-09-01T00:00:00Z")
             try {
@@ -145,7 +145,7 @@ class BulkDedupeInstrumentedTest {
         val ids = mutableListOf<String>()
         try {
             manager.cancelAllWork().result.get()
-            settings.save(original.copy(server = "", token = "", syncMode = "manual", ocrChargingOnly = true))
+            settings.save(original.copy(server = "", token = "", syncMode = "manual"))
             val bitmap = Bitmap.createBitmap(240, 400, Bitmap.Config.ARGB_8888)
             fun png(color: Int): ByteArray { bitmap.eraseColor(color); return ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray() }
             // Generated high-frequency pattern verifies identical feature extraction at every tier.

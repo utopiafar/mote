@@ -74,17 +74,17 @@ test('report evidence uses source content time instead of its later import obser
   assert.match(html,/资料时间 · 2020年2月3日/);
 });
 
-const job:MemoryJob={id:'fixture-memory',status:'running',createdAt:'2026-09-15T03:00:00Z',updatedAt:'2026-09-15T03:00:00Z',evidenceIds:[evidenceId],totalBatches:5,completedBatches:2,failedBatches:1,skippedChunks:1,memoryIds:['candidate-1'],skillVersion:'1'};
+const job:MemoryJob={id:'fixture-memory',status:'running',createdAt:'2026-09-15T03:00:00Z',updatedAt:'2026-09-15T03:00:00Z',evidenceIds:[evidenceId],totalBatches:5,completedBatches:2,failedBatches:1,skippedChunks:1,memoryIds:['candidate-1'],skillVersion:'1',memoryCount:['candidate-1'].length,inputPlans:{total:5,waiting:2,blocked:1,stale:0,completed:2},recipeProgress:[]};
 test('memory progress reports actual partial completion and does not label archive success as completed memory',()=>{
   const html=renderToStaticMarkup(React.createElement(MemoryProgress,{job}));
-  assert.match(html,/正在分批提取记忆/);assert.match(html,/已完成 2 \/ 5 批/);assert.match(html,/1 批失败/);
+  assert.match(html,/正在分批提取记忆/);assert.match(html,/已生成的批次：2 \/ 5 完成/);assert.match(html,/1 批失败/);
   assert.match(html,/有 1 个片段已处理过或没有可提取的正文/);assert.doesNotMatch(html,/记忆提取完成/);
   assert.match(html,/<progress[^>]+max="5"[^>]+value="2"/);
 });
 test('failed and unconfigured batches offer a resumable operation',()=>{
   for(const status of ['failed','waiting_for_model'] as const){
     const html=renderToStaticMarkup(React.createElement(MemoryProgress,{job:{...job,status},onRetry:()=>{}}));
-    assert.match(html,/继续提取记忆/);assert.doesNotMatch(html,/记忆提取完成/);
+    assert.match(html,/重新检查未完成方案/);assert.doesNotMatch(html,/记忆提取完成/);
   }
 });
 test('document evidence retains original metadata and authenticated download controls without embedding a token',()=>{
@@ -96,7 +96,7 @@ test('document evidence retains original metadata and authenticated download con
 
 test('memory status exposes admission waits, idle review, exact rejection and batch-boundary controls',()=>{
  const html=renderToStaticMarkup(React.createElement(MemoryProgress,{job:{...job,runningBatches:1,pendingBatches:2,batches:[{id:'batch',index:1,status:'running',attempts:1,memoryIds:[],phase:'review',stage:'等待模型执行名额',startedAt:'2020-01-01T00:00:00Z',lastActivityAt:'2020-01-01T00:00:00Z',validationFailures:[{at:'2020-01-01T00:00:00Z',code:'quote_offset_mismatch',phase:'review',attempt:1,details:{candidateIndex:0,spanIndex:1}}]}]},onAction:()=>{}}));
- for(const text of ['执行中 1 批','等待 2 批','独立审核','等待模型执行名额','较长时间未收到新活动','quote_offset_mismatch','当前批次结束后暂停','取消剩余批次'])assert.ok(html.includes(text),text);
+ for(const text of ['执行中 1 批','等待 2 批','独立审核','等待模型执行名额','较长时间未收到新活动','quote_offset_mismatch','当前批次结束后暂停','取消未完成方案'])assert.ok(html.includes(text),text);
  const paused=renderToStaticMarkup(React.createElement(MemoryProgress,{job:{...job,status:'paused'},onAction:()=>{}}));assert.match(paused,/继续整理/);
  const completed=renderToStaticMarkup(React.createElement(MemoryProgress,{job:{...job,status:'completed',memoryIds:[]}}));assert.match(completed,/本次没有发现需要新增的记忆/);
 });

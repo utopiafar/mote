@@ -1,3 +1,5 @@
+import {memorySchema} from '../src/memory-schema.js';
+import {memoryEvidenceFingerprint} from '../src/memory.js';
 import {readAgentCredential} from './login-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,9 +30,25 @@ async function fixture(t:any){
  return {...node,agentReader,call,client};
 }
 
+
+/** Complete generated storage fixture; the reader still enforces its original-evidence policy. */
+function seedMemory(store:Store,id:string,evidenceIds:string[],createdAt:string,details:{title:string;statement:string;uncertainty:string}){
+ const records=store.evidence(evidenceIds);assert.equal(records.length,evidenceIds.length);
+ const value=memorySchema.parse({version:1,id,domain:'personal',tier:'episode',kind:'episodic',...details,
+  status:'published',createdAt,evidenceIds,model:'generated-fixture',runId:randomUUID(),skillVersion:'generated-fixture@1',
+  admission:{layer:'memory',reason:'Generated model selected evidence for this fixture',scope:'Generated fixture only',attribution:'observed'},
+  fingerprint:memoryEvidenceFingerprint(records[0]),
+  evidence:records.map(record=>({id:record.id,deviceId:record.deviceId,sourceId:record.provenance?.sourceId,externalId:record.provenance?.externalId,revision:record.provenance?.revision,
+   capturedAt:record.capturedAt,receivedAt:record.receivedAt,offset:0,length:record.ocrText.length,quote:record.ocrText,contentHash:memoryEvidenceFingerprint(record)})),
+  scopeRefs:records.flatMap(record=>{const c=record.provenance?.document?.coding;return c?[{sourceId:record.provenance?.sourceId,deviceId:record.deviceId,provider:c.provider,projectKey:c.projectKey,sessionId:c.sessionId}]:[]})});
+ store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(id,createdAt,JSON.stringify(value));
+ for(const evidenceId of evidenceIds)store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(id,evidenceId);
+ return value;
+}
+
 test('direct Agent expansion preserves the source protocol through bounded evidence projection',async t=>{
  const {app,agentReader}=await fixture(t),id=randomUUID(),text='Generated note: media notification screen are quoted words, not the source protocol.';
- const response=await app.inject({method:'POST',url:'/api/notes',headers:{...headers,'x-mote-ingress-version':'2'},payload:{id,deviceId:'generated-notes',deviceName:'Generated',platform:'import',capturedAt:'2026-09-20T00:00:00Z',text}});
+ const response=await app.inject({method:'POST',url:'/api/notes',headers:{...headers,'x-mote-ingress-version':'2'},payload:{client:'web',id,deviceId:'generated-notes',deviceName:'Generated',platform:'import',capturedAt:'2026-09-20T00:00:00Z',text}});
  assert.equal(response.statusCode,201,response.body);
  const expanded=(await agentReader.evidence({ids:[id]}))[0];
  assert.equal(expanded.sourceType,'note');assert.equal(expanded.ocrText,text);assert.equal(expanded.ref,'capture:'+id);
@@ -94,7 +112,7 @@ test('Web, MCP and Agent share ranked refs and scoped expansions across 400 gene
  const readScope={deviceId:'a',after:scope.after,before:scope.before};
  const webRead=(await app.inject({method:'POST',url:'/api/context/read',headers,payload:{refs,...readScope}})).json();
  assert.deepEqual(await call('mote_read',{refs,...readScope}),webRead);
- assert.deepEqual((await agentReader.evidence({ids:refs,...readScope})).map(r=>r.id).sort(),webRead.items.map((r:any)=>r.id).sort());
+ assert.deepEqual((await agentReader.evidence({ids:refs.map((ref:string)=>parseEvidenceRef(ref)!.id),...readScope})).map(r=>r.id).sort(),webRead.items.map((r:any)=>r.id).sort());
  const denied:any=await call('mote_read',{refs,deviceId:'b'});assert.equal(denied.items.length,0);assert.deepEqual(denied.missingRefs,refs);
  // A shared service never retains the previous request's filter.
  assert.equal((await call('mote_read',{refs}) as any).items.length,5);
@@ -137,31 +155,35 @@ test('typed Memory refs cannot select a capture with the same UUID; adapters rec
  await sources.upsert('typed',{externalId:'original',revision:'1',observedAt:'2024-06-01T00:00:00.000Z',title:'Generated',text:'Memory support',kind:'message',layer:'original'});
  const evidence=sources.getItem('typed','original')!.captureId,record=store.evidence([evidence])[0],id=randomUUID(),createdAt='2024-06-02T00:00:00.000Z';
  await store.ingest({id,deviceId:record.deviceId,deviceName:'Generated device',platform:'import',capturedAt:record.capturedAt,durationMs:0,source:record.source,appId:record.appId,appName:record.appName,privacy:record.privacy,ocrText:'Different capture in another namespace'});
- store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(id,createdAt,JSON.stringify({id,title:'Generated memory',statement:'Supported fixture',uncertainty:'fixture',status:'published',createdAt,evidenceIds:[evidence],evidence:[{id:evidence,deviceId:record.deviceId,capturedAt:record.capturedAt}],admission:{layer:'memory'}}));
- store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(id,evidence);
+ seedMemory(store,id,[evidence],createdAt,{title:'Generated memory',statement:'Supported fixture',uncertainty:'fixture'});
  const ref=`MEMORY:${id.toUpperCase()}`;
  const web=(await app.inject({method:'POST',url:'/api/context/read',headers,payload:{refs:[ref]}})).json();
  assert.equal(web.items[0].kind,'memory');assert.equal(web.items[0].ref,`memory:${id}`);assert.match(web.items[0].text,/Supported fixture/);
  assert.deepEqual(await call('mote_read',{refs:[ref]}),web);
  assert.equal((await call('mote_memories',{id:ref}) as any).items[0].id,id);
- assert.equal(((await agentReader.memories!({id:ref})).items[0] as any).id,id);
+ assert.equal(((await agentReader.memories!({id})).items[0] as any).id,id);
+ const listed=await agentReader.memories!({sourceId:'typed'});assert.equal(listed.items[0].id,id);
+ const detail=await agentReader.memories!({id:listed.items[0].id,includeEvidence:true,sourceId:'typed'});
+ assert.equal(detail.items[0].id,id);assert.equal(detail.sourceSpans!.length,1);
+ assert.equal(detail.sourceSpans![0].record.id,evidence);assert.equal(detail.sourceSpans![0].record.ocrText,record.ocrText);
+ assert.deepEqual(detail.sourceCoverage,{references:1,delivered:1,partial:false});
  for(const suffix of ['', '/text','/evidence']){
-  const url=`/api/memories/${encodeURIComponent(ref)}${suffix}`;
+  const url=`/api/memories/${id}${suffix}`;
   assert.equal((await app.inject({url,headers})).statusCode,200);
   assert.equal((await app.inject({url:url+'?appId=outside',headers})).statusCode,404);
  }
  assert.equal((await app.inject({url:'/api/memories?appId=outside',headers})).json().items.length,0);
  const captureRef=`CAPTURE:${id.toUpperCase()}`;
  assert.equal((await call('mote_evidence',{ids:[captureRef]}) as any)[0].text,'Different capture in another namespace');
- assert.equal((await agentReader.evidence({ids:[captureRef]}))[0].id,id);
- assert.equal((await app.inject({url:'/api/captures/'+encodeURIComponent(captureRef),headers})).json().id,id);
- assert.equal((await app.inject({url:'/api/captures/'+encodeURIComponent(ref),headers})).statusCode,404);
- assert.equal((await app.inject({url:'/api/captures/'+encodeURIComponent(captureRef)+'?source=note',headers})).statusCode,404);
- assert.equal((await agentReader.evidence({ids:[ref]})).length,0);
- assert.equal((await agentReader.memories!({id:captureRef})).items.length,0);
+ assert.equal((await agentReader.evidence({ids:[id]}))[0].id,id);
+ assert.equal((await app.inject({url:'/api/captures/'+id,headers})).json().id,id);
+ assert.equal((await app.inject({url:'/api/captures/'+encodeURIComponent(ref),headers})).statusCode,400);
+ assert.equal((await app.inject({url:'/api/captures/'+id+'?source=note',headers})).statusCode,404);
+ await assert.rejects(agentReader.evidence({ids:[ref]}),/uuid/,'internal capture adapter only accepts UUIDs');
+ for(const invalid of ['opaque-memory-id',captureRef,ref])await assert.rejects(agentReader.memories!({id:invalid,includeEvidence:true}),/uuid/,'internal Memory adapter rejects non-UUIDs');
  for(const scope of [{appId:'different-app'},{source:'note' as const},{deviceId:'other'},{before:'2024-01-01T00:00:00.000Z'}]){
   assert.equal((await call('mote_memories',{id:ref,...scope}) as any).items.length,0);
-  assert.equal((await agentReader.memories!({id:ref,...scope})).items.length,0);
+  assert.equal((await agentReader.memories!({id,...scope})).items.length,0);
   assert.equal((await call('mote_memories',scope) as any).items.length,0);
   assert.equal((await agentReader.memories!(scope)).items.length,0);
   assert.equal((await call('mote_context',scope) as any).stableMemories.length,0);
@@ -198,7 +220,7 @@ test('artifact refs pin revisions across Web/MCP/Agent and scope every transitiv
  assert.equal((await agentReader.segments!({id:ref})).items[0].id,child.id);assert.deepEqual((await agentReader.segments!({id:ref})).items[0].members,[a]);
  assert.equal((await app.inject({url:'/api/context/segments?'+new URLSearchParams({id:ref,sourceId:'artifact-b'}),headers})).json().items.length,0);
  const web=(await app.inject({method:'POST',url:'/api/context/read',headers,payload:{refs:[ref],sourceId:'artifact-a'}})).json();
- assert.equal(web.items[0].kind,'artifact');assert.equal(web.items[0].text,'Derived fixture, verify the original');assert.deepEqual(web.items[0].evidenceRefs,[a]);
+ assert.equal(web.items[0].kind,'artifact');assert.equal(web.items[0].text,'Derived fixture, verify the original');assert.deepEqual(web.items[0].evidenceRefs,[`capture:${a}`]);
  const mcpRead:any=await call('mote_read',{refs:[ref],sourceId:'artifact-a'});
  assert.equal(mcpRead.items[0].text,web.items[0].text);assert.ok(!JSON.stringify(mcpRead).includes(a));
  for(const scope of [{sourceId:'artifact-b'},{deviceId:'other'},{after:'2025-01-01T00:00:00.000Z'},{appId:'other-app'}]){

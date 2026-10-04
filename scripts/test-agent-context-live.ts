@@ -7,7 +7,7 @@ const original:ContextRecord={id,capturedAt:'2026-09-18T00:00:00Z',appName:'Gene
 const old:ContextRecord={...original,id:other,ocrText:'Outdated draft: Wednesday at 14:30. Superseded by the revised ANCHOR_ZETA schedule.',capturedAt:'2026-09-17T00:00:00Z'};
 let retrieval=0;
 const agent=createAgent({provider:'codex',protocol:'codex-app-server',model:process.env.MOTE_TEST_CODEX_MODEL??'gpt-6-astra',reasoningEffort:'low',agentTimeoutMs:180000,reader:{
- search:async()=>{retrieval++;return [original,old];},timeline:async()=>{retrieval++;return [original,old];},evidence:async({ids})=>[original,old].filter(r=>ids.includes(r.id)),activity:async()=>({}),devices:async()=>[],
+ search:async()=>{retrieval++;return [original,old];},timeline:async()=>{retrieval++;return ({items:([original,old]),nextCursor:null});},evidence:async({ids})=>[original,old].filter(r=>ids.includes(r.id)),activity:async()=>({}),devices:async()=>[],
 }});
 async function run(name:string,input:QueryInput,check:(result:Awaited<ReturnType<typeof agent.query>>)=>void){const start=Date.now();const result=await agent.query(input);check(result);console.log(JSON.stringify({name,ok:true,durationMs:Date.now()-start,tools:result.trace.map(t=>t.tool),citations:result.citations.length,answer:result.answer,personalDataUsed:false}));return result;}
 try{

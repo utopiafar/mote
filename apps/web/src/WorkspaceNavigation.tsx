@@ -4,7 +4,6 @@ import { webFeatures } from './features/registry';
 import { LanguageSelector } from './LanguageSelector';
 import { pageLabels, sectionFor, sections, type Page } from './navigation';
 
-const integrated = new Set(['archive','timeline','materials','files','memories']);
 export function primaryDestination(page: Page) {
   const section=sectionFor(page);
   if (section === 'library') return 'archive';
@@ -15,7 +14,7 @@ export function primaryDestination(page: Page) {
 export function WorkspaceNavigation({page,onPage}:{page:Page;onPage:(page:Page)=>void}) {
   const section=sectionFor(page);
   if (section==='library') {
-    const tools=sections.library.filter(id=>!integrated.has(id));
+    const tools=sections.library.filter(id=>id!=='archive');
     return <div className="workspace-context">
       {page!=='archive'&&<button className="back-link" onClick={()=>onPage('archive')}><ArrowLeft size={16}/>{moteText('返回资料库')}</button>}
       <label className="workspace-tool-select"><span>{moteText('资料库工具')}</span><select aria-label={moteText('资料库工具')} value={tools.includes(page)?page:''} onChange={event=>{if(event.target.value)onPage(event.target.value);}}><option value="">{moteText('选择工具')}</option>{tools.map(id=><option value={id} key={id}>{pageLabels[id]}</option>)}</select></label>

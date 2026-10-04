@@ -1,3 +1,4 @@
+import {DESKTOP_STORAGE_VERSION} from './storage-format';
 import {spoolOriginal,originalPart} from './original-spool';
 import {processLocalFile} from './local-file-processing';
 import {extractFileText} from './file-index';
@@ -14,7 +15,7 @@ import { prepareVisionImage } from './vision-image';
 import { maskBitmap } from './privacy';
 import { validateRecord, validateImage, type QueueArchive, type QueueRecord } from './queue';
 import type { BackgroundRequest, WorkProgress } from './background';
-import { configureLocalContent, encodeLocalContent, readLocalContent, type ContentPolicy } from './local-content';
+import { encodeLocalContent, readLocalContent } from './local-content';
 
 async function execute(request: BackgroundRequest, progress: (value: WorkProgress) => void): Promise<unknown> {
   switch (request.kind) {
@@ -69,7 +70,7 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
       const file = await open(temporary, 'wx', 0o600);
       const blobs = new Set<string>();
       try {
-        await file.writeFile('{"format":"mote-desktop-queue","version":1,"records":[');
+        await file.writeFile('{"format":"mote-desktop-queue","version":3,"records":[');
         for (let i = 0; i < names.length; i++) {
           const record = validateRecord(JSON.parse((await readLocalContent(join(request.directory, 'events', names[i]))).toString('utf8')));
           if (record.blobHash) blobs.add(record.blobHash);
@@ -98,7 +99,7 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
         if ((await input.stat()).size > 360 * 1024 * 1024) throw new Error(moteText("备份超过 360 MiB，请使用完整 queue 文件夹迁移"));
         archive = JSON.parse(await input.readFile('utf8')) as QueueArchive;
       } finally { await input.close(); }
-      if (archive?.format !== 'mote-desktop-queue' || archive.version !== 1 || !Array.isArray(archive.records) || archive.records.length > 1_000_000 || !archive.blobs || typeof archive.blobs !== 'object') throw new Error(moteText("不是 Mote 电脑端队列备份"));
+      if (archive?.format !== 'mote-desktop-queue' || archive.version !== DESKTOP_STORAGE_VERSION || !Array.isArray(archive.records) || archive.records.length > 1_000_000 || !archive.blobs || typeof archive.blobs !== 'object') throw new Error(moteText("不是 Mote 电脑端队列备份"));
       await mkdir(join(request.staging, 'events'), { mode: 0o700 });
       await mkdir(join(request.staging, 'blobs'), { mode: 0o700 });
       const unique = new Map<string, QueueRecord>(), images = new Map<string, number>();
@@ -118,9 +119,7 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
         if (prior && (prior.blobHash !== record.blobHash || JSON.stringify(prior.event) !== JSON.stringify(record.event))) throw new Error(moteText("备份包含冲突的事件 ID"));
         if (!prior) {
           unique.set(record.event.id, record);
-          await writeFile(join(request.staging, 'events', record.event.id + '.json'), JSON.stringify(record.localArchiveOnly?
-            {...record,uploaded:false,attempts:0,nextAttemptAt:0,syncBlocked:undefined,syncError:undefined,localArchiveOnly:undefined}:
-            { ...record, uploaded: false, attempts: 0, nextAttemptAt: 0 }), { mode: 0o600 });
+          await writeFile(join(request.staging, 'events', record.event.id + '.json'), JSON.stringify({ ...record, attempts: 0, nextAttemptAt: 0 }), { mode: 0o600 });
         }
         if (i % 100 === 0 || i + 1 === archive.records.length) progress({ message: moteText("正在校验备份"), completed: i + 1, total: archive.records.length });
       }
@@ -129,12 +128,11 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
   }
 }
 let chain = Promise.resolve();
-parentPort!.on('message', ({ id, request, contentPolicy, locale }: { locale?: Locale; id: number; request: BackgroundRequest; contentPolicy: ContentPolicy }) => {
+parentPort!.on('message', ({ id, request, locale }: { locale?: Locale; id: number; request: BackgroundRequest }) => {
   chain = chain.then(async () => {
     let lastProgress = 0;
     try {
       configureLocale(() => locale ?? 'zh-CN');
-      configureLocalContent(contentPolicy);
       const value = await execute(request, progress => {
         const now = Date.now(); if (now - lastProgress < 100 && progress.completed !== progress.total) return;
         lastProgress = now; parentPort!.postMessage({ id, progress });

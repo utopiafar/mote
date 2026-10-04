@@ -119,8 +119,8 @@ class ConnectionActivity : MoteActivity() {
             }
         }
         button(MoteI18n.text("测试已保存的连接")) {
-            run(MoteI18n.text("正在测试节点和设备凭据…"), work = { ConnectionClient(applicationContext).test() }) { scope ->
-                MoteI18n.text("连接正常 · {0}", if (scope == "collector") MoteI18n.text("本设备采集权限") else MoteI18n.text("手工配置的管理员权限"))
+            run(MoteI18n.text("正在测试节点和设备凭据…"), work = { ConnectionClient(applicationContext).test() }) {
+                MoteI18n.text("连接正常 · {0}", MoteI18n.text("节点所有者"))
             }
         }
         status = text(MoteI18n.text("{0}\n状态记录时间：{1}", message(initial.status), initial.statusAt.takeIf { it > 0 }?.let { Instant.ofEpochMilli(it) } ?: MoteI18n.text("未测试")))

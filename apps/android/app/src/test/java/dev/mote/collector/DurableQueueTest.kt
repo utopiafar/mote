@@ -112,6 +112,7 @@ class DurableQueueTest {
     }
     @Test fun `corrupt event is surfaced instead of silently discarded`() {
         val dir = folder.newFolder()
+        LocalDataFormat.requireCurrent(dir)
         File(dir, "broken.event").writeText("corruption-fixture")
         val queue = DurableQueue(dir, cipher)
         assertThrows(Exception::class.java) { queue.recoverOrphans() }

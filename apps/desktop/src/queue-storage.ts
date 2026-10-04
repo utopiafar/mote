@@ -1,3 +1,4 @@
+import {RESET_REQUIRED} from './storage-format';
 import { moteText } from '@mote/shared/i18n';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -79,7 +80,7 @@ export class QueueStorage {
       if (!await exists(selected) && await exists(this.journalPath)) throw new Error(moteText("迁移恢复需要的原目录不可用；请连接原磁盘后重试，不会创建空队列"));
       await mkdir(selected, { recursive: true, mode: 0o700 }); await this.checkDirectory(selected);
       const owner = await this.readOwner(selected);
-      if (!owner) await writeJson(join(selected, OWNER), this.owner);
+      if (!owner) {if((await readdir(selected)).length)throw Error(RESET_REQUIRED);await writeJson(join(selected, OWNER), this.owner);}
       if (!await exists(this.journalPath)) {
         await mkdir(join(selected, 'events'), { recursive: true, mode: 0o700 }); await mkdir(join(selected, 'blobs'), { recursive: true, mode: 0o700 });
       }

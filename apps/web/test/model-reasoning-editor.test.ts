@@ -1,3 +1,4 @@
+import {modelView} from './fixtures/model-settings';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React,{act} from 'react';
@@ -16,7 +17,7 @@ test('Codex editor renders the selected model effort levels from model/list',asy
   dom.window.localStorage.setItem('mote.language','zh-CN');
   const root=createRoot(dom.window.document.getElementById('root')!);
   t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of saved){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
-  const view:ModelSettingsView={version:1,revision:1,source:'saved',settings:{provider:'codex',protocol:'codex-app-server',baseUrl:'',model:'first',reasoningEffort:'medium',maxTokens:8192,modelRequestTimeoutMs:null,agentTimeoutMs:null,allowUnauthenticatedLocal:false,apiKeyConfigured:false,headersConfigured:false,extraBodyConfigured:false}};
+  const view:ModelSettingsView={...modelView(),version:1,revision:1,source:'saved',settings:{provider:'codex',protocol:'codex-app-server',serviceTier:'default',baseUrl:'',model:'first',reasoningEffort:'medium',maxTokens:8192,modelRequestTimeoutMs:null,agentTimeoutMs:null,allowUnauthenticatedLocal:false,apiKeyConfigured:false,headersConfigured:false,extraBodyConfigured:false}};
   let saves=0;
   const api={request:async(path:string,init?:RequestInit)=>{if(init?.method==='PUT')saves++;return path==='/api/model-settings'?view:{items:[
     {id:'first',name:'First',defaultReasoningEffort:'medium',reasoningEfforts:['low','medium','high','max']},
@@ -46,7 +47,7 @@ test('Codex editor saves Fast, blocks unsupported models and clears speed when s
   dom.window.localStorage.setItem('mote.language','zh-CN');
   const root=createRoot(dom.window.document.getElementById('root')!);
   t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of saved){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
-  let view:ModelSettingsView={version:1,revision:1,source:'saved',settings:{provider:'codex',protocol:'codex-app-server',baseUrl:'',model:'first',reasoningEffort:'max',maxTokens:8192,modelRequestTimeoutMs:null,agentTimeoutMs:120000,allowUnauthenticatedLocal:false,apiKeyConfigured:false,headersConfigured:false,extraBodyConfigured:false}};
+  let view:ModelSettingsView={...modelView(),version:1,revision:1,source:'saved',settings:{provider:'codex',protocol:'codex-app-server',serviceTier:'default',baseUrl:'',model:'first',reasoningEffort:'max',maxTokens:8192,modelRequestTimeoutMs:null,agentTimeoutMs:120000,allowUnauthenticatedLocal:false,apiKeyConfigured:false,headersConfigured:false,extraBodyConfigured:false}};
   const bodies:any[]=[];
   const api={request:async(path:string,init?:RequestInit)=>{
     if(init?.method==='PUT'){const body=JSON.parse(String(init.body));bodies.push(body);view={...view,revision:view.revision+1,settings:{...view.settings,...body.settings}};return view;}

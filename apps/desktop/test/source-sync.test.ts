@@ -22,18 +22,9 @@ function transport(saved: SourceItem[], fail?: (item: SourceItem) => boolean): S
 }
 async function create() { const engine = new SourceSync(join(directory, 'state.json')); await engine.initialize(); return engine; }
 describe('source revisions and durable acknowledgments', () => {
-  it('discards pre-v2 source outbox and checkpoint so the same evidence is rescanned', async () => {
-    const path=join(directory,'state.json');
-    await writeFile(path,JSON.stringify({version:2,known:{[item.externalId]:{contentHash:'old',revision:'old',item}},pendingRealtime:[{...item,revision:'old',observedAt:'2026-09-14T01:00:00Z'}],pendingHistory:[],delivered:{old:'old'},checkpoint:{version:1,cursor:'old'},initialized:true}));
-    const engine=new SourceSync(path);await engine.initialize();
-    expect(engine.status()).toMatchObject({pending:0,items:0});
-    expect(engine.checkpoint()).toBeUndefined();
-    expect(engine.initialized()).toBe(false);
-    expect(JSON.stringify(sourceState(path))).not.toContain(item.text);
-    await expect(stat(path+'.pre-sqlite')).rejects.toMatchObject({code:'ENOENT'});
-    expect(await engine.stage(scan([item]),false)).toBe(1);
-    const reopened=new SourceSync(path);await reopened.initialize();
-    expect(reopened.status().pending).toBe(1);
+  it('rejects pre-v3 saved source JSON and preserves all pending originals',async()=>{
+    const path=join(directory,'state.json'),raw=JSON.stringify({version:2,known:{},pendingRealtime:[{...item,revision:'old'}],pendingHistory:[]});await writeFile(path,raw);
+    await expect(new SourceSync(path).initialize()).rejects.toThrow('Unsupported desktop storage format');expect(await readFile(path,'utf8')).toBe(raw);
   });
   it('records archive acknowledgment only after a validated item ACK, never an empty sync',async()=>{
     const engine=await create(),sent:SourceItem[]=[];

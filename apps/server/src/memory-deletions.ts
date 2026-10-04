@@ -7,7 +7,7 @@ import {Store,StoreError,sha256} from './store.js';
 import {memoryDeletionDependencyBytes} from './storage-ledger.js';
 import {memoryRelationSchema,type Memory} from './memory-schema.js';
 
-export const memoryDeletionSchema=z.object({id:z.string().uuid(),memoryId:z.string().uuid(),title:z.string().max(160),statement:z.string().max(6000),uncertainty:z.string().max(2000),deletedAt:z.string().datetime({offset:true}),originKeys:z.array(z.string().regex(/^(bytes|event|source):[a-f0-9]{64}$/)).min(1).max(60000),lineageKeys:z.array(z.string().regex(/^source:[a-f0-9]{64}$/)).max(20000),originalTexts:z.array(z.string().max(12000)).max(100),dependencies:z.array(z.string().uuid()).min(1).max(20000),derivationSourceIds:z.array(sourceIdSchema).max(40000).default([]),sourceLineageComplete:z.boolean().default(false)}).strict();
+export const memoryDeletionSchema=z.object({id:z.string().uuid(),memoryId:z.string().uuid(),title:z.string().max(160),statement:z.string().max(6000),uncertainty:z.string().max(2000),deletedAt:z.string().datetime({offset:true}),originKeys:z.array(z.string().regex(/^(bytes|event|source):[a-f0-9]{64}$/)).min(1).max(60000),lineageKeys:z.array(z.string().regex(/^source:[a-f0-9]{64}$/)).max(20000),originalTexts:z.array(z.string().max(12000)).max(100),dependencies:z.array(z.string().uuid()).min(1).max(20000),derivationSourceIds:z.array(sourceIdSchema).max(40000),sourceLineageComplete:z.boolean()}).strict();
 type Rejection=z.infer<typeof memoryDeletionSchema>;
 type Candidate={title:string;statement:string;uncertainty:string;evidenceIds:string[];evidence?:{id:string;quote:string}[]};
 /** A user's deletion constrains regeneration, not original-evidence retention.
@@ -17,15 +17,6 @@ export class MemoryDeletions {
     store.db.exec(`CREATE TABLE IF NOT EXISTS memory_deletions(id TEXT PRIMARY KEY,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memory_deletion_dependencies(deletion_id TEXT NOT NULL REFERENCES memory_deletions(id) ON DELETE CASCADE,evidence_id TEXT NOT NULL,origin_keys TEXT NOT NULL DEFAULT '[]',lineage_keys TEXT NOT NULL DEFAULT '[]',PRIMARY KEY(deletion_id,evidence_id));
       CREATE INDEX IF NOT EXISTS memory_deletion_evidence ON memory_deletion_dependencies(evidence_id);`);
-    const columns=new Set(store.db.prepare('PRAGMA table_info(memory_deletion_dependencies)').all().map(row=>String(row.name)));
-    for(const column of ['origin_keys','lineage_keys'])if(!columns.has(column))store.db.exec(`ALTER TABLE memory_deletion_dependencies ADD COLUMN ${column} TEXT NOT NULL DEFAULT '[]'`);
-    for(const row of store.db.prepare("SELECT deletion_id,evidence_id FROM memory_deletion_dependencies WHERE origin_keys='[]'").all())store.db.prepare('UPDATE memory_deletion_dependencies SET origin_keys=?,lineage_keys=? WHERE deletion_id=? AND evidence_id=?').run(JSON.stringify(this.keys(String(row.evidence_id))),JSON.stringify(this.lineage(String(row.evidence_id))),row.deletion_id,row.evidence_id);
-    // Legacy rows cannot recover identities already removed by retention. Keep
-    // that limitation explicit while preserving every identity still available.
-    for(const row of store.db.prepare("SELECT id,json FROM memory_deletions WHERE json_type(json,'$.derivationSourceIds') IS NULL").all()){
-      const value=memoryDeletionSchema.parse(JSON.parse(String(row.json)));value.derivationSourceIds=this.sourceIds(value.dependencies);value.sourceLineageComplete=false;
-      store.db.prepare('UPDATE memory_deletions SET json=? WHERE id=?').run(JSON.stringify(value),row.id);
-    }
     const cleanup=`UPDATE memory_deletions SET json=json_set(json,
       '$.dependencies',json((SELECT coalesce(json_group_array(evidence_id),'[]') FROM memory_deletion_dependencies d WHERE d.deletion_id=memory_deletions.id AND d.evidence_id!=old.id)),
       '$.originKeys',json((SELECT coalesce(json_group_array(DISTINCT k.value),'[]') FROM memory_deletion_dependencies d,json_each(d.origin_keys) k WHERE d.deletion_id=memory_deletions.id AND d.evidence_id!=old.id)),
@@ -33,8 +24,8 @@ export class MemoryDeletions {
       '$.originalTexts',json('[]')) WHERE id IN (SELECT deletion_id FROM memory_deletion_dependencies WHERE evidence_id=old.id);
       DELETE FROM memory_deletion_dependencies WHERE evidence_id=old.id;
       DELETE FROM memory_deletions WHERE json_array_length(json,'$.dependencies')=0;`;
-    store.db.exec(`DROP TRIGGER IF EXISTS memory_deletion_original_removed;CREATE TRIGGER memory_deletion_original_removed BEFORE DELETE ON captures BEGIN ${cleanup} END;`);
-    if(store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'").get())store.db.exec(`DROP TRIGGER IF EXISTS memory_deletion_anchor_removed;CREATE TRIGGER memory_deletion_anchor_removed BEFORE DELETE ON material_evidence BEGIN ${cleanup} END;`);
+    store.db.exec(`CREATE TRIGGER IF NOT EXISTS memory_deletion_original_removed BEFORE DELETE ON captures BEGIN ${cleanup} END;`);
+    if(store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'").get())store.db.exec(`CREATE TRIGGER IF NOT EXISTS memory_deletion_anchor_removed BEFORE DELETE ON material_evidence BEGIN ${cleanup} END;`);
   }
   export(){return this.store.db.prepare('SELECT json FROM memory_deletions ORDER BY id').all().map(row=>memoryDeletionSchema.parse(JSON.parse(String(row.json))));}
   restore(raw:unknown){
@@ -121,7 +112,7 @@ export class MemoryDeletions {
       // published non-correction Memory must leave it at v3 or later. Owner
       // corrections have their own exact relation and must always be followed.
       const neverPublished=current.status==='proposed'||current.status==='stale'&&!current.correction&&
-        ((current.version??1)===1||(current.version===2&&Boolean(current.supersededBy)));
+        (current.version===1||(current.version===2&&Boolean(current.supersededBy)));
       const relations=parsed.data.filter(relation=>relation.kind==='supersedes');
       if(current.correction&&(!current.evidenceIds.includes(current.correction.noteId)||!relations.some(relation=>relation.memoryId===current.correction!.memoryId&&relation.fingerprint===current.correction!.fingerprint)))throw new StoreError('Memory correction lineage is inconsistent',409);
       for(const relation of relations){
@@ -136,7 +127,7 @@ export class MemoryDeletions {
         // The relation pins the historical content. A later metadata version
         // may advance, while its fingerprint and supersededBy edge stay exact.
         if(ancestor.id!==relation.memoryId||ancestor.fingerprint!==relation.fingerprint||
-          ancestor.supersededBy!==current.id||(ancestor.version??1)<=relation.version)
+          ancestor.supersededBy!==current.id||ancestor.version<=relation.version)
           throw new StoreError('Memory deletion lineage changed; refresh before deleting',409);
         visit(ancestor,depth+1);
       }

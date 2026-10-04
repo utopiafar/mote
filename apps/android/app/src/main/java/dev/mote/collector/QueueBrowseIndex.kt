@@ -8,7 +8,7 @@ import java.time.Instant
 import java.util.UUID
 
 /** Rebuildable local metadata projection. No OCR, window titles, device metadata or image bytes.
- * Callers hold DurableQueue's lock. Sixteen shards bound rewrite cost on capture/OCR updates.
+ * Callers hold DurableQueue's lock. Sixteen shards bound rewrite cost on capture/current metadata updates.
  * Invalidate on disk BEFORE changing authoritative events, so a crash can only force a rebuild.
  */
 internal class QueueBrowseIndex(private val dir: File, private val cipher: ByteCipher) {
@@ -71,19 +71,19 @@ internal class QueueBrowseIndex(private val dir: File, private val cipher: ByteC
     private fun project(file: File, event: JSONObject): JSONObject {
         require(event.getString("id") == file.nameWithoutExtension) { MoteI18n.text("记录 ID 与存储文件不匹配") }
         Instant.parse(event.getString("capturedAt"))
-        val blocked = event.optBoolean("_archiveMissing") || event.optBoolean("_ocrConflict") || event.optBoolean("_uploadConflict")
-        val awaitingOcr = event.optJSONObject("ocr")?.optString("status") == "pending" && !event.has("_ocrResult")
+        val blocked = event.optBoolean("_archiveMissing") || event.optBoolean("_uploadConflict")
+        LocalDataFormat.validateEvent(event)
         return JSONObject()
             .put("id", file.nameWithoutExtension).put("capturedAt", event.getString("capturedAt"))
             .put("lastCapturedAt", event.optJSONObject("stateSeries")?.optJSONArray("samples")?.let { it.optJSONObject(it.length() - 1)?.optString("at") } ?: event.getString("capturedAt"))
             .put("source", event.optString("source", "screen")).put("appId", event.optString("appId"))
             .put("appName", event.optString("appName")).put("hasImage", event.optString("_blob").isNotBlank())
             .put("blob", event.optString("_blob")).put("bytes", file.length()).put("modified", file.lastModified())
-            .put("metadataVersion", 4).put("blocked", blocked).put("awaitingOcr", awaitingOcr)
-            .put("retainedUntil", event.optLong("_retainedUntil")).put("ocrUploaded", event.optBoolean("_ocrUploaded"))
-            .put("uploaded", event.optBoolean("_uploaded")).put("hasOcrResult", event.has("_ocrResult"))
-            .put("pending", !blocked && (!event.optBoolean("_uploaded") || event.has("_ocrResult") && !event.optBoolean("_ocrUploaded")))
-            .put("reservedBytes", if (awaitingOcr && !blocked) DurableQueue.OCR_RESERVE_BYTES else 0L)
+            .put("metadataVersion", 4).put("blocked", blocked).put("awaitingOcr", false)
+            .put("retainedUntil", event.optLong("_retainedUntil"))
+            .put("uploaded", event.optBoolean("_uploaded"))
+            .put("pending", !blocked && !event.optBoolean("_uploaded"))
+            .put("reservedBytes", 0L)
     }
     private fun valid(row: JSONObject?, eventFile: File, requireStatistics: Boolean) = row != null &&
         (!requireStatistics || row.optInt("metadataVersion") == 4) &&
@@ -126,13 +126,7 @@ internal class QueueBrowseIndex(private val dir: File, private val cipher: ByteC
         val count = load(key).size
         if (count == 0) 0L else (rowBytes.getOrDefault(key, 0L) + count + 1L + 64L - file(key).length()).coerceAtLeast(0)
     }
-    /** Unknown/old entries reserve the maximum possible OCR growth until background upgrade.
-     * This is an upper bound only: it can authorize a safe append, never bypass the quota.
-     */
-    fun reservationUpperBound(files: List<File>): Long = files.sumOf { eventFile ->
-        val row = load(eventFile.name.first())[eventFile.nameWithoutExtension]
-        if (valid(row, eventFile, requireStatistics = true)) row!!.getLong("reservedBytes") else DurableQueue.OCR_RESERVE_BYTES
-    }
+    fun reservationUpperBound(files: List<File>): Long = 0L
     /** Build once, then maintain reference counts with each committed mutation. */
     fun references(hash: String, files: () -> List<File>, read: (File) -> JSONObject): Int {
         if (blobReferences == null) {

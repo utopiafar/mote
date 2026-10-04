@@ -13,41 +13,14 @@ beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-desktop-
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
 describe('durable capture queue', () => {
-  it('clears only pending pre-v2 captures and keeps acknowledged local originals for browse', async () => {
-    const acknowledged={...event('f50650f0-fb31-4215-90cd-c96dc62d5e94'),ocr:{status:'pending' as const}};
-    await queue.enqueue(acknowledged,image);
-    await queue.acknowledge(acknowledged.id);
-    await queue.enqueue(event(), image);
-    await queue.syncCheckpoint('2026-09-22T01:00:00Z');
-    await writeFile(join(directory, 'capture-input-journal.json'), 'legacy pending input');
-    await writeFile(join(directory, 'capture-stage-journal.json'), 'legacy stage output');
-    await rm(join(directory, 'capture-ingress-v2.json'));
-    const upgraded = new DurableQueue(directory, limits);
-    await upgraded.initialize();
-    expect(upgraded.stats().depth).toBe(0);
-    expect(upgraded.stats().blocked).toBe(0);
-    expect(await readdir(join(directory, 'events'))).toEqual([`${acknowledged.id}.json`]);
-    expect(await readdir(join(directory, 'blobs'))).toEqual([`${imageHash(image)}.jpg`]);
-    expect(upgraded.recordForBrowser(acknowledged.id)?.syncError).toBe('legacy_ingress_archive');
-    expect(await upgraded.imageForBrowser(acknowledged.id)).toEqual(image);
-    expect(await upgraded.next()).toBeUndefined();
-    for (const name of ['capture-input-journal.json', 'capture-stage-journal.json', 'capture-stage-checkpoint.json', 'sync-checkpoint.json']) {
-      await expect(stat(join(directory, name))).rejects.toMatchObject({ code: 'ENOENT' });
-    }
-    await upgraded.resetRetries();
-    expect(await upgraded.next()).toBeUndefined();
-    const backup=await upgraded.exportArchive();
-    const restored=new DurableQueue(join(directory,'explicit-restore'),limits);
-    await restored.initialize();
-    await restored.importArchive(backup);
-    expect((await restored.next())?.record).toMatchObject({event:{id:acknowledged.id},uploaded:false});
-    expect(JSON.parse(await readFile(join(directory, 'capture-ingress-v2.json'), 'utf8'))).toEqual({ version: 2 });
-    const fresh = event('f50650f0-fb31-4215-90cd-c96dc62d5e93');
-    upgraded.setLimits({...limits,maxQueueEvents:1});
-    await upgraded.enqueue(fresh, image);
-    const reopened = new DurableQueue(directory, limits);
-    await reopened.initialize();
-    expect((await reopened.next())?.record.event.id).toBe(fresh.id);
+  it('rejects a pre-format-3 queue without altering its generated records or originals', async () => {
+    await queue.enqueue(event(),image);
+    const original=await readFile(join(directory,'events',event().id+'.json'));
+    await rm(join(directory,'storage-format.json'));
+    const reopened=new DurableQueue(directory,limits);
+    await expect(reopened.initialize()).rejects.toThrow('Unsupported desktop storage format');
+    expect(await readFile(join(directory,'events',event().id+'.json'))).toEqual(original);
+    expect(await readFile(join(directory,'blobs',imageHash(image)+'.jpg'))).toEqual(image);
   });
   it('retains the archive ACK origin separately from retry and last-contact timestamps',async()=>{
     queue.stats();
@@ -91,29 +64,12 @@ describe('durable capture queue', () => {
     expect((await queue.pageForBrowser('2026-09-14T00:00:00.000Z', '2026-09-15T00:00:00.000Z', 1, 1)).records.map(r => r.event.id)).toEqual([first.id]);
     expect((await queue.pageForBrowser('2026-09-15T00:00:00.000Z', '2026-09-16T00:00:00.000Z', 0, 1)).total).toBe(0);
   });
-  it('makes progress at the byte limit by consuming pre-reserved OCR space, including worst-case escaping', async () => {
-    const original = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const } };
-    await queue.enqueue(original, image); await queue.acknowledge(original.id);
-    const reserved = queue.stats().bytes;
-    queue.setLimits({ ...limits, maxQueueBytes: reserved });
-    expect(queue.atCapacity()).toBe(true);
-    await expect(queue.saveOcr(original.id, '\u0000'.repeat(100000))).resolves.toBeUndefined();
-    expect(queue.stats().bytes).toBeLessThanOrEqual(reserved);
-    await queue.acknowledge(original.id, true); expect(queue.stats().depth).toBe(0);
-  });
-  it('retains deferred OCR quota and immutable payload through ACK/restart/export until OCR succeeds', async () => {
-    queue.setLimits({ ...limits, maxQueueEvents: 1 });
-    const original = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const, reason: 'charging' as const } };
-    await queue.enqueue(original, image); await queue.acknowledge(original.id);
-    expect(queue.atCapacity()).toBe(true); expect(queue.stats()).toMatchObject({ depth: 1, waitingOcr: 1, eligibleDepth: 0 });
-    await expect(queue.enqueue(event('f50650f0-fb31-4215-90cd-c96dc62d5e93'), image)).rejects.toBeInstanceOf(QueueFullError);
-    const restored = new DurableQueue(directory, { ...limits, maxQueueEvents: 1 }); await restored.initialize();
-    expect((await restored.nextOcr())?.image).toEqual(image); expect(await restored.next()).toBeUndefined();
-    await restored.saveOcr(original.id, 'RECOGNIZED FIXTURE');
-    const entry = await restored.next(); expect(entry?.record.event).toEqual(original); expect(entry?.record.uploaded).toBe(true); expect(entry?.record.ocrResult).toBe('RECOGNIZED FIXTURE');
-    const target = new DurableQueue(join(directory, 'imported'), limits); await target.initialize(); await target.importArchive(await restored.exportArchive());
-    expect((await target.next())?.record.uploaded).toBe(false); // Imported node must ACK original again before patch.
-    await restored.acknowledge(original.id, true); expect(restored.stats().depth).toBe(0); expect(await readdir(join(directory, 'blobs'))).toEqual([]);
+  it('rejects obsolete pending OCR records and old portable archives before any write',async()=>{
+    await expect(queue.enqueue({...event(),ocr:{status:'pending'}},image)).rejects.toThrow();
+    const archive=await queue.exportArchive();expect(archive.version).toBe(3);
+    await expect(queue.importArchive({...archive,version:1})).rejects.toThrow();
+    expect(queue.stats().depth).toBe(0);
+    expect(await readdir(join(directory,'blobs'))).toEqual([]);
   });
   it('deduplicates identical image bytes while preserving every sampled observation and survives restart', async () => {
     await queue.enqueue(event(), image);
@@ -236,13 +192,13 @@ it('persists compacted observations across restart and ignores an acknowledgemen
   await queue.enqueue(first);await queue.enqueue({...first,id:crypto.randomUUID(),capturedAt:'2026-09-17T00:00:05.000Z',durationMs:5000});
   const restarted=new DurableQueue(directory,limits);await restarted.initialize();
   expect((await restarted.next())?.record.event.stateSeries?.samples).toHaveLength(2);
-  await restarted.acknowledge(first.id,false,1);expect(restarted.stats().depth).toBe(1);
+  await restarted.acknowledge(first.id,1);expect(restarted.stats().depth).toBe(1);
 });
 
 it('packs stable snapshots without acknowledging other records when a receipt is partial', async () => {
   const a = event(), b = event('00000000-0000-4000-8000-000000000077');
   await queue.enqueue(a, image); await queue.enqueue(b, image);
-  const batch = await queue.nextBatch(25, Date.now(), true);
+  const batch = await queue.nextBatch(25, Date.now());
   expect(batch.map(item => item.record.event.id).sort()).toEqual([a.id, b.id].sort());
   await queue.acknowledge(a.id);
   expect((await queue.nextBatch()).map(item => item.record.event.id)).toEqual([b.id]);

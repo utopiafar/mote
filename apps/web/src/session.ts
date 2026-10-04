@@ -87,8 +87,7 @@ export function restoreSession(raw: string | null, origin: string, now = Date.no
     const value = JSON.parse(raw || 'null');
     if (!value || typeof value.token !== 'string' || !value.token.trim()) return null;
     if (value.expiresAt !== undefined && (!Number.isSafeInteger(value.expiresAt) || value.expiresAt <= now)) return null;
-    // Accept old same-service sessions; invalidate the former remote-node option.
-    if (value.url !== undefined && value.url !== '' && value.url !== origin) return null;
+    if (Object.hasOwn(value, 'url') || !validScope(value.viewScope)) return null;
     if(value.serverExpiresAt!==undefined&&(!Number.isSafeInteger(value.serverExpiresAt)||value.serverExpiresAt<=now))return null;
     return { token: value.token,...(value.serverExpiresAt===undefined?{}:{serverExpiresAt:value.serverExpiresAt}), ...(validScope(value.viewScope)?{viewScope:value.viewScope}:{}), ...(value.expiresAt === undefined ? {} : {expiresAt: value.expiresAt}) };
   } catch {
@@ -100,18 +99,11 @@ export function readStoredSession(origin: string, now = Date.now()): Connection 
   let raw: string | null = null;
   try { raw = globalThis.sessionStorage?.getItem(connectionStorageKey) ?? null; } catch { /* try persistent storage */ }
   const session = restoreSession(raw, origin, now);
-  if (session) return ensureViewScope(session,'sessionStorage');
+  if (session) return session;
   try { raw = globalThis.localStorage?.getItem(connectionStorageKey) ?? null; } catch { raw = null; }
   const persistent = restoreSession(raw, origin, now);
   if (!persistent && raw) {
     try { globalThis.localStorage?.removeItem(connectionStorageKey); } catch { /* ignore stale storage */ }
   }
-  return persistent?ensureViewScope(persistent,'localStorage'):null;
-}
-
-function ensureViewScope(connection:Connection,storage:'sessionStorage'|'localStorage'):Connection {
-  if(connection.viewScope)return connection;
-  const migrated={...connection,viewScope:crypto.randomUUID()};
-  try {globalThis[storage]?.setItem(connectionStorageKey,JSON.stringify(migrated));} catch { /* keep the in-memory identity */ }
-  return migrated;
+  return persistent;
 }

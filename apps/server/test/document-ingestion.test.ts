@@ -1,3 +1,4 @@
+import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,realpathSync} from 'node:fs';
@@ -19,8 +20,9 @@ function docx(){return Buffer.from(zipSync({'[Content_Types].xml':Buffer.from('<
 test('PDF, DOCX and XLSX share text and locators across Desktop, automatic import, and central processing',async t=>{
  const dir=realpathSync(mkdtempSync(join(tmpdir(),'mote-document-ingestion-'))),store=new Store(dir),sources=new SourceStore(store),files=new FileStore(store,sources),archive=new ArchivedFileStore(store),imports=new ImportStore(store,archive,sources),processing=new FileProcessing(files);
  t.after(async()=>{await processing.close();store.close();rmSync(dir,{recursive:true,force:true});});
+ await processing.runtime.ready;
  sources.register({id:'generated-documents',name:'Generated documents',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'archive'});
- processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true}});
+ processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true},policy:fixtureFilePolicy({...processing.view().settings,enabled:true},processing.runtime.registry)});
  const book=new ExcelJS.Workbook(),sheet=book.addWorksheet('Generated');sheet.getCell('B2').value={formula:'1+1',result:2};sheet.getCell('A2').value='Generated cell';
  const fixtures=[{name:'generated.pdf',mime:'application/pdf',bytes:pdf('Generated PDF evidence')},{name:'generated.docx',mime:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',bytes:docx()},{name:'generated.xlsx',mime:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',bytes:Buffer.from(await book.xlsx.writeBuffer())}];
  for(const value of fixtures){

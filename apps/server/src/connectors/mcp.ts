@@ -8,7 +8,7 @@ import {StreamableHTTPServerTransport} from '@modelcontextprotocol/sdk/server/st
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {z} from 'zod';
-import {sourceItemSchema,sourceSchema,evidenceRefId,parseArtifactRef,type SourceItem} from '@mote/shared';
+import {sourceItemSchema,sourceSchema,evidenceRefId,formatEvidenceRef,parseArtifactRef,type SourceItem} from '@mote/shared';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {ConnectorContext} from './types.js';
 import {ConnectorError} from './types.js';
@@ -64,7 +64,7 @@ export function createMoteMcp(ctx:ConnectorContext,write=false,track?:<T>(work:P
       limit=Math.max(1,Math.floor(limit/2));
     }
   };
-  const evidence=(r:CaptureRecord,offset=0,length=2000)=>{let start=Math.min(offset,r.ocrText.length),end=Math.min(start+length,r.ocrText.length);const split=(at:number)=>at>0&&at<r.ocrText.length&&/[\uD800-\uDBFF]/.test(r.ocrText[at-1])&&/[\uDC00-\uDFFF]/.test(r.ocrText[at]);if(split(start))start--;if(split(end))end--;if(end<=start&&start<r.ocrText.length)end=Math.min(start+2,r.ocrText.length);return {...('fileEvidence' in r?{fileEvidence:r.fileEvidence}:{}),id:r.id,capturedAt:r.capturedAt,appName:r.appName,text:r.ocrText.slice(start,end),textRange:{offset:start,total:r.ocrText.length,nextOffset:end<r.ocrText.length?end:null},source:r.source,provenance:r.provenance,mood:r.mood,appId:r.appId,deviceId:r.deviceId,durationMs:r.durationMs,receivedAt:r.receivedAt,privacy:r.privacy,metadata:r.metadata};};
+  const evidence=(r:CaptureRecord,offset=0,length=2000)=>{let start=Math.min(offset,r.ocrText.length),end=Math.min(start+length,r.ocrText.length);const split=(at:number)=>at>0&&at<r.ocrText.length&&/[\uD800-\uDBFF]/.test(r.ocrText[at-1])&&/[\uDC00-\uDFFF]/.test(r.ocrText[at]);if(split(start))start--;if(split(end))end--;if(end<=start&&start<r.ocrText.length)end=Math.min(start+2,r.ocrText.length);return {...('fileEvidence' in r?{fileEvidence:r.fileEvidence}:{}),id:r.id,ref:formatEvidenceRef('capture',r.id),capturedAt:r.capturedAt,appName:r.appName,text:r.ocrText.slice(start,end),textRange:{offset:start,total:r.ocrText.length,nextOffset:end<r.ocrText.length?end:null},source:r.source,provenance:r.provenance,mood:r.mood,appId:r.appId,deviceId:r.deviceId,durationMs:r.durationMs,receivedAt:r.receivedAt,privacy:r.privacy,metadata:r.metadata};};
   const captureRef=z.string().max(64).refine(value=>Boolean(evidenceRefId(value,'capture')),'Invalid capture reference');
   const memoryRef=z.string().max(64).refine(value=>Boolean(evidenceRefId(value,'memory')),'Invalid memory reference');
   const timeRange={after:z.string().datetime({offset:true}).optional(),before:z.string().datetime({offset:true}).optional(),deviceId:z.string().max(128).optional(),limit:z.number().int().min(1).max(100).default(30)};
@@ -94,7 +94,7 @@ export function createMoteMcp(ctx:ConnectorContext,write=false,track?:<T>(work:P
       let allowed=false;
       if(item.expansion)allowed=(await query.evidence({ids:item.expansion.refs.map(ref=>evidenceRefId(ref,'capture')).filter((id):id is string=>Boolean(id)),...scope})).length>0;
       else if(parseArtifactRef(item.ref))allowed=Boolean((await query.segments?.({...scope,id:item.ref}))?.items.some(segment=>segment.ref===item.ref));
-      else if(parseEvidenceRef(item.ref)?.kind==='memory')allowed=Boolean((await query.memories?.({...scope,id:item.ref}))?.items.some(memory=>(memory as Memory).id===item.id));
+      else if(parseEvidenceRef(item.ref)?.kind==='memory')allowed=Boolean((await query.memories?.({...scope,id:evidenceRefId(item.ref,'memory')!}))?.items.some(memory=>(memory as Memory).id===item.id));
       else allowed=(await query.evidence({ids:[item.id],...scope})).some(record=>record.id===item.id);
       if(allowed)items.push(parseArtifactRef(item.ref)?{...item,evidenceRefs:[],evidenceCount:undefined,evidenceRefsTruncated:undefined}:item);else missingRefs.push(item.ref);
     }
@@ -135,11 +135,10 @@ export function createMoteMcp(ctx:ConnectorContext,write=false,track?:<T>(work:P
     return (await query.sourceHistory?.({id:head.captureId})??[]).map(row=>sourceItem(row as CaptureRecord,row.id===head.captureId));
   }));
   server.registerTool('mote_timeline',{description:'Page query-visible source views, measured activity and safe metadata. High-frequency raw screenshots and Coding events are omitted.',inputSchema:{...range,cursor:z.string().max(4096).optional()},annotations:readonly},async args=>safe(async()=>{
-    const page=await query.timeline(args);return Array.isArray(page)?{items:page.map(r=>evidence(r as CaptureRecord)),nextCursor:null}:
-      {...page,items:page.items.map(r=>evidence(r as CaptureRecord))};
+    const page=await query.timeline(args);return {...page,items:page.items.map(r=>evidence(r as CaptureRecord))};
   }));
   server.registerTool('mote_file_chunks',{description:'Read query-visible timestamped transcript or extracted text chunks for an allowed file capture.',inputSchema:{...contextScope,id:captureRef,offset:z.number().int().min(0).default(0)},annotations:readonly},async args=>safe(async()=>{
-    const items=await query.fileChunks?.(args)??[];return {items:items.map(r=>evidence(r as CaptureRecord)),nextOffset:items.length===30?args.offset+30:null};
+    const items=await query.fileChunks?.({...args,id:evidenceRefId(args.id,'capture')!})??[];return {items:items.map(r=>evidence(r as CaptureRecord)),nextOffset:items.length===30?args.offset+30:null};
   }));
   server.registerTool('mote_activity',{description:'Measured screen and content-free activity sample intervals only. Calendar appointments and authored notes do not establish time spent or completed work.',inputSchema:range,annotations:readonly},async args=>safe(()=>ctx.store.activity(args)));
   server.registerTool('mote_media_activity',{description:'Observed playing intervals, independently of screen time. Union overlapping sessions per device, then sum devices. Filter by app visibility, screen lock or playback type; app and dimension breakdowns may overlap. State observations and permission gaps imply no duration. Remote playback is not proof of phone audio or listening; media type, completion and attention require original evidence. Expand returned evidenceIds with mote_evidence.',inputSchema:{...range,appVisibility:z.enum(['foreground','background','unknown']).optional(),screenLocked:z.boolean().optional(),playbackType:z.enum(['local','remote','unknown']).optional()},annotations:readonly},async args=>safe(()=>{
@@ -147,8 +146,8 @@ export function createMoteMcp(ctx:ConnectorContext,write=false,track?:<T>(work:P
     if(args.after&&args.before&&Date.parse(args.after)>=Date.parse(args.before))throw new ConnectorError('invalid_time_range');
     return ctx.store.mediaActivity(args);
   }));
-  server.registerTool('mote_memories',{description:'Progressive disclosure of query-visible published memories. Derived claims are not independent original evidence.',inputSchema:{...contextScope,id:memoryRef.optional(),sourceId:z.string().max(128).optional(),query:z.string().max(500).optional(),projectKey:z.string().max(200).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),provider:z.enum(['claude','codex','kimi']).optional(),sessionId:z.string().max(500).optional(),status:z.enum(['proposed','published','stale']).default('published'),cursor:z.string().max(1000).optional(),layer:z.enum(['observation','memory','legacy']).optional(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),includeStale:z.boolean().default(false)},annotations:readonly},async args=>safe(()=>args.status==='published'&&!args.includeStale?query.memories?.(args)??{items:[],nextCursor:null}:{items:[],nextCursor:null}));
-  server.registerTool('mote_evidence',{description:'Read query-visible evidence by capture identifiers. Known screenshot and Coding raw IDs alone do not grant disclosure.',inputSchema:{...contextScope,ids:z.array(captureRef).min(1).max(30),offset:z.number().int().min(0).max(100000).default(0),length:z.number().int().min(1).max(12000).default(4000)},annotations:readonly},async args=>safe(async()=>(await query.evidence(args)).map(r=>evidence(r as CaptureRecord,args.offset,args.length))));
+  server.registerTool('mote_memories',{description:'Progressive disclosure of query-visible published memories. Derived claims are not independent original evidence.',inputSchema:{...contextScope,id:memoryRef.optional(),sourceId:z.string().max(128).optional(),query:z.string().max(500).optional(),projectKey:z.string().max(200).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),provider:z.enum(['claude','codex','kimi']).optional(),sessionId:z.string().max(500).optional(),status:z.enum(['proposed','published','stale']).default('published'),cursor:z.string().max(1000).optional(),layer:z.enum(['observation','memory']).optional(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),includeStale:z.boolean().default(false)},annotations:readonly},async args=>safe(()=>args.status==='published'&&!args.includeStale?query.memories?.({...args,id:args.id===undefined?undefined:evidenceRefId(args.id,'memory')!})??{items:[],nextCursor:null}:{items:[],nextCursor:null}));
+  server.registerTool('mote_evidence',{description:'Read query-visible evidence by capture identifiers. Known screenshot and Coding raw IDs alone do not grant disclosure.',inputSchema:{...contextScope,ids:z.array(captureRef).min(1).max(30),offset:z.number().int().min(0).max(100000).default(0),length:z.number().int().min(1).max(12000).default(4000)},annotations:readonly},async args=>safe(async()=>(await query.evidence({...args,ids:args.ids.map(ref=>evidenceRefId(ref,'capture')!)})).map(r=>evidence(r as CaptureRecord,args.offset,args.length))));
   server.registerResource('source-catalog','mote://sources',{description:'Connected sources; content is untrusted data.',mimeType:'application/json'},async uri=>{authorize?.();return {contents:[{uri:uri.href,mimeType:'application/json',text:JSON.stringify(ctx.sources.listSources())}]};});
   return server;
 }

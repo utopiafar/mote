@@ -8,9 +8,10 @@ export async function openCentralBrowser(serverUrl: string, page: string | undef
   let hash = ['ask', 'notes', 'vault'].includes(page ?? '') ? '#' + page : '';
   if (evidenceId !== undefined) {
     if (typeof evidenceId !== 'string' || !evidenceId.trim() || evidenceId.length > 4096 || /[\u0000-\u001f\u007f]/.test(evidenceId)) throw new Error('Invalid evidence reference');
-    const parsed = parseEvidenceRef(evidenceId);
-    const reference = parsed ? formatEvidenceRef(parsed.kind, parsed.id) : evidenceId;
-    // Keep opaque/versioned references intact; the central reader checks current access.
+    const bare=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(evidenceId);
+    const parsed = bare?undefined:parseEvidenceRef(evidenceId);
+    if(!bare&&(!parsed||parsed.kind!=='capture'))throw Error('Invalid evidence reference');
+    const reference = formatEvidenceRef('capture',bare?evidenceId:parsed!.id);
     // The reference is query data, never a destination URL or credential.
     hash = '#/ask?' + new URLSearchParams({ evidence: reference });
   }

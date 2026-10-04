@@ -14,7 +14,8 @@ import java.time.Instant
 import org.json.JSONObject
 
 fun Context.localSources(): LocalSourceStore {
-    IngressV2Migration.ensure(this)
+
+    LocalDataFormat.requireCurrent(this)
     return LocalSourceStore(File(noBackupFilesDir, "local-sources"), localContentCipher()).apply {
         onMutation = { LocalStateChanges.changed() }
     }

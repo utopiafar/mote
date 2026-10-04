@@ -72,7 +72,7 @@ class ConnectionClient(private val context: Context) {
         if (!ConnectionGuard.reconfiguring()) runCatching { UploadWorker.schedule(context, settings.read()) }
     }
     private fun validateResponse(body: JSONObject?, server: String) {
-        if (body == null || body.opt("scope") !in setOf("owner", "collector") || body.opt("serverUrl") != server ||
+        if (body == null || body.opt("scope") != "owner" || body.opt("serverUrl") != server ||
             !(body.opt("token") as? String ?: "").matches(Regex("[A-Za-z0-9._~-]{32,2048}")) ||
             !(body.opt("credentialId") as? String ?: "").matches(Regex("[A-Za-z0-9_.:-]{1,128}"))) throw ConnectionFailure("response")
     }
@@ -84,7 +84,7 @@ class ConnectionClient(private val context: Context) {
         if (body.has("node") && node == null) throw ConnectionFailure("response")
         ProtocolCompatibility.requireCompatible(node?.opt("protocol"))
         val scope = credential.opt("scope")
-        if (scope !in setOf("owner", "collector") || (credentialId != null && (scope !in setOf("owner", "collector") || credential.opt("id") != credentialId)) ||
+        if (scope != "owner" || (credentialId != null && credential.opt("id") != credentialId) ||
             (credential.has("deviceId") && (credential.opt("deviceId") != settings.deviceId || credential.opt("platform") != "android" || credential.opt("serverUrl") != server)) ||
             body.optJSONObject("capabilities")?.opt("ingest") != true) throw ConnectionFailure("identity")
         return credential

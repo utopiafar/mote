@@ -19,8 +19,9 @@ export class NoteOutbox {
   private readonly prefix: string;
   private readonly draftKey: string;
   constructor(private storage: NoteStorage, namespace: string) {
-    this.prefix = `mote.notes.v1:${encodeURIComponent(namespace)}:`;
+    this.prefix = `mote.notes.v3:${encodeURIComponent(namespace)}:`;
     this.draftKey = `${this.prefix}draft`;
+    for(let i=0;i<storage.length;i++)if(storage.key(i)?.startsWith("mote.notes.v1:"))throw new Error(moteText("本机草稿无法读取；原数据已保留。"));
   }
   private storedDraft(): StoredDraft {
     const raw = this.storage.getItem(this.draftKey);
@@ -30,6 +31,7 @@ export class NoteOutbox {
       if (typeof value?.text !== 'string' || typeof value?.mood !== 'string') throw new Error('Invalid draft');
       if(value.attachments!==undefined&&(!Array.isArray(value.attachments)||value.attachments.length>10||value.attachments.some((id:unknown)=>typeof id!=='string')))throw new Error('Invalid attachments');
       const prepared = value.prepared === undefined ? undefined : noteSchema.parse(value.prepared);
+      if(prepared&&prepared.client!=="web")throw new Error("Unsupported note identity");
       if (prepared && (prepared.text !== (value.text.trim()?value.text:'附件记录') || (prepared.mood ?? '') !== (value.mood.trim() ? value.mood : '') || JSON.stringify(prepared.metadata?.attachments??[]) !== JSON.stringify(value.attachments??[]))) throw new Error('Draft submission content mismatch');
       return { text: value.text, mood: value.mood, attachments: value.attachments, ...(prepared ? { prepared } : {}) };
     } catch { throw new Error(moteText("本机草稿无法读取；原数据已保留。")); }
@@ -49,6 +51,7 @@ export class NoteOutbox {
     const previous = this.storedDraft();
     const prepared = previous.text === draft.text && previous.mood === draft.mood && JSON.stringify(previous.attachments) === JSON.stringify(draft.attachments) ? previous.prepared : undefined;
     const { id, deviceId, deviceName, platform, capturedAt, client } = identity;
+    if(client!=="web")throw new Error("Web notes require an explicit client identity");
     const note = prepared ?? noteSchema.parse({ id, deviceId, deviceName, platform, capturedAt, ...(client ? { client } : {}), text: draft.text.trim()?draft.text:'附件记录', ...(draft.attachments?.length?{metadata:{version:1,observedAt:capturedAt,attachments:draft.attachments}}:{}), ...(draft.mood.trim() ? { mood: draft.mood } : {}) });
     this.storage.setItem(this.draftKey, JSON.stringify({ ...draft, prepared: note }));
     return note;
@@ -67,6 +70,7 @@ export class NoteOutbox {
       try {
         const item = JSON.parse(raw);
         const note = noteSchema.parse(item.note);
+        if(note.client!=="web")throw new Error("Unsupported note identity");
         if (key !== `${this.prefix}event:${note.id}`) throw new Error('Mismatched event ID');
         items.push({ note, ...(typeof item.error === 'string' ? { error: item.error } : {}), ...(item.blocked === true ? { blocked: true } : {}) });
       } catch { throw new Error(moteText("本机待同步随手记存在损坏记录；原数据已保留，不能覆盖。")); }
@@ -75,6 +79,7 @@ export class NoteOutbox {
   }
   enqueue(note: NoteInput): void {
     const normalized = noteSchema.parse(note);
+    if(normalized.client!=="web")throw new Error("Web notes require an explicit client identity");
     const key = `${this.prefix}event:${normalized.id}`;
     const existing = this.storage.getItem(key);
     if (existing) {

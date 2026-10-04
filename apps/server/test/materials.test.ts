@@ -1,3 +1,4 @@
+import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -118,8 +119,8 @@ test('changing only a block context invalidates its Memory, preserves other evid
   const first=materials.publish(value),old=materials.evidence(materials.evidenceIds(first.ref));
   const fingerprints=old.map(memoryEvidenceFingerprint);
   const memories=new MemoryStore(store,ids=>materials.evidence(ids),id=>materials.isCurrentEvidence(id));
-  const saved=old.map(record=>memories.publish(memories.extract({answer:JSON.stringify({memories:[{title:'Generated',statement:`Generated supported statement [${record.id}]`,uncertainty:'Fixture only',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),
-    citations:[{id:record.id,capturedAt:record.capturedAt,appName:'Generated',excerpt:record.ocrText}],trace:[],runId:randomUUID()},'fixture').items[0]!.id));
+  const saved=old.map(record=>memories.publish(memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'Generated',statement:`Generated supported statement [${record.id}]`,uncertainty:'Fixture only',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),
+    citations:[{id:record.id,capturedAt:record.capturedAt,appName:'Generated',excerpt:record.ocrText}],trace:[],runId:randomUUID()}),'fixture').items[0]!.id));
   const revised:MaterialDraft={...value,blocks:value.blocks.map((block,index)=>index===0?{...block,evidenceContext:{...context,document:{...context.document,recordedAt:'2026-05-02T08:00:00+08:00'}}}:block)};
   const second=materials.publish(revised,{expectedRevision:first.revision});
   const current=materials.evidence(materials.evidenceIds(second.ref));
@@ -183,7 +184,7 @@ test('owner material API requires owner credential and serves only bounded reads
 test('source invalidation permits an identical rebuild once, preserves other anchors and stays idempotent across store instances',async t=>{
   const {store,materials}=fixture(t),ids=[randomUUID(),randomUUID()];
   for(const id of ids)await store.ingest({id,deviceId:'fixture',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-09-24T01:00:00Z',durationMs:0,ocrText:'Generated original'});
-  const value:MaterialDraft={...draft(),members:ids.map((id,i)=>({id:`m${i}`,kind:'capture',ref:id})),
+  const value:MaterialDraft={...draft(),members:ids.map((id,i)=>({id:`m${i}`,kind:'capture',ref:'capture:'+id})),
     blocks:ids.map((_,i)=>({id:`b${i}`,kind:'text',format:'plain',text:`Generated fact ${i}`,memberIds:[`m${i}`]}))};
   const first=materials.publish(value),[changed,stable]=materials.evidenceIds(first.ref);
   store.invalidateMemoryEvidence(ids[0]);

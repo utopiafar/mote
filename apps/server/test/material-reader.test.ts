@@ -1,3 +1,4 @@
+import {formatEvidenceRef} from '@mote/shared';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -28,7 +29,7 @@ test('model material view requires every original member to remain in the select
   assert.throws(()=>reader.materialRead({...selected,sourceId:'different-source',ref:published.ref}),{statusCode:404});
   const read=reader.materialRead({...selected,ref:published.ref});
   assert.equal(read.text,'Generated member 0\n');
-  assert.deepEqual(read.originalRefs,[ids[0]]);
+  assert.deepEqual(read.originalRefs,[formatEvidenceRef('capture',ids[0])]);
   assert.equal(reader.materialCatalog({...selected,deviceId:'other-device'}).items.length,0);
   assert.throws(()=>reader.materialRead({...selected,after:'2026-09-24T01:30:00.000Z',ref:published.ref}),{statusCode:404});
   const mixed:MaterialDraft={...single,id:materialId('generated-source','mixed'),origin:{...single.origin,externalId:'mixed',lastAt:'2026-09-24T02:00:00.000Z'},

@@ -1,3 +1,4 @@
+import {formatEvidenceRef} from '@mote/shared';
 import {imageOutput} from './evidence-image.js';
 import {fileAttachmentAvailable} from './file-attachments.js';
 import {MemoryRecipeSettings} from './memory-recipe-settings.js';
@@ -149,7 +150,7 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   backendContext.provide('moteMaterialOrganizers',materialOrganizer.registry);
   const evidenceReader=new EvidenceReader(store,sources,files,indexer,fileEvidence,materials,sourcePipelines,materialOrganizer.sourceItemRecipes,
     ref=>materialMemoryWork.readyForMemory(ref));
-  const allEvidence=(ids:string[])=>evidenceReader.evidence(ids);
+  const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,conversations=new Conversations(store);
   const archivedFiles=new ArchivedFileStore(store);
   const contentStorage=new ContentStorageService(store,files,archivedFiles);
@@ -225,8 +226,8 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   let initialAgent=dependencies?.agent?wrapAgent(dependencies.agent,modelSettingsFromConfig(config)):undefined;
   const modelSettings=new ModelSettingsStore({
     directory:config.dataDir,environment:modelSettingsFromConfig(config),codex,
-    prepare:async (settings,profiles)=>{
-      const candidate=await createModelRegistry([{id:'default',name:moteText("默认配置"),settings},...profiles],reader,factory,initialAgent);initialAgent=undefined;
+    prepare:async (settings,profiles,defaultProfileId)=>{
+      const candidate=await createModelRegistry(profiles,reader,factory,initialAgent,defaultProfileId);initialAgent=undefined;
       return agent.prepare(candidate,()=>applyModelSettings(config,settings));
     },
     probe:settings=>testModelConnection(settings,factory),
@@ -246,7 +247,7 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     return structuredClone(selected);
   };
   const analyzeFile:FileAnalysis=async(records,prompt,settings,localOnly,signal,host)=>{
-    const scoped:ContextReader={search:async()=>records,timeline:async()=>records,evidence:async args=>records.filter(r=>args.ids.includes(r.id)),activity:async()=>({}),devices:async()=>[]};
+    const scoped:ContextReader={search:async()=>records,timeline:async()=>({items:records,nextCursor:null}),evidence:async args=>records.filter(r=>args.ids.includes(r.id)),activity:async()=>({}),devices:async()=>[]};
     const selected=settings.modelSnapshot??resolveFileModel(settings,localOnly);
     const meter=usageLedger.start(selected.provider,selected.model,'file-analysis',{agentId:'file-analysis',moduleId:'files',skillId:null,...host});
     let model:QueryAgent|undefined;
@@ -408,13 +409,10 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     const material=materials.get(refs[0]);
     if(!material||material.kind!=='mote.coding-session'||material.schemaVersion<5)return;
     const pages=materials.conversationInputs(material.ref,input.ranges);
-    const legacyPin=input.materialInputs.length?undefined:materials.input(material.ref,['conversation']);
-    if(legacyPin&&!legacyPin.ready)throw new ExecutionFailure('blocked','semantic_processing_blocked');
-    const pins=input.materialInputs.length?input.materialInputs:legacyPin?[legacyPin]:[];
     const configuration=input.job.configuration!;
     const jobs=workflows.enqueue([{name:'conversation',processor:'mote.coding-conversation-understanding',materialInputs:pages,
       config:{candidatePolicy:input.candidatePolicy,modelFingerprint:configuration.fingerprint,profileId:configuration.profileId,modelOverride:configuration.model,
-        contextTime:input.job.contextTime??input.job.createdAt,timeZone:input.job.timeZone,language:input.job.language,processingMaterialInputs:pins.map(pin=>({materialId:pin.materialId,required:pin.required,fingerprint:pin.fingerprint,evidenceIds:pin.evidenceIds.filter(id=>input.ranges.some(range=>range.id===id))}))}}],input.parentGrant);
+        contextTime:input.job.contextTime,timeZone:input.job.timeZone,language:input.job.language,processingMaterialInputs:input.materialInputs.map(pin=>({materialId:pin.materialId,required:pin.required,fingerprint:pin.fingerprint,evidenceIds:pin.evidenceIds.filter(id=>input.ranges.some(range=>range.id===id))}))}}],input.parentGrant);
     linkOperationParent(store,'memory:'+input.job.id,executor.get(jobs.conversation)!.operationId);
     const abort=()=>executor.abortLocal(jobs.conversation);input.signal.addEventListener('abort',abort,{once:true});
     try{await executor.drain([jobs.conversation]);input.signal.throwIfAborted();}
@@ -425,11 +423,11 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     const row=store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(jobs.conversation)!;
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
   };
-  const memoryPipeline=new MemoryPipeline({understand:understandConversation,materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:(id,profileId)=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),authoredMaterialOriginalForReuse:(id,ref)=>evidenceReader.authoredMaterialOriginalForReuse(id,ref),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&(!job.automaticGrant||sourcePipelines.memoryAllowed(job.automaticGrant.sourceId)),strategies:memoryStrategies,executor,store,memories,deletionEvidenceAllowedForMemory:(id,profileId)=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),evidenceAllowedForMemory:(id,profileId)=>!evidenceReader.evidenceLocalOnly(id)||usesLocalModel(modelSettings.select('memory',profileId).settings),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings)),required),configuration:(id,model)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);},concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
+  const memoryPipeline=new MemoryPipeline({understand:understandConversation,materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:(id,profileId)=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&(!job.automaticGrant||sourcePipelines.memoryAllowed(job.automaticGrant.sourceId)),strategies:memoryStrategies,executor,store,memories,deletionEvidenceAllowedForMemory:(id,profileId)=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),evidenceAllowedForMemory:(id,profileId)=>!evidenceReader.evidenceLocalOnly(id)||usesLocalModel(modelSettings.select('memory',profileId).settings),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings)),required),configuration:(id,model)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);},concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
   memoryRecipeSettings.onChange=()=>materialMemoryWork.inputs.revokeDisabled();
   memoryRecipeSettings.onApplied=()=>materialMemoryWork.reconcile(memoryPipeline);
   materialMemoryWork.reconcile(memoryPipeline);
-  const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours,executor,dependencies?.semanticContextTime),working=new WorkingMemory(store,conversations);
+  const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,executor,dependencies?.semanticContextTime),working=new WorkingMemory(store,conversations);
   const memoryIntegrationSettings=new MemoryIntegrationSettings(store,memoryStrategies);
   registerMemoryExtensions({integrationSettings:memoryIntegrationSettings,semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);

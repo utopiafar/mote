@@ -110,13 +110,13 @@ codex -c 'cli_auth_credentials_store="file"' login
 
 每次请求启动独立进程和临时 home，只链接登录文件，不继承个人 MCP、插件、hooks、历史会话或用户指令。查询使用只读沙箱、关闭环境访问与原生执行工具，动态工具仅调用 Mote 已有证据桥。当前验证过的 Codex 0.154.0 还会提供仅修改临时运行计划的 `update_plan`，不访问或修改用户资料。导入有单独的可写临时工作区，不接入归档查询工具；仍须经过原有预览、确认和宿主校验。
 
-App Server 的动态工具接口为实验接口，兼容性取决于安装的 CLI。配置警告、额外审批请求、未知执行工具和错误返回会终止请求；不会降级为另一个服务商。设置中的“单次模型请求超时”对 Codex Server 不适用：App Server 不把内部模型生成作为 Mote 可见的单次 Provider 请求；Mote 只可选择是否设置“Agent 总运行超时”，它覆盖整个 `turn` 及其中的工具循环，留空则不设置 Mote 总期限。响应字节预算仍由 Mote 限制，输出 token 上限由 Codex 管理，页面的 HTTP 输出预算不传给 Codex。设置页从本机 `model/list` 读取所选模型的 `supportedReasoningEfforts` 和 `defaultReasoningEffort`；`auto` 不指定推理强度，旧设置 `off` 对应 App Server 的 `none`，其余挡位按原值传给 `turn/start.effort`。目录不可用或手动填写目录外模型时，页面仍显示通用选项，具体支持情况须通过测试连接验证。
+App Server 的动态工具接口为实验接口，兼容性取决于安装的 CLI。配置警告、额外审批请求、未知执行工具和错误返回会终止请求；不会降级为另一个服务商。设置中的“单次模型请求超时”对 Codex Server 不适用：App Server 不把内部模型生成作为 Mote 可见的单次 Provider 请求；Mote 只可选择是否设置“Agent 总运行超时”，它覆盖整个 `turn` 及其中的工具循环，留空则不设置 Mote 总期限。响应字节预算仍由 Mote 限制，输出 token 上限由 Codex 管理，页面的 HTTP 输出预算不传给 Codex。设置页从本机 `model/list` 读取所选模型的 `supportedReasoningEfforts` 和 `defaultReasoningEffort`；`auto` 不指定推理强度，Mote 的当前 `off` 选择对应 App Server 的 `none`，其余挡位按原值传给 `turn/start.effort`。目录不可用或手动填写目录外模型时，页面仍显示通用选项，具体支持情况须通过测试连接验证。
 
-Codex 预设可独立选择 **速度模式：Standard / Fast**，不会改变推理强度。Fast 可用性取决于账户、模型、工作区和 CLI 版本，且会增加额度或费用消耗；页面按模型目录禁用明确不支持的 Fast，缺少速度目录时可用“测试连接”验证。保存后，查询、Memory、回顾、文件分析和导入均使用该预设的速度模式。Mote 在自己的临时配置中设置 `service_tier`，Fast 还启用 `features.fast_mode`，并将 `serviceTier` 传给 `thread/start`；Codex 目录和线程返回的 `priority` 是 Fast 的协议别名，Mote 统一映射为 `fast`；返回的线程档位不匹配时终止请求。旧预设没有此字段时保留原来的行为，不继承用户 Codex 配置中的 Fast 设置。[官方速度模式说明](https://learn.chatgpt.com/docs/agent-configuration/speed)、[配置参考中的档位映射](https://learn.chatgpt.com/docs/config-file/config-reference)
+Codex 预设可独立选择 **速度模式：Standard / Fast**，不会改变推理强度。Fast 可用性取决于账户、模型、工作区和 CLI 版本，且会增加额度或费用消耗；页面按模型目录禁用明确不支持的 Fast，缺少速度目录时可用“测试连接”验证。保存后，查询、Memory、回顾、文件分析和导入均使用该预设的速度模式。Mote 在自己的临时配置中设置 `service_tier`，Fast 还启用 `features.fast_mode`，并将 `serviceTier` 传给 `thread/start`；Codex 目录和线程返回的 `priority` 是 Fast 的协议别名，Mote 统一映射为 `fast`；返回的线程档位不匹配时终止请求。当前 Codex 预设必须显式保存速度模式；缺少该字段的旧预设不自动补值，需要重新配置。[官方速度模式说明](https://learn.chatgpt.com/docs/agent-configuration/speed)、[配置参考中的档位映射](https://learn.chatgpt.com/docs/config-file/config-reference)
 
 ## 环境配置与保存位置
 
-也可以在所选私有 `mote.env` 中设置默认值。修改环境文件后重启中央；部署配置保持只读；页面自定义预设与模块分配独立持久化。旧版默认预设的覆盖仅用于兼容旧版入口。
+也可以在所选私有 `mote.env` 中设置默认值。修改环境文件后重启中央；部署配置保持只读；页面自定义预设与模块分配独立持久化。普通初始预设 ID 为 `primary`，只读部署预设为 `env:deployment`；模块始终引用实际存在的预设，没有旧 `default` 别名。
 
 ```dotenv
 MOTE_MODEL_PROVIDER=qwen
@@ -135,7 +135,7 @@ MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL=0
 
 `MOTE_MODEL_PROVIDER` 使用上表 ID，未设时为 `deepseek`；`MOTE_MODEL_PROTOCOL` 未设时采用该预设协议。`MOTE_MODEL_HEADERS` 和 `MOTE_MODEL_EXTRA_BODY` 必须是 JSON 对象，每个环境变量最多 16 KiB。不要用 shell 的 `source` 执行配置文件；不要将真实密钥放进命令参数或提交到仓库。完整默认值见[服务端配置参考](server-configuration.md)。
 
-页面保存的值位于 `<MOTE_DATA_DIR>/model-settings.json`，文件权限为 `0600`。该文件沿用 version 1，包含可选 `profiles`、`defaults` 和 `defaultModels`，旧文件无需迁移。`defaults` 保存模块的预设 ID，`defaultModels` 保存模块显式指定的模型 ID；缺省跟随预设默认。只读部署预设不把环境凭据额外写入此文件；仅在主动复制时持久化副本。保存多个配置后不要直接降级到不认识这些字段的旧服务端。文件包含每套配置的真实 API key、请求头和高级参数；权限限制不等于文件内容加密。若自行复制或备份此文件，副本也包含密钥，需作为私有凭据管理。HTTP 资料导出、安全支持包和标准 CLI 归档备份不包含该文件；迁移模型设置需单独保护并转移该文件，或在新节点重新填写。
+页面保存的值位于 `<MOTE_DATA_DIR>/model-settings.json`，文件权限为 `0600`。当前持久文件为 version 2，必须包含完整的 `profiles`、`defaults` 和 `defaultModels`。格式 3 中央不读取旧文件；升级时需备份旧配置，再重新填写模型预设与模块分配。`defaults` 保存模块的预设 ID，`defaultModels` 保存模块显式指定的模型 ID；缺省跟随预设默认。只读部署预设不把环境凭据额外写入此文件；仅在主动复制时持久化副本。保存多个配置后不要直接降级到不认识这些字段的旧服务端。文件包含每套配置的真实 API key、请求头和高级参数；权限限制不等于文件内容加密。若自行复制或备份此文件，副本也包含密钥，需作为私有凭据管理。HTTP 资料导出、安全支持包和标准 CLI 归档备份不包含该文件；迁移模型设置需单独保护并转移该文件，或在新节点重新填写。
 
 保存先验证配置并准备新运行时，再原子替换文件、同步目录，最后切换后续请求。恢复部署配置仍保存递增 revision 的空覆盖标记，防止旧页面覆盖新状态。文件损坏或不可读时不会静默恢复成另一套模型凭据；若写入结果无法确认，页面提示重新读取或检查服务状态。
 
@@ -155,9 +155,9 @@ MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL=0
 | `POST /api/model-settings/profiles/:id/copy` | 接受 `{revision,id,name,includeCredentials?}`；目标必须为新 ID，在服务器内部复制，默认包含凭据 |
 | `POST /api/model-settings/profiles/:id/models` | 接受与测试相同的草稿，以该预设的凭据加载目录；Codex 自动调用本机 `model/list` |
 | `GET /api/model-settings/profiles/:id/models` | 使用已保存连接加载目录；模块选择器与本次模型入口共用 |
-| `PUT /api/model-settings/defaults` | 接受 `{revision,defaults:{chat,memory,insight,import,file},defaultModels?:{chat?,memory?,insight?,import?,file?}}`；预设与模型覆盖整组原子保存 |
+| `PUT /api/model-settings/defaults` | 接受 `{revision,defaults:{chat,memory,insight,import,file},defaultModels:{chat?,memory?,insight?,import?,file?}}`；预设与模型覆盖整组原子保存 |
 
-配置 ID 为 1–80 个字母、数字、下划线或连字符，以字母或数字开头；`default` 保留给原始默认项。所有修改共用一个 revision，防止并发页面互相覆盖。`POST /api/query`、`/api/insights`、`/api/insight-runs`、`/api/memories/extract`、`/api/memory-jobs` 支持可选 `modelProfileId`；不存在的 ID 会返回错误，省略时采用相应功能默认值。每次问答的显式选择只影响这一轮，不修改功能默认值。
+配置 ID 为 1–80 个字母、数字、下划线或连字符，以字母或数字开头；普通初始项为 `primary`，环境部署项为只读的 `env:deployment`；`default` 已退役。所有修改共用一个 revision，防止并发页面互相覆盖。`POST /api/query`、`/api/insights`、`/api/insight-runs`、`/api/memories/extract`、`/api/memory-jobs` 支持可选 `modelProfileId`；不存在的 ID 会返回错误，省略时采用相应功能默认值。每次问答的显式选择只影响这一轮，不修改功能默认值。
 
 `settings` 的基础字段为 `provider`、`protocol`、`baseUrl`、`model`、`reasoningEffort`、`maxTokens`、`modelRequestTimeoutMs`、`agentTimeoutMs`、`allowUnauthenticatedLocal`。`provider` 必须是注册预设 ID，未列出的服务使用 `custom`。模型名称可留空关闭 AI；HTTP 协议只允许在模型也为空时省略实际地址内容；Codex 的地址必须为空，不能设置 HTTP 密钥、请求头或高级参数。非 Codex 的 `modelRequestTimeoutMs` 为 5000–600000 毫秒整数，`agentTimeoutMs` 为 5000–3600000 毫秒整数；Codex 的 `modelRequestTimeoutMs` 为 `null`，`agentTimeoutMs` 可为 `null`。
 
@@ -175,7 +175,7 @@ MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL=0
 
 Harness 0.2.0-rc.2 / Cordis 4.0.4 的分模块覆盖、合成全流程结果与兼容性边界见[升级验证记录](harness-upgrade-validation.md)。
 
-自动化覆盖配置持久化、凭据隔离、默认路由、逐次选择、热切换、旧文件兼容和授权。`scripts/test-model-profiles-ui.cjs` 使用独立临时资料库与生成答案验证前端操作、凭据不回显、桌面及窄屏布局。
+自动化覆盖配置持久化、凭据隔离、默认路由、逐次选择、热切换、旧文件拒绝和授权。`scripts/test-model-profiles-ui.cjs` 使用独立临时资料库与生成答案验证前端操作、凭据不回显、桌面及窄屏布局。
 
 Codex 测试分为协议模拟进程和真实 CLI + 本机合成 Responses 服务。后者验证 `initialize → thread/start → turn/start`、两轮动态工具、引用和查询工具清单：
 

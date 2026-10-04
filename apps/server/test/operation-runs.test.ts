@@ -42,14 +42,14 @@ test('a host deadline preserves the public timeout reason before an uncooperativ
  }finally{release?.();await runs.close();}
 });
 
-test('legacy query and insight receipts migrate once without replaying work or losing historical dates',async t=>{
- const {store,executor,operations}=fixture(t),at='2025-08-18T00:00:00.000Z';
+test('receipts without canonical execution steps are refused without replay or mutation',async t=>{
+ const {store,executor}=fixture(t),at='2025-08-18T00:00:00.000Z';
  store.db.exec('CREATE TABLE query_runs(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,json TEXT NOT NULL); CREATE TABLE insight_runs(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,json TEXT NOT NULL)');
- for(const [table,id,status] of [['query_runs','old-done','completed'],['query_runs','old-running','running'],['insight_runs','old-report','completed']])store.db.prepare(`INSERT INTO ${table} VALUES(?,?,?)`).run(id,'generated-hash',JSON.stringify({id,status,createdAt:at,updatedAt:at,events:[],scope:{}}));
- const queries=new QueryRuns(store,{executor}),insights=new InsightRuns(store,{executor});await executor.tick();
- assert.equal(queries.get('old-running').error?.code,'interrupted');assert.equal(operations.detail('query:old-running').operation.state,'failed');assert.equal(operations.detail('query:old-done').operation.state,'succeeded');assert.equal(insights.get('old-report').operationId,'insight:old-report');
- assert.equal(Number(store.db.prepare('SELECT created_at FROM execution_steps WHERE id=?').get('query:old-done')!.created_at),Date.parse(at));assert.equal(operations.page().items.length,3);
- await queries.close();await insights.close();
+ const json=JSON.stringify({id:'old',status:'completed',createdAt:at,updatedAt:at,events:[],scope:{}});
+ for(const table of ['query_runs','insight_runs'])store.db.prepare(`INSERT INTO ${table} VALUES(?,?,?)`).run('old','generated-hash',json);
+ assert.throws(()=>new QueryRuns(store,{executor}),/no canonical execution step/);assert.throws(()=>new InsightRuns(store,{executor}),/no canonical execution step/);
+ assert.equal(store.db.prepare('SELECT count(*) n FROM execution_steps').get()!.n,0);
+ for(const table of ['query_runs','insight_runs'])assert.equal(store.db.prepare(`SELECT json FROM ${table}`).get()!.json,json);
 });
 
 test('one import links originals to later engine work and generation changes atomically',async t=>{

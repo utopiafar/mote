@@ -1,3 +1,4 @@
+import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -22,7 +23,7 @@ async function fixture(t:TestContext){
  const start=()=>{store=new Store(directory,options);materials=new MaterialStore(store);sources=new SourceStore(store);const memories=new MemoryStore(store,ids=>[...store.evidence(ids),...materials.evidence(ids)],id=>store.isCurrentEvidence(id)||materials.isCurrentEvidence(id)),strategies=new MemoryStrategies();
   for(const [index,ref] of recipes.entries())strategies.registerRecipe({...ref,requires:[index?'transcript':'body'],extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:'mote.personal-review',version:'2'}});
   const query=async(input:MemoryPipelineQuery)=>{calls.push(input);if(control.failure)throw control.failure;return {answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()};};
-  pipeline=new MemoryPipeline({store,memories,strategies,configured:()=>true,model:()=> 'generated',query,review:(input,result)=>reviewMemory(input,result,async request=>query(request as MemoryPipelineQuery)),materialInput:(ref,required)=>materials.input(ref,required),materialAllowedForMemory:(ref,_profile,required)=>control.allowed&&Boolean(materials.input(ref,required??['material'])?.ready),materialPlanAllowed:()=>control.allowed,materialSourceCurrent:(pin,id)=>materialSourceCurrent(store,materials,pin,id)});
+  pipeline=fixtureMemoryPipeline({store,memories,strategies,configured:()=>true,model:()=> 'generated',query,review:(input,result)=>reviewMemory(input,result,async request=>query(request as MemoryPipelineQuery)),materialInput:(ref,required)=>materials.input(ref,required),materialAllowedForMemory:(ref,_profile,required)=>control.allowed&&Boolean(materials.input(ref,required??['material'])?.ready),materialPlanAllowed:()=>control.allowed,materialSourceCurrent:(pin,id)=>materialSourceCurrent(store,materials,pin,id)});
  };
  start();t.after(async()=>{await pipeline.close();store.close();rmSync(directory,{recursive:true,force:true});});
  const add=async(name:string)=>{sources.register({id:name,name:'Generated '+name,kind:'custom',deviceId:'fixture',platform:'import'});return (await sources.upsert(name,{externalId:'original',revision:'1',observedAt:'2026-01-01T00:00:00Z',kind:'message',layer:'original',text:'Generated original '+name})).id;};

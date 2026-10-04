@@ -2,7 +2,7 @@
 
 中央受管理 OCR/ASR 的 profile 运行时、模型目录与内部 Worker 配置另见 [中央 OCR 与录音转写](ocr-asr-implementation-plan.md)。
 
-中央当前一级入口为今天、资料库、问一问、行动、连接。系统管理包含模型、费用、处理任务、存储和诊断，用户设置管理会话与语言；模型入口为 `#/system/models`，诊断为 `#/system/diagnostics`。旧页面 hash 保留映射，当前导航见 [Slate UI](ui-slate.md)。
+中央当前一级入口为今天、资料库、问一问、行动、连接。系统管理包含模型、费用、处理任务、存储和诊断，用户设置管理会话与语言；模型入口为 `#/system/models`，诊断为 `#/system/diagnostics`。当前使用资料库 collection 与明确路由，导航见 [Slate UI](ui-slate.md)。
 
 每类设置将 **配置草稿** 与 **当前生效值** 分开显示。**系统管理 → 模型** 提供厂商和本机服务预设、模型 ID、协议及只写 API key；点击“保存并应用”立即用于后续模型请求，重启后仍保留。预设本身不会发请求；手动“测试连接”只发送合成内容，可能产生模型费用。详见[模型服务配置](model-providers.md)。保留周期、容量和同步间隔仍提供配置草稿；外部应用的可写来源可从已注册来源中勾选。
 
@@ -18,10 +18,10 @@
 |---|---|---|
 | CLI 命名环境 | `<home>/<profile>/mote.env`；部署元数据在同目录 `profile.json` | `mote.env` 所在目录 |
 | 直接启动并指定 `MOTE_ENV_FILE` | 仅指定的文件；不存在会启动失败 | 指定文件所在目录 |
-| 旧版 `npm start` | 仓库根目录 `.env` | 仓库根目录 |
+| 直接启动并仅指定 `MOTE_DATA_DIR` | 进程环境变量；不自动读取根 `.env` | 启动基准目录，通常是仓库根目录 |
 | Docker CLI 部署 | 宿主机环境文件生成私有 `generated/docker.env`，注入容器 | 容器数据固定 `/data`，日志 `/data/logs` |
 
-直接启动时，进程环境变量覆盖文件值。CLI 会清除继承的 `MOTE_*`、`COMPOSE_*`，只装入显式选定的环境；Docker 另强制使用容器监听与挂载路径。容器内 `/app/deploy/empty.env` 是启动占位文件，实际应编辑页面显示的宿主机 profile 配置文件。
+直接启动的 `MOTE_PROFILE` 默认是 `default`；必须显式设置 `MOTE_ENV_FILE` 或 `MOTE_DATA_DIR` 之一，不要求两者同时设置。`MOTE_DATA_DIR` 可以是相对路径。指定环境文件时，进程环境变量覆盖文件值。CLI 会清除继承的 `MOTE_*`、`COMPOSE_*`，只装入显式选定的环境；Docker 另强制使用容器监听与挂载路径。容器内 `/app/deploy/empty.env` 是启动占位文件，实际应编辑页面显示的宿主机 profile 配置文件。
 
 编辑环境文件后按顺序执行 `stop`、`start`，然后在设置中刷新生效配置。模型页面保存的覆盖值仍然优先；要重新使用环境中的模型字段，选择“恢复部署配置”。页面保存模型配置不需要此重启流程。使用 launchd 等进程管理器时，由该管理器执行停止和重启，避免两个管理器竞争。CLI 默认 `dev`；日常节点必须明确 `--profile prod`。完整操作见 [部署指南](deployment.md)。
 
@@ -32,7 +32,7 @@
 | 内容 | 原生进程 | Docker |
 |---|---|---|
 | 日记、OCR、时间线、设备信息、索引、已保存的洞察 | `<MOTE_DATA_DIR>/mote.sqlite`，运行时有 WAL 辅助文件 | `/data/mote.sqlite`，持久化到所选命名卷 |
-| 截图与文件原件资产 | `<MOTE_DATA_DIR>/files/objects/<sha256>/<part>.plain\|.aes`，每片最多 4 MiB；兼容旧 `blobs/` 与 `files/<hash>` | `/data/files/objects/`，同一卷；格式以资产目录为准 |
+| 截图与文件原件资产 | `<MOTE_DATA_DIR>/files/objects/<sha256>/<part>.plain\|.aes`，每片最多 4 MiB；仅支持当前 chunk 资产，不读取旧 `blobs/`、`files/<hash>` 或无后缀内容 | `/data/files/objects/`，同一卷；格式以资产目录为准 |
 | 结构化运行日志 | `MOTE_LOG_DIR`；为空时为数据目录下 `logs/` | `/data/logs`，同一卷 |
 | 原生进程监督日志 | profile 的 `logs/central.log` 及轮转文件 | Docker logging driver，独立于 `/data/logs` |
 | CLI 离线备份 | 默认 `<profile>/backups/`；`backup --out` 可指定其它目录 | 备份仍写入宿主机选定位置，不在数据卷内 |
@@ -41,33 +41,35 @@
 | Tunnel 凭据 | profile 的 `secrets/cloudflared-token` | 只挂载给 cloudflared，中央容器不读取此文件 |
 | 客户端截图队列、草稿、Qwen 权重 | 分别在 Mac / Android App 本地目录 | 不属于中央节点配置或中央备份 |
 
-普通问答的完成回答和失败轮次保存在中央 SQLite 对话历史中；网页通过持久化 query run 展示进度并恢复结果。洞察独立保存版本化报告。完整离线备份包含对话，旧 HTTP JSON 导出不包含对话，见 [对话历史](conversations.md)。
+普通问答的完成回答和失败轮次保存在中央 SQLite 对话历史中；网页通过持久化 query run 展示进度并恢复结果。洞察独立保存版本化报告。完整离线备份包含对话，当前 HTTP 便携归档导出不包含对话，见 [对话历史](conversations.md)。
 
 **Docker 的宿主机 profile 下 `data/` 不是容器资料库。** 数据保存在界面或 `config` 输出标出的命名卷里。Linux Docker Engine 可用 `docker volume inspect <卷名> --format '{{.Mountpoint}}'` 查询 Docker 管理的位置；Docker Desktop 的卷位于其 Linux 虚拟机，不能把虚拟机里的路径当作 macOS Finder 目录。修改 Docker profile 的 `MOTE_DATA_DIR` 不会改变 `/data` 的挂载。
 
 原生节点可在新建时用 `init --profile prod --data-dir /Volumes/ContextData/mote` 选择另一块本地磁盘。Docker 可用 `init --runtime docker --profile prod --volume mote-personal-data` 为新环境选择命名卷。不要让两个节点共用一个资料库；dev/test 必须使用各自环境范围内的目录和卷。当前 CLI 不提供自定义 Docker bind mount，避免把宿主机目录配置误当成已生效挂载。
 
-迁移数据时先停止并备份，在新机器或新环境初始化空目录/卷，设置原图片加密 key，再 `restore`，最后验收并更新客户端地址。只编辑目录、卷名或图片加密 key 不会自动迁移数据。SQLite 应使用本地块存储；NAS 可运行服务，但不要把活动 WAL 数据库放到 SMB/NFS 共享上。
+在同一存储代际内迁移数据时，先停止并备份，在新机器或新环境初始化空目录/卷，设置原内容加密 key，再 `restore`，最后验收并更新客户端地址。只编辑目录、卷名或图片加密 key 不会自动迁移数据。SQLite 应使用本地块存储；NAS 可运行服务，但不要把活动 WAL 数据库放到 SMB/NFS 共享上。
 
 ## 网络与访问
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `MOTE_ENV_FILE` | 根目录 `.env`（直接启动） | 启动时选择配置文件；CLI 自动提供，不在文件内切换其它文件 |
-| `MOTE_PROFILE` | `legacy`（直接启动） | CLI 支持 `dev` / `test` / `prod` 与显式命名隔离环境；legacy 不受更新命令管理 |
+| `MOTE_ENV_FILE` | 未设置 | 仅显式指定时读取配置文件；CLI 自动提供。不指定时必须设置 `MOTE_DATA_DIR`，根 `.env` 不自动加载 |
+| `MOTE_PROFILE` | `default`（直接启动） | CLI 另外默认选择 `dev`，支持 `dev` / `test` / `prod` 与显式命名隔离环境；CLI 拒绝 `legacy` 名 |
 | `MOTE_HOST` | `127.0.0.1` | 监听地址；Docker 强制 `0.0.0.0`，宿主机端口仍仅发布 loopback |
 | `MOTE_PORT` | `47832` | 1–65535 整数；CLI dev/test 分别 47842/47852，Docker 容器内部始终 47832 |
 | `MOTE_PUBLIC_URL` | 空 | 客户端使用的公开 HTTPS 基址，例如 `https://mote.example.com`；不创建 DNS、Tunnel 路由或证书 |
-| `MOTE_TOKEN` | 自动生成 | 中央所有者 Bearer 令牌；命名环境生成 32 字节随机值。连接授权页可另外发放受限的独立采集／MCP 凭据 |
+| `MOTE_TOKEN` | 自动生成 | 中央所有者 Bearer 令牌；命名环境生成 32 字节随机值。连接授权页可发放独立可撤销 owner 配对凭据；MCP 读/指定来源写凭据另行限权 |
 | `MOTE_ALLOWED_ORIGINS` | 本机 5173 开发前端两个 origin | 逗号分隔的浏览器跨域来源；CLI test 使用 5174。完整 origin，包括协议和端口，不是 API 路径 |
 
 同域中央网页无需额外配置跨域来源。不同域的浏览器前端才需要将其 origin 加入白名单。公开 URL 与节点 Bearer 令牌分别填入客户端，令牌不放 URL。Cloudflare Tunnel 与 Caddy 是两种可选入口；详见 [Tunnel 部署](cloudflare-tunnel.md)。
 
 ## 存储与保留
 
+本轮采用 MVP 破坏升级：中央只接受 `backend_epoch=3` 的库，模型 registry 为 version 2，HTTP 便携归档为完整 version 2。旧库、旧资产包装、旧模型/文件处理配置和旧便携包不自动转换。旧安装先用旧程序完成所需导出并停止，保留完整目录与凭据备份，再使用新空目录；明确放弃旧资料时才运行 reset。操作与风险见 [兼容清理实施记录](audits/compatibility-cleanup-2026-10-04.md#升级操作和风险)。离线备份是当前库的快照，不是跨代升级工具。
+
 | 变量 | 默认值 | 范围及行为 |
 |---|---|---|
-| `MOTE_DATA_DIR` | `./data` | SQLite 与图片根目录；原生相对配置文件解析；Docker 强制 `/data` |
+| `MOTE_DATA_DIR` | `./data` | SQLite 与原件根目录；有显式 env 文件时相对该文件解析，否则相对启动基准目录；Docker 强制 `/data` |
 | `MOTE_CONTENT_ENCRYPTION` | `0` | 图片与文件内容加密初始开关；开发者页面保存的选择优先，默认明文 |
 | `MOTE_DATA_KEY` | 空 | 可选 64 位十六进制 AES-256-GCM 内容密钥；配置密钥本身不会开启加密，显式开启且未配置时生成资料库私有 `content-key`；SQLite 原文保持明文 |
 | `MOTE_MAX_STORAGE_MB` | `10240` | 1–1000000 MiB；图片及记录的逻辑容量上限，达到后拒绝新增摄取（507），不会自动删除旧资料腾空间 |
@@ -91,7 +93,7 @@
 | `MOTE_MODEL_REASONING_EFFORT` | 通用 `auto`，DeepSeek `high` | `auto` 由模型决定；`off` / `low` / `high` / `max` 需模型支持 |
 | `MOTE_MODEL_MAX_TOKENS` | `65536` | 1–128000 整数；单次 HTTP 模型输出预算，非总请求/账户预算，仍须符合所选模型限制；Codex 自行管理输出预算 |
 | `MOTE_MODEL_REQUEST_TIMEOUT_MS` | `300000` | 非 Codex Provider 的单次模型 API 请求期限，5000–600000 毫秒整数；不包含后续工具循环。Codex Server 不暴露内部单次模型请求，此项为不适用 |
-| `MOTE_AGENT_TIMEOUT_MS` | `600000` | 一次 Agent 从开始到完成的总期限，5000–3600000 毫秒整数；包含多次模型请求、工具调用和校验。Codex Server 可留空，留空表示不设置 Mote 的总期限。旧 `MOTE_MODEL_TIMEOUT_MS` 仅作为兼容回退 |
+| `MOTE_AGENT_TIMEOUT_MS` | `600000` | 一次 Agent 从开始到完成的总期限，5000–3600000 毫秒整数；包含多次模型请求、工具调用和校验。Codex Server 可留空，留空表示不设置 Mote 的总期限。旧 `MOTE_MODEL_TIMEOUT_MS` 已退役 |
 | `MOTE_CODEX_BIN` | `codex`（PATH） | 可信的本机 Codex CLI 可执行路径；网页不能设置此值 |
 | `MOTE_CODEX_HOME` | `CODEX_HOME` 或 `~/.codex` | 服务端系统用户的 Codex 文件登录目录；仅链接 `auth.json`，不加载该目录的其他设置，见[本机 Codex](model-providers.md#本机-codex) |
 | `MOTE_INSIGHT_INTERVAL_HOURS` | `0` | 0–168 小时；只在首次建立生命周期策略时以正数初始化洞察 intervalHours；0 不会关闭现行默认自动工作流。后续以数据库中的 enabled、minChanges、maxWaitHours 为准，见 [调度规则](memory-lifecycle.md) |
@@ -124,7 +126,7 @@ Caddy 使用 profile 文件中的 `MOTE_TLS_DOMAIN`、`MOTE_TLS_HTTP_PORT`（80�
 
 ## 发行版本与更新
 
-当前 DEV 发布只有客户端安装包，手动下载覆盖安装；中央自行从源码构建并使用 `upgrade`。以下变量/API 描述保留的历史签名更新通道，当前 DEV 不提供该通道需要的 manifest、服务端包或镜像，见 [更新指南](updating.md)。
+当前 DEV 按 `central-vX.Y.Z`、`desktop-vX.Y.Z`、`android-vX.Y.Z` 独立发布；中央提供源码包，需独立构建后使用 `upgrade`。当前 DEV 不附签名 manifest 或 GHCR 镜像，因此不能通过签名更新通道获取。保留的更新 API/CLI 只接受显式组件身份与所属组件标签的可信清单，不接受旧统一 `vX.Y.Z` 标签，见 [更新指南](updating.md)。
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
@@ -133,9 +135,9 @@ Caddy 使用 profile 文件中的 `MOTE_TLS_DOMAIN`、`MOTE_TLS_HTTP_PORT`（80�
 
 中央不会因启动、打开配置页或发现新版本而自动安装。认证的 `GET /api/software-update` 读取最近状态；`POST /api/software-update/check` 仅允许空请求体，手动检查固定配置的 GitHub Release。同一分钟内合并检查，失败只返回固定错误代码。`release_not_found` 表示尚无所选渠道的可信发行资产，不能据此绕过签名校验。
 
-页面为独立命名的原生/Docker 环境给出检查、更新与回退命令；`legacy` / 未知运行方式不生成可执行安装命令。HTTP 不接受任意仓库 URL、目标路径、签名密钥或 shell，不停止中央或更改资料库。已有 `/api/updates` 仍是归档条目的增量同步接口，与软件发行检查无关。
+页面为独立命名的原生/Docker 环境给出检查、更新与回退命令；未知运行方式不生成可执行安装命令。直接进程不能据此假定已由部署 CLI 接管。HTTP 不接受任意仓库 URL、目标路径、签名密钥或 shell，不停止中央或更改资料库。已有 `/api/updates` 仍是归档条目的增量同步接口，与软件发行检查无关。
 
-安装使用 `node scripts/mote.mjs update --profile 名称 --home /绝对路径`，原生准备独立源码目录，Docker 使用 manifest 中的固定镜像 digest；两者均先验证签名，复用备份、健康检查和显式回退。详细的凭据、连接器游标、磁盘空间及 launchd 停机操作见 [部署与更新](deployment.md#升级与回退)。
+安装使用 `node scripts/mote.mjs update --profile 名称 --home /绝对路径`，原生准备独立源码目录，Docker 使用 manifest 中的固定镜像 digest；两者均先验证签名，复用备份、健康检查和显式回退；这套事务不包含跨存储代际的自动转换。详细的凭据、连接器游标、磁盘空间及 launchd 停机操作见 [部署与更新](deployment.md#升级与回退)。
 
 ## 来源、Google Calendar 与 MCP
 

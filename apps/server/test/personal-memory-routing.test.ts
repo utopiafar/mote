@@ -1,3 +1,4 @@
+import {fixtureMemoryResult,fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -44,7 +45,7 @@ test('agent transcript can yield a task breadcrumb and personal memory without f
   const draft=result(id,quote,'observation'),personal=result(id,'I feel drained after today’s meetings.');
   const mixed={...draft,answer:JSON.stringify({memories:[...JSON.parse(draft.answer).memories,...JSON.parse(personal.answer).memories]})};
   let reviews=0;
-  const pipeline=new MemoryPipeline({store:f.store,memories:f.memories,model:()=> 'fixture',configured:()=>true,requireAdmission:true,
+  const pipeline=fixtureMemoryPipeline({store:f.store,memories:f.memories,model:()=> 'fixture',configured:()=>true,requireAdmission:true,
     materialAllowedForMemory:ref=>f.materials.get(ref)?.coverage.state==='complete',query:async()=>mixed,review:async(input,draft)=>reviewMemory(input,draft,async()=>{reviews++;return mixed;})});
   t.after(()=>pipeline.close());
   const job=await pipeline.run(pipeline.create({evidenceIds:[id]}).id);
@@ -57,22 +58,22 @@ test('agent transcript can yield a task breadcrumb and personal memory without f
   assert.equal(f.materials.read(material.ref).text.includes(quote),true,'original remains readable on demand');
   const index=contextIndex(f.store,f.memories,f.sources,{path:'/context/memory'});
   assert.deepEqual((index.entries as {id:string}[]).map(item=>item.id),[selected[0].id],'task breadcrumb is not a default memory card');
-  assert.throws(()=>f.memories.extract(result(id,quote,'observation',{relatedMemoryIds:[breadcrumbs[0].id]}),'fixture',
+  assert.throws(()=>f.memories.extract(fixtureMemoryResult(f.memories,result(id,quote,'observation',{relatedMemoryIds:[breadcrumbs[0].id]})),'fixture',
     {profile:'personal',requireAdmission:true,tier:'consolidated',relatedMemoryIds:[breadcrumbs[0].id]}),/Consolidation/);
 });
 
 test('distinct observations of the same personal expression retain evidence and survive owner correction',async t=>{
   const f=await fixture(t),quote='I feel drained after today’s meetings.';
   const first=await f.add(quote,'day-one',true),second=await f.add(quote,'day-two',true,'day-two',{},'2026-01-03T08:00:00Z');
-  const a=f.memories.extract(result(first.id,quote),'fixture',{profile:'coding',requireAdmission:true}).items[0];
-  const b=f.memories.extract(result(second.id,quote),'fixture',{profile:'coding',requireAdmission:true}).items[0];
+  const a=f.memories.extract(fixtureMemoryResult(f.memories,result(first.id,quote)),'fixture',{profile:'coding',requireAdmission:true}).items[0];
+  const b=f.memories.extract(fixtureMemoryResult(f.memories,result(second.id,quote)),'fixture',{profile:'coding',requireAdmission:true}).items[0];
   assert.notEqual(a.id,b.id);assert.notDeepEqual(a.evidenceIds,b.evidenceIds);
   assert.notEqual(a.evidence?.[0].capturedAt,b.evidence?.[0].capturedAt);
   assert.equal(a.evidence?.[0].recordedAt,undefined);assert.equal(b.evidence?.[0].recordedAt,undefined,'observation timestamps do not establish recording dates');
   assert.equal(a.scopeRefs?.[0].projectName,'Aster');assert.equal(a.scopeRefs?.[0].repositoryKey,'a'.repeat(64));
   const correction=await f.memories.correct(a.id,{version:1,title:'Owner clarification',statement:'Only the planning meetings felt draining.',uncertainty:'One dated experience'});
   assert.equal(correction.domain,'personal');assert.deepEqual(correction.scopeRefs,a.scopeRefs);
-  const revised=f.memories.extract(result(correction.evidenceIds[0],'Only the planning meetings felt draining.'),'fixture',{profile:'personal',requireAdmission:true}).items[0];
+  const revised=f.memories.extract(fixtureMemoryResult(f.memories,result(correction.evidenceIds[0],'Only the planning meetings felt draining.')),'fixture',{profile:'personal',requireAdmission:true}).items[0];
   assert.deepEqual(revised.scopeRefs,a.scopeRefs,'personal correction retains source-project provenance');
 });
 
@@ -80,12 +81,12 @@ test('project identity crosses Material and evidence; unknown sessions cannot mi
   const f=await fixture(t),quote='Aster uses a transaction so partial writes roll back.';
   const known=await f.add(quote,'known',true),unknown=await f.add(quote,'unknown');
   const coding={kind:'decision',scope:'project',applicability:'Aster transaction writes',validation:'unverified'};
-  const a=f.memories.extract(result(known.id,quote,'memory',{domain:'coding',coding}),'fixture',{profile:'coding'}).items[0];
+  const a=f.memories.extract(fixtureMemoryResult(f.memories,result(known.id,quote,'memory',{domain:'coding',coding})),'fixture',{profile:'coding'}).items[0];
   assert.equal(a.domain,'coding');assert.equal(a.scopeRefs?.[0].projectIdentity,'workspace');
   assert.equal(f.materials.evidence([known.id])[0].provenance?.document?.coding?.cwd,'/generated/aster');
-  assert.throws(()=>f.memories.extract(result(unknown.id,quote,'memory',{domain:'coding',coding}),'fixture',{profile:'coding'}),/requires session scope/);
-  assert.equal(f.memories.extract(result(unknown.id,quote,'memory',{domain:'coding',coding:{...coding,scope:'session'}}),'fixture',{profile:'coding'}).items[0].coding?.scope,'session');
-  assert.throws(()=>f.memories.extract(result(known.id,quote,'memory',{domain:'personal',coding}),'fixture',{profile:'coding'}),/personal claims must omit coding/);
+  assert.throws(()=>f.memories.extract(fixtureMemoryResult(f.memories,result(unknown.id,quote,'memory',{domain:'coding',coding})),'fixture',{profile:'coding'}),/requires session scope/);
+  assert.equal(f.memories.extract(fixtureMemoryResult(f.memories,result(unknown.id,quote,'memory',{domain:'coding',coding:{...coding,scope:'session'}})),'fixture',{profile:'coding'}).items[0].coding?.scope,'session');
+  assert.throws(()=>f.memories.extract(fixtureMemoryResult(f.memories,result(known.id,quote,'memory',{domain:'personal',coding})),'fixture',{profile:'coding'}),/personal claims must omit coding/);
 });
 
 test('conflicting source workspace metadata is explicit, never resolved by a model or first-event wins',()=>{

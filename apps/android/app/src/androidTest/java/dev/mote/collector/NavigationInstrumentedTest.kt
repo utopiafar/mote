@@ -67,7 +67,7 @@ class NavigationInstrumentedTest {
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             val originalNavigation = arrayOfNulls<View>(1)
             scenario.onActivity { originalNavigation[0] = views(it.window.decorView).single { view -> view is MotePrimaryNavigation } }
-            val askMonitor = instrumentation.addMonitor(AskActivity::class.java.name, null, true)
+            val askMonitor = instrumentation.addMonitor("dev.mote.collector.AskActivity", null, true)
             val centralMonitor = instrumentation.addMonitor(CentralActivity::class.java.name, null, true)
             try { for (label in listOf("资料库", "问一问", "本机", "今天", "问一问", "资料库", "今天")) {
                 instrumentation.waitForIdleSync()
@@ -369,7 +369,7 @@ class NavigationInstrumentedTest {
                 }
             }
         }
-        ActivityScenario.launch(AskActivity::class.java).use { scenario ->
+        ActivityScenario.launch(CentralActivity::class.java).use { scenario ->
             instrumentation.waitForIdleSync()
             scenario.onActivity { activity ->
                 assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)

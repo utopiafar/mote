@@ -1,3 +1,4 @@
+import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {scanVectors} from '../src/vector-work.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {test} from 'node:test';
@@ -58,14 +59,14 @@ test('reference handles a huge external file without bytes or processing; versio
 test('processor builds timestamped layers and tail search, source removal retains them, forget blocks resurrection',async t=>{
  const {files,store,sources}=fixture(t),bytes=Buffer.from('synthetic audio placeholder'),ack=await upload(files,manifest(bytes),bytes);let calls=0;
  const provider:TranscriptionProvider={transcribe:async()=>{calls++;return {durationMs:90000,segments:[{startMs:0,endMs:1000,text:'计划下周联系对方，并未完成。'},{startMs:89000,endMs:90000,text:'尾部校验：项目代号青杉，金额三百元。'}]};}};
- const processing=new FileProcessing(files,provider,async records=>({answer:`合成摘要 [${records[0].id}]`,citations:[{id:records[0].id}]}));t.after(()=>processing.close());
- processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:false,audioProcessor:'audio.http'}});
+ const processing=new FileProcessing(files,provider,async records=>({answer:`合成摘要 [${records[0].id}]`,citations:[{id:records[0].id}]}));t.after(()=>processing.close());await processing.runtime.ready;
+ processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:false,audioProcessor:'audio.http'},policy:fixtureFilePolicy({...processing.view().settings,enabled:false,audioProcessor:'audio.http'},processing.runtime.registry)});
  await processing.tick();assert.equal(files.detail(ack.id).job.state,'blocked');
- processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,summarize:true}});await processing.tick();
+ processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,summarize:true},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,summarize:true},processing.runtime.registry)});await processing.tick();
  assert.equal(calls,1);assert.equal(files.detail(ack.id).job.state,'succeeded');assert.equal(files.detail(ack.id).job.summary_state,'succeeded');
  const tail=files.search({query:'青杉'});assert.equal(tail.length,1);assert.deepEqual(files.search({query:'青杉 金额'}).map(r=>r.id),tail.map(r=>r.id));assert.deepEqual(files.search({query:'青杉 三百元'}).map(r=>r.id),tail.map(r=>r.id));assert.equal((tail[0].fileEvidence as any).startMs,89000);assert.equal(files.search({query:'青杉',deviceId:'other'}).length,0);
  const reader=new EvidenceReader(store,sources,files),typed=`CAPTURE:${ack.id.toUpperCase()}`;
- assert.deepEqual(reader.chunks({id:typed}).map(r=>r.id),reader.chunks({id:ack.id}).map(r=>r.id));
+ assert.deepEqual(reader.chunks({id:typed}).map(r=>r.id),files.chunks(ack.id).map(r=>r.id));
  assert.equal(reader.chunks({id:typed,deviceId:'other'}).length,0);
  assert.equal(reader.chunks({id:`memory:${ack.id}`}).length,0);
  assert.equal(reader.sourceHistory({id:typed})[0].id,ack.id);
@@ -78,18 +79,18 @@ test('processor builds timestamped layers and tail search, source removal retain
 test('deleting a file while ASR is in flight cannot recreate derived content',async t=>{
  const {files,store}=fixture(t),bytes=Buffer.from('race fixture'),ack=await upload(files,manifest(bytes),bytes);
  let release!:(v:any)=>void,started!:()=>void;const begun=new Promise<void>(r=>{started=r;});
- const processing=new FileProcessing(files,{transcribe:async()=>{started();return new Promise(r=>{release=r;});}});t.after(()=>processing.close());
- processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http'}});
+ const processing=new FileProcessing(files,{transcribe:async()=>{started();return new Promise(r=>{release=r;});}});t.after(()=>processing.close());await processing.runtime.ready;
+ processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http'},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'audio.http'},processing.runtime.registry)});
  const running=processing.tick();await begun;files.forget(ack.id);release({durationMs:1000,segments:[{startMs:0,endMs:1000,text:'must disappear'}]});await running;
  assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM file_chunks').get()!.n,0);
 });
 
-test('processing settings never expose credentials or silently reuse them at another endpoint',t=>{
- const {files}=fixture(t),processing=new FileProcessing(files);t.after(()=>processing.close());
- const initial=processing.view();processing.update({revision:initial.revision,settings:{...initial.settings,apiKey:'synthetic-secret'}});
+test('processing settings never expose credentials or silently reuse them at another endpoint',async t=>{
+ const {files}=fixture(t),processing=new FileProcessing(files);t.after(()=>processing.close());await processing.runtime.ready;
+ const initial=processing.view();processing.update({revision:initial.revision,settings:{...initial.settings,apiKey:'synthetic-secret'},policy:fixtureFilePolicy({...initial.settings,apiKey:'synthetic-secret'},processing.runtime.registry)});
  assert.ok(!JSON.stringify(processing.view()).includes('synthetic-secret'));
- assert.throws(()=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,endpoint:'https://example.test/transcribe',allowRemote:true}}),{statusCode:409});
- assert.throws(()=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,endpoint:'http://example.test/transcribe',apiKey:null}}));
+ assert.throws(()=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,endpoint:'https://example.test/transcribe',allowRemote:true},policy:fixtureFilePolicy({...processing.view().settings,endpoint:'https://example.test/transcribe',allowRemote:true},processing.runtime.registry)}),{statusCode:409});
+ assert.throws(()=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,endpoint:'http://example.test/transcribe',apiKey:null},policy:fixtureFilePolicy({...processing.view().settings,endpoint:'http://example.test/transcribe',apiKey:null},processing.runtime.registry)}));
 });
 
 test('HTTP binary ingest, authenticated playback cookie, range, unauthenticated denial and full client access and explicit source filters',async t=>{
@@ -105,7 +106,7 @@ MOTE_LOG_LEVEL=silent
  const started=await app.inject({method:'POST',url:'/api/file-sync/v1/uploads',headers,payload:m});assert.equal(started.statusCode,200,started.body);const session=started.json();
  assert.equal((await app.inject({method:'PUT',url:`/api/file-sync/v1/uploads/${session.uploadId}/parts/0`,headers:{...headers,'content-type':'application/octet-stream'},payload:bytes})).statusCode,200);
  const committed=await app.inject({method:'POST',url:`/api/file-sync/v1/uploads/${session.uploadId}/commit`,headers,payload:{}});assert.equal(committed.statusCode,200,committed.body);const ack=committed.json();
- const typedRef=encodeURIComponent(`CAPTURE:${ack.id.toUpperCase()}`);
+ const typedRef=ack.id;
  for(const suffix of ['', '/chunks','/content']){
   assert.equal((await app.inject({url:`/api/files/${typedRef}${suffix}`,headers})).statusCode,200);
   assert.equal((await app.inject({url:`/api/files/${typedRef}${suffix}?deviceId=other`,headers})).statusCode,404);
@@ -143,8 +144,8 @@ test('reference manifests count towards the vault limit and quota failures do no
 test('changing a processing provider during a job requeues it and rejects the old derived output; silence is valid',async t=>{
  const {files,store}=fixture(t),bytes=Buffer.from('provider change'),ack=await upload(files,manifest(bytes),bytes);
  let release!:(v:any)=>void,started!:()=>void;const begun=new Promise<void>(r=>{started=r;});let first=true;
- const processing=new FileProcessing(files,{transcribe:async()=>{if(first){first=false;started();return new Promise(r=>{release=r;});}return {durationMs:1000,segments:[]};}});t.after(()=>processing.close());
- const update=(endpoint=processing.view().settings.endpoint)=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http',endpoint}});update();
+ const processing=new FileProcessing(files,{transcribe:async()=>{if(first){first=false;started();return new Promise(r=>{release=r;});}return {durationMs:1000,segments:[]};}});t.after(()=>processing.close());await processing.runtime.ready;
+ const update=(endpoint=processing.view().settings.endpoint)=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http',endpoint},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'audio.http',endpoint},processing.runtime.registry)});update();
  const running=processing.tick();await begun;update('http://127.0.0.1:9010/transcribe');release({durationMs:1000,segments:[{startMs:0,endMs:1000,text:'superseded output'}]});await running;
  assert.equal(files.detail(ack.id).job.state,'waiting');assert.equal(files.chunks(ack.id).length,0);for(const until=Date.now()+5000;Date.now()<until&&files.detail(ack.id).job.state!=='succeeded';){await processing.tick();if(files.detail(ack.id).job.state!=='succeeded')await new Promise(r=>setTimeout(r,25));}
  assert.equal(files.detail(ack.id).job.state,'succeeded');assert.equal(files.chunks(ack.id).length,0);
@@ -158,8 +159,8 @@ test('file digest mismatch never creates an archive or ACK',async t=>{
 
 test('derived semantic index respects device/app bounds and disappears with its file',async t=>{
  const {files,store}=fixture(t),bytes=Buffer.from('generated vector input'),ack=await upload(files,manifest(bytes),bytes);
- const processing=new FileProcessing(files,{transcribe:async()=>({durationMs:1000,segments:[{startMs:0,endMs:1000,text:'A planned visit; attendance unknown.'}]})});t.after(()=>processing.close());
- processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http'}});await processing.tick();const chunk=files.chunks(ack.id)[0];
+ const processing=new FileProcessing(files,{transcribe:async()=>({durationMs:1000,segments:[{startMs:0,endMs:1000,text:'A planned visit; attendance unknown.'}]})});t.after(()=>processing.close());await processing.runtime.ready;
+ processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http'},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'audio.http'},processing.runtime.registry)});await processing.tick();const chunk=files.chunks(ack.id)[0];
  assert.equal(files.pendingIndex('fixture-vector').length,1);files.indexed(chunk.id,[1,0,0],'fixture-vector');assert.equal(files.pendingIndex('fixture-vector').length,0);
  const search=async(args:Parameters<FileStore['vectorQuery']>[1])=>{const query=files.vectorQuery('fixture-vector',args);if(!query)return [];return (await scanVectors({path:join(store.directory,'mote.sqlite'),queries:[query],vector:[1,0,0],limit:30},AbortSignal.timeout(10000)))[0].candidates;};
  assert.equal((await search({deviceId:'phone'}))[0].id,chunk.id);assert.equal((await search({deviceId:'other'})).length,0);

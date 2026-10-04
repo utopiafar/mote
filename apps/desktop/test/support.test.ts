@@ -10,25 +10,22 @@ let directory: string;
 it('viewer distinguishes missing history from corrupt history without modifying the file', async () => {
   const journal = new EventJournal(directory, () => false);
   expect(await journal.read(true)).toEqual([]);
-  await writeFile(join(directory, 'events.json'), 'broken generated fixture');
+  await writeFile(join(directory, 'events.0.ndjson'), 'broken generated fixture');
   await expect(journal.read(true)).rejects.toThrow();
-  expect(await readFile(join(directory, 'events.json'), 'utf8')).toBe('broken generated fixture');
+  expect(await readFile(join(directory, 'events.0.ndjson'), 'utf8')).toBe('broken generated fixture');
 });
 beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-support-test-')); });
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 it('bounds concurrent events, restores after restart, strips unknown fields and honors opt-out', async () => {
   let enabled = false; const journal = new EventJournal(directory, () => enabled, 3);
   await journal.record('APP', 'STARTED'); expect(await journal.read()).toEqual([]);
-  const orphan = join(directory, 'events.json.2147483647.11111111-1111-4111-8111-111111111111.tmp');
-  await writeFile(orphan, 'synthetic unfinished event');
   enabled = true;
   await Promise.all(Array.from({ length: 6 }, (_, i) => journal.record('UPLOAD', 'AUTH', { httpStatus: 401, elapsedMs: i })));
-  await expect(readFile(orphan)).rejects.toMatchObject({ code: 'ENOENT' });
   expect((await journal.read()).map(e => e.elapsedMs)).toEqual([3,4,5]);
   enabled = false; await journal.record('NOTE', 'OK'); expect((await journal.read()).length).toBe(3);
-  const rows = JSON.parse(await readFile(join(directory, 'events.json'), 'utf8'));
+  const rows = (await readFile(join(directory, 'events.0.ndjson'),'utf8')).trim().split('\n').map(line=>JSON.parse(line));
   rows[0].message = 'private OCR token'; rows[0].token = 'private'; rows.push({ atMs: Date.now(), stage: 'private', code: 'OK' });
-  await writeFile(join(directory, 'events.json'), JSON.stringify(rows));
+  await writeFile(join(directory, 'events.0.ndjson'), rows.map(row=>JSON.stringify(row)).join('\n')+'\n');
   const resumed = new EventJournal(directory, () => true, 3); expect(JSON.stringify(await resumed.read())).not.toContain('private'); expect((await resumed.read()).length).toBe(3);
 });
 it('classifies explicit transport/type codes without reading a sensitive error message', () => {
@@ -52,16 +49,23 @@ it('raw viewer preserves whitespace, unicode and malformed records without parsi
   const journal = new EventJournal(directory, () => true);
   expect(await journal.readRaw()).toBe('');
   const raw = '  {"level":"debug"}\nmalformed <script>中文 fixture</script>\n';
-  await writeFile(join(directory, 'events.json'), raw);
+  await writeFile(join(directory, 'events.0.ndjson'), raw);
   expect(await journal.readRaw()).toBe(raw);
-  expect(await readFile(join(directory, 'events.json'), 'utf8')).toBe(raw);
-  await writeFile(join(directory, 'events.json'), 'x'.repeat(256 * 1024 + 1));
-  await expect(journal.readRaw()).rejects.toThrow('上限');
+  expect(await readFile(join(directory, 'events.0.ndjson'), 'utf8')).toBe(raw);
+  await writeFile(join(directory, 'events.0.ndjson'), 'x'.repeat(256 * 1024 + 1));
+  expect(Buffer.byteLength(await journal.readRaw())).toBe(256*1024);
+  await writeFile(join(directory,'events.0.ndjson'),'x'.repeat(2*1024*1024+4097));
+  await expect(journal.readRaw()).rejects.toThrow('read limit');
 });
 it('records severity at the source and preserves original serialized log text', async () => {
   const journal = new EventJournal(directory, () => true);
   await journal.record('MODEL', 'STARTED'); await journal.record('MODEL', 'OK');
   await journal.record('OCR', 'SCHEDULER'); await journal.record('UPLOAD', 'AUTH');
   expect((await journal.read()).map(row => row.level)).toEqual(['debug', 'info', 'warn', 'error']);
-  expect(await journal.readRaw()).toBe(await readFile(join(directory, 'events.json'), 'utf8'));
+  expect(await journal.readRaw()).toBe(await readFile(join(directory, 'events.0.ndjson'), 'utf8'));
+});
+
+it('does not import events.json history into the current NDJSON viewer or range export',async()=>{
+ const path=join(directory,'events.json'),raw=JSON.stringify([{atMs:1,stage:'APP',code:'OK'}]);await writeFile(path,raw);
+ const journal=new EventJournal(directory,()=>true);expect(await journal.readRaw()).toBe('');expect((await journal.exportRange(0)).events).toEqual([]);expect(await readFile(path,'utf8')).toBe(raw);
 });

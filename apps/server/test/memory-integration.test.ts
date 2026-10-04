@@ -1,3 +1,4 @@
+import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {readAgentCredential} from './login-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -49,7 +50,7 @@ async function fixture(t:any){
   const material=node.materials.list({sourceId:name}).items[0],evidence=node.memories.readEvidence(node.materials.evidenceIds(material.ref)).find(r=>r.ocrText.includes(original))!;assert.ok(evidence);
   const base={uncertainty:'Generated fixture',admission:{layer:'memory',reason:'Explicit useful experience',scope:'Generated session',attribution:'user'},evidenceIds:[evidence.id],evidence:[{id:evidence.id,quote:original}]};
   const claims=[{...base,domain:'personal',title:'Prototype pride',statement:`Felt proud of the prototype [${evidence.id}]`},...(both?[{...base,domain:'coding',title:'Retry validation',statement:`Verified idempotency key retry [${evidence.id}]`,coding:{kind:'pitfall',scope:'session',applicability:'Generated prototype',validation:'tested'}}]:[])];
-  const products=node.memories.extract({answer:JSON.stringify({memories:claims}),citations:[{id:evidence.id,capturedAt:evidence.capturedAt,appName:'Generated',excerpt:original}],trace:[],runId:randomUUID()},'generated',{requireAdmission:true}).items;
+  const products=node.memories.extract(fixtureMemoryResult(node.memories,{answer:JSON.stringify({memories:claims}),citations:[{id:evidence.id,capturedAt:evidence.capturedAt,appName:'Generated',excerpt:original}],trace:[],runId:randomUUID()}),'generated',{requireAdmission:true}).items;
   return {source,products};
  };
  const queue=(ids:string[],recipe='base')=>requestMemoryIntegration({recipe:ref(recipe),memoryIds:ids},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});
@@ -158,7 +159,7 @@ test('empty integration is a completed decision and does not trigger unnecessary
 test('maximum declared strategy and card inputs fit the Agent question contract for both phases',async t=>{
  const f=await fixture(t),{products}=await f.add('diary');
  const parent=products[0],quote=parent.evidence![0].quote!,evidenceId=parent.evidenceIds[0],ids=[parent.id];
- for(let i=1;i<50;i++)ids.push(f.node.memories.extract({answer:JSON.stringify({memories:[{domain:'personal',title:'Generated '+i,statement:`Generated distinct statement ${i} [${evidenceId}]`,uncertainty:'Generated fixture',admission:parent.admission,evidenceIds:[evidenceId],evidence:[{id:evidenceId,quote}]}]}),citations:[{id:evidenceId,capturedAt:parent.evidence![0].capturedAt,appName:'Generated',excerpt:''}],trace:[],runId:randomUUID()},'fixture',{requireAdmission:true}).items[0].id);
+ for(let i=1;i<50;i++)ids.push(f.node.memories.extract(fixtureMemoryResult(f.node.memories,{answer:JSON.stringify({memories:[{domain:'personal',title:'Generated '+i,statement:`Generated distinct statement ${i} [${evidenceId}]`,uncertainty:'Generated fixture',admission:parent.admission,evidenceIds:[evidenceId],evidence:[{id:evidenceId,quote}]}]}),citations:[{id:evidenceId,capturedAt:parent.evidence![0].capturedAt,appName:'Generated',excerpt:''}],trace:[],runId:randomUUID()}),'fixture',{requireAdmission:true}).items[0].id);
  f.node.memoryStrategies.registerIntegration({...integrate,...ref('long-integrator'),prompt:'G'.repeat(16000)});
  f.node.memoryStrategies.registerReview({...review,...ref('long-review'),policy:'R'.repeat(16000)});
  f.node.memoryStrategies.registerIntegrationRecipe({...ref('long'),integrate:ref('long-integrator'),review:ref('long-review')});

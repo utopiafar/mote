@@ -14,7 +14,7 @@ export function latestFileTranscript(files:FileStore,id:string){
   const row=files.store.db.prepare("SELECT id,kind,json FROM file_artifacts WHERE capture_id=? AND current=1 AND kind IN ('corrected-dialogue','dialogue','transcript','text','image-text') ORDER BY CASE kind WHEN 'corrected-dialogue' THEN 0 WHEN 'dialogue' THEN 1 ELSE 2 END,created_at DESC LIMIT 1").get(id) as {id:string;kind:string;json:string}|undefined;
   if(!row)throw new StoreError('File transcript is not ready',409);
   const data=JSON.parse(row.json);
-  if(!data.transcript)throw new StoreError('Re-extract this legacy file before reviewing it',409);
+  if(!data.transcript)throw new StoreError('File artifact requires a structured transcript before review',409);
   return {artifactId:row.id,kind:row.kind,transcript:transcriptSchema.parse(data.transcript)};
 }
 const proposalInput=z.object({kind:z.enum(['calendar','terms']),after:z.string().datetime({offset:true}).optional(),before:z.string().datetime({offset:true}).optional(),offset:z.number().int().min(0).max(50000).default(0)}).strict();

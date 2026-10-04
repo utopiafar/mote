@@ -7,7 +7,7 @@ const {tmpdir}=require('node:os');const {join}=require('node:path');
 const assert=require('node:assert/strict');const {randomUUID}=require('node:crypto');
 const {defaultConfig,ConfigStore}=require('../dist/config');
 const root=mkdtempSync(join(tmpdir(),'mote-unified-native-')),origin='http://127.0.0.1:47883',owner='generated-native-central-owner-token-123456';
-app.setPath('userData',root);process.env.MOTE_PROFILE='legacy';for(const key of ['MOTE_URL','MOTE_TOKEN','MOTE_ENV_FILE'])delete process.env[key];
+app.setPath('userData',root);process.env.MOTE_PROFILE='default';for(const key of ['MOTE_URL','MOTE_TOKEN','MOTE_ENV_FILE'])delete process.env[key];
 const opened=[];const cp=require('node:child_process'),execFile=cp.execFile;
 cp.execFile=function(file,args,...rest){if(file==='/usr/bin/open'){opened.push(args.at(-1));queueMicrotask(()=>rest.at(-1)(null,'',''));return {kill:()=>true};}return execFile.call(this,file,args,...rest);};
 dialog.showErrorBox=(_title,message)=>{throw Error(message);};
@@ -57,7 +57,8 @@ async function run(value){
 }
 async function finish(code){clearTimeout(timeout);if(window&&!window.isDestroyed())window.destroy();await rm(root,{recursive:true,force:true,maxRetries:8,retryDelay:100});app.exit(code);}
 app.whenReady().then(async()=>{
- assert.ok(safeStorage.isEncryptionAvailable());const config={...defaultConfig(),serverUrl:origin,deviceName:'Generated unified Mac',ocrEnabled:false,metadataEnabled:false};
+ assert.ok(safeStorage.isEncryptionAvailable());const config={...defaultConfig(),serverUrl:origin,deviceName:'Generated unified Mac',metadataEnabled:false};
  const grant=await(await request('/api/login/session',owner,{serverUrl:origin,deviceId:config.deviceId,deviceName:config.deviceName,platform:'macos',durationMs:86400000})).json();assert.ok(grant.token);
- writeFileSync(join(root,'config.json'),JSON.stringify({version:1,config:{...config,authExpiresAt:grant.expiresAt},encryptedToken:safeStorage.encryptString(grant.token).toString('base64')}),{mode:0o600});require('../dist/main');
+ writeFileSync(join(root,'config.json'),JSON.stringify({version:3,config:{...config,authExpiresAt:grant.expiresAt},encryptedToken:safeStorage.encryptString(grant.token).toString('base64')}),{mode:0o600});require('../dist/main');
+writeFileSync(join(root,'storage-format.json'),JSON.stringify({version:3}),{mode:0o600});
 }).catch(error=>{console.error(error.stack);console.error(JSON.stringify({checkFailures}));void finish(1);});

@@ -237,7 +237,7 @@ function App() {
     void Promise.allSettled([
       load<Status>("/api/status", value => {api.setAgentTimeout(value.agent.agentTimeoutMs);setStatus(value);}),
       load<{items: Device[]}>("/api/devices", value => setDevices(value.items)),
-      ...(["overview", "activity", "timeline"].includes(page) ? [load<Activity>(`/api/activity${queryString(range)}`, setActivity)] : []),
+      ...(["overview", "activity"].includes(page) ? [load<Activity>(`/api/activity${queryString(range)}`, setActivity)] : []),
       ...(page === "overview" ? [load<{items: Capture[]}>(`/api/captures${queryString(range, {limit: 4})}`, value => setRecent(value.items))] : []),
       ...(page === "overview" ? [load<{items: Answer[]}>("/api/insights", value => setInsights(value.items))] : []),
     ]).then(results => {

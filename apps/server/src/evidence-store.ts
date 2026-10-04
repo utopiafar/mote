@@ -51,15 +51,15 @@ export class EvidenceStore {
     privateSqliteFile(join(directory,'mote.sqlite'),true);
     for(const suffix of ['-wal','-shm','-journal'])privateSqliteFile(join(directory,`mote.sqlite${suffix}`));
     this.db=new DatabaseSync(join(directory,'mote.sqlite'));
-    // MVP protocol v2 is a deliberate vault cutover. Never infer that an old
+    // Backend epoch 3 is a deliberate vault cutover. Never infer that an old
     // populated schema has the new archive and visibility semantics.
     const priorTable=this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1").get();
     if(priorTable){
       const settingsTable=this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'").get();
       const epoch=settingsTable?this.db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value:undefined;
-      if(epoch!=='2'){
+      if(epoch!=='3'){
         this.db.close();
-        throw new StoreError('Legacy Mote vault cannot open with backend protocol v2. Stop the server and run the explicit MVP vault reset command.',409);
+        throw new StoreError('Unsupported Mote vault epoch. Backend epoch 3 requires a new empty data directory; existing data is retained.',409);
       }
     }
     ensureTodoSchema(this.db);
@@ -67,14 +67,13 @@ export class EvidenceStore {
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS captures (
         id TEXT PRIMARY KEY, device_id TEXT NOT NULL, captured_at TEXT NOT NULL, received_at TEXT NOT NULL,
-        json TEXT NOT NULL, fingerprint TEXT NOT NULL, blob_hash TEXT, mime TEXT, index_status TEXT NOT NULL,
+        json TEXT NOT NULL, fingerprint TEXT NOT NULL, blob_hash TEXT, mime TEXT, index_status TEXT NOT NULL, context_at TEXT, context_end TEXT,
         summary TEXT, embedding TEXT, embedding_model TEXT, index_error TEXT, attempts INTEGER NOT NULL DEFAULT 0
       );
-      CREATE TABLE IF NOT EXISTS perception_jobs(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,kind TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,available_at INTEGER NOT NULL DEFAULT 0,requested INTEGER NOT NULL DEFAULT 0,error TEXT,PRIMARY KEY(capture_id,kind));
+      CREATE TABLE IF NOT EXISTS perception_jobs(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,kind TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,available_at INTEGER NOT NULL DEFAULT 0,requested INTEGER NOT NULL DEFAULT 0,auto_eligible INTEGER NOT NULL DEFAULT 1,error TEXT,PRIMARY KEY(capture_id,kind));
       CREATE TABLE IF NOT EXISTS perception_results(id TEXT PRIMARY KEY,capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,kind TEXT NOT NULL,fingerprint TEXT NOT NULL,json TEXT NOT NULL,current INTEGER NOT NULL DEFAULT 1);
       CREATE INDEX IF NOT EXISTS perception_cache ON perception_results(fingerprint);
-      DROP TRIGGER IF EXISTS perception_ingest;
-      CREATE TRIGGER perception_ingest AFTER INSERT ON captures WHEN new.blob_hash IS NOT NULL AND json_extract(new.json,'$.source')='screen' BEGIN
+      CREATE TRIGGER IF NOT EXISTS perception_ingest AFTER INSERT ON captures WHEN new.blob_hash IS NOT NULL AND json_extract(new.json,'$.source')='screen' BEGIN
         INSERT INTO perception_jobs(capture_id,kind,state,created_at) VALUES(new.id,'ocr','waiting',CAST(strftime('%s','now') AS INTEGER)*1000);
       END;
       CREATE INDEX IF NOT EXISTS captures_vectors ON captures(embedding_model,captured_at DESC,id) WHERE embedding IS NOT NULL;
@@ -111,12 +110,8 @@ export class EvidenceStore {
       CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY,title TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,json TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS conversations_updated ON conversations(updated_at DESC,id DESC);
       CREATE VIRTUAL TABLE IF NOT EXISTS captures_fts USING fts5(id UNINDEXED, text, tokenize='unicode61');
-      PRAGMA user_version=2;`);
-    this.db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('backend_epoch','2')").run();
-    // Existing screenshot jobs predate managed OCR. They remain available for explicit retry,
-    // but model installation must not silently process an old archive.
-    const perceptionColumns=new Set((this.db.prepare('PRAGMA table_info(perception_jobs)').all() as {name:string}[]).map(row=>row.name));
-    if(!perceptionColumns.has('auto_eligible'))this.db.exec('BEGIN IMMEDIATE; ALTER TABLE perception_jobs ADD COLUMN auto_eligible INTEGER NOT NULL DEFAULT 1; UPDATE perception_jobs SET auto_eligible=0; COMMIT');
+      PRAGMA user_version=3;`);
+    this.db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('backend_epoch','3')").run();
     fileSchema(this.db);
     // Materialized browsing projection: album navigation never reads OCR/metadata JSON or blobs.
     this.db.exec(`
@@ -130,19 +125,10 @@ export class EvidenceStore {
         INSERT INTO capture_gallery VALUES(NEW.id,NEW.device_id,NEW.captured_at,COALESCE(json_extract(NEW.json,'$.appId'),''),COALESCE(json_extract(NEW.json,'$.appName'),''),NEW.blob_hash IS NOT NULL);
       END;
     `);
-    if(!this.db.prepare("SELECT 1 FROM settings WHERE key='gallery-v1'").get()) {
-      this.db.exec(`BEGIN IMMEDIATE;
-        INSERT OR IGNORE INTO capture_gallery SELECT id,device_id,captured_at,COALESCE(json_extract(json,'$.appId'),''),COALESCE(json_extract(json,'$.appName'),''),blob_hash IS NOT NULL FROM captures WHERE json_extract(json,'$.source')='screen';
-        INSERT INTO settings(key,value) VALUES('gallery-v1','1'); COMMIT;`);
-    }
     this.db.function('mote_central_ocr_status',{deterministic:true},(state,error,enabled)=>centralOcrState({state:String(state),error:error===null?null:String(error)},enabled!==0).status);
     this.db.function('mote_ocr_status',{deterministic:true},json=>captureOcrState(JSON.parse(String(json))).status);
     this.db.function('mote_context_end',{deterministic:true},json=>{const c=JSON.parse(String(json));return new Date(c.stateSeries?.samples?.at(-1)?.at??sourceContentTime(c)).toISOString();});
     this.db.function('mote_context_time',{deterministic:true},json=>new Date(sourceContentTime(JSON.parse(String(json)))).toISOString());
-    // Add precise dependency rows for archives written before this table existed.
-    this.db.exec("INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) SELECT memories.id,entry.value FROM memories,json_each(memories.json,'$.evidenceIds') entry");
-    this.db.exec(`INSERT OR IGNORE INTO memory_dependencies SELECT d.memory_id,c.capture_id FROM memory_dependencies d JOIN file_chunks c ON c.id=d.evidence_id;
-      INSERT OR IGNORE INTO memory_batch_dependencies SELECT d.batch_id,c.capture_id FROM memory_batch_dependencies d JOIN file_chunks c ON c.id=d.evidence_id;`);
     try{this.contentEncryption=new ContentEncryption(directory,this.db,options);}catch(error){this.db.close();throw error;}
     this.assets=new AssetStore(this);
     this.db.function('mote_search_text',{deterministic:true},json=>searchText(JSON.parse(String(json))));
@@ -150,20 +136,6 @@ export class EvidenceStore {
       CREATE TRIGGER IF NOT EXISTS captures_trigram_insert AFTER INSERT ON captures BEGIN INSERT INTO captures_trigram(rowid,id,text) VALUES(new.rowid,new.id,mote_search_text(new.json)); END;
       CREATE TRIGGER IF NOT EXISTS captures_trigram_delete AFTER DELETE ON captures BEGIN DELETE FROM captures_trigram WHERE rowid=old.rowid; END;
       CREATE TRIGGER IF NOT EXISTS captures_trigram_update AFTER UPDATE OF json ON captures WHEN new.json!=old.json BEGIN DELETE FROM captures_trigram WHERE rowid=old.rowid; INSERT INTO captures_trigram(rowid,id,text) VALUES(new.rowid,new.id,mote_search_text(new.json)); END;`);
-    if(!this.db.prepare("SELECT 1 FROM settings WHERE key='trigram-v1'").get())this.db.exec("BEGIN IMMEDIATE; INSERT INTO captures_trigram(rowid,id,text) SELECT rowid,id,mote_search_text(json) FROM captures; INSERT INTO settings VALUES('trigram-v1','1'); COMMIT");
-    if(!this.db.prepare('SELECT value FROM settings WHERE key=? AND value=?').get('search_text_version','2')){
-      this.db.exec('BEGIN IMMEDIATE');
-      try{
-        this.db.exec('DELETE FROM captures_fts; INSERT INTO captures_fts(rowid,id,text) SELECT rowid,id,mote_search_text(json) FROM captures');
-        this.db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)').run('search_text_version','2');
-        this.db.exec('COMMIT');
-      }catch(error){this.db.exec('ROLLBACK');this.db.close();throw error;}
-    }
-    if(!this.db.prepare("SELECT 1 FROM settings WHERE key='fts-rowid-v2'").get())this.db.exec(`BEGIN IMMEDIATE;
-      DELETE FROM captures_fts; DELETE FROM captures_trigram;
-      INSERT INTO captures_fts(rowid,id,text) SELECT rowid,id,mote_search_text(json)||COALESCE((SELECT group_concat(json_extract(p.json,'$.text'),' ') FROM perception_results p WHERE p.capture_id=captures.id AND p.kind='ocr' AND p.current=1),'') FROM captures;
-      INSERT INTO captures_trigram(rowid,id,text) SELECT rowid,id,text FROM captures_fts;
-      INSERT INTO settings VALUES('fts-rowid-v2','1'); COMMIT;`);
     this.db.exec('CREATE TRIGGER IF NOT EXISTS captures_words_delete BEFORE DELETE ON captures BEGIN DELETE FROM captures_fts WHERE rowid=old.rowid; END;');
     initializeReadModels(this.db);
     initializeSourceCatalog(this.db);
@@ -307,8 +279,9 @@ export class EvidenceStore {
   }
   async importArchive(raw:unknown) {
     const archive=raw as {version?:number;captures?:unknown[];sources?:unknown[];sourceHeads?:unknown[];sourceVersions?:unknown[];memories?:unknown[];memoryDeletions?:unknown[];files?:unknown[];captureFiles?:unknown[];perceptionResults?:unknown[];todos?:unknown[]};
-    if(archive?.version!==1||!Array.isArray(archive.captures)||archive.captures.length>20000)throw new StoreError('Expected Mote archive version 1 (maximum 20,000 records per import)');
-    const connections=(archive.sources??[]).map(v=>{const {createdAt,updatedAt,status,...fields}=v as Record<string,unknown>;const value=sourceConnectionSchema.parse(fields);return {...value,createdAt:typeof createdAt==='string'?createdAt:new Date().toISOString(),updatedAt:typeof updatedAt==='string'?updatedAt:new Date().toISOString()};});
+    if(archive?.version!==2||!Array.isArray(archive.captures)||archive.captures.length>20000)throw new StoreError('Expected Mote archive version 2 (maximum 20,000 records per import)');
+    for(const key of ['sources','sourceHeads','sourceVersions','memories','memoryDeletions','files','captureFiles','perceptionResults','todos'] as const)if(!Array.isArray(archive[key]))throw new StoreError('Archive v2 requires all canonical sections');
+    const connections=(archive.sources??[]).map(v=>{const {createdAt,updatedAt,status,...fields}=v as Record<string,unknown>;const value=sourceConnectionSchema.parse(fields);return {...value,createdAt:z.string().datetime({offset:true}).parse(createdAt),updatedAt:z.string().datetime({offset:true}).parse(updatedAt)};});
     if(connections.length>500)throw new StoreError('Too many source connections');
     const prepared:Prepared[]=[];
     for(const entry of archive.captures) {
@@ -559,12 +532,6 @@ export class EvidenceStore {
     return {bytes:this.readBlob(row.blob_hash),mime:row.mime};
   }
   private readBlob(hash:string) {return this.assets.read(hash);}
-  decryptImage(hash:string):boolean {
-    if(!/^[a-f0-9]{64}$/.test(hash))throw new StoreError('Invalid image hash');
-    const path=join(this.blobsDir,hash);if(!existsSync(path))return false;
-    const raw=readFileSync(path);if(raw.subarray(0,5).toString()!=='MOTE1')return false;
-    const plain=this.assets.readLegacyImage(hash);replaceContentFile(path,plain);return true;
-  }
   heartbeat(beat:Heartbeat) {
     const record:DeviceRecord={...beat,lastSeenAt:new Date().toISOString()};
     this.db.prepare('INSERT INTO devices(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(beat.deviceId,JSON.stringify(record));return {ok:true};
@@ -641,7 +608,7 @@ export class EvidenceStore {
     const rows=this.db.prepare('SELECT * FROM captures ORDER BY captured_at,id').all() as unknown as Row[];
     const captures=rows.map(row=>{const c=JSON.parse(row.json);return {...c,receivedAt:row.received_at,...(row.blob_hash?{imageMime:row.mime,imageBase64:this.readBlob(row.blob_hash).toString('base64')}:{}),blobHash:row.blob_hash};});
     const memoryDeletions=this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_deletions'").get()?new MemoryDeletions(this,ids=>this.evidence(ids)).export():[];
-    const archive={memoryDeletions,todos:this.db.prepare('SELECT json,request_hash FROM todos ORDER BY id').all().map(row=>({...JSON.parse(String(row.json)),requestHash:row.request_hash})),perceptionResults:this.db.prepare("SELECT capture_id,kind,json,current FROM perception_results WHERE kind='ocr'").all(),version:1,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
+    const archive={memoryDeletions,todos:this.db.prepare('SELECT json,request_hash FROM todos ORDER BY id').all().map(row=>({...JSON.parse(String(row.json)),requestHash:row.request_hash})),perceptionResults:this.db.prepare("SELECT capture_id,kind,json,current FROM perception_results WHERE kind='ocr'").all(),version:2,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
     if(Buffer.byteLength(JSON.stringify(archive))>maxBytes)throw new StoreError('Expanded archive exceeds the export limit; use npm run backup',413);
     return archive;
   }

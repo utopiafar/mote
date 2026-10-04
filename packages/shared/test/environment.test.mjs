@@ -14,7 +14,7 @@ test('explicit environments cannot inherit a legacy file and resolve data beside
  assert.equal(result.env.MOTE_MODEL,undefined);assert.deepEqual(inherited,{MOTE_ENV_FILE:file,MOTE_PORT:'47942'});
  assert.throws(()=>loadEnvironment(root,{env:{MOTE_ENV_FILE:join(root,'missing')}}),/does not exist/);
  assert.throws(()=>loadEnvironment(root,{env:{MOTE_ENV_FILE:''}}),/must name/);
- assert.equal(loadEnvironment(root,{env:{}}).env.MOTE_MODEL,'legacy-model');
+ assert.equal(loadEnvironment(root,{env:{}}).env.MOTE_MODEL,undefined);
 });
 test('two profile files keep credentials and values separate without process environment mutation',t=>{
  const root=mkdtempSync(join(tmpdir(),'mote-env-two-'));t.after(()=>rmSync(root,{recursive:true,force:true}));

@@ -249,57 +249,5 @@ class AnrRegressionInstrumentedTest {
         }
     }
 
-    @Test fun v001EncryptedScreenshotBacklogMigratesToReadableFilesWithoutChangingContent() {
-        val directory = File(context.noBackupFilesDir, "generated-v001-backlog-${UUID.randomUUID()}").apply { mkdirs() }
-        val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.CYAN) }
-        val image = ByteArrayOutputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 80, it); it.toByteArray() }
-        bitmap.recycle()
-        val cipher = SecretBox() // Actual Android Keystore and the same v1 AES-GCM envelope as v0.0.1.
-        val blob = MessageDigest.getInstance("SHA-256").digest(image).joinToString("") { "%02x".format(it) }
-        val ids = List(256) { UUID.randomUUID().toString() }
-        val firstAt = 1_789_344_000_000L
-        try {
-            File(directory, "$blob.blob").writeBytes(cipher.seal(image))
-            ids.forEachIndexed { index, id ->
-                // v0.0.1 completed OCR inline and had no ocr object or _uploaded/_ocrResult state.
-                val event = JSONObject().put("id", id).put("deviceId", "generated-v001-device")
-                    .put("deviceName", "Generated upgrade fixture").put("platform", "android")
-                    .put("capturedAt", java.time.Instant.ofEpochMilli(firstAt + index).toString())
-                    .put("durationMs", 30_000).put("appId", "dev.mote.generated").put("appName", "Generated fixture")
-                    .put("source", "screen").put("imageMime", "image/jpeg").put("ocrText", "GENERATED V001 SCREEN $index")
-                    .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "local")
-                        .put("collection", "content").put("reason", "generated fixture only"))
-                    .put("_blob", blob)
-                File(directory, "$id.event").apply {
-                    writeBytes(cipher.seal(event.toString().toByteArray()))
-                    assertTrue(setLastModified(firstAt + index))
-                }
-            }
-            val before = directory.listFiles()!!.associate { it.name to NsfwModelStore.sha256(it) }
-            val bytes = directory.listFiles()!!.sumOf { it.length() }
-            val reopened = DurableQueue(directory, LocalContentCipher())
-            reopened.recoverOrphans()
-            assertEquals(ids.size, reopened.depth())
-            assertEquals(PendingSync(ids.size, firstAt), reopened.pendingSync())
-            assertEquals("legacy inline OCR must not acquire a new pending-OCR reservation", 0L, reopened.reservedOcrBytes())
-            assertTrue("storage accounting also includes the generated browse index", reopened.bytes() >= bytes)
-            val first = reopened.peek()!!
-            assertEquals(ids.first(), first.getString("id"))
-            assertEquals("GENERATED V001 SCREEN 0", first.getString("ocrText"))
-            assertFalse(first.has("ocr"))
-            assertArrayEquals(image, Base64.getDecoder().decode(first.getString("imageBase64")))
-            assertArrayEquals(image, reopened.image(ids.last()))
-            assertEquals("recovery and status must preserve the old encrypted files byte for byte", before,
-                directory.listFiles()!!.filter { it.name in before }.associate { it.name to NsfwModelStore.sha256(it) })
-            assertFalse(image.contentEquals(File(directory, "$blob.blob").readBytes()))
-            reopened.migrateLegacyContent()
-            assertArrayEquals(image, File(directory, "$blob.blob").readBytes())
-            ids.forEachIndexed { index, id ->
-                val readable = JSONObject(File(directory, "$id.event").readText())
-                assertEquals(id, readable.getString("id"))
-                assertEquals("GENERATED V001 SCREEN $index", readable.getString("ocrText"))
-            }
-            assertEquals(ids.size, DurableQueue(directory, LocalContentCipher()).pendingSync().count)
-        } finally { directory.deleteRecursively() }
-    }
+
 }

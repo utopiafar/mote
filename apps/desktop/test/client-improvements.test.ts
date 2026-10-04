@@ -50,7 +50,7 @@ it('keeps queued captures when a v2 batch route is unavailable', async () => {
   expect(urls.map(url => new URL(url).pathname)).toEqual(['/api/captures/batch']);
 });
 it('uses the canonical node login including legacy paired credentials and stops after logout or expiry', async () => {
-  const client = new AskClient(), config = {...defaultConfig(), credentialScope:'collector' as const, token:'device'.repeat(8)};
+  const client = new AskClient(), config = {...defaultConfig(), credentialScope:'owner' as const, token:'device'.repeat(8)};
   const fetcher = vi.fn(async () => Response.json({items:[]})); vi.stubGlobal('fetch', fetcher);
   await client.request(config, 'history');expect(fetcher.mock.calls[0][1].headers.Authorization).toBe('Bearer '+config.token);
   await expect(client.request(config, 'run', {id:'../configuration'})).rejects.toThrow('Invalid ID');

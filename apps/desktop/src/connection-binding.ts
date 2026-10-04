@@ -1,3 +1,4 @@
+import {RESET_REQUIRED} from './storage-format';
 import { moteText } from '@mote/shared/i18n';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -12,15 +13,15 @@ export function connectionBinding(config: Connection): Binding {
 export class ConnectionBindingStore {
   private value: Binding = { kind: 'unknown' };
   constructor(private path: string, private readonly write: (path: string, value: unknown) => Promise<void> = atomicSourceJson) {}
-  async initialize(config: Connection, hasLegacyData: boolean): Promise<void> {
+  async initialize(config: Connection, hasData: boolean): Promise<void> {
     try {
       const value = JSON.parse(await readFile(this.path, 'utf8')) as Binding;
       if (!['bound', 'unbound', 'unknown'].includes(value.kind) || (value.kind === 'bound' && (typeof value.origin !== 'string' || !/^https?:\/\//.test(value.origin) || !/^[a-f0-9]{64}$/.test(value.credentialHash)))) throw new Error(moteText("本地记录的节点绑定信息无效"));
       this.value = value;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      const current = connectionBinding(config);
-      this.value = current.kind === 'unbound' && hasLegacyData ? { kind: 'unknown' } : current;
+      if(hasData)throw Error(RESET_REQUIRED);
+      this.value = connectionBinding(config);
       await this.write(this.path, this.value);
     }
   }

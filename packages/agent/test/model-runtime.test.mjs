@@ -2,14 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {modelConnection,modelRuntimeEntries} from '../dist/model-runtime.js';
 
-test('existing official DeepSeek roots migrate at runtime while explicit gateways and other protocols retain paths',()=>{
-  for(const baseUrl of [undefined,'https://api.deepseek.com','https://api.deepseek.com/v1/','https://api.deepseek.com/anthropic/']){
-    assert.equal(modelConnection({protocol:'deepseek',baseUrl}).baseUrl,'https://api.deepseek.com/anthropic');
-  }
-  for(const baseUrl of ['https://custom.invalid/v1','https://custom.invalid/anthropic','https://api.deepseek.com/custom']){
-    assert.equal(modelConnection({protocol:'deepseek',baseUrl}).baseUrl,baseUrl);
-  }
-  assert.equal(modelConnection({protocol:'openai-completions',baseUrl:'https://api.deepseek.com/v1'}).baseUrl,'https://api.deepseek.com/v1');
+test('explicit endpoints are preserved and only an omitted endpoint selects the current preset',()=>{
+ assert.equal(modelConnection({protocol:'deepseek'}).baseUrl,'https://api.deepseek.com/anthropic');
+ for(const baseUrl of ['https://custom.invalid/v1','https://api.deepseek.com/v1','https://api.deepseek.com'])assert.equal(modelConnection({protocol:'deepseek',baseUrl}).baseUrl,baseUrl);
 });
 
 test('native DeepSeek declares vision and bounded output for every supported reasoning setting',()=>{

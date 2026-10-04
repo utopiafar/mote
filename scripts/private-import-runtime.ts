@@ -141,7 +141,7 @@ console.log('GENERATED_RESTRICTED_MANIFEST_VALID');`;
   await new Promise<void>((resolveListen,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolveListen);});
   const port=(server.address() as {port:number}).port;
   let runtimeAliasTested=false;
-  const agent=createImportAgent({model:'fixture-model',apiKey:'generated-only',baseUrl:`http://127.0.0.1:${port}`,timeoutMs:60000},async paths=>{
+  const agent=createImportAgent({model:'fixture-model',apiKey:'generated-only',baseUrl:`http://127.0.0.1:${port}`,requestTimeoutMs:60000},async paths=>{
     const launch=await preparePrivateImportLaunch({...paths,relayPort:port});
     runtimeAliasTested=resolve(paths.runtimeRoot)!==launch.runtimeRoot;
     return launch;

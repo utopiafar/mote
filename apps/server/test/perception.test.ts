@@ -97,7 +97,7 @@ test('managed worker unavailability does not consume attempts and readiness resu
  ready=true;await p.tick();assert.equal(job().state,'succeeded');assert.equal(job().attempts,1);
 });
 
-test('first healthy worker recovers exhausted legacy failures but leaves historical jobs and repeated errors alone',async t=>{
+test('worker readiness leaves exhausted failures unchanged until an explicit current retry',async t=>{
  const {store,p:old,runtime,assets,dir,input}=await setup(t,true);await old.close();let ready=false;
  const p=new Perception(store,runtime,undefined,assets,async()=>ready);t.after(()=>p.close());
  const root=join(dir,'models/ocr');for(const name of ['det/inference.onnx','det/inference.yml','rec/inference.onnx','rec/inference.yml']){const path=join(root,name);mkdirSync(dirname(path),{recursive:true});writeFileSync(path,'fixture');}
@@ -107,7 +107,7 @@ test('first healthy worker recovers exhausted legacy failures but leaves histori
  p.prepare();store.db.exec("UPDATE execution_steps SET state='failed',attempts=4,error='processor_failed' WHERE kind='perception.ocr'");
  store.db.exec("UPDATE perception_jobs SET state='failed',attempts=4,error='processor_failed' WHERE kind='ocr'");
  await p.tick();assert.equal(store.db.prepare("SELECT attempts FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(input.id)!.attempts,4);
- ready=true;await p.tick();assert.equal(store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(input.id)!.state,'succeeded');
+ ready=true;await p.tick();assert.equal(store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(input.id)!.state,'failed');p.retry(input.id);await p.tick();assert.equal(store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(input.id)!.state,'succeeded');
  assert.equal(store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(historical)!.state,'failed');
  store.db.prepare("UPDATE perception_jobs SET state='failed',attempts=4,error='processor_failed' WHERE capture_id=? AND kind='ocr'").run(input.id);
  await p.tick();assert.equal(store.db.prepare("SELECT attempts FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(input.id)!.attempts,4);
@@ -134,12 +134,9 @@ test('central OCR projections and filters distinguish disabled, cancelled, block
 });
 
 
-test('legacy metadata-only disabled OCR follows the same central status projection and filters',async t=>{
- const {store,input}=await setup(t);const legacy={...input,ocr:undefined,metadata:{version:1,observedAt:input.capturedAt,capture:{ocrEnabled:false}}};await store.ingest(legacy);
+test('missing OCR metadata stays unknown without deriving status from text or disabled metadata',async t=>{
+ const {store,input}=await setup(t);await store.ingest({...input,ocr:undefined,metadata:{version:1,observedAt:input.capturedAt,capture:{ocrEnabled:false}}});
  const original=store.db.prepare('SELECT json,fingerprint FROM captures WHERE id=?').get(input.id);
- store.db.prepare("UPDATE perception_jobs SET state='running',error=NULL WHERE capture_id=? AND kind='ocr'").run(input.id);
- assert.equal(store.evidence([input.id])[0].ocr?.status,'pending');assert.equal(store.previews({ocrStatus:'pending'}).items[0]?.id,input.id);assert.equal(store.previews({ocrStatus:'disabled'}).items.length,0);
- store.db.prepare("UPDATE perception_jobs SET state='cancelled' WHERE capture_id=? AND kind='ocr'").run(input.id);
- assert.equal(store.evidence([input.id])[0].ocr?.status,'disabled');assert.equal(store.previews({ocrStatus:'disabled'}).items[0]?.id,input.id);
+ for(const state of ['running','cancelled']){store.db.prepare("UPDATE perception_jobs SET state=?,error=NULL WHERE capture_id=? AND kind='ocr'").run(state,input.id);assert.equal(store.evidence([input.id])[0].ocr,undefined);assert.equal(store.previews({ocrStatus:'unknown'}).items[0]?.id,input.id);assert.equal(store.previews({ocrStatus:'disabled'}).items.length,0);}
  assert.deepEqual(store.db.prepare('SELECT json,fingerprint FROM captures WHERE id=?').get(input.id),original);
 });

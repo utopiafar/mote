@@ -15,7 +15,6 @@ class SourceScanWorker(context: Context, params: WorkerParameters) : Worker(cont
     private fun work(): Result {
         val store = applicationContext.localSources(); val settings = Settings(applicationContext)
         return try {
-            settings.ensureDataOrigin(settings.read())
             for (source in store.sources().filter { it.enabled && (inputData.getString("sourceId") == null || it.id == inputData.getString("sourceId")) }) {
                 if (isStopped) return Result.retry()
                 val adapter = SourceAdapters.default.forKind(source.kind)

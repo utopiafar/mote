@@ -5,7 +5,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {DeepSeekHarness,RequestTimeoutError} from '@deepseek-ai/dsh-sdk-client';
 import {createAgent,AgentTimeoutError,AgentResponseError,AgentProviderError} from '../dist/index.js';
 
-const reader={search:async()=>[],timeline:async()=>[],evidence:async()=>[],activity:async()=>({captures:0}),devices:async()=>[]};
+const reader={search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async()=>[],activity:async()=>({captures:0}),devices:async()=>[]};
 const options={reader,model:'synthetic-model',apiKey:'synthetic-test-key',baseUrl:'http://127.0.0.1:9/v1'};
 const marker='SYNTHETIC_PRIVATE_STDERR_OR_PROVIDER_TEXT';
 
@@ -14,7 +14,7 @@ test('a real local stalled provider reaches the explicit deadline and its runtim
   const provider=createServer(async(req,res)=>{for await(const _chunk of req){}requests++;res.writeHead(200,{'Content-Type':'text/event-stream'});res.flushHeaders();});
   provider.on('connection',socket=>{sockets.add(socket);socket.on('close',()=>sockets.delete(socket));});
   await new Promise(resolve=>provider.listen(0,'127.0.0.1',resolve));
-  const agent=createAgent({...options,baseUrl:`http://127.0.0.1:${provider.address().port}/v1`,timeoutMs:8000});
+  const agent=createAgent({...options,baseUrl:`http://127.0.0.1:${provider.address().port}/v1`,agentTimeoutMs:8000});
   try{
     const started=Date.now();await assert.rejects(agent.query({question:'Synthetic stalled transport fixture'}),error=>error instanceof AgentTimeoutError&&error.statusCode===504);
     assert.ok(Date.now()-started>=7900);assert.ok(requests>0,'The real pinned runtime must reach the synthetic HTTP provider');
@@ -34,7 +34,7 @@ test('deadline remains primary when cleanup fails, and cleanup is still awaited'
   let cleaned=false;
   t.mock.method(DeepSeekHarness.prototype,'run',async()=>new Promise(()=>{}));
   t.mock.method(DeepSeekHarness.prototype,'close',async()=>{await delay(15);cleaned=true;throw new Error(marker);});
-  const agent=createAgent({...options,timeoutMs:10});t.after(()=>agent.close());
+  const agent=createAgent({...options,agentTimeoutMs:10});t.after(()=>agent.close());
   await assert.rejects(agent.query({question:'Synthetic deadline and cleanup failure'}),error=>error instanceof AgentTimeoutError&&!String(error).includes(marker));
   assert.equal(cleaned,true);
 });
@@ -51,7 +51,7 @@ test('lookalike timeouts are sanitized as provider failures and validation remai
 test('configured request deadline also permits buffered providers to exceed the former 30-second idle window',async()=>{
   const {createRuntimePatch}=await import('../dist/index.js');
   for(const protocol of ['deepseek','openai-completions']){
-    const patch=JSON.parse(createRuntimePatch('/generated/plugin.mjs','generated','http://127.0.0.1:1/v1','max',8192,{protocol,timeoutMs:600000}));
+    const patch=JSON.parse(createRuntimePatch('/generated/plugin.mjs','generated','http://127.0.0.1:1/v1','max',8192,{protocol,requestTimeoutMs:600000}));
     const profile=protocol==='deepseek'?patch.find(p=>p.id==='llm-deepseek').config:patch.find(p=>p.insert?.some(i=>i.id==='mote-llm')).insert[0].config.providers['mote-model'];
     assert.equal(profile.streamIdleTimeoutMs,600000);
   }

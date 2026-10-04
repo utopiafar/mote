@@ -9,7 +9,7 @@ let directory: string;
 beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-updater-')); });
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 const zip = updateZip([{ name: 'Mote.app/Contents/synthetic', text: 'fixture' }]);
-const manifest: ReleaseManifest = { schemaVersion: 1, version: '0.6.0', channel: 'stable', repository: 'utopiafar/mote', tag: 'v0.6.0', notesUrl: 'https://github.com/utopiafar/mote/releases/tag/v0.6.0', publishedAt: '2026-09-14T00:00:00Z', assets: [{ component: 'desktop', platform: 'darwin', arch: 'arm64', format: 'zip', name: 'fixture.zip', url: 'https://github.com/utopiafar/mote/releases/download/v0.6.0/fixture.zip', size: zip.length, sha256: digest(zip), bundleId: 'dev.mote.collector', signing: 'adhoc' }], images: [] };
+const manifest: ReleaseManifest = { schemaVersion: 1, component:'desktop', version: '0.6.0', channel: 'stable', repository: 'utopiafar/mote', tag: 'desktop-v0.6.0', notesUrl: 'https://github.com/utopiafar/mote/releases/tag/desktop-v0.6.0', publishedAt: '2026-09-14T00:00:00Z', assets: [{ component: 'desktop', platform: 'darwin', arch: 'arm64', format: 'zip', name: 'fixture.zip', url: 'https://github.com/utopiafar/mote/releases/download/desktop-v0.6.0/fixture.zip', size: zip.length, sha256: digest(zip), bundleId: 'dev.mote.collector', signing: 'adhoc' }], images: [] };
 function deps(change: Partial<UpdateDependencies> = {}): UpdateDependencies {
   return { check: async () => ({ manifest, available: true }), download: async (_asset, path, options) => { await writeFile(path, zip); options?.onProgress?.(zip.length, zip.length); return path; }, inspect: async () => ({ valid: true, otherInstances: 0, digest: 'a'.repeat(64) }), extract: async (_archive, path) => { await mkdir(join(path, 'Mote.app')); }, ...change };
 }
@@ -24,7 +24,7 @@ it('checks, downloads and validates the app while preserving every adjacent prof
   for (const path of files) expect(await readFile(join(directory, path), 'utf8')).toBe('private-synthetic-' + path);
   await value.close();
 });
-it('checks only the desktop release stream while retaining legacy signed manifests', async () => {
+it('checks only the desktop release stream with explicit component signed manifests', async () => {
   let selected: string | undefined;
   const value = await updater(deps({check:async options=>{selected=options?.component;return {manifest,available:true};}}));
   expect((await value.check()).state).toBe('available'); expect(selected).toBe('desktop');

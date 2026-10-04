@@ -9,10 +9,10 @@ enum class AppCollectionMode(val wire: String) { CONTENT("content"), ACTIVITY("a
 /** Explicit app identity rules only; unknown surfaces use the default unless a privacy rule needs identity. */
 data class AppCollectionRules(val defaultMode: AppCollectionMode, val apps: Map<String, AppCollectionMode>) {
     fun mayCollectContent() = defaultMode == AppCollectionMode.CONTENT || apps.values.any { it == AppCollectionMode.CONTENT }
-    fun requiresWindowIdentity(legacyExcluded: Set<String>) = legacyExcluded.isNotEmpty() || defaultMode != AppCollectionMode.CONTENT || apps.values.any { it != AppCollectionMode.CONTENT }
-    fun decide(windows: WindowSnapshot, legacyExcluded: Set<String>): AppCollectionMode {
-        if (windows.packages.any { it in legacyExcluded }) return AppCollectionMode.OFF
-        if (!windows.trustworthy && requiresWindowIdentity(legacyExcluded)) return AppCollectionMode.OFF
+    fun requiresWindowIdentity(excludedPackages: Set<String>) = excludedPackages.isNotEmpty() || defaultMode != AppCollectionMode.CONTENT || apps.values.any { it != AppCollectionMode.CONTENT }
+    fun decide(windows: WindowSnapshot, excludedPackages: Set<String>): AppCollectionMode {
+        if (windows.packages.any { it in excludedPackages }) return AppCollectionMode.OFF
+        if (!windows.trustworthy && requiresWindowIdentity(excludedPackages)) return AppCollectionMode.OFF
         // Every identified auxiliary window obeys the same explicit rules. Never downgrade a sample.
         val selected = windows.foreground?.let { apps[it] } ?: defaultMode
         if (selected == AppCollectionMode.ACTIVITY && (!windows.trustworthy || windows.foreground.isNullOrBlank() || windows.foreground !in windows.packages)) return AppCollectionMode.OFF
@@ -22,7 +22,7 @@ data class AppCollectionRules(val defaultMode: AppCollectionMode, val apps: Map<
     fun json(): String = JSONObject().put("default", defaultMode.wire).put("apps", JSONObject().apply { apps.toSortedMap().forEach { (key, value) -> put(key, value.wire) } }).toString()
     companion object {
         const val DEFAULT = "{\"default\":\"activity\",\"apps\":{}}"
-        const val LEGACY_DEFAULT = "{\"default\":\"content\",\"apps\":{}}"
+        const val CONTENT_DEFAULT = "{\"default\":\"content\",\"apps\":{}}"
         private val packagePattern = Regex("[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)*")
         fun parse(value: String): AppCollectionRules {
             require(value.toByteArray(Charsets.UTF_8).size <= 32768) { MoteI18n.text("应用规则超过大小上限") }

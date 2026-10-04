@@ -38,24 +38,12 @@ export class ContentStorageService {
     // Verify every parent again when a step executes; inspecting only the final file
     // would follow a restored/symlinked object directory outside the managed vault.
     const directory=(...paths:string[])=>{privateDirectory(this.store.directory);for(const path of paths)privateDirectory(path);};
-    const image=(hash:string)=>{
-      if(!hashName.test(hash))throw Error('Invalid managed image');
-      const path=join(this.store.blobsDir,hash);
-      steps.set(path,()=>{directory(this.store.blobsDir);privateFile(path);return this.store.decryptImage(hash);});
-    };
-    const original=(hash:string)=>{
-      if(!hashName.test(hash))throw Error('Invalid managed original');
-      const path=join(this.archived.directory,hash);
-      steps.set(path,()=>{directory(this.archived.directory);return this.archived.decrypt(hash);});
-    };
     const part=(root:string,id:string,index:number,checksum?:string)=>{
       const parent=join(root,id),path=join(parent,String(index));
       if(steps.has(path))return;
       steps.set(path,()=>{directory(this.archived.directory,root,parent);return this.store.contentEncryption.decrypt(path,bytes=>{if(checksum&&sha256(bytes)!==checksum)throw Error('File part checksum mismatch');});});
     };
     const importUploads=join(this.store.directory,'import-uploads');privateDirectory(importUploads);
-    for(const row of this.store.db.prepare("SELECT hash FROM assets WHERE format='image-legacy'").all() as {hash:string}[])image(row.hash);
-    for(const row of this.store.db.prepare("SELECT hash FROM assets WHERE format='archive-legacy'").all() as {hash:string}[])original(row.hash);
     for(const row of this.store.db.prepare("SELECT hash,parts,bytes FROM assets WHERE format='chunks'").all() as {hash:string;parts:number;bytes:number}[]){
       if(!/^[a-f0-9]{64}$/.test(row.hash)||!Number.isSafeInteger(row.parts)||row.parts<0||row.parts>100000)throw Error('Invalid managed object');
       for(let index=0;index<row.parts;index++)part(this.files.objects,row.hash,index);
@@ -64,14 +52,6 @@ export class ContentStorageService {
       if(!uploadName.test(row.upload_id)||!Number.isSafeInteger(row.part)||row.part<0)throw Error('Invalid managed upload');
       part(this.files.uploads,row.upload_id,row.part,row.hash);
     }
-    // A crash can leave a durable object before its DB transaction commits. Include
-    // those files (and incomplete staging objects), or dropping the legacy key
-    // marker would make a later retry interpret old ciphertext as plaintext.
-    directory(this.store.blobsDir,this.archived.directory,this.files.objects,this.files.uploads);
-    for(const name of readdirSync(this.store.blobsDir))if(hashName.test(name))image(name);
-    for(const name of readdirSync(this.archived.directory)){
-      const match=/^([a-f0-9]{64})(?:\.plain|\.aes)?$/.exec(name);if(match)original(match[1]);
-    }
     for(const [root,pattern] of [[this.files.objects,objectName],[this.files.uploads,uploadName],[importUploads,uploadName]] as const){
       for(const name of readdirSync(root))if(pattern.test(name)){
         await setImmediate();if(this.stopped){this.progress.state='cancelled';return;}
@@ -79,7 +59,7 @@ export class ContentStorageService {
         try{
           directory(this.archived.directory,root,parent);
           for(const file of readdirSync(parent)){
-            const match=/^(0|[1-9][0-9]*)(?:\.plain|\.aes)?$/.exec(file);
+            const match=/^(0|[1-9][0-9]*)(?:\.plain|\.aes)$/.exec(file);
             if(match){const index=Number(match[1]);if(!Number.isSafeInteger(index))throw Error('Invalid managed part');part(root,name,index);}
           }
         }catch(error){steps.set(parent,()=>{throw error;});}
@@ -90,7 +70,7 @@ export class ContentStorageService {
       if(!hashName.test(source))throw Error('Invalid source archive directory');
       const parent=join(rawRoot,source);directory(rawRoot,parent);
       for(const name of readdirSync(parent)){
-        const match=/^(manifest|[a-f0-9]{64})(?:\.plain|\.aes)$/.exec(name);if(!match)continue;
+        const match=/^([a-f0-9]{64})(?:\.plain|\.aes)$/.exec(name);if(!match)continue;
         const path=join(parent,match[1]);steps.set(path,()=>{directory(rawRoot,parent);return this.store.contentEncryption.decrypt(path,bytes=>{JSON.parse(bytes.toString());});});
       }
     }

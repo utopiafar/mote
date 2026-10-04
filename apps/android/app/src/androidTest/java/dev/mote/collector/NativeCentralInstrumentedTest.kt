@@ -166,7 +166,7 @@ class NativeCentralInstrumentedTest {
             fun click(label: String) = scenario.onActivity { activity ->
                 visible(activity).filterIsInstance<TextView>().single { it.isClickable && it.text.toString() == label }.performClick()
             }
-            val askMonitor = instrumentation.addMonitor(AskActivity::class.java.name, null, true)
+            val askMonitor = instrumentation.addMonitor("dev.mote.collector.AskActivity", null, true)
             val centralMonitor = instrumentation.addMonitor(CentralActivity::class.java.name, null, true)
             try {
                 click("问一问")

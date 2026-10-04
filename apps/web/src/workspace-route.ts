@@ -1,12 +1,8 @@
-/** Authored navigation aliases. Captured content never participates in routing. */
-const legacyCollections: Readonly<Record<string, string>> = {
-  timeline: 'segments', materials: 'materials', files: 'files', memories: 'memories',
-};
+/** Current routes use explicit collection query parameters. */
 export function canonicalDestination(page: string, collection: string, available: readonly string[]) {
-  const requested = legacyCollections[page];
   return {
-    page: requested ? 'archive' : page,
-    collection: available.includes(requested ?? collection) ? requested ?? collection : available[0] ?? 'records',
+    page,
+    collection: available.includes(collection) ? collection : available[0] ?? 'records',
   };
 }
 export function readWorkspaceRoute(hash: string, readPage: (hash: string) => string, available: readonly string[]) {

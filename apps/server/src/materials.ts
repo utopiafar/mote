@@ -96,7 +96,7 @@ export class MaterialStore {
   constructor(readonly store:Store){
     store.db.exec(`
       CREATE TABLE IF NOT EXISTS material_searchable(material_id TEXT PRIMARY KEY REFERENCES material_heads(id) ON DELETE CASCADE);
-      CREATE TABLE IF NOT EXISTS material_evidence(id TEXT PRIMARY KEY,material_id TEXT NOT NULL,revision TEXT NOT NULL,block_id TEXT NOT NULL,FOREIGN KEY(material_id,revision) REFERENCES material_revisions(material_id,revision) ON DELETE CASCADE);
+      CREATE TABLE IF NOT EXISTS material_evidence(id TEXT PRIMARY KEY,material_id TEXT NOT NULL,revision TEXT NOT NULL,block_id TEXT NOT NULL,invalidated INTEGER NOT NULL DEFAULT 0,FOREIGN KEY(material_id,revision) REFERENCES material_revisions(material_id,revision) ON DELETE CASCADE);
       CREATE INDEX IF NOT EXISTS material_evidence_parent ON material_evidence(material_id,revision);
       CREATE TABLE IF NOT EXISTS material_evidence_context(
         anchor_id TEXT PRIMARY KEY REFERENCES material_evidence(id) ON DELETE CASCADE,json TEXT NOT NULL);
@@ -109,7 +109,7 @@ export class MaterialStore {
       CREATE TABLE IF NOT EXISTS material_heads(
         id TEXT PRIMARY KEY,source_id TEXT NOT NULL,external_id TEXT NOT NULL,kind TEXT NOT NULL,
         revision TEXT NOT NULL,sequence INTEGER NOT NULL,retired INTEGER NOT NULL DEFAULT 0,
-        device_id TEXT,first_at TEXT,last_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+        device_id TEXT,first_at TEXT,last_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,min_visible_sequence INTEGER NOT NULL DEFAULT 1);
       CREATE TRIGGER IF NOT EXISTS material_search_delete BEFORE DELETE ON material_heads BEGIN DELETE FROM material_fts WHERE rowid=old.rowid; END;
       CREATE INDEX IF NOT EXISTS material_heads_source ON material_heads(source_id,updated_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS material_heads_recent ON material_heads(retired,updated_at DESC,id DESC);
@@ -117,7 +117,7 @@ export class MaterialStore {
         material_id TEXT NOT NULL REFERENCES material_heads(id) ON DELETE CASCADE,revision TEXT NOT NULL,
         sequence INTEGER NOT NULL,manifest TEXT NOT NULL,created_at TEXT NOT NULL,
         text_length INTEGER NOT NULL,block_count INTEGER NOT NULL,member_count INTEGER NOT NULL,asset_count INTEGER NOT NULL,
-        PRIMARY KEY(material_id,revision),UNIQUE(material_id,sequence));
+        draft_hash TEXT,PRIMARY KEY(material_id,revision),UNIQUE(material_id,sequence));
       CREATE TABLE IF NOT EXISTS material_coding_snapshots(material_id TEXT NOT NULL,revision TEXT NOT NULL,
         archive_checkpoint TEXT,append_epoch INTEGER,head_count INTEGER,
         PRIMARY KEY(material_id,revision),FOREIGN KEY(material_id,revision) REFERENCES material_revisions(material_id,revision) ON DELETE CASCADE);
@@ -136,7 +136,7 @@ export class MaterialStore {
         kind TEXT NOT NULL,format TEXT,payload_hash TEXT NOT NULL REFERENCES material_block_payloads(hash),
         asset_hash TEXT,mime_type TEXT,member_ids TEXT NOT NULL,locator TEXT,
         start_offset INTEGER NOT NULL,end_offset INTEGER NOT NULL,
-        PRIMARY KEY(material_id,revision,idx),UNIQUE(material_id,revision,block_id),
+        anchor_id TEXT,identity_hash TEXT,PRIMARY KEY(material_id,revision,idx),UNIQUE(material_id,revision,block_id),
         FOREIGN KEY(material_id,revision) REFERENCES material_revisions(material_id,revision) ON DELETE CASCADE);
       CREATE INDEX IF NOT EXISTS material_blocks_range ON material_blocks(material_id,revision,end_offset);
       CREATE TABLE IF NOT EXISTS material_members(
@@ -153,6 +153,11 @@ export class MaterialStore {
         WHEN old.asset_hash IS NOT NULL BEGIN
         DELETE FROM asset_references WHERE owner='material:'||old.material_id||':'||old.revision||':'||old.block_id;
       END;
+      CREATE TRIGGER IF NOT EXISTS material_block_payload_delete AFTER DELETE ON material_blocks BEGIN
+        DELETE FROM material_block_payloads WHERE hash=old.payload_hash
+          AND NOT EXISTS(SELECT 1 FROM material_blocks WHERE payload_hash=old.payload_hash)
+          AND NOT EXISTS(SELECT 1 FROM material_block_versions WHERE payload_hash=old.payload_hash);
+      END;
       CREATE TRIGGER IF NOT EXISTS material_block_version_delete AFTER DELETE ON material_block_versions BEGIN
         DELETE FROM material_fts_blocks WHERE rowid=old.id;
         DELETE FROM material_block_payloads WHERE hash=old.payload_hash
@@ -163,27 +168,9 @@ export class MaterialStore {
       -- fragment compaction must use a separate path and preserve a lightweight source anchor.
       CREATE TRIGGER IF NOT EXISTS material_capture_delete AFTER DELETE ON captures BEGIN
         DELETE FROM material_heads WHERE id IN
-          (SELECT material_id FROM material_members WHERE kind='capture' AND (ref=old.id OR ref='capture:'||old.id));
+          (SELECT material_id FROM material_members WHERE kind='capture' AND ref='capture:'||old.id);
       END;
     `);
-    const columns=new Set((store.db.prepare('PRAGMA table_info(material_heads)').all() as {name:string}[]).map(row=>row.name));
-    if(!columns.has('min_visible_sequence'))store.db.exec('ALTER TABLE material_heads ADD COLUMN min_visible_sequence INTEGER NOT NULL DEFAULT 1');
-    const evidenceColumns=new Set(store.db.prepare('PRAGMA table_info(material_evidence)').all().map(row=>String(row.name)));
-    if(!evidenceColumns.has('invalidated'))store.db.exec('ALTER TABLE material_evidence ADD COLUMN invalidated INTEGER NOT NULL DEFAULT 0');
-    const blockColumns=new Set(store.db.prepare('PRAGMA table_info(material_blocks)').all().map(row=>String(row.name)));
-    if(!blockColumns.has('anchor_id'))store.db.exec(`ALTER TABLE material_blocks ADD COLUMN anchor_id TEXT;
-      UPDATE material_blocks SET anchor_id=(SELECT id FROM material_evidence e WHERE e.material_id=material_blocks.material_id
-        AND e.revision=material_blocks.revision AND e.block_id=material_blocks.block_id);`);
-    if(!blockColumns.has('identity_hash'))store.db.exec('ALTER TABLE material_blocks ADD COLUMN identity_hash TEXT');
-    if(!store.db.prepare('PRAGMA table_info(material_revisions)').all().some(row=>row.name==='draft_hash'))
-      store.db.exec('ALTER TABLE material_revisions ADD COLUMN draft_hash TEXT');
-    const payloadTrigger=store.db.prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='material_block_payload_delete'").get() as {sql:string}|undefined;
-    if(!payloadTrigger?.sql.includes('material_block_versions'))store.db.exec(`DROP TRIGGER IF EXISTS material_block_payload_delete;
-      CREATE TRIGGER material_block_payload_delete AFTER DELETE ON material_blocks BEGIN
-        DELETE FROM material_block_payloads WHERE hash=old.payload_hash
-          AND NOT EXISTS(SELECT 1 FROM material_blocks WHERE payload_hash=old.payload_hash)
-          AND NOT EXISTS(SELECT 1 FROM material_block_versions WHERE payload_hash=old.payload_hash);
-      END;`);
     installEvidenceDependencies(store);
   }
 
@@ -382,7 +369,8 @@ export class MaterialStore {
         if(head&&(head.source_id!==draft.origin.sourceId||head.external_id!==draft.origin.externalId))throw new StoreError('Material identity cannot change',409);
         if(this.version(id,revision))throw new StoreError('An older material revision cannot become the current head',409);
         for(const member of draft.members)if(member.kind==='capture'){
-          const captureId=member.ref.startsWith('capture:')?member.ref.slice('capture:'.length):member.ref;
+          if(!member.ref.startsWith('capture:'))throw new StoreError('Material capture members require a typed reference',400);
+          const captureId=z.string().uuid().parse(member.ref.slice('capture:'.length));
           if(!db.prepare('SELECT 1 FROM captures WHERE id=?').get(captureId))throw new StoreError('Material source capture is missing',409);
         }
         const now=new Date().toISOString(),sequence=(head?.sequence??0)+1;

@@ -13,7 +13,7 @@ interface ByteCipher {
     fun open(bytes: ByteArray): ByteArray
 }
 
-/** Keystore protection for credentials, optional content encryption and legacy content reads. */
+/** Keystore protection for current credentials, private drafts and operation ledgers. */
 class SecretBox : ByteCipher {
     private fun key(): SecretKey = synchronized(SecretBox::class.java) {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

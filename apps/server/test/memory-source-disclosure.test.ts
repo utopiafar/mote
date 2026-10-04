@@ -23,7 +23,7 @@ async function fixture(t:any){
   function saveMemory(evidenceId=originalId,quote='Relax shoulders before turning.',overrides:Record<string,unknown>={}){
     const record=reader.memories.readEvidence([evidenceId])[0],offset=record.ocrText.indexOf(quote),id=randomUUID();
     const ref={id:evidenceId,deviceId:record.deviceId,capturedAt:record.capturedAt,receivedAt:record.receivedAt,offset,length:quote.length,quote,contentHash:memoryEvidenceFingerprint(record),...overrides};
-    const memory={id,title:'Generated lesson',statement:'Scoped generated lesson',uncertainty:'Generated evidence only',status:'published',createdAt:at,model:'fixture',runId:'fixture',fingerprint:'a'.repeat(64),evidenceIds:[evidenceId],evidence:[ref],admission:{layer:'memory',reason:'fixture',scope:'training',attribution:'user'}};
+    const memory={version:1,domain:'personal',tier:'episode',kind:'episodic',id,title:'Generated lesson',statement:'Scoped generated lesson',uncertainty:'Generated evidence only',status:'published',createdAt:at,model:'fixture',runId:'fixture',fingerprint:'a'.repeat(64),evidenceIds:[evidenceId],evidence:[ref],admission:{layer:'memory',reason:'fixture',scope:'training',attribution:'user'}};
     store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(id,at,JSON.stringify(memory));
     store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(id,evidenceId);
     return id;
@@ -49,7 +49,7 @@ test('supporting original disclosure is opt-in, scoped, permission checked and f
 test('stale fingerprints, fabricated quotes and invalid locators cannot become original evidence',async t=>{
   const f=await fixture(t);
   for(const change of [{contentHash:'b'.repeat(64)},{quote:'Generated invented quote'},{offset:-1},{length:100000},{offset:undefined}]){
-    const id=f.saveMemory(undefined,undefined,change),result=await f.agent.memories!({id,includeEvidence:true});
+    const id=f.saveMemory(undefined,undefined,change);if(change.offset===-1){await assert.rejects(f.agent.memories!({id,includeEvidence:true}));continue;}const result=await f.agent.memories!({id,includeEvidence:true});
     assert.equal(result.items.length,1);assert.deepEqual(result.sourceSpans,[]);assert.equal(result.sourceCoverage?.partial,true);
   }
 });

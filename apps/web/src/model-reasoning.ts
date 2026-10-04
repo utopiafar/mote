@@ -2,7 +2,7 @@ import {MODEL_REASONING_EFFORTS,type ModelReasoningEffort} from '@mote/shared/mo
 
 export interface CatalogModel {id:string;name:string;reasoningEfforts?:string[];defaultReasoningEffort?:string;serviceTiers?:string[]}
 
-/** Codex names `none` on the wire; older Mote settings store the same request as `off`. */
+/** Translate the current Codex wire enum into Mote’s provider-neutral effort enum. */
 export function codexEffortValue(effort:string):ModelReasoningEffort|undefined {
   const value=effort==='none'?'off':effort;
   return value!=='auto'&&MODEL_REASONING_EFFORTS.includes(value as ModelReasoningEffort)?value as ModelReasoningEffort:undefined;

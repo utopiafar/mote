@@ -15,7 +15,7 @@ const quote = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
 export function createUpdateService(context: UpdateContext, dependencies: { checkRelease?: ReleaseCheck; clock?: () => number } = {}) {
   const check = dependencies.checkRelease ?? checkRelease, clock = dependencies.clock ?? Date.now;
   const runtime = context.runtime ?? 'unknown';
-  const supported = /^[a-z0-9][a-z0-9_-]{0,31}$/.test(context.profile ?? '') && context.profile !== 'legacy' && runtime !== 'unknown';
+  const supported = /^[a-z0-9][a-z0-9_-]{0,31}$/.test(context.profile ?? '') && runtime !== 'unknown';
   const repository = context.repository ?? 'utopiafar/mote', channel = context.channel ?? 'stable';
   const controller = new AbortController(); let closed = false;
   let result: UpdateStatus = { repository, channel, currentVersion: context.currentVersion, latestVersion: null, available: false, verified: false, checkedAt: null, state: 'idle', releaseUrl: null, runtime, commands: null };

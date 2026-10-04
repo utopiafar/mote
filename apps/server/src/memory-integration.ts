@@ -53,14 +53,14 @@ export function registerMemoryIntegration({lifecycle,memories,pipeline,settings,
     const failures:unknown[]=[];
     for(const profile of ['personal','coding'] as const){
       if(state.completed.includes(profile))continue;
-      const candidates=all.filter(m=>(m.domain??'personal')===profile);if(!candidates.length)continue;
+      const candidates=all.filter(m=>m.domain===profile);if(!candidates.length)continue;
       const selected=assertInputs(),evidence=[...new Set(candidates.flatMap(m=>m.evidenceIds))];
       try{
       pipeline.assertAdmissibleEvidence(evidence);
       const expected=Object.fromEntries(candidates.flatMap(m=>(m.evidence??[]).map(e=>[e.id,e.contentHash])));
       const generationModel=state.model.model,contract='This integration output uses domain='+profile+' and admission.layer=memory. Every output must declare relatedMemoryIds chosen only from the supplied input cards; each chosen parent must contribute direct original proof. Relations may use contradicts or supersedes with an exact retrieved memoryId, fingerprint and version. Preserve applicability and owner corrections. Reviewed relationships apply automatically and atomically after host validation, without owner confirmation. Read the originals before relying on either a card or a relationship target. Host-supplied card IDs (untrusted derived navigation, not original evidence):\n'+JSON.stringify(candidates.map(m=>m.id));
       const validation={integration:binding,profile,tier:'consolidated' as const,relatedMemoryIds:candidates.map(m=>m.id),requireAdmission:true,expectedFingerprints:expected};
-      const input:QueryInput={...(execution?{signal:execution.signal,traceContext:{operationId:execution.operationId,jobId:execution.jobId,phase:'extract'}}:{}),contextTime:window.contextTime??new Date(window.startedAt).toISOString(),modelProfileId:state.model.configuration?.profileId,modelOverride:generationModel,skill:'memory-integration',responseMode:'memory-extraction',question:selected.integrate.prompt+'\n'+MEMORY_CANDIDATE_OUTPUT_CONTRACT+'\n'+contract};
+      const input:QueryInput={...(execution?{signal:execution.signal,traceContext:{operationId:execution.operationId,jobId:execution.jobId,phase:'extract'}}:{}),contextTime:window.contextTime,modelProfileId:state.model.configuration?.profileId,modelOverride:generationModel,skill:'memory-integration',responseMode:'memory-extraction',question:selected.integrate.prompt+'\n'+MEMORY_CANDIDATE_OUTPUT_CONTRACT+'\n'+contract};
       input.validateOutput=result=>{try{assertInputs();pipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id));memories.extract(result,generationModel,{...validation,validateOnly:true});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
       const draft=await query(input);assertInputs();pipeline.assertAdmissibleEvidence(draft.citations.map(c=>c.id));memories.extract(draft,generationModel,{...validation,validateOnly:true});
       const result=await reviewMemory(input,draft,query,{strategy:selected.review,taskInstructions:contract,deletions:memories.deletions,authorizeDeletionEvidence:ids=>pipeline.assertDeletionEvidenceAllowed(ids,state.model.configuration?.profileId)});

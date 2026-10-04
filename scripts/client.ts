@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { loadEnvironment } from '@mote/shared/environment';
 import {INGRESS_VERSION_HEADERS,requireIngressReceipt} from '../apps/desktop/src/ingress-protocol.js';
 const {env,baseDir,envFile}=loadEnvironment(fileURLToPath(new URL('../',import.meta.url)));
-export const resolvedConnection={url:(env.MOTE_URL||`http://127.0.0.1:${env.MOTE_PORT||47832}`).replace(/\/$/,''),baseDir,envFile,profileDirectory:env.MOTE_ENV_FILE?baseDir:undefined,profile:env.MOTE_PROFILE||'legacy'};
+export const resolvedConnection={url:(env.MOTE_URL||`http://127.0.0.1:${env.MOTE_PORT||47832}`).replace(/\/$/,''),baseDir,envFile,profileDirectory:env.MOTE_ENV_FILE?baseDir:undefined,profile:env.MOTE_PROFILE||'default'};
 export function apiClient() {
   const url=resolvedConnection.url;
   const parsed=new URL(url);

@@ -1,10 +1,10 @@
 import {DOCUMENT_MIME_TYPES} from '@mote/shared/document-decoder';
 import {createHash} from 'node:crypto';
 import type {FileProcessingSettings,FilePolicy} from '@mote/shared';
-import {effectiveFileSettings,selectFilePolicy,migrateFilePolicy,type AppliedFilePolicy} from './file-policy.js';
+import {effectiveFileSettings,selectFilePolicy,type AppliedFilePolicy} from './file-policy.js';
 import type {FileProcessor,ProcessorRegistry} from './file-processors.js';
 
-export type FileConfiguration={revision:string;settings:FileProcessingSettings;policy?:FilePolicy};
+export type FileConfiguration={revision:string;settings:FileProcessingSettings;policy:FilePolicy};
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value,(_key,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(key=>[key,v[key]])):v)).digest('hex');
 type Descriptor=Omit<FileProcessor,'process'>;
 export function processorContract(processor:Descriptor){
@@ -17,13 +17,12 @@ export function processorSettingsFingerprint(processor:Descriptor,settings:FileP
  return hash({contract:processorContract(processor),parameters:selected?Object.fromEntries(selected.map(key=>[key,parameters[key]])):parameters,settings:Object.fromEntries(keys.map(key=>[key,settings[key]]))});
 }
 export function fileConfiguration(saved:FileConfiguration,sourceId:string,mime:string,registry:ProcessorRegistry,prior?:AppliedFilePolicy){
- const base=saved.settings,policy=saved.policy??migrateFilePolicy(base,registry);
- const applied=prior??(saved.policy?selectFilePolicy(policy,sourceId,mime,saved.revision):undefined);
- const override=base.sourceProfiles[sourceId],processorId=applied?.profile.processorId??(override&&override!=='inherit'?override:base.typeProfiles[mime]??base.typeProfiles[mime.split('/')[0]+'/*']??(DOCUMENT_MIME_TYPES.some(type=>type===mime)?'document.generic':({audio:base.audioProcessor,text:'text.utf8',image:base.imageProcessor} as Record<string,string>)[mime.split('/')[0]]))??'archive';
+ const base=saved.settings,policy=saved.policy;
+ const applied=prior??selectFilePolicy(policy,sourceId,mime,saved.revision);
+ const processorId=applied.profile.processorId;
  const processor=registry.list().find(p=>p.id===processorId);
  let settings=base,unavailable=false;
  try{if(applied&&processorId!=='archive')settings=effectiveFileSettings(applied,policy,base,registry);}catch{unavailable=true;}
- if(!applied&&processor?.localOnly&&processor.serviceKind==='asr')settings={...base,endpoint:base.localEndpoint,apiKey:base.localWorkerApiKey};
  const diarizer=processor?.dialogue?registry.list().find(p=>p.id===settings.diarizationProcessor):undefined;
  if(processor?.dialogue&&!diarizer)unavailable=true;
  const dependencies=[...(processor?[processor]:[]),...(diarizer?[diarizer]:[])];

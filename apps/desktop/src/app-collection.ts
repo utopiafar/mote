@@ -1,6 +1,6 @@
 import { moteText } from '@mote/shared/i18n';
 import type { CollectionMode, Config } from './contracts';
-export type CollectionPolicy = Pick<Config, 'defaultCollection' | 'appCollectionRules' | 'excludedAppIds'>;
+export type CollectionPolicy = Pick<Config, 'defaultCollection' | 'appCollectionRules'>;
 export function normalizeCollectionMode(value: unknown): CollectionMode {
   if (value !== 'content' && value !== 'activity' && value !== 'off') throw new Error(moteText("采集级别必须是完整内容、仅应用活动或不记录"));
   return value;
@@ -16,15 +16,14 @@ export function normalizeAppCollectionRules(value: unknown): Record<string, Coll
 }
 export const UNKNOWN_FOREGROUND = 'dev.mote.unknown-foreground';
 export function hasRestrictedApplications(policy: CollectionPolicy): boolean {
-  return policy.defaultCollection !== 'content' || policy.excludedAppIds.length > 0 || Object.values(policy.appCollectionRules).some(mode => mode !== 'content');
+  return policy.defaultCollection !== 'content' || Object.values(policy.appCollectionRules).some(mode => mode !== 'content');
 }
 /** Missing foreground/window identity only blocks content when it could bypass an explicit restriction. */
 export function collectionForApp(appId: string | undefined, policy: CollectionPolicy): CollectionMode {
   if (!appId || appId === UNKNOWN_FOREGROUND) {
-    if (appId && (policy.excludedAppIds.includes(appId) || Object.hasOwn(policy.appCollectionRules, appId))) return policy.excludedAppIds.includes(appId) ? 'off' : policy.appCollectionRules[appId];
+    if (appId && Object.hasOwn(policy.appCollectionRules, appId)) return policy.appCollectionRules[appId];
     return hasRestrictedApplications(policy) ? 'off' : policy.defaultCollection;
   }
-  if (policy.excludedAppIds.includes(appId)) return 'off';
   return Object.hasOwn(policy.appCollectionRules, appId) ? policy.appCollectionRules[appId] : policy.defaultCollection;
 }
 /** A full-screen frame must not contain any application configured to withhold content. */

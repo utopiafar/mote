@@ -11,7 +11,7 @@ import { startBridge, TOOL_NAMES } from "../dist/bridge.js";
 import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider.ts';
 
 const record = {
-  id: "ctx-fixture-1",
+  id: "4235863d-6b12-53e5-b74b-8b221b668ddd",
   capturedAt: "2026-09-12T09:00:00.000Z",
   appName: "Fixture Browser",
   ocrText:
@@ -27,7 +27,7 @@ const reader = {
     return [record];
   },
   async timeline() {
-    return [record];
+    return ({items:([record]),nextCursor:null});
   },
   async evidence({ ids }) {
     return ids.includes(record.id) ? [record] : [];
@@ -204,7 +204,7 @@ test(
       baseUrl: `http://127.0.0.1:${fixture.address().port}/v1`,
       apiKey: "synthetic-fixture-key",
       model: "fixture-model",
-      timeoutMs: 60_000,
+      agentTimeoutMs: 60_000,
     });
     try {
       const progress=[],usage=[];
@@ -287,7 +287,7 @@ test('timeline passes opaque continuation with the selected scope and reports th
   const received=[];
   const bridge=await startBridge({...reader,timeline:async args=>{
     received.push(args);
-    return args.cursor ? {items:[{...record,id:'second'}],nextCursor:null} : {items:[record],nextCursor:'opaque-test-cursor'};
+    return (args.cursor ? {items:[{...record,id:'5c8e080f-ec97-5192-8be5-4aa9311e27aa'}],nextCursor:null} : {items:[record],nextCursor:'opaque-test-cursor'});
   }},{question:'all pages',after:'2026-09-12T00:00:00Z',before:'2026-09-13T00:00:00Z'},5);
   const call=async args=>{
     const response=await fetch(`${bridge.url}/timeline`,{method:'POST',headers:{Authorization:`Bearer ${bridge.token}`,'Content-Type':'application/json'},body:JSON.stringify(args)});
@@ -296,7 +296,7 @@ test('timeline passes opaque continuation with the selected scope and reports th
   try {
     const first=await call({limit:1});assert.equal(first.pagination.nextCursor,'opaque-test-cursor');
     const second=await call({cursor:first.pagination.nextCursor,limit:1,after:'2000-01-01T00:00:00Z'});
-    assert.equal(second.pagination.nextCursor,null);assert.equal(second.data[0].id,'second');
+    assert.equal(second.pagination.nextCursor,null);assert.equal(second.data[0].id,'5c8e080f-ec97-5192-8be5-4aa9311e27aa');
     assert.equal(received[1].after,'2026-09-12T00:00:00.000Z');assert.equal(received[1].before,'2026-09-13T00:00:00.000Z');
     assert.equal(received[1].cursor,'opaque-test-cursor');assert.equal(bridge.records.size,2);
   } finally {await bridge.close();}
@@ -314,7 +314,7 @@ test('real Harness repairs invalid final JSON once in the same evidence session'
     res.end(`data: ${JSON.stringify({choices:[{index:0,delta:{},finish_reason:stage===1?'tool_calls':'stop'}]})}\n\ndata: [DONE]\n\n`);
   });
   await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));
-  const agent=createAgent({reader,protocol:'openai-completions',model:'fixture-model',apiKey:'synthetic-only',baseUrl:`http://127.0.0.1:${fixture.address().port}`,timeoutMs:60000});
+  const agent=createAgent({reader,protocol:'openai-completions',model:'fixture-model',apiKey:'synthetic-only',baseUrl:`http://127.0.0.1:${fixture.address().port}`,agentTimeoutMs:60000});
   try {
     const answer=await agent.query({question:'Find original evidence'});
     assert.equal(requests.length,3);assert.equal(answer.citations[0].id,record.id);

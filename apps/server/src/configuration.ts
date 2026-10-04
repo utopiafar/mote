@@ -41,7 +41,7 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
   const hasAgentKey = Boolean(config.apiKey.trim()), hasEmbeddingKey = Boolean(config.embeddingApiKey.trim());
   const localWithoutKey = Boolean(config.allowUnauthenticatedLocal && (() => { try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(config.modelBaseUrl).hostname); } catch { return false; } })());
   return {
-    version: 1, profile: config.profile ?? 'legacy', runtime, envFile: context?.hostConfigFile ?? context?.envFile ?? null, baseDir,
+    version: 1, profile: config.profile ?? 'default', runtime, envFile: context?.hostConfigFile ?? context?.envFile ?? null, baseDir,
     readOnly: true, restartRequired: true,
     description: moteText("此接口只读展示中央的生效配置，只向已认证的节点所有者提供。模型可在模型设置中保存并立即生效；其余部署设置修改后需重启中央。路径不会加入安全支持包。"),
     storage,
@@ -51,7 +51,7 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
         field('updateChannel', moteText("发布渠道"), config.updateChannel ?? 'stable', moteText("stable 使用正式版本，preview 使用预览版本。不会自动降级或重启服务。"), 'MOTE_UPDATE_CHANNEL'),
       ] },
       { id: 'deployment', title: moteText("部署与配置来源"), description: moteText("环境文件修改后不会立即影响运行中的进程。容器中的加载文件与宿主机可编辑配置可能不同。"), fields: [
-        field('profile', moteText("环境"), config.profile ?? 'legacy', moteText("dev、test、prod 或显式命名的独立环境。"), 'MOTE_PROFILE'),
+        field('profile', moteText("环境"), config.profile ?? 'default', moteText("dev、test、prod 或显式命名的独立环境。"), 'MOTE_PROFILE'),
         field('runtime', moteText("运行方式"), runtime, moteText("部署工具声明的运行方式；缺少元数据时显示 unknown，不探测宿主环境。"), 'MOTE_RUNTIME'),
         field('configurationFile', moteText("部署配置文件"), context?.hostConfigFile ?? context?.envFile ?? null, moteText("部署工具提供的宿主配置路径；请在部署机器修改。未提供时显示实际加载文件。"), 'MOTE_CONFIG_FILE', { ...ownerPath, source: context?.hostConfigFile ? context.sources.MOTE_CONFIG_FILE ?? 'environment' : 'derived' }),
         field('effectiveEnvFile', moteText("进程加载文件"), context?.envFile ?? null, moteText("显式 MOTE_ENV_FILE 只读取该文件；Docker 可使用空文件哨兵，生效值由容器环境注入。"), 'MOTE_ENV_FILE', ownerPath),
@@ -85,7 +85,7 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
         field('agentConcurrency', moteText('Agent 并发'), config.agentConcurrency??8, moteText('运行中的 Agent 上限；可在设置中立即调整。'), 'MOTE_AGENT_CONCURRENCY'),
         field('llmConcurrency', moteText('LLM 执行并发'), config.llmConcurrency??4, moteText('模型运行及工具循环的并发上限。'), 'MOTE_LLM_CONCURRENCY'),
         field('memoryConcurrency', moteText('记忆批次并发'), config.memoryConcurrency??3, moteText('独立证据批次的并发上限。'), 'MOTE_MEMORY_CONCURRENCY'),
-        field('agentTimeoutMs', moteText("Agent 总运行超时"), config.agentTimeoutMs ?? (config.modelProtocol === 'codex-app-server' ? null : config.modelTimeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS), moteText("从一次 Agent 运行开始到完成，包含多次模型请求、工具调用和结果校验。Codex Server 可留空，留空表示不设置 Mote 的总运行期限。"), 'MOTE_AGENT_TIMEOUT_MS', { unit: 'ms' }),
+        field('agentTimeoutMs', moteText("Agent 总运行超时"), config.agentTimeoutMs ?? (config.modelProtocol === 'codex-app-server' ? null : DEFAULT_AGENT_TIMEOUT_MS), moteText("从一次 Agent 运行开始到完成，包含多次模型请求、工具调用和结果校验。Codex Server 可留空，留空表示不设置 Mote 的总运行期限。"), 'MOTE_AGENT_TIMEOUT_MS', { unit: 'ms' }),
         field('allowUnauthenticatedLocal', moteText("允许本机免密模型"), config.allowUnauthenticatedLocal, moteText("只对 localhost、127.0.0.1 或 ::1 的模型地址生效；容器 loopback 指容器本身。"), 'MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL'),
         field('insightIntervalHours', moteText("后台洞察间隔"), config.insightIntervalHours, moteText("0 关闭定时洞察；正数按小时请求已配置的 Agent，模型服务可能产生费用。"), 'MOTE_INSIGHT_INTERVAL_HOURS', { unit: 'hours' }),
       ] },

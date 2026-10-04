@@ -1,3 +1,4 @@
+import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -46,7 +47,7 @@ test('a disclosed memory resolves all original ancestors before deletion cascade
  const directory=mkdtempSync(join(tmpdir(),'mote-lineage-derived-')),store=new Store(directory),memories=new MemoryStore(store),conversations=new Conversations(store);installEvidenceDependencies(store);
  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
  const id=randomUUID();await store.ingest({id,deviceId:'generated',deviceName:'Generated',platform:'import',source:'note',appId:'fixture',appName:'Fixture',capturedAt:'2026-09-01T10:00:00Z',durationMs:0,ocrText:'Synthetic useful decision.',privacy:{excluded:false,redacted:false,mode:'none'}});
- const memory=memories.extract({answer:JSON.stringify({memories:[{title:'Decision',statement:`Decision [${id}]`,uncertainty:'Fixture',evidenceIds:[id],evidence:[{id,quote:'Synthetic useful decision.'}]}]}),citations:[{id,capturedAt:'2026-09-01T10:00:00Z',appName:'Fixture',excerpt:''}],trace:[],runId:'fixture'},'fixture').items[0];
+ const memory=memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'Decision',statement:`Decision [${id}]`,uncertainty:'Fixture',evidenceIds:[id],evidence:[{id,quote:'Synthetic useful decision.'}]}]}),citations:[{id,capturedAt:'2026-09-01T10:00:00Z',appName:'Fixture',excerpt:''}],trace:[],runId:'fixture'}),'fixture').items[0];
  const saved=conversations.append(undefined,{question:'Read memory overview without citing the original'},answer([memory.id]));
  assert.ok(conversations.get(saved.conversationId).turns[0].result!.evidenceDependencies!.ids.includes(id));
  store.delete(id);assert.equal(conversations.get(saved.conversationId).turns[0].evidenceDeleted,true);

@@ -38,7 +38,7 @@ export class RunExecution {
  }
  id(id:string){return `${this.kind}:${id}`;}
  step(id:string){return this.engine.get(this.id(id));}
- /** Install legacy receipts without running old work or trusting legacy prompts. */
+ /** Reconcile current durable receipts and owner leases without replaying prompts. */
  restore(id:string,input:{state:ExecutionStep['state'];attempts?:number;createdAt:string;updatedAt:string;error?:string;availableAt?:number}){
   const stepId=this.id(id),prior=this.engine.get(stepId);
   if(prior){
@@ -49,9 +49,7 @@ export class RunExecution {
    }else this.callbacks.project(id,prior);
    return;
   }
-  this.engine.enqueue(this.id(id),`${this.kind}.run.${this.ownerId}`,{runId:id,ownerId:this.ownerId},{id:stepId,initial:{state:input.state==='running'||input.state==='waiting'?'failed':input.state,attempts:input.attempts??1,availableAt:input.availableAt??0,error:input.state==='running'||input.state==='waiting'?'interrupted':input.error}});
-  const created=Date.parse(input.createdAt),updated=Date.parse(input.updatedAt);
-  if(Number.isFinite(created)&&Number.isFinite(updated)){this.store.db.prepare('UPDATE execution_steps SET created_at=?,updated_at=? WHERE id=?').run(created,updated,stepId);this.store.db.prepare('UPDATE operation_progress SET created_at=?,updated_at=? WHERE id=?').run(created,updated,this.id(id));this.engine.project(stepId);}
+  throw new StoreError('Run receipt has no canonical execution step',409);
  }
  start(id:string,work:Pending['work'],options:RunDeadline={},journal?:()=>void){
   this.renewOwner();this.startHeartbeat();this.started.add(this.id(id));let finish!:()=>void;const done=new Promise<void>(resolve=>finish=resolve),pending:Pending={work,done,finish};this.pending.set(id,pending);

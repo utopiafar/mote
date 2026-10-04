@@ -19,7 +19,7 @@ async function fixture(t:any){
 }
 const button=(d:Document,label:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(b=>b.textContent?.trim()===label)!;
 const now='2026-09-01T08:00:00Z';
-function importJob(extra:Record<string,unknown>={}){return {id:'import-generated',name:'Generated originals',status:'completed',createdAt:now,updatedAt:now,instruction:'',archive:{files:1,bytes:9},warnings:[],files:[],captureIds:['generated-record'],progress:{total:1,processed:1,imported:1,duplicates:0},...extra};}
+function importJob(extra:Record<string,unknown>={}){return {id:'import-generated',name:'Generated originals',status:'completed',createdAt:now,updatedAt:now,instruction:'',archive:{files:1,bytes:9},warnings:[],files:[],captureIds:['cccccccc-cccc-4ccc-8ccc-cccccccccccc'],progress:{total:1,processed:1,imported:1,duplicates:0},...extra};}
 function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{const api={request:async(path:string,init?:RequestInit)=>path.startsWith('/api/operations/changes')?{ids:[],cursor:0,hasMore:false,reset:false}:read(path,init),setAgentTimeout:()=>{}} as Api;fixtureApis.add(api);return api;}
 function view(api:Api,extra:Record<string,unknown>={}){return React.createElement(Imports,{api,onOpen:()=>{},onMemories:()=>{},onSettings:()=>{},onChanged:()=>{},...extra});}
 async function select(d:Document,files:File[]){const input=d.querySelector<HTMLInputElement>('input[type=file]')!;Object.defineProperty(input,'files',{value:files,configurable:true});await act(async()=>input.dispatchEvent(new window.Event('change',{bubbles:true})));}
@@ -28,15 +28,15 @@ async function until(check:()=>boolean){for(let i=0;i<100;i++){if(check())return
 
 test('media admission distinguishes extraction, search and Memory and retries the existing file',async t=>{
  const {root,d}=await fixture(t),writes:string[]=[],opened:string[]=[];
- const job=importJob({files:[{id:'generated-media',name:'generated.mp3',relativePath:'generated.mp3',sizeBytes:9}],media:[{fileId:'generated-media',captureId:'generated-record',format:{id:'mote.media-format',version:'1',mimeType:'audio/mpeg',reason:'Generated format'},processing:{state:'failed',stage:'extract',error:'unsupported_format'},searchable:false,memory:{state:'failed',jobIds:[]}}]});
+ const job=importJob({files:[{id:'generated-media',name:'generated.mp3',relativePath:'generated.mp3',sizeBytes:9}],media:[{fileId:'generated-media',captureId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',format:{id:'mote.media-format',version:'1',mimeType:'audio/mpeg',reason:'Generated format'},processing:{state:'failed',stage:'extract',error:'unsupported_format'},searchable:false,memory:{state:'failed',jobIds:[]}}]});
  const api=apiWith((path,init)=>{
   if(init?.method==='POST'){writes.push(path);return {queued:true};}
   if(path==='/api/imports')return {items:[job]};if(path==='/api/imports/'+job.id)return job;return {items:[]};
  });
  await act(async()=>root.render(view(api,{onOpen:(id:string)=>opened.push(id)})));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
  assert.match(d.body.textContent!,/媒体已接入/);assert.match(d.body.textContent!,/内容提取失败/);assert.match(d.body.textContent!,/尚无可搜索片段/);assert.match(d.body.textContent!,/记忆整理失败/);assert.doesNotMatch(d.body.textContent!,/记录已保存到中央归档/);
- await act(async()=>button(d,'重试处理').click());assert.deepEqual(writes,['/api/files/capture%3Agenerated-record/retry']);
- await act(async()=>button(d,'查看记录').click());assert.deepEqual(opened,['generated-record']);
+ await act(async()=>button(d,'重试处理').click());assert.deepEqual(writes,['/api/files/cccccccc-cccc-4ccc-8ccc-cccccccccccc/retry']);
+ await act(async()=>button(d,'查看记录').click());assert.deepEqual(opened,['capture:cccccccc-cccc-4ccc-8ccc-cccccccccccc']);
 });
 
 test('import history failures recover without false empty state, and revoked history is removed',async t=>{
@@ -87,11 +87,11 @@ test('lost import-create response retries its frozen request while another batch
 
 test('import detail exposes memory pause, resume and cancel and keeps original evidence navigation',async t=>{
  const {root,d}=await fixture(t),actions:string[]=[],opened:string[]=[];let status='running';
- const job={id:'memory-generated',status,createdAt:now,updatedAt:now,evidenceIds:[],totalBatches:3,completedBatches:1,failedBatches:0,skippedChunks:0,memoryIds:[],skillVersion:'fixture'};
+ const job={id:'memory-generated',status,createdAt:now,updatedAt:now,evidenceIds:[],totalBatches:3,completedBatches:1,failedBatches:0,skippedChunks:0,memoryIds:[],skillVersion:'fixture',memoryCount:[].length,inputPlans:{total:0,waiting:0,blocked:0,stale:0,completed:0},recipeProgress:[]};
  const api=apiWith((path,init)=>{if(path==='/api/imports')return {items:[importJob({memoryJobId:job.id})]};if(init?.method==='POST'){const action=path.split('/').at(-1)!;actions.push(action);status=action==='pause'?'paused':action==='resume'?'running':'cancelled';}return {...job,status};});
  await act(async()=>root.render(view(api,{onOpen:(id:string)=>opened.push(id)})));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
- await act(async()=>button(d,'当前批次结束后暂停').click());await act(async()=>button(d,'继续整理').click());await act(async()=>button(d,'取消剩余批次').click());assert.deepEqual(actions,['pause','resume','cancel']);assert.match(d.body.textContent!,/记忆提取已停止/);
- await act(async()=>button(d,'查看记录 1').click());assert.deepEqual(opened,['generated-record']);
+ await act(async()=>button(d,'当前批次结束后暂停').click());await act(async()=>button(d,'继续整理').click());await act(async()=>button(d,'取消未完成方案').click());assert.deepEqual(actions,['pause','resume','cancel']);assert.match(d.body.textContent!,/记忆提取已停止/);
+ await act(async()=>button(d,'查看记录 1').click());assert.deepEqual(opened,['capture:cccccccc-cccc-4ccc-8ccc-cccccccccccc']);
 });
 
 test('running import exposes cancellation, keeps originals and requires explicit retry',async t=>{

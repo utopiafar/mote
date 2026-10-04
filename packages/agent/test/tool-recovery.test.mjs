@@ -5,11 +5,11 @@ import {parseAnswer} from '../dist/index.js';
 import {ContextToolError} from '../dist/index.js';
 const id='11111111-1111-4111-8111-111111111111';
 const record={id,capturedAt:'2026-01-01T00:00:00Z',appName:'Fixture',ocrText:'hidden:generated evidence:hidden'};
-const reader={search:async()=>[record],timeline:async()=>[],evidence:async()=>[record],activity:async()=>({}),devices:async()=>[]};
+const reader={search:async()=>[record],timeline:async()=>({items:([]),nextCursor:null}),evidence:async()=>[record],activity:async()=>({}),devices:async()=>[]};
 async function call(b,tool,args){const r=await fetch(b.url+'/'+tool,{method:'POST',headers:{Authorization:'Bearer '+b.token,'Content-Type':'application/json'},body:JSON.stringify(args)});return {status:r.status,body:await r.json()};}
 test('range errors return actionable grants; corrected call stays within the original grant',async t=>{
   const events=[],b=await startBridge(reader,{question:'fixture',evidenceIds:[id],evidenceRanges:[{id,offset:7,length:18}],onTrace:e=>events.push(e)},10);t.after(()=>b.close());
-  const wrongId=await call(b,'evidence',{ids:['not-a-record-id']});assert.equal(wrongId.body.toolError.code,'evidence_scope_denied');assert.deepEqual(wrongId.body.toolError.details.allowedRanges,[{id,offset:7,length:18}]);
+  const wrongId=await call(b,'evidence',{ids:['22222222-2222-4222-8222-222222222222']});assert.equal(wrongId.body.toolError.code,'evidence_scope_denied');assert.deepEqual(wrongId.body.toolError.details.allowedRanges,[{id,offset:7,length:18}]);
   const failed=await call(b,'evidence',{ids:[id],offset:0,length:12000});
   assert.equal(failed.status,400);assert.equal(failed.body.toolError.code,'evidence_range_exceeded');
   assert.deepEqual(failed.body.toolError.details.allowedRanges,[{offset:7,length:18}]);

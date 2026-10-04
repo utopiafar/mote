@@ -1,3 +1,4 @@
+import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -19,9 +20,9 @@ async function fixture(t:TestContext){
  const ids=originals.map(r=>r.id),draft:QueryResult={runId:'original-extraction',answer:JSON.stringify({memories:[{title:'Making a bowl',statement:`The owner enjoyed making a bowl [${ids[0]}]`,uncertainty:'A single experience',admission:{layer:'memory',attribution:'user',reason:'An expressed personal experience',scope:'This occasion'},evidenceIds:[ids[0]],evidence:[{id:ids[0],quote:'I enjoyed making a bowl.'}]}]}),citations:[{id:ids[0],capturedAt:'2026-09-01T00:00:00Z',appName:'Generated',excerpt:'I enjoyed making a bowl.'}],trace:[]};
  let extracts=0,reviews=0,failReview=true,config='one',skillVersion='generated-v1',reviewHook:(()=>Promise<void>)|undefined;
  const options=():MemoryPipelineOptions=>({store,memories,skillVersion,configured:()=>true,model:()=> 'fixture',requireAdmission:true,configuration:()=>({owner:'models',fingerprint:config,revision:1,profileId:'generated',provider:'fixture',model:'fixture'}),query:async()=>{extracts++;return {...draft,runId:'extraction-'+extracts};},review:(input,result)=>reviewMemory(input,result,async()=>{reviews++;await reviewHook?.();if(failReview)throw new ProviderFailure({category:'transient',code:'provider_timeout',retryAfterMs:0});return {...result,runId:'review-'+reviews};})});
- let pipeline=new MemoryPipeline(options());
+ let pipeline=fixtureMemoryPipeline(options());
  t.after(async()=>{await pipeline.close();store.close();rmSync(directory,{recursive:true,force:true});});
- return {ids,draft,get store(){return store;},get sources(){return sources;},get memories(){return memories;},get pipeline(){return pipeline;},counts:()=>({extracts,reviews}),succeed(){failReview=false;reviewHook=undefined;},holdReview(){let enter!:()=>void,release!:()=>void;const entered=new Promise<void>(resolve=>enter=resolve),held=new Promise<void>(resolve=>release=resolve);reviewHook=()=>{enter();return held;};return {entered,release};},configuration(value:string){config=value;},policy(value:string){skillVersion=value;},async restart(){await pipeline.close();store.close();store=new Store(directory);sources=new SourceStore(store);memories=new MemoryStore(store);pipeline=new MemoryPipeline(options());}};
+ return {ids,draft,get store(){return store;},get sources(){return sources;},get memories(){return memories;},get pipeline(){return pipeline;},counts:()=>({extracts,reviews}),succeed(){failReview=false;reviewHook=undefined;},holdReview(){let enter!:()=>void,release!:()=>void;const entered=new Promise<void>(resolve=>enter=resolve),held=new Promise<void>(resolve=>release=resolve);reviewHook=()=>{enter();return held;};return {entered,release};},configuration(value:string){config=value;},policy(value:string){skillVersion=value;},async restart(){await pipeline.close();store.close();store=new Store(directory);sources=new SourceStore(store);memories=new MemoryStore(store);pipeline=fixtureMemoryPipeline(options());}};
 }
 
 test('review timeout resumes a validated draft across a vault restart without splitting or re-extracting',async t=>{

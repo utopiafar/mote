@@ -1,3 +1,4 @@
+import {DESKTOP_STORAGE_VERSION,RESET_REQUIRED} from './storage-format';
 import {rm} from 'node:fs/promises';
 import {sourceStatePatch,type StatePatch} from './source-state-store';
 import { moteText } from '@mote/shared/i18n';
@@ -24,20 +25,18 @@ interface ProcessingJob { input: LocalFileInput; item: ScannedItem; discoveryHas
 interface RejectedItem { item: SourceItem; status: number }
 interface BatchResult { acks: Record<string, unknown>[]; rejected?: RejectedItem[] }
 interface State {
-  version: 2;
+  version: 3;
   /** Distinct from the local outbox schema version; old server receipts cannot be replayed. */
   ingressVersion: 2;
   predecessors?: Record<string, string | null>;
   delivered?: Record<string, string>;
   quarantined?: Record<string, RejectedItem>;
-  /** First-send format for immutable revisions, including ACKed versions that a rescan can replay. */
-  codingWireFields?: Record<string, 0 | 1>;
   collectedItems?: number;
   checkpoint?: SourceCheckpoint;
   initialized?: boolean;
   baseline?: string[];
   policy?: string;
-  adapterVersion?: number;
+  adapterVersion: number;
   known: Record<string, Known>;
   localProcessing?: Record<string, ProcessingJob>;
   pendingRealtime: SourceItem[];
@@ -48,7 +47,6 @@ interface State {
 
 const receiptId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const itemKey = (item: Pick<SourceItem, 'externalId' | 'revision'>) => `${item.externalId}\u0000${item.revision}`;
-const codingWireKey = (item: Pick<SourceItem, 'externalId' | 'revision'>) => sourceHash(JSON.stringify([item.externalId,item.revision]));
 
 /** Durable outbox with a latency-sensitive queue and a resumable backfill queue. */
 export class SourceSync {
@@ -57,7 +55,7 @@ export class SourceSync {
   private scheduler=new PriorityScheduler(16*1024*1024);
   private manifestBatch?:boolean;
   private knownItems=0;
-  private data: State = { version: 2, ingressVersion:2, known: {}, pendingRealtime: [], pendingHistory: [] };
+  private data: State = { version: 3, ingressVersion:2, adapterVersion:1, known: {}, pendingRealtime: [], pendingHistory: [] };
   private readonly limits: { maxEvents: number; maxBytes: number; batchSize: number; concurrency: number };
   constructor(private readonly path: string, limits?: Partial<{ maxEvents: number; maxBytes: number; batchSize: number; concurrency: number }>) { this.limits = { maxEvents: 4000, maxBytes: 32 * 1024 * 1024, batchSize: 100, concurrency: 4, ...limits }; }
 
@@ -65,15 +63,8 @@ export class SourceSync {
     try {
       const value = await sourceWork.run<Record<string, unknown> | undefined>({ kind: 'source-state', path: this.path });
       if (value === undefined) {await sourceWork.run({kind:'source-state',path:this.path,patches:sourceStatePatch({},this.data as unknown as Record<string,unknown>)});return;}
-      if(value.ingressVersion!==2){
-        // Explicit MVP protocol break: old receipts, dedupe heads and cursors
-        // cannot be interpreted as accepted by the v2 node. Rescan from zero.
-        await sourceWork.run({kind:'source-state',path:this.path,patches:sourceStatePatch(value,this.data as unknown as Record<string,unknown>)});
-        await rm(this.path+'.pre-sqlite',{force:true});
-        return;
-      }
       const next = value as unknown as State;
-      if (next.version !== 2 || !next.known || !Array.isArray(next.pendingRealtime) || !Array.isArray(next.pendingHistory) || next.codingWireFields && Object.values(next.codingWireFields).some(value=>value!==0&&value!==1)) throw new Error(moteText("来源同步状态无法读取，请保留文件后修复"));
+      if (next.version !== DESKTOP_STORAGE_VERSION || next.ingressVersion!==2 || !Number.isSafeInteger(next.adapterVersion) || next.adapterVersion<1 || !next.known || !Array.isArray(next.pendingRealtime) || !Array.isArray(next.pendingHistory)) throw Error(RESET_REQUIRED);
       if (next.pendingRealtime.length + next.pendingHistory.length + Object.keys(next.quarantined??{}).length > this.limits.maxEvents) throw new Error(moteText("来源同步状态超过本地队列上限，请恢复网络后重试"));
       this.data = next;
       this.knownItems=Object.values(next.known).filter(value=>!value.item.deleted).length;
@@ -109,10 +100,7 @@ export class SourceSync {
   async ensureAdapterVersion(version:number):Promise<void>{
     if(!Number.isSafeInteger(version)||version<1)throw Error('Invalid source adapter version');
     return this.mutate(async()=>{
-      if((this.data.adapterVersion??1)===version){
-        if(this.data.adapterVersion===undefined)await this.commit({...this.data,adapterVersion:version});
-        return;
-      }
+      if(this.data.adapterVersion===version)return;
       await this.commit({...this.data,adapterVersion:version,checkpoint:undefined});
     });
   }
@@ -226,11 +214,9 @@ export class SourceSync {
 
   async flush(source: SourceDefinition, request: SourceRequest, signal?: AbortSignal): Promise<'ready' | 'paused'> {
     signal?.throwIfAborted();
-    const registered = await request('/api/sources', source, 'POST', signal) as { id?: unknown; enabled?: unknown; capabilities?:{codingEvidenceFieldsVersion?:unknown} };
+    const registered = await request('/api/sources', source, 'POST', signal) as { id?: unknown; enabled?: unknown };
     if (!registered || registered.id !== source.id || typeof registered.enabled !== 'boolean') throw new Error(moteText("中央来源注册确认无效"));
     if (!registered.enabled) return 'paused';
-    // Refresh every registration: Central can upgrade without restarting this collector.
-    const codingFields=source.kind==='coding-agent'&&registered.capabilities?.codingEvidenceFieldsVersion===1?1:0;
     const scheduler = this.scheduler;
     const deferred=new Set<string>();let rejectedStatus:number|undefined;
     while (this.status().pending) {
@@ -241,7 +227,7 @@ export class SourceSync {
       const batches = this.takeBatches(queue,deferred);
       let bytes=0;
       const measured:SourceRequest=(path,body,method,signal)=>{const pending=request(path,body,method,signal);bytes+=requestBytes(body);return pending;};
-      const outcomes = await Promise.all(batches.map(async batch => { try { return { batch, result: await this.sendBatch(source, batch, measured, signal,codingFields) }; } catch (error) { return { batch, error }; } }));
+      const outcomes = await Promise.all(batches.map(async batch => { try { return { batch, result: await this.sendBatch(source, batch, measured, signal) }; } catch (error) { return { batch, error }; } }));
       let failure: unknown;
       for (const outcome of outcomes) {
         if ('error' in outcome) { if(!failure||failure instanceof UploadSliceYield)failure=outcome.error;continue; }
@@ -279,7 +265,7 @@ export class SourceSync {
     return batches;
   }
 
-  private async sendBatch(source: SourceDefinition, batch: SourceItem[], request: SourceRequest, signal?: AbortSignal,codingFields:0|1=0): Promise<BatchResult> {
+  private async sendBatch(source: SourceDefinition, batch: SourceItem[], request: SourceRequest, signal?: AbortSignal): Promise<BatchResult> {
     const first = batch[0]!;
     if (first.kind === 'file' && first.document?.fileIndex) {
       if(first.localOriginalBase64||first.localOriginal)return {acks:[await this.sendFile(source,first,request,signal)]};
@@ -300,36 +286,18 @@ export class SourceSync {
           // Originals with a durable local spool use sendFile before batching.
           // A metadata-only manifest cannot manufacture the missing original.
           rejected.push({item,status:422});
-        }else if(result.state==='accepted'||result.state==='existing'||result.state===undefined&&result.ack){acks.push(this.validateAck(source,result.ack,item));}
+        }else if(result.state==='accepted'||result.state==='existing'){acks.push(this.validateAck(source,result.ack,item));}
         else throw Error('Invalid manifest acknowledgement');
       }
       return {acks,rejected};
     }
-    const wire = await this.codingWire(batch,codingFields);
+    const wire = batch.map(({localOriginalBase64:_,localOriginal:__,...item})=>item);
     // A single item uses the dedicated v2 endpoint; multi-item writes require
     // the v2 batch endpoint and never retry through an older route.
     if (wire.length === 1) return {acks:[this.validateAck(source, await request(`/api/sources/${encodeURIComponent(source.id)}/items`, wire[0], 'PUT', signal), wire[0])]};
     const result=await request(`/api/sources/${encodeURIComponent(source.id)}/items/batch`, { items: wire }, 'POST', signal) as { receipts?: unknown };
     if (!result || !Array.isArray(result.receipts) || result.receipts.length !== batch.length) throw new Error(moteText("中央批量来源确认不完整，已保留待重试版本"));
     return {acks:result.receipts.map((receipt, index) => this.validateAck(source, receipt, wire[index]))};
-  }
-
-  private async codingWire(batch:SourceItem[],version:0|1):Promise<SourceItem[]> {
-    // Pin before the request. An ACK-lost old-node write must retry with the
-    // same bytes after a node upgrade, while untouched revisions use its new capability.
-    const extended=batch.filter(item=>item.document?.coding&&(item.document.coding.channel!==undefined||item.document.coding.attribution!==undefined));
-    if(extended.length)await this.mutate(async()=>{
-      const missing=extended.filter(item=>!Object.hasOwn(this.data.codingWireFields??{},codingWireKey(item)));if(!missing.length)return;
-      const patches:StatePatch[]=missing.map(item=>({section:'codingWireFields',key:codingWireKey(item),value:version}));
-      await this.commit({...this.data},undefined,patches);
-      for(const item of missing)(this.data.codingWireFields??={})[codingWireKey(item)]=version;
-    });
-    return batch.map(({localOriginalBase64:_,localOriginal:__,...item})=>{
-      const coding=item.document?.coding;
-      if(!coding||this.data.codingWireFields?.[codingWireKey(item)]===1)return item;
-      const {channel:___,attribution:____,...legacy}=coding;
-      return {...item,document:{...item.document,coding:legacy}};
-    });
   }
 
   private async sendFile(source: SourceDefinition, item: SourceItem, request: SourceRequest, signal?: AbortSignal): Promise<Record<string, unknown>> {
@@ -385,5 +353,5 @@ export class SourceSync {
     for(const item of batch)if(item.localOriginal)await rm(item.localOriginal.directory,{force:true,recursive:true}).catch(()=>{});
   }
 
-  private async commit(next: State, maximum?: number, patches=sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>)): Promise<void> { await sourceWork.run({ kind: 'source-state', path: this.path, patches:[...patches,{section:'state',key:'version',value:2}], maximum }); this.data = next; }
+  private async commit(next: State, maximum?: number, patches=sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>)): Promise<void> { await sourceWork.run({ kind: 'source-state', path: this.path, patches:[...patches,{section:'state',key:'version',value:DESKTOP_STORAGE_VERSION}], maximum }); this.data = next; }
 }

@@ -65,19 +65,13 @@ it('keeps a prepared local note local across restart, then binds it only through
   await expect(store.submit(input, target, 'macos', { enqueue: async () => true })).resolves.toMatchObject({ id: input.id });
 });
 
-it('keeps note text but revokes a prepared v1 submission ID exactly once',async()=>{
-  let store=new NoteDraftStore(directory);await store.initialize();
-  const input={...store.get(),text:'generated note retained as draft',mood:'calm',revision:1};
-  await expect(store.submit(input,config,'macos',{enqueue:async()=>{throw Error('synthetic pending write');}})).rejects.toThrow('synthetic pending write');
-  expect(store.get().prepared).toBe(true);
-  await store.clearPreparedForProtocolUpgrade();
-  const migrated=store.get();
-  expect(migrated).toMatchObject({text:input.text,mood:input.mood,prepared:false});
-  expect(migrated.id).not.toBe(input.id);
-  store=new NoteDraftStore(directory);await store.initialize();await store.clearPreparedForProtocolUpgrade();
-  expect(store.get()).toEqual(migrated);
-  const prepared={...migrated,revision:1};
-  await expect(store.submit(prepared,config,'macos',{enqueue:async()=>{throw Error('synthetic v2 pending write');}})).rejects.toThrow('synthetic v2 pending write');
-  await store.clearPreparedForProtocolUpgrade();
-  expect(store.get().prepared).toBe(true);
+it('rejects a saved old-format note without changing prepared identity or text',async()=>{
+  const {readFile,writeFile}=await import('node:fs/promises');
+  const store=new NoteDraftStore(directory);await store.initialize();
+  const input={...store.get(),text:'generated retained note',mood:'calm',revision:1};
+  await expect(store.submit(input,config,'macos',{enqueue:async()=>{throw Error('generated queue full');}})).rejects.toThrow();
+  const before=await readFile(join(directory,'draft.json'));
+  await writeFile(join(directory,'storage-format.json'),JSON.stringify({version:2}));
+  await expect(new NoteDraftStore(directory).initialize()).rejects.toThrow('Unsupported desktop storage format');
+  expect(await readFile(join(directory,'draft.json'))).toEqual(before);
 });

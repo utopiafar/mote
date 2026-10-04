@@ -60,17 +60,16 @@ test('CLI SourceSync keeps a generated file revision pending until its v2 receip
   assert.ok(headerChecks>=4);
 });
 
-test('CLI removes pre-v2 original spools after outbox reset and preserves v2 spools',async t=>{
-  const directory=await mkdtemp(join(tmpdir(),'mote-cli-v2-spool-'));
+test('CLI rejects old outboxes without deleting generated state or private original spools',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-cli-strict-spool-'));
   t.after(()=>rm(directory,{recursive:true,force:true}));
-  const statePath=join(directory,'outbox.json'),spool=statePath+'.atime.json.originals';
-  await writeFile(statePath,JSON.stringify({version:2,known:{},pendingRealtime:[],pendingHistory:[]}));
-  await mkdir(spool,{recursive:true});await writeFile(join(spool,'generated.bin'),'Generated old staged bytes');
-  assert.deepEqual(await initializeCliIngressState(statePath,new SourceSync(statePath)),{reset:true});
-  assert.equal(existsSync(spool),false);
-  await mkdir(spool,{recursive:true});await writeFile(join(spool,'generated.bin'),'Generated current staged bytes');
-  assert.deepEqual(await initializeCliIngressState(statePath,new SourceSync(statePath)),{reset:false});
+  const statePath=join(directory,'outbox.json'),spool=statePath+'.atime.json.originals',old=JSON.stringify({version:2,known:{},pendingRealtime:[],pendingHistory:[]});
+  await writeFile(statePath,old);await mkdir(spool,{recursive:true});await writeFile(join(spool,'generated.bin'),'Generated staged bytes');
+  await assert.rejects(initializeCliIngressState(statePath,new SourceSync(statePath)),/Unsupported desktop storage format/);
   assert.equal(existsSync(join(spool,'generated.bin')),true);
+  assert.equal(await (await import('node:fs/promises')).readFile(statePath,'utf8'),old);
+  const freshPath=join(directory,'fresh.json');await initializeCliIngressState(freshPath,new SourceSync(freshPath));
+  await initializeCliIngressState(freshPath,new SourceSync(freshPath));
 });
 
 test('import-files dry run scans a generated file without contacting a node',async t=>{

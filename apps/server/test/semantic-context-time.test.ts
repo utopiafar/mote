@@ -1,3 +1,4 @@
+import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -40,7 +41,7 @@ function draft(record:ReturnType<Node['store']['evidence']>[number],claims:Recor
 }
 async function timedCard(node:Node){
   const record=await note(node,'Generated access expires at '+expiry);
-  return node.memories.publish(node.memories.extract(draft(record,[{title:'Generated access',statement:'Generated access ['+record.id+']',validUntil:expiry}]),'generated').items[0].id);
+  return node.memories.publish(node.memories.extract(fixtureMemoryResult(node.memories,draft(record,[{title:'Generated access',statement:'Generated access ['+record.id+']',validUntil:expiry}])),'generated').items[0].id);
 }
 
 test('five stub calls share frozen generation/review/Ask times and preserve real receipts',async t=>{
@@ -148,7 +149,7 @@ test('invalid host times fail before model work or creation of a lifecycle windo
 for(const manual of [false,true])test(`${manual?'manual':'automatic'} lifecycle windows retain semantic time across retries and restart`,async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-window-clock-')),store=new Store(directory);let now=Date.now(),semantic=early,samples=0,calls=0,fail=true;
   const windows:LifecycleWindow[]=[],clock=()=>{samples++;return semantic;};
-  let lifecycle=new MemoryLifecycle(store,()=>true,()=>now,0,undefined,clock);
+  let lifecycle=new MemoryLifecycle(store,()=>true,()=>now,undefined,clock);
   const register=()=>lifecycle.register({id:'consolidation',version:'generated',stream:'evidence',async run(window,checkpoint){calls++;windows.push(window);checkpoint('generated checkpoint');if(fail)throw Error('Generated failure');}});
   register();const settings=lifecycle.settings();lifecycle.configure({...settings,consolidation:{...settings.consolidation,minChanges:1}});
   t.after(async()=>{await lifecycle.close();store.close();rmSync(directory,{recursive:true,force:true});});
@@ -156,7 +157,7 @@ for(const manual of [false,true])test(`${manual?'manual':'automatic'} lifecycle 
   await lifecycle.tick();assert.equal(samples,1);assert.equal(calls,1);assert.equal(windows[0].contextTime,early);assert.equal(windows[0].startedAt,now);
   const original=lifecycle.view().extensions[0].active!.id,retryAt=lifecycle.view().extensions[0].retryAt!;assert.ok(retryAt>now);
   semantic=later;now++;await lifecycle.tick();assert.equal(calls,1);assert.equal(samples,1);
-  await lifecycle.close();lifecycle=new MemoryLifecycle(store,()=>true,()=>now,0,undefined,clock);register();
+  await lifecycle.close();lifecycle=new MemoryLifecycle(store,()=>true,()=>now,undefined,clock);register();
   assert.equal(lifecycle.view().extensions[0].active?.id,original);await lifecycle.tick();assert.equal(calls,1);
   now=retryAt;await lifecycle.tick();assert.equal(calls,2);assert.equal(samples,1);assert.equal(windows[1].contextTime,early);assert.equal(windows[1].startedAt,windows[0].startedAt);
   fail=false;lifecycle.retry('consolidation',original);await lifecycle.tick();assert.equal(calls,3);assert.equal(samples,1);assert.equal(windows[2].contextTime,early);
@@ -164,12 +165,12 @@ for(const manual of [false,true])test(`${manual?'manual':'automatic'} lifecycle 
   await lifecycle.tick();assert.equal(samples,2);assert.equal(windows[3].contextTime,later);assert.equal(windows[3].startedAt,now);
 });
 
-test('legacy integration windows use their persisted start without sampling the new clock',async t=>{
+test('integration windows missing their frozen clock are refused without sampling a new clock',async t=>{
   let samples=0;const calls:QueryInput[]=[];
   const {node}=await appFixture(t,async input=>{calls.push(input);return empty('{"memories":[]}');},()=>{samples++;return later;});
   const card=await timedCard(node);requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,memoryIds:[card.id]},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});assert.equal(samples,1);
   node.store.db.prepare("UPDATE memory_lifecycle_state SET json=json_set(json_remove(json,'$.active.contextTime'),'$.active.startedAt',?) WHERE id='consolidation'").run(Date.parse(early));
-  await node.lifecycle.tick();assert.equal(samples,1);assert.equal(calls.length,1);assert.equal(calls[0].contextTime,new Date(early).toISOString());
+  await assert.rejects(node.lifecycle.tick(),/Unsupported lifecycle window/);assert.equal(samples,1);assert.equal(calls.length,0);
 });
 
 test('a queued integration survives closing and reopening its SQLite vault without resampling',async t=>{
@@ -186,9 +187,9 @@ test('a queued integration survives closing and reopening its SQLite vault witho
 
 test('explicit validity wins over reviewed time and owner corrections keep their real clock',async t=>{
   const start=Date.now();const {node}=await appFixture(t,async()=>empty(),()=>early);const record=await note(node,'Generated first, replacement, and owner correction evidence.');
-  const original=node.memories.publish(node.memories.extract(draft(record,[{title:'Generated original',statement:'Generated original ['+record.id+']'}]),'generated').items[0].id);
+  const original=node.memories.publish(node.memories.extract(fixtureMemoryResult(node.memories,draft(record,[{title:'Generated original',statement:'Generated original ['+record.id+']'}])),'generated').items[0].id);
   const explicit='2001-01-03T00:00:00Z',candidate=draft(record,[{title:'Generated explicit',statement:'Generated explicit replacement ['+record.id+']',validFrom:explicit,relations:[{kind:'supersedes',memoryId:original.id,fingerprint:original.fingerprint,version:original.version}]}]);
   const reviewed=await reviewMemory({question:'Generated review',contextTime:later},candidate,async()=>({...candidate,runId:randomUUID()}));
-  const replacement=node.memories.extract(reviewed,'generated',{reviewReceipt:memoryReviewReceipt(reviewed)}).items[0];assert.equal(node.memories.get(original.id).supersededAt,explicit);
+  const replacement=node.memories.extract(fixtureMemoryResult(node.memories,reviewed),'generated',{reviewReceipt:memoryReviewReceipt(reviewed)}).items[0];assert.equal(node.memories.get(original.id).supersededAt,explicit);
   const corrected=await node.memories.correct(replacement.id,{version:replacement.version,title:'Generated owner correction',statement:'Generated owner statement'});realTime(corrected.validFrom,start);assert.equal(node.memories.get(replacement.id).supersededAt,corrected.validFrom);
 });

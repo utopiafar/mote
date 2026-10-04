@@ -33,8 +33,8 @@ data class LocalSource(
     companion object {
         fun from(v: JSONObject) = LocalSource(v.getString("id"), v.getString("name"), v.getString("kind"), v.getString("retention"), v.getBoolean("enabled"),
             if (v.has("calendarId")) v.getLong("calendarId") else null, if (v.has("uri")) v.getString("uri") else null,
-            v.optBoolean("tree"), v.optString("extensions", "md,txt,json,csv,ics"), v.optString("excluded", ""),
-            v.optInt("daysBefore", 30), v.optInt("daysAfter", 90), v.optInt("intervalMinutes", 60), v.optString("initialSync", "all"), v.optInt("maxFileMiB", 512), v.optBoolean("lightweightIndex"), v.optBoolean("allowRead")).also { it.validate() }
+            v.getBoolean("tree"), v.getString("extensions"), v.getString("excluded"),
+            v.getInt("daysBefore"), v.getInt("daysAfter"), v.getInt("intervalMinutes"), v.getString("initialSync"), v.getInt("maxFileMiB"), v.getBoolean("lightweightIndex"), v.getBoolean("allowRead")).also { it.validate() }
     }
 }
 
@@ -97,22 +97,6 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
     internal var onMutation: (() -> Unit)? = null
     init { directory.mkdirs() }
     /** Keep source definitions, but force every source to start with a new v2 scan. */
-    fun resetForProtocolUpgrade() = synchronized(lock) {
-        directory.listFiles()?.filter { it.name != "config.enc" }?.forEach { file ->
-            check(file.deleteRecursively()) { "Unable to discard legacy source checkpoint" }
-        }
-        onMutation?.invoke()
-    }
-    fun migrateLegacyContent(shouldStop: () -> Boolean = { false }, onProgress: (Int, Int) -> Unit = { _, _ -> }): Int {
-        val files = synchronized(lock) { directory.listFiles()?.filter { it.extension == "enc" }.orEmpty() }
-        var changed = 0
-        for ((index, file) in files.withIndex()) {
-            if (shouldStop()) break
-            synchronized(lock) { if (LocalContentMigration.migrate(file, cipher) { JSONObject(String(it, Charsets.UTF_8)) }) { changed++; onMutation?.invoke() } }
-            onProgress(index + 1, files.size)
-        }
-        return changed
-    }
     fun sources(): List<LocalSource> = synchronized(lock) {
         val array = read(File(directory, "config.enc")).optJSONArray("sources") ?: JSONArray()
         (0 until array.length()).map { LocalSource.from(array.getJSONObject(it)) }

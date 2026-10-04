@@ -1,3 +1,5 @@
+import {fixtureCaptureRefs} from './fixtures/evidence-refs.js';
+import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -20,7 +22,7 @@ async function fixture(t:TestContext){
   t.after(async()=>{await value.app.close();await rm(dir,{recursive:true,force:true});});
   const image=await sharp({create:{width:960,height:640,channels:3,background:'#4e8060'}}).jpeg().toBuffer();
   const capture=(deviceId='phone')=>({id:randomUUID(),deviceId,deviceName:'Generated device',platform:'android',capturedAt:'2026-09-13T12:00:00.000Z',
-    durationMs:0,appId:'',appName:'',windowTitle:'',source:'screen',imageMime:'image/jpeg',imageBase64:image.toString('base64'),ocrText:'',ocr:{status:'pending',reason:'charging'}});
+    durationMs:0,appId:'',appName:'',windowTitle:'',source:'screen',imageMime:'image/jpeg',imageBase64:image.toString('base64'),ocrText:'',ocr:{status:'pending'}});
   const paired=async(deviceId='phone')=>{
     const invite=await value.app.inject({method:'POST',url:'/api/connections/invitations',headers:auth(),payload:{serverUrl:'https://fixture.invalid',label:'Generated phone'}});
     const redeem=await value.app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invite.json().invitation.code,deviceId,deviceName:'Generated device',platform:'android'}});
@@ -33,7 +35,7 @@ test('capture details declare native file storage for import sources without exp
   const {app,files,sources,capture,paired}=await fixture(t);
   sources.register({id:'generated-import',name:'Generated import',kind:'local-files',deviceId:'importer',platform:'import',retention:'archive'});
   const ack=await files.revision({sourceId:'generated-import',previousRevision:null,item:{externalId:'generated.wav',revision:'1',observedAt:'2026-09-13T12:00:00.000Z',title:'Generated recording',kind:'file',layer:'reference',text:'',mimeType:'audio/wav',deleted:false},relativePath:'generated.wav',sizeBytes:10},()=>{});
-  const url=`/api/capture-browser/capture:${ack.id}`;
+  const url=`/api/capture-browser/${ack.id}`;
   const detail=await app.inject({url,headers:auth()});assert.equal(detail.statusCode,200,detail.body);
   assert.equal(detail.json().platform,'import');assert.deepEqual(detail.json().fileArchive,{captureId:ack.id});
   assert.equal(detail.json().requiresMaterialForMemory,true);
@@ -58,9 +60,9 @@ test('scoped owner Memory and evidence views retain corrected formal quotes with
   assert.equal(originalDetail.json().requiresMaterialForMemory,true);
   assert.equal(originalDetail.json().memoryMaterialRef,initial.ref,'trusted current source head maps raw original to published Material');
   assert.equal(anchorDetail.json().memoryMaterialRef,initial.ref,'formal anchor maps to its current Material');
-  const memory=memories.publish(memories.extract({answer:JSON.stringify({memories:[{title:'Generated memory',statement:`Generated old claim [${anchor.id}]`,uncertainty:'Generated fixture',admission:{layer:'memory',reason:'Generated explicit claim',scope:'Generated fixture',attribution:'user'},evidenceIds:[anchor.id],evidence:[{id:anchor.id,quote:anchor.ocrText}]}]}),citations:[{id:anchor.id,capturedAt:at,appName:'Generated',excerpt:anchor.ocrText}],trace:[],runId:'generated'},'fixture').items[0].id);
-  assert.equal(reader.evidence([anchor.id]).length,1);
-  materials.publish({...draft,blocks:[{...draft.blocks[0],text:'Generated new claim'}]},{expectedRevision:initial.revision});assert.equal(memories.get(memory.id).status,'stale');assert.deepEqual(reader.evidence([anchor.id]),[]);
+  const memory=memories.publish(memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'Generated memory',statement:`Generated old claim [${anchor.id}]`,uncertainty:'Generated fixture',admission:{layer:'memory',reason:'Generated explicit claim',scope:'Generated fixture',attribution:'user'},evidenceIds:[anchor.id],evidence:[{id:anchor.id,quote:anchor.ocrText}]}]}),citations:[{id:anchor.id,capturedAt:at,appName:'Generated',excerpt:anchor.ocrText}],trace:[],runId:'generated'}),'fixture').items[0].id);
+  assert.equal(reader.evidence(fixtureCaptureRefs([anchor.id])).length,1);
+  materials.publish({...draft,blocks:[{...draft.blocks[0],text:'Generated new claim'}]},{expectedRevision:initial.revision});assert.equal(memories.get(memory.id).status,'stale');assert.deepEqual(reader.evidence(fixtureCaptureRefs([anchor.id])),[]);
   const scope=new URLSearchParams({deviceId:'generated-owner',after:'2026-09-13T00:00:00.000Z',before:'2026-09-14T00:00:00.000Z'});
   const list=await app.inject({url:'/api/memories?includeStale=true&'+scope,headers:auth()});assert.deepEqual(list.json().items.map((m:any)=>m.id),[memory.id]);
   assert.equal((await app.inject({url:`/api/memories/${memory.id}?${scope}`,headers:auth()})).json().status,'stale');
@@ -81,7 +83,7 @@ test('paired clients browse the full archive and preserve explicit view filters'
   for(const url of ['/api/capture-browser',`/api/capture-browser/${own.id}`,`/api/capture-browser/${own.id}/image?thumbnail=1`])assert.equal((await app.inject(url)).statusCode,401);
   const list=await app.inject({url:'/api/capture-browser?deviceId=phone&after=2026-09-13T00:00:00Z&before=2026-09-14T00:00:00Z',headers:auth(phone.token)});
   assert.equal(list.statusCode,200);assert.equal(list.json().totalCount,1);assert.equal(list.json().items[0].id,own.id);
-  assert.deepEqual(list.json().items[0].ocr,{status:'pending',reason:'charging'});assert.equal(list.json().items[0].hasImage,true);
+  assert.deepEqual(list.json().items[0].ocr,{status:'pending'});assert.equal(list.json().items[0].hasImage,true);
   assert.equal('ocrText' in list.json().items[0],false);assert.equal(list.headers['cache-control'],'no-store');
   assert.equal((await app.inject({url:'/api/capture-browser?deviceId=other',headers:auth(phone.token)})).statusCode,200);
   for(const suffix of ['', '/image', '/image?thumbnail=1'])assert.equal((await app.inject({url:`/api/capture-browser/${foreign.id}${suffix}`,headers:auth(phone.token)})).statusCode,200);
@@ -268,10 +270,13 @@ test('session members sharing a timestamp stay separate and pages do not include
  assert.equal((await app.inject({method:'POST',url:`/api/perception/${own.id}/retry`,headers:auth(),payload:{kind:'semantic'}})).statusCode,400);
  });
 
-test('typed screenshot refs keep full client permissions and explicit view filters before original or cached image reads',async t=>{
+test('UUID resource paths keep permissions and filters; typed refs are rejected before original or cached image reads',async t=>{
  const {app,capture,paired,image}=await fixture(t),phone=await paired(),record=capture();
  await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:record});
- const ref=encodeURIComponent('CAPTURE:'+record.id.toUpperCase());
+ const ref=record.id;
+ for(const root of ['captures','capture-browser'])for(const suffix of ['', '/image']){
+  for(const typed of ['capture:'+record.id,'memory:'+record.id])assert.equal((await app.inject({url:`/api/${root}/${encodeURIComponent(typed)}${suffix}`,headers:auth()})).statusCode,400,'resource URLs require bare UUIDs');
+ }
  for(const root of ['captures','capture-browser']){
   for(const suffix of ['', '/image']){
    const url=`/api/${root}/${ref}${suffix}`;

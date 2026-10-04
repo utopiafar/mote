@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DurableQueue } from '../src/queue';
@@ -27,4 +27,9 @@ it('persists interval checkpoints and clears retry deadlines without changing pe
   await queue.syncCheckpoint(lastUploadAt, nextRetryAt); queue = new DurableQueue(directory, config); await queue.initialize();
   expect(queue.stats()).toMatchObject({ depth: 1, oldestPendingAt: event().capturedAt, lastUploadAt, nextRetryAt });
   await queue.resetRetries(); expect(queue.stats()).toMatchObject({ depth: 1, lastUploadAt, nextRetryAt: undefined });
+});
+
+it('rejects a missing binding for an existing current backlog and never adopts its owner',async()=>{
+ const config=defaultConfig(),queue=new DurableQueue(directory,config);await queue.initialize();await queue.enqueue(event(),image);await rm(join(directory,'connection-binding.json'));
+ const reopened=new DurableQueue(directory,config);await expect(reopened.initialize()).rejects.toThrow('Unsupported desktop storage format');await expect(stat(join(directory,'connection-binding.json'))).rejects.toMatchObject({code:'ENOENT'});expect(await readFile(join(directory,'events',event().id+'.json'),'utf8')).toContain(event().id);
 });

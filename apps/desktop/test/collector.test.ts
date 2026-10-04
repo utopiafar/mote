@@ -105,7 +105,7 @@ describe.skipIf(process.platform !== 'darwin')('collector pipeline with generate
   });
   it('never requests screenshot pixels when an excluded app is visible behind the foreground app', async () => {
     mocks.active.mockResolvedValue({ ...application, visibleAppIds: ['dev.mote.fixture', 'dev.private'] });
-    const { collector, queue } = await makeCollector({ excludedAppIds: ['dev.private'] });
+    const { collector, queue } = await makeCollector({ appCollectionRules: {'dev.private': 'off'} });
     await collector.start(); await collector.settleCapture();
     expect(mocks.capture).not.toHaveBeenCalled(); expect(queue.stats().depth).toBe(0);
   });
@@ -162,9 +162,9 @@ describe.skipIf(process.platform !== 'darwin')('per-application collection bound
     for (const key of ['ocrText', 'title', 'windowTitle', 'imageMime', 'imageBase64', 'mood', 'provenance']) expect(event).not.toHaveProperty(key);
     expect(mocks.capture).not.toHaveBeenCalled(); expect(mocks.active).not.toHaveBeenCalled(); expect(mocks.ocr).not.toHaveBeenCalled(); expect(gate.ensureReady).not.toHaveBeenCalled(); expect(gate.classify).not.toHaveBeenCalled();
   });
-  it.each(['off', 'legacy exclusion', 'unknown'])('records nothing for %s without reading content', async mode => {
+  it.each(['off', 'explicit off', 'unknown'])('records nothing for %s without reading content', async mode => {
     if (mode === 'unknown') mocks.foreground.mockRejectedValue(new Error('identity unavailable'));
-    const { collector, queue } = await makeCollector({ defaultCollection: mode === 'off' ? 'off' : 'content', excludedAppIds: mode === 'legacy exclusion' ? [application.appId] : [] });
+    const { collector, queue } = await makeCollector({ defaultCollection: mode === 'off' ? 'off' : 'content', appCollectionRules: mode === 'explicit off' ? {[application.appId]:'off'} : {} });
     await collector.start(); await collector.settleCapture();
     expect(queue.stats().depth).toBe(0); expect(mocks.capture).not.toHaveBeenCalled(); expect(mocks.active).not.toHaveBeenCalled(); expect(mocks.ocr).not.toHaveBeenCalled();
   });
@@ -205,82 +205,12 @@ describe.skipIf(process.platform !== 'darwin')('per-application collection bound
   });
 });
 
-describe.skipIf(process.platform !== 'darwin')('deferred OCR from sanitized durable images', () => {
-  it('leaves new screenshots for central OCR even when legacy local options are set', async () => {
-    const { collector, queue } = await makeCollector({ ocrEnabled:true, ocrOnlyWhileCharging: true, metadataEnabled: false, syncMode: 'manual' });
-    await collector.start(); await collector.settleCapture(); collector.stop();
-    const original = (await queue.exportArchive()).records[0].event;
-    expect(original.ocr).toEqual({ status: 'disabled' });
-    expect(original.metadata).toBeUndefined(); expect(original.ocrText).toBe(''); expect(mocks.ocr).not.toHaveBeenCalled();
-    mocks.power.mockResolvedValue({ onBattery: false, charging: false });
-    await collector.processPendingOcr();
-    const result = (await queue.exportArchive()).records[0];
-    expect(result.event).toEqual(original); expect(result.ocrResult).toBeUndefined();
-    expect(collector.status().running).toBe(false); expect(mocks.capture).toHaveBeenCalledTimes(1);
-  });
-  it('ACKs the immutable screenshot before OCR patching and keeps the image until the patch ACK', async () => {
-    const { event, image } = await import('./fixtures');
-    const { collector, queue } = await makeCollector({ ocrEnabled:true, ocrOnlyWhileCharging: true, syncMode: 'manual' });
-    const original = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const, reason: 'charging' as const } };
-    await queue.enqueue(original, image);
-    const calls: { url: string; body: any }[] = [];
-    vi.mocked(fetch).mockImplementation(async (url, init) => { calls.push({ url: String(url), body: JSON.parse(await new Response(init!.body).text()) }); return new Response(JSON.stringify(String(url).endsWith('/ocr')?{id:original.id}:captureAck(original.id)), { status: 200 }); });
-    await collector.retry();
-    expect(queue.stats()).toMatchObject({ depth: 1, eligibleDepth: 0, waitingOcr: 1 }); expect(await queue.next()).toBeUndefined();
-    expect(await queue.imageForBrowser(original.id)).toEqual(image);
-    mocks.power.mockResolvedValue({ onBattery: false }); await collector.processPendingOcr();
-    expect((await queue.exportArchive()).records[0].event).toEqual(original);
-    await collector.retry();
-    expect(queue.stats().depth).toBe(0);
-    const captureCall = calls.find(c => c.url.endsWith('/api/captures'))!;
-    expect(captureCall.body.ocr.status).toBe('pending'); expect(captureCall.body.ocrText).toBeUndefined();
-    const patch = calls.find(c => c.url.endsWith(`/api/capture-browser/${original.id}/ocr`))!;
-    expect(patch.body).toEqual({ status: 'completed', ocrText: 'GENERATED SANITIZED TEXT' });
-  });
-  it('aborts backfill when unplugged without losing the saved screenshot or original ID', async () => {
-    const { event, image } = await import('./fixtures'); const { collector, queue } = await makeCollector({ ocrEnabled:true, ocrOnlyWhileCharging: true, syncMode: 'manual' });
-    const original = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const, reason: 'charging' as const } }; await queue.enqueue(original, image);
-    mocks.power.mockResolvedValue({ onBattery: false });
-    mocks.ocr.mockImplementationOnce((_path: string, _image: Buffer, signal: AbortSignal) => new Promise((_resolve, reject) => { signal.addEventListener('abort', () => reject(new Error('fixture unplugged')), { once: true }); }));
-    const processing = collector.processPendingOcr(); await vi.waitFor(() => expect(mocks.ocr).toHaveBeenCalled());
-    (powerMonitor as unknown as EventEmitter).emit('on-battery'); await processing;
-    expect((await queue.exportArchive()).records[0]).toMatchObject({ event: original });
-    expect((await queue.exportArchive()).records[0].ocrResult).toBeUndefined(); expect(await queue.imageForBrowser(original.id)).toEqual(image);
-  });
-  it('restores pending backfill and retries a failing item without starving later images', async () => {
-    const { event, image } = await import('./fixtures'); const first = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const } };
-    const second = { ...first, id: 'f50650f0-fb31-4215-90cd-c96dc62d5e93' };
-    const { queue } = await makeCollector({ syncMode: 'manual' }); await queue.enqueue(first, image); await queue.enqueue(second, image); await queue.acknowledge(first.id); await queue.acknowledge(second.id);
-    collector!.shutdown();
-    const cfg = { ...fixtureConfig(), ocrEnabled:true,token: 'synthetic-token', syncMode: 'manual' as const };
-    const restored = new DurableQueue(directory, cfg); await restored.initialize();
-    collector = new Collector(cfg, restored, '/fixture/no-real-helper', () => true, () => undefined);
-    mocks.ocr.mockRejectedValueOnce(new Error('synthetic OCR failure')).mockResolvedValue('SECOND FIXTURE');
-    await collector.processPendingOcr(); await collector.processPendingOcr();
-    const records = (await restored.exportArchive()).records;
-    expect(records[0].ocrRetryAt).toBeGreaterThan(Date.now()); expect(records[0].ocrResult).toBeUndefined(); expect(records[1].ocrResult).toBe('SECOND FIXTURE');
-  });
-  it('blocks automatic OCR retries when the central record is gone, retaining a visible local copy', async () => {
-    const { event, image } = await import('./fixtures'); const { collector, queue } = await makeCollector();
-    const original = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const } };
-    await queue.enqueue(original, image); await queue.acknowledge(original.id); await queue.saveOcr(original.id, 'FIXTURE TEXT');
-    vi.mocked(fetch).mockResolvedValue(new Response('{"error":"capture_not_found"}', { status: 404 }));
-    await collector.upload(true); expect(queue.stats().blocked).toBe(1); expect(await queue.next()).toBeUndefined();
-    const attempts = vi.mocked(fetch).mock.calls.length; await collector.upload(); expect(vi.mocked(fetch).mock.calls).toHaveLength(attempts);
-    expect((await queue.exportArchive()).records[0].syncError).toContain('中央已删除'); expect(await queue.imageForBrowser(original.id)).toEqual(image);
-  });
-  it('blocks a permanent OCR conflict but still uploads later healthy records in the same flush', async () => {
-    const { event, image } = await import('./fixtures'); const { collector, queue } = await makeCollector({ syncMode: 'manual' });
-    const original = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const } };
-    const later = { ...event('f50650f0-fb31-4215-90cd-c96dc62d5e93'), capturedAt: new Date(Date.parse(original.capturedAt) + 1000).toISOString() };
-    await queue.enqueue(original, image); await queue.acknowledge(original.id); await queue.saveOcr(original.id, 'DIFFERENT OCR'); await queue.enqueue(later, image);
-    vi.mocked(fetch).mockImplementation(async (url, init) => String(url).endsWith('/ocr') ? new Response('{}', { status: 409 }) : new Response(JSON.stringify(captureAck(JSON.parse(await new Response(init!.body).text()).id)), { status: 200 }));
-    await collector.upload(true);
-    expect(queue.contains(original.id)).toBe(true); expect(queue.contains(later.id)).toBe(false); expect(queue.stats().blocked).toBe(1);
-    expect((await queue.exportArchive()).records[0].syncError).toContain('保留中央原文字');
-  });
+describe.skipIf(process.platform !== 'darwin')('central OCR capture contract',()=>{
+ it('stores new screenshots with local OCR disabled and performs no backfill calls',async()=>{
+  const {collector,queue}=await makeCollector({metadataEnabled:false,syncMode:'manual'});await collector.start();await collector.settleCapture();collector.stop();
+  const original=(await queue.exportArchive()).records[0].event;expect(original.ocr).toEqual({status:'disabled'});expect(original.ocrText).toBe('');expect(mocks.ocr).not.toHaveBeenCalled();
+ });
 });
-
 describe.skipIf(process.platform !== 'darwin')('desktop and missing foreground under default privacy policy', () => {
   it('captures an unidentified foreground and window when no application is restricted', async () => {
     const unknown = { appId: 'dev.mote.unknown-foreground', appName: '无前台应用', pid: 0 };
@@ -290,7 +220,7 @@ describe.skipIf(process.platform !== 'darwin')('desktop and missing foreground u
   });
   it('still refuses missing foreground when any user application restriction might apply', async () => {
     mocks.foreground.mockResolvedValue({ appId: 'dev.mote.unknown-foreground', appName: '无前台应用', pid: 0 });
-    const { collector, queue } = await makeCollector({ excludedAppIds: ['dev.private'] }); await collector.start(); await collector.settleCapture();
+    const { collector, queue } = await makeCollector({ appCollectionRules: {'dev.private': 'off'} }); await collector.start(); await collector.settleCapture();
     expect(queue.stats().depth).toBe(0); expect(mocks.capture).not.toHaveBeenCalled();
   });
 });
@@ -423,15 +353,11 @@ describe.skipIf(process.platform !== 'darwin')('immediate settings with generate
     await resume(); expect(collector.status().running).toBe(false); expect(mocks.capture).not.toHaveBeenCalled();
     if (mode === 'shutdown during save') { await expect(collector.start()).rejects.toThrow(); await collector.upload(true); await collector.retry(); expect(vi.mocked(fetch).mock.calls.filter(args => String(args[0]).includes('/api/captures'))).toHaveLength(0); }
   });
-  it('holds OCR/upload across settings and permits pending OCR to continue after release even while capture stays stopped', async () => {
-    const { collector, queue } = await makeCollector({ ocrEnabled:true,syncMode: 'manual', ocrOnlyWhileCharging: true });
-    const { event, image } = await import('./fixtures');
-    await queue.enqueue({ ...event(), ocrText: undefined, ocr: { status: 'pending', reason: 'charging' } }, image);
-    mocks.power.mockResolvedValue({ onBattery: false });
-    const resume = await collector.suspendForSettings();
-    await collector.processPendingOcr(); await collector.upload(true); expect(mocks.ocr).not.toHaveBeenCalled();
-    await resume(); await vi.waitFor(async () => expect((await queue.exportArchive()).records[0].ocrResult).toBe('GENERATED SANITIZED TEXT'));
-    expect(collector.status().running).toBe(false); expect(mocks.capture).not.toHaveBeenCalled();
+  it('holds uploads during settings and resumes the immutable queued capture after release',async()=>{
+    const {collector,queue}=await makeCollector({syncMode:'manual',packedUpload:false});const {event,image}=await import('./fixtures');await queue.enqueue(event(),image);
+    vi.mocked(fetch).mockImplementation(async()=>new Response(JSON.stringify(captureAck(event().id)),{status:200}));
+    const resume=await collector.suspendForSettings();const before=vi.mocked(fetch).mock.calls.length;await collector.upload(true);expect(vi.mocked(fetch).mock.calls.length).toBe(before);
+    await resume();await collector.upload(true);expect(queue.stats().depth).toBe(0);expect(collector.status().running).toBe(false);expect(mocks.ocr).not.toHaveBeenCalled();
   });
 });
 

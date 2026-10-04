@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {canonicalRunStatus,executionEnvelope,retryDelay,standardRetryPolicy} from '../dist/execution.js';
 
-test('legacy states are additive-normalized without changing their wire meaning',()=>{
+test('current domain states have explicit execution projections',()=>{
   assert.equal(canonicalRunStatus({state:'completed'}),'succeeded');
   assert.equal(canonicalRunStatus({status:'waiting_for_model',errorCode:'model_unconfigured'}),'waiting');
   assert.equal(canonicalRunStatus({state:'interrupted'}),'queued');
@@ -29,9 +29,6 @@ test('backoff is bounded and deterministic when randomness is injected',()=>{
   assert.equal(retryDelay({...standardRetryPolicy,maxDelayMs:50000},20,()=>.5),50000);
 });
 
-test('unknown legacy status remains runnable instead of becoming a destructive failure',()=>{
-  const value=executionEnvelope({status:'old_pending_state',attempts:1});
-  assert.equal(value.status,'waiting');
-  assert.equal(value.failure,undefined);
-  assert.ok(value.allowedActions.includes('continue'));
+test('unknown and missing states are rejected instead of granting recovery actions',()=>{
+  for(const input of [{status:'old_pending_state'},{status:'canceled'},{}])assert.throws(()=>executionEnvelope(input),/Unsupported domain execution state/);
 });

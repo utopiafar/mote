@@ -1,0 +1,1936 @@
+{
+  "date": "2026-10-04",
+  "baseline": "8d68aef2ddd9f531d88e3337ce97215945222f14",
+  "storageEpoch": 3,
+  "wireProtocol": 1,
+  "ingressVersion": 2,
+  "findings": [
+    {
+      "id": "R01",
+      "title": "握手缺协议元数据默认接受 v1",
+      "status": "removed",
+      "implementation": "握手必须有 protocol 元数据；TS/Kotlin 校验范围、中央完整响应及 fixtures 联动更新。",
+      "files": [
+        "packages/shared/src/protocol.ts",
+        "protocol/contract.json"
+      ],
+      "risk": "中：新客户端连不上旧中央；强加字段会使旧桌面客户端 strict parse 失败",
+      "originalDecision": "需要先迁移或更新调用方",
+      "scope": "root"
+    },
+    {
+      "id": "R02",
+      "title": "旧任务状态映射与 execution 双表示",
+      "status": "refactored",
+      "implementation": "移除历史 materialization 脚本、未知/缺状态默认值与 canceled 别名；当前领域阶段到 execution 调度状态的投影继续保留。",
+      "files": [
+        "packages/shared/src/execution.ts",
+        "docs/execution-protocol.md"
+      ],
+      "risk": "高：直接删会损坏当前任务、错误恢复动作；只删除可选脚本风险低，失去人工补历史 envelope 的入口",
+      "originalDecision": "当前链路仍依赖，必须重构后删除",
+      "scope": "root"
+    },
+    {
+      "id": "R03",
+      "title": "统一 v 标签和无 component 发布清单",
+      "status": "removed",
+      "implementation": "组件身份与组件发布 tag 必填；删除统一 v 标签、无 component 清单及容器执行版本探测回退。",
+      "files": [
+        "packages/shared/src/release.ts",
+        "scripts/update-release.mjs"
+      ],
+      "risk": "中：旧版升级/固定版本下载/版本识别失效；签名、hash、来源与包身份验证仍需保留",
+      "originalDecision": "需要先迁移或更新调用方",
+      "scope": "root"
+    },
+    {
+      "id": "R04",
+      "title": "旧根目录 env 与 legacy profile 直接启动",
+      "status": "removed",
+      "implementation": "普通 profile 命名 default，拒绝 legacy；只在显式 MOTE_ENV_FILE 时读取配置文件，不自动读取根 .env。",
+      "files": [
+        "packages/shared/src/environment.ts",
+        "scripts/client.ts"
+      ],
+      "risk": "中：新配置可能指错数据目录、换掉令牌、看起来仓库为空",
+      "originalDecision": "仍是受支持入口，删除会改变产品用法",
+      "scope": "root"
+    },
+    {
+      "id": "R05",
+      "title": "Agent timeoutMs 旧 SDK 参数",
+      "status": "removed",
+      "implementation": "SDK 仅接收 requestTimeoutMs / agentTimeoutMs；删除 timeoutMs alias。两种期限独立，Codex 当前 null 整体期限语义保留。",
+      "files": [
+        "packages/agent/src/types.ts",
+        "packages/agent/src/index.ts"
+      ],
+      "risk": "中：旧调用失去原超时，可能改成默认导致过早失败或长占用；部分 fixture 刻意传很短旧值",
+      "originalDecision": "需要先迁移或更新调用方",
+      "scope": "root"
+    },
+    {
+      "id": "R06",
+      "title": "DeepSeek 旧官方根地址重写",
+      "status": "removed",
+      "implementation": "删除用户显式 DeepSeek 根地址重写；未填地址时由当前 provider preset 选择官方入口。",
+      "files": [
+        "packages/agent/src/model-runtime.ts"
+      ],
+      "risk": "中：旧地址下请求路径错误、模型调用失败",
+      "originalDecision": "需要先迁移或更新调用方",
+      "scope": "root"
+    },
+    {
+      "id": "R07",
+      "title": "Codex 旧缺速度值补 Standard 与 off 字段映射",
+      "status": "refactored",
+      "implementation": "当前 Codex 预设必须显式有 serviceTier；保留 Codex 当前协议 off/none、fast/priority 参数翻译。",
+      "files": [
+        "packages/shared/src/model-providers.ts",
+        "packages/agent/src/codex-session.ts"
+      ],
+      "risk": "中：速度选择或推理选项无法显示、协议拒绝请求",
+      "originalDecision": "缺值 default 可迁移后删；off/none 仍是当前契约",
+      "scope": "root"
+    },
+    {
+      "id": "R08",
+      "title": "网页旧会话 url 校验和缺 viewScope 补身份",
+      "status": "removed",
+      "implementation": "持久 session 必须有合法 viewScope；含旧 url 字段的身份拒绝，期限与跨节点缓存隔离继续保留。",
+      "files": [
+        "apps/web/src/session.ts"
+      ],
+      "risk": "低中：重新登录/时间筛选丢失；误删服务边界校验有凭据跨节点风险",
+      "originalDecision": "需要先迁移或更新调用方",
+      "scope": "root"
+    },
+    {
+      "id": "R09",
+      "title": "旧资料页导航转 archive collection 与路由别名",
+      "status": "removed",
+      "implementation": "删除旧 captures/files/memory/materials 页面与旧路由别名；使用 library 的显式 collection 查询。当前插件 collections 保留。",
+      "files": [
+        "apps/web/src/workspace-route.ts",
+        "apps/web/src/features/"
+      ],
+      "risk": "低中：旧书签/当前导航落错页，功能页布局改变",
+      "originalDecision": "兼容和现行路由共用，先更新调用方",
+      "scope": "root"
+    },
+    {
+      "id": "R10",
+      "title": "旧网页随手记缺 client 身份与当前 prepared 幂等重试共用",
+      "status": "refactored",
+      "implementation": "笔记 outbox 升为 mote.notes.v3，要求 web client 身份；旧键拒绝并保留原值，已准备提交的固定ID和安全重试保留。",
+      "files": [
+        "apps/web/src/notes-state.ts"
+      ],
+      "risk": "高：同ID不同payload冲突、重复笔记或离线草稿无法提交",
+      "originalDecision": "可退役的是旧 web 身份形状；prepared 原样复用必须保留",
+      "scope": "root"
+    },
+    {
+      "id": "R11",
+      "title": "UUID裸证据引用和注入reader不透明旧ID",
+      "status": "refactored",
+      "implementation": "公开证据引用仅 capture:UUID / memory:UUID（以及固定版本 Material/Artifact）；重构所有生产方、工具桥与UI消费者。声明为 resource ID 的接口与原件 record.id 继续使用 UUID，不推断裸ID命名空间。",
+      "files": [
+        "packages/shared/src/evidence-ref.ts",
+        "packages/agent/src/bridge.ts",
+        "apps/web/src/evidence-route.ts",
+        "apps/web/src/LibraryBrowse.tsx"
+      ],
+      "risk": "高：证据详情/引用/文件读取失效；错把source ID当证据会破坏授权边界",
+      "originalDecision": "当前API仍使用裸ID，必须整体改契约",
+      "scope": "root"
+    },
+    {
+      "id": "R12",
+      "title": "注入 ContextReader 同时接受数组和分页对象",
+      "status": "removed",
+      "implementation": "ContextReader timeline / sourceItems 只返回显式分页对象，不接受数组；全部注入 reader fixtures 同步。",
+      "files": [
+        "packages/agent/src/types.ts",
+        "packages/agent/src/bridge.ts"
+      ],
+      "risk": "中：第三方reader/fixture直接报invalid page；分页完整性假设变更",
+      "originalDecision": "需要先迁移或更新调用方",
+      "scope": "root"
+    },
+    {
+      "id": "R13",
+      "title": "旧洞察 Markdown 读取与现行文字模式共用",
+      "status": "retained_current_boundary",
+      "implementation": "保留当前产品支持的 Markdown / 文字呈现；后端 epoch3 拒绝旧持久库，无需把现行文字视图当作旧数据读取器删除。",
+      "files": [
+        "apps/web/src/InsightReport.tsx"
+      ],
+      "risk": "中：直接删会损坏旧报告、当前纯Markdown洞察与文字模式；重跑旧报告产生不同内容和费用",
+      "originalDecision": "历史可读性与现行结果形态共用，不能作为纯旧分支删除",
+      "scope": "root"
+    },
+    {
+      "id": "R14",
+      "title": "历史费用缺 attribution 与 usage 保守展示",
+      "status": "retained_current_boundary",
+      "implementation": "测量缺失与未标记 attribution 继续保守显示未知，不能默认零成本或捏造归属；此情况仍可能由当前 provider 正常产生。",
+      "files": [
+        "packages/shared/src/usage.ts",
+        "packages/shared/src/usage.ts",
+        "apps/web/src/Usage.tsx"
+      ],
+      "risk": "中：统计分组错误或旧回答报错；不能推断未上报token为0",
+      "originalDecision": "unknown 仍有现行缺测语义，建议保留",
+      "scope": "root"
+    },
+    {
+      "id": "R15",
+      "title": "旧截图缺 OCR 字段和 charging pending 读取",
+      "status": "removed",
+      "implementation": "删除 charging OCR pending 类型与旧text/ocrEnabled推断。当前缺测量显示 unknown、activity无图显示 not_applicable。",
+      "files": [
+        "packages/shared/src/metadata.ts",
+        "apps/web/src/capture-presentation.ts"
+      ],
+      "risk": "中高：历史OCR过滤、向量待处理判断、已保存文字显示或老队列同步损坏",
+      "originalDecision": "历史兼容和缺测语义共用，保留unknown",
+      "scope": "root"
+    },
+    {
+      "id": "R16",
+      "title": "无 stateSeries 的单次采样回退",
+      "status": "retained_current_boundary",
+      "implementation": "当前单次合法采样不必有 stateSeries；保留单次 duration 测量，完整活动统计继续去重裁剪，缺口不推断活跃。",
+      "files": [
+        "packages/shared/src/state-series.ts"
+      ],
+      "risk": "中高：旧样本丢时长，跨设备测量统计改变",
+      "originalDecision": "现行合法单样本仍依赖，不能直接删",
+      "scope": "root"
+    },
+    {
+      "id": "R17",
+      "title": "缺 inputPlans 的 Memory 批次进度同时服务当前自动任务",
+      "status": "refactored",
+      "implementation": "当前 Memory 写方固定 inputPlanVersion/contextTime/materialInputs；UI只消费必有 inputPlans/recipeProgress/memoryCount，不再用缺字段旧批次分支。直接原件任务的合法空物料计划仍可显示。",
+      "files": [
+        "apps/web/src/MemoryProgress.tsx"
+      ],
+      "risk": "高：直接删会破坏当前自动/普通记忆任务的进度、重试和取消，清空旧job也不能消除此依赖",
+      "originalDecision": "属于现行两条任务路径共用，必须先重构自动任务",
+      "scope": "root"
+    },
+    {
+      "id": "R18",
+      "title": "模型下载旧固定 .part 临时文件恢复",
+      "status": "removed",
+      "implementation": "忽略并保留旧固定 .part；所有新下载用 PID+UUID 独占文件，当前实例可续传，仅认领已退出写者的部分文件。",
+      "files": [
+        "packages/local-inference/src/index.ts"
+      ],
+      "risk": "低：旧已下载片段不会续传、额外模型下载流量/磁盘占用；已验证完整模型不受影响",
+      "originalDecision": "可优先移除，先处理旧缓存",
+      "scope": "root"
+    },
+    {
+      "id": "R19",
+      "title": "MCP stdio 支持旧私有 flat connection JSON",
+      "status": "removed",
+      "implementation": "MCP stdio 只接受当前嵌套连接导出；删除 flat 私有 JSON 读取入口，保留只读scope验证。",
+      "files": [
+        "scripts/mcp-connection.mjs"
+      ],
+      "risk": "低：旧Chatbot stdio配置无法启动，需要转换文件",
+      "originalDecision": "可优先移除，需转换私有连接文件",
+      "scope": "root"
+    },
+    {
+      "id": "S01",
+      "title": "未显式环境名的 legacy profile / 默认 data 目录",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed the implicit legacy profile. The current default is profile=default. Startup requires MOTE_ENV_FILE or MOTE_DATA_DIR (either one is sufficient); MOTE_DATA_DIR may be relative and is resolved against the configured base directory, with data as the default under an explicit env file. Status/update paths use the same current profile identity.",
+      "files": [
+        "apps/server/src/config.ts",
+        "apps/server/src/configuration.ts",
+        "apps/server/src/updates.ts"
+      ],
+      "retainedCurrentBoundary": "Current default/named profiles, relative data-directory configuration, environment isolation and loopback default remain. MOTE_PROFILE, MOTE_ENV_FILE and an absolute MOTE_DATA_DIR are not all mandatory.",
+      "relatedTests": [
+        "apps/server/test/config.test.ts",
+        "apps/server/test/configuration.test.ts",
+        "apps/server/test/updates.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S02",
+      "title": "模型 timeoutMs / MOTE_MODEL_TIMEOUT_MS 旧别名",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed MOTE_MODEL_TIMEOUT_MS, settings timeoutMs normalization and request/agent timeout aliases. Model execution uses only requestTimeoutMs and agentTimeoutMs, including explicit null semantics.",
+      "files": [
+        "apps/server/src/config.ts",
+        "apps/server/src/model-settings.ts",
+        "apps/server/src/model-agent.ts"
+      ],
+      "retainedCurrentBoundary": "File-worker and execution-engine timeoutMs are independent current execution limits, not retired model-setting aliases.",
+      "relatedTests": [
+        "apps/server/test/model-settings.test.ts",
+        "apps/server/test/config.test.ts",
+        "apps/server/test/model-settings-api.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S03",
+      "title": "单模型 default 预设兼容多 profile",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Persisted model settings require version 2 with profiles/defaults/defaultModels. Fresh installations save a normal primary profile; deployment profiles have explicit identity. Removed synthesis and loading of a top-level single-model legacy envelope. Selected primary/deployment profile is passed explicitly into runtime preparation.",
+      "files": [
+        "apps/server/src/model-settings.ts",
+        "apps/server/src/model-agent.ts",
+        "apps/server/src/model-configuration.ts"
+      ],
+      "retainedCurrentBoundary": "The current API view.settings is an intentional projection of the selected chat default and the current update API edits that named profile. Codex serviceTier is explicit default/fast; HTTP has no Codex tier.",
+      "relatedTests": [
+        "apps/server/test/model-profiles.test.ts",
+        "apps/server/test/model-settings.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S04",
+      "title": "旧 collector 凭据取得 owner 权限",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Owner client credentials and owner-route authentication accept owner only; removed collector-to-owner authority alias. Explicit current mcp-read/mcp-write scopes remain separate. Server self/redeem responses always include current protocol version 1 metadata. Parent coordinated owner-only native response validation and negative collector cases.",
+      "files": [
+        "apps/server/src/connections.ts",
+        "apps/server/src/app.ts",
+        "apps/server/src/features/connections.ts"
+      ],
+      "retainedCurrentBoundary": "Current owner invitations, redeem, management, revoke and read access remain legal; explicit current MCP read/write capability scopes remain. Ingress version 2, transport ACK and current device binding are independent contracts.",
+      "relatedTests": [
+        "apps/server/test/connections.test.ts",
+        "apps/server/test/central-workflow.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S05",
+      "title": "无后缀加密文件与 vault-wide encryption 身份",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed unsuffixed asset selection and old vault-wide encryption identity fallback. Current content-key identities and .plain/.aes files are the only asset formats read/written.",
+      "files": [
+        "apps/server/src/content-encryption.ts",
+        "apps/server/src/asset-worker.ts",
+        "scripts/backup.ts",
+        "scripts/profile-lib.mjs",
+        "scripts/security-tests.mjs",
+        "apps/server/test/import-backup.test.ts"
+      ],
+      "retainedCurrentBoundary": "Current mixed plaintext/AES assets, key verification, encrypted upload and backup roundtrip are retained.",
+      "relatedTests": [
+        "apps/server/test/content-storage.test.ts",
+        "apps/server/test/import-backup.test.ts",
+        "apps/server/test/assets.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "finalLinkedCleanup": [
+        "Offline backup/restore requires actual SQLite epoch3 and manifest storageEpoch3 before destination writes; referenced current chunks and hashed source batches only; current .plain/.aes retained; old layouts/bare parts/manifest rejected. Focused13+security9 and full gate passed."
+      ],
+      "scope": "server"
+    },
+    {
+      "id": "S06",
+      "title": "旧图像/归档资产目录及 MOTE1 包装",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed image-legacy/archive-legacy catalog formats, old blobs/files readers, MOTE1 wrapping and legacy asset migration routines. Fresh assets and all current producers use the chunk store.",
+      "files": [
+        "apps/server/src/assets.ts",
+        "apps/server/src/asset-work.ts",
+        "apps/server/src/content-storage.ts",
+        "apps/server/src/evidence-store.ts",
+        "scripts/backup.ts",
+        "scripts/profile-lib.mjs",
+        "scripts/security-tests.mjs",
+        "apps/server/test/import-backup.test.ts"
+      ],
+      "retainedCurrentBoundary": "Current deduplication, byte/range reads, reference ownership, cancellation, GC, safe paths, copy/export/import and privacy protections remain.",
+      "relatedTests": [
+        "apps/server/test/assets.test.ts",
+        "apps/server/test/archived-files.test.ts",
+        "apps/server/test/import-backup.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "finalLinkedCleanup": [
+        "Offline backup/restore requires actual SQLite epoch3 and manifest storageEpoch3 before destination writes; referenced current chunks and hashed source batches only; current .plain/.aes retained; old layouts/bare parts/manifest rejected. Focused13+security9 and full gate passed."
+      ],
+      "scope": "server"
+    },
+    {
+      "id": "S07",
+      "title": "旧 source-archive manifest 到 SQLite index 的惰性迁移",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed manifest heads/versions/checkpoint conversion and ensureIndexed legacy migration. Fresh SQLite source-archive index is installed directly; receive writes the current index and batch records.",
+      "files": [
+        "apps/server/src/source-archive.ts",
+        "scripts/backup.ts",
+        "scripts/profile-lib.mjs",
+        "scripts/security-tests.mjs",
+        "apps/server/test/import-backup.test.ts"
+      ],
+      "retainedCurrentBoundary": "Current archive revision addressing, source snapshots, group checkpoints, append serialization and prepared original disclosure remain.",
+      "relatedTests": [
+        "apps/server/test/source-archive-index.test.ts",
+        "apps/server/test/source-archive-reader.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "finalLinkedCleanup": [
+        "Offline backup/restore requires actual SQLite epoch3 and manifest storageEpoch3 before destination writes; referenced current chunks and hashed source batches only; current .plain/.aes retained; old layouts/bare parts/manifest rejected. Focused13+security9 and full gate passed."
+      ],
+      "scope": "server"
+    },
+    {
+      "id": "S08",
+      "title": "文件旧 flat settings 转 policy 和旧客户端保护",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed flat-settings-to-policy migration and old-client protection fallback. New/default/update paths require and persist an explicit canonical policy. Fresh static builtin services/profiles/rules are created before asynchronous plugin initialization, including explicit asr-local audio binding.",
+      "files": [
+        "apps/server/src/file-processing.ts",
+        "apps/server/src/file-policy.ts",
+        "apps/server/src/file-configuration.ts"
+      ],
+      "retainedCurrentBoundary": "Transport limits and settings shown in the editor remain current API projections. Missing/disabled current plugins retain explicit saved policy and block execution until restored; credential redaction and endpoint-change reauthorization remain.",
+      "relatedTests": [
+        "apps/server/test/file-policy.test.ts",
+        "apps/server/test/file-config-snapshot.test.ts",
+        "apps/server/test/file-processing.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S09",
+      "title": "旧文件任务 UI revision → 新执行 fingerprint aliases",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed saved UI revision to execution fingerprint aliases and rememberLegacyConfigurations. New steps are pinned to the actual execution configuration fingerprint and evaluate that fingerprint directly.",
+      "files": [
+        "apps/server/src/file-processing.ts",
+        "apps/server/src/file-configuration.ts"
+      ],
+      "retainedCurrentBoundary": "Current fingerprint stale detection, configuration fencing and explicit retry are retained.",
+      "relatedTests": [
+        "apps/server/test/file-config-snapshot.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S10",
+      "title": "文件/截图旧 running projections 重置为 waiting",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed startup resurrection of old running projections with no canonical execution step. Current Memory interrupted work is recovered through the real expired execution lease. Fixed current awaiting_activation projection to remain queued until explicit activation, then retry the same canonical receipt.",
+      "files": [
+        "apps/server/src/file-processing.ts",
+        "apps/server/src/perception.ts",
+        "apps/server/src/memory-pipeline.ts"
+      ],
+      "retainedCurrentBoundary": "Canonical leases, fences, actual restart interruption, pause/pausing projection and portable-backup current running-to-waiting restore semantics remain; these are current recovery behavior.",
+      "relatedTests": [
+        "apps/server/test/lifecycle-execution.test.ts",
+        "apps/server/test/perception.test.ts",
+        "apps/server/test/file-processing.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S11",
+      "title": "旧 processing DAG authority/依赖迁移到共享 engine",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed processing DAG migration markers, old dependency-table authority replay and constructor migration. Fresh final processing schema uses execution_steps as the sole execution authority.",
+      "files": [
+        "apps/server/src/processing-runtime.ts"
+      ],
+      "retainedCurrentBoundary": "Current processing projections, dependency readiness, processor output/cache identity and explicit current retry remain.",
+      "relatedTests": [
+        "apps/server/test/architecture-upgrade.test.ts",
+        "apps/server/test/execution-engine.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S12",
+      "title": "旧 query/insight receipts 安装 canonical execution",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed installation of canonical receipts for legacy query/insight runs. A stored run missing its canonical step is rejected with 409 without rewriting its JSON. New runs enqueue canonical execution immediately.",
+      "files": [
+        "apps/server/src/run-execution.ts",
+        "apps/server/src/query-runs.ts",
+        "apps/server/src/insight-runs.ts"
+      ],
+      "retainedCurrentBoundary": "Current owner heartbeat, running-step interruption, deadline/fence protection and genuine crashed-owner recovery remain and use actual execution receipts in fixtures.",
+      "relatedTests": [
+        "apps/server/test/operation-runs.test.ts",
+        "apps/server/test/query-runs.test.ts",
+        "apps/server/test/insight-runs.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S13",
+      "title": "启动时 reviewed legacy Memory 自动发布、清 proposed checkpoints",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed activateReviewedLegacy constructor publication and legacy proposed-checkpoint clearing. Startup does not publish or mutate historical Memory; current extraction requires verified admission/proof and publishes through the current transaction.",
+      "files": [
+        "apps/server/src/memory.ts",
+        "apps/server/src/memory-schema.ts"
+      ],
+      "retainedCurrentBoundary": "Current bounded exact review, publication receipts, checkpoints and current revision replacement remain.",
+      "relatedTests": [
+        "apps/server/test/memory-review.test.ts",
+        "apps/server/test/memory-revisions.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S14",
+      "title": "旧 Memory 删除意图身份/来源 lineage 补齐",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed ALTER/default/identity/lineage backfills. Fresh deletion dependencies include origin identity and lineage keys; deletion records require sourceLineageComplete and derivationSourceIds rather than filling them on read.",
+      "files": [
+        "apps/server/src/memory-deletions.ts",
+        "apps/server/src/memory-schema.ts"
+      ],
+      "retainedCurrentBoundary": "Current deletion intent, prevent-resurrection checks, ancestor identity and partial-lineage conservative protection remain.",
+      "relatedTests": [
+        "apps/server/test/memory-deletion-permissions.test.ts",
+        "apps/server/test/memory-automatic-deletion.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S15",
+      "title": "OCR managed settings 和旧连接失败一次性恢复",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed old managed OCR settings migration, startup failed-job reset markers and obsolete connection-failure retry reset. Fresh managed settings are explicit; readiness cannot clear exhausted attempts. Retired charging reason is no longer produced.",
+      "files": [
+        "apps/server/src/perception.ts",
+        "apps/server/src/app.ts"
+      ],
+      "retainedCurrentBoundary": "Current worker readiness, bounded waits, explicit owner retry, provider failure classification, cancellation/fencing and unknown missing OCR status remain. Fixtures verify no automatic exhausted-failure reset.",
+      "relatedTests": [
+        "apps/server/test/perception.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S16",
+      "title": "不支持的旧 vault/Coding 索引启动拒绝",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Fresh backend schema is epoch 3/user_version 3. An old/missing populated epoch is rejected before schema/data mutation; no automatic upgrade, reset or real-directory read was performed.",
+      "files": [
+        "apps/server/src/evidence-store.ts",
+        "apps/server/src/app.ts",
+        "scripts/backup.ts",
+        "scripts/profile-lib.mjs",
+        "scripts/security-tests.mjs",
+        "apps/server/test/import-backup.test.ts"
+      ],
+      "retainedCurrentBoundary": "Malformed raw Coding vault rejection remains as an explicit security/architecture admission boundary; it does not read/convert retired formats. Generated fixture proves old epoch rows remain unchanged.",
+      "relatedTests": [
+        "apps/server/test/backend-epoch.test.ts",
+        "apps/server/test/architecture-upgrade.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "finalLinkedCleanup": [
+        "Offline backup/restore requires actual SQLite epoch3 and manifest storageEpoch3 before destination writes; referenced current chunks and hashed source batches only; current .plain/.aes retained; old layouts/bare parts/manifest rejected. Focused13+security9 and full gate passed."
+      ],
+      "scope": "server"
+    },
+    {
+      "id": "S17",
+      "title": "旧截图/文件任务没有自动付费处理资格",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed historical ALTER default-0 eligibility upgrade. Fresh task tables have current explicit eligible state; all current writers apply owner intake authorization directly.",
+      "files": [
+        "apps/server/src/file-schema.ts",
+        "apps/server/src/perception.ts",
+        "apps/server/src/file-processing.ts"
+      ],
+      "retainedCurrentBoundary": "Current paid-processing opt-in, owner preview/disclosure grant, local-only policy and automatic-model admission are retained. This is not permission to process all existing content.",
+      "relatedTests": [
+        "apps/server/test/perception.test.ts",
+        "apps/server/test/file-processing.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S18",
+      "title": "截图/文件/Memory 搜索、依赖与浏览读模型的历史回填",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed historical scans rebuilding screenshot/file/Memory search, browser, dependency and source catalog projections. Fresh final tables/triggers are installed and current writes/deletes maintain them. Blob-count seed is a fresh sentinel, not a historical backfill.",
+      "files": [
+        "apps/server/src/read-models.ts",
+        "apps/server/src/source-catalog.ts",
+        "apps/server/src/memory.ts",
+        "apps/server/src/memory-schema.ts",
+        "apps/server/src/evidence-store.ts"
+      ],
+      "retainedCurrentBoundary": "Current pagination, search/index updates, deletion hooks and explicit current embedding rebuild remain; fixture seeds are inserted after trigger installation.",
+      "relatedTests": [
+        "apps/server/test/memory-admission.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S19",
+      "title": "Material anchors、可见序号及payload删除触发器升级",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed ALTER/backfill for Material anchors/visible ordinals and historical trigger replacement. Final anchor/ordinal columns and payload deletion trigger are created directly. Current capture deletion membership is typed capture only, without bare-ID legacy alias.",
+      "files": [
+        "apps/server/src/materials.ts"
+      ],
+      "retainedCurrentBoundary": "Current material versions, stable anchors, payload retention cleanup, prepared original grants and quote addressing remain. Fixed fresh payload trigger to reference material_block_versions.",
+      "relatedTests": [
+        "apps/server/test/materials.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S20",
+      "title": "Source pipeline 存量工作无storage/checkpoint/generation/recipe pins",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Fresh source work schema includes storage/checkpoint/generation/recipe/component pins and fingerprints. Removed history migration/default authority for persisted jobs; current recipe writes canonical complete work.",
+      "files": [
+        "apps/server/src/source-pipelines.ts",
+        "apps/server/src/materials.ts",
+        "apps/server/src/source-archive.ts"
+      ],
+      "retainedCurrentBoundary": "Current source revision invalidation, append receipts, current recipe upgrade/rebuild and bounded component execution remain.",
+      "relatedTests": [
+        "apps/server/test/source-pipelines.test.ts",
+        "apps/server/test/source-recipe-integration.test.ts",
+        "apps/server/test/material-memory-work.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S21",
+      "title": "共享Execution步骤/Operation生成关系和optional计数升级",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed ALTER/old relationship reconstruction and historical optional-count backfills. Fresh execution and operation membership schemas include recovery_deadline, generation/slot/optional and canonical projection triggers.",
+      "files": [
+        "apps/server/src/execution-engine.ts",
+        "apps/server/src/operation-projection.ts"
+      ],
+      "retainedCurrentBoundary": "Current operation aggregation, optional terminal counts, fair scheduling, resources, dependencies, leases/fences and executing operation membership remain.",
+      "relatedTests": [
+        "apps/server/test/operations.test.ts",
+        "apps/server/test/operation-runs.test.ts",
+        "apps/server/test/execution-engine.test.ts",
+        "apps/server/test/architecture-upgrade.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S22",
+      "title": "授权账本、Memory草稿和资产储存ledger升级",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Replaced old authorization/draft/storage-ledger column upgrades with final CREATE schemas and current triggers. Removed old missing binding/origin/lineage column skip logic; no constructor old-record conversion remains.",
+      "files": [
+        "apps/server/src/memory-input-authorization.ts",
+        "apps/server/src/memory-extraction-drafts.ts",
+        "apps/server/src/storage-ledger.ts",
+        "apps/server/src/processing-runtime.ts"
+      ],
+      "retainedCurrentBoundary": "Current lazy accounting for a newly installed plugin table is retained: plugin installation can introduce a current table after writes. Current authorization revision, quota and atomic draft publication remain.",
+      "relatedTests": [
+        "apps/server/test/memory-input-authorization.test.ts",
+        "apps/server/test/assets.test.ts",
+        "apps/server/test/material-memory-work.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S23",
+      "title": "旧无scope自动Memory工作迁移时保留物料并撤销自动重放",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed migration that retained old unscoped automatic Memory materials while withdrawing replay authority. Fresh requests persist the complete current scope, source/recipe pins and authorization metadata.",
+      "files": [
+        "apps/server/src/material-memory-work.ts",
+        "apps/server/src/memory-input-authorization.ts"
+      ],
+      "retainedCurrentBoundary": "Current explicit scope revocation, original disclosure permission, idempotent automatic claims and current source rebuild remain.",
+      "relatedTests": [
+        "apps/server/test/material-memory-work.test.ts",
+        "apps/server/test/memory-input-authorization.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S24",
+      "title": "对话json.turns拆到conversation_turns历史表",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed extraction of embedded json.turns into historical conversation_turns. Fresh current conversations write turns directly to the normalized table.",
+      "files": [
+        "apps/server/src/conversations.ts"
+      ],
+      "retainedCurrentBoundary": "Current conversation history pagination, evidence lineage, continuity and privacy invalidation remain.",
+      "relatedTests": [
+        "apps/server/test/conversations.test.ts",
+        "apps/server/test/conversation-lineage.test.ts",
+        "apps/server/test/combined-backup-recovery.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S25",
+      "title": "旧 Memory batch 缺独立 pins，以及当前 Coding 无 pins 路径共用恢复",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Every current batch stores independent materialInputs and materialRefs; readers reject missing arrays/maps rather than projecting job-level pins. Removed unpinned Coding conversation fallback; current preparation supplies pinned Material inputs and exact bounded original ranges. All jobs persist inputPlanVersion 1 and explicit activationRequired.",
+      "files": [
+        "apps/server/src/memory-pipeline.ts",
+        "apps/server/src/app.ts"
+      ],
+      "retainedCurrentBoundary": "Metadata-only job list intentionally omits internal pin payloads while always returning inputPlans/recipeProgress/memoryCount. Current independent batch splitting/retry retains the matching subset of frozen pins.",
+      "relatedTests": [
+        "apps/server/test/memory-artifact-composition.test.ts",
+        "apps/server/test/memory-material-gate.test.ts",
+        "apps/server/test/memory-manual-selection.test.ts",
+        "apps/server/test/memory-authored-selection.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S26",
+      "title": "旧人工任务同时选择authored Material和原件的精确一次性复用",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed completedAuthoredCoverage exact-once reuse for old duplicate authored-Material/raw-original jobs and authoredMaterialOriginalForReuse public wrapper. Explicit current recheck resolves the currently pinned original and performs a fresh authorized query/review.",
+      "files": [
+        "apps/server/src/memory-pipeline.ts",
+        "apps/server/src/evidence-reader.ts"
+      ],
+      "retainedCurrentBoundary": "Current selection deduplicates authored originals; current review cache and exact proof validation remain within current pinned inputs.",
+      "relatedTests": [
+        "apps/server/test/memory-authored-selection.test.ts",
+        "apps/server/test/memory-manual-selection.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S27",
+      "title": "旧Memory版本、分类和admission元数据读取默认",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed old Memory version/domain/tier/kind/admission read defaults and legacy admission layer. Strict current schema and extract require current semantic classification, verified admission and exact original evidence provenance; fresh catalog triggers project only canonical records.",
+      "files": [
+        "apps/server/src/memory-schema.ts",
+        "apps/server/src/memory.ts",
+        "apps/server/src/memory-integration.ts"
+      ],
+      "retainedCurrentBoundary": "Model-authored current candidate classification, current empty-result extraction, metadata overview and explicit full detail are distinct supported outputs; overview uses a dedicated card constructor, not a missing-field fallback.",
+      "relatedTests": [
+        "apps/server/test/memory-admission.test.ts",
+        "apps/server/test/memory-automatic-deletion.test.ts",
+        "apps/server/test/memory-integration.test.ts",
+        "apps/server/test/memory-pipeline.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S28",
+      "title": "历史缺disclosure依赖时全量保守清理，混有现行不完整依赖保护",
+      "status": "retained_current_boundary_verified",
+      "implementation": "No historical evidence-dependency backfill or citation-based fabrication is installed. Current provider-disclosure/deletion revision is honored. The incomplete/missing/unsupported dependency rejection path remains conservative invalidation rather than reading old content.",
+      "files": [
+        "apps/server/src/evidence-store.ts",
+        "apps/server/src/conversation-lineage.ts",
+        "apps/server/src/query-runs.ts"
+      ],
+      "retainedCurrentBoundary": "Retained current privacy boundary: provider aborts, partial disclosure and injected current query consumers can lack complete dependency proof, so deletion must revoke associated prose. complete=false must not be treated as safe.",
+      "relatedTests": [
+        "apps/server/test/conversation-lineage.test.ts",
+        "apps/server/test/evidence-dependencies.test.ts",
+        "apps/server/test/evidence-exposure.test.ts",
+        "apps/server/test/query-runs.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S29",
+      "title": "旧raw extraction lifecycle任务/cursor与旧Insight时间配置升级",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed layered-extraction migration journal, old raw lifecycle-job cancellation/cursor reset and legacyInsightHours adapter. Current insight interval environment writer directly initializes current settings; intakeArtifactIds names its supported screenshot/authored intake. Changed source stream is rejected before registration mutation.",
+      "files": [
+        "apps/server/src/memory-lifecycle.ts",
+        "apps/server/src/lifecycle-extensions.ts",
+        "apps/server/src/memory-pipeline.ts",
+        "apps/server/src/config.ts",
+        "apps/server/src/app.ts"
+      ],
+      "retainedCurrentBoundary": "Current artifact intake, source recipe queues, lifecycle progress and current configurable integration/consolidation remain.",
+      "relatedTests": [
+        "apps/server/test/architecture-upgrade.test.ts",
+        "apps/server/test/lifecycle-execution.test.ts",
+        "apps/server/test/memory-lifecycle.test.ts",
+        "apps/server/test/memory-integration.test.ts",
+        "apps/server/test/memory-authored-selection.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S30",
+      "title": "旧任务没有冻结contextTime时使用持久化创建/开始时间",
+      "status": "implemented_verified_full_gate",
+      "implementation": "All new Memory jobs persist one frozen contextTime at creation, including ordinary/manual jobs. Active integration windows require their persisted clock; reader no longer substitutes createdAt/startedAt for missing clocks.",
+      "files": [
+        "apps/server/src/memory-pipeline.ts",
+        "apps/server/src/memory-integration.ts",
+        "apps/server/src/app.ts"
+      ],
+      "retainedCurrentBoundary": "Clock generation at creation when the caller does not supply one is a current writer behavior. Restart, retry, review receipt and cache keep the same persisted semantic time.",
+      "relatedTests": [
+        "apps/server/test/semantic-context-time.test.ts",
+        "apps/server/test/memory-integration.test.ts",
+        "apps/server/test/conversation-understanding.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S31",
+      "title": "旧Coding Material schema<5含tool正文，被query和Memory读取隔离",
+      "status": "retained_current_boundary_verified",
+      "implementation": "No old schema<5 Coding body conversion or legacy raw query path remains. Current recipe produces clean tool-free Coding conversations and current plugin changes can rebuild the derived head.",
+      "files": [
+        "apps/server/src/evidence-reader.ts",
+        "apps/server/src/materials.ts",
+        "apps/server/src/conversation-understanding.ts",
+        "apps/server/src/source-pipelines.ts"
+      ],
+      "retainedCurrentBoundary": "The minimum-safe-schema refusal is retained as content security validation: low-version or malformed externally produced Material must never expose tool bodies to query/Memory. It is not old-data compatibility.",
+      "relatedTests": [
+        "apps/server/test/conversation-understanding.test.ts",
+        "apps/server/test/source-pipelines.test.ts",
+        "apps/server/test/source-recipe-integration.test.ts",
+        "apps/server/test/evidence-reader.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S32",
+      "title": "Source pipeline旧group/organize callback扩展契约与内置重复入口",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Removed group/organize callback registration and callback executor contract; archive pipelines require explicit recipes with component pins/fingerprints. Coding grouping/organizing algorithms remain registered current recipe components. Fixtures now declare explicit recipes.",
+      "files": [
+        "apps/server/src/source-pipelines.ts",
+        "apps/server/src/coding-source-plugin.ts"
+      ],
+      "retainedCurrentBoundary": "Current algorithm functionality, source grouping, privacy and plugin component execution remain. Plugins using the retired callback interface must adopt the explicit recipe contract.",
+      "relatedTests": [
+        "apps/server/test/source-pipelines.test.ts",
+        "apps/server/test/source-recipe-integration.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S33",
+      "title": "旧无结构化Transcript产物只允许重新提取后review",
+      "status": "retained_current_boundary_verified",
+      "implementation": "Removed legacy-specific review fallback/message. Review reads only a current structured Transcript and rejects unavailable/malformed layout; text-only artifacts cannot fabricate transcript coordinates.",
+      "files": [
+        "apps/server/src/file-reviews.ts"
+      ],
+      "retainedCurrentBoundary": "Structured transcript exact chunks, time/locators, correctable layout and model review safety remain mandatory current validation.",
+      "relatedTests": [
+        "apps/server/test/file-processing.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S34",
+      "title": "旧Import工作缺处理模式/媒体计数/phase fingerprint元数据",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Current import writers persist processing mode, recordsProcessed and preparationRevision from creation. Removed old progress arithmetic, preview read defaults and legacy phase fingerprint sentinel; current phase identity/recovery uses explicit metadata.",
+      "files": [
+        "apps/server/src/imports.ts"
+      ],
+      "retainedCurrentBoundary": "Before preparation, manifestHash is legitimately unavailable; confirmation requires the actual prepared hash. Current review/confirm, cancellation, media progress and portable-backup restore remain.",
+      "relatedTests": [
+        "apps/server/test/imports.test.ts",
+        "apps/server/test/import-media.test.ts",
+        "apps/server/test/import-backup.test.ts",
+        "apps/server/test/import-manifest-worker.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S35",
+      "title": "升级后旧网页lazy bundle404边界",
+      "status": "retained_current_boundary_verified",
+      "implementation": "Confirmed and retained the generic current missing hashed-bundle 404/no-store guard. This is exercised by every current release and unknown static resource; it is not a persisted old-format loader.",
+      "files": [
+        "apps/server/src/app.ts"
+      ],
+      "retainedCurrentBoundary": "Returning SPA HTML for a missing JavaScript asset would break current loading. Current build mismatch and HTML cache policy remain.",
+      "relatedTests": [],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "S36",
+      "title": "Portable archive v1新增字段缺省允许较早或精简归档导入",
+      "status": "implemented_verified_full_gate",
+      "implementation": "Portable archive export/import now use version 2 with all collection fields and current source timestamps required. Version 1 and sparse envelopes are rejected atomically instead of filling missing sets or timestamps.",
+      "files": [
+        "apps/server/src/evidence-store.ts"
+      ],
+      "retainedCurrentBoundary": "Current full archive import/export, canonical source heads/version references, encrypted original roundtrip and deletion intents remain.",
+      "relatedTests": [
+        "apps/server/test/import-backup.test.ts",
+        "apps/server/test/archived-files.test.ts"
+      ],
+      "verification": "Current strict-contract fixtures and focused convergence are green; parent will run the unified full suite after merging origin/main.",
+      "scope": "server"
+    },
+    {
+      "id": "D01",
+      "title": "Ingress v1 → v2 断代迁移、旧队列本地归档及重新导入",
+      "status": "removed",
+      "implementation": "删除旧 capture/source 协议清空迁移、旧 OCR 上传归档状态；新 desktop/queue/notes/local-sources/storage marker 为 3，旧数据明确拒绝且不改写。",
+      "files": [
+        "apps/desktop/src/storage-format.ts",
+        "apps/desktop/src/main.ts",
+        "apps/desktop/src/queue.ts",
+        "apps/desktop/src/source-manager.ts",
+        "apps/desktop/src/source-sync.ts",
+        "apps/desktop/src/note-draft.ts",
+        "apps/desktop/test/ingress-migration.test.ts",
+        "apps/desktop/test/queue.test.ts",
+        "apps/desktop/test/note-draft.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D02",
+      "title": "来源状态 JSON → SQLite、整数组 → 单 revision 行、内嵌 catalog → 行存储",
+      "status": "removed",
+      "implementation": "SQLite user_version=3 新建；拒绝 JSON、旧 SQLite、嵌入 catalog/whole-array pending，不转换、不重命名。保留当前增量行表、事务和 busy_timeout。",
+      "files": [
+        "apps/desktop/src/source-state-store.ts",
+        "apps/desktop/src/source-sync.ts",
+        "apps/desktop/test/source-state-store.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D03",
+      "title": "Coding evidence 字段兼容旧中央并永久固定 revision 的 wire schema",
+      "status": "removed",
+      "implementation": "发送完整当前 coding evidence；移除字段降级协商与 codingWireFields 持久化 pin，旧 pin 状态明确拒绝。",
+      "files": [
+        "apps/desktop/src/source-sync.ts",
+        "apps/desktop/src/source-state-store.ts",
+        "apps/desktop/test/coding-transport-compatibility.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D04",
+      "title": "仅为旧队列存在的本机 OCR 补做链路及旧节点 OCR 404 兼容",
+      "status": "removed",
+      "implementation": "删除延迟 OCR/backlog/charging 重试与补传接口；保留每次新 capture 的本机 OCR 隐私 gate、captureAbort 和准确 ACK。",
+      "files": [
+        "apps/desktop/src/collector.ts",
+        "apps/desktop/src/queue.ts",
+        "apps/desktop/src/transport.ts",
+        "apps/desktop/src/capture-browser.ts",
+        "apps/desktop/test/collector.test.ts",
+        "apps/desktop/test/upload-gate.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D05",
+      "title": "读取历史本机加密 envelope/key；批量解密入口已无生产调用",
+      "status": "removed",
+      "implementation": "格式3内容直接原样写读普通字节，包括碰巧以旧magic prefix开头的合法原文；旧格式由storage marker/schema拒绝，不做内容嗅探、AES读取或批量解密。凭据保留safeStorage。",
+      "files": [
+        "apps/desktop/src/local-content.ts",
+        "apps/desktop/src/main.ts",
+        "apps/desktop/src/background-worker.ts",
+        "apps/desktop/src/background.ts",
+        "apps/desktop/src/queue.ts",
+        "apps/desktop/src/note-draft.ts",
+        "apps/desktop/src/original-spool.ts",
+        "apps/desktop/test/local-content.test.ts",
+        "apps/desktop/test/original-spool.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D06",
+      "title": "旧默认 profile 沿用原 Electron userData 和启动项语义",
+      "status": "removed",
+      "implementation": "规范默认 profile=default 并复用原 userData；显式 legacy 名拒绝。不会偷偷切换新目录；原目录旧格式需要备份/重置。",
+      "files": [
+        "apps/desktop/src/profile.ts",
+        "apps/desktop/src/main.ts",
+        "apps/desktop/src/ui.ts",
+        "apps/desktop/test/profile.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D07",
+      "title": "无 binding/owner marker 的旧目录安全认领",
+      "status": "removed",
+      "implementation": "不再自动认领旧缺 binding/owner 的非空目录；fresh 初始化写 owner/binding。保留当前队列搬移、外置盘不可用、连接变更与事务恢复。",
+      "files": [
+        "apps/desktop/src/connection-binding.ts",
+        "apps/desktop/src/queue-storage.ts",
+        "apps/desktop/src/queue.ts",
+        "apps/desktop/test/connection-binding.test.ts",
+        "apps/desktop/test/queue-storage.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D08",
+      "title": "缺新字段的历史配置补齐及排除列表旧新两套共存",
+      "status": "removed",
+      "implementation": "统一 appCollectionRules，排除按钮写 off；删除 excludedAppIds 与 localContentEncryption/ocrEnabled/ocrOnlyWhileCharging 配置旧字段、旧默认 merge；配置 envelope3 严格读当前字段。旧配置整体拒绝，避免丢失历史隐私排除。",
+      "files": [
+        "apps/desktop/src/config.ts",
+        "apps/desktop/src/contracts.ts",
+        "apps/desktop/src/app-collection.ts",
+        "apps/desktop/src/ui.ts",
+        "apps/desktop/src/index.html",
+        "apps/desktop/src/collector.ts",
+        "apps/desktop/test/config.test.ts",
+        "apps/desktop/test/app-collection.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D09",
+      "title": "旧 snapshot 音频索引补建独立本机处理任务",
+      "status": "removed",
+      "implementation": "未修改音频采用普通 unchanged shortcut；保留新/改音频生成独立 processing job、ASR 重试、状态与源 spool。",
+      "files": [
+        "apps/desktop/src/source-files.ts",
+        "apps/desktop/test/source-files.test.ts",
+        "apps/desktop/test/local-file-processing.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D10",
+      "title": "File manifest 未带 state 的旧 ACK 格式容忍",
+      "status": "removed",
+      "implementation": "批量 manifest 必须显式 accepted/existing/rejected/missing_original；去掉无 state+ack 接受。保留现行批量上限能力协商和逐条路径。",
+      "files": [
+        "apps/desktop/src/source-sync.ts",
+        "apps/desktop/test/source-sync-batch.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D11",
+      "title": "旧 support events.json 作为 NDJSON 不存在时的导出来源",
+      "status": "removed",
+      "implementation": "去 support events.json 双写和回退；read/readRaw/exportRange 使用 NDJSON，保留轮转、安全清洗与当前 raw UI。旧 events.json 原样留下，不读取。",
+      "files": [
+        "apps/desktop/src/support.ts",
+        "apps/desktop/test/support.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D12",
+      "title": "CodingCheckpoint 新 catalog/counter 字段对旧持久化游标的补齐",
+      "status": "removed",
+      "implementation": "Coding checkpoint3 fresh 必须填齐 catalog/counter/time 和 cursor stat/hash；旧缺字段或 version 明确拒绝。保留当前第三方日志 decoder、追加/partial-line restart。",
+      "files": [
+        "apps/desktop/src/coding-agents.ts",
+        "apps/desktop/test/coding-agents.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D13",
+      "title": "来源 adapter 版本升级检查和旧缺版本默认1",
+      "status": "partial_removed_current_boundary_preserved",
+      "implementation": "移除缺 adapterVersion 猜1；fresh 写 adapterVersion=1，持久化必须带 version。保留显式 adapter 版本变更重扫与未 ACK outbox。",
+      "files": [
+        "apps/desktop/src/source-sync.ts",
+        "apps/desktop/test/source-sync.test.ts",
+        "apps/desktop/test/source-scheduling.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "ANDROID-01",
+      "title": "读取旧 AES/GCM 内容封装，以及遗留可选加密写入开关",
+      "status": "implemented",
+      "result": "格式3本机边界与明文内容编解码；旧AES envelope/escape reader和可选内容加密设置退役",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/LocalDataFormat.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/LocalContentCipher.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/Settings.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/MoteApplication.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt"
+      ],
+      "regressions": [
+        "LocalContentCipherTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-02",
+      "title": "全域旧内容批量解密工具残留，目前只有测试入口",
+      "status": "implemented",
+      "result": "删除 LocalContentDecryptor/LocalContentMigration 和各store migrateLegacyContent 入口；保留当前SecretBox凭据、中央私有草稿及ledger",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/LocalContentDecryptor.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/LocalContentMigration.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/SecretBox.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/LocalSources.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/NoteDraftStore.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/BulkDedupeWorker.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/ImageDedupeDiagnosticsStore.kt"
+      ],
+      "regressions": [
+        "LocalContentCipherTest",
+        "BulkDedupeQueueTest",
+        "LocalSourcesTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-03",
+      "title": "Ingress v2 一次性切换：清除旧 outbox、源检查点、上传状态",
+      "status": "implemented",
+      "result": "删除IngressV2Migration及清空旧outbox/checkpoint helper，旧app存量要求显式清除应用存储",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/IngressV2Migration.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/MoteApplication.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/LocalSources.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt"
+      ],
+      "regressions": [
+        "LocalContentCipherTest",
+        "IngressV2ProtocolTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-04",
+      "title": "保留旧用户默认完整内容采集，新安装默认只采应用活动",
+      "status": "implemented",
+      "result": "新设置构造时保存完整configurationFormat3快照、统一activity默认；缺配置字段拒绝且不再依据interval/enabled推断content",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/Settings.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/AppCollectionRules.kt"
+      ],
+      "regressions": [
+        "SettingsStorageInstrumentedTest (compiled only)",
+        "PowerOptimizationInstrumentedTest (compiled only)",
+        "AppPolicyAndActivityTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-05",
+      "title": "旧独立 central-owner-session.enc 一次性导入统一登录",
+      "status": "implemented",
+      "result": "统一中央会话不再读取/导入 central-owner-session.enc；旧app根目录未标格式3时拒绝进入当前路径",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/CentralClient.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/LocalDataFormat.kt"
+      ],
+      "regressions": [
+        "LocalContentCipherTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-06",
+      "title": "服务器未返回 node.protocol 时按旧协商前 v1 接受",
+      "status": "implemented",
+      "result": "node.protocol必有；null/undefined不是v1协商，现行协议range仍1",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/ProtocolCompatibility.kt"
+      ],
+      "regressions": [
+        "ProtocolCompatibilityTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-07",
+      "title": "上传 bundle -> JSON batch -> individual 老端点回退与24小时能力缓存",
+      "status": "implemented",
+      "result": "删除bundle→JSONbatch→single 404/405回退和24小时能力cache；packed=false合法单条上传保留，packed=true仅bundle；413减半与严格v2ACK保留",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/UploadWorker.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/UploadNegotiation.kt"
+      ],
+      "regressions": [
+        "UploadNegotiationTest",
+        "IngressV2ProtocolTest",
+        "CaptureBundleTest",
+        "SyncRecoveryTest",
+        "OfflineSyncInstrumentedTest (compiled only)"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-08",
+      "title": "更新器支持旧 v* 统一 release feed 和无 component 的混合清单",
+      "status": "implemented",
+      "result": "更新器仅android-v* feed与component=android签名清单；旧v*、缺component、混合组件清单拒绝",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/AppUpdateStore.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/AppRelease.kt"
+      ],
+      "regressions": [
+        "AppReleaseTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-09",
+      "title": "文件 transport 索引版本不匹配时重建，兼顾旧版与新来源",
+      "status": "implemented",
+      "result": "当前FileArchiveQueue新state明确transportQueueVersion3；无版本或非3状态拒绝，不重建旧checkpoint；新state写入仍保存3",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt"
+      ],
+      "regressions": [
+        "FileArchiveQueueTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-10",
+      "title": "旧 exact 截图签名 WxH:hash 的解析",
+      "status": "implemented",
+      "result": "ScreenshotDedupeHelper只接受v2|签名，旧WxH:hash不读",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/ScreenshotDedupeHelper.kt"
+      ],
+      "regressions": [
+        "ScreenshotDedupeTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-11",
+      "title": "本机随手记旧 mood 字段隐藏读写",
+      "status": "implemented",
+      "result": "删除MainActivity隐藏mood EditText及旧草稿mood回填；本机notes界面统一空mood；中央mood产品与已prepared不可变payload保留",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/NoteDraftStore.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/CentralScreens.kt"
+      ],
+      "regressions": [
+        "DurableQueueTest",
+        "NoteDraftStoreTest",
+        "NotesDiagnosticsInstrumentedTest (compiled only)"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-12",
+      "title": "旧本机延迟OCR及OCR补上传队列",
+      "status": "implemented",
+      "result": "删除CaptureOcrWorker、本机pending OCR字段及补上传队列/API；拒绝pending/_ocr*旧内容，中央derived OCR显示与UploadGate native OCR保留",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/CaptureOcr.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/QueueBrowseIndex.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/QueueArchive.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/UploadWorker.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/RuntimeSettings.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/MoteApplication.kt"
+      ],
+      "regressions": [
+        "LocalContentCipherTest",
+        "MediaObservationTest",
+        "CaptureAlbumsTest",
+        "RetainedOriginTest",
+        "CaptureRecordsInstrumentedTest (compiled only)"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-13",
+      "title": "旧未记dataOrigin的设置从server推导节点绑定",
+      "status": "implemented",
+      "result": "dataOrigin成为格式3设置必有字段，不再从server或ensureDataOrigin回填；当前明确绑定、未绑定本机数据、disconnect sticky origin、retained跨节点保护保留",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/Settings.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/QuickNotes.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/SourceWorkers.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/CapturePipeline.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/SystemEventCollector.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/MediaCollectionService.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/CaptureAccessibilityService.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/FileEvidencePoller.kt"
+      ],
+      "regressions": [
+        "RetainedOriginTest",
+        "IssueOneRegressionTest",
+        "SyncRecoveryTest",
+        "OfflineSyncInstrumentedTest (compiled only)"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-14",
+      "title": "旧本机来源配置缺新增字段时补默认",
+      "status": "implemented",
+      "result": "LocalSource.from当前完整字段使用get*，旧缺字段JSON拒绝；kind合法可选uri/calendarId保留",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/LocalSources.kt"
+      ],
+      "regressions": [
+        "LocalSourcesTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-15",
+      "title": "AskActivity 旧入口class保留但已成为当前导航依赖",
+      "status": "implemented",
+      "result": "删除AskActivity类及manifest声明；合并origin/main后保留MainActivity内嵌Ask主导航与CentralContent共享页面，CentralActivity保留当前中央深链入口；新导航和草稿/会话恢复fixture不再依赖已删除类。",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/NativeUi.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/AskActivity.kt",
+        "apps/android/app/src/main/AndroidManifest.xml",
+        "apps/android/app/src/main/java/dev/mote/collector/CentralContent.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/CentralActivity.kt"
+      ],
+      "regressions": [
+        "NavigationInstrumentedTest (compiled only)",
+        "NativeCentralInstrumentedTest (compiled only)"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    }
+  ],
+  "validation": {
+    "root": {
+      "shared": "90/90 fixture tests passed",
+      "localInference": "14/14 fixture tests passed",
+      "web": "218/218 fixture tests and production build passed",
+      "agent": "220/220 passed, zero failure/skip with installed Codex synthetic Responses fixture enabled",
+      "e2e": "generated Mac/Android/note → encrypted vault → actual Harness with fixture provider → evidence/image → portable archive passed",
+      "liveModel": "local Codex Server gpt-6.1-sol: 8-model catalog, connection/tool probe, copied profile module selection and query search_context/evidence with 1 verified citation passed; generated data only",
+      "mandatoryCheck": {
+        "command": "MOTE_TEST_PYTHON_OS_SANDBOX=1 MOTE_TEST_CODEX_BIN=<installed Codex binary> npm run check:local",
+        "result": "passed, exit0, 2029 tests passed, 0 failed/cancelled/skipped",
+        "log": "/private/tmp/mote-check-local-all-fixtures-verified.log",
+        "i18nMessages": 6064,
+        "desktop": {
+          "files": 53,
+          "tests": 388,
+          "pass": 388
+        },
+        "server": {
+          "tests": 1040,
+          "pass": 1040,
+          "fail": 0,
+          "skip": 0
+        },
+        "web": {
+          "tests": 218,
+          "pass": 218
+        },
+        "agent": {
+          "tests": 220,
+          "pass": 220,
+          "fail": 0,
+          "skip": 0
+        },
+        "diagnostics": {
+          "tests": 5,
+          "pass": 5
+        },
+        "localInference": {
+          "tests": 14,
+          "pass": 14
+        },
+        "shared": {
+          "tests": 90,
+          "pass": 90
+        },
+        "supervisor": "pass",
+        "scriptUnitTests": {
+          "tests": 50,
+          "pass": 50,
+          "fail": 0
+        },
+        "cli": {
+          "tests": 4,
+          "pass": 4,
+          "fail": 0
+        },
+        "installedCodexFixture": "pass with installed binary and synthetic Responses provider; this is distinct from the separately measured live-model test",
+        "macOSPythonSandboxFixture": "pass with actual OS sandbox, staged generated input, outside-file and network denial"
+      },
+      "postMergeE2E": {
+        "result": "pass",
+        "log": "/private/tmp/mote-e2e-after-main-final.log",
+        "personalDataUsed": false
+      },
+      "postMergeMediaE2E": {
+        "result": "pass",
+        "log": "/private/tmp/mote-media-e2e-after-main-final.log",
+        "personalDataUsed": false
+      },
+      "firstFinalGate": {
+        "result": "failed only on an obsolete legacy prompt text assertion; central 1035 total/1034 pass/1 existing platform skip/0 fail, desktop388,web218,shared90,localinference14,diagnostics5 passed; task-context fixture corrected to current published lead and exact original-proof guidance; subsequent complete mandatory gate passed as recorded above",
+        "log": "/private/tmp/mote-check-local-final.log"
+      },
+      "taskContextFocused": {
+        "result": "11/11 pass",
+        "log": "/private/tmp/mote-agent-task-context-final.log"
+      },
+      "profileProcesses": {
+        "result": "pass",
+        "log": "/private/tmp/mote-profiles-verified.log",
+        "coverage": "isolated real central processes; encrypted image and strict epoch3 backup/restore; actual release upgrade/snapshot rollback/new data preservation/PID fencing"
+      },
+      "updateDeployment": {
+        "result": "2/2 pass",
+        "log": "/private/tmp/mote-update-deployment-verified.log"
+      },
+      "componentProductionBuild": {
+        "result": "pass",
+        "log": "/private/tmp/mote-components-build-verified.log",
+        "coverage": "current server/web/desktop production build with current libraries"
+      },
+      "securityScan": {
+        "changedPathsChecked": 474,
+        "credentialPatternCandidates": 0,
+        "personalDataCommitted": false
+      },
+      "finalDesktopTransport": {
+        "result": "53 files/388 pass after removing retired OCR-specific 400-to-version-upgrade error branch; current generic HTTP failure preserves queue",
+        "log": "/private/tmp/mote-desktop-transport-verified.log"
+      },
+      "macPythonOsSandbox": {
+        "command": "MOTE_TEST_PYTHON_OS_SANDBOX=1 node --import tsx --test apps/server/test/python-source-pack-executor.test.ts",
+        "result": "6/6 pass, 0 skip, including actual macOS sandbox read/write/network isolation of generated staged input",
+        "log": "/private/tmp/mote-python-os-sandbox-verified.log"
+      },
+      "finalDesktopProductionBuild": {
+        "result": "pass, exit0",
+        "log": "/private/tmp/mote-desktop-build-verified.log"
+      },
+      "defaultGate": {
+        "command": "npm run check:local",
+        "result": "passed, exit0",
+        "log": "/private/tmp/mote-check-local-verified.log",
+        "i18nMessages": 6064,
+        "desktop": {
+          "files": 53,
+          "tests": 388,
+          "pass": 388
+        },
+        "server": {
+          "tests": 1040,
+          "pass": 1039,
+          "fail": 0,
+          "skip": 1,
+          "skipReason": "existing opt-in macOS sandbox test"
+        },
+        "web": {
+          "tests": 218,
+          "pass": 218
+        },
+        "agent": {
+          "tests": 220,
+          "pass": 219,
+          "fail": 0,
+          "skip": 1,
+          "skipReason": "existing installed-Codex/synthetic-provider opt-in fixture"
+        },
+        "diagnostics": {
+          "tests": 5,
+          "pass": 5
+        },
+        "localInference": {
+          "tests": 14,
+          "pass": 14
+        },
+        "shared": {
+          "tests": 90,
+          "pass": 90
+        },
+        "supervisor": "pass",
+        "scriptUnitTests": {
+          "tests": 50,
+          "pass": 50,
+          "fail": 0
+        },
+        "cli": {
+          "tests": 4,
+          "pass": 4,
+          "fail": 0
+        }
+      },
+      "e2eFinal": {
+        "result": "passed",
+        "log": "/private/tmp/mote-e2e-verified.log"
+      },
+      "mediaE2EFinal": {
+        "result": "passed",
+        "log": "/private/tmp/mote-media-e2e-verified.log"
+      }
+    },
+    "server": [
+      {
+        "command": "npm run typecheck -w @mote/server",
+        "result": "pass",
+        "log": "/private/tmp/mote-server-final-typecheck.log"
+      },
+      {
+        "command": "npm run build -w @mote/server",
+        "result": "pass",
+        "log": "/private/tmp/mote-server-final-build.log"
+      },
+      {
+        "command": "node --import tsx --test --test-concurrency=4 --test-timeout=120000 <11 focused server test files>",
+        "result": "90 tests, 90 pass, 0 fail, 0 cancelled, 0 skipped; 11.25 seconds",
+        "log": "/private/tmp/mote-server-final-convergence3.log"
+      },
+      {
+        "command": "node --import tsx --test <5 execution/probe/profile/query/insight fixture files>",
+        "result": "20 tests, 20 pass, 0 fail",
+        "log": "/private/tmp/mote-server-five-fixtures-final.log"
+      },
+      {
+        "command": "node --import tsx --test <5 evidence/context/connectors/capture-browser fixture files>",
+        "result": "59 tests, 59 pass, 0 fail, 0 skip",
+        "log": "/private/tmp/mote-server-evidence-fixtures-final.log"
+      },
+      {
+        "command": "node --import tsx --test <4 coding/material/source-pipeline fixture files>",
+        "result": "37 tests, 37 pass, 0 fail; 10.8 seconds",
+        "log": "/private/tmp/mote-server-typed-material-fixtures-final.log"
+      },
+      {
+        "command": "npm run test -w @mote/server (previous pre-convergence complete snapshot)",
+        "result": "1032 tests, 1010 pass, 21 fail, 1 skip, 0 cancelled. All 21 failure groups subsequently corrected and focused tests above pass. The final full suite above has now passed; this earlier failed snapshot is retained as historical convergence evidence.",
+        "log": "/private/tmp/mote-server-final-suite.log"
+      },
+      {
+        "command": "Generated temporary vault with actual Agent Memory bridge resource roundtrip (desktop cross-review)",
+        "result": "pass: returned UUID discovery -> detail/includeEvidence -> exact note source proof/dependency; public bare refs remain denied",
+        "log": "/private/tmp/mote-memory-resource-bridge-after.log"
+      },
+      {
+        "command": "node --test scripts/update-tests.mjs",
+        "result": "12 tests, 12 pass, 0 fail/cancelled/skipped; 5.34 seconds",
+        "log": "/private/tmp/mote-update-tests-final-crossreview.log"
+      },
+      {
+        "command": "Desktop final strict backup focused validation (independently inspected logs)",
+        "result": "Current import/combined backup 13/13 and security 9/9 pass, 0 fail/cancelled/skipped; scripts typecheck pass",
+        "logs": [
+          "/private/tmp/mote-backup-current-import.log",
+          "/private/tmp/mote-backup-current-security.log",
+          "/private/tmp/mote-backup-current-typecheck.log"
+        ]
+      },
+      {
+        "command": "npm run check:local (full server suite after main merge and strict backup cleanup)",
+        "result": "1040 total, 1039 pass, 0 fail/cancelled, 1 existing opt-in macOS sandbox skip; complete repository gate exit0",
+        "log": "/private/tmp/mote-check-local-verified.log"
+      },
+      {
+        "command": "MOTE_TEST_PYTHON_OS_SANDBOX=1 MOTE_TEST_CODEX_BIN=<installed Codex binary> npm run check:local",
+        "result": "Complete final gate exit0; server1040/1040 pass, actual macOS sandbox opt-in enabled,0 failed/cancelled/skipped; entire repository2029/2029 pass",
+        "log": "/private/tmp/mote-check-local-all-fixtures-verified.log"
+      }
+    ],
+    "desktop": {
+      "desktopTypecheck": {
+        "status": "passed",
+        "log": "/private/tmp/mote-desktop-typecheck-owner-final.log"
+      },
+      "desktopVitest": {
+        "files": 53,
+        "tests": 388,
+        "passed": 388,
+        "failed": 0,
+        "log": "/private/tmp/mote-desktop-test-owner-complete.log",
+        "environment": "unsandboxed loopback generated fixture tests",
+        "durationSeconds": 44.89
+      },
+      "desktopJsBuild": "passed",
+      "completeDesktopBuild": {
+        "status": "passed",
+        "coverage": [
+          "TypeScript",
+          "UI esbuild",
+          "pinned Qwen C++",
+          "Swift native helper",
+          "Swift native updater",
+          "app icon"
+        ],
+        "log": "/private/tmp/mote-desktop-build-verified.log"
+      },
+      "realPersonalDataRead": false,
+      "realScreenshotsCaptured": false,
+      "physicalDeviceChecks": "not performed",
+      "liveModelChecks": "not performed",
+      "fullRepositoryChecks": {
+        "command": "fixture opt-ins enabled npm run check:local",
+        "status": "passed",
+        "log": "/private/tmp/mote-check-local-all-fixtures-verified.log",
+        "desktopTests": 388,
+        "overallTests": 2029,
+        "failed": 0,
+        "skipped": 0
+      },
+      "desktopNativeGeneratedProfiles": {
+        "status": "passed",
+        "phases": [
+          "dev write",
+          "test write",
+          "test restart read",
+          "dev restart read"
+        ],
+        "coverage": [
+          "independent Electron instances",
+          "current strict connection metadata",
+          "draft and device identity restart",
+          "credential encryption",
+          "offline outbox preserved",
+          "capture stayed stopped"
+        ],
+        "log": "/private/tmp/mote-desktop-native-profiles-complete.log"
+      },
+      "desktopNativeGeneratedContentUI": {
+        "status": "passed",
+        "coverage": [
+          "plain text note queue/draft writes",
+          "content encryption controls removed",
+          "capture stopped"
+        ],
+        "log": "/private/tmp/mote-desktop-content-ui-final.log"
+      },
+      "rawContentPrefixRegression": {
+        "status": "passed",
+        "files": 5,
+        "tests": 22,
+        "log": "/private/tmp/mote-desktop-raw-prefix-final.log",
+        "coverage": "arbitrary raw format3 bytes and magic-prefix-looking authored text survive restart; old storage rejected by markers"
+      },
+      "ownerScopeFocused": {
+        "status": "passed",
+        "files": 4,
+        "tests": 38,
+        "log": "/private/tmp/mote-desktop-owner-focused.log",
+        "coverage": [
+          "owner identity and invitation accepted",
+          "retired collector and MCP even with owner capability claims rejected",
+          "persisted old credentialScope rejected without rewriting",
+          "device/protocol/TLS/credential validation retained"
+        ]
+      },
+      "ownerRealCentralFixture": {
+        "status": "passed",
+        "log": "/private/tmp/mote-desktop-owner-real-central-final.log",
+        "coverage": [
+          "owner invitation redemption and self identity",
+          "encrypted credential config",
+          "current ingress2 note ACK",
+          "scoped source sync",
+          "full owner configuration API",
+          "unbound existing device takeover denied",
+          "revocation retains exact queued note and source revisions",
+          "bound same-origin reauthorization and ACK",
+          "different-origin backlog blocked"
+        ]
+      },
+      "ownerNativeOnboardingFixture": {
+        "status": "passed",
+        "log": "/private/tmp/mote-desktop-owner-native-onboarding-final.log",
+        "coverage": [
+          "real Electron invitation and generated QR Vision decode",
+          "explicit origin confirmation",
+          "no fake cancel during redemption",
+          "failed pairing preserves settings",
+          "navigation/reload/save preserve paired identity",
+          "mock safeStorage retains no plaintext credential",
+          "current ingress2 receipt",
+          "offline same-origin exact note recovery"
+        ],
+        "expectedErrors": [
+          "generated first redemption503",
+          "pending data blocks different-origin connection"
+        ],
+        "realKeychainUntouched": true,
+        "captureStayedStopped": true
+      },
+      "currentBackupCleanup": {
+        "backupImportAndCombinedRecovery": {
+          "status": "passed",
+          "command": "node --import tsx --test --test-concurrency=2 --test-timeout=120000 apps/server/test/import-backup.test.ts apps/server/test/combined-backup-recovery.test.ts",
+          "tests": 13,
+          "passed": 13,
+          "failed": 0,
+          "skipped": 0,
+          "durationMs": 4188.7055,
+          "log": "/private/tmp/mote-backup-current-import.log"
+        },
+        "backupSecurity": {
+          "status": "passed",
+          "command": "node --test --test-timeout=120000 scripts/security-tests.mjs",
+          "tests": 9,
+          "passed": 9,
+          "failed": 0,
+          "skipped": 0,
+          "durationMs": 1977.032042,
+          "log": "/private/tmp/mote-backup-current-security.log"
+        },
+        "scriptsTypecheck": {
+          "status": "passed",
+          "command": "node_modules/.bin/tsc -p tsconfig.scripts.json",
+          "exitCode": 0,
+          "log": "/private/tmp/mote-backup-current-typecheck.log"
+        }
+      },
+      "finalTransportCleanup": {
+        "files": 53,
+        "tests": 388,
+        "pass": 388,
+        "log": "/private/tmp/mote-desktop-transport-verified.log",
+        "result": "Retired OCR-specific 400 compatibility error branch removed; current generic HTTP400 failure and durable queue retained."
+      }
+    },
+    "android": {
+      "lastCompletedCommand": "JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/utopiafar/Library/Android/sdk' ./gradlew :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin :app:assembleDebug",
+      "workingDirectory": "/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android",
+      "lastCompleted": "Final post-origin/main merge build after generated-result metadata correction: 54 suites, 245 JVM tests, 0 failed/error/skipped; instrumented Kotlin compilation and debug assemble passed.",
+      "finalVerification": "Final Kotlin and bilingual-catalog source: all three Gradle targets passed; catalog assets/debugAPK rebuilt. Latest JVM XML remains54 suites/245 tests/0 failure/error/skip.",
+      "instrumentedDeviceTests": "not run; Kotlin sources compiled only",
+      "physicalDevice": "not run",
+      "liveModel": "not run",
+      "realPersonalData": "not read/captured/uploaded",
+      "log": "/private/tmp/mote-android-gradle-catalog-final.log",
+      "unitTests": {
+        "suites": 54,
+        "tests": 245,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "instrumentedSources": ":app:compileDebugAndroidTestKotlin passed on final source after ownerAdminAllowed result-key correction. No device execution.",
+      "debugAssembly": ":app:assembleDebug passed on final source; fixed llama.cpp native library built.",
+      "apkPaths": [
+        "/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/build/outputs/apk/debug/app-debug.apk"
+      ],
+      "durationSeconds": 1,
+      "verificationRuns": [
+        {
+          "log": "/private/tmp/mote-android-gradle-after-main.log",
+          "result": "Post-merge three targets passed in 27s; JVM suite executed, 245/245 tests passed."
+        },
+        {
+          "log": "/private/tmp/mote-android-gradle-after-main-final.log",
+          "result": "Final metadata-only correction: three targets passed in 1s; instrumented Kotlin recompiled, JVM/APK current and up-to-date."
+        },
+        {
+          "log": "/private/tmp/mote-android-gradle-catalog-final.log",
+          "result": "Current bilingual empty-connections text synchronized; three Gradle targets passed, exit0, BUILD SUCCESSFUL in1s, 5 executed/51 up-to-date; catalog assets rebuilt, JVM245 final source suite unchanged."
+        }
+      ],
+      "mergeBaseline": "fba1ad4941219a62d4a66e74c45fcb0c8c227bcf",
+      "verifiedTree": "Final working tree after owner result-key correction and synchronized bilingual assets"
+    }
+  },
+  "additionalLinkedCleanup": {
+    "root": [],
+    "server": [],
+    "desktop": [
+      {
+        "status": "removed",
+        "item": "privacy unused shouldExclude / shouldExcludeVisibleApps / reviewLocally / parseReviewDecision",
+        "preserved": "maskBitmap live worker"
+      },
+      {
+        "status": "removed",
+        "item": "retired collector credential scope accepted by desktop self/invitation/config/UI",
+        "files": [
+          "apps/desktop/src/connection.ts",
+          "apps/desktop/src/contracts.ts",
+          "apps/desktop/src/config.ts",
+          "apps/desktop/src/main.ts",
+          "apps/desktop/src/ui.ts",
+          "apps/desktop/test/connection.test.ts",
+          "apps/desktop/test/config.test.ts",
+          "apps/desktop/test/client-improvements.test.ts",
+          "apps/desktop/scripts/connection-smoke.cjs"
+        ],
+        "preserved": "current owner identity with protocol/device validation; MCP rejected for native collector login; shared/server production unchanged"
+      },
+      {
+        "status": "complete",
+        "item": "Root-approved current epoch 3 offline backup and restore contract cleanup",
+        "files": [
+          "scripts/backup.ts",
+          "scripts/profile-lib.mjs",
+          "scripts/security-tests.mjs",
+          "apps/server/test/import-backup.test.ts"
+        ],
+        "changes": [
+          "Backup rejects an actual SQLite backend_epoch other than 3 before creating a database copy, preserving source files and removing only its exclusive incomplete output directory.",
+          "Referenced content comes only from assets format chunks, files/objects hash/part with explicit .plain or .aes, and current hash-named source-archive batches. Removed image-legacy/archive-legacy readers, blobs/file_blobs/file_objects fallback enumeration, unqualified content suffix and source manifest reader.",
+          "Backup manifest v1 explicitly declares storageEpoch 3. verifiedBackup requires that epoch and separately validates the read-only SQLite backend_epoch after path/link/checksum checks, before restore staging or destination mutation.",
+          "Current source archive batches are allowed by restore with exact hash/hash .plain/.aes paths. Old blobs, single files, bare part paths and source manifests are rejected.",
+          "Private permissions, checksum verification, current encryption identity, separate keys/tokens, import reanalysis, completed execution preservation and lease/staging recovery transactions remain."
+        ],
+        "validation": {
+          "backupImportAndCombinedRecovery": {
+            "status": "passed",
+            "command": "node --import tsx --test --test-concurrency=2 --test-timeout=120000 apps/server/test/import-backup.test.ts apps/server/test/combined-backup-recovery.test.ts",
+            "tests": 13,
+            "passed": 13,
+            "failed": 0,
+            "skipped": 0,
+            "durationMs": 4188.7055,
+            "log": "/private/tmp/mote-backup-current-import.log"
+          },
+          "backupSecurity": {
+            "status": "passed",
+            "command": "node --test --test-timeout=120000 scripts/security-tests.mjs",
+            "tests": 9,
+            "passed": 9,
+            "failed": 0,
+            "skipped": 0,
+            "durationMs": 1977.032042,
+            "log": "/private/tmp/mote-backup-current-security.log"
+          },
+          "scriptsTypecheck": {
+            "status": "passed",
+            "command": "node_modules/.bin/tsc -p tsconfig.scripts.json",
+            "exitCode": 0,
+            "log": "/private/tmp/mote-backup-current-typecheck.log"
+          }
+        },
+        "fixtureBoundary": "Generated temporary directories only; no actual user vault, personal evidence, physical device or live model used.",
+        "independentReview": "Assigned to server agent; final full check:local belongs to root."
+      }
+    ],
+    "android": []
+  },
+  "retainedCurrentBoundaries": {
+    "root": {},
+    "server": [
+      "Owner invitations/redeem/management and current device authorization; old collector alias is refused across native clients.",
+      "Ingress version 2, ACK, current quotas, privacy/local-only policy, canonical leases, durable restart recovery, cancellation and stale fencing.",
+      "Current Markdown output, unknown missing measurements/OCR, legitimate single-sample states and plugin discovery.",
+      "Incomplete current evidence dependencies require conservative privacy invalidation; minimum-safe Coding schema and structured Transcript validation reject malformed content.",
+      "Current missing hashed static asset 404 guard."
+    ],
+    "desktop": [
+      "native macOS capability fallbacks",
+      "current privacy upload gate and credential safeStorage",
+      "exact ingress ACK and retry journaling",
+      "connection authorization/binding and queue-storage ownership/transactions",
+      "adapter version rescan preserving unacknowledged revisions",
+      "updater install signature and crash-recovery transaction",
+      "current third-party Coding log formats",
+      "central-window and central-preload fixture entrypoints"
+    ],
+    "android": {
+      "androidLocalContent": 3,
+      "androidPortableQueueArchive": 3,
+      "fileTransportQueue": 3,
+      "wireProtocol": 1,
+      "ingress": 2,
+      "oldApplicationData": "reject requiring explicit user app-storage reset; no migration/delete"
+    }
+  }
+}

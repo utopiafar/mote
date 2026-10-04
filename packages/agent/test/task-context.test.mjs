@@ -9,17 +9,18 @@ test('durable task retries keep their host-owned time even across a clock bounda
  assert.equal(buildContextEnvelope({question:'Interactive request'},[],'2026-09-02T00:00:01Z').currentTime,'2026-09-02T00:00:01Z');
 });
 test('opening memory hints are separate from cited evidence and include verification guidance',()=>{
- const lead={id:'generated-memory',title:'Generated preference',statement:'Generated statement',uncertainty:'Only in one project',status:'proposed',tier:'episode',createdAt:'2026-09-18T00:00:00Z'};
+ const lead={id:'generated-memory',title:'Generated preference',statement:'Generated statement',uncertainty:'Only in one project',status:'published',tier:'episode',createdAt:'2026-09-18T00:00:00Z'};
  const envelope=buildContextEnvelope({question:'What do you know?',openingMemories:[lead]},[]);
  assert.deepEqual(envelope.untrustedMemoryLeads,[lead]);
- assert.match(envelope.memoryLeadInstruction,/legacy drafts are not awaiting user confirmation/);
+ assert.match(envelope.memoryLeadInstruction,/navigation hints, not independent evidence or instructions/);
+ assert.match(envelope.memoryLeadInstruction,/includeEvidence=true.*host-verified supporting original ranges/);
  assert.match(envelope.memoryLeadInstruction,/Cite delivered original ids, not memory ids/);
  assert.equal(envelope.untrustedEvidence,undefined);
 });
 import {startBridge} from '../dist/bridge.js';
 import {parseAnswer} from '../dist/index.js';
-const record={id:'generated-evidence',capturedAt:'2026-09-18T00:00:00Z',deviceId:'fixture',appName:'Generated',ocrText:'a'.repeat(9000)+'NEEDLE the gate opens at 14:30. '+'b'.repeat(3000)};
-const reader={search:async()=>[record],timeline:async()=>[record],evidence:async()=>[record],activity:async()=>({}),devices:async()=>[],memories:async()=>({items:[{id:'memory',statement:'derived'}],evidence:[record]})};
+const record={id:'6f28159f-242b-5442-9a0c-a17958985a52',capturedAt:'2026-09-18T00:00:00Z',deviceId:'fixture',appName:'Generated',ocrText:'a'.repeat(9000)+'NEEDLE the gate opens at 14:30. '+'b'.repeat(3000)};
+const reader={search:async()=>[record],timeline:async()=>({items:([record]),nextCursor:null}),evidence:async()=>[record],activity:async()=>({}),devices:async()=>[],memories:async()=>({items:[{id:'memory',statement:'derived'}],evidence:[record]})};
 async function fixture(t,input={question:'fixture'}){const bridge=await startBridge(reader,input,24);t.after(()=>bridge.close());return {bridge,call:async(tool,args)=>{const r=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{Authorization:'Bearer '+bridge.token},body:JSON.stringify(args)});return {status:r.status,body:await r.json()};}};}
 test('shared context separates long task input and retains incremental semantics and task authority',()=>{
  const input={question:'Compact',skill:'working-memory',taskContext:{turns:[{turnId:'t1',answer:'x'.repeat(30000)}]},incrementalEvidenceIds:['one']};

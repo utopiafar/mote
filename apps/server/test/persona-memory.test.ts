@@ -1,3 +1,4 @@
+import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -22,7 +23,7 @@ test('45-day generated Persona preserves late authorship, closes every bounded b
  assert.equal(late.capturedAt,'2026-09-12T10:00:00.000Z');assert.equal(late.provenance?.document?.recordedAt,'2026-08-05T10:00:00.000Z');
  assert.ok(store.list({after:'2026-08-05T00:00:00Z',before:'2026-08-06T00:00:00Z',limit:100}).items.some(item=>item.id===late.id));
  const seen=new Set<string>();let calls=0;
- pipeline=new MemoryPipeline({store,memories,concurrency:()=>3,configured:()=>true,model:()=> 'fixture-no-semantic-judgment',query:async input=>{calls++;for(const range of input.evidenceRanges){assert.ok(!seen.has(range.id));seen.add(range.id);assert.ok(range.length>0&&range.length<=12000);}return {answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-empty'};}});
+ pipeline=fixtureMemoryPipeline({store,memories,concurrency:()=>3,configured:()=>true,model:()=> 'fixture-no-semantic-judgment',query:async input=>{calls++;for(const range of input.evidenceRanges){assert.ok(!seen.has(range.id));seen.add(range.id);assert.ok(range.length>0&&range.length<=12000);}return {answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-empty'};}});
  const job=await pipeline.run(pipeline.create({evidenceIds:ids,timeZone:'Asia/Shanghai'}).id);
  assert.equal(job.status,'completed');assert.equal(job.failedBatches,0);assert.equal(job.pendingBatches,0);assert.equal(job.runningBatches,0);assert.equal(seen.size,1080);assert.equal(calls,54);
  assert.equal(pipeline.create({evidenceIds:ids}).totalBatches,0);

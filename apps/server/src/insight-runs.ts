@@ -6,7 +6,6 @@ import type {AgentProgress} from '@mote/agent';
 import {createInsightSnapshot} from './insight-snapshots.js';
 import type {InsightSnapshot,QueryResult} from '@mote/shared';
 import {Store,StoreError} from './store.js';
-import {normalizeRun} from './execution.js';
 import {safeError} from './diagnostics.js';
 import type {ExecutionEnvelope} from '@mote/shared/execution';
 import {RunExecution,runEnvelope,type RunExecutionOptions,type RunDeadline} from './run-execution.js';
@@ -43,7 +42,7 @@ export class InsightRuns {
     run.execution=runEnvelope({...step,error:run.error?.code??step.error,availableAt:run.availableAt??step.availableAt});run.updatedAt=new Date(Math.max(Date.parse(run.updatedAt),Number(this.store.db.prepare('SELECT updated_at FROM execution_steps WHERE id=?').get(step.id)!.updated_at))).toISOString();if(JSON.stringify(run)!==before)this.save(run);
   }
   list():InsightRun[]{return (this.store.db.prepare("SELECT id FROM insight_runs ORDER BY json_extract(json,'$.createdAt') DESC,id LIMIT 20").all() as {id:string}[]).map(row=>this.get(row.id));}
-  get(id:string):InsightRun{this.execution.sync(id);const run=this.raw(id);return this.execution.step(id)?run:normalizeRun(run);}
+  get(id:string):InsightRun{this.execution.sync(id);const run=this.raw(id);if(!this.execution.step(id))throw new StoreError('Run receipt has no canonical execution step',409);return run;}
   cancel(id:string){const run=this.get(id);if(run.status==='running')this.execution.cancel(id);return this.get(id);}
   detail(id:string){
     const run=this.get(id),row=run.resultRunId?this.store.db.prepare('SELECT json FROM insights WHERE id=?').get(run.resultRunId) as {json:string}|undefined:undefined;

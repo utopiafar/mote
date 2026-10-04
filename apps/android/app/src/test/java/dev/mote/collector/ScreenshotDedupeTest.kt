@@ -2,6 +2,13 @@ package dev.mote.collector
 import org.junit.Assert.*
 import org.junit.Test
 class ScreenshotDedupeTest {
+    @Test fun retiredDimensionHashSignaturesAreNotAccepted() {
+        val features = ScreenshotDedupeHelper.buildFeatures(32, 32, IntArray(1024) { 0xff303030.toInt() })
+        val retired = "32x32:${features.exactHash}"
+        assertNull(ScreenshotDedupeHelper.parseSignature(retired))
+        assertNotNull(ScreenshotDedupeHelper.parseSignature(features.toSignature()))
+        assertFalse(ScreenshotDedupeHelper.shouldSkip(retired, features, ScreenshotDedupeHelper.Mode.EXACT).duplicate)
+    }
     @Test fun exactDigestMatchesExistingSignaturesAcrossChunkBoundaries() {
         for ((width, height) in listOf(1 to 1, 32 to 64, 33 to 65, 240 to 400)) {
             val pixels = IntArray(width * height) { (it * 2654435761L).toInt() }

@@ -110,7 +110,7 @@ class CodingMaterialBody {
     }
   }
 }
-const organize:NonNullable<SourcePipeline['organize']>=({source,items,group:identity})=>{
+const organize=({source,items,group:identity}:{source:SourceConnection;items:SourceItem[];group:string}):MaterialDraft=>{
       const [provider,projectKey,sessionId]=JSON.parse(identity) as string[];
       const records=conversationRecords(items).sort((a,b)=>{
         const at=a.document?.recordedAt??a.observedAt,bt=b.document?.recordedAt??b.observedAt;
@@ -180,8 +180,5 @@ export function codingSourcePlugin(ctx:Context){
   }));
   ctx.effect(()=>ctx.moteSourcePipelines.register({
     id:'mote.coding',featureId:'mote.coding',version:'7',recipe:{id:'mote.coding',version:'7'},reprocess:'deterministic',sourceKinds:['coding-agent'],storage:'archive',index:'material',modelInput:'material',memory:true,memoryDependencies:['conversation'],
-    // Retained temporarily for explicit legacy pipeline migration tests. Coding
-    // production work executes the registered recipe implementations above.
-    group,organize,
   }));
 }

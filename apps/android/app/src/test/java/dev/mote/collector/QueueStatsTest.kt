@@ -39,8 +39,9 @@ class QueueStatsTest {
         assertEquals(20, second.getJSONArray("items").length()); assertEquals(before + 40, cipher.opens)
     }
 
-    @Test fun legacyScreenshotBacklogIsDecryptedOnceAcrossQueueHandlesAndStatisticsCalls() = fixture { directory, cipher ->
-        // Write the 0.0.1 format directly: no deferred OCR or upload flags, no location pointer.
+    @Test fun currentScreenshotBacklogIsReadOnceAcrossQueueHandlesAndStatisticsCalls() = fixture { directory, cipher ->
+        LocalDataFormat.requireCurrent(directory)
+        // Generated current records exercise cache rebuild without content disclosure.
         // All data is generated; the shared blob must never be opened for numeric statistics.
         val image = byteArrayOf(1, 2, 3, 4)
         val hash = MessageDigest.getInstance("SHA-256").digest(image).joinToString("") { "%02x".format(it) }
@@ -69,32 +70,7 @@ class QueueStatsTest {
         assertEquals(501, cipher.opens) // Cached statistics never replace full event/blob verification.
     }
 
-    @Test fun sharedStatisticsFollowEnqueueDeferredOcrAcknowledgementsAndConflictChanges() = fixture { directory, cipher ->
-        val queue = DurableQueue(directory, cipher)
-        val first = screen(true); val second = screen(); val id = first.getString("id")
-        queue.enqueue(first, byteArrayOf(1), 2_000_000)
-        queue.enqueue(second, byteArrayOf(2), 2_000_000)
-        val initial = queue.stats(); assertEquals(2, initial.pendingSync.count); assertTrue(initial.reservedOcrBytes >= 600_000)
-        val reopened = DurableQueue(directory, cipher)
-        reopened.acknowledge(id)
-        var before = cipher.opens
-        val waiting = queue.stats()
-        assertEquals(before, cipher.opens); assertEquals(1, waiting.pendingSync.count)
-        assertEquals(initial.reservedOcrBytes, waiting.reservedOcrBytes)
-        reopened.completeOcr(id, "generated completed OCR", "completed", 2_000_000)
-        before = cipher.opens
-        val completed = queue.stats()
-        assertEquals(before, cipher.opens); assertEquals(2, completed.pendingSync.count); assertEquals(0L, completed.reservedOcrBytes)
-        reopened.ocrConflict(id)
-        before = cipher.opens
-        assertEquals(1, queue.stats().pendingSync.count); assertEquals(before, cipher.opens)
-        reopened.acknowledgeOcr(id)
-        val remaining = queue.stats()
-        assertEquals(1, remaining.depth); assertEquals(1, remaining.pendingSync.count)
-        assertNull(queue.image(id)); assertNotNull(queue.image(second.getString("id")))
-        reopened.acknowledge(second.getString("id"))
-        assertEquals(QueueStats(0, 0, 0, PendingSync(0, null)), queue.stats())
-    }
+
 
     @Test fun migrationUsesIndependentStatisticsAndNewWritesInvalidateTheTargetCache() = fixture { root, cipher ->
         val control = File(root, "control").apply { mkdirs() }
@@ -103,7 +79,7 @@ class QueueStatsTest {
         val store = QueueLocationStore(control, legacy, cipher)
         val source = store.current()
         val queue = DurableQueue(legacy, cipher).apply { assertCurrent = { store.assertCurrent(source) } }
-        val item = screen(true); val id = item.getString("id")
+        val item = screen(); val id = item.getString("id")
         queue.enqueue(item, byteArrayOf(9), 2_000_000)
         val initial = queue.stats()
         val target = store.migrate("card", card)
@@ -135,12 +111,12 @@ class QueueStatsTest {
 
     @Test fun sameSizeAndTimestampReplacementInvalidatesStatisticsAndIntegrityStillReadsFiles() = fixture { directory, cipher ->
         val queue = DurableQueue(directory, cipher)
-        val item = screen(true); val id = item.getString("id")
+        val item = screen(); val id = item.getString("id")
         queue.enqueue(item, byteArrayOf(1), 2_000_000)
-        queue.recordOcrFailure(id); queue.stats()
+        queue.uploadConflict(id); queue.stats()
         val file = File(directory, "$id.event")
         val length = file.length(); val timestamp = file.lastModified()
-        DurableQueue(directory, cipher).recordOcrFailure(id)
+        DurableQueue(directory, cipher).uploadConflict(id)
         assertEquals(length, file.length()); assertTrue(file.setLastModified(timestamp))
         val before = cipher.opens
         queue.stats(); assertTrue(cipher.opens in before..before + 1) // A changed stamp requires one refresh; a same-stamp commit already updated metadata.

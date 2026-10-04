@@ -1,3 +1,4 @@
+import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -33,7 +34,7 @@ async function reviewed(f:Fixture,result:QueryResult,decision={sameConclusion:tr
  },{deletions:f.memories.deletions,authorizeDeletionEvidence:options.authorize});
  return {result:answer,receipt:memoryReviewReceipt(answer)!,comparisons};
 }
-async function save(f:Fixture,result:QueryResult){const r=await reviewed(f,result);return f.memories.extract(r.result,'fixture',{requireAdmission:true,reviewReceipt:r.receipt}).items;}
+async function save(f:Fixture,result:QueryResult){const r=await reviewed(f,result);return f.memories.extract(fixtureMemoryResult(f.memories,r.result),'fixture',{requireAdmission:true,reviewReceipt:r.receipt}).items;}
 
 test('reviewed memories and supersession become active atomically, preserving time-scoped history',async t=>{
  const f=await fixture(t),oldId=await f.add('I currently prefer afternoon meetings.'),newId=await f.add('From February I prefer morning meetings.','2026-02-01T00:00:00Z');
@@ -47,14 +48,14 @@ test('a relation loses its version race to an owner correction without partial a
  const f=await fixture(t),id=await f.add('Generated scoped preference.'),[old]=await save(f,output(f,[id]));
  const reviewedReplacement=await reviewed(f,output(f,[id],'Generated replacement',{relations:[{kind:'supersedes',memoryId:old.id,version:old.version,fingerprint:old.fingerprint}]}));
  const corrected=await f.memories.correct(old.id,{version:old.version,title:'Owner correction',statement:'This preference concerns only one project.'});
- assert.throws(()=>f.memories.extract(reviewedReplacement.result,'fixture',{reviewReceipt:reviewedReplacement.receipt}),{statusCode:409});
+ assert.throws(()=>f.memories.extract(fixtureMemoryResult(f.memories,reviewedReplacement.result),'fixture',{reviewReceipt:reviewedReplacement.receipt}),{statusCode:409});
  assert.equal(f.memories.get(old.id).supersededBy,corrected.id);assert.equal(f.memories.page({includeHistory:true}).items.length,2);
 });
 
 test('deleting an unpublished supersession proposal does not require an unestablished ancestor edge',async t=>{
  const f=await fixture(t),id=await f.add('Generated original for a proposal.'),[old]=await save(f,output(f,[id]));
- const proposal=f.memories.extract(output(f,[id],'Generated draft replacement',{relations:[{kind:'supersedes',memoryId:old.id,version:old.version,fingerprint:old.fingerprint}]}),'fixture').items[0];
- const stale=f.memories.extract(output(f,[id],'Another generated draft',{relations:[{kind:'supersedes',memoryId:old.id,version:old.version,fingerprint:old.fingerprint}]}),'fixture').items[0];
+ const proposal=f.memories.extract(fixtureMemoryResult(f.memories,output(f,[id],'Generated draft replacement',{relations:[{kind:'supersedes',memoryId:old.id,version:old.version,fingerprint:old.fingerprint}]})),'fixture').items[0];
+ const stale=f.memories.extract(fixtureMemoryResult(f.memories,output(f,[id],'Another generated draft',{relations:[{kind:'supersedes',memoryId:old.id,version:old.version,fingerprint:old.fingerprint}]})),'fixture').items[0];
  f.store.db.prepare("UPDATE memories SET json=json_set(json,'$.status','stale') WHERE id=?").run(stale.id);
  assert.equal(proposal.status,'proposed');assert.equal(f.memories.get(old.id).supersededBy,undefined);
  assert.equal(f.memories.delete(proposal.id).deleted,1);
@@ -65,7 +66,7 @@ test('deleting an unpublished supersession proposal does not require an unestabl
 
 test('archive restore distinguishes a corrected unpublished proposal from an established supersession',async t=>{
  const source=await fixture(t),id=await source.add('Generated archive proposal original.'),[old]=await save(source,output(source,[id]));
- const proposal=source.memories.extract(output(source,[id],'Generated unpublished proposal',{relations:[{kind:'supersedes',memoryId:old.id,version:old.version,fingerprint:old.fingerprint}]}),'fixture').items[0];
+ const proposal=source.memories.extract(fixtureMemoryResult(source.memories,output(source,[id],'Generated unpublished proposal',{relations:[{kind:'supersedes',memoryId:old.id,version:old.version,fingerprint:old.fingerprint}]})),'fixture').items[0];
  const corrected=await source.memories.correct(proposal.id,{version:proposal.version,title:'Owner correction of draft',statement:'Generated owner correction of an unpublished proposal.'});
  assert.equal(source.memories.get(proposal.id).version,2);
  assert.equal(source.memories.get(old.id).supersededBy,undefined,'the proposed relation was never applied');
@@ -92,7 +93,7 @@ test('deletion survives restart and rejects a paraphrase from duplicated origina
  f.memories.delete(old.id);assert.equal(f.store.evidence([id]).length,1);f.restart();
  const duplicate=await f.add(text),paraphrase=output(f,[duplicate],'The user has an enduring enthusiasm for ceramics');
  const check=await reviewed(f,paraphrase);assert.equal(check.comparisons,1);assert.deepEqual(JSON.parse(check.result.answer).memories,[]);
- assert.equal(f.memories.extract(check.result,'fixture',{reviewReceipt:check.receipt,skillVersion:'entirely-different-strategy@9'}).items.length,0);assert.equal(f.memories.list().length,0);
+ assert.equal(f.memories.extract(fixtureMemoryResult(f.memories,check.result),'fixture',{reviewReceipt:check.receipt,skillVersion:'entirely-different-strategy@9'}).items.length,0);assert.equal(f.memories.list().length,0);
 });
 
 test('deleting a twice-corrected Memory routes every superseded original through bounded semantic review',async t=>{
@@ -118,12 +119,12 @@ test('deleting a twice-corrected Memory routes every superseded original through
  assert.equal(blocked.comparisons,1,'reimported old event reaches the model deletion verdict');
  assert.deepEqual(authorized.map(ids=>[...ids].sort()),[expected]);
  assert.deepEqual(JSON.parse(blocked.result.answer).memories,[]);
- assert.equal(f.memories.extract(blocked.result,'fixture',{reviewReceipt:blocked.receipt,skillVersion:'changed-recipe@9'}).items.length,0);
+ assert.equal(f.memories.extract(fixtureMemoryResult(f.memories,blocked.result),'fixture',{reviewReceipt:blocked.receipt,skillVersion:'changed-recipe@9'}).items.length,0);
  const distinct=await reviewed(f,output(f,[replay],'A different generated conclusion'),{sameConclusion:false,newSupportEvidenceIds:[]});
  assert.equal(distinct.comparisons,1);assert.equal(JSON.parse(distinct.result.answer).memories.length,1,'sharing evidence does not blanket-suppress a distinct conclusion');
  const fresh=await f.add('Generated later owner confirms using the quick entry every day.','2026-02-01T00:00:00Z');
  const reconsidered=await reviewed(f,output(f,[replay,fresh],'Generated quick-recording preference with new support'),{sameConclusion:true,newSupportEvidenceIds:[fresh]});
- assert.equal(reconsidered.comparisons,1);assert.equal(f.memories.extract(reconsidered.result,'fixture',{reviewReceipt:reconsidered.receipt}).items[0].status,'published');
+ assert.equal(reconsidered.comparisons,1);assert.equal(f.memories.extract(fixtureMemoryResult(f.memories,reconsidered.result),'fixture',{reviewReceipt:reconsidered.receipt}).items[0].status,'published');
 });
 
 test('missing or mismatched supersession ancestors do not leave a partial deletion intent',async t=>{
@@ -164,7 +165,7 @@ test('new evidence must support reconsideration; unrelated new citations do not 
  const denied=await reviewed(f,candidate);assert.equal(JSON.parse(denied.result.answer).memories.length,0);
  const fresh=await f.add('I have now joined a weekly pottery club because this is my long-term hobby.','2026-03-01T00:00:00Z');
  const allowed=await reviewed(f,output(f,[id,fresh],'Pottery has become an ongoing hobby'),{sameConclusion:true,newSupportEvidenceIds:[fresh]});
- assert.equal(f.memories.extract(allowed.result,'fixture',{reviewReceipt:allowed.receipt}).items[0].status,'published');
+ assert.equal(f.memories.extract(fixtureMemoryResult(f.memories,allowed.result),'fixture',{reviewReceipt:allowed.receipt}).items[0].status,'published');
  await assert.rejects(reviewed(f,candidate,{sameConclusion:true,newSupportEvidenceIds:[id]}),{statusCode:502});
 });
 
@@ -172,33 +173,33 @@ test('an independent later expression is new evidence and unrelated private dele
  const f=await fixture(t),text='I enjoy pottery.',id=await f.add(text),[old]=await save(f,output(f,[id]));f.memories.delete(old.id);
  const later=await f.add(text,'2026-02-01T00:00:00Z');
  const result=await reviewed(f,output(f,[later]),undefined,{authorize:()=>assert.fail('Unrelated private deletion must not be disclosed')});
- assert.equal(result.comparisons,0);assert.equal(f.memories.extract(result.result,'fixture',{reviewReceipt:result.receipt}).items.length,1);
+ assert.equal(result.comparisons,0);assert.equal(f.memories.extract(fixtureMemoryResult(f.memories,result.result),'fixture',{reviewReceipt:result.receipt}).items.length,1);
  await assert.rejects(reviewed(f,output(f,[id]),undefined,{authorize:()=>{throw Object.assign(new Error('local-only'),{statusCode:403});}}),{statusCode:403});
 });
 
 test('a cached or in-flight verdict cannot commit after a new deletion, and cancellation issues no receipt',async t=>{
  const f=await fixture(t),id=await f.add('Generated preference'),draft=output(f,[id]),[old]=await save(f,draft);
  const prior=await reviewed(f,{...draft,answer:draft.answer.replace('Generated personal conclusion','Different wording')});f.memories.delete(old.id);
- assert.throws(()=>f.memories.extract(prior.result,'fixture',{reviewReceipt:prior.receipt}),{statusCode:409});
+ assert.throws(()=>f.memories.extract(fixtureMemoryResult(f.memories,prior.result),'fixture',{reviewReceipt:prior.receipt}),{statusCode:409});
  const abort=new AbortController();await assert.rejects(reviewed(f,draft,undefined,{signal:abort.signal,onDeletion:()=>abort.abort()}),{name:'AbortError'});assert.equal(f.memories.list().length,0);
 });
 
 test('deletion invalidates dependent consolidation cards and raw retention removes private deletion payloads',async t=>{
  const f=await fixture(t),id=await f.add('Generated owner statement'),[old]=await save(f,output(f,[id]));
  const parent=output(f,[id],'Synthesis with an explicitly new relationship',{relatedMemoryIds:[old.id]});const reviewedParent=await reviewed(f,parent);
- const derived=f.memories.extract(reviewedParent.result,'fixture',{tier:'consolidated',relatedMemoryIds:[old.id],requireAdmission:true,reviewReceipt:reviewedParent.receipt}).items[0];
+ const derived=f.memories.extract(fixtureMemoryResult(f.memories,reviewedParent.result),'fixture',{tier:'consolidated',relatedMemoryIds:[old.id],requireAdmission:true,reviewReceipt:reviewedParent.receipt}).items[0];
  f.memories.delete(old.id);assert.equal(f.memories.get(derived.id).staleReason,'memory_deleted');assert.equal(f.memories.list().length,0);
  assert.equal(Number(f.store.db.prepare('SELECT count(*) n FROM memory_deletions').get()!.n),1);
  f.store.prune('2027-01-01T00:00:00Z');assert.equal(Number(f.store.db.prepare('SELECT count(*) n FROM memory_deletions').get()!.n),0);assert.equal(Number(f.store.db.prepare('SELECT count(*) n FROM memory_deletion_dependencies').get()!.n),0);
 });
 
-test('legacy migration uses exact reviewed proof; fresh review activates a duplicate draft and reopens its checkpoint',async t=>{
+test('reopening never publishes proposed drafts or removes checkpoints; explicit fresh review activates them',async t=>{
  const f=await fixture(t),id=await f.add('Legacy generated statement'),draft=output(f,[id]);
- const pending=f.memories.extract(draft,'fixture').items[0];f.store.db.prepare('INSERT INTO memory_checkpoints VALUES(?,?,?)').run('legacy-key',id,new Date().toISOString());f.restart();
- assert.equal(f.memories.get(pending.id).status,'proposed');assert.equal(Number(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n),0);
+ const pending=f.memories.extract(fixtureMemoryResult(f.memories,draft),'fixture').items[0];f.store.db.prepare('INSERT INTO memory_checkpoints VALUES(?,?,?)').run('legacy-key',id,new Date().toISOString());f.restart();
+ assert.equal(f.memories.get(pending.id).status,'proposed');assert.equal(Number(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n),1);
  const [active]=await save(f,draft);assert.equal(active.id,pending.id);assert.equal(active.status,'published');
- const id2=await f.add('Reviewed legacy generated statement','2026-02-01T00:00:00Z'),draft2=output(f,[id2]),legacy=f.memories.extract(draft2,'fixture',{reviewReceipt:{policy:'bounded-exact-review@1',decision:'independent',draftRunId:'legacy',reviewRunId:'legacy-review',checkedAt:new Date().toISOString()}}).items[0];
- assert.equal(legacy.status,'proposed');f.restart();assert.equal(f.memories.get(legacy.id).status,'published');
+ const id2=await f.add('Reviewed legacy generated statement','2026-02-01T00:00:00Z'),draft2=output(f,[id2]),legacy=f.memories.extract(fixtureMemoryResult(f.memories,draft2),'fixture',{reviewReceipt:{policy:'bounded-exact-review@1',decision:'independent',draftRunId:'legacy',reviewRunId:'legacy-review',checkedAt:new Date().toISOString()}}).items[0];
+ assert.equal(legacy.status,'proposed');f.restart();assert.equal(f.memories.get(legacy.id).status,'proposed');
 });
 
 test('changing a source revision with only unrelated appended text does not make its old proof new',async t=>{
@@ -219,14 +220,14 @@ test('deletion invalidates a bounded review cache and a simultaneous second dele
  await assert.rejects(reviewed(f,draft,undefined,{onDeletion:()=>{f.memories.delete(second.id);}}),{statusCode:409});
 });
 
-test('portable archives retain deletion intent, reject identity tampering atomically, and accept old archives',async t=>{
+test('portable archives retain deletion intent, reject identity tampering atomically, and reject incomplete archives',async t=>{
  const f=await fixture(t),id=await f.add('Generated temporary interest'),[old]=await save(f,output(f,[id]));f.memories.delete(old.id);
  const archive=f.store.exportArchive(2_000_000),restored=await fixture(t);await restored.store.importArchive(archive);
  const checked=await reviewed(restored,output(restored,[id],'Paraphrased generated interest'));assert.equal(checked.comparisons,1);assert.equal(JSON.parse(checked.result.answer).memories.length,0);
  await restored.store.importArchive(archive);assert.equal(Number(restored.store.db.prepare('SELECT count(*) n FROM memory_deletions').get()!.n),1);
  const bad=structuredClone(archive);bad.memoryDeletions[0].originKeys=['event:'+sha256('tampered')];const target=await fixture(t);
  await assert.rejects(target.store.importArchive(bad),/identity mismatch/);assert.equal(target.store.evidence([id]).length,0);assert.equal(Number(target.store.db.prepare('SELECT count(*) n FROM memory_deletions').get()!.n),0);
- const legacy={...archive,memoryDeletions:undefined};await target.store.importArchive(legacy);assert.equal(target.store.evidence([id]).length,1);
+ const legacy={...archive,version:1,memoryDeletions:undefined};await assert.rejects(target.store.importArchive(legacy));assert.equal(target.store.evidence([id]).length,0);
 });
 
 
@@ -241,7 +242,7 @@ test('the complete deletion comparison has a deadline even when a model ignores 
 test('portable merge applies owner deletion to an existing active card and its consolidation',async t=>{
  const f=await fixture(t),id=await f.add('Generated merge evidence'),[old]=await save(f,output(f,[id])),baseline=f.store.exportArchive(2_000_000),target=await fixture(t);
  await target.store.importArchive(baseline);target.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(old),old.id);
- const draft=output(target,[id],'Generated synthesis',{relatedMemoryIds:[old.id]}),check=await reviewed(target,draft),child=target.memories.extract(check.result,'fixture',{tier:'consolidated',requireAdmission:true,relatedMemoryIds:[old.id],reviewReceipt:check.receipt}).items[0];
+ const draft=output(target,[id],'Generated synthesis',{relatedMemoryIds:[old.id]}),check=await reviewed(target,draft),child=target.memories.extract(fixtureMemoryResult(target.memories,check.result),'fixture',{tier:'consolidated',requireAdmission:true,relatedMemoryIds:[old.id],reviewReceipt:check.receipt}).items[0];
  f.memories.delete(old.id);await target.store.importArchive(f.store.exportArchive(2_000_000));assert.throws(()=>target.memories.get(old.id),{statusCode:404});assert.equal(target.memories.get(child.id).staleReason,'memory_deleted');assert.equal(target.memories.list().length,0);
 });
 
@@ -259,7 +260,7 @@ test('forgetting a Coding archive removes private deletion intent even without c
  await sources.upsert('coding',{externalId:'event-1',revision:'1',observedAt:'2026-01-01T00:00:00Z',kind:'message',layer:'snapshot',text:'Generated owner preference: use written decisions for batch tasks.',document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'fixture-session',projectKey:'fixture-project',eventId:'000001',role:'user',part:0,parts:1}}});await runtime.tick();
  const material=materials.list().items[0],memories=new MemoryStore(f.store,ids=>[...f.store.evidence(ids),...materials.evidence(ids)],id=>materials.isCurrentEvidence(id)||f.store.isCurrentEvidence(id)),ids=materials.evidenceIds(material.id),records=memories.readEvidence(ids);
  const draft={answer:JSON.stringify({memories:[{title:'Generated private policy',statement:'Generated private preference '+ids.map(id=>'['+id+']').join(' '),uncertainty:'Generated only',evidenceIds:ids,evidence:records.map(r=>({id:r.id,quote:r.ocrText}))}]}),citations:records.map(r=>({id:r.id,capturedAt:r.capturedAt,appName:'Generated',excerpt:''})),trace:[],runId:randomUUID()};
- const memory=memories.extract(draft,'fixture').items[0];memories.delete(memory.id);assert.equal(memories.deletions.export().length,1);assert.ok(memories.deletions.export()[0].dependencies.every(id=>ids.includes(id)));
+ const memory=memories.extract(fixtureMemoryResult(memories,draft),'fixture').items[0];memories.delete(memory.id);assert.equal(memories.deletions.export().length,1);assert.ok(memories.deletions.export()[0].dependencies.every(id=>ids.includes(id)));
  runtime.configure('coding',{memory:false,settleSeconds:0});await runtime.tick();assert.equal(memories.deletions.export().length,1,'Rebuilding unchanged archive material must preserve the owner rule');
  const result=runtime.forget('coding');assert.equal(result.erased,true);assert.equal(Number(f.store.db.prepare('SELECT count(*) n FROM material_evidence').get()!.n),0);assert.deepEqual(memories.deletions.export(),[]);
 });
@@ -274,7 +275,7 @@ test('explicit source forgetting erases mixed-source owner rules before removing
  await runtime.tick();
  const memories=new MemoryStore(f.store,ids=>[...f.store.evidence(ids),...materials.evidence(ids)],id=>materials.isCurrentEvidence(id)||f.store.isCurrentEvidence(id)),b=materials.list().items.find(m=>m.origin.sourceId==='coding-b')!,bIds=materials.evidenceIds(b.id),allIds=materials.list().items.flatMap(m=>materials.evidenceIds(m.id));
  const make=(ids:string[],statement:string):QueryResult=>({answer:JSON.stringify({memories:[{title:'Generated owner rule',statement,uncertainty:'Generated only',evidenceIds:ids,evidence:memories.readEvidence(ids).map(r=>({id:r.id,quote:r.ocrText}))}]}),citations:memories.readEvidence(ids).map(r=>({id:r.id,capturedAt:r.capturedAt,appName:'Generated',excerpt:''})),trace:[],runId:randomUUID()});
- const saved=([[allIds,'Generated A PRIVATE conclusion combined with B'],[bIds,'Generated independent B conclusion']] as const).map(([ids,statement])=>memories.extract(make([...ids],statement),'fixture').items[0]);for(const memory of saved)memories.delete(memory.id);
+ const saved=([[allIds,'Generated A PRIVATE conclusion combined with B'],[bIds,'Generated independent B conclusion']] as const).map(([ids,statement])=>memories.extract(fixtureMemoryResult(memories,make([...ids],statement)),'fixture').items[0]);for(const memory of saved)memories.delete(memory.id);
  assert.equal(memories.deletions.export().length,2);
  assert.deepEqual(runtime.forget('coding-a'),{erased:true,sourcePaused:true});
  const [remaining]=memories.deletions.export();assert.equal(memories.deletions.export().length,1);assert.equal(remaining.statement,'Generated independent B conclusion');assert.deepEqual(remaining.dependencies,bIds);assert.equal(materials.list().items.length,1);
@@ -297,14 +298,11 @@ test('source lineage survives prune, restart and portable restore before explici
  }
 });
 
-test('legacy source lineage records only recoverable identities and imported complete lineage cannot omit current sources',async t=>{
- const f=await fixture(t),sources=new SourceStore(f.store);sources.register({id:'expired-source',name:'Generated expired source',kind:'custom',deviceId:'fixture',platform:'import'});
- const expired=(await sources.upsert('expired-source',{externalId:'expired',revision:'1',observedAt:'2026-01-01T00:00:00Z',kind:'message',layer:'original',text:'Generated expired private evidence.'})).id,id=await f.add('Generated legacy rule evidence','2026-03-01T00:00:00Z'),[memory]=await save(f,output(f,[expired,id]));f.memories.delete(memory.id);f.store.prune('2026-02-01T00:00:00Z');
- const archive=f.store.exportArchive(2_000_000),legacyArchive=structuredClone(archive);for(const value of legacyArchive.memoryDeletions){Reflect.deleteProperty(value,'derivationSourceIds');Reflect.deleteProperty(value,'sourceLineageComplete');}
- f.store.db.prepare("UPDATE memory_deletions SET json=json_remove(json,'$.derivationSourceIds','$.sourceLineageComplete')").run();
- f.restart();const [migrated]=f.memories.deletions.export();assert.deepEqual(migrated.derivationSourceIds,['generated']);assert.equal(migrated.sourceLineageComplete,false);
- const restored=await fixture(t);await restored.store.importArchive(legacyArchive);assert.deepEqual(restored.memories.deletions.export(),[migrated]);
- const bad=structuredClone(archive);bad.memoryDeletions[0].derivationSourceIds=[];const rejected=await fixture(t);await assert.rejects(rejected.store.importArchive(bad),/source lineage mismatch/);assert.equal(rejected.store.evidence([id]).length,0);
+test('incomplete lineage archives are refused atomically and current lineage cannot omit its sources',async t=>{
+ const f=await fixture(t),id=await f.add('Generated rule evidence'),[memory]=await save(f,output(f,[id]));f.memories.delete(memory.id);
+ const archive=f.store.exportArchive(2_000_000),missing=structuredClone(archive);Reflect.deleteProperty(missing.memoryDeletions[0],'derivationSourceIds');Reflect.deleteProperty(missing.memoryDeletions[0],'sourceLineageComplete');
+ const rejected=await fixture(t);await assert.rejects(rejected.store.importArchive(missing));assert.equal(rejected.store.evidence([id]).length,0);
+ const bad=structuredClone(archive);bad.memoryDeletions[0].derivationSourceIds=[];await assert.rejects(rejected.store.importArchive(bad),/source lineage mismatch/);assert.equal(rejected.store.evidence([id]).length,0);
 });
 
 test('deletion rules and provenance dependencies consume exact quota and release it when originals are removed',async t=>{
@@ -320,14 +318,8 @@ test('deletion rules and provenance dependencies consume exact quota and release
  f.store.delete(id);assert.deepEqual(f.memories.deletions.export(),[]);assert.equal(f.store.db.prepare("SELECT sum(bytes) n FROM storage_ledger WHERE name IN ('memory_deletions','memory_deletion_dependencies')").get()!.n,0);f.store.reserveMetadata(ruleBytes*2);
 });
 
-test('pre-ledger deletion tables migrate their dependency identities and backfill existing payload accounting',async t=>{
- const f=await fixture(t),id=await f.add('Generated historical accounting evidence'),[memory]=await save(f,output(f,[id]));f.memories.delete(memory.id);const expected=f.store.logicalBytes(),intent=f.memories.deletions.export()[0];
- for(const table of ['memory_deletions','memory_deletion_dependencies']){
-  for(const action of ['insert','delete','update'])f.store.db.exec(`DROP TRIGGER ledger_${table}_${action}`);
-  f.store.db.prepare('DELETE FROM storage_ledger WHERE name=?').run(table);
- }
- f.store.db.exec('DROP TABLE memory_deletion_dependencies;CREATE TABLE memory_deletion_dependencies(deletion_id TEXT NOT NULL REFERENCES memory_deletions(id) ON DELETE CASCADE,evidence_id TEXT NOT NULL,PRIMARY KEY(deletion_id,evidence_id))');f.store.db.prepare('INSERT INTO memory_deletion_dependencies VALUES(?,?)').run(intent.id,id);
- f.restart({},store=>assert.doesNotThrow(()=>store.logicalBytes(),'Ledger may run before Memory dependency migration'));
- assert.equal(f.store.logicalBytes(),expected);assert.deepEqual(f.memories.deletions.export(),[intent]);assert.notEqual(f.store.db.prepare('SELECT origin_keys FROM memory_deletion_dependencies').get()!.origin_keys,'[]');
+test('current deletion ledgers reopen with exact accounting and dependency identities',async t=>{
+ const f=await fixture(t),id=await f.add('Generated accounting evidence'),[memory]=await save(f,output(f,[id]));f.memories.delete(memory.id);const expected=f.store.logicalBytes(),intent=f.memories.deletions.export()[0];
+ f.restart();assert.equal(f.store.logicalBytes(),expected);assert.deepEqual(f.memories.deletions.export(),[intent]);assert.notEqual(f.store.db.prepare('SELECT origin_keys FROM memory_deletion_dependencies').get()!.origin_keys,'[]');
  f.store.delete(id);assert.equal(f.store.db.prepare("SELECT sum(bytes) n FROM storage_ledger WHERE name IN ('memory_deletions','memory_deletion_dependencies')").get()!.n,0);
 });

@@ -12,7 +12,9 @@ Opening an album synchronously renders grid placeholders. Only the selected page
 
 Both local and central screenshot browsing use this flow. Central browsing requires a server that supports the selected grouping endpoint; older servers show an explicit unavailable/version error. Web retains the full record view with its existing filters. Mac session image pages use its existing 30-record page size; Web and Android use 20.
 
-For the current validation, see [Session and preview checks](session-preview-validation.md).
+For historical session/preview acceptance, see [Session and preview checks](session-preview-validation.md).
+
+Current cleanup validation (2026-10-04): all 245 JVM tests across 54 suites passed, with no failures, errors or skips. Instrumentation Kotlin sources compiled and the debug APK assembled. No emulator or physical-device instrumentation, live-model or personal-data check ran. Earlier acceptance records below are historical, not a rerun of the current code.
 
 ## Why the previous path was slow
 
@@ -22,15 +24,15 @@ The new album/grid path reads a separate minimal projection. It neither deserial
 
 ## Local storage
 
-- Authoritative `.event` and content-addressed `.blob` files keep their existing formats.
-- Sixteen `.browse-v1-*` shards (plaintext by default, optional content encryption) contain only record ID, source, timestamp, app identity, image availability/blob reference and file size/mtime. New writes update their shard; reads use a bounded directory cache across queue handles.
+- Android current format 3 stores authoritative `.event` JSON and content-addressed `.blob` image bytes verbatim. Retired local data is rejected with a reset-required error; old AES readers are removed.
+- Sixteen `.browse-v1-*` shards (verbatim bytes in format 3) contain only record ID, source, timestamp, app identity, image availability/blob reference and file size/mtime. New writes update their shard; reads use a bounded directory cache across queue handles.
 - A shard is invalidated on disk before its authoritative event changes. After a crash, missing or stale entries are reconstructed from events. A broken derived index can be rebuilt; unreadable authoritative events are preserved and surfaced as errors.
-- Older queues build the projection on first recovery/browse. This first migration still needs to read old event metadata; later launches read the compact index. Explicit integrity checks still open and verify all authoritative records/blobs.
-- `.thumb` files are derivatives using the selected content-encryption policy, generated from the final privacy-processed bitmap. Older images generate a thumbnail when first opened in the grid. Derivatives share their parent's blob identity, follow queue retention/migration/orphan cleanup, and count toward storage usage. Thumbnail writes are optional when the configured storage limit leaves no room. Decoded display bitmaps use a bounded memory cache; on-disk derivatives are plaintext unless content encryption is enabled. See [content storage](content-storage.md).
+- Current-format queues rebuild a missing derived projection on recovery/browse. This reads current authoritative event metadata; later launches read the compact index. It is crash recovery, not an old-data upgrade path. Explicit integrity checks still open and verify authoritative records/blobs.
+- `.thumb` files are derivatives stored as original bytes, generated from the final privacy-processed bitmap. Current-format images lacking a derivative generate one when first opened in the grid. Derivatives share their parent's blob identity, follow queue retention/migration/orphan cleanup, and count toward storage usage. Thumbnail writes are optional when the configured storage limit leaves no room. Decoded display bitmaps use a bounded memory cache; on-disk derivatives use the current format 3 raw-byte policy. See [content storage](content-storage.md).
 
-The central server maintains its own SQLite `capture_gallery` projection, backfills it once, and cascades deletes with parent captures. Image authorization now reads only the owner device and blob reference. See [protocol](protocol.md#screenshot-albums).
+The central server maintains its own SQLite `capture_gallery` projection on current capture writes and cascades deletes with parent captures. Epoch 3 creates its final schema without historical backfill. Image authorization now reads only the owner device and blob reference. See [protocol](protocol.md#screenshot-albums).
 
-## Validation — 2026-09-15
+## Historical validation — 2026-09-15
 
 - Android development and test APKs built successfully; 113 JVM unit tests passed, no skips.
 - Service typecheck and all 156 server tests passed, no skips. Full server tests require permission to listen on fixture loopback ports.

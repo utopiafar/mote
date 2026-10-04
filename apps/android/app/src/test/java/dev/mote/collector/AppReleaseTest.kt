@@ -14,10 +14,10 @@ import java.security.Signature
 import java.util.Base64
 
 class AppReleaseTest {
-    private fun manifest() = JSONObject().put("schemaVersion", 1).put("version", "0.5.0").put("channel", "stable").put("repository", "utopiafar/mote").put("tag", "v0.5.0")
-        .put("publishedAt", "2026-09-13T00:00:00Z").put("notesUrl", "https://github.com/utopiafar/mote/releases/tag/v0.5.0")
+    private fun manifest() = JSONObject().put("schemaVersion", 1).put("component", "android").put("version", "0.5.0").put("channel", "stable").put("repository", "utopiafar/mote").put("tag", "android-v0.5.0")
+        .put("publishedAt", "2026-09-13T00:00:00Z").put("notesUrl", "https://github.com/utopiafar/mote/releases/tag/android-v0.5.0")
         .put("assets", JSONArray().put(JSONObject().put("component", "android").put("platform", "android").put("arch", "arm64").put("format", "apk")
-            .put("name", "mote.apk").put("url", "https://github.com/utopiafar/mote/releases/download/v0.5.0/mote.apk").put("size", 100)
+            .put("name", "mote.apk").put("url", "https://github.com/utopiafar/mote/releases/download/android-v0.5.0/mote.apk").put("size", 100)
             .put("sha256", "a".repeat(64)).put("packageName", "dev.mote.collector").put("versionCode", 6).put("certificateSha256", "b".repeat(64))))
         .put("images", JSONArray())
     private fun envelope(payload: JSONObject): ByteArray {
@@ -39,7 +39,7 @@ class AppReleaseTest {
             assertThrows(UpdateFailure::class.java) { AppReleaseVerifier.verify(envelope(mixed), pem, UpdateConfig()) }
         }
         assertThrows(UpdateFailure::class.java) { AppReleaseVerifier.verify(envelope(grouped().put("images", JSONArray().put(JSONObject().put("component", "server").put("image", "ghcr.io/utopiafar/mote@sha256:" + "a".repeat(64))))), pem, UpdateConfig()) }
-        assertEquals("v0.5.0", AppReleaseVerifier.verify(envelope(manifest()), pem, UpdateConfig(), "0.5.0", "v0.5.0").tag)
+        assertThrows(UpdateFailure::class.java) { AppReleaseVerifier.verify(envelope(manifest().apply { remove("component") }), pem, UpdateConfig()) }
     }
     @Test fun paginatedFeedSelectsOnlyAndroidAndPrefersComponentTagsOverLegacy() {
         val first = JSONArray(); repeat(100) { first.put(feed("desktop-v9.0.$it")) }
@@ -51,11 +51,11 @@ class AppReleaseTest {
         assertEquals("android-v0.6.0", AppReleaseVerifier.verify(raw, pem, UpdateConfig(), network.selectedVersion, network.selectedTag).tag)
         assertEquals(3, requested.size); assertTrue(requested.last().contains("/android-v0.6.0/")); assertFalse(requested.any { it.endsWith("/latest") })
     }
-    @Test fun feedsRetainLegacyFallbackAndHaveABoundedPageLimit() {
+    @Test fun feedsRejectRetiredUnifiedTagsAndHaveABoundedPageLimit() {
         val requested = mutableListOf<String>()
         val legacy = UpdateNetwork(open = { url -> requested.add(url.toString()); Fake(url, if (url.host == "api.github.com") JSONArray().put(feed("desktop-v9.0.0")).put(feed("v0.5.0")).toString().toByteArray() else envelope(manifest()), 200) })
-        assertEquals("v0.5.0", AppReleaseVerifier.verify(legacy.check(UpdateConfig()), pem, UpdateConfig(), legacy.selectedVersion, legacy.selectedTag).tag)
-        assertTrue(requested.last().contains("/v0.5.0/"))
+        assertEquals("not_found", assertThrows(UpdateFailure::class.java) { legacy.check(UpdateConfig()) }.code)
+        assertEquals(1, requested.size); assertTrue(requested.single().contains("api.github.com"))
         val full = JSONArray(); repeat(100) { full.put(feed("central-v8.0.$it")) }; var pages = 0
         val bounded = UpdateNetwork(open = { url -> pages++; Fake(url, full.toString().toByteArray(), 200) })
         assertEquals("not_found", assertThrows(UpdateFailure::class.java) { bounded.check(UpdateConfig()) }.code); assertEquals(10, pages)
@@ -80,7 +80,7 @@ class AppReleaseTest {
     }
     @Test fun schemaRejectsDuplicateIdentityWrongHostsAndNonIntegerVersion() {
         val wrongHost = manifest().apply { getJSONArray("assets").getJSONObject(0).put("url", "https://example.com/mote.apk") }
-        val duplicate = manifest().apply { getJSONArray("assets").put(JSONObject(getJSONArray("assets").getJSONObject(0).toString()).put("name", "other.apk").put("url", "https://github.com/utopiafar/mote/releases/download/v0.5.0/other.apk")) }
+        val duplicate = manifest().apply { getJSONArray("assets").put(JSONObject(getJSONArray("assets").getJSONObject(0).toString()).put("name", "other.apk").put("url", "https://github.com/utopiafar/mote/releases/download/android-v0.5.0/other.apk")) }
         val fraction = manifest().apply { getJSONArray("assets").getJSONObject(0).put("versionCode", 6.5) }
         for (value in listOf(wrongHost, duplicate, fraction, manifest().put("publicKey", pem), manifest().put("tag", "v0.6.0")))
             assertThrows(UpdateFailure::class.java) { AppReleaseVerifier.verify(envelope(value), pem, UpdateConfig()) }
@@ -95,7 +95,7 @@ class AppReleaseTest {
     }
     @Test fun truncatedDownloadResumesExactlyAndRejectsChecksumOrUnsafeRedirect() {
         val directory = Files.createTempDirectory("update-fixture").toFile(); val part = java.io.File(directory, "fixture.part")
-        val body = "合成应用下载字节，不是APK".repeat(100).toByteArray(); val hash = SourceRules.hash(String(body)); val asset = AppReleaseAsset("mote.apk", "https://github.com/utopiafar/mote/releases/download/v0.5.0/mote.apk", body.size.toLong(), hash, "dev.mote.collector", 6, "b".repeat(64))
+        val body = "合成应用下载字节，不是APK".repeat(100).toByteArray(); val hash = SourceRules.hash(String(body)); val asset = AppReleaseAsset("mote.apk", "https://github.com/utopiafar/mote/releases/download/android-v0.5.0/mote.apk", body.size.toLong(), hash, "dev.mote.collector", 6, "b".repeat(64))
         val first = body.copyOfRange(0, 50)
         try {
             assertThrows(IOException::class.java) { UpdateNetwork(open = { Fake(it, first, 200, mapOf("Content-Length" to body.size.toString())) }).download(asset, part) {} }
@@ -111,7 +111,7 @@ class AppReleaseTest {
     }
     @Test fun deeplyNestedUnsignedReleaseMetadataStopsBeforeFetchingTheManifest() {
         val nested = "[".repeat(64) + "0" + "]".repeat(64)
-        val metadata = """{"draft":false,"prerelease":false,"tag_name":"v0.5.0","untrusted":$nested}""".toByteArray()
+        val metadata = """{"draft":false,"prerelease":false,"tag_name":"android-v0.5.0","untrusted":$nested}""".toByteArray()
         val requested = mutableListOf<String>()
         val network = UpdateNetwork(open = { url -> requested.add(url.toString()); Fake(url, metadata, 200) })
         assertEquals("response", assertThrows(UpdateFailure::class.java) { network.check(UpdateConfig()) }.code)

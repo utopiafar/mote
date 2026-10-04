@@ -1,8 +1,10 @@
 # Execution protocol
 
-Mote keeps the existing domain tables and wire fields for compatibility, and
-adds an `execution` projection to file jobs/steps, Memory jobs/batches, query
-runs and insight runs.
+Mote persists each current workflow's domain phase and projects it into the shared
+`execution` scheduling vocabulary for file jobs/steps, Memory jobs/batches,
+query runs and insight runs. Domain phases carry details such as model admission,
+input readiness, or user confirmation; they are required by the current workflow.
+Unknown or retired phase names fail explicitly instead of becoming `queued`.
 
 The projection answers four separate questions:
 
@@ -13,19 +15,12 @@ The projection answers four separate questions:
 - `waiting`: why a run is waiting and which resource/action can unblock it;
 - `allowedActions`: the controls the client may offer.
 
-Older clients can continue reading `state`/`status`, `summary_state`, and the
-existing error fields. Older SQLite archives are read through the same
-normalizer; opening an archive does not rewrite evidence or derived artifacts.
-
-If an operator wants to materialize the additive projection once, stop the
-server and run:
-
-```sh
-node scripts/migrate-execution-state.mjs --data-dir /path/to/mote-data
-```
-
-The script makes a timestamped SQLite backup, runs in one transaction, and is
-idempotent. Use `--dry-run` to inspect the number of rows that would change.
+Central storage epoch 3 creates the current execution schema directly. It does
+not run ALTER/backfill passes or persist a historical projection sidecar. The old
+execution migration command has been removed. Restart recovery, dependency waits,
+retry deadlines, cancellation fences, and lease ownership remain current runtime
+behaviors. For the destructive MVP upgrade procedure, see
+[compatibility cleanup](audits/compatibility-cleanup-2026-10-04.md).
 
 The protocol deliberately does not classify user text or infer intent. The
 only deterministic mappings are explicit persisted state/error codes and

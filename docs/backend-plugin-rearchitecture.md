@@ -123,9 +123,11 @@ Source Pack 声明输入形态、产物和默认暴露路由；可信内核按�
 
 ## MVP 断代操作
 
-新服务启动时检查 `backend_epoch=2`。旧库不会被自动迁移或静默读取；先停止中央服务，再显式执行 `npm run reset:mvp-vault -- --data-dir <中央数据目录> --confirm-clear`。该命令移除 SQLite、截图与文件原件、来源归档、导入暂存及旧客户端连接凭据，保留访问令牌、内容密钥、其他外部连接凭据和日志；来源登记随 SQLite 一起清空，设备需重新连接。历史资料无法通过便携 JSON 完整恢复。Mac、Android 与 CLI 首次运行 v2 时清理旧待传队列及相关原件暂存，并重新扫描来源；Mac 已获中央确认、仍保存在本机供浏览的截图原件继续保留，不计入新协议待传队列，旧 OCR 待传状态会被取消。Mac 未完成的随手记提交 ID 作废，草稿正文保留供重新提交。服务端采集写入需要 `X-Mote-Ingress-Version: 2`，成功收据只表示输入可恢复。
+新服务启动时检查 `backend_epoch=3`。旧库不会自动迁移或静默读取。先停止中央服务并备份完整数据目录，再显式执行 `npm run reset:mvp-vault -- --data-dir <中央数据目录> --confirm-clear`。该命令移除 SQLite、截图与文件原件、来源归档、导入暂存及退役的模型/文件处理设置，保留访问令牌、内容密钥、客户端及外部连接凭据、模型和日志。来源登记随 SQLite 清空，需要重新选择来源和处理配置。便携 JSON 只恢复当前格式，不能用来跨代恢复历史资料。
 
-资料的 `artifacts` 记录会话拼接、OCR、文件提取等命名产物的 `ready/pending/failed/unavailable` 状态。查询可阅读已发布的 partial 资料并看到这些状态；来源配方或配置可声明 Memory 所需的具体产物。旧配方的保守默认仍要求整份 Material complete。
+Mac 和 Android 使用本机格式 3；发现旧格式时明确拒绝并保留原文件，不自动清队列、转换密文或改写草稿。先完成备份，再对端侧应用存储进行明确重置，重新设置并配对。CLI 旧 ingress spool 也需用户显式移走。升级顺序及回滚限制见[兼容清理实施记录](audits/compatibility-cleanup-2026-10-04.md)。采集写入仍使用 `X-Mote-Ingress-Version: 2`，成功收据表示输入已可恢复；幂等与冲突、绑定、隐私及删除防重建保护继续生效。
+
+资料的 `artifacts` 记录会话拼接、OCR、文件提取等命名产物的 `ready/pending/failed/unavailable` 状态。查询可阅读已发布的 partial 资料并看到这些状态；当前来源配方与配置显式声明 Memory 所需产物，任务固定所用版本。
 
 ## 验收门槛
 

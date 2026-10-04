@@ -16,17 +16,17 @@ async function fixture() {
   const store = new ConfigStore(profile, { available: () => true, encrypt: value => Buffer.from(value), decrypt: value => value.toString() }); await store.save(config);
   const storage = new QueueStorage(profile, 'test', config.deviceId), source = await storage.open('');
   const queue = new DurableQueue(source, config); queue.setStorageGuard(() => storage.assertOwned(queue.directory)); await queue.initialize();
-  const pending = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const, reason: 'charging' as const } };
-  await queue.enqueue(pending, image); await queue.acknowledge(pending.id); await queue.saveOcr(pending.id, 'GENERATED DEFERRED OCR');
+  const pending = { ...event(), ocrText:'GENERATED IMMUTABLE SCREENSHOT' };
+  await queue.enqueue(pending, image);
   await queue.failed(pending.id, 1000, () => 0.5); await queue.syncCheckpoint('2026-09-14T00:00:00.000Z', '2026-09-14T00:01:00.000Z');
-  await queue.initialize(); // Normalize optional zero-valued legacy fields before byte/state comparisons.
+  await queue.initialize();
   const target = await storage.candidate(external, source);
   const selected = async () => (await store.load()).captureStorageDirectory || storage.defaultDirectory;
   const commit = () => store.save({ ...config, captureStorageDirectory: target });
   return { profile, external, config, store, storage, source, queue, target, selected, commit };
 }
 describe('capture storage transactions with generated queue data', () => {
-  it('moves complete queue, pending OCR/retries/binding/checkpoint and preserves identity across restart/default restore', async () => {
+  it('moves complete queue, pending captures/retries/binding/checkpoint and preserves identity across restart/default restore', async () => {
     const f = await fixture(), before = await f.queue.exportArchive();
     const binding = await readFile(join(f.source, 'connection-binding.json')), checkpoint = await readFile(join(f.source, 'sync-checkpoint.json'));
     await f.queue.relocate(f.target, f.storage, f.commit, f.selected);
@@ -108,7 +108,7 @@ it('keeps the new pointer authoritative when old-copy cleanup fails, even after 
   internal.removeOwned = async (path, id) => { if (path === f.source) throw new Error('synthetic unavailable old disk'); await remove(path, id); };
   await f.queue.relocate(f.target, f.storage, f.commit, f.selected);
   expect(f.storage.cleanupPending).toBe(true); expect(f.queue.directory).toBe(f.target);
-  await f.queue.acknowledge(event().id, true); expect(f.queue.stats().depth).toBe(0);
+  await f.queue.acknowledge(event().id); expect(f.queue.stats().depth).toBe(0);
   const storage = new QueueStorage(f.profile, 'test', f.config.deviceId), queue = new DurableQueue(await storage.open(f.target), f.config);
   await queue.initialize(); await storage.recover(queue.directory);
   expect(queue.stats().depth).toBe(0); await expect(stat(f.source)).rejects.toMatchObject({ code: 'ENOENT' });
@@ -120,4 +120,9 @@ it('rejects missing custom directories during guarded initialize without recreat
   queue.setStorageGuard(async () => {}); // Simulate disappearance immediately AFTER a successful ownership check.
   await expect(queue.initialize()).rejects.toThrow(); await expect(stat(f.target)).rejects.toMatchObject({ code: 'ENOENT' });
   expect((await stat(disconnected)).isDirectory()).toBe(true);
+});
+
+it('refuses ownerless pre-existing default storage without adopting or erasing records',async()=>{
+ const profile=join(root,'ownerless'),queue=join(profile,'queue');await mkdir(join(queue,'events'),{recursive:true});const path=join(queue,'events','old.json');await writeFile(path,'Generated old record');
+ const storage=new QueueStorage(profile,'default',event().deviceId);await expect(storage.open('')).rejects.toThrow('Unsupported desktop storage format');expect(await readFile(path,'utf8')).toBe('Generated old record');await expect(stat(join(queue,'.mote-storage.json'))).rejects.toMatchObject({code:'ENOENT'});
 });

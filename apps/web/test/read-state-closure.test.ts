@@ -1,3 +1,4 @@
+import {modelView} from './fixtures/model-settings';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React,{act} from 'react';
@@ -14,7 +15,7 @@ import {configureLocale} from '@mote/shared/i18n';
 configureLocale(()=> 'zh-CN');
 function deferred(){let resolve!:(value:any)=>void,reject!:(error:unknown)=>void;const promise=new Promise<any>((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 async function fixture(t:any){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),before=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){before.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}dom.window.HTMLElement.prototype.scrollIntoView=()=>{};const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,value] of before){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,d:dom.window.document};}
-function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/model-settings')return {settings:{agentTimeoutMs:120000},profiles:[]};return read(path,init);},setAgentTimeout:()=>{}} as Api;}
+function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/model-settings')return modelView();return read(path,init);},setAgentTimeout:()=>{}} as Api;}
 const when='2026-01-01T00:00:00Z',summary=(id:string)=>({id,title:'Conversation '+id,createdAt:when,updatedAt:when,turnCount:1,scope:{},status:'completed'}),detail=(id:string)=>({...summary(id),turns:[{id:'turn-'+id,question:'Question '+id,status:'completed',createdAt:when,result:{answer:'Answer '+id,citations:[],trace:[],runId:id}}],nextCursor:'older'});
 const button=(d:Document,text:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(b=>b.textContent===text)!;
 test('conversation restore, detail and older-page replies cannot replace later owner selection',async t=>{

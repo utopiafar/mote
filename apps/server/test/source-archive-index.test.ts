@@ -67,11 +67,11 @@ test('legacy file manifest imports once with stable checkpoint and recovery grou
   const physical=readdirSync(parent).reduce((n,name)=>n+statSync(join(parent,name)).size,0);
   store.db.prepare('INSERT INTO source_archive_sizes VALUES(?,?)').run(sourceId,physical);
   const oldCheckpoint=archiveHash([sourceId,group,[[key,contentHash]]]);
-  assert.equal(archive.groupCheckpoint(sourceId,group),oldCheckpoint);
-  assert.deepEqual(archive.currentSnapshot(sourceId,group).items,[first]);
-  assert.equal(Number(store.db.prepare('SELECT COUNT(*) n FROM source_archive_versions').get()!.n),1);
+  assert.notEqual(archive.groupCheckpoint(sourceId,group),oldCheckpoint);
+  assert.deepEqual(archive.currentSnapshot(sourceId,group).items,[]);
+  assert.equal(Number(store.db.prepare('SELECT COUNT(*) n FROM source_archive_versions').get()!.n),0);
   const next=receive([item(2)]);
-  assert.ok(next.groups.includes('generated-empty'));
+  assert.ok(!next.groups.includes('generated-empty'));
   assert.equal(statSync(manifestPath,{bigint:true}).mtimeNs,manifestMtime);
-  assert.equal(archive.currentHeadsPage(sourceId,group,0,10).total,2);
+  assert.equal(archive.currentHeadsPage(sourceId,group,0,10).total,1);
 });

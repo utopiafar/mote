@@ -1,3 +1,4 @@
+import {formatEvidenceRef} from '@mote/shared';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Check, CloudUpload, FileText, LoaderCircle, RefreshCw, Trash2, WifiOff } from 'lucide-react';
@@ -123,7 +124,7 @@ export function Notes({ api, namespace, revision, onOpen, onSaved }: {
     <section className="notes-history"><div className="section-heading"><div><span className="eyebrow">YOUR OWN WORDS</span><h2>{moteText("已经留下的心绪与杂事")}</h2></div><button className="text-button" onClick={() => void load()} disabled={loading}><RefreshCw size={14} />{moteText("刷新")}</button></div>
       {listError && <div className="notice error" role="alert">{listError}{' '}{moteText("· 本机草稿仍可继续保存。")}</div>}
       {!records.length && !loading && !listError && <div className="panel empty"><FileText size={26} /><h3>{moteText("给今天留一小段文字")}</h3><p>{moteText("保存后，原文会出现在这里，也可作为问答的证据。")}</p></div>}
-      <div className="notes-grid">{records.map(record => <button className="panel note-card" key={record.id} onClick={() => onOpen(record.id)}><time>{dateTime(record.capturedAt)}</time><p>{record.ocrText}</p>{record.metadata?.attachments?.length&&<small>{moteText("附件")}: {record.metadata.attachments.length}</small>}<footer>{record.deviceName}<span>{moteText("查看原文 →")}</span></footer></button>)}</div>
+      <div className="notes-grid">{records.map(record => <button className="panel note-card" key={record.id} onClick={() => onOpen(formatEvidenceRef('capture',record.id))}><time>{dateTime(record.capturedAt)}</time><p>{record.ocrText}</p>{record.metadata?.attachments?.length&&<small>{moteText("附件")}: {record.metadata.attachments.length}</small>}<footer>{record.deviceName}<span>{moteText("查看原文 →")}</span></footer></button>)}</div>
       {loading && <div className="load-more"><LoaderCircle size={17} className="spin" />{moteText("正在读取随手记…")}</div>}
       {cursor && !loading && <div className="load-more"><button className="button subtle" onClick={() => void load(cursor)}>{moteText("加载更早的随手记")}</button></div>}
     </section>

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { validateModelOptions } from '@mote/agent';
 import {
-  MAX_AGENT_TIMEOUT_MS, MAX_MODEL_REQUEST_TIMEOUT_MS, MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, CODEX_SERVICE_TIERS, MODEL_FEATURES, modelProvider, DEPLOYMENT_MODEL_PROFILE_ID,
+  MAX_AGENT_TIMEOUT_MS, MAX_MODEL_REQUEST_TIMEOUT_MS, MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, CODEX_SERVICE_TIERS, MODEL_FEATURES, modelProvider, DEPLOYMENT_MODEL_PROFILE_ID, DEFAULT_MODEL_PROFILE_ID,
   type ModelProfile, type ModelFeature, type ModelFeatureDefaults,
   type ModelSettings, type ModelSettingsInput, type ModelSettingsView, type ModelTestResult,
 } from '@mote/shared/models';
@@ -29,6 +29,7 @@ const apiKey = line(8192);
 const headers = z.record(z.string().max(8192));
 const extraBody = z.record(z.unknown());
 const validateTimeouts = (value: {protocol: string; reasoningEffort:string; modelRequestTimeoutMs: number | null; agentTimeoutMs: number | null}, ctx: z.RefinementCtx) => {
+  if (value.protocol === 'codex-app-server' && (value as {serviceTier?:string}).serviceTier===undefined)ctx.addIssue({code:'custom',path:['serviceTier'],message:'Codex service tier is required'});
   if (value.protocol === 'codex-app-server' && value.modelRequestTimeoutMs !== null) ctx.addIssue({ code: 'custom', path: ['modelRequestTimeoutMs'], message: 'Model request timeout is not applicable to Codex App Server' });
   if (value.protocol !== 'codex-app-server' && value.modelRequestTimeoutMs === null) ctx.addIssue({ code: 'custom', path: ['modelRequestTimeoutMs'], message: 'Model request timeout is required for HTTP providers' });
   if (value.protocol !== 'codex-app-server' && value.agentTimeoutMs === null) ctx.addIssue({ code: 'custom', path: ['agentTimeoutMs'], message: 'Agent timeout is required for HTTP providers' });
@@ -48,41 +49,14 @@ export const modelProfileIdSchema = z.union([z.string().regex(/^[a-zA-Z0-9][a-zA
 const profileSchema = z.object({id:modelProfileIdSchema.refine(id=>!['default',DEPLOYMENT_MODEL_PROFILE_ID].includes(id)),name:line(100,1),settings:settingsSchema}).strict();
 const defaultsSchema = z.object(Object.fromEntries(MODEL_FEATURES.map(feature=>[feature,modelProfileIdSchema])) as Record<ModelFeature, typeof modelProfileIdSchema>).strict();
 const defaultModelsSchema = z.object(Object.fromEntries(MODEL_FEATURES.map(feature=>[feature,line(512,1)])) as Record<ModelFeature, ReturnType<typeof line>>).partial().strict();
-const savedSchema = z.object({ version: z.literal(1), revision: revisionSchema, settings: settingsSchema.nullable(),
-  profiles:z.array(profileSchema).max(30).optional(), defaults:defaultsSchema.optional(), defaultModels:defaultModelsSchema.optional(),
-}).strict().superRefine((state,ctx)=>{
-  const ids=['default',DEPLOYMENT_MODEL_PROFILE_ID,...(state.profiles??[]).map(p=>p.id)];
-  if(new Set(ids).size!==ids.length||Object.values(state.defaults??{}).some(id=>!ids.includes(id)))ctx.addIssue({code:'custom',message:'Invalid model references'});
+const savedSchema = z.object({version:z.literal(2),revision:revisionSchema,profiles:z.array(profileSchema).max(30),defaults:defaultsSchema,defaultModels:defaultModelsSchema}).strict().superRefine((state,ctx)=>{
+  const ids=[DEPLOYMENT_MODEL_PROFILE_ID,...state.profiles.map(p=>p.id)];
+  if(new Set(ids).size!==ids.length||Object.values(state.defaults).some(id=>!ids.includes(id)))ctx.addIssue({code:'custom',message:'Invalid model references'});
 });
-const defaultAssignments=():ModelFeatureDefaults=>({chat:'default',memory:'default',insight:'default',import:'default',file:'default'});
+const defaultAssignments=():ModelFeatureDefaults=>Object.fromEntries(MODEL_FEATURES.map(feature=>[feature,DEPLOYMENT_MODEL_PROFILE_ID])) as ModelFeatureDefaults;
 type SavedState = z.infer<typeof savedSchema>;
 type FileSystem = Pick<typeof fs, 'open' | 'mkdir' | 'rename' | 'unlink'>;
 const MAX_FILE_BYTES = 512 * 1024;
-
-function normalizeSettings(value: unknown): unknown {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  const input = value as Record<string, unknown>;
-  if (!Object.hasOwn(input, 'timeoutMs')) return value;
-  const normalized = { ...input };
-  if (!Object.hasOwn(normalized, 'modelRequestTimeoutMs')) normalized.modelRequestTimeoutMs = normalized.protocol === 'codex-app-server' ? null : normalized.timeoutMs;
-  if (!Object.hasOwn(normalized, 'agentTimeoutMs')) normalized.agentTimeoutMs = normalized.timeoutMs;
-  delete normalized.timeoutMs;
-  return normalized;
-}
-function normalizeSavedState(value: unknown): unknown {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  const state = value as Record<string, unknown>;
-  return {
-    ...state,
-    ...(Object.hasOwn(state, 'settings') ? { settings: normalizeSettings(state.settings) } : {}),
-    ...(Array.isArray(state.profiles) ? { profiles: state.profiles.map(profile => profile && typeof profile === 'object' && !Array.isArray(profile) ? { ...profile, settings: normalizeSettings((profile as Record<string, unknown>).settings) } : profile) } : {}),
-  };
-}
-function normalizeSettingsEnvelope(value: unknown): unknown {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  const body = value as Record<string, unknown>;
-  return Object.hasOwn(body, 'settings') ? { ...body, settings: normalizeSettings(body.settings) } : value;
-}
 
 const errors = {
   model_profile_missing: [400, "所选模型配置不存在，请重新选择。"],
@@ -112,7 +86,7 @@ export interface PreparedModelSettings {
 export interface ModelSettingsStoreOptions {
   directory: string;
   environment: ModelSettings;
-  prepare(settings: ModelSettings, profiles: ModelProfile[]): Promise<PreparedModelSettings>;
+  prepare(settings: ModelSettings, profiles: ModelProfile[], defaultProfileId:string): Promise<PreparedModelSettings>;
   probe(settings: ModelSettings): Promise<ModelTestResult>;
   codex?: {executable?:string;home?:string};
   /** Filesystem operations can be fault-injected without model or network access. */
@@ -180,9 +154,8 @@ export class ModelSettingsStore {
     try {
       const stat = await handle.stat();
       if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('Invalid settings file');
-      const value: unknown = normalizeSavedState(JSON.parse(await handle.readFile('utf8')));
+      const value: unknown = JSON.parse(await handle.readFile('utf8'));
       const state = savedSchema.parse(value);
-      if (state.settings) state.settings = validSettings(state.settings);
       for(const profile of state.profiles??[])profile.settings=validSettings(profile.settings);
       return state;
     } finally { await handle.close(); }
@@ -196,8 +169,8 @@ export class ModelSettingsStore {
         await this.io.mkdir(this.options.directory, { recursive: true, mode: 0o700 });
         state = await this.readSaved();
       } catch { throw new ModelSettingsError('model_settings_unavailable'); }
-      const candidate = await this.prepare(state?.settings ?? this.environment, state?.profiles ?? []);
-      this.state = state ?? { version: 1, revision: 0, settings: null };
+      const candidate = await this.prepare(state?state.profiles.find(p=>p.id===state.defaults.chat)?.settings??this.environment:this.environment,state?.profiles??[],state?.defaults.chat??DEPLOYMENT_MODEL_PROFILE_ID);
+      this.state = state ?? {version:2,revision:0,profiles:[],defaults:defaultAssignments(),defaultModels:{}};
       this.diskState = state;
       this.activate(candidate);
       return this.view();
@@ -205,26 +178,24 @@ export class ModelSettingsStore {
   }
 
   view(): ModelSettingsView {
-    const state = this.requireState(), settings = state.settings ?? this.environment;
+    const state = this.requireState(), settings = this.current();
     const defaults = {...defaultAssignments(),...state.defaults};
-    if (!state.settings) for (const feature of MODEL_FEATURES) if (defaults[feature] === 'default') defaults[feature] = DEPLOYMENT_MODEL_PROFILE_ID;
     return {
-      version: 1, revision: state.revision, source: state.settings ? 'saved' : 'environment',
-      profiles:this.profiles().filter(p=>p.id!=='default'||state.settings).map(p=>({...p,settings:publicSettings(p.settings),readOnly:p.id===DEPLOYMENT_MODEL_PROFILE_ID,source:p.id===DEPLOYMENT_MODEL_PROFILE_ID?'environment':'saved'})), defaults,
+      version: 1, revision: state.revision, source: state.defaults.chat===DEPLOYMENT_MODEL_PROFILE_ID?'environment':'saved',
+      profiles:this.profiles().map(p=>({...p,settings:publicSettings(p.settings),readOnly:p.id===DEPLOYMENT_MODEL_PROFILE_ID,source:p.id===DEPLOYMENT_MODEL_PROFILE_ID?'environment':'saved'})), defaults,
       defaultModels:{...state.defaultModels},
       settings: publicSettings(settings),
     };
   }
 
   /** Internal use only. HTTP routes must return view(), never current(). */
-  current(): ModelSettings { return structuredClone(this.requireState().settings ?? this.environment); }
+  current(): ModelSettings { return structuredClone(this.select('chat').settings); }
 
   profiles(): ModelProfile[] {
-    return [{id:'default',name:moteText("旧版默认预设"),settings:this.current()},
-      {id:DEPLOYMENT_MODEL_PROFILE_ID,name:moteText("部署配置"),settings:structuredClone(this.environment)},...structuredClone(this.requireState().profiles??[])];
+    return [{id:DEPLOYMENT_MODEL_PROFILE_ID,name:moteText("部署配置"),settings:structuredClone(this.environment)},...structuredClone(this.requireState().profiles??[])];
   }
   select(feature:ModelFeature, override?:string):ModelProfile {
-    const id=override??this.requireState().defaults?.[feature]??'default';
+    const id=override??this.requireState().defaults[feature];
     const profile=this.profiles().find(p=>p.id===id);
     if(!profile)throw new ModelSettingsError('model_profile_missing');
     const model = override === undefined ? this.requireState().defaultModels?.[feature] : undefined;
@@ -235,10 +206,10 @@ export class ModelSettingsStore {
     if (revision !== this.requireState().revision) throw new ModelSettingsError('model_settings_conflict');
   }
 
-  private draft(body: unknown, profileId = 'default'): ModelSettings {
+  private draft(body: unknown, profileId = DEFAULT_MODEL_PROFILE_ID): ModelSettings {
     let update: z.infer<typeof updateSchema>;
     try {
-      const normalized = normalizeSettingsEnvelope(body);
+      const normalized = body;
       update = updateSchema.parse(normalized);
       const original = (normalized as {settings: ModelSettingsInput}).settings;
       validateModelOptions({ ...update.settings, headers: original.headers ?? undefined, extraBody: original.extraBody ?? undefined });
@@ -247,7 +218,7 @@ export class ModelSettingsStore {
     this.expectedRevision(update.revision);
     const input = update.settings;
     // New profiles never inherit another profile's credentials.
-    const current = this.profiles().find(p=>p.id===profileId)?.settings ?? {...input,apiKey:'',headers:{},extraBody:{}};
+    const current = this.profiles().find(p=>p.id===profileId)?.settings ?? (profileId===DEFAULT_MODEL_PROFILE_ID?this.current():{...input,apiKey:'',headers:{},extraBody:{}});
     const changed = input.provider !== current.provider || input.protocol !== current.protocol || input.baseUrl !== current.baseUrl;
     const retained = (input.apiKey === undefined && Boolean(current.apiKey))
       || (input.headers === undefined && Object.keys(current.headers).length > 0)
@@ -261,8 +232,8 @@ export class ModelSettingsStore {
     });
   }
 
-  private async prepare(settings: ModelSettings, profiles: ModelProfile[]): Promise<PreparedModelSettings> {
-    try { return await this.options.prepare(structuredClone(settings), [{id:DEPLOYMENT_MODEL_PROFILE_ID,name:moteText("部署配置"),settings:structuredClone(this.environment)},...structuredClone(profiles)]); }
+  private async prepare(settings: ModelSettings, profiles: ModelProfile[], defaultProfileId:string): Promise<PreparedModelSettings> {
+    try { return await this.options.prepare(structuredClone(settings), [{id:DEPLOYMENT_MODEL_PROFILE_ID,name:moteText("部署配置"),settings:structuredClone(this.environment)},...structuredClone(profiles)],defaultProfileId); }
     catch { throw new ModelSettingsError('model_settings_prepare_failed'); }
   }
 
@@ -312,13 +283,12 @@ export class ModelSettingsStore {
     }
   }
 
-  private async commit(settings: ModelSettings | null, registry: Pick<SavedState,'profiles'|'defaults'|'defaultModels'> = this.requireState()): Promise<ModelSettingsView> {
+  private async commit(registry: Pick<SavedState,'profiles'|'defaults'|'defaultModels'>): Promise<ModelSettingsView> {
     const state = this.requireState();
     if (state.revision === Number.MAX_SAFE_INTEGER) throw new ModelSettingsError('model_settings_unavailable');
-    const next: SavedState = { version: 1, revision: state.revision + 1, settings,
-      ...(registry.profiles?.length?{profiles:registry.profiles}:{}), ...(registry.defaults?{defaults:registry.defaults}:{}), ...(registry.defaultModels?{defaultModels:registry.defaultModels}:{}) };
+    const next:SavedState={version:2,revision:state.revision+1,profiles:registry.profiles,defaults:registry.defaults,defaultModels:registry.defaultModels};
     if(!savedSchema.safeParse(next).success)throw new ModelSettingsError('model_settings_invalid');
-    const candidate = await this.prepare(settings ?? this.environment, next.profiles??[]);
+    const candidate = await this.prepare(next.profiles.find(p=>p.id===next.defaults.chat)?.settings??this.environment,next.profiles,next.defaults.chat);
     let activated = false;
     try {
       const uncertain = await this.persist(next);
@@ -334,7 +304,7 @@ export class ModelSettingsStore {
   }
 
   update(body: unknown): Promise<ModelSettingsView> {
-    return this.serialize(() => this.commit(this.draft(body)));
+    return this.serialize(()=>{const settings=this.draft(body),state=this.requireState();return this.commit({profiles:[...state.profiles.filter(p=>p.id!==DEFAULT_MODEL_PROFILE_ID),{id:DEFAULT_MODEL_PROFILE_ID,name:moteText("部署配置"),settings}],defaults:Object.fromEntries(MODEL_FEATURES.map(feature=>[feature,state.defaults[feature]===DEPLOYMENT_MODEL_PROFILE_ID?DEFAULT_MODEL_PROFILE_ID:state.defaults[feature]])) as ModelFeatureDefaults,defaultModels:state.defaultModels});});
   }
 
   reset(body: unknown): Promise<ModelSettingsView> {
@@ -342,18 +312,18 @@ export class ModelSettingsStore {
       const parsed = resetSchema.safeParse(body);
       if (!parsed.success) throw new ModelSettingsError('model_settings_invalid');
       this.expectedRevision(parsed.data.revision);
-      return this.commit(null);
+      const state=this.requireState();return this.commit({profiles:state.profiles.filter(p=>p.id!==DEFAULT_MODEL_PROFILE_ID),defaults:Object.fromEntries(MODEL_FEATURES.map(feature=>[feature,state.defaults[feature]===DEFAULT_MODEL_PROFILE_ID?DEPLOYMENT_MODEL_PROFILE_ID:state.defaults[feature]])) as ModelFeatureDefaults,defaultModels:state.defaultModels});
     });
   }
 
-  models(body: unknown, profileId = 'default') {
+  models(body: unknown, profileId = DEFAULT_MODEL_PROFILE_ID) {
     return this.serialize(async () => this.draft(body,profileId)).then(settings => settings.protocol==='codex-app-server'?codexModels(undefined,this.options.codex):providerModels(settings));
   }
 
   updateProfile(id:string, body:unknown):Promise<ModelSettingsView> {
     return this.serialize(()=>{
       if(id===DEPLOYMENT_MODEL_PROFILE_ID)throw new ModelSettingsError('model_profile_read_only');
-      const normalized = normalizeSettingsEnvelope(body);
+      const normalized = body;
       const parsed=z.object({revision:revisionSchema,name:line(100,1),settings:inputSchema,allowCredentialReuse:z.boolean().optional()}).strict().safeParse(normalized);
       if(!parsed.success||!modelProfileIdSchema.safeParse(id).success||id==='default')throw new ModelSettingsError('model_settings_invalid');
       const {name,...update}=parsed.data;
@@ -361,7 +331,7 @@ export class ModelSettingsStore {
       const state=this.requireState(),profiles=structuredClone(state.profiles??[]),index=profiles.findIndex(p=>p.id===id);
       const profile={id,name,settings};
       if(index<0)profiles.push(profile);else profiles[index]=profile;
-      return this.commit(state.settings,{...state,profiles});
+      return this.commit({...state,profiles});
     });
   }
   copyProfile(id:string,body:unknown):Promise<ModelSettingsView> {
@@ -373,7 +343,7 @@ export class ModelSettingsStore {
       const source=this.select('chat',id),state=this.requireState();
       const settings=structuredClone(source.settings);
       if(!parsed.data.includeCredentials){settings.apiKey='';settings.headers={};settings.extraBody={};}
-      return this.commit(state.settings,{...state,profiles:[...(state.profiles??[]),{id:parsed.data.id,name:parsed.data.name,settings}]});
+      return this.commit({...state,profiles:[...(state.profiles??[]),{id:parsed.data.id,name:parsed.data.name,settings}]});
     });
   }
   deleteProfile(id:string,body:unknown):Promise<ModelSettingsView> {
@@ -385,23 +355,22 @@ export class ModelSettingsStore {
       const state=this.requireState();
       this.select('chat',id);
       if(Object.values(state.defaults??{}).includes(id))throw new ModelSettingsError('model_profile_in_use');
-      return this.commit(state.settings,{...state,profiles:state.profiles?.filter(p=>p.id!==id)});
+      return this.commit({...state,profiles:state.profiles?.filter(p=>p.id!==id)});
     });
   }
   updateDefaults(body:unknown):Promise<ModelSettingsView> {
     return this.serialize(()=>{
-      const parsed=z.object({revision:revisionSchema,defaults:defaultsSchema,defaultModels:defaultModelsSchema.optional()}).strict().safeParse(body);
+      const parsed=z.object({revision:revisionSchema,defaults:defaultsSchema,defaultModels:defaultModelsSchema}).strict().safeParse(body);
       if(!parsed.success)throw new ModelSettingsError('model_settings_invalid');
       this.expectedRevision(parsed.data.revision);
       for(const feature of MODEL_FEATURES)this.select(feature,parsed.data.defaults[feature]);
       const state=this.requireState();
-      // Old clients changing a provider must not accidentally retain another provider's model ID.
-      const defaultModels=parsed.data.defaultModels??Object.fromEntries(Object.entries(state.defaultModels??{}).filter(([feature])=>parsed.data.defaults[feature as ModelFeature]===(state.defaults?.[feature as ModelFeature]??'default')));
-      return this.commit(state.settings,{profiles:state.profiles,defaults:parsed.data.defaults,defaultModels});
+      const defaultModels=parsed.data.defaultModels;
+      return this.commit({profiles:state.profiles,defaults:parsed.data.defaults,defaultModels});
     });
   }
 
-  test(body: unknown, profileId='default'): Promise<ModelTestResult> {
+  test(body: unknown, profileId=DEFAULT_MODEL_PROFILE_ID): Promise<ModelTestResult> {
     return this.serialize(async () => {
       const settings = this.draft(body,profileId), started = Date.now();
       try {

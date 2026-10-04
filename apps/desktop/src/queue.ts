@@ -1,3 +1,4 @@
+import {ensureStorageFormat,DESKTOP_STORAGE_VERSION} from './storage-format';
 import {captureSchema} from '@mote/shared';
 import {stateSeriesSchema,stateOnly,isStateExtension} from '@mote/shared/state-series';
 import { moteText } from '@mote/shared/i18n';
@@ -26,20 +27,14 @@ export interface QueueRecord {
   blobBytes: number;
   attempts: number;
   nextAttemptAt: number;
-  /** Original event stays immutable across POST retries; deferred OCR uses its own update. */
-  uploaded?: boolean;
-  ocrResult?: string;
-  ocrRetryAt?: number;
   syncBlocked?: boolean;
   syncError?: string;
-  /** Acknowledged v1 original retained for local browse, outside the v2 upload backlog. */
-  localArchiveOnly?: boolean;
 }
 export interface QueueLimits { maxQueueBytes: number; maxQueueEvents: number }
-export interface QueueStats { archiveAcknowledgment?:{at:string;origin:string}; depth: number; bytes: number; nextRetryAt?: string; oldestPendingAt?: string; lastUploadAt?: string; eligibleDepth: number; waitingOcr: number; blocked: number }
+export interface QueueStats { archiveAcknowledgment?:{at:string;origin:string}; depth: number; bytes: number; nextRetryAt?: string; oldestPendingAt?: string; lastUploadAt?: string; eligibleDepth: number; blocked: number }
 export interface QueueArchive {
   format: 'mote-desktop-queue';
-  version: 1;
+  version: 3;
   records: QueueRecord[];
   blobs: Record<string, string>;
 }
@@ -55,18 +50,10 @@ export function retryDelay(attempts: number, random = Math.random): number {
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HASH = /^[a-f0-9]{64}$/;
-// A 100,000-character OCR result can expand to six bytes per JSON-escaped character.
-// Reserve before accepting a pending image, so a full queue can still persist OCR and release it.
-export const OCR_RESULT_RESERVE_BYTES = 600128;
-// Reserve envelope/escape overhead even for mixed-mode files so a later OCR rewrite
-// cannot exceed the quota merely because the user enabled content encryption.
-const CONTENT_FILE_ALLOWANCE = 64;
-function recordBytes(record: QueueRecord): number {
-  return Buffer.byteLength(JSON.stringify(record)) + CONTENT_FILE_ALLOWANCE + (!record.localArchiveOnly && record.event.ocr?.status === 'pending' && record.ocrResult === undefined ? OCR_RESULT_RESERVE_BYTES : 0);
-}
+function recordBytes(record: QueueRecord): number {return Buffer.byteLength(JSON.stringify(record));}
 function activeUsage(records:Iterable<QueueRecord>):{depth:number;bytes:number}{
   const blobs=new Map<string,number>();let depth=0,bytes=0;
-  for(const record of records){if(record.localArchiveOnly)continue;depth++;bytes+=recordBytes(record);if(record.blobHash)blobs.set(record.blobHash,record.blobBytes+CONTENT_FILE_ALLOWANCE);}
+  for(const record of records){depth++;bytes+=recordBytes(record);if(record.blobHash)blobs.set(record.blobHash,record.blobBytes);}
   return {depth,bytes:bytes+[...blobs.values()].reduce((sum,value)=>sum+value,0)};
 }
 
@@ -101,7 +88,7 @@ function validateEvent(value: unknown): CaptureEvent {
     return { ...base, ocrText: v.ocrText, source: 'note', mood: v.mood, privacy: { excluded: false, redacted: false, mode: 'none' } };
   }
   if (v.imageMime !== 'image/jpeg' || v.privacy.mode !== 'local' || typeof v.privacy.reason !== 'string' || v.privacy.reason.length > 500) throw new Error(moteText("截图隐私标记无效"));
-  if (v.ocr !== undefined && (!['pending', 'completed', 'disabled', 'failed'].includes(v.ocr.status) || (v.ocr.reason !== undefined && v.ocr.reason !== 'charging') || (v.ocr.updatedAt !== undefined && !Number.isFinite(Date.parse(v.ocr.updatedAt))))) throw new Error(moteText("OCR 状态无效"));
+  if (v.ocr !== undefined && (!['completed', 'disabled'].includes(v.ocr.status) || (v.ocr.reason !== undefined && v.ocr.reason !== 'charging') || (v.ocr.updatedAt !== undefined && !Number.isFinite(Date.parse(v.ocr.updatedAt))))) throw new Error(moteText("OCR 状态无效"));
   const ocr = v.ocr ? { status: v.ocr.status, ...(v.ocr.reason ? { reason: v.ocr.reason } : {}), ...(v.ocr.updatedAt ? { updatedAt: v.ocr.updatedAt } : {}) } : undefined;
   return { ...base, ocrText: v.ocrText, ...(ocr ? { ocr } : {}), source: 'screen', imageMime: 'image/jpeg', privacy: { excluded: false, redacted: v.privacy.redacted, mode: 'local', ...(v.privacy.collection ? { collection: v.privacy.collection } : {}), reason: v.privacy.reason } };
 }
@@ -109,10 +96,9 @@ export function validateRecord(value: unknown): QueueRecord {
   const v = value as QueueRecord;
   const event = validateEvent(v?.event);
   if ((event.source === 'screen' ? (!v.blobHash || !HASH.test(v.blobHash) || !Number.isInteger(v.blobBytes) || v.blobBytes < 4 || v.blobBytes > MAX_IMAGE_BYTES) : (v.blobHash !== undefined || v.blobBytes !== 0)) || !Number.isInteger(v.attempts) || v.attempts < 0 || !Number.isFinite(v.nextAttemptAt) || v.nextAttemptAt < 0) throw new Error(moteText("队列记录无效"));
-  if ((v.uploaded !== undefined && typeof v.uploaded !== 'boolean') || (v.ocrResult !== undefined && (typeof v.ocrResult !== 'string' || v.ocrResult.length > 100000)) || (v.ocrRetryAt !== undefined && (!Number.isFinite(v.ocrRetryAt) || v.ocrRetryAt < 0)) || ((v.uploaded || v.ocrResult !== undefined) && event.ocr?.status !== 'pending')) throw new Error(moteText("OCR 补做队列状态无效"));
+  if(['uploaded','ocrResult','ocrRetryAt','localArchiveOnly'].some(key=>Object.hasOwn(v,key)))throw Error('Unsupported desktop queue record format');
   if ((v.syncBlocked !== undefined && typeof v.syncBlocked !== 'boolean') || (v.syncError !== undefined && (typeof v.syncError !== 'string' || v.syncError.length > 300))) throw new Error(moteText("同步失败状态无效"));
-  if(v.localArchiveOnly!==undefined&&(v.localArchiveOnly!==true||!v.uploaded||!v.syncBlocked||v.syncError!=='legacy_ingress_archive'))throw new Error(moteText("队列记录无效"));
-  return { event, blobHash: v.blobHash, blobBytes: v.blobBytes, attempts: v.attempts, nextAttemptAt: v.nextAttemptAt, ...(v.uploaded ? { uploaded: true } : {}), ...(v.ocrResult !== undefined ? { ocrResult: v.ocrResult } : {}), ...(v.ocrRetryAt ? { ocrRetryAt: v.ocrRetryAt } : {}), ...(v.syncBlocked ? { syncBlocked: true, syncError: v.syncError } : {}),...(v.localArchiveOnly?{localArchiveOnly:true}:{}) };
+  return { event, blobHash: v.blobHash, blobBytes: v.blobBytes, attempts: v.attempts, nextAttemptAt: v.nextAttemptAt, ...(v.syncBlocked ? { syncBlocked: true, syncError: v.syncError } : {}) };
 }
 export function validateImage(image: Buffer, hash?: string): void {
   if (image.length < 4 || image.length > MAX_IMAGE_BYTES || image[0] !== 0xff || image[1] !== 0xd8 || image.at(-2) !== 0xff || image.at(-1) !== 0xd9 || (hash && imageHash(image) !== hash)) throw new Error(moteText("队列图片格式、大小或校验和不正确"));
@@ -173,43 +159,11 @@ export class DurableQueue {
     this.chain = result.catch(() => undefined);
     return result;
   }
-  withContentMaintenance<T>(work: () => Promise<T>): Promise<T> { return this.exclusive(work); }
   private eventsPath(id: string): string { return join(this.directory, 'events', `${id}.json`); }
   private blobPath(hash: string): string { return join(this.directory, 'blobs', `${hash}.jpg`); }
   private stageCheckpointPath(): string { return join(this.directory, 'capture-stage-checkpoint.json'); }
   private stageJournalPath(): string { return join(this.directory, 'capture-stage-journal.json'); }
   private inputJournalPath(): string { return join(this.directory, 'capture-input-journal.json'); }
-  private async clearLegacyIngressState():Promise<void>{
-    const marker=join(this.directory,'capture-ingress-v2.json');
-    try{const value=JSON.parse(await readFile(marker,'utf8')) as {version?:unknown};
-      if(value.version===2)return;
-      throw Error('Invalid capture ingress migration marker');
-    }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
-    // A previously acknowledged capture can be the only remaining local
-    // original after the central MVP vault is reset. Keep it for local browse,
-    // but revoke its old OCR upload state: the old central capture no longer
-    // exists. Only unacknowledged protocol work is cleared.
-    const retainedBlobs=new Set<string>();
-    const events=join(this.directory,'events');
-    for(const name of await readdir(events)){
-      const path=join(events,name);
-      if(!name.endsWith('.json')){if(name.endsWith('.tmp'))await unlink(path);continue;}
-      const record=validateRecord(JSON.parse(await readFile(path,'utf8')));
-      if(name!==`${record.event.id}.json`)throw Error(moteText("队列文件名与事件 ID 不匹配"));
-      if(!record.uploaded){await unlink(path);continue;}
-      if(record.blobHash)retainedBlobs.add(record.blobHash);
-      await atomicWrite(path,JSON.stringify({...record,syncBlocked:true,syncError:'legacy_ingress_archive',localArchiveOnly:true}));
-    }
-    await syncDirectory(events);
-    const blobs=join(this.directory,'blobs');
-    for(const name of await readdir(blobs)){
-      if(name.endsWith('.tmp')||name.endsWith('.jpg')&&HASH.test(name.slice(0,-4))&&!retainedBlobs.has(name.slice(0,-4)))await unlink(join(blobs,name));
-    }
-    await syncDirectory(blobs);
-    for(const path of [this.stageCheckpointPath(),this.stageJournalPath(),this.inputJournalPath(),join(this.directory,'sync-checkpoint.json')])await rm(path,{force:true});
-    await syncDirectory(this.directory);
-    await atomicWrite(marker,JSON.stringify({version:2}));
-  }
   private async replayStageJournal(updateMemory: boolean): Promise<void> {
     let journal: CaptureStageJournal;
     try { journal = JSON.parse(await readFile(this.stageJournalPath(), 'utf8')) as CaptureStageJournal; }
@@ -237,13 +191,14 @@ export class DurableQueue {
   private assertReady(): void { if (!this.initialized) throw new Error(moteText("持久队列尚未初始化")); }
   async initialize(): Promise<void> {
     return this.exclusive(async () => {
+      if(this.storageGuard)for(const path of [this.directory,join(this.directory,'events'),join(this.directory,'blobs')]){const info=await lstat(path);if(!info.isDirectory()||info.isSymbolicLink())throw Error(moteText('截图存储目录不完整，请连接原磁盘后重试'));}
+      await ensureStorageFormat(this.directory,['events','blobs','capture-ingress-v2.json','capture-stage-checkpoint.json','capture-stage-journal.json','capture-input-journal.json','sync-checkpoint.json']);
       for (const path of [this.directory, join(this.directory, 'events'), join(this.directory, 'blobs')]) {
         if (this.storageGuard) {
           const info = await lstat(path); if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(moteText("截图存储目录不完整，请连接原磁盘后重试"));
         } else await mkdir(path, { recursive: true, mode: 0o700 });
         await chmod(path, 0o700);
       }
-      await this.clearLegacyIngressState();
       await this.replayStageJournal(false);
       const restored = new Map<string, QueueRecord>();
       const checked = new Map<string, number>();
@@ -316,33 +271,9 @@ export class DurableQueue {
       const image = await readFile(this.blobPath(record.blobHash)); validateImage(image); if (await imageWork.run<string>({ kind: 'hash', bytes: image }) !== record.blobHash) throw new Error(moteText("队列图片校验和不正确")); return image;
     });
   }
-  async nextOcr(now = Date.now()): Promise<{ record: QueueRecord; image: Buffer } | undefined> {
-    return this.exclusive(async () => {
-      const record = [...this.records.values()].find(r => !r.syncBlocked && r.event.ocr?.status === 'pending' && r.ocrResult === undefined && (r.ocrRetryAt ?? 0) <= now);
-      if (!record?.blobHash) return undefined;
-      const image = await readFile(this.blobPath(record.blobHash)); validateImage(image); if (await imageWork.run<string>({ kind: 'hash', bytes: image }) !== record.blobHash) throw new Error(moteText("队列图片校验和不正确"));
-      return { record: structuredClone(record), image };
-    });
-  }
-  async saveOcr(id: string, text: string): Promise<void> {
-    if (typeof text !== 'string' || text.length > 100000) throw new Error(moteText("OCR 文本超出限制"));
-    await this.exclusive(async () => {
-      const prior = this.records.get(id); if (!prior || prior.localArchiveOnly || prior.event.ocr?.status !== 'pending') return;
-      const record = { ...prior, ocrResult: text, ocrRetryAt: 0, nextAttemptAt: 0 };
-      // This consumes the record's pre-reserved budget, even if the user since lowered the limit.
-      await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.cachedStats = undefined; this.records.set(id, record);
-    });
-  }
-  async deferOcr(id: string): Promise<void> {
-    await this.exclusive(async () => {
-      const prior = this.records.get(id); if (!prior || prior.localArchiveOnly) return;
-      const record = { ...prior, ocrRetryAt: Date.now() + 60000 };
-      await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.cachedStats = undefined; this.records.set(id, record);
-    });
-  }
   async blockSync(id: string, message: string): Promise<void> {
     await this.exclusive(async () => {
-      const prior = this.records.get(id); if (!prior || prior.localArchiveOnly) return;
+      const prior = this.records.get(id); if (!prior) return;
       const record = { ...prior, syncBlocked: true, syncError: message.slice(0, 300), nextAttemptAt: 0 };
       await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.cachedStats = undefined; this.records.set(id, record);
     });
@@ -355,17 +286,16 @@ export class DurableQueue {
     let nextRetry: number | undefined = this.sourceRetryAt ? Date.parse(this.sourceRetryAt) : undefined;
     let oldestPendingAt: string | undefined;
     for (const record of this.records.values()) {
-      if(record.localArchiveOnly){if(record.blobHash)blobs.set(record.blobHash,record.blobBytes+CONTENT_FILE_ALLOWANCE);metadataBytes+=this.sizeOf(record);continue;}
       if (!oldestPendingAt || record.event.capturedAt < oldestPendingAt) oldestPendingAt = record.event.capturedAt;
-      if (record.blobHash) blobs.set(record.blobHash, record.blobBytes + CONTENT_FILE_ALLOWANCE);
+      if (record.blobHash) blobs.set(record.blobHash, record.blobBytes);
       metadataBytes += this.sizeOf(record);
       if (!record.syncBlocked && record.nextAttemptAt > 0) nextRetry = Math.min(nextRetry ?? Infinity, record.nextAttemptAt);
     }
     const values = [...this.records.values()];
-    const active=values.filter(record=>!record.localArchiveOnly);
+    const active=values;
     this.cachedStats = { ...(this.archiveAcknowledgment?{archiveAcknowledgment:{...this.archiveAcknowledgment}}:{}), depth: active.length, bytes: [...blobs.values()].reduce((a, b) => a + b, metadataBytes), nextRetryAt: nextRetry ? new Date(nextRetry).toISOString() : undefined, oldestPendingAt, lastUploadAt: this.lastUploadAt,
-      eligibleDepth: active.filter(r => !r.syncBlocked && (!r.uploaded || r.ocrResult !== undefined)).length,
-      waitingOcr: active.filter(r => r.uploaded && r.ocrResult === undefined).length, blocked: active.filter(r => r.syncBlocked).length };
+      eligibleDepth: active.filter(r => !r.syncBlocked).length,
+      blocked: active.filter(r => r.syncBlocked).length };
     return { ...this.cachedStats };
   }
   async syncCheckpoint(lastUploadAt = this.lastUploadAt, nextRetryAt?: string, archiveAcknowledgment=this.archiveAcknowledgment): Promise<void> {
@@ -407,7 +337,7 @@ export class DurableQueue {
     const checkpoint=this.captureCheckpoint?structuredClone(this.captureCheckpoint):undefined;
     // An ACK can remove the old series head before the next capture. Never revise an ACKed ID.
     const state=checkpoint?.stages?.['state-series'],head=(state?.value as {head?:CaptureEvent}|undefined)?.head;
-    if(head&&state){const current=this.records.get(head.id);if(!current||current.uploaded||current.syncBlocked||!isStateExtension(head,current.event)||!isStateExtension(current.event,head))state.value={};}
+    if(head&&state){const current=this.records.get(head.id);if(!current||current.syncBlocked||!isStateExtension(head,current.event)||!isStateExtension(current.event,head))state.value={};}
     const result=this.captureStages.consume(inputs,checkpoint,flush);
     const held=Object.values(result.checkpoint.stages).some(value=>value.held);
     if(held&&inputs.some(packet=>packet.image))throw new Error('Capture stages cannot hold image inputs; emit them in this batch');
@@ -453,12 +383,12 @@ export class DurableQueue {
     this.cachedStats = undefined; this.records.set(record.event.id, record);
   }
   async next(now = Date.now(), preferSince?:number): Promise<{ record: QueueRecord; image?: Buffer } | undefined> {
-    return (await this.nextBatch(1, now, false, preferSince))[0];
+    return (await this.nextBatch(1, now, preferSince))[0];
   }
-  async nextBatch(limit = 25, now = Date.now(), capturesOnly = false, preferSince?:number): Promise<{ record: QueueRecord; image?: Buffer }[]> {
+  async nextBatch(limit = 25, now = Date.now(), preferSince?:number): Promise<{ record: QueueRecord; image?: Buffer }[]> {
     return this.exclusive(async () => {
       this.assertReady();
-      const records = [...this.records.values()].filter(r => !r.syncBlocked && r.nextAttemptAt <= now && (!r.uploaded || (!capturesOnly && r.ocrResult !== undefined))).sort((a, b) => (preferSince===undefined?0:Number(Date.parse(b.event.capturedAt)>=preferSince)-Number(Date.parse(a.event.capturedAt)>=preferSince))||a.event.capturedAt.localeCompare(b.event.capturedAt));
+      const records = [...this.records.values()].filter(r => !r.syncBlocked && r.nextAttemptAt <= now).sort((a, b) => (preferSince===undefined?0:Number(Date.parse(b.event.capturedAt)>=preferSince)-Number(Date.parse(a.event.capturedAt)>=preferSince))||a.event.capturedAt.localeCompare(b.event.capturedAt));
       const result: { record: QueueRecord; image?: Buffer }[] = []; let bytes = 0;
       for (const record of records.slice(0, Math.min(25, limit))) {
         const image = record.blobHash ? await readFile(this.blobPath(record.blobHash)) : undefined;
@@ -470,17 +400,13 @@ export class DurableQueue {
       return result;
     });
   }
-  async acknowledge(id: string, ocrComplete = false, observations?: number, reviewOnly = false): Promise<void> {
+  async acknowledge(id: string, observations?: number, reviewOnly = false): Promise<void> {
     return this.exclusive(async () => {
       this.assertReady();
       const record = this.records.get(id);
       if (reviewOnly && (!record || record.syncError !== 'upload_review_pending')) throw Error('Review item is unavailable');
       if (!record) return;
       if(observations!==undefined&&(record.event.stateSeries?.samples.length??0)>observations)return;
-      if (record.event.ocr?.status === 'pending' && !ocrComplete) {
-        const retained = { ...record, uploaded: true, attempts: 0, nextAttemptAt: 0 };
-        await atomicWrite(this.eventsPath(id), JSON.stringify(retained)); this.cachedStats = undefined; this.records.set(id, retained); return;
-      }
       await unlink(this.eventsPath(id));
       // The event deletion must be durable before the last referenced blob is removed.
       await syncDirectory(join(this.directory, 'events'));
@@ -498,13 +424,13 @@ export class DurableQueue {
     });
   }
   reviewPending() { return [...this.records.values()].filter(r=>r.syncError==='upload_review_pending').map(r=>({id:r.event.id,capturedAt:r.event.capturedAt,appName:r.event.appName})); }
-  async rejectReview(id:string) {await this.acknowledge(id,true,undefined,true);}
+  async rejectReview(id:string) {await this.acknowledge(id,undefined,true);}
   async approveReview(id:string) { return this.exclusive(async()=>{const prior=this.records.get(id);if(!prior||prior.syncError!=='upload_review_pending')throw Error('Review item is unavailable');const record={...prior,syncBlocked:false,syncError:undefined};await atomicWrite(this.eventsPath(id),JSON.stringify(record));this.records.set(id,record);this.cachedStats=undefined;}); }
   async resetRetries(): Promise<void> {
     await this.syncCheckpoint();
     return this.exclusive(async () => {
       for (const prior of this.records.values()) {
-        if (prior.syncError === 'upload_review_pending' || prior.localArchiveOnly) continue;
+        if (prior.syncError === 'upload_review_pending') continue;
         const record = { ...prior, nextAttemptAt: 0, syncBlocked: false, syncError: undefined };
         await atomicWrite(this.eventsPath(record.event.id), JSON.stringify(record));
         this.cachedStats = undefined; this.records.set(record.event.id, record);
@@ -516,8 +442,7 @@ export class DurableQueue {
     return this.exclusive(async () => {
       this.assertReady();
       if(Object.values(this.captureCheckpoint?.stages??{}).some(stage=>stage.held))throw new Error('Flush held capture stage inputs before exporting the queue');
-      const reservation = [...this.records.values()].filter(r => !r.localArchiveOnly && r.event.ocr?.status === 'pending' && r.ocrResult === undefined).length * OCR_RESULT_RESERVE_BYTES;
-      if (this.stats().bytes - reservation > 256 * 1024 * 1024) throw new Error(moteText("队列超过 256 MiB，请退出采集器后备份整个 queue 文件夹"));
+      if (this.stats().bytes > 256 * 1024 * 1024) throw new Error(moteText("队列超过 256 MiB，请退出采集器后备份整个 queue 文件夹"));
       await archiveWork.run({ kind: 'archive-export', directory: this.directory, path }, progress);
     });
   }
@@ -560,18 +485,17 @@ export class DurableQueue {
   async exportArchive(): Promise<QueueArchive> {
     return this.exclusive(async () => {
       this.assertReady();
-      const reservation = [...this.records.values()].filter(r => !r.localArchiveOnly && r.event.ocr?.status === 'pending' && r.ocrResult === undefined).length * OCR_RESULT_RESERVE_BYTES;
-      if (this.stats().bytes - reservation > 256 * 1024 * 1024) throw new Error(moteText("队列超过 256 MiB，请退出采集器后备份整个 queue 文件夹"));
+      if (this.stats().bytes > 256 * 1024 * 1024) throw new Error(moteText("队列超过 256 MiB，请退出采集器后备份整个 queue 文件夹"));
       const blobs: Record<string, string> = {};
       for (const record of this.records.values()) if (record.blobHash && !blobs[record.blobHash]) blobs[record.blobHash] = (await readFile(this.blobPath(record.blobHash))).toString('base64');
-      return { format: 'mote-desktop-queue', version: 1, records: structuredClone([...this.records.values()]), blobs };
+      return { format: 'mote-desktop-queue', version: DESKTOP_STORAGE_VERSION, records: structuredClone([...this.records.values()]), blobs };
     });
   }
   async importArchive(input: unknown): Promise<number> {
     return this.exclusive(async () => {
       this.assertReady();
       const archive = input as QueueArchive;
-      if (archive?.format !== 'mote-desktop-queue' || archive.version !== 1 || !Array.isArray(archive.records) || archive.records.length > 1000000 || !archive.blobs || typeof archive.blobs !== 'object') throw new Error(moteText("不是 Mote 电脑端队列备份"));
+      if (archive?.format !== 'mote-desktop-queue' || archive.version !== DESKTOP_STORAGE_VERSION || !Array.isArray(archive.records) || archive.records.length > 1000000 || !archive.blobs || typeof archive.blobs !== 'object') throw new Error(moteText("不是 Mote 电脑端队列备份"));
       const unique = new Map<string, QueueRecord>();
       const images = new Map<string, Buffer>();
       // Validate every record before the first write.
@@ -586,10 +510,7 @@ export class DurableQueue {
         }
         const existing = this.records.get(record.event.id) ?? unique.get(record.event.id);
         if (existing && (existing.blobHash !== record.blobHash || JSON.stringify(existing.event) !== JSON.stringify(record.event))) throw new Error(moteText("备份包含冲突的事件 ID"));
-        // A restored archive may target a new node: re-ACK the immutable original before OCR patching.
-        if (!existing) unique.set(record.event.id, record.localArchiveOnly?
-          {...record,uploaded:false,attempts:0,nextAttemptAt:0,syncBlocked:undefined,syncError:undefined,localArchiveOnly:undefined}:
-          { ...record, uploaded: false, attempts: 0, nextAttemptAt: 0 });
+        if (!existing) unique.set(record.event.id, { ...record, attempts: 0, nextAttemptAt: 0 });
       }
       const usage=activeUsage([...this.records.values(),...unique.values()]);
       if(usage.depth>this.limits.maxQueueEvents||usage.bytes>this.limits.maxQueueBytes)throw new QueueFullError();

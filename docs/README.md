@@ -11,6 +11,7 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | 安装、开发、部署与更新 | [项目首页](../README.md)、[开发](development.md)、[部署](deployment.md)、[当前 DEV 更新](updating.md)、[发布](releasing.md) |
 | 采集、隐私和上传 | [统一行为](collection-and-sync.md)、[macOS](desktop.md)、[Android](android.md)、[文字审查与中央感知](central-perception.md)、[同步恢复](sync-recovery.md) |
 | 本地 OCR / ASR 与文件 | [运行时和模型安装](ocr-asr-implementation-plan.md)、[文件归档](files.md)、[文件处理](file-processing.md)、[类型策略](file-processing-policies.md) |
+| MVP 兼容清理、断代与验证 | [原始逐文件审计](audits/compatibility-audit-2026-10-04.md)、[83 项实施与升级风险](audits/compatibility-cleanup-2026-10-04.md) |
 | 数据、权限、协议 | [架构](architecture.md)、[正式资料](material-architecture.md)、[协议](protocol.md)、[内容加密](content-storage.md)、[资产存储](asset-storage.md) |
 | Agent、记忆和行动 | [Agent](agent.md)、[模型配置](model-providers.md)、[生命周期](memory-lifecycle.md)、[记忆更新](memory-updates.md)、[日程](calendar-actions.md)、[行动更新](action-updates.md) |
 | 当前界面、对话和运行状态 | [Slate 导航](ui-slate.md)、[对话](conversations.md)、[Operations](operations.md)、[执行器](execution-engine.md)、[排错](troubleshooting.md) |
@@ -28,7 +29,7 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | [agent](agent.md) | Agent 配置与权限 |
 | [android-bulk-dedupe](android-bulk-dedupe.md) | Android local bulk image deduplication |
 | [android-capture-recovery](android-capture-recovery.md) | Android capture recovery and central navigation |
-| [android-library-performance](android-library-performance.md) | Android 大资料库性能与可选内容加密 |
+| [android-library-performance](android-library-performance.md) | Android 大资料库性能与当前格式 3 存储 |
 | [android-local-state](android-local-state.md) | Android shared local state |
 | [android-power-optimization](android-power-optimization.md) | Android 采集与同步开销优化 |
 | [android-system-events](android-system-events.md) | Android 通知、设备事件与采集记录 |

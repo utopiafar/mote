@@ -48,8 +48,8 @@ class PowerOptimizationInstrumentedTest {
         val firstCalls = diagnostics.getLong("ocrCalls", 0)
         val firstSkips = diagnostics.getLong("earlySkippedFrames", 0)
         val config = original.copy(server = "", token = "", syncMode = "manual", nsfw = original.nsfw.copy(enabled = false),
-            localReviewUrl = "", masks = "", excludedPackages = "", appCollectionRules = AppCollectionRules.LEGACY_DEFAULT,
-            diagnosticsEnabled = true, imageDedupeMode = "exact", imageDedupeDiagnosticsEnabled = false, ocrMode = "chinese", ocrAppModes = "{}", ocrChargingOnly = false)
+            localReviewUrl = "", masks = "", excludedPackages = "", appCollectionRules = AppCollectionRules.CONTENT_DEFAULT,
+            diagnosticsEnabled = true, imageDedupeMode = "exact", imageDedupeDiagnosticsEnabled = false, ocrMode = "chinese", ocrAppModes = "{}")
         val pipeline = CapturePipeline(context) { }
         try {
             settings.save(config); settings.enabled = true
@@ -108,7 +108,7 @@ class PowerOptimizationInstrumentedTest {
             assertEquals(cancels + 1, counters.getLong("notificationCancels", 0))
         } finally { Notifications.clear(context); settings.save(original) }
     }
-    @Test fun freshDefaultIsStickyAndLegacyUnconfiguredRulesRemainContent() {
+    @Test fun freshDefaultIsStickyAndMissingRulesNeverInferContentFromOtherPreferences() {
         val prefs = context.getSharedPreferences("power-default-fixture", 0)
         val isolated = object : android.content.ContextWrapper(context) {
             override fun getSharedPreferences(name: String, mode: Int) = if (name == "mote") prefs else super.getSharedPreferences(name, mode)
@@ -118,8 +118,8 @@ class PowerOptimizationInstrumentedTest {
             assertEquals(AppCollectionRules.DEFAULT, Settings(isolated).read().appCollectionRules)
             prefs.edit().putBoolean("enabled", true).commit()
             assertEquals(AppCollectionRules.DEFAULT, Settings(isolated).read().appCollectionRules)
-            prefs.edit().clear().putInt("interval", 30).commit()
-            assertEquals(AppCollectionRules.LEGACY_DEFAULT, Settings(isolated).read().appCollectionRules)
+            prefs.edit().remove("appCollectionRules").putInt("interval", 30).commit()
+            assertThrows(IllegalStateException::class.java) { Settings(isolated) }
         } finally { prefs.edit().clear().commit() }
     }
     private fun views(view: View): List<View> = buildList {

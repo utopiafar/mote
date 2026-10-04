@@ -2,93 +2,75 @@ package dev.mote.collector
 
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import java.io.File
-import java.nio.file.Files
 import java.util.UUID
-import javax.crypto.Cipher
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
 
 class LocalContentCipherTest {
-    /** Same wire framing as SecretBox, with a generated-test key rather than Android Keystore. */
-    private class LegacyCipher : ByteCipher {
-        private val key = SecretKeySpec(ByteArray(16) { it.toByte() }, "AES")
-        override fun seal(bytes: ByteArray): ByteArray = Cipher.getInstance("AES/GCM/NoPadding").run {
-            init(Cipher.ENCRYPT_MODE, key); byteArrayOf(iv.size.toByte()) + iv + doFinal(bytes)
-        }
-        override fun open(bytes: ByteArray): ByteArray = Cipher.getInstance("AES/GCM/NoPadding").run {
-            init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, bytes.copyOfRange(1, 13))); doFinal(bytes.copyOfRange(13, bytes.size))
+    @get:Rule val folder = TemporaryFolder()
+    @Test fun formatThreeContentIsVerbatimIncludingFormerEnvelopePrefixes() {
+        val cipher = LocalContentCipher()
+        for (bytes in listOf(ByteArray(50) { if (it == 0) 12 else 7 }, "MOTE-LOCAL-PLAIN-V1\u0000generated".toByteArray(), "{\"generated\":true}".toByteArray())) {
+            assertArrayEquals(bytes, cipher.seal(bytes)); assertArrayEquals(bytes, cipher.open(bytes))
         }
     }
-    private fun event() = JSONObject().put("id", UUID.randomUUID().toString()).put("source", "screen")
-        .put("capturedAt", "2026-09-14T00:00:00Z").put("privacy", JSONObject().put("excluded", false))
-        .put("ocrText", "generated fixture text")
-    @Test fun normalJsonAndImageBytesArePlaintextWhileLegacyFramesAndAmbiguousBinaryRoundTrip() {
-        val legacy = LegacyCipher(); val codec = LocalContentCipher(legacy)
-        for (plain in listOf(event().toString().toByteArray(), byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47), byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte()))) {
-            assertArrayEquals(plain, codec.seal(plain)); assertArrayEquals(plain, codec.open(codec.seal(plain)))
-            val encrypted = legacy.seal(plain)
-            assertTrue(codec.isLegacy(encrypted)); assertArrayEquals(plain, codec.open(encrypted))
+    @Test fun retiredDirectoryAndSettingsAreRefusedWithoutReadingOrDeletingContent() {
+        val old = folder.newFolder("old"); val bytes = byteArrayOf(12, 1, 2, 3)
+        val event = File(old, "generated.event").apply { writeBytes(bytes) }
+        assertThrows(IllegalStateException::class.java) { LocalDataFormat.requireCurrent(old) }
+        assertArrayEquals(bytes, event.readBytes()); assertEquals(1, old.listFiles()!!.size)
+        val configured = folder.newFolder("configured")
+        assertThrows(IllegalStateException::class.java) { LocalDataFormat.requireCurrent(configured, true) }
+        assertTrue(configured.listFiles()!!.isEmpty())
+    }
+    @Test fun currentMarkerSurvivesRestartAndWrongVersionIsNeverUpgraded() {
+        val current = folder.newFolder("current"); LocalDataFormat.requireCurrent(current)
+        File(current, "generated.enc").writeText("generated")
+        LocalDataFormat.requireCurrent(current, true)
+        val marker = File(current, ".mote-local-format"); marker.writeText("2")
+        assertThrows(IllegalStateException::class.java) { LocalDataFormat.requireCurrent(current) }
+        assertEquals("2", marker.readText()); assertEquals("generated", File(current, "generated.enc").readText())
+    }
+    @Test fun pendingOcrAndRetiredPatchFieldsAreRejectedBeforeQueueWrites() {
+        val queue = DurableQueue(folder.newFolder("queue"), LocalContentCipher())
+        val event = JSONObject().put("id", UUID.randomUUID().toString()).put("source", "screen")
+            .put("capturedAt", "2026-10-04T00:00:00Z").put("imageMime", "image/png")
+            .put("privacy", JSONObject().put("excluded", false)).put("ocr", JSONObject().put("status", "pending"))
+        assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event, byteArrayOf(1), 1000000) }
+        event.getJSONObject("ocr").put("status", "disabled"); event.put("_ocrResult", JSONObject())
+        assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event, byteArrayOf(1), 1000000) }
+        assertEquals(0, queue.depth())
+        event.remove("_ocrResult"); val id = queue.enqueue(event, byteArrayOf(1), 1000000)
+        queue.acknowledge(id, retentionDays = 1, now = 1000)
+        assertEquals(0, queue.pendingSync().count); assertArrayEquals(byteArrayOf(1), queue.image(id))
+        assertEquals(1, queue.pruneUploaded(1000 + 86400000L)); assertNull(queue.image(id))
+    }
+    @Test fun retiredPortableArchivesCannotBecomeCurrentQueues() {
+        for (version in listOf(1, 2)) {
+            val bytes = java.io.ByteArrayOutputStream().also { output ->
+                java.util.zip.ZipOutputStream(output).use { zip ->
+                    zip.putNextEntry(java.util.zip.ZipEntry("archive.json"))
+                    zip.write(JSONObject().put("format", "mote-android-records").put("version", version).put("origin", "").toString().toByteArray())
+                    zip.closeEntry()
+                }
+            }.toByteArray()
+            val directory = File(folder.root, "retired-archive-$version")
+            assertThrows(IllegalArgumentException::class.java) { QueueArchive.prepare(bytes.inputStream(), directory, 1000000) }
+            assertFalse(directory.exists())
         }
-        for (plain in listOf(ByteArray(50) { if (it == 0) 12 else 7 }, "MOTE-LOCAL-PLAIN-V1\u0000generated".toByteArray())) {
-            val stored = codec.seal(plain)
-            assertFalse(codec.isLegacy(stored)); assertArrayEquals(plain, codec.open(stored))
-        }
-        val broken = legacy.seal(event().toString().toByteArray()).also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
-        assertThrows(Exception::class.java) { codec.open(broken) }
     }
-    @Test fun optionalEncryptionTracksCurrentPolicyAndExplicitPlaintextOverride() {
-        val legacy = LegacyCipher(); var enabled = false
-        val codec = LocalContentCipher(legacy) { enabled }
-        val bytes = event().toString().toByteArray()
-        assertArrayEquals(bytes, codec.seal(bytes))
-        enabled = true
-        val encrypted = codec.seal(bytes)
-        assertTrue(codec.isLegacy(encrypted)); assertArrayEquals(bytes, codec.open(encrypted))
-        assertArrayEquals(bytes, codec.open(bytes))
-        codec.withPlaintextWrites { assertArrayEquals(bytes, codec.seal(bytes)) }
-        assertTrue(codec.isLegacy(codec.seal(bytes)))
-        enabled = false
-        assertArrayEquals(bytes, codec.seal(bytes))
-    }
-    @Test fun queueMigrationIsResumableAtomicAndKeepsPayloadsAndPendingTime() {
-        val root = Files.createTempDirectory("mote-plain-migration").toFile()
-        val legacy = LegacyCipher(); val codec = LocalContentCipher(legacy, encryptWrites = true)
-        try {
-            val old = File(root, "old"); val oldQueue = DurableQueue(old, legacy)
-            val first = event(); val second = event()
-            val image = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 1, 2, 3)
-            listOf(first, second).forEach { oldQueue.enqueue(it, image, 10_000_000) }
-            val target = File(root, "restarted").apply { mkdirs() }
-            old.listFiles()!!.forEach { it.copyTo(File(target, it.name)).setLastModified(it.lastModified()) }
-            val queue = DurableQueue(target, codec)
-            val before = queue.pendingSync()
-            var checked = 0
-            queue.migrateLegacyContent { checked++ >= 1 }
-            assertNotNull(queue.capture(first.getString("id")))
-            queue.migrateLegacyContent()
-            assertEquals(0, queue.migrateLegacyContent())
-            assertEquals(before, queue.pendingSync())
-            assertEquals(2, queue.inventory().images); assertEquals(1, queue.inventory().imageFiles)
-            listOf(first, second).forEach { row ->
-                val file = File(target, "${row.getString("id")}.event")
-                assertEquals(row.getString("id"), JSONObject(file.readText()).getString("id"))
-                assertArrayEquals(image, queue.image(row.getString("id")))
-            }
-            assertArrayEquals(image, target.listFiles()!!.single { it.extension == "blob" }.readBytes())
-            queue.verifyIntegrity()
-        } finally { root.deleteRecursively() }
-    }
-    @Test fun corruptLegacyFileIsNeverOverwrittenDuringMigration() {
-        val root = Files.createTempDirectory("mote-plain-failed").toFile()
-        val legacy = LegacyCipher(); val codec = LocalContentCipher(legacy)
-        try {
-            val row = event()
-            val broken = legacy.seal(row.toString().toByteArray()).also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
-            val file = File(root, "${row.getString("id")}.event").apply { writeBytes(broken) }
-            assertThrows(Exception::class.java) { DurableQueue(root, codec).migrateLegacyContent() }
-            assertArrayEquals(broken, file.readBytes())
-        } finally { root.deleteRecursively() }
+    @Test fun frameworkStartupFilesDoNotMisclassifyFreshInstallAsRetiredData() {
+        val current = folder.newFolder("framework")
+        val database = File(current, "androidx.work.workdb").apply { writeText("generated framework fixture") }
+        LocalDataFormat.requireCurrent(current, ignoredFiles = LocalDataFormat.FRAMEWORK_FILES)
+        assertEquals("generated framework fixture", database.readText())
+        assertEquals("3", File(current, ".mote-local-format").readText())
+        val retired = folder.newFolder("framework-with-mote")
+        File(retired, "androidx.work.workdb").writeText("generated framework fixture")
+        File(retired, "draft.enc").writeText("generated retired fixture")
+        assertThrows(IllegalStateException::class.java) { LocalDataFormat.requireCurrent(retired, ignoredFiles = LocalDataFormat.FRAMEWORK_FILES) }
+        assertEquals(2, retired.listFiles()!!.size)
     }
 }

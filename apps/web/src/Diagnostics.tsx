@@ -49,7 +49,7 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
     catch {logRef.current?.focus();logRef.current?.select();setCopyStatus(moteText("剪贴板不可用，已全选，请按 ⌘/Ctrl+C 复制。"));}
   }
   return <section className="panel diagnostics-panel" aria-labelledby="diagnostics-title">
-    <div className="section-heading"><div><h2 id="diagnostics-title">{moteText("运行诊断")}</h2><p>{moteText("环境 ·")}{' '}{profile||'legacy'}{' '}{moteText("· 中央节点")}</p></div>
+    <div className="section-heading"><div><h2 id="diagnostics-title">{moteText("运行诊断")}</h2><p>{moteText("环境 ·")}{' '}{profile||'default'}{' '}{moteText("· 中央节点")}</p></div>
       <div className="diagnostics-actions">
         <button className="button subtle" onClick={refresh} disabled={busy}><RefreshCw size={15} className={busy?'spin':''}/>{moteText("刷新诊断")}</button>
         <select aria-label={moteText("导出时间范围")} value={hours} onChange={e=>setHours(Number(e.target.value))}><option value={1}>{moteText("最近 1 小时")}</option><option value={24}>{moteText("最近 24 小时")}</option><option value={168}>{moteText("最近 7 天")}</option></select><button className="button subtle" onClick={()=>void download()} disabled={exporting}><ArrowDownToLine size={15}/>{exporting?moteText("正在导出…"):moteText("导出诊断包")}</button>

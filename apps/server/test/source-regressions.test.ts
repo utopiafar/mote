@@ -1,3 +1,4 @@
+import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -86,12 +87,12 @@ test('each memory must declare its own inline evidence, even when another claim 
   {...second,statement:`错配但已在外层读取 [${a.id}]`},
   {...second,uncertainty:`限制也引用了未为本条声明的证据 [${a.id}]`},
  ]) {
-  assert.throws(()=>memories.extract(result([first,invalid]),'fixture-model'),error=>error instanceof MemoryOutputValidationError&&error.code==='citations'&&error.statusCode===502);
+  assert.throws(()=>memories.extract(fixtureMemoryResult(memories,result([first,invalid])),'fixture-model'),error=>error instanceof MemoryOutputValidationError&&error.code==='citations'&&error.statusCode===502);
   assert.equal(memories.list().length,0,'validation must finish before any memory is saved');
  }
  // Literal code copied from untrusted evidence is not a prose citation.
  const quoted={...second,statement:second.statement+`\n\n\`[${a.id}]\`\n\n\`\`\`text\n[${a.id}]\n\`\`\``};
- const saved=memories.extract(result([first,quoted]),'fixture-model');
+ const saved=memories.extract(fixtureMemoryResult(memories,result([first,quoted])),'fixture-model');
  assert.equal(saved.items.length,2);
  assert.deepEqual(saved.items[1].evidenceIds,[b.id]);
 });
@@ -99,7 +100,7 @@ test('each memory must declare its own inline evidence, even when another claim 
 test('merging a newer source version invalidates old memories and retains as-of insights',async t=>{
  const {store:destination,sources:local}=fixture(t),{store:origin,sources:remote}=fixture(t);
  const first=item(),ack=await local.upsert('generated-source',first);await remote.upsert('generated-source',first);
- const memories=new MemoryStore(destination),memory=memories.extract({answer:JSON.stringify({memories:[{title:'合成旧结论',statement:`旧版本的陈述 [${ack.id}]`,uncertainty:'仅供回归验证',evidenceIds:[ack.id]}]}),citations:[{id:ack.id,capturedAt:first.observedAt,appName:'generated',excerpt:'generated'}],trace:[],runId:'generated-import-memory'},'fixture-model').items[0];
+ const memories=new MemoryStore(destination),memory=memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'合成旧结论',statement:`旧版本的陈述 [${ack.id}]`,uncertainty:'仅供回归验证',evidenceIds:[ack.id]}]}),citations:[{id:ack.id,capturedAt:first.observedAt,appName:'generated',excerpt:'generated'}],trace:[],runId:'generated-import-memory'}),'fixture-model').items[0];
  memories.publish(memory.id);destination.saveInsight({answer:'合成旧洞察',citations:[{id:ack.id}]},'generated-import-insight');
  const before=destination.deletionRevision();
  await remote.upsert('generated-source',{...first,revision:'r2',observedAt:'2026-09-13T00:01:00Z',text:'合成修订版本'});
@@ -125,7 +126,7 @@ test('archive merge rejects ambiguous equal-time current pointers without partia
 test('archive imports account for source and memory metadata in the destination storage quota',async t=>{
  const {store,sources}=fixture(t),ack=await sources.upsert('generated-source',item());
  const memory={title:'合成容量检查',statement:`${'合成陈述。'.repeat(100)} [${ack.id}]`,uncertainty:'仅用于生成的容量测试',evidenceIds:[ack.id]};
- new MemoryStore(store).extract({answer:JSON.stringify({memories:[memory]}),citations:[{id:ack.id,capturedAt:item().observedAt,appName:'generated',excerpt:'generated'}],trace:[],runId:'generated-capacity'},'fixture-model');
+ const memories=new MemoryStore(store);memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[memory]}),citations:[{id:ack.id,capturedAt:item().observedAt,appName:'generated',excerpt:'generated'}],trace:[],runId:'generated-capacity'}),'fixture-model');
  const directory=mkdtempSync(join(tmpdir(),'mote-source-quota-'));
  const destination=new Store(directory,{maxStorageBytes:store.logicalBytes()-500});
  t.after(()=>{destination.close();rmSync(directory,{recursive:true,force:true});});

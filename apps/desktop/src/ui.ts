@@ -197,7 +197,7 @@ async function loadRecords(): Promise<void> {
       const caption = document.createElement('div'); caption.className = 'record-card-caption';
       const title = document.createElement('strong'); title.textContent = item.appName || moteText("截图");
       const time = document.createElement('time'); time.dateTime = item.capturedAt; time.textContent = new Date(item.capturedAt).toLocaleTimeString(getLocale());
-      const state = document.createElement('small'); state.textContent = item.syncError ? moteText("同步需处理 · {0}", ocrLabel(item)) : `${location === 'local' ? item.uploaded ? moteText("图片已同步 · ") : moteText("本机待同步 · ") : ''}${ocrLabel(item)}`;
+      const state = document.createElement('small'); state.textContent = item.syncError ? moteText("同步需处理 · {0}", ocrLabel(item)) : `${location === 'local' ? moteText("本机待同步 · ") : ''}${ocrLabel(item)}`;
       if(item.sizeBytes!==undefined)state.textContent+=` · ${(item.sizeBytes/1024).toFixed(1)} KiB`;
       caption.append(title, time, state); card.append(image, caption); card.addEventListener('click', () => {
         selectedRecordButton?.classList.remove('selected'); selectedRecordButton?.setAttribute('aria-pressed', 'false');
@@ -251,7 +251,7 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
     'server-url': config.serverUrl, 'device-name': config.deviceName, interval: config.intervalMs / 1000,
     'queue-mb': config.maxQueueBytes / 1024 / 1024, 'queue-events': config.maxQueueEvents,
     'default-collection': config.defaultCollection, 'sync-interval': config.syncIntervalMinutes, 'sync-batch': config.syncBatchSize,
-    'excluded-apps': config.excludedAppIds.join('\n'), masks: JSON.stringify(config.masks, null, 2),
+    masks: JSON.stringify(config.masks, null, 2),
     idle: config.idlePauseSeconds, 'privacy-model-url': config.privacyModelUrl,
     'review-policy': config.reviewPolicy, 'review-max-tokens': config.reviewMaxTokens, 'review-max-side': config.reviewMaxSide, 'nsfw-threads': config.nsfwThreads,
     'nsfw-timeout': config.nsfwTimeoutMs / 1000, 'nsfw-source': config.nsfwSource, 'nsfw-custom-url': config.nsfwCustomUrl,
@@ -262,9 +262,7 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
   for (const [id, mode] of Object.entries(config.appCollectionRules)) addAppRule(id, mode);
   byId<HTMLInputElement>('diagnostics-enabled').checked = config.diagnosticsEnabled;
   byId<HTMLInputElement>('pause-on-battery').checked = config.pauseOnBattery;
-  byId<HTMLInputElement>('ocr').checked = config.ocrEnabled;
-  byId<HTMLInputElement>('ocr-charging').checked = config.ocrOnlyWhileCharging;
-  byId<HTMLInputElement>('login').checked = currentStatus.environment?.legacy === false ? false : config.openAtLogin;
+  byId<HTMLInputElement>('login').checked = currentStatus.environment?.defaultProfile === false ? false : config.openAtLogin;
   byId<HTMLInputElement>('nsfw-enabled').checked = false;
   byId<HTMLInputElement>('gate-enabled').checked = config.uploadGate?.enabled ?? true;
   byId<HTMLTextAreaElement>('gate-text').value = (config.uploadGate?.blockedText ?? []).join('\n');
@@ -303,7 +301,7 @@ function render(status: import('./contracts').Status): void {
   byId('background-progress').hidden = !operations.length;
   byId('background-progress').textContent = operations.map(job => `${job.message}${job.total !== undefined ? ` · ${job.completed ?? 0}/${job.total}` : ''}${job.state === 'running' ? moteText(" · 已用 {0} 秒", Math.floor((Date.now() - job.startedAt) / 1000)) : ''}`).join('；');
   byId('connection-device').textContent = moteText("设备：{0} · ID {1}。迁移已有设备时，请在中央邀请中选择此 ID。", status.config.deviceName, status.config.deviceId);
-  byId('environment').textContent = status.environment ? moteText("环境：{0}{1} · {2}", status.environment.profile, status.environment.legacy ? moteText("（原日常目录）") : moteText(" · 独立数据"), status.environment.dataDirectory) : '';
+  byId('environment').textContent = status.environment ? moteText("环境：{0}{1} · {2}", status.environment.profile, status.environment.defaultProfile ? moteText("（原日常目录）") : moteText(" · 独立数据"), status.environment.dataDirectory) : '';
   const names = { stopped: moteText("采集已停止"), capturing: moteText("正在采集"), paused: moteText("采集已暂停"), permission_required: moteText("需要屏幕录制权限"), error: moteText("采集已停止 · 需要处理") };
   setText('state', names[status.state]);
   setText('sidebar-state', names[status.state]);
@@ -334,8 +332,8 @@ function render(status: import('./contracts').Status): void {
   setText('central-status-origin', hasCentralConnection ? `${status.config.deviceName} · ${status.config.serverUrl}` : moteText("连接后，采集记录会按同步设置发送"));
   setText('central-status-action', hasCentralConnection ? moteText("连接详情") : moteText("连接节点"));
   byId('settings-connection-summary').textContent = status.config.tokenConfigured ? moteText("{0} · 已保存连接", status.config.deviceName) : moteText("连接你的中央节点，让记录开始同步");
-  byId<HTMLInputElement>('login').disabled = status.environment?.legacy === false;
-  byId('login-hint').textContent = status.environment?.legacy === false ? moteText("命名环境使用带 --profile 的启动命令；不会注册可能丢失环境参数的系统登录项。") : moteText("应用启动后保持停止状态，需手动开始采集；已有记录按上传策略处理。");
+  byId<HTMLInputElement>('login').disabled = status.environment?.defaultProfile === false;
+  byId('login-hint').textContent = status.environment?.defaultProfile === false ? moteText("命名环境使用带 --profile 的启动命令；不会注册可能丢失环境参数的系统登录项。") : moteText("应用启动后保持停止状态，需手动开始采集；已有记录按上传策略处理。");
   setText('message', status.message);
   byId('status-dot').className = `dot ${status.state === 'capturing' ? 'active' : status.state === 'error' || status.state === 'permission_required' ? 'error' : ''}`;
   setText('permission', status.platform !== 'macos' ? moteText("此平台尚不支持采集") : status.screenPermission === 'granted' ? moteText("屏幕权限已授权") : moteText("屏幕权限未授权"));
@@ -442,7 +440,7 @@ byId('settings').addEventListener('submit', event => {
     try { updated = await desktopApi.configure({
       captureStorageDirectory,
       uiPageMode:readInput('ui-page-mode') as import('@mote/shared').UiMode, uiPageRules:JSON.parse(readInput('ui-page-rules')||'[]'),
-      localContentEncryption: false, notificationCollectionEnabled: byId<HTMLInputElement>('notification-collection').checked,
+      notificationCollectionEnabled: byId<HTMLInputElement>('notification-collection').checked,
       metadataEnabled: byId<HTMLInputElement>('metadata-enabled').checked,
       defaultCollection: readInput('default-collection') as import('./contracts').CollectionMode, appCollectionRules,
       diagnosticsEnabled: byId<HTMLInputElement>('diagnostics-enabled').checked, diagnosticIntervalSeconds: numberInput('diagnostic-interval'),
@@ -451,8 +449,8 @@ byId('settings').addEventListener('submit', event => {
       ...(byId<HTMLInputElement>('confirm-local-backlog').checked ? { confirmLocalBacklog: true } : {}),
       serverUrl: readInput('server-url'), deviceName: readInput('device-name'), intervalMs: numberInput('interval') * 1000,
       maxQueueBytes: numberInput('queue-mb') * 1024 * 1024, maxQueueEvents: numberInput('queue-events'),
-      excludedAppIds: readInput('excluded-apps').split('\n').map(v => v.trim()).filter(Boolean), masks,
-      idlePauseSeconds: numberInput('idle'), ocrEnabled: byId<HTMLInputElement>('ocr').checked, ocrOnlyWhileCharging: byId<HTMLInputElement>('ocr-charging').checked,
+      masks,
+      idlePauseSeconds: numberInput('idle'),
       uploadGate: {enabled:byId<HTMLInputElement>('gate-enabled').checked,blockedText:readInput('gate-text').split('\n').map(s=>s.trim()).filter(Boolean),failureAction:readInput('gate-failure') as 'drop'|'hold'|'allow'},
       privacyModelUrl: readInput('privacy-model-url').trim(), openAtLogin: byId<HTMLInputElement>('login').checked,
       nsfwEnabled: byId<HTMLInputElement>('nsfw-enabled').checked, reviewPolicy: readInput('review-policy'), reviewMaxTokens: numberInput('review-max-tokens'), reviewMaxSide: numberInput('review-max-side'),
@@ -709,7 +707,7 @@ setInterval(() => {
 
 function renderConnection(value: import('./connection').ConnectionStatus): void {
   byId('connection-state').textContent = value.message + (value.checkedAt ? ' · ' + new Date(value.checkedAt).toLocaleTimeString(getLocale()) : '');
-  byId('connection-capabilities').textContent = value.identity ? moteText("权限：{0} · 中央 {1} · 环境 {2}", value.identity.credential.scope === 'collector' ? moteText("管理员") : moteText("管理员"), value.identity.node.version, value.identity.node.profile) : currentStatus?.config.credentialScope === 'collector' ? moteText("登录凭据已安全保存，所有中央功能共用此登录。") : '';
+  byId('connection-capabilities').textContent = value.identity ? moteText("权限：{0} · 中央 {1} · 环境 {2}", moteText("管理员"), value.identity.node.version, value.identity.node.profile) : currentStatus?.config.credentialScope === 'owner' ? moteText("登录凭据已安全保存，所有中央功能共用此登录。") : '';
 }
 function clearConnectionPreview(): void { connectionPreview = undefined; byId('connection-confirmation').hidden = true; byId<HTMLInputElement>('connection-confirm-origin').checked = false; }
 function showConnectionPreview(value: import('./connection').ConnectionPreview): void {
@@ -865,15 +863,10 @@ byId('add-app-rule').addEventListener('click', () => void perform(async () => {
 }));
 function useInstalledApp(exclude: boolean): void {
   const id = readInput('installed-app-choice'); if (!id) return;
-  if (exclude) {
-    const ids = new Set(readInput('excluded-apps').split('\n').map(value => value.trim()).filter(Boolean)); ids.add(id);
-    byId<HTMLTextAreaElement>('excluded-apps').value = [...ids].join('\n');
-    byId('app-picker-hint').textContent = moteText("{0} 已加入完全排除列表，保存设置后生效。", installedApps.find(app => app.appId === id)?.appName || id);
-  } else {
-    const existing = Array.from(byId('app-collection-rules').children).find(row => row.querySelector('input')?.value === id);
-    if (existing) { existing.querySelector('select')?.focus(); byId('app-picker-hint').textContent = moteText("这个应用已有规则，可直接修改下方采集级别。"); return; }
-    addAppRule(id); byId('app-picker-hint').textContent = moteText("已添加为仅活动。可在规则中选择完整内容或不记录，保存设置后生效。");
-  }
+  const existing = Array.from(byId('app-collection-rules').children).find(row => row.querySelector('input')?.value === id);
+  if(existing){const mode=existing.querySelector<HTMLSelectElement>('select');if(mode){if(exclude)mode.value='off';mode.focus();}}
+  else addAppRule(id,exclude?'off':'activity');
+  byId('app-picker-hint').textContent = exclude ? moteText("{0} 已加入完全排除列表，保存设置后生效。",installedApps.find(app=>app.appId===id)?.appName||id) : moteText("已添加为仅活动。可在规则中选择完整内容或不记录，保存设置后生效。");
   markSettingsDirty();
 }
 byId('use-installed-app').addEventListener('click', () => useInstalledApp(false));
