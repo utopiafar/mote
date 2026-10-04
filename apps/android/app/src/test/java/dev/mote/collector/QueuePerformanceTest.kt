@@ -37,7 +37,7 @@ class QueuePerformanceTest {
         val root = Files.createTempDirectory("mote-large-library").toFile()
         val cipher = CountingCipher()
         try {
-            val source = File(root, "legacy").apply { mkdirs() }
+            val source = File(root, "generated").apply { mkdirs(); LocalDataFormat.requireCurrent(this) }
             val image = ByteArray(4096) { (it % 251).toByte() }
             val hash = MessageDigest.getInstance("SHA-256").digest(image).joinToString("") { "%02x".format(it) }
             File(source, "$hash.blob").writeBytes(cipher.seal(image))
@@ -45,11 +45,11 @@ class QueuePerformanceTest {
                 val record = event(index).put("_blob", hash)
                 record.getString("id").also { File(source, "$it.event").writeBytes(cipher.seal(record.toString().toByteArray())) }
             }
-            val legacy = DurableQueue(source, cipher)
+            val generated = DurableQueue(source, cipher)
             cipher.reset()
-            legacy.prepareIndex()
+            generated.prepareIndex()
             assertEquals(2000, cipher.records)
-            assertTrue("Legacy upgrade persists at most sixteen shards", cipher.seals <= 16)
+            assertTrue("Rebuilding a current cache persists at most sixteen shards", cipher.seals <= 16)
             val restarted = File(root, "restarted"); copy(source, restarted)
             val queue = DurableQueue(restarted, cipher)
             cipher.reset()
@@ -75,27 +75,27 @@ class QueuePerformanceTest {
             println("Generated 2000-record fixture: cold inventory + two pages ${readMs} ms; 1000 deletes ${(System.nanoTime() - deletionStart) / 1_000_000} ms")
         } finally { root.deleteRecursively() }
     }
-    @Test fun firstCaptureCanUseConservativeHeadroomBeforeLegacyIndexUpgradeWithoutBypassingQuota() {
+    @Test fun firstCaptureCanUseConservativeHeadroomBeforeCurrentIndexRebuildWithoutBypassingQuota() {
         val root = Files.createTempDirectory("mote-capture-headroom").toFile()
         val cipher = CountingCipher()
         try {
-            val roomy = File(root, "roomy").apply { mkdirs() }
+            val roomy = File(root, "roomy").apply { mkdirs(); LocalDataFormat.requireCurrent(this) }
             repeat(100) { index ->
                 val row = event(index).put("source", "note").apply { remove("imageMime") }
                 File(roomy, "${row.getString("id")}.event").writeBytes(cipher.seal(row.toString().toByteArray()))
             }
             cipher.reset()
             DurableQueue(roomy, cipher).enqueue(event(200), byteArrayOf(1), 100_000_000)
-            assertTrue("Safe headroom must not deserialize the legacy library; only the accepted input is replayed", cipher.records <= 2)
-            val tight = File(root, "tight").apply { mkdirs() }
+            assertTrue("Safe headroom must not deserialize the generated library; only the accepted input is replayed", cipher.records <= 2)
+            val tight = File(root, "tight").apply { mkdirs(); LocalDataFormat.requireCurrent(this) }
             repeat(2) { index ->
-                val row = event(index).put("source", "note").put("ocr", JSONObject().put("status", "pending")).apply { remove("imageMime") }
+                val row = event(index).put("source", "note").put("ocrText", "Generated".repeat(10000)).apply { remove("imageMime") }
                 File(tight, "${row.getString("id")}.event").writeBytes(cipher.seal(row.toString().toByteArray()))
             }
             val queue = DurableQueue(tight, cipher)
-            assertThrows(QueueFull::class.java) { queue.enqueue(event(3), byteArrayOf(2), 700_000) }
+            assertThrows(QueueFull::class.java) { queue.enqueue(event(3), byteArrayOf(2), 150_000) }
             assertEquals(2, queue.depth())
-            assertEquals(2 * DurableQueue.OCR_RESERVE_BYTES, queue.reservedOcrBytes())
+            assertEquals(0L, queue.reservedOcrBytes())
         } finally { root.deleteRecursively() }
     }
     @Test fun deferredIndexesStillCountTowardTheStorageLimit() {

@@ -83,7 +83,7 @@ class ComplexNotesInstrumentedTest {
         }
         val settings = Settings(context)
         context.getSharedPreferences("mote", 0).edit().putString("deviceId", "android-complex-${UUID.randomUUID()}").commit()
-        val config = settings.read().copy(server = url, token = token, deviceName = "Android complex synthetic round $round", debugHttp = true, wifiOnly = false, syncMode = "realtime", uploadedRetentionDays = 0, contentEncryptionEnabled = false)
+        val config = settings.read().copy(server = url, token = token, deviceName = "Android complex synthetic round $round", debugHttp = true, wifiOnly = false, syncMode = "realtime", uploadedRetentionDays = 0)
         settings.save(config); val drafts = QuickNotes.draft(context); drafts.clear()
         val records = JSONArray()
         val fixtures = ComplexNoteFixtures.cases(round)

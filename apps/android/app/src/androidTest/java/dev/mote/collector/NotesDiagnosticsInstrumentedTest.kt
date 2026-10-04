@@ -11,9 +11,6 @@ import org.junit.runner.RunWith
 class NotesDiagnosticsInstrumentedTest {
     @Test fun readableDraftRestoresNativeEditorAfterActivityRecreation() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val preferences = context.getSharedPreferences("mote", 0)
-        val originalEncryption = preferences.getBoolean("contentEncryptionEnabled", false)
-        preferences.edit().putBoolean("contentEncryptionEnabled", false).commit()
         val drafts = QuickNotes.draft(context); drafts.clear()
         val value = "合成草稿：页面重建后仍保留\n  以及原来的空白。"
         fun editor(view: android.view.View): android.widget.EditText? {
@@ -37,7 +34,7 @@ class NotesDiagnosticsInstrumentedTest {
                 assertEquals(value, JSONObject(String(stored, Charsets.UTF_8)).getString("text"))
                 activity.recreate(); activity.awaitMainUi()
                 activity.onActivity { assertEquals(value, editor(it.window.decorView)!!.text.toString()) }
-            } finally { drafts.clear(); preferences.edit().putBoolean("contentEncryptionEnabled", originalEncryption).commit() }
+            } finally { drafts.clear() }
         }
     }
     @Test fun numericDiagnosticsContainOnlyAllowedFieldsAndRespectOptIn() {

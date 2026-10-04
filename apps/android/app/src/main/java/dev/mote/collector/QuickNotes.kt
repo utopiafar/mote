@@ -9,7 +9,7 @@ import java.util.UUID
 object QuickNotes {
     internal val io = java.util.concurrent.Executors.newSingleThreadExecutor()
     fun draft(context: Context): NoteDraftStore {
-        IngressV2Migration.ensure(context)
+        LocalDataFormat.requireCurrent(context)
         return NoteDraftStore(File(context.noBackupFilesDir, "note-draft"), context.localContentCipher())
     }
     fun save(context: Context, text: String, mood: String): String = save(context, text, mood) { config -> UploadWorker.schedule(context, config) }
@@ -19,7 +19,7 @@ object QuickNotes {
         require(mood.length <= 80) { MoteI18n.text("心情最多 80 字符") }
         val store = draft(context)
         store.update(text, mood)
-        val settings = Settings(context); val config = settings.read(); config.validate(); settings.ensureDataOrigin(config)
+        val settings = Settings(context); val config = settings.read(); config.validate()
         val prepared = store.prepare(settings.dataOrigin()) {
         val id = UUID.randomUUID().toString()
         val event = JSONObject().put("id", id).put("deviceId", settings.deviceId).put("deviceName", config.deviceName)

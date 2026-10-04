@@ -7,8 +7,9 @@ const {tmpdir}=require('node:os');
 const assert=require('node:assert/strict');
 const {defaultConfig}=require('../dist/config');
 const profile=mkdtempSync(join(tmpdir(),'mote-complex-ui-'));app.setPath('userData',profile);
-process.env.MOTE_PROFILE='legacy';for(const key of ['MOTE_URL','MOTE_TOKEN','MOTE_ENV_FILE'])delete process.env[key];
-writeFileSync(join(profile,'config.json'),JSON.stringify({version:1,config:{...defaultConfig(),deviceName:'desktop-complex-ui-fixture',ocrEnabled:false,metadataEnabled:false}}),{mode:0o600});
+process.env.MOTE_PROFILE='default';for(const key of ['MOTE_URL','MOTE_TOKEN','MOTE_ENV_FILE'])delete process.env[key];
+writeFileSync(join(profile,'config.json'),JSON.stringify({version:3,config:{...defaultConfig(),deviceName:'desktop-complex-ui-fixture',metadataEnabled:false}}),{mode:0o600});
+writeFileSync(join(profile,'storage-format.json'),JSON.stringify({version:3}),{mode:0o600});
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const timeout=setTimeout(()=>{process.stderr.write('Complex UI timeout\n');app.exit(1);},30000);
 async function until(fn){for(let i=0;i<200;i++){if(await fn())return;await sleep(20);}throw Error('Complex UI condition failed');}

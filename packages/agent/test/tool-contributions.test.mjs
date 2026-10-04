@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ContextToolRegistry} from '../dist/tool-contributions.js';
 import {startBridge} from '../dist/bridge.js';
-const base={search:async()=>[],timeline:async()=>[],evidence:async()=>[],activity:async()=>({}),devices:async()=>[]};
+const base={search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]};
 async function call(b,tool,args={}){const r=await fetch(b.url+'/'+tool,{method:'POST',headers:{Authorization:'Bearer '+b.token,'Content-Type':'application/json'},body:JSON.stringify(args)});return {status:r.status,body:await r.json()};}
 const tool=(name,read)=>({name,version:'1',description:'Generated metadata',fields:{},maxCharacters:1000,parse:args=>args,authorize:()=>true,read});
 test('contributed schema and dispatch are pinned per run while revocation remains live',async t=>{

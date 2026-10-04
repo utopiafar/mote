@@ -38,7 +38,7 @@ Deleted event IDs have tombstones: later upload/import of that ID into the same 
 
 Every record with a nonempty `appId` must also include a nonblank `appName` (maximum 200 characters), including screen, activity, notification and media records. Media sessions carry the same pair. Names are the platform-reported application labels at collection time, independent of the optional device metadata switch. If the platform cannot provide a label, collectors use the explicit `未知应用` label and preserve the identifier; they never infer a name from content. The server rejects missing/blank names. Already archived evidence is not rewritten. Records without an application, such as device state observations, remain unattributed.
 
-App collection rules resolve locally to `content`, `activity`, or `off`; legacy exclusions override all rules. `off` creates no event. `activity` never acquires pixels, a window title or body. Example:
+App collection rules resolve locally to `content`, `activity`, or `off` from the current complete user-configured rule set. `off` creates no event. `activity` never acquires pixels, a window title or body. Example:
 
 ```json
 {
@@ -113,7 +113,7 @@ The Web/embedded console includes a separate 随手记 page. Drafts and immutabl
 
 ## Read API
 
-- `GET /api/health` => `{ok,version,protocol:{min,max}}`. Product versions are independent of wire compatibility. Native connection checks request `node.protocol` with `X-Mote-Protocol-Version: 1`; legacy servers without metadata retain v1 behavior. See the [wire contract and compatibility fixtures](../protocol/README.md).
+- `GET /api/health` => `{ok,version,protocol:{min,max}}`. Product versions are independent of wire compatibility. Native connection checks send `X-Mote-Protocol-Version: 1`; `/api/connections/self` always returns `node.protocol`, and missing metadata is rejected. Storage epoch 3 is independent of wire protocol 1 and Ingress 2. See the [wire contract and compatibility fixtures](../protocol/README.md).
 - `GET /api/status` => `{agent:{configured,provider,model},storage:{bytes,captures,blobs},...}`
 - `GET /api/captures?limit=50&before=<ISO>&after=<ISO>&deviceId=<id>&source=<type>&appId=<exact-id>&collection=<content|activity>` => `{items,nextCursor}`. Items include `id,deviceId,deviceName,platform,capturedAt,durationMs,appId,appName,windowTitle,ocrText,source,mood?,privacy,blobHash,indexingStatus,summary?`.
 - `GET /api/captures/:id/image` authenticated image bytes.
@@ -163,4 +163,4 @@ Final answers must have a string body and declared retrieved citation IDs. Only 
 
 Albums group screenshots into fixed 15-minute UTC clock buckets per device and app. These are browsing buckets, not inferred activities, sessions or tasks. Album rows return `id`, `deviceId`, `appId`, `appName`, `firstAt`, `capturedAt`, bucket `after`/`before`, `count` and `imageCount`. The response includes `totalCount`, `albumCount`, and `nextCursor`. Albums use bucket/device/app keyset pagination; images use capture-time/ID keyset pagination, so new captures do not shift already-read pages.
 
-Grid rows contain only `id`, `deviceId`, `source`, `capturedAt`, `appId`, `appName`, and `hasImage`, plus response `totalCount` and `nextCursor`. Neither endpoint returns OCR, raw metadata or image bytes. SQLite maintains a separate `capture_gallery` projection on capture insertion and cascades deletion with its parent capture; existing rows are backfilled once. The existing detail/image routes remain available. Image authorization reads only ownership and blob reference, without loading full evidence JSON.
+Grid rows contain only `id`, `deviceId`, `source`, `capturedAt`, `appId`, `appName`, and `hasImage`, plus response `totalCount` and `nextCursor`. Neither endpoint returns OCR, raw metadata or image bytes. SQLite maintains a separate `capture_gallery` projection on capture insertion and cascades deletion with its parent capture; epoch 3 creates the complete schema without historical backfill. The existing detail/image routes remain available. Image authorization reads only ownership and blob reference, without loading full evidence JSON.

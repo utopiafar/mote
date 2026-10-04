@@ -23,20 +23,11 @@ export function registerMemoryExtensions({integrationSettings,lifecycle,store,fi
   lifecycle:MemoryLifecycle;store:Store;files:FileStore;memories:MemoryStore;pipeline:MemoryPipeline;working:WorkingMemory;
   query:(input:QueryInput,module:'memories'|'insights'|'conversations')=>Promise<QueryResult>;model:()=>string;
 }){
-  // MVP migration: retire only obsolete automatic raw-extraction work. Replay
-  // the artifact journal through the new semantic boundary; originals and manual
-  // import jobs are untouched. A single transaction makes restarts idempotent.
-  if(!store.db.prepare("SELECT 1 FROM settings WHERE key='layered-extraction-v3'").get()){
-    store.db.exec(`BEGIN IMMEDIATE;
-      UPDATE memory_jobs SET json=json_set(json,'$.status','cancelled','$.errorCode','pipeline_upgraded') WHERE json_extract(json,'$.importJobId') LIKE 'lifecycle:%' AND json_extract(json,'$.status') NOT IN ('completed','cancelled') AND json_extract(json,'$.artifactRefs') IS NULL;
-      DELETE FROM memory_lifecycle_state WHERE id IN ('extraction','insights');
-      INSERT INTO settings VALUES('layered-extraction-v3','1'); COMMIT;`);
-  }
   lifecycle.register({id:'extraction',version:'3.3.0',stream:'artifact',maxAttempts:3,async run(window,checkpoint,execution){
     let job=window.checkpoint?pipeline.get(window.checkpoint):undefined;
     if(!job){
       if(!semanticArtifacts)return;
-      const artifactIds=await semanticArtifacts(pipeline.legacyArtifactIds(window.ids),execution?.operationId,'lifecycle');
+      const artifactIds=await semanticArtifacts(pipeline.intakeArtifactIds(window.ids),execution?.operationId,'lifecycle');
       const admit=()=>{const created=pipeline.createFromArtifacts(artifactIds,'lifecycle:'+window.id,window.settings.batchCharacters);if(created){if(execution)linkOperationParent(store,execution.operationId,'memory:'+created.id);checkpoint(created.id);}return created;};
       job=execution?execution.commit(admit):admit();if(!job)return;
     }

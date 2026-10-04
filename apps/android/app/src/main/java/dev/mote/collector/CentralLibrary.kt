@@ -58,7 +58,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             val path = "/api/context/search?" + params.filterNot { it.startsWith("source=") }.joinToString("&") + "&query=" + enc(query)
             paged(path, list) { row, card ->
                 ui.text(row.optString("title"), 19f, card); ui.text(row.optString("snippet"), parent = card)
-                ui.button(MoteI18n.text("查看原文"), parent = card) { evidence(row.optString("ref", row.optString("id"))) }
+                ui.button(MoteI18n.text("查看原文"), parent = card) { evidence(row.getString("ref")) }
             }
         } else paged("/api/capture-browser?" + params.joinToString("&"), list) { row, card ->
             ui.text(row.optString("appName"), 19f, card); ui.text(row.optString("capturedAt"), 13f, card)
@@ -116,12 +116,13 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             ui.button(MoteI18n.text("查看原文"), parent = card) { material(row.getString("id"), row.getString("revision")) }
         }
     }
+    fun captureEvidence(id: String) = evidence(CentralEvidenceReference.capture(id))
     fun evidence(reference: String, offset: Int = 0) {
         require(reference.isNotBlank() && reference.length <= 4096)
         val materialRef = Regex("^material:(mat_[a-f0-9]{64})(?:@([a-f0-9]{64}))?$").matchEntire(reference)
         if (materialRef != null) { material(materialRef.groupValues[1], materialRef.groupValues[2].takeIf { it.isNotBlank() }); return }
-        val captureRef = Regex("^(?:capture:)?([a-fA-F0-9-]{36})$").matchEntire(reference)
-        if (captureRef != null) { capture(captureRef.groupValues[1]); return }
+        val captureId = CentralEvidenceReference.captureId(reference)
+        if (captureId != null) { capture(captureId); return }
         val api = client
         ui.work(MoteI18n.text("正在读取原文…"), {
             api.post("/api/context/read", JSONObject().put("refs", JSONArray().put(reference)).put("offset", offset).put("length", 4000))
@@ -252,7 +253,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 body.removeAllViews(); screens.setBack { screens.refresh() }
                 paged("/api/sources/" + enc(row.getString("id")) + "/items?limit=30", ui.card()) { item, child ->
                     ui.text(item.optString("title"), 19f, child); ui.text(item.optString("text"), parent = child)
-                    item.optString("captureId").takeIf { it.isNotBlank() }?.let { id -> ui.button(MoteI18n.text("查看原文"), parent = child) { evidence(id) } }
+                    item.optString("captureId").takeIf { it.isNotBlank() }?.let { id -> ui.button(MoteI18n.text("查看原文"), parent = child) { captureEvidence(id) } }
                     ui.button(MoteI18n.text("历史版本"), parent = child) {
                         val api = client
                         ui.work(MoteI18n.text("正在读取…"), { api.get("/api/sources/" + enc(row.getString("id")) + "/history?externalId=" + enc(item.getString("externalId"))) }) { history -> values(history, child) }
@@ -274,7 +275,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         ui.work(MoteI18n.text("正在读取记忆…"), { api.get("/api/memories/" + enc(id)) }) { row ->
             body.removeAllViews(); screens.setBack { screens.refresh() }; values(row, ui.card())
             val evidenceIds = row.optJSONArray("evidenceIds") ?: JSONArray()
-            for (i in 0 until evidenceIds.length()) ui.button(MoteI18n.text("查看原文依据") + " " + (i + 1)) { evidence(evidenceIds.getString(i)) }
+            for (i in 0 until evidenceIds.length()) ui.button(MoteI18n.text("查看原文依据") + " " + (i + 1)) { captureEvidence(evidenceIds.getString(i)) }
             val statement = ui.field(MoteI18n.text("陈述"), row.optString("statement"), multiline = true)
             val title = ui.field(MoteI18n.text("标题"), row.optString("title"))
             val uncertainty = ui.field(MoteI18n.text("不确定性"), row.optString("uncertainty"), multiline = true)
@@ -306,7 +307,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         paged("/api/insights", ui.card()) { row, card ->
             ui.text(row.optString("answer"), parent = card)
             val citations = row.optJSONArray("citations") ?: JSONArray()
-            for (i in 0 until citations.length()) ui.button(MoteI18n.text("查看原文依据"), parent = card) { evidence(citations.getJSONObject(i).getString("id")) }
+            for (i in 0 until citations.length()) ui.button(MoteI18n.text("查看原文依据"), parent = card) { captureEvidence(citations.getJSONObject(i).getString("id")) }
         }
     }
     private fun image(path: String, parent: LinearLayout) {

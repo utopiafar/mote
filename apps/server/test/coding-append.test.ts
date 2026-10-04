@@ -1,3 +1,5 @@
+import {evidenceRefId} from '@mote/shared';
+import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -116,7 +118,7 @@ test('append reads only new refs, reuses prefix blocks and anchors, and keeps th
   const currentIds=materials.evidenceIds(after.ref);
   assert.equal(reader.memories.isCurrentEvidence(oldIds[0]!),true,'reused prefix stays admissible to Memory');
   assert.equal(reader.memories.isCurrentEvidence(oldIds.at(-1)!),false,'replaced tail cannot support Memory');
-  const pipeline=new MemoryPipeline({store,memories:reader.memories,model:()=> 'fixture-model',configured:()=>true,
+  const pipeline=fixtureMemoryPipeline({store,memories:reader.memories,model:()=> 'fixture-model',configured:()=>true,
     materialAllowedForMemory:ref=>reader.materialAllowedForMemory(ref),query:async()=>{throw Error('No model request expected');}});
   t.after(()=>pipeline.close());
   const job=pipeline.create({evidenceIds:[oldIds[0]!,currentIds.at(-1)!],originKey:after.ref});
@@ -184,7 +186,8 @@ test('one thousand generated Coding events form one complete searchable Material
   assert.equal(store.db.prepare('SELECT count(*) n FROM captures').get()!.n,0);
   const prefix=reader.materialRead({ref:current[0]!.ref,offset:0,length:4000});
   assert.ok(prefix.originalRefs.length>0);
-  assert.equal(materials.isCurrentEvidence(prefix.originalRefs[0]!),true);
+  const originalId=evidenceRefId(prefix.originalRefs[0]!,'capture');assert.ok(originalId,'material originals carry an explicit capture namespace');
+  assert.equal(materials.isCurrentEvidence(originalId),true);
 });
 
 test('a second append after restart keeps pinned revisions and reuses the stable prefix',async t=>{

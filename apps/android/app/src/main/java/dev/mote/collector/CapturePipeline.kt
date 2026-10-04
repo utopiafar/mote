@@ -68,7 +68,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     }
     private fun checkStorage(config: CollectorConfig) {
         // canCollect runs on service/UI callbacks. Queue accounting and diagnostic sampling
-        // may scan legacy encrypted records, so run them only on the processing executor.
+        // may scan the current queue, so run them only on the processing executor.
         runCatching { diagnostics.sample(config) }
         if (context.queue().bytes() >= config.maxQueueMiB * 1024L * 1024L) throw QueueFull()
     }
@@ -88,8 +88,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none").put("collection", "activity"))
                     .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L, activityOnly = true)) }
                 SupportEvents.record(context, EventStage.QUEUE, EventCode.STARTED)
-                settings.ensureDataOrigin(config)
-                context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+                        context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
                 SupportEvents.record(context, EventStage.QUEUE, EventCode.OK)
                 dedupeSignature = null; dedupeReference = null
                 previousTime = now; previousApp = appId; previousMode = AppCollectionMode.ACTIVITY; lastPause = null
@@ -133,8 +132,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                         .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none").put("collection", "activity"))
                         .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context,
                             if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L, activityOnly = true)) }
-                    settings.ensureDataOrigin(config)
-                    context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+                                context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
                     diagnostics.add("earlySkippedFrames")
                     previousTime = observedAtMs; previousApp = appId; previousMode = AppCollectionMode.CONTENT
                     settings.captured(capturedAt); settings.status("capturing", MoteI18n.text("重复画面已丢弃，仅保存应用活动；未执行审查与 OCR")); settings.screenStatus(settings.message())
@@ -187,8 +185,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 if (protectedWindow(windows)) { pause("窗口状态已变化，此帧未保存"); return@execute }
                 stage = EventStage.QUEUE
                 SupportEvents.record(context, EventStage.QUEUE, EventCode.STARTED)
-                settings.ensureDataOrigin(config)
-                // Diagnostic pixels are encoded only after every privacy gate and final state check.
+                        // Diagnostic pixels are encoded only after every privacy gate and final state check.
                 // The local pair is never included in the upload event or upload queue.
                 val encodeStart = SystemClock.elapsedRealtime()
                 val encoded = if (!duplicate) jpeg(output, config.jpegQuality) else null

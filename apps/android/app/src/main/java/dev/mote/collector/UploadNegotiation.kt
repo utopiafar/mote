@@ -1,8 +1,7 @@
 package dev.mote.collector
 
-/** Transport negotiation never treats authorization or size limits as missing protocol support. */
+/** Only an explicit size limit shrinks a bundle; all other rejections preserve the pending records. */
 object UploadNegotiation {
-    fun unsupported(status: Int) = status == 404 || status == 405
     fun <T, R> sendShrinking(items: List<T>, send: (List<T>) -> Pair<Int, R>): Pair<List<T>, Pair<Int, R>> {
         require(items.isNotEmpty())
         var selected = items

@@ -4,7 +4,7 @@ import {captureOcrState} from '@mote/shared';
 import {captureDateRange, evidencePresentation, localDateInput, ocrPresentation} from '../src/capture-presentation';
 
 test('OCR distinguishes deferred, failed and completed-with-no-text screenshots without guessing from an empty body', () => {
-  assert.equal(ocrPresentation({status:'pending',reason:'charging'}, '').label, 'OCR 待充电');
+  assert.equal(ocrPresentation({status:'pending'}, '').label, 'OCR 待处理');
   assert.equal(ocrPresentation({status:'pending'}, '').label, 'OCR 待处理');
   assert.equal(ocrPresentation({status:'completed'}, '').label, 'OCR 未识别到文字');
   assert.equal(ocrPresentation({status:'completed'}, '合成文字').label, 'OCR 已完成');
@@ -12,7 +12,7 @@ test('OCR distinguishes deferred, failed and completed-with-no-text screenshots 
   assert.equal(ocrPresentation({status:'disabled'}, '').label, 'OCR 已关闭');
   assert.equal(ocrPresentation(captureOcrState({source:'screen',ocrText:''}), '').label, 'OCR 状态未知');
   assert.equal(ocrPresentation(captureOcrState({source:'note',ocrText:'手写笔记'}), '手写笔记').label, '无需 OCR');
-  assert.equal(captureOcrState({source:'screen',ocrText:'旧版保留的识别结果'}).status, 'completed');
+  assert.equal(captureOcrState({source:'screen',ocrText:'旧版保留的识别结果'}).status, 'unknown');
 });
 
 test('day filters use local midnight across both daylight-saving boundaries', () => {

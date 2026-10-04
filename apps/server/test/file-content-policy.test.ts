@@ -1,3 +1,4 @@
+import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -33,7 +34,7 @@ test('local-only file policy follows chunks, Material, Memory and segments for t
  node.store.db.prepare("UPDATE file_jobs SET state='succeeded',local_only=1 WHERE capture_id=?").run(parent.id);
  while(await node.materialOrganizer.tick(100));
  const material=node.materials.get(materialId('generated-files','recording'))!,anchors=node.materials.evidenceIds(material.ref),record=node.materials.evidence(anchors).find(r=>r.ocrText===text)!;
- const memory=node.memories.extract({answer:JSON.stringify({memories:[{title:'Generated private Memory',statement:`Recorded experience [${record.id}]`,uncertainty:'Fixture',evidenceIds:[record.id],evidence:[{id:record.id,quote:text}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:text}],trace:[],runId:'fixture'},'fixture').items[0];
+ const memory=node.memories.extract(fixtureMemoryResult(node.memories,{answer:JSON.stringify({memories:[{title:'Generated private Memory',statement:`Recorded experience [${record.id}]`,uncertainty:'Fixture',evidenceIds:[record.id],evidence:[{id:record.id,quote:text}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:text}],trace:[],runId:'fixture'}),'fixture').items[0];
  const segment=node.store.archive.save('generated-private-segment','generated-private-segment','1',{kind:'segment',text:'Generated private derived segment',metadata:{complete:true}},[{id:parent.id,fingerprint:node.store.archive.fingerprint(parent.id)!}],'fixture','1','fixture');
  const segmentRef=formatArtifactRef(segment.id,segment.revision);
  const excerpt=randomUUID();await node.store.ingest({id:excerpt,deviceId:'fixture-device',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-09-20T00:00:00Z',durationMs:0,ocrText:text});
@@ -49,7 +50,7 @@ test('local-only file policy follows chunks, Material, Memory and segments for t
  const localSettings={...node.modelSettings.current(),provider:'custom' as const,protocol:'openai-completions' as const,baseUrl:'http://127.0.0.1:1234/v1',model:'fixture-local',reasoningEffort:'auto' as const,apiKey:'',allowUnauthenticatedLocal:true};
  assert.equal(usesLocalModel({...localSettings,provider:'codex',protocol:'codex-app-server'}),false,'local Codex transport does not mean local model execution');
  await node.modelSettings.updateProfile('local',{revision:node.modelSettings.view().revision,name:'Generated local model',settings:localSettings});
- await Promise.all([node.agent.query({question:'Generated read check',modelProfileId:'default'}),node.agent.query({question:'Generated read check',modelProfileId:'local'})]);
+ await Promise.all([node.agent.query({question:'Generated read check',modelProfileId:'env:deployment'}),node.agent.query({question:'Generated read check',modelProfileId:'local'})]);
  const remote=calls.find(c=>c.model==='fixture-remote')!.views,local=calls.find(c=>c.model==='fixture-local')!.views;
  assert.deepEqual(remote,{raw:0,chunks:0,materialEvidence:0,catalog:0,search:0,timeline:0,memories:0,segments:0,items:0,history:0,excerpt:0,materialText:''});
  for(const key of ['raw','chunks','materialEvidence','catalog','search','timeline','memories','segments','items','history','excerpt'])assert.ok(Number(local[key])>0,key);
@@ -72,7 +73,7 @@ test('local-only file policy follows chunks, Material, Memory and segments for t
  node.store.db.prepare('UPDATE file_jobs SET local_only=1 WHERE capture_id=?').run(parent.id);release();
  const finished=await running;assert.notEqual(finished.status,'completed');assert.equal(finished.memoryIds.length,0);
  assert.equal(node.store.db.prepare('SELECT COUNT(*) n FROM memory_checkpoints').get()!.n,0);
- await assert.rejects(node.memoryPipeline.retry(inFlight.id),/not allowed|not ready/);
+ const beforeDeniedRetry=calls.length,deniedRetry=await node.memoryPipeline.retry(inFlight.id);assert.equal(deniedRetry.status,'failed');assert.equal(deniedRetry.memoryIds.length,0);assert.equal(calls.length,beforeDeniedRetry,'retry does not issue another model call after disclosure is revoked');
  node.store.db.prepare('UPDATE file_jobs SET local_only=0 WHERE capture_id=?').run(parent.id);
  const gate=node.featureServices.agentGate,limit=gate.snapshot().limit;
  let unblock!:()=>void,allEntered!:()=>void,count=0;const blocked=new Promise<void>(resolve=>unblock=resolve),full=new Promise<void>(resolve=>allEntered=resolve);

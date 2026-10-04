@@ -61,8 +61,7 @@ try {
     }
     await lock.writeFile(String(process.pid)); await lock.sync();
     engine = new SourceSync(statePath);
-    const ingress=await initializeCliIngressState(statePath,engine);
-    if(ingress.reset)console.info('Legacy source receipts and staged originals were reset for ingress v2; scanning this source again.');
+    await initializeCliIngressState(statePath,engine);
     await engine.ensurePolicy(policy);
   }
   async function scan(): Promise<void> {

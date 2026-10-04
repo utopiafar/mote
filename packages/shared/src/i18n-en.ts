@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "未提供文字识别状态，无法判断是否已处理。": "OCR status was not provided; processing completion is unknown.",
+  "高级：遮挡 JSON": "Advanced: mask JSON",
+  "本机数据格式已退役，请清除应用存储后重新设置。": "This local data format is retired. Clear app storage and set up again.",
   "整理所选记忆": "Consolidate selected memory",
   "从这条记忆开始整理": "Consolidate from this memory",
   "从当前精选记忆开始，模型会按需检索你仍可读取的相关资料和原文；结果可能为空，也可能产生经独立审核的新记忆。": "Starting from this selected memory, the model may retrieve related records and originals you can still access. It may produce no new memory or a new memory after independent review.",

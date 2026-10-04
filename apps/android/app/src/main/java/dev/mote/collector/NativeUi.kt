@@ -149,7 +149,7 @@ fun Activity.openMoteLocalPage(page: String) {
 }
 
 fun Activity.openMotePrimary(tab: MotePrimaryTab) {
-    if (tab == MotePrimaryTab.ASK) startActivity(Intent(this, AskActivity::class.java).putExtra("page", "ask")
+    if (tab == MotePrimaryTab.ASK) startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "ask").putExtra("page", "ask")
         .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
     else openMoteLocalPage(tab.localPage)
 }

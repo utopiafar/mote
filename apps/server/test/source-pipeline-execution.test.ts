@@ -1,3 +1,4 @@
+import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -168,7 +169,7 @@ test('Coding recipe upgrade reuses the common queue without paying for historica
   let sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   let calls=0;
   const pipeline=()=>{const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials,runtime);
-    return new MemoryPipeline({store,memories:reader.memories,materialAllowedForMemory:ref=>reader.materialAllowedForMemory(ref),configured:()=>true,model:()=> 'fixture',query:async()=>{
+    return fixtureMemoryPipeline({store,memories:reader.memories,materialAllowedForMemory:ref=>reader.materialAllowedForMemory(ref),configured:()=>true,model:()=> 'fixture',query:async()=>{
       calls++;return {answer:'{"memories":[]}',citations:[],trace:[],runId:'fixture'};
     }});};
   let memory=pipeline();

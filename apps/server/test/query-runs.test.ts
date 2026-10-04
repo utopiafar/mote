@@ -87,7 +87,7 @@ test('interrupted runs recover as failures, and deleted evidence clears public s
   finish({conversationId:randomUUID(),turnId:randomUUID()});await runs.close();
   assert.ok(!JSON.stringify(runs.get(id)).includes('Generated private status'));assert.ok(!JSON.stringify(runs.get(id)).includes('Must not restore'));
   store.db.prepare("UPDATE query_runs SET json=json_set(json,'$.status','running') WHERE id=?").run(id);
-  store.db.prepare('DELETE FROM execution_steps WHERE id=?').run(`query:${id}`);
+  store.db.prepare("UPDATE execution_steps SET state='running',lease_until=0,fence=NULL,error=NULL WHERE id=?").run(`query:${id}`);
   const restarted=new QueryRuns(store);assert.equal(restarted.get(id).status,'failed');assert.equal(restarted.get(id).error?.code,'interrupted');
 });
 
@@ -128,7 +128,7 @@ test('explicit cancellation reaches the executing agent and cannot archive a lat
 test('export bundles require owner access, include originals and never include model credentials',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-export-bundle-'));const {app,store}=await buildApp(config(dir));
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
-  const id=randomUUID();await app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'fixture',deviceName:'fixture',platform:'import',capturedAt:new Date().toISOString(),text:'Generated note export'}});
+  const id=randomUUID();await app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'fixture',deviceName:'fixture',platform:'import',client:'web',capturedAt:new Date().toISOString(),text:'Generated note export'}});
   assert.equal((await app.inject({url:'/api/export-bundle?mode=data'})).statusCode,401);
   const response=await app.inject({url:'/api/export-bundle?mode=metadata',headers});assert.equal(response.statusCode,200,response.body);
   const {gunzipSync}=await import('node:zlib');const tar=gunzipSync(response.rawPayload).toString();assert.ok(tar.includes('Generated note export'));assert.ok(!tar.includes('synthetic-key'));assert.ok(!tar.includes(token));

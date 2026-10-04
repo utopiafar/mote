@@ -1,3 +1,6 @@
+import {fixtureCaptureRefs} from './fixtures/evidence-refs.js';
+import {fixtureMemoryResult,fixtureMemoryPipeline} from './fixtures/memory-result.js';
+import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,7 +43,7 @@ async function fixture(t:any,options:any={}){
  const diagnostics=new ServerDiagnostics({directory:join(dir,'logs'),debug:true});await diagnostics.init();
  const instances:FileProcessing[]=[];const createProcessing=(executor?:ExecutionEngine)=>{const instance=new FileProcessing(files,{transcribe:async input=>{asrCalls++;return options.transcribe?options.transcribe(input):raw;}},async()=>{summaries++;throw Error('Unexpected cloud summary');},{executor,plugins:[plugin],analyze:options.analyze,diagnostics});instances.push(instance);return instance;};const processing=createProcessing();
  await processing.runtime.ready;
- processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:true,...options.settings}});
+ processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:true,...options.settings},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:true,...options.settings},processing.runtime.registry)});
  t.after(async()=>{for(const instance of instances)await instance.close();await diagnostics.close();store.close();rmSync(dir,{recursive:true,force:true});});
  return {dir,store,sources,files,processing,createProcessing,diagnostics,id:ack.id,counts:()=>({asrCalls,diaryCalls,summaries,disposed})};
 }
@@ -110,7 +113,7 @@ for(const manual of [false,true])test(`confirmed ${manual?'manual':'model'} text
   while(await organizers.tick(100));const material=materials.get(materialId('phone','fixture.wav'))!;
   const raw=f.files.chunks(f.id),formal=materials.evidence(materials.evidenceIds(material.ref)).filter(r=>JSON.parse(r.ocrText).speaker);
   const memories=new MemoryStore(f.store,ids=>[...f.files.evidence(ids),...materials.evidence(ids)],id=>f.files.isCurrentEvidence(id)||materials.isCurrentEvidence(id));
-  const save=(record:typeof raw[number]|typeof formal[number])=>memories.publish(memories.extract({answer:JSON.stringify({memories:[{title:'Generated correction fixture',statement:`Generated speech [${record.id}]`,uncertainty:'Fixture',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-text-correction'},'fixture').items[0].id);
+  const save=(record:typeof raw[number]|typeof formal[number])=>memories.publish(memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'Generated correction fixture',statement:`Generated speech [${record.id}]`,uncertainty:'Fixture',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-text-correction'}),'fixture').items[0].id);
   const savedRaw=raw.map(save),savedFormal=formal.map(save),stableFingerprint=memoryEvidenceFingerprint(raw[1]);
   const conversations=new Conversations(f.store),answers=raw.map(record=>conversations.append(undefined,{question:'Generated question'},{answer:'Generated answer '+record.id,citations:[],trace:[],runId:'generated',evidenceDependencies:{version:1,complete:true,ids:[record.id]}}));
   const derivedAnswers=[formal.map(record=>record.id),[savedFormal[0].id],[savedFormal[1].id]].map(ids=>conversations.append(undefined,{question:'Generated derived read without citations'},{answer:'Generated derived answer',citations:[],trace:[],runId:'generated',evidenceDependencies:{version:1,complete:true,ids}}));
@@ -151,7 +154,7 @@ test('confirmed speaker identities reach evidence without rewriting speech and o
  assert.equal(named[0].fileEvidence!.speakerAttribution!.name,'Generated Alice');assert.equal(named[0].fileEvidence!.speakerAttribution!.confirmedBy,'owner');
  assert.deepEqual(f.files.evidence(named.map(r=>r.id)).map(r=>r.fileEvidence),named.map(r=>r.fileEvidence));
  const memories=new MemoryStore(f.store,ids=>[...f.store.evidence(ids),...f.files.evidence(ids)],id=>f.files.isCurrentEvidence(id)||f.store.isCurrentEvidence(id));
- const saved=named.map(r=>memories.extract({answer:JSON.stringify({memories:[{title:'Generated attribution',statement:`Recorded speech [${r.id}]`,uncertainty:'Generated fixture',evidenceIds:[r.id],evidence:[{id:r.id,quote:r.ocrText}]}]}),citations:[{id:r.id,capturedAt:r.capturedAt,appName:r.appName,excerpt:r.ocrText}],trace:[],runId:'generated-attribution'},'fixture').items[0]);
+ const saved=named.map(r=>memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'Generated attribution',statement:`Recorded speech [${r.id}]`,uncertainty:'Generated fixture',evidenceIds:[r.id],evidence:[{id:r.id,quote:r.ocrText}]}]}),citations:[{id:r.id,capturedAt:r.capturedAt,appName:r.appName,excerpt:r.ocrText}],trace:[],runId:'generated-attribution'}),'fixture').items[0]);
  for(const memory of saved)memories.publish(memory.id);
  save({SPEAKER_0:'Generated Carol',SPEAKER_1:'Generated Bob'});
  const renamed=f.files.chunks(f.id);assert.notEqual(memoryEvidenceFingerprint(renamed[0]),memoryEvidenceFingerprint(named[0]));assert.equal(memoryEvidenceFingerprint(renamed[1]),memoryEvidenceFingerprint(named[1]));
@@ -167,7 +170,7 @@ test('speaker correction during Memory extraction fences the late response and c
  reviews.nameSpeakers(f.id,{artifactId:record.fileEvidence!.artifactId,names:{SPEAKER_0:'Generated Alice'}});
  const memories=new MemoryStore(f.store,ids=>[...f.store.evidence(ids),...f.files.evidence(ids)],id=>f.files.isCurrentEvidence(id)||f.store.isCurrentEvidence(id));
  let enter!:()=>void,finish!:()=>void;const entered=new Promise<void>(resolve=>enter=resolve),release=new Promise<void>(resolve=>finish=resolve);
- const pipeline=new MemoryPipeline({store:f.store,memories,configured:()=>true,model:()=> 'fixture',query:async()=>{enter();await release;return {answer:JSON.stringify({memories:[{title:'Old attribution',statement:`Old speaker [${record.id}]`,uncertainty:'Generated',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-old-attribution'};}});
+ const pipeline=fixtureMemoryPipeline({store:f.store,memories,configured:()=>true,model:()=> 'fixture',query:async()=>{enter();await release;return {answer:JSON.stringify({memories:[{title:'Old attribution',statement:`Old speaker [${record.id}]`,uncertainty:'Generated',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-old-attribution'};}});
  t.after(()=>pipeline.close());const job=pipeline.create({evidenceIds:[record.id]}),running=pipeline.run(job.id);await entered;
  reviews.nameSpeakers(f.id,{artifactId:record.fileEvidence!.artifactId,names:{SPEAKER_0:'Generated Carol'}});finish();
  const done=await running;assert.equal(done.status,'failed');assert.equal(done.batches[0].status,'invalidated');assert.equal(memories.list({includeStale:true}).length,0);
@@ -192,11 +195,11 @@ test('formal audio material preserves anonymous and confirmed speakers and repub
   assert.deepEqual(dialogue.map(value=>value.speakerAttribution),f.files.chunks(f.id).map(record=>record.fileEvidence!.speakerAttribution));
   const memories=new MemoryStore(f.store,ids=>materials.evidence(ids),anchor=>materials.isCurrentEvidence(anchor));
   const record=namedRecords.find(record=>JSON.parse(record.ocrText).speaker==='SPEAKER_0')!;
-  const memory=memories.extract({answer:JSON.stringify({memories:[{title:'Generated owner experience',statement:`Generated speech [${record.id}]`,uncertainty:'Fixture',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-material-speaker'},'fixture').items[0];
+  const memory=memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'Generated owner experience',statement:`Generated speech [${record.id}]`,uncertainty:'Fixture',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-material-speaker'}),'fixture').items[0];
   memories.publish(memory.id);
   const other=namedRecords.find(record=>JSON.parse(record.ocrText).speaker==='SPEAKER_1')!;
   const otherFingerprint=memoryEvidenceFingerprint(other);
-  const otherMemory=memories.extract({answer:JSON.stringify({memories:[{title:'Unchanged speaker',statement:`Generated speech [${other.id}]`,uncertainty:'Fixture',evidenceIds:[other.id],evidence:[{id:other.id,quote:other.ocrText}]}]}),citations:[{id:other.id,capturedAt:other.capturedAt,appName:other.appName,excerpt:other.ocrText}],trace:[],runId:'generated-unchanged-speaker'},'fixture').items[0];
+  const otherMemory=memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'Unchanged speaker',statement:`Generated speech [${other.id}]`,uncertainty:'Fixture',evidenceIds:[other.id],evidence:[{id:other.id,quote:other.ocrText}]}]}),citations:[{id:other.id,capturedAt:other.capturedAt,appName:other.appName,excerpt:other.ocrText}],trace:[],runId:'generated-unchanged-speaker'}),'fixture').items[0];
   memories.publish(otherMemory.id);
   assert.ok(evidenceDependents(f.store,{kind:'file_chunk',id:raw[0].id}).some(node=>node.kind==='material_evidence'&&node.id===record.id));
   reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Carol',SPEAKER_1:'Generated Bob'}});
@@ -214,8 +217,8 @@ test('formal audio material preserves anonymous and confirmed speakers and repub
   assert.equal(memoryEvidenceFingerprint(materials.evidence([other.id])[0]),otherFingerprint);
   assert.ok(materials.evidenceIds(corrected.ref).includes(other.id));
   const reader=new EvidenceReader(f.store,f.sources,f.files,undefined,undefined,materials);
-  assert.equal(reader.evidence([record.id]).length,0);
-  assert.ok(reader.evidence([other.id])[0].provenance!.uri!.startsWith(corrected.ref+'#'));
+  assert.equal(reader.evidence(fixtureCaptureRefs([record.id])).length,0);
+  assert.ok(reader.evidence(fixtureCaptureRefs([other.id]))[0].provenance!.uri!.startsWith(corrected.ref+'#'));
   assert.ok(materials.read(named.ref).text.includes('Generated Alice'),'pinned history remains distinguishable from current state');
   const correctedDialogue=materials.evidence(materials.evidenceIds(id)).map(record=>JSON.parse(record.ocrText)).filter(value=>value.speaker);
   assert.equal(correctedDialogue[0].speakerAttribution.name,'Generated Carol');assert.equal(correctedDialogue[1].speakerAttribution.name,'Generated Bob');
@@ -238,7 +241,7 @@ for(const correction of ['speaker','text'] as const)test(`formal ${correction} c
  const record=materials.evidence(materials.evidenceIds(material.ref)).find(r=>JSON.parse(r.ocrText).speaker==='SPEAKER_0')!;
  const memories=new MemoryStore(f.store,ids=>materials.evidence(ids),id=>materials.isCurrentEvidence(id));
  let enter!:()=>void,finish!:()=>void;const entered=new Promise<void>(resolve=>enter=resolve),release=new Promise<void>(resolve=>finish=resolve);
- const pipeline=new MemoryPipeline({store:f.store,memories,configured:()=>true,model:()=> 'fixture',materialAllowedForMemory:ref=>work.readyForMemory(ref),query:async()=>{enter();await release;return {answer:JSON.stringify({memories:[{title:'Old formal attribution',statement:`Old speaker [${record.id}]`,uncertainty:'Generated',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-old-formal-attribution'};}});
+ const pipeline=fixtureMemoryPipeline({store:f.store,memories,configured:()=>true,model:()=> 'fixture',materialAllowedForMemory:ref=>work.readyForMemory(ref),query:async()=>{enter();await release;return {answer:JSON.stringify({memories:[{title:'Old formal attribution',statement:`Old speaker [${record.id}]`,uncertainty:'Generated',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-old-formal-attribution'};}});
  try{
   const job=pipeline.create({evidenceIds:[record.id]}),running=pipeline.run(job.id);await entered;
   if(proposal)reviews.confirm(f.id,proposal.id,{action:'accept',selected:[proposal.suggestions[0].id]});
@@ -310,7 +313,7 @@ for(const change of ['geometry','text'] as const)test(`image ${change} changes p
   assert.deepEqual(view.items.filter(i=>i.type==='text').map(i=>i.text),['Same words','Same words']);
   assert.ok(view.items.every(i=>!i.speaker&&!i.confirmedName&&i.startMs===undefined));
   const memories=new MemoryStore(f.store,ids=>materials.evidence(ids),id=>materials.isCurrentEvidence(id));
-  const saved=anchors.map(r=>memories.publish(memories.extract({answer:JSON.stringify({memories:[{title:'Generated image fixture',statement:`Generated text [${r.id}]`,uncertainty:'Fixture',evidenceIds:[r.id],evidence:[{id:r.id,quote:r.ocrText}]}]}),citations:[{id:r.id,capturedAt:r.capturedAt,appName:r.appName,excerpt:r.ocrText}],trace:[],runId:'generated-image'},'fixture').items[0].id));
+  const saved=anchors.map(r=>memories.publish(memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'Generated image fixture',statement:`Generated text [${r.id}]`,uncertainty:'Fixture',evidenceIds:[r.id],evidence:[{id:r.id,quote:r.ocrText}]}]}),citations:[{id:r.id,capturedAt:r.capturedAt,appName:r.appName,excerpt:r.ocrText}],trace:[],runId:'generated-image'}),'fixture').items[0].id));
   if(change==='geometry'){transcript.segments[0].imageLocation=location(12,45);f.processing.retry(f.id);await f.processing.tick();assert.equal(calls,2);}
   else {const reviews=new FileReviews(f.files,f.processing),proposal=await reviews.propose(f.id,{kind:'terms'});reviews.confirm(f.id,proposal.id,{action:'accept',selected:[proposal.suggestions[0].id]});assert.equal(calls,1);}
   const after=f.files.chunks(f.id);assert.notEqual(after[0].id,before[0].id);assert.equal(after[1].id,before[1].id);
@@ -329,9 +332,9 @@ test('local semantic grouping blocks without a local model and never invokes the
 });
 
 test('local settings redact all credentials and reject remote destinations',async t=>{
- const f=await fixture(t);f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,apiKey:'cloud-test-secret',localModelApiKey:'local-test-secret',localWorkerApiKey:'worker-test-secret'}});assert.ok(!JSON.stringify(f.processing.view()).includes('test-secret'));
+ const f=await fixture(t);f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,apiKey:'cloud-test-secret',localModelApiKey:'local-test-secret',localWorkerApiKey:'worker-test-secret'},policy:fixtureFilePolicy({...f.processing.view().settings,apiKey:'cloud-test-secret',localModelApiKey:'local-test-secret',localWorkerApiKey:'worker-test-secret'},f.processing.runtime.registry)});assert.ok(!JSON.stringify(f.processing.view()).includes('test-secret'));
  for(const field of ['localEndpoint','localModelEndpoint'])assert.throws(()=>fileProcessingSchema.parse({[field]:'https://example.test/api',allowRemote:true}));
- assert.throws(()=>f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,localEndpoint:'http://127.0.0.1:12345/transcribe'}}),{statusCode:409});
+ assert.throws(()=>f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,localEndpoint:'http://127.0.0.1:12345/transcribe'},policy:fixtureFilePolicy({...f.processing.view().settings,localEndpoint:'http://127.0.0.1:12345/transcribe'},f.processing.runtime.registry)}),{statusCode:409});
 });
 
 test('Cordis rejects duplicate registrations and missing deployment modules',async()=>{
@@ -349,7 +352,7 @@ test('calendar association is model-proposed, requires evidence from both sides,
 });
 
 test('changing defaults cannot send completed local-only transcripts into a cloud summary',async t=>{
- const f=await fixture(t);await f.processing.tick();f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,audioProcessor:'audio.http',summarize:true}});await f.processing.tick();assert.equal(f.counts().summaries,0);assert.equal(f.files.detail(f.id).job.local_only,1);
+ const f=await fixture(t);await f.processing.tick();f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,audioProcessor:'audio.http',summarize:true},policy:fixtureFilePolicy({...f.processing.view().settings,audioProcessor:'audio.http',summarize:true},f.processing.runtime.registry)});await f.processing.tick();assert.equal(f.counts().summaries,0);assert.equal(f.files.detail(f.id).job.local_only,1);
 });
 
 
@@ -540,7 +543,7 @@ test('ordinary cooperative processor still receives cancellation and cannot publ
 
 test('explicit retry leaves cancelled children from an obsolete configuration untouched',async t=>{
  const f=await fixture(t,{transcribe:async()=>{throw new ProviderFailure(providerHttpFailure(429));}});await f.processing.tick();
- f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,localEndpoint:'http://127.0.0.1:9047/generated-new-endpoint'}});
+ f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,localEndpoint:'http://127.0.0.1:9047/generated-new-endpoint'},policy:fixtureFilePolicy({...f.processing.view().settings,localEndpoint:'http://127.0.0.1:9047/generated-new-endpoint'},f.processing.runtime.registry)});
  assert.equal(f.processing.engine.list({operationId:'file:'+f.id,kind:'files.pipeline'}).items[0].state,'cancelled','fixture must actually revoke the old configuration');
  const historical=()=>f.store.db.prepare("SELECT e.* FROM execution_steps e JOIN execution_operation_steps o ON o.step_id=e.id WHERE o.operation_id=? AND e.kind LIKE 'file-step.%'").all('file:'+f.id);
  const before=JSON.stringify(historical());assert.ok(historical().length);f.processing.retry(f.id);assert.equal(JSON.stringify(historical()),before,'only current-generation child backoff may reset');

@@ -1,3 +1,4 @@
+import {formatEvidenceRef} from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
 import {useEffect,useState} from 'react';
 import {ArrowLeft,ArrowRight,Clock3,Layers3,RefreshCw} from 'lucide-react';
@@ -38,5 +39,5 @@ function SessionImage({api,item,onOpen}:{api:Api;item:ImageRef;onOpen:(id:string
   useEffect(()=>{if(!item.hasImage)return;let disposed=false,owned='';const controller=new AbortController();
     void api.raw(`/api/capture-browser/${item.id}/image?thumbnail=1`,{signal:controller.signal}).then(response=>response.blob()).then(blob=>{if(!disposed){owned=URL.createObjectURL(blob);setUrl(owned);}}).catch(()=>{if(!disposed)setFailed(true);});
     return()=>{disposed=true;controller.abort();if(owned)URL.revokeObjectURL(owned);};},[api,item.id,item.hasImage]);
-  return <button className="session-image" onClick={()=>onOpen(item.id)}>{url?<img src={url} alt={moteText("{0} 截图", item.appName)} loading="lazy"/>:<span>{failed?moteText("预览加载失败，点击查看详情"):item.hasImage?moteText("加载预览…"):moteText("无图片 · 查看采样记录")}</span>}<small>{dateTime(item.capturedAt)}</small></button>;
+  return <button className="session-image" onClick={()=>onOpen(formatEvidenceRef('capture',item.id))}>{url?<img src={url} alt={moteText("{0} 截图", item.appName)} loading="lazy"/>:<span>{failed?moteText("预览加载失败，点击查看详情"):item.hasImage?moteText("加载预览…"):moteText("无图片 · 查看采样记录")}</span>}<small>{dateTime(item.capturedAt)}</small></button>;
 }

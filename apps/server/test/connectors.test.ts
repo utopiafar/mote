@@ -1,3 +1,6 @@
+import {fixtureCaptureRefs} from './fixtures/evidence-refs.js';
+import {memorySchema} from '../src/memory-schema.js';
+import {memoryEvidenceFingerprint} from '../src/memory.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile,stat,writeFile} from 'node:fs/promises';
@@ -37,6 +40,22 @@ async function fixture(t:any){
   t.after(async()=>{store.close();await rm(directory,{recursive:true,force:true});});return {ctx,directory,store,sources};
 }
 const item=(text='Synthetic evidence')=>({externalId:'synthetic-item',revision:randomUUID(),observedAt:new Date().toISOString(),title:'Synthetic item',text,kind:'file',layer:'original'});
+
+
+/** Complete generated storage fixture; the reader still enforces its original-evidence policy. */
+function seedMemory(store:Store,id:string,evidenceIds:string[],createdAt:string,details:{title:string;statement:string;uncertainty:string}){
+ const records=store.evidence(evidenceIds);assert.equal(records.length,evidenceIds.length);
+ const value=memorySchema.parse({version:1,id,domain:'personal',tier:'episode',kind:'episodic',...details,
+  status:'published',createdAt,evidenceIds,model:'generated-fixture',runId:randomUUID(),skillVersion:'generated-fixture@1',
+  admission:{layer:'memory',reason:'Generated model selected evidence for this fixture',scope:'Generated fixture only',attribution:'observed'},
+  fingerprint:memoryEvidenceFingerprint(records[0]),
+  evidence:records.map(record=>({id:record.id,deviceId:record.deviceId,sourceId:record.provenance?.sourceId,externalId:record.provenance?.externalId,revision:record.provenance?.revision,
+   capturedAt:record.capturedAt,receivedAt:record.receivedAt,offset:0,length:record.ocrText.length,quote:record.ocrText,contentHash:memoryEvidenceFingerprint(record)})),
+  scopeRefs:records.flatMap(record=>{const c=record.provenance?.document?.coding;return c?[{sourceId:record.provenance?.sourceId,deviceId:record.deviceId,provider:c.provider,projectKey:c.projectKey,sessionId:c.sessionId}]:[]})});
+ store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(id,createdAt,JSON.stringify(value));
+ for(const evidenceId of evidenceIds)store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(id,evidenceId);
+ return value;
+}
 
 test('a third-party recording manifest contributes owner routes, source capabilities and generic settings metadata and releases its runtime',async t=>{
  const {ctx,sources}=await fixture(t),app=Fastify();let accounts=0,closed=0;
@@ -182,7 +201,7 @@ test('MCP material tools expose bounded formal revisions without original member
     {expectedRevision:saved.revision});
   assert.equal((await call(readToken,6,'tools/call',{name:'mote_material_read',arguments:{ref:saved.ref}})).isError,true);
   assert.equal((await call(readToken,7,'tools/call',{name:'mote_material',arguments:{ref:saved.ref}})).isError,true);
-  assert.deepEqual(jsonResult(await call(readToken,8,'tools/call',{name:'mote_evidence',arguments:{ids:[oldAnchor]}})),[]);
+  assert.deepEqual(jsonResult(await call(readToken,8,'tools/call',{name:'mote_evidence',arguments:{ids:fixtureCaptureRefs([oldAnchor])}})),[]);
   assert.deepEqual(jsonResult(await call(readToken,9,'tools/call',{name:'mote_read',arguments:{refs:[`capture:${oldAnchor}`]}})).items,[]);
   assert.match(jsonResult(await call(readToken,10,'tools/call',{name:'mote_material_read',arguments:{ref:revised.ref}})).text,/corrected body/);
 });
@@ -217,12 +236,12 @@ test('MCP model reads cannot discover or expand generated screen and Coding orig
     assert.ok(!JSON.stringify(result).includes(screenId),`${name} disclosed screen ID`);
     assert.ok(!JSON.stringify(result).includes(coding.id),`${name} disclosed Coding ID`);
   }
-  assert.deepEqual(jsonResult(await call('mote_evidence',{ids:[screenId,coding.id]})),[]);
+  assert.deepEqual(jsonResult(await call('mote_evidence',{ids:fixtureCaptureRefs([screenId,coding.id])})),[]);
   const rawRead=jsonResult(await call('mote_read',{refs:[`capture:${screenId}`,`capture:${coding.id}`]}));
   assert.deepEqual(rawRead.items,[]);
   assert.deepEqual(jsonResult(await call('mote_history',{sourceId:'generated-coding',externalId:'event-1'})),[]);
   assert.equal((await call('mote_file_catalog',{sourceId:'generated-coding'})).isError,true);
-  assert.deepEqual(jsonResult(await call('mote_file_chunks',{id:coding.id})).items,[]);
+  assert.deepEqual(jsonResult(await call('mote_file_chunks',{id:`capture:${coding.id}`})).items,[]);
   const catalog=jsonResult(await call('mote_materials',{}));assert.ok(catalog.items.some((value:any)=>value.ref===screen.ref));
   const metadata=jsonResult(await call('mote_material',{ref:screen.ref}));assert.ok(!JSON.stringify(metadata).includes(screenId));
   const materialRead=jsonResult(await call('mote_material_read',{ref:screen.ref}));assert.match(materialRead.text,/Generated screen summary/);
@@ -230,7 +249,7 @@ test('MCP model reads cannot discover or expand generated screen and Coding orig
   const segments=jsonResult(await call('mote_segments',{id:segment.id}));assert.equal(segments.items[0].id,segment.id);
   assert.ok(!JSON.stringify(segments).includes(screenId));
   const artifactRead=jsonResult(await call('mote_read',{refs:[segments.items[0].ref]}));assert.ok(!JSON.stringify(artifactRead).includes(screenId));
-  assert.deepEqual(jsonResult(await call('mote_evidence',{ids:[screenId]})),[],'MCP material expansion never creates a cross-request raw grant');
+  assert.deepEqual(jsonResult(await call('mote_evidence',{ids:fixtureCaptureRefs([screenId])})),[],'MCP material expansion never creates a cross-request raw grant');
 });
 
 test('MCP pages ordinary, screen and Coding Materials with one raw pending fallback',async t=>{
@@ -308,12 +327,12 @@ test('MCP real SDK isolates read/write credentials, scopes writes and exposes bo
   const event={...item('x'.repeat(14000)),metadata:{version:1,file:{sizeBytes:14000,createdAt:'2026-09-01T00:00:00Z'}}};
   const written=jsonResult(await writer.callTool({name:'mote_put_item',arguments:{sourceId:'allowed',item:event}}));assert.equal(written.duplicate,false);
   assert.equal(jsonResult(await writer.callTool({name:'mote_put_item',arguments:{sourceId:'allowed',item:event}})).duplicate,true);
-  const original=await reader.callTool({name:'mote_evidence',arguments:{ids:[written.id],offset:12000,length:2000}});
+  const original=await reader.callTool({name:'mote_evidence',arguments:{ids:fixtureCaptureRefs([written.id]),offset:12000,length:2000}});
   assert.equal(jsonResult(original)[0].text.length,2000);assert.equal(jsonResult(original)[0].textRange.nextOffset,null);
   assert.deepEqual(jsonResult(original)[0].provenance.metadata,event.metadata);
   const revised={...event,revision:randomUUID(),text:'a😀b',observedAt:new Date(Date.now()+1000).toISOString()};
   const revision=jsonResult(await writer.callTool({name:'mote_put_item',arguments:{sourceId:'allowed',item:revised}}));
-  const unicode=jsonResult(await reader.callTool({name:'mote_evidence',arguments:{ids:[revision.id],offset:2,length:1}}))[0];
+  const unicode=jsonResult(await reader.callTool({name:'mote_evidence',arguments:{ids:fixtureCaptureRefs([revision.id]),offset:2,length:1}}))[0];
   assert.equal(unicode.text,'😀');assert.equal(unicode.textRange.offset,1);assert.equal(unicode.textRange.nextOffset,3);
   const history=jsonResult(await reader.callTool({name:'mote_history',arguments:{sourceId:'allowed',externalId:event.externalId}}));
   assert.equal(history.length,2);assert.equal(history.filter((v:any)=>v.current).length,1);
@@ -322,7 +341,7 @@ test('MCP real SDK isolates read/write credentials, scopes writes and exposes bo
   assert.equal(jsonResult(await reader.callTool({name:'mote_items',arguments:{}})).items.length,0);
   assert.equal(jsonResult(await reader.callTool({name:'mote_items',arguments:{includeDeleted:true}})).items.length,0,
     'a model read credential cannot expand a tombstoned source item');
-  assert.deepEqual(jsonResult(await reader.callTool({name:'mote_evidence',arguments:{ids:[revision.id]}})),[],
+  assert.deepEqual(jsonResult(await reader.callTool({name:'mote_evidence',arguments:{ids:fixtureCaptureRefs([revision.id])}})),[],
     'the tombstone also revokes exact expansion of prior raw revisions');
   assert.ok(!names.includes('mote_updates'));
   const noteId=randomUUID();await store.ingest({id:noteId,deviceId:'synthetic-notes',deviceName:'Synthetic notes',platform:'import',capturedAt:new Date().toISOString(),durationMs:0,appId:'notes',appName:'Notes',source:'note',ocrText:'Authored synthetic diary'});
@@ -338,7 +357,7 @@ test('MCP real SDK isolates read/write credentials, scopes writes and exposes bo
   await store.ingest({id:mediaId,deviceId:'synthetic-media',deviceName:'Generated phone',platform:'android',capturedAt:new Date().toISOString(),durationMs:15000,appId:'generated.player',appName:'Generated player',source:'media',metadata:{version:1,observedAt:new Date().toISOString(),state:{screenLocked:true},media}});
   const mediaTotals=jsonResult(await reader.callTool({name:'mote_media_activity',arguments:{deviceId:'synthetic-media',screenLocked:true,appVisibility:'background'}}));
   assert.equal(mediaTotals.totalDurationMs,15000);assert.equal(mediaTotals.screenLock.locked,15000);assert.deepEqual(mediaTotals.evidenceIds,[mediaId]);
-  const mediaEvidence=jsonResult(await reader.callTool({name:'mote_evidence',arguments:{ids:[mediaId]}}))[0];assert.deepEqual(mediaEvidence.metadata.media,media);assert.equal(mediaEvidence.text,'');
+  const mediaEvidence=jsonResult(await reader.callTool({name:'mote_evidence',arguments:{ids:fixtureCaptureRefs([mediaId])}}))[0];assert.deepEqual(mediaEvidence.metadata.media,media);assert.equal(mediaEvidence.text,'');
   assert.equal(jsonResult(await reader.callTool({name:'mote_search',arguments:{source:'media',query:'audiobook'}})).items[0].id,mediaId);
   assert.equal(jsonResult(await reader.callTool({name:'mote_activity',arguments:{deviceId:'synthetic-media'}})).totalDurationMs,0);
   assert.equal((await reader.callTool({name:'mote_media_activity',arguments:{source:'screen'}})).isError,true);
@@ -500,7 +519,7 @@ test('MCP context pages every published memory under a small serialized budget',
  const expected=new Set<string>();
  for(let i=0;i<7;i++){
    const original=await sources.upsert('allowed',{...item('Generated memory evidence '+i),externalId:'memory-page-'+i});const id=randomUUID(),at=new Date().toISOString();expected.add(id);
-   store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(id,at,JSON.stringify({id,title:'Generated memory '+i,statement:'Generated memory prose '.repeat(30),uncertainty:'Fixture only',status:'published',createdAt:at,evidenceIds:[original.id],evidence:[{id:original.id,capturedAt:at,deviceId:'synthetic-device'}],admission:{layer:'memory'}}));store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(id,original.id);
+   seedMemory(store,id,[original.id],at,{title:'Generated memory '+i,statement:'Generated memory prose '.repeat(30),uncertainty:'Fixture only'});
  }
  const seen:string[]=[];let cursor:string|undefined;
  for(let pageNumber=0;pageNumber<30;pageNumber++){

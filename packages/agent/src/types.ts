@@ -54,7 +54,7 @@ export interface ContextReader {
   segments?(args:ContextRange & {id?:string;query?:string}):Promise<{items:{members:string[];[key:string]:unknown}[];nextCursor:string|null;[key:string]:unknown}>;
   readImage?(args:import('@mote/shared').ImageReadInput):Promise<import('@mote/shared').ImageReadResult>;
   search(args: ContextRange & { query?: string }): Promise<ContextRecord[]>;
-  timeline(args: ContextRange): Promise<ContextRecord[] | ContextPage>;
+  timeline(args: ContextRange): Promise<ContextPage>;
   evidence(args: ContextRange & { ids: string[] }): Promise<ContextRecord[]>;
   activity(args: ContextRange): Promise<unknown>;
   mediaActivity?(args: MediaContextRange): Promise<unknown>;
@@ -63,8 +63,8 @@ export interface ContextReader {
   fileChunks?(args:ContextRange & {id:string;offset?:number}):Promise<ContextRecord[]>;
   sourceHistory?(args:ContextRange & {id:string}): Promise<ContextRecord[]>;
   sources?(args:ContextRange): Promise<unknown>;
-  sourceItems?(args:ContextRange & {sourceId?:string;kind?:string;includeDeleted?:boolean}): Promise<ContextRecord[]|ContextPage>;
-  memories?(args:ContextRange & {includeEvidence?:boolean;includeHistory?:boolean;asOf?:string;id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory'|'legacy';kind?:'episodic'|'semantic'|'procedural';status?:'published'|'proposed'|'stale'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[];references?:{id:string;capturedAt:string;characters:number}[];sourceSpans?:MemorySourceSpan[];sourceCoverage?:{references:number;delivered:number;partial:boolean}}>;
+  sourceItems?(args:ContextRange & {sourceId?:string;kind?:string;includeDeleted?:boolean}): Promise<ContextPage>;
+  memories?(args:ContextRange & {includeEvidence?:boolean;includeHistory?:boolean;asOf?:string;id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory';kind?:'episodic'|'semantic'|'procedural';status?:'published'|'proposed'|'stale'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[];references?:{id:string;capturedAt:string;characters:number}[];sourceSpans?:MemorySourceSpan[];sourceCoverage?:{references:number;delivered:number;partial:boolean}}>;
 }
 
 export interface AgentOptions {
@@ -89,8 +89,6 @@ export interface AgentOptions {
   requestTimeoutMs?: number | null;
   /** Maximum time for the complete Agent run. Null disables the host deadline. */
   agentTimeoutMs?: number | null;
-  /** @deprecated Use requestTimeoutMs and agentTimeoutMs. Kept for third-party callers during migration. */
-  timeoutMs?: number;
   maxToolCalls?: number;
   maxTokens?: number;
   reasoningEffort?: ModelReasoningEffort;

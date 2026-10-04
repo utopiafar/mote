@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import sharp from 'sharp';
 import {startBridge} from '../dist/bridge.js';
 import {generatedImageRead,digest} from './image-region-fixture.mjs';
-const record={id:'generated-regions',capturedAt:'2026-09-27T00:00:00Z',appName:'Generated pixels',sourceType:'file',ocrText:'Generated geometric fixture'};
+const record={id:'6f7a917a-a0f6-56d1-bde0-86fa7f2938cc',capturedAt:'2026-09-27T00:00:00Z',appName:'Generated pixels',sourceType:'file',ocrText:'Generated geometric fixture'};
 async function call(b,tool,args,ack=true){const res=await fetch(b.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+b.token},body:JSON.stringify(args)}),body=await res.json();if(ack&&body.imageDelivery)b.imageDelivery(body.imageDelivery,true);return {status:res.status,body};}
 async function fixture(t){
  let bytes=await sharp({create:{width:40,height:20,channels:3,background:'#ab3490'}}).png().toBuffer(),allowed=true,reads=0,deleted=false;
- const alias={...record,id:'formal-generated',sourceType:'message',provenance:{document:{attachments:[{id:'generated-image'}]}}};
- const rows=()=>deleted?[]:[record,alias],reader={search:async()=>rows(),timeline:async()=>rows(),evidence:async({ids})=>rows().filter(r=>ids.includes(r.id)),activity:async()=>({}),devices:async()=>[],readImage:async args=>{reads++;if(!allowed)throw Error('Generated revocation');return generatedImageRead(bytes,args);}};
+ const alias={...record,id:'61d5c64d-bfca-5530-9ced-d1f904984252',sourceType:'message',provenance:{document:{attachments:[{id:'generated-image'}]}}};
+ const rows=()=>deleted?[]:[record,alias],reader={search:async()=>rows(),timeline:async()=>({items:(rows()),nextCursor:null}),evidence:async({ids})=>rows().filter(r=>ids.includes(r.id)),activity:async()=>({}),devices:async()=>[],readImage:async args=>{reads++;if(!allowed)throw Error('Generated revocation');return generatedImageRead(bytes,args);}};
  const open=async()=>{const bridge=await startBridge(reader,{question:'Generated regions'},40);t.after(()=>bridge.close());await call(bridge,'timeline',{});await call(bridge,'evidence',{ids:[record.id,alias.id]});return bridge;};
  return {open,alias,get bytes(){return bytes;},set bytes(value){bytes=value;},set allowed(value){allowed=value;},set deleted(value){deleted=value;},get reads(){return reads;}};
 }
@@ -39,7 +39,7 @@ test('region delivery failure lets a concurrent reader deliver its first image',
 });
 test('unsupported or mismatched region responses fail closed, never masquerading as full image success',async t=>{
  const bytes=await sharp({create:{width:8,height:8,channels:3,background:'#abc'}}).png().toBuffer();let read=async()=>({mimeType:'image/png',data:bytes.toString('base64')});
- const b=await startBridge({search:async()=>[record],timeline:async()=>[record],evidence:async()=>[record],activity:async()=>({}),devices:async()=>[],readImage:args=>read(args)},{question:'Generated bounds'},16);t.after(()=>b.close());await call(b,'timeline',{});await call(b,'evidence',{ids:[record.id]});
+ const b=await startBridge({search:async()=>[record],timeline:async()=>({items:([record]),nextCursor:null}),evidence:async()=>[record],activity:async()=>({}),devices:async()=>[],readImage:args=>read(args)},{question:'Generated bounds'},16);t.after(()=>b.close());await call(b,'timeline',{});await call(b,'evidence',{ids:[record.id]});
  const input={id:record.id,expectedImageSha256:digest(bytes),region:{x:0,y:0,width:3,height:3}};
  assert.equal((await call(b,'read_image',input)).body.toolError.code,'image_view_unsupported');
  read=async args=>{const result=await generatedImageRead(bytes,args);result.imageView.output.sha256='0'.repeat(64);return result;};assert.equal((await call(b,'read_image',input)).status,400);

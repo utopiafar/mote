@@ -122,8 +122,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             if (!inputData.getBoolean("continuation", false)) SourceWork.enqueueUpload(applicationContext, config, explicit)
             Diagnostics(applicationContext).add("uploadSessions")
             // The configured batch size is the number of records in one worker
-            // operation. The new compressed JSONL transport supports up to 500;
-            // older JSON batch endpoints are still capped to 25 on fallback.
+            // operation. Compressed JSONL transport supports up to 500.
             var remaining = config.syncBatchSize.coerceIn(1, 500)
             val slice = UploadSlice()
             val turns = applicationContext.getSharedPreferences("capture-upload-turns", Context.MODE_PRIVATE)
@@ -131,90 +130,39 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             val continuing = inputData.getBoolean("continuation", false) && turns.getString("stamp", null) == stamp
             val preferSince = if (continuing) turns.getLong("since", System.currentTimeMillis()) else System.currentTimeMillis()
             var liveBytes = if (continuing) turns.getLong("liveBytes", 0) else 0L
-            var ocrSinceCapture = if (continuing) turns.getInt("ocrSinceCapture", 0) else 0
-            fun retainTurn() { turns.edit().putString("stamp", stamp).putLong("since", preferSince).putLong("liveBytes", liveBytes).putInt("ocrSinceCapture", ocrSinceCapture).apply() }
+            fun retainTurn() { turns.edit().putString("stamp", stamp).putLong("since", preferSince).putLong("liveBytes", liveBytes).apply() }
             while (remaining > 0 && !slice.exhausted) {
                 if (isStopped || ConnectionGuard.reconfiguring()) return Result.retry()
                 SyncSchedule.waitingReason(applicationContext, config)?.let {
                     settings.syncStatus("waiting", it); return Result.retry()
                 }
                 stage = EventStage.QUEUE
-                val ocrUpdate = if (ocrSinceCapture < 4) queue.nextOcrUpdate() else null
-                if (ocrUpdate != null) {
-                    stage = EventStage.UPLOAD
-                    val id = ocrUpdate.getString("id"); pendingRecordId = id
-                    val body = JSONObject().put("ocrText", ocrUpdate.getString("ocrText")).put("status", ocrUpdate.getString("status"))
-                    slice.record(body.toString().toByteArray(Charsets.UTF_8).size.toLong()); remaining--; ocrSinceCapture++
-                    SyncSchedule.requireConditions(applicationContext, config)
-                    val (code, response) = HttpJson.post("${config.server}/api/capture-browser/$id/ocr", body, config.connectionToken())
-                    if ((code == 404 && response?.optString("error") == "capture_not_found") || code == 410) {
-                        queue.archiveMissing(id); pendingRecordId = null
-                        settings.syncStatus("error", MoteI18n.text("中央记录已不可更新；本机保留图片和失败状态，不会重新创建记录"))
-                        continue
-                    }
-                    if (code == 409) {
-                        queue.ocrConflict(id); pendingRecordId = null
-                        settings.syncStatus("error", MoteI18n.text("OCR 更新与中央记录冲突；本机图片和文字已保留，请在采集记录中查看"))
-                        continue
-                    }
-                    if (code !in 200..299 || response?.optString("id") != id) return failed(if (code == 404) MoteI18n.text("中央节点可能需要升级，OCR 结果已保留") else MoteI18n.text("OCR 更新未确认（HTTP {0}）", code))
-                    Diagnostics(applicationContext).add("uploadBytes", body.toString().toByteArray(Charsets.UTF_8).size.toLong())
-                    queue.acknowledgeOcr(id, config.uploadedRetentionDays); pendingRecordId = null
-                    settings.syncStatus("uploading", MoteI18n.text("文字识别已更新至中央归档"), uploaded = true)
-                    continue
-                }
                 val preferNew = liveBytes < 16L * 1024 * 1024
                 val events = queue.peekBatch(maxCount = remaining, maxBytes = 4 * 1024 * 1024, metadataWindowMinutes = config.jsonlWindowMinutes, preferSince = if (preferNew) preferSince else null)
                 if (events.isEmpty()) {
-                    if (queue.nextOcrUpdate() != null) { ocrSinceCapture = 0; continue }
                     finishStatus()
                     runCatching { PerceptionSync.pull(applicationContext, settings, config, queue) }
                     runCatching { SyncHeartbeat.send(applicationContext, settings, config, queue) }
                     return Result.success()
                 }
                 stage = EventStage.UPLOAD
-                val capability = applicationContext.getSharedPreferences("bundle-capability", Context.MODE_PRIVATE)
-                val bundleUnsupported = capability.getString("server", null) == config.server &&
-                    System.currentTimeMillis() - capability.getLong("at", 0) in 0 until 86_400_000L
-                val useBundle = config.packedUpload && !bundleUnsupported
-                var sent = when {
-                    useBundle -> events
-                    config.packedUpload -> events.take(25)
-                    else -> events.take(1)
-                }
+                var sent = if (config.packedUpload) events else events.take(1)
                 pendingRecordId = sent.first().getString("id")
                 var wireBytes = 0L
-                var response: Pair<Int, JSONObject?>
-                var individual = !config.packedUpload
-                fun jsonBatch() {
-                    val result = UploadNegotiation.sendShrinking(events.take(25)) { batch ->
-                        val body = JSONObject().put("captures", org.json.JSONArray(batch))
-                        wireBytes += body.toString().toByteArray(Charsets.UTF_8).size
-                        SyncSchedule.requireConditions(applicationContext, config)
-                        HttpJson.post("${config.server}/api/captures/batch", body, config.connectionToken())
-                    }
-                    sent = result.first; response = result.second; individual = false
-                }
-                response = 0 to null
-                if (useBundle) {
+                val individual = !config.packedUpload
+                val response: Pair<Int, JSONObject?> = if (individual) {
+                    wireBytes = sent.first().toString().toByteArray(Charsets.UTF_8).size.toLong()
+                    SyncSchedule.requireConditions(applicationContext, config)
+                    HttpJson.post("${config.server}/api/captures", sent.first(), config.connectionToken())
+                } else {
                     val result = UploadNegotiation.sendShrinking(sent) { batch ->
                         val bundle = CaptureBundle.encode(batch); wireBytes += bundle.size
                         SyncSchedule.requireConditions(applicationContext, config)
                         HttpJson.postBytes("${config.server}/api/captures/bundle", bundle, config.connectionToken(), CaptureBundle.CONTENT_TYPE)
                     }
-                    sent = result.first; response = result.second
-                    if (UploadNegotiation.unsupported(response.first)) {
-                        capability.edit().putString("server", config.server).putLong("at", System.currentTimeMillis()).apply()
-                        jsonBatch()
-                    }
-                } else if (config.packedUpload) jsonBatch()
-                if (!config.packedUpload || UploadNegotiation.unsupported(response.first)) {
-                    sent = events.take(1); individual = true
-                    wireBytes += sent.first().toString().toByteArray(Charsets.UTF_8).size
-                    SyncSchedule.requireConditions(applicationContext, config)
-                    response = HttpJson.post("${config.server}/api/captures", sent.first(), config.connectionToken())
+                    sent = result.first; result.second
                 }
-                slice.record(wireBytes); ocrSinceCapture = 0
+                slice.record(wireBytes)
                 liveBytes = if (preferNew) liveBytes + wireBytes else 0L
                 retainTurn()
                 Diagnostics(applicationContext).add("uploadBytes", wireBytes)

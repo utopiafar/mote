@@ -33,7 +33,7 @@ export const automaticMemoryExtractionEnabled=(store:Store)=>storedMemoryLifecyc
 export function freezeSemanticContextTime(clock:()=>string=()=>new Date().toISOString()):string {
   return z.string().max(64).datetime({offset:true}).refine(value=>Number.isFinite(Date.parse(value)),'Invalid semantic context time').parse(clock());
 }
-export type LifecycleWindow={manual?:boolean;id:string;version:string;from:number;through:number;ids:string[];startedAt:number;contextTime?:string;settings:LifecycleSettings;checkpoint?:string};
+export type LifecycleWindow={manual?:boolean;id:string;version:string;from:number;through:number;ids:string[];startedAt:number;contextTime:string;settings:LifecycleSettings;checkpoint?:string};
 type State={cancelled?:boolean;manualRetryRequired?:boolean;stream?:LifecycleExtension['stream'];drainThrough?:number;cursor:number;lastSuccess:number;retryAt?:number;failures:number;active?:LifecycleWindow;lastRun?:{id:string;through:number;completedAt:number};error?:string};
 export type LifecycleExecution={operationId:string;jobId:string;signal:AbortSignal;interrupted:()=>boolean;commit:<T>(write:()=>T)=>T};
 export type LifecycleExtension={id:keyof Pick<LifecycleSettings,'extraction'|'consolidation'|'insights'|'working'>;version:string;stream:'evidence'|'artifact'|'memory'|'conversation';maxAttempts?:number;
@@ -46,34 +46,33 @@ export class MemoryLifecycle {
   private extensions=new Map<string,LifecycleExtension>();
   private running=new Map<string,Promise<void>>();
   private closed=false;private abort=new AbortController();
-  constructor(private store:Store,private configured:()=>boolean,private now:()=>number=Date.now,legacyInsightHours=0,private executor?:ExecutionEngine,private semanticContextTime?:()=>string){
+  constructor(private store:Store,private configured:()=>boolean,private now:()=>number=Date.now,private executor?:ExecutionEngine,private semanticContextTime?:()=>string){
     store.db.exec(`
       CREATE TABLE IF NOT EXISTS memory_lifecycle_settings(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memory_lifecycle_state(id TEXT PRIMARY KEY,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memory_events(seq INTEGER PRIMARY KEY AUTOINCREMENT,stream TEXT NOT NULL,entity TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS memory_events_stream ON memory_events(stream,seq);
-      CREATE TRIGGER IF NOT EXISTS memory_event_insert AFTER INSERT ON memories WHEN coalesce(json_extract(new.json,'$.tier'),'episode')='episode' BEGIN INSERT INTO memory_events(stream,entity) VALUES('memory',new.id); END;
-      CREATE TRIGGER IF NOT EXISTS memory_event_update AFTER UPDATE ON memories WHEN new.json!=old.json AND coalesce(json_extract(new.json,'$.tier'),'episode')='episode' BEGIN INSERT INTO memory_events(stream,entity) VALUES('memory',new.id); END;
+      CREATE TRIGGER IF NOT EXISTS memory_event_insert AFTER INSERT ON memories WHEN json_extract(new.json,'$.tier')='episode' BEGIN INSERT INTO memory_events(stream,entity) VALUES('memory',new.id); END;
+      CREATE TRIGGER IF NOT EXISTS memory_event_update AFTER UPDATE ON memories WHEN new.json!=old.json AND json_extract(new.json,'$.tier')='episode' BEGIN INSERT INTO memory_events(stream,entity) VALUES('memory',new.id); END;
       CREATE TRIGGER IF NOT EXISTS conversation_event_insert AFTER INSERT ON conversations BEGIN INSERT INTO memory_events(stream,entity) VALUES('conversation',new.id); END;
       CREATE TRIGGER IF NOT EXISTS conversation_event_update AFTER UPDATE ON conversations WHEN new.json!=old.json BEGIN INSERT INTO memory_events(stream,entity) VALUES('conversation',new.id); END;
     `);
     if(!store.db.prepare('SELECT 1 FROM memory_lifecycle_settings').get()){
-      const settings=structuredClone(defaultLifecycleSettings);if(legacyInsightHours>0)settings.insights.intervalHours=legacyInsightHours;
+      const settings=structuredClone(defaultLifecycleSettings);
       store.db.exec('BEGIN IMMEDIATE');
       try{
         const inserted=store.db.prepare('INSERT OR IGNORE INTO memory_lifecycle_settings VALUES(1,?)').run(JSON.stringify(settings));
-        if(inserted.changes)store.db.exec("INSERT INTO memory_events(stream,entity) SELECT 'memory',id FROM memories; INSERT INTO memory_events(stream,entity) SELECT 'conversation',id FROM conversations");
+
         store.db.exec('COMMIT');
       }catch(error){store.db.exec('ROLLBACK');throw error;}
     }
   }
   register(extension:LifecycleExtension){
     if(this.extensions.has(extension.id))throw new Error('Duplicate lifecycle extension: '+extension.id);
-    this.extensions.set(extension.id,extension);
     const exists=this.store.db.prepare('SELECT id FROM memory_lifecycle_state WHERE id=?').get(extension.id);
-    // A journal cursor is meaningful only in its original stream. Rebuild the
-    // new artifact cursor; existing memories and durable manual jobs stay intact.
-    if(!exists||(extension.stream==='artifact'&&this.state(extension.id).stream!=='artifact'))this.save(extension.id,{stream:extension.stream,cursor:0,lastSuccess:this.now(),failures:0});
+    if(exists&&this.state(extension.id).stream!==extension.stream)throw new StoreError('Unsupported lifecycle stream structure',409);
+    this.extensions.set(extension.id,extension);
+    if(!exists)this.save(extension.id,{stream:extension.stream,cursor:0,lastSuccess:this.now(),failures:0});
   }
   replace(extension:LifecycleExtension){
     if(!this.extensions.has(extension.id))return this.register(extension);
@@ -116,7 +115,7 @@ export class MemoryLifecycle {
     state.cursor=through;delete state.active;delete state.cancelled;delete state.manualRetryRequired;delete state.retryAt;delete state.error;delete state.drainThrough;state.failures=0;this.save(id,state);
   }
   configure(input:unknown){const parsed=lifecycleSettingsSchema.parse(input);this.store.db.prepare('UPDATE memory_lifecycle_settings SET json=? WHERE id=1').run(JSON.stringify(parsed));return this.view();}
-  private state(id:string):State{return JSON.parse(String(this.store.db.prepare('SELECT json FROM memory_lifecycle_state WHERE id=?').get(id)!.json));}
+  private state(id:string):State{const state=JSON.parse(String(this.store.db.prepare('SELECT json FROM memory_lifecycle_state WHERE id=?').get(id)!.json)) as State;if(state.active&&(!Array.isArray(state.active.ids)||typeof state.active.contextTime!=='string'||!Number.isFinite(Date.parse(state.active.contextTime))))throw new StoreError('Unsupported lifecycle window structure',409);return state;}
   private save(id:string,state:State){this.store.db.prepare('INSERT INTO memory_lifecycle_state VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(id,JSON.stringify(state));}
   private events(extension:LifecycleExtension,cursor:number,limit:number){
     return (extension.stream==='artifact'?this.store.db.prepare('SELECT seq,entity FROM artifact_events WHERE seq>? ORDER BY seq LIMIT ?').all(cursor,limit):extension.stream==='evidence'?this.store.db.prepare('SELECT seq,id AS entity FROM changes WHERE seq>? ORDER BY seq LIMIT ?').all(cursor,limit):this.store.db.prepare('SELECT seq,entity FROM memory_events WHERE stream=? AND seq>? ORDER BY seq LIMIT ?').all(extension.stream,cursor,limit)) as {seq:number;entity:string}[];

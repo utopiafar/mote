@@ -17,11 +17,11 @@ data class CollectorConfig(
     val diagnosticsEnabled: Boolean = false, val diagnosticsIntervalSeconds: Int = 60,
     val appCollectionRules: String = AppCollectionRules.DEFAULT, val metadataEnabled: Boolean = true,
     val packedUpload: Boolean = true, val syncMode: String = "batch", val syncIntervalMinutes: Int = 1, val syncBatchSize: Int = 100, val jsonlWindowMinutes: Int = 10,
-    val ocrChargingOnly: Boolean = false, val mediaCollectionEnabled: Boolean = false, val screenCollectionEnabled: Boolean = true,
+    val mediaCollectionEnabled: Boolean = false, val screenCollectionEnabled: Boolean = true,
     val notificationCollectionEnabled: Boolean = false, val deviceEventCollectionEnabled: Boolean = false,
     val syncChargingOnly: Boolean = false, val syncBatteryNotLow: Boolean = false, val imageDedupeMode: String = "off",
     val ocrMode: String = "chinese", val ocrAppModes: String = "{}",
-    val imageDedupeDiagnosticsEnabled: Boolean = false, val contentEncryptionEnabled: Boolean = false, val uploadedRetentionDays: Int = 7
+    val imageDedupeDiagnosticsEnabled: Boolean = false, val uploadedRetentionDays: Int = 7
 ) {
     fun observesSystem() = (mediaCollectionEnabled && metadataEnabled) || notificationCollectionEnabled || deviceEventCollectionEnabled
     val pageRules by lazy { UiPageRules.parse(uiPageRules) }
@@ -62,8 +62,10 @@ class SettingsWriteFailure : IllegalStateException(MoteI18n.text("无法持久�
 class SettingsChangedFailure : IllegalStateException(MoteI18n.text("已保存设置发生变化，页面已更新；请检查后重新保存"))
 
 class Settings(private val context: Context) {
+    init { LocalDataFormat.requireCurrent(context) }
     private val prefs = context.getSharedPreferences("mote", Context.MODE_PRIVATE)
     private val secret = SecretBox()
+    init { read() }
     val deviceId: String get() = synchronized(Settings::class.java) {
         prefs.getString("deviceId", null) ?: UUID.randomUUID().toString().also { prefs.edit().putString("deviceId", it).commit() }
     }
@@ -74,9 +76,9 @@ class Settings(private val context: Context) {
         runCatching { HeartbeatWorker.stateChanged(context, read()) }
     }
     fun read(): CollectorConfig = synchronized(Settings::class.java) {
-        if (!prefs.contains("appCollectionRules")) {
-            val initial = if (prefs.contains("interval") || prefs.contains("enabled")) AppCollectionRules.LEGACY_DEFAULT else AppCollectionRules.DEFAULT
-            if (!prefs.edit().putString("appCollectionRules", initial).commit()) throw SettingsWriteFailure()
+        if (!prefs.contains("configurationFormat")) check(prefs.all.isEmpty()) { MoteI18n.text(LocalDataFormat.RESET_MESSAGE) }
+        if (prefs.contains("configurationFormat")) {
+            check(prefs.getInt("configurationFormat", 0) == LocalDataFormat.VERSION && configurationKeys.all(prefs::contains)) { MoteI18n.text(LocalDataFormat.RESET_MESSAGE) }
         }
         // SharedPreferences already keeps values in memory. Compare only configuration keys,
         // so status/counter writes never rebuild a snapshot or decrypt credentials.
@@ -100,18 +102,26 @@ class Settings(private val context: Context) {
         jpegQuality = prefs.getInt("jpegQuality", 75), captureMaxSide = prefs.getInt("captureMaxSide", 1280),
         chargingOnly = prefs.getBoolean("chargingOnly", false), batteryPauseBelowPct = prefs.getInt("batteryPauseBelowPct", 0),
         diagnosticsEnabled = prefs.getBoolean("diagnosticsEnabled", false), diagnosticsIntervalSeconds = prefs.getInt("diagnosticsIntervalSeconds", 60),
-        appCollectionRules = prefs.getString("appCollectionRules", if (prefs.contains("interval") || prefs.contains("enabled")) AppCollectionRules.LEGACY_DEFAULT else AppCollectionRules.DEFAULT)!!,
+        appCollectionRules = prefs.getString("appCollectionRules", AppCollectionRules.DEFAULT)!!,
         metadataEnabled = prefs.getBoolean("metadataEnabled", true),
         syncMode = prefs.getString("syncMode", "batch")!!,
         packedUpload = prefs.getBoolean("packedUpload", true), syncIntervalMinutes = prefs.getInt("syncIntervalMinutes", 1), syncBatchSize = prefs.getInt("syncBatchSize", 100), jsonlWindowMinutes = prefs.getInt("jsonlWindowMinutes", 10),
-        ocrChargingOnly = prefs.getBoolean("ocrChargingOnly", false), mediaCollectionEnabled = prefs.getBoolean("mediaCollectionEnabled", false), screenCollectionEnabled = prefs.getBoolean("screenCollectionEnabled", true),
+        mediaCollectionEnabled = prefs.getBoolean("mediaCollectionEnabled", false), screenCollectionEnabled = prefs.getBoolean("screenCollectionEnabled", true),
         notificationCollectionEnabled = prefs.getBoolean("notificationCollectionEnabled", false), deviceEventCollectionEnabled = prefs.getBoolean("deviceEventCollectionEnabled", false),
         syncChargingOnly = prefs.getBoolean("syncChargingOnly", false), syncBatteryNotLow = prefs.getBoolean("syncBatteryNotLow", false), imageDedupeMode = prefs.getString("imageDedupeMode", "off")!!,
         imageDedupeDiagnosticsEnabled = prefs.getBoolean("imageDedupeDiagnosticsEnabled", false),
-        contentEncryptionEnabled = false,
         uploadedRetentionDays = prefs.getInt("uploadedRetentionDays", 7),
         ocrMode = prefs.getString("ocrMode", "chinese")!!, ocrAppModes = prefs.getString("ocrAppModes", "{}")!!
     )
+        if (!prefs.contains("configurationFormat")) {
+            val editor = prefs.edit().putBoolean("enabled", prefs.getBoolean("enabled", false))
+            configurationValues(config, "").forEach { (key, value) -> when (value) {
+                is String -> editor.putString(key, value); is Int -> editor.putInt(key, value)
+                is Long -> editor.putLong(key, value); is Boolean -> editor.putBoolean(key, value)
+                else -> error("Unsupported configuration value")
+            } }
+            if (!editor.commit()) throw SettingsWriteFailure()
+        }
         cachedPrefs = prefs; cachedValues = values; cachedConfig = config
         config
     }
@@ -123,15 +133,11 @@ class Settings(private val context: Context) {
         }
         return cachedToken
     }
-    fun save(c: CollectorConfig, expected: CollectorConfig? = null, confirmCentralEndpoint: Boolean = false) = synchronized(Settings::class.java) {
-        if (expected != null && read() != expected) throw SettingsChangedFailure()
-        c.validate()
-        val origin = originAfterChange(c)
-        val values = mapOf<String, Any>(
-            "authSignedOut" to c.authSignedOut, "authExpiresAt" to c.authExpiresAt, "authProcess" to c.authProcess,
+    private fun configurationValues(c: CollectorConfig, origin: String): Map<String, Any> = mapOf(
+            "configurationFormat" to LocalDataFormat.VERSION, "authSignedOut" to c.authSignedOut, "authExpiresAt" to c.authExpiresAt, "authProcess" to c.authProcess,
             "uiPageMode" to c.uiPageMode, "uiPageRules" to c.uiPageRules,
             "uploadGateEnabled" to c.uploadGate.enabled, "uploadGateText" to c.uploadGate.blockedText, "uploadGateFailure" to c.uploadGate.failureAction,
-            "contentEncryptionEnabled" to c.contentEncryptionEnabled, "uploadedRetentionDays" to c.uploadedRetentionDays,
+            "uploadedRetentionDays" to c.uploadedRetentionDays,
             "ocrMode" to c.ocrMode, "ocrAppModes" to c.ocrAppModes, "imageDedupeMode" to c.imageDedupeMode, "imageDedupeDiagnosticsEnabled" to c.imageDedupeDiagnosticsEnabled,
             "dataOrigin" to origin, "syncMode" to c.syncMode, "syncIntervalMinutes" to c.syncIntervalMinutes,
             "syncChargingOnly" to c.syncChargingOnly, "syncBatteryNotLow" to c.syncBatteryNotLow,
@@ -143,11 +149,17 @@ class Settings(private val context: Context) {
             "debugHttp" to c.debugHttp, "mode" to c.mode, "appCollectionRules" to c.appCollectionRules, "metadataEnabled" to c.metadataEnabled,
             "jpegQuality" to c.jpegQuality, "captureMaxSide" to c.captureMaxSide, "chargingOnly" to c.chargingOnly,
             "notificationCollectionEnabled" to c.notificationCollectionEnabled, "deviceEventCollectionEnabled" to c.deviceEventCollectionEnabled,
-            "ocrChargingOnly" to c.ocrChargingOnly, "mediaCollectionEnabled" to c.mediaCollectionEnabled, "screenCollectionEnabled" to c.screenCollectionEnabled, "batteryPauseBelowPct" to c.batteryPauseBelowPct,
+            "mediaCollectionEnabled" to c.mediaCollectionEnabled, "screenCollectionEnabled" to c.screenCollectionEnabled, "batteryPauseBelowPct" to c.batteryPauseBelowPct,
             "diagnosticsEnabled" to c.diagnosticsEnabled, "diagnosticsIntervalSeconds" to c.diagnosticsIntervalSeconds,
             "nsfwEnabled" to c.nsfw.enabled, "nsfwThreads" to c.nsfw.threads, "qwenTimeout" to c.nsfw.timeoutMs,
             "nsfwSource" to c.nsfw.source, "qwenCustomUrl" to c.nsfw.customUrl, "qwenPolicy" to c.nsfw.policy,
             "qwenMaxTokens" to c.nsfw.maxTokens, "qwenMaxSide" to c.nsfw.reviewMaxSide)
+
+    fun save(c: CollectorConfig, expected: CollectorConfig? = null, confirmCentralEndpoint: Boolean = false) = synchronized(Settings::class.java) {
+        if (expected != null && read() != expected) throw SettingsChangedFailure()
+        c.validate()
+        val origin = originAfterChange(c)
+        val values = configurationValues(c, origin)
         val committedValues = if (confirmCentralEndpoint) values + ("centralEndpoint" to c.server.trim().trimEnd('/')) else values
         val previous = committedValues.keys.associateWith { prefs.all[it] }
         fun write(items: Map<String, Any?>): Boolean {
@@ -185,11 +197,7 @@ class Settings(private val context: Context) {
         next.validateConnection(); save(next, confirmCentralEndpoint = true)
     }
     /** Sticky while records or prepared submissions exist, including after disconnecting. */
-    fun dataOrigin(): String {
-        if (prefs.contains("dataOrigin")) return prefs.getString("dataOrigin", "")!!
-        val old = read()
-        return if (prefs.contains("server") && old.server.isNotBlank()) old.server.trimEnd('/') else ""
-    }
+    fun dataOrigin(): String = requireNotNull(prefs.getString("dataOrigin", null)) { MoteI18n.text(LocalDataFormat.RESET_MESSAGE) }
     fun hasPendingData(): Boolean = context.fileArchives().pendingSync().count > 0 || context.localSources().sources().any { it.binaryFiles() && context.fileArchives().processingCount(it.id) > 0 } || context.queue().hasPendingConnectionWork() || BulkDedupeStore(context).quarantine().hasUnboundRecords() || QuickNotes.draft(context).read().prepared != null ||
         context.localSources().sources().any { (context.localSources().state(it.id).optJSONArray("pending")?.length() ?: 0) > 0 }
     private fun originAfterChange(next: CollectorConfig): String {
@@ -202,12 +210,6 @@ class Settings(private val context: Context) {
         }
         require(previous.isBlank() || next.server.isBlank() || previous == next.server.trimEnd('/')) { MoteI18n.text("待同步资料属于原节点，请先同步到原节点；清空连接不会解除资料绑定") }
         return previous.ifBlank { if (next.hasSyncConnection()) next.server.trimEnd('/') else "" }
-    }
-    fun ensureDataOrigin(config: CollectorConfig) {
-        if (!prefs.contains("dataOrigin")) {
-            val origin = if (config.hasSyncConnection()) config.server.trimEnd('/') else ""
-            if (!prefs.edit().putString("dataOrigin", origin).commit()) throw SettingsWriteFailure()
-        }
     }
     fun lastSyncDispatch(): Long = prefs.getLong("lastSyncDispatch", 0)
     fun syncDispatched(at: Long) { prefs.edit().putLong("lastSyncDispatch", at).apply() }
@@ -226,7 +228,7 @@ class Settings(private val context: Context) {
         private var cachedConfig: CollectorConfig? = null
         private var cachedCiphertext: String? = null
         private var cachedToken = ""
-        private val configurationKeys = setOf("authSignedOut", "authExpiresAt", "authProcess", "uiPageMode", "uiPageRules", "packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uploadedRetentionDays", "contentEncryptionEnabled", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "jsonlWindowMinutes", "localReview", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "nsfwEnabled", "nsfwSource", "nsfwThreads", "ocrAppModes", "ocrChargingOnly", "ocrMode", "qwenCustomUrl", "qwenMaxSide", "qwenMaxTokens", "qwenPolicy", "qwenTimeout", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
+        private val configurationKeys = setOf("configurationFormat", "dataOrigin", "authSignedOut", "authExpiresAt", "authProcess", "uiPageMode", "uiPageRules", "packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uploadedRetentionDays", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "jsonlWindowMinutes", "localReview", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "nsfwEnabled", "nsfwSource", "nsfwThreads", "ocrAppModes", "ocrMode", "qwenCustomUrl", "qwenMaxSide", "qwenMaxTokens", "qwenPolicy", "qwenTimeout", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
 
     }
     fun saveNsfw(value: NsfwConfig) {

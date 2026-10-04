@@ -7,7 +7,7 @@ import {privateDirectory,privateFile} from './private-storage.js';
 import {StoreError,type Store} from './store.js';
 import {prepareAsset} from './asset-work.js';
 
-export type Asset={hash:string;bytes:number;parts:number;format:'chunks'|'image-legacy'|'archive-legacy'};
+export type Asset={hash:string;bytes:number;parts:number;format:'chunks'};
 const hashOf=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
 const syncDirectory=(path:string)=>{const fd=openSync(path,'r');try{fsyncSync(fd);}finally{closeSync(fd);}};
 /** Authoritative bytes, deduplication, references and GC. Observations retain independent domain IDs. */
@@ -30,30 +30,23 @@ export class AssetStore {
   for(const [table,id,hash] of [
    ['file_versions',"'file:'||capture_id",'object_hash','chunks','0'],
    ['file_assets',"'artifact:'||artifact_id||':'||name",'object_hash','chunks','0'],
-   ['captures',"'capture:'||id",'blob_hash','image-legacy','0'],
-   ['archived_files',"'archive:'||id",'hash','archive-legacy','0'],
+   ['captures',"'capture:'||id",'blob_hash'],
+   ['archived_files',"'archive:'||id",'hash'],
   ]){
-   if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)||db.prepare('SELECT 1 FROM settings WHERE key=?').get('asset-refs-v1:'+table))continue;
+   if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table))continue;
    const qualify=(prefix:string)=>id.replace(/\b(capture_id|artifact_id|name|id)\b/g,`${prefix}.$1`);
    const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
    try{
-    db.exec(`INSERT OR REPLACE INTO asset_references SELECT ${id},${hash} FROM ${table} WHERE ${hash} IS NOT NULL;
-     CREATE TRIGGER asset_${table}_insert AFTER INSERT ON ${table} WHEN new.${hash} IS NOT NULL BEGIN INSERT OR REPLACE INTO asset_references VALUES(${qualify('new')},new.${hash}); END;
-     CREATE TRIGGER asset_${table}_delete AFTER DELETE ON ${table} BEGIN DELETE FROM asset_references WHERE owner=${qualify('old')}; END;
-     CREATE TRIGGER asset_${table}_update AFTER UPDATE OF ${hash} ON ${table} BEGIN DELETE FROM asset_references WHERE owner=${qualify('old')}; INSERT OR REPLACE INTO asset_references SELECT ${qualify('new')},new.${hash} WHERE new.${hash} IS NOT NULL; END;`);
-    db.prepare('INSERT INTO settings VALUES(?,?)').run('asset-refs-v1:'+table,'1');if(own)db.exec('COMMIT');
+    db.exec(`CREATE TRIGGER IF NOT EXISTS asset_${table}_insert AFTER INSERT ON ${table} WHEN new.${hash} IS NOT NULL BEGIN INSERT OR REPLACE INTO asset_references VALUES(${qualify('new')},new.${hash}); END;
+     CREATE TRIGGER IF NOT EXISTS asset_${table}_delete AFTER DELETE ON ${table} BEGIN DELETE FROM asset_references WHERE owner=${qualify('old')}; END;
+     CREATE TRIGGER IF NOT EXISTS asset_${table}_update AFTER UPDATE OF ${hash} ON ${table} BEGIN DELETE FROM asset_references WHERE owner=${qualify('old')}; INSERT OR REPLACE INTO asset_references SELECT ${qualify('new')},new.${hash} WHERE new.${hash} IS NOT NULL; END;`);
+    if(own)db.exec('COMMIT');
    }catch(error){if(own)db.exec('ROLLBACK');throw error;}
   }
-  // Metadata migration preserves all IDs/hashes. Legacy readers remain until each object is rewritten.
-  for(const [table,format,parts] of [['file_objects','chunks','parts'],['blobs','image-legacy','0'],['file_blobs','archive-legacy','0']]){
-   if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)&&!db.prepare('SELECT 1 FROM settings WHERE key=?').get('asset-catalog-v1:'+table)){
-    db.exec(`INSERT OR IGNORE INTO assets SELECT hash,bytes,${parts},'${format}' FROM ${table}`);
-    db.prepare('INSERT INTO settings VALUES(?,?)').run('asset-catalog-v1:'+table,'1');
-   }
-  }
+
  }
  private directories(){privateDirectory(this.store.directory);privateDirectory(join(this.store.directory,'files'));privateDirectory(this.directory);}
- get(hash:string):Asset{if(!/^[a-f0-9]{64}$/.test(hash))throw new StoreError('Invalid asset hash');const row=this.store.db.prepare('SELECT * FROM assets WHERE hash=?').get(hash);if(!row)throw new StoreError('Asset unavailable',404);if(!['chunks','image-legacy','archive-legacy'].includes(String(row.format))||!Number.isSafeInteger(row.bytes)||Number(row.bytes)<0||Number(row.bytes)>FILE_MAX_BYTES||!Number.isSafeInteger(row.parts)||Number(row.parts)<0||Number(row.parts)>128)throw new StoreError('Invalid asset metadata',500);return row as Asset;}
+ get(hash:string):Asset{if(!/^[a-f0-9]{64}$/.test(hash))throw new StoreError('Invalid asset hash');const row=this.store.db.prepare('SELECT * FROM assets WHERE hash=?').get(hash);if(!row)throw new StoreError('Asset unavailable',404);if(row.format!=='chunks'||!Number.isSafeInteger(row.bytes)||Number(row.bytes)<0||Number(row.bytes)>FILE_MAX_BYTES||!Number.isSafeInteger(row.parts)||Number(row.parts)<0||Number(row.parts)>128)throw new StoreError('Invalid asset metadata',500);return row as Asset;}
  hold(hash:string){const id=randomUUID();this.store.db.prepare('INSERT INTO asset_pins VALUES(?,?,?)').run(id,hash,Date.now()+86400000);return ()=>{this.store.db.prepare('DELETE FROM asset_pins WHERE id=?').run(id);};}
  put(bytes:Buffer){return this.putParts([bytes],bytes.length,hashOf(bytes));}
  /** Prepare immutable upload parts outside the event loop and outside SQLite.
@@ -72,7 +65,7 @@ export class AssetStore {
    privateDirectory(staging);
    const encryption=this.store.contentEncryption;
    const enabled=encryption.enabled;
-   const result=await prepareAsset({directory,staging,destinationRoot:this.directory,hash:expectedHash,bytes:expectedBytes,partBytes:FILE_PART_BYTES,parts,encryption:{enabled,legacyEncrypted:encryption.legacyEncrypted,key:encryption.key?.toString('hex')}},signal);
+   const result=await prepareAsset({directory,staging,destinationRoot:this.directory,hash:expectedHash,bytes:expectedBytes,partBytes:FILE_PART_BYTES,parts,encryption:{enabled,key:encryption.key?.toString('hex')}},signal);
    signal?.throwIfAborted();
    const actualHash=result.hash;if(!/^[a-f0-9]{64}$/.test(actualHash)||expectedHash&&actualHash!==expectedHash)throw new StoreError('Asset checksum mismatch',409);
    if(actualHash!==initialHash){const releaseInitial=release;release=this.hold(actualHash);releaseInitial();}
@@ -130,28 +123,17 @@ export class AssetStore {
    return {hash,bytes:size,parts:part,format:'chunks',release:release!};
   }finally{rmSync(staging,{recursive:true,force:true});}
  }
- private legacy(asset:Asset){
-  this.directories();privateDirectory(this.store.blobsDir);
-  if(asset.format==='archive-legacy')return this.store.contentEncryption.read(join(this.store.directory,'files',asset.hash));
-  const path=join(this.store.blobsDir,asset.hash);privateFile(path);const raw=readFileSync(path);
-  if(raw.subarray(0,5).toString()!=='MOTE1')return raw;
-  const key=this.store.contentEncryption.key;if(!key)throw new StoreError('Encrypted asset requires its original key',500);
-  const decipher=createDecipheriv('aes-256-gcm',key,raw.subarray(5,17));decipher.setAuthTag(raw.subarray(17,33));return Buffer.concat([decipher.update(raw.subarray(33)),decipher.final()]);
- }
- readLegacyImage(hash:string){if(!/^[a-f0-9]{64}$/.test(hash))throw new StoreError('Invalid asset hash');const bytes=this.legacy({hash,bytes:0,parts:0,format:'image-legacy'});if(hashOf(bytes)!==hash)throw new StoreError('Asset checksum mismatch',500);return bytes;}
  private part(asset:Asset,index:number){this.directories();const parent=join(this.directory,asset.hash);privateDirectory(parent);const bytes=this.store.contentEncryption.read(join(parent,String(index)));const expected=this.store.db.prepare('SELECT checksum FROM asset_parts WHERE hash=? AND part=?').get(asset.hash,index);if(expected&&hashOf(bytes)!==expected.checksum)throw new StoreError('Asset checksum mismatch',500);return bytes;}
- verify(asset:Asset){const digest=createHash('sha256');let total=0;for(const bytes of asset.format==='chunks'?this.parts(asset):[this.legacy(asset)]){total+=bytes.length;digest.update(bytes);}if(total!==asset.bytes||digest.digest('hex')!==asset.hash)throw new StoreError('Asset checksum mismatch',500);}
+ verify(asset:Asset){const digest=createHash('sha256');let total=0;for(const bytes of this.parts(asset)){total+=bytes.length;digest.update(bytes);}if(total!==asset.bytes||digest.digest('hex')!==asset.hash)throw new StoreError('Asset checksum mismatch',500);}
  private *parts(asset:Asset){for(let index=0;index<asset.parts;index++){const bytes=this.part(asset,index);if(bytes.length!==Math.min(FILE_PART_BYTES,asset.bytes-index*FILE_PART_BYTES))throw new StoreError('Asset part size mismatch',500);yield bytes;}}
  *bytes(hash:string,start=0,end?:number):Generator<Buffer>{
   const asset=this.get(hash);end??=asset.bytes-1;
   if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end>=asset.bytes||start>end){if(asset.bytes===0&&start===0)return;throw new StoreError('Invalid asset range',416);}
   const release=this.hold(hash);
-  try{if(asset.format!=='chunks'){const bytes=this.legacy(asset);if(bytes.length!==asset.bytes||hashOf(bytes)!==hash)throw new StoreError('Asset checksum mismatch',500);yield bytes.subarray(start,end+1);return;}
-   for(let part=Math.floor(start/FILE_PART_BYTES);part<=Math.floor(end/FILE_PART_BYTES);part++){const bytes=this.part(asset,part);yield bytes.subarray(Math.max(0,start-part*FILE_PART_BYTES),Math.min(bytes.length,end-part*FILE_PART_BYTES+1));}
+  try{for(let part=Math.floor(start/FILE_PART_BYTES);part<=Math.floor(end/FILE_PART_BYTES);part++){const bytes=this.part(asset,part);yield bytes.subarray(Math.max(0,start-part*FILE_PART_BYTES),Math.min(bytes.length,end-part*FILE_PART_BYTES+1));}
   }finally{release();}
  }
  read(hash:string){const asset=this.get(hash),bytes=Buffer.concat([...this.bytes(hash)],asset.bytes);if(hashOf(bytes)!==hash)throw new StoreError('Asset checksum mismatch',500);return bytes;}
- migrate(hash:string){const asset=this.get(hash);if(asset.format==='chunks')return asset;const migrated=this.putParts(this.bytes(hash),asset.bytes,hash);migrated.release();return this.get(hash);}
  sweep(now=Date.now()){
   this.directories();privateDirectory(this.store.blobsDir);
   const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');

@@ -21,10 +21,10 @@ const reasoningNames = {auto: moteText("由模型决定（推荐）"), off: mote
 const genericReasoningEfforts=['auto','off','low','high','max'] as const;
 interface EditorState {name:string;api: Api; snapshot: ModelSettingsView; latest: ModelSettingsView; draft: ModelSettingsDraft}
 
-export function ModelSettingsEditor({api, revision, onApplied, profileId='default'}: {api: Api; revision: number; onApplied: () => void;profileId?:string}) {
-  const endpoint=profileId==='default'?'/api/model-settings':`/api/model-settings/profiles/${encodeURIComponent(profileId)}`;
-  const profileView=(view:ModelSettingsView):ModelSettingsView=>{const profile=view.profiles?.find(p=>p.id===profileId);if(profileId!=='default'&&!profile)throw new Error(moteText("模型配置已被删除，请重新选择。"));return {...view,settings:profile?.settings??view.settings};};
-  const profileName=(view:ModelSettingsView)=>view.profiles?.find(p=>p.id===profileId)?.name??moteText("默认配置");
+export function ModelSettingsEditor({api, revision, onApplied, profileId}: {api: Api; revision: number; onApplied: () => void;profileId?:string}) {
+  const endpoint=profileId===undefined?'/api/model-settings':`/api/model-settings/profiles/${encodeURIComponent(profileId)}`;
+  const profileView=(view:ModelSettingsView):ModelSettingsView=>{const profile=view.profiles.find(p=>p.id===profileId);if(profileId!==undefined&&!profile)throw new Error(moteText("模型配置已被删除，请重新选择。"));return {...view,settings:profile?.settings??view.settings};};
+  const profileName=(view:ModelSettingsView)=>view.profiles.find(p=>p.id===profileId)?.name??moteText("默认配置");
   const [state, setState] = useState<EditorState>();
   const [loading, setLoading] = useState(true), [operation, setOperation] = useState<'save' | 'test' | 'restore'>();
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [conflict, setConflict] = useState(false);
@@ -68,7 +68,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
       });
       setError('');
     }).catch(e => {
-      if (!controller.signal.aborted && requestEpoch === epoch.current) {if(e instanceof ApiError&&[401,403,404,410].includes(e.status))setState(undefined);setError(e instanceof ApiError && e.status === 404 ? moteText("此中央节点尚不支持页面模型配置，请先升级中央节点。") : errorMessage(e));}
+      if (!controller.signal.aborted && requestEpoch === epoch.current) {if(e instanceof ApiError&&[401,403,404,410].includes(e.status))setState(undefined);setError(errorMessage(e));}
     }).finally(() => { if (!controller.signal.aborted && requestEpoch === epoch.current) setLoading(false); });
     return () => controller.abort();
   }, [api, revision, reload]);
@@ -102,7 +102,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
     }
     let body: unknown;
     try {
-      body = kind === 'restore' ? {revision: active.snapshot.revision} : {...modelSettingsRequest(active.snapshot, active.draft),...(kind==='save'&&profileId!=='default'?{name:active.name.trim()}: {})};
+      body = kind === 'restore' ? {revision: active.snapshot.revision} : {...modelSettingsRequest(active.snapshot, active.draft),...(kind==='save'&&profileId!==undefined?{name:active.name.trim()}: {})};
       if (kind === 'test' && !active.draft.model.trim()) throw new Error(moteText("填写模型名称后才能测试连接。"));
     } catch (e) { setError(errorMessage(e)); return; }
     const controller = new AbortController(), requestEpoch = ++epoch.current;
@@ -120,7 +120,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
         setState({api, name:profileName(snapshot), snapshot, latest: snapshot, draft: createModelDraft(snapshot.settings)});
         setRestoreReview(false);
         setNotice(kind === 'restore' ? moteText("默认项已恢复部署配置，功能分配保持不变。") : moteText("已保存。选择此配置的新请求将立即使用这些设置。"));
-        const agentTimeoutValues=[snapshot.settings.agentTimeoutMs,...(snapshot.profiles??[]).map(p=>p.settings.agentTimeoutMs)],agentTimeouts=agentTimeoutValues.filter((value):value is number=>value!==null);
+        const agentTimeoutValues=[snapshot.settings.agentTimeoutMs,...snapshot.profiles.map(p=>p.settings.agentTimeoutMs)],agentTimeouts=agentTimeoutValues.filter((value):value is number=>value!==null);
         api.setAgentTimeout(agentTimeoutValues.some(value=>value===null)?null:agentTimeouts.length?Math.max(...agentTimeouts):null);
         resources(api).invalidate(key=>key.startsWith('/api/model-settings'));
         onApplied();
@@ -150,7 +150,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
       {active && draft && <form onSubmit={e => {e.preventDefault(); void run('save');}}>
         <fieldset className="model-settings-fields" disabled={busy}>
           <div className="preference-grid">
-            {profileId!=='default'&&<label className="preference-field">{moteText("预设名称")}<input aria-label={moteText("预设名称")} maxLength={100} required value={active.name} onChange={e=>setState({...active,name:e.target.value})}/></label>}
+            {profileId!==undefined&&<label className="preference-field">{moteText("预设名称")}<input aria-label={moteText("预设名称")} maxLength={100} required value={active.name} onChange={e=>setState({...active,name:e.target.value})}/></label>}
             <label className="preference-field">{moteText("服务商类型")}<select aria-label={moteText("服务商类型")} value={draft.provider} onChange={e => {
               const next = MODEL_PROVIDER_PRESETS.find(p => p.id === e.target.value);
               if (next) change({provider: next.id, ...(next.id !== 'custom' ? {baseUrl: next.baseUrl, protocol: next.protocol, reasoningEffort: next.reasoningEffort ?? 'auto', allowUnauthenticatedLocal: next.allowUnauthenticatedLocal ?? false,...(next.protocol==='codex-app-server'?{apiKeyAction:'clear' as const,apiKey:'',headersAction:'clear' as const,headers:'',extraBodyAction:'clear' as const,extraBody:''}:{})} : {})});
@@ -207,7 +207,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
         [moteText("输出上限 / 超时"), saved.protocol==='codex-app-server'?moteText("Codex 管理输出；Agent 总运行超时 {0}", saved.agentTimeoutMs===null?moteText("未设置"):saved.agentTimeoutMs/1000+' 秒'):moteText("{0}；单次模型请求 {1} 秒；Agent 总运行 {2} 秒", saved.maxTokens+' tokens', saved.modelRequestTimeoutMs===null?moteText("未设置"):saved.modelRequestTimeoutMs/1000, saved.agentTimeoutMs===null?moteText("未设置"):saved.agentTimeoutMs/1000)],
         ['API key', saved.apiKeyConfigured ? moteText("已配置") : moteText("未配置")], [moteText("自定义请求头"), saved.headersConfigured ? moteText("已配置") : moteText("未配置")], [moteText("高级请求参数"), saved.extraBodyConfigured ? moteText("已配置") : moteText("未配置")],
       ] as const).map(([label, value]) => <div className="effective-field" key={label}><div><strong>{label}</strong></div><div>{value}</div></div>)}
-      {profileId==='default'&&active.latest.source === 'saved' && <div className="model-restore"><button className="button subtle" disabled={busy} onClick={() => setRestoreReview(v => !v)}><RotateCcw size={15}/>{moteText("恢复部署配置")}</button>{restoreReview && <div className="preference-note"><p>{moteText("将默认配置恢复为中央节点的启动环境或部署配置，其他配置和功能分配保留。当前未保存的草稿也会清空；不会修改部署文件。")}</p><button className="button subtle" disabled={busy} onClick={() => void run('restore')}>{operation === 'restore' ? moteText("正在恢复…") : moteText("确认恢复部署配置")}</button></div>}</div>}
+      {profileId===undefined&&active.latest.source === 'saved' && <div className="model-restore"><button className="button subtle" disabled={busy} onClick={() => setRestoreReview(v => !v)}><RotateCcw size={15}/>{moteText("恢复部署配置")}</button>{restoreReview && <div className="preference-note"><p>{moteText("将默认配置恢复为中央节点的启动环境或部署配置，其他配置和功能分配保留。当前未保存的草稿也会清空；不会修改部署文件。")}</p><button className="button subtle" disabled={busy} onClick={() => void run('restore')}>{operation === 'restore' ? moteText("正在恢复…") : moteText("确认恢复部署配置")}</button></div>}</div>}
     </section>}
   </>;
 }

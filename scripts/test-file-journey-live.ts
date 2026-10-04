@@ -94,7 +94,7 @@ try{
   const view=(await request('GET','/api/file-processing')).json();
   if(priorSettings)assert.equal(asr+'/transcribe',priorSettings.localEndpoint,'Keep worker identity to reuse the saved extraction');
   else await request('PUT','/api/file-processing',{revision:view.revision,settings:{...view.settings,
-    enabled:true,summarize:false,semanticTurns:false,timeoutMs:600000,
+    enabled:true,summarize:false,semanticTurns:false,requestTimeoutMs:600000,
     ...(ocr?{imageProcessor:'image.http',imageEndpoint:ocr+'/ocr',apiKey:workerToken}:{}),
     ...(asr?{audioProcessor,localEndpoint:asr+'/transcribe',localWorkerApiKey:workerToken}:{}),
   }});

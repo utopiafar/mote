@@ -11,15 +11,16 @@ const { defaultConfig } = require('../dist/config');
 const { connectionUri } = require('@mote/shared/connection');
 const QRCode = require('qrcode');
 const profile = mkdtempSync(join(tmpdir(), 'mote-connection-fixture-'));
-app.setPath('userData', profile); process.env.MOTE_PROFILE = 'legacy';
+app.setPath('userData', profile); process.env.MOTE_PROFILE = 'default';
 for (const key of ['MOTE_URL', 'MOTE_TOKEN', 'MOTE_ENV_FILE']) delete process.env[key];
 // Test-only reversible adapter keeps this fixture independent of real macOS Keychain entries.
 safeStorage.isEncryptionAvailable = () => true;
 safeStorage.encryptString = value => Buffer.from('fixture:' + Buffer.from(value).toString('base64'));
 safeStorage.decryptString = value => Buffer.from(value.toString().slice(8), 'base64').toString();
-const oldToken = 'old-synthetic-owner-token-' + 'o'.repeat(32), token = 'new-synthetic-collector-token-' + 'c'.repeat(32), owner = 'separate-synthetic-admin-token-' + 'a'.repeat(32);
-const config = { ...defaultConfig(), syncMode: 'realtime', packedUpload: false, deviceName: 'Synthetic onboarding Mac', serverUrl: 'http://127.0.0.1:1', excludedAppIds: ['dev.synthetic.private'], masks: [{ x: 0, y: 0, width: 0.1, height: 0.1 }], ocrEnabled: false, metadataEnabled: false };
-writeFileSync(join(profile, 'config.json'), JSON.stringify({ version: 1, config, encryptedToken: safeStorage.encryptString(oldToken).toString('base64') }));
+const oldToken = 'old-synthetic-owner-token-' + 'o'.repeat(32), token = 'new-synthetic-owner-token-' + 'c'.repeat(32), owner = 'separate-synthetic-admin-token-' + 'a'.repeat(32);
+const config = { ...defaultConfig(), syncMode: 'realtime', packedUpload: false, deviceName: 'Synthetic onboarding Mac', serverUrl: 'http://127.0.0.1:1', appCollectionRules: {'dev.synthetic.private': 'off'}, masks: [{ x: 0, y: 0, width: 0.1, height: 0.1 }], metadataEnabled: false };
+writeFileSync(join(profile, 'config.json'), JSON.stringify({ version:3, config, encryptedToken: safeStorage.encryptString(oldToken).toString('base64') }));
+writeFileSync(join(profile,'storage-format.json'),JSON.stringify({version:3}),{mode:0o600});
 mkdirSync(join(profile, 'models')); writeFileSync(join(profile, 'models', 'preserved-fixture'), 'synthetic-model-marker');
 let releaseFirstRedeem, releaseSecondRedeem, releaseImport, delayImport = false, selected, origin, invitation, failRedeem = true, requests = 0, ownerApiHeaders = [], finished = false, responseToken = token, uploadsAllowed = false; const uploadBodies = [];
 const server = createServer(async (req, res) => {
@@ -31,14 +32,14 @@ const server = createServer(async (req, res) => {
     if (requests === 1) await new Promise(resolve => { releaseFirstRedeem = resolve; });
     if (requests === 2) await new Promise(resolve => { releaseSecondRedeem = resolve; });
     if (failRedeem) { res.writeHead(503); res.end('{"ignored":"provider body"}'); return; }
-    res.end(JSON.stringify({ serverUrl: origin, token: responseToken, credentialId: 'fixture-collector', scope: 'collector' })); return;
+    res.end(JSON.stringify({ serverUrl: origin, token: responseToken, credentialId: 'fixture-device-owner', scope: 'owner' })); return;
   }
   if (req.url === '/api/connections/self') {
     const isOwner = req.headers.authorization === 'Bearer ' + owner;
     if (!isOwner && req.headers.authorization !== 'Bearer ' + responseToken) { res.writeHead(401); res.end('{}'); return; }
-    res.end(JSON.stringify({ credential: { id: isOwner ? 'fixture-owner' : 'fixture-collector', scope: isOwner ? 'owner' : 'collector', label: 'Synthetic', ...(!isOwner ? { deviceId: config.deviceId } : {}) }, node: { version: 'synthetic', profile: 'test' }, capabilities: { ingest: true, ingressVersion: 2, ownSources: true, archiveRead: isOwner } })); return;
+    res.end(JSON.stringify({ credential: { id: isOwner ? 'fixture-owner' : 'fixture-device-owner', scope: 'owner', label: 'Synthetic', ...(!isOwner ? { deviceId: config.deviceId } : {}) }, node: { version: 'synthetic', profile: 'test', protocol:{min:1,max:1} }, capabilities: { ingest: true, ingressVersion: 2, ownSources: true, archiveRead: true } })); return;
   }
-  if (req.url === '/api/captures') { const body = JSON.parse(Buffer.concat(chunks).toString()); uploadBodies.push(body); if (!uploadsAllowed || req.headers.authorization !== 'Bearer ' + responseToken) { res.writeHead(401); res.end('{}'); return; } res.end(JSON.stringify({ id: body.id })); return; }
+  if (req.url === '/api/captures') { const body = JSON.parse(Buffer.concat(chunks).toString()); uploadBodies.push(body); if (!uploadsAllowed || req.headers.authorization !== 'Bearer ' + responseToken) { res.writeHead(401); res.end('{}'); return; } res.end(JSON.stringify({ id: body.id,duplicate:false,receipt:{version:2,id:body.id,kind:'capture',state:'received',duplicate:false} })); return; }
   if (req.url === '/api/fixture-owner') { ownerApiHeaders.push(req.headers.authorization); res.end('{}'); return; }
   if (req.url === '/') { res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><title>Synthetic owner UI</title><p>Generated central fixture</p><script>fetch("/api/fixture-owner")</script>'); return; }
   res.writeHead(404); res.end('{}');
@@ -90,8 +91,8 @@ app.on('browser-window-created', (_event, window) => {
       await js(`document.querySelector('[data-nav="connection"]').click()`);
       assert(await js('document.querySelector("#connection-confirmation").hidden'));
       releaseSecondRedeem();
-      await until(async () => (await js('window.mote.status()')).config.credentialScope === 'collector');
-      const paired = await js('window.mote.status()'); assert.equal(paired.config.serverUrl, origin); assert.equal(paired.config.deviceId, original.deviceId); assert.deepEqual(paired.config.masks, original.masks); assert.deepEqual(paired.config.excludedAppIds, original.excludedAppIds); assert.equal(paired.running, false);
+      await until(async () => (await js('window.mote.status()')).config.credentialScope === 'owner');
+      const paired = await js('window.mote.status()'); assert.equal(paired.config.serverUrl, origin); assert.equal(paired.config.deviceId, original.deviceId); assert.deepEqual(paired.config.masks, original.masks); assert.deepEqual(paired.config.appCollectionRules, original.appCollectionRules); assert.equal(paired.running, false);
       await until(() => js('!document.querySelector("#connection-preview").disabled'));
       assert.equal(await js(`document.querySelector('#server-url').value`), origin);
       assert.equal(await js(`document.querySelector('#token').value`), '');
@@ -107,11 +108,11 @@ app.on('browser-window-created', (_event, window) => {
       await until(() => js('document.querySelector("#server-url").value === ' + JSON.stringify(origin)));
       await js(`document.querySelector('[data-nav="connection"]').click()`);
       assert.equal(await js(`document.querySelector('#server-url').value`), origin, 'Reopening uses the paired URL after another settings save');
-      assert.equal((await js('window.mote.testConnection()')).identity.credential.scope, 'collector');
-      // The central UI owns its browser session now; the collector token is never
+      assert.equal((await js('window.mote.testConnection()')).identity.credential.scope, 'owner');
+      // The central UI owns its browser session now; the client credential is never
       // passed to Chrome or the default browser. Keep this fixture in Electron so
       // it cannot launch a real browser during CI, and verify the renderer contract.
-      assert(await js('document.body.innerText.includes("中央仓库将在 Chrome 打开")'));
+      assert(await js('document.body.innerText.includes("中央仓库将在浏览器中打开")'));
       assert.equal(await js('document.querySelector("#connection-owner-token")'), null);
       assert(!readFileSync(join(profile, 'config.json'), 'utf8').includes(owner)); assert.equal(await readFile(join(profile, 'models', 'preserved-fixture'), 'utf8'), 'synthetic-model-marker');
       console.log('Connection fixture: browser-owned central login contract; recording generated UI');
@@ -124,7 +125,7 @@ app.on('browser-window-created', (_event, window) => {
       await assert.rejects(js('window.mote.confirmConnection(' + JSON.stringify(preview.id) + ',' + JSON.stringify(preview.serverUrl) + ')'), /待上传/); assert.equal(requests, 2);
       // Repeat through the actual native confirmation UI with a revoked credential and a durable note.
       const previousUpload = structuredClone(uploadBodies[0]); assert(previousUpload);
-      responseToken = 'replacement-synthetic-collector-' + 'r'.repeat(32);
+      responseToken = 'replacement-synthetic-owner-' + 'r'.repeat(32);
       await js('document.querySelector("#connection-input").value=' + JSON.stringify(JSON.stringify(invitation)) + '; document.querySelector("#connection-preview").click()');
       await until(() => js('!document.querySelector("#connection-confirmation").hidden'));
       assert((await js('document.querySelector("#connection-resume").textContent')).includes('待传截图、随手记和来源版本'));
@@ -135,7 +136,7 @@ app.on('browser-window-created', (_event, window) => {
       await until(() => js('!document.querySelector("#connection-preview").disabled'));
       await js('window.mote.retry()'); await until(async () => (await js('window.mote.status()')).queueDepth === 0);
       assert.equal(requests, 3); assert.deepEqual(uploadBodies.at(-1), previousUpload);
-      console.log(JSON.stringify({ ok: true, fixtureOnly: true, jsonAndUriPreview: true, nativeVisionQrImport: true, explicitOriginRequired: true, connectingCannotPretendCancel: true, failedPairRetainsConfig: true, abandonedPreviewDiscarded: true, pairingSurvivesNavigation: true, newConnectionSurvivesLaterSettingsSaveAndReload: true, secureStoreAdapterUsed: true, existingDevicePrivacyAndModelPreserved: true, centralLoginOwnedByBrowser: true, collectorTokenNotExposedToBrowser: true, pendingNoteBlocksOtherOrigin: true, sameOriginExplicitReauthorizationResumesNote: true, screenshotCaptureStayedStopped: true, realKeychainUntouched: true }));
+      console.log(JSON.stringify({ ok: true, fixtureOnly: true, jsonAndUriPreview: true, nativeVisionQrImport: true, explicitOriginRequired: true, connectingCannotPretendCancel: true, failedPairRetainsConfig: true, abandonedPreviewDiscarded: true, pairingSurvivesNavigation: true, newConnectionSurvivesLaterSettingsSaveAndReload: true, secureStoreAdapterUsed: true, existingDevicePrivacyAndModelPreserved: true, centralLoginOwnedByBrowser: true, clientCredentialNotExposedToBrowser: true, pendingNoteBlocksOtherOrigin: true, sameOriginExplicitReauthorizationResumesNote: true, screenshotCaptureStayedStopped: true, realKeychainUntouched: true }));
       finished = true; clearTimeout(timeout); app.quit();
     })().catch(error => { process.stderr.write('Connection fixture failed: ' + error.stack + '\n'); app.exit(1); });
   });

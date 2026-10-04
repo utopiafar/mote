@@ -239,7 +239,6 @@ class MediaCollectionService : NotificationListenerService() {
             .put("metadata", CollectorMetadata.snapshot(this, "media_session", 30_000, activityOnly)
                 .put("media", MediaPrivacy.snapshot(status, sessions, Instant.ofEpochMilli(wall).toString())))
         one?.let { event.put("appId", it.getString("appId")).put("appName", it.getString("appName")) }
-        settings.ensureDataOrigin(c)
         queue().enqueue(event, null, c.maxQueueMiB * 1024L * 1024L)
         UploadWorker.schedule(this, c)
     }

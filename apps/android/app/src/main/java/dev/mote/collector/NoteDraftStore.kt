@@ -11,12 +11,6 @@ data class NoteDraft(val text: String = "", val mood: String = "", val prepared:
 class NoteDraftStore(private val directory: File, private val cipher: ByteCipher) {
     private val file = File(directory, "draft.enc")
     init { directory.mkdirs() }
-    fun migrateLegacyContent(shouldStop: () -> Boolean = { false }, onProgress: (Int, Int) -> Unit = { _, _ -> }): Int = synchronized(lock) {
-        if (shouldStop()) return@synchronized 0
-        val changed = LocalContentMigration.migrate(file, cipher) { read() }
-        onProgress(1, 1)
-        if (changed) 1 else 0
-    }
     fun read(): NoteDraft = synchronized(lock) {
         if (!file.exists()) return@synchronized NoteDraft()
         val json = JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8))
@@ -46,10 +40,6 @@ class NoteDraftStore(private val directory: File, private val cipher: ByteCipher
     }
     fun clear() = synchronized(lock) { write(NoteDraft()) }
     /** Preserve editable text while dropping an old prepared capture ID. */
-    fun clearPreparedForProtocolUpgrade() = synchronized(lock) {
-        val draft = read()
-        if (draft.prepared != null || draft.server != null) write(NoteDraft(draft.text, draft.mood))
-    }
     private fun write(draft: NoteDraft) {
         val value = JSONObject().put("text", draft.text).put("mood", draft.mood).put("prepared", draft.prepared).put("server", draft.server)
         val temp = File(directory, "${UUID.randomUUID()}.tmp")

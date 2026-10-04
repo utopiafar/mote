@@ -14,7 +14,7 @@ import { execute, repository } from './profile-lib.mjs';
 const keys = generateKeyPairSync('rsa', { modulusLength: 3072 });
 const publicKey = keys.publicKey.export({ format: 'pem', type: 'spki' }).toString();
 function signedManifest(bytes, version = '0.5.0') {
-  const manifest = { schemaVersion: 1, version, channel: 'stable', repository: 'utopiafar/mote', tag: `v${version}`, notesUrl: `https://github.com/utopiafar/mote/releases/tag/v${version}`, publishedAt: new Date().toISOString(), assets: [{ component: 'server', platform: 'source', arch: 'all', format: 'tar.gz', name: `mote-server-${version}.tar.gz`, url: `https://github.com/utopiafar/mote/releases/download/v${version}/mote-server-${version}.tar.gz`, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }], images: [{ component: 'server', image: 'ghcr.io/utopiafar/mote@sha256:' + 'a'.repeat(64) }] };
+  const manifest = { schemaVersion: 1, component:'central', version, channel: 'stable', repository: 'utopiafar/mote', tag: `central-v${version}`, notesUrl: `https://github.com/utopiafar/mote/releases/tag/central-v${version}`, publishedAt: new Date().toISOString(), assets: [{ component: 'server', platform: 'source', arch: 'all', format: 'tar.gz', name: `mote-server-${version}.tar.gz`, url: `https://github.com/utopiafar/mote/releases/download/central-v${version}/mote-server-${version}.tar.gz`, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }], images: [{ component: 'server', image: 'ghcr.io/utopiafar/mote@sha256:' + 'a'.repeat(64) }] };
   const payload = Buffer.from(JSON.stringify(manifest)), envelope = JSON.stringify({ schemaVersion: 1, keyId: 'synthetic-release-key', payload: payload.toString('base64'), signature: sign('RSA-SHA256', payload, keys.privateKey).toString('base64') });
   return { manifest: verifyReleaseEnvelope(envelope, { publicKey, keyId: 'synthetic-release-key' }), envelope };
 }
@@ -37,9 +37,9 @@ test('ordinary Docker profile commands work in a clean checkout without compiled
   assert.equal(configured.profile, 'synthetic-clean-checkout');
 }));
 test('signed release and verified asset prepare a separate source checkout without changing profile data', async () => fixture(async directory => {
-  const bytes = sourceTar(), signed = signedManifest(bytes), active = join(directory, 'active'); await mkdir(active); await writeFile(join(active, 'package.json'), JSON.stringify({ version: '0.4.0' }));
+  const bytes = sourceTar(), signed = signedManifest(bytes), active = join(directory, 'active'); await mkdir(join(active,'apps/server'),{recursive:true}); await writeFile(join(active, 'apps/server/package.json'), JSON.stringify({ name:'@mote/server',version: '0.4.0' }));
   const p = { directory, meta: { runtime: 'native', release: active }, env: { MOTE_TOKEN: 'synthetic-private-credential' } };
-  const checked = await checkProfileUpdate(p, { checkRelease: options => checkRelease({ ...options, publicKey, keyId: 'synthetic-release-key', fetch: async url => new Response(String(url).includes('api.github.com') ? JSON.stringify([{ tag_name: 'v0.5.0', draft: false, prerelease: false }]) : signed.envelope) }) });
+  const checked = await checkProfileUpdate(p, { checkRelease: options => checkRelease({ ...options, publicKey, keyId: 'synthetic-release-key', fetch: async url => new Response(String(url).includes('api.github.com') ? JSON.stringify([{ tag_name: 'central-v0.5.0', draft: false, prerelease: false }]) : signed.envelope) }) });
   assert.equal(checked.available, true);
   const result = await prepareProfileUpdate(p, checked, { downloadReleaseAsset: (asset, path) => downloadReleaseAsset(asset, path, { fetch: async () => new Response(bytes) }), build });
   assert.notEqual(result.release, active); assert.equal(result.releaseVersion, '0.5.0'); assert.equal(p.meta.release, active);
@@ -65,12 +65,12 @@ test('central source identity and stopped installed version use the server packa
   await assert.rejects(prepareProfileUpdate(p,{manifest:wrongManifest,currentVersion:'0.4.0'},{downloadReleaseAsset:(asset,path)=>downloadReleaseAsset(asset,path,{fetch:async()=>new Response(wrong)}),build:async()=>{built=true;}}),/package identity/); assert.equal(built,false);
   await assert.rejects(prepareProfileUpdate(p,{manifest:{...manifest,component:'desktop'},currentVersion:'0.4.0'}),/central release/);
 }));
-test('legacy source archives remain installable while grouped archives require the central package', async () => fixture(async directory => {
-  const bytes=sourceTar('0.5.0', [], '0.5.0', '0.5.0', false),{manifest}=signedManifest(bytes),p={directory,meta:{runtime:'native'},env:{}};
-  assert.equal((await prepareProfileUpdate(p,{manifest,currentVersion:'0.4.0'},{downloadReleaseAsset:(asset,path)=>downloadReleaseAsset(asset,path,{fetch:async()=>new Response(bytes)}),build})).releaseVersion,'0.5.0');
-  const tag='central-v0.5.0',grouped={...manifest,component:'central',tag,assets:manifest.assets.map(asset=>({...asset,url:`https://github.com/utopiafar/mote/releases/download/${tag}/${asset.name}`}))};
-  // Use a separate profile release cache so the legacy prepared checkout cannot satisfy a grouped update.
-  await assert.rejects(prepareProfileUpdate({...p,directory:join(directory,'grouped')},{manifest:grouped,currentVersion:'0.4.0'},{downloadReleaseAsset:(asset,path)=>downloadReleaseAsset(asset,path,{fetch:async()=>new Response(bytes)}),build}),{code:'ENOENT'});
+test('updates reject missing release components and archives without the central package before building',async()=>fixture(async directory=>{
+ const bytes=sourceTar('0.5.0', [], '0.5.0', '0.5.0', false),{manifest}=signedManifest(bytes),p={directory,meta:{runtime:'native'},env:{}};let built=false;
+ const options={downloadReleaseAsset:(asset,path)=>downloadReleaseAsset(asset,path,{fetch:async()=>new Response(bytes)}),build:async()=>{built=true;}};
+ await assert.rejects(prepareProfileUpdate(p,{manifest,currentVersion:'0.4.0'},options),{code:'ENOENT'});
+ const {component,...missing}=manifest;await assert.rejects(prepareProfileUpdate(p,{manifest:missing,currentVersion:'0.4.0'},options),/central release/);
+ assert.equal(built,false);
 }));
 test('asset corruption and a mismatched package cannot invoke a build or modify the current release', async () => fixture(async directory => {
   const bytes = sourceTar(), { manifest } = signedManifest(bytes), p = { directory, meta: { runtime: 'native', release: '/synthetic-active' }, env: {} }; let built = false;
@@ -93,10 +93,11 @@ test('container preparation pulls the signed immutable digest and rejects an ins
   assert.equal(result.image, manifest.images[0].image); assert.equal(calls[0][2], manifest.images[0].image);
   await assert.rejects(prepareProfileUpdate(p, { manifest, currentVersion: '0.4.0' }, { execute: async (_command, args) => args[0] === 'pull' ? '' : '[]' }), /digest/);
 });
-test('installed container version comes from its old image even when CLI metadata is newer', async () => {
-  const calls = [], image = 'sha256:' + 'b'.repeat(64), p = { meta: { runtime: 'docker', releaseVersion: '0.5.0' } };
-  const version = await profileVersion(p, { dockerContainer: async () => 'synthetic-container', execute: async (_command, args) => { calls.push(args); if (args[0] === 'inspect') return image; if (args[0] === 'image') return 'null'; return '0.4.0'; } });
-  assert.equal(version, '0.4.0'); const probe = calls.find(args => args[0] === 'run'); assert.ok(probe.includes(image)); assert.deepEqual(probe.slice(probe.indexOf('--network'), probe.indexOf('--network') + 2), ['--network', 'none']); assert.ok(probe.includes('--read-only'));
+test('installed container version requires its image label and never probes older package layouts',async()=>{
+ const calls=[],image='sha256:'+'b'.repeat(64),p={meta:{runtime:'docker',releaseVersion:'0.5.0'}};
+ const dependencies={dockerContainer:async()=>'synthetic-container',execute:async(_command,args)=>{calls.push(args);return args[0]==='inspect'?image:JSON.stringify('0.4.0');}};
+ assert.equal(await profileVersion(p,dependencies),'0.4.0');assert.equal(calls.length,2);assert.ok(calls.every(args=>args[0]!=='run'));
+ await assert.rejects(profileVersion(p,{...dependencies,execute:async(_command,args)=>args[0]==='inspect'?image:'null'}),/unavailable or inconsistent/);
 });
 test('running native version wins over a newer checkout and rejects an inconsistent recorded release', async () => {
   const p = { processFile: '/synthetic/process.json', url: 'http://127.0.0.1:1', meta: { runtime: 'native', release: '/not-read-newer-checkout' }, env: { MOTE_TOKEN: 'synthetic-token' } };

@@ -3,9 +3,9 @@ import {z} from 'zod';
 /**
  * The durable execution vocabulary shared by the server and all clients.
  *
- * The existing domain-specific `status`/`state` fields remain part of the
- * wire contract for older clients.  New code should consume `execution` and
- * use the legacy field only as a compatibility projection.
+ * Domain-specific `status`/`state` fields describe each workflow phase.
+ * `execution` projects those current states into the shared scheduling vocabulary;
+ * unsupported states are rejected.
  */
 export const runStatusSchema=z.enum(['waiting','queued','running','retry_wait','succeeded','failed','cancelled','skipped']);
 export type RunStatus=z.infer<typeof runStatusSchema>;
@@ -63,10 +63,9 @@ export const executionEnvelopeSchema=z.object({
 }).strict();
 export type ExecutionEnvelope=z.infer<typeof executionEnvelopeSchema>;
 
-export type LegacyExecutionInput={
+export type DomainExecutionInput={
   status?:unknown;
   state?:unknown;
-  summaryState?:unknown;
   attempts?:unknown;
   maxAttempts?:unknown;
   errorCode?:unknown;
@@ -80,24 +79,24 @@ export type LegacyExecutionInput={
 const stringValue=(value:unknown)=>typeof value==='string'&&value.length<=100?value:undefined;
 const numberValue=(value:unknown)=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=0?value:undefined;
 
-/** Map persisted pre-protocol state without inspecting user content. */
-export function canonicalRunStatus(input:LegacyExecutionInput):RunStatus {
-  const value=stringValue(input.status??input.state)??'';
+/** Project explicitly supported current domain states into the execution API. */
+export function canonicalRunStatus(input:DomainExecutionInput):RunStatus {
+  const value=stringValue(input.status??input.state);
   switch(value){
     case 'waiting_for_model': case 'waiting_for_confirmation': case 'blocked': case 'waiting': return 'waiting';
     case 'pending': case 'queued': return 'queued';
     case 'running': return 'running';
     case 'retry_wait': return 'retry_wait';
     case 'completed': case 'succeeded': return 'succeeded';
-    case 'cancelled': case 'canceled': return 'cancelled';
+    case 'cancelled': return 'cancelled';
     case 'skipped': case 'invalidated': return 'skipped';
     case 'failed': return 'failed';
     case 'interrupted': return 'queued';
-    default: return value ? 'waiting' : 'queued';
+    default: throw new Error('Unsupported domain execution state');
   }
 }
 
-function failureFor(input:LegacyExecutionInput,status:RunStatus):TaskFailure|undefined {
+function failureFor(input:DomainExecutionInput,status:RunStatus):TaskFailure|undefined {
   const code=stringValue(input.errorCode)??(typeof input.error==='object'&&input.error&&'code' in input.error?stringValue((input.error as {code?:unknown}).code):undefined);
   if(!code)return undefined;
   const retryable=new Set(['provider_failed','model_failed','agent_response','timeout','network','rate_limited','worker_interrupted','provider_unavailable','provider_timeout','provider_network']);
@@ -113,7 +112,7 @@ function failureFor(input:LegacyExecutionInput,status:RunStatus):TaskFailure|und
   return taskFailureSchema.parse({code,recovery,scope,...(numberValue(input.availableAt)?{retryAfterMs:Math.max(0,numberValue(input.availableAt)!-Date.now())}:{}),safeMessage});
 }
 
-function waitFor(input:LegacyExecutionInput,status:RunStatus,failure?:TaskFailure):WaitCondition|undefined {
+function waitFor(input:DomainExecutionInput,status:RunStatus,failure?:TaskFailure):WaitCondition|undefined {
   if(status!=='waiting')return undefined;
   const code=failure?.code??stringValue(input.errorCode);
   const reason:WaitReason=['model_unconfigured','provider_unavailable','provider_authentication','provider_endpoint','provider_redirect'].includes(code??'')?'provider_unavailable':
@@ -129,8 +128,8 @@ function actions(status:RunStatus, failure?:TaskFailure):ExecutionAction[] {
   return [];
 }
 
-/** Normalize a legacy status into the additive execution projection. */
-export function executionEnvelope(input:LegacyExecutionInput):ExecutionEnvelope {
+/** Current domain projection; unknown or absent states are rejected. */
+export function executionEnvelope(input:DomainExecutionInput):ExecutionEnvelope {
   const status=canonicalRunStatus(input),failure=failureFor(input,status),waiting=waitFor(input,status,failure);
   const attempts=numberValue(input.attempts)??0,maxAttempts=numberValue(input.maxAttempts);
   return executionEnvelopeSchema.parse({status,attempts,...(maxAttempts===undefined?{}:{maxAttempts}),...(failure?{failure}:{}),...(waiting?{waiting}:{}),allowedActions:actions(status,failure),...(stringValue(input.inputVersion)?{inputVersion:stringValue(input.inputVersion)}:{}),...(stringValue(input.definitionVersion)?{definitionVersion:stringValue(input.definitionVersion)}:{}),...(stringValue(input.updatedAt)?{updatedAt:stringValue(input.updatedAt)}:{})});

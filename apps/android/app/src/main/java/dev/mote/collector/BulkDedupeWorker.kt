@@ -24,21 +24,6 @@ class BulkDedupeStore(context: Context) {
         val value = JSONObject(String(cipher.open(bytes), Charsets.UTF_8))
         return value
     }
-    fun migrateLegacyContent(onProgress: (Int, Int) -> Unit = { _, _ -> }, shouldStop: () -> Boolean = { false }): Int = cipher.withPlaintextWrites {
-        var migrated = 0
-        for ((position, name) in listOf("report", "plan").withIndex()) {
-            if (shouldStop()) break
-            synchronized(fileLock) {
-                val file = File(dir, "$name.enc")
-                if (file.exists()) {
-                    val bytes = file.readBytes()
-                    if (cipher.isLegacy(bytes)) { write(name, JSONObject(String(cipher.open(bytes), Charsets.UTF_8))); migrated++ }
-                }
-            }
-            onProgress(position + 1, 2)
-        }
-        migrated
-    }
     fun write(name: String, value: JSONObject): Unit = synchronized(fileLock) {
         require(name in listOf("report", "plan"))
         val temp = File.createTempFile("state", ".tmp", dir)

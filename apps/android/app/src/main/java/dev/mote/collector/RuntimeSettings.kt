@@ -132,7 +132,6 @@ object RuntimeSettings {
                     runCatching {
                         if (applied.isSuccess) current.getOrNull()?.let { config ->
                             UploadWorker.schedule(app, config)
-                            CaptureOcrWorker.schedule(app, config, replace = true)
                             SourceWork.schedule(app)
                         }
                     }.onFailure { settings.uploadStatus(MoteI18n.text("设置已保存，同步调度暂不可用：{0}", it.message ?: MoteI18n.text("请稍后重试"))) }

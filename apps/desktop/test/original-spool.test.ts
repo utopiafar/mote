@@ -7,11 +7,10 @@ import {spoolOriginal,originalPart} from '../src/original-spool';
 import {scanSourceFiles} from '../src/source-files';
 import {SourceSync} from '../src/source-sync';
 import {DEFAULT_SOURCE_OPTIONS,type SourceDefinition,type SourceRequest,type LocalFileCheckpoint} from '../src/source-types';
-import {configureLocalContent} from '../src/local-content';
 import {sourceAck} from './fixtures';
 const digest=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
 const dirs:string[]=[];
-afterEach(async()=>{configureLocalContent({enabled:false});for(const dir of dirs.splice(0))await rm(dir,{force:true,recursive:true});});
+afterEach(async()=>{for(const dir of dirs.splice(0))await rm(dir,{force:true,recursive:true});});
 async function fixture(){const dir=await realpath(await mkdtemp(join(tmpdir(),'mote-spool-')));dirs.push(dir);return dir;}
 it('20 MiB history yields to 400 dated notes, resumes across restart and never acknowledges a partial original',async()=>{
  const dir=await fixture(),path=join(dir,'large.txt'),bytes=Buffer.alloc(20*1024*1024+13,71);await writeFile(path,bytes);
@@ -36,12 +35,11 @@ it('20 MiB history yields to 400 dated notes, resumes across restart and never a
  for(let turns=0;large.status().pending&&turns<10;turns++){const slice=await large.flushSlice(source,request);if(slice.state==='yielded'){expect(large.status().pending).toBe(1);await access(spool.directory);}}
  expect(large.status().pending).toBe(0);expect(parts.size).toBe(6);expect(Buffer.concat([...parts.values()]).equals(bytes)).toBe(true);expect(events[0]).toBe('part:0');expect(events[1]).toBe('notes:100');expect(events.at(-1)).toBe('commit');await expect(access(spool.directory)).rejects.toThrow();
 });
-it('streams an encrypted 20 MiB immutable original across restart, resumes missing parts, validates ACK and cleans only after commit',async()=>{
+it('streams a 20 MiB immutable original across restart, resumes missing parts, validates ACK and cleans only after commit',async()=>{
  const dir=await fixture(),path=join(dir,'large.txt');const bytes=Buffer.alloc(20*1024*1024+13,67);await writeFile(path,bytes);
- configureLocalContent({enabled:true,key:Buffer.alloc(32,11)});
  const scan=await scanSourceFiles(path,{...DEFAULT_SOURCE_OPTIONS,retention:'archive'},undefined,join(dir,'markers.json'));
  expect(scan.items).toHaveLength(1);const spool=scan.items[0].localOriginal!;expect(spool).toBeDefined();expect(scan.items[0].localOriginalBase64).toBeUndefined();
- expect((await readFile(join(spool.directory,'0'))).equals(bytes.subarray(0,spool.partBytes))).toBe(false);
+ expect((await readFile(join(spool.directory,'0'))).equals(bytes.subarray(0,spool.partBytes))).toBe(true);
  const state=join(dir,'queue.json');let sync=new SourceSync(state);await sync.initialize();await sync.stage(scan,false);
  // A queued version remains valid after its source is changed and removed.
  await writeFile(path,'new version');await rm(path);
@@ -91,4 +89,10 @@ it('rejects mismatched part and archive receipts without clearing the journal or
  };
  await expect(sync.flush(source,request)).rejects.toThrow('part acknowledgement');expect(commits).toBe(0);await access(spool.directory);
  wrongPart=false;await expect(sync.flush(source,request)).rejects.toThrow('archive acknowledgement');expect(sync.status().pending).toBe(1);await access(spool.directory);
+});
+
+it('preserves arbitrary original bytes beginning with an obsolete content-envelope prefix',async()=>{
+ const dir=await fixture(),path=join(dir,'generated.bin'),bytes=Buffer.concat([Buffer.from('MOTE-CONTENT-v1'),Buffer.from([0,255,17])]);await writeFile(path,bytes);
+ const info=await stat(path),spool=await spoolOriginal(path,join(dir,'spools'),{dev:info.dev,ino:info.ino,size:info.size,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs});
+ expect(await originalPart(spool,0)).toEqual(bytes);expect(spool.sha256).toBe(digest(bytes));
 });

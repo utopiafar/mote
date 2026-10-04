@@ -18,15 +18,9 @@ export class MemoryInputAuthorization {
     store.db.exec(`CREATE TABLE IF NOT EXISTS memory_input_authorizations(
       source_id TEXT NOT NULL REFERENCES source_connections(id) ON DELETE CASCADE,
       input_key TEXT NOT NULL,scope TEXT NOT NULL,capture_id TEXT REFERENCES captures(id) ON DELETE CASCADE,
-      authorized INTEGER NOT NULL,received_at INTEGER NOT NULL,job_id TEXT,
+      authorized INTEGER NOT NULL,received_at INTEGER NOT NULL,job_id TEXT,binding_json TEXT,revoked_at INTEGER,
       PRIMARY KEY(source_id,input_key,scope));
       CREATE INDEX IF NOT EXISTS memory_input_authorizations_capture ON memory_input_authorizations(capture_id) WHERE capture_id IS NOT NULL;`);
-    const columns=new Set(store.db.prepare('PRAGMA table_info(memory_input_authorizations)').all().map(r=>String(r.name)));
-    if(!columns.has('binding_json'))store.db.exec('ALTER TABLE memory_input_authorizations ADD COLUMN binding_json TEXT');
-    if(!columns.has('revoked_at'))store.db.exec('ALTER TABLE memory_input_authorizations ADD COLUMN revoked_at INTEGER');
-    if(!store.db.prepare("SELECT 1 FROM settings WHERE key='memory-grant-ledger-v2'").get()){
-      store.db.exec(`DROP TRIGGER IF EXISTS ledger_memory_input_authorizations_insert; DROP TRIGGER IF EXISTS ledger_memory_input_authorizations_update; DROP TRIGGER IF EXISTS ledger_memory_input_authorizations_delete; DELETE FROM storage_ledger WHERE name='memory_input_authorizations'; INSERT INTO settings VALUES('memory-grant-ledger-v2','1');`);
-    }
   }
   /** Only a newly accepted raw revision calls this, inside its receive transaction.
    * Persist denied receipts too: a duplicate ACK must not acquire a later grant. */

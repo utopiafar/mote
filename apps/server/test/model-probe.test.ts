@@ -5,7 +5,7 @@ import type {AddressInfo} from 'node:net';
 import {testModelConnection} from '../src/model-agent.js';
 
 test('connection probe uses the real Harness for generated search, evidence and cited final response', {timeout:45000}, async()=>{
-  const id='mote-model-connection-test';
+  const id='7a8f56d1-45de-47b7-90bb-5e84d411c3d6';
   const requests: {url?:string;authorization?:string;body:Record<string,any>}[]=[];
   const provider=createServer(async(req,res)=>{
     let raw='';for await (const chunk of req) raw+=chunk;

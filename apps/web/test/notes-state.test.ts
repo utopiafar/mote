@@ -10,7 +10,7 @@ class MemoryStorage implements NoteStorage {
   setItem(key: string, value: string) { this.entries.set(key, value); }
   removeItem(key: string) { this.entries.delete(key); }
 }
-const note = () => ({ id: randomUUID(), deviceId: 'web:synthetic-fixture', deviceName: 'Synthetic notes fixture', platform: 'import' as const, capturedAt: '2026-09-12T12:00:00.000Z', text: '  合成原文\n不改写。 ', mood: '用户自行标注' });
+const note = () => ({ id: randomUUID(), client:'web' as const, deviceId: 'web:synthetic-fixture', deviceName: 'Synthetic notes fixture', platform: 'import' as const, capturedAt: '2026-09-12T12:00:00.000Z', text: '  合成原文\n不改写。 ', mood: '用户自行标注' });
 
 test('draft and immutable pending notes survive reopening, separately per central node', () => {
   const storage = new MemoryStorage(); const outbox = new NoteOutbox(storage, 'https://node-a.example'); const event = note();
@@ -106,15 +106,12 @@ test('attachment-only drafts preserve references across reopen and retry',()=>{
   assert.notEqual(reopened.prepareSubmission(changed,note()).id,first.id);
 });
 
-test('new web notes retain their client identity while prepared legacy retries remain unchanged', () => {
+test('retired notes and missing client identities are rejected without mutating storage', () => {
   const storage = new MemoryStorage(), outbox = new NoteOutbox(storage, 'fixture');
   const draft = { text: 'generated note', mood: '' };
-  const legacy = outbox.prepareSubmission(draft, note());
-  assert.equal(legacy.client, undefined);
-  assert.deepEqual(outbox.prepareSubmission(draft, { ...note(), client: 'web' }), legacy);
-  outbox.completeSubmission(legacy.id);
-  const fresh = outbox.prepareSubmission(draft, { ...note(), client: 'web' });
-  assert.equal(fresh.client, 'web');
-  outbox.enqueue(fresh);
-  assert.equal(new NoteOutbox(storage, 'fixture').items()[0].note.client, 'web');
+  assert.throws(()=>outbox.prepareSubmission(draft, {...note(),client:undefined}), /identity|身份|client/);
+  storage.setItem('mote.notes.v1:fixture:draft', JSON.stringify(draft));
+  const original=[...storage.entries];
+  assert.throws(()=>new NoteOutbox(storage,'fixture'));
+  assert.deepEqual([...storage.entries], original);
 });

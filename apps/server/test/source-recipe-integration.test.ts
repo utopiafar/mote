@@ -24,7 +24,7 @@ async function fixture(t:import('node:test').TestContext){
   return {store,materials,runtime,sources};
 }
 
-test('Coding receipts pin a recipe and execute its registered handlers instead of the legacy organizer',async t=>{
+test('Coding receipts pin a recipe and execute its registered handlers through the canonical pinned recipe contract',async t=>{
   const {store,materials,runtime,sources}=await fixture(t);
   await sources.upsert('coding',event('one','Generated recipe evidence'));
   const row=store.db.prepare('SELECT recipe_id,recipe_version,recipe_definition_fingerprint,recipe_config_fingerprint,recipe_component_pins FROM source_pipeline_work').get()!;
@@ -33,7 +33,7 @@ test('Coding receipts pin a recipe and execute its registered handlers instead o
   assert.match(String(row.recipe_config_fingerprint),/^[a-f0-9]{64}$/);
   assert.ok(JSON.parse(String(row.recipe_component_pins)).some((pin:{id:string;version:string})=>pin.id==='mote.coding-assemble'&&pin.version==='6'));
   const pipeline=runtime.registry.get('mote.coding')!;
-  pipeline.organize=()=>{throw Error('Legacy callback must not run for a recipe');};
+  assert.equal(Object.hasOwn(pipeline,'organize'),false);assert.equal(Object.hasOwn(pipeline,'group'),false);
   await runtime.tick();
   const material=materials.list({query:'Generated recipe evidence'}).items[0];
   assert.ok(material);assert.equal(material.coverage.state,'complete');

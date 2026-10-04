@@ -18,7 +18,7 @@ object QueueArchive {
         var count = 0
         ZipOutputStream(output).use { zip ->
             fun write(name: String, bytes: ByteArray) { zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry() }
-            write("archive.json", JSONObject().put("format", "mote-android-records").put("version", 1).put("origin", origin).toString().toByteArray())
+            write("archive.json", JSONObject().put("format", "mote-android-records").put("version", LocalDataFormat.VERSION).put("origin", origin).toString().toByteArray())
             val images = mutableSetOf<String>()
             for (id in queue.dedupeIds()) {
                 val value = queue.archiveRecord(id) ?: continue
@@ -33,6 +33,7 @@ object QueueArchive {
     fun prepare(input: InputStream, directory: File, maxBytes: Long): Prepared {
         require(maxBytes > 0 && !directory.exists()); check(directory.mkdirs())
         try {
+            LocalDataFormat.requireCurrent(directory)
             val seen = mutableSetOf<String>(); var total = 0L; var origin: String? = null; var count = 0
             ZipInputStream(input).use { zip ->
                 while (true) {
@@ -46,14 +47,14 @@ object QueueArchive {
                     when {
                         name == "archive.json" -> {
                             val manifest = JSONObject(String(bytes, Charsets.UTF_8))
-                            require(manifest.getString("format") == "mote-android-records" && manifest.get("version") == 1) { MoteI18n.text("备份版本不支持") }
+                            require(manifest.getString("format") == "mote-android-records" && manifest.get("version") == LocalDataFormat.VERSION) { MoteI18n.text("备份版本不支持") }
                             origin = manifest.getString("origin")
                         }
                         record.matches(name) -> {
                             val id = name.removePrefix("records/").removeSuffix(".json")
                             require(UUID.fromString(id).toString() == id)
                             val text = String(bytes, Charsets.UTF_8); StrictJson.validate(text)
-                            val event = JSONObject(text); require(event.getString("id") == id)
+                            val event = JSONObject(text); require(event.getString("id") == id); LocalDataFormat.validateEvent(event)
                             File(directory, "$id.event").writeBytes(bytes); count++
                         }
                         else -> {
@@ -73,19 +74,11 @@ object QueueArchive {
                 val (event, bytes) = requireNotNull(staged.archiveRecord(id))
                 val wire = wire(event)
                 validated.enqueue(wire, bytes, maxBytes)
-                restoreOcr(event, validated, maxBytes)
             }
             staged.prepareIndex()
             validatedDir.deleteRecursively()
             return Prepared(directory, origin!!, count)
         } catch (error: Exception) { directory.deleteRecursively(); throw error }
-    }
-    private fun restoreOcr(event: JSONObject, target: DurableQueue, maxBytes: Long) {
-        event.optJSONObject("_ocrResult")?.let { result ->
-            java.time.Instant.parse(result.getString("updatedAt"))
-            if (target.archiveRecord(event.getString("id"))?.first?.has("_ocrResult") != true)
-                target.completeOcr(event.getString("id"), result.getString("ocrText"), result.getString("status"), maxBytes)
-        }
     }
     private fun wire(event: JSONObject) = JSONObject(event.toString()).apply { keys().asSequence().filter { it.startsWith("_") }.toList().forEach(::remove) }
     /** Same IDs merge idempotently; a conflicting existing record is rejected before any writes. */
@@ -99,14 +92,11 @@ object QueueArchive {
             val existing = target.archiveRecord(id) ?: continue
             val incoming = requireNotNull(source.archiveRecord(id))
             require(SourceRules.canonical(wire(existing.first)) == SourceRules.canonical(wire(incoming.first)) && existing.second.contentEquals(incoming.second)) { MoteI18n.text("备份中存在同 ID 内容冲突，未导入") }
-            val oldOcr = existing.first.optJSONObject("_ocrResult"); val newOcr = incoming.first.optJSONObject("_ocrResult")
-            require(oldOcr == null || newOcr == null || oldOcr.getString("ocrText") == newOcr.getString("ocrText") && oldOcr.getString("status") == newOcr.getString("status")) { MoteI18n.text("备份 OCR 与本机内容冲突，未导入") }
         }
         var count = 0
         for (id in ids) {
             val (event, bytes) = requireNotNull(source.archiveRecord(id))
             if (target.capture(id) == null) { target.enqueue(wire(event), bytes, maxBytes); count++ }
-            restoreOcr(event, target, maxBytes)
         }
         count
     }

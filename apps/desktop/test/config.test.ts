@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ConfigStore, defaultConfig, publicConfig, updateConfig, validateLocalModelUrl, validateServerUrl } from '../src/config';
@@ -57,4 +57,11 @@ it('persists image deduplication and renamed identity without replacing the devi
   expect(next.deviceName).toBe('Renamed Mac'); expect(next.deviceId).toBe(config.deviceId);
   expect(next.imageDedupeMode).toBe('exact');
   expect(() => updateConfig(config, { ...config, imageDedupeMode: 'invalid' as any })).toThrow();
+});
+
+it('rejects old and incomplete saved configuration instead of filling fields or restoring excluded lists',async()=>{
+ const store=new ConfigStore(directory,{available:()=>true,encrypt:Buffer.from,decrypt:value=>value.toString()}),config=defaultConfig();
+ for(const value of [{version:1,config},{version:3,config:{...config,credentialScope:'collector'}},{version:3,config:{...config,credentialScope:'mcp'}},{version:3,config:{...config,excludedAppIds:['dev.private']}},{version:3,config:Object.fromEntries(Object.entries(config).filter(([key])=>key!=='appCollectionRules'))}]){
+  const raw=JSON.stringify(value);await writeFile(join(directory,'config.json'),raw);await expect(store.load()).rejects.toThrow('Unsupported desktop storage format');expect(await readFile(join(directory,'config.json'),'utf8')).toBe(raw);
+ }
 });

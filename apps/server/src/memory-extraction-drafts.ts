@@ -9,16 +9,13 @@ export class MemoryExtractionDrafts {
     store.db.exec(`CREATE TABLE IF NOT EXISTS memory_extraction_drafts(
       batch_id TEXT PRIMARY KEY REFERENCES memory_batches(id) ON DELETE CASCADE,
       input_hash TEXT NOT NULL,json TEXT NOT NULL,created_at INTEGER NOT NULL,shared INTEGER NOT NULL DEFAULT 0);`);
-    if(!(store.db.prepare('PRAGMA table_info(memory_extraction_drafts)').all() as {name:string}[]).some(c=>c.name==='shared'))store.db.exec('ALTER TABLE memory_extraction_drafts ADD COLUMN shared INTEGER NOT NULL DEFAULT 0');
     store.db.exec(`CREATE INDEX IF NOT EXISTS memory_drafts_shared ON memory_extraction_drafts(input_hash) WHERE shared=1;
-      DROP TRIGGER IF EXISTS memory_draft_batch_terminal;
       CREATE TRIGGER IF NOT EXISTS memory_draft_batch_terminal AFTER UPDATE OF json ON memory_batches
         WHEN json_extract(new.json,'$.status') IN ('completed','invalidated') BEGIN
         DELETE FROM memory_extraction_drafts WHERE batch_id=new.id AND (shared=0 OR json_extract(new.json,'$.status')='invalidated'); END;
       CREATE TRIGGER IF NOT EXISTS memory_draft_dependency_removed AFTER DELETE ON memory_batch_dependencies BEGIN
         DELETE FROM memory_extraction_drafts WHERE batch_id=old.batch_id; END;
-      DROP TRIGGER IF EXISTS memory_draft_job_cancelled;
-      CREATE TRIGGER memory_draft_job_cancelled AFTER UPDATE OF json ON memory_jobs
+      CREATE TRIGGER IF NOT EXISTS memory_draft_job_cancelled AFTER UPDATE OF json ON memory_jobs
         WHEN json_extract(new.json,'$.status')='cancelled' BEGIN
         DELETE FROM memory_extraction_drafts WHERE shared=0 AND batch_id IN (SELECT id FROM memory_batches WHERE job_id=new.id); END;`);
   }

@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import type {ContextReader} from '@mote/agent';
 import {StoreError} from './store.js';
-import {cardFromMemory,contextCard,type ContextCard,type ContextQueryInput} from './context-query.js';
+import {cardFromMemoryOverview,contextCard,type ContextCard,type ContextQueryInput} from './context-query.js';
 import type {EvidenceReader} from './evidence-reader.js';
 import type {Memory} from './memory.js';
 import type {MaterialRecord} from './materials.js';
@@ -26,7 +26,7 @@ export async function contextBundle(reader:EvidenceReader,query:ContextReader,ar
     if(position.p===0&&args.includeMemories===false||position.p===1&&args.includeRecentSessions===false){position={v:1,h,p:position.p+1};continue;}
     const inner=pack(position.c),channel=position.p;let card:ContextCard|undefined,next:string|null=null;
     if(channel===0){const page=await query.memories?.({...scope,cursor:inner,limit:1,status:'published',layer:'memory'});
-      card=page?.items[0]?cardFromMemory(page.items[0] as Memory):undefined;next=page?.nextCursor??null;
+      card=page?.items[0]?cardFromMemoryOverview(page.items[0] as Memory):undefined;next=page?.nextCursor??null;
     }else if(channel===1){const page=await query.materialCatalog?.({...scope,cursor:inner,limit:1,kind:'mote.coding-session'});
       const m=page?.items[0] as MaterialRecord|undefined;next=page?.nextCursor??null;
       if(m&&['sourceId','provider','projectKey','repositoryKey','sessionId'].every(key=>scope[key as keyof typeof scope]===undefined||m.origin[key as keyof typeof m.origin]===scope[key as keyof typeof scope]))card={id:m.id,ref:m.ref,revision:m.revision,kind:'session',title:m.title,snippet:'',matchReasons:['formal session material'],origin:{source:'coding-agent',sourceId:m.origin.sourceId,deviceId:m.origin.deviceId??'',appName:m.title,capturedAt:m.origin.firstAt??m.createdAt,receivedAt:m.updatedAt,provider:m.origin.provider as 'codex'|'claude'|'kimi'|undefined,projectKey:m.origin.projectKey,repositoryKey:m.origin.repositoryKey,sessionId:m.origin.sessionId},evidenceRefs:[],status:m.coverage.state};

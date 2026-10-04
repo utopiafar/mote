@@ -3,7 +3,6 @@ import { moteText } from './i18n.js';
 import {createHash} from 'node:crypto';
 import {AgentTimeoutError,type AgentProgress} from '@mote/agent';
 import {Store,StoreError} from './store.js';
-import {normalizeRun} from './execution.js';
 import {safeError} from './diagnostics.js';
 import type {ExecutionEnvelope} from '@mote/shared/execution';
 import {RunExecution,runEnvelope,type RunExecutionOptions,type RunDeadline,type RunExecutionContext} from './run-execution.js';
@@ -43,7 +42,7 @@ export class QueryRuns {
   }
   cancel(id:string){const run=this.get(id);if(run.status==='running')this.execution.cancel(id);return this.get(id);}
   list():QueryRun[]{return (this.store.db.prepare("SELECT id FROM query_runs ORDER BY json_extract(json,'$.createdAt') DESC LIMIT 100").all() as {id:string}[]).map(row=>this.get(row.id));}
-  get(id:string):QueryRun{this.execution.sync(id);const run=this.raw(id);return this.execution.step(id)?run:normalizeRun(run);}
+  get(id:string):QueryRun{this.execution.sync(id);const run=this.raw(id);if(!this.execution.step(id))throw new StoreError('Run receipt has no canonical execution step',409);return run;}
   start(id:string,input:unknown,work:QueryWork,deadline:RunDeadline={}){
     const hash=createHash('sha256').update(JSON.stringify(input)).digest('hex');
     const existing=this.store.db.prepare('SELECT request_hash FROM query_runs WHERE id=?').get(id);

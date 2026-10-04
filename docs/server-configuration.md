@@ -91,7 +91,7 @@
 | `MOTE_MODEL_REASONING_EFFORT` | 通用 `auto`，DeepSeek `high` | `auto` 由模型决定；`off` / `low` / `high` / `max` 需模型支持 |
 | `MOTE_MODEL_MAX_TOKENS` | `65536` | 1–128000 整数；单次 HTTP 模型输出预算，非总请求/账户预算，仍须符合所选模型限制；Codex 自行管理输出预算 |
 | `MOTE_MODEL_REQUEST_TIMEOUT_MS` | `300000` | 非 Codex Provider 的单次模型 API 请求期限，5000–600000 毫秒整数；不包含后续工具循环。Codex Server 不暴露内部单次模型请求，此项为不适用 |
-| `MOTE_AGENT_TIMEOUT_MS` | `600000` | 一次 Agent 从开始到完成的总期限，5000–3600000 毫秒整数；包含多次模型请求、工具调用和校验。Codex Server 可留空，留空表示不设置 Mote 的总期限。旧 `MOTE_MODEL_TIMEOUT_MS` 仅作为兼容回退 |
+| `MOTE_AGENT_TIMEOUT_MS` | `600000` | 一次 Agent 从开始到完成的总期限，5000–3600000 毫秒整数；包含多次模型请求、工具调用和校验。Codex Server 可留空，留空表示不设置 Mote 的总期限。旧 `MOTE_MODEL_TIMEOUT_MS` 已退役 |
 | `MOTE_CODEX_BIN` | `codex`（PATH） | 可信的本机 Codex CLI 可执行路径；网页不能设置此值 |
 | `MOTE_CODEX_HOME` | `CODEX_HOME` 或 `~/.codex` | 服务端系统用户的 Codex 文件登录目录；仅链接 `auth.json`，不加载该目录的其他设置，见[本机 Codex](model-providers.md#本机-codex) |
 | `MOTE_INSIGHT_INTERVAL_HOURS` | `0` | 0–168 小时；只在首次建立生命周期策略时以正数初始化洞察 intervalHours；0 不会关闭现行默认自动工作流。后续以数据库中的 enabled、minChanges、maxWaitHours 为准，见 [调度规则](memory-lifecycle.md) |

@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canonicalDestination, readWorkspaceRoute, workspaceHash } from '../src/workspace-route';
 const collections = ['records', 'segments', 'materials', 'sources', 'files', 'activity', 'media', 'memories', 'extension'];
-const readPage = (hash: string) => ({'library/files':'files','library/segments':'timeline','library/materials':'materials','library/memories':'memories','library':'archive'} as Record<string,string>)[hash.replace(/^#\//,'').split('?')[0]] ?? 'overview';
-test('existing collection links open the matching type in the unified library', () => {
-  for (const [route,collection] of [['files','files'],['segments','segments'],['materials','materials'],['memories','memories']]) {
-    assert.deepEqual(readWorkspaceRoute('#/library/'+route+'?evidence=abc',readPage,collections),{page:'archive',collection});
+const readPage = (hash:string)=>hash.replace(/^#\//,'').split('?')[0]==='library'?'archive':'overview';
+test('current collection links use explicit query state and retired route aliases are absent', () => {
+  for(const collection of ['files','segments','materials','memories']){
+    assert.deepEqual(readWorkspaceRoute('#/library?view='+collection,readPage,collections),{page:'archive',collection});
+    assert.deepEqual(readWorkspaceRoute('#/library/'+collection,readPage,collections),{page:'overview',collection:'records'});
   }
 });
 test('registered collection types remain deep-linkable; invalid types fall back safely', () => {

@@ -14,7 +14,7 @@ const directory=mkdtempSync(join(tmpdir(),'mote-personal-memory-live-')),store=n
 sources.register({id:'generated',name:'Generated conversations only',kind:'coding-agent',deviceId:'generated',platform:'import'});
 const model=process.env.MOTE_TEST_CODEX_MODEL??'gpt-5.6-luna';
 const agent=createAgent({provider:'codex',protocol:'codex-app-server',model,reasoningEffort:'low',agentTimeoutMs:300000,
-  reader:{search:async()=>[],timeline:async()=>[],evidence:async({ids})=>store.evidence(ids),activity:async()=>({}),devices:async()=>[]}});
+  reader:{search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async({ids})=>store.evidence(ids),activity:async()=>({}),devices:async()=>[]}});
 let calls=0;const reports:unknown[]=[];
 async function query(input:QueryInput){assert.ok(++calls<=12,'Live call budget exceeded');console.log(JSON.stringify({stage:'model-start',call:calls}));return agent.query(input);}
 const pipeline=new MemoryPipeline({store,memories,configured:()=>true,model:()=>model,requireAdmission:true,query,review:(input,result)=>reviewMemory(input,result,query)});

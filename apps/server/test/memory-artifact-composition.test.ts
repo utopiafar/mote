@@ -1,3 +1,4 @@
+import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -55,7 +56,7 @@ async function fixture(t:import('node:test').TestContext,remote=false){
     await node.app.ready();
   };
   await start();
-  const settings=node.processing.view();node.processing.update({revision:settings.revision,settings:{...settings.settings,enabled:true,audioProcessor:'audio.http',endpoint:'http://127.0.0.1:1234/transcribe',summarize:false}});
+  const settings=node.processing.view();node.processing.update({revision:settings.revision,settings:{...settings.settings,enabled:true,audioProcessor:'audio.http',endpoint:'http://127.0.0.1:1234/transcribe',summarize:false},policy:fixtureFilePolicy({...settings.settings,enabled:true,audioProcessor:'audio.http',endpoint:'http://127.0.0.1:1234/transcribe',summarize:false},node.processing.runtime.registry)});
   const selected=await node.app.inject({method:'PUT',url:'/api/memory-recipe-settings',headers:{authorization:'Bearer '+config.token},payload:{recipes:[bodyRecipe,extractedPersonal,extractedCoding]}});assert.equal(selected.statusCode,200,selected.body);
   const upload=async(mime='audio/wav',sourceId='generated-audio')=>{
     node.sources.register({id:sourceId,name:'Generated '+sourceId,kind:mime==='audio/wav'?'local-files':'upload',deviceId:'fixture',platform:'import',retention:'archive'});

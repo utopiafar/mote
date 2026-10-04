@@ -31,12 +31,12 @@ export class ImportInputError extends StoreError {
 export type ImportPreparation={operationId?:string;signal?:AbortSignal;workspace:string;inputPaths:string[];instruction:string;previous?:{summary:string;error?:string}};
 export type ImportPreparationResult={summary:string;recordsPath?:string;warnings?:string[];reviewDecision?:ImportReviewDecision};
 export type ImportRuntime={executor?:ExecutionEngine;intake?:ImportIntakeRegistry;fileStore?:FileStore;prepare?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;sourcePacks?:ReadonlyMap<string,{revision:string;prepare:(input:ImportPreparation)=>Promise<ImportPreparationResult>}>;onImported?:(captureIds:string[],importJobId:string)=>Promise<{memoryJobId?:string}>};
-type InternalJob=ImportJob&{containerIds?:string[];recordsProcessed?:number;processing?:'automatic'|'preview';sourcePackRevision?:string;archiveWarnings?:string[];createFingerprint?:string;preparationRevision?:number;originalsPending?:boolean;expansion?:{originalIds:string[];completedIds:string[];pins?:Record<string,{id:string;version:string}>};parserMode?:'plain';workspace:string;inputs:{path:string;fileId:string}[];manifestHash?:string;failurePhase?:'prepare'|'import';memoryNotified?:boolean;blockedArchive?:boolean};
+type InternalJob=ImportJob&{containerIds?:string[];recordsProcessed:number;processing:'automatic'|'preview';sourcePackRevision?:string;archiveWarnings?:string[];createFingerprint?:string;preparationRevision:number;originalsPending?:boolean;expansion?:{originalIds:string[];completedIds:string[];pins?:Record<string,{id:string;version:string}>};parserMode?:'plain';workspace:string;inputs:{path:string;fileId:string}[];manifestHash?:string;failurePhase?:'prepare'|'import';memoryNotified?:boolean;blockedArchive?:boolean};
 const responseSchema=z.object({summary:z.string().max(20000),recordsPath:z.string().max(4000).optional(),warnings:z.array(z.string().max(2000)).max(200).optional(),reviewDecision:importReviewDecisionSchema.optional()}).strict();
 const message=(error:unknown)=>error instanceof Error?error.message.slice(0,2000):'Import failed';
 const inside=(root:string,path:string)=>{const rel=relative(root,path);return rel===''||(!rel.startsWith(`..${sep}`)&&rel!=='..'&&!isAbsolute(rel));};
 function reviewGate(job:InternalJob,decision:ImportReviewDecision|undefined,informationalWarnings=false):ImportReviewGate {
-  if((job.processing??'preview')!=='automatic')return {decision:'confirmation',reason:'This import was requested for manual preview.'};
+  if(job.processing!=='automatic')return {decision:'confirmation',reason:'This import was requested for manual preview.'};
   if(!decision)return {decision:'confirmation',reason:'The parser did not provide a confidence and ambiguity assessment.'};
   if(decision.confidence!=='high'||decision.ambiguous)return {decision:'confirmation',reason:decision.reason??'The parser reported low confidence or ambiguity.'};
   if(!decision.reason)return {decision:'confirmation',reason:'The parser did not explain its high-confidence assessment.'};
@@ -86,7 +86,7 @@ export class ImportStore {
         // The saved workspace/preview is intentionally absent from a backup.
         // Retire its runnable phases before admitting a new reviewed generation.
         store.db.prepare("UPDATE execution_steps SET state='stale',error='restored_preview_required',fence=NULL,lease_until=0,updated_at=? WHERE kind IN ('imports.prepare','imports.commit') AND json_extract(input,'$.jobId')=? AND state IN ('waiting','running','blocked')").run(Date.now(),job.id);
-        job.preparationRevision=(job.preparationRevision??0)+1;job.status=job.status==='cancelled'?'cancelled':job.blockedArchive?'failed':'queued';job.processingStatus=job.blockedArchive?'blocked':'archived';job.failurePhase='prepare';job.preview=undefined;job.dispositions=undefined;job.reviewDecision=undefined;job.reviewGate=undefined;job.manifestHash=undefined;
+        job.preparationRevision=job.preparationRevision+1;job.status=job.status==='cancelled'?'cancelled':job.blockedArchive?'failed':'queued';job.processingStatus=job.blockedArchive?'blocked':'archived';job.failurePhase='prepare';job.preview=undefined;job.dispositions=undefined;job.reviewDecision=undefined;job.reviewGate=undefined;job.manifestHash=undefined;
         job.progress={total:0,processed:0,imported:0,duplicates:0};
         job.recordsProcessed=0;if(job.media)job.media=job.media.map(({captureId,processing,searchable,memory,...item})=>item);
         if(missingOriginals)job.error='This backup is missing original files. Upload them again to continue.';
@@ -181,7 +181,7 @@ export class ImportStore {
     // Directory enumeration yields; another host may have accepted this request meanwhile.
     if(request.requestId){const existing=this.createdRequest(request.requestId,createFingerprint!);if(existing)return existing;}
     const now=new Date().toISOString(),id=request.requestId??randomUUID(),workspace=join(this.directory,id);privateDirectory(workspace);privateDirectory(join(workspace,'inputs'));
-    const job:InternalJob={...(createFingerprint?{createFingerprint}:{}),...(request.sourcePackId?{sourcePackId:request.sourcePackId,sourcePackRevision:configuredPack!.revision}:{}),...(request.processing==='automatic'&&!request.sourcePackId&&!request.instruction.trim()&&entries.every(entry=>/\.(txt|md|markdown|csv|tsv|json|jsonl|ndjson|yaml|yml|log|ics|pdf|docx|xlsx)$/i.test(entry.name))?{parserMode:'plain' as const}:{}),processing:request.processing,id,name:request.name??(entries.length===1?basename(entries[0].name):moteText("导入 {0} 个文件", entries.length)),instruction:request.instruction,sourceId:'',status:'queued',processingStatus:'archived',createdAt:now,updatedAt:now,files:[],summary:'',warnings:[],archive:{files:0,bytes:0,expandedFiles:0},progress:{total:0,processed:0,imported:0,duplicates:0},captureIds:[],workspace,inputs:[]};
+    const job:InternalJob={preparationRevision:0,recordsProcessed:0,...(createFingerprint?{createFingerprint}:{}),...(request.sourcePackId?{sourcePackId:request.sourcePackId,sourcePackRevision:configuredPack!.revision}:{}),...(request.processing==='automatic'&&!request.sourcePackId&&!request.instruction.trim()&&entries.every(entry=>/\.(txt|md|markdown|csv|tsv|json|jsonl|ndjson|yaml|yml|log|ics|pdf|docx|xlsx)$/i.test(entry.name))?{parserMode:'plain' as const}:{}),processing:request.processing,id,name:request.name??(entries.length===1?basename(entries[0].name):moteText("导入 {0} 个文件", entries.length)),instruction:request.instruction,sourceId:'',status:'queued',processingStatus:'archived',createdAt:now,updatedAt:now,files:[],summary:'',warnings:[],archive:{files:0,bytes:0,expandedFiles:0},progress:{total:0,processed:0,imported:0,duplicates:0},captureIds:[],workspace,inputs:[]};
     const stage=(entry:{name:string;bytes?:Buffer;fileId?:string;mimeType?:string;path?:string;sizeBytes?:number;identity?:string})=>{
       if(job.inputs.length>=MAX_FILES)throw new StoreError('Expanded archive exceeds 4000 files',413);
       const path=join(workspace,'inputs',archiveRelativePath(entry.name));if(job.inputs.some(i=>i.path===path))throw new StoreError('Archive contains duplicate file paths');
@@ -251,7 +251,7 @@ export class ImportStore {
     z.string().max(12000).parse(instruction);const job=this.load(id);
     if(job.sourcePackId&&instruction.trim())throw new StoreError('Python Source Packs use fixed parser code; use model analysis for freeform import instructions',409);
     if(this.running.has(id)||this.isScheduled(id)||job.progress.processed>0||job.status==='completed')throw new StoreError('This import can no longer be reanalyzed',409);
-    job.preparationRevision=(job.preparationRevision??0)+1;job.instruction=instruction;if(instruction.trim())delete job.parserMode;job.status='queued';job.processingStatus='archived';job.failurePhase='prepare';job.preview=undefined;job.dispositions=undefined;job.reviewDecision=undefined;job.reviewGate=undefined;job.manifestHash=undefined;job.progress.total=0;job.error=undefined;this.save(job);return this.public(job);
+    job.preparationRevision=job.preparationRevision+1;job.instruction=instruction;if(instruction.trim())delete job.parserMode;job.status='queued';job.processingStatus='archived';job.failurePhase='prepare';job.preview=undefined;job.dispositions=undefined;job.reviewDecision=undefined;job.reviewGate=undefined;job.manifestHash=undefined;job.progress.total=0;job.error=undefined;this.save(job);return this.public(job);
   }
   private async materialize(input:{path:string;fileId:string}){
     privateDirectory(dirname(input.path));privateFile(input.path,true);
@@ -394,7 +394,7 @@ export class ImportStore {
         if(ack.duplicate)grant.commit(()=>record(ack.id,true));
       }
       let index=-1;for await(const record of this.validatedRecords(validated,signal)){
-        index++;if(index<(job.recordsProcessed??Math.max(0,job.progress.processed-(job.media?.filter(item=>item.captureId).length??0))))continue;signal?.throwIfAborted();grant.assert();const fileIds=[...record.evidencePaths,...record.attachments].map(path=>job.inputs.find(input=>input.path===path)!.fileId);
+        index++;if(index<(job.recordsProcessed))continue;signal?.throwIfAborted();grant.assert();const fileIds=[...record.evidencePaths,...record.attachments].map(path=>job.inputs.find(input=>input.path===path)!.fileId);
         await this.sources.upsert(job.sourceId,record.item,()=>grant.assert(),result=>{
           grant.assert();this.files.attach(result.id,fileIds);
           linkOperationParent(this.store,`import:${id}`,`capture:${result.id}`);linkOperationParent(this.store,`import:${id}`,`file:${result.id}`);
@@ -415,7 +415,7 @@ export class ImportStore {
     // preparation revision stay fixed; a new reviewed preview always changes the commit ID.
     // Decoder selection is derived during preparation and cannot change the
     // generation of its own active lease. User edits increment preparationRevision.
-    return sha256(JSON.stringify([`import:${job.id}`,phase,phase==='prepare'?[job.preparationRevision??0,job.sourceId,job.instruction,job.sourcePackId,job.sourcePackRevision]:[job.preparationRevision??0,job.manifestHash??'legacy']]));
+    return sha256(JSON.stringify([`import:${job.id}`,phase,phase==='prepare'?[job.preparationRevision,job.sourceId,job.instruction,job.sourcePackId,job.sourcePackRevision]:[job.preparationRevision,job.manifestHash]]));
   }
   private admitPhase(job:InternalJob,phase:'prepare'|'commit',state:ExecutionStep['state']='waiting',error?:string){
     const id=this.phaseId(job,phase);return this.executor.enqueue(`import:${job.id}`,`imports.${phase}`,{jobId:job.id,phase},{id,generation:{slot:phase,version:id},initial:{state,attempts:['running','succeeded','failed'].includes(state)?1:0,availableAt:0,error},...(phase==='commit'?{dependencies:[this.phaseId(job,'prepare')]}:{})});

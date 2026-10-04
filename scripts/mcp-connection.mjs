@@ -3,8 +3,7 @@ export function parseMcpConnection(value) {
   const fail=()=>{throw Error('Invalid private MCP connection');};
   if(!value||typeof value!=='object'||Array.isArray(value))return fail();
   let url,token;
-  if(Object.keys(value).sort().join(',')==='token,url')({url,token}=value);
-  else {
+  {
     if(Object.keys(value).join(',')!=='mcpServers'||!value.mcpServers||Object.keys(value.mcpServers).join(',')!=='mote')return fail();
     const server=value.mcpServers.mote;
     if(!server||Object.keys(server).sort().join(',')!=='headers,type,url'||server.type!=='http'||!server.headers||Object.keys(server.headers).join(',')!=='Authorization'||typeof server.headers.Authorization!=='string'||!server.headers.Authorization.startsWith('Bearer '))return fail();

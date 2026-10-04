@@ -10,20 +10,16 @@ Current products support the inclusive range `{ "min": 1, "max": 1 }`.
 is the Central release version, and `protocol` is its supported wire range.
 This public health response does not disclose credential capabilities.
 
-Native connection checks send `X-Mote-Protocol-Version: 1` to the authenticated
-`GET /api/connections/self` endpoint. Any present value requests metadata, so a
-future client can still discover an incompatible server range. The server adds
-`node.protocol` to its existing `{credential,node,capabilities}` response. Without
-this header, the response retains its previous shape because already-installed
-Desktop clients reject unknown fields. The header only requests disclosure; it
-does not bypass authentication or select a different ingestion behavior.
+Native connection checks send `X-Mote-Protocol-Version: 1` to authenticated
+`GET /api/connections/self`. Every successful response includes `node.protocol`
+alongside `{credential,node,capabilities}`. The header does not bypass
+authentication or select a different ingestion behavior.
 
-Clients validate integer bounds, `min <= max`, and range overlap. A provided
-malformed or non-overlapping range fails the connection check before applying a
-new credential. Missing metadata means the existing v1 API, preserving connections
-to servers shipped before this handshake. Existing endpoint, authorization and
-ingress receipt checks still apply. Product version strings are never compared
-across Central, Desktop and Android to decide compatibility.
+Clients require integer bounds, `min <= max`, and range overlap. Missing,
+malformed, or non-overlapping metadata fails the connection check before applying
+a credential. Pre-handshake nodes are retired by this MVP upgrade. Product
+versions are never compared across Central, Desktop and Android to decide API
+compatibility.
 
 `capabilities.ingest`, `ownSources` and `archiveRead` describe the authenticated
 credential's existing authorization. They do not promise new product features.
@@ -33,12 +29,12 @@ validation. The connection handshake does not replace that guard. Server and its
 bundled Web console remain one release unit and retain their build consistency
 check.
 
-Additive changes must retain existing request and response behavior, including
-strict older consumers. New fields can use an explicit opt-in, as above. A future
-incompatible wire change must update the supported range and these generated
-fixtures, provide an upgrade path, and retain old readers while older collectors
-remain supported. Changes to this directory or `@mote/shared` require validating
-all consumers; they do not require releasing every product.
+Storage epochs and release tags are independent of the wire range. This cleanup
+uses Central and native local format 3 while retaining wire range 1 and collector
+ingress 2. Unsupported stored formats fail explicitly without rewriting their
+files. See the compatibility cleanup audit for the destructive MVP upgrade steps.
+Future wire changes must update the supported range and generated fixtures, and
+validate all consumers.
 
 The fixture cases in [fixtures/compatibility.json](fixtures/compatibility.json)
 are consumed by shared TypeScript, Desktop connection and Android JVM tests.

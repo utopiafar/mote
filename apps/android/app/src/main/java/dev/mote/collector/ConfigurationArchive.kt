@@ -29,7 +29,7 @@ object ConfigurationArchive {
             .put("syncIntervalMinutes", c.syncIntervalMinutes)
             .put("syncBatchSize", c.syncBatchSize)
             .put("jsonlWindowMinutes", c.jsonlWindowMinutes)
-            .put("ocrChargingOnly", c.ocrChargingOnly)
+
             .put("mediaCollectionEnabled", c.mediaCollectionEnabled)
             .put("screenCollectionEnabled", c.screenCollectionEnabled)
             .put("notificationCollectionEnabled", c.notificationCollectionEnabled)
@@ -40,7 +40,7 @@ object ConfigurationArchive {
             .put("ocrMode", c.ocrMode)
             .put("ocrAppModes", c.ocrAppModes)
             .put("imageDedupeDiagnosticsEnabled", c.imageDedupeDiagnosticsEnabled)
-            .put("contentEncryptionEnabled", c.contentEncryptionEnabled)
+
             .put("uploadedRetentionDays", c.uploadedRetentionDays)
         if (includeToken) settings.put("token", c.token)
         settings.put("nsfw", JSONObject()
@@ -90,7 +90,7 @@ object ConfigurationArchive {
             syncIntervalMinutes = int(values, "syncIntervalMinutes", current.syncIntervalMinutes),
             syncBatchSize = int(values, "syncBatchSize", current.syncBatchSize),
             jsonlWindowMinutes = int(values, "jsonlWindowMinutes", current.jsonlWindowMinutes),
-            ocrChargingOnly = boolean(values, "ocrChargingOnly", current.ocrChargingOnly),
+
             mediaCollectionEnabled = boolean(values, "mediaCollectionEnabled", current.mediaCollectionEnabled),
             screenCollectionEnabled = boolean(values, "screenCollectionEnabled", current.screenCollectionEnabled),
             notificationCollectionEnabled = boolean(values, "notificationCollectionEnabled", current.notificationCollectionEnabled),
@@ -101,7 +101,7 @@ object ConfigurationArchive {
             ocrMode = string(values, "ocrMode", current.ocrMode),
             ocrAppModes = string(values, "ocrAppModes", current.ocrAppModes),
             imageDedupeDiagnosticsEnabled = boolean(values, "imageDedupeDiagnosticsEnabled", current.imageDedupeDiagnosticsEnabled),
-            contentEncryptionEnabled = boolean(values, "contentEncryptionEnabled", current.contentEncryptionEnabled),
+
             uploadedRetentionDays = int(values, "uploadedRetentionDays", current.uploadedRetentionDays),
             token = string(values, "token", if (nextServer == current.server) current.token else ""),
             nsfw = current.nsfw.copy(
@@ -125,6 +125,6 @@ object ConfigurationArchive {
     private fun int(j: JSONObject, key: String, fallback: Int): Int {
         val n = long(j, key, fallback.toLong()); require(n in Int.MIN_VALUE..Int.MAX_VALUE); return n.toInt()
     }
-    private val keys = setOf("uiPageMode", "uiPageRules", "server", "token", "deviceName", "intervalSeconds", "maxQueueMiB", "wifiOnly", "excludedPackages", "masks", "localReviewUrl", "debugHttp", "mode", "nsfw", "jpegQuality", "captureMaxSide", "chargingOnly", "batteryPauseBelowPct", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "appCollectionRules", "metadataEnabled", "syncMode", "syncIntervalMinutes", "syncBatchSize", "jsonlWindowMinutes", "ocrChargingOnly", "mediaCollectionEnabled", "screenCollectionEnabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "syncChargingOnly", "syncBatteryNotLow", "imageDedupeMode", "ocrMode", "ocrAppModes", "imageDedupeDiagnosticsEnabled", "contentEncryptionEnabled", "uploadedRetentionDays")
+    private val keys = setOf("uiPageMode", "uiPageRules", "server", "token", "deviceName", "intervalSeconds", "maxQueueMiB", "wifiOnly", "excludedPackages", "masks", "localReviewUrl", "debugHttp", "mode", "nsfw", "jpegQuality", "captureMaxSide", "chargingOnly", "batteryPauseBelowPct", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "appCollectionRules", "metadataEnabled", "syncMode", "syncIntervalMinutes", "syncBatchSize", "jsonlWindowMinutes", "mediaCollectionEnabled", "screenCollectionEnabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "syncChargingOnly", "syncBatteryNotLow", "imageDedupeMode", "ocrMode", "ocrAppModes", "imageDedupeDiagnosticsEnabled", "uploadedRetentionDays")
     private val nsfwKeys = setOf("enabled", "threads", "timeoutMs", "source", "customUrl", "policy", "maxTokens", "reviewMaxSide")
 }

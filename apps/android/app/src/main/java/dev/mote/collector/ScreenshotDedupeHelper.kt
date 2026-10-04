@@ -195,9 +195,7 @@ object ScreenshotDedupeHelper {
         val text = raw?.trim().orEmpty()
         if (text.isEmpty()) return null
 
-        if (!text.startsWith("$SIGNATURE_VERSION|")) {
-            return parseLegacyExactSignature(text)
-        }
+        if (!text.startsWith("$SIGNATURE_VERSION|")) return null
 
         val parts = text.split('|')
         if (parts.size != 5) return null
@@ -212,16 +210,6 @@ object ScreenshotDedupeHelper {
         return FrameFeatures(width, height, exactHash, dHash, thumb)
     }
 
-    private fun parseLegacyExactSignature(raw: String): FrameFeatures? {
-        val sep = raw.indexOf(':')
-        if (sep <= 0 || sep >= raw.length - 1) return null
-        val size = raw.substring(0, sep).split('x')
-        if (size.size != 2) return null
-        val width = size[0].toIntOrNull() ?: return null
-        val height = size[1].toIntOrNull() ?: return null
-        val exactHash = raw.substring(sep + 1).takeIf { it.isNotBlank() } ?: return null
-        return FrameFeatures(width, height, exactHash, 0L, ByteArray(THUMB_SIZE * THUMB_SIZE))
-    }
 
     private data class ThumbDiff(
         val changedPixelRatio: Double,

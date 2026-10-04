@@ -87,8 +87,8 @@ test('real Harness cancels an unbounded synthetic SSE line before its query dead
     pump();
   });
   await new Promise(resolve=>provider.listen(0,'127.0.0.1',resolve));
-  const reader={search:async()=>[],timeline:async()=>[],evidence:async()=>[],activity:async()=>({}),devices:async()=>[]};
-  const agent=createAgent({reader,baseUrl:`http://127.0.0.1:${provider.address().port}/v1`,model:'synthetic',apiKey:'synthetic',timeoutMs:8000});
+  const reader={search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]};
+  const agent=createAgent({reader,baseUrl:`http://127.0.0.1:${provider.address().port}/v1`,model:'synthetic',apiKey:'synthetic',agentTimeoutMs:8000});
   const start=Date.now();
   try {
     await assert.rejects(agent.query({question:'Generated stream resource fixture'}));

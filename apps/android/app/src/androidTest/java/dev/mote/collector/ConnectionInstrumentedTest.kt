@@ -16,6 +16,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.util.concurrent.CopyOnWriteArrayList
 import java.time.Instant
 import java.util.Base64
 import java.util.UUID
@@ -35,7 +38,7 @@ class ConnectionInstrumentedTest {
         try {
             ActivityScenario.launch(ConnectionActivity::class.java).awaitUiText(currentNodePrefix()).use { scenario ->
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
-                Settings(context).saveConnection("https://generated-new.invalid", "synthetic-collector-token-no-network-123456789", "合成设备", false)
+                Settings(context).saveConnection("https://generated-new.invalid", "synthetic-owner-token-no-network-123456789", "合成设备", false)
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
                 scenario.awaitUiText(currentNodePrefix("https://generated-new.invalid"))
                 scenario.onActivity { activity ->
@@ -66,14 +69,14 @@ class ConnectionInstrumentedTest {
         try {
             ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
-                Settings(context).saveConnection("https://generated-new.invalid", "synthetic-collector-token-no-network-123456789", "合成设备", false)
+                Settings(context).saveConnection("https://generated-new.invalid", "synthetic-owner-token-no-network-123456789", "合成设备", false)
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
                 scenario.onActivity { activity ->
                     fun views(v: android.view.View): List<android.view.View> = listOf(v) + if (v is android.view.ViewGroup) (0 until v.childCount).flatMap { views(v.getChildAt(it)) } else emptyList()
                     views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString() == MoteI18n.text("本机") }.performClick()
                     views(activity.window.decorView).single { it.isShown && it.tag == "menu:${MoteI18n.text("连接与同步")}" }.performClick()
                 }
-                scenario.awaitUiText("synthetic-collector-token-no-network-123456789")
+                scenario.awaitUiText("synthetic-owner-token-no-network-123456789")
                 scenario.onActivity { activity ->
                     val fields = mutableListOf<android.widget.EditText>()
                     fun walk(v: android.view.View) { if (v is android.widget.EditText) fields += v; if (v is android.view.ViewGroup) repeat(v.childCount) { walk(v.getChildAt(it)) } }
@@ -124,6 +127,68 @@ class ConnectionInstrumentedTest {
         assertFalse(ConnectionGuard.startCapture(context, "stale-config") { error("No stale consent may start") })
         assertFalse(settings.enabled)
     }
+    @Test fun ownerHandshakeRejectsRetiredCollectorAndMcpBeforeSavingCredentials() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        require(context.packageName == "dev.mote.collector.dev" && android.os.Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
+        val settings = Settings(context)
+        require(!settings.enabled && context.queue().depth() == 0 && QuickNotes.draft(context).read().text.isEmpty())
+        val pending = File(context.noBackupFilesDir, "connection-pending.enc"); require(!pending.exists())
+        val previous = listOf("mote", "connection").associateWith { context.getSharedPreferences(it, 0).all.toMap() }
+        val listener = ServerSocket(0, 10, InetAddress.getByName("127.0.0.1"))
+        val node = "http://127.0.0.1:${listener.localPort}"
+        val requests = CopyOnWriteArrayList<String>()
+        val scope = java.util.concurrent.atomic.AtomicReference("owner")
+        val token = "generated-owner-handshake-token-12345678901234567890"
+        val worker = Thread {
+            while (!listener.isClosed) {
+                val socket = try { listener.accept() } catch (_: java.io.IOException) { break }
+                socket.use {
+                    it.soTimeout = 10_000
+                    val reader = it.getInputStream().bufferedReader(); val request = reader.readLine() ?: return@use
+                    val path = request.split(' ')[1]; var length = 0
+                    while (true) {
+                        val line = reader.readLine() ?: break; if (line.isEmpty()) break
+                        if (line.startsWith("Content-Length:", ignoreCase = true)) length = line.substringAfter(':').trim().toInt()
+                    }
+                    repeat(length) { reader.read() }; requests += path
+                    val response = if (path == "/api/connections/redeem") JSONObject().put("serverUrl", node).put("scope", scope.get()).put("token", token).put("credentialId", "generated-owner-credential")
+                    else JSONObject().put("credential", JSONObject().put("id", "generated-owner-credential").put("scope", scope.get()).put("deviceId", settings.deviceId).put("platform", "android").put("serverUrl", node))
+                        .put("node", JSONObject().put("protocol", JSONObject().put("min", 1).put("max", 1)))
+                        .put("capabilities", JSONObject().put("ingest", true).put("ingressVersion", 2).put("ownSources", true).put("archiveRead", true))
+                    val body = response.toString().toByteArray()
+                    it.getOutputStream().apply {
+                        write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n".toByteArray())
+                        write(body); flush()
+                    }
+                }
+            }
+        }.apply { isDaemon = true; start() }
+        try {
+            settings.save(settings.read().copy(server = node, token = token, debugHttp = true, syncMode = "manual"))
+            val before = settings.read(); val client = ConnectionClient(context)
+            assertEquals("owner", client.test())
+            for (retired in listOf("collector", "mcp-read", "mcp-write")) {
+                scope.set(retired)
+                assertEquals("identity", assertThrows(ConnectionFailure::class.java) { client.test() }.category)
+                assertEquals(before, settings.read()); assertFalse(pending.exists())
+                val invitation = ConnectionInvitation.parse(JSONObject().put("format", "mote.connection").put("version", 1).put("serverUrl", node)
+                    .put("code", "A".repeat(43)).put("expiresAt", Instant.now().plusSeconds(600).toString()).toString(), true, true)
+                val start = requests.size
+                assertEquals("response", assertThrows(ConnectionFailure::class.java) { client.connect(invitation, "Generated owner", true) }.category)
+                assertEquals(listOf("/api/connections/redeem"), requests.drop(start))
+                assertEquals(before, settings.read()); assertFalse(pending.exists())
+            }
+        } finally {
+            listener.close(); worker.join(5000)
+            previous.forEach { (name, values) ->
+                val edit = context.getSharedPreferences(name, 0).edit().clear()
+                values.forEach { (key, value) -> when (value) {
+                    is String -> edit.putString(key, value); is Boolean -> edit.putBoolean(key, value); is Int -> edit.putInt(key, value)
+                    is Long -> edit.putLong(key, value); is Float -> edit.putFloat(key, value)
+                } }; edit.commit()
+            }
+        }
+    }
     @Test fun optionalGeneratedCentralRePairPreservesOfflineQueueAndPreparedNote() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val input = File(context.filesDir, "connection-live-fixture.json")
@@ -165,11 +230,11 @@ class ConnectionInstrumentedTest {
             val first = mint(); val client = ConnectionClient(context)
             connectThroughRuntime(client, first)
             waitUntil { ConnectionGuard.sync { true } == true }; stopUploads()
-            assertEquals("collector", client.test()); assertEquals(deviceId, settings.deviceId)
+            assertEquals("owner", client.test()); assertEquals(deviceId, settings.deviceId)
             val config = settings.read().copy(wifiOnly = false, diagnosticsEnabled = false, syncMode = "manual", uploadedRetentionDays = 0); settings.save(config)
             val credential = context.getSharedPreferences("connection", 0).getString("credentialId", "")!!
             assertEquals(410, HttpJson.post("$server/api/connections/redeem", JSONObject().put("code", first.code).put("deviceId", deviceId).put("deviceName", "合成").put("platform", "android")).first)
-            assertEquals(403, HttpJson.get("$server/api/configuration", config.token).first)
+            assertEquals(200, HttpJson.get("$server/api/configuration", config.token).first)
             assertTrue(HttpJson.request("DELETE", "$server/api/connections/$credential", JSONObject(), owner).first in 200..299)
             val queued = event("note", "仅合成离线笔记 👩🏽‍💻\n等待重新配对")
             context.queue().enqueue(queued, null, 1024 * 1024); context.queue().enqueue(queued, null, 1024 * 1024)

@@ -50,14 +50,12 @@ export class ProcessingRuntime {
       CREATE INDEX IF NOT EXISTS processing_ready ON processing_jobs(lane,state,available_at);
       CREATE TABLE IF NOT EXISTS processing_dependencies(job_id TEXT NOT NULL REFERENCES processing_jobs(id) ON DELETE CASCADE,dependency_id TEXT NOT NULL REFERENCES processing_jobs(id),PRIMARY KEY(job_id,dependency_id));
       CREATE TABLE IF NOT EXISTS processing_usage(day TEXT NOT NULL,lane TEXT NOT NULL,calls INTEGER NOT NULL,input_characters INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(day,lane));`);
-    if(!store.db.prepare('PRAGMA table_info(processing_usage)').all().some(r=>r.name==='input_characters'))store.db.exec('ALTER TABLE processing_usage ADD COLUMN input_characters INTEGER NOT NULL DEFAULT 0');
     if(materials)store.archive.enableMaterialLineage();
     this.engine=engine??new ExecutionEngine(store,now);this.owned=!engine;
     for(const lane of lanes)this.unregister.push(this.engine.register({kind:'context-dag.'+lane,pool:lane,concurrency:()=>this.settings()[lane].concurrency,
       validate:step=>this.valid(this.job(step.id)),admit:step=>this.admit(this.job(step.id)),execute:(step,signal)=>this.process(this.job(step.id),signal,step),commit:(step,result)=>this.commit(this.job(step.id),result),project:step=>this.project(step),
       classify:error=>{const category=error instanceof ProcessingFailure?error.category:error instanceof z.ZodError?'permanent':error instanceof StoreError?(error.statusCode===409?'blocked':error.statusCode<500?'permanent':'transient'):'transient';return new ExecutionFailure(category,category);},
     }));
-    this.migrate();
     const pluginScope=this.pluginScope;
     this.ready=(async()=>{for(const plugin of plugins)await pluginScope.install(plugin);})();void this.ready.catch(()=>{});
   }
@@ -113,19 +111,6 @@ export class ProcessingRuntime {
   private job(id:string):Job{const row=this.store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(id);if(!row)throw new StoreError('Workflow step unavailable',404);return JSON.parse(String(row.json));}
   private project(step:ExecutionStep){
     this.store.db.prepare('UPDATE processing_jobs SET state=?,attempts=?,available_at=?,lease_until=0,fence=NULL,error=? WHERE id=?').run(step.state,step.attempts,step.availableAt,step.error??null,step.id);
-  }
-  private migrate(){
-    const db=this.store.db;if(db.prepare("SELECT 1 FROM settings WHERE key='execution-dag-v1'").get())return;
-    // Stable job IDs and artifact IDs survive the authority migration. One transaction
-    // prevents a partially installed projection from losing the prior retry state.
-    db.exec('BEGIN IMMEDIATE');try{
-      let cursor=0;
-      for(;;){const rows=db.prepare('SELECT rowid,* FROM processing_jobs WHERE rowid>? ORDER BY rowid LIMIT 500').all(cursor);if(!rows.length)break;
-        for(const row of rows){const job=JSON.parse(String(row.json)) as Job;this.engine.enqueue('workflow:'+job.id,'context-dag.'+job.lane,{jobId:job.id},{id:job.id,initial:{state:String(row.state) as ExecutionState,attempts:Number(row.attempts),availableAt:Number(row.available_at),error:row.error?String(row.error):undefined}});cursor=Number(row.rowid);}
-      }
-      db.exec('INSERT OR IGNORE INTO execution_dependencies SELECT job_id,dependency_id FROM processing_dependencies');
-      db.prepare("INSERT INTO settings VALUES('execution-dag-v1','1')").run();db.exec('COMMIT');
-    }catch(error){db.exec('ROLLBACK');throw error;}
   }
   /** All execution ownership is in the shared engine, including dependency admission. */
   async tick(){if(this.stopping)return;await this.ready;const ids=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE 'context-dag.%' AND (state='waiting' OR (state='running' AND lease_until<=?)) ORDER BY rowid LIMIT 1000").all(this.now()).map(row=>String(row.id));await this.engine.drain(ids);}

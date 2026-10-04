@@ -15,7 +15,7 @@ class QueueLocationStoreTest {
     }
     private fun screen() = JSONObject().put("id", UUID.randomUUID().toString()).put("source", "screen").put("capturedAt", "2026-09-14T00:00:00Z")
         .put("privacy", JSONObject().put("excluded", false)).put("imageMime", "image/jpeg").put("ocrText", "")
-        .put("ocr", JSONObject().put("status", "pending").put("reason", "charging"))
+        .put("ocr", JSONObject().put("status", "disabled"))
     private fun note() = JSONObject().put("id", UUID.randomUUID().toString()).put("source", "note").put("ocrText", "generated fixture")
         .put("capturedAt", "2026-09-14T00:00:01Z").put("privacy", JSONObject().put("excluded", false))
     private class Interrupted : Error()
@@ -24,22 +24,7 @@ class QueueLocationStoreTest {
         try { test(File(root, "control").apply { mkdirs() }, File(root, "internal/queue").apply { mkdirs() }, File(root, "card").apply { mkdirs() }) }
         finally { root.deleteRecursively() }
     }
-    @Test fun migrationPreservesEncryptedQueueAndOcrStateAndRejectsStaleInstances() = fixture { control, legacy, card ->
-        val store = QueueLocationStore(control, legacy, cipher); val original = store.current()
-        val queue = DurableQueue(legacy, cipher).apply { assertCurrent = { store.assertCurrent(original) } }
-        val image = screen(); val note = note(); val id = image.getString("id")
-        queue.enqueue(image, byteArrayOf(1, 2, 3), 2000000); queue.acknowledge(id); queue.completeOcr(id, "generated OCR", "completed", 2000000)
-        queue.enqueue(note, null, 2000000)
-        val old = legacy.listFiles()!!.filter { it.extension in setOf("event", "blob") }.associate { it.name to it.readBytes().toList() }
-        val target = store.migrate("card", card)
-        assertFalse(legacy.exists()); assertEquals(target, QueueLocationStore(control, legacy, cipher).current())
-        val reopened = DurableQueue(File(target.path), cipher)
-        reopened.verifyIntegrity(); assertEquals(2, reopened.depth()); assertEquals(id, reopened.nextOcrUpdate()!!.getString("id"))
-        assertEquals(note.getString("id"), reopened.peek()!!.getString("id")); assertArrayEquals(byteArrayOf(1, 2, 3), reopened.image(id))
-        assertEquals(old, File(target.path).listFiles()!!.filter { it.extension in setOf("event", "blob") }.associate { it.name to it.readBytes().toList() })
-        assertThrows(IllegalStateException::class.java) { queue.acknowledgeOcr(id) }
-        reopened.acknowledgeOcr(id); assertNull(reopened.image(id))
-    }
+
     @Test fun crashBeforePointerCommitKeepsOriginalAndRemovesOnlyUncommittedCopy() = fixture { control, legacy, card ->
         val store = QueueLocationStore(control, legacy, cipher, checkpoint = { if (it == "verified") throw Interrupted() })
         val original = store.current(); DurableQueue(legacy, cipher).enqueue(screen(), byteArrayOf(3), 2000000)
@@ -77,5 +62,22 @@ class QueueLocationStoreTest {
         store.current(); DurableQueue(legacy, cipher).enqueue(note(), null, 2000000)
         assertThrows(IllegalStateException::class.java) { store.migrate("card", card) }
         assertTrue(legacy.exists()); assertEquals(1, card.listFiles()!!.size); assertTrue(File(control, "queue-migration.json").exists())
+    }
+
+    @Test fun migrationPreservesExactQueueBytesAndRejectsStaleInstances() = fixture { control, legacy, card ->
+        val store = QueueLocationStore(control, legacy, cipher); val original = store.current()
+        val queue = DurableQueue(legacy, cipher).apply { assertCurrent = { store.assertCurrent(original) } }
+        val image = screen(); val note = note(); val id = image.getString("id")
+        queue.enqueue(image, byteArrayOf(1, 2, 3), 2000000); queue.acknowledge(id, retentionDays = 7)
+        queue.enqueue(note, null, 2000000)
+        val old = legacy.listFiles()!!.filter { it.extension in setOf("event", "blob") }.associate { it.name to it.readBytes().toList() }
+        val target = store.migrate("card", card)
+        assertFalse(legacy.exists()); assertEquals(target, QueueLocationStore(control, legacy, cipher).current())
+        val reopened = DurableQueue(File(target.path), cipher)
+        reopened.verifyIntegrity(); assertEquals(2, reopened.depth())
+        assertEquals(note.getString("id"), reopened.peek()!!.getString("id")); assertArrayEquals(byteArrayOf(1, 2, 3), reopened.image(id))
+        assertEquals(old, File(target.path).listFiles()!!.filter { it.extension in setOf("event", "blob") }.associate { it.name to it.readBytes().toList() })
+        assertThrows(IllegalStateException::class.java) { queue.acknowledge(id) }
+        reopened.pruneUploaded(Long.MAX_VALUE); assertNull(reopened.image(id))
     }
 }

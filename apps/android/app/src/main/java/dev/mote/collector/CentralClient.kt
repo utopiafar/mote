@@ -95,18 +95,6 @@ internal class UnifiedCentralSession(private val context: Context) {
     private var stamp = ""
     private var version = 0L
     private var selected = ""
-    init {
-        val legacy = File(context.noBackupFilesDir, "central-owner-session.enc")
-        if (legacy.exists()) {
-            val config = Settings(context).read()
-            val saved = runCatching { JSONObject(String(SecretBox().open(legacy.readBytes()))) }.getOrNull()
-            if (config.token.isBlank() && saved?.optString("server") == config.server && !saved.optBoolean("signedOut") && saved.optLong("expiresAt") > System.currentTimeMillis()) {
-                val restored = config.copy(token = saved.getString("token"), authExpiresAt = saved.getLong("expiresAt"), authSignedOut = false, authProcess = "")
-                restored.validateConnection(); Settings(context).save(restored, confirmCentralEndpoint = true)
-            }
-            check(legacy.delete())
-        }
-    }
     private val settings get() = Settings(context.applicationContext)
     @Synchronized private fun refresh(): CollectorConfig {
         val config = settings.read()

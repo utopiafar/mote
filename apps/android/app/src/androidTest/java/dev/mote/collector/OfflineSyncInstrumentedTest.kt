@@ -67,16 +67,7 @@ class OfflineSyncInstrumentedTest {
             original.forEach { (key, value) -> when (value) { is String -> edit.putString(key, value); is Boolean -> edit.putBoolean(key, value); is Int -> edit.putInt(key, value); is Long -> edit.putLong(key, value); is Float -> edit.putFloat(key, value) } }; edit.commit()
         }
     }
-    @Test fun localNoteWithoutNodeIsReadableAndDoesNotScheduleUploads() = fixture { context, settings ->
-        assertFalse(settings.read().contentEncryptionEnabled)
-        settings.read().validate(); assertFalse(settings.read().hasSyncConnection())
-        val text = "Generated local-only note 👩🏽‍💻"
-        val id = QuickNotes.save(context, text, "")
-        assertEquals(1, context.queue().depth()); assertEquals(text, context.queue().peek()!!.getString("ocrText"))
-        assertEquals("", settings.dataOrigin()); assertEquals("unconfigured", settings.syncState())
-        assertTrue(String(File(QueueStorage(context).current().path, "$id.event").readBytes()).contains(text))
-        assertTrue(QuickNotes.draft(context).read().text.isEmpty())
-    }
+
     @Test fun generatedActivityCaptureIsLocalWithoutEndpointOrModel() = fixture { context, settings ->
         val config = settings.read().copy(metadataEnabled = false, appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
         settings.save(config); settings.enabled = true
@@ -412,6 +403,16 @@ class OfflineSyncInstrumentedTest {
         }
     }
     private fun waitUntil(detail: () -> String = { "" }, check: () -> Boolean) { val deadline = System.currentTimeMillis() + 30_000; while (!check()) { require(System.currentTimeMillis() < deadline) { "Generated sync fixture timeout: ${detail()} ${Settings(InstrumentationRegistry.getInstrumentation().targetContext).syncState()} ${InstrumentationRegistry.getInstrumentation().targetContext.getSharedPreferences("mote", 0).getString("uploadStatus", "")}" }; Thread.sleep(50) } }
+    @Test fun localNoteWithoutNodeIsReadableAndDoesNotScheduleUploads() = fixture { context, settings ->
+        settings.read().validate(); assertFalse(settings.read().hasSyncConnection())
+        val text = "Generated local-only note 👩🏽‍💻"
+        val id = QuickNotes.save(context, text, "")
+        assertEquals(1, context.queue().depth()); assertEquals(text, context.queue().peek()!!.getString("ocrText"))
+        assertEquals("", settings.dataOrigin()); assertEquals("unconfigured", settings.syncState())
+        assertTrue(String(File(QueueStorage(context).current().path, "$id.event").readBytes()).contains(text))
+        assertTrue(QuickNotes.draft(context).read().text.isEmpty())
+    }
+
     private class LoopbackArchive : Closeable {
         private val socket = ServerSocket(0, 20, InetAddress.getByName("127.0.0.1"))
         val url = "http://127.0.0.1:${socket.localPort}"
@@ -489,4 +490,6 @@ class HeldUploadCompletionWorker(context: Context, params: WorkerParameters) : W
         @Volatile var release = CountDownLatch(1)
         fun reset() { entered = CountDownLatch(1); release = CountDownLatch(1) }
     }
+
+
 }

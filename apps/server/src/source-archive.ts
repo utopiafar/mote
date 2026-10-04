@@ -15,12 +15,11 @@ type Manifest={versions:Record<string,Entry>;heads:Record<string,string>;pending
 type VersionRow={version_key:string;content_hash:string;batch_hash:string;batch_index:number;observed_at:string;group_hash:string};
 export type ArchiveHead={versionKey:string;observedAt:string};
 const hashSchema=z.string().regex(/^[a-f0-9]{64}$/);
-const manifestSchema=z.object({versions:z.record(hashSchema,z.object({hash:hashSchema,batch:hashSchema,index:z.number().int().min(0).max(499),observedAt:z.string().datetime({offset:true}),group:z.string().max(4096)}).strict()),heads:z.record(hashSchema,hashSchema),pendingGroups:z.array(z.string().max(4096))}).strict();
-const batchFile=/^([a-f0-9]{64})(?:\.plain|\.aes)?$/;
+const batchFile=/^([a-f0-9]{64})(?:\.plain|\.aes)$/;
 
 /** Immutable raw batches stay in private files. Their lookup index is transactional
  * SQLite metadata: an interrupted receive leaves only an unreferenced batch file.
- * Existing file manifests are imported once, then never rewritten. */
+ * Metadata is indexed only by the current SQLite schema. */
 export class SourceArchive {
   constructor(private store:Store) {
     store.db.exec(`CREATE TABLE IF NOT EXISTS source_archive_sizes(source_id TEXT PRIMARY KEY,bytes INTEGER NOT NULL);
@@ -39,22 +38,9 @@ export class SourceArchive {
         PRIMARY KEY(source_id,batch_hash),FOREIGN KEY(source_id) REFERENCES source_archive_indexed_sources(source_id) ON DELETE CASCADE);
       CREATE TABLE IF NOT EXISTS source_archive_recovery_groups(source_id TEXT NOT NULL,group_hash TEXT NOT NULL,
         PRIMARY KEY(source_id,group_hash),FOREIGN KEY(source_id) REFERENCES source_archive_indexed_sources(source_id) ON DELETE CASCADE);`);
-    const groupColumns=new Set((store.db.prepare('PRAGMA table_info(source_archive_groups)').all() as {name:string}[]).map(row=>row.name));
-    if(!groupColumns.has('append_epoch'))
-      store.db.exec('ALTER TABLE source_archive_groups ADD COLUMN append_epoch INTEGER NOT NULL DEFAULT 0');
-    if(!groupColumns.has('head_count')){
-      const own=!store.db.isTransaction;if(own)store.db.exec('BEGIN IMMEDIATE');
-      try{
-        store.db.exec('ALTER TABLE source_archive_groups ADD COLUMN head_count INTEGER NOT NULL DEFAULT 0');
-        store.db.exec(`UPDATE source_archive_groups SET head_count=(SELECT count(*) FROM source_archive_heads h
-          WHERE h.source_id=source_archive_groups.source_id AND h.group_hash=source_archive_groups.group_hash)`);
-        if(own)store.db.exec('COMMIT');
-      }catch(error){if(own&&store.db.isTransaction)store.db.exec('ROLLBACK');throw error;}
-    }
     privateDirectory(join(store.directory,'source-archive'));
   }
   private directory(sourceId:string){const path=join(this.store.directory,'source-archive',archiveHash(sourceId));privateDirectory(path);return path;}
-  private manifestPath(sourceId:string){return join(this.store.directory,'source-archive',archiveHash(sourceId),'manifest');}
   private key(item:Pick<SourceItem,'externalId'|'revision'>){return archiveHash([item.externalId,item.revision]);}
   private emptyCheckpoint(sourceId:string,group:string){return archiveHash([sourceId,group,[]]);}
   private groupHash(group:string){return archiveHash(group);}
@@ -68,47 +54,15 @@ export class SourceArchive {
     return {bytes,batches};
   }
   private batchBytes(directory:string,batch:string){
-    let bytes=0;for(const suffix of ['', '.plain','.aes']){
+    let bytes=0;for(const suffix of ['.plain','.aes']){
       const path=join(directory,batch+suffix);if(existsSync(path)){const info=lstatSync(path);if(info.isFile())bytes+=info.size;}
     }return bytes;
   }
-  /** Imports a legacy manifest under the same writer lock as receive. A migrated
-   * group starts with its old checkpoint, so already queued work stays valid. */
   private ensureIndexed(sourceId:string,create=false){
-    const db=this.store.db;
-    if(db.prepare('SELECT 1 FROM source_archive_indexed_sources WHERE source_id=?').get(sourceId))return;
-    const path=this.manifestPath(sourceId);
-    if(!create&&!this.store.contentEncryption.exists(path))return;
-    const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
-    try{
-      if(db.prepare('SELECT 1 FROM source_archive_indexed_sources WHERE source_id=?').get(sourceId)){if(own)db.exec('COMMIT');return;}
-      const legacy=this.store.contentEncryption.exists(path)?manifestSchema.parse(JSON.parse(this.store.contentEncryption.read(path).toString())):undefined;
-      if(!create&&!legacy){if(own)db.exec('COMMIT');return;}
-      const physical=this.physicalFiles(this.directory(sourceId));
-      db.prepare('INSERT INTO source_archive_sizes VALUES(?,?) ON CONFLICT(source_id) DO UPDATE SET bytes=excluded.bytes').run(sourceId,physical.bytes);
-      db.prepare('INSERT INTO source_archive_indexed_sources VALUES(?)').run(sourceId);
-      const insertBatch=db.prepare('INSERT INTO source_archive_batches VALUES(?,?,?)');
-      for(const [batch,bytes] of physical.batches)insertBatch.run(sourceId,batch,bytes);
-      if(legacy){
-        const grouped=new Map<string,[string,string][]>();
-        for(const entry of Object.values(legacy.versions))if(!grouped.has(entry.group))grouped.set(entry.group,[]);
-        for(const versionKey of Object.values(legacy.heads)){
-          const entry=legacy.versions[versionKey];if(!entry)throw new StoreError('Archive head has no version',500);
-          grouped.get(entry.group)!.push([versionKey,entry.hash]);
-        }
-        for(const group of legacy.pendingGroups)if(!grouped.has(group))grouped.set(group,[]);
-        const insertGroup=db.prepare('INSERT INTO source_archive_groups(source_id,group_hash,group_key,checkpoint,head_count) VALUES(?,?,?,?,?)');
-        for(const [group,heads] of grouped)insertGroup.run(sourceId,this.groupHash(group),group,archiveHash([sourceId,group,heads]),heads.length);
-        const insertVersion=db.prepare('INSERT INTO source_archive_versions VALUES(?,?,?,?,?,?,?)');
-        for(const [versionKey,entry] of Object.entries(legacy.versions))insertVersion.run(sourceId,versionKey,entry.hash,entry.batch,entry.index,entry.observedAt,this.groupHash(entry.group));
-        const insertHead=db.prepare('INSERT INTO source_archive_heads(source_id,external_key,version_key,group_hash,observed_at,content_hash) VALUES(?,?,?,?,?,?)');
-        for(const [externalKey,versionKey] of Object.entries(legacy.heads)){
-          const entry=legacy.versions[versionKey];if(!entry)throw new StoreError('Archive head has no version',500);
-          insertHead.run(sourceId,externalKey,versionKey,this.groupHash(entry.group),entry.observedAt,entry.hash);
-        }
-        const insertRecovery=db.prepare('INSERT OR IGNORE INTO source_archive_recovery_groups VALUES(?,?)');
-        for(const group of legacy.pendingGroups)insertRecovery.run(sourceId,this.groupHash(group));
-      }
+    if(!create||this.store.db.prepare('SELECT 1 FROM source_archive_indexed_sources WHERE source_id=?').get(sourceId))return;
+    const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+    try{db.prepare('INSERT OR IGNORE INTO source_archive_sizes VALUES(?,0)').run(sourceId);
+      db.prepare('INSERT OR IGNORE INTO source_archive_indexed_sources VALUES(?)').run(sourceId);
       if(own)db.exec('COMMIT');
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }

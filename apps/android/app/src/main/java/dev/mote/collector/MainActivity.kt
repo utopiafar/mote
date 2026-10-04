@@ -116,7 +116,6 @@ class MainActivity : MoteActivity() {
     private lateinit var chargingOnly: CheckBox
     private lateinit var ocrMode: Spinner
     private lateinit var ocrAppModes: EditText
-    private lateinit var ocrChargingOnly: CheckBox
     private lateinit var diagnosticEnabled: CheckBox
     private lateinit var imageDedupeDiagnosticsEnabled: CheckBox
     private lateinit var diagnosticInterval: EditText
@@ -153,13 +152,16 @@ class MainActivity : MoteActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         if (Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { navigateBack() }
-        settings = Settings(this)
+        try { settings = Settings(this) } catch (error: Exception) {
+            setContentView(TextView(this).apply { text = error.message ?: MoteI18n.text(LocalDataFormat.RESET_MESSAGE); setPadding(dp(24), dp(24), dp(24), dp(24)) })
+            return
+        }
         val retained = lastNonConfigurationInstance as? RetainedDraft
         val loading = moteDetailPage()
         val label = TextView(this).apply { text = MoteI18n.text("正在读取本机设置…") }; loading.addView(label); loading.addView(ProgressBar(this))
         uiTask.start(MoteI18n.text("正在读取本机设置…"), { label.text = it }, { settings.read() }) { result ->
             result.onSuccess { buildUi(it, savedInstanceState, retained); if (resumed) { updatePermissionStatuses(); refreshStatus() } }
-                .onFailure { label.text = MoteI18n.text("设置无法读取，原数据保留。请退出后检查存储或重试。") }
+                .onFailure { label.text = if (it.message == MoteI18n.text(LocalDataFormat.RESET_MESSAGE)) it.message else MoteI18n.text("设置无法读取，原数据保留。请退出后检查存储或重试。") }
         }
     }
     private fun buildUi(config: CollectorConfig, savedInstanceState: Bundle?, retained: RetainedDraft?) {
@@ -506,7 +508,6 @@ class MainActivity : MoteActivity() {
         content.addView(ocrMode); track(ocrMode, "ocrMode")
         ocrAppModes = field(MoteI18n.text("按应用指定 OCR（JSON）"), config.ocrAppModes, "{}")
         text(MoteI18n.text("可填写包名到 chinese、latin 或 dual 的映射；未指定的应用使用上方模式。"), 13, MoteUi.muted)
-        ocrChargingOnly = check(MoteI18n.text("中央负责 OCR；旧版本地补识别策略已停用"), false).apply { isEnabled = false }
         text(MoteI18n.text("新截图由中央识别。充电限制仅用于升级前已经排队的本机 OCR。"), 13, MoteUi.muted)
     }
 
@@ -535,8 +536,7 @@ class MainActivity : MoteActivity() {
         val task = UiTask(this, io, ownsExecutor = false)
         val note = field(MoteI18n.text("正在想什么"), "", MoteI18n.text("记下此刻的想法…"), multiline = true)
         note.minLines = 7; note.gravity = Gravity.TOP
-        val mood = EditText(this) // Read compatibility for old drafts; no mood field in the UI.
-        note.filters = arrayOf(android.text.InputFilter.LengthFilter(100000)); mood.filters = arrayOf(android.text.InputFilter.LengthFilter(80))
+        note.filters = arrayOf(android.text.InputFilter.LengthFilter(100000))
         val progress = text(MoteI18n.text("正在读取草稿…"), 13, MoteUi.muted)
         var changingDraft = false
         var readable = false
@@ -547,20 +547,20 @@ class MainActivity : MoteActivity() {
             persisted.set(revision to result.isSuccess)
         }
         fun replace(value: NoteDraft) {
-            changingDraft = true; note.setText(value.text); mood.setText(value.mood); changingDraft = false
+            changingDraft = true; note.setText(value.text); changingDraft = false
         }
-        fun editable(value: Boolean) { note.isEnabled = value; mood.isEnabled = value }
+        fun editable(value: Boolean) { note.isEnabled = value }
         val draftWatcher = object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(s: Editable?) {
                 if (!changingDraft && readable) {
-                    writer.submit(++editRevision to (note.text.toString() to mood.text.toString()))
+                    writer.submit(++editRevision to (note.text.toString() to ""))
                     progress.text = MoteI18n.text("正在保存草稿…")
                 }
             }
         }
-        note.addTextChangedListener(draftWatcher); mood.addTextChangedListener(draftWatcher)
+        note.addTextChangedListener(draftWatcher)
         // Persistence is independent of this Activity; only the lightweight observer stops on pause.
         val draftPoll = object : Runnable {
             override fun run() {
@@ -579,7 +579,7 @@ class MainActivity : MoteActivity() {
         }
         button(MoteI18n.text("保存随手记"), true) {
             if (!task.busy && readable) {
-                val value = note.text.toString() to mood.text.toString()
+                val value = note.text.toString() to ""
                 editable(false)
                 task.start(MoteI18n.text("正在保存随手记…"), { progress.text = it }, { QuickNotes.save(app, value.first, value.second) }) { result ->
                     editable(true); persisted.set(null)
@@ -825,7 +825,7 @@ class MainActivity : MoteActivity() {
         Page.PROCESSING -> current.copy(
             jpegQuality = number(jpegQuality, 40..95), captureMaxSide = number(captureMaxSide, 640..2560),
             ocrMode = OcrPolicy.modes[ocrMode.selectedItemPosition], ocrAppModes = ocrAppModes.text.toString(),
-            ocrChargingOnly = ocrChargingOnly.isChecked, imageDedupeMode = imageDedupeModes[imageDedupeMode.selectedItemPosition])
+            imageDedupeMode = imageDedupeModes[imageDedupeMode.selectedItemPosition])
         Page.PRIVACY -> current.copy(
             uiPageMode=UiPageRules.modes[uiPageMode.selectedItemPosition], uiPageRules=checked(uiPageRules){uiPageRules.text.toString().also{UiPageRules.parse(it)}},
             excludedPackages = excludes.text.toString(), masks = checked(masks) { masks.text.toString().also { Mask.parse(it) } },
@@ -834,8 +834,7 @@ class MainActivity : MoteActivity() {
         Page.MODEL -> current.copy(nsfw = nsfwDraft().copy(enabled = current.nsfw.enabled),
             localReviewUrl = checked(review) { review.text.toString().trim().also { PrivacyRules.validateLocalReview(it) } })
         Page.DIAGNOSTICS -> current.copy(diagnosticsEnabled = diagnosticEnabled.isChecked, diagnosticsIntervalSeconds = number(diagnosticInterval, 15..3600))
-        Page.DEVELOPER -> current.copy(debugHttp = http.isChecked, imageDedupeDiagnosticsEnabled = imageDedupeDiagnosticsEnabled.isChecked,
-            contentEncryptionEnabled = false)
+        Page.DEVELOPER -> current.copy(debugHttp = http.isChecked, imageDedupeDiagnosticsEnabled = imageDedupeDiagnosticsEnabled.isChecked)
         else -> current
     }
     private fun nsfwDraft(): NsfwConfig {
@@ -1167,6 +1166,7 @@ class MainActivity : MoteActivity() {
     }
     override fun onResume() {
         super.onResume()
+        if (!::settings.isInitialized) return
         resumed = true
         notePoll?.let { handler.removeCallbacks(it); handler.post(it) }
         updatePermissionStatuses()
@@ -1249,7 +1249,7 @@ class MainActivity : MoteActivity() {
         if (page == Page.ASK && !initializing) {
             // A central conversation is a separate screen; keep the current native
             // page and any unsaved draft intact for Back, without an extra landing page.
-            startActivity(Intent(this, AskActivity::class.java))
+            startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "ask"))
             return
         }
         if (!initializing && page != currentPage && !discardConfirmed && pageControlValues().any { (key, value) -> baseline[key] != value && (!applyingSettings || pendingSubmission?.get(key) != value) }) {

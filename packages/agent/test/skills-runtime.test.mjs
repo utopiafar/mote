@@ -12,7 +12,7 @@ import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider
 const id='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
 const prefix='UNDISCLOSED_PREFIX::',body='合成记录：我计划学习 TypeScript，尚未开始。',suffix='::UNDISCLOSED_SUFFIX';
 const record={id,capturedAt:'2026-09-15T01:00:00.000Z',appName:'Generated diary',deviceId:'generated',ocrText:prefix+body+suffix,provenance:{sourceId:'fixture',externalId:'diary-1',revision:'one',layer:'original',document:{recordedAt:'2018-05-03T09:00:00+08:00',timeBasis:'recorded',contentRole:'authored'}}};
-const reader={search:async()=>[record],timeline:async()=>[record],evidence:async()=>[record],activity:async()=>({}),devices:async()=>[]};
+const reader={search:async()=>[record],timeline:async()=>({items:([record]),nextCursor:null}),evidence:async()=>[record],activity:async()=>({}),devices:async()=>[]};
 async function provider(handler,protocol){
   const requests=[],errors=[];
   const server=createServer(async(req,res)=>{
@@ -65,7 +65,7 @@ test(`real Harness ${protocol} loads skills while memory batches cannot retrieve
     if(stage===2)return {tool:{name:'evidence',args:{ids:[id]}}};
     return {answer:{answer:`合成计划尚未完成 [${id}]`,citationIds:[id]}};
   },protocol);
-  const agent=createAgent({reader,protocol,model:'fixture-model',apiKey:'generated-only',baseUrl:fixture.baseUrl,timeoutMs:60000});
+  const agent=createAgent({reader,protocol,model:'fixture-model',apiKey:'generated-only',baseUrl:fixture.baseUrl,agentTimeoutMs:60000});
   try{
     const result=await agent.query({question:'Process supplied evidence',skill:'memory-extraction',evidenceIds:[id],evidenceRanges:[{id,offset:prefix.length,length:body.length}],timeZone:'Asia/Shanghai'});
     assert.deepEqual(fixture.errors,[]);assert.equal(fixture.requests.length,4);assert.equal(result.citations[0].excerpt,body);
@@ -88,7 +88,7 @@ test(`${protocol} Memory strategy preserves neutral procedure and read-only scop
     assert.ok(!messages.includes(prefix)&&!messages.includes(suffix));
     return {answer:{answer:'{"memories":[]}',citationIds:[]}};
   },protocol);
-  const agent=createAgent({reader,protocol,model:'fixture-model',apiKey:'generated-only',baseUrl:fixture.baseUrl,timeoutMs:60000});
+  const agent=createAgent({reader,protocol,model:'fixture-model',apiKey:'generated-only',baseUrl:fixture.baseUrl,agentTimeoutMs:60000});
   try{
     const result=await agent.query({question:'Generated independently selected admission policy',skill:'memory-strategy',responseMode:'memory-extraction',evidenceIds:[id],evidenceRanges:[{id,offset:prefix.length,length:body.length}]});
     assert.deepEqual(fixture.errors,[]);assert.equal(fixture.requests.length,1);assert.deepEqual(JSON.parse(result.answer),{memories:[]});
@@ -111,7 +111,7 @@ test(`dedicated ${protocol} import Harness uses skill, read, write and shell too
     if(stage===5)return {answer:'Generated analysis finished, but this is not the required preview object.'};
     return {answer:{summary:'识别并生成一条合成资料；日期来自原始字段。',recordsPath:'records.jsonl',warnings:[]}};
   },protocol);
-  const agent=createImportAgent({protocol,model:'fixture-model',apiKey:'generated-only',baseUrl:fixture.baseUrl,timeoutMs:60000});
+  const agent=createImportAgent({protocol,model:'fixture-model',apiKey:'generated-only',baseUrl:fixture.baseUrl,agentTimeoutMs:60000});
   try{
     const observed=[];
     const result=await agent.prepare({workspace,inputPaths:['inputs/generated.json'],instruction:'导入生成测试资料',helperPath:join(workspace,'helper.mjs'),manifestSchema:{type:'object'}},notification=>{observed.push(notification);});
@@ -135,7 +135,7 @@ test(`${protocol} calendar skill receives notification evidence without OCR and 
     if(stage===0)return {tool:{name:'skill',args:{name:'calendar-extraction'}}};
     return {answer:{answer:'{"actions":[]}',citationIds:[]}};
   },protocol);
-  const agent=createAgent({reader:{...reader,evidence:async()=>[notification]},protocol,model:'fixture-model',apiKey:'generated-only',baseUrl:fixture.baseUrl,timeoutMs:45000});
+  const agent=createAgent({reader:{...reader,evidence:async()=>[notification]},protocol,model:'fixture-model',apiKey:'generated-only',baseUrl:fixture.baseUrl,agentTimeoutMs:45000});
   try{const result=await agent.query({question:'只读分析合成日程',skill:'calendar-extraction',evidenceIds:[id],evidenceRanges:[{id,offset:0,length:text.length}],timeZone:'Asia/Shanghai'});assert.deepEqual(JSON.parse(result.answer),{actions:[]});assert.deepEqual(fixture.errors,[]);}finally{await agent.close();await fixture.close();}
 });
 
@@ -146,7 +146,7 @@ test(`${protocol} calendar Harness retrieves historical action comparisons throu
     if(stage===1){assert.ok(JSON.stringify(request.messages).includes('generated-next-page'));return {tool:{name:'action_catalog',args:{query:'Generated previous participant',cursor:'generated-next-page',limit:1}}};}
     assert.ok(JSON.stringify(request.messages).includes('Generated historical comparison'));return {answer:{answer:'{"actions":[]}',citationIds:[]}};
   },protocol);
-  const agent=createAgent({reader,protocol,model:'fixture-model',apiKey:'generated-only',baseUrl:fixture.baseUrl,timeoutMs:45000});
+  const agent=createAgent({reader,protocol,model:'fixture-model',apiKey:'generated-only',baseUrl:fixture.baseUrl,agentTimeoutMs:45000});
   try{const result=await agent.query({question:'Compare generated update with older proposals',skill:'calendar-extraction',evidenceIds:[id],evidenceRanges:[{id,offset:prefix.length,length:body.length}],actionCatalog:async args=>{seen.push(args);return args.cursor?{items:[{id:other,event:{title:'Generated historical comparison'}}],nextCursor:null}:{items:[],nextCursor:'generated-next-page'};}});assert.equal(seen.length,2);assert.equal(seen[1].cursor,'generated-next-page');assert.equal(result.citations.length,0);assert.deepEqual(result.trace.map(row=>row.tool),['action_catalog','action_catalog']);assert.deepEqual(fixture.errors,[]);}finally{await agent.close();await fixture.close();}
 });
 

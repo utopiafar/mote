@@ -67,7 +67,7 @@ class LocalStateRepository private constructor(context: Context) {
                 val next = try {
                     check(!QueueStorage.recovering) { MoteI18n.text("正在恢复本机存储") }
                     // Index upgrades inspect a few records per lock acquisition; starting capture
-                    // must not wait behind decrypting an entire legacy library.
+                    // must not wait behind scanning the entire library.
                     if (previous.active == null || previous.error != null || previous.revision.storage != LocalStateChanges.revisions.value.storage) {
                         app.queue().prepareIndex()
                         BulkDedupeStore(app).quarantine().prepareIndex()

@@ -13,7 +13,7 @@ export interface BrowseRequest { source?: 'screen'|'ui_page'; location: CaptureL
 export interface BrowserCapture {
   source?: 'screen'|'ui_page'; id: string; capturedAt: string; appName: string; appId: string;
   ocr: { status: 'pending' | 'completed' | 'disabled' | 'failed' | 'unknown'; reason?: 'charging' };
-  textPreview: string; sizeBytes?: number; uploaded?: boolean; hasImage: boolean; syncError?: string;
+  textPreview: string; sizeBytes?: number; hasImage: boolean; syncError?: string;
 }
 export interface BrowserPage { items: BrowserCapture[]; totalCount: number; nextCursor?: string; sessions?: CaptureSession[]; sessionCount?: number }
 export interface BrowserDetail extends BrowserCapture { ocrText: string; deviceName?: string }
@@ -33,11 +33,11 @@ function validId(id: unknown): asserts id is string { if (typeof id !== 'string'
 function preview(event: Partial<CaptureEvent> & { hasImage?: boolean; textPreview?: string; sizeBytes?: number }, record?: QueueRecord): BrowserCapture {
   validId(event.id);
   if (typeof event.capturedAt !== 'string' || !Number.isFinite(Date.parse(event.capturedAt))) throw new Error(moteText("中央记录时间无效"));
-  const status = record?.ocrResult !== undefined ? 'completed' : record?.ocrRetryAt ? 'failed' : captureOcrState({ ...event, source: 'screen' }).status;
+  const status = captureOcrState({ ...event, source: 'screen' }).status;
   const normalizedStatus = status === 'pending' || status === 'completed' || status === 'disabled' || status === 'failed' ? status : 'unknown';
   const ocr: BrowserCapture['ocr'] = { status: normalizedStatus, ...(event.ocr?.reason === 'charging' ? { reason: 'charging' as const } : {}) };
-  const text = record?.ocrResult ?? event.ocrText ?? event.textPreview ?? '';
-  return { source:event.source==='ui_page'?'ui_page':'screen', id: event.id, capturedAt: event.capturedAt, appName: String(event.appName ?? '').slice(0, 200), appId: String(event.appId ?? '').slice(0, 256), ocr, textPreview: String(text).slice(0, 160), sizeBytes:record?record.blobBytes+Buffer.byteLength(text):event.sizeBytes, hasImage: record ? Boolean(record.blobHash) : Boolean(event.hasImage), ...(record ? { uploaded: Boolean(record.uploaded), syncError: record.syncError } : {}) };
+  const text = event.ocrText ?? event.textPreview ?? '';
+  return { source:event.source==='ui_page'?'ui_page':'screen', id: event.id, capturedAt: event.capturedAt, appName: String(event.appName ?? '').slice(0, 200), appId: String(event.appId ?? '').slice(0, 256), ocr, textPreview: String(text).slice(0, 160), sizeBytes:record?record.blobBytes+Buffer.byteLength(text):event.sizeBytes, hasImage: record ? Boolean(record.blobHash) : Boolean(event.hasImage), ...(record ? { syncError: record.syncError } : {}) };
 }
 async function request(config: Config, path: string): Promise<Response> {
   if (!connectionToken(config) || !config.serverUrl) throw new Error(moteText("请先连接中央节点；本机记录仍可查看"));
@@ -109,7 +109,7 @@ export async function captureDetail(queue: DurableQueue, config: Config, source:
   location(source); validId(id);
   if (source === 'local') {
     const record = queue.recordForBrowser(id); if (!record) throw new Error(moteText("该记录已完成同步，请切换到中央已归档查看"));
-    return { ...preview(record.event, record), ocrText: record.ocrResult ?? record.event.ocrText ?? '', deviceName: record.event.deviceName };
+    return { ...preview(record.event, record), ocrText: record.event.ocrText ?? '', deviceName: record.event.deviceName };
   }
   const value = await remoteDetail(config, id);
   return { ...preview({ ...value, hasImage: Boolean(value.imageMime) }), ocrText: String(value.ocrText ?? '').slice(0, 100000), deviceName: String(value.deviceName ?? '').slice(0, 128) };

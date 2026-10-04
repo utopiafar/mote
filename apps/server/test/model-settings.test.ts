@@ -71,12 +71,12 @@ test('saved configuration is private, survives restart and takes precedence over
   assert.equal((await fs.stat(f.path)).mode & 0o777, 0o600);
   assert.equal(f.disposed.length, 0, 'Old active runtimes remain owned by the query coordinator');
   const saved = JSON.parse(await fs.readFile(f.path, 'utf8'));
-  assert.equal(saved.version, 1); assert.equal(saved.revision, 1); assert.equal(saved.settings.apiKey, environment.apiKey);
+  assert.equal(saved.version, 2); assert.equal(saved.revision, 1); assert.equal(saved.profiles.find((profile:any)=>profile.id==='primary').settings.apiKey, environment.apiKey);
   const restart = new ModelSettingsStore({ ...f.options, environment: { ...environment, model: 'changed-environment', apiKey: 'changed-environment-key' } });
   t.after(() => restart.close());
   const restartedView=await restart.initialize();
   assert.deepEqual(restartedView.settings,view.settings);
-  assert.deepEqual(restartedView.profiles?.find(p=>p.id==='default'),view.profiles?.find(p=>p.id==='default'));
+  assert.deepEqual(restartedView.profiles?.find(p=>p.id==='primary'),view.profiles?.find(p=>p.id==='primary'));
   assert.equal(restartedView.profiles?.find(p=>p.readOnly)?.settings.model,'changed-environment');
   assert.equal(restart.current().apiKey, environment.apiKey);
   await f.store.close(); assert.equal(f.disposed.length, 0, 'Store close does not cancel active requests');
@@ -85,7 +85,7 @@ test('saved configuration is private, survives restart and takes precedence over
 test('Codex saves catalog effort levels while HTTP profiles retain their existing choices',async t=>{
   const f=await fixture(t);await f.store.initialize();
   await assert.rejects(f.store.update({revision:0,settings:{...input(),reasoningEffort:'ultra'}}),errorCode('model_settings_invalid'));
-  const view=await f.store.update({revision:0,settings:{...input(),provider:'codex',protocol:'codex-app-server',baseUrl:'',model:'fixture',reasoningEffort:'ultra',modelRequestTimeoutMs:null,agentTimeoutMs:null,apiKey:null,headers:null,extraBody:null}});
+  const view=await f.store.update({revision:0,settings:{...input(),provider:'codex',protocol:'codex-app-server',serviceTier:'default',baseUrl:'',model:'fixture',reasoningEffort:'ultra',modelRequestTimeoutMs:null,agentTimeoutMs:null,apiKey:null,headers:null,extraBody:null}});
   assert.equal(view.settings.reasoningEffort,'ultra');
   assert.equal(f.store.current().reasoningEffort,'ultra');
 });
@@ -95,7 +95,7 @@ test('reset persists a monotonic tombstone and uses current startup environment 
   await f.store.update({ revision: 0, settings: { ...input(), model: 'saved-synthetic-model', apiKey: 'saved-synthetic-key' } });
   const reset = await f.store.reset({ revision: 1 });
   assert.equal(reset.revision, 2); assert.equal(reset.source, 'environment'); assert.deepEqual(f.store.current(), environment);
-  assert.deepEqual(JSON.parse(await fs.readFile(f.path, 'utf8')), { version: 1, revision: 2, settings: null });
+  assert.deepEqual(JSON.parse(await fs.readFile(f.path, 'utf8')), {version:2,revision:2,profiles:[],defaults:Object.fromEntries(['chat','insight','memory','file','import'].map(feature=>[feature,'env:deployment'])),defaultModels:{}});
   const restart = new ModelSettingsStore({ ...f.options, environment: { ...environment, model: 'new-environment-model' } });
   t.after(() => restart.close()); await restart.initialize();
   assert.equal(restart.view().revision, 2); assert.equal(restart.current().model, 'new-environment-model');
@@ -113,7 +113,7 @@ test('concurrent writes with the same revision prepare and activate exactly one 
   assert.equal(results[0].status, 'fulfilled'); assert.equal(results[1].status, 'rejected');
   errorCode('model_settings_conflict')((results[1] as PromiseRejectedResult).reason);
   assert.equal(f.prepared.length, 2); assert.equal(f.activated.length, 2); assert.equal(f.store.view().revision, 1);
-  assert.equal(JSON.parse(await fs.readFile(f.path, 'utf8')).settings.model, 'first-synthetic-model');
+  assert.equal(JSON.parse(await fs.readFile(f.path, 'utf8')).profiles.find((profile:any)=>profile.id==='primary').settings.model, 'first-synthetic-model');
 });
 
 test('provider, protocol and exact endpoint changes require confirmation for each retained secret class', async t => {
@@ -195,7 +195,7 @@ test('strict schemas and runtime validation reject unsafe advanced parameters be
 });
 
 test('Codex settings make the model request timeout inapplicable and allow an unset Agent deadline', async t => {
-  const codex: ModelSettings = { ...environment, provider: 'codex', protocol: 'codex-app-server', baseUrl: '', model: 'fixture-codex', apiKey: '', headers: {}, extraBody: {}, modelRequestTimeoutMs: null, agentTimeoutMs: null };
+  const codex: ModelSettings = { ...environment, provider: 'codex', protocol: 'codex-app-server', serviceTier:'default', baseUrl: '', model: 'fixture-codex', apiKey: '', headers: {}, extraBody: {}, modelRequestTimeoutMs: null, agentTimeoutMs: null };
   const f = await fixture(t, { environment: codex });
   const view = await f.store.initialize();
   assert.equal(view.settings.modelRequestTimeoutMs, null); assert.equal(view.settings.agentTimeoutMs, null);
@@ -204,14 +204,9 @@ test('Codex settings make the model request timeout inapplicable and allow an un
   assert.equal(saved.settings.modelRequestTimeoutMs, null); assert.equal(saved.settings.agentTimeoutMs, 3600000);
 });
 
-test('legacy saved timeout settings migrate to separate request and Agent deadlines', async t => {
-  const f = await fixture(t);
-  const { modelRequestTimeoutMs: _request, agentTimeoutMs: _agent, ...legacy } = environment;
-  await fs.writeFile(f.path, JSON.stringify({ version: 1, revision: 7, settings: { ...legacy, timeoutMs: 240000 } }));
-  const view = await f.store.initialize();
-  assert.equal(view.revision, 7); assert.equal(view.settings.modelRequestTimeoutMs, 240000); assert.equal(view.settings.agentTimeoutMs, 240000);
-  const saved = await f.store.update({ revision: 7, settings: { ...input(f.store.current()), model: 'migrated-model' } });
-  assert.equal(saved.settings.model, 'migrated-model');
+test('old saved settings and timeout aliases are rejected without rewriting the file',async t=>{
+ const f=await fixture(t),body=JSON.stringify({version:1,revision:7,settings:{...environment,timeoutMs:240000}});await fs.writeFile(f.path,body);
+ await assert.rejects(f.store.initialize(),errorCode('model_settings_unavailable'));assert.equal(await fs.readFile(f.path,'utf8'),body);
 });
 
 test('invalid saved files fail startup instead of falling back to environment or revealing file values', async t => {
@@ -221,7 +216,7 @@ test('invalid saved files fail startup instead of falling back to environment or
     await assert.rejects(f.store.initialize(), errorCode('model_settings_unavailable'));
     assert.equal(f.prepared.length, 0);
   }
-  await fs.writeFile(f.path, JSON.stringify({ version: 1, revision: 4, settings: null }));
+  await fs.writeFile(f.path, JSON.stringify({version:2,revision:4,profiles:[],defaults:Object.fromEntries(['chat','insight','memory','file','import'].map(feature=>[feature,'env:deployment'])),defaultModels:{}}));
   assert.equal((await f.store.initialize()).revision, 4);
 });
 
@@ -254,7 +249,7 @@ test('post-rename directory sync failure adopts confirmed new disk state without
   await assert.rejects(f.store.update({ revision: 0, settings: { ...input(), model: 'committed-synthetic-model' } }), errorCode('model_settings_commit_uncertain'));
   assert.equal(f.store.view().revision, 1); assert.equal(f.store.current().model, 'committed-synthetic-model');
   assert.equal(f.activated.length, 2); assert.equal(f.disposed.length, 0);
-  assert.equal(JSON.parse(await fs.readFile(f.path, 'utf8')).settings.model, f.store.current().model);
+  assert.equal(JSON.parse(await fs.readFile(f.path, 'utf8')).profiles.find((profile:any)=>profile.id==='primary').settings.model, f.store.current().model);
   await assert.rejects(f.store.update({ revision: 0, settings: input() }), errorCode('model_settings_conflict'));
   fail = false; assert.equal((await f.store.update({ revision: 1, settings: input() })).revision, 2);
 });
@@ -294,7 +289,7 @@ test('reset write failure keeps saved credentials and revision rather than prema
   await f.store.update({ revision: 0, settings: { ...input(), apiKey: 'saved-synthetic-secret' } });
   fail = true; await assert.rejects(f.store.reset({ revision: 1 }), errorCode('model_settings_save_failed'));
   assert.equal(f.store.view().revision, 1); assert.equal(f.store.view().source, 'saved'); assert.equal(f.store.current().apiKey, 'saved-synthetic-secret');
-  assert.equal(JSON.parse(await fs.readFile(f.path, 'utf8')).settings.apiKey, 'saved-synthetic-secret');
+  assert.equal(JSON.parse(await fs.readFile(f.path, 'utf8')).profiles.find((profile:any)=>profile.id==='primary').settings.apiKey, 'saved-synthetic-secret');
   assert.equal(f.disposed.length, 1); assert.equal(f.disposed[0].apiKey, environment.apiKey);
 });
 
@@ -310,9 +305,9 @@ test('close drains accepted changes while rejecting new transactions without ret
 
 
 test('Codex speed presets survive restart and connection probes; HTTP and unknown tiers are rejected', async t => {
-  const codex: ModelSettings = {...environment,provider:'codex',protocol:'codex-app-server',baseUrl:'',apiKey:'',headers:{},extraBody:{},modelRequestTimeoutMs:null,agentTimeoutMs:null};
+  const codex: ModelSettings = {...environment,provider:'codex',protocol:'codex-app-server',serviceTier:'default',baseUrl:'',apiKey:'',headers:{},extraBody:{},modelRequestTimeoutMs:null,agentTimeoutMs:null};
   const f=await fixture(t,{environment:codex});
-  assert.equal((await f.store.initialize()).settings.serviceTier,undefined,'legacy settings remain valid');
+  assert.equal((await f.store.initialize()).settings.serviceTier,'default','Codex tier is explicit');
   const fast={...input(codex),serviceTier:'fast'};
   const view=await f.store.updateProfile('fast',{revision:0,name:'Fast fixture',settings:fast});
   assert.equal(view.profiles?.find(p=>p.id==='fast')?.settings.serviceTier,'fast');

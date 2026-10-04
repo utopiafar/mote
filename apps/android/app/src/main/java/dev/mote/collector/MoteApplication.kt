@@ -9,6 +9,10 @@ class MoteApplication : Application() {
         super.onCreate()
         MoteI18n.initialize(this)
         if (getProcessName() != packageName) return
+        try { LocalDataFormat.requireCurrent(this) } catch (error: Exception) {
+            QueueStorage.recoveryFailure = error.message
+            return
+        }
         HttpJson.onUnauthorized = { url, token -> Settings(this).rejectCredential(url, token) }
         HttpJson.onRequest = { Diagnostics(this).add("httpRequests") }
         HttpJson.onComplete = { Diagnostics(this).timing("httpMs", it) }
@@ -58,13 +62,12 @@ class MoteApplication : Application() {
                         imageDedupeDiagnostics().prune()
                         ImageDedupeDiagnosticsMaintenance.configure(this@MoteApplication, config.imageDedupeDiagnosticsEnabled)
                     }
-                    // Launch noninteractive consumers after warming the legacy metadata;
+                    // Launch noninteractive consumers after warming current metadata;
                     // they must not race to rebuild the same library under a longer lock.
                     val current = settings.read()
                     local.pruneUploaded()
                     RetentionWorker.schedule(this@MoteApplication)
                     UploadWorker.schedule(this@MoteApplication, current)
-                    CaptureOcrWorker.schedule(this@MoteApplication, current)
                     SourceWork.schedule(this@MoteApplication)
                 } catch (error: Exception) {
                     SupportEvents.record(this@MoteApplication, EventStage.QUEUE, EventCode.STORAGE)

@@ -59,7 +59,7 @@ class CaptureRecordsInstrumentedTest {
             WorkManager.getInstance(context).cancelUniqueWork(it).result.get(5, TimeUnit.SECONDS)
         } }
         try {
-            cancel(); settings.save(settings.read().copy(server = "", token = "", syncMode = "manual", uploadedRetentionDays = 0, excludedPackages = "", contentEncryptionEnabled = false, appCollectionRules = AppCollectionRules.LEGACY_DEFAULT))
+            cancel(); settings.save(settings.read().copy(server = "", token = "", syncMode = "manual", uploadedRetentionDays = 0, excludedPackages = "", appCollectionRules = AppCollectionRules.CONTENT_DEFAULT))
             test(context, settings, ids)
         } finally {
             settings.enabled = false; cancel(); shell("dumpsys battery reset")
@@ -67,8 +67,6 @@ class CaptureRecordsInstrumentedTest {
                 context.queue().capture(id)?.let { record ->
                     context.queue().acknowledge(id)
                     if (record.optJSONObject("ocr")?.optString("status") == "pending" || context.queue().capture(id) != null) {
-                        context.queue().completeOcr(id, "", "failed", 64 * 1024 * 1024)
-                        context.queue().acknowledgeOcr(id)
                     }
                 }
             }
@@ -83,109 +81,9 @@ class CaptureRecordsInstrumentedTest {
     private fun views(root: View): List<View> = buildList { add(root); if (root is ViewGroup) for (i in 0 until root.childCount) addAll(views(root.getChildAt(i))) }
     private fun waitUntil(condition: () -> Boolean) { val deadline = System.currentTimeMillis() + 45000; while (!condition()) { check(System.currentTimeMillis() < deadline) { "Generated capture fixture timeout" }; Thread.sleep(100) } }
 
-    @Test fun deduplicationWithDiagnosticsAcrossModesSynchronizesToRealCentral() = fixture { context, settings, ids ->
-        require(!CaptureAccessibilityService.connected && !ProjectionService.running)
-        val args = InstrumentationRegistry.getArguments()
-        val url = requireNotNull(args.getString("fixtureServer"))
-        require(url.startsWith("http://127.0.0.1:"))
-        val token = requireNotNull(args.getString("fixtureToken"))
-        val expected = org.json.JSONArray()
-        var sequence = 0
-        val start = Instant.now().minusSeconds(720)
-        // Diagnostics deliberately exercises the reviewed-pair path; early discard is covered separately.
-        val base = settings.read().copy(server = url, token = token, debugHttp = true, wifiOnly = false, imageDedupeDiagnosticsEnabled = true,
-            syncMode = "manual", syncChargingOnly = false, syncBatteryNotLow = false,
-            chargingOnly = false, ocrChargingOnly = false, masks = "", localReviewUrl = "",
-            nsfw = settings.read().nsfw.copy(enabled = false))
-        fun run(mode: String, metadata: Boolean, changes: List<Int>) {
-            val config = base.copy(imageDedupeMode = mode, metadataEnabled = metadata)
-            settings.save(config); assertEquals(mode, Settings(context).read().imageDedupeMode)
-            val pipeline = CapturePipeline(context) { }
-            try {
-                settings.enabled = true
-                for ((index, shade) in changes.withIndex()) {
-                    val bitmap = Bitmap.createBitmap(480, 240, Bitmap.Config.ARGB_8888).apply {
-                        Canvas(this).apply {
-                            drawColor(Color.rgb(shade, shade, shade))
-                            drawText("GENERATED MOTE 2048", 20f, 130f, Paint().apply { color = Color.RED; textSize = 32f })
-                        }
-                    }
-                    val at = start.plusSeconds(sequence * 30L).toString()
-                    pipeline.submit(bitmap, WindowSnapshot(setOf("dev.mote.generated"), "dev.mote.generated", true), config,
-                        capturedAt = at, observedAtMs = 1000L + sequence * 30000L)
-                    waitUntil { !pipeline.isBusy() }
-                    val page = context.queue().capturePage(start.minusSeconds(1).toString(), start.plusSeconds(900).toString(), limit = 60)
-                    val rows = page.getJSONArray("items")
-                    val row = (0 until rows.length()).map { rows.getJSONObject(it) }.singleOrNull { record ->
-                        val samples = record.optJSONObject("stateSeries")?.optJSONArray("samples")
-                        record.getString("capturedAt") == at || samples != null && (0 until samples.length()).any { samples.getJSONObject(it).getString("at") == at }
-                    }
-                    assertNotNull("Capture $mode/$index persisted: ${settings.message()}", row)
-                    val id = row!!.getString("id"); ids += id
-                    val duplicate = mode != "off" && (index == 1 || (index == 2 && (mode != "exact" || !metadata)))
-                    val record = context.queue().capture(id)!!
-                    assertEquals("$mode/$index image", !duplicate, context.queue().image(id) != null)
-                    assertEquals(!duplicate, CapturePreview.hasImage(record))
-                    if (duplicate) {
-                        assertEquals("", record.getString("ocrText"))
-                        assertEquals("disabled", record.getJSONObject("ocr").getString("status"))
-                        assertEquals(mode, record.getJSONObject("metadata").getJSONObject("capture").getJSONObject("deduplication").getString("mode"))
-                        if (!metadata) assertFalse(record.getJSONObject("metadata").has("device"))
-                    }
-                    val samples = record.optJSONObject("stateSeries")?.optJSONArray("samples")
-                    val measured = samples?.let { rows -> (0 until rows.length()).map { rows.getJSONObject(it) }.first { it.getString("at") == at }.getLong("durationMs") } ?: record.getLong("durationMs")
-                    assertEquals(if (index == 0) 0L else 30000L, measured)
-                    expected.put(JSONObject().put("id", id).put("duplicate", duplicate).put("mode", mode))
-                    sequence++
-                }
-            } finally { settings.enabled = false; waitUntil { !pipeline.isBusy() }; pipeline.close() }
-        }
-        for (mode in listOf("off", "exact", "conservative", "balanced", "aggressive")) run(mode, true, listOf(240, 240, 239, 20))
-        run("balanced", false, listOf(240, 240, 240))
-        assertNull(context.queue().pendingOcr())
-        assertEquals(0L, context.queue().reservedOcrBytes())
-        val upload = settings.read()
-        UploadWorker.schedule(context, upload, true)
-        waitUntil { context.queue().depth() == 0 }
-        val client = CaptureRecordClient(upload, settings.deviceId)
-        for (index in 0 until expected.length()) {
-            val item = expected.getJSONObject(index); val record = client.detail(item.getString("id"))
-            assertEquals(!item.getBoolean("duplicate"), CapturePreview.hasImage(record))
-            if (item.getBoolean("duplicate")) assertEquals("", record.getString("ocrText"))
-        }
-        File(context.filesDir, "dedupe-cross-result.json").writeText(JSONObject().put("deviceId", settings.deviceId)
-            .put("records", expected).put("generatedOnly", true).toString())
-    }
 
-    @Test fun batteryCaptureKeepsMaskedImageForCentralOcrWithoutChangingOriginalEvent() = fixture { context, settings, ids ->
-        shell("dumpsys battery unplug"); shell("dumpsys battery set status 3")
-        waitUntil { !Diagnostics.battery(context).second }
-        val config = settings.read().copy(ocrChargingOnly = true, chargingOnly = false, metadataEnabled = false, masks = "0,0,0.2,1", nsfw = settings.read().nsfw.copy(enabled = false))
-        settings.save(config); assertTrue(settings.read().ocrChargingOnly)
-        val pipeline = CapturePipeline(context) { }
-        try {
-            settings.enabled = true
-            val unknown = WindowSnapshot(emptySet(), null, false)
-            assertTrue(pipeline.canCapture(config, unknown))
-            pipeline.submit(generated(), unknown, config)
-            waitUntil { context.queue().depth() == 1 && !pipeline.isBusy() }
-            val event = context.queue().peek()!!; val id = event.getString("id"); ids += id
-            assertEquals("disabled", event.getJSONObject("ocr").getString("status")); assertEquals("", event.getString("ocrText")); assertFalse(event.has("metadata"))
-            val bytes = context.queue().image(id)!!
-            val image = CapturePreview.decode(bytes, 1000)!!
-            try { assertTrue(Color.red(image.getPixel(10, 80)) < 10) } finally { image.recycle() }
-            settings.enabled = false; pipeline.close()
-            val original = context.queue().peek()!!.toString()
-            assertNull(context.queue().pendingOcr())
-            shell("dumpsys battery set ac 1"); shell("dumpsys battery set status 2")
-            waitUntil { Diagnostics.battery(context).second }
-            CaptureOcrWorker.schedule(context, config, replace = true)
-            assertNull(context.queue().pendingOcr())
-            assertFalse(settings.enabled); assertEquals("", context.queue().capture(id)!!.getString("ocrText"))
-            assertEquals(original, context.queue().peek()!!.toString())
-            assertFalse(context.queue().peek()!!.keys().asSequence().any { it.startsWith("_") })
-        } finally { settings.enabled = false; if (pipeline.isBusy()) waitUntil { !pipeline.isBusy() }; runCatching { pipeline.close() } }
-    }
+
+
 
     @Test fun localBrowserDisplaysGeneratedThumbnailsPagesAndOcrDetail() = fixture { context, _, ids ->
         val start = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant()
@@ -258,34 +156,7 @@ class CaptureRecordsInstrumentedTest {
         }
     }
 
-    @Test fun deferredOcrUploadsOriginalOnceAndKeepsResultUntilMatchingPatchAck() = fixture { context, settings, ids ->
-        val bytes = jpeg()
-        LoopbackArchive(bytes).use { archive ->
-            val config = settings.read().copy(server = archive.url, token = "generated-capture-browser-token-1234567890", debugHttp = true, wifiOnly = false, syncMode = "manual")
-            settings.save(config)
-            val id = UUID.randomUUID().toString(); ids += id
-            context.queue().enqueue(JSONObject().put("id", id).put("source", "screen").put("deviceId", settings.deviceId).put("capturedAt", Instant.now().toString())
-                .put("imageMime", "image/jpeg").put("ocrText", "").put("ocr", JSONObject().put("status", "pending").put("reason", "charging"))
-                .put("privacy", JSONObject().put("excluded", false)), bytes, 1000000)
-            val original = context.queue().peek()!!.toString()
-            context.queue().completeOcr(id, "Generated PATCH OCR", "completed", 1000000)
-            archive.wrongPatchAck = true
-            UploadWorker.schedule(context, config, true)
-            waitUntil { WorkManager.getInstance(context).getWorkInfosForUniqueWork("mote-upload").get().any { it.state == WorkInfo.State.FAILED } }
-            assertEquals(1, archive.captures.get()); assertEquals(1, archive.patches.get())
-            assertEquals(original, archive.original!!.toString()); assertNotNull(context.queue().image(id)); assertNotNull(context.queue().nextOcrUpdate())
-            assertNull(context.queue().peek()); assertEquals("error", settings.syncState())
-            archive.wrongPatchAck = false
-            UploadWorker.schedule(context, config, true)
-            waitUntil { context.queue().depth() == 0 }
-            assertEquals(1, archive.captures.get()); assertEquals(2, archive.patches.get())
-            val client = CaptureRecordClient(config, settings.deviceId)
-            val list = client.page(Instant.now().minusSeconds(86400).toString(), Instant.now().plusSeconds(1).toString(), null)
-            assertEquals(1, list.getInt("totalCount")); assertEquals(id, list.getJSONArray("items").getJSONObject(0).getString("id"))
-            assertEquals("Generated PATCH OCR", client.detail(id).getString("ocrText"))
-            assertArrayEquals(bytes, client.image(id, true))
-        }
-    }
+
 
     private class LoopbackArchive(private val image: ByteArray) : AutoCloseable {
         private val socket = ServerSocket(0, 20, InetAddress.getByName("127.0.0.1"))
@@ -348,5 +219,107 @@ class CaptureRecordsInstrumentedTest {
             } } catch (error: Exception) { if (running) throw error }
         }.apply { isDaemon = true; start() }
         override fun close() { running = false; socket.close(); thread.join(2000) }
+    }
+
+    @Test fun deduplicationWithDiagnosticsAcrossModesSynchronizesToRealCentral() = fixture { context, settings, ids ->
+        require(!CaptureAccessibilityService.connected && !ProjectionService.running)
+        val args = InstrumentationRegistry.getArguments()
+        val url = requireNotNull(args.getString("fixtureServer"))
+        require(url.startsWith("http://127.0.0.1:"))
+        val token = requireNotNull(args.getString("fixtureToken"))
+        val expected = org.json.JSONArray()
+        var sequence = 0
+        val start = Instant.now().minusSeconds(720)
+        // Diagnostics deliberately exercises the reviewed-pair path; early discard is covered separately.
+        val base = settings.read().copy(server = url, token = token, debugHttp = true, wifiOnly = false, imageDedupeDiagnosticsEnabled = true,
+            syncMode = "manual", syncChargingOnly = false, syncBatteryNotLow = false,
+            chargingOnly = false, masks = "", localReviewUrl = "",
+            nsfw = settings.read().nsfw.copy(enabled = false))
+        fun run(mode: String, metadata: Boolean, changes: List<Int>) {
+            val config = base.copy(imageDedupeMode = mode, metadataEnabled = metadata)
+            settings.save(config); assertEquals(mode, Settings(context).read().imageDedupeMode)
+            val pipeline = CapturePipeline(context) { }
+            try {
+                settings.enabled = true
+                for ((index, shade) in changes.withIndex()) {
+                    val bitmap = Bitmap.createBitmap(480, 240, Bitmap.Config.ARGB_8888).apply {
+                        Canvas(this).apply {
+                            drawColor(Color.rgb(shade, shade, shade))
+                            drawText("GENERATED MOTE 2048", 20f, 130f, Paint().apply { color = Color.RED; textSize = 32f })
+                        }
+                    }
+                    val at = start.plusSeconds(sequence * 30L).toString()
+                    pipeline.submit(bitmap, WindowSnapshot(setOf("dev.mote.generated"), "dev.mote.generated", true), config,
+                        capturedAt = at, observedAtMs = 1000L + sequence * 30000L)
+                    waitUntil { !pipeline.isBusy() }
+                    val page = context.queue().capturePage(start.minusSeconds(1).toString(), start.plusSeconds(900).toString(), limit = 60)
+                    val rows = page.getJSONArray("items")
+                    val row = (0 until rows.length()).map { rows.getJSONObject(it) }.singleOrNull { record ->
+                        val samples = record.optJSONObject("stateSeries")?.optJSONArray("samples")
+                        record.getString("capturedAt") == at || samples != null && (0 until samples.length()).any { samples.getJSONObject(it).getString("at") == at }
+                    }
+                    assertNotNull("Capture $mode/$index persisted: ${settings.message()}", row)
+                    val id = row!!.getString("id"); ids += id
+                    val duplicate = mode != "off" && (index == 1 || (index == 2 && (mode != "exact" || !metadata)))
+                    val record = context.queue().capture(id)!!
+                    assertEquals("$mode/$index image", !duplicate, context.queue().image(id) != null)
+                    assertEquals(!duplicate, CapturePreview.hasImage(record))
+                    if (duplicate) {
+                        assertEquals("", record.getString("ocrText"))
+                        assertEquals("disabled", record.getJSONObject("ocr").getString("status"))
+                        assertEquals(mode, record.getJSONObject("metadata").getJSONObject("capture").getJSONObject("deduplication").getString("mode"))
+                        if (!metadata) assertFalse(record.getJSONObject("metadata").has("device"))
+                    }
+                    val samples = record.optJSONObject("stateSeries")?.optJSONArray("samples")
+                    val measured = samples?.let { rows -> (0 until rows.length()).map { rows.getJSONObject(it) }.first { it.getString("at") == at }.getLong("durationMs") } ?: record.getLong("durationMs")
+                    assertEquals(if (index == 0) 0L else 30000L, measured)
+                    expected.put(JSONObject().put("id", id).put("duplicate", duplicate).put("mode", mode))
+                    sequence++
+                }
+            } finally { settings.enabled = false; waitUntil { !pipeline.isBusy() }; pipeline.close() }
+        }
+        for (mode in listOf("off", "exact", "conservative", "balanced", "aggressive")) run(mode, true, listOf(240, 240, 239, 20))
+        run("balanced", false, listOf(240, 240, 240))
+        assertEquals(0L, context.queue().reservedOcrBytes())
+        assertEquals(0L, context.queue().reservedOcrBytes())
+        val upload = settings.read()
+        UploadWorker.schedule(context, upload, true)
+        waitUntil { context.queue().depth() == 0 }
+        val client = CaptureRecordClient(upload, settings.deviceId)
+        for (index in 0 until expected.length()) {
+            val item = expected.getJSONObject(index); val record = client.detail(item.getString("id"))
+            assertEquals(!item.getBoolean("duplicate"), CapturePreview.hasImage(record))
+            if (item.getBoolean("duplicate")) assertEquals("", record.getString("ocrText"))
+        }
+        File(context.filesDir, "dedupe-cross-result.json").writeText(JSONObject().put("deviceId", settings.deviceId)
+            .put("records", expected).put("generatedOnly", true).toString())
+    }
+
+    @Test fun batteryCaptureKeepsMaskedImageForCentralOcrWithoutChangingOriginalEvent() = fixture { context, settings, ids ->
+        shell("dumpsys battery unplug"); shell("dumpsys battery set status 3")
+        waitUntil { !Diagnostics.battery(context).second }
+        val config = settings.read().copy(chargingOnly = false, metadataEnabled = false, masks = "0,0,0.2,1", nsfw = settings.read().nsfw.copy(enabled = false))
+        val pipeline = CapturePipeline(context) { }
+        try {
+            settings.enabled = true
+            val unknown = WindowSnapshot(emptySet(), null, false)
+            assertTrue(pipeline.canCapture(config, unknown))
+            pipeline.submit(generated(), unknown, config)
+            waitUntil { context.queue().depth() == 1 && !pipeline.isBusy() }
+            val event = context.queue().peek()!!; val id = event.getString("id"); ids += id
+            assertEquals("disabled", event.getJSONObject("ocr").getString("status")); assertEquals("", event.getString("ocrText")); assertFalse(event.has("metadata"))
+            val bytes = context.queue().image(id)!!
+            val image = CapturePreview.decode(bytes, 1000)!!
+            try { assertTrue(Color.red(image.getPixel(10, 80)) < 10) } finally { image.recycle() }
+            settings.enabled = false; pipeline.close()
+            val original = context.queue().peek()!!.toString()
+            assertEquals(0L, context.queue().reservedOcrBytes())
+            shell("dumpsys battery set ac 1"); shell("dumpsys battery set status 2")
+            waitUntil { Diagnostics.battery(context).second }
+            assertEquals(0L, context.queue().reservedOcrBytes())
+            assertFalse(settings.enabled); assertEquals("", context.queue().capture(id)!!.getString("ocrText"))
+            assertEquals(original, context.queue().peek()!!.toString())
+            assertFalse(context.queue().peek()!!.keys().asSequence().any { it.startsWith("_") })
+        } finally { settings.enabled = false; if (pipeline.isBusy()) waitUntil { !pipeline.isBusy() }; runCatching { pipeline.close() } }
     }
 }

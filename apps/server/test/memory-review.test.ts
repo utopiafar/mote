@@ -1,3 +1,4 @@
+import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -88,7 +89,7 @@ test('pipeline saves the host review receipt and activates the validated Memory 
  sources.register({id:'generated',name:'Generated',kind:'custom',deviceId:'generated',platform:'import'});
  const original=await sources.upsert('generated',{externalId:'1',revision:'1',text:'Meeting proposed',observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original'});
  const d=draft();d.answer=d.answer.replaceAll(id,original.id);d.citations[0].id=original.id;
- const pipeline=new MemoryPipeline({store,memories,requireAdmission:true,configured:()=>true,model:()=> 'fixture',query:async()=>d,review:(request,value)=>reviewMemory(request,value,async()=>({...value,runId:'independent-review'}),{cache:new MemoryReviewCache(),snapshot:()=> 'fixed'})});
+ const pipeline=fixtureMemoryPipeline({store,memories,requireAdmission:true,configured:()=>true,model:()=> 'fixture',query:async()=>d,review:(request,value)=>reviewMemory(request,value,async()=>({...value,runId:'independent-review'}),{cache:new MemoryReviewCache(),snapshot:()=> 'fixed'})});
  t.after(async()=>{await pipeline.close();store.close();rmSync(dir,{recursive:true,force:true});});
  const job=await pipeline.run(pipeline.create({evidenceIds:[original.id]}).id);assert.equal(job.status,'completed');
  const m=memorySchema.parse(memories.get(job.memoryIds[0]));assert.equal(m.reviewRunId,'independent-review');assert.equal(m.reviewReceipt?.decision,'independent');assert.equal(m.reviewReceipt?.draftRunId,d.runId);assert.equal(m.status,'published');
@@ -100,7 +101,7 @@ test('transaction rollback reuses the validated draft and original independent v
  sources.register({id:'generated',name:'Generated',kind:'custom',deviceId:'generated',platform:'import'});
  const original=await sources.upsert('generated',{externalId:'1',revision:'1',text:'Meeting proposed',observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original'});
  const d=draft();d.answer=d.answer.replaceAll(id,original.id);d.citations[0].id=original.id;let reviews=0,extractions=0;
- const pipeline=new MemoryPipeline({store,memories,requireAdmission:true,configured:()=>true,model:()=> 'fixture',query:async()=>({...d,runId:'draft-'+ ++extractions}),review:(request,value)=>reviewMemory(request,value,async()=>{reviews++;return {...value,runId:'original-independent-review'};},{cache,snapshot:()=>JSON.stringify(memories.readEvidence([original.id]))})});
+ const pipeline=fixtureMemoryPipeline({store,memories,requireAdmission:true,configured:()=>true,model:()=> 'fixture',query:async()=>({...d,runId:'draft-'+ ++extractions}),review:(request,value)=>reviewMemory(request,value,async()=>{reviews++;return {...value,runId:'original-independent-review'};},{cache,snapshot:()=>JSON.stringify(memories.readEvidence([original.id]))})});
  t.after(async()=>{await pipeline.close();store.close();rmSync(dir,{recursive:true,force:true});});
  store.db.exec("CREATE TRIGGER fixture_commit_failure BEFORE INSERT ON memory_checkpoints BEGIN SELECT RAISE(ABORT,'generated commit failure'); END");
  const job=await pipeline.run(pipeline.create({evidenceIds:[original.id]}).id);assert.equal(job.status,'failed');assert.equal(memories.list().length,0);assert.equal(reviews,1);

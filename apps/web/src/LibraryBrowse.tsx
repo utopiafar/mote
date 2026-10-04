@@ -32,7 +32,7 @@ function LibraryReference({api,reference,onOpen}:{api:Api;reference:string;onOpe
 
 /** The same authenticated original and provenance shown by the full evidence reader. */
 function LibraryCaptureDetail({api,reference,onOpen}:{api:Api;reference:string;onOpen:(ref:string)=>void}) {
-  const read=useResource<Capture>(api,'/api/capture-browser/'+encodeURIComponent(reference),5000);
+  const read=useResource<Capture>(api,'/api/capture-browser/'+encodeURIComponent(parseEvidenceRef(reference)!.id),5000);
   if(read.error!==undefined)return <div className="panel-pad"><ErrorNotice text={errorMessage(read.error)} retry={read.refresh}/></div>;
   if(!read.data)return <div className="panel-pad"><Spinner/></div>;
   const capture=read.data,presentation=evidencePresentation(capture);

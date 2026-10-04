@@ -1,3 +1,6 @@
+import {fixtureCaptureRefs} from './fixtures/evidence-refs.js';
+import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
+import {fixtureRecipe,codingOrganizer,codingGroup,type FixtureOrganizer} from './fixtures/source-recipe.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -10,7 +13,7 @@ import {SourcePipelineRuntime} from '../src/source-pipelines.js';
 import {codingSourcePlugin} from '../src/coding-source-plugin.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
-import {sourceItemSchema} from '@mote/shared';
+import {sourceItemSchema,evidenceRefId,formatEvidenceRef} from '@mote/shared';
 
 const item=(i:number,session='session-a',text='Generated user requirement and tool result.')=>({externalId:'event-'+i,revision:'1',observedAt:'2026-09-24T01:00:00.000Z',kind:'message',layer:'snapshot',text,document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:session,projectKey:'generated-project',eventId:String(i).padStart(6,'0'),role:'user',part:0,parts:1}}});
 async function fixture(t:import('node:test').TestContext){
@@ -20,10 +23,9 @@ async function fixture(t:import('node:test').TestContext){
   const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials);
   t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});return {directory,store,materials,runtime,sources,reader};
 }
-function intercept(runtime:SourcePipelineRuntime,hook:NonNullable<import('../src/source-pipelines.js').SourcePipeline['organize']>){
-  const original=runtime.registry.get('mote.coding')!;
-  const {recipe:_,...legacy}=original;
-  const unregister=runtime.registry.register({...legacy,id:'fixture.interceptor',priority:1,organize:hook});
+function intercept(runtime:SourcePipelineRuntime,hook:FixtureOrganizer){
+  const original={...runtime.registry.get('mote.coding')!,organize:codingOrganizer(runtime)};
+  const unregister=fixtureRecipe(runtime,{...original,id:'fixture.interceptor',priority:1,organize:hook});
   runtime.configure('coding',{pipelineId:'fixture.interceptor',memory:false,settleSeconds:0});
   return {original,unregister};
 }
@@ -48,7 +50,7 @@ test('rolled-back archive receive leaves its batch unreferenced until a committe
   const {store,materials,runtime,sources}=await fixture(t);
   await sources.upsert('coding',item(1,'session-a','Committed generated input'));
   const orphan=sourceItemSchema.parse(item(2,'session-a','Orphan generated input'));
-  const group=runtime.registry.get('mote.coding')!.group!(orphan);
+  const group=codingGroup(runtime,orphan);
   store.db.exec('BEGIN IMMEDIATE');runtime.archive.receive('coding',[orphan],[group]);store.db.exec('ROLLBACK');
   await runtime.tick();const committed=materials.list().items[0];assert.ok(committed);
   assert.match(materials.read(committed.ref,{length:12000}).text,/Committed generated input/);
@@ -73,7 +75,7 @@ test('configuration and plugin changes during organization leave newer work unto
 
   let uninstall=false;let unregister=()=>{};
   const {recipe:_,...legacy}=original;
-  const next=runtime.registry.register({...legacy,id:'fixture.uninstall',priority:2,organize:input=>{
+  const next=fixtureRecipe(runtime,{...legacy,id:'fixture.uninstall',priority:2,organize:input=>{
     if(!uninstall){uninstall=true;unregister();}return original.organize!(input);
   }});unregister=next;
   runtime.configure('coding',{pipelineId:'fixture.uninstall',memory:false});
@@ -141,8 +143,8 @@ test('Cordis uninstall blocks archive work, ordinary records stay supported, ind
 test('model extraction first reads the assembled conversation, never raw upload records',async t=>{
   const {store,materials,runtime,sources,reader}=await fixture(t);runtime.configure('coding',{settleSeconds:0});
   await sources.upsertBatch('coding',[item(1),item(2,'session-a','Second generated message.')]);await runtime.tick();
-  let calls=0;const pipeline=new MemoryPipeline({store,memories:reader.memories,materialAllowedForMemory:ref=>reader.materialAllowedForMemory(ref),configured:()=>true,model:()=> 'fixture',query:async input=>{
-    calls++;assert.equal(input.skill,'coding-memory');const records=reader.evidence(input.evidenceIds);assert.ok(records[0].ocrText.includes('Second generated message.'));assert.ok(records[0].ocrText.includes('Generated user requirement'));return {answer:'{"memories":[]}',citations:[],trace:[],runId:'fixture'};
+  let calls=0;const pipeline=fixtureMemoryPipeline({store,memories:reader.memories,materialAllowedForMemory:ref=>reader.materialAllowedForMemory(ref),configured:()=>true,model:()=> 'fixture',query:async input=>{
+    calls++;assert.equal(input.skill,'coding-memory');const records=reader.evidence(fixtureCaptureRefs(input.evidenceIds));assert.ok(records[0].ocrText.includes('Second generated message.'));assert.ok(records[0].ocrText.includes('Generated user requirement'));return {answer:'{"memories":[]}',citations:[],trace:[],runId:'fixture'};
   }});
   runtime.drainMemory(pipeline,true);const job=store.db.prepare('SELECT job_id FROM material_memory_requests').get()!;assert.ok(job.job_id);await pipeline.run(String(job.job_id));assert.ok(calls>0);await pipeline.close();
   const material=materials.list().items[0];materials.forget(material.id);assert.equal(materials.list({query:'Generated'}).items.length,0);assert.equal(store.db.prepare('SELECT count(*) n FROM material_evidence').get()!.n,0);
@@ -157,8 +159,8 @@ test('short Chinese search, source revision moves, explicit erasure and stable d
   await sources.upsert('coding',{...item(1,'session-a','中文需求'),observedAt:'2026-09-24T03:00:00Z'});await runtime.tick();
   assert.equal(materials.list({query:'中文'}).items.length,0);
   const current=materials.list({query:'Moved'}).items[0];const ids=materials.evidenceIds(current.ref);
-  assert.equal(reader.evidence(ids,{before:'2026-09-24T01:30:00Z'}).length,0);
-  runtime.forget('coding');assert.equal(materials.list().items.length,0);assert.equal(reader.evidence(ids).length,0);
+  assert.equal(reader.evidence(fixtureCaptureRefs(ids),{before:'2026-09-24T01:30:00Z'}).length,0);
+  runtime.forget('coding');assert.equal(materials.list().items.length,0);assert.equal(reader.evidence(fixtureCaptureRefs(ids)).length,0);
   assert.equal(store.db.prepare('SELECT count(*) n FROM source_archive_sizes').get()!.n,0);
   await assert.rejects(sources.upsert('coding',item(2)),/paused/);
 });
@@ -166,7 +168,7 @@ test('short Chinese search, source revision moves, explicit erasure and stable d
 test('a second installed pipeline composes the same archive and publishing services without core dispatch changes',async t=>{
   const {sources,runtime,materials,store}=await fixture(t);
   sources.capabilities.register('fixture.document',{lifecycle:'one-shot',discovery:'explicit-selection',listening:'none',readOriginal:'none',synchronization:'import-only',externalWrite:false});
-  const unregister=runtime.registry.register({id:'fixture.documents',version:'1',sourceKinds:['fixture.document'],storage:'archive',index:'material',modelInput:'material',group:item=>item.externalId,
+  const unregister=fixtureRecipe(runtime,{id:'fixture.documents',version:'1',sourceKinds:['fixture.document'],storage:'archive',index:'material',modelInput:'material',group:item=>item.externalId,
     organize:({source,items,group})=>({id:materialId(source.id,group),kind:'fixture.document',schemaVersion:1,title:'Fixture document',origin:{sourceId:source.id,externalId:group,deviceId:source.deviceId},blocks:[{id:'body',kind:'text',format:'plain',text:items[0].text,memberIds:['archive']}],members:[{id:'archive',kind:'archive',ref:'archive:fixture'}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}})});
   sources.register({id:'documents',name:'Fixture',kind:'fixture.document',deviceId:'device',platform:'import'});
   await sources.upsert('documents',{externalId:'doc',revision:'1',observedAt:'2026-09-24T00:00:00Z',kind:'file',layer:'snapshot',text:'Searchable fixture document'});await runtime.tick();assert.equal(materials.list({query:'Searchable'}).items.length,1);assert.equal(store.db.prepare('SELECT count(*) n FROM captures').get()!.n,0);unregister();await assert.rejects(sources.upsert('documents',{externalId:'doc',revision:'2',observedAt:'2026-09-24T00:00:00Z',kind:'file',layer:'snapshot',text:'next'}),/unavailable/);
@@ -175,7 +177,7 @@ test('a second installed pipeline composes the same archive and publishing servi
 test('Memory waits for named outputs while a partial material remains queryable',async t=>{
   const {sources,runtime,materials,reader,store}=await fixture(t);
   sources.capabilities.register('fixture.partial',{lifecycle:'one-shot',discovery:'explicit-selection',listening:'none',readOriginal:'none',synchronization:'import-only',externalWrite:false});
-  runtime.registry.register({id:'fixture.partial',version:'1',sourceKinds:['fixture.partial'],storage:'archive',index:'material',modelInput:'material',memory:true,memoryDependencies:['parsed-text'],group:item=>item.externalId,
+  fixtureRecipe(runtime,{id:'fixture.partial',version:'1',sourceKinds:['fixture.partial'],storage:'archive',index:'material',modelInput:'material',memory:true,memoryDependencies:['parsed-text'],group:item=>item.externalId,
     organize:({source,items,group})=>({id:materialId(source.id,group),kind:'fixture.partial',schemaVersion:1,title:'Partial fixture',origin:{sourceId:source.id,externalId:group,deviceId:source.deviceId},
       blocks:[{id:'body',kind:'text',format:'plain',text:items[0]!.text,memberIds:['archive']}],members:[{id:'archive',kind:'archive',ref:'archive:fixture'}],
       coverage:{state:'partial',reason:'attachment_pending'},artifacts:[{key:'parsed-text',state:'ready'},{key:'attachment',state:'pending'}],fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}})});
@@ -206,8 +208,8 @@ test('HTTP source upload, material search and actual agent bridge cite assembled
   const bridge=await startBridge(reader.agent({diagnostics:node.diagnostics}),{question:'Fixture',deviceId:'device'},20);t.after(()=>bridge.close());
   const call=async(tool:string,args:unknown)=>{const response=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify(args)});assert.equal(response.status,200);return response.json();};
   const discovered=await call('material_catalog',{query:'bridge'});const ref=discovered.data.items[0].ref;
-  const page=await call('material_read',{ref});const id=page.data.originalRefs[0];assert.ok(id);assert.notEqual(id,upload.json().receipts[0].id);
-  await call('evidence',{ids:[id]});const answer=parseAnswer(JSON.stringify({answer:`The assembled conversation contains the proof [${id}]`,citationIds:[id]}),bridge.records);assert.equal(answer.citations[0].id,id);assert.equal(answer.citations[0].provenance?.externalId,ref.split('@')[0].slice('material:'.length));assert.equal(answer.citations[0].provenance?.revision,ref.split('@')[1]);
+  const page=await call('material_read',{ref});const originalRef=page.data.originalRefs[0],id=evidenceRefId(originalRef,'capture');assert.ok(id,'material page returns a typed capture reference');assert.equal(originalRef,formatEvidenceRef('capture',id));assert.notEqual(id,upload.json().receipts[0].id);
+  const expanded=await call('evidence',{ids:[originalRef]});assert.equal(expanded.data[0].id,id,'tool expansion resolves the typed reference to its exact UUID original');const answer=parseAnswer(JSON.stringify({answer:`The assembled conversation contains the proof [${id}]`,citationIds:[id]}),bridge.records);assert.equal(answer.citations[0].id,id);assert.equal(answer.citations[0].provenance?.externalId,ref.split('@')[0].slice('material:'.length));assert.equal(answer.citations[0].provenance?.revision,ref.split('@')[1]);
   assert.equal(node.store.db.prepare('SELECT count(*) n FROM captures').get()!.n,0);
 });
 
@@ -224,7 +226,7 @@ test('explicit pipeline replacement rebuilds groups without introducing raw reco
   const {runtime,sources,materials}=await fixture(t);await sources.upsert('coding',item(1));await runtime.tick();
   const installed=runtime.registry.get('mote.coding')!;
   const {recipe:_,...legacy}=installed;
-  runtime.registry.register({...legacy,id:'fixture.replacement',version:'3',priority:1,organize:input=>({...installed.organize!(input)!,title:'Replacement title'})});
+  fixtureRecipe(runtime,{...legacy,id:'fixture.replacement',version:'3',priority:1,organize:input=>({...codingOrganizer(runtime)(input)!,title:'Replacement title'})});
   runtime.configure('coding',{pipelineId:'fixture.replacement',memory:false});await runtime.tick();assert.equal(materials.list().items[0].title,'Replacement title');assert.equal(runtime.options('coding').pipelineId,'fixture.replacement');
 });
 
@@ -233,7 +235,7 @@ test('file journal preserves both groups when a move is interrupted before SQL c
   await sources.upsert('coding',item(1,'old','Previous body'));await runtime.tick();
   const moved={...item(1,'new','Replacement body'),revision:'2',observedAt:'2026-09-24T02:00:00Z'};
   const parsed=(await import('@mote/shared')).sourceItemSchema.parse(moved);
-  const group=runtime.registry.get('mote.coding')!.group!(parsed);
+  const group=codingGroup(runtime,parsed);
   store.db.exec('BEGIN IMMEDIATE');runtime.archive.receive('coding',[parsed],[group]);store.db.exec('ROLLBACK');
   await sources.upsert('coding',moved);await runtime.tick();
   assert.equal(materials.list({query:'Previous body'}).items.length,0);

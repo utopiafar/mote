@@ -1,3 +1,4 @@
+import {ensureStorageFormat,DESKTOP_STORAGE_VERSION} from './storage-format';
 import { connectionToken, requireConnectionToken, sourceConnectionBinding, type LoginSettings } from './login-session';
 import {nativeStatusView} from './native-status';
 import {fileProcessingWork} from './background';
@@ -57,22 +58,11 @@ export class LocalSourceManager {
   private readonly adapters: SourceAdapterRegistry;
   constructor(private directory: string, private connection: SourceConnection, private helperPath: string, private managedUploads = false, private events?: EventJournal, adapters?: SourceAdapterRegistry) { this.adapters = adapters ?? builtInSourceAdapters(); this.binding = this.connectionBinding(); this.nodeBinding = new ConnectionBindingStore(join(directory, 'connection-binding.json')); this.watcher = new FileWatcher(event => this.onFileWatchEvent(event)); }
   private connectionBinding(): string { return sourceConnectionBinding(this.connection); }
-  private async clearLegacyOriginalSpools():Promise<boolean>{
-    const marker=join(this.directory,'ingress-v2.json');
-    try{const value=JSON.parse((await readLocalContent(marker)).toString('utf8')) as {version?:unknown};
-      if(value.version===2)return false;
-      throw Error('Invalid desktop ingress migration marker');
-    }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
-    const root=join(this.directory,'access-markers');
-    let names:string[];
-    try{names=await readdir(root);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;names=[];}
-    for(const name of names)if(/^local-[a-f0-9-]{36}\.json\.originals$/.test(name))await rm(join(root,name),{recursive:true,force:true});
-    return true;
-  }
   async initialize(): Promise<void> {
+    await ensureStorageFormat(this.directory,['sources.json','nodes','access-markers','ingress-v2.json']);
     try {
       const saved = JSON.parse((await readLocalContent(join(this.directory, 'sources.json'))).toString('utf8')) as { version: number; sources: LocalSource[]; metadataDirty: string[]; metadataDirtyAt?: string };
-      if (saved.version !== 1 || !Array.isArray(saved.sources) || saved.sources.length > 40) throw new Error(moteText("本地来源配置无效"));
+      if (saved.version !== DESKTOP_STORAGE_VERSION || !Array.isArray(saved.sources) || saved.sources.length > 40) throw new Error(moteText("本地来源配置无效"));
       this.sources = saved.sources.map(s => {
         if (!/^local-[a-f0-9-]{36}$/.test(s.id) || typeof s.name !== 'string' || s.name.length > 200 || typeof s.enabled !== 'boolean' || typeof s.kind !== 'string') throw new Error(moteText("本地来源配置无效"));
         const normalized = { ...s, ...normalizeSourceOptions(s), deviceId: this.connection.deviceId };
@@ -83,10 +73,8 @@ export class LocalSourceManager {
       if (this.metadataDirty.size) this.metadataDirtyAt = saved.metadataDirtyAt ?? (await stat(join(this.directory, 'sources.json'))).mtime.toISOString();
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
     await this.nodeBinding.initialize(this.connection, this.sources.length > 0);
-    const migrating=await this.clearLegacyOriginalSpools();
     // Include paused sources when guarding a node change: they can still own durable pending bodies.
     for (const source of this.sources) { const engine = new SourceSync(join(this.directory, 'nodes', this.binding, source.id + '.json')); await engine.initialize(); this.engines.set(source.id, engine); }
-    if(migrating)await atomicSourceJson(join(this.directory,'ingress-v2.json'),{version:2});
     await this.refreshWatchers();
     this.timer = setInterval(() => { void this.refreshWatchers(); void this.sync(false); void this.processFiles(); }, 5000); this.timer.unref();
     void this.sync(false);
@@ -174,7 +162,7 @@ export class LocalSourceManager {
     if (switchingBucket) {
       const dirty = new Set(this.sources.map(s => s.id));
       // Persist before mutating the connection so an I/O failure can retain the old in-memory node.
-      await atomicSourceJson(join(this.directory, 'sources.json'), { version: 1, sources: this.sources, metadataDirty: [...dirty], metadataDirtyAt: this.metadataDirtyAt ?? new Date().toISOString() });
+      await atomicSourceJson(join(this.directory, 'sources.json'), { version: DESKTOP_STORAGE_VERSION, sources: this.sources, metadataDirty: [...dirty], metadataDirtyAt: this.metadataDirtyAt ?? new Date().toISOString() });
       const engines = new Map<string, SourceSync>();
       for (const source of this.sources) { const engine = new SourceSync(join(this.directory, 'nodes', binding, source.id + '.json')); await engine.initialize(); engines.set(source.id, engine); }
       this.binding = binding; this.engines = engines; this.states.clear(); this.readable.clear(); this.metadataDirty = dirty; this.metadataDirtyAt ??= new Date().toISOString();
@@ -350,7 +338,7 @@ export class LocalSourceManager {
     try { await task; } finally { if(this.uploadTask===task)this.uploadTask = undefined; if (this.uploadController === controller) this.uploadController = undefined; }
   }
   private markMetadataDirty(id: string): void { if (!this.metadataDirty.size) this.metadataDirtyAt = new Date().toISOString(); this.metadataDirty.add(id); }
-  private async persist(): Promise<void> { await atomicSourceJson(join(this.directory, 'sources.json'), { version: 1, sources: this.sources, metadataDirty: [...this.metadataDirty], metadataDirtyAt: this.metadataDirtyAt }); }
+  private async persist(): Promise<void> { await atomicSourceJson(join(this.directory, 'sources.json'), { version: DESKTOP_STORAGE_VERSION, sources: this.sources, metadataDirty: [...this.metadataDirty], metadataDirtyAt: this.metadataDirtyAt }); }
   private async interrupt(): Promise<void> { this.controller?.abort(); this.uploadController?.abort(); this.processingController?.abort(); await fileProcessingWork.close(); await Promise.allSettled([this.task,this.uploadTask,this.processingTask]); }
   async close(): Promise<void> { this.stopped = true; if (this.timer) clearInterval(this.timer); this.watcher.close(); this.permissionController?.abort(); await Promise.allSettled([this.interrupt(), this.permissionTask]); }
 }

@@ -1,3 +1,5 @@
+import {memorySchema} from '../src/memory-schema.js';
+import {fixtureCaptureRefs} from './fixtures/evidence-refs.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -18,6 +20,22 @@ import {codingSourcePlugin} from '../src/coding-source-plugin.js';
 import {formatArtifactRef} from '@mote/shared';
 import {SourceItemRecipeCatalog} from '../src/source-item-recipe.js';
 import {MaterialMemoryWork} from '../src/material-memory-work.js';
+
+
+/** Complete generated storage fixture; the reader still enforces its original-evidence policy. */
+function seedMemory(store:Store,id:string,evidenceIds:string[],createdAt:string,details:{title:string;statement:string;uncertainty:string}){
+ const records=store.evidence(evidenceIds);assert.equal(records.length,evidenceIds.length);
+ const value=memorySchema.parse({version:1,id,domain:'personal',tier:'episode',kind:'episodic',...details,
+  status:'published',createdAt,evidenceIds,model:'generated-fixture',runId:randomUUID(),skillVersion:'generated-fixture@1',
+  admission:{layer:'memory',reason:'Generated model selected evidence for this fixture',scope:'Generated fixture only',attribution:'observed'},
+  fingerprint:memoryEvidenceFingerprint(records[0]),
+  evidence:records.map(record=>({id:record.id,deviceId:record.deviceId,sourceId:record.provenance?.sourceId,externalId:record.provenance?.externalId,revision:record.provenance?.revision,
+   capturedAt:record.capturedAt,receivedAt:record.receivedAt,offset:0,length:record.ocrText.length,quote:record.ocrText,contentHash:memoryEvidenceFingerprint(record)})),
+  scopeRefs:records.flatMap(record=>{const c=record.provenance?.document?.coding;return c?[{sourceId:record.provenance?.sourceId,deviceId:record.deviceId,provider:c.provider,projectKey:c.projectKey,sessionId:c.sessionId}]:[]})});
+ store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(id,createdAt,JSON.stringify(value));
+ for(const evidenceId of evidenceIds)store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(id,evidenceId);
+ return value;
+}
 
 test('query discovery uses published screen views while selected originals remain expandable',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-exposure-'));
@@ -40,23 +58,22 @@ test('query discovery uses published screen views while selected originals remai
   materials.setSearchable(material.id,true);
   let runContext:object|undefined={};const firstRun=runContext,queryContext=new AsyncLocalStorage<object>();
   const agent=reader.agent({diagnostics,allowQueryImages:()=>true,currentGrantContext:()=>queryContext.getStore()??runContext});
-  const legacyMemoryId=randomUUID();
-  store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(legacyMemoryId,'2026-09-20T03:00:00.000Z',JSON.stringify({id:legacyMemoryId,title:'Generated raw screenshot memory',statement:'SCREEN_MEMORY_ANCHOR',uncertainty:'',status:'published',createdAt:'2026-09-20T03:00:00.000Z',evidenceIds:[screenIds[0]],evidence:[{id:screenIds[0],capturedAt:'2026-09-20T01:00:00.000Z'}]}));
-  store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(legacyMemoryId,screenIds[0]);
+  const restrictedMemoryId=randomUUID();
+  seedMemory(store,restrictedMemoryId,[screenIds[0]],'2026-09-20T03:00:00.000Z',{title:'Generated raw screenshot memory',statement:'SCREEN_MEMORY_ANCHOR',uncertainty:'Generated exposure fixture only'});
   assert.deepEqual((await agent.search({query:'EXPOSURE_ANCHOR',limit:5})).map(record=>record.id),[noteId]);
   assert.deepEqual((await agent.search({query:'Available OCR'})).map(record=>record.id),[materials.evidenceIds(material.ref)[0]],
     'processed screen Material text is discoverable without exposing a raw screenshot');
   const timeline=await agent.timeline({limit:1});assert.ok(!Array.isArray(timeline));
   assert.deepEqual(timeline.items.map(record=>record.id),[noteId]);
   assert.equal(timeline.nextCursor,null);
-  assert.equal((await agent.memories!({id:legacyMemoryId})).items.length,0);
-  assert.equal((await agent.catalog!({path:'/context/memory'})).entries.some((entry:any)=>entry.id===legacyMemoryId),false);
+  assert.equal((await agent.memories!({id:restrictedMemoryId})).items.length,0);
+  assert.equal((await agent.catalog!({path:'/context/memory'})).entries.some((entry:any)=>entry.id===restrictedMemoryId),false);
   const catalog=await agent.materialCatalog!({});assert.deepEqual(catalog.items.map(item=>item.ref),[material.ref]);
   assert.equal((catalog.items[0] as any).coverage.state,'pending');
   assert.deepEqual(await agent.evidence({ids:[screenIds[0]]}),[],'a known screen UUID is not an original disclosure grant');
   await assert.rejects(agent.readImage!({id:screenIds[0]}),/Image not found/);
-  const read=await agent.materialRead!({ref:material.ref});assert.deepEqual(read.originalRefs,[screenIds[0]]);
-  assert.equal((await agent.evidence({ids:read.originalRefs}))[0].id,screenIds[0]);
+  const read=await agent.materialRead!({ref:material.ref});assert.deepEqual(read.originalRefs,[`capture:${screenIds[0]}`]);
+  assert.equal((await agent.evidence({ids:[screenIds[0]]}))[0].id,screenIds[0]);
   assert.equal((await agent.readImage!({id:screenIds[0]})).mimeType,'image/png');
   assert.deepEqual(await agent.evidence({ids:[screenIds[1]]}),[],'a material only grants originals in the expanded span');
   runContext={};
@@ -74,7 +91,7 @@ test('query discovery uses published screen views while selected originals remai
     assert.equal((await call('evidence',{ids:[screenIds[0]]})).status,400,'an undiscovered raw screenshot is not an Agent expansion grant');
     const discovered=await (await call('material_catalog',{})).json();
     const page=await (await call('material_read',{ref:discovered.data.items[0].ref})).json();
-    assert.deepEqual(page.data.originalRefs,[screenIds[0]]);
+    assert.deepEqual(page.data.originalRefs,[`capture:${screenIds[0]}`]);
     assert.equal((await call('evidence',{ids:[screenIds[0]]})).status,200,'bridge callbacks retain the trusted query context');
     const answer=parseAnswer(JSON.stringify({answer:`Generated screen content [${screenIds[0]}]`,citationIds:[screenIds[0]]}),bridge.records);
     assert.equal(answer.citations[0].id,screenIds[0]);
@@ -95,7 +112,7 @@ test('query discovery uses published screen views while selected originals remai
   materials.retire(material.id,{expectedRevision:material.revision});
   assert.deepEqual(await agent.evidence({ids:[screenIds[0]]}),[],'material retirement revokes its original grant');
   await assert.rejects(agent.readImage!({id:screenIds[0]}),/Image not found/);
-  assert.equal(reader.evidence([screenIds[0]]).length,1,'owner archive reads retain the original');
+  assert.equal(reader.evidence(fixtureCaptureRefs([screenIds[0]])).length,1,'owner archive reads retain the original');
 });
 
 test('trusted rules are explicit over source, operation, phase and representation',async t=>{
@@ -133,15 +150,14 @@ test('trusted rules are explicit over source, operation, phase and representatio
     text:'CODING_RAW_ANCHOR',kind:'message',layer:'original',document:{coding:{version:1,provider:'codex',projectKey:'generated-project',sessionId:'generated-session',eventId:'event-1',role:'user',part:0,parts:1}}});
   const id=sources.getItem('generated-coding','event-1')!.captureId;
   const reader=new EvidenceReader(store,sources),agent=reader.agent({diagnostics});
-  const legacyMemoryId=randomUUID();
-  store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(legacyMemoryId,'2026-09-20T03:00:00.000Z',JSON.stringify({id:legacyMemoryId,title:'Generated raw Coding memory',statement:'CODING_MEMORY_ANCHOR',uncertainty:'',status:'published',createdAt:'2026-09-20T03:00:00.000Z',evidenceIds:[id],evidence:[{id,capturedAt:'2026-09-20T02:00:00.000Z'}]}));
-  store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(legacyMemoryId,id);
+  const restrictedMemoryId=randomUUID();
+  seedMemory(store,restrictedMemoryId,[id],'2026-09-20T03:00:00.000Z',{title:'Generated raw Coding memory',statement:'CODING_MEMORY_ANCHOR',uncertainty:'Generated exposure fixture only'});
   assert.equal((await agent.search({query:'CODING_RAW_ANCHOR'})).length,0);
   assert.equal((await agent.evidence({ids:[id]})).length,0);
   assert.deepEqual((await agent.sourceItems!({sourceId:'generated-coding'})).items,[]);
-  assert.equal((await agent.memories!({id:legacyMemoryId})).items.length,0);
-  assert.equal((await agent.catalog!({path:'/context/memory'})).entries.some((entry:any)=>entry.id===legacyMemoryId),false);
-  assert.equal(reader.evidence([id]).length,1,'the original remains in the owner archive');
+  assert.equal((await agent.memories!({id:restrictedMemoryId})).items.length,0);
+  assert.equal((await agent.catalog!({path:'/context/memory'})).entries.some((entry:any)=>entry.id===restrictedMemoryId),false);
+  assert.equal(reader.evidence(fixtureCaptureRefs([id])).length,1,'the original remains in the owner archive');
 });
 
 test('ordinary recipe routes keep pending query material visible and require a named Memory grant',async t=>{
@@ -226,7 +242,7 @@ test('Coding append retains an active prefix anchor under the current Material s
     'an old prefix cannot bypass the current session time range');
   assert.match((await agent.materialRead!({ref:current.ref})).text,/Generated active prefix/);
   const page=await agent.materialRead!({ref:current.ref,offset:0,length:10});
-  assert.deepEqual(page.originalRefs,[prefix],'the current prefix page must cite its active original anchor');
+  assert.deepEqual(page.originalRefs,[`capture:${prefix}`],'the current prefix page must cite its active original anchor');
 });
 
 test('bounded Coding products use original conversation dates, expand only covered anchors and reject legacy tool projections',async t=>{
@@ -286,7 +302,7 @@ test('a source tombstone revokes model access to prior raw revisions',async t=>{
     text:'',kind:'message',layer:'original',deleted:true});
   assert.deepEqual(await agent.evidence({ids:[old.id]}),[]);
   assert.equal((await agent.search({query:'Generated private body'})).length,0);
-  assert.equal(reader.evidence([old.id]).length,1,'owner history remains available');
+  assert.equal(reader.evidence(fixtureCaptureRefs([old.id])).length,1,'owner history remains available');
 });
 
 test('synthetic Material evidence obeys named Memory readiness without blocking unrelated raw captures',async t=>{

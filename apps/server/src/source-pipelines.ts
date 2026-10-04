@@ -19,7 +19,7 @@ type GroupInput={workId:string;sourceId:string;pipelineId:string;version:string;
   sourceFingerprint:string;configFingerprint:string;policyFingerprint:string;reprocess:'deterministic'|'manual'};
 type PreparedGroup={draft:MaterialDraft|MaterialAppendDraft|undefined;pipeline:SourcePipeline;recipe:InstalledRecipe|undefined;sourceJson:string;configJson:string|null;checkpoint:string;policyFingerprint:string;
   priorRevision:string|null;codingSnapshot?:CodingArchiveSnapshot;
-  organizer:SourcePipeline['organize'];options:z.infer<typeof configuration>};
+  options:z.infer<typeof configuration>};
 const STEP_KIND='source.archive-group';
 const stepId=(id:string,generation:number)=>`source.archive-group:${id}:${generation}`;
 
@@ -37,14 +37,12 @@ export interface SourcePipeline {
   recipe?:{id:string;version:string};
   /** Historical model work requires an explicit user request; only declared deterministic recipes replay automatically. */
   reprocess?:'deterministic'|'manual';
-  group?(item:SourceItem):string;
-  organize?(input:{source:SourceConnection;items:SourceItem[];group:string}):MaterialDraft|undefined;
 }
 export class SourcePipelineRegistry {
   private entries=new Map<string,SourcePipeline>();
   private declaredKinds=new Set<string>();
   register(pipeline:SourcePipeline){
-    if(!/^[a-z0-9.-]+$/.test(pipeline.id)||!pipeline.version||this.entries.has(pipeline.id)||!pipeline.sourceKinds.length||pipeline.modelInput!=='material'||!['records','archive'].includes(pipeline.storage)||!['none','material'].includes(pipeline.index)||pipeline.storage==='archive'&&!pipeline.recipe&&(!pipeline.group||!pipeline.organize))throw Error('Invalid source pipeline');
+    if(!/^[a-z0-9.-]+$/.test(pipeline.id)||!pipeline.version||this.entries.has(pipeline.id)||!pipeline.sourceKinds.length||pipeline.modelInput!=='material'||!['records','archive'].includes(pipeline.storage)||!['none','material'].includes(pipeline.index)||pipeline.storage==='archive'&&!pipeline.recipe)throw Error('Invalid source pipeline');
     if([...this.entries.values()].some(p=>(p.priority??0)===(pipeline.priority??0)&&p.sourceKinds.some(kind=>pipeline.sourceKinds.includes(kind))))throw Error('Ambiguous source pipeline');
     pipeline.sourceKinds.forEach(kind=>this.declaredKinds.add(kind));
     this.entries.set(pipeline.id,pipeline);return ()=>{if(this.entries.get(pipeline.id)===pipeline)this.entries.delete(pipeline.id);};
@@ -52,7 +50,7 @@ export class SourcePipelineRegistry {
   declared(kind:string){return this.declaredKinds.has(kind);}
   get(id:string){return this.entries.get(id);}
   forKind(kind:string){return [...this.entries.values()].filter(p=>p.sourceKinds.includes(kind)).sort((a,b)=>(b.priority??0)-(a.priority??0))[0];}
-  list(){return [...this.entries.values()].map(({group,organize,...policy})=>policy);}
+  list(){return [...this.entries.values()].map(policy=>({...policy}));}
 }
 declare module '@deepseek-ai/cordis' {interface Context {moteSourcePipelines:SourcePipelineRegistry;}}
 /** Cordis owns installation; host owns receipts, durable work and atomic publication.
@@ -66,17 +64,11 @@ export class SourcePipelineRuntime {
     this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
     this.engine=executor??new ExecutionEngine(store);this.ownsEngine=!executor;
     this.archive=new SourceArchive(store);this.pluginScope.provide('moteSourcePipelines',this.registry);this.pluginScope.provide('moteSourceRecipes',this.recipes);
-    store.db.exec(`CREATE TABLE IF NOT EXISTS source_pipeline_bindings(source_id TEXT PRIMARY KEY,pipeline_id TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS source_pipeline_work(id TEXT PRIMARY KEY,source_id TEXT NOT NULL,pipeline_id TEXT NOT NULL,version TEXT NOT NULL,group_key TEXT NOT NULL,state TEXT NOT NULL,error TEXT,updated_at INTEGER NOT NULL,material_ref TEXT,generation INTEGER NOT NULL DEFAULT 0,archive_checkpoint TEXT,
+    store.db.exec(`CREATE TABLE IF NOT EXISTS source_pipeline_bindings(source_id TEXT PRIMARY KEY,pipeline_id TEXT NOT NULL,storage TEXT);
+      CREATE TABLE IF NOT EXISTS source_pipeline_work(id TEXT PRIMARY KEY,source_id TEXT NOT NULL,pipeline_id TEXT NOT NULL,version TEXT NOT NULL,group_key TEXT NOT NULL,state TEXT NOT NULL,error TEXT,updated_at INTEGER NOT NULL,material_ref TEXT,generation INTEGER NOT NULL DEFAULT 0,archive_checkpoint TEXT,memory_trigger TEXT NOT NULL,
         recipe_id TEXT,recipe_version TEXT,recipe_definition_fingerprint TEXT,recipe_config_fingerprint TEXT,recipe_component_pins TEXT);
       CREATE TABLE IF NOT EXISTS source_pipeline_config(source_id TEXT PRIMARY KEY,json TEXT NOT NULL);`);
     this.memoryWork=memoryWork??new MaterialMemoryWork(store,materials);
-    if(!(store.db.prepare('PRAGMA table_info(source_pipeline_bindings)').all() as {name:string}[]).some(c=>c.name==='storage'))store.db.exec('ALTER TABLE source_pipeline_bindings ADD COLUMN storage TEXT');
-    const workColumns=new Set((store.db.prepare('PRAGMA table_info(source_pipeline_work)').all() as {name:string}[]).map(column=>column.name));
-    if(!workColumns.has('generation'))store.db.exec('ALTER TABLE source_pipeline_work ADD COLUMN generation INTEGER NOT NULL DEFAULT 0');
-    if(!workColumns.has('archive_checkpoint'))store.db.exec('ALTER TABLE source_pipeline_work ADD COLUMN archive_checkpoint TEXT');
-    if(!workColumns.has('memory_trigger'))store.db.exec("ALTER TABLE source_pipeline_work ADD COLUMN memory_trigger TEXT NOT NULL DEFAULT 'rebuild'");
-    for(const name of ['recipe_id','recipe_version','recipe_definition_fingerprint','recipe_config_fingerprint','recipe_component_pins'])if(!workColumns.has(name))store.db.exec(`ALTER TABLE source_pipeline_work ADD COLUMN ${name} TEXT`);
     this.unregisterHandler=this.engine.register({kind:STEP_KIND,pool:'source.archive',concurrency:()=>2,
       resourceKeys:step=>[`source.archive:${(step.input as unknown as GroupInput).workId}`],
       validate:step=>this.validWork(step),admit:step=>this.admitWork(step),
@@ -86,7 +78,7 @@ export class SourcePipelineRuntime {
     this.ready=(async()=>{for(const plugin of plugins)await pluginScope.install(plugin);})();
   }
   private recipeFor(pipeline:SourcePipeline,source:SourceConnection):InstalledRecipe|undefined {
-    if(!pipeline.recipe)return undefined;
+    if(!pipeline.recipe){if(pipeline.storage==='records')return undefined;throw new StoreError('Source archive pipelines require a recipe',409);}
     let recipe:InstalledRecipe;
     try{recipe=this.recipes.resolve(pipeline.recipe.id,pipeline.recipe.version);}catch{throw new StoreError('Source recipe or component unavailable',409);}
     if(recipe.definition.accepts.sourceKind!==source.kind)throw new StoreError('Source recipe kind mismatch',409);
@@ -111,8 +103,7 @@ export class SourcePipelineRuntime {
   private enqueueWork(row:WorkRow){
     const db=this.store.db,sourceJson=String((db.prepare('SELECT json FROM source_connections WHERE id=?').get(row.source_id) as {json:string}|undefined)?.json??''),
       configJson=(db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(row.source_id) as {json:string}|undefined)?.json??null;
-    if(row.archive_checkpoint===null){row.archive_checkpoint=this.archive.groupCheckpoint(row.source_id,row.group_key);
-      db.prepare('UPDATE source_pipeline_work SET archive_checkpoint=? WHERE id=? AND generation=?').run(row.archive_checkpoint,row.id,row.generation);}
+    if(row.archive_checkpoint===null)throw new StoreError('Source work requires an immutable archive checkpoint',409);
     const pipeline=this.registry.get(row.pipeline_id);
     const input:GroupInput={workId:row.id,sourceId:row.source_id,pipelineId:row.pipeline_id,version:row.version,group:row.group_key,
       generation:row.generation,checkpoint:row.archive_checkpoint,memoryTrigger:row.memory_trigger,recipeId:row.recipe_id,recipeVersion:row.recipe_version,
@@ -147,7 +138,7 @@ export class SourcePipelineRuntime {
       const recipe=this.recipeFor(pipeline,source),options=this.options(input.sourceId);
       if(recipe){const metadata=this.recipeMetadata(recipe,input.sourceId,options);
         if(input.recipeId!==metadata.id||input.recipeVersion!==metadata.version||input.recipeDefinitionFingerprint!==metadata.definitionFingerprint||input.recipeConfigFingerprint!==metadata.configFingerprint||input.recipeComponentPins!==metadata.componentPins)throw Error('recipe_unavailable');
-      }else if(input.recipeId!==null||!pipeline.organize)throw Error('pipeline_unavailable');
+      }else throw Error('recipe_unavailable');
     }catch(error){return new ExecutionFailure('blocked',error instanceof Error&&error.message==='pipeline_unavailable'?'pipeline_unavailable':'recipe_unavailable');}
   }
   private async organizeGroup(step:ExecutionStep,signal:AbortSignal):Promise<PreparedGroup>{
@@ -166,21 +157,21 @@ export class SourcePipelineRuntime {
     const snapshot=recipe?await this.recipes.snapshot(recipe,scopedReader!,source,input.group,signal,base):this.archive.currentSnapshot(input.sourceId,input.group);
     if(snapshot.checkpoint!==input.checkpoint)throw new ExecutionFailure('stale','archive_changed');
     signal.throwIfAborted();
-    const organizer=pipeline.organize,draft=recipe?this.recipes.organize(recipe,source,input.group,snapshot):organizer!({source,group:input.group,items:snapshot.items});
+    const draft=this.recipes.organize(recipe!,source,input.group,snapshot);
     signal.throwIfAborted();
     const priorRevision=draft?this.materials.revisionForWrite(draft.id):null;
     if(draft&&'mode' in draft&&base?.record.revision!==priorRevision)throw new ExecutionFailure('stale','material_changed');
     const pinned=recipe?snapshot as RecipeSnapshot:undefined;
     const codingSnapshot=pinned&&typeof pinned.headCount==='number'&&typeof pinned.appendEpoch==='number'?
       {checkpoint:pinned.checkpoint,headCount:pinned.headCount,appendEpoch:pinned.appendEpoch}:undefined;
-    return {draft,pipeline,recipe,sourceJson,configJson,checkpoint:snapshot.checkpoint,policyFingerprint:this.policyFingerprint(pipeline),organizer,options,
+    return {draft,pipeline,recipe,sourceJson,configJson,checkpoint:snapshot.checkpoint,policyFingerprint:this.policyFingerprint(pipeline),options,
       priorRevision,codingSnapshot};
   }
   private publishGroup(step:ExecutionStep,result:PreparedGroup){
     const input=this.input(step),db=this.store.db;
     if(!this.validWork(step))throw new ExecutionFailure('stale','input_changed');
     const pipeline=this.registry.get(input.pipelineId);
-    if(pipeline!==result.pipeline||!pipeline||pipeline.version!==input.version||pipeline.organize!==result.organizer||this.policyFingerprint(pipeline)!==result.policyFingerprint)throw new ExecutionFailure('blocked','pipeline_unavailable');
+    if(pipeline!==result.pipeline||!pipeline||pipeline.version!==input.version||this.policyFingerprint(pipeline)!==result.policyFingerprint)throw new ExecutionFailure('blocked','pipeline_unavailable');
     const sourceJson=(db.prepare('SELECT json FROM source_connections WHERE id=?').get(input.sourceId) as {json:string}|undefined)?.json,
       configJson=(db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(input.sourceId) as {json:string}|undefined)?.json??null;
     if(!sourceJson||this.sourceFingerprint(sourceJson)!==this.sourceFingerprint(result.sourceJson)||configJson!==result.configJson||this.archive.groupCheckpoint(input.sourceId,input.group)!==result.checkpoint)throw new ExecutionFailure('stale','input_changed');
@@ -210,7 +201,7 @@ export class SourcePipelineRuntime {
     const pipeline=binding?this.registry.get(String(binding.pipeline_id)):this.registry.forKind(source.kind);
     if(binding&&!pipeline)throw new StoreError('Source pipeline unavailable',409);
     if(pipeline&&!pipeline.sourceKinds.includes(source.kind))throw new StoreError('Source pipeline kind mismatch',409);
-    if(pipeline){this.recipeFor(pipeline,source);if(binding&&!binding.storage)this.store.db.prepare('UPDATE source_pipeline_bindings SET storage=? WHERE source_id=?').run(pipeline.storage,source.id);}
+    if(pipeline){this.recipeFor(pipeline,source);if(binding&&!binding.storage)throw new StoreError('Source binding requires storage semantics',409);}
     // Ordinary sources retain the record-store path. A declared plugin kind
     // may never silently fall through after uninstall.
     if(!pipeline&&this.registry.declared(source.kind))throw new StoreError('Source pipeline unavailable',409);
@@ -219,7 +210,7 @@ export class SourcePipelineRuntime {
   receive(source:SourceConnection,items:SourceItem[],validate:()=>void){
     const pipeline=this.select(source);if(!pipeline||pipeline.storage==='records')return undefined;
     const recipe=this.recipeFor(pipeline,source),metadata=recipe?this.recipeMetadata(recipe,source.id):undefined;
-    const groups=items.map(item=>recipe?this.recipes.group(recipe,item):pipeline.group!(item));
+    const groups=items.map(item=>this.recipes.group(recipe!,item));
     const db=this.store.db;db.exec('BEGIN IMMEDIATE');
     try{
       validate();if(this.select(source)!==pipeline)throw new StoreError('Source pipeline changed',409);
@@ -269,9 +260,7 @@ export class SourcePipelineRuntime {
             db.prepare("UPDATE source_pipeline_work SET state='blocked',error=?,updated_at=? WHERE id=? AND generation=?").run(reason,Date.now(),row.id,row.generation);
             this.revoke(old);superseded.push(old);
           };
-          if(row.recipe_id===null&&!policy.recipe){
-            db.prepare("UPDATE source_pipeline_work SET memory_trigger=CASE WHEN state='complete' THEN 'rebuild' ELSE memory_trigger END,state='pending',error=NULL,version=?,generation=generation+1,updated_at=? WHERE id=? AND generation=?").run(policy.version,Date.now(),row.id,row.generation);
-          }else if(policy.recipe&&policy.reprocess==='deterministic'&&row.recipe_id===policy.recipe.id){
+          if(policy.recipe&&policy.reprocess==='deterministic'&&row.recipe_id===policy.recipe.id){
             const prior=this.engine.get(old),input=prior?.input as unknown as GroupInput|undefined;
             const sourceJson=(db.prepare('SELECT json FROM source_connections WHERE id=?').get(row.source_id) as {json:string}|undefined)?.json??'',
               configJson=(db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(row.source_id) as {json:string}|undefined)?.json??null;

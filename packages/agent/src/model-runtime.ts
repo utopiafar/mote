@@ -1,4 +1,4 @@
-import {DEFAULT_MODEL_MAX_TOKENS,MODEL_REASONING_EFFORTS,deepSeekMessagesBaseUrl,type ModelProtocol} from '@mote/shared/models';
+import {DEFAULT_MODEL_MAX_TOKENS,MODEL_REASONING_EFFORTS,type ModelProtocol} from '@mote/shared/models';
 import {AgentConfigurationError, type AgentOptions} from './types.js';
 
 const protocols: ModelProtocol[] = ['deepseek', 'openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai', 'codex-app-server'];
@@ -24,7 +24,7 @@ const forbiddenBody = new Set([
   'dshsessionlog', 'dshpluginpackages',
 ]);
 const normalizedKey = (key: string) => key.toLowerCase().replace(/[_-]/g, '');
-type ConnectionOptions = Pick<AgentOptions, 'protocol' | 'provider' | 'model' | 'baseUrl' | 'reasoningEffort' | 'serviceTier' | 'maxTokens' | 'headers' | 'extraBody' | 'requestTimeoutMs' | 'timeoutMs'>;
+type ConnectionOptions = Pick<AgentOptions, 'protocol' | 'provider' | 'model' | 'baseUrl' | 'reasoningEffort' | 'serviceTier' | 'maxTokens' | 'headers' | 'extraBody' | 'requestTimeoutMs'>;
 
 /** Keep errors value-free: advanced fields can contain credentials. */
 export function validateModelOptions(options: ConnectionOptions): void {
@@ -34,7 +34,7 @@ export function validateModelOptions(options: ConnectionOptions): void {
   if (options.reasoningEffort !== undefined && !MODEL_REASONING_EFFORTS.includes(options.reasoningEffort)) throw new AgentConfigurationError('Unsupported reasoning effort.');
   if (options.protocol !== 'codex-app-server' && options.reasoningEffort !== undefined && ['minimal', 'medium', 'xhigh', 'ultra'].includes(options.reasoningEffort)) throw new AgentConfigurationError('This reasoning effort requires Codex App Server.');
   if (options.maxTokens !== undefined && (!Number.isInteger(options.maxTokens) || options.maxTokens < 1 || options.maxTokens > 128_000)) throw new AgentConfigurationError('Model output limit must be between 1 and 128000 tokens.');
-  const requestTimeoutMs = options.requestTimeoutMs !== undefined ? options.requestTimeoutMs : options.timeoutMs === undefined ? undefined : Math.max(options.timeoutMs, 5_000);
+  const requestTimeoutMs = options.requestTimeoutMs;
   if (requestTimeoutMs !== undefined && requestTimeoutMs !== null && (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs < 5_000 || requestTimeoutMs > 600_000)) throw new AgentConfigurationError('Model request timeout must be between 5000 and 600000 milliseconds.');
   if (options.baseUrl) {
     let url: URL;
@@ -72,7 +72,7 @@ export function modelConnection(options: ConnectionOptions) {
   validateModelOptions(options);
   const protocol = options.protocol ?? 'deepseek';
   const suppliedBaseUrl = (options.baseUrl || defaults[protocol]).replace(/\/+$/, '');
-  const baseUrl = protocol === 'deepseek' ? deepSeekMessagesBaseUrl(suppliedBaseUrl) : suppliedBaseUrl;
+  const baseUrl = suppliedBaseUrl;
   const effort = options.reasoningEffort ?? (protocol === 'deepseek' ? 'high' : 'auto');
   const route = protocol === 'deepseek' ? 'deepseek-official' : protocol === 'google-generative-ai' ? 'google' : 'mote-model';
   return {protocol, baseUrl, effort, route};
@@ -88,7 +88,7 @@ export function modelRuntimeEntries(options: ConnectionOptions): unknown[] {
   if(options.protocol==='codex-app-server')throw new AgentConfigurationError('Codex requires the App Server runtime.');
   const {protocol, baseUrl, effort, route} = modelConnection(options);
   const maxTokens = options.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS;
-  const requestTimeoutMs = options.requestTimeoutMs !== undefined ? options.requestTimeoutMs : options.timeoutMs === undefined ? undefined : Math.max(options.timeoutMs, 5_000);
+  const requestTimeoutMs = options.requestTimeoutMs;
   const model = {id: options.model!, name: options.model!, contextWindow: 128_000, maxTokens};
   if (protocol === 'deepseek') return [{id: 'llm-deepseek', config: {
     ...(effort === 'auto' ? {thinking: 'disabled'} : {thinking: effort === 'off' ? 'disabled' : 'enabled', reasoningEffort: effort}),

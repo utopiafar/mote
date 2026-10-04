@@ -1,3 +1,4 @@
+import {formatEvidenceRef} from '@mote/shared';
 import {useMemo} from 'react';
 import { moteText } from '@mote/shared/i18n';
 import ReactMarkdown from 'react-markdown';
@@ -53,7 +54,7 @@ export function AnswerMarkdown({answer,onOpen}:{answer:Answer;onOpen:(id:string)
     table:({children})=><div className="answer-table-scroll" role="region" aria-label={moteText("回答中的表格")} tabIndex={0}><table>{children}</table></div>,
     a:({href,children})=>{
       const id=href?verified.get(href):undefined;
-      return id ? <button type="button" className="inline-citation" onClick={()=>onOpen(id)} aria-label={moteText("查看证据：{0}", children)}>{children}</button>
+      return id ? <button type="button" className="inline-citation" onClick={()=>onOpen(formatEvidenceRef('capture',id))} aria-label={moteText("查看证据：{0}", children)}>{children}</button>
         : <a href={href} target="_blank" rel="noreferrer noopener">{children}</a>;
     },
   }),[verified,onOpen]);

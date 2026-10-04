@@ -33,13 +33,13 @@ const note=(deviceId='synthetic-phone')=>({id:randomUUID(),deviceId,deviceName:'
 const source=(id:string,deviceId='synthetic-phone')=>({id,deviceId,name:'Synthetic source',kind:'local-files',platform:'import',retention:'snapshot',enabled:true});
 const item=()=>({externalId:'one',revision:randomUUID(),observedAt:new Date().toISOString(),title:'Synthetic file',text:'Synthetic file evidence',kind:'file',layer:'snapshot'});
 
-test('wire metadata is independent of product versions and preserves strict legacy connection responses',async t=>{
+test('wire metadata is independent of product versions and always includes its protocol contract',async t=>{
   const {app}=await fixture(t);
   const health=(await app.inject('/api/health')).json();
   assert.equal(health.ok,true);assert.deepEqual(health.protocol,MOTE_PROTOCOL_RANGE);
   assert.equal('capabilities' in health,false,'Public metadata does not reveal credential authorization');
   const legacy=(await app.inject({url:'/api/connections/self',headers:headers()})).json();
-  assert.deepEqual(Object.keys(legacy.node).sort(),['profile','version']);
+  assert.deepEqual(Object.keys(legacy.node).sort(),['profile','protocol','version']);
   for(const version of ['1','2']){
     const self=(await app.inject({url:'/api/connections/self',headers:{...headers(),'x-mote-protocol-version':version}})).json();
     assert.deepEqual(self.node.protocol,MOTE_PROTOCOL_RANGE);assert.equal(self.node.version,health.version);

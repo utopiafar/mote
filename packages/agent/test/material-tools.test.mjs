@@ -1,3 +1,5 @@
+import {fixtureCaptureId} from './capture-fixture-id.mjs';
+import {formatEvidenceRef} from '@mote/shared';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {startBridge} from '../dist/bridge.js';
@@ -6,11 +8,11 @@ import {taskTools} from '../dist/task-context.js';
 const at='2026-09-24T00:00:00Z';
 const ref=`material:mat_${'a'.repeat(64)}@${'b'.repeat(64)}`;
 const id=`mat_${'a'.repeat(64)}`;
-const original={id:'generated-original-1',capturedAt:at,deviceId:'generated-device',appName:'Generated',ocrText:'Generated original evidence'};
+const original={id:fixtureCaptureId('material-original-1'),capturedAt:at,deviceId:'generated-device',appName:'Generated',ocrText:'Generated original evidence'};
 const text='Generated material page text';
 const material={id,ref,kind:'coding.session',schemaVersion:1,title:'Generated session',origin:{sourceId:'generated-source',externalId:'/private/source-path',deviceId:'generated-device',firstAt:at,lastAt:at},revision:'b'.repeat(64),updatedAt:at,memberCount:1,blockCount:1,textLength:text.length,assetCount:0,coverage:{state:'complete',reason:'private coverage detail'},fidelity:{state:'lossless',limitations:['private limitation']},retention:{original:'retained',policy:'keep'},text:'PRIVATE BODY',members:[original.id]};
-const page={material,text,textRange:{offset:0,total:text.length,nextOffset:null},spans:[{blockId:'block-1',kind:'text',format:'plain',pageRange:{start:0,end:text.length},materialRange:{start:0,end:text.length},memberIds:['member-1'],locator:{privatePath:'/hidden'}}],originalRefs:[original.id],originalRefsTotal:1,originalRefsTruncated:false};
-const baseReader={search:async()=>[],timeline:async()=>[],evidence:async({ids})=>[original].filter(row=>ids.includes(row.id)),activity:async()=>({}),devices:async()=>[],materialCatalog:async()=>({items:[material],nextCursor:null}),materialRead:async()=>page};
+const page={material,text,textRange:{offset:0,total:text.length,nextOffset:null},spans:[{blockId:'block-1',kind:'text',format:'plain',pageRange:{start:0,end:text.length},materialRange:{start:0,end:text.length},memberIds:['member-1'],locator:{privatePath:'/hidden'}}],originalRefs:[formatEvidenceRef('capture',original.id)],originalRefsTotal:1,originalRefsTruncated:false};
+const baseReader={search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async({ids})=>[original].filter(row=>ids.includes(row.id)),activity:async()=>({}),devices:async()=>[],materialCatalog:async()=>({items:[material],nextCursor:null}),materialRead:async()=>page};
 async function fixture(t,reader=baseReader,bounds={question:'Generated material',deviceId:'generated-device',after:'2026-09-01T00:00:00Z',before:'2026-10-01T00:00:00Z'}) {
   const bridge=await startBridge(reader,bounds,40);t.after(()=>bridge.close());
   const call=async(tool,args={})=>{const response=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{Authorization:'Bearer '+bridge.token},body:JSON.stringify(args)});return {status:response.status,body:await response.json()};};
@@ -28,7 +30,7 @@ test('material catalog discloses only metadata and pins exact returned revisions
   assert.equal((await call('material_read',{ref:ref.replace('@','@'+ 'c')})).status,400);
   const read=await call('material_read',{ref});assert.equal(read.status,200);
   assert.equal(read.body.data.text,page.text);
-  assert.deepEqual(read.body.data.originalRefs,[original.id]);
+  assert.deepEqual(read.body.data.originalRefs,[formatEvidenceRef('capture',original.id)]);
   assert.equal(JSON.stringify(read.body.data.spans).includes('/hidden'),false);
   assert.equal((await call('evidence',{ids:[original.id]})).status,200);
   assert.equal(bridge.evidenceDependencies.complete,false);
@@ -58,8 +60,8 @@ test('a reader that ignores a smaller page request cannot grant its original evi
 });
 
 test('material reading caps original grants at 30 and extraction advertises no material tools',async t=>{
-  const originals=Array.from({length:35},(_,i)=>({...original,id:`generated-original-${i}`}));
-  const {call}=await fixture(t,{...baseReader,evidence:async({ids})=>originals.filter(row=>ids.includes(row.id)),materialRead:async()=>({...page,originalRefs:originals.map(row=>row.id),originalRefsTotal:35,originalRefsTruncated:true})});
+  const originals=Array.from({length:35},(_,i)=>({...original,id:fixtureCaptureId('material-original-'+i)}));
+  const {call}=await fixture(t,{...baseReader,evidence:async({ids})=>originals.filter(row=>ids.includes(row.id)),materialRead:async()=>({...page,originalRefs:originals.map(row=>formatEvidenceRef('capture',row.id)),originalRefsTotal:35,originalRefsTruncated:true})});
   await call('material_catalog',{});
   const read=await call('material_read',{ref});assert.equal(read.status,200);assert.equal(read.body.data.originalRefs.length,30);assert.equal(read.body.data.originalRefsTruncated,true);
   assert.equal((await call('evidence',{ids:[originals[34].id]})).status,400);
@@ -67,4 +69,18 @@ test('material reading caps original grants at 30 and extraction advertises no m
   const restricted=await fixture(t,baseReader,{question:'Extract',evidenceIds:[original.id],evidenceRanges:[{id:original.id,offset:0,length:original.ocrText.length}]});
   assert.equal((await restricted.call('material_catalog',{})).status,400);
   assert.equal((await restricted.call('material_read',{ref})).status,400);
+});
+
+test('old bare or wrong-kind material originalRefs reject the page without authorizing originals',async t=>{
+  for(const originalRef of [original.id,formatEvidenceRef('memory',original.id)]){
+    let evidenceReads=0;
+    const {bridge,call}=await fixture(t,{...baseReader,evidence:async args=>{evidenceReads++;return baseReader.evidence(args);},materialRead:async()=>({...page,originalRefs:[originalRef]})});
+    assert.equal((await call('material_catalog',{})).status,200);
+    const denied=await call('material_read',{ref});
+    assert.equal(denied.status,400);assert.match(denied.body.error,/Invalid material original reference/);
+    assert.equal(evidenceReads,0,'invalid page must be rejected before reading originals');
+    assert.equal((await call('evidence',{ids:[original.id]})).status,400);
+    assert.equal(evidenceReads,0);assert.deepEqual(bridge.evidenceDependencies.ids,[]);
+    assert.equal(bridge.trace.some(entry=>entry.tool==='material_read'),false);
+  }
 });

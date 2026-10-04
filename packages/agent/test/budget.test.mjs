@@ -1,11 +1,12 @@
+import {fixtureCaptureId} from './capture-fixture-id.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startBridge } from '../dist/bridge.js';
 import { parseAnswer } from '../dist/index.js';
 
-const small = { id:'synthetic-budget-0', capturedAt:'2026-01-01T00:00:00.000Z', appName:'Synthetic fixture', ocrText:'Previously delivered original evidence.' };
+const small = { id:fixtureCaptureId('synthetic-budget-0'), capturedAt:'2026-01-01T00:00:00.000Z', appName:'Synthetic fixture', ocrText:'Previously delivered original evidence.' };
 const oversized = Array.from({ length:100 }, (_, index) => ({
-  ...small, id:`synthetic-budget-${index}`, ocrText:'字'.repeat(2000), summary:'字'.repeat(4000),
+  ...small, id:fixtureCaptureId('synthetic-budget-'+index), ocrText:'字'.repeat(2000), summary:'字'.repeat(4000),
 }));
 const answerFor = id => JSON.stringify({ answer:'Synthetic answer.', citationIds:[id] });
 function request(bridge, tool, args) {
@@ -18,7 +19,7 @@ test('a rejected oversized result cannot authorize either citations or evidence 
   let evidenceCalls = 0;
   const bridge = await startBridge({
     search:async args => args.query === 'small' ? [small] : oversized,
-    timeline:async()=>[],
+    timeline:async()=>({items:([]),nextCursor:null}),
     evidence:async()=>{ evidenceCalls++; return [small]; },
     activity:async()=>({}), devices:async()=>[],
   }, { question:'Synthetic budget boundary' }, 8);
@@ -50,14 +51,14 @@ test('a rejected later page cannot overwrite earlier delivered citation evidence
     assert.equal(bridge.records.size, 1); assert.equal(bridge.trace.length, 1);
     assert.deepEqual(bridge.records.get(small.id), previouslyDelivered);
     assert.equal(parseAnswer(answerFor(small.id), bridge.records).citations[0].excerpt, small.ocrText);
-    assert.throws(() => parseAnswer(answerFor('synthetic-budget-99'), bridge.records), /not retrieved/);
-    assert.equal((await request(bridge, 'evidence', { ids:['synthetic-budget-99'] })).status, 400);
+    assert.throws(() => parseAnswer(answerFor(fixtureCaptureId('synthetic-budget-99')), bridge.records), /not retrieved/);
+    assert.equal((await request(bridge, 'evidence', { ids:[fixtureCaptureId('synthetic-budget-99')] })).status, 400);
   } finally { await bridge.close(); }
 });
 
 test('successful and rejected tools expose the same host budget without granting rejected evidence', async t => {
   let searches=0;
-  const bridge=await startBridge({search:async args=>{searches++;return args.query==='large'?oversized:[small];},timeline:async()=>[],evidence:async()=>[small],activity:async()=>({}),devices:async()=>[]},{question:'Generated bounded retrieval'},4);
+  const bridge=await startBridge({search:async args=>{searches++;return args.query==='large'?oversized:[small];},timeline:async()=>({items:([]),nextCursor:null}),evidence:async()=>[small],activity:async()=>({}),devices:async()=>[]},{question:'Generated bounded retrieval'},4);
   t.after(()=>bridge.close());
   const initial=bridge.deliveredCharacters;
   const rejected=await request(bridge,'search_context',{query:'large',limit:100});

@@ -16,13 +16,6 @@ export const DEFAULT_AGENT_TIMEOUT_MS = 600_000;
 export const MAX_MODEL_REQUEST_TIMEOUT_MS = 600_000;
 export const MAX_AGENT_TIMEOUT_MS = 3_600_000;
 
-/** Migrate only the two former official DeepSeek roots; custom gateways retain their paths. */
-export function deepSeekMessagesBaseUrl(baseUrl: string): string {
-  const base = baseUrl.replace(/\/+$/, '');
-  return base === 'https://api.deepseek.com' || base === 'https://api.deepseek.com/v1'
-    ? 'https://api.deepseek.com/anthropic' : base;
-}
-
 export interface ModelProviderPreset {
   id: string;
   name: string;
@@ -41,7 +34,7 @@ export interface ModelSettingsParameters {
   baseUrl: string;
   model: string;
   reasoningEffort: ModelReasoningEffort;
-  /** Codex speed selection. Omitted in legacy settings; never sent to HTTP providers. */
+  /** Explicit Codex speed selection; never sent to HTTP providers. */
   serviceTier?: CodexServiceTier;
   maxTokens: number;
   /** One provider/model request. Null means not applicable to Codex App Server. */
@@ -65,17 +58,17 @@ export interface ModelSettingsView {
   revision: number;
   source: 'environment' | 'saved';
   settings: ModelSettingsPublic;
-  /** Absent on older nodes. The default profile preserves the original API. */
-  profiles?: ModelProfilePublic[];
-  defaults?: ModelFeatureDefaults;
+  /** Every supported node exposes its complete profile assignments. */
+  profiles: ModelProfilePublic[];
+  defaults: ModelFeatureDefaults;
   /** An omitted entry follows the selected preset's default model. */
-  defaultModels?: ModelFeatureModels;
+  defaultModels: ModelFeatureModels;
 }
 export const MODEL_FEATURES = ['chat', 'memory', 'insight', 'import', 'file'] as const;
 export type ModelFeature = typeof MODEL_FEATURES[number];
 export type ModelFeatureDefaults = Record<ModelFeature, string>;
 export type ModelFeatureModels = Partial<Record<ModelFeature, string>>;
-export const DEFAULT_MODEL_PROFILE_ID = 'default';
+export const DEFAULT_MODEL_PROFILE_ID = 'primary';
 export const DEPLOYMENT_MODEL_PROFILE_ID = 'env:deployment';
 export const MODEL_FEATURE_LABELS: Record<ModelFeature, string> = {get chat() { return moteText("Chat 问答"); }, get memory() { return moteText("Memory 记忆提取"); }, get insight() { return moteText("个人回顾"); }, get import() { return moteText("资料导入"); }, get file() { return moteText("文件分析"); }};
 export interface ModelProfile {id: string; name: string; settings: ModelSettings}

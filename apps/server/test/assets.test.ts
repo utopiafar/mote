@@ -53,10 +53,10 @@ test('durable pins protect uncommitted and streaming assets from another store s
  reader.return(undefined);peer.assets.sweep();assert.throws(()=>store.assets.get(asset.hash),{statusCode:404});
 });
 
-test('legacy bytes migrate with stable original hashes and independent reference identities after restart',t=>{
- const store=fixture(t),archived=new ArchivedFileStore(store),file=archived.put({name:'old.txt',bytes:Buffer.from('Generated legacy original')});
- legacyAsset(store,file.hash,'archive-legacy');assert.equal(store.assets.get(file.hash).format,'archive-legacy');
- const before=archived.get(file.id);store.assets.migrate(file.hash);assert.equal(store.assets.get(file.hash).format,'chunks');assert.deepEqual(archived.get(file.id),before);
- const reopened=new Store(store.directory,{dataKey:'fc'.repeat(32)});t.after(()=>reopened.close());assert.equal(new ArchivedFileStore(reopened).read(file.id).toString(),'Generated legacy original');
+test('unsupported asset formats are refused while current chunks reopen with stable references',t=>{
+ const store=fixture(t),archived=new ArchivedFileStore(store),file=archived.put({name:'generated.txt',bytes:Buffer.from('Generated current original')});
+ const before=archived.get(file.id);assert.equal(store.assets.get(file.hash).format,'chunks');
+ const reopened=new Store(store.directory,{dataKey:'fc'.repeat(32)});t.after(()=>reopened.close());assert.deepEqual(new ArchivedFileStore(reopened).get(file.id),before);assert.equal(new ArchivedFileStore(reopened).read(file.id).toString(),'Generated current original');
  assert.equal(reopened.db.prepare('SELECT count(*) n FROM asset_references WHERE hash=?').get(file.hash)!.n,1);
+ legacyAsset(store,file.hash,'archive-legacy');assert.throws(()=>store.assets.get(file.hash),/Invalid asset metadata/);
 });

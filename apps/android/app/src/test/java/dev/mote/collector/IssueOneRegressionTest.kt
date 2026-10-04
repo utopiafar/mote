@@ -29,16 +29,7 @@ class IssueOneRegressionTest {
         assertEquals(1, restarted.pruneUploaded(1000 + 7 * 86_400_000L))
         assertArrayEquals(byteArrayOf(1, 2), restarted.image(pending.getString("id")))
     }
-    @Test fun deferredOcrMustBeAcknowledgedBeforeRetentionAndConflictsNeverExpire() {
-        val queue = DurableQueue(folder.newFolder(), plain); val event = event(true); val id = event.getString("id")
-        queue.enqueue(event, byteArrayOf(9), 2_000_000); queue.acknowledge(id, retentionDays = 1, now = 1000)
-        assertEquals(0, queue.pruneUploaded(Long.MAX_VALUE)); assertNotNull(queue.pendingOcr())
-        queue.completeOcr(id, "generated OCR", "completed", 2_000_000)
-        assertNotNull(queue.nextOcrUpdate()); queue.acknowledgeOcr(id, 1, 2000)
-        assertNull(queue.nextOcrUpdate()); assertEquals(0, queue.pendingSync().count)
-        assertEquals("generated OCR", queue.capture(id)!!.getString("ocrText"))
-        queue.ocrConflict(id); assertEquals(0, queue.pruneUploaded(Long.MAX_VALUE))
-    }
+
     @Test fun archivesRoundTripImagesAndRejectCorruptionBeforeMutatingDestination() {
         val source = DurableQueue(folder.newFolder(), plain); val record = event(); source.enqueue(record, byteArrayOf(4, 5, 6), 2_000_000)
         source.acknowledge(record.getString("id"), retentionDays = 7)
@@ -85,20 +76,7 @@ class IssueOneRegressionTest {
         assertEquals("download", UpdatePresentation.action("scheduler", true))
         assertEquals("check", UpdatePresentation.action("cancelled", false))
     }
-    @Test fun deferredOcrArchiveKeepsBothOriginalCaptureAndRecognizedText() {
-        val source = DurableQueue(folder.newFolder(), plain); val record = event(true); val id = record.getString("id")
-        source.enqueue(record, byteArrayOf(1), 2_000_000)
-        source.completeOcr(id, "recognized generated text", "completed", 2_000_000)
-        source.acknowledge(id); source.acknowledgeOcr(id, 7)
-        val bytes = ByteArrayOutputStream().also { QueueArchive.export(source, "", it) }.toByteArray()
-        val prepared = QueueArchive.prepare(bytes.inputStream(), File(folder.root, "ocr"), 2_000_000)
-        val target = DurableQueue(folder.newFolder(), plain)
-        QueueArchive.restore(prepared, target, "", 2_000_000)
-        assertEquals("recognized generated text", target.capture(id)!!.getString("ocrText"))
-        assertEquals(record.getString("ocrText"), target.peek()!!.getString("ocrText"))
-        target.acknowledge(id); assertEquals("recognized generated text", target.nextOcrUpdate()!!.getString("ocrText"))
-        prepared.close()
-    }
+
     @Test fun resumedDownloadUsesRangeAndValidatesCompleteBytes() {
         val bytes = "generated update bytes".toByteArray()
         val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

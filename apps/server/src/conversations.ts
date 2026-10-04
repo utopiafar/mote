@@ -15,16 +15,7 @@ type Failure = {code:string;message:string};
 export class Conversations {
   constructor(private readonly store:Store) {
     store.db.exec(`CREATE TABLE IF NOT EXISTS conversation_turns(conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,idx INTEGER NOT NULL,id TEXT NOT NULL UNIQUE,json TEXT NOT NULL,PRIMARY KEY(conversation_id,idx));`);
-    if(!store.db.prepare("SELECT 1 FROM settings WHERE key='conversation-turns-v1'").get()){
-      store.db.exec('BEGIN IMMEDIATE');try{
-        for(const row of store.db.prepare('SELECT id,json FROM conversations').iterate()){
-          const value=JSON.parse(String(row.json)),turns=value.turns??[];
-          for(const [index,turn] of turns.entries())store.db.prepare('INSERT OR IGNORE INTO conversation_turns VALUES(?,?,?,?)').run(row.id,index,turn.id,JSON.stringify({...turn,status:turn.status??(turn.result?'completed':'failed')}));
-          store.db.prepare('UPDATE conversations SET json=? WHERE id=?').run(JSON.stringify({scope:value.scope,turnCount:turns.length,status:turns.at(-1)?.status??'completed',bytes:Buffer.byteLength(JSON.stringify(turns)),revision:1}),row.id);
-        }
-        store.db.exec("INSERT INTO settings VALUES('conversation-turns-v1','1'); COMMIT");
-      }catch(error){store.db.exec('ROLLBACK');throw error;}
-    }
+
   }
 
   list({limit=50,cursor}:{limit?:number;cursor?:string}={}) {

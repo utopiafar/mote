@@ -5,9 +5,8 @@ import { checkRelease, selectReleaseAsset, downloadReleaseAsset, compareVersions
 import { execute, nativeIdentity, dockerContainer } from './profile-lib.mjs';
 import { extractSourceArchive } from './update-archive.mjs';
 
-async function centralPackage(directory, legacy = true) {
-  try { return JSON.parse(await readFile(join(directory, 'apps/server/package.json'), 'utf8')); }
-  catch (error) { if (!legacy || error.code !== 'ENOENT') throw error; return JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')); }
+async function centralPackage(directory) {
+  return JSON.parse(await readFile(join(directory, 'apps/server/package.json'), 'utf8'));
 }
 
 export async function profileVersion(p, dependencies = {}) {
@@ -19,9 +18,7 @@ export async function profileVersion(p, dependencies = {}) {
       const image = await run('docker', ['inspect', '--format', '{{.Image}}', container], { capture: true });
       if (!/^sha256:[a-f0-9]{64}$/.test(image)) throw Error();
       const label = JSON.parse(await run('docker', ['image', 'inspect', '--format', '{{json (index .Config.Labels "org.opencontainers.image.version")}}', image], { capture: true }));
-      // Older images have no OCI version label. A no-network, read-only package probe uses the
-      // exact installed image ID, never the current CLI checkout or a mutable tag.
-      const version = label || await run('docker', ['run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--entrypoint', 'node', image, '-p', "require('/app/apps/server/package.json').version"], { capture: true });
+      const version = label;
       return valid(version);
     }
     const identity = p.processFile ? await (dependencies.nativeIdentity ?? nativeIdentity)(p) : { running: false };
@@ -58,7 +55,7 @@ async function buildSource(directory) {
 /** Prepare trusted release code without stopping a node or touching its configuration/data. */
 export async function prepareProfileUpdate(p, checked, options = {}) {
   const { manifest, currentVersion } = checked;
-  if (manifest.component && manifest.component !== 'central') throw Error('Update requires a central release');
+  if (manifest.component !== 'central') throw Error('Update requires a central release');
   if (compareVersions(manifest.version, currentVersion) <= 0) throw Error('Update requires a newer release; use explicit snapshot rollback for downgrades');
   if (p.meta.runtime === 'docker') {
     const target = manifest.images.find(image => image.component === 'server');
@@ -82,8 +79,8 @@ export async function prepareProfileUpdate(p, checked, options = {}) {
   if (present) {
     const installed = JSON.parse(await readFile(join(destination, '.mote-release.json'), 'utf8'));
     if (installed.version !== manifest.version || installed.tag !== manifest.tag || installed.sha256 !== asset.sha256 || (await lstat(destination)).isSymbolicLink()) throw Error('Existing release directory is not the verified prepared release');
-    const preparedPackage = await centralPackage(destination, !manifest.component);
-    if (preparedPackage.version !== manifest.version || (manifest.component && preparedPackage.name !== '@mote/server')) throw Error('Source package identity does not match the signed release');
+    const preparedPackage = await centralPackage(destination);
+    if (preparedPackage.version !== manifest.version || preparedPackage.name !== '@mote/server') throw Error('Source package identity does not match the signed release');
     await lstat(join(destination, 'apps/server/dist/index.js')); await lstat(join(destination, 'apps/web/dist/index.html'));
     return { release: destination, releaseVersion: manifest.version, releaseTag: manifest.tag };
   }
@@ -93,8 +90,8 @@ export async function prepareProfileUpdate(p, checked, options = {}) {
     await (options.downloadReleaseAsset ?? downloadReleaseAsset)(asset, archive, { signal: options.signal });
     options.signal?.throwIfAborted();
     await extractSourceArchive(archive, stage, `mote-${manifest.version}/`);
-    const sourcePackage = await centralPackage(stage, !manifest.component);
-    if (!(manifest.component ? sourcePackage.name === '@mote/server' : ['mote', '@mote/server'].includes(sourcePackage.name)) || sourcePackage.version !== manifest.version) throw Error('Source package identity does not match the signed release');
+    const sourcePackage = await centralPackage(stage);
+    if (sourcePackage.name !== '@mote/server' || sourcePackage.version !== manifest.version) throw Error('Source package identity does not match the signed release');
     options.onStage?.('building-source');
     await (options.build ?? buildSource)(stage);
     options.signal?.throwIfAborted();

@@ -15,7 +15,7 @@ class ProtocolCompatibilityTest {
         assertEquals(contract.getString("metadataRequestHeader"), ProtocolCompatibility.HEADER)
         assertEquals(contract.getJSONObject("range").getInt("min"), ProtocolCompatibility.MIN)
         assertEquals(contract.getJSONObject("range").getInt("max"), ProtocolCompatibility.MAX)
-        assertEquals(contract.getInt("legacyVersion"), ProtocolCompatibility.requireCompatible(null).max)
+        assertThrows(ConnectionFailure::class.java) { ProtocolCompatibility.requireCompatible(null) }
         assertEquals(mapOf(ProtocolCompatibility.HEADER to "1"), ProtocolCompatibility.headers)
     }
 

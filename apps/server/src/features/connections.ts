@@ -31,7 +31,7 @@ app.get('/api/connections/self',async req=>{
     const owner=!c||connections.isOwner(c),collector=false;
     // Existing collectors strictly validate this response. Advertise new metadata
     // only when the client opts in so already-installed collectors still connect.
-    const protocol = req.headers[MOTE_PROTOCOL_HEADER.toLowerCase()] === undefined ? {} : {protocol:MOTE_PROTOCOL_RANGE};
-    return {credential:c?{id:c.id,scope:owner?'owner':c.scope,label:c.label,serverUrl:c.serverUrl,...(c.deviceId?{deviceId:c.deviceId,deviceName:c.deviceName,platform:c.platform}:{})}:{id:'owner',scope:'owner',label:moteText("节点所有者")},node:{version:serverVersion,profile:config.profile??'legacy',...protocol},capabilities:{ingest:owner||collector,ingressVersion:Number(INGRESS_PROTOCOL_VERSION),ownSources:owner||collector,archiveRead:owner||c?.scope==='mcp-read'}};
+    const protocol = {protocol:MOTE_PROTOCOL_RANGE};
+    return {credential:c?{id:c.id,scope:owner?'owner':c.scope,label:c.label,serverUrl:c.serverUrl,...(c.deviceId?{deviceId:c.deviceId,deviceName:c.deviceName,platform:c.platform}:{})}:{id:'owner',scope:'owner',label:moteText("节点所有者")},node:{version:serverVersion,profile:config.profile??'default',...protocol},capabilities:{ingest:owner||collector,ingressVersion:Number(INGRESS_PROTOCOL_VERSION),ownSources:owner||collector,archiveRead:owner||c?.scope==='mcp-read'}};
   });
 }

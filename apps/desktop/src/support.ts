@@ -1,8 +1,7 @@
 import { moteText } from '@mote/shared/i18n';
-import { appendFile, mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
+import { appendFile, mkdir, open, rename, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { constants } from 'node:fs';
-import { randomUUID } from 'node:crypto';
 import type { Status } from './contracts';
 import type { DesktopProfile } from './profile';
 
@@ -55,39 +54,14 @@ export function failureCode(error: unknown, stage: EventStage): EventCode {
 /** Opt-in fixed events only. Its failures must never change capture or ACK semantics. */
 export class EventJournal {
   private chain: Promise<unknown> = Promise.resolve();
-  private readonly path: string;
-  private readonly temporary: string;
-  private cleaned = false;
   constructor(private readonly directory: string, private readonly enabled: () => boolean, private readonly limit = 500) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error(moteText("事件日志上限无效"));
-    this.path = join(directory, 'events.json'); this.temporary = `${this.path}.${process.pid}.${randomUUID()}.tmp`;
-  }
-  private async cleanOrphanedWrites(): Promise<void> {
-    if (this.cleaned) return;
-    this.cleaned = true;
-    for (const entry of await readdir(this.directory, { withFileTypes: true }).catch(() => [])) {
-      const match = /^events\.json\.([1-9][0-9]*)\.([0-9a-f-]{36})\.tmp$/.exec(entry.name);
-      if (!entry.isFile() || !match || !Number.isSafeInteger(Number(match[1]))) continue;
-      try { process.kill(Number(match[1]), 0); continue; }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') continue; }
-      await unlink(join(this.directory, entry.name)).catch(() => undefined);
-    }
-  }
-  private async load(strict = false): Promise<SupportEvent[]> {
-    try {
-      if ((await stat(this.path)).size > 256 * 1024) { if (strict) throw new Error(moteText("日志文件超出读取上限")); return []; }
-      const raw = await readFile(this.path, 'utf8');
-      if (Buffer.byteLength(raw) > 256 * 1024) return [];
-      const value = JSON.parse(raw);
-      return Array.isArray(value) ? value.map(cleanEvent).filter((e): e is SupportEvent => Boolean(e)).slice(-this.limit) : [];
-    } catch (error) { if (strict && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; return []; }
   }
   record(stage: EventStage, code: EventCode, metrics: { elapsedMs?: number; httpStatus?: number } = {}): Promise<void> {
     if (!this.enabled()) return Promise.resolve();
     const event = cleanEvent({ atMs: Date.now(), stage, code, level: eventLevel(code), ...metrics });
     if (!event) return Promise.resolve();
     const task = this.chain.then(async () => {
-      await this.cleanOrphanedWrites();
       await mkdir(this.directory, { recursive: true, mode: 0o700 });
       const archive=join(this.directory,'events.0.ndjson');
       if((await stat(archive).catch(()=>({size:0}))).size>=2*1024*1024){
@@ -95,11 +69,6 @@ export class EventJournal {
         for(let i=5;i>=0;i--)await rename(join(this.directory,`events.${i}.ndjson`),join(this.directory,`events.${i+1}.ndjson`)).catch(e=>{if(e.code!=='ENOENT')throw e;});
       }
       await appendFile(archive,JSON.stringify(event)+'\n',{mode:0o600});
-      const rows = [...await this.load(), event].slice(-this.limit);
-      await mkdir(this.directory, { recursive: true, mode: 0o700 });
-      const file = await open(this.temporary, 'w', 0o600);
-      try { await file.writeFile('[' + rows.map(row => JSON.stringify(row)).join(',\n') + ']\n'); await file.sync(); } finally { await file.close(); }
-      try { await rename(this.temporary, this.path); } finally { await unlink(this.temporary).catch(() => undefined); }
     }).catch(() => undefined);
     this.chain = task; return task;
   }
@@ -110,23 +79,19 @@ export class EventJournal {
         for(const line of (await file.readFile('utf8')).split('\n')){if(!line.trim())continue;const event=cleanEvent(JSON.parse(line));if(event)rows.push(event);}
       }catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}finally{await file?.close();}
     }
-    if(!rows.length)rows.push(...await this.load(true));
     rows.sort((a,b)=>a.atMs-b.atMs);
     return {events:rows.filter(e=>e.atMs>=after&&e.atMs<before),after:new Date(after).toISOString(),before:new Date(before).toISOString(),oldestRetainedAt:rows[0]?new Date(rows[0].atMs).toISOString():null,retentionLimited:!rows.length||rows[0].atMs>after};
   }
   async readRaw(): Promise<string> {
     await this.chain;
-    try {
-      const file = await open(this.path, constants.O_RDONLY | constants.O_NOFOLLOW);
-      try {
-        if ((await file.stat()).size > 256 * 1024) throw new Error(moteText("日志文件超出读取上限"));
-        const buffer = Buffer.alloc(256 * 1024);
-        const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-        return buffer.subarray(0, bytesRead).toString('utf8');
-      } finally { await file.close(); }
-    } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''; throw error; }
+    let file;try{file=await open(join(this.directory,'events.0.ndjson'),constants.O_RDONLY|constants.O_NOFOLLOW);
+      const size=(await file.stat()).size;if(size>2*1024*1024+4096)throw Error('Log exceeds read limit');
+      const buffer=Buffer.alloc(Math.min(size,256*1024)),offset=Math.max(0,size-buffer.length);
+      const {bytesRead}=await file.read(buffer,0,buffer.length,offset);return buffer.subarray(0,bytesRead).toString('utf8');
+    }catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return '';throw error;}finally{await file?.close();}
   }
-  async read(strict = false): Promise<SupportEvent[]> { await this.chain; return this.load(strict); }
+  async read(_strict = false): Promise<SupportEvent[]> {return (await this.exportRange(0,Date.now()+1)).events.slice(-this.limit);}
+
 }
 const metricKeys = ['sampleCount','fileBytes','queueBytes','modelBytes','rssBytes','cpuUserMicros','cpuSystemMicros','batteryPercent','deviceBatteryDeltaPct','queueDeltaBytes','saved','blocked','failed','imageBytes','uploadedBytes','inferenceMs','ocrMs','captureMs'];
 function metrics(value: unknown): Record<string, number | boolean | object> {
@@ -141,12 +106,12 @@ export function buildSupportBundle(profile: DesktopProfile, version: string, sta
   const c = status.config, model = status.nsfw;
   const config: Record<string, number | boolean> = {};
   for (const key of ['intervalMs','maxQueueBytes','maxQueueEvents','idlePauseSeconds','diagnosticIntervalSeconds','jpegQuality','captureMaxSide','batteryPauseBelowPct','reviewMaxTokens','reviewMaxSide','nsfwThreads','nsfwTimeoutMs'] as const) if (number(c[key])) config[key] = c[key];
-  for (const key of ['ocrEnabled','nsfwEnabled','diagnosticsEnabled','pauseOnBattery','openAtLogin'] as const) if (typeof c[key] === 'boolean') config[key] = c[key];
+  for (const key of ['nsfwEnabled','diagnosticsEnabled','pauseOnBattery','openAtLogin'] as const) if (typeof c[key] === 'boolean') config[key] = c[key];
   const modelMetrics = Object.fromEntries(['bytes','totalBytes','blockedCount','lastLoadMs','lastVisionMs','lastTokens','lastDurationMs'].flatMap(key => {
     const value = model?.[key as keyof typeof model]; return number(value) ? [[key,value]] : [];
   }));
   return { version: 1, scope: 'local-support-without-content', exportedAt: new Date().toISOString(),
-    app: { platform: process.platform, version: /^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(version) ? version : 'unknown', profile: profile.name, legacy: profile.legacy },
+    app: { platform: process.platform, version: /^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(version) ? version : 'unknown', profile: profile.name, defaultProfile: profile.defaultProfile },
     state: { running: Boolean(status.running), state: ['stopped','capturing','paused','permission_required','error'].includes(status.state) ? status.state : 'unknown', queueDepth: number(status.queueDepth) ? status.queueDepth : 0, queueBytes: number(status.queueBytes) ? status.queueBytes : 0, encryptedTokenStorage: Boolean(status.encryptedTokenStorage) },
     config, model: modelMetrics, diagnostics: metrics(status.diagnostics), events: events.map(cleanEvent).filter(Boolean),
     batteryScope: 'whole-device change, not application energy attribution' };

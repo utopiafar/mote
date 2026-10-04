@@ -1,11 +1,17 @@
-import {parseEvidenceRef,formatEvidenceRef} from '@mote/shared';
+import {parseEvidenceRef,formatEvidenceRef,parseArtifactRef} from '@mote/shared';
+function normalizePublicReference(value:string):string|null {
+ const parsed=parseEvidenceRef(value);
+ if(parsed)return formatEvidenceRef(parsed.kind,parsed.id);
+ if(/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/.test(value)||parseArtifactRef(value))return value;
+ return null;
+}
 export function readEvidenceRoute(hash:string):string|null {
  const value=new URLSearchParams(hash.split('?')[1]??'').get('evidence');
- return value&&value.length<=4096?value:null;
+ return value?normalizePublicReference(value):null;
 }
 export function evidenceRoute(hash:string,id:string|null):string {
  const [base,search]=hash.split('?'),query=new URLSearchParams(search);
- if(id){const parsed=parseEvidenceRef(id);query.set('evidence',parsed?formatEvidenceRef(parsed.kind,parsed.id):id);}else query.delete('evidence');
+ if(id){const ref=normalizePublicReference(id);if(!ref)throw new Error('A typed evidence reference is required');query.set('evidence',ref);}else query.delete('evidence');
  return (base||'#/today')+(query.size?'?'+query:'');
 }
 /** One reversible detail entry retains its origin route and other query filters. */

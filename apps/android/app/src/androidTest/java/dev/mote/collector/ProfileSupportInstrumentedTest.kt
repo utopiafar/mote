@@ -60,6 +60,6 @@ class ProfileSupportInstrumentedTest {
             settings.save(fixture.copy(diagnosticsEnabled = false)); SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE)
             assertEquals(count, SupportEvents.journal(context).read().length())
             assertEquals(id, Settings(context).deviceId)
-        } finally { QuickNotes.draft(context).clear(); context.getSharedPreferences("mote", 0).edit().clear().putString("deviceId", id).commit(); settings.enabled = false }
+        } finally { QuickNotes.draft(context).clear(); settings.save(original); settings.enabled = false }
     }
 }

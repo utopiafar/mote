@@ -77,9 +77,9 @@ test('endpoint safety and numeric bounds are checked before any request', () => 
 });
 
 
-test('Codex speed drafts preserve Fast, default legacy presets to Standard and omit tiers for HTTP',()=>{
+test('Codex speed drafts preserve Fast, reject missing tiers and omit tiers for HTTP',()=>{
   const codex={...snapshot,settings:{...snapshot.settings,provider:'codex',protocol:'codex-app-server' as const,baseUrl:'',modelRequestTimeoutMs:null,agentTimeoutMs:null}};
-  const legacy=createModelDraft(codex.settings);assert.equal(legacy.serviceTier,'default');assert.equal(modelDraftChanged(legacy,codex.settings),false);
+  assert.throws(()=>createModelDraft(codex.settings),/explicit service tier/);codex.settings={...codex.settings,serviceTier:'default'};const legacy=createModelDraft(codex.settings);assert.equal(legacy.serviceTier,'default');assert.equal(modelDraftChanged(legacy,codex.settings),false);
   assert.equal(modelSettingsRequest(codex,{...legacy,serviceTier:'fast'}).settings.serviceTier,'fast');
   const saved={...codex.settings,serviceTier:'fast' as const};assert.equal(createModelDraft(saved).serviceTier,'fast');
   assert.equal(Object.hasOwn(modelSettingsRequest(snapshot,{...createModelDraft(snapshot.settings),serviceTier:'fast'}).settings,'serviceTier'),false);

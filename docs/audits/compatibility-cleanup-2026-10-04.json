@@ -1,0 +1,1069 @@
+{
+  "date": "2026-10-04",
+  "baseline": "8d68aef2ddd9f531d88e3337ce97215945222f14",
+  "storageEpoch": 3,
+  "wireProtocol": 1,
+  "ingressVersion": 2,
+  "findings": [
+    {
+      "id": "R01",
+      "title": "握手缺协议元数据默认接受 v1",
+      "status": "removed",
+      "implementation": "握手必须有 protocol 元数据；TS/Kotlin 校验范围、中央完整响应及 fixtures 联动更新。",
+      "files": [
+        "packages/shared/src/protocol.ts",
+        "protocol/contract.json"
+      ],
+      "risk": "中：新客户端连不上旧中央；强加字段会使旧桌面客户端 strict parse 失败",
+      "originalDecision": "需要先迁移或更新调用方",
+      "scope": "root"
+    },
+    {
+      "id": "R02",
+      "title": "旧任务状态映射与 execution 双表示",
+      "status": "refactored",
+      "implementation": "移除历史 materialization 脚本、未知/缺状态默认值与 canceled 别名；当前领域阶段到 execution 调度状态的投影继续保留。",
+      "files": [
+        "packages/shared/src/execution.ts",
+        "docs/execution-protocol.md"
+      ],
+      "risk": "高：直接删会损坏当前任务、错误恢复动作；只删除可选脚本风险低，失去人工补历史 envelope 的入口",
+      "originalDecision": "当前链路仍依赖，必须重构后删除",
+      "scope": "root"
+    },
+    {
+      "id": "R03",
+      "title": "统一 v 标签和无 component 发布清单",
+      "status": "removed",
+      "implementation": "组件身份与组件发布 tag 必填；删除统一 v 标签、无 component 清单及容器执行版本探测回退。",
+      "files": [
+        "packages/shared/src/release.ts",
+        "scripts/update-release.mjs"
+      ],
+      "risk": "中：旧版升级/固定版本下载/版本识别失效；签名、hash、来源与包身份验证仍需保留",
+      "originalDecision": "需要先迁移或更新调用方",
+      "scope": "root"
+    },
+    {
+      "id": "R04",
+      "title": "旧根目录 env 与 legacy profile 直接启动",
+      "status": "removed",
+      "implementation": "普通 profile 命名 default，拒绝 legacy；只在显式 MOTE_ENV_FILE 时读取配置文件，不自动读取根 .env。",
+      "files": [
+        "packages/shared/src/environment.ts",
+        "scripts/client.ts"
+      ],
+      "risk": "中：新配置可能指错数据目录、换掉令牌、看起来仓库为空",
+      "originalDecision": "仍是受支持入口，删除会改变产品用法",
+      "scope": "root"
+    },
+    {
+      "id": "R05",
+      "title": "Agent timeoutMs 旧 SDK 参数",
+      "status": "removed",
+      "implementation": "SDK 仅接收 requestTimeoutMs / agentTimeoutMs；删除 timeoutMs alias。两种期限独立，Codex 当前 null 整体期限语义保留。",
+      "files": [
+        "packages/agent/src/types.ts",
+        "packages/agent/src/index.ts"
+      ],
+      "risk": "中：旧调用失去原超时，可能改成默认导致过早失败或长占用；部分 fixture 刻意传很短旧值",
+      "originalDecision": "需要先迁移或更新调用方",
+      "scope": "root"
+    },
+    {
+      "id": "R06",
+      "title": "DeepSeek 旧官方根地址重写",
+      "status": "removed",
+      "implementation": "删除用户显式 DeepSeek 根地址重写；未填地址时由当前 provider preset 选择官方入口。",
+      "files": [
+        "packages/agent/src/model-runtime.ts"
+      ],
+      "risk": "中：旧地址下请求路径错误、模型调用失败",
+      "originalDecision": "需要先迁移或更新调用方",
+      "scope": "root"
+    },
+    {
+      "id": "R07",
+      "title": "Codex 旧缺速度值补 Standard 与 off 字段映射",
+      "status": "refactored",
+      "implementation": "当前 Codex 预设必须显式有 serviceTier；保留 Codex 当前协议 off/none、fast/priority 参数翻译。",
+      "files": [
+        "packages/shared/src/model-providers.ts",
+        "packages/agent/src/codex-session.ts"
+      ],
+      "risk": "中：速度选择或推理选项无法显示、协议拒绝请求",
+      "originalDecision": "缺值 default 可迁移后删；off/none 仍是当前契约",
+      "scope": "root"
+    },
+    {
+      "id": "R08",
+      "title": "网页旧会话 url 校验和缺 viewScope 补身份",
+      "status": "removed",
+      "implementation": "持久 session 必须有合法 viewScope；含旧 url 字段的身份拒绝，期限与跨节点缓存隔离继续保留。",
+      "files": [
+        "apps/web/src/session.ts"
+      ],
+      "risk": "低中：重新登录/时间筛选丢失；误删服务边界校验有凭据跨节点风险",
+      "originalDecision": "需要先迁移或更新调用方",
+      "scope": "root"
+    },
+    {
+      "id": "R09",
+      "title": "旧资料页导航转 archive collection 与路由别名",
+      "status": "removed",
+      "implementation": "删除旧 captures/files/memory/materials 页面与旧路由别名；使用 library 的显式 collection 查询。当前插件 collections 保留。",
+      "files": [
+        "apps/web/src/workspace-route.ts",
+        "apps/web/src/features/"
+      ],
+      "risk": "低中：旧书签/当前导航落错页，功能页布局改变",
+      "originalDecision": "兼容和现行路由共用，先更新调用方",
+      "scope": "root"
+    },
+    {
+      "id": "R10",
+      "title": "旧网页随手记缺 client 身份与当前 prepared 幂等重试共用",
+      "status": "refactored",
+      "implementation": "笔记 outbox 升为 mote.notes.v3，要求 web client 身份；旧键拒绝并保留原值，已准备提交的固定ID和安全重试保留。",
+      "files": [
+        "apps/web/src/notes-state.ts"
+      ],
+      "risk": "高：同ID不同payload冲突、重复笔记或离线草稿无法提交",
+      "originalDecision": "可退役的是旧 web 身份形状；prepared 原样复用必须保留",
+      "scope": "root"
+    },
+    {
+      "id": "R11",
+      "title": "UUID裸证据引用和注入reader不透明旧ID",
+      "status": "refactored",
+      "implementation": "公开证据引用仅 capture:UUID / memory:UUID（以及固定版本 Material/Artifact）；重构所有生产方、工具桥与UI消费者。声明为 resource ID 的接口与原件 record.id 继续使用 UUID，不推断裸ID命名空间。",
+      "files": [
+        "packages/shared/src/evidence-ref.ts",
+        "packages/agent/src/bridge.ts",
+        "apps/web/src/evidence-route.ts",
+        "apps/web/src/LibraryBrowse.tsx"
+      ],
+      "risk": "高：证据详情/引用/文件读取失效；错把source ID当证据会破坏授权边界",
+      "originalDecision": "当前API仍使用裸ID，必须整体改契约",
+      "scope": "root"
+    },
+    {
+      "id": "R12",
+      "title": "注入 ContextReader 同时接受数组和分页对象",
+      "status": "removed",
+      "implementation": "ContextReader timeline / sourceItems 只返回显式分页对象，不接受数组；全部注入 reader fixtures 同步。",
+      "files": [
+        "packages/agent/src/types.ts",
+        "packages/agent/src/bridge.ts"
+      ],
+      "risk": "中：第三方reader/fixture直接报invalid page；分页完整性假设变更",
+      "originalDecision": "需要先迁移或更新调用方",
+      "scope": "root"
+    },
+    {
+      "id": "R13",
+      "title": "旧洞察 Markdown 读取与现行文字模式共用",
+      "status": "retained_current_boundary",
+      "implementation": "保留当前产品支持的 Markdown / 文字呈现；后端 epoch3 拒绝旧持久库，无需把现行文字视图当作旧数据读取器删除。",
+      "files": [
+        "apps/web/src/InsightReport.tsx"
+      ],
+      "risk": "中：直接删会损坏旧报告、当前纯Markdown洞察与文字模式；重跑旧报告产生不同内容和费用",
+      "originalDecision": "历史可读性与现行结果形态共用，不能作为纯旧分支删除",
+      "scope": "root"
+    },
+    {
+      "id": "R14",
+      "title": "历史费用缺 attribution 与 usage 保守展示",
+      "status": "retained_current_boundary",
+      "implementation": "测量缺失与未标记 attribution 继续保守显示未知，不能默认零成本或捏造归属；此情况仍可能由当前 provider 正常产生。",
+      "files": [
+        "packages/shared/src/usage.ts",
+        "packages/shared/src/usage.ts",
+        "apps/web/src/Usage.tsx"
+      ],
+      "risk": "中：统计分组错误或旧回答报错；不能推断未上报token为0",
+      "originalDecision": "unknown 仍有现行缺测语义，建议保留",
+      "scope": "root"
+    },
+    {
+      "id": "R15",
+      "title": "旧截图缺 OCR 字段和 charging pending 读取",
+      "status": "removed",
+      "implementation": "删除 charging OCR pending 类型与旧text/ocrEnabled推断。当前缺测量显示 unknown、activity无图显示 not_applicable。",
+      "files": [
+        "packages/shared/src/metadata.ts",
+        "apps/web/src/capture-presentation.ts"
+      ],
+      "risk": "中高：历史OCR过滤、向量待处理判断、已保存文字显示或老队列同步损坏",
+      "originalDecision": "历史兼容和缺测语义共用，保留unknown",
+      "scope": "root"
+    },
+    {
+      "id": "R16",
+      "title": "无 stateSeries 的单次采样回退",
+      "status": "retained_current_boundary",
+      "implementation": "当前单次合法采样不必有 stateSeries；保留单次 duration 测量，完整活动统计继续去重裁剪，缺口不推断活跃。",
+      "files": [
+        "packages/shared/src/state-series.ts"
+      ],
+      "risk": "中高：旧样本丢时长，跨设备测量统计改变",
+      "originalDecision": "现行合法单样本仍依赖，不能直接删",
+      "scope": "root"
+    },
+    {
+      "id": "R17",
+      "title": "缺 inputPlans 的 Memory 批次进度同时服务当前自动任务",
+      "status": "refactored",
+      "implementation": "当前 Memory 写方固定 inputPlanVersion/contextTime/materialInputs；UI只消费必有 inputPlans/recipeProgress/memoryCount，不再用缺字段旧批次分支。直接原件任务的合法空物料计划仍可显示。",
+      "files": [
+        "apps/web/src/MemoryProgress.tsx"
+      ],
+      "risk": "高：直接删会破坏当前自动/普通记忆任务的进度、重试和取消，清空旧job也不能消除此依赖",
+      "originalDecision": "属于现行两条任务路径共用，必须先重构自动任务",
+      "scope": "root"
+    },
+    {
+      "id": "R18",
+      "title": "模型下载旧固定 .part 临时文件恢复",
+      "status": "removed",
+      "implementation": "忽略并保留旧固定 .part；所有新下载用 PID+UUID 独占文件，当前实例可续传，仅认领已退出写者的部分文件。",
+      "files": [
+        "packages/local-inference/src/index.ts"
+      ],
+      "risk": "低：旧已下载片段不会续传、额外模型下载流量/磁盘占用；已验证完整模型不受影响",
+      "originalDecision": "可优先移除，先处理旧缓存",
+      "scope": "root"
+    },
+    {
+      "id": "R19",
+      "title": "MCP stdio 支持旧私有 flat connection JSON",
+      "status": "removed",
+      "implementation": "MCP stdio 只接受当前嵌套连接导出；删除 flat 私有 JSON 读取入口，保留只读scope验证。",
+      "files": [
+        "scripts/mcp-connection.mjs"
+      ],
+      "risk": "低：旧Chatbot stdio配置无法启动，需要转换文件",
+      "originalDecision": "可优先移除，需转换私有连接文件",
+      "scope": "root"
+    },
+    {
+      "id": "S01",
+      "title": "未显式环境名的 legacy profile / 默认 data 目录",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S02",
+      "title": "模型 timeoutMs / MOTE_MODEL_TIMEOUT_MS 旧别名",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S03",
+      "title": "单模型 default 预设兼容多 profile",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S04",
+      "title": "旧 collector 凭据取得 owner 权限",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S05",
+      "title": "无后缀加密文件与 vault-wide encryption 身份",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S06",
+      "title": "旧图像/归档资产目录及 MOTE1 包装",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S07",
+      "title": "旧 source-archive manifest 到 SQLite index 的惰性迁移",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S08",
+      "title": "文件旧 flat settings 转 policy 和旧客户端保护",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S09",
+      "title": "旧文件任务 UI revision → 新执行 fingerprint aliases",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S10",
+      "title": "文件/截图旧 running projections 重置为 waiting",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S11",
+      "title": "旧 processing DAG authority/依赖迁移到共享 engine",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S12",
+      "title": "旧 query/insight receipts 安装 canonical execution",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S13",
+      "title": "启动时 reviewed legacy Memory 自动发布、清 proposed checkpoints",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S14",
+      "title": "旧 Memory 删除意图身份/来源 lineage 补齐",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S15",
+      "title": "OCR managed settings 和旧连接失败一次性恢复",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S16",
+      "title": "不支持的旧 vault/Coding 索引启动拒绝",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S17",
+      "title": "旧截图/文件任务没有自动付费处理资格",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S18",
+      "title": "截图/文件/Memory 搜索、依赖与浏览读模型的历史回填",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S19",
+      "title": "Material anchors、可见序号及payload删除触发器升级",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S20",
+      "title": "Source pipeline 存量工作无storage/checkpoint/generation/recipe pins",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S21",
+      "title": "共享Execution步骤/Operation生成关系和optional计数升级",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S22",
+      "title": "授权账本、Memory草稿和资产储存ledger升级",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S23",
+      "title": "旧无scope自动Memory工作迁移时保留物料并撤销自动重放",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S24",
+      "title": "对话json.turns拆到conversation_turns历史表",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S25",
+      "title": "旧 Memory batch 缺独立 pins，以及当前 Coding 无 pins 路径共用恢复",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S26",
+      "title": "旧人工任务同时选择authored Material和原件的精确一次性复用",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S27",
+      "title": "旧Memory版本、分类和admission元数据读取默认",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S28",
+      "title": "历史缺disclosure依赖时全量保守清理，混有现行不完整依赖保护",
+      "status": "retained_current_boundary",
+      "scope": "server"
+    },
+    {
+      "id": "S29",
+      "title": "旧raw extraction lifecycle任务/cursor与旧Insight时间配置升级",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S30",
+      "title": "旧任务没有冻结contextTime时使用持久化创建/开始时间",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S31",
+      "title": "旧Coding Material schema<5含tool正文，被query和Memory读取隔离",
+      "status": "retained_current_boundary",
+      "scope": "server"
+    },
+    {
+      "id": "S32",
+      "title": "Source pipeline旧group/organize callback扩展契约与内置重复入口",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S33",
+      "title": "旧无结构化Transcript产物只允许重新提取后review",
+      "status": "retained_current_boundary",
+      "scope": "server"
+    },
+    {
+      "id": "S34",
+      "title": "旧Import工作缺处理模式/媒体计数/phase fingerprint元数据",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "S35",
+      "title": "升级后旧网页lazy bundle404边界",
+      "status": "retained_current_boundary",
+      "scope": "server"
+    },
+    {
+      "id": "S36",
+      "title": "Portable archive v1新增字段缺省允许较早或精简归档导入",
+      "status": "implemented_pending_verification",
+      "scope": "server"
+    },
+    {
+      "id": "D01",
+      "title": "Ingress v1 → v2 断代迁移、旧队列本地归档及重新导入",
+      "status": "removed",
+      "implementation": "删除旧 capture/source 协议清空迁移、旧 OCR 上传归档状态；新 desktop/queue/notes/local-sources/storage marker 为 3，旧数据明确拒绝且不改写。",
+      "files": [
+        "apps/desktop/src/storage-format.ts",
+        "apps/desktop/src/main.ts",
+        "apps/desktop/src/queue.ts",
+        "apps/desktop/src/source-manager.ts",
+        "apps/desktop/src/source-sync.ts",
+        "apps/desktop/src/note-draft.ts",
+        "apps/desktop/test/ingress-migration.test.ts",
+        "apps/desktop/test/queue.test.ts",
+        "apps/desktop/test/note-draft.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D02",
+      "title": "来源状态 JSON → SQLite、整数组 → 单 revision 行、内嵌 catalog → 行存储",
+      "status": "removed",
+      "implementation": "SQLite user_version=3 新建；拒绝 JSON、旧 SQLite、嵌入 catalog/whole-array pending，不转换、不重命名。保留当前增量行表、事务和 busy_timeout。",
+      "files": [
+        "apps/desktop/src/source-state-store.ts",
+        "apps/desktop/src/source-sync.ts",
+        "apps/desktop/test/source-state-store.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D03",
+      "title": "Coding evidence 字段兼容旧中央并永久固定 revision 的 wire schema",
+      "status": "removed",
+      "implementation": "发送完整当前 coding evidence；移除字段降级协商与 codingWireFields 持久化 pin，旧 pin 状态明确拒绝。",
+      "files": [
+        "apps/desktop/src/source-sync.ts",
+        "apps/desktop/src/source-state-store.ts",
+        "apps/desktop/test/coding-transport-compatibility.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D04",
+      "title": "仅为旧队列存在的本机 OCR 补做链路及旧节点 OCR 404 兼容",
+      "status": "removed",
+      "implementation": "删除延迟 OCR/backlog/charging 重试与补传接口；保留每次新 capture 的本机 OCR 隐私 gate、captureAbort 和准确 ACK。",
+      "files": [
+        "apps/desktop/src/collector.ts",
+        "apps/desktop/src/queue.ts",
+        "apps/desktop/src/transport.ts",
+        "apps/desktop/src/capture-browser.ts",
+        "apps/desktop/test/collector.test.ts",
+        "apps/desktop/test/upload-gate.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D05",
+      "title": "读取历史本机加密 envelope/key；批量解密入口已无生产调用",
+      "status": "removed",
+      "implementation": "删除 AES 内容 key/policy/decode/批量解密；新内容直接写普通 bytes，非原始内容拒绝旧 MOTE-CONTENT envelope；原始文件 byte-for-byte，保留凭据 safeStorage。",
+      "files": [
+        "apps/desktop/src/local-content.ts",
+        "apps/desktop/src/main.ts",
+        "apps/desktop/src/background-worker.ts",
+        "apps/desktop/src/background.ts",
+        "apps/desktop/src/queue.ts",
+        "apps/desktop/src/note-draft.ts",
+        "apps/desktop/src/original-spool.ts",
+        "apps/desktop/test/local-content.test.ts",
+        "apps/desktop/test/original-spool.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D06",
+      "title": "旧默认 profile 沿用原 Electron userData 和启动项语义",
+      "status": "removed",
+      "implementation": "规范默认 profile=default 并复用原 userData；显式 legacy 名拒绝。不会偷偷切换新目录；原目录旧格式需要备份/重置。",
+      "files": [
+        "apps/desktop/src/profile.ts",
+        "apps/desktop/src/main.ts",
+        "apps/desktop/src/ui.ts",
+        "apps/desktop/test/profile.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D07",
+      "title": "无 binding/owner marker 的旧目录安全认领",
+      "status": "removed",
+      "implementation": "不再自动认领旧缺 binding/owner 的非空目录；fresh 初始化写 owner/binding。保留当前队列搬移、外置盘不可用、连接变更与事务恢复。",
+      "files": [
+        "apps/desktop/src/connection-binding.ts",
+        "apps/desktop/src/queue-storage.ts",
+        "apps/desktop/src/queue.ts",
+        "apps/desktop/test/connection-binding.test.ts",
+        "apps/desktop/test/queue-storage.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D08",
+      "title": "缺新字段的历史配置补齐及排除列表旧新两套共存",
+      "status": "removed",
+      "implementation": "统一 appCollectionRules，排除按钮写 off；删除 excludedAppIds 与 localContentEncryption/ocrEnabled/ocrOnlyWhileCharging 配置旧字段、旧默认 merge；配置 envelope3 严格读当前字段。旧配置整体拒绝，避免丢失历史隐私排除。",
+      "files": [
+        "apps/desktop/src/config.ts",
+        "apps/desktop/src/contracts.ts",
+        "apps/desktop/src/app-collection.ts",
+        "apps/desktop/src/ui.ts",
+        "apps/desktop/src/index.html",
+        "apps/desktop/src/collector.ts",
+        "apps/desktop/test/config.test.ts",
+        "apps/desktop/test/app-collection.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D09",
+      "title": "旧 snapshot 音频索引补建独立本机处理任务",
+      "status": "removed",
+      "implementation": "未修改音频采用普通 unchanged shortcut；保留新/改音频生成独立 processing job、ASR 重试、状态与源 spool。",
+      "files": [
+        "apps/desktop/src/source-files.ts",
+        "apps/desktop/test/source-files.test.ts",
+        "apps/desktop/test/local-file-processing.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D10",
+      "title": "File manifest 未带 state 的旧 ACK 格式容忍",
+      "status": "removed",
+      "implementation": "批量 manifest 必须显式 accepted/existing/rejected/missing_original；去掉无 state+ack 接受。保留现行批量上限能力协商和逐条路径。",
+      "files": [
+        "apps/desktop/src/source-sync.ts",
+        "apps/desktop/test/source-sync-batch.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D11",
+      "title": "旧 support events.json 作为 NDJSON 不存在时的导出来源",
+      "status": "removed",
+      "implementation": "去 support events.json 双写和回退；read/readRaw/exportRange 使用 NDJSON，保留轮转、安全清洗与当前 raw UI。旧 events.json 原样留下，不读取。",
+      "files": [
+        "apps/desktop/src/support.ts",
+        "apps/desktop/test/support.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D12",
+      "title": "CodingCheckpoint 新 catalog/counter 字段对旧持久化游标的补齐",
+      "status": "removed",
+      "implementation": "Coding checkpoint3 fresh 必须填齐 catalog/counter/time 和 cursor stat/hash；旧缺字段或 version 明确拒绝。保留当前第三方日志 decoder、追加/partial-line restart。",
+      "files": [
+        "apps/desktop/src/coding-agents.ts",
+        "apps/desktop/test/coding-agents.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "D13",
+      "title": "来源 adapter 版本升级检查和旧缺版本默认1",
+      "status": "partial_removed_current_boundary_preserved",
+      "implementation": "移除缺 adapterVersion 猜1；fresh 写 adapterVersion=1，持久化必须带 version。保留显式 adapter 版本变更重扫与未 ACK outbox。",
+      "files": [
+        "apps/desktop/src/source-sync.ts",
+        "apps/desktop/test/source-sync.test.ts",
+        "apps/desktop/test/source-scheduling.test.ts"
+      ],
+      "validation": "Fixture suite passed; tests listed as related coverage, not each item independently complete E2E.",
+      "scope": "desktop"
+    },
+    {
+      "id": "ANDROID-01",
+      "title": "读取旧 AES/GCM 内容封装，以及遗留可选加密写入开关",
+      "status": "implemented",
+      "result": "格式3本机边界与明文内容编解码；旧AES envelope/escape reader和可选内容加密设置退役",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/LocalDataFormat.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/LocalContentCipher.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/Settings.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/MoteApplication.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt"
+      ],
+      "regressions": [
+        "LocalContentCipherTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-02",
+      "title": "全域旧内容批量解密工具残留，目前只有测试入口",
+      "status": "implemented",
+      "result": "删除 LocalContentDecryptor/LocalContentMigration 和各store migrateLegacyContent 入口；保留当前SecretBox凭据、中央私有草稿及ledger",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/LocalContentDecryptor.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/LocalContentMigration.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/SecretBox.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/LocalSources.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/NoteDraftStore.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/BulkDedupeWorker.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/ImageDedupeDiagnosticsStore.kt"
+      ],
+      "regressions": [
+        "LocalContentCipherTest",
+        "BulkDedupeQueueTest",
+        "LocalSourcesTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-03",
+      "title": "Ingress v2 一次性切换：清除旧 outbox、源检查点、上传状态",
+      "status": "implemented",
+      "result": "删除IngressV2Migration及清空旧outbox/checkpoint helper，旧app存量要求显式清除应用存储",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/IngressV2Migration.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/MoteApplication.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/LocalSources.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt"
+      ],
+      "regressions": [
+        "LocalContentCipherTest",
+        "IngressV2ProtocolTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-04",
+      "title": "保留旧用户默认完整内容采集，新安装默认只采应用活动",
+      "status": "implemented",
+      "result": "新设置构造时保存完整configurationFormat3快照、统一activity默认；缺配置字段拒绝且不再依据interval/enabled推断content",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/Settings.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/AppCollectionRules.kt"
+      ],
+      "regressions": [
+        "SettingsStorageInstrumentedTest (compiled only)",
+        "PowerOptimizationInstrumentedTest (compiled only)",
+        "AppPolicyAndActivityTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-05",
+      "title": "旧独立 central-owner-session.enc 一次性导入统一登录",
+      "status": "implemented",
+      "result": "统一中央会话不再读取/导入 central-owner-session.enc；旧app根目录未标格式3时拒绝进入当前路径",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/CentralClient.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/LocalDataFormat.kt"
+      ],
+      "regressions": [
+        "LocalContentCipherTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-06",
+      "title": "服务器未返回 node.protocol 时按旧协商前 v1 接受",
+      "status": "implemented",
+      "result": "node.protocol必有；null/undefined不是v1协商，现行协议range仍1",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/ProtocolCompatibility.kt"
+      ],
+      "regressions": [
+        "ProtocolCompatibilityTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-07",
+      "title": "上传 bundle -> JSON batch -> individual 老端点回退与24小时能力缓存",
+      "status": "implemented",
+      "result": "删除bundle→JSONbatch→single 404/405回退和24小时能力cache；packed=false合法单条上传保留，packed=true仅bundle；413减半与严格v2ACK保留",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/UploadWorker.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/UploadNegotiation.kt"
+      ],
+      "regressions": [
+        "UploadNegotiationTest",
+        "IngressV2ProtocolTest",
+        "CaptureBundleTest",
+        "SyncRecoveryTest",
+        "OfflineSyncInstrumentedTest (compiled only)"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-08",
+      "title": "更新器支持旧 v* 统一 release feed 和无 component 的混合清单",
+      "status": "implemented",
+      "result": "更新器仅android-v* feed与component=android签名清单；旧v*、缺component、混合组件清单拒绝",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/AppUpdateStore.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/AppRelease.kt"
+      ],
+      "regressions": [
+        "AppReleaseTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-09",
+      "title": "文件 transport 索引版本不匹配时重建，兼顾旧版与新来源",
+      "status": "implemented",
+      "result": "当前FileArchiveQueue新state明确transportQueueVersion3；无版本或非3状态拒绝，不重建旧checkpoint；新state写入仍保存3",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt"
+      ],
+      "regressions": [
+        "FileArchiveQueueTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-10",
+      "title": "旧 exact 截图签名 WxH:hash 的解析",
+      "status": "implemented",
+      "result": "ScreenshotDedupeHelper只接受v2|签名，旧WxH:hash不读",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/ScreenshotDedupeHelper.kt"
+      ],
+      "regressions": [
+        "ScreenshotDedupeTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-11",
+      "title": "本机随手记旧 mood 字段隐藏读写",
+      "status": "implemented",
+      "result": "删除MainActivity隐藏mood EditText及旧草稿mood回填；本机notes界面统一空mood；中央mood产品与已prepared不可变payload保留",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/NoteDraftStore.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/CentralScreens.kt"
+      ],
+      "regressions": [
+        "DurableQueueTest",
+        "NoteDraftStoreTest",
+        "NotesDiagnosticsInstrumentedTest (compiled only)"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-12",
+      "title": "旧本机延迟OCR及OCR补上传队列",
+      "status": "implemented",
+      "result": "删除CaptureOcrWorker、本机pending OCR字段及补上传队列/API；拒绝pending/_ocr*旧内容，中央derived OCR显示与UploadGate native OCR保留",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/CaptureOcr.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/QueueBrowseIndex.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/QueueArchive.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/UploadWorker.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/RuntimeSettings.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/MoteApplication.kt"
+      ],
+      "regressions": [
+        "LocalContentCipherTest",
+        "MediaObservationTest",
+        "CaptureAlbumsTest",
+        "RetainedOriginTest",
+        "CaptureRecordsInstrumentedTest (compiled only)"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-13",
+      "title": "旧未记dataOrigin的设置从server推导节点绑定",
+      "status": "implemented",
+      "result": "dataOrigin成为格式3设置必有字段，不再从server或ensureDataOrigin回填；当前明确绑定、未绑定本机数据、disconnect sticky origin、retained跨节点保护保留",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/Settings.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/QuickNotes.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/SourceWorkers.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/CapturePipeline.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/SystemEventCollector.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/MediaCollectionService.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/CaptureAccessibilityService.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/FileEvidencePoller.kt"
+      ],
+      "regressions": [
+        "RetainedOriginTest",
+        "IssueOneRegressionTest",
+        "SyncRecoveryTest",
+        "OfflineSyncInstrumentedTest (compiled only)"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-14",
+      "title": "旧本机来源配置缺新增字段时补默认",
+      "status": "implemented",
+      "result": "LocalSource.from当前完整字段使用get*，旧缺字段JSON拒绝；kind合法可选uri/calendarId保留",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/LocalSources.kt"
+      ],
+      "regressions": [
+        "LocalSourcesTest"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    },
+    {
+      "id": "ANDROID-15",
+      "title": "AskActivity 旧入口class保留但已成为当前导航依赖",
+      "status": "implemented",
+      "result": "MainActivity和NativeUi Ask导航先改CentralActivity page=ask，再移除AskActivity类及manifest声明",
+      "files": [
+        "apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/NativeUi.kt",
+        "apps/android/app/src/main/java/dev/mote/collector/AskActivity.kt",
+        "apps/android/app/src/main/AndroidManifest.xml"
+      ],
+      "regressions": [
+        "NavigationInstrumentedTest (compiled only)",
+        "NativeCentralInstrumentedTest (compiled only)"
+      ],
+      "risk": "MVP破坏升级已获用户授权。旧应用数据必须由用户清除应用存储后重新设置；本次实现不读取、迁移或删除真实个人数据。",
+      "preserved": "当前授权、隐私筛选与native OCR、origin绑定、v2 ACK、413及合法单条上传、SecretBox凭据/私有草稿/ledger。",
+      "scope": "android"
+    }
+  ],
+  "validation": {
+    "root": {
+      "shared": "90/90 fixture tests passed",
+      "localInference": "14/14 fixture tests passed",
+      "web": "218/218 fixture tests and production build passed",
+      "agent": "219 total, 218 passed, 1 existing skip; final typed Material fixture rerun pending",
+      "e2e": "generated Mac/Android/note → encrypted vault → actual Harness with fixture provider → evidence/image → portable archive passed",
+      "liveModel": "local Codex Server gpt-6.1-sol: 8-model catalog, connection/tool probe, copied profile module selection and query search_context/evidence with 1 verified citation passed; generated data only",
+      "mandatoryCheck": "pending"
+    },
+    "server": [
+      {
+        "command": "npm run typecheck -w @mote/server",
+        "result": "in progress after explicit UUID conversion"
+      },
+      {
+        "command": "npx tsx --test ...",
+        "result": "sandbox IPC denied; replaced by node --import tsx runner"
+      }
+    ],
+    "desktop": {
+      "desktopTypecheck": {
+        "status": "passed",
+        "log": "/private/tmp/mote-desktop-typecheck-last.log"
+      },
+      "desktopVitest": {
+        "files": 53,
+        "tests": 388,
+        "passed": 388,
+        "failed": 0,
+        "log": "/private/tmp/mote-desktop-test-complete.log",
+        "environment": "unsandboxed loopback generated fixture tests"
+      },
+      "desktopJsBuild": "passed",
+      "completeDesktopBuild": {
+        "status": "passed",
+        "coverage": [
+          "TypeScript",
+          "UI esbuild",
+          "pinned Qwen C++",
+          "Swift native helper",
+          "Swift native updater",
+          "app icon"
+        ],
+        "log": "/private/tmp/mote-desktop-build-last.log"
+      },
+      "realPersonalDataRead": false,
+      "realScreenshotsCaptured": false,
+      "physicalDeviceChecks": "not performed",
+      "liveModelChecks": "not performed",
+      "fullRepositoryChecks": "root owns; not run by desktop agent",
+      "desktopNativeGeneratedProfiles": {
+        "status": "passed",
+        "phases": [
+          "dev write",
+          "test write",
+          "test restart read",
+          "dev restart read"
+        ],
+        "coverage": [
+          "independent Electron instances",
+          "current strict connection metadata",
+          "draft and device identity restart",
+          "credential encryption",
+          "offline outbox preserved",
+          "capture stayed stopped"
+        ],
+        "log": "/private/tmp/mote-desktop-native-profiles-complete.log"
+      },
+      "desktopNativeGeneratedContentUI": {
+        "status": "passed",
+        "coverage": [
+          "plain text note queue/draft writes",
+          "content encryption controls removed",
+          "capture stopped"
+        ],
+        "log": "/private/tmp/mote-desktop-content-ui-final.log"
+      }
+    },
+    "android": {
+      "lastCompletedCommand": "JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ANDROID_HOME='/Users/utopiafar/Library/Android/sdk' ./gradlew :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin :app:assembleDebug",
+      "workingDirectory": "/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android",
+      "lastCompleted": "Latest completed build: 54 suites, 245 JVM tests, 0 failed/error/skipped; instrumented Kotlin compilation and debug assemble passed.",
+      "finalVerification": "BUILD SUCCESSFUL; latest code verified by root final Gradle execution",
+      "instrumentedDeviceTests": "not run; Kotlin sources compiled only",
+      "physicalDevice": "not run",
+      "liveModel": "not run",
+      "realPersonalData": "not read/captured/uploaded",
+      "log": "/private/tmp/mote-android-gradle-final-current.log",
+      "unitTests": {
+        "suites": 54,
+        "tests": 245,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "instrumentedSources": ":app:compileDebugAndroidTestKotlin passed; no device execution",
+      "debugAssembly": ":app:assembleDebug passed, fixed llama.cpp native library built",
+      "apkPaths": [
+        "/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/build/outputs/apk/debug/app-debug.apk"
+      ]
+    }
+  },
+  "retainedCurrentBoundaries": {
+    "root": {},
+    "server": [
+      "Current authorization, owner management, privacy and incomplete evidence dependency invalidation",
+      "IngressVersion 2, acknowledgement, leases, durable recovery and current retention",
+      "Current Markdown, legitimate optional fields, single-sample states, and plugin discovery",
+      "Invalid old Coding material and missing transcript are excluded by safe read/review gates; no conversion performed",
+      "Current static asset 404 guard retained"
+    ],
+    "desktop": [
+      "native macOS capability fallbacks",
+      "current privacy upload gate and credential safeStorage",
+      "exact ingress ACK and retry journaling",
+      "connection authorization/binding and queue-storage ownership/transactions",
+      "adapter version rescan preserving unacknowledged revisions",
+      "updater install signature and crash-recovery transaction",
+      "current third-party Coding log formats",
+      "central-window and central-preload fixture entrypoints"
+    ],
+    "android": {
+      "androidLocalContent": 3,
+      "androidPortableQueueArchive": 3,
+      "fileTransportQueue": 3,
+      "wireProtocol": 1,
+      "ingress": 2,
+      "oldApplicationData": "reject requiring explicit user app-storage reset; no migration/delete"
+    }
+  }
+}

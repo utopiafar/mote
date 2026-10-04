@@ -1,3 +1,4 @@
+import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
@@ -17,8 +18,8 @@ async function fixture(t:any,options:ConstructorParameters<typeof FileProcessing
  let begin!:()=>void,finish!:()=>void;const started=new Promise<void>(r=>begin=r),gate=new Promise<void>(r=>finish=r),calls:Parameters<TranscriptionProvider['transcribe']>[0][]=[];
  const provider:TranscriptionProvider={transcribe:async input=>{calls.push(input);begin();await gate;return {durationMs:segmentCount*1000,segments:Array.from({length:segmentCount},(_,i)=>({startMs:i*1000,endMs:(i+1)*1000,text:'Generated immutable transcript '+i}))};}};let processing=new FileProcessing(files,provider,undefined,options);await processing.runtime.ready;
  t.after(async()=>{finish();await processing.close();store.close();rmSync(dir,{recursive:true,force:true});});
- // These snapshot tests exercise the legacy HTTP ASR path; the product default now includes diarization.
- processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http'}});
+ // These snapshot tests exercise the current HTTP ASR processor; the product default now includes diarization.
+ processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http'},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'audio.http'},processing.runtime.registry)});
  const bytes=Buffer.from('generated audio fixture'),manifest={sourceId:'audio',previousRevision:null,item:{externalId:'generated.wav',revision:'1',observedAt:'2024-01-01T00:00:00.000Z',title:'Generated audio',kind:'file',layer:'original',text:'',mimeType:'audio/wav',deleted:false},relativePath:'generated.wav',sizeBytes:bytes.length,sha256:sha256(bytes)};
  const session=files.begin(manifest,()=>{});files.part(session.uploadId,0,bytes,()=>{});const id=(await files.commit(session.uploadId,()=>{})).id;
  return {dir,store,files,get processing(){return processing;},id,calls,started,finish,async restart(){await processing.close();processing=new FileProcessing(files,provider,undefined,options);await processing.runtime.ready;}};
@@ -27,20 +28,20 @@ async function fixture(t:any,options:ConstructorParameters<typeof FileProcessing
 test('unrelated image settings preserve an active audio grant and its immutable processing snapshot',async t=>{
  const f=await fixture(t),running=f.processing.tick();await f.started;
  const first=f.processing.engine.list({operationId:'file:'+f.id,kind:'files.pipeline'}).items[0];assert.equal(first.state,'running');
- const old=f.processing.view();f.processing.update({revision:old.revision,settings:{...old.settings,imageEndpoint:'http://127.0.0.1:9030/generated-ocr'}});
+ const old=f.processing.view();f.processing.update({revision:old.revision,settings:{...old.settings,imageEndpoint:'http://127.0.0.1:9030/generated-ocr'},policy:fixtureFilePolicy({...old.settings,imageEndpoint:'http://127.0.0.1:9030/generated-ocr'},f.processing.runtime.registry)});
  assert.equal(f.calls[0].signal.aborted,false,'unrelated settings must not cancel audio');
  assert.equal(f.processing.engine.get(first.id)!.state,'running');
  f.finish();await running;await f.processing.tick();
  assert.equal(f.calls.length,1);assert.equal(f.files.detail(f.id).job.state,'succeeded');
  assert.equal(f.processing.engine.list({operationId:'file:'+f.id,kind:'files.pipeline'}).items.length,1);
  assert.equal(f.calls[0].settings.imageEndpoint,'','running work keeps its original settings snapshot');
- assert.throws(()=>f.processing.update({revision:old.revision,settings:old.settings}),{statusCode:409});
+ assert.throws(()=>f.processing.update({revision:old.revision,settings:old.settings,policy:fixtureFilePolicy(old.settings,f.processing.runtime.registry)}),{statusCode:409});
 });
 
 test('relevant audio endpoint changes revoke the active grant and fence its late result',async t=>{
  const f=await fixture(t),running=f.processing.tick();await f.started;
  const first=f.processing.engine.list({operationId:'file:'+f.id,kind:'files.pipeline'}).items[0],old=f.processing.view();
- f.processing.update({revision:old.revision,settings:{...old.settings,endpoint:'http://127.0.0.1:9040/generated-transcribe'}});
+ f.processing.update({revision:old.revision,settings:{...old.settings,endpoint:'http://127.0.0.1:9040/generated-transcribe'},policy:fixtureFilePolicy({...old.settings,endpoint:'http://127.0.0.1:9040/generated-transcribe'},f.processing.runtime.registry)});
  assert.equal(f.calls[0].signal.aborted,true);f.finish();await running;
  assert.notEqual(f.processing.engine.get(first.id)!.state,'succeeded');assert.equal(f.files.chunks(f.id).length,0);
  for(const until=Date.now()+5000;Date.now()<until&&f.files.detail(f.id).job.state!=='succeeded';){await f.processing.tick();if(f.files.detail(f.id).job.state!=='succeeded')await new Promise(r=>setTimeout(r,25));}assert.equal(f.calls.length,2,JSON.stringify({job:f.files.detail(f.id).job,steps:f.processing.engine.list({operationId:'file:'+f.id}).items.map(({kind,state,error,input})=>({kind,state,error,input}))}));assert.equal(f.files.detail(f.id).job.state,'succeeded');assert.equal(f.calls[1].settings.endpoint,'http://127.0.0.1:9040/generated-transcribe');
@@ -48,10 +49,10 @@ test('relevant audio endpoint changes revoke the active grant and fence its late
 
 test('same-value saves preserve execution identity and receipts never retain credentials',async t=>{
  const f=await fixture(t),secret='generated-file-snapshot-secret';
- f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,apiKey:secret}});
+ f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,apiKey:secret},policy:fixtureFilePolicy({...f.processing.view().settings,apiKey:secret},f.processing.runtime.registry)});
  const firstSettings=f.processing.view().revision,running=f.processing.tick();await f.started;
  const first=f.processing.engine.list({operationId:'file:'+f.id,kind:'files.pipeline'}).items[0];
- f.processing.update({revision:firstSettings,settings:f.processing.view().settings});
+ f.processing.update({revision:firstSettings,settings:f.processing.view().settings,policy:fixtureFilePolicy(f.processing.view().settings,f.processing.runtime.registry)});
  assert.equal(f.calls[0].signal.aborted,false);f.finish();await running;await f.processing.tick();
  assert.equal(f.calls.length,1);assert.equal(f.processing.engine.list({operationId:'file:'+f.id,kind:'files.pipeline'}).items[0].id,first.id);
  const snapshots=f.processing.explain(f.id).snapshots;assert.equal(snapshots.length,1);assert.equal(snapshots[0].settingsRevision,firstSettings);
@@ -59,9 +60,9 @@ test('same-value saves preserve execution identity and receipts never retain cre
  const persisted=f.store.db.prepare('SELECT receipt FROM file_configuration_snapshots').all();assert.ok(!JSON.stringify(persisted).includes(secret));
 });
 
-test('global-revision work reuses an exact compatible extraction after reconstruction',async t=>{
+test('current fingerprint work reuses an exact extraction after reconstruction',async t=>{
  const f=await fixture(t),running=f.processing.tick();await f.started;f.finish();await running;await f.processing.tick();
- const original=f.files.chunks(f.id)[0].id,revision=f.processing.view().revision;
+ const original=f.files.chunks(f.id)[0].id,revision=f.processing.configuration(f.id,'pipeline').fingerprint;
  // The durable wrapper can be reconstructed, but its exact extraction dependencies remain pinned.
  f.store.db.prepare("DELETE FROM execution_steps WHERE operation_id=?").run('file:'+f.id);
  f.store.db.prepare("UPDATE file_jobs SET state='waiting',summary_state='waiting',attempts=0,available_at=0 WHERE capture_id=?").run(f.id);
@@ -69,7 +70,7 @@ test('global-revision work reuses an exact compatible extraction after reconstru
  await f.restart();
  for(const until=Date.now()+5000;Date.now()<until&&f.files.detail(f.id).job.state!=='succeeded';){await f.processing.tick();if(f.files.detail(f.id).job.state!=='succeeded')await new Promise(r=>setTimeout(r,25));}
  assert.equal(f.processing.engine.get(legacy)!.state,'succeeded');assert.equal(f.calls.length,1);assert.equal(f.files.chunks(f.id)[0].id,original);
- assert.equal(f.processing.engine.list({operationId:'file:'+f.id,kind:'files.pipeline'}).items.length,1,'migration must not create a second runnable wrapper');
+ assert.equal(f.processing.engine.list({operationId:'file:'+f.id,kind:'files.pipeline'}).items.length,1,'reconstruction must not create a second runnable wrapper');
 });
 
 test('legacy fingerprints without declared dependencies require fresh extraction',async t=>{
@@ -85,7 +86,7 @@ test('legacy fingerprints without declared dependencies require fresh extraction
 
 test('restart reconciles a persisted relevant config change before resuming interrupted work',async t=>{
  const f=await fixture(t),running=f.processing.tick();await f.started;
- const saved={revision:randomUUID(),settings:{...f.processing.currentSettings(),endpoint:'http://127.0.0.1:9050/transcribe'}};
+ const settings={...f.processing.currentSettings(),endpoint:'http://127.0.0.1:9050/transcribe'},saved={revision:randomUUID(),settings,policy:fixtureFilePolicy(settings,f.processing.runtime.registry)};
  writeFileSync(join(f.dir,'file-processing.json'),JSON.stringify(saved),{mode:0o600});
  await f.restart();f.finish();await running;
  for(const until=Date.now()+5000;Date.now()<until&&f.files.detail(f.id).job.state!=='succeeded';){await f.processing.tick();if(f.files.detail(f.id).job.state!=='succeeded')await new Promise(r=>setTimeout(r,25));}
@@ -101,7 +102,7 @@ for(const changed of [false,true])test(`summary model snapshot ${changed?'fences
   seen.push(settings.modelSnapshot!.model);if(seen.length===1){begin();await gate;}
   return {answer:'Generated bounded summary',citations:[{id:records[0].id}]};
  }},41);t.after(()=>finish());
- f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,summarize:true}});
+ f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,summarize:true},policy:fixtureFilePolicy({...f.processing.view().settings,summarize:true},f.processing.runtime.registry)});
  f.finish();const running=f.processing.tick();await started;
  revision++;if(changed)model=generatedModel('model-two');
  if(changed){await f.processing.tick();assert.equal(seen.length,1,'new summary waits until the old raw analysis returns');}

@@ -27,11 +27,11 @@ test('profiles route each request and feature independently; credentials, restar
   assert.equal(seen.at(-1)?.apiKey,'');
   response=await put('second',{...settings,apiKey:'fixture-second-secret',model:'second-model'});view=response.json();
   const defaults={...view.defaults!,chat:'second',memory:'second',file:'second'};
-  response=await node.app.inject({method:'PUT',url:'/api/model-settings/defaults',headers,payload:{revision:view.revision,defaults}});
+  response=await node.app.inject({method:'PUT',url:'/api/model-settings/defaults',headers,payload:{revision:view.revision,defaults,defaultModels:view.defaultModels}});
   assert.equal(response.statusCode,200,response.body);view=response.json();
   const query=async(modelProfileId?:string)=>node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated fixture question',modelProfileId}});
   assert.equal((await query()).json().answer,'second-model');
-  const explicit=(await query('default')).json();assert.equal(explicit.answer,'first-model');assert.equal(explicit.modelSelection.profileId,'default');
+  const explicit=(await query('env:deployment')).json();assert.equal(explicit.answer,'first-model');assert.equal(explicit.modelSelection.profileId,'env:deployment');
   assert.equal((await query('missing')).statusCode,400);
   const switched=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated temporary model',modelProfileId:'second',modelOverride:'temporary-model'}});
   assert.equal(switched.statusCode,200,switched.body);assert.equal(switched.json().answer,'temporary-model');
@@ -42,7 +42,7 @@ test('profiles route each request and feature independently; credentials, restar
   await node.store.ingest({id:randomUUID(),deviceId:'generated-memory',deviceName:'Generated',platform:'import',source:'note',capturedAt:new Date().toISOString(),durationMs:0,ocrText:'Generated memory model routing evidence'});
   assert.equal((await node.app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{}})).statusCode,200);
   assert.deepEqual(calls.at(-1),{model:'second-model',skill:'memory-extraction'});
-  assert.equal((await node.app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{modelProfileId:'default'}})).statusCode,200);
+  assert.equal((await node.app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{modelProfileId:'env:deployment'}})).statusCode,200);
   assert.deepEqual(calls.at(-1),{model:'first-model',skill:'memory-extraction'});
   const review=await node.app.inject({method:'POST',url:'/api/insights',headers,payload:{modelProfileId:'second'}});
   assert.equal(review.statusCode,200,review.body);assert.equal(review.json().modelSelection.profileId,'second');
@@ -52,8 +52,8 @@ test('profiles route each request and feature independently; credentials, restar
   await node.materialOrganizer.tick();
   const fixtureMaterial=node.materials.get(materialId('fixture','fixture'));
   assert.ok(fixtureMaterial);
-  const created=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:node.materials.evidenceIds(fixtureMaterial.ref),modelProfileId:'default'}});
-  assert.equal(created.statusCode,202,created.body);assert.equal(created.json().modelProfileId,'default');
+  const created=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:node.materials.evidenceIds(fixtureMaterial.ref),modelProfileId:'env:deployment'}});
+  assert.equal(created.statusCode,202,created.body);assert.equal(created.json().modelProfileId,'env:deployment');
   const finished=await node.memoryPipeline.run(created.json().id);assert.equal(finished.status,'completed');
   assert.deepEqual(calls.at(-1),{model:'first-model',skill:'memory-extraction'});
   const removed=await node.app.inject({method:'DELETE',url:'/api/model-settings/profiles/second',headers,payload:{revision:view.revision}});
@@ -62,7 +62,7 @@ test('profiles route each request and feature independently; credentials, restar
   response=await node.app.inject({method:'DELETE',url:'/api/model-settings',headers,payload:{revision:view.revision}});view=response.json();
   assert.equal(view.profiles?.length,2,'restoring default must preserve other profiles and routes');
   assert.equal(view.defaults?.memory,'second');
-  response=await node.app.inject({method:'PUT',url:'/api/model-settings/defaults',headers,payload:{revision:oldRevision,defaults}});assert.equal(response.statusCode,409);
+  response=await node.app.inject({method:'PUT',url:'/api/model-settings/defaults',headers,payload:{revision:oldRevision,defaults,defaultModels:view.defaultModels}});assert.equal(response.statusCode,409);
   assert.equal(JSON.stringify(view).includes('fixture-second-secret'),false);
   assert.equal((await readFile(join(directory,'model-settings.json'),'utf8')).includes('fixture-second-secret'),true);
   await node.app.close();node=await buildApp(cfg,{createModelAgent:factory});
@@ -76,7 +76,7 @@ test('Codex profiles accept a local login transport and reject arbitrary process
   const directory=await mkdtemp(join(tmpdir(),'mote-codex-settings-'));
   const store=new ModelSettingsStore({directory,environment:settings,prepare:async()=>({activate(){},async dispose(){}}),probe:async()=>({ok:true,code:'ok',message:'',durationMs:1})});
   t.after(async()=>{await store.close();await rm(directory,{recursive:true,force:true});});await store.initialize();
-  const local={...settings,provider:'codex',protocol:'codex-app-server',baseUrl:'',model:'fixture-codex',apiKey:null,modelRequestTimeoutMs:null,agentTimeoutMs:null};
+  const local={...settings,provider:'codex',protocol:'codex-app-server',baseUrl:'',serviceTier:'default',model:'fixture-codex',apiKey:null,modelRequestTimeoutMs:null,agentTimeoutMs:null};
   await store.updateProfile('local',{revision:0,name:'Codex fixture',settings:local});
   assert.equal(store.select('chat','local').settings.protocol,'codex-app-server');
   for(const patch of [{baseUrl:'file:///bin/sh'},{extraBody:{command:'sh'}},{headers:{Authorization:'fixture'}},{codexPath:'/bin/sh'}]){
@@ -117,7 +117,7 @@ test('deployment is read-only; copies retain secrets server-side, stay independe
   assert.equal(restarted.select('chat','env:deployment').settings.model,'changed-env');
   view=restarted.view();
   await assert.rejects(restarted.updateDefaults({revision:view.revision,defaults:view.defaults,defaultModels:{chat:'invalid\nmodel'}}),{code:'model_settings_invalid'});
-  await restarted.updateDefaults({revision:view.revision,defaults:{...view.defaults,chat:'env:deployment'}});
+  await restarted.updateDefaults({revision:view.revision,defaults:{...view.defaults,chat:'env:deployment'},defaultModels:{...view.defaultModels,chat:undefined}});
   assert.equal(restarted.view().defaultModels?.chat,undefined,'old clients switching connections clear unrelated model IDs');
   await restarted.close();
 });

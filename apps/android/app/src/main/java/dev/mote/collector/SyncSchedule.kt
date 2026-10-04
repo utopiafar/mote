@@ -57,7 +57,7 @@ object SyncSchedule {
     fun schedule(context: Context, config: CollectorConfig, explicit: Boolean = false) {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             val app = context.applicationContext
-            // Pending counts can decrypt a large legacy queue or wait for storage recovery.
+            // Pending counts can scan a large queue or wait for storage recovery.
             // Service ticks and UI actions must never perform that work on the main looper.
             dispatcher.submit(Request(app, ScheduleIntent(stamp(config), explicit)))
             return

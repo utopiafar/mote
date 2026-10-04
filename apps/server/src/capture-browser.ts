@@ -4,7 +4,7 @@ import { moteText } from './i18n.js';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import sharp from 'sharp';
-import {sourceSchema,evidenceRefId} from '@mote/shared';
+import {sourceSchema,formatEvidenceRef} from '@mote/shared';
 import {Store,StoreError} from './store.js';
 import {Connections,ConnectionError,type ConnectionCredential} from './connections.js';
 
@@ -21,8 +21,8 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
   const {store,connections,credential,evidenceReader}=context;
   const thumbnails=new Map<string,Buffer>();let cachedBytes=0;
   const ownRecord=(req:FastifyRequest)=>{
-    const id=evidenceRefId((req.params as {id:string}).id,'capture');
-    const record=id?evidenceReader.archivedEvidence([id],navigationScopeSchema.parse(req.query))[0]:undefined,c=credential(req);
+    const id=z.string().uuid().parse((req.params as {id:string}).id);
+    const record=id?evidenceReader.archivedEvidence([formatEvidenceRef('capture',id)],navigationScopeSchema.parse(req.query))[0]:undefined,c=credential(req);
     if(c)connections.assertActive(c);
     // Missing and foreign IDs share a response so collectors cannot probe other devices.
     if(!record||(c&&record.deviceId!==c.deviceId))throw new ConnectionError('capture_not_found',404,moteText("采集记录不存在或已被清理。"));
@@ -71,9 +71,9 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
     return store.sessions(query);
   });
   const ownImage=(req:FastifyRequest)=>{
-    const id=evidenceRefId((req.params as {id:string}).id,'capture'),c=credential(req);
+    const id=z.string().uuid().parse((req.params as {id:string}).id),c=credential(req);
     if(c)connections.assertActive(c);
-    const record=id?evidenceReader.imageReference(id,navigationScopeSchema.strip().parse(req.query)):undefined;
+    const record=id?evidenceReader.imageReference(formatEvidenceRef('capture',id),navigationScopeSchema.strip().parse(req.query)):undefined;
     if(!record||(c&&record.deviceId!==c.deviceId))throw new ConnectionError('capture_not_found',404,moteText("采集记录不存在或已被清理。"));
     return record;
   };

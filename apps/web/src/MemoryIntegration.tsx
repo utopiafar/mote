@@ -30,9 +30,9 @@ export function MemoryIntegration({api,candidate,verificationPending=false}:{api
   const state=lifecycle.data?.extensions?.find(item=>item.id==='consolidation'),active=state?.active;
   const manual=active?.manual===true,local=run?.api===api&&run.id===active?.id?run:undefined;
   const completed=run?.api===api&&run.id===state?.lastRun?.id&&!active;
-  const defaultId=models.data?.defaults?.memory??'default';
-  const profile=defaultId==='default'?{name:moteText('默认预设'),settings:models.data?.settings}:models.data?.profiles?.find(item=>item.id===defaultId);
-  const model=models.data?.defaultModels?.memory||profile?.settings?.model;
+  const defaultId=models.data?.defaults.memory;
+  const profile=models.data?.profiles.find(item=>item.id===defaultId);
+  const model=models.data?.defaultModels.memory||profile?.settings?.model;
   const timeout=profile?.settings?.agentTimeoutMs;
   const configured=!!model&&!!profile;
   const limit=lifecycle.data?.settings?.consolidation?.maxItems;

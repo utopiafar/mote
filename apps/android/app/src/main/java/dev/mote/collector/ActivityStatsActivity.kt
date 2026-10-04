@@ -101,7 +101,6 @@ class ActivityStatsActivity : MoteActivity() {
                     append(MoteI18n.text("目录大小为最近测量值，最多缓存 30 秒；可点击上方刷新重新测量。\n"))
                     append(MoteI18n.text("\n生效设置\n实际配置：每 {0} 秒，JPEG {1}，最长边 {2}px\n", config.intervalSeconds, config.jpegQuality, config.captureMaxSide))
                     append(MoteI18n.text("仅非计费 Wi-Fi：{0} · 仅充电采集：{1} · 低于 {2}% 暂停（0 关闭）\n", if (config.wifiOnly) MoteI18n.text("开启") else MoteI18n.text("关闭"), if (config.chargingOnly) MoteI18n.text("开启") else MoteI18n.text("关闭"), config.batteryPauseBelowPct))
-                    append(MoteI18n.text("仅充电 OCR：{0}\n", if (config.ocrChargingOnly) MoteI18n.text("开启，充电后补做历史图片") else MoteI18n.text("关闭")))
                     append(MoteI18n.text("本机过滤：{0} · {1} 线程 · {2}ms 超时\n", if (config.nsfw.enabled) MoteI18n.text("开启") else MoteI18n.text("关闭"), config.nsfw.threads, config.nsfw.timeoutMs))
                     append(MoteI18n.text("设备元数据：{0} · 应用规则 {1} 项\n", if (config.metadataEnabled) MoteI18n.text("上传新记录的实际状态") else MoteI18n.text("新记录不附带"), AppCollectionRules.parse(config.appCollectionRules).apps.size))
                     append(MoteI18n.text("\n统计口径与限制\n已保存表示本机入队成功；已上传表示节点已确认收到。待 OCR 的图片在确认上传后仍会保留，补做结果也同步成功后才清理。被过滤的画面不会入队。暂停是原因变更次数，不等于丢弃截图次数；请求可能因系统/进程中断没有后续结果。统计与队列分开持久化，进程在两次写入之间终止时累计数可能少记；当前队列数量包含待识别和同步失败保留的图片。\n"))

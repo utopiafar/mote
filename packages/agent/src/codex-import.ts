@@ -9,7 +9,7 @@ export function createCodexImportAgent(options:Omit<AgentOptions,'reader'>){
   let closed=false;const sessions=new Set<CodexSession>(),pending=new Set<Promise<ImportAgentResult>>();
   async function execute(input:ImportAgentInput,onUsage?:(usage:TokenUsage)=>void):Promise<ImportAgentResult>{
     if(closed)throw new AgentProviderError();if(!options.model?.trim())throw new AgentNotConfiguredError();
-    const agentTimeoutMs = options.agentTimeoutMs !== undefined ? options.agentTimeoutMs : options.timeoutMs ?? 120000;
+    const agentTimeoutMs = options.agentTimeoutMs === undefined ? 120000 : options.agentTimeoutMs;
     const session=new CodexSession({...options,agentTimeoutMs},async()=>{throw new AgentProviderError();},undefined,onUsage);sessions.add(session);
     try{
       await session.start(skillContent('document-import'),[],input.workspace);

@@ -157,7 +157,7 @@ internal class CentralScreens(val ui: CentralActivity, val body: LinearLayout, p
             filters = arrayOf(InputFilter.LengthFilter(8000)); minLines = 4
         }
         watch(question!!) { askState.put("question", question!!.text.toString()); persistAsk() }
-        val profiles = modelSettings.optJSONArray("profiles") ?: JSONArray()
+        val profiles = modelSettings.getJSONArray("profiles")
         val ids = listOf("") + (0 until profiles.length()).map { profiles.getJSONObject(it).getString("id") }
         val names = listOf(MoteI18n.text("跟随功能默认")) + (0 until profiles.length()).map { profiles.getJSONObject(it).getString("name") }
         ui.text(MoteI18n.text("模型预设"), 13f)
@@ -284,7 +284,7 @@ internal class CentralScreens(val ui: CentralActivity, val body: LinearLayout, p
                     for (j in 0 until citations.length()) {
                         val citation = citations.getJSONObject(j)
                         ui.text(citation.optString("excerpt"), parent = target)
-                        ui.button(MoteI18n.text("查看原文依据") + " · " + citation.optString("appName"), parent = target) { library.evidence(citation.getString("id")) }
+                        ui.button(MoteI18n.text("查看原文依据") + " · " + citation.optString("appName"), parent = target) { library.captureEvidence(citation.getString("id")) }
                     }
                 }
                 turn.optJSONObject("error")?.let { ui.text(it.optString("message"), parent = target) }
@@ -346,7 +346,7 @@ internal class CentralScreens(val ui: CentralActivity, val body: LinearLayout, p
         for (i in 0 until items.length()) {
             val note = items.getJSONObject(i); val card = ui.card()
             ui.text(note.optString("capturedAt"), 13f, card); ui.text(note.optString("ocrText"), parent = card)
-            ui.button(MoteI18n.text("查看原文"), parent = card) { library.evidence(note.getString("id")) }
+            ui.button(MoteI18n.text("查看原文"), parent = card) { library.captureEvidence(note.getString("id")) }
         }
         next(history)?.let { cursor -> ui.button(MoteI18n.text("加载更早的随手记")) {
             val api = client

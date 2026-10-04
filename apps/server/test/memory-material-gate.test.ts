@@ -1,3 +1,4 @@
+import {fixtureMemoryResult,fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -26,7 +27,7 @@ async function fixture(t:TestContext,query:()=>Promise<ReturnType<typeof empty>>
   sources.register({id:sourceId,name:'Generated source',kind:'custom',deviceId:'generated-device',platform:'import'});
   const raw=(await sources.upsert(sourceId,{externalId,revision:'1',observedAt:'2026-09-20T00:00:00Z',kind:'message',layer:'original',text:body})).id;
   const memories=new MemoryStore(store,ids=>[...store.evidence(ids),...materials.evidence(ids)],id=>materials.isCurrentEvidence(id)||store.isCurrentEvidence(id));
-  const pipeline=new MemoryPipeline({store,memories,configured:()=>true,model:()=> 'fixture',query,
+  const pipeline=fixtureMemoryPipeline({store,memories,configured:()=>true,model:()=> 'fixture',query,
     materialAllowedForMemory:ref=>work.readyForMemory(ref),evidenceAllowedForMemory});
   t.after(async()=>{await pipeline.close();store.close();rmSync(directory,{recursive:true,force:true});});
   const id=materialId(sourceId,externalId);
@@ -49,7 +50,7 @@ test('ordinary raw artifact and manual raw job cannot bypass pending or failed n
   f.work.observe(pending.id,['extracted-text'],{inputKey:'generated-raw-input',change:'rebuild'});
   f.store.archive.aggregate();
   const segment=f.store.archive.page().items.find(item=>item.kind==='segment')!;
-  assert.deepEqual(f.pipeline.legacyArtifactIds([segment.id]),[]);
+  assert.deepEqual(f.pipeline.intakeArtifactIds([segment.id]),[]);
   assert.equal(f.work.readyForMemory(pending.ref),false);
   assert.throws(()=>f.pipeline.create({evidenceIds:[f.raw]}),{statusCode:409});
   assert.throws(()=>f.pipeline.create({evidenceIds:f.materials.evidenceIds(pending.ref)}),{statusCode:409});
@@ -73,7 +74,7 @@ test('a ready named source body admits partial Material anchor, then supersessio
   release();const finished=await running;
   assert.equal(finished.status,'failed');assert.equal(finished.batches[0].status,'invalidated');
   assert.equal(f.memories.list({includeStale:true}).length,0);
-  await assert.rejects(f.pipeline.retry(job.id),{statusCode:409});
+  const retried=await f.pipeline.retry(job.id);assert.equal(retried.status,'failed');assert.equal(retried.batches[0].status,'invalidated');assert.equal(f.memories.list().length,0);
   const currentAnchor=f.materials.evidenceIds(next.ref)[0];
   const fresh=f.pipeline.create({evidenceIds:[currentAnchor]});
   assert.equal((await f.pipeline.run(fresh.id)).status,'completed');
@@ -108,10 +109,10 @@ test('Memory deletion review reads authorized historical roots without admitting
  let allowed=true;const f=await fixture(t,undefined,()=>allowed),material=f.publish(body,'ready');f.work.observe(material.id,['source-body'],{inputKey:'generated-raw-input',change:'rebuild'});
  const anchor=f.materials.evidenceIds(material.ref)[0],record=f.memories.readEvidence([anchor])[0];
  const draft={answer:JSON.stringify({memories:[{title:'Generated decision',statement:`Generated conclusion [${anchor}]`,uncertainty:'Fixture',admission:{layer:'memory',reason:'Generated decision',scope:'Fixture',attribution:'user'},evidenceIds:[anchor],evidence:[{id:anchor,quote:body}]}]}),citations:[{id:anchor,capturedAt:record.capturedAt,appName:'Fixture',excerpt:body}],trace:[],runId:randomUUID()};
- const card=f.memories.extract(draft,'fixture').items[0];f.memories.delete(card.id);
+ const card=f.memories.extract(fixtureMemoryResult(f.memories,draft),'fixture').items[0];f.memories.delete(card.id);
  assert.throws(()=>f.pipeline.assertAdmissibleEvidence([f.raw]),{statusCode:409});assert.doesNotThrow(()=>f.pipeline.assertAdmissibleEvidence([anchor]));assert.doesNotThrow(()=>f.pipeline.assertDeletionEvidenceAllowed([f.raw]));
  let comparisons=0;const result=await reviewMemory({question:'Generated extraction',skill:'memory-extraction'},draft,async input=>{if(input.question.startsWith('Host Memory deletion review.')){comparisons++;return {...draft,answer:JSON.stringify({sameConclusion:true,newSupportEvidenceIds:[]})};}return draft;},{deletions:f.memories.deletions,authorizeDeletionEvidence:ids=>f.pipeline.assertDeletionEvidenceAllowed(ids)});
- assert.equal(comparisons,1);assert.equal(f.memories.extract(result,'fixture',{reviewReceipt:memoryReviewReceipt(result)}).items.length,0);
+ assert.equal(comparisons,1);assert.equal(f.memories.extract(fixtureMemoryResult(f.memories,result),'fixture',{reviewReceipt:memoryReviewReceipt(result)}).items.length,0);
  allowed=false;assert.throws(()=>f.pipeline.assertDeletionEvidenceAllowed([f.raw]),{statusCode:409});assert.throws(()=>f.pipeline.assertAdmissibleEvidence([anchor]),{statusCode:409});
 });
 

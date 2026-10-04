@@ -1,14 +1,14 @@
-import {parseEvidenceRef} from '@mote/shared';
+import {parseEvidenceRef,formatEvidenceRef} from '@mote/shared';
 /** Explicit capture selection is separate from the list's rolling time window. */
 export function memorySourceRoute(id:string){
  const parsed=parseEvidenceRef(id);
  if(parsed?.kind!=='capture')throw new Error('A capture reference is required');
- return '#/library/memories?'+new URLSearchParams({memorySource:parsed.id});
+ return '#/library?view=memories&'+new URLSearchParams({memorySource:formatEvidenceRef('capture',parsed.id)});
 }
 const materialPattern=/^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$/;
 export function memoryMaterialRoute(ref:string){
  if(!materialPattern.test(ref))throw new Error('A pinned Material reference is required');
- return '#/library/memories?'+new URLSearchParams({memoryMaterial:ref});
+ return '#/library?view=memories&'+new URLSearchParams({memoryMaterial:ref});
 }
 export function readMemorySource(hash:string){return new URLSearchParams(hash.split('?')[1]??'').get('memorySource');}
 export function memorySourceId(value:string|null){const parsed=value?parseEvidenceRef(value):null;return parsed?.kind==='capture'?parsed.id:null;}

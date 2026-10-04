@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { connectionForLifetime, restoreSession, sessionLifetime } from '../src/session.js';
 
 const origin = 'https://mote.example';
-test('restores current-service sessions and migrates old same-service credentials', () => {
-  for (const value of [{token:'fixture'}, {url:'',token:'fixture'}, {url:origin,token:'fixture'}]) {
-    assert.deepEqual(restoreSession(JSON.stringify(value), origin), {token:'fixture'});
-  }
+test('restores explicit current identities and rejects retired session shapes', () => {
+  const current={token:'fixture',viewScope:crypto.randomUUID()};
+  assert.deepEqual(restoreSession(JSON.stringify(current),origin),current);
+  for(const value of [{token:'fixture'},{...current,url:''},{...current,url:origin}])assert.equal(restoreSession(JSON.stringify(value),origin),null);
 });
 test('does not send a former remote-node credential to the current service', () => {
   for (const value of [{url:'https://other.example',token:'fixture'}, {url:42,token:'fixture'}, {token:''}, {token:42}, null]) {
@@ -16,12 +16,12 @@ test('does not send a former remote-node credential to the current service', () 
 });
 test('persistent sessions carry a browser expiry and expired credentials are rejected', () => {
   const now = Date.parse('2026-09-19T00:00:00.000Z');
-  const connection = connectionForLifetime('fixture', '7d', now);
+  const connection = {...connectionForLifetime('fixture', '7d', now),viewScope:crypto.randomUUID()};
   assert.equal(connection.expiresAt, now + 7 * 24 * 60 * 60 * 1000);
   assert.deepEqual(restoreSession(JSON.stringify(connection), origin, now + 6 * 24 * 60 * 60 * 1000), connection);
   assert.equal(restoreSession(JSON.stringify(connection), origin, connection.expiresAt!), null);
   assert.equal(restoreSession(JSON.stringify(connection), origin, connection.expiresAt! + 1), null);
-  assert.deepEqual(connectionForLifetime('fixture', 'session', now), {token:'fixture'});
+  assert.equal(connectionForLifetime('fixture', 'session', now).token,'fixture');
 });
 test('unknown session lifetime values fall back to the safest tab-scoped mode', () => {
   assert.equal(sessionLifetime('30d'), '30d');
@@ -54,9 +54,9 @@ test('new login, logout, expiry and another tab login do not inherit a period',a
  const current=m.persistSession({token:'current'},'7d');m.savePeriod(current,'all');
  local.setItem(m.connectionStorageKey,JSON.stringify({token:'other-tab',expiresAt:Date.now()+60000,viewScope:crypto.randomUUID()}));assert.equal(m.readPeriod(m.readStoredSession(origin)),'week');
 });
-test('legacy identity migration and invalid or foreign view state are safe',async t=>{
+test('retired identity is rejected and invalid or foreign view state is safe',async t=>{
  const {session}=browserStorage(t);const m=await import('../src/session.js');
- session.setItem(m.connectionStorageKey,JSON.stringify({token:'legacy'}));const c=m.readStoredSession(origin)!;assert.ok(c.viewScope);assert.equal(m.readStoredSession(origin)!.viewScope,c.viewScope);
+ session.setItem(m.connectionStorageKey,JSON.stringify({token:'legacy'}));assert.equal(m.readStoredSession(origin),null);const c=m.persistSession({token:'current'},'session');assert.ok(c.viewScope);
  m.savePeriod(c,'all');session.setItem(m.periodStorageKey,JSON.stringify({scope:c.viewScope,period:'arbitrary'}));assert.equal(m.readPeriod(c),'week');
  session.setItem(m.connectionStorageKey,JSON.stringify({token:'foreign',url:'https://other.example',viewScope:c.viewScope}));assert.equal(m.readPeriod(m.readStoredSession(origin)),'week');
  session.setItem(m.periodStorageKey,'{');assert.equal(m.readPeriod(c),'week');

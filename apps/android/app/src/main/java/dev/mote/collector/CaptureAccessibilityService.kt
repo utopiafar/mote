@@ -248,8 +248,7 @@ class CaptureAccessibilityService : AccessibilityService() {
                     .put("privacy",org.json.JSONObject().put("excluded",false).put("redacted",true).put("mode","local").put("collection","content"))
                     .put("metadata",org.json.JSONObject().put("version",1).put("observedAt",at).put("collector",org.json.JSONObject().put("method","accessibility")).put("uiPage",page))
                 if(!valid())return@execute
-                settings.ensureDataOrigin(config)
-                queue().enqueue(event,null,config.maxQueueMiB*1024L*1024L)
+                        queue().enqueue(event,null,config.maxQueueMiB*1024L*1024L)
                 settings.captured(at);settings.status("capturing",MoteI18n.text("页面内容已保存"));UploadWorker.schedule(this,config)
                 suppressScreen=config.uiPageMode=="ui_preferred" && page.getString("status")=="ok"
             } catch (_: Exception) { settings.status("paused",MoteI18n.text("页面读取失败，等待下一次采样")) }

@@ -1,3 +1,4 @@
+import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -118,7 +119,7 @@ test('shared quote resolver uses only authorized positions and rejects cross-win
 test('the pinned extraction policy governs only memory candidates and retains its validation profile and receipt',async t=>{
  const f=await fixture(t),policy={prompt:'GENERATED_PINNED_CANDIDATE_POLICY',profile:'personal' as const,fingerprint:'d'.repeat(64)},read=input(f.page());let validations=0;
  const p=processor(f,async request=>{assert.ok(request.question.includes(policy.prompt));assert.ok(!request.question.includes('Review this batch of original agent conversation evidence using coding-memory'));assert.ok(request.question.includes('Each workRecord'));return result(f.anchor,products(f.anchor,false));},
-  {memories:{extract:(value,model,options)=>{validations++;assert.equal(options?.profile,'personal');return f.memories.extract(value,model,options);}}});
+  {memories:{extract:(value,model,options)=>{validations++;assert.equal(options?.profile,'personal');return f.memories.extract(fixtureMemoryResult(f.memories,value),model,options);}}});
  const outputs=await p.process({...read,config:{...read.config,candidatePolicy:policy}});assert.equal(outputs[0].metadata.candidatePolicyFingerprint,policy.fingerprint);assert.ok(validations);
  await assert.rejects(p.process({...read,config:{...read.config,candidatePolicy:{...policy,unexpected:'captured override'}}}));
 });

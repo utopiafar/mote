@@ -4,8 +4,9 @@ const {mkdtempSync,writeFileSync,rmSync}=require('node:fs');
 const {join}=require('node:path');const {tmpdir}=require('node:os');const assert=require('node:assert/strict');
 const {defaultConfig}=require('../dist/config');
 const profile=mkdtempSync(join(tmpdir(),'mote-page-ui-'));
-app.setPath('userData',profile);process.env.MOTE_PROFILE='legacy';delete process.env.MOTE_URL;delete process.env.MOTE_TOKEN;delete process.env.MOTE_ENV_FILE;
-writeFileSync(join(profile,'config.json'),JSON.stringify({version:1,config:{...defaultConfig(),serverUrl:'',deviceName:'Generated UI page fixture'}}));
+app.setPath('userData',profile);process.env.MOTE_PROFILE='default';delete process.env.MOTE_URL;delete process.env.MOTE_TOKEN;delete process.env.MOTE_ENV_FILE;
+writeFileSync(join(profile,'config.json'),JSON.stringify({version:3,config:{...defaultConfig(),serverUrl:'',deviceName:'Generated UI page fixture'}}));
+writeFileSync(join(profile,'storage-format.json'),JSON.stringify({version:3}),{mode:0o600});
 const timer=setTimeout(()=>{console.error('UI page smoke timeout');app.exit(1);},45000);
 app.on('browser-window-created',(_,w)=>{
  w.webContents.setBackgroundThrottling(false);

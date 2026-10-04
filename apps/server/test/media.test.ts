@@ -31,15 +31,14 @@ test('media is searchable original metadata, has a useful preview, and survives 
   store.delete(value.id);assert.equal(store.mediaActivity().totalDurationMs,0);assert.equal(store.search({query:'海边'}).length,0);
 });
 
-test('existing vault search migration rebuilds media terms atomically without changing immutable evidence',async t=>{
+test('current media search triggers survive reopening without changing immutable evidence',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-media-migration-'));let store=new Store(directory);
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
   const value=record();await store.ingest(value);const saved=store.evidence([value.id])[0];
-  store.db.prepare('UPDATE captures_fts SET text=? WHERE id=?').run('Legacy app-only index',value.id);
-  store.db.prepare('DELETE FROM settings WHERE key=?').run('search_text_version');store.close();store=new Store(directory);
+  store.close();store=new Store(directory);
   assert.deepEqual(store.evidence([value.id])[0],saved);assert.equal((await store.ingest(value)).duplicate,true);
   assert.equal(store.db.prepare('SELECT id FROM captures_fts WHERE captures_fts MATCH ?').get('"Generated narrator"')?.id,value.id);
-  assert.equal(store.db.prepare('SELECT value FROM settings WHERE key=?').get('search_text_version')?.value,'2');
+  assert.equal(store.db.prepare('SELECT value FROM settings WHERE key=?').get('search_text_version')?.value,undefined);
   store.close();store=new Store(directory);assert.equal(store.previews().totalCount,1);assert.equal(store.search({query:'海边'})[0].id,value.id);
 });
 

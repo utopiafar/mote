@@ -1,3 +1,4 @@
+import {modelView} from './fixtures/model-settings';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React,{act} from 'react';
@@ -16,14 +17,14 @@ async function fixture(t:import('node:test').TestContext){
 }
 const personal={id:'mote.personal-memory',version:'2'},coding={id:'mote.coding-memory',version:'2'};
 const summary={total:2,waiting:1,blocked:0,stale:0,completed:1};
-const job:MemoryJob={id:'generated-memory',status:'waiting_for_input',createdAt:'2026-09-27T00:00:00Z',updatedAt:'2026-09-27T00:00:00Z',evidenceIds:[],totalBatches:1,completedBatches:1,failedBatches:0,skippedChunks:0,memoryIds:['generated-complete'],skillVersion:'fixture',inputPlans:summary,recipeProgress:[{recipe:personal,inputs:{...summary,total:1,waiting:0},completedBatches:1,failedBatches:0,reasons:[]},{recipe:coding,inputs:{...summary,total:1,completed:0},completedBatches:0,failedBatches:0,reasons:[{code:'memory_input_pending',required:['extracted-text'],materialRef:'material:generated'}]}]};
+const job:MemoryJob={id:'generated-memory',status:'waiting_for_input',createdAt:'2026-09-27T00:00:00Z',updatedAt:'2026-09-27T00:00:00Z',evidenceIds:[],totalBatches:1,completedBatches:1,failedBatches:0,skippedChunks:0,memoryIds:['generated-complete'],skillVersion:'fixture',inputPlans:summary,recipeProgress:[{recipe:personal,inputs:{...summary,total:1,waiting:0},completedBatches:1,failedBatches:0,reasons:[]},{recipe:coding,inputs:{...summary,total:1,completed:0},completedBatches:0,failedBatches:0,reasons:[{code:'memory_input_pending',required:['extracted-text'],materialRef:'material:generated'}]}],memoryCount:['generated-complete'].length};
 
 test('manual recipe choices travel only with this extraction request and survive an unsuccessful submission',async t=>{
   const {root,d}=await fixture(t),writes:{path:string;body:Record<string,unknown>}[]=[];
   const api={request:async(path:string,init?:RequestInit)=>{
     if(init?.method==='POST'){writes.push({path,body:JSON.parse(String(init.body))});throw Error('Generated request failure');}
     if(path==='/api/memory-recipes')return {items:[{...personal,available:true},{...coding,available:true}]};
-    if(path==='/api/model-settings')return {settings:{agentTimeoutMs:120000},profiles:[]};
+    if(path==='/api/model-settings')return modelView();
     if(path.startsWith('/api/memories?'))return {items:[],nextCursor:null};
     if(path==='/api/memory-jobs')return {items:[]};
     if(path==='/api/execution-settings')return {queues:{agents:{active:0,waiting:0,limit:1},llm:{active:0,waiting:0,limit:1}}};

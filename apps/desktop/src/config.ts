@@ -1,3 +1,4 @@
+import {DESKTOP_STORAGE_VERSION,RESET_REQUIRED} from './storage-format';
 import { connectionToken, sourceConnectionBinding, validSourceBinding } from './login-session';
 import {uiRulesSchema,uiModeSchema} from '@mote/shared';
 import { uploadGateConfig } from './upload-gate';
@@ -17,8 +18,8 @@ export function defaultConfig(): Config {
     uploadGate: uploadGateConfig(undefined),
     serverUrl: 'http://127.0.0.1:47832', deviceId: randomUUID(), deviceName: hostname(),
     syncMode: 'batch', syncIntervalMinutes: 1, syncBatchSize: 100, packedUpload:true,
-    intervalMs: 15000, maxQueueBytes: 512 * 1024 * 1024, maxQueueEvents: 10000, captureStorageDirectory: '', localContentEncryption: false, notificationCollectionEnabled: false,
-    excludedAppIds: [], defaultCollection: 'content', appCollectionRules: {}, masks: [], idlePauseSeconds: 300, ocrEnabled: false, ocrOnlyWhileCharging: false,
+    intervalMs: 15000, maxQueueBytes: 512 * 1024 * 1024, maxQueueEvents: 10000, captureStorageDirectory: '', notificationCollectionEnabled: false,
+    defaultCollection: 'content', appCollectionRules: {}, masks: [], idlePauseSeconds: 300,
     privacyModelUrl: '', openAtLogin: false,
     metadataEnabled: true, diagnosticsEnabled: false, diagnosticIntervalSeconds: 60, imageDedupeMode: 'off', jpegQuality: 75, captureMaxSide: 1600, pauseOnBattery: false, batteryPauseBelowPct: 0,
     nsfwEnabled: false, reviewPolicy: DEFAULT_REVIEW_POLICY, reviewMaxTokens: 256, reviewMaxSide: 512, nsfwThreads: 2, nsfwTimeoutMs: 60000, nsfwSource: 'auto', nsfwCustomUrl: '',
@@ -65,42 +66,41 @@ export function validateLocalModelUrl(value: unknown): string {
 }
 
 export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents = 0, confirmedUnboundBacklog = false): Config {
+  if(['excludedAppIds','localContentEncryption','ocrEnabled','ocrOnlyWhileCharging'].some(key=>input&&Object.hasOwn(input,key)))throw Error(RESET_REQUIRED);
+  if ((current.credentialScope!==undefined&&current.credentialScope!=='owner')||(input?.credentialScope!==undefined&&input.credentialScope!=='owner'))throw Error(RESET_REQUIRED);
   if (!input || typeof input !== 'object') throw new Error(moteText("配置格式不正确"));
   if (typeof input.deviceName !== 'string' || !input.deviceName.trim() || input.deviceName.length > 128) throw new Error(moteText("设备名需为 1–128 字符"));
-  if (!Array.isArray(input.excludedAppIds) || input.excludedAppIds.length > 500 || input.excludedAppIds.some(id => typeof id !== 'string' || id.length > 256 || !id.trim())) throw new Error(moteText("排除列表必须填写有效应用 ID"));
   if (input.metadataEnabled !== undefined && typeof input.metadataEnabled !== 'boolean') throw new Error(moteText("设备元数据开关值无效"));
   if (input.notificationCollectionEnabled !== undefined && typeof input.notificationCollectionEnabled !== 'boolean') throw new Error('Invalid notification setting');
-  if (input.localContentEncryption !== undefined && typeof input.localContentEncryption !== 'boolean') throw new Error(moteText("本地内容加密开关值无效"));
-  if (input.ocrOnlyWhileCharging !== undefined && typeof input.ocrOnlyWhileCharging !== 'boolean') throw new Error(moteText("OCR 电源策略开关值无效"));
-  const imageDedupeMode = input.imageDedupeMode ?? current.imageDedupeMode ?? 'off';
+  const imageDedupeMode = input.imageDedupeMode ?? current.imageDedupeMode;
   if (!['off', 'exact', 'conservative', 'balanced', 'aggressive'].includes(imageDedupeMode)) throw new Error('Invalid image deduplication mode');
-  const captureStorageDirectory = input.captureStorageDirectory ?? current.captureStorageDirectory ?? '';
+  const captureStorageDirectory = input.captureStorageDirectory ?? current.captureStorageDirectory;
   if (typeof captureStorageDirectory !== 'string' || captureStorageDirectory.length > 2048 || /[\x00-\x1f]/.test(captureStorageDirectory) || (captureStorageDirectory && (!isAbsolute(captureStorageDirectory) || resolve(captureStorageDirectory) !== captureStorageDirectory))) throw new Error(moteText("请通过文件夹选择器选择截图保存位置"));
-  if (typeof input.ocrEnabled !== 'boolean' || typeof input.openAtLogin !== 'boolean') throw new Error(moteText("开关值不正确"));
+  if (typeof input.openAtLogin !== 'boolean') throw new Error(moteText("开关值不正确"));
   if (typeof input.diagnosticsEnabled !== 'boolean' || typeof input.pauseOnBattery !== 'boolean') throw new Error(moteText("诊断或电量策略开关值无效"));
   if (input.token !== undefined && (typeof input.token !== 'string' || input.token.length > 4096 || /[\r\n]/.test(input.token))) throw new Error(moteText("令牌格式不正确"));
-  const syncMode = input.syncMode ?? current.syncMode ?? 'realtime';
+  const syncMode = input.syncMode ?? current.syncMode;
   if (!['realtime', 'interval', 'batch', 'manual'].includes(syncMode)) throw new Error(moteText("同步方式无效"));
   const serverUrl = input.serverUrl === '' ? '' : validateServerUrl(input.serverUrl);
   const config: Config = {
     authSourceBinding: serverUrl === current.serverUrl && current.authSourceBinding ? validSourceBinding(current.authSourceBinding) : undefined,
     authSignedOut: current.authSignedOut, authExpiresAt: current.authExpiresAt, authSessionOnly: current.authSessionOnly,
-    uiPageMode:uiModeSchema.parse(input.uiPageMode??current.uiPageMode??'screen_only'),
-    uiPageRules:uiRulesSchema.parse(input.uiPageRules??current.uiPageRules??[]),
+    uiPageMode:uiModeSchema.parse(input.uiPageMode??current.uiPageMode),
+    uiPageRules:uiRulesSchema.parse(input.uiPageRules??current.uiPageRules),
     uploadGate: uploadGateConfig(input.uploadGate ?? current.uploadGate),
     serverUrl,
-    syncMode, syncIntervalMinutes: integer(input.syncIntervalMinutes ?? current.syncIntervalMinutes ?? 1, 1, 1440, moteText("同步间隔（分钟）")), syncBatchSize: integer(input.syncBatchSize ?? current.syncBatchSize ?? 20, 1, 500, moteText("批量同步条数")), deviceId: current.deviceId, deviceName: input.deviceName.trim(),
+    syncMode, syncIntervalMinutes: integer(input.syncIntervalMinutes ?? current.syncIntervalMinutes, 1, 1440, moteText("同步间隔（分钟）")), syncBatchSize: integer(input.syncBatchSize ?? current.syncBatchSize, 1, 500, moteText("批量同步条数")), deviceId: current.deviceId, deviceName: input.deviceName.trim(),
     intervalMs: integer(input.intervalMs, 5000, 300000, moteText("采样间隔（毫秒）")),
     maxQueueBytes: integer(input.maxQueueBytes, 1024 * 1024, 20 * 1024 * 1024 * 1024, moteText("本地队列容量")),
     maxQueueEvents: integer(input.maxQueueEvents, 1, 1000000, moteText("本地队列事件数")),
-    captureStorageDirectory, imageDedupeMode, packedUpload: input.packedUpload === undefined ? (current.packedUpload ?? true) : input.packedUpload === true,
-    localContentEncryption: false, notificationCollectionEnabled: input.notificationCollectionEnabled ?? current.notificationCollectionEnabled ?? false,
+    captureStorageDirectory, imageDedupeMode, packedUpload: input.packedUpload === undefined ? (current.packedUpload) : input.packedUpload === true,
+    notificationCollectionEnabled: input.notificationCollectionEnabled ?? current.notificationCollectionEnabled,
     idlePauseSeconds: integer(input.idlePauseSeconds, 0, 86400, moteText("空闲暂停秒数")),
-    defaultCollection: normalizeCollectionMode(input.defaultCollection ?? current.defaultCollection ?? 'content'),
-    appCollectionRules: normalizeAppCollectionRules(input.appCollectionRules ?? current.appCollectionRules ?? {}),
-    excludedAppIds: [...new Set(input.excludedAppIds.map(id => id.trim()))], masks: validateRectangles(input.masks),
-    ocrEnabled: false, ocrOnlyWhileCharging: input.ocrOnlyWhileCharging ?? current.ocrOnlyWhileCharging ?? false, privacyModelUrl: validateLocalModelUrl(input.privacyModelUrl), openAtLogin: input.openAtLogin,
-    metadataEnabled: input.metadataEnabled ?? current.metadataEnabled ?? true, diagnosticsEnabled: input.diagnosticsEnabled, diagnosticIntervalSeconds: integer(input.diagnosticIntervalSeconds, 15, 3600, moteText("诊断采样秒数")),
+    defaultCollection: normalizeCollectionMode(input.defaultCollection ?? current.defaultCollection),
+    appCollectionRules: normalizeAppCollectionRules(input.appCollectionRules ?? current.appCollectionRules),
+    masks: validateRectangles(input.masks),
+    privacyModelUrl: validateLocalModelUrl(input.privacyModelUrl), openAtLogin: input.openAtLogin,
+    metadataEnabled: input.metadataEnabled ?? current.metadataEnabled, diagnosticsEnabled: input.diagnosticsEnabled, diagnosticIntervalSeconds: integer(input.diagnosticIntervalSeconds, 15, 3600, moteText("诊断采样秒数")),
     jpegQuality: integer(input.jpegQuality, 40, 95, moteText("JPEG 质量")), captureMaxSide: integer(input.captureMaxSide, 640, 2560, moteText("截图最大边长")),
     pauseOnBattery: input.pauseOnBattery, batteryPauseBelowPct: integer(input.batteryPauseBelowPct, 0, 95, moteText("低电量暂停百分比")),
     // Paused visual-review settings belong to its optional model controls.
@@ -110,7 +110,7 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
     nsfwSource: current.nsfwSource, nsfwCustomUrl: current.nsfwCustomUrl,
     token: input.token === undefined ? current.token : input.token.trim() || undefined,
   };
-  if (config.serverUrl === current.serverUrl && config.token === current.token && ['owner', 'collector'].includes(current.credentialScope || '')) config.credentialScope = current.credentialScope;
+  if (config.serverUrl === current.serverUrl && config.token === current.token && current.credentialScope === 'owner') config.credentialScope = current.credentialScope;
   if ((config.serverUrl !== current.serverUrl || config.token !== current.token) && queuedEvents > 0 && !confirmedUnboundBacklog) throw new Error(moteText("还有待上传记录，不能切换节点或令牌；请先完成上传或备份处理旧队列"));
   if (config.serverUrl !== current.serverUrl) {
     if (queuedEvents > 0 && !confirmedUnboundBacklog) throw new Error(moteText("还有待上传记录，不能切换中央节点；请先完成上传，或导出并移走旧队列后重启"));
@@ -136,10 +136,13 @@ export class ConfigStore {
   constructor(private readonly directory: string, private readonly secrets: SecretStorage, private readonly defaults: () => Config = defaultConfig, private readonly bootstrap: () => Config = defaults) {}
   async load(): Promise<Config> {
     try {
-      const stored = JSON.parse(await readFile(join(this.directory, 'config.json'), 'utf8')) as { config: Config; encryptedToken?: string };
+      const stored = JSON.parse(await readFile(join(this.directory, 'config.json'), 'utf8')) as { version:number; config: Config; encryptedToken?: string };
+      if(stored.version!==DESKTOP_STORAGE_VERSION)throw Error(RESET_REQUIRED);
       if (!stored.config || typeof stored.config.deviceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(stored.config.deviceId)) throw new Error(moteText("设备标识无效"));
       // Never accept a plaintext token from a tampered or legacy configuration.
-      const current: Config = { ...this.defaults(), ...stored.config, token: undefined };
+      const required=Object.keys(defaultConfig());
+      if(required.some(key=>!Object.hasOwn(stored.config,key))||['excludedAppIds','localContentEncryption','ocrEnabled','ocrOnlyWhileCharging'].some(key=>Object.hasOwn(stored.config,key)))throw Error(RESET_REQUIRED);
+      const current: Config = { ...stored.config, token: undefined };
       if (stored.encryptedToken) {
         if (!this.secrets.available()) throw new Error(moteText("系统密钥存储不可用，无法解密令牌"));
         current.token = this.secrets.decrypt(Buffer.from(stored.encryptedToken, 'base64'));
@@ -147,13 +150,15 @@ export class ConfigStore {
       return updateConfig(current, { ...current, token: current.token });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return this.bootstrap();
+      if(error instanceof Error&&error.message===RESET_REQUIRED)throw error;
       throw new Error(moteText("无法读取配置：请检查系统密钥存储或备份后修复配置文件"));
     }
   }
   async save(config: Config): Promise<void> {
+    if(config.credentialScope!==undefined&&config.credentialScope!=='owner')throw Error(RESET_REQUIRED);
     const { token, ...rest } = config;
     if (token && !this.secrets.available()) throw new Error(moteText("系统加密存储不可用，拒绝保存明文令牌"));
-    const contents = JSON.stringify({ version: 1, config: {...rest,authSourceBinding:config.authSessionOnly?sourceConnectionBinding(config):config.authSourceBinding}, encryptedToken: token && !config.authSessionOnly ? this.secrets.encrypt(token).toString('base64') : undefined }, null, 2);
+    const contents = JSON.stringify({ version: DESKTOP_STORAGE_VERSION, config: {...rest,authSourceBinding:config.authSessionOnly?sourceConnectionBinding(config):config.authSourceBinding}, encryptedToken: token && !config.authSessionOnly ? this.secrets.encrypt(token).toString('base64') : undefined }, null, 2);
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     await chmod(this.directory, 0o700);
     const temporary = join(this.directory, `config.${randomUUID()}.tmp`);

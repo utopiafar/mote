@@ -1,3 +1,4 @@
+import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
@@ -36,7 +37,7 @@ async function fixture(t:import('node:test').TestContext,modules:string[]=[],see
       return {answer:JSON.stringify({memories:[]}),citations:evidence?[{id:evidence.id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}]:[],trace:[],runId:'generated-media-model'};
     }}});await node.app.ready();
   };
-  await start();node.processing.update({revision:node.processing.view().revision,settings:{...node.processing.view().settings,enabled:true,audioProcessor:'audio.http',summarize:false}});
+  await start();node.processing.update({revision:node.processing.view().revision,settings:{...node.processing.view().settings,enabled:true,audioProcessor:'audio.http',summarize:false},policy:fixtureFilePolicy({...node.processing.view().settings,enabled:true,audioProcessor:'audio.http',summarize:false},node.processing.runtime.registry)});
   const headers={authorization:'Bearer '+config.token};
   const create=async(files:{name:string;dataBase64:string}[],processing:'automatic'|'preview'='automatic')=>{
     const result=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files,processing}});assert.equal(result.statusCode,202,result.body);let job=result.json<ImportJob>();
@@ -82,7 +83,7 @@ test('one failed extraction is isolated, retries without reupload, then enters a
 test('mixed image and text import uses separate native extraction and preserves original text',async t=>{
   const f=await fixture(t),image=await sharp({create:{width:8,height:8,channels:3,background:'#abc'}}).png().toBuffer();let ocr=0;
   f.node.processing.runtime.registry.get('image.http').process=async()=>{ocr++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated image text'}]};};
-  f.node.processing.update({revision:f.node.processing.view().revision,settings:{...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'}});
+  f.node.processing.update({revision:f.node.processing.view().revision,settings:{...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'},policy:fixtureFilePolicy({...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'},f.node.processing.runtime.registry)});
   const job=await f.create([entry('note.txt','Generated original note'),entry('image.png',image)]);assert.equal(job.status,'completed',JSON.stringify(job));assert.equal(job.media?.length,1);assert.equal(job.progress.imported,2);
   await f.node.processing.tick();assert.equal(ocr,1);assert.equal(f.modelCalls.length,0);assert.equal(f.node.files.chunks(job.media![0].captureId!)[0].ocrText,'Generated image text');
   assert.equal(f.node.store.search({query:'Generated original note'}).length,1);
@@ -90,7 +91,7 @@ test('mixed image and text import uses separate native extraction and preserves 
 
 test('a deployment plugin extends format, output schema and DAG without changing import or file hosts',async t=>{
   const path=fileURLToPath(new URL('../../../examples/plugins/media-intake.mjs',import.meta.url)),f=await fixture(t,[path]);
-  f.node.processing.update({revision:f.node.processing.view().revision,settings:{...f.node.processing.view().settings,typeProfiles:{'application/vnd.mote.text':'community.text-extract'}}});
+  f.node.processing.update({revision:f.node.processing.view().revision,settings:{...f.node.processing.view().settings,typeProfiles:{'application/vnd.mote.text':'community.text-extract'}},policy:fixtureFilePolicy({...f.node.processing.view().settings,typeProfiles:{'application/vnd.mote.text':'community.text-extract'}},f.node.processing.runtime.registry)});
   const job=await f.create([entry('unknown.custom','MOTE-TEXT\nGenerated first\r\nGenerated second')]);assert.equal(job.status,'completed',JSON.stringify(job));assert.equal(job.media![0].format.id,'community.text-format');
   await f.node.processing.tick();const id=job.media![0].captureId!;assert.equal(f.node.files.chunks(id)[0].ocrText,'Generated first\nGenerated second');assert.equal(f.calls.length,0);assert.equal(f.modelCalls.length,0);
   const receipt=f.node.processing.explain(id).snapshots[0] as any;assert.equal(receipt.recipe.id,'community.text-pipeline');assert.equal(receipt.stagePins[1].id,'community.normalize-lines');

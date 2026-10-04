@@ -18,75 +18,62 @@ class RetainedOriginTest {
             assertFalse("ACK-retained original must not block changing nodes", queue.hasPendingConnectionWork())
         } finally { dir.deleteRecursively() }
     }
-    @Test fun pendingOcrConflictAndHeldWorkStillBlockConnectionChanges() {
+
+
+
+
+    @Test fun pendingConflictsAndReviewHeldWorkBlockConnectionChanges() {
         val dir = Files.createTempDirectory("mote-origin-work").toFile()
         try {
-            val queue = DurableQueue(dir, cipher)
-            val event = note().put("source", "screen").put("imageMime", "image/jpeg").put("ocr", JSONObject().put("status", "pending"))
-            val id = event.getString("id")
-            queue.enqueue(event, byteArrayOf(1, 2, 3), 3_000_000)
+            val queue = DurableQueue(dir, cipher); val event = note(); val id = event.getString("id")
+            queue.enqueue(event, null, 3_000_000)
             assertTrue(queue.hasPendingConnectionWork())
             assertThrows(IllegalStateException::class.java) { queue.pinRetainedOrigin("https://a.invalid") }
-            queue.acknowledge(id, retentionDays = 7)
-            assertTrue(queue.hasPendingConnectionWork())
-            queue.completeOcr(id, "Generated OCR", "completed", 3_000_000)
-            assertTrue(queue.hasPendingConnectionWork())
-            queue.acknowledgeOcr(id, retentionDays = 7)
-            assertFalse(queue.hasPendingConnectionWork())
-            queue.ocrConflict(id); assertTrue(queue.hasPendingConnectionWork())
+            queue.acknowledge(id, retentionDays = 7); assertFalse(queue.hasPendingConnectionWork())
+            queue.uploadConflict(id); assertTrue(queue.hasPendingConnectionWork())
             assertThrows(IllegalStateException::class.java) { queue.pinRetainedOrigin("https://a.invalid") }
         } finally { dir.deleteRecursively() }
-        val heldDir = Files.createTempDirectory("mote-origin-held").toFile()
+        val held = Files.createTempDirectory("mote-origin-held").toFile()
         try {
-            val queue = DurableQueue(heldDir, cipher)
+            val queue = DurableQueue(held, cipher)
             queue.enqueue(note(), null, 3_000_000, reviewHeld = true)
-            assertEquals(0, queue.pendingSync().count)
-            assertTrue(queue.hasPendingConnectionWork())
-        } finally { heldDir.deleteRecursively() }
+            assertEquals(0, queue.pendingSync().count); assertTrue(queue.hasPendingConnectionWork())
+        } finally { held.deleteRecursively() }
     }
-    @Test fun retainedRecordsOnlyReplayAtTheirOriginalNodeAcrossRestartsAndReturn() {
+    @Test fun retainedRecordsReplayOnlyAtTheirOriginalNodeAcrossRestarts() {
         val dir = Files.createTempDirectory("mote-origin-replay").toFile()
         try {
             val a = "https://a.invalid"; val b = "https://b.invalid"
             val queue = DurableQueue(dir, cipher).apply { archiveOrigin = a }; val event = note(); val id = event.getString("id")
-            queue.enqueue(event, null, 3_000_000); queue.acknowledge(id, retentionDays = 7)
-            queue.pinRetainedOrigin(a)
+            queue.enqueue(event, null, 3_000_000); queue.acknowledge(id, retentionDays = 7); queue.pinRetainedOrigin(a)
             val pinned = queue.archiveRecord(id)!!.first.toString()
-            queue.enqueue(event, null, 3_000_000)
-            assertEquals(pinned, queue.archiveRecord(id)!!.first.toString())
+            queue.enqueue(event, null, 3_000_000); assertEquals(pinned, queue.archiveRecord(id)!!.first.toString())
             val next = DurableQueue(dir, cipher).apply { archiveOrigin = b }
-            assertFalse(next.hasPendingConnectionWork()); assertEquals(0, next.requeueRetained()); assertTrue(next.syncIds().isEmpty())
-            assertNull(next.peek()); assertNull(next.pendingOcr()); assertNull(next.nextOcrUpdate())
-            val fresh = note(); next.enqueue(fresh, null, 3_000_000); next.acknowledge(fresh.getString("id"), retentionDays = 7)
-            next.pinRetainedOrigin(b)
+            assertFalse(next.hasPendingConnectionWork()); assertEquals(0, next.requeueRetained()); assertTrue(next.syncIds().isEmpty()); assertNull(next.peek())
+            val fresh = note(); next.enqueue(fresh, null, 3_000_000); next.acknowledge(fresh.getString("id"), retentionDays = 7); next.pinRetainedOrigin(b)
             assertEquals(pinned, next.archiveRecord(id)!!.first.toString())
             val returned = DurableQueue(dir, cipher).apply { archiveOrigin = a }
             assertEquals(listOf(id), returned.syncIds()); assertEquals(1, returned.requeueRetained())
-            assertEquals(id, returned.peek()!!.getString("id")); assertFalse(returned.peek()!!.has("_archiveOrigin"))
-            assertTrue(returned.hasPendingConnectionWork())
+            assertEquals(id, returned.peek()!!.getString("id")); assertFalse(returned.peek()!!.has("_archiveOrigin")); assertTrue(returned.hasPendingConnectionWork())
             returned.acknowledge(id, retentionDays = 7); assertFalse(returned.hasPendingConnectionWork())
         } finally { dir.deleteRecursively() }
     }
-    @Test fun publicUploadBoundaryRejectsForeignPendingRecordsAndLateOcr() {
+    @Test fun publicUploadBoundaryRejectsForeignPendingRecords() {
         val dir = Files.createTempDirectory("mote-origin-boundary").toFile()
         try {
             val a = "https://a.invalid"; val b = "https://b.invalid"
-            val queue = DurableQueue(dir, cipher).apply { archiveOrigin = a }
-            val event = note().put("source", "screen").put("imageMime", "image/jpeg").put("ocr", JSONObject().put("status", "pending")); val id = event.getString("id")
-            queue.enqueue(event, byteArrayOf(1, 2, 3), 3_000_000); queue.acknowledge(id)
-            queue.completeOcr(id, "Generated OCR", "completed", 3_000_000); queue.acknowledgeOcr(id, retentionDays = 7); queue.pinRetainedOrigin(a)
+            val queue = DurableQueue(dir, cipher).apply { archiveOrigin = a }; val event = note(); val id = event.getString("id")
+            queue.enqueue(event, null, 3_000_000); queue.acknowledge(id, retentionDays = 7); queue.pinRetainedOrigin(a)
             val next = DurableQueue(dir, cipher).apply { archiveOrigin = b }
-            assertThrows(IllegalStateException::class.java) { next.completeOcr(id, "Late result", "completed", 3_000_000) }
-            // Generated counterexample: even an already-pending foreign record must never escape.
-            val file = java.io.File(dir, "$id.event"); val changed = JSONObject(file.readText()).put("_uploaded", false).put("_ocrUploaded", false)
+            val file = java.io.File(dir, "$id.event"); val changed = JSONObject(file.readText()).put("_uploaded", false)
             file.writeText(changed.toString()); file.setLastModified(System.currentTimeMillis() + 2000)
-            assertNull(next.peek()); assertNull(next.nextOcrUpdate()); assertEquals(0, next.requeueRetained())
-            next.uploadConflict(id); assertFalse(next.retryConflict(id, 3_000_000))
-            assertTrue(next.hasPendingConnectionWork())
+            assertNull(next.peek()); assertEquals(0, next.requeueRetained()); next.uploadConflict(id)
+            assertFalse(next.retryConflict(id, 3_000_000)); assertTrue(next.hasPendingConnectionWork())
             changed.put("_uploaded", true).remove("_uploadConflict"); file.writeText(changed.toString()); file.setLastModified(System.currentTimeMillis() + 4000)
-            assertNull(next.nextOcrUpdate()); assertTrue(next.syncIds().isEmpty())
+            assertTrue(next.syncIds().isEmpty())
         } finally { dir.deleteRecursively() }
     }
+
     @Test fun mixedOriginBackupCannotStripBindingAndReplayOldRecords() {
         val dir = Files.createTempDirectory("mote-origin-backup").toFile()
         try {

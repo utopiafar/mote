@@ -1,3 +1,4 @@
+import {formatEvidenceRef} from '@mote/shared';
 import {ArchivedAudio} from './ArchivedAudio';
 import React,{useEffect,useRef,useState} from 'react';
 import {ArrowLeft,RefreshCw} from 'lucide-react';
@@ -39,7 +40,7 @@ export function RecordingConnection({api,provider,onOpen}:{api:Api;provider:stri
  <div className="lark-buttons"><button className="button" onClick={()=>void run('PUT','/selection',selection)}>{moteText('保存并开始同步')}</button><button className="button subtle" disabled={!selection.enabled||dirty.current} onClick={()=>void run('POST','/sync')}><RefreshCw size={15}/>{moteText('立即同步')}</button><button className="button subtle" disabled={!status.counts.failed} onClick={()=>void run('POST','/retry')}>{moteText('重试失败步骤')}</button><button className="button subtle" onClick={()=>void run('DELETE')}>{moteText('断开连接')}</button></div></fieldset></>}
  {status&&<><p role="status">{moteText('已归档转写 {0} 条，音频 {1} 条；等待 {2} 步，需处理 {3} 步。',status.counts.transcripts,status.counts.audio,status.counts.pending,status.counts.failed)}</p>
  <details><summary>{moteText('同步步骤与状态')}</summary>{status.steps.map(step=><p key={step.id}>{phases[step.phase]??step.phase} · {states[step.state]??step.state} · {moteText('尝试 {0} 次',step.attempts)}{step.error&&<> · {problem(step.error)}</>}</p>)}</details></>}
- {Boolean(archive.data?.items.length)&&<details><summary>{moteText('最近归档的录音')}</summary>{archive.data!.items.map(item=><div className="source-item" key={item.captureId}><button className="text-button" onClick={()=>onOpen(item.captureId)}>{item.title||moteText('原始录音')}</button>{item.audio&&<ArchivedAudio api={api} id={item.audio.id} name={item.audio.name} mimeType={item.audio.mimeType}/>}</div>)}</details>}
+ {Boolean(archive.data?.items.length)&&<details><summary>{moteText('最近归档的录音')}</summary>{archive.data!.items.map(item=><div className="source-item" key={item.captureId}><button className="text-button" onClick={()=>onOpen(formatEvidenceRef('capture',item.captureId))}>{item.title||moteText('原始录音')}</button>{item.audio&&<ArchivedAudio api={api} id={item.audio.id} name={item.audio.name} mimeType={item.audio.mimeType}/>}</div>)}</details>}
  </section>;
 }
 export function RecordingsSettings({api,onBack,onSources,onOpen}:{api:Api;onBack:()=>void;onSources:()=>void;onOpen:(ref:string)=>void}){

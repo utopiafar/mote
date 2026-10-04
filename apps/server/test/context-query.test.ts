@@ -1,3 +1,5 @@
+import {memorySchema} from '../src/memory-schema.js';
+import {memoryEvidenceFingerprint} from '../src/memory.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -17,6 +19,22 @@ async function fixture(t:any){
 }
 async function coding(store:Store,minutes:number,projectKey:string,sessionId:string,text:string,provider:'codex'|'claude'='codex'){
   const id=randomUUID();await store.ingest({id,deviceId:sessionId==='s-a'?'device-a':'device-b',deviceName:'Generated device',platform:'import',capturedAt:captured(minutes),durationMs:0,appId:'generated.agent',appName:'Generated Agent',windowTitle:'Generated coding turn',ocrText:text,source:'message',provenance:{sourceId:'coding',externalId:id,revision:'1',layer:'snapshot',document:{contentRole:'transcript',coding:{version:1,provider,sessionId,projectKey,eventId:id,role:'user',part:0,parts:1}}},privacy:{excluded:false,redacted:false,mode:'none'}});return id;
+}
+
+
+/** Complete generated storage fixture; the reader still enforces its original-evidence policy. */
+function seedMemory(store:Store,id:string,evidenceIds:string[],createdAt:string,details:{title:string;statement:string;uncertainty:string}){
+ const records=store.evidence(evidenceIds);assert.equal(records.length,evidenceIds.length);
+ const value=memorySchema.parse({version:1,id,domain:'personal',tier:'episode',kind:'episodic',...details,
+  status:'published',createdAt,evidenceIds,model:'generated-fixture',runId:randomUUID(),skillVersion:'generated-fixture@1',
+  admission:{layer:'memory',reason:'Generated model selected evidence for this fixture',scope:'Generated fixture only',attribution:'observed'},
+  fingerprint:memoryEvidenceFingerprint(records[0]),
+  evidence:records.map(record=>({id:record.id,deviceId:record.deviceId,sourceId:record.provenance?.sourceId,externalId:record.provenance?.externalId,revision:record.provenance?.revision,
+   capturedAt:record.capturedAt,receivedAt:record.receivedAt,offset:0,length:record.ocrText.length,quote:record.ocrText,contentHash:memoryEvidenceFingerprint(record)})),
+  scopeRefs:records.flatMap(record=>{const c=record.provenance?.document?.coding;return c?[{sourceId:record.provenance?.sourceId,deviceId:record.deviceId,provider:c.provider,projectKey:c.projectKey,sessionId:c.sessionId}]:[]})});
+ store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(id,createdAt,JSON.stringify(value));
+ for(const evidenceId of evidenceIds)store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(id,evidenceId);
+ return value;
 }
 
 test('unified context query keeps candidate projects explainable and reads exact hit ranges',async t=>{
@@ -66,8 +84,7 @@ test('137 same-time records paginate without omissions under item and response b
 
 test('memory references expand and strict device/time/coding scope applies before pagination',async t=>{
   const {store,query}=await fixture(t);const evidence=await coding(store,1,'github:fixture/mote','same','Evidence');
-  const id=randomUUID();store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(id,captured(2),JSON.stringify({id,title:'Generated memory',statement:'Supported fixture',uncertainty:'fixture',status:'published',createdAt:captured(2),evidenceIds:[evidence],evidence:[{id:evidence,deviceId:'device-b',capturedAt:captured(1)}],admission:{layer:'memory'},scopeRefs:[{provider:'codex',projectKey:'github:fixture/mote',sessionId:'same'}]}));
-  store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(id,evidence);
+  const id=randomUUID();seedMemory(store,id,[evidence],captured(2),{title:'Generated memory',statement:'Supported fixture',uncertainty:'fixture'});
   assert.equal(query.read(['memory:'+id]).items[0].id,id);
   assert.equal(query.read(['memory:'+id],0,4000,{deviceId:'device-a'}).items.length,0);
   assert.equal(query.read(['memory:'+id],0,4000,{sourceId:'other'}).items.length,0);
@@ -113,7 +130,7 @@ test('navigation references survive reader reconstruction and intersect the orig
  }
  for(const [sourceId,items] of batches)await sources.upsertBatch(sourceId,items);
  const scope={sourceId:'nav-0',after:'2024-06-01T00:00:00.000Z',before:'2024-12-01T00:00:00.000Z'};
- const cards=[...query.browse(scope).items,...query.context({...scope,includeMemories:false}).recentSessions];
+ const cards=[...query.browse(scope).items,...query.context({...scope,includeMemories:false,maxCharacters:24000,limit:10}).recentSessions];
  assert.ok(cards.some(c=>c.kind==='session'));assert.ok(cards.some(c=>c.kind==='project-candidate'));
  const restored=new ContextQuery(store,sources);
  for(const card of cards){
@@ -147,8 +164,7 @@ test('post-filtered memory pages advance without a false response-budget error',
  const {store,query}=await fixture(t),evidence=await coding(store,1,'fixture','same','Scope fixture');
  for(let i=0;i<25;i++){
   const id=randomUUID(),createdAt=captured(i+2);
-  store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(id,createdAt,JSON.stringify({id,title:'Generated scoped memory',statement:'Fixture',uncertainty:'fixture',status:'published',createdAt,evidenceIds:[evidence],admission:{layer:'memory'}}));
-  store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(id,evidence);
+  seedMemory(store,id,[evidence],createdAt,{title:'Generated scoped memory',statement:'Fixture',uncertainty:'fixture'});
  }
  let cursor:string|undefined,finished=false;
  for(let page=0;page<4;page++){

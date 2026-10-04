@@ -6,7 +6,7 @@ import { version } from '../package.json';
 export function Feedback({profile, runtime}: {profile?: string; runtime?: string}) {
   // Only generic deployment labels may leave the private node in the issue URL.
   const environment = [
-    ['dev', 'test', 'prod', 'legacy'].includes(profile ?? '') ? profile : undefined,
+    ['dev', 'test', 'prod', 'default'].includes(profile ?? '') ? profile : undefined,
     ['native', 'docker'].includes(runtime ?? '') ? runtime : undefined,
   ].filter(Boolean).join(' · ');
   const href = githubFeedbackUrl({version, platform: 'Web', environment: environment || undefined});

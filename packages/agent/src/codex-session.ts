@@ -41,7 +41,7 @@ export class CodexSession {
   private usage?:TokenUsage;
   private turnError?:unknown;
   private usageInterrupted=false;
-  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'serviceTier'|'agentTimeoutMs'|'timeoutMs'|'codex'|'runModel'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void,private onUsage?:(usage:TokenUsage)=>void){ }
+  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'serviceTier'|'agentTimeoutMs'|'codex'|'runModel'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void,private onUsage?:(usage:TokenUsage)=>void){ }
 
   async start(instructions:string,tools:CodexTool[],workspace?:string):Promise<void>{
     if(this.initializing)throw new AgentProviderError();
@@ -83,7 +83,7 @@ export class CodexSession {
       this.child.stderr.on('data',(chunk:Buffer)=>{this.bytes+=chunk.length;if(this.bytes>MAX_RPC_STREAM_BYTES)this.transportLimit('stream_limit',MAX_RPC_STREAM_BYTES);});
       this.child.stdout.setEncoding('utf8');
       this.child.stdout.on('data',(chunk:string)=>this.receive(chunk));
-      const agentTimeoutMs = this.options.agentTimeoutMs !== undefined ? this.options.agentTimeoutMs : this.options.timeoutMs ?? 120000;
+      const agentTimeoutMs = this.options.agentTimeoutMs === undefined ? 120000 : this.options.agentTimeoutMs;
       if(agentTimeoutMs!==null)this.timer=setTimeout(()=>this.fail(new AgentTimeoutError()),agentTimeoutMs);
       await this.request('initialize',{clientInfo:{name:'mote',title:'Mote',version:'0.1.0'},capabilities:{experimentalApi:true}});
       this.send({method:'initialized',params:{}});

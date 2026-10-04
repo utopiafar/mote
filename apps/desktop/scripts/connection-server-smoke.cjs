@@ -25,7 +25,7 @@ const freePort = () => new Promise(resolve => { const server = createServer(); s
     central.stderr.on('data',chunk=>process.stderr.write(chunk));
     for (let i = 0; i < 100; i++) { if (central.exitCode !== null) throw Error('Generated central failed to start'); try { if ((await fetch(origin + '/api/health')).ok) break; } catch {} await new Promise(resolve => setTimeout(resolve, 50)); }
     const request = (path, body, method = body ? 'POST' : 'GET', token = owner) => fetch(origin + path, { method, headers: { Authorization: 'Bearer ' + token, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
-    const original = { ...defaultConfig(), deviceName: 'Synthetic desktop pairing', masks: [{ x: 0, y: 0, width: 0.1, height: 0.2 }], excludedAppIds: ['dev.synthetic.private'] };
+    const original = { ...defaultConfig(), deviceName: 'Synthetic desktop pairing', masks: [{ x: 0, y: 0, width: 0.1, height: 0.2 }], appCollectionRules: {'dev.synthetic.private': 'off'} };
     const issued = await request('/api/connections/invitations', { serverUrl: origin, label: 'Synthetic desktop' }); assert.equal(issued.status, 200); const invitation = (await issued.json()).invitation;
     const flow = new ConnectionOnboarding(), preview = flow.preview(JSON.stringify(invitation));
     const redeemed = await flow.redeem(preview.id, preview.serverUrl, original, 'macos'); assert.notEqual(redeemed.token, owner);
@@ -68,9 +68,8 @@ const freePort = () => new Promise(resolve => { const server = createServer(); s
     const history = await request('/api/sources/' + sourceId + '/items'); assert.equal(history.status, 200);
     const historyBody = JSON.stringify(await history.json());
     const oldSourceState = JSON.parse(oldSourceBytes.toString());
-    // SourceSync v2 keeps latency-sensitive and backfill queues separately;
-    // the fixture only needs to assert that the durable revision survived.
-    const pendingSourceItems = [...(oldSourceState.pendingRealtime ?? []), ...(oldSourceState.pendingHistory ?? []), ...(oldSourceState.pending ?? [])];
+    // Current format3 retains the exact unacknowledged revision across owner reauthorization.
+    const pendingSourceItems = [...oldSourceState.pendingRealtime,...oldSourceState.pendingHistory];
     assert(pendingSourceItems[0]?.revision);
     assert(historyBody.includes(pendingSourceItems[0].revision));
     assert.equal((await store.load()).deviceId, original.deviceId); assert.deepEqual((await store.load()).masks, original.masks);

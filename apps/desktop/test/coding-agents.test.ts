@@ -106,3 +106,11 @@ it('explicit Git metadata discovers repository candidates across devices without
  const third=await scanCodingAgent(root,'codex',DEFAULT_SOURCE_OPTIONS,second.checkpoint);
  expect(third.items[0].document!.coding!.repositoryKey).toBeUndefined();
 });
+
+it('rejects old or incomplete coding checkpoints while leaving the original log unchanged',async()=>{
+ const path=join(root,'generated.jsonl'),body=line(codex('Generated evidence'));await writeFile(path,body);
+ const current=(await scanCodingAgent(root,'codex',DEFAULT_SOURCE_OPTIONS)).checkpoint!;
+ const shapes=[{version:1,files:{},initialized:true},{...current,catalog:undefined},{...current,scanNumber:undefined},{...current,files:Object.fromEntries(Object.entries(current.files).map(([name,cursor])=>[name,{...cursor,quickHash:undefined}]))}];
+ for(const old of shapes)await expect(scanCodingAgent(root,'codex',DEFAULT_SOURCE_OPTIONS,old as any)).rejects.toThrow('Unsupported Coding');
+ expect(await (await import('node:fs/promises')).readFile(path,'utf8')).toBe(body);
+});

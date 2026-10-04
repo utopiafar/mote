@@ -142,3 +142,12 @@ it('single-file new-only establishes a durable baseline and collects later chang
   const next = await scanSourceFiles(path, options, undefined, undefined, undefined, first.checkpoint as any);
   expect(next.items.map(item => item.text)).toEqual(['changed']);
 });
+
+it('skips unchanged audio after creating its current independent processing job',async()=>{
+ const path=join(root,'generated.wav'),marker=join(root,'.generated-access.json');await writeFile(path,Buffer.from('Generated audio fixture'));
+ const options={...DEFAULT_SOURCE_OPTIONS,extensions:['.wav']};
+ const first=await scanSourceFiles(path,options,undefined,marker);expect(first.items).toHaveLength(1);expect(first.items[0].localProcessing?.spool).toBeDefined();
+ const spool=first.items[0].localProcessing!.spool!;
+ const second=await scanSourceFiles(path,options,undefined,marker,undefined,first.checkpoint as any);expect(second.items).toEqual([]);
+ expect(await readFile(join(spool.directory,'0'))).toEqual(Buffer.from('Generated audio fixture'));
+});

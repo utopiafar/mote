@@ -31,16 +31,14 @@ export function ocrPresentation(state: CapturePreview['ocr'], text: string, dupl
     if(central.state==='blocked')return {label:moteText("OCR 暂不可用"),description:central.error==='model_missing'||central.error==='not_installed'?moteText("中央文字识别模型尚未安装，截图已保留。"):moteText("中央文字识别被阻止，请检查中央感知配置与处理状态。截图已保留。"),tone:'amber'};
   }
   switch (state.status) {
-    case 'pending': return state.reason === 'charging'
-      ? {label: moteText("OCR 待充电"), description: moteText("截图已保存，采集端接入电源后会自动补做文字识别，再同步识别结果。"), tone: 'amber'}
-      : {label: moteText("OCR 待处理"), description: moteText("截图已保存，文字识别任务正在排队或处理。"), tone: 'amber'};
+    case 'pending': return {label: moteText("OCR 待处理"), description: moteText("截图已保存，文字识别任务正在排队或处理。"), tone: 'amber'};
     case 'completed': return text.trim()
       ? {label: moteText("OCR 已完成"), description: moteText("文字识别已完成，下方显示这条记录保留的全文。"), tone: 'green'}
       : {label: moteText("OCR 未识别到文字"), description: moteText("文字识别已完成，但没有识别到文字。截图仍可查看。"), tone: 'muted'};
     case 'failed': return {label: moteText("OCR 失败"), description: moteText("文字识别失败，截图已保留。"), tone: 'amber'};
     case 'disabled': return {label: moteText("OCR 已关闭"), description: moteText("采集这条记录时未启用文字识别，截图仍可查看。"), tone: 'muted'};
     case 'not_applicable': return {label: moteText("无需 OCR"), description: moteText("此类记录不使用屏幕文字识别。"), tone: 'muted'};
-    default: return {label: moteText("OCR 状态未知"), description: moteText("这条早期记录未上报文字识别状态，无法判断是否已处理。"), tone: 'muted'};
+    default: return {label: moteText("OCR 状态未知"), description: moteText("未提供文字识别状态，无法判断是否已处理。"), tone: 'muted'};
   }
 }
 

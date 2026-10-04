@@ -1,3 +1,4 @@
+import {fixtureMemoryResult,fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -56,14 +57,14 @@ test('restart preserves failed window, snapshot settings and backoff; success al
 test('consolidation model timeout remains visible across restart without changing its window or retry delay',async t=>{
  for(const sharedEngine of [false,true])await t.test(sharedEngine?'shared executor':'direct extension',async t=>{
   const store=fixture(t),engine=sharedEngine?new ExecutionEngine(store):undefined;let now=Date.now(),calls=0;
-  let lifecycle=new MemoryLifecycle(store,()=>true,()=>now,0,engine);
+  let lifecycle=new MemoryLifecycle(store,()=>true,()=>now,engine);
   try{
    lifecycle.register({id:'consolidation',version:'fixture',stream:'memory',async run(_window,checkpoint){calls++;checkpoint('generated-consolidation');throw new AgentTimeoutError();}});
    lifecycle.configure({...lifecycle.settings(),consolidation:{...lifecycle.settings().consolidation,minChanges:1}});
    store.db.prepare("INSERT INTO memory_events(stream,entity) VALUES('memory',?)").run(randomUUID());
    await lifecycle.tick();const failed=lifecycle.view().extensions[0];
    assert.equal(failed.error,'provider_timeout');assert.equal(failed.status,'retry_wait');assert.equal(failed.failures,1);assert.equal(failed.cursor,0);assert.equal(failed.retryAt,now+120000);assert.equal(failed.active?.checkpoint,'generated-consolidation');
-   await lifecycle.close();lifecycle=new MemoryLifecycle(store,()=>true,()=>now,0,engine);
+   await lifecycle.close();lifecycle=new MemoryLifecycle(store,()=>true,()=>now,engine);
    lifecycle.register({id:'consolidation',version:'fixture',stream:'memory',async run(window){calls++;assert.equal(window.id,failed.active!.id);assert.equal(window.checkpoint,'generated-consolidation');}});
    assert.equal(lifecycle.view().extensions[0].error,'provider_timeout');now=failed.retryAt!-1;await lifecycle.tick();assert.equal(calls,1);
    now++;await lifecycle.tick();await lifecycle.tick();const completed=lifecycle.view().extensions[0];
@@ -78,9 +79,9 @@ test('480 originals across six months replay all current segments; FTS finds old
   assert.equal(store.search({query:'离线索引实验',after:'2026-03-01T00:00:00Z',before:'2026-04-01T00:00:00Z'})[0].id,data.anchors.late);
   assert.ok(store.search({query:'uncertain outcome',deviceId:'fixture-device-0',limit:200}).every(e=>e.deviceId==='fixture-device-0'));
   for(const query of ['林岚 清晨','清晨 开会','林岚 喜欢 清晨 开会'])assert.deepEqual(store.search({query}).map(r=>r.id),[data.anchors['other-person']],query+' finds embedded short Chinese words');
-  const pipeline=new MemoryPipeline({store,memories,configured:()=>true,model:()=> 'fixture-only',query:async input=>{for(const id of input.evidenceIds)seen.add(id);assert.ok(input.evidenceRanges.reduce((n,r)=>n+r.length,0)<=12000);return empty();}});t.after(()=>pipeline.close());
+  const pipeline=fixtureMemoryPipeline({store,memories,configured:()=>true,model:()=> 'fixture-only',query:async input=>{for(const id of input.evidenceIds)seen.add(id);assert.ok(input.evidenceRanges.reduce((n,r)=>n+r.length,0)<=12000);return empty();}});t.after(()=>pipeline.close());
   const job=await pipeline.run(pipeline.create({evidenceIds:data.currentIds}).id);assert.equal(job.status,'completed');assert.equal(seen.size,472);assert.equal(pipeline.create({evidenceIds:data.currentIds}).totalBatches,0);
-  for(const id of data.currentIds.slice(0,160)){const record=store.evidence([id])[0];memories.extract({answer:JSON.stringify({memories:[{title:'索引候选 '+id,statement:`原文记录 [${id}]`,uncertainty:'合成验证',evidenceIds:[id],evidence:[{id,offset:0,quote:record.ocrText}]}]}),citations:[{id,capturedAt:record.capturedAt,appName:'Generated',excerpt:record.ocrText}],trace:[],runId:randomUUID()},'fixture-only');}
+  for(const id of data.currentIds.slice(0,160)){const record=store.evidence([id])[0];memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'索引候选 '+id,statement:`原文记录 [${id}]`,uncertainty:'合成验证',evidenceIds:[id],evidence:[{id,offset:0,quote:record.ocrText}]}]}),citations:[{id,capturedAt:record.capturedAt,appName:'Generated',excerpt:record.ocrText}],trace:[],runId:randomUUID()}),'fixture-only');}
   const all:string[]=[];let cursor:string|undefined;do{const page=memories.page({query:'索引候选',limit:17,cursor});all.push(...page.items.map(m=>m.id));cursor=page.nextCursor??undefined;}while(cursor);assert.equal(new Set(all).size,160);
   const oldest=memories.get(all.at(-1)!);assert.equal(memories.page({id:oldest.id,level:'detail'}).items[0].id,oldest.id);assert.match(memories.text(oldest.id),/Provenance/);
   store.delete(oldest.evidenceIds[0]);assert.equal(memories.page({id:oldest.id,includeStale:true}).items.length,0);assert.equal(store.db.prepare('SELECT id FROM memories_fts WHERE id=?').get(oldest.id),undefined);
@@ -157,7 +158,7 @@ test('startup recovers detached queued jobs without bypassing active retry or di
   store.db.exec('CREATE TABLE IF NOT EXISTS memory_jobs(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL)');
   for(const [id,status,importJobId] of [['manual','queued',null],['orphan','queued','lifecycle:old'],['active','queued','lifecycle:current'],['paused','paused','lifecycle:paused'],['cancelled','cancelled',null]])store.db.prepare('INSERT INTO memory_jobs VALUES(?,?,?)').run(id,new Date().toISOString(),JSON.stringify({id,status,importJobId}));
   store.db.prepare('INSERT INTO memory_jobs VALUES(?,?,?)').run('material',new Date().toISOString(),JSON.stringify({id:'material',status:'queued',originKey:'material:generated@revision'}));
-  store.db.prepare('UPDATE memory_lifecycle_state SET json=? WHERE id=?').run(JSON.stringify({cursor:0,lastSuccess:0,failures:1,retryAt:Date.now()+60000,active:{checkpoint:'active',ids:[]}}),'extraction');
+  store.db.prepare('UPDATE memory_lifecycle_state SET json=? WHERE id=?').run(JSON.stringify({cursor:0,lastSuccess:0,failures:1,retryAt:Date.now()+60000,active:{id:'generated-window',contextTime:new Date().toISOString(),checkpoint:'active',ids:[]}}),'extraction');
   assert.deepEqual(recoverableMemoryJobs(store,lifecycle),['manual','orphan']);
   const settings=lifecycle.settings();lifecycle.configure({...settings,extraction:{...settings.extraction,enabled:false}});
   assert.deepEqual(recoverableMemoryJobs(store,lifecycle),['manual']);

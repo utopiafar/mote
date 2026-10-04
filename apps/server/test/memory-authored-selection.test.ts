@@ -1,3 +1,4 @@
+import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,createHash} from 'node:crypto';
@@ -52,7 +53,7 @@ test('current built-in authored Material is admitted once, without a second raw 
 
   // The fake executor is never run. Creating the durable job verifies that
   // planning and batch admission agree without contacting a model.
-  const pipeline=new MemoryPipeline({store:f.store,memories:f.reader.memories,
+  const pipeline=fixtureMemoryPipeline({store:f.store,memories:f.reader.memories,
     materialSourceCurrent:(pin,id)=>f.reader.materialSourceCurrent(pin,id),
     materialPlanAllowed:id=>f.reader.materialPlanAllowed(id),
     materialInput:(ref,required)=>f.materials.input(ref,required),
@@ -104,32 +105,29 @@ async function historicalDuplicate(t:TestContext){
   const control={allowed:false,extracts:0,reviews:0,fingerprint:'a'.repeat(64)};
   const configuration=()=>({owner:'models' as const,fingerprint:control.fingerprint,revision:1,
     profileId:'generated-profile',provider:'generated',model:'generated-model'});
-  const quote='a meeting moved from Tuesday to Friday';
-  const pipeline=new MemoryPipeline({store:f.store,memories:f.reader.memories,requireAdmission:true,
+  const pipeline=fixtureMemoryPipeline({store:f.store,memories:f.reader.memories,requireAdmission:true,
     materialSourceCurrent:(pin,id)=>f.reader.materialSourceCurrent(pin,id),
     materialPlanAllowed:id=>control.allowed&&f.reader.materialPlanAllowed(id),
-    authoredMaterialOriginalForReuse:(id,ref)=>f.reader.authoredMaterialOriginalForReuse(id,ref),
     materialInput:(ref,required)=>f.materials.input(ref,required),
     materialAllowedForMemory:(ref,_profileId,required)=>control.allowed&&f.reader.materialAllowedForMemory(ref,undefined,required),
     model:()=>configuration().model,configured:()=>true,configuration,
-    query:async()=>{control.extracts++;return {answer:JSON.stringify({memories:[{
-      domain:'personal',title:'Generated rescheduling',statement:`The generated meeting moved [${f.originalId}]`,
+    query:async input=>{control.extracts++;const proofId=input.evidenceIds[0],quote=f.reader.memories.readEvidence([proofId])[0].ocrText;return {answer:JSON.stringify({memories:[{
+      domain:'personal',title:'Generated rescheduling',statement:`The generated meeting moved [${proofId}]`,
       uncertainty:'Only this generated note supports the change.',
       admission:{layer:'observation',reason:'The changed date may matter later',scope:'This generated meeting',attribution:'user'},
-      evidenceIds:[f.originalId],evidence:[{id:f.originalId,quote}]}]}),
-      citations:[{id:f.originalId,capturedAt:'2026-09-20T00:00:00.000Z',appName:'Notes',excerpt:quote}],
+      evidenceIds:[proofId],evidence:[{id:proofId,quote}]}]}),
+      citations:[{id:proofId,capturedAt:'2026-09-20T00:00:00.000Z',appName:'Notes',excerpt:quote}],
       trace:[],runId:'generated-extract-'+control.extracts};},
     review:(input,result,strategy)=>reviewMemory(input,result,async()=>({...result,runId:'generated-review-'+ ++control.reviews}),{strategy})});
   t.after(()=>pipeline.close());
-  // This request deliberately represents a historical job created by the old
-  // range selector: the same current original was both a plan and raw input.
+  // Separate raw intake and pinned Material inputs require their own model reads.
   const job=pipeline.create({manualPlans:selected.manualPlans,recipes:[{id:'mote.personal-memory',version:'2'}],
     evidenceIds:[f.originalId],modelProfileId:'generated-profile'});
   const first=await pipeline.run(job.id);
   return {f,material,pipeline,job,first,control};
 }
 
-test('explicit recheck reuses a fully reviewed raw batch from an older duplicate authored plan',async t=>{
+test('explicit recheck extracts the pinned Material after completing a separate raw batch',async t=>{
   const {f,material,pipeline,job,first,control}=await historicalDuplicate(t);
   assert.equal(first.status,'failed');
   assert.equal(first.errorCode,'memory_authorization_revoked');
@@ -141,14 +139,12 @@ test('explicit recheck reuses a fully reviewed raw batch from an older duplicate
   const recovered=await pipeline.retry(job.id);
   assert.equal(recovered.status,'completed');
   assert.equal(recovered.inputPlans?.completed,1);
-  assert.equal(recovered.batches.length,1);
-  assert.deepEqual(recovered.memoryIds,first.memoryIds);
-  assert.equal(control.extracts,1);assert.equal(control.reviews,1);
-  assert.equal(f.store.db.prepare('SELECT COUNT(*) n FROM memories').get()!.n,1);
+  assert.equal(recovered.batches.length,2);
+  assert.ok(recovered.memoryIds.includes(first.memoryIds[0]));
+  assert.equal(control.extracts,2);assert.equal(control.reviews,2);
+  assert.equal(f.store.db.prepare('SELECT COUNT(*) n FROM memories').get()!.n,2);
   const plan=JSON.parse(String(f.store.db.prepare('SELECT json FROM memory_input_plans WHERE job_id=?').get(job.id)!.json));
-  assert.equal(plan.coveredByBatchId,recovered.batches[0].id);
-  assert.equal(plan.resolvedInput,undefined,'the reused result retains raw provenance');
-  assert.equal(f.reader.authoredMaterialOriginalForReuse(material.id,material.ref),f.originalId);
+  assert.equal(plan.coveredByBatchId,undefined);assert.ok(plan.resolvedInput,'the new batch pins its own Material revision');
 });
 
 test('a deleted reviewed Memory cannot be revived by the authored coverage recheck',async t=>{

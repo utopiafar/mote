@@ -31,19 +31,7 @@ export class Perception {
   private unregister:Array<()=>Promise<void>>=[];
   constructor(private store:Store,private runtime:FileProcessorRuntime,engine?:ExecutionEngine,private mediaAssets?:MediaAssets,private probeOcr:()=>Promise<boolean>=managedOcrReady){
     this.engine=engine??new ExecutionEngine(store);this.owned=!engine;
-    if(mediaAssets&&!store.db.prepare("SELECT 1 FROM settings WHERE key='managed-ocr-v1'").get()){
-      const row=store.db.prepare("SELECT value FROM settings WHERE key='perception'").get();
-      const prior=row?JSON.parse(String(row.value)):{};
-      const next=perceptionSettingsSchema.strip().parse({...prior,enabled:prior.enabled??true,ocrProcessorId:prior.ocrProcessorId??'image.http',ocrEndpoint:prior.ocrEndpoint||managedOcrEndpoint(),concurrency:prior.concurrency??1});
-      store.db.exec('BEGIN IMMEDIATE');try{
-        store.db.prepare("INSERT INTO settings(key,value) VALUES('perception',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(next));
-        store.db.prepare("INSERT INTO settings(key,value) VALUES('managed-ocr-v1','1')").run();store.db.exec('COMMIT');
-      }catch(error){store.db.exec('ROLLBACK');throw error;}
-    }
-    // One-time compatibility recovery: only jobs with no durable engine step are legacy.
-    this.engine.cancelKind('perception.semantic');
-    store.db.prepare("DELETE FROM perception_jobs WHERE kind='semantic'").run();
-    store.db.exec("UPDATE perception_jobs SET state='waiting' WHERE kind='ocr' AND state='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE operation_id='capture:'||perception_jobs.capture_id AND kind='perception.ocr')");
+    if(mediaAssets&&!store.db.prepare("SELECT 1 FROM settings WHERE key='perception'").get())store.db.prepare("INSERT INTO settings VALUES('perception',?)").run(JSON.stringify(perceptionSettingsSchema.parse({enabled:true,ocrProcessorId:'image.http',ocrEndpoint:managedOcrEndpoint(),concurrency:1})));
     this.unregister.push(this.engine.register({kind:'perception.ocr',pool:'image-ocr',concurrency:()=>this.settings().concurrency,
       validate:step=>this.valid(step),admit:step=>this.admit(step),execute:(step,signal)=>this.process(step,signal),commit:(step,result)=>this.commit(step,result),project:step=>this.project(step),
       classify:error=>error instanceof z.ZodError?new ExecutionFailure('permanent','invalid_processor_output'):new ExecutionFailure('transient','processor_failed',60000),
@@ -113,13 +101,6 @@ export class Perception {
       this.workerReady=ready;this.workerCheckedAt=Date.now();
       if(ready)for(const row of this.store.db.prepare("SELECT id FROM execution_steps WHERE kind='perception.ocr' AND state='waiting' AND error='ocr_worker_unavailable'").all()){
         const step=this.engine.get(String(row.id));if(step&&this.valid(step))this.engine.retry(step.id,false);
-      }
-      // Recover old connection failures once, only after the managed worker loads its model.
-      // Historical opt-in jobs and genuine repeated processor failures remain bounded.
-      if(ready&&!this.store.db.prepare("SELECT 1 FROM settings WHERE key='ocr-worker-recovery-v1'").get()){
-        const rows=this.store.db.prepare("SELECT capture_id FROM perception_jobs WHERE kind='ocr' AND auto_eligible=1 AND state='failed' AND error='processor_failed'").all();
-        for(const row of rows)if(this.store.imageReference(String(row.capture_id))?.blobHash)this.retry(String(row.capture_id));
-        this.store.db.prepare("INSERT INTO settings(key,value) VALUES('ocr-worker-recovery-v1','1')").run();
       }
     })().finally(()=>{this.workerProbe=undefined;});
     return this.workerProbe;

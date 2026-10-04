@@ -8,7 +8,7 @@ test('canonical immutable references round-trip across both namespaces and case 
     const id=randomUUID(),ref=formatEvidenceRef(kind,id);
     assert.deepEqual(parseEvidenceRef(ref),{kind,id});
     assert.deepEqual(parseEvidenceRef(ref.toUpperCase()),{kind,id});
-    assert.equal(evidenceRefId(id.toUpperCase(),kind),id);
+    assert.equal(evidenceRefId(id.toUpperCase(),kind),undefined);
     assert.equal(evidenceRefId(ref,kind==='capture'?'memory':'capture'),undefined);
   }
 });
@@ -19,7 +19,7 @@ test('navigation, nested, path, padded and malformed references cannot become ev
     assert.equal(parseEvidenceRef(ref),undefined,JSON.stringify(ref));
     assert.throws(()=>formatEvidenceRef('capture',ref));
   }
-  assert.deepEqual(parseEvidenceRef(id),{kind:'capture',id});
+  assert.equal(parseEvidenceRef(id),undefined);
 });
 
 test('derived artifact refs pin a case-sensitive revision and reject ambiguous encodings',async()=>{

@@ -12,14 +12,15 @@ const { tmpdir } = require('node:os');
 const assert = require('node:assert/strict');
 const { defaultConfig } = require('../dist/config');
 const profile = mkdtempSync(join(tmpdir(), 'mote-offline-sync-fixture-'));
-app.setPath('userData', profile); process.env.MOTE_PROFILE = 'legacy';
+app.setPath('userData', profile); process.env.MOTE_PROFILE = 'default';
 for (const key of ['MOTE_URL', 'MOTE_TOKEN', 'MOTE_ENV_FILE']) delete process.env[key];
 safeStorage.isEncryptionAvailable = () => true;
 safeStorage.encryptString = value => Buffer.from('fixture:' + Buffer.from(value).toString('base64'));
 safeStorage.decryptString = value => Buffer.from(value.toString().slice(8), 'base64').toString();
 desktopCapturer.getSources = async () => { throw new Error('Real screenshots are forbidden in this generated fixture'); };
-const config = { ...defaultConfig(), serverUrl: '', syncMode: 'manual', deviceName: 'Synthetic offline Mac', metadataEnabled: false, ocrEnabled: false, nsfwEnabled: false };
-writeFileSync(join(profile, 'config.json'), JSON.stringify({ version: 1, config }), { mode: 0o600 });
+const config = { ...defaultConfig(), serverUrl: '', syncMode: 'manual', deviceName: 'Synthetic offline Mac', metadataEnabled: false, nsfwEnabled: false };
+writeFileSync(join(profile, 'config.json'), JSON.stringify({ version:3, config }), { mode: 0o600 });
+writeFileSync(join(profile,'storage-format.json'),JSON.stringify({version:3}),{mode:0o600});
 const file = join(profile, 'generated-source.md'); writeFileSync(file, 'Generated offline source version. No personal files.');
 dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
 const token = 'synthetic-offline-sync-token-' + 'x'.repeat(32), requests = [], captureBodies = [], sourceBodies = [];
@@ -46,13 +47,7 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const queueBodies = () => readdirSync(join(profile, 'queue/events')).filter(name => name.endsWith('.json')).map(name => JSON.parse(readFileSync(join(profile, 'queue/events', name), 'utf8')).event).sort((a, b) => a.id.localeCompare(b.id));
 const sourcePending = (url, credential, id) => {
   const state = require('../dist/source-state-store').sourceState(join(profile, 'local-sources/nodes', createHash('sha256').update(url + ':' + credential).digest('hex'), id + '.json'));
-  // SourceSync v2 separates realtime and history queues; keep this fixture
-  // compatible with the legacy state shape so it validates both migrations.
-  return [
-    ...(Array.isArray(state.pendingRealtime) ? state.pendingRealtime : []),
-    ...(Array.isArray(state.pendingHistory) ? state.pendingHistory : []),
-    ...(Array.isArray(state.pending) ? state.pending : []),
-  ];
+  return [...state.pendingRealtime,...state.pendingHistory];
 };
 const timeout = setTimeout(() => { process.stderr.write('Offline sync fixture timeout\n'); app.exit(1); }, 35000);
 app.on('browser-window-created', (_event, window) => {

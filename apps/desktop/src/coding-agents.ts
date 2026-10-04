@@ -19,9 +19,9 @@ export async function discoverCodingAgents(home=homedir()) {
   return Promise.all((Object.keys(codingProviders) as CodingProvider[]).map(async provider=>({provider,name:codingProviders[provider],path:codingRoot(provider,home),available:await lstat(codingRoot(provider,home)).then(s=>s.isDirectory()&&!s.isSymbolicLink(),()=>false)})));
 }
 type Context={sessionId:string;cwd?:string;repositoryKey?:string;branch?:string;parentSessionId?:string;callId?:string};
-type Cursor={offset:number;anchor:string;ino:number;size?:number;mtimeMs?:number;ctimeMs?:number;quickHash?:string;generation:number;context:Context};
+type Cursor={offset:number;anchor:string;ino:number;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;generation:number;context:Context};
 export type CodingCatalogEntry={relativePath:string;fileId:string;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;contentHash?:string;lastSeenScan:number;syncState:'pending'|'synced'|'error'};
-export type CodingCheckpoint={version:1;files:Record<string,Cursor>;initialized:boolean;catalog?:Record<string,CodingCatalogEntry>;scanNumber?:number;scanStartedAt?:string;nextFile?:string};
+export type CodingCheckpoint={version:3;files:Record<string,Cursor>;initialized:boolean;catalog:Record<string,CodingCatalogEntry>;scanNumber:number;scanStartedAt:string;nextFile?:string};
 type Event={role:'user'|'assistant'|'tool_call'|'tool_result'|'assistant_delta'|'tool_call_delta';text:string;callId?:string;at?:string;channel?:string;attribution?:CodingEvidence['attribution']};
 const time=(v:unknown)=>{const ms=typeof v==='number'?v*1000:typeof v==='string'?Date.parse(v):NaN;return Number.isFinite(ms)?new Date(ms).toISOString():undefined;};
 const textParts=(content:any):string=>typeof content==='string'?content:Array.isArray(content)?content.flatMap(p=>p?.type==='text'||p?.type==='input_text'||p?.type==='output_text'?[String(p.text??'')]:p?.type==='image'||p?.type==='input_image'||p?.type==='image_url'?['[image attachment omitted]']:[]).join('\n'):'';
@@ -67,8 +67,10 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
 /** Bounded incremental tailer. Its cursor is committed atomically with SourceSync's durable outbox. */
 export async function scanCodingAgent(rootPath:string,provider:CodingProvider,options:SourceOptions,previous?:CodingCheckpoint,signal?:AbortSignal,limits={items:200,bytes:4*1024*1024}):Promise<SourceScan> {
   const selected=await lstat(rootPath);if(!selected.isDirectory()||selected.isSymbolicLink())throw Error(moteText("Agent 来源必须是普通目录"));
-  const root=await realpath(rootPath),priorScanStartedAt=previous?.scanStartedAt,checkpoint:CodingCheckpoint=structuredClone(previous??{version:1,files:{},initialized:false});
-  checkpoint.catalog??={};checkpoint.scanNumber=(checkpoint.scanNumber??0)+1;checkpoint.scanStartedAt=new Date().toISOString();
+  const root=await realpath(rootPath),priorScanStartedAt=previous?.scanStartedAt,checkpoint:CodingCheckpoint=structuredClone(previous??{version:3,files:{},initialized:false,catalog:{},scanNumber:0,scanStartedAt:new Date().toISOString()});
+  if(checkpoint.version!==3||!checkpoint.catalog||!Number.isSafeInteger(checkpoint.scanNumber)||!Number.isFinite(Date.parse(checkpoint.scanStartedAt)))throw Error('Unsupported Coding checkpoint format; reset the source state before scanning');
+  for(const cursor of Object.values(checkpoint.files))if(![cursor.size,cursor.mtimeMs,cursor.ctimeMs].every(Number.isFinite)||typeof cursor.quickHash!=='string')throw Error('Unsupported Coding cursor format; reset the source state before scanning');
+  checkpoint.scanNumber++;checkpoint.scanStartedAt=new Date().toISOString();
   const result:SourceScan={items:[],seen:[],complete:true,skipped:0,checkpoint,queue:previous?.initialized?'realtime':options.initialSync==='new_only'?'realtime':'history'};
   const files:{path:string;relativePath:string;size:number;mtimeMs:number;ctimeMs:number;ino:number;fileId:string;quickHash:string}[]=[];let visited=0,bytes=0;
   async function visit(path:string,depth:number):Promise<void>{
@@ -88,7 +90,7 @@ export async function scanCodingAgent(rootPath:string,provider:CodingProvider,op
   const cursorIndex=checkpoint.nextFile?selectedFiles.findIndex(entry=>entry.relativePath===checkpoint.nextFile):-1;
   const rotated=cursorIndex<0?selectedFiles:[...selectedFiles.slice(cursorIndex+1),...selectedFiles.slice(0,cursorIndex+1)];
   // New or growing journals jump ahead of the historical round-robin cursor.
-  const urgent=rotated.filter(entry=>{const old=checkpoint.files[hash(entry.relativePath)],catalog=checkpoint.catalog?.[entry.relativePath];return !catalog||(priorScanStartedAt!==undefined&&entry.mtimeMs>=Date.parse(priorScanStartedAt))||(old!==undefined&&entry.size>old.offset);});
+  const urgent=rotated.filter(entry=>{const old=checkpoint.files[hash(entry.relativePath)],catalog=checkpoint.catalog[entry.relativePath];return !catalog||(priorScanStartedAt!==undefined&&entry.mtimeMs>=Date.parse(priorScanStartedAt))||(old!==undefined&&entry.size>old.offset);});
   const routine=rotated.filter(entry=>!urgent.includes(entry));
   const orderedFiles=[...urgent,...routine];
   for(const entry of orderedFiles){
@@ -99,9 +101,9 @@ export async function scanCodingAgent(rootPath:string,provider:CodingProvider,op
       if(await realpath(path)!==path)throw Error('Source path changed');
       handle=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW);const info=await handle.stat();if(!info.isFile())throw Error('Invalid source');
       const read=async(start:number,length:number)=>{const buffer=Buffer.alloc(length);const {bytesRead}=await handle!.read(buffer,0,length,start);return buffer.subarray(0,bytesRead);};
-      let cursor:Cursor=old?structuredClone(old):{offset:0,anchor:hash(''),ino:info.ino,generation:0,context:{sessionId:provider==='kimi'?basename(dirname(path)):basename(path,'.jsonl')}};
-      if(old&&(info.ino!==old.ino||info.size<old.offset||hash(await read(Math.max(0,old.offset-256),Math.min(old.offset,256)))!==old.anchor))cursor={offset:0,anchor:hash(''),ino:info.ino,generation:old.generation+1,context:{sessionId:old.context.sessionId}};
-      const itemQueue: 'realtime'|'history' = old && info.size>old.offset ? 'realtime' : checkpoint.catalog?.[rel] && priorScanStartedAt && info.mtimeMs>=Date.parse(priorScanStartedAt) ? 'realtime' : checkpoint.initialized ? 'realtime' : 'history';
+      let cursor:Cursor=old?structuredClone(old):{offset:0,anchor:hash(''),ino:info.ino,size:info.size,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,quickHash:entry.quickHash,generation:0,context:{sessionId:provider==='kimi'?basename(dirname(path)):basename(path,'.jsonl')}};
+      if(old&&(info.ino!==old.ino||info.size<old.offset||hash(await read(Math.max(0,old.offset-256),Math.min(old.offset,256)))!==old.anchor))cursor={offset:0,anchor:hash(''),ino:info.ino,size:info.size,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,quickHash:entry.quickHash,generation:old.generation+1,context:{sessionId:old.context.sessionId}};
+      const itemQueue: 'realtime'|'history' = old && info.size>old.offset ? 'realtime' : checkpoint.catalog[rel] && priorScanStartedAt && info.mtimeMs>=Date.parse(priorScanStartedAt) ? 'realtime' : checkpoint.initialized ? 'realtime' : 'history';
       if(!checkpoint.initialized&&!old&&options.initialSync==='new_only'){
         // Baseline only complete lines so a currently partial message is picked up later.
         const header=await read(0,Math.min(info.size,65536));for(const line of header.toString('utf8').split('\n').slice(0,-1)){try{decodeCodingEvent(provider,JSON.parse(line),cursor.context,basename(path)==='wire.jsonl');}catch{break;}}
@@ -131,7 +133,7 @@ export async function scanCodingAgent(rootPath:string,provider:CodingProvider,op
       }
       cursor.anchor=hash(await read(Math.max(0,cursor.offset-256),Math.min(cursor.offset,256)));
       if(await realpath(path)!==path)throw Error('Source path changed');
-      cursor.size=info.size;cursor.mtimeMs=info.mtimeMs;cursor.ctimeMs=info.ctimeMs;cursor.quickHash=entry.quickHash;checkpoint.files[key]=cursor;checkpoint.nextFile=rel;checkpoint.catalog![rel]={relativePath:rel,fileId:entry.fileId,size:info.size,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,quickHash:entry.quickHash,lastSeenScan:checkpoint.scanNumber!,syncState:result.complete?'synced':'pending'};
+      cursor.size=info.size;cursor.mtimeMs=info.mtimeMs;cursor.ctimeMs=info.ctimeMs;cursor.quickHash=entry.quickHash;checkpoint.files[key]=cursor;checkpoint.nextFile=rel;checkpoint.catalog[rel]={relativePath:rel,fileId:entry.fileId,size:info.size,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,quickHash:entry.quickHash,lastSeenScan:checkpoint.scanNumber,syncState:result.complete?'synced':'pending'};
     }catch(error){if(signal?.aborted)throw error;result.items.splice(itemStart);result.seen.splice(seenStart);result.complete=false;result.skipped++;}
     finally{await handle?.close();}
   }

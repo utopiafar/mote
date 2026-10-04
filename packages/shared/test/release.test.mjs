@@ -7,8 +7,8 @@ import { join } from 'node:path';
 import { verifyReleaseEnvelope, checkRelease, downloadReleaseAsset, compareVersions, RELEASE_KEY_ID, RELEASE_PUBLIC_KEY } from '../dist/release.js';
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 3072, publicKeyEncoding: { format: 'pem', type: 'spki' }, privateKeyEncoding: { format: 'pem', type: 'pkcs8' } });
 const body = Buffer.from('generated release bytes\n');
-const artifact = { component: 'server', platform: 'source', arch: 'all', format: 'tar.gz', name: 'mote-server-0.5.0.tar.gz', url: 'https://github.com/utopiafar/mote/releases/download/v0.5.0/mote-server-0.5.0.tar.gz', size: body.length, sha256: createHash('sha256').update(body).digest('hex') };
-const fixture = () => ({ schemaVersion: 1, version: '0.5.0', channel: 'stable', repository: 'utopiafar/mote', tag: 'v0.5.0', notesUrl: 'https://github.com/utopiafar/mote/releases/tag/v0.5.0', publishedAt: '2026-09-14T00:00:00Z', assets: [artifact], images: [{component: 'server', image: 'ghcr.io/utopiafar/mote@sha256:' + 'a'.repeat(64)}] });
+const artifact = { component: 'server', platform: 'source', arch: 'all', format: 'tar.gz', name: 'mote-server-0.5.0.tar.gz', url: 'https://github.com/utopiafar/mote/releases/download/central-v0.5.0/mote-server-0.5.0.tar.gz', size: body.length, sha256: createHash('sha256').update(body).digest('hex') };
+const fixture = () => ({ schemaVersion: 1, version: '0.5.0', channel: 'stable', repository: 'utopiafar/mote', component:'central', tag: 'central-v0.5.0', notesUrl: 'https://github.com/utopiafar/mote/releases/tag/central-v0.5.0', publishedAt: '2026-09-14T00:00:00Z', assets: [artifact], images: [{component: 'server', image: 'ghcr.io/utopiafar/mote@sha256:' + 'a'.repeat(64)}] });
 const signed = (value = fixture()) => { const payload = Buffer.from(JSON.stringify(value)); return JSON.stringify({schemaVersion: 1, keyId: RELEASE_KEY_ID, payload: payload.toString('base64'), signature: sign('RSA-SHA256', payload, privateKey).toString('base64')}); };
 const grouped = (component = 'central', version = '0.5.0') => {
   const tag = `${component}-v${version}`, value = {...fixture(), component, version, tag, notesUrl: `https://github.com/utopiafar/mote/releases/tag/${tag}`};
@@ -46,7 +46,7 @@ test('version comparisons do not silently downgrade or misorder prereleases', ()
 test('GitHub check verifies the selected tag and never forwards central credentials', async () => {
   const calls = [];
   const network = async (url, init) => { calls.push(url); assert.equal(new Headers(init.headers).has('authorization'),false); assert.equal(init.redirect,'manual');
-    return String(url).includes('api.github.com') ? Response.json([feedEntry('v0.5.0')]) : new Response(signed()); };
+    return String(url).includes('api.github.com') ? Response.json([feedEntry('central-v0.5.0')]) : new Response(signed()); };
   const result = await checkRelease({currentVersion:'0.4.0',publicKey,fetch:network});
   assert.equal(result.available,true); assert.equal(calls.length,2);
   assert.equal((await checkRelease({currentVersion:'0.6.0',publicKey,fetch:network})).available,false);
@@ -61,7 +61,8 @@ test('component manifests authenticate their own tag and reject signed assets fr
     const wrong = {...grouped(component), assets:[...grouped(component).assets, ...grouped(component==='central'?'desktop':'central').assets]};
     assert.throws(()=>verifyReleaseEnvelope(signed(wrong), {publicKey}), /release_component_mismatch/);
   }
-  assert.equal(verifyReleaseEnvelope(signed(), {publicKey,component:'central'}).tag, 'v0.5.0');
+  assert.equal(verifyReleaseEnvelope(signed(), {publicKey,component:'central'}).tag, 'central-v0.5.0');
+  const retired={...fixture(),tag:'v0.5.0'};delete retired.component;assert.throws(()=>verifyReleaseEnvelope(signed(retired),{publicKey}),/invalid_release_manifest/);
   assert.throws(()=>verifyReleaseEnvelope(signed(), {publicKey,component:'desktop'}), /release_component_mismatch/);
   assert.throws(()=>verifyReleaseEnvelope(signed({...grouped('desktop'),images:fixture().images}), {publicKey}), /release_component_mismatch/);
 });
@@ -82,10 +83,11 @@ test('release lookup is bounded even when every page contains other applications
   assert.equal(pages,10);
 });
 
-test('explicit component versions fall back only to missing legacy releases and pin the fetched tag', async () => {
-  const calls = [], fetch = async url => { calls.push(String(url)); return String(url).includes('/central-v') ? new Response('',{status:404}) : new Response(signed()); };
-  assert.equal((await checkRelease({version:'0.5.0',publicKey,fetch})).manifest.tag,'v0.5.0'); assert.equal(calls.length,2);
-  await assert.rejects(checkRelease({version:'0.5.0',publicKey,fetch:async()=>new Response(signed())}), /release_identity_mismatch/);
+test('explicit component versions refuse a missing stream without legacy fallback', async () => {
+  const calls=[];
+  await assert.rejects(checkRelease({version:'0.5.0',publicKey,fetch:async url=>{calls.push(String(url));return new Response('',{status:404});}}),/release_not_found/);
+  assert.equal(calls.length,1);assert.ok(calls[0].includes('/central-v0.5.0/'));
+  await assert.rejects(checkRelease({version:'0.5.0',publicKey,fetch:async()=>new Response(signed({...fixture(),tag:'v0.5.0'}))}),/release_identity_mismatch/);
   let failures = 0;
   await assert.rejects(checkRelease({version:'0.5.0',publicKey,fetch:async()=>{failures++;return new Response(signed({...grouped(),assets:grouped('desktop').assets}));}}), /release_component_mismatch/);
   assert.equal(failures,1);

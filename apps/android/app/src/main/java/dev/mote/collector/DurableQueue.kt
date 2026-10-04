@@ -23,9 +23,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     companion object {
         private val lock = Any()
         fun <T> exclusive(action: () -> T): T = synchronized(lock) { action() }
-        // 100,000 UTF-16 code units can require six JSON bytes each, plus result fields.
-        internal const val OCR_RESERVE_BYTES = 600_256L
-        private val localFields = listOf("_archiveOrigin", "_centralDerived", "_reviewHeld", "_uploaded", "_retainedUntil", "_ocrUploaded", "_ocrResult", "_archiveMissing", "_ocrConflict", "_ocrAttempts", "_uploadConflict")
+        private val localFields = listOf("_archiveOrigin", "_centralDerived", "_reviewHeld", "_uploaded", "_retainedUntil", "_archiveMissing", "_uploadConflict")
         // Only fixed statistics and date/source index fields are cached, never capture content. A bounded process cache
         // is shared by the short-lived queue handles; the record files remain authoritative.
         private const val MAX_CACHED_DIRECTORIES = 4
@@ -42,8 +40,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     /** Origin snapshot supplied by the connection-owned queue handle; unbound handles fail closed for pinned records. */
     internal var archiveOrigin: String = ""
     private fun matchesOrigin(event: JSONObject) = !event.has("_archiveOrigin") || event.getString("_archiveOrigin") == archiveOrigin.trim().trimEnd('/')
-    private fun unfinished(event: JSONObject) = !event.optBoolean("_uploaded") || syncFailed(event) || event.optBoolean("_reviewHeld") ||
-        ((event.optJSONObject("ocr")?.optString("status") == "pending" || event.has("_ocrResult")) && !event.optBoolean("_ocrUploaded"))
+    private fun unfinished(event: JSONObject) = !event.optBoolean("_uploaded") || syncFailed(event) || event.optBoolean("_reviewHeld")
     fun hasPendingConnectionWork(): Boolean = guarded {
         stageInbox.exists() || stageJournal.exists() || readStageCheckpoint()?.let { stageHeldCount(it) > 0 } == true || records().any { unfinished(read(it)) }
     }
@@ -71,6 +68,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     init {
         check(dir.isDirectory || createMissing && dir.mkdirs()) { MoteI18n.text("本机存储目录不可用") }
         synchronized(lock) {
+            LocalDataFormat.requireCurrent(dir)
             replayStageJournal() // A committed transaction must still be recovered completely.
             try { processStageInbox() } catch (error: Exception) { pendingStageFailure = error }
         }
@@ -122,7 +120,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
                     .put("capturedAt", event.getString("capturedAt"))
                     .put("reviewHeld", event.optBoolean("_reviewHeld"))
                     .put("retryable", !event.optBoolean("_archiveMissing"))
-                    .put("reason", if (event.optBoolean("_reviewHeld")) MoteI18n.text("上传审查待复核") else if (event.optBoolean("_archiveMissing")) MoteI18n.text("中央不可用 / 已删除") else if (event.optBoolean("_ocrConflict")) MoteI18n.text("OCR 内容冲突") else MoteI18n.text("记录内容冲突"))
+                    .put("reason", if (event.optBoolean("_reviewHeld")) MoteI18n.text("上传审查待复核") else if (event.optBoolean("_archiveMissing")) MoteI18n.text("中央不可用 / 已删除") else MoteI18n.text("记录内容冲突"))
             }.toList()
         }
     }
@@ -135,8 +133,6 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
                 .sortedWith(compareBy<JSONObject> { it.getLong("modified") }.thenBy { it.getString("id") })
             val items = rows.drop(offset).take(limit).map { row -> JSONObject(row.toString()).put("status", when {
                 row.optBoolean("blocked") -> MoteI18n.text("需处理")
-                row.optBoolean("uploaded") && row.optBoolean("hasOcrResult") -> MoteI18n.text("OCR 待上传")
-                row.optBoolean("uploaded") -> MoteI18n.text("等待 OCR")
                 else -> MoteI18n.text("等待上传")
             }) }
             JSONObject().put("total", rows.size).put("items", org.json.JSONArray(items))
@@ -152,7 +148,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         for (file in records()) {
             val event = read(file)
             if (syncFailed(event) || !matchesOrigin(event)) continue
-            if (event.optBoolean("_uploaded")) { event.remove("_uploaded"); event.remove("_ocrUploaded"); event.remove("_retainedUntil"); atomic(file, event.toString().toByteArray()) }
+            if (event.optBoolean("_uploaded")) { event.remove("_uploaded"); event.remove("_retainedUntil"); atomic(file, event.toString().toByteArray()) }
             count++
         }; count
     }
@@ -162,10 +158,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (!file.exists()) return@guarded false
         val event = read(file)
         if (event.optBoolean("_archiveMissing") || !matchesOrigin(event)) return@guarded false
-        if (!event.optBoolean("_uploadConflict") && !event.optBoolean("_ocrConflict")) return@guarded false
-        val previousReserve = ocrReserve(event)
-        event.remove("_uploadConflict"); event.remove("_ocrConflict"); event.remove("_reviewHeld")
-        if (bytes() + ocrReserve(event) - previousReserve > maxBytes) throw QueueFull()
+        if (!event.optBoolean("_uploadConflict")) return@guarded false
+        event.remove("_uploadConflict"); event.remove("_reviewHeld")
         atomic(file, event.toString().toByteArray()); true
     }
     fun uploadConflict(id: String) = guarded {
@@ -185,30 +179,11 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
     fun pendingSync(): PendingSync = stats().pendingSync
     fun depth(): Int = guarded { dir.listFiles()?.count { it.extension == "event" } ?: 0 }
-    /** A protocol break discards every unacknowledged event, including OCR and conflict work. */
-    fun discardLegacyOutbox(): Int = withDeferredIndexWrites {
-        guarded {
-            var removed = 0
-            for (file in records()) {
-                val event = read(file)
-                val pendingOcr = (event.optJSONObject("ocr")?.optString("status") == "pending" || event.has("_ocrResult")) && !event.optBoolean("_ocrUploaded")
-                if (!event.optBoolean("_uploaded") || pendingOcr || syncFailed(event)) {
-                    remove(file, event)
-                    removed++
-                }
-            }
-            listOf(stageCheckpoint, stageJournal, stageInbox).forEach { stage ->
-                check(!stage.exists() || stage.delete()) { "Unable to discard legacy capture stage checkpoint" }
-            }
-            removed
-        }
-    }
-    fun diskBytes(): Long = guarded { dir.listFiles()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L }
+    fun diskBytes(): Long = guarded { dir.listFiles()?.filter { it.isFile && it.name != ".mote-local-format" }?.sumOf { it.length() } ?: 0L }
     fun reservedOcrBytes(): Long = stats().reservedOcrBytes
     fun bytes(): Long = stats().bytes
-    private fun read(file: File): JSONObject = JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8))
-    private fun syncFailed(event: JSONObject) = event.optBoolean("_archiveMissing") || event.optBoolean("_ocrConflict") || event.optBoolean("_uploadConflict")
-    private fun ocrReserve(event: JSONObject) = if (event.optJSONObject("ocr")?.optString("status") == "pending" && !event.has("_ocrResult") && !syncFailed(event)) OCR_RESERVE_BYTES else 0L
+    private fun read(file: File): JSONObject = JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8)).also(LocalDataFormat::validateEvent)
+    private fun syncFailed(event: JSONObject) = event.optBoolean("_archiveMissing") || event.optBoolean("_uploadConflict")
     private fun atomic(file: File, bytes: ByteArray, modifiedAt: Long? = null) {
         val temp = File(dir, "${UUID.randomUUID()}.tmp")
         try {
@@ -232,6 +207,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     private fun capacityUpperBound(): Long = diskBytes() + browseIndex().pendingDiskBytes() + browseIndex().reservationUpperBound(browseFiles())
     private fun validateStageCapture(capture: StageCapture): JSONObject {
         val event = capture.event
+        LocalDataFormat.validateEvent(event)
         val image = capture.image
         require(!event.getJSONObject("privacy").optBoolean("excluded")) { "Excluded captures must never be queued" }
         fun requireAppName(value: JSONObject) {
@@ -427,7 +403,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val checkpointBytes = checkpoint.toString().toByteArray(Charsets.UTF_8)
         val extra = outputs.sumOf { (stored, image, existing) ->
             val hash = stored.optString("_blob")
-            (stored.toString().toByteArray(Charsets.UTF_8).size + 2048L + ocrReserve(stored) - (existing?.let { ocrReserve(it) + File(dir, "${it.getString("id")}.event").length() } ?: 0L) +
+            (stored.toString().toByteArray(Charsets.UTF_8).size + 2048L - (existing?.let { File(dir, "${it.getString("id")}.event").length() } ?: 0L) +
                 if (image != null && !File(dir, "$hash.blob").exists()) image.size + 64L else 0L).coerceAtLeast(0L)
         } + journalBytes.size + checkpointBytes.size + 4096L
         if (capacityUpperBound() > maxBytes - extra && bytes() + browseIndex().pendingDiskBytes() > maxBytes - extra) throw QueueFull()
@@ -445,7 +421,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
 
     fun enqueue(rawEvent: JSONObject, image: ByteArray?, maxBytes: Long, reviewHeld: Boolean = false): String {
-        val maximumAddition = rawEvent.toString().toByteArray().size * 4L + 8192L + (image?.size ?: 0) * 4L + ocrReserve(rawEvent)
+        LocalDataFormat.validateEvent(rawEvent)
+        val maximumAddition = rawEvent.toString().toByteArray().size * 4L + 8192L + (image?.size ?: 0) * 4L
         if (guarded { capacityUpperBound() > maxBytes - maximumAddition }) prepareIndex()
         return guarded {
             replayStageJournal()
@@ -526,8 +503,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val record = read(file)
         if (observations != null && (record.optJSONObject("stateSeries")?.optJSONArray("samples")?.length() ?: 0) > observations) return
         if (record.optBoolean("_uploaded")) return
-        if (record.optJSONObject("ocr")?.optString("status") == "pending") atomic(file, record.put("_uploaded", true).toString().toByteArray())
-        else retainOrRemove(file, record, retentionDays, now)
+        retainOrRemove(file, record, retentionDays, now)
         releaseAcknowledgedStageHead(id)
         onChange?.invoke(when (record.optString("source")) { "ui_page" -> OperationKind.PAGE_ACK; "notification", "device_event" -> OperationKind.SYSTEM_EVENT_ACK; "media" -> OperationKind.MEDIA_ACK; "activity" -> OperationKind.ACTIVITY_ACK; "note" -> OperationKind.NOTE_ACK; else -> OperationKind.SCREEN_ACK }, uploadedBytes, id)
     }
@@ -536,7 +512,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (days == 0) remove(file, record)
         else atomic(file, record.put("_uploaded", true).put("_retainedUntil", now + days * 86_400_000L).toString().toByteArray())
     }
-    /** Never prune pending uploads, pending OCR or conflict records. Deadline starts at final ACK. */
+    /** Never prune pending uploads or conflict records. Deadline starts at final ACK. */
     fun pruneUploaded(now: Long = System.currentTimeMillis()): Int {
         prepareIndex()
         val ids = guarded { metadata().filter { it.optLong("retainedUntil") in 1..now && !it.optBoolean("pending") && !it.optBoolean("blocked") && !it.optBoolean("awaitingOcr") }.map { it.getString("id") } }
@@ -546,8 +522,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
                 val file = File(dir, "$id.event")
                 if (file.exists()) {
                     val event = read(file)
-                    if (event.optBoolean("_uploaded") && event.optLong("_retainedUntil") in 1..now && !syncFailed(event) &&
-                        (event.optJSONObject("ocr")?.optString("status") != "pending" || event.optBoolean("_ocrUploaded"))) { remove(file, event); count++ }
+                    if (event.optBoolean("_uploaded") && event.optLong("_retainedUntil") in 1..now && !syncFailed(event)) { remove(file, event); count++ }
                 }
             }
         }
@@ -565,59 +540,10 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         }
         releaseAcknowledgedStageHead(file.nameWithoutExtension)
     }
-    fun pendingOcr(): JSONObject? {
-        prepareIndex()
-        return guarded {
-            metadata().asSequence().filter { it.optBoolean("awaitingOcr") && !it.optBoolean("blocked") }.sortedBy { it.getLong("modified") }
-                .map { read(File(dir, "${it.getString("id")}.event")) }.firstOrNull(::matchesOrigin)?.apply { remove("_blob"); remove("_uploaded") }
-        }
-    }
-    fun completeOcr(id: String, text: String, status: String, maxBytes: Long) = guarded {
-        require(status in setOf("completed", "failed") && text.length <= 100_000)
-        val file = File(dir, "${UUID.fromString(id)}.event")
-        if (!file.exists()) return
-        val event = read(file)
-        check(matchesOrigin(event)) { MoteI18n.text("待同步资料属于原节点，请先同步到原节点；清空连接不会解除资料绑定") }
-        require(event.optJSONObject("ocr")?.optString("status") == "pending")
-        val reserve = ocrReserve(event)
-        val result = JSONObject().put("status", status).put("ocrText", text).put("updatedAt", java.time.Instant.now().toString())
-        val body = event.put("_ocrResult", result).toString().toByteArray()
-        val growth = body.size + 64L - file.length()
-        // Completing a bounded pending result consumes its reservation, even if the user shrank the cap.
-        if (growth > reserve && bytes() - reserve + growth > maxBytes) throw QueueFull()
-        atomic(file, body)
-    }
-    fun recordOcrFailure(id: String): Int = guarded {
-        val file = File(dir, "${UUID.fromString(id)}.event")
-        if (!file.exists()) return 0
-        val event = read(file); val attempts = (event.optInt("_ocrAttempts") + 1).coerceAtMost(100)
-        atomic(file, event.put("_ocrAttempts", attempts).toString().toByteArray())
-        attempts
-    }
-    fun nextOcrUpdate(): JSONObject? {
-        prepareIndex()
-        return guarded {
-            metadata().asSequence().filter { it.optBoolean("uploaded") && it.optBoolean("hasOcrResult") && !it.optBoolean("ocrUploaded") && !it.optBoolean("blocked") }.sortedBy { it.getLong("modified") }
-                .map { read(File(dir, "${it.getString("id")}.event")) }.firstOrNull(::matchesOrigin)
-                ?.let { JSONObject(it.getJSONObject("_ocrResult").toString()).put("id", it.getString("id")) }
-        }
-    }
-    fun acknowledgeOcr(id: String, retentionDays: Int = 0, now: Long = System.currentTimeMillis()) = guarded {
-        val file = File(dir, "${UUID.fromString(id)}.event")
-        if (!file.exists()) return
-        val event = read(file); require(event.optBoolean("_uploaded") && event.has("_ocrResult"))
-        if (event.optBoolean("_ocrUploaded")) return
-        retainOrRemove(file, event.put("_ocrUploaded", true), retentionDays, now)
-    }
     fun archiveMissing(id: String) = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return
         atomic(file, read(file).put("_archiveMissing", true).toString().toByteArray())
-    }
-    fun ocrConflict(id: String) = guarded {
-        val file = File(dir, "${UUID.fromString(id)}.event")
-        if (!file.exists()) return
-        atomic(file, read(file).put("_ocrConflict", true).toString().toByteArray())
     }
     /** The caller's work never holds the queue lock; each mutation still commits atomically.
      * A crash during a batch leaves invalidated shards absent and rebuildable from events.
@@ -675,7 +601,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             verifiedBlob(hash)
             if (target.exists()) check(destination.read(target).toString() == event.toString()) { MoteI18n.text("目标已有不同记录，保留两份以供检查") }
             else {
-                val additional = event.toString().toByteArray().size + 2048L + ocrReserve(event) +
+                val additional = event.toString().toByteArray().size + 2048L +
                     if (blob.exists()) 0L else File(dir, "$hash.blob").length() + 64L
                 if (destination.bytes() + destination.browseIndex().pendingDiskBytes() > destinationMaxBytes - additional) throw QueueFull()
                 if (!blob.exists()) destination.atomic(blob, requireNotNull(verifiedBlob(hash, readBytes = true)))
@@ -713,15 +639,10 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     private fun display(event: JSONObject): JSONObject {
         val hash = event.optString("_blob")
         event.put("sizeBytes", event.optString("ocrText").toByteArray().size.toLong() + if (hash.matches(Regex("[a-f0-9]{64}"))) File(dir, "$hash.blob").length() else 0L)
-        event.put("ocrSynced", event.optBoolean("_ocrUploaded")).put("retainedUntil", event.optLong("_retainedUntil"))
+        event.put("retainedUntil", event.optLong("_retainedUntil"))
         event.put("hasImage", event.optString("_blob").isNotBlank()).put("uploaded", event.optBoolean("_uploaded"))
-        event.optJSONObject("_ocrResult")?.let { result ->
-            event.put("ocrText", result.getString("ocrText"))
-                .put("ocr", JSONObject().put("status", result.getString("status")).put("updatedAt", result.getString("updatedAt")))
-        }
         if (event.optBoolean("_uploadConflict")) event.put("syncError", "upload_conflict")
         if (event.optBoolean("_archiveMissing")) event.put("syncError", "archive_missing").put("ocr", JSONObject().put("status", "failed"))
-        if (event.optBoolean("_ocrConflict")) event.put("syncError", "ocr_conflict").put("ocr", JSONObject().put("status", "failed"))
         event.optJSONObject("_centralDerived")?.let { result ->
             event.put("centralProcessing", result.optJSONArray("perceptionJobs"))
             if (result.optJSONObject("ocr")?.optString("status") == "completed") {
@@ -848,41 +769,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             }
         }
     }
-    /** Each authenticated legacy file is replaced atomically, independently of other files.
-     * A failed read leaves the original untouched; mixed old/new libraries remain readable.
-     */
-    fun migrateLegacyContent(onProgress: (Int, Int) -> Unit = { _, _ -> }, shouldStop: () -> Boolean = { false }): Int {
-        val codec = cipher as? LocalContentCipher ?: return 0
-        var migrated = 0
-        codec.withPlaintextWrites { withDeferredIndexWrites {
-            val files = guarded { dir.listFiles()?.filter { it.extension in setOf("event", "blob", "thumb") || it.name.startsWith(".browse-v1-") } ?: error(MoteI18n.text("无法读取本机存储目录")) }
-            for ((position, file) in files.withIndex()) {
-                if (shouldStop()) break
-                guarded {
-                    if (file.exists()) {
-                        val original = file.readBytes()
-                        if (codec.isLegacy(original)) {
-                            val decoded = codec.open(original)
-                            when (file.extension) {
-                                "event" -> {
-                                    val event = JSONObject(String(decoded, Charsets.UTF_8))
-                                    check(event.getString("id") == file.nameWithoutExtension)
-                                    java.time.Instant.parse(event.getString("capturedAt"))
-                                }
-                                "blob" -> check(MessageDigest.getInstance("SHA-256").digest(decoded).joinToString("") { "%02x".format(it) } == file.nameWithoutExtension) { MoteI18n.text("图片校验失败，原文件已保留") }
-                            }
-                            atomic(file, decoded, file.lastModified())
-                            migrated++
-                        }
-                    }
-                }
-                onProgress(position + 1, files.size)
-            }
-        } }
-        return migrated
-    }
     fun recoverOrphans() {
-        // Legacy metadata upgrades release the lock between small chunks. Final reconciliation
+        // Metadata repairs release the lock between small chunks. Final reconciliation
         // and unlinking share the lock so a newly committed capture can never lose its blob.
         prepareIndex()
         guarded {

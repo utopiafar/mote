@@ -1,3 +1,4 @@
+import {ensureStorageFormat} from './storage-format';
 import { moteText } from '@mote/shared/i18n';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, rename, readdir, unlink, stat } from 'node:fs/promises';
@@ -20,9 +21,8 @@ export class NoteDraftStore {
   private chain: Promise<unknown> = Promise.resolve();
   constructor(private directory: string) {}
   private exclusive<T>(fn: () => Promise<T>): Promise<T> { const task = this.chain.then(fn); this.chain = task.catch(() => undefined); return task; }
-  withContentMaintenance<T>(work: () => Promise<T>): Promise<T> { return this.exclusive(work); }
   async initialize(): Promise<void> {
-    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    await ensureStorageFormat(this.directory,['draft.json','note-ingress-v2.json']);
     try {
       const path = join(this.directory, 'draft.json');
       // Prepared submissions include a second copy; JSON can escape each UTF-16 unit as six bytes.
@@ -38,28 +38,6 @@ export class NoteDraftStore {
     for (const name of await readdir(this.directory)) if (name.endsWith('.tmp') && uuid.test(name.slice(0, -4))) await unlink(join(this.directory, name));
   }
   get(): NoteDraft { return { ...this.value.draft, prepared: Boolean(this.value.submission) }; }
-  /** The old prepared submission belongs to the cleared v1 vault. Preserve the
-   * user's text as a new editable draft, never replay its former event ID. */
-  clearPreparedForProtocolUpgrade():Promise<void> {
-    return this.exclusive(async()=>{
-      const marker=join(this.directory,'note-ingress-v2.json');
-      try{const value=JSON.parse((await readLocalContent(marker)).toString('utf8')) as {version?:unknown};
-        if(value.version===2)return;
-        throw Error('Invalid note ingress migration marker');
-      }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
-      if(this.value.submission){
-        const {text,mood}=this.value.draft;
-        await this.persist({draft:{...emptyDraft(),text,mood}});
-      }else if(this.value.completed)await this.persist({draft:this.value.draft});
-      const temporary=join(this.directory,randomUUID()+'.tmp');
-      try{
-        const file=await open(temporary,'wx',0o600);
-        try{await file.writeFile(JSON.stringify({version:2}));await file.sync();}finally{await file.close();}
-        await rename(temporary,marker);
-        if(process.platform!=='win32'){const directory=await open(this.directory,'r');try{await directory.sync();}finally{await directory.close();}}
-      }finally{await unlink(temporary).catch(error=>{if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;});}
-    });
-  }
   hasUnboundPrepared(): boolean { return Boolean(this.value.submission && this.value.targetOrigin === ''); }
   async bindPreparedOrigin(origin: string): Promise<void> {
     await this.exclusive(async () => { if (this.hasUnboundPrepared()) await this.persist({ ...this.value, targetOrigin: origin }); });

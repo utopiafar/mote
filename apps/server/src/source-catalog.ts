@@ -11,9 +11,7 @@ export function initializeSourceCatalog(db:DatabaseSync){
  CREATE TRIGGER IF NOT EXISTS source_catalog_update AFTER UPDATE ON source_heads BEGIN
  DELETE FROM source_catalog WHERE source_id=new.source_id AND external_id=new.external_id;
  INSERT INTO source_catalog SELECT new.source_id,new.external_id,new.capture_id,mote_catalog_parent(json),COALESCE(json_extract(json,'$.windowTitle'),''),CASE WHEN json_extract(json,'$.ocrText')='' THEN 'catalog' ELSE COALESCE(json_extract(json,'$.provenance.document.fileIndex.coverage'),'full') END FROM captures WHERE id=new.capture_id AND new.deleted=0 AND json_extract(json,'$.source')='file'; END;`);
- if(!db.prepare("SELECT 1 FROM settings WHERE key='source-catalog-v1'").get())db.exec(`BEGIN IMMEDIATE;
- INSERT OR REPLACE INTO source_catalog SELECT h.source_id,h.external_id,c.id,mote_catalog_parent(c.json),COALESCE(json_extract(c.json,'$.windowTitle'),''),CASE WHEN json_extract(c.json,'$.ocrText')='' THEN 'catalog' ELSE COALESCE(json_extract(c.json,'$.provenance.document.fileIndex.coverage'),'full') END FROM source_heads h JOIN captures c ON c.id=h.capture_id WHERE h.deleted=0 AND json_extract(c.json,'$.source')='file';
- INSERT INTO settings VALUES('source-catalog-v1','1'); COMMIT;`);
+
 }
 export function browseSourceCatalog(db:DatabaseSync,sourceId:string,input:{parent?:string;cursor?:string;limit?:number}={}){
  const args=z.object({parent:z.string().max(2048).optional(),cursor:z.string().max(8192).optional(),limit:z.number().int().min(1).max(100).default(30)}).parse(input);

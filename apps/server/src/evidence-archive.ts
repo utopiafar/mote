@@ -18,14 +18,13 @@ export class EvidenceArchive {
   constructor(readonly store:Store){
     const db=store.db;
     db.function('mote_observation_key',{deterministic:true},json=>observationKey(JSON.parse(String(json))));
-    if(db.prepare('PRAGMA table_info(context_dirty)').all().length&&!db.prepare('PRAGMA table_info(context_dirty)').all().some(row=>row.name==='error'))db.exec('ALTER TABLE context_dirty ADD COLUMN error TEXT');
     db.exec('PRAGMA recursive_triggers=ON');
     db.exec(`
       CREATE TABLE IF NOT EXISTS context_contents(hash TEXT PRIMARY KEY,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS context_observations(id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE,group_key TEXT NOT NULL,content_hash TEXT REFERENCES context_contents(hash));
       CREATE INDEX IF NOT EXISTS observations_group ON context_observations(group_key,id);
       CREATE INDEX IF NOT EXISTS observations_content ON context_observations(content_hash);
-      CREATE TABLE IF NOT EXISTS context_dirty(group_key TEXT PRIMARY KEY,generation INTEGER NOT NULL DEFAULT 1,error TEXT);
+      CREATE TABLE IF NOT EXISTS context_dirty(group_key TEXT PRIMARY KEY,generation INTEGER NOT NULL DEFAULT 1,error TEXT,changed_at INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS context_artifacts(id TEXT PRIMARY KEY,group_key TEXT NOT NULL,revision TEXT NOT NULL,kind TEXT NOT NULL,first_at TEXT NOT NULL,last_at TEXT NOT NULL,device_id TEXT NOT NULL,app_id TEXT NOT NULL,source TEXT NOT NULL,content_hash TEXT NOT NULL REFERENCES context_contents(hash),json TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS artifacts_group ON context_artifacts(group_key);
       CREATE INDEX IF NOT EXISTS artifacts_time ON context_artifacts(last_at DESC,id);
@@ -53,8 +52,6 @@ export class EvidenceArchive {
         INSERT INTO context_dirty(group_key) SELECT group_key FROM context_observations WHERE id=new.id ON CONFLICT(group_key) DO UPDATE SET generation=generation+1,error=NULL;
       END;
     `);
-    if(!db.prepare('PRAGMA table_info(context_dirty)').all().some(row=>row.name==='error'))db.exec('ALTER TABLE context_dirty ADD COLUMN error TEXT');
-    if(!db.prepare('PRAGMA table_info(context_dirty)').all().some(row=>row.name==='changed_at'))db.exec('ALTER TABLE context_dirty ADD COLUMN changed_at INTEGER NOT NULL DEFAULT 0');
     db.exec(`CREATE TRIGGER IF NOT EXISTS dirty_created AFTER INSERT ON context_dirty BEGIN UPDATE context_dirty SET changed_at=CAST(unixepoch('subsec')*1000 AS INTEGER) WHERE group_key=new.group_key; END;
       CREATE TRIGGER IF NOT EXISTS dirty_changed AFTER UPDATE OF generation ON context_dirty BEGIN UPDATE context_dirty SET changed_at=CAST(unixepoch('subsec')*1000 AS INTEGER) WHERE group_key=new.group_key; END;
       CREATE TABLE IF NOT EXISTS artifact_dependencies(artifact_id TEXT NOT NULL REFERENCES context_artifacts(id) ON DELETE CASCADE,parent_id TEXT NOT NULL REFERENCES context_artifacts(id) ON DELETE CASCADE,revision TEXT NOT NULL,PRIMARY KEY(artifact_id,parent_id));
@@ -69,11 +66,8 @@ export class EvidenceArchive {
       CREATE VIRTUAL TABLE IF NOT EXISTS artifacts_fts USING fts5(id UNINDEXED,text,tokenize='trigram');
       CREATE TRIGGER IF NOT EXISTS artifacts_search_insert AFTER INSERT ON context_artifacts BEGIN INSERT INTO artifacts_fts(id,text) SELECT new.id,json_extract(json,'$.text') FROM context_contents WHERE hash=new.content_hash; END;
       CREATE TRIGGER IF NOT EXISTS artifacts_search_delete AFTER DELETE ON context_artifacts BEGIN DELETE FROM artifacts_fts WHERE id=old.id; END;
-      INSERT INTO artifacts_fts SELECT a.id,json_extract(c.json,'$.text') FROM context_artifacts a JOIN context_contents c ON c.hash=a.content_hash WHERE a.id NOT IN (SELECT id FROM artifacts_fts);`);
-    if(!db.prepare("SELECT 1 FROM settings WHERE key='evidence-archive-v1'").get())db.exec(`BEGIN IMMEDIATE;
-      INSERT OR IGNORE INTO context_observations(id,group_key) SELECT id,mote_observation_key(json) FROM captures;
-      INSERT OR IGNORE INTO context_dirty(group_key) SELECT DISTINCT group_key FROM context_observations;
-      INSERT INTO settings VALUES('evidence-archive-v1','1'); COMMIT;`);
+`);
+
   }
   revision(id:string){return this.store.db.prepare('SELECT revision FROM context_artifacts WHERE id=?').get(id)?.revision;}
   /** Installed after MaterialStore creates its tables. Revision changes invalidate

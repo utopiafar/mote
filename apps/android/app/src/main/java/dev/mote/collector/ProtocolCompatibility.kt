@@ -12,8 +12,6 @@ object ProtocolCompatibility {
     val headers = mapOf(HEADER to MAX.toString())
 
     fun requireCompatible(value: Any?): ProtocolRange {
-        // A missing field means the pre-negotiation v1 API. Explicit JSON null is invalid.
-        if (value == null) return ProtocolRange(MIN, MAX)
         val range = value as? JSONObject ?: throw ConnectionFailure("response")
         if (range.keys().asSequence().toSet() != setOf("min", "max")) throw ConnectionFailure("response")
         fun version(key: String): Int {

@@ -1,3 +1,4 @@
+import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -72,7 +73,7 @@ test('a manual composition retains default dependencies without blocking an inde
   const first=materials.publish(initial),body=materials.input(first.ref,['body'])!;
   const memories=new MemoryStore(store,ids=>materials.evidence(ids),id=>materials.isCurrentEvidence(id));
   const calls:string[][]=[];
-  const pipeline=new MemoryPipeline({store,memories,strategies,configured:()=>true,model:()=> 'fixture',
+  const pipeline=fixtureMemoryPipeline({store,memories,strategies,configured:()=>true,model:()=> 'fixture',
     materialInput:(ref,required)=>materials.input(ref,required),materialAllowedForMemory:(ref,_profile,required)=>Boolean(materials.input(ref,required??['material'])?.ready),
     query:async input=>{calls.push((input.processingMaterialInputs??[]).flatMap(pin=>pin.required));return {answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-independent-body'};},review:async(_input,result)=>result});
   try{

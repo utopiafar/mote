@@ -22,7 +22,7 @@ try{
   assert.ok(items.some(m=>m.id===model),'test model must be available in the local Codex catalog');
   console.log(JSON.stringify({stage:'catalog',model,availableModels:items.length}));
   let view=(await node.app.inject({url:'/api/model-settings',headers})).json<ModelSettingsView>();
-  const settings={provider:'codex',protocol:'codex-app-server',baseUrl:'',model,reasoningEffort:items.find(m=>m.id===model)?.reasoningEfforts?.includes('low')?'low':'auto',maxTokens:8192,modelRequestTimeoutMs:null,agentTimeoutMs:null,allowUnauthenticatedLocal:false,apiKey:null,headers:null,extraBody:null};
+  const settings={provider:'codex',protocol:'codex-app-server',baseUrl:'',model,reasoningEffort:items.find(m=>m.id===model)?.reasoningEfforts?.includes('low')?'low':'auto',maxTokens:8192,serviceTier:'default',modelRequestTimeoutMs:null,agentTimeoutMs:null,allowUnauthenticatedLocal:false,apiKey:null,headers:null,extraBody:null};
   const saved=await node.app.inject({method:'PUT',url:'/api/model-settings/profiles/local-codex',headers,payload:{revision:view.revision,name:'Generated live Codex preset',settings}});
   assert.equal(saved.statusCode,200,saved.body);view=saved.json();
   const probe=await node.app.inject({method:'POST',url:'/api/model-settings/profiles/local-codex/test',headers,payload:{revision:view.revision,settings}});
@@ -36,7 +36,7 @@ try{
   const assigned=await node.app.inject({method:'PUT',url:'/api/model-settings/defaults',headers,payload:{revision:view.revision,defaults:{...view.defaults,chat:'codex-copy'},defaultModels:{chat:model}}});
   assert.equal(assigned.statusCode,200,assigned.body);
   const evidenceId=randomUUID();
-  const note=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id:evidenceId,deviceId:'generated-codex-test',deviceName:'Generated fixture',platform:'import',capturedAt:new Date().toISOString(),text:'Generated Mote provider validation: the synthetic observatory opens on Wednesday at 14:30. This is test data, not a personal record.'}});
+  const note=await node.app.inject({method:'POST',url:'/api/notes',headers:{...headers,'X-Mote-Ingress-Version':'2'},payload:{id:evidenceId,deviceId:'generated-codex-test',deviceName:'Generated fixture',platform:'import',capturedAt:new Date().toISOString(),text:'Generated Mote provider validation: the synthetic observatory opens on Wednesday at 14:30. This is test data, not a personal record.'}});
   assert.equal(note.statusCode,201,note.body);
   const started=Date.now();
   const answer=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'This is a synthetic integration test. Find the synthetic observatory in the archive using the available retrieval tools, then call evidence to read the matching record. What day and time does it open? Cite the source record.'}});

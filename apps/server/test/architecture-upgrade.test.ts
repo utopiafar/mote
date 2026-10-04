@@ -110,8 +110,8 @@ test('plugin withdrawal blocks queued work and a changed version gets a new cach
  const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation();await store.ingest(a);const processor={id:'fixture.version',version:'1',lane:'extract' as const,async process(){return [{kind:'text',text:'Versioned',metadata:{}}];}};const unregister=runtime.registry.register(processor);const first=runtime.enqueue([{name:'s',processor:processor.id,inputs:[a.id]}]).s;unregister();await runtime.tick();assert.equal(store.db.prepare('SELECT error FROM processing_jobs WHERE id=?').get(first)!.error,'processor_version_unavailable');runtime.registry.register({...processor,version:'2'});const second=runtime.enqueue([{name:'s',processor:processor.id,inputs:[a.id]}]).s;assert.notEqual(first,second);await runtime.tick();assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(second)!.state,'succeeded');
 });
 
-test('upgrading memory extraction resets a legacy evidence cursor exactly once',async t=>{
- const {MemoryLifecycle}=await import('../src/memory-lifecycle.js');const store=fixture(t),old=new MemoryLifecycle(store,()=>false);old.register({id:'extraction',version:'1',stream:'evidence',async run(){}});store.db.prepare("UPDATE memory_lifecycle_state SET json=? WHERE id='extraction'").run(JSON.stringify({cursor:900000,lastSuccess:0,failures:2,active:{version:'1'}}));const upgraded=new MemoryLifecycle(store,()=>false);upgraded.register({id:'extraction',version:'2',stream:'artifact',async run(){}});assert.equal(upgraded.view().extensions[0].cursor,0);store.db.prepare("UPDATE memory_lifecycle_state SET json=json_set(json,'$.cursor',9) WHERE id='extraction'").run();const reopened=new MemoryLifecycle(store,()=>false);reopened.register({id:'extraction',version:'2',stream:'artifact',async run(){}});assert.equal(reopened.view().extensions[0].cursor,9);
+test('changing a lifecycle stream is refused without rewriting its durable cursor',async t=>{
+ const {MemoryLifecycle}=await import('../src/memory-lifecycle.js'),store=fixture(t),old=new MemoryLifecycle(store,()=>false);old.register({id:'extraction',version:'1',stream:'evidence',async run(){}});store.db.prepare("UPDATE memory_lifecycle_state SET json=json_set(json,'$.cursor',9) WHERE id='extraction'").run();const other=new MemoryLifecycle(store,()=>false);assert.throws(()=>other.register({id:'extraction',version:'2',stream:'artifact',async run(){}}),/Unsupported lifecycle stream/);const reopened=new MemoryLifecycle(store,()=>false);reopened.register({id:'extraction',version:'1',stream:'evidence',async run(){}});assert.equal(reopened.view().extensions[0].cursor,9);await Promise.all([old.close(),other.close(),reopened.close()]);
 });
 
 test('processing presentation exposes bounded steps and valid actions without raw configuration or content',async t=>{
@@ -121,23 +121,6 @@ test('processing presentation exposes bounded steps and valid actions without ra
  let view=runtime.view();assert.equal(view.jobs.length,1);assert.deepEqual(view.jobs[0].allowedActions,['cancel']);assert.equal(JSON.stringify(view).includes('generated-only-secret'),false);assert.equal(JSON.stringify(view).includes(a.ocrText),false);
  await runtime.tick();view=runtime.view();assert.equal(view.jobs[0].state,'failed');assert.deepEqual(view.jobs[0].allowedActions,['retry-step','cancel']);
  runtime.cancel(view.jobs[0].id);assert.deepEqual(runtime.view().jobs[0].allowedActions,['retry-step']);
-});
-
-test('legacy DAG authority migration preserves IDs, artifacts and interrupted retry counts',async t=>{
- const store=fixture(t),a=observation();await store.ingest(a);
- let runtime=new ProcessingRuntime(store),calls=0;
- const register=(fail=false)=>{runtime.registry.register({id:'fixture.migration',version:'1',lane:'extract',async process(input){calls++;if(fail&&input.config.child)throw new ProcessingFailure('transient');return [{kind:'text',text:input.config.child?'Migrated child':'Preserved parent',metadata:{}}];}});};register(true);
- const graph=[{name:'parent',processor:'fixture.migration',inputs:[a.id]},{name:'child',processor:'fixture.migration',inputs:[a.id],dependsOn:['parent'],config:{child:true}}];
- const ids=runtime.enqueue(graph);await runtime.tick();const parent=JSON.parse(String(store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(ids.parent)!.json));const original=store.archive.get(parent.outputs[0]);assert.ok(original);
- await runtime.close();
- // Generated legacy checkpoint: no common-engine authority existed before upgrade.
- store.db.exec("DELETE FROM execution_dependencies; DELETE FROM execution_operation_steps; DELETE FROM execution_steps; DELETE FROM settings WHERE key='execution-dag-v1'");
- store.db.prepare("UPDATE processing_jobs SET state='running',attempts=2,lease_until=1,available_at=0,fence='legacy' WHERE id=?").run(ids.child);
- runtime=new ProcessingRuntime(store);register();t.after(()=>runtime.close());
- assert.equal(runtime.engine.get(ids.parent)!.state,'succeeded');assert.equal(runtime.engine.get(ids.child)!.state,'waiting');assert.equal(runtime.engine.get(ids.child)!.attempts,2);
- assert.deepEqual(store.archive.get(parent.outputs[0]),original);const before=calls;await runtime.tick();assert.equal(calls,before+1);
- assert.equal(runtime.engine.get(ids.child)!.state,'succeeded');assert.equal(runtime.engine.get(ids.child)!.attempts,3);
- assert.deepEqual(runtime.enqueue(graph),ids);await runtime.tick();assert.equal(calls,before+1,'migration replay reran an existing result');
 });
 
 test('cached DAG steps can be traced from each operation without a second execution owner',async t=>{

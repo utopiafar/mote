@@ -44,7 +44,7 @@ export function createCodexAgent(options:AgentOptions){
           if(!skill)throw new Error('Unknown skill');const result={name:skill.name,content:skill.content};trace({type:'tool.completed',stage:'tool',phase:'completed',tool:name,status:'succeeded',payload:{result}});return result;
         }
         if(!taskTools(input).includes(name))throw new Error('Unknown tool');
-        const requestTimeoutMs = options.requestTimeoutMs !== undefined ? options.requestTimeoutMs : options.timeoutMs;
+        const requestTimeoutMs = options.requestTimeoutMs;
         try {
           const response=await fetch(bridge.url+'/'+name,{method:'POST',headers:{Authorization:'Bearer '+bridge.token,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(requestTimeoutMs??120000)});
           if(!response.ok){const body=await response.json() as {toolError?:{code:string;message:string;recovery:'correct_arguments'|'use_existing_evidence'|'stop';details:Record<string,unknown>}};const error=body.toolError;if(error)throw new ContextToolError(error.code,error.message,error.recovery,error.details);throw new Error('Context tool rejected');}

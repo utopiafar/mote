@@ -12,7 +12,7 @@ data class QueueLocation(val id: String, val baseId: String, val path: String) {
 }
 
 /** The pointer and recovery journal always stay on internal storage. Files are copied byte-for-byte and verified before switching. */
-class QueueLocationStore(private val control: File, private val legacy: File, private val cipher: ByteCipher,
+class QueueLocationStore(private val control: File, private val initialDirectory: File, private val cipher: ByteCipher,
     private val validate: (QueueLocation) -> Unit = {}, private val checkpoint: (String) -> Unit = {},
     private val syncDirectory: (File) -> Unit = { java.nio.channels.FileChannel.open(it.toPath(), java.nio.file.StandardOpenOption.READ).use { channel -> channel.force(true) } }) {
     private val pointer = File(control, "queue-location.json")
@@ -39,11 +39,12 @@ class QueueLocationStore(private val control: File, private val legacy: File, pr
     private fun load(): QueueLocation {
         if (pointer.exists()) return QueueLocation.parse(read(pointer)).also(::identified)
         check(!journal.exists()) { MoteI18n.text("存储恢复记录存在，但位置指针缺失，请保留应用数据") }
-        check(legacy.isDirectory || legacy.mkdirs()) { MoteI18n.text("无法创建本机存储目录") }
-        check(!java.nio.file.Files.isSymbolicLink(legacy.toPath())) { MoteI18n.text("存储目录不可为符号链接") }
-        val marker = File(legacy, IDENTITY)
+        check(initialDirectory.isDirectory || initialDirectory.mkdirs()) { MoteI18n.text("无法创建本机存储目录") }
+        check(!java.nio.file.Files.isSymbolicLink(initialDirectory.toPath())) { MoteI18n.text("存储目录不可为符号链接") }
+        LocalDataFormat.requireCurrent(initialDirectory)
+        val marker = File(initialDirectory, IDENTITY)
         val id = if (marker.exists()) UUID.fromString(marker.readText()).toString() else UUID.randomUUID().toString().also { atomic(marker, it.toByteArray()) }
-        val location = QueueLocation(id, "internal", legacy.absolutePath)
+        val location = QueueLocation(id, "internal", initialDirectory.absolutePath)
         identified(location); write(pointer, location.json())
         return location
     }

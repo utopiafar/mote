@@ -13,7 +13,7 @@ test('evidence keeps delivered ranges per revision and layer without replacing o
  assert.equal(evidenceLayers(records).length,3);assert.equal(records.get('generated').deliveredRanges.length,1);
 });
 test('bridge lineage includes successfully disclosed uncited originals and derived cards only',async()=>{
- const a={id:'generated-a',capturedAt:'2026-09-01T00:00:00Z',appName:'Fixture',ocrText:'Read but never cited'},b={...a,id:'generated-b'};
+ const a={id:'2d21d371-92b5-5657-90ec-ad099bf37d4e',capturedAt:'2026-09-01T00:00:00Z',appName:'Fixture',ocrText:'Read but never cited'},b={...a,id:'bfa2289f-2bbc-5827-b82b-76df5374788c'};
  const reader={search:async()=>[a],timeline:async()=>({items:[b],nextCursor:null}),evidence:async()=>[a],devices:async()=>[],activity:async()=>({}),memories:async()=>({items:[{id:'generated-memory',title:'Derived title'}],references:[{id:b.id,capturedAt:b.capturedAt,characters:20}]})};
  const bridge=await startBridge(reader,{question:'Synthetic disclosure'},8);
  const call=async(tool,args)=>{const response=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify(args)});assert.equal(response.status,200);return response.json();};

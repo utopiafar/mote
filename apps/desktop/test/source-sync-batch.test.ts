@@ -133,3 +133,15 @@ it('validates every manifest identity before applying accepted and rejected resu
    return {results:entries.map(({item},index)=>({externalId:index?'wrong':item.externalId,revision:item.revision,...(index?{state:'rejected',status:410}:{state:'accepted',ack:receipt(item)})}))};
  })).rejects.toThrow('manifest acknowledgement');expect(engine.status()).toMatchObject({pending:2,blocked:0});
 });
+
+it('rejects a manifest ACK missing state before settling any record and preserves both records across restart',async()=>{
+ const state=join(root,'state.json'),engine=new SourceSync(state);await engine.initialize();
+ await engine.stage({items:[indexedFile(1),indexedFile(2)],seen:[],complete:false,skipped:0},false);
+ await expect(engine.flush(source,async(path,body)=>{
+   if(path==='/api/sources')return {id:source.id,enabled:true};if(path.endsWith('/capabilities'))return {manifestBatch:100};
+   const entries=(body as {items:{item:ScannedItem&{revision:string}}[]}).items;
+   return {results:entries.map(({item},index)=>({externalId:item.externalId,revision:item.revision,...(index?{}:{state:'accepted'}),ack:receipt(item)}))};
+ })).rejects.toThrow('manifest acknowledgement');
+ expect(engine.status()).toMatchObject({pending:2,blocked:0});
+ const restarted=new SourceSync(state);await restarted.initialize();expect(restarted.status()).toMatchObject({pending:2,blocked:0});
+});

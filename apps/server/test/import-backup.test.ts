@@ -36,7 +36,7 @@ test('restored import rebases all paths and replays a partial import without los
  resumed.delete(job.id);assert.equal(readFileSync(join(oldWorkspace,'generated-secret-script.mjs'),'utf8'),'synthetic original marker');
 });
 
-for(const mode of ['plain','encrypted','mixed','legacy'] as const)test(`${mode} backup restores imported originals and multipart client files through their original readers`,async t=>{
+for(const mode of ['plain','encrypted','mixed'] as const)test(`${mode} backup restores imported originals and multipart client files through their original readers`,async t=>{
  const root=realpathSync(mkdtempSync(join(tmpdir(),'mote-mixed-backup-'))),source=join(root,'source'),snapshot=join(root,'snapshot'),target=join(root,'target'),key='cd'.repeat(32);
  const original=new Store(source,{dataKey:key,contentEncryptionEnabled:mode!=='plain'}),sources=new SourceStore(original),archived=new ArchivedFileStore(original),files=new FileStore(original,sources);let restored:Store|undefined;
  t.after(()=>{original.close();restored?.close();rmSync(root,{recursive:true,force:true});});
@@ -47,13 +47,6 @@ for(const mode of ['plain','encrypted','mixed','legacy'] as const)test(`${mode} 
  const suffix=mode==='plain'?'.plain':'.aes',partBase=join(files.objects,sha256(bytes));
  if(mode==='plain')assert.deepEqual(readFileSync(join(partBase,'0'+suffix)),bytes.subarray(0,FILE_PART_BYTES));
  else assert.notDeepEqual(readFileSync(join(partBase,'0'+suffix)),bytes.subarray(0,FILE_PART_BYTES));
- const legacy=mode==='legacy'||mode==='mixed';
- if(legacy){
-   // Old vaults used unsuffixed AES-GCM originals/parts and one vault-wide key identity.
-   original.db.prepare('UPDATE settings SET value=? WHERE key=?').run(sha256(Buffer.from(key,'hex')),'encryption');
-   legacyAsset(original,imported.files[0].hash,'archive-legacy',true);
-   if(mode==='legacy')for(let part=0;part<2;part++)renameSync(join(partBase,part+'.aes'),join(partBase,String(part)));
- }
  let plainOriginal:ReturnType<ArchivedFileStore['put']>|undefined;
  if(mode==='mixed'){
    original.contentEncryption.setEnabled(false);
@@ -66,9 +59,9 @@ for(const mode of ['plain','encrypted','mixed','legacy'] as const)test(`${mode} 
  original.db.prepare("UPDATE file_jobs SET state='running',summary_state='running',attempts=2,available_at=12345,local_only=1 WHERE capture_id=?").run(ack.id);
  takeBackup(source,snapshot);
  const manifest=JSON.parse(readFileSync(join(snapshot,'backup-manifest.json'),'utf8'));
- const selectedPartSuffix=mode==='legacy'?'':mode==='mixed'?'.plain':suffix;
+ const selectedPartSuffix=mode==='mixed'?'.plain':suffix;
  assert.ok(Object.hasOwn(manifest.checksums,`files/objects/${sha256(bytes)}/0${selectedPartSuffix}`));
- assert.ok(Object.hasOwn(manifest.checksums,legacy?`files/${imported.files[0].hash}`:`files/objects/${imported.files[0].hash}/0${suffix}`));
+ assert.ok(Object.hasOwn(manifest.checksums,`files/objects/${imported.files[0].hash}/0${suffix}`));
  if(mode==='mixed'){
    assert.ok(Object.hasOwn(manifest.checksums,`files/objects/${sha256(bytes)}/1.aes`));
    assert.equal(Object.hasOwn(manifest.checksums,`files/objects/${sha256(bytes)}/0.aes`),false);

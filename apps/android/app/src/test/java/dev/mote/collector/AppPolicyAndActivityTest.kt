@@ -50,7 +50,7 @@ class AppPolicyAndActivityTest {
 
     @Test fun freshAndLegacyDefaultsDifferButAnExplicitContentRuleIsPreserved() {
         assertEquals(AppCollectionMode.ACTIVITY, AppCollectionRules.parse(AppCollectionRules.DEFAULT).defaultMode)
-        assertEquals(AppCollectionMode.CONTENT, AppCollectionRules.parse(AppCollectionRules.LEGACY_DEFAULT).defaultMode)
+        assertEquals(AppCollectionMode.CONTENT, AppCollectionRules.parse(AppCollectionRules.CONTENT_DEFAULT).defaultMode)
         val configured = AppCollectionRules.fromLines(AppCollectionMode.CONTENT, "fixture.private=activity")
         assertEquals(AppCollectionMode.CONTENT, configured.decide(WindowSnapshot(setOf("fixture.editor"), "fixture.editor", true), emptySet()))
         assertEquals(AppCollectionMode.OFF, configured.decide(WindowSnapshot(setOf("fixture.editor"), "fixture.editor", false), emptySet()))
@@ -65,7 +65,7 @@ class AppPolicyAndActivityTest {
         assertEquals(AppCollectionMode.OFF, rules.decide(CollectionWindows.snapshot(listOf(app, CollectionWindow(3, "com.example.overlay", systemBar = true)), app.packageName), emptySet()))
     }
     @Test fun defaultContentIncludesLauncherSystemAndUnidentifiedSurfaces() {
-        val defaults = AppCollectionRules.parse(AppCollectionRules.LEGACY_DEFAULT)
+        val defaults = AppCollectionRules.parse(AppCollectionRules.CONTENT_DEFAULT)
         val launcher = CollectionWindows.snapshot(listOf(CollectionWindow(1, "com.example.launcher")), "com.example.launcher")
         val system = CollectionWindows.snapshot(listOf(CollectionWindow(3, "com.android.systemui")), null)
         val absent = WindowSnapshot(emptySet(), null, false)

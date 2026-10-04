@@ -33,7 +33,13 @@ app.on('browser-window-created', (_event, window) => {
         assert.equal(status.config.serverUrl, 'http://127.0.0.1:' + (name === 'dev' ? 47842 : 47852));
         assert.equal(status.config.tokenConfigured, false); assert.equal(status.queueDepth, 0);
         const before = await run('window.mote.noteDraft()'); assert.equal(before.text, '');
-        receiver = createServer((req, res) => { req.resume(); res.writeHead(401, { 'Content-Type': 'application/json' }); res.end('{"error":"synthetic deny"}'); });
+        receiver = createServer((req, res) => {
+          req.resume();
+          if(req.url==='/api/connections/self'){
+            assert.equal(req.headers.authorization,'Bearer '+token);res.writeHead(200,{'Content-Type':'application/json'});
+            res.end(JSON.stringify({credential:{id:'generated-'+name,scope:'owner',label:'Generated '+name,deviceId:status.config.deviceId},node:{version:'0.0.79',profile:name,protocol:{min:1,max:1}},capabilities:{ingest:true,ingressVersion:2,ownSources:true,archiveRead:true}}));
+          }else {res.writeHead(401, { 'Content-Type': 'application/json' }); res.end('{"error":"synthetic deny"}');}
+        });
         await new Promise(resolve => receiver.listen(0, '127.0.0.1', resolve));
         const config = { ...status.config, token, serverUrl: 'http://127.0.0.1:' + receiver.address().port, deviceName: 'private fixture device ' + name, diagnosticsEnabled: true };
         await run(`window.mote.configure(${JSON.stringify(config)})`);

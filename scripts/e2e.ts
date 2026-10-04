@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import sharp from 'sharp';
 import { buildApp } from '../apps/server/src/app.js';
+import {formatEvidenceRef} from '@mote/shared';
 import type { Config } from '../apps/server/src/config.js';
 import {writeMessagesResponse} from './fixtures/messages-provider.js';
 
@@ -17,14 +18,19 @@ const fixtureModel=createServer(async(req,res)=>{
   assert.equal(req.url,'/v1/messages');assert.equal(req.headers['x-api-key'],'synthetic-fixture');
   assert.equal(body.dsh_session_log,undefined);
   assert.ok(JSON.stringify(body.messages).includes('\\"language\\":\\"en\\"'), 'The selected language must be explicit in every model request');
-  const replies=(body.messages??[]).flatMap((message:any)=>Array.isArray(message.content)?message.content.filter((block:any)=>block.type==='tool_result').map((block:any)=>JSON.parse(block.content.find((value:any)=>value.type==='text').text)):[]);
+  const replies=(body.messages??[]).flatMap((message:any)=>Array.isArray(message.content)?message.content.filter((block:any)=>block.type==='tool_result').map((block:any)=>{
+    const text=block.content.find((value:any)=>value.type==='text')?.text;
+    assert.equal(typeof text,'string','Fixture provider expected a text tool result');
+    assert.ok(!block.is_error&&!text.startsWith('Error:'),`Fixture tool ${block.tool_use_id} failed: ${text.slice(0,500)}`);
+    return JSON.parse(text);
+  }):[]);
   const stage=replies.length;rounds++;
   const catalog=replies[0]?.data?.items??[];
   const screenRef=catalog.find((item:any)=>item.kind==='mote.screen-segment'&&item.origin.deviceId==='synthetic-mac')?.ref;
   const noteRef=catalog.find((item:any)=>item.kind==='mote.note')?.ref;
   if(stage>=1){assert.ok(screenRef,'The generated screen must be discoverable as a Material');assert.ok(noteRef,'The authored note must be discoverable as a Material');}
-  if(stage>=2)assert.ok(replies[1].data.originalRefs.includes(id),'Reading the screen Material grants its selected original');
-  if(stage>=3)assert.ok(replies[2].data.originalRefs.includes(noteId),'Reading the note Material grants its original');
+  if(stage>=2)assert.ok(replies[1].data.originalRefs.includes(formatEvidenceRef('capture',id)),`Reading the screen Material grants its selected original ${formatEvidenceRef('capture',id)}; current generated result: ${JSON.stringify(replies[1])}`);
+  if(stage>=3)assert.ok(replies[2].data.originalRefs.includes(formatEvidenceRef('capture',noteId)),`Reading the note Material grants its original ${formatEvidenceRef('capture',noteId)}; current generated result: ${JSON.stringify(replies[2])}`);
   if(stage>=4)assert.deepEqual(replies[3].data.map((record:any)=>record.id).sort(),[id,noteId].sort());
   const tool=stage===0?{name:'material_catalog',arguments:JSON.stringify({query:'orbital observatory'})}:
     stage===1?{name:'material_read',arguments:JSON.stringify({ref:screenRef})}:
@@ -36,7 +42,7 @@ const fixtureModel=createServer(async(req,res)=>{
 await new Promise<void>(r=>fixtureModel.listen(0,'127.0.0.1',r));
 const config:Config={dataDir:dir,token:'synthetic-e2e-not-a-real-secret',tokenPath:'unused',host:'127.0.0.1',port:0,contentEncryptionEnabled:true,dataKey:'3c'.repeat(32),maxStorageBytes:10000000,maxExportBytes:10000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'synthetic-fixture',modelBaseUrl:`http://127.0.0.1:${(fixtureModel.address() as AddressInfo).port}/v1`,apiKey:'synthetic-fixture',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
 const {app,materialOrganizer}=await buildApp(config);await app.listen({port:process.argv.includes('--serve')?47835:0,host:'127.0.0.1'});const base=`http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
-const headers={Authorization:`Bearer ${config.token}`,'Content-Type':'application/json','Accept-Language':'en'};
+const headers={Authorization:`Bearer ${config.token}`,'Content-Type':'application/json','Accept-Language':'en','X-Mote-Ingress-Version':'2'};
 async function call(path:string,body?:unknown,method=body?'POST':'GET') {const res=await fetch(base+path,{method,headers,...(body?{body:JSON.stringify(body)}:{})});assert.ok(res.ok,`${path} returned ${res.status}: ${res.ok?'':await res.text()}`);return res.json();}
 try {
   const image=await sharp({create:{width:128,height:80,channels:3,background:'#365c4e'}}).webp().toBuffer();

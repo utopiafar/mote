@@ -13,7 +13,7 @@ const directory=mkdtempSync(join(tmpdir(),'mote-admission-live-')),store=new Sto
 sources.register({id:'synthetic',name:'Generated fixtures',kind:'custom',deviceId:'synthetic',platform:'import'});
 const model=process.env.MOTE_TEST_CODEX_MODEL??'gpt-5.6-luna',reports:unknown[]=[];
 let calls=0;
-const agent=createAgent({provider:'codex',protocol:'codex-app-server',model,reasoningEffort:'low',agentTimeoutMs:300000,reader:{search:async()=>[],timeline:async()=>[],evidence:async({ids})=>store.evidence(ids),activity:async()=>({}),devices:async()=>[]}});
+const agent=createAgent({provider:'codex',protocol:'codex-app-server',model,reasoningEffort:'low',agentTimeoutMs:300000,reader:{search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async({ids})=>store.evidence(ids),activity:async()=>({}),devices:async()=>[]}});
 async function query(input:QueryInput){if(++calls>18)throw Error('Live call budget exceeded');console.log(JSON.stringify({stage:'model-start',call:calls}));return agent.query(input);}
 const pipeline=new MemoryPipeline({store,memories,configured:()=>true,model:()=>model,requireAdmission:true,query,review:(input,result)=>reviewMemory(input,result,query)});
 async function seed(text:string){const a=await sources.upsert('synthetic',{externalId:'case-'+Math.random(),revision:'1',observedAt:'2026-09-18T08:00:00Z',kind:'file',layer:'original',text,title:'Generated source'});return a.id;}

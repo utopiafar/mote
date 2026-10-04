@@ -4,7 +4,7 @@
 
 `QueueInventory` counts committed records separately from image-bearing records and distinct referenced image files. Metadata-only deduplicated screen records are records, not images. Multiple image-bearing records can share one content-addressed image file. Active and pending-decision storage are counted separately; their image-record counts sum to the current local image total.
 
-Moving to the pending-decision area reduces active images and increases held images without changing that total. Permanent deletion reduces the owning area's count. Upload acknowledgement can reduce pending work without removing an image while OCR is unfinished. OCR completion, conflict state and final acknowledgement update the same inventory. Cumulative operation counters retain their historical meaning and never decrease during cleanup or restoration. The home screen explicitly labels current image inventory and cumulative screenshot records separately. Central archive counts remain independently owned by the server.
+Moving to the pending-decision area reduces active images and increases held images without changing that total. Permanent deletion reduces the owning area's count. Upload acknowledgement reduces pending work and starts current local retention independently of central OCR. Conflict state and acknowledgement update the same inventory; Android no longer keeps a deferred local OCR outbox. Cumulative operation counters retain their historical meaning and never decrease during cleanup or restoration. The home screen explicitly labels current image inventory and cumulative screenshot records separately. Central archive counts remain independently owned by the server.
 
 ## Update contract
 
@@ -23,15 +23,17 @@ Capture browsing reloads the current query on committed record changes, retainin
 
 ## Large-library behavior in 0.0.25
 
-Connecting the selected storage location is separate from background maintenance. Starting capture no longer waits for the complete library's migration, index upgrade or orphan cleanup. Existing storage-migration recovery and unavailable-media errors still protect the selected directory; the app does not silently switch to an empty location.
+Connecting the selected storage location is separate from background maintenance. Starting capture no longer waits for the current-format library's index reconstruction or orphan cleanup. Existing storage-migration recovery and unavailable-media errors still protect the selected directory; the app does not silently switch to an empty location.
 
-The shared browse index now persists fixed inventory/OCR/upload fields alongside date, app and image references. Inventory and browsing reuse this projection instead of independently decrypting and parsing every event. Missing or obsolete metadata can be rebuilt in small queue-lock acquisitions. Screens show loading or stale inventory until a valid snapshot is available, rather than inventing a zero count.
+The shared browse index now persists fixed inventory/OCR/upload fields alongside date, app and image references. Inventory and browsing reuse this projection instead of independently parsing every event. Missing or obsolete metadata can be rebuilt in small queue-lock acquisitions. Screens show loading or stale inventory until a valid snapshot is available, rather than inventing a zero count.
 
 Unchanged visible pages keep their existing views and thumbnails when unrelated records change. Date/page switching drops superseded queued requests; thumbnails appear progressively and their cache writes use a separate executor. The browse index remains derived metadata: records and image files are authoritative, and invalidation precedes every authoritative mutation.
 
-New Android local content is written in plaintext by default, including records, images, thumbnails and the metadata index. Encryption is optional for future writes. Existing encrypted content remains readable; the developer page provides an explicit one-time background decryption task with progress and cancellation. Credentials still use Android Keystore. Server and desktop content encryption also defaults off. See [performance and storage details](android-library-performance.md) for scope and current validation; the historical results below describe the earlier release.
+Android format 3 stores content as verbatim bytes, including events, images, thumbnails, local note drafts, source state and metadata indexes. The optional content-encryption setting, old AES reader and bulk decryption task are removed. A missing/retired format marker or incomplete settings causes an explicit reset-required error; existing data is preserved without migration. Credentials, connection recovery, central private drafts and operation ledgers separately retain Keystore SecretBox encryption. Missing derived indexes can still be rebuilt from current authoritative files. See [performance and storage details](android-library-performance.md).
 
-## Validation
+Current cleanup validation (2026-10-04): all 245 JVM tests across 54 suites passed, with no failures, errors or skips. Instrumentation Kotlin sources compiled and the debug APK assembled. No emulator or physical-device instrumentation, live-model or personal-data check ran. Earlier acceptance records below are historical, not a rerun of the current code.
+
+## Historical validation (2026-09-15)
 
 - JVM inventory fixtures cover shared blobs, metadata-only records, pending/OCR transitions, rejected writes, thumbnail-vs-record invalidation and missing image files.
 - Dedicated `mote_fixture_api35` instrumentation uses generated images/notes to exercise home and actual notification updates, storage, pending-decision removal, capture-page removal, Activity background/recreation, stale-state recovery, OCR cleanup and burst coalescing. Cumulative collection counts remain unchanged during moves/restores.

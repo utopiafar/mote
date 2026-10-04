@@ -16,9 +16,9 @@ export class ProtocolCompatibilityError extends Error {
   }
 }
 
-/** Missing metadata is the existing v1 API, with its existing endpoint guards. */
+/** Every supported node declares its wire range explicitly. */
 export function requireCompatibleProtocol(value: unknown, supported: Readonly<ProtocolRange> = MOTE_PROTOCOL_RANGE): ProtocolRange {
-  const parsed = protocolRangeSchema.safeParse(value === undefined ? MOTE_PROTOCOL_RANGE : value);
+  const parsed = protocolRangeSchema.safeParse(value);
   if (!parsed.success) throw new ProtocolCompatibilityError('invalid_protocol_range');
   if (Math.max(parsed.data.min, supported.min) > Math.min(parsed.data.max, supported.max)) throw new ProtocolCompatibilityError('incompatible_protocol');
   return parsed.data;

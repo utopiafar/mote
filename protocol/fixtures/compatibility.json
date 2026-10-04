@@ -1,15 +1,102 @@
 [
-  { "name": "legacy metadata absent", "expected": { "min": 1, "max": 1 } },
-  { "name": "same wire version", "protocol": { "min": 1, "max": 1 }, "expected": { "min": 1, "max": 1 } },
-  { "name": "new server retains v1", "protocol": { "min": 1, "max": 2 }, "expected": { "min": 1, "max": 2 } },
-  { "name": "new server drops v1", "protocol": { "min": 2, "max": 2 }, "error": "incompatible_protocol" },
-  { "name": "reversed range", "protocol": { "min": 2, "max": 1 }, "error": "invalid_protocol_range" },
-  { "name": "zero version", "protocol": { "min": 0, "max": 1 }, "error": "invalid_protocol_range" },
-  { "name": "fractional version", "protocol": { "min": 1, "max": 1.5 }, "error": "invalid_protocol_range" },
-  { "name": "string version", "protocol": { "min": "1", "max": 1 }, "error": "invalid_protocol_range" },
-  { "name": "overflow version", "protocol": { "min": 1, "max": 2147483648 }, "error": "invalid_protocol_range" },
-  { "name": "missing bound", "protocol": { "min": 1 }, "error": "invalid_protocol_range" },
-  { "name": "unknown field", "protocol": { "min": 1, "max": 1, "token": "generated" }, "error": "invalid_protocol_range" },
-  { "name": "null metadata", "protocol": null, "error": "invalid_protocol_range" },
-  { "name": "array metadata", "protocol": [], "error": "invalid_protocol_range" }
+  {
+    "name": "missing metadata is rejected",
+    "error": "invalid_protocol_range"
+  },
+  {
+    "name": "same wire version",
+    "protocol": {
+      "min": 1,
+      "max": 1
+    },
+    "expected": {
+      "min": 1,
+      "max": 1
+    }
+  },
+  {
+    "name": "new server retains v1",
+    "protocol": {
+      "min": 1,
+      "max": 2
+    },
+    "expected": {
+      "min": 1,
+      "max": 2
+    }
+  },
+  {
+    "name": "new server drops v1",
+    "protocol": {
+      "min": 2,
+      "max": 2
+    },
+    "error": "incompatible_protocol"
+  },
+  {
+    "name": "reversed range",
+    "protocol": {
+      "min": 2,
+      "max": 1
+    },
+    "error": "invalid_protocol_range"
+  },
+  {
+    "name": "zero version",
+    "protocol": {
+      "min": 0,
+      "max": 1
+    },
+    "error": "invalid_protocol_range"
+  },
+  {
+    "name": "fractional version",
+    "protocol": {
+      "min": 1,
+      "max": 1.5
+    },
+    "error": "invalid_protocol_range"
+  },
+  {
+    "name": "string version",
+    "protocol": {
+      "min": "1",
+      "max": 1
+    },
+    "error": "invalid_protocol_range"
+  },
+  {
+    "name": "overflow version",
+    "protocol": {
+      "min": 1,
+      "max": 2147483648
+    },
+    "error": "invalid_protocol_range"
+  },
+  {
+    "name": "missing bound",
+    "protocol": {
+      "min": 1
+    },
+    "error": "invalid_protocol_range"
+  },
+  {
+    "name": "unknown field",
+    "protocol": {
+      "min": 1,
+      "max": 1,
+      "token": "generated"
+    },
+    "error": "invalid_protocol_range"
+  },
+  {
+    "name": "null metadata",
+    "protocol": null,
+    "error": "invalid_protocol_range"
+  },
+  {
+    "name": "array metadata",
+    "protocol": [],
+    "error": "invalid_protocol_range"
+  }
 ]

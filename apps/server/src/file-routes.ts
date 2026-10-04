@@ -4,7 +4,7 @@ import type {ServerDiagnostics,Operation} from './diagnostics.js';
 import {randomBytes} from 'node:crypto';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
-import {FILE_PART_BYTES,evidenceRefId} from '@mote/shared';
+import {FILE_PART_BYTES,formatEvidenceRef} from '@mote/shared';
 import {FileStore} from './files.js';
 import {FileReviews} from './file-reviews.js';
 import {fileExportEntries,exportTar} from './file-export.js';
@@ -22,10 +22,10 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   const cookieName=(id:string)=>'mote_file_'+id.replace(/-/g,'');
   const id=(req:FastifyRequest)=>(req.params as {id:string}).id;
   const check=(req:FastifyRequest)=>(sourceId:string)=>authorize(req,sourceId);
-  const fileId=(req:FastifyRequest)=>{const value=evidenceRefId(id(req),'capture');if(!value)throw new StoreError('Invalid file reference');return value;};
+  const fileId=(req:FastifyRequest)=>z.string().uuid().parse(id(req));
   const file=(req:FastifyRequest)=>{
     const id=fileId(req),v=files.version(id);authorize(req,v.source_id);
-    if(!reader.evidence([id],navigationScopeSchema.strip().parse(req.query)).length)throw new StoreError('File not found',404);
+    if(!reader.evidence([formatEvidenceRef('capture',id)],navigationScopeSchema.strip().parse(req.query)).length)throw new StoreError('File not found',404);
     return files.detail(id);
   };
   app.addContentTypeParser('application/octet-stream',{parseAs:'buffer',bodyLimit:FILE_PART_BYTES},(_req,body,done)=>done(null,body));
@@ -80,7 +80,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.put('/api/file-processing',{bodyLimit:262144},async req=>processing.update(req.body));
   return (req:FastifyRequest)=>{
     if(req.routeOptions.url!=='/api/files/:id/content'||!['GET','HEAD'].includes(req.method))return false;
-    if(!evidenceRefId(id(req),'capture'))return false;
+    if(!z.string().uuid().safeParse(id(req)).success?z.string().uuid().parse(id(req)):undefined)return false;
     const token=req.headers.cookie?.split(';').map(s=>s.trim()).find(s=>s.startsWith(cookieName(fileId(req))+'='))?.split('=')[1];
     const grant=token?grants.get(token):undefined;if(!grant||grant.id!==fileId(req)||grant.until<Date.now())return false;
     grant.check();return true;

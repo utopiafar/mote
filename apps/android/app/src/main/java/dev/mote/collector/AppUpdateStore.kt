@@ -27,7 +27,7 @@ class UpdateNetwork(private val stopped: () -> Boolean = { false }, private val 
     fun check(config: UpdateConfig): ByteArray {
         config.validate()
         selectedVersion = null; selectedTag = null
-        val own = mutableListOf<Pair<String, String>>(); val legacy = mutableListOf<Pair<String, String>>()
+        val own = mutableListOf<Pair<String, String>>()
         // /latest is global across all applications. Scan at most 1,000 releases without following remote links.
         for (page in 1..10) {
             val endpoint = "https://api.github.com/repos/${config.repository}/releases?per_page=100&page=$page"
@@ -37,13 +37,13 @@ class UpdateNetwork(private val stopped: () -> Boolean = { false }, private val 
             for (index in 0 until releases.length()) {
                 val r = releases.optJSONObject(index) ?: continue
                 val tag = r.optString("tag_name")
-                val version = when { tag.startsWith("android-v") -> tag.drop(9); tag.startsWith('v') -> tag.drop(1); else -> continue }
+                val version = if (tag.startsWith("android-v")) tag.drop(9) else continue
                 if (r.opt("draft") != false || r.opt("prerelease") != (config.channel == "preview") || !AppReleaseVerifier.validVersion(version) || (config.channel == "preview") != version.contains('-')) continue
-                (if (tag.startsWith("android-v")) own else legacy).add(tag to version)
+                own.add(tag to version)
             }
             if (releases.length() < 100) break
         }
-        val selected = (own.ifEmpty { legacy }).maxWithOrNull { a, b -> AppReleaseVerifier.compareVersions(a.second, b.second) } ?: throw UpdateFailure("not_found")
+        val selected = own.maxWithOrNull { a, b -> AppReleaseVerifier.compareVersions(a.second, b.second) } ?: throw UpdateFailure("not_found")
         return bytes("https://github.com/${config.repository}/releases/download/${selected.first}/mote-release.json", AppReleaseVerifier.MAX_MANIFEST).also { selectedTag = selected.first; selectedVersion = selected.second }
     }
     var selectedVersion: String? = null; private set

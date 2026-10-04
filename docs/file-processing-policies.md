@@ -49,22 +49,22 @@ ctx.effect(() => ctx.moteFileProcessors.register({
 
 参数声明支持 string / number / boolean、枚举、默认值、可空、数值范围和整数。服务端验证参数与类型兼容性，网页按声明生成表单。秘钥放服务，不放 parameters。处理器返回共享 Transcript 契约；非音频使用零时间，代码负责可靠提取，内容理解由模型完成。
 
-兼容原有 `ProcessorInput.settings`；新插件使用 `parameters`。模型服务使用 OpenAI 兼容的 completions 协议，独立于提取服务。本地多人录音保留既有的转写 → 分离 → 对齐 → 可选本地语义分组流程。
+当前 `ProcessorInput.settings` 提供所选服务的执行配置，`parameters` 提供所选方案参数。模型服务使用 OpenAI 兼容的 completions 协议，独立于提取服务。本地多人录音保留既有的转写 → 分离 → 对齐 → 可选本地语义分组流程。
 
 ## 配置与 API
 
-- `GET /api/file-processing`：脱敏的旧 settings、policy、Cordis 元数据、revision。
+- `GET /api/file-processing`：脱敏的当前执行 settings、必有 policy、Cordis 元数据、revision。
 - `PUT /api/file-processing`：`{revision, settings, policy}`，乐观并发控制；校验后以私有文件原子写入。
 - `POST /api/file-processing/match`：`{sourceId, mimeType}`，只试算已保存规则。
 - `POST /api/file-processing/preview`：`{revision, sourceId?, type?, profileId?}`，返回有时限的一次性 token 和范围。
 - `POST /api/file-processing/reprocess`：`{token}`，按预览范围入队。
 - `GET /api/files/:id`：增加 `processingPolicy.applied/current`；导出 manifest 也包含实际方案快照，无密钥。
 
-策略保存在原 `file-processing.json` 的可选 `policy` 字段，版本为 1。旧配置首次打开时转换为方案预览，保存后启用。未启用 policy 的旧 API 继续工作；启用后，旧客户端仍可改总开关和预算，修改旧策略字段会返回 409，避免悄悄覆盖新版策略。数据库通过可空 `file_jobs.policy_json` 做兼容迁移。
+当前 `file-processing.json` 必须包含 revision、settings 与 version 1 的 policy。新资料库直接建立显式默认方案；缺 policy 的旧文件及不带 policy 的更新请求拒绝。旧 flat selector 不转换成 policy，也不作为任务路由回退。任务执行时保存实际命中方案与配置指纹；中央 epoch 3 直接建立最终 schema。
 
 ## 验证
 
-`apps/server/test/file-policy.test.ts` 覆盖迁移、参数和密钥隔离、实际 Cordis 调用、规则优先级、混合来源、保存冲突、重处理预览及隐私边界。已有文件同步、分离、审阅与导出测试继续运行。
+`apps/server/test/file-policy.test.ts` 覆盖旧契约拒绝、当前默认策略、参数和密钥隔离、实际 Cordis 调用、规则优先级、混合来源、保存冲突、重处理预览及隐私边界。已有文件同步、分离、审阅与导出测试继续运行。
 
 可用隔离测试中央与生成的 Android 文件执行：
 

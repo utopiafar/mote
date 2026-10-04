@@ -2,11 +2,11 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {startBridge} from '../dist/bridge.js';
 
-const record={id:'generated-original',capturedAt:'2026-09-20T00:00:00Z',deviceId:'generated-device',appName:'Generated',ocrText:'Preface. Relax shoulders before turning. Other private detail.',filePath:'/private/not-for-disclosure'};
+const record={id:'4d7146d7-3e99-5e38-87b4-f12e5833442a',capturedAt:'2026-09-20T00:00:00Z',deviceId:'generated-device',appName:'Generated',ocrText:'Preface. Relax shoulders before turning. Other private detail.',filePath:'/private/not-for-disclosure'};
 const quote='Relax shoulders before turning.',offset=record.ocrText.indexOf(quote);
 const result={items:[{id:'generated-memory',statement:'A scoped training lesson',evidence:[{id:record.id,offset,length:quote.length,quote:'UNVERIFIED SAVED QUOTE'}]}],references:[{id:record.id,capturedAt:record.capturedAt,characters:quote.length}],sourceSpans:[{record,offset,length:quote.length}]};
 async function fixture(t,memoryResult=result){
-  const reader={memories:async()=>memoryResult,search:async()=>[],timeline:async()=>[],evidence:async({ids})=>ids.includes(record.id)?[record]:[],activity:async()=>({}),devices:async()=>[]};
+  const reader={memories:async()=>memoryResult,search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async({ids})=>ids.includes(record.id)?[record]:[],activity:async()=>({}),devices:async()=>[]};
   const bridge=await startBridge(reader,{question:'Generated training detail',deviceId:record.deviceId,after:'2026-09-01T00:00:00Z',before:'2026-10-01T00:00:00Z'},20);
   t.after(()=>bridge.close());
   const call=async(args)=>{const response=await fetch(bridge.url+'/memories',{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify(args)});return {status:response.status,body:await response.json()};};
@@ -29,7 +29,7 @@ test('memory detail discloses original text only on request and grants only deli
 });
 
 test('source disclosure rejects broad requests and ignores unrequested, out-of-scope or unreferenced spans',async t=>{
-  const outside={...record,id:'outside',deviceId:'another-device'},future={...record,id:'future',capturedAt:'2026-10-01T00:00:00Z'},unlisted={...record,id:'unlisted'};
+  const outside={...record,id:'a7e4b8df-d79b-5df6-afff-ecc9fc1f55af',deviceId:'another-device'},future={...record,id:'303bea8c-bfab-52dd-aca6-515bcf75469c',capturedAt:'2026-10-01T00:00:00Z'},unlisted={...record,id:'6116924c-ecfe-5bf4-813d-0baeb493ceb5'};
   const {bridge,call}=await fixture(t,{...result,references:[...result.references,...[outside,future].map(r=>({id:r.id,capturedAt:r.capturedAt,characters:20}))],sourceSpans:[outside,future,unlisted].map(r=>({record:r,offset:0,length:20}))});
   assert.equal((await call({includeEvidence:true})).status,400);
   assert.equal((await call({id:'generated-memory',includeEvidence:'yes'})).status,400);

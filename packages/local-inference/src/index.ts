@@ -75,12 +75,12 @@ export class ModelStore {
     this.directory = resolve(directory); this.path = join(this.directory, manifest.fileName);
   }
   private async partials(): Promise<string[]> {
-    try { return (await readdir(this.directory)).filter(name => name === basename(this.path) + '.part' || name.startsWith(basename(this.path) + '.part-')).map(name => join(this.directory, name)); }
+    try { return (await readdir(this.directory)).filter(name => name.startsWith(basename(this.path) + '.part-') && /^[1-9][0-9]*-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(name.slice((basename(this.path) + '.part-').length))).map(name => join(this.directory, name)); }
     catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []; throw e; }
   }
   private async claimPartial(): Promise<void> {
     for (const candidate of await this.partials()) {
-      if (candidate !== this.path + '.part') {
+      {
         const pid = Number(candidate.slice((this.path + '.part-').length).split('-')[0]);
         if (!Number.isSafeInteger(pid) || pid <= 0) continue;
         try { process.kill(pid, 0); continue; }
@@ -123,7 +123,6 @@ export class ModelStore {
         } finally { await out.close(); }
         if (!await verifyModelFile(temporary, this.manifest)) throw new Error(moteText("导入模型 SHA-256 校验失败"));
         await rename(temporary, this.path);
-        await unlink(this.path + '.part').catch(() => undefined);
         return this.path;
       } finally { await unlink(temporary).catch(() => undefined); }
     });
@@ -131,8 +130,10 @@ export class ModelStore {
   async download(options: DownloadOptions): Promise<string> {
     return this.exclusive(async () => {
       if (await verifyModelFile(this.path, this.manifest)) return this.path;
-      this.partialPath = this.path + `.part-${process.pid}-${randomUUID()}`;
-      await this.claimPartial();
+      if (!this.partialPath || !await bytesAt(this.partialPath)) {
+        this.partialPath = this.path + `.part-${process.pid}-${randomUUID()}`;
+        await this.claimPartial();
+      }
       try {
       const sources = options.source === 'auto' ? ['mirror', 'official'] as const : [options.source];
       if (!sources.every(s => ['mirror', 'official', 'custom'].includes(s))) throw new Error(moteText("模型下载来源无效"));
@@ -160,12 +161,9 @@ export class ModelStore {
       }
       throw new Error(moteText("模型下载或校验失败；已保留可续传部分，请重试、更换来源或离线导入"));
       } finally {
-        // Each writer owns an inode. Only a closed file may become the shared resume file.
-        // Another process can never retain a write handle to our verified final model.
-        if (await bytesAt(this.partialPath)) {
-          if (await bytesAt(this.path + '.part') <= await bytesAt(this.partialPath)) await rename(this.partialPath, this.path + '.part');
-          else await unlink(this.partialPath);
-        } else await unlink(this.partialPath).catch(() => undefined);
+        // A failed transfer retains its unique inode. This instance may retry it;
+        // other processes may claim it only after its writer has exited.
+        if (!await bytesAt(this.partialPath)) await unlink(this.partialPath).catch(() => undefined);
       }
     });
   }

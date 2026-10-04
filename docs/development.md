@@ -40,7 +40,7 @@ npm run desktop:dev
 node scripts/mote.mjs token --profile dev
 ```
 
-Mac 的命名 profile 使用独立的用户数据目录、队列、草稿和连接设置。`desktop:dev` 将所选中央 URL 与令牌交给主进程；只对新 profile 引导连接，已有设置不会被后台替换。首次开始截图仍需要用户在 App 中设置并授权；这些命令本身不会采集屏幕。旧版/未命名 App 保留原来的用户数据目录，详见 [电脑端说明](desktop.md)。
+Mac 的命名 profile 使用独立的用户数据目录、队列、草稿和连接设置。`desktop:dev` 将所选中央 URL 与令牌交给主进程；只对新 profile 引导连接，已有设置不会被后台替换。首次开始截图仍需要用户在 App 中设置并授权；这些命令本身不会采集屏幕。未命名 App 的 default profile 使用原 Electron 用户数据路径，旧存储仍受格式 3 拒绝边界约束，详见 [电脑端说明](desktop.md)。
 
 运行 test 环境的同一套热重载界面：
 
@@ -63,7 +63,7 @@ node scripts/mote.mjs exec --profile test -- npm run import:files -- --root /abs
 
 导入脚本只读取用户明确选择的 UTF-8 文件夹，默认 `.md,.txt`，单文件不超过 100 KB，不递归隐藏目录或符号链接。加 `--extensions .md,.txt,.csv` 明确类型；`--watch` 每 30 秒检查更改。文件状态基于实际所选节点 URL，落在该 profile 的 `file-sync/`，所以同一个源目录可以分别导入 dev 与 test；成功 ACK 后同环境再次运行会跳过不变文件。原文删除不删除中央历史。
 
-`exec` 清除继承的 `MOTE_*` 与 `COMPOSE_*`，再加载唯一 profile；显式 `MOTE_ENV_FILE` 存在时只读所选文件。直接运行旧 `npm start` / `npm run import:files` 保留 legacy 根 `.env` 兼容行为，不能视为开发隔离入口。API/model 密钥不要写进命令参数、示例文件或公开诊断。
+`exec` 清除继承的 `MOTE_*` 与 `COMPOSE_*`，再加载唯一 profile；显式 `MOTE_ENV_FILE` 存在时只读所选文件。直接运行 `npm start` / `npm run import:files` 只使用进程环境，读取文件必须显式设置 `MOTE_ENV_FILE`；根 `.env` 不再自动加载。API/model 密钥不要写进命令参数、示例文件或公开诊断。
 
 ## Android 开发连接
 

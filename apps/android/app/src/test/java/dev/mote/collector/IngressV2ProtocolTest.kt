@@ -29,7 +29,7 @@ class IngressV2ProtocolTest {
     }
 
     @Test fun `upload writes carry version while reads do not`() {
-        for (path in listOf("/api/captures", "/api/captures/bundle", "/api/capture-browser/id/ocr", "/api/sources", "/api/sources/id/items", "/api/file-sync/v1/commit")) {
+        for (path in listOf("/api/captures", "/api/captures/bundle", "/api/capture-browser/reconcile", "/api/sources", "/api/sources/id/items", "/api/file-sync/v1/commit")) {
             assertTrue(IngressV2Protocol.uploadWrite("POST", "http://127.0.0.1:47842$path"))
         }
         assertFalse(IngressV2Protocol.uploadWrite("GET", "http://127.0.0.1:47842/api/captures"))
@@ -62,44 +62,5 @@ class IngressV2ProtocolTest {
         assertFalse(IngressV2Protocol.sourcePaused("generated-source", null))
     }
 
-    @Test fun `protocol cleanup preserves configured sources and draft text but discards old work`() {
-        val captureDir = folder.newFolder("captures")
-        val queue = DurableQueue(captureDir, cipher)
-        val pending = JSONObject().put("id", UUID.randomUUID().toString()).put("source", "note")
-            .put("ocrText", "generated pending").put("capturedAt", "2026-09-24T00:00:00Z")
-            .put("privacy", JSONObject().put("excluded", false))
-        val retained = JSONObject(pending.toString()).put("id", UUID.randomUUID().toString()).put("ocrText", "generated retained")
-        queue.enqueue(pending, null, 100000)
-        queue.enqueue(retained, null, 100000)
-        queue.acknowledge(retained.getString("id"), retentionDays = 7)
-        assertEquals(1, queue.discardLegacyOutbox())
-        assertEquals(1, queue.depth())
-        assertFalse(queue.syncIds().contains(pending.getString("id")))
-        assertTrue(queue.syncIds().contains(retained.getString("id")))
 
-        val sourceDir = folder.newFolder("sources")
-        val sources = LocalSourceStore(sourceDir, cipher)
-        val source = LocalSource(id = "generated-source", name = "Generated", kind = "local-files", uri = "content://fixture/document/root")
-        sources.save(source); sources.selectTarget(source.id, "old-target")
-        assertTrue(File(sourceDir, "config.enc").exists())
-        sources.resetForProtocolUpgrade()
-        assertEquals(listOf(source), LocalSourceStore(sourceDir, cipher).sources())
-        assertFalse(LocalSourceStore(sourceDir, cipher).state(source.id).has("target"))
-
-        val archiveDir = folder.newFolder("archives")
-        val archive = FileArchiveQueue(archiveDir, cipher)
-        archive.saveState(source.id, JSONObject().put("generation", "old-generation"))
-        archive.resetForProtocolUpgrade()
-        assertFalse(FileArchiveQueue(archiveDir, cipher).state(source.id).has("generation"))
-
-        val drafts = NoteDraftStore(folder.newFolder("draft"), cipher)
-        drafts.update("generated note", "calm")
-        drafts.prepare("https://old.example") { draft -> JSONObject().put("id", UUID.randomUUID().toString())
-            .put("source", "note").put("ocrText", draft.text).put("mood", draft.mood) }
-        drafts.clearPreparedForProtocolUpgrade()
-        assertEquals("generated note", drafts.read().text)
-        assertEquals("calm", drafts.read().mood)
-        assertNull(drafts.read().prepared)
-        assertNull(drafts.read().server)
-    }
 }

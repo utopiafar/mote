@@ -11,29 +11,6 @@ import {INGRESS_VERSION_HEADERS,requireIngressReceipt} from './ingress-protocol'
 // fetch does not attempt to replay a streaming upload after a 401 response.
 export class DeletedCaptureFailure extends TransportFailure {}
 
-export async function uploadDeferredOcr(config: Config, id: string, ocrText: string, signal?: AbortSignal): Promise<void> {
-  if (!connectionToken(config) || !/^[a-f0-9-]{36}$/i.test(id)) throw new TransportFailure(moteText("OCR 补写配置无效"), 'CONFIG_INVALID');
-  let response: Response;
-  try {
-    response = await fetch(`${validateServerUrl(config.serverUrl)}/api/capture-browser/${id}/ocr`, {
-      method: 'POST', headers: { ...INGRESS_VERSION_HEADERS,'Accept-Language': getLocale(), Authorization: `Bearer ${requireConnectionToken(config)}`, 'Content-Type': 'application/json' },
-      credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
-      body: meteredBody(JSON.stringify({ ocrText, status: 'completed' })), ...({duplex:'half'} as object),
-    });
-  } catch { throw new TransportFailure(moteText("OCR 结果上传失败，已保留等待重试"), 'NETWORK'); }
-  if (!response.ok) {
-    if (response.status === 404) {
-      let code: unknown; try { code = (JSON.parse(await readResponseText(response, 16384)) as { error?: unknown }).error; } catch { /* Unrecognized responses may come from an older node. */ }
-      if (code === 'capture_not_found') throw new DeletedCaptureFailure(moteText("中央记录已删除，OCR 结果保留在本机待处理"), 'RESPONSE', 404);
-      throw new TransportFailure(moteText("中央节点暂不支持 OCR 补写，请升级至 0.0.2 或更新版本；结果已保留等待重试"), 'RESPONSE', 404);
-    }
-    await response.body?.cancel().catch(() => undefined);
-    if (response.status === 410) throw new DeletedCaptureFailure(moteText("中央记录已删除，OCR 结果保留在本机待处理"), 'RESPONSE', 410);
-    throw new TransportFailure(moteText("OCR 补写返回 HTTP {0}，已保留等待重试", response.status), httpFailure(response.status), response.status);
-  }
-  const ack = JSON.parse(await readResponseText(response, 16384)) as { id?: string };
-  if (ack.id !== id) throw new TransportFailure(moteText("OCR 补写确认 ID 不匹配，已保留等待重试"), 'RESPONSE');
-}
 
 export async function uploadCapture(config: Config, event: CaptureEvent, image?: Buffer, signal?: AbortSignal): Promise<void> {
   const origin = validateServerUrl(config.serverUrl);

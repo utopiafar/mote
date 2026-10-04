@@ -57,7 +57,7 @@ export function createRuntimePatch(
   baseUrl?: string,
   reasoningEffort?: AgentOptions["reasoningEffort"],
   maxTokens = DEFAULT_MODEL_MAX_TOKENS,
-  connection: Pick<AgentOptions, 'protocol' | 'provider' | 'requestTimeoutMs' | 'timeoutMs'> = {},
+  connection: Pick<AgentOptions, 'protocol' | 'provider' | 'requestTimeoutMs'> = {},
   systemPrompt = SYSTEM_PROMPT,
 ): string {
   // JSON is valid YAML. No executable YAML expressions or untrusted path interpolation.
@@ -248,7 +248,7 @@ export function createAgent(options: AgentOptions) {
         model: options.model!,
         maxTokens: options.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS,
         initializeTimeoutMs: 30_000,
-        requestTimeoutMs: options.requestTimeoutMs !== undefined ? options.requestTimeoutMs ?? 120_000 : Math.max(options.timeoutMs ?? 120_000, 5_000),
+        requestTimeoutMs: options.requestTimeoutMs ?? 120_000,
         env: {
           PATH: process.env.PATH,
           TMPDIR: tmpdir(),
@@ -321,7 +321,7 @@ export function createAgent(options: AgentOptions) {
         }
       };
       input.signal?.throwIfAborted();
-      const agentTimeoutMs = options.agentTimeoutMs !== undefined ? options.agentTimeoutMs : options.timeoutMs ?? 120_000;
+      const agentTimeoutMs = options.agentTimeoutMs === undefined ? 120_000 : options.agentTimeoutMs;
       const deadline = agentTimeoutMs === null ? [] : [new Promise<never>((_resolve, reject) => {
         timeout = setTimeout(
           () => reject(new AgentTimeoutError()),

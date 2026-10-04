@@ -25,33 +25,12 @@ export class MaterialMemoryWork {
     const db=store.db;
     this.transaction(()=>{
     db.exec('CREATE TABLE IF NOT EXISTS material_memory_revocations(job_id TEXT PRIMARY KEY,material_id TEXT NOT NULL,revision TEXT NOT NULL)');
-    const columns=new Set(db.prepare('PRAGMA table_info(material_memory_requests)').all().map(r=>String(r.name)));
-    if(columns.size&&!columns.has('scope')){
-      // Preserve evidence and products, retiring only unpinned old automatic work.
-      db.exec(`DROP TRIGGER IF EXISTS ledger_material_memory_requests_insert; DROP TRIGGER IF EXISTS ledger_material_memory_requests_update; DROP TRIGGER IF EXISTS ledger_material_memory_requests_delete;
-        DELETE FROM storage_ledger WHERE name='material_memory_requests'; DROP TRIGGER IF EXISTS material_memory_forget; DROP INDEX IF EXISTS material_memory_requests_due;
-        ALTER TABLE material_memory_requests RENAME TO material_memory_requests_previous;`);
-    }
     db.exec(`CREATE TABLE IF NOT EXISTS material_memory_requests(
       material_id TEXT NOT NULL,scope TEXT NOT NULL,revision TEXT NOT NULL,required_json TEXT NOT NULL,ready_at INTEGER NOT NULL,
-      job_id TEXT,error TEXT,input_key TEXT NOT NULL,auto_authorized INTEGER NOT NULL,binding_json TEXT,context_time TEXT,
+      job_id TEXT,error TEXT,input_key TEXT NOT NULL,auto_authorized INTEGER NOT NULL,binding_json TEXT,context_time TEXT,source_required_json TEXT NOT NULL,input_fingerprint TEXT,
       PRIMARY KEY(material_id,scope));
       CREATE INDEX IF NOT EXISTS material_memory_requests_due ON material_memory_requests(ready_at,job_id);`);
-    if(columns.size&&!columns.has('scope'))this.transaction(()=>{
-      db.exec(`INSERT INTO material_memory_requests SELECT material_id,'memory.default',revision,required_json,ready_at,job_id,error,${columns.has('input_key')?'input_key':"''"},0,NULL,NULL FROM material_memory_requests_previous;
-        INSERT OR IGNORE INTO material_memory_revocations SELECT job_id,material_id,revision FROM material_memory_requests_previous WHERE job_id IS NOT NULL;
-        DROP TABLE material_memory_requests_previous;`);
-    });
-    if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_memory_work'").get())this.transaction(()=>{
-      db.exec(`INSERT OR IGNORE INTO material_memory_requests SELECT material_id,'memory.default',revision,'["material"]',ready_at,job_id,error,'',0,NULL,NULL FROM material_memory_work;
-        INSERT OR IGNORE INTO material_memory_revocations SELECT job_id,material_id,revision FROM material_memory_work WHERE job_id IS NOT NULL; DROP TABLE material_memory_work;`);
-    });
-    const scopedColumns=new Set(db.prepare('PRAGMA table_info(material_memory_requests)').all().map(r=>String(r.name)));
-    if(!scopedColumns.has('source_required_json')){db.exec("ALTER TABLE material_memory_requests ADD COLUMN source_required_json TEXT NOT NULL DEFAULT '[\"material\"]'; UPDATE material_memory_requests SET source_required_json=required_json");}
-    if(!scopedColumns.has('input_fingerprint'))db.exec('ALTER TABLE material_memory_requests ADD COLUMN input_fingerprint TEXT');
-    if(!scopedColumns.has('input_fingerprint'))db.exec('DROP TRIGGER IF EXISTS ledger_material_memory_requests_insert; DROP TRIGGER IF EXISTS ledger_material_memory_requests_update; DROP TRIGGER IF EXISTS ledger_material_memory_requests_delete; DELETE FROM storage_ledger WHERE name=\'material_memory_requests\'');
-    db.exec(`DROP TRIGGER IF EXISTS material_memory_forget;
-      CREATE TRIGGER material_memory_forget BEFORE DELETE ON material_heads BEGIN
+    db.exec(`CREATE TRIGGER IF NOT EXISTS material_memory_forget BEFORE DELETE ON material_heads BEGIN
       INSERT OR IGNORE INTO material_memory_revocations SELECT job_id,material_id,revision FROM material_memory_requests WHERE material_id=old.id AND job_id IS NOT NULL;
       DELETE FROM memory_input_authorizations WHERE source_id=old.source_id AND input_key IN (SELECT input_key FROM material_memory_requests WHERE material_id=old.id);
       DELETE FROM material_memory_requests WHERE material_id=old.id; END;`);

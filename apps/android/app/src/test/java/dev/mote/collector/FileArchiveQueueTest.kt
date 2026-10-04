@@ -40,13 +40,17 @@ class FileArchiveQueueTest {
         val restarted = FileArchiveQueue(dir, cipher); assertEquals(result.toString(), restarted.next(s.id).toString())
         restarted.acknowledge(s.id, result, ack(result)); assertEquals(0, restarted.pendingCount(s.id))
     }
-    @Test fun oldIndexWaitMarkersMigrateWithoutChangingAnExistingImmutableManifest() {
-        val dir = folder.newFolder(); val queue = FileArchiveQueue(dir, cipher); val s = source("snapshot")
-        queue.observe(s, item(layer = "snapshot"), queue.configure(s).getString("generation"), 0)
-        val pending = queue.prepare(s, { error("Must not decode") }, { true }, 61000)!!
-        queue.state(s.id).apply { remove("transportQueueVersion"); queue.saveState(s.id, this) }
-        assertEquals(pending.toString(), FileArchiveQueue(dir,cipher).next(s.id).toString())
-        queue.acknowledge(s.id,pending,ack(pending)); assertEquals(0, queue.pendingCount(s.id)); assertEquals(1, queue.processingCount(s.id))
+    @Test fun retiredTransportStateIsRejectedWithoutChangingPendingManifest() {
+        val dir = folder.newFolder(); val queue = FileArchiveQueue(dir, cipher); val source = source("snapshot")
+        queue.observe(source, item(layer = "snapshot"), queue.configure(source).getString("generation"), 0)
+        val pending = queue.prepare(source, { error("Must not decode") }, { true }, 61000)!!
+        val stateFile = java.io.File(java.io.File(dir, source.id), "state.enc")
+        val state = JSONObject(String(cipher.open(stateFile.readBytes()))).apply { remove("transportQueueVersion") }
+        stateFile.writeBytes(cipher.seal(state.toString().toByteArray()))
+        val before = stateFile.readBytes()
+        assertThrows(Exception::class.java) { FileArchiveQueue(dir, cipher).next(source.id) }
+        assertArrayEquals(before, stateFile.readBytes())
+        assertEquals(pending.toString(), queue.rows(source.id).single().toString())
     }
     @Test fun sourceChangeDuringLocalProcessingRejectsStalePublication() {
         val queue = FileArchiveQueue(folder.newFolder(), cipher); val s = source("snapshot"); val g = queue.configure(s).getString("generation")

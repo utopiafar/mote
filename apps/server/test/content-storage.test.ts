@@ -39,7 +39,7 @@ test('content encryption is off even with an environment key, and opt-in persist
   assert.throws(()=>new Store(dir,{dataKey:'cd'.repeat(32)}),/key mismatch/);
 });
 
-test('one-time decrypt handles legacy images, originals, committed parts and pending uploads; cancellation is resumable',async t=>{
+test('bulk decrypt handles current image chunks, originals, committed parts and pending uploads; cancellation is resumable',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-content-migrate-')),key='ac'.repeat(32);
   let store=new Store(dir,{dataKey:key,contentEncryptionEnabled:true});
   t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
@@ -51,20 +51,16 @@ test('one-time decrypt handles legacy images, originals, committed parts and pen
   const manifest=(externalId:string)=>({sourceId:'fixture',previousRevision:null,item:{externalId,revision:'v1',observedAt:new Date().toISOString(),title:'Generated file',kind:'file',layer:'original',text:'',mimeType:'application/octet-stream',deleted:false},relativePath:'generated.bin',sizeBytes:bytes.length,sha256:sha256(bytes)});
   const completed=files.begin(manifest('completed'),()=>{});files.part(completed.uploadId,0,bytes,()=>{});const ack=await files.commit(completed.uploadId,()=>{});
   const pending=files.begin(manifest('pending'),()=>{});files.part(pending.uploadId,0,bytes,()=>{});
-  legacyAsset(store,saved.blobHash!,'image-legacy');legacyAsset(store,original.hash,'archive-legacy');
-  // Exact pre-0.0.25 format: unmarked AES-GCM file parts + vault-wide encryption identity.
-  for(const base of [join(archived.directory,original.hash),join(files.objects,ack.sha256,'0'),join(files.uploads,pending.uploadId,'0')])renameSync(base+'.aes',base);
-  store.db.prepare('UPDATE settings SET value=? WHERE key=?').run(sha256(Buffer.from(key,'hex')),'encryption');
   store.contentEncryption.setEnabled(false);store.close();store=new Store(dir,{dataKey:key});
   archived=new ArchivedFileStore(store);sources=new SourceStore(store);files=new FileStore(store,sources);
   assert.deepEqual(Buffer.concat([...files.bytes(ack.id)]),bytes);assert.deepEqual(store.image(saved.id).bytes,image);
   const service=new ContentStorageService(store,files,archived);
   service.start();service.cancel();assert.equal((await finish(service)).state,'cancelled');
   service.start();const result=await finish(service);assert.equal(result.failed,0);assert.equal(result.converted,4);
-  assert.deepEqual(readFileSync(join(store.blobsDir,saved.blobHash!)),image);
+  assert.deepEqual(readFileSync(join(store.assets.directory,saved.blobHash!,'0.plain')),image);
   assert.deepEqual(readFileSync(join(files.objects,ack.sha256,'0.plain')),bytes);
   assert.deepEqual(readFileSync(join(files.uploads,pending.uploadId,'0.plain')),bytes);
-  assert.equal(readFileSync(join(archived.directory,original.hash+'.plain'),'utf8'),'Generated legacy original');
+  assert.equal(readFileSync(join(store.assets.directory,original.hash,'0.plain'),'utf8'),'Generated legacy original');
   service.start();assert.equal((await finish(service)).converted,0);
   store.close();store=new Store(dir);assert.deepEqual(store.image(saved.id).bytes,image);
   assert.deepEqual(Buffer.concat([...new FileStore(store,new SourceStore(store)).bytes(ack.id)]),bytes);
@@ -80,24 +76,22 @@ test('failed decrypt keeps the original ciphertext and preserves the key require
   assert.throws(()=>new Store(dir),/key mismatch/);
 });
 
-test('decrypt includes untracked legacy objects and uploads before dropping the key requirement; retry commits remain readable',async t=>{
+test('decrypt includes untracked current chunks and uploads before dropping the key requirement; retry commits remain readable',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-content-orphan-')),key='ae'.repeat(32);
   let store=new Store(dir,{dataKey:key,contentEncryptionEnabled:true});
   t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
-  store.db.prepare('UPDATE settings SET value=? WHERE key=?').run(sha256(Buffer.from(key,'hex')),'encryption');
   store.contentEncryption.setEnabled(false);store.close();store=new Store(dir,{dataKey:key});
   let sources=new SourceStore(store),files=new FileStore(store,sources);const archived=new ArchivedFileStore(store);
   sources.register({id:'fixture',name:'Generated',kind:'local-files',deviceId:'fixture',platform:'android',retention:'archive'});
   const bytes=Buffer.from('Generated content surviving a crash before the object database transaction'),hash=sha256(bytes);
   const object=join(files.objects,hash),upload=join(files.uploads,randomUUID()),staging=join(files.objects,hash+'.'+randomUUID()+'.tmp');
-  for(const directory of [object,upload,staging]){mkdirSync(directory,{mode:0o700});writeFileSync(join(directory,'0'),store.contentEncryption.seal(bytes));}
-  writeFileSync(join(archived.directory,hash),store.contentEncryption.seal(bytes));
+  for(const directory of [object,upload,staging]){mkdirSync(directory,{mode:0o700});writeFileSync(join(directory,'0.aes'),store.contentEncryption.seal(bytes));}
+
   assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM file_objects').get()!.n,0);
   assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM file_parts').get()!.n,0);
   const service=new ContentStorageService(store,files,archived);service.start();const job=await finish(service);
-  assert.equal(job.failed,0);assert.equal(job.converted,4);
+  assert.equal(job.failed,0);assert.equal(job.converted,3);
   for(const directory of [object,upload,staging]){assert.deepEqual(readFileSync(join(directory,'0.plain')),bytes);assert.equal(existsSync(join(directory,'0')),false);}
-  assert.deepEqual(readFileSync(join(archived.directory,hash+'.plain')),bytes);
   store.close();store=new Store(dir);sources=new SourceStore(store);files=new FileStore(store,sources);
   const manifest=(externalId:string)=>({sourceId:'fixture',previousRevision:null,item:{externalId,revision:'v1',observedAt:new Date().toISOString(),title:'Generated retry',kind:'file',layer:'original',text:'',mimeType:'application/octet-stream',deleted:false},relativePath:'generated.bin',sizeBytes:bytes.length,sha256:hash});
   const retry=files.begin(manifest('retry'),()=>{});files.part(retry.uploadId,0,bytes,()=>{});const ack=await files.commit(retry.uploadId,()=>{});
@@ -127,9 +121,9 @@ test('decrypt preserves conflicting retained ciphertext copies for a retry',asyn
   t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
   const files=new FileStore(store,new SourceStore(store)),archived=new ArchivedFileStore(store),original=archived.put({name:'generated.txt',bytes:Buffer.from('Generated canonical content')});
   const base=join(store.assets.directory,original.hash,'0'),sealed=readFileSync(base+'.aes'),conflicting=Buffer.from('Generated different content');
-  writeFileSync(base,conflicting);store.contentEncryption.setEnabled(false);
+  writeFileSync(base+'.plain',conflicting);store.contentEncryption.setEnabled(false);
   const service=new ContentStorageService(store,files,archived);service.start();assert.equal((await finish(service)).failed,1);
-  assert.deepEqual(readFileSync(base+'.aes'),sealed);assert.deepEqual(readFileSync(base),conflicting);assert.equal(existsSync(base+'.plain'),false);
+  assert.deepEqual(readFileSync(base+'.aes'),sealed);assert.deepEqual(readFileSync(base+'.plain'),conflicting);assert.equal(existsSync(base+'.plain'),true);
 });
 
 test('retrying a part write after changing encryption policy removes obsolete representations before ACK',async t=>{
@@ -143,7 +137,6 @@ test('retrying a part write after changing encryption policy removes obsolete re
     const path=join(files.uploads,session.uploadId,'0');
     // Simulate a process exit between the durable part write and file_parts INSERT.
     store.contentEncryption.setEnabled(!enabled);store.contentEncryption.write(path,stale);
-    writeFileSync(path,stale); // A pre-format retry may also leave an unmarked copy.
     assert.equal(files.upload(session.uploadId,()=>{}).parts.length,0);
     store.contentEncryption.setEnabled(enabled);files.part(session.uploadId,0,bytes,()=>{});
     assert.deepEqual(store.contentEncryption.read(path),bytes);

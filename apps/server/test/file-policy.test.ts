@@ -1,3 +1,4 @@
+import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {readAgentCredential} from './login-fixture.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,6 +17,7 @@ import {installFileRecipes} from '../src/file-recipes.js';
 import {buildApp} from '../src/app.js';
 import {configFromEnv} from '../src/config.js';
 
+function fixtureConfig(directory:string){const prior=process.env.MOTE_DATA_DIR;process.env.MOTE_DATA_DIR=directory;try{return configFromEnv();}finally{if(prior===undefined)delete process.env.MOTE_DATA_DIR;else process.env.MOTE_DATA_DIR=prior;}}
 async function fixture(t:any){
  const dir=mkdtempSync(join(tmpdir(),'mote-policy-')),store=new Store(dir,{dataKey:'41'.repeat(32)}),sources=new SourceStore(store),files=new FileStore(store,sources),calls:ProcessorInput[]=[];
  for(const id of ['phone','nas'])sources.register({id,name:id,kind:'local-files',deviceId:id,platform:'android',retention:'archive'});
@@ -40,14 +42,14 @@ function customPolicy(f:Awaited<ReturnType<typeof fixture>>):FilePolicy{
  policy.rules.find(r=>r.type==='audio/*')!.profileId='two';policy.rules.push({sourceId:'phone',type:'audio/*',profileId:'four'});return policy;
 }
 
-test('migration preserves legacy services and credentials, persists atomically, and keeps legacy clients safe',async t=>{
- const f=await fixture(t),v=f.processing.view();f.processing.update({revision:v.revision,settings:{...v.settings,enabled:true,imageEndpoint:'http://127.0.0.1:9912/image',apiKey:'generated-cloud-secret',localWorkerApiKey:'generated-worker-secret',sourceProfiles:{phone:'audio.local-dialogue'},speakerCount:4}});
- const migrated=f.processing.view();assert.equal(migrated.policyConfigured,false);assert.equal(migrated.policy.rules.find(r=>r.sourceId==='phone')?.type,'audio/*');assert.ok(!JSON.stringify(migrated).includes('generated-'));
+test('explicit policy persists services and credentials atomically and rejects flat settings writes',async t=>{
+ const f=await fixture(t),v=f.processing.view();f.processing.update({revision:v.revision,settings:{...v.settings,enabled:true,imageEndpoint:'http://127.0.0.1:9912/image',apiKey:'generated-cloud-secret',localWorkerApiKey:'generated-worker-secret',sourceProfiles:{phone:'audio.local-dialogue'},speakerCount:4},policy:fixtureFilePolicy({...v.settings,enabled:true,imageEndpoint:'http://127.0.0.1:9912/image',apiKey:'generated-cloud-secret',localWorkerApiKey:'generated-worker-secret',sourceProfiles:{phone:'audio.local-dialogue'},speakerCount:4},f.processing.runtime.registry)});
+ const migrated=f.processing.view();assert.equal(migrated.policyConfigured,true);assert.equal(migrated.policy.rules.find(r=>r.sourceId==='phone')?.type,'audio/*');assert.ok(!JSON.stringify(migrated).includes('generated-'));
  f.save();await f.restart();assert.equal(f.processing.view().policyConfigured,true);assert.equal(f.processing.match({sourceId:'phone',mimeType:'audio/wav'}).profile.parameters.speakerCount,4);
  assert.ok(readFileSync(join(f.dir,'file-processing.json'),'utf8').includes('generated-worker-secret'));
  const persisted=JSON.parse(readFileSync(join(f.dir,'file-processing.json'),'utf8'));assert.equal(persisted.policy.services.find((s:any)=>s.id==='image-api').apiKey,'generated-cloud-secret');
- const current=f.processing.view();assert.throws(()=>f.processing.update({revision:current.revision,settings:{...current.settings,speakerCount:8}}),{statusCode:409});
- f.processing.update({revision:current.revision,settings:{...current.settings,maxAudioMinutes:300}});assert.equal(f.processing.view().settings.maxAudioMinutes,300);
+ const current=f.processing.view();assert.throws(()=>f.processing.update({revision:current.revision,settings:{...current.settings,speakerCount:8}}));
+ f.processing.update({revision:current.revision,settings:{...current.settings,maxAudioMinutes:300},policy:fixtureFilePolicy({...current.settings,maxAudioMinutes:300},f.processing.runtime.registry)});assert.equal(f.processing.view().settings.maxAudioMinutes,300);
 });
 
 test('mixed-source routing respects exact MIME, source overrides, global families and archive fallback',async t=>{
@@ -102,8 +104,8 @@ test('profile-specific summary uses its chosen model and no unrelated credential
  const id=await f.upload('summary.wav');await f.processing.tick();assert.equal(f.files.detail(id).job.summary_state,'succeeded');assert.equal(f.analyses[0].settings.analysisModel.model,'generated-cloud-model');assert.equal(f.analyses[0].settings.analysisModel.apiKey,'generated-model-key');assert.equal(f.analyses[0].localOnly,false);
 });
 
-test('owner policy routes support migration and preview while query agent mutation is denied',async t=>{
- const dir=mkdtempSync(join(tmpdir(),'mote-policy-http-')),config={...configFromEnv(),dataDir:dir,token:'generated-owner-policy-token',model:'',apiKey:'',logLevel:'silent' as const};const node=await buildApp(config);t.after(async()=>{await node.app.close();rmSync(dir,{force:true,recursive:true});});
+test('owner policy routes support explicit policy and preview while query agent mutation is denied',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'mote-policy-http-')),config={...fixtureConfig(dir),dataDir:dir,token:'generated-owner-policy-token',model:'',apiKey:'',logLevel:'silent' as const};const node=await buildApp(config);t.after(async()=>{await node.app.close();rmSync(dir,{force:true,recursive:true});});
  const owner={authorization:'Bearer '+config.token},get=await node.app.inject({method:'GET',url:'/api/file-processing',headers:owner});assert.equal(get.statusCode,200);const body=get.json();const saved=await node.app.inject({method:'PUT',url:'/api/file-processing',headers:owner,payload:{revision:body.revision,settings:body.settings,policy:body.policy}});assert.equal(saved.statusCode,200);
  const match=await node.app.inject({method:'POST',url:'/api/file-processing/match',headers:owner,payload:{sourceId:'fixture',mimeType:'text/plain'}});assert.equal(match.statusCode,200);assert.equal(match.json().profile.processorId,'text.utf8');
  const {invitation}=node.connections.invite({serverUrl:'http://127.0.0.1:57569',label:'Generated',deviceId:'fixture'});const collector=await readAgentCredential(node.connections);

@@ -92,7 +92,7 @@ class NavigationInstrumentedTest {
         val settings = Settings(context); val previous = settings.read()
         org.junit.Assume.assumeTrue("Fresh generated development fixture only", context.packageName == "dev.mote.collector.dev" && previous.token.isBlank() && !settings.enabled && context.queue().depth() == 0)
         settings.save(previous.copy(server = "", token = ""), confirmCentralEndpoint = true)
-        try { ActivityScenario.launch(AskActivity::class.java).use { scenario ->
+        try { ActivityScenario.launch(CentralActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 val tabs = views(activity.window.decorView).filterIsInstance<TextView>().filter { it.tag?.toString()?.startsWith("primary:") == true }
                 assertEquals(listOf("今天", "资料库", "问一问", "本机"), tabs.map { it.text.toString() })
@@ -300,7 +300,7 @@ class NavigationInstrumentedTest {
         require(QuickNotes.draft(context).read().text.isEmpty())
         val directory = File(context.filesDir, "generated-ui").apply { mkdirs() }
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-            // AskActivity has its own generated native rendering fixture; Main no longer owns a jump page.
+            // CentralActivity has its own generated native rendering fixture; Main no longer owns a jump page.
             listOf("今天" to "overview", "记录" to "notes", "资料库" to "library", "本机来源" to "sources", "本机" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings", "本机存储" to "storage-settings", "图像与文字识别" to "processing-settings").forEach { (label, file) ->
                 scenario.onActivity {
                     when {
@@ -321,7 +321,7 @@ class NavigationInstrumentedTest {
                 }
             }
         }
-        ActivityScenario.launch(AskActivity::class.java).use { scenario ->
+        ActivityScenario.launch(CentralActivity::class.java).use { scenario ->
             instrumentation.waitForIdleSync()
             scenario.onActivity { activity ->
                 assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Accept a private legacy {url,token} file or the HTTP JSON exported by the central UI.
+// Accept the exact HTTP MCP JSON exported by the central UI.
 // Stdout is reserved for MCP. Never log the connection or upstream error bodies.
 import {open,readFile} from 'node:fs/promises';
 import {constants} from 'node:fs';

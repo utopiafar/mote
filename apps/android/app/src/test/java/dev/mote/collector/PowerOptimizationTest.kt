@@ -33,7 +33,7 @@ class PowerOptimizationTest {
     }
     @Test fun newInstallUsesActivityWhileLegacyDefaultRemainsContent() {
         assertEquals(AppCollectionMode.ACTIVITY, AppCollectionRules.parse(AppCollectionRules.DEFAULT).defaultMode)
-        assertEquals(AppCollectionMode.CONTENT, AppCollectionRules.parse(AppCollectionRules.LEGACY_DEFAULT).defaultMode)
+        assertEquals(AppCollectionMode.CONTENT, AppCollectionRules.parse(AppCollectionRules.CONTENT_DEFAULT).defaultMode)
     }
     @Test fun captureBundleIsOneGzipJsonlStream() {
         val events = listOf(JSONObject().put("id", "a"), JSONObject().put("id", "b"))

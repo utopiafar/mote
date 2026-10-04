@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { ModelStore, VisionModelStore, parseVisionDecision, validateModelUrl, QWEN_MODEL } from '../dist/index.js';
 
 const body = Buffer.from('synthetic-model-for-downloader-tests');
 const manifest = { ...QWEN_MODEL.files[0], size: body.length, sha256: createHash('sha256').update(body).digest('hex') };
 const directories: string[] = [];
+const abandonedPartial=(path:string)=>path+'.part-2147483647-'+randomUUID();
+const partialPath=async(path:string)=>{const names=await readdir(join(path,'..'));const name=names.find(n=>n.startsWith(manifest.fileName+'.part-'));if(!name)throw Error('No current partial');return join(path,'..',name);};
 async function setup(fetcher: typeof fetch) {
   const dir = await mkdtemp(join(tmpdir(), 'mote-model-test-')); directories.push(dir);
   return { dir, store: new ModelStore(dir, manifest, fetcher, 1) };
@@ -31,7 +33,7 @@ describe('verified model delivery', () => {
       expect((init?.headers as Record<string,string>).Range).toBe('bytes=7-');
       return new Response(body.subarray(7), { status: 206, headers: { 'Content-Range': `bytes 7-${body.length-1}/${body.length}` } });
     });
-    await writeFile(join(dir, manifest.fileName + '.part'), body.subarray(0, 7));
+    await writeFile(abandonedPartial(store.path), body.subarray(0, 7));
     expect((await store.inspect()).state).toBe('partial');
     await store.download({ source: 'official' });
     expect(await readFile(store.path)).toEqual(body);
@@ -42,16 +44,16 @@ describe('verified model delivery', () => {
       seen.push(String(url));
       return String(url).includes('modelscope') ? new Response('', { status: 503 }) : new Response(body);
     });
-    await writeFile(store.path + '.part', body.subarray(0, 7));
+    await writeFile(abandonedPartial(store.path), body.subarray(0, 7));
     await store.download({ source: 'auto' });
     expect(seen.filter(url => url.includes('modelscope'))).toHaveLength(3);
     expect(await readFile(store.path)).toEqual(body);
   });
   it('rejects incorrect Content-Range without corrupting the partial', async () => {
     const { store } = await setup(async () => new Response(body.subarray(7), { status: 206, headers: { 'Content-Range': `bytes 8-${body.length-1}/${body.length}` } }));
-    await writeFile(store.path + '.part', body.subarray(0, 7));
+    await writeFile(abandonedPartial(store.path), body.subarray(0, 7));
     await expect(store.download({ source: 'official' })).rejects.toThrow('下载或校验失败');
-    expect(await readFile(store.path + '.part')).toEqual(body.subarray(0, 7));
+    expect(await readFile(await partialPath(store.path))).toEqual(body.subarray(0, 7));
   });
   it('rejects corrupt, oversized, and truncated responses', async () => {
     for (const response of [Buffer.alloc(body.length), Buffer.alloc(body.length + 1), body.subarray(0, 7)]) {
@@ -83,7 +85,7 @@ describe('verified model delivery', () => {
       if (bytes) controller.abort(new Error('user cancel'));
     } })).rejects.toThrow('user cancel');
     expect((await store.inspect()).state).toBe('partial');
-    expect(await readFile(store.path + '.part')).toEqual(body);
+    expect(await readFile(await partialPath(store.path))).toEqual(body);
     await store.download({ source: 'official' }); expect((await store.inspect()).state).toBe('ready');
   });
   it('does not allow concurrent downloads through another store instance', async () => {
@@ -95,6 +97,7 @@ describe('verified model delivery', () => {
     release(new Response(body)); await downloading;
   });
 });
+it('ignores the retired fixed partial without altering it',async()=>{const {store}=await setup(async()=>new Response(body));await writeFile(store.path+'.part',body.subarray(0,7));expect((await store.inspect()).state).toBe('missing');await store.download({source:'official'});expect(await readFile(store.path+'.part')).toEqual(body.subarray(0,7));expect((await store.inspect()).state).toBe('ready');});
 describe('explicit model decision contract', () => {
   it('requires a complete strict model decision without keyword or confidence fallback', () => {
     expect(parseVisionDecision('{"allow":false,"reason":"explicit image","labels":["nsfw"]}')).toEqual({allow:false, reason:'explicit image', labels:['nsfw']});

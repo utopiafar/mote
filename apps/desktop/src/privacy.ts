@@ -1,15 +1,6 @@
 import { moteText } from '@mote/shared/i18n';
 import type { Rectangle } from './contracts';
-import { validateLocalModelUrl, validateRectangles } from './config';
-import { readResponseText } from './response-body';
-
-export function shouldExclude(appId: string | undefined, excludedAppIds: string[]): boolean {
-  // Exact identities only. Unknown foreground identity is always fail-closed.
-  return !appId || excludedAppIds.includes(appId);
-}
-export function shouldExcludeVisibleApps(visibleAppIds: string[], unknownVisibleWindows: boolean, excludedAppIds: string[]): boolean {
-  return excludedAppIds.length > 0 && (unknownVisibleWindows || visibleAppIds.some(id => excludedAppIds.includes(id)));
-}
+import { validateRectangles } from './config';
 
 /** Electron nativeImage bitmap uses four bytes per pixel; black is channel-order independent. */
 export function maskBitmap(bitmap: Buffer, width: number, height: number, rectangles: Rectangle[]): Buffer {
@@ -27,26 +18,4 @@ export function maskBitmap(bitmap: Buffer, width: number, height: number, rectan
     }
   }
   return output;
-}
-
-export interface ReviewDecision { allow: boolean; rectangles: Rectangle[] }
-export function parseReviewDecision(value: unknown): ReviewDecision {
-  if (!value || typeof value !== 'object' || typeof (value as ReviewDecision).allow !== 'boolean') throw new Error(moteText("本地隐私模型返回值无效；已跳过本次采集"));
-  const v = value as ReviewDecision;
-  return { allow: v.allow, rectangles: validateRectangles(v.rectangles) };
-}
-export async function reviewLocally(url: string, image: Buffer, signal?: AbortSignal): Promise<ReviewDecision> {
-  validateLocalModelUrl(url);
-  try {
-    const result = await fetch(url, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, redirect: 'error',
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
-      body: JSON.stringify({ version: 1, imageBase64: image.toString('base64'), imageMime: 'image/jpeg', purpose: 'privacy_review' }),
-    });
-    if (!result.ok) { await result.body?.cancel().catch(() => undefined); throw new Error('request failed'); }
-    const raw = await readResponseText(result, 64000);
-    return parseReviewDecision(JSON.parse(raw));
-  } catch {
-    throw new Error(moteText("本地隐私审查不可用或返回无效结果，已跳过本次采集"));
-  }
 }

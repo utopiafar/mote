@@ -62,9 +62,9 @@ object AppReleaseVerifier {
             val json = JSONObject(payloadText)
             exactKeys(json, setOf("schemaVersion", "version", "channel", "component", "repository", "tag", "publishedAt", "notesUrl", "assets", "images"))
             val version = json.getString("version"); val tag = json.getString("tag"); val channel = json.getString("channel")
-            val releaseComponent = if (json.has("component")) json.getString("component") else null
-            check(releaseComponent == null || releaseComponent == "android")
-            check(integer(json, "schemaVersion", 1, 1) == 1L && validVersion(version) && tag == (if (releaseComponent == null) "v$version" else "android-v$version") && (expectedVersion == null || expectedVersion == version) && (expectedTag == null || expectedTag == tag))
+            val releaseComponent = json.getString("component")
+            check(releaseComponent == "android")
+            check(integer(json, "schemaVersion", 1, 1) == 1L && validVersion(version) && tag == "android-v$version" && (expectedVersion == null || expectedVersion == version) && (expectedTag == null || expectedTag == tag))
             check(json.getString("repository") == expected.repository && channel == expected.channel && (channel == "preview") == version.contains('-'))
             val notes = "https://github.com/${expected.repository}/releases/tag/$tag"; check(json.getString("notesUrl") == notes)
             check(!Instant.parse(json.getString("publishedAt")).isAfter(Instant.now().plusSeconds(86400)))
@@ -74,8 +74,8 @@ object AppReleaseVerifier {
                 val a = array.getJSONObject(i)
                 exactKeys(a, setOf("component", "platform", "arch", "format", "name", "url", "size", "sha256", "versionCode", "packageName", "certificateSha256", "bundleId", "signing", "teamId"))
                 val component = a.getString("component"); val platform = a.getString("platform"); val arch = a.getString("arch"); val format = a.getString("format")
-                check(releaseComponent == null || component == "android")
-                check(component in setOf("android", "desktop", "server") && platform in setOf("android", "darwin", "source") && arch in setOf("arm64", "x64", "all") && format in setOf("apk", "zip", "tar.gz"))
+                check(component == "android")
+                check(platform == "android" && arch in setOf("arm64", "x64", "all") && format == "apk")
                 val name = a.getString("name"); val url = a.getString("url"); val size = integer(a, "size", 1, 2_000_000_000)
                 check(name.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,159}")) && names.add(name) && sha.matches(a.getString("sha256")))
                 check(url == "https://github.com/${expected.repository}/releases/download/$tag/$name")
@@ -87,12 +87,10 @@ object AppReleaseVerifier {
                     val asset = AppReleaseAsset(name, url, size, a.getString("sha256"), packageName, integer(a, "versionCode", 1, 2_100_000_000), certificate)
                     if (arch == "arm64") android.add(asset)
                 }
-                if (component == "desktop") check(platform == "darwin" && format == "zip" && a.getString("bundleId").isNotBlank() && a.getString("signing") in setOf("adhoc", "developer-id") && (a.getString("signing") != "developer-id" || a.getString("teamId").matches(Regex("[A-Z0-9]{10}"))))
-                if (component == "server") check(platform == "source" && arch == "all" && format == "tar.gz")
+
             }
             val images = json.optJSONArray("images") ?: JSONArray(); check(images.length() <= 2)
-            check(releaseComponent == null || images.length() == 0)
-            for (i in 0 until images.length()) { val image = images.getJSONObject(i); exactKeys(image, setOf("component", "image")); check(image.getString("component") == "server" && image.getString("image").matches(Regex(Regex.escape("ghcr.io/${expected.repository.lowercase()}@sha256:") + "[a-f0-9]{64}"))) }
+            check(images.length() == 0)
             return AppRelease(version, channel, expected.repository, tag, notes, android)
         } catch (e: UpdateFailure) { throw e } catch (_: Exception) { throw UpdateFailure("manifest") }
     }

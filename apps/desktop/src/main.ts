@@ -33,15 +33,15 @@ import { acknowledgeInstalledUpdate } from './update-install';
 import { QueueStorage, StorageCommitUncertainError } from './queue-storage';
 import { DurableQueue } from './queue';
 import { BackgroundJobs } from './background-jobs';
-import { LocalContentKeyStore } from './local-content';
+import {ensureStorageFormat} from './storage-format';
 import { browseCaptures, captureDetail, captureImage, type BrowseRequest, type CaptureLocation } from './capture-browser';
 import { NsfwController } from './nsfw';
 import type { Config, ConfigUpdate, Status } from './contracts';
 
-const legacyDataDirectory = app.getPath('userData');
+const defaultDataDirectory = app.getPath('userData');
 const developmentBuild=Boolean((require('../package.json') as {moteDevelopment?:boolean}).moteDevelopment);
-const profile = resolveProfile(process.argv, developmentBuild?{...process.env,MOTE_PROFILE:process.env.MOTE_PROFILE??'dev'}:process.env, legacyDataDirectory);
-if (!profile.legacy) {
+const profile = resolveProfile(process.argv, developmentBuild?{...process.env,MOTE_PROFILE:process.env.MOTE_PROFILE??'dev'}:process.env, defaultDataDirectory);
+if (!profile.defaultProfile) {
   mkdirSync(profile.dataDirectory, { recursive: true, mode: 0o700 });
   const sessionDirectory = join(profile.dataDirectory, 'session');
   mkdirSync(sessionDirectory, { recursive: true, mode: 0o700 });
@@ -70,7 +70,7 @@ function refreshApplicationMenu() {
       { role: 'windowMenu', label: moteText("窗口") },
     ]));
 }
-const profileLabel = profile.legacy ? moteText("legacy（日常原目录）") : profile.name;
+const profileLabel = profile.name;
 let window: BrowserWindow | undefined;
 let tray: Tray | undefined;
 let collector: Collector;
@@ -91,7 +91,7 @@ const events = new EventJournal(join(profile.dataDirectory, 'diagnostics'), () =
 let pendingNoteStatus = () => ({ count: 0, unbound: true, baseRecords: undefined as number | undefined });
 function includePreparedNote(status: Status): Status { const note = pendingNoteStatus(); return { ...status, sync: { ...status.sync, pendingRecords: (note.baseRecords ?? status.sync.pendingRecords) + note.count, localBacklogUnbound: (note.baseRecords ?? status.sync.pendingRecords) + note.count > 0 && note.unbound } }; }
 let storageStatus: () => Status['storage'] = () => undefined;
-function clientStatus(): Status { return { ...includePreparedNote(collector.status()), operations: backgroundJobs.snapshot(), storage: storageStatus(), environment: { profile: profile.name, legacy: profile.legacy, dataDirectory: profile.dataDirectory } }; }
+function clientStatus(): Status { return { ...includePreparedNote(collector.status()), operations: backgroundJobs.snapshot(), storage: storageStatus(), environment: { profile: profile.name, defaultProfile: profile.defaultProfile, dataDirectory: profile.dataDirectory } }; }
 const backgroundJobs = new BackgroundJobs();
 let controlChain: Promise<unknown> = Promise.resolve();
 
@@ -126,7 +126,7 @@ function trayIcon(): Electron.NativeImage {
   return icon;
 }
 function updateUi(status: Status): void {
-  status = { ...includePreparedNote(status), operations: backgroundJobs.snapshot(), storage: storageStatus(), environment: { profile: profile.name, legacy: profile.legacy, dataDirectory: profile.dataDirectory } };
+  status = { ...includePreparedNote(status), operations: backgroundJobs.snapshot(), storage: storageStatus(), environment: { profile: profile.name, defaultProfile: profile.defaultProfile, dataDirectory: profile.dataDirectory } };
   if (window && !window.isDestroyed()) window.webContents.send('mote:status', status);
   tray?.setToolTip(moteText("Mote [{0}] · {1} · 待上传 {2}", profile.name, status.running ? moteText("采集中") : moteText("已停止"), status.queueDepth));
   tray?.setContextMenu(Menu.buildFromTemplate([
@@ -158,6 +158,7 @@ else {
   void app.whenReady().then(async () => {
     await mkdir(profile.dataDirectory, { recursive: true, mode: 0o700 });
     const dataDirectory = await realpath(profile.dataDirectory);
+    await ensureStorageFormat(dataDirectory,['config.json','queue','notes','local-sources','content-key.json']);
     const secrets = {
       available: encryptedStorageAvailable,
       encrypt: (value: string) => safeStorage.encryptString(value),
@@ -165,12 +166,10 @@ else {
     };
     const store = new ConfigStore(dataDirectory, secrets, () => profileDefaults(profile, {}), () => profileDefaults(profile, process.env));
     settings = await store.load();
-    const contentKeys = new LocalContentKeyStore(dataDirectory, secrets);
-    await contentKeys.initialize(false);
     await store.save(settings); // Persist stable device identity before the first observation.
     void events.record('APP', 'STARTED');
-    const noteDrafts = new NoteDraftStore(join(dataDirectory, 'notes')); await noteDrafts.initialize();await noteDrafts.clearPreparedForProtocolUpgrade();
-    const storage = new QueueStorage(dataDirectory, profile.name, settings.deviceId, [dataDirectory, ...await Promise.all([legacyDataDirectory, `${legacyDataDirectory}-profiles`].map(path => realpath(path).catch(() => resolve(path))))]);
+    const noteDrafts = new NoteDraftStore(join(dataDirectory, 'notes')); await noteDrafts.initialize();
+    const storage = new QueueStorage(dataDirectory, profile.name, settings.deviceId, [dataDirectory, ...await Promise.all([defaultDataDirectory, `${defaultDataDirectory}-profiles`].map(path => realpath(path).catch(() => resolve(path))))]);
     const queue = new DurableQueue(await storage.open(settings.captureStorageDirectory), settings);
     queue.setStorageGuard(async () => { if (recoveryRequired) throw new Error(recoveryRequired); await storage.assertOwned(queue.directory); });
     await queue.initialize();
@@ -275,9 +274,8 @@ else {
       const wasDownloading = modelSourceChanged && nsfw.status().downloading;
       let saved = false;
       try {
-        await contentKeys.setEnabled(updated.localContentEncryption);
         if (modelSourceChanged) await nsfw.cancelDownload();
-        if (profile.legacy && updated.openAtLogin !== previous.openAtLogin) {
+        if (profile.defaultProfile && updated.openAtLogin !== previous.openAtLogin) {
           app.setLoginItemSettings({ openAtLogin: updated.openAtLogin });
           if (app.getLoginItemSettings().openAtLogin !== updated.openAtLogin) throw new Error(moteText("系统未允许修改登录启动项，请在系统设置检查"));
         }
@@ -294,10 +292,9 @@ else {
           throw new Error(recoveryRequired);
         }
         try {
-          await contentKeys.setEnabled(previous.localContentEncryption);
           await localSources!.changeConnection(previous);
           settings = previous; collector.updateConfig(previous); await configureDiagnostics();
-          if (profile.legacy && updated.openAtLogin !== previous.openAtLogin) {
+          if (profile.defaultProfile && updated.openAtLogin !== previous.openAtLogin) {
             app.setLoginItemSettings({ openAtLogin: previous.openAtLogin });
             if (app.getLoginItemSettings().openAtLogin !== previous.openAtLogin) throw new Error(moteText("登录项还原失败"));
           }
@@ -323,7 +320,7 @@ else {
       if (initial) await noteDrafts.bindPreparedOrigin(updated.serverUrl);
       if (sameNodeInvitation) await queue.resetRetries();
       await applySettings(updated);
-      connectionState = { state: 'unchecked', message: updated.credentialScope === 'collector' ? moteText("登录凭据已安全保存，所有中央功能共用此登录。") : moteText("连接已保存，可测试权限与节点版本") };
+      connectionState = { state: 'unchecked', message: moteText("连接已保存，可测试权限与节点版本") };
     };
     const readSelectedInvitation = async (path: string, maximum: number): Promise<Buffer> => {
       const file = await open(path, 'r');
@@ -352,14 +349,14 @@ else {
       const result = await onboarding.redeem(id, origin, named, currentPlatform);
       const updated = { ...updateConfig(settings, { ...named, serverUrl: result.serverUrl, token: result.token }), credentialScope: result.scope, authSignedOut:false, authExpiresAt:undefined, authSessionOnly:false };
       const identity = await testConnection(updated);
-      if (identity.credential.id !== result.credentialId || !['owner','collector'].includes(identity.credential.scope)) throw new Error(moteText("中央凭据身份确认不一致，原连接未修改；请重新生成邀请"));
+      if (identity.credential.id !== result.credentialId || identity.credential.scope !== 'owner') throw new Error(moteText("中央凭据身份确认不一致，原连接未修改；请重新生成邀请"));
       await commitConnection(updated, origin === settings.serverUrl, true);
       connectionState = { state: 'connected', message: moteText("登录成功，可使用所有中央功能。"), checkedAt: new Date().toISOString(), identity };
     }, origin === settings.serverUrl, true); return clientStatus(); }));
     handle('mote:connection-test', async () => {
       if (connectionState.state === 'checking') return connectionState;
       const requested = settings; connectionState = { state: 'checking', message: moteText("正在验证已保存连接与权限…") };
-      try { const identity = await testConnection(requested); if (settings === requested) connectionState = { state: 'connected', message: identity.credential.scope === 'collector' ? moteText("登录正常 · 可使用所有中央功能") : moteText("管理员连接正常 · 可访问完整中央仓库"), checkedAt: new Date().toISOString(), identity }; }
+      try { const identity = await testConnection(requested); if (settings === requested) connectionState = { state: 'connected', message: moteText("管理员连接正常 · 可访问完整中央仓库"), checkedAt: new Date().toISOString(), identity }; }
       catch (error) { if (settings === requested) connectionState = { state: 'error', message: error instanceof ConnectionError ? error.message : moteText("连接检查失败；已保存配置未改变"), checkedAt: new Date().toISOString() }; }
       return connectionState;
     });
@@ -385,7 +382,7 @@ else {
     handle('mote:feedback', () => shell.openExternal(githubFeedbackUrl({
       version: app.getVersion(),
       platform: `${process.platform === 'darwin' ? 'macOS' : currentPlatform} ${process.getSystemVersion()} · ${process.arch}`,
-      environment: moteText("桌面客户端 · {0}", ['dev', 'test', 'prod', 'legacy'].includes(profile.name) ? profile.name : moteText("自定义环境")),
+      environment: moteText("桌面客户端 · {0}", ['dev', 'test', 'prod', 'default'].includes(profile.name) ? profile.name : moteText("自定义环境")),
     })));
     handle('mote:coding-agents', () => discoverCodingAgents());
     handle('mote:source-coding', (provider, options) => serialize(() => { if (provider !== 'claude' && provider !== 'codex' && provider !== 'kimi') throw new Error(moteText("不支持的 Coding Agent")); return localSources!.addCodingAgent(provider, options); }));
@@ -444,7 +441,7 @@ else {
     handle('mote:configure', input => serialize(async () => {
       const confirmedInitial = (input as ConfigUpdate).confirmLocalBacklog === true && unboundBacklog();
       let updated = updateConfig(settings, input as ConfigUpdate, queue.stats().depth + (noteDrafts.hasPrepared() ? 1 : 0), confirmedInitial);
-      if (!profile.legacy && updated.openAtLogin) throw new Error(moteText("命名环境请使用带 --profile 的启动命令；系统默认登录项不能保留环境参数"));
+      if (!profile.defaultProfile && updated.openAtLogin) throw new Error(moteText("命名环境请使用带 --profile 的启动命令；系统默认登录项不能保留环境参数"));
       const relocating = updated.captureStorageDirectory !== settings.captureStorageDirectory;
       const changingConnection = updated.serverUrl !== settings.serverUrl || updated.token !== settings.token;
       if (relocating && updated.captureStorageDirectory && updated.captureStorageDirectory !== pendingStorageDirectory) throw new Error(moteText("请通过本机文件夹选择器选择截图位置，再保存设置"));

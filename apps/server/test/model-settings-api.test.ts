@@ -57,7 +57,7 @@ test('owner model saves apply to new queries while an existing query retains its
   assert.equal(fields.find((field: any) => field.key === 'model').source, 'derived');
   assert.equal(cfg.model, 'original-fixture', 'Hot settings must not mutate the caller configuration snapshot');
   finish(); const completed=(await pending).json();assert.equal(completed.answer, 'original-fixture');assert.equal(completed.configuration.model,'original-fixture');assert.ok(completed.configuration.fingerprint);assert.equal(completed.configuration.owner,'models');
-  await new Promise(resolve => setImmediate(resolve)); assert.deepEqual(closed, ['original-fixture','original-fixture']);
+  await new Promise(resolve => setImmediate(resolve)); assert.deepEqual(closed, ['original-fixture']);
   for (const route of ['/api/model-settings', '/api/configuration', '/api/status', '/api/support-bundle', '/api/export']) {
     const response = await app.inject({ url: route, headers }); assert.equal(response.statusCode, 200);
     for (const secret of ['synthetic-new-key', 'synthetic-header-key', 'synthetic-body-key']) assert.equal(response.body.includes(secret), false, route);
@@ -97,12 +97,12 @@ test('draft probe uses only generated records and neither persists nor exposes p
   const { app } = await fixture(t, async (settings, reader) => ({ configured: true,
     query: async () => {
       const records = await reader.search({}); seen.push(...records.map(record => record.ocrText));
-      assert.equal(records.length, 1); assert.equal(records[0].id, 'mote-model-connection-test');
+      assert.equal(records.length, 1); assert.equal(records[0].id, '7a8f56d1-45de-47b7-90bb-5e84d411c3d6');
       assert.equal((await reader.evidence({ ids: [records[0].id] })).length, 1);
       return { ...answer('fixture connection'), citations: [{ id: records[0].id, appName: records[0].appName, capturedAt: records[0].capturedAt, excerpt: records[0].ocrText }], trace: [{ tool: 'evidence', arguments: { ids: [records[0].id] }, count: 1 }] };
     }, close: async () => {},
   }));
-  const note = { id: '11111111-2222-4333-8444-555555555555', deviceId: 'fixture', deviceName: 'Fixture', platform: 'import', capturedAt: '2026-01-01T00:00:00Z', text: 'Synthetic archive sentinel: must never be sent by connection test.' };
+  const note = { id: '11111111-2222-4333-8444-555555555555', deviceId: 'fixture', deviceName: 'Fixture', platform: 'import', client: 'web', capturedAt: '2026-01-01T00:00:00Z', text: 'Synthetic archive sentinel: must never be sent by connection test.' };
   assert.equal((await app.inject({ method: 'POST', url: '/api/notes', headers, payload: note })).statusCode, 201);
   const view = (await app.inject({ url: '/api/model-settings', headers })).json<ModelSettingsView>();
   const response = await app.inject({ method: 'POST', url: '/api/model-settings/test', headers, payload: { revision: view.revision, settings: { ...input(view), model: 'draft-only' } } });

@@ -7,15 +7,15 @@ const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 test('detail history preserves the exact origin filters, replaces nested evidence and closes with one back',async()=>{
  const dom=new JSDOM('<!doctype html>',{url:'http://localhost/#/library?source=generated&after=2020-01-01'}),w=dom.window;
  const before=w.history.length,origin=w.location.hash;
- changeEvidenceRoute(w as unknown as Window,id.toUpperCase());assert.equal(w.history.length,before+1);assert.equal(readEvidenceRoute(w.location.hash),'capture:'+id);assert.match(w.location.hash,/source=generated/);
+ changeEvidenceRoute(w as unknown as Window,'capture:'+id.toUpperCase());assert.equal(w.history.length,before+1);assert.equal(readEvidenceRoute(w.location.hash),'capture:'+id);assert.match(w.location.hash,/source=generated/);
  changeEvidenceRoute(w as unknown as Window,'memory:'+id);assert.equal(w.history.length,before+1);assert.equal(readEvidenceRoute(w.location.hash),'memory:'+id);
  const closed=new Promise(resolve=>w.addEventListener('popstate',resolve,{once:true}));changeEvidenceRoute(w as unknown as Window,null);await closed;assert.equal(w.location.hash,origin);
  const reopened=new Promise(resolve=>w.addEventListener('popstate',resolve,{once:true}));w.history.forward();await reopened;assert.equal(readEvidenceRoute(w.location.hash),'memory:'+id);w.close();
 });
 test('a direct evidence link closes in place and oversized refs cannot enter the reader',()=>{
- const dom=new JSDOM('<!doctype html>',{url:'http://localhost/#/library/memories?filter=published&evidence=memory%3A'+id});const before=dom.window.history.length;
- changeEvidenceRoute(dom.window as unknown as Window,null);assert.equal(dom.window.history.length,before);assert.equal(dom.window.location.hash,'#/library/memories?filter=published');
- assert.equal(readEvidenceRoute('#/library?evidence='+'x'.repeat(4097)),null);assert.equal(evidenceRoute('#/memories?x=1',null),'#/memories?x=1');dom.window.close();
+ const dom=new JSDOM('<!doctype html>',{url:'http://localhost/#/library?view=memories&filter=published&evidence=memory%3A'+id});const before=dom.window.history.length;
+ changeEvidenceRoute(dom.window as unknown as Window,null);assert.equal(dom.window.history.length,before);assert.equal(dom.window.location.hash,'#/library?view=memories&filter=published');
+ assert.equal(readEvidenceRoute('#/library?evidence='+id),null);assert.throws(()=>evidenceRoute('#/library',id),/typed evidence/);assert.equal(readEvidenceRoute('#/library?evidence='+'x'.repeat(4097)),null);assert.equal(evidenceRoute('#/memories?x=1',null),'#/memories?x=1');dom.window.close();
 });
 test('detail focus contains outside keyboard focus, skips hidden controls and restores the opener',()=>{
  const dom=new JSDOM('<button id="origin">open</button><section id="dialog"><button id="first">close</button><div hidden><button id="hidden">hidden</button></div><button id="last">read</button></section>');

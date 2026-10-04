@@ -1,3 +1,4 @@
+import {fixtureMemoryResult,fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -16,7 +17,7 @@ function fixture(t:any){const dir=mkdtempSync(join(tmpdir(),'mote-read-models-')
 
 test('metadata overview performs zero evidence reads and direct mutations revoke it transactionally',async t=>{
  const store=fixture(t),record=note();await store.ingest(record);const memories=new MemoryStore(store);
- const saved=memories.extract({answer:JSON.stringify({memories:[{title:'Backup decision',statement:`Local backups [${record.id}]`,uncertainty:'Fixture',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:'Fixture',excerpt:record.ocrText}],trace:[],runId:randomUUID()},'fixture');
+ const saved=memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'Backup decision',statement:`Local backups [${record.id}]`,uncertainty:'Fixture',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:'Fixture',excerpt:record.ocrText}],trace:[],runId:randomUUID()}),'fixture');
  memories.readEvidence=()=>{throw Error('Original read from an overview');};
  assert.equal(memories.page({deviceId:record.deviceId,after:'2026-09-20T00:00:00Z',limit:1}).items.length,1);
  assert.equal(memories.get(saved.items[0].id).title,'Backup decision');
@@ -49,7 +50,7 @@ test('semantic memory input is bounded to selected spans, with original exact-qu
  const store=fixture(t),record=note('Generated introduction. KEEP THIS DECISION. '+'Other text. '.repeat(2000));await store.ingest(record);
  const artifact='a'.repeat(64),revision='b'.repeat(64),start=record.ocrText.indexOf('KEEP THIS DECISION.');
  store.archive.save(artifact,artifact,revision,{kind:'semantic',text:'A generated decision summary',metadata:{evidenceRanges:[{id:record.id,offset:start,length:19}]}},[{id:record.id,fingerprint:store.archive.fingerprint(record.id)!}],'fixture','1','fixture');
- const memories=new MemoryStore(store),seen:any[]=[],pipeline=new MemoryPipeline({store,memories,configured:()=>true,model:()=> 'fixture',query:async input=>{seen.push(input);return {answer:JSON.stringify({memories:[{title:'Selected decision',statement:`Keep this decision [${record.id}]`,uncertainty:'Generated fixture',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText.slice(start,start+19)}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:'Fixture',excerpt:record.ocrText.slice(start,start+19)}],trace:[],runId:randomUUID()};}});t.after(()=>pipeline.close());
+ const memories=new MemoryStore(store),seen:any[]=[],pipeline=fixtureMemoryPipeline({store,memories,configured:()=>true,model:()=> 'fixture',query:async input=>{seen.push(input);return {answer:JSON.stringify({memories:[{title:'Selected decision',statement:`Keep this decision [${record.id}]`,uncertainty:'Generated fixture',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText.slice(start,start+19)}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:'Fixture',excerpt:record.ocrText.slice(start,start+19)}],trace:[],runId:randomUUID()};}});t.after(()=>pipeline.close());
  const job=pipeline.createFromArtifacts([artifact],'fixture-semantic')!;await pipeline.run(job.id);assert.equal(seen.length,1);assert.deepEqual(seen[0].evidenceRanges,[{id:record.id,offset:start,length:19}]);assert.ok(seen[0].question.includes('A generated decision summary'));assert.equal(memories.page().items.length,1);
  store.db.prepare("UPDATE captures SET json=json_set(json,'$.ocrText','Changed generated decision') WHERE id=?").run(record.id);assert.equal(memories.page({includeStale:true}).items.length,0);
 });

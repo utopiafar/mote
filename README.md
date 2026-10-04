@@ -145,7 +145,7 @@ node scripts/mote.mjs start --profile dev
 
 中央界面的 **服务端配置** 页面显示当前生效的数据目录、SQLite 与图片位置、日志、容量、保留时间、模型和网络设置，并标注来源及对应变量名。离线可用 `node scripts/mote.mjs config --profile dev` 查看部署配置与存储映射。完整变量、默认值与迁移注意事项见 [配置参考](docs/server-configuration.md)。
 
-日常部署建议使用仓库外的 `prod` 环境，见下方部署章节。已有 `npm start` / 根目录 `.env` / `data/` 的安装仍按原路径运行，不会自动搬迁。
+日常部署建议使用仓库外的 `prod` 环境，见下方部署章节。直接启动使用进程环境；读取配置文件必须显式设置 `MOTE_ENV_FILE`。根目录 `.env` 不再自动加载。
 
 ### 2. 连接采集 App
 

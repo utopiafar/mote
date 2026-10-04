@@ -161,14 +161,14 @@ class NativeCentralInstrumentedTest {
                 if (!mainReady) Thread.sleep(50)
             }
             assertTrue("Local shell must finish loading", mainReady)
-            fun launchAsk(): AskActivity {
-                val monitor = instrumentation.addMonitor(AskActivity::class.java.name, null, false)
+            fun launchAsk(): CentralActivity {
+                val monitor = instrumentation.addMonitor(CentralActivity::class.java.name, null, false)
                 try {
                     instrumentation.runOnMainSync { main.openMotePrimary(MotePrimaryTab.ASK) }
-                    return requireNotNull(monitor.waitForActivityWithTimeout(10000) as? AskActivity)
+                    return requireNotNull(monitor.waitForActivityWithTimeout(10000) as? CentralActivity)
                 } finally { instrumentation.removeMonitor(monitor) }
             }
-            fun await(activity: AskActivity, label: String, predicate: (AskActivity) -> Boolean) {
+            fun await(activity: CentralActivity, label: String, predicate: (CentralActivity) -> Boolean) {
                 val deadline = System.currentTimeMillis() + 20000
                 while (System.currentTimeMillis() < deadline) {
                     var ready = false; instrumentation.runOnMainSync { ready = predicate(activity) }

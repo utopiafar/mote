@@ -22,13 +22,14 @@ export interface ModelSettingsDraft {
   allowCredentialReuse: boolean;
 }
 export function createModelDraft(settings: ModelSettingsPublic): ModelSettingsDraft {
+  if(settings.protocol==='codex-app-server'&&!settings.serviceTier)throw new Error("Codex settings require an explicit service tier");
   return {
     provider: settings.provider,
     protocol: settings.protocol,
     baseUrl: settings.baseUrl,
     model: settings.model,
     reasoningEffort: settings.reasoningEffort,
-    serviceTier: settings.serviceTier ?? 'default',
+    serviceTier: settings.protocol==='codex-app-server'?settings.serviceTier!:'default',
     maxTokens: String(settings.maxTokens),
     modelRequestTimeoutSeconds: settings.modelRequestTimeoutMs === null ? '' : String(settings.modelRequestTimeoutMs / 1000),
     agentTimeoutSeconds: settings.agentTimeoutMs === null ? '' : String(settings.agentTimeoutMs / 1000),

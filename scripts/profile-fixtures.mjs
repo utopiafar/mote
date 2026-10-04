@@ -46,7 +46,7 @@ export async function initializeFixture(home, profile, options = {}) {
   return updateEnvironment(await loadProfile(profilePaths(profile, home)), { MOTE_CONTENT_ENCRYPTION: '1', MOTE_DATA_KEY: options.dataKey ?? randomBytes(32).toString('hex'), MOTE_DIAGNOSTICS_ENABLED: '1', MOTE_MODEL: '' });
 }
 export async function request(p, path, { status = 200, method = 'GET', body, token = p.env.MOTE_TOKEN, binary = false } = {}) {
-  const response = await fetch(p.url + path, { method, redirect: 'error', signal: AbortSignal.timeout(15000), headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const response = await fetch(p.url + path, { method, redirect: 'error', signal: AbortSignal.timeout(15000), headers: { Authorization: `Bearer ${token}`, 'X-Mote-Ingress-Version':'2', ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
   const bytes = Buffer.from(await response.arrayBuffer());
   assert.equal(response.status, status, `${method} ${path}: HTTP ${response.status} ${status === response.status ? '' : bytes.toString().slice(0, 400)}`);
   return binary ? bytes : bytes.length ? JSON.parse(bytes.toString()) : undefined;
