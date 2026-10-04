@@ -1,3 +1,5 @@
+import { ClientLoginApproval } from './ClientLoginApproval';
+import {consumeLoginTicket,loginRequestId,removeLoginParameter} from './login-handoff';
 import { getLocale,moteText } from '@mote/shared/i18n';
 import {
 ArrowRight,
@@ -45,6 +47,7 @@ import { pageLabels,readPage,routes,type Page } from './navigation';
 import { canonicalDestination,readWorkspaceRoute,workspaceHash } from './workspace-route';
 import { primaryDestination,WorkspaceNavigation } from './WorkspaceNavigation';
 import { readResource,resources } from './resource-cache';
+import { importQueue } from './import-queue';
 import { clearSession,persistSession,readPeriod,savePeriod,type Period,readSessionLifetime,readStoredSession,saveSessionLifetime,type SessionLifetime } from "./session";
 import { CentralStatusPill,ErrorNotice,EvidenceDialog,LoginDialog,Spinner } from './shell-components';
 import "./styles.css";
@@ -83,6 +86,7 @@ function App() {
   );
   const [sessionLifetime, setSessionLifetime] = useState<SessionLifetime>(readSessionLifetime);
   const connectionGeneration = useRef(0);
+  const [clientLogin,setClientLogin]=useState(loginRequestId);
   const [verified, setVerified] = useState(false);
   const [showConnect, setShowConnect] = useState(false);
   const collectionIds = () => webFeatures.collections().map(entry=>entry.id);
@@ -99,6 +103,7 @@ function App() {
         history.replaceState(null, '', currentHash.current); return;
       }
       currentHash.current=location.hash;
+      setClientLogin(loginRequestId());
       setPage(next.page); updateArchiveTab(next.collection);
       updateEvidenceId(readEvidenceRoute(location.hash));
     };
@@ -141,11 +146,23 @@ function App() {
     setRecent([]);
     setInsights([]);
   }, []);
+  useEffect(()=>{
+    const handoff=()=>{
+      if(!new URLSearchParams(location.hash.split('?')[1]??'').has('loginTicket'))return;
+      clearConnection();const generation=connectionGeneration.current;
+      void consumeLoginTicket(()=>generation===connectionGeneration.current).then(()=>{
+        if(generation===connectionGeneration.current)setConnection(readConnection());
+      }).catch(()=>{if(generation===connectionGeneration.current)setShowConnect(true);});
+    };
+    window.addEventListener('hashchange',handoff);
+    return()=>window.removeEventListener('hashchange',handoff);
+  },[clearConnection]);
   const disconnect = useCallback(() => {
+    if(connection)void createApi(connection).request('/api/login/logout',{method:'POST',body:'{}'}).catch(()=>{});
     clearConnection();
     setEvidenceId(null);
     window.moteCentralSession?.close();
-  }, [clearConnection, setEvidenceId]);
+  }, [clearConnection, setEvidenceId,connection]);
   const unauthorized = useCallback(() => {
     // A same-node re-login may continue a direct evidence link. Clear the
     // credential and private UI, but keep the URL until the owner logs in.
@@ -196,6 +213,17 @@ function App() {
     setRevision((value) => value + 1);
     setTimelineRevision((value) => value + 1);
   }, [api]);
+  useEffect(() => {
+    if (!api) return;
+    const queue=importQueue(api);
+    queue.start();
+    let completed=queue.getSnapshot().completedVersion;
+    const unsubscribe=queue.subscribe(()=>{
+      const next=queue.getSnapshot().completedVersion;
+      if(next!==completed){completed=next;refresh();}
+    });
+    return ()=>{unsubscribe();queue.close();};
+  }, [api,refresh]);
   useEffect(() => {
     if (!api || !verified) return;
     let active = true;
@@ -252,7 +280,7 @@ function App() {
     connectionGeneration.current++;
     saveSessionLifetime(lifetime);
     setSessionLifetime(lifetime);
-    const next=persistSession({token:value.token}, lifetime);
+    const next=persistSession(value, lifetime);
     setConnection(next);
     setPeriod(readPeriod(next));
     setVerified(false);
@@ -368,6 +396,7 @@ function App() {
                   </select>
             )}
           </div>
+      {clientLogin&&api&&verified&&<ClientLoginApproval id={clientLogin} api={api} done={()=>{removeLoginParameter('loginRequest');setClientLogin(undefined);setNotice(moteText('客户端已登录，可返回客户端继续。'));}}/>}
           {notice && (
             <div className="notice" role="status">
               <Info size={17} />
@@ -484,7 +513,7 @@ function App() {
 
 document.documentElement.lang = getLocale();
 document.documentElement.dir = 'ltr';
-void featuresReady.then(()=>createRoot(document.getElementById("root")!).render(
+void Promise.all([featuresReady,consumeLoginTicket().catch(()=>{})]).then(()=>createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>,

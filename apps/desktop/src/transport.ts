@@ -1,3 +1,4 @@
+import { connectionToken, requireConnectionToken } from './login-session';
 import { meteredBody } from './upload-meter';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import type { CaptureEvent, Config } from './contracts';
@@ -11,11 +12,11 @@ import {INGRESS_VERSION_HEADERS,requireIngressReceipt} from './ingress-protocol'
 export class DeletedCaptureFailure extends TransportFailure {}
 
 export async function uploadDeferredOcr(config: Config, id: string, ocrText: string, signal?: AbortSignal): Promise<void> {
-  if (!config.token || !/^[a-f0-9-]{36}$/i.test(id)) throw new TransportFailure(moteText("OCR 补写配置无效"), 'CONFIG_INVALID');
+  if (!connectionToken(config) || !/^[a-f0-9-]{36}$/i.test(id)) throw new TransportFailure(moteText("OCR 补写配置无效"), 'CONFIG_INVALID');
   let response: Response;
   try {
     response = await fetch(`${validateServerUrl(config.serverUrl)}/api/capture-browser/${id}/ocr`, {
-      method: 'POST', headers: { ...INGRESS_VERSION_HEADERS,'Accept-Language': getLocale(), Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' },
+      method: 'POST', headers: { ...INGRESS_VERSION_HEADERS,'Accept-Language': getLocale(), Authorization: `Bearer ${requireConnectionToken(config)}`, 'Content-Type': 'application/json' },
       credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
       body: meteredBody(JSON.stringify({ ocrText, status: 'completed' })), ...({duplex:'half'} as object),
     });
@@ -36,11 +37,11 @@ export async function uploadDeferredOcr(config: Config, id: string, ocrText: str
 
 export async function uploadCapture(config: Config, event: CaptureEvent, image?: Buffer, signal?: AbortSignal): Promise<void> {
   const origin = validateServerUrl(config.serverUrl);
-  if (!config.token) throw new TransportFailure(moteText("请配置中央节点访问令牌"), 'CONFIG_INVALID');
+  if (!connectionToken(config)) throw new TransportFailure(moteText("请配置中央节点访问令牌"), 'CONFIG_INVALID');
   let response: Response;
   try {
     response = await fetch(`${origin}/api/captures`, {
-      method: 'POST', headers: { ...INGRESS_VERSION_HEADERS,'Accept-Language': getLocale(), 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' },
+      method: 'POST', headers: { ...INGRESS_VERSION_HEADERS,'Accept-Language': getLocale(), 'Authorization': `Bearer ${requireConnectionToken(config)}`, 'Content-Type': 'application/json' },
       credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
       body: meteredBody(JSON.stringify({ ...event, ...(image ? { imageBase64: image.toString('base64') } : {}) })),
       ...({ duplex: 'half' } as object),
@@ -58,10 +59,10 @@ export async function uploadCapture(config: Config, event: CaptureEvent, image?:
 }
 
 export async function heartbeat(config: Config, body: object, events?: EventJournal, signal?: AbortSignal): Promise<void> {
-  if (!config.token) return;
+  if (!connectionToken(config)) return;
   try {
     const response = await fetch(`${validateServerUrl(config.serverUrl)}/api/devices/heartbeat`, {
-      method: 'POST', headers: { 'Accept-Language': getLocale(), 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Accept-Language': getLocale(), 'Authorization': `Bearer ${requireConnectionToken(config)}`, 'Content-Type': 'application/json' },
       credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000), body: JSON.stringify(body),
     });
     await response.body?.cancel().catch(() => undefined);
@@ -70,12 +71,12 @@ export async function heartbeat(config: Config, body: object, events?: EventJour
 }
 
 export async function uploadCaptureBatch(config: Config, entries: { event: CaptureEvent; image?: Buffer }[], signal?: AbortSignal): Promise<Map<string, number>> {
-  if (!config.token) throw new TransportFailure(moteText("请配置中央节点访问令牌"), 'CONFIG_INVALID');
+  if (!connectionToken(config)) throw new TransportFailure(moteText("请配置中央节点访问令牌"), 'CONFIG_INVALID');
   const origin = validateServerUrl(config.serverUrl);
   let response: Response;
   try { response = await fetch(`${origin}/api/captures/batch`, {
     method: 'POST', credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000),
-    headers: { ...INGRESS_VERSION_HEADERS,Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json', 'Accept-Language': getLocale() },
+    headers: { ...INGRESS_VERSION_HEADERS,Authorization: `Bearer ${requireConnectionToken(config)}`, 'Content-Type': 'application/json', 'Accept-Language': getLocale() },
     body: meteredBody(JSON.stringify({ captures: entries.map(({event, image}) => ({ ...event, ...(image ? { imageBase64: image.toString('base64') } : {}) })) })),
     ...({ duplex: 'half' } as object),
   }); } catch (error) {

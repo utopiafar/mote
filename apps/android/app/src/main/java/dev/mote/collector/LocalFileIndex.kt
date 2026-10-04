@@ -12,7 +12,37 @@ import java.net.URL
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
 
+interface LocalFileProcessor {
+    val id: String
+    val version: Int
+    fun index(item: JSONObject, bytes: ByteArray, source: LocalSource)
+}
+/** Trusted modules decode their format; the journal owns permission, retry and immutable publication. */
+class LocalFileProcessors {
+    private val entries = mutableMapOf<Pair<String, Int>, LocalFileProcessor>()
+    fun register(processor: LocalFileProcessor): LocalFileProcessors {
+        require(processor.id.isNotBlank() && processor.version > 0 && (processor.id to processor.version) !in entries)
+        entries[processor.id to processor.version] = processor; return this
+    }
+    fun get(id: String, version: Int) = entries[id to version] ?: error("Local file processor unavailable")
+    companion object {
+        val default = LocalFileProcessors().register(object : LocalFileProcessor {
+            override val id = "local-file"
+            override val version = 1
+            override fun index(item: JSONObject, bytes: ByteArray, source: LocalSource) = LocalFileIndex.index(item, bytes, source)
+        })
+    }
+}
+
 object LocalFileIndex {
+    const val VERSION = 1
+    /** Receipt can precede extraction. This version identifies discovery, not a byte hash. */
+    fun pending(item: JSONObject, inputVersion: String, source: LocalSource) {
+        item.put("text", "").put("document", JSONObject().put("fileIndex", JSONObject().put("version", VERSION)
+            .put("fileId", SourceRules.hash(item.getString("externalId"))).put("contentVersion", inputVersion)
+            .put("mode", "index").put("coverage", "none").put("status", "pending").put("parser", "local-pending")
+            .put("totalCharacters", 0).put("offset", 0).put("length", 0).put("allowRead", source.allowRead)))
+    }
     data class Parsed(val text: String, val parser: String, val status: String = "ready")
     fun bytes(input: InputStream): ByteArray { val out = ByteArrayOutputStream(); val buffer = ByteArray(8192); while (true) { val n = input.read(buffer); if (n < 0) break; check(out.size() + n <= 16 * 1024 * 1024); out.write(buffer, 0, n) }; return out.toByteArray() }
     fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

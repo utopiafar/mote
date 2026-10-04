@@ -30,6 +30,7 @@ export interface ConnectorContext {
   sources: SourceStore;
   store: Store;
   config: {dataDir: string;token: string;allowedOrigins: string[];connectors?: ConnectorConfig};
+  ownerAuthorization?:(header:string|undefined)=>boolean;
   mcpAuthorization?:(header:string|undefined)=>{write:boolean;sourceIds?:string[];authorize:()=>void}|undefined;
 }
 export class ConnectorError extends Error {

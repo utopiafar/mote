@@ -12,7 +12,7 @@ const deviceId=z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/);
 const label=z.string().trim().min(1).max(120);
 const platform=z.enum(['android','macos','windows','linux','other']);
 const timestamp=z.string().datetime();
-const credentialSchema=z.object({id:z.string().uuid(),label,scope:z.enum(['collector','mcp-read','mcp-write']),createdAt:timestamp,revokedAt:timestamp.optional(),serverUrl:z.string().max(2048),hash:z.string().regex(/^[a-f0-9]{64}$/),deviceId:deviceId.optional(),deviceName:z.string().min(1).max(200).optional(),platform:platform.optional(),writeSourceIds:z.array(z.string().min(1).max(128)).max(500).optional()}).strict();
+const credentialSchema=z.object({id:z.string().uuid(),label,scope:z.enum(['owner','collector','mcp-read','mcp-write']),createdAt:timestamp,revokedAt:timestamp.optional(),expiresAt:timestamp.optional(),serverUrl:z.string().max(2048),hash:z.string().regex(/^[a-f0-9]{64}$/),deviceId:deviceId.optional(),deviceName:z.string().min(1).max(200).optional(),platform:platform.optional(),writeSourceIds:z.array(z.string().min(1).max(128)).max(500).optional()}).strict();
 const savedSchema=z.object({version:z.literal(1),credentials:z.array(credentialSchema).max(500)}).strict();
 export type ConnectionCredential=z.infer<typeof credentialSchema>;
 type Saved=z.infer<typeof savedSchema>;
@@ -69,18 +69,18 @@ export class Connections {
       const known=this.credentials.some(c=>c.deviceId===input.deviceId)||Boolean(this.store.db.prepare('SELECT id FROM devices WHERE id=?').get(input.deviceId))||this.sources.listSources().some(s=>s.deviceId===input.deviceId);
       if(known&&!invitation.authorizedDeviceId)throw new ConnectionError('device_already_registered',409,moteText("此设备 ID 已在中央登记；请由所有者选择该设备并生成绑定邀请。"));
       const token=randomBytes(32).toString('base64url'),now=new Date(this.clock()).toISOString();
-      const credential:ConnectionCredential={id:randomUUID(),label:invitation.label,scope:'collector',createdAt:now,serverUrl:invitation.serverUrl,hash:digest(token),deviceId:input.deviceId,deviceName:input.deviceName,platform:input.platform};
-      const next=this.credentials.map(c=>c.scope==='collector'&&c.deviceId===input.deviceId&&!c.revokedAt?{...c,revokedAt:now}:c);
+      const credential:ConnectionCredential={id:randomUUID(),label:invitation.label,scope:'owner',createdAt:now,serverUrl:invitation.serverUrl,hash:digest(token),deviceId:input.deviceId,deviceName:input.deviceName,platform:input.platform};
+      const next=this.credentials.map(c=>['owner','collector'].includes(c.scope)&&c.deviceId===input.deviceId&&!c.revokedAt?{...c,revokedAt:now}:c);
       await this.persist([...next,credential]);
       this.invitations.delete(key);
-      return {serverUrl:invitation.serverUrl,token,credentialId:credential.id,scope:'collector' as const};
+      return {serverUrl:invitation.serverUrl,token,credentialId:credential.id,scope:'owner' as const};
     });
   }
   authenticate(header:string|undefined):ConnectionCredential|undefined{
     if(this.closed||typeof header!=='string'||!/^Bearer [A-Za-z0-9_-]{43}$/.test(header))return;
-    const hash=digest(header.slice(7));return this.credentials.find(c=>c.hash===hash&&!c.revokedAt);
+    const hash=digest(header.slice(7));return this.credentials.find(c=>c.hash===hash&&!c.revokedAt&&(!c.expiresAt||Date.parse(c.expiresAt)>this.clock()));
   }
-  assertActive(credential:ConnectionCredential){if(!this.credentials.some(c=>c.id===credential.id&&!c.revokedAt))throw new ConnectionError('connection_revoked',401,moteText("此设备连接已撤销，请重新配对。"));if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央节点正在关闭，请稍后重试。"));}
+  assertActive(credential:ConnectionCredential){if(!this.credentials.some(c=>c.id===credential.id&&!c.revokedAt&&(!c.expiresAt||Date.parse(c.expiresAt)>this.clock())))throw new ConnectionError('connection_revoked',401,moteText("此设备连接已撤销，请重新配对。"));if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央节点正在关闭，请稍后重试。"));}
   publicCredential(c:ConnectionCredential){const {hash:_,writeSourceIds,...visible}=c;return {...visible,tokenHint:`…${c.id.slice(-8)}`,...(writeSourceIds?{writeSourceIds:[...writeSourceIds]}:{})};}
   inventory(config?:ConnectorConfig){return {items:this.credentials.map(c=>this.publicCredential(c)),mcp:{enabled:Boolean(config?.mcpEnabled),writeEnabled:Boolean(config?.mcpEnabled&&config.mcpWriteEnabled&&config.mcpWriteSourceIds?.length),writeSourceIds:config?.mcpWriteSourceIds??[]}};}
   revoke(id:string){z.string().uuid().parse(id);return this.serialize(async()=>{const found=this.credentials.find(c=>c.id===id);if(!found)throw new ConnectionError('connection_not_found',404,moteText("未找到此连接。"));if(!found.revokedAt)await this.persist(this.credentials.map(c=>c.id===id?{...c,revokedAt:new Date(this.clock()).toISOString()}:c));return {revoked:true as const,id};});}
@@ -100,12 +100,26 @@ export class Connections {
     if(write&&(!config.mcpWriteEnabled||!sourceIds?.length))return;
     return {write,sourceIds,authorize:()=>this.assertActive(c)};
   }
+  /** Legacy paired credentials retain their hashes and acquire the same rights as owner tokens. */
+  isOwner(c:ConnectionCredential){return c.scope==='owner'||c.scope==='collector';}
+  async session(server:string,label:string,device?:{deviceId:string;deviceName:string;platform:z.infer<typeof platform>},durationMs=30*86400000){
+    const url=serverUrl(server);platform.parse(device?.platform??'other');
+    if(device){deviceId.parse(device.deviceId);if(!device.deviceName.trim()||device.deviceName.length>200)throw new ConnectionError('invalid_device',400,'Invalid device');}
+    if(![0,86400000,7*86400000,30*86400000].includes(durationMs))throw new ConnectionError('invalid_lifetime',400,'Invalid lifetime');
+    return this.serialize(async()=>{
+      const token=randomBytes(32).toString('base64url'),now=this.clock();
+      const c:ConnectionCredential={id:randomUUID(),hash:digest(token),label:label.slice(0,120),scope:'owner',createdAt:new Date(now).toISOString(),serverUrl:url,...device,...(durationMs?{expiresAt:new Date(now+durationMs).toISOString()}:{} )};
+      const credential={...c,hash:digest(token)};
+      await this.persist([...this.credentials,credential]);
+      return {serverUrl:url,token,credentialId:c.id,scope:'owner' as const,...(c.expiresAt?{expiresAt:Date.parse(c.expiresAt)}:{})};
+    });
+  }
   assertCollectorRoute(credential:ConnectionCredential,method:string,route:string){
     this.assertActive(credential);
     if(route==='/api/connections/self'&&['GET','HEAD'].includes(method))return;
-    if(credential.scope!=='collector')throw denied();
-  const permitted:Record<string,string[]>={'/api/sources/:id/read-requests':['GET','HEAD'],'/api/sources/:id/read-requests/:requestId':['PUT'],'/api/actions':['GET','HEAD'],'/api/actions/deliveries':['GET','HEAD'],'/api/actions/targets':['POST'],'/api/actions/:id/confirm':['POST'],'/api/actions/:id/dismiss':['POST'],'/api/actions/:id/claim':['POST'],'/api/actions/:id/receipt':['POST'],'/api/file-sync/v1/manifests':['POST'],'/api/file-sync/v1/head':['GET','HEAD'],'/api/file-sync/v1/capabilities':['GET','HEAD'],'/api/file-sync/v1/uploads':['POST'],'/api/file-sync/v1/uploads/:id':['GET','HEAD'],'/api/file-sync/v1/uploads/:id/parts/:part':['PUT'],'/api/file-sync/v1/uploads/:id/commit':['POST'],'/api/file-sync/v1/revisions':['PUT'],'/api/files':['GET','HEAD'],'/api/files/:id':['GET','HEAD'],'/api/files/:id/chunks':['GET','HEAD'],'/api/files/:id/content':['GET','HEAD'],'/api/files/:id/playback':['POST'],'/api/captures':['POST'],'/api/captures/batch':['POST'],'/api/captures/bundle':['POST'],'/api/capture-browser/updates':['GET','HEAD'],'/api/capture-browser/reconcile':['POST'],'/api/capture-browser':['GET','HEAD'],'/api/capture-browser/sessions':['GET','HEAD'],'/api/capture-browser/albums':['GET','HEAD'],'/api/capture-browser/album-images':['GET','HEAD'],'/api/capture-browser/:id':['GET','HEAD'],'/api/capture-browser/:id/image':['GET','HEAD'],'/api/capture-browser/:id/ocr':['POST'],'/api/media-activity':['GET','HEAD'],'/api/notes':['POST'],'/api/devices/heartbeat':['POST'],'/api/sources':['GET','HEAD','POST'],'/api/sources/:id':['PATCH'],'/api/sources/:id/items':['GET','HEAD','PUT'],'/api/sources/:id/items/batch':['POST'],'/api/sources/:id/item':['GET','HEAD'],'/api/sources/:id/history':['GET','HEAD'],'/api/source-items':['GET','HEAD']};
-    if(!permitted[route]?.includes(method))throw denied();
+    if(this.isOwner(credential))return;
+    throw denied();
+
   }
   assertOwnDevice(c:ConnectionCredential,body:unknown){this.assertActive(c);if(!body||typeof body!=='object'||(body as {deviceId?:unknown}).deviceId!==c.deviceId)throw denied();}
   assertPlatform(c:ConnectionCredential,value:unknown){if(value!==(c.platform==='other'?'import':c.platform))throw denied();}

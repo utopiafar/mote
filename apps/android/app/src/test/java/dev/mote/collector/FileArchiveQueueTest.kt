@@ -9,6 +9,51 @@ import java.io.ByteArrayInputStream
 import java.util.UUID
 
 class FileArchiveQueueTest {
+    @Test fun missingTranscriptionNeverBlocksMetadataOrAnotherFileAndRetrySurvivesRestart() {
+        val dir = folder.newFolder(); var queue = FileArchiveQueue(dir, cipher); val source = source("snapshot")
+        val generation = queue.configure(source).getString("generation")
+        for (id in listOf("a", "b", "c")) queue.observe(source, item(id, "snapshot"), generation, 0)
+        repeat(3) {
+            val pending = queue.prepare(source, { error("Transport must not open snapshot content") }, { true }, 61000)!!
+            assertEquals("pending", pending.getJSONObject("pending").getJSONObject("manifest").getJSONObject("item").getJSONObject("document").getJSONObject("fileIndex").getString("status"))
+            queue.acknowledge(source.id, pending, ack(pending))
+        }
+        assertEquals(0, queue.pendingCount(source.id)); assertEquals(3, queue.processingCount(source.id))
+        queue.processOne(source, { ByteArrayInputStream(byteArrayOf(1)) }, { true }, now = 62000, index = { value, _, s -> LocalFileIndex.pending(value, "a".repeat(64), s) })
+        queue = FileArchiveQueue(dir, cipher)
+        assertEquals(0, queue.pendingCount(source.id)); assertEquals(3, queue.processingCount(source.id))
+        assertTrue(queue.processingReady(source.id, 62001)) // The failed file backs off, others remain runnable.
+    }
+    @Test fun derivedResultIsANewVersionAndLostAckDoesNotInvokeProcessingAgain() {
+        val dir = folder.newFolder(); val queue = FileArchiveQueue(dir, cipher); val s = source("snapshot")
+        queue.observe(s, item(layer = "snapshot"), queue.configure(s).getString("generation"), 0)
+        val metadata = queue.prepare(s, { error("Must not decode") }, { true }, 61000)!!; queue.acknowledge(s.id, metadata, ack(metadata))
+        queue.processOne(s, { ByteArrayInputStream("Generated transcript".toByteArray()) }, { true }, now = 62000, index = { value, bytes, source ->
+            LocalFileIndex.pending(value, LocalFileIndex.hash(bytes), source)
+            value.put("text", "Generated transcript"); value.getJSONObject("document").getJSONObject("fileIndex").put("status", "ready").put("parser", "fixture").put("coverage", "full").put("length", 20).put("totalCharacters", 20)
+        })
+        assertEquals(0, queue.processingCount(s.id)); assertEquals(1, queue.pendingCount(s.id))
+        val result = queue.prepare(s, { error("Must not decode twice") }, { true }, 63000)!!
+        val manifest = result.getJSONObject("pending").getJSONObject("manifest")
+        assertEquals(metadata.getJSONObject("pending").getJSONObject("manifest").getJSONObject("item").getString("revision"), manifest.getString("previousRevision"))
+        assertFalse(manifest.has("sha256")); assertEquals("Generated transcript", manifest.getJSONObject("item").getString("text"))
+        val restarted = FileArchiveQueue(dir, cipher); assertEquals(result.toString(), restarted.next(s.id).toString())
+        restarted.acknowledge(s.id, result, ack(result)); assertEquals(0, restarted.pendingCount(s.id))
+    }
+    @Test fun oldIndexWaitMarkersMigrateWithoutChangingAnExistingImmutableManifest() {
+        val dir = folder.newFolder(); val queue = FileArchiveQueue(dir, cipher); val s = source("snapshot")
+        queue.observe(s, item(layer = "snapshot"), queue.configure(s).getString("generation"), 0)
+        val pending = queue.prepare(s, { error("Must not decode") }, { true }, 61000)!!
+        queue.state(s.id).apply { remove("transportQueueVersion"); queue.saveState(s.id, this) }
+        assertEquals(pending.toString(), FileArchiveQueue(dir,cipher).next(s.id).toString())
+        queue.acknowledge(s.id,pending,ack(pending)); assertEquals(0, queue.pendingCount(s.id)); assertEquals(1, queue.processingCount(s.id))
+    }
+    @Test fun sourceChangeDuringLocalProcessingRejectsStalePublication() {
+        val queue = FileArchiveQueue(folder.newFolder(), cipher); val s = source("snapshot"); val g = queue.configure(s).getString("generation")
+        queue.observe(s,item(layer="snapshot"),g,0); val pending=queue.prepare(s,{error("No parse")},{true},61000)!!;queue.acknowledge(s.id,pending,ack(pending))
+        queue.processOne(s,{ByteArrayInputStream(byteArrayOf(1))},{true},now=62000,index={ _, _, _ -> queue.observe(s,item(layer="snapshot",size=99),g,62000) })
+        assertEquals(1,queue.pendingCount(s.id));assertEquals(0,queue.processingCount(s.id));assertFalse(queue.rows(s.id).single().has("indexResult"))
+    }
     @Test fun responseReaderHandlesShortReadsAndExactLimit() {
         val expected = ByteArray(1024 * 1024) { (it % 251).toByte() }
         val input = object : ByteArrayInputStream(expected) {

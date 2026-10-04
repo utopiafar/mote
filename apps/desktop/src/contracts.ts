@@ -47,6 +47,11 @@ export interface Config {
   openAtLogin: boolean;
   token?: string;
   credentialScope?: 'owner' | 'collector';
+  authSignedOut?: boolean;
+  authExpiresAt?: number;
+  authSessionOnly?: boolean;
+  /** Hash-only source checkpoint identity survives an app-scoped login restart. */
+  authSourceBinding?: string;
 }
 export type PublicConfig = Omit<Config, 'token'> & { tokenConfigured: boolean };
 export type ConfigUpdate = Omit<Config, 'token' | 'deviceId'> & { token?: string; confirmLocalBacklog?: boolean };
@@ -115,7 +120,7 @@ export interface NsfwGate {
   close(): void;
 }
 export interface DesktopApi {
-  ask(command: import('./ask').AskCommand, input?: {id?: string; question?: string; conversationId?: string; token?: string; cursor?: string}): Promise<unknown>;
+  ask(command: import('./ask').AskCommand, input?: {id?: string; question?: string; conversationId?: string; token?: string; cursor?: string; durationMs?: number}): Promise<unknown>;
   permissionStatus(): Promise<{screen: string; accessibility: string; calendar: string; appPath?: string; bundleId?: string}>;
   permissionSettings(kind: 'screen' | 'accessibility' | 'calendar' | 'files'): Promise<void>;
   storageStatistics(): Promise<import('@mote/shared/storage-statistics').StorageStatistics>;

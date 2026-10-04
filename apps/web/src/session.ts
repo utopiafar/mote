@@ -57,7 +57,9 @@ export function connectionForLifetime(token: string, lifetime: SessionLifetime, 
 
 /** Persist only the browser session credential; the central owner token itself remains server-managed. */
 export function persistSession(connection: Connection, lifetime: SessionLifetime, now = Date.now()): Connection {
-  const stored = {...connectionForLifetime(connection.token, lifetime, now),viewScope:validScope(connection.viewScope)?connection.viewScope:crypto.randomUUID()};
+  const selected=connectionForLifetime(connection.token,lifetime,now);
+  const deadline=connection.serverExpiresAt===undefined?selected.expiresAt:selected.expiresAt===undefined?connection.serverExpiresAt:Math.min(selected.expiresAt,connection.serverExpiresAt);
+  const stored = {...selected,...(connection.serverExpiresAt!==undefined?{serverExpiresAt:connection.serverExpiresAt}:{}),...(deadline!==undefined?{expiresAt:deadline}:{}),viewScope:validScope(connection.viewScope)?connection.viewScope:crypto.randomUUID()};
   try {
     globalThis.sessionStorage?.removeItem(connectionStorageKey);
     globalThis.localStorage?.removeItem(connectionStorageKey);
@@ -65,7 +67,7 @@ export function persistSession(connection: Connection, lifetime: SessionLifetime
   } catch {
     try {
       globalThis.localStorage?.removeItem(connectionStorageKey);
-      globalThis.sessionStorage?.setItem(connectionStorageKey, JSON.stringify({token: connection.token,viewScope:stored.viewScope}));
+      globalThis.sessionStorage?.setItem(connectionStorageKey, JSON.stringify(stored));
     } catch {
       // Keep the in-memory connection alive when browser storage is unavailable.
     }
@@ -87,7 +89,8 @@ export function restoreSession(raw: string | null, origin: string, now = Date.no
     if (value.expiresAt !== undefined && (!Number.isSafeInteger(value.expiresAt) || value.expiresAt <= now)) return null;
     // Accept old same-service sessions; invalidate the former remote-node option.
     if (value.url !== undefined && value.url !== '' && value.url !== origin) return null;
-    return { token: value.token, ...(validScope(value.viewScope)?{viewScope:value.viewScope}:{}), ...(value.expiresAt === undefined ? {} : {expiresAt: value.expiresAt}) };
+    if(value.serverExpiresAt!==undefined&&(!Number.isSafeInteger(value.serverExpiresAt)||value.serverExpiresAt<=now))return null;
+    return { token: value.token,...(value.serverExpiresAt===undefined?{}:{serverExpiresAt:value.serverExpiresAt}), ...(validScope(value.viewScope)?{viewScope:value.viewScope}:{}), ...(value.expiresAt === undefined ? {} : {expiresAt: value.expiresAt}) };
   } catch {
     return null;
   }

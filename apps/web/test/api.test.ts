@@ -50,6 +50,16 @@ test('a delayed 401 from a previous connection cannot disconnect a new authentic
   const currentRequest=current.request('/api/status');deliver(new Response('{}',{status:401}));
   await assert.rejects(currentRequest,ApiError);assert.equal(unauthorized,1);
 });
+test('external authorization failures preserve the node login while revoked credentials clear it', async t => {
+  let unauthorized = 0;
+  const api = createApi({token:'synthetic'}, () => unauthorized++);
+  for (const code of ['google_not_connected','unauthorized','connection_revoked']) {
+    const mock = t.mock.method(globalThis, 'fetch', async () => Response.json({error:code}, {status:401}));
+    await assert.rejects(api.request('/api/connectors/google/calendars'), error => error instanceof ApiError && error.code === code);
+    mock.mock.restore();
+    assert.equal(unauthorized, code === 'google_not_connected' ? 0 : code === 'unauthorized' ? 1 : 2);
+  }
+});
 
 test('only model operations use the node deadline plus transport allowance; ordinary requests keep their deadline', async t => {
   const durations:number[]=[],signals:AbortSignal[]=[];
@@ -122,4 +132,11 @@ test('API request throttling and provider throttling retain distinct localized m
   }
  }
  assert.equal(unauthorized,0);
+});
+
+test('API exposes bounded retry delay from transport headers or structured errors',async t=>{
+ for(const [header,body,expected] of [['2',{},2000],[null,{retryAfterMs:250},250],['invalid',{retryAfterMs:-1},undefined]] as const){
+  const mocked=t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({error:'api_rate_limited',...body}),{status:429,headers:header?{'Retry-After':header}:{}}));
+  await assert.rejects(createApi({token:'fixture'}).request('/api/imports'),error=>{assert.ok(error instanceof ApiError);assert.equal(error.retryAfterMs,expected);return true;});mocked.mock.restore();
+ }
 });

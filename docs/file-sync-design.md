@@ -1,5 +1,7 @@
 # 已实现的处理扩展
 
+2026-10-04 的客户端上传/本机处理队列解耦、云录音独立备份和迁移边界见 [上传与处理解耦决策](upload-processing-decoupling.md)。
+
 文件处理已采用常驻 Cordis Context、可替换 extract/diarize 插件和持久化分步检查点。最新接口及本地/云配置以 [中央文件处理](file-processing.md) 为准；下文保留文件同步协议与归档层级设计。
 
 # 文件同步与中央处理设计

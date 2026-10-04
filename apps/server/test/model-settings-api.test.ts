@@ -1,3 +1,4 @@
+import {readAgentCredential} from './login-fixture.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -65,14 +66,15 @@ test('owner model saves apply to new queries while an existing query retains its
 
 test('model settings enforce owner authorization, optimistic revisions, explicit credential reuse and reset persistence', async t => {
   const factory: ModelAgentFactory = async settings => ({ configured: true, query: async () => answer(settings.model), close: async () => {} });
-  const { app, cfg } = await fixture(t, factory);
+  const { app, cfg, connections } = await fixture(t, factory);
   const invitation = await app.inject({ method: 'POST', url: '/api/connections/invitations', headers, payload: { serverUrl: 'https://synthetic.invalid', label: 'Fixture phone' } });
   const redeemed = await app.inject({ method: 'POST', url: '/api/connections/redeem', payload: { code: invitation.json().invitation.code, deviceId: 'fixture-phone', deviceName: 'Fixture phone', platform: 'android' } });
   assert.equal(redeemed.statusCode, 200);
+  const restricted=await readAgentCredential(connections);
   for (const method of ['GET', 'PUT', 'DELETE', 'POST'] as const) {
     const url = '/api/model-settings' + (method === 'POST' ? '/test' : '');
     assert.equal((await app.inject({ method, url })).statusCode, 401);
-    assert.equal((await app.inject({ method, url, headers: { authorization: `Bearer ${redeemed.json().token}` } })).statusCode, 403);
+    assert.equal((await app.inject({ method, url, headers: { authorization: `Bearer ${restricted.token}` } })).statusCode, 403);
   }
   let view = (await app.inject({ url: '/api/model-settings', headers })).json<ModelSettingsView>();
   const payload = { revision: view.revision, settings: { ...input(view), provider: 'qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'fixture-new' } };

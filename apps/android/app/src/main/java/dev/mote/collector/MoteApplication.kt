@@ -9,6 +9,7 @@ class MoteApplication : Application() {
         super.onCreate()
         MoteI18n.initialize(this)
         if (getProcessName() != packageName) return
+        HttpJson.onUnauthorized = { url, token -> Settings(this).rejectCredential(url, token) }
         HttpJson.onRequest = { Diagnostics(this).add("httpRequests") }
         HttpJson.onComplete = { Diagnostics(this).timing("httpMs", it) }
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {

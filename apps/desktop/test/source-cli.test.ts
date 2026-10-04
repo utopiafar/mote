@@ -31,7 +31,7 @@ async function run(profile: string, args: string[] = [], token = 'synthetic-cli-
 it('CLI independently syncs the same source for two profiles, then skips acknowledged unchanged versions', async () => {
   await mkdir(join(root, 'selected')); await writeFile(join(root, 'selected', 'a.md'), '合成 CLI 🧑🏽‍💻');
   for (const profile of ['dev', 'test']) { expect((await run(profile)).output).toContain('Received 1 changed'); expect((await run(profile)).output).toContain('Received 0 changed'); }
-  expect(items).toHaveLength(2); expect(items[0].text).toBe('合成 CLI 🧑🏽‍💻');
+  expect(items).toHaveLength(4); expect(items.filter(item=>item.text).map(item=>item.text)).toEqual(['合成 CLI 🧑🏽‍💻','合成 CLI 🧑🏽‍💻']);
 }, 15000);
 it('CLI restores an unacknowledged revision after failed process, then tracks explicit deletion and restoration', async () => {
   await mkdir(join(root, 'selected')); const file = join(root, 'selected', 'a.md'); await writeFile(file, '合成离线版本');
@@ -47,14 +47,14 @@ it('CLI recovers a lock whose former process has exited, while preserving acknow
   const stateDir = join(imported.directory, 'file-sync'); const stateFile = (await readdir(stateDir)).find(file => file.endsWith('.json.sqlite'))!.replace(/\.sqlite$/,'');
   const child = spawn(process.execPath, ['-e', 'process.exit(0)']); await new Promise(done => child.once('exit', done));
   await writeFile(join(stateDir, stateFile + '.lock'), String(child.pid));
-  expect((await run('dev')).output).toContain('Received 0 changed'); expect(items).toHaveLength(1);
+  expect((await run('dev')).output).toContain('Received 0 changed'); expect(items).toHaveLength(2);
 }, 15000);
 it('CLI credential change at the same URL isolates old pending text and submits only the current scan', async () => {
   await mkdir(join(root, 'selected')); const file = join(root, 'selected', 'a.md'); await writeFile(file, 'old synthetic private text');
   fail = true; expect((await run('dev')).code).not.toBe(0);
   fail = false; await writeFile(file, 'new synthetic current text');
   expect((await run('dev', [], 'other-synthetic-token')).code).toBe(0);
-  expect(items).toHaveLength(2); expect(items[1].text).toBe('new synthetic current text');
+  expect(items).toHaveLength(3); expect(items[2].text).toBe('new synthetic current text');
 }, 15000);
 it('CLI dry-run writes no sync state, while reference mode sends no body', async () => {
   await mkdir(join(root, 'selected')); await writeFile(join(root, 'selected', 'a.md'), '合成引用正文');

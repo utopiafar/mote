@@ -66,3 +66,13 @@ test('blocked view storage keeps valid in-memory filtering available',async t=>{
  Object.defineProperty(globalThis,'sessionStorage',{configurable:true,get(){throw Error('blocked');}});
  assert.equal(m.readPeriod(c),'week');assert.equal(m.savePeriod(c,'all'),'all');assert.doesNotThrow(()=>m.clearSession());
 });
+
+test('browser lifetime changes and blocked persistent storage cannot extend a native server grant',async t=>{
+ const {session,local}=browserStorage(t);const m=await import('../src/session.js');const now=Date.now(),deadline=now+1000;
+ let c=m.persistSession({token:'generated-native',serverExpiresAt:deadline},'30d',now);
+ assert.equal(c.expiresAt,deadline);c=m.persistSession(c,'session',now);assert.equal(c.expiresAt,deadline);
+ assert.equal(m.restoreSession(JSON.stringify(c),origin,deadline),null);
+ local.setItem=()=>{throw Error('Generated blocked storage');};m.persistSession(c,'7d',now);
+ assert.equal(JSON.parse(session.getItem(m.connectionStorageKey)!).serverExpiresAt,deadline);
+ assert.equal(m.readStoredSession(origin,deadline),null);
+});

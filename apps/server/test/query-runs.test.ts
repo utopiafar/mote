@@ -26,7 +26,7 @@ test('background admission survives client departure, deduplicates and persists 
   assert.equal((await app.inject({url:`/api/query-runs/${id}`})).statusCode,401);
   const invitation=(await app.inject({method:'POST',url:'/api/connections/invitations',headers,payload:{serverUrl:'https://synthetic.invalid',label:'fixture'}})).json();
   const credential=(await app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invitation.invitation.code,deviceId:'fixture',deviceName:'fixture',platform:'android'}})).json();
-  assert.equal((await app.inject({url:'/api/query-runs',headers:{authorization:`Bearer ${credential.token}`}})).statusCode,403);
+  assert.equal((await app.inject({url:'/api/query-runs',headers:{authorization:`Bearer ${credential.token}`}})).statusCode,200);
   complete();let finished:any;
   for(let i=0;i<20;i++){await new Promise(r=>setImmediate(r));finished=(await app.inject({url:`/api/query-runs/${id}`,headers})).json();if(finished.status==='completed')break;}
   assert.equal(finished.status,'completed');assert.ok(!JSON.stringify(finished).includes('Generated question'));
@@ -36,7 +36,7 @@ test('background admission survives client departure, deduplicates and persists 
   const today=new Date().toISOString().slice(0,10),url=`/api/usage?from=${today}&to=${today}&groupBy=module&agentId=context-query&skillId=__none__`;
   const summary=(await app.inject({url,headers})).json();assert.equal(summary.groups[0].id,'conversations');assert.equal(summary.total.totalTokens,40);
   assert.equal((await app.inject({url})).statusCode,401);
-  assert.equal((await app.inject({url,headers:{authorization:`Bearer ${credential.token}`}})).statusCode,403);
+  assert.equal((await app.inject({url,headers:{authorization:`Bearer ${credential.token}`}})).statusCode,200);
   assert.equal((await app.inject({url:url.replace('groupBy=module','groupBy=invalid'),headers})).statusCode,400);
   assert.equal((await app.inject({url:url+'&status=invalid',headers})).statusCode,400);
   await app.inject({method:'DELETE',url:`/api/conversations/${finished.conversationId}`,headers});

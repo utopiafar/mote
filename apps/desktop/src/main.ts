@@ -1,3 +1,4 @@
+import { connectionToken, loginRequest, loginVerifier } from './login-session';
 import { AskClient } from './ask';
 import {storageStatistics} from '@mote/shared/storage-statistics';
 import { moteText, statusMessage, configureLocale, getLocale, negotiateLocale, languagePreference, type LanguagePreference } from '@mote/shared/i18n';
@@ -102,9 +103,14 @@ function serialize<T>(operation: () => Promise<T>): Promise<T> {
 function encryptedStorageAvailable(): boolean {
   return safeStorage.isEncryptionAvailable() && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text');
 }
+let browserLogin: ((page?:string,evidenceId?:string,durationMs?:number)=>Promise<void>)|undefined;
+let ensureBrowserLogin: (()=>Promise<void>)|undefined;
 async function showCentral(page?: string, evidenceId?: string): Promise<void> {
+  if(!connectionToken(settings)){if(browserLogin)return browserLogin(page,evidenceId);throw Error(moteText('请先登录中央节点，各页面会共用这次登录。'));}
+  await ensureBrowserLogin?.();
+  const {code}=await loginRequest(settings,'/api/login/ticket',{expiresAt:settings.authExpiresAt},connectionToken(settings));
   await openCentralBrowser(settings.serverUrl, page, process.platform,
-    url => promisify(execFile)('/usr/bin/open', ['-a', 'Google Chrome', url]), url => shell.openExternal(url), evidenceId);
+    url => promisify(execFile)('/usr/bin/open', ['-a', 'Google Chrome', url]), url => shell.openExternal(url), evidenceId, code);
 }
 function showWindow(): void { window?.show(); window?.focus(); }
 function showClientPage(page: 'overview' | 'notes' | 'sources' | 'settings'): void {
@@ -189,7 +195,7 @@ else {
     collector = new Collector(settings, queue, helperPath, encryptedStorageAvailable, updateUi, nsfw, diagnostics, events, localSources);
     let calendarDelivery:Promise<void>|undefined;
     const calendarTimer=setInterval(()=>{
-      if(calendarDelivery||!settings.token||!settings.serverUrl||settings.syncMode==='manual'||process.platform!=='darwin')return;
+      if(calendarDelivery||!connectionToken(settings)||!settings.serverUrl||settings.syncMode==='manual'||process.platform!=='darwin')return;
       calendarDelivery=nativeCalendarActions({...settings},helperPath,dataDirectory).deliver().catch(()=>{}).finally(()=>{calendarDelivery=undefined;});
     },60000);calendarTimer.unref();
     app.once('before-quit',()=>clearInterval(calendarTimer));
@@ -258,7 +264,7 @@ else {
     };
     const connectionChange = async <T>(operation: () => Promise<T>, sameNodeInvitation = false, confirmedInitial = false): Promise<T> => pausedSettings(async () => {
       const source = localSources!.connectionActivity();
-      assertConnectionChangeSafe({ running: clientStatus().running, inFlight: collector.connectionActivity().inFlight, queued: queue.stats().depth, preparedNote: noteDrafts.hasPrepared(), sourcePending: source.pending, sourceInFlight: source.inFlight }, sameNodeInvitation || (confirmedInitial && unboundBacklog()));
+      assertConnectionChangeSafe({ running: clientStatus().running, inFlight: collector.connectionActivity().inFlight, queued: queue.stats().depth, preparedNote: noteDrafts.hasPrepared(), sourcePending: source.pending + source.processingPending, sourceInFlight: source.inFlight }, sameNodeInvitation || (confirmedInitial && unboundBacklog()));
       return operation();
     });
     const requireRecovery = (message: string): void => { recoveryRequired = message; collector.requireRecovery(message); void localSources!.close(); };
@@ -317,7 +323,7 @@ else {
       if (initial) await noteDrafts.bindPreparedOrigin(updated.serverUrl);
       if (sameNodeInvitation) await queue.resetRetries();
       await applySettings(updated);
-      connectionState = { state: 'unchecked', message: updated.credentialScope === 'collector' ? moteText("已安全保存采集凭据；可测试连接。完整仓库需单独管理员登录。") : moteText("连接已保存，可测试权限与节点版本") };
+      connectionState = { state: 'unchecked', message: updated.credentialScope === 'collector' ? moteText("登录凭据已安全保存，所有中央功能共用此登录。") : moteText("连接已保存，可测试权限与节点版本") };
     };
     const readSelectedInvitation = async (path: string, maximum: number): Promise<Buffer> => {
       const file = await open(path, 'r');
@@ -344,16 +350,16 @@ else {
       if (typeof deviceName !== 'string') throw new Error('Invalid device name');
       const named = updateConfig(settings, { ...settings, deviceName });
       const result = await onboarding.redeem(id, origin, named, currentPlatform);
-      const updated = { ...updateConfig(settings, { ...named, serverUrl: result.serverUrl, token: result.token }), credentialScope: result.scope };
+      const updated = { ...updateConfig(settings, { ...named, serverUrl: result.serverUrl, token: result.token }), credentialScope: result.scope, authSignedOut:false, authExpiresAt:undefined, authSessionOnly:false };
       const identity = await testConnection(updated);
-      if (identity.credential.id !== result.credentialId || identity.credential.scope !== 'collector') throw new Error(moteText("中央凭据身份确认不一致，原连接未修改；请重新生成邀请"));
+      if (identity.credential.id !== result.credentialId || !['owner','collector'].includes(identity.credential.scope)) throw new Error(moteText("中央凭据身份确认不一致，原连接未修改；请重新生成邀请"));
       await commitConnection(updated, origin === settings.serverUrl, true);
-      connectionState = { state: 'connected', message: moteText("采集连接成功；可上传记录与同步自身来源，完整仓库需单独管理员登录"), checkedAt: new Date().toISOString(), identity };
+      connectionState = { state: 'connected', message: moteText("登录成功，可使用所有中央功能。"), checkedAt: new Date().toISOString(), identity };
     }, origin === settings.serverUrl, true); return clientStatus(); }));
     handle('mote:connection-test', async () => {
       if (connectionState.state === 'checking') return connectionState;
       const requested = settings; connectionState = { state: 'checking', message: moteText("正在验证已保存连接与权限…") };
-      try { const identity = await testConnection(requested); if (settings === requested) connectionState = { state: 'connected', message: identity.credential.scope === 'collector' ? moteText("采集连接正常 · 仅上传与自身来源同步") : moteText("管理员连接正常 · 可访问完整中央仓库"), checkedAt: new Date().toISOString(), identity }; }
+      try { const identity = await testConnection(requested); if (settings === requested) connectionState = { state: 'connected', message: identity.credential.scope === 'collector' ? moteText("登录正常 · 可使用所有中央功能") : moteText("管理员连接正常 · 可访问完整中央仓库"), checkedAt: new Date().toISOString(), identity }; }
       catch (error) { if (settings === requested) connectionState = { state: 'error', message: error instanceof ConnectionError ? error.message : moteText("连接检查失败；已保存配置未改变"), checkedAt: new Date().toISOString() }; }
       return connectionState;
     });
@@ -384,7 +390,7 @@ else {
     handle('mote:coding-agents', () => discoverCodingAgents());
     handle('mote:source-coding', (provider, options) => serialize(() => { if (provider !== 'claude' && provider !== 'codex' && provider !== 'kimi') throw new Error(moteText("不支持的 Coding Agent")); return localSources!.addCodingAgent(provider, options); }));
     handle('mote:sources', () => localSources!.status());
-    handle('mote:source-sync', async () => { await localSources!.sync(true); await collector.retry(); });
+    handle('mote:source-sync', async () => { const scan = localSources!.sync(true); await collector.retry(); await scan; await collector.retry(); });
     handle('mote:calendar-authorize', () => serialize(() => localSources!.authorizeCalendar()));
     handle('mote:source-calendar', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error(moteText("日历选择无效")); await localSources!.addCalendar(id, options); }));
     handle('mote:source-update', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error(moteText("来源选择无效")); await localSources!.update(id, options); }));
@@ -437,12 +443,18 @@ else {
     });
     handle('mote:configure', input => serialize(async () => {
       const confirmedInitial = (input as ConfigUpdate).confirmLocalBacklog === true && unboundBacklog();
-      const updated = updateConfig(settings, input as ConfigUpdate, queue.stats().depth + (noteDrafts.hasPrepared() ? 1 : 0), confirmedInitial);
+      let updated = updateConfig(settings, input as ConfigUpdate, queue.stats().depth + (noteDrafts.hasPrepared() ? 1 : 0), confirmedInitial);
       if (!profile.legacy && updated.openAtLogin) throw new Error(moteText("命名环境请使用带 --profile 的启动命令；系统默认登录项不能保留环境参数"));
       const relocating = updated.captureStorageDirectory !== settings.captureStorageDirectory;
       const changingConnection = updated.serverUrl !== settings.serverUrl || updated.token !== settings.token;
       if (relocating && updated.captureStorageDirectory && updated.captureStorageDirectory !== pendingStorageDirectory) throw new Error(moteText("请通过本机文件夹选择器选择截图位置，再保存设置"));
       if (relocating && changingConnection) throw new Error(moteText("请先保存截图位置，再单独保存节点连接；每次切换均会自动应用"));
+      if(changingConnection&&updated.token){
+        const identity=await testConnection(updated,fetch,false);
+        if(!identity.capabilities.archiveRead)throw Error(moteText('请升级中央节点后再登录。'));
+        if(identity.credential.id==='owner'||identity.credential.deviceId!==updated.deviceId){const grant=await loginRequest(updated,'/api/login/session',{serverUrl:updated.serverUrl,deviceId:updated.deviceId,deviceName:updated.deviceName,platform:currentPlatform,durationMs:30*86400000},updated.token);updated={...updated,token:grant.token,authExpiresAt:grant.expiresAt};}
+        updated={...updated,credentialScope:'owner',authSignedOut:false,authSessionOnly:false};
+      }
       if (changingConnection) await connectionChange(() => commitConnection(updated, false, confirmedInitial), false, confirmedInitial);
       else await pausedSettings(() => applySettings(updated));
       updateUi(clientStatus()); return clientStatus();
@@ -452,7 +464,7 @@ else {
     handle('mote:review-pending', () => queue!.reviewPending());
     handle('mote:review-reject', async (id:unknown) => { if(typeof id!=='string')throw Error('Invalid review ID');await queue!.rejectReview(id); });
     handle('mote:review-approve', async (id:unknown) => { if(typeof id!=='string')throw Error('Invalid review ID');await queue!.approveReview(id); });
-    handle('mote:retry', async () => { await localSources!.sync(true); await collector.retry(); return clientStatus(); });
+    handle('mote:retry', async () => { const scan = localSources!.sync(true); await collector.retry(); await scan; await collector.retry(); return clientStatus(); });
     const requireStopped = async () => {
       if (clientStatus().running) throw new Error(moteText("请先停止采集，再修改本地模型"));
       await collector.settleCapture();
@@ -466,8 +478,65 @@ else {
       if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
       await nsfw.importFiles(selected.filePaths); return { canceled: false };
     }));
-    const askClient = new AskClient();
-    handle('mote:ask', (command, input) => askClient.request(settings, command as import('./ask').AskCommand, input as Parameters<AskClient['request']>[2]));
+    const askClient = new AskClient(config=>config.serverUrl===settings.serverUrl&&config.token===settings.token&&config.authSignedOut===settings.authSignedOut&&config.authExpiresAt===settings.authExpiresAt);
+    let loginGeneration=0;
+    const endLogin=()=>serialize(async()=>{
+      loginGeneration++;
+      const token=connectionToken(settings);
+      // Locally sign out even when the node is offline; never fall back to another credential.
+      await pausedSettings(()=>applySettings({...settings,authSignedOut:true}));
+      if(token)await loginRequest(settings,'/api/login/logout',{},token).catch(()=>{});
+      updateUi(clientStatus());
+    });
+    const installLogin=async(token:string,durationMs=30*86400000,expectedGeneration=loginGeneration)=>{
+      if(![0,86400000,604800000,2592000000].includes(durationMs))throw Error('Invalid lifetime');
+      const requested=settings;
+      const identity=await testConnection({...requested,token},fetch,false);
+      if(!identity.capabilities.archiveRead)throw Error(moteText('请升级中央节点后再登录。'));
+      let credential=token,expiresAt=durationMs?Date.now()+durationMs:undefined;
+      let minted=false;
+      if(identity.credential.id==='owner'||identity.credential.deviceId!==requested.deviceId){
+        const grant=await loginRequest(requested,'/api/login/session',{serverUrl:requested.serverUrl,deviceId:requested.deviceId,deviceName:requested.deviceName,platform:currentPlatform,durationMs},token);credential=grant.token;expiresAt=grant.expiresAt;minted=true;
+      }
+      try {
+        await serialize(()=>{
+          // Check after waiting for other settings/logout operations as well as network I/O.
+          if(settings!==requested||expectedGeneration!==loginGeneration)throw Error(moteText('登录会话已变更，请重新打开中央页面。'));
+          return connectionChange(()=>commitConnection({...requested,token:credential,credentialScope:'owner',authSignedOut:false,authSessionOnly:durationMs===0,authExpiresAt:expiresAt},true,true),true,true);
+        });
+      } catch(error) {
+        if(minted)await loginRequest(requested,'/api/login/logout',{},credential).catch(()=>{});
+        throw error;
+      }
+      loginGeneration++;updateUi(clientStatus());
+      if(requested.token&&requested.token!==credential)await loginRequest(requested,'/api/login/logout',{},requested.token).catch(()=>{});
+    };
+    ensureBrowserLogin=async()=>{const current=settings;if(connectionToken(current)&&(await testConnection(current)).credential.id==='owner')await installLogin(current.token!,current.authSessionOnly?0:2592000000);};
+    browserLogin=async(page,evidenceId,durationMs=2592000000)=>{
+      if(![0,86400000,604800000,2592000000].includes(durationMs))throw Error('Invalid lifetime');
+      const requested=settings,generation=++loginGeneration,{verifier,challenge}=loginVerifier();
+      const {id}=await loginRequest(requested,'/api/login/requests',{serverUrl:requested.serverUrl,deviceId:requested.deviceId,deviceName:requested.deviceName,platform:currentPlatform,challenge,durationMs});
+      await openCentralBrowser(requested.serverUrl,page,process.platform,url=>promisify(execFile)('/usr/bin/open',['-a','Google Chrome',url]),url=>shell.openExternal(url),evidenceId,undefined,id);
+      const deadline=Date.now()+10*60000;
+      while(Date.now()<deadline&&generation===loginGeneration&&settings===requested&&!quitting){
+        const grant=await loginRequest(requested,'/api/login/poll',{id,verifier});
+        if(grant.ready){await installLogin(grant.token,durationMs,generation);await loginRequest(requested,'/api/login/ack',{id,verifier}).catch(()=>{});return;}
+        await new Promise(resolve=>setTimeout(resolve,1500));
+      }
+      throw Error(moteText('登录会话已变更，请重新打开中央页面。'));
+    };
+    let authCheck:Promise<unknown>|undefined;let nextAuthCheck=0;
+    const authTimer=setInterval(()=>{
+      if(connectionToken(settings)&&Date.now()>=nextAuthCheck&&!authCheck){const selected=settings;nextAuthCheck=Date.now()+15000;authCheck=testConnection(selected).catch(error=>{if(settings===selected&&error instanceof ConnectionError&&error.code==='AUTH')return endLogin();}).finally(()=>{authCheck=undefined;});}
+      if(settings.token&&!settings.authSignedOut&&settings.authExpiresAt&&settings.authExpiresAt<=Date.now())void endLogin().catch(()=>{});
+    },1000);authTimer.unref();app.once('before-quit',()=>clearInterval(authTimer));
+    handle('mote:ask', async (command,input) => {
+      if(command==='login'){const value=input as {token?:string;durationMs?:number};if(typeof value?.token!=='string'||value.token.length<32||value.token.length>8192||/[\r\n]/.test(value.token))throw Error(moteText('请输入有效的中央所有者令牌'));await installLogin(value.token.trim(),value.durationMs);return {};}
+      if(command==='logout'){await endLogin();return {};}
+      if(command==='login-browser'){await browserLogin!(undefined,undefined,(input as {durationMs?:number})?.durationMs);return {};}
+      try{return await askClient.request(settings,command as import('./ask').AskCommand,input as Parameters<AskClient['request']>[2]);}
+      catch(error){if(error instanceof Error&&error.message===moteText('令牌无效或已失效，请检查后重新登录。'))await endLogin();throw error;}
+    });
     handle('mote:permission-status', async () => ({
       appPath: bundlePath ?? app.getPath('exe'),
       bundleId: bundlePath ? await promisify(execFile)('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', join(bundlePath, 'Contents', 'Info.plist')]).then(result => result.stdout.trim()).catch(() => 'unknown') : 'unpackaged',

@@ -43,7 +43,7 @@ internal class CaptureRecordClient(private val config: CollectorConfig, private 
             connection.connectTimeout = if (thumbnail) 5_000 else 15_000; connection.readTimeout = if (thumbnail) 8_000 else 30_000
             connection.instanceFollowRedirects = false
             connection.setRequestProperty("Accept-Language", MoteI18n.language())
-            connection.setRequestProperty("Authorization", "Bearer ${config.token}")
+            connection.setRequestProperty("Authorization", "Bearer ${config.connectionToken()}")
             val code = connection.responseCode
             check(code == 200) { when (code) { 401, 403 -> MoteI18n.text("当前连接没有查看此记录的权限，请检查连接凭据"); 404 -> MoteI18n.text("此记录已不存在，或中央节点版本尚不支持浏览"); else -> MoteI18n.text("中央记录读取失败（HTTP {0}）", code) } }
             if (image) check(connection.contentType?.startsWith("image/") == true) { MoteI18n.text("中央节点未返回图片") }

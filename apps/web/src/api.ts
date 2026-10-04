@@ -5,6 +5,8 @@ export interface Connection {
   token: string;
   /** Browser-only expiry for a persisted management session; the server token is unchanged. */
   expiresAt?: number;
+  /** Maximum deadline imposed by the shared native/server session. */
+  serverExpiresAt?: number;
   /** Non-secret identity for tab view state; never sent to the server. */
   viewScope?: string;
 }
@@ -142,6 +144,7 @@ export class ApiError extends Error {
     public status: number,
     public requestId?: string,
     public code?: string,
+    public retryAfterMs?: number,
   ) {
     super(message);
   }
@@ -177,7 +180,6 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
       },
     });
     if (!response.ok) {
-      if (response.status === 401 && !init.signal?.aborted && isCurrentConnection()) onUnauthorized?.();
       let message = response.status === 524
         ? moteText("入口等待服务响应超时（524）。请检查节点运行诊断；较慢的模型请求可能超过代理等待上限。")
         : response.status === 413
@@ -187,6 +189,9 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
             : moteText("请求未完成（{0}）", response.status);
       let requestId = response.headers.get("X-Request-Id") ?? undefined;
       let code: string | undefined;
+      const retryAfter=response.headers.get('Retry-After');
+      const retrySeconds=retryAfter&&/^\d+$/.test(retryAfter)?Number(retryAfter):undefined;
+      let retryAfterMs=retrySeconds!==undefined&&Number.isSafeInteger(retrySeconds)&&retrySeconds>=0?retrySeconds*1000:undefined;
       try {
         const value = await response.json();
         const candidate=value.reason??value.code??(typeof value.error==='object'?value.error?.code:value.error);
@@ -194,11 +199,13 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
         if (typeof value.message === "string") message = value.message;
         else if (typeof value.error === "string") message = value.error;
         if (!requestId && typeof value.requestId === "string") requestId = value.requestId;
+        if(retryAfterMs===undefined&&Number.isSafeInteger(value.retryAfterMs)&&value.retryAfterMs>=0)retryAfterMs=value.retryAfterMs;
       } catch {
         /* response might not be JSON */
       }
+      if (response.status === 401 && (!code || ['unauthorized','connection_revoked'].includes(code)) && !init.signal?.aborted && isCurrentConnection()) onUnauthorized?.();
       if (!requestId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) requestId = undefined;
-      throw new ApiError(message, response.status, requestId, code);
+      throw new ApiError(message, response.status, requestId, code, retryAfterMs);
     }
     return response;
   }

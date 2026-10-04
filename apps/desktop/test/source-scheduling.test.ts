@@ -59,7 +59,9 @@ it('keeps scanning/staging files locally with no connection, restores them, and 
   const received: any[] = [];
   vi.mocked(fetch).mockImplementation(async (_url, init) => { if(init!.method==='GET')return new Response(JSON.stringify({revision:null}));const manifest = JSON.parse(await new Response(init!.body).text());const body=manifest.item??manifest; received.push(body); return new Response(JSON.stringify(init!.method === 'PUT' ? sourceAck(app.status()[0].source.id,body,'file-revision') : { ...body, id: app.status()[0].source.id }), { status: 200 }); });
   await app.flushPending(new AbortController().signal);
-  expect(app.pendingStats().pendingRecords).toBe(0); expect(received.find(body => body.text)?.text).toBe('original generated offline version');
+  expect(app.pendingStats().pendingRecords).toBe(0); expect(received.find(body => body.document?.fileIndex)?.text).toBe(''); expect(app.status()[0].processingPending).toBe(1);
+  await (app as any).processFiles(); await app.flushPending(new AbortController().signal);
+  expect(received.find(body => body.text)?.text).toBe('original generated offline version');
   expect(vi.mocked(fetch).mock.calls.every(([,init])=>(init?.headers as Record<string,string>)['X-Mote-Ingress-Version']==='2')).toBe(true);
   await expect(app.nodeBinding.commit({ ...target, serverUrl: 'https://other.example' }, true, true)).rejects.toThrow();
 });
@@ -100,5 +102,5 @@ it('continues local discovery during a blocked upload and commits both versions 
  vi.mocked(fetch).mockImplementation(async(url,init)=>{const path=String(url).replace(config.serverUrl,''),body=init?.body?JSON.parse(await new Response(init.body).text()):undefined;if(init?.method==='GET')return new Response(JSON.stringify({revision:null}));if(path==='/api/sources')return new Response(JSON.stringify(body));if(init?.method==='PATCH')return new Response(JSON.stringify({...body,id:app.status()[0].source.id}));const record=body.item??body;bodies.push(record);if(bodies.length===1){started();await gate;}return new Response(JSON.stringify(sourceAck(app.status()[0].source.id,record,'file-revision')));});
  const upload=app.flushPending(new AbortController().signal);await ready;
  try{await writeFile(file,'second generated version');void app.sync(true);await vi.waitFor(()=>expect(app.pendingStats().pendingRecords).toBe(2),{timeout:5000,interval:25});expect(app.connectionActivity().inFlight).toBe(true);}finally{release();}
- await upload;expect(bodies.map(body=>body.text)).toEqual(['first generated version','second generated version']);expect(app.pendingStats().pendingRecords).toBe(0);
+ await upload;expect(bodies.map(body=>body.text)).toEqual(['','']);expect(bodies[0].document.fileIndex.contentVersion).not.toBe(bodies[1].document.fileIndex.contentVersion);expect(app.status()[0].processingPending).toBe(1);expect(app.pendingStats().pendingRecords).toBe(0);
 });

@@ -94,6 +94,12 @@
       "import": "./dist/protocol.js",
       "require": "./dist/protocol.js",
       "default": "./dist/protocol.js"
+    },
+    "./collector-receipt": {
+      "types": "./dist/collector-receipt.d.ts",
+      "import": "./dist/collector-receipt.js",
+      "require": "./dist/collector-receipt.js",
+      "default": "./dist/collector-receipt.js"
     }
   },
   "typesVersions": {
@@ -139,6 +145,9 @@
       ],
       "protocol": [
         "dist/protocol.d.ts"
+      ],
+      "collector-receipt": [
+        "dist/collector-receipt.d.ts"
       ]
     }
   },

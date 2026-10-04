@@ -39,7 +39,7 @@ async function request(serverUrl: string, path: string, init: RequestInit, fetch
     return await responseJson(response);
   } catch (error) { if (error instanceof ConnectionError) throw error; throw new ConnectionError('NETWORK', moteText("连接失败或超时；请检查中央地址、HTTPS 证书和网络，不接受重定向")); }
 }
-export async function testConnection(config: Pick<Config, 'serverUrl' | 'token' | 'deviceId'>, fetcher: typeof fetch = fetch): Promise<ConnectionIdentity> {
+export async function testConnection(config: Pick<Config, 'serverUrl' | 'token' | 'deviceId'>, fetcher: typeof fetch = fetch, enforceDevice = true): Promise<ConnectionIdentity> {
   if (!config.token) throw new ConnectionError('MISSING_TOKEN', moteText("请先导入连接邀请，或保存访问令牌"));
   const result = object(await request(config.serverUrl, '/api/connections/self', { headers: { ...MOTE_PROTOCOL_HEADERS, 'Accept-Language': getLocale(), Authorization: 'Bearer ' + config.token } }, fetcher), ['credential', 'node', 'capabilities']);
   const credential = object(result.credential, ['id', 'scope', 'label'], ['deviceId', 'deviceName', 'platform', 'serverUrl']);
@@ -48,7 +48,7 @@ export async function testConnection(config: Pick<Config, 'serverUrl' | 'token' 
   let protocol: ProtocolRange;
   try { protocol = requireCompatibleProtocol(node.protocol); }
   catch (error) { if (error instanceof ProtocolCompatibilityError && error.code === 'incompatible_protocol') throw new ConnectionError('PROTOCOL_INCOMPATIBLE', moteText("响应不符合协议")); throw invalid(); }
-  if (['ingest', 'ownSources', 'archiveRead'].some(key => typeof capabilities[key] !== 'boolean') || (capabilities.ingressVersion !== undefined && (!Number.isInteger(capabilities.ingressVersion) || (capabilities.ingressVersion as number) < 1)) || (credential.scope === 'collector' && (credential.deviceId !== config.deviceId || capabilities.archiveRead !== false))) throw invalid();
+  if (['ingest', 'ownSources', 'archiveRead'].some(key => typeof capabilities[key] !== 'boolean') || (capabilities.ingressVersion !== undefined && (!Number.isInteger(capabilities.ingressVersion) || (capabilities.ingressVersion as number) < 1)) || (enforceDevice && credential.deviceId !== undefined && credential.deviceId !== config.deviceId)) throw invalid();
   const cleanCredential: ConnectionIdentity['credential'] = { id: bounded(credential.id, 128), scope: credential.scope as 'owner' | 'collector', label: bounded(credential.label, 200, true) };
   for (const key of ['deviceId', 'deviceName', 'platform', 'serverUrl'] as const) if (credential[key] !== undefined) cleanCredential[key] = bounded(credential[key], key === 'serverUrl' ? 2048 : 200);
   if (cleanCredential.serverUrl && validateServerUrl(cleanCredential.serverUrl) !== config.serverUrl) throw invalid();
@@ -65,15 +65,15 @@ export class ConnectionOnboarding {
     this.pending = { preview, invitation }; return { ...preview };
   }
   clear(): void { this.pending = undefined; }
-  async redeem(id: unknown, confirmedOrigin: unknown, config: Pick<Config, 'deviceId' | 'deviceName'>, platform: Platform): Promise<{ serverUrl: string; token: string; credentialId: string; scope: 'collector' }> {
+  async redeem(id: unknown, confirmedOrigin: unknown, config: Pick<Config, 'deviceId' | 'deviceName'>, platform: Platform): Promise<{ serverUrl: string; token: string; credentialId: string; scope: 'owner' | 'collector' }> {
     const pending = this.pending;
     if (!pending || pending.preview.id !== id || pending.preview.serverUrl !== confirmedOrigin) throw new ConnectionError('CONFIRMATION', moteText("请先预览邀请并确认显示的中央地址"));
     const invitation = parseConnectionInvitation(JSON.stringify(pending.invitation), this.now());
     const result = object(await request(invitation.serverUrl, '/api/connections/redeem', { method: 'POST', headers: { 'Accept-Language': getLocale(), 'Content-Type': 'application/json' }, body: JSON.stringify({ code: invitation.code, deviceId: config.deviceId, deviceName: config.deviceName, platform }) }, this.fetcher), ['serverUrl', 'token', 'credentialId', 'scope']);
     const serverUrl = bounded(result.serverUrl, 2048), token = bounded(result.token, 4096), credentialId = bounded(result.credentialId, 128);
-    if (result.scope !== 'collector' || token.length < 32 || validateServerUrl(serverUrl) !== invitation.serverUrl || serverUrl !== invitation.serverUrl) throw invalid();
+    if (!['owner','collector'].includes(String(result.scope)) || token.length < 32 || validateServerUrl(serverUrl) !== invitation.serverUrl || serverUrl !== invitation.serverUrl) throw invalid();
     this.pending = undefined;
-    return { serverUrl, token, credentialId, scope: 'collector' };
+    return { serverUrl, token, credentialId, scope: result.scope as 'owner' | 'collector' };
   }
 }
 export function assertConnectionChangeSafe(state: { running: boolean; inFlight: boolean; queued: number; preparedNote: boolean; sourcePending: number; sourceInFlight: boolean }, sameNodeInvitation = false): void {
