@@ -4,6 +4,20 @@
 
 Pool capacity is checked inside the claim transaction, including leases held by other database connections. Fairness uses a monotonic admission sequence per operation, independent of clock resolution. Configuration waits do not consume attempts; transient execution errors have a finite retry limit. A noncooperative plugin cannot hold shutdown or a cancelled slot indefinitely. Physical provider cancellation still depends on that provider honoring the signal; late local results remain fenced.
 
+Server shutdown first stops feature admission and recurring scheduling in Fastify's `preClose`, then closes the shared executor while handlers and storage are still available. After execution settles and HTTP requests drain, `onClose` disposes feature/plugin resources and closes storage. Handler removal on a live shared executor similarly stops only that handler's claims and interrupts its local work; it does not cancel the queued backlog. `cancelled` remains terminal for explicit cancellation.
+
+| State at shutdown | Durable state and restart behavior |
+| --- | --- |
+| Queued, never started | Remains `waiting`; restart can schedule it without losing the task. |
+| Model/configuration admission wait | Retains `blocked`, its reason (including `model_missing`) and zero attempts; existing readiness rules can resume it. |
+| Retry wait | Retains its retry time, attempts and recovery deadline. |
+| Running replayable program/substep | Becomes `waiting/interrupted`; the revoked signal/fence prevents late commits. Completed checkpoints and artifacts stay `succeeded` and are reused on replay. |
+| Issued file processor with unknown outcome | Retains an `unknown` request record, including when the provider ignores abort. Restart blocks another request until the owner confirms retry; a disposed runtime cannot erase the record with a late response. |
+| Non-replayable Ask, Insight or Import execution | Records `failed/interrupted` and requires explicit retry, rather than resubmitting an unknown model request. Admission/confirmation blocks remain intact. |
+| Succeeded, failed, stale or explicitly cancelled | Retains its existing state; shutdown does not reopen it. |
+
+These are durable scheduling states. A provider can still be executing remotely after local shutdown; abort revokes local publication authority and does not establish that the remote call stopped. Generated fixtures exercise the real `app.close()` order, model readiness after restart, substep checkpoints, unknown outcomes and explicit cancellation; they do not constitute physical-device or live-model validation.
+
 Material publication records index intent without writing FTS. A separate `material.index` step and `material-index:<materialId>` Operation commit the search projection and restored search authority together. Index failure never rolls back published text or reruns its organizer/model. Owner metadata exposes independent index state and an index-only retry. A revised, disabled, retired or deleted Material invalidates the old index generation before it can commit.
 
 Ask, Insight and Import features bind their business runtimes to `ServerFeatureScope`. Disposal revokes route and agent contributions, cancels their own current execution steps, aborts model/container signals, waits for fenced local work and releases their handlers/timers. Shared execution pools and unrelated features stay available; retained results and original uploads remain archived. Initial import expansion also fences uncooperative late results and removes late temporary output. Generated application fixtures exercise disposal during all three business operations and container expansion.

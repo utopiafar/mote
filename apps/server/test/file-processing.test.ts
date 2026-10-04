@@ -386,6 +386,20 @@ test('shared engine shutdown fences an uncooperative file provider and resumes t
  assert.equal(f.store.db.prepare('SELECT COUNT(*) AS n FROM file_usage').get()!.n,0);
 });
 
+test('file module disposal interrupts its program without cancelling the shared backlog or engine',async t=>{
+ let entered!:()=>void,release!:(value:Transcript)=>void,signal!:AbortSignal;const started=new Promise<void>(resolve=>entered=resolve);
+ const f=await fixture(t,{transcribe:(input:any)=>{signal=input.signal;entered();return new Promise<Transcript>(resolve=>release=resolve);}});
+ await f.processing.close();const engine=new ExecutionEngine(f.store),processing=f.createProcessing(engine);await processing.runtime.ready;t.after(()=>engine.close());
+ const ids=processing.prepare(),run=engine.drain(ids);await started;
+ const queued=engine.enqueue('generated-queued','files.pipeline',{captureId:f.id,revision:engine.get(ids[0])!.input.revision},{id:'generated-queued'});
+ await processing.close();await run;
+ assert.equal(engine.closed,false);assert.equal(signal.aborted,true);assert.equal(engine.get(ids[0])!.state,'waiting');assert.equal(engine.get(queued)!.state,'waiting');assert.equal(engine.get(queued)!.attempts,0);
+ assert.ok(engine.list({operationId:'file:'+f.id,limit:100}).items.every(step=>step.state!=='cancelled'));assert.deepEqual(processing.prepare(),[]);
+ let committed=false;engine.register({kind:'generated-unrelated',pool:'generated-unrelated',concurrency:()=>1,validate:()=>true,execute:async()=>null,commit:()=>{committed=true;}});
+ await engine.drain([engine.enqueue('generated-unrelated','generated-unrelated',{})]);assert.equal(committed,true);
+ release(raw);await new Promise(resolve=>setImmediate(resolve));assert.equal(f.files.detail(f.id).artifacts.length,0);assert.equal(processing.cancellation(f.id).wait,'unknown');
+});
+
 test('old daily usage does not limit new audio processing',async t=>{
  const f=await fixture(t),day=new Date().toISOString().slice(0,10);
  f.store.db.prepare('INSERT INTO file_usage VALUES(?,?)').run(day,24*60*60000);

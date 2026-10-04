@@ -6,6 +6,7 @@ test('current domain states have explicit execution projections',()=>{
   assert.equal(canonicalRunStatus({state:'completed'}),'succeeded');
   assert.equal(canonicalRunStatus({status:'waiting_for_model',errorCode:'model_unconfigured'}),'waiting');
   assert.equal(canonicalRunStatus({state:'interrupted'}),'queued');
+  assert.equal(canonicalRunStatus({state:'stale'}),'skipped');
   const value=executionEnvelope({status:'waiting_for_model',attempts:2,errorCode:'model_unconfigured'});
   assert.equal(value.status,'waiting');
   assert.equal(value.waiting?.reason,'provider_unavailable');
@@ -27,6 +28,13 @@ test('backoff is bounded and deterministic when randomness is injected',()=>{
   assert.equal(retryDelay(standardRetryPolicy,1,()=>0),24000);
   assert.equal(retryDelay(standardRetryPolicy,2,()=>1),72000);
   assert.equal(retryDelay({...standardRetryPolicy,maxDelayMs:50000},20,()=>.5),50000);
+});
+
+test('shutdown interruption distinguishes replayable tasks from runs requiring explicit retry',()=>{
+ const resumable=executionEnvelope({state:'waiting',errorCode:'interrupted'}),interactive=executionEnvelope({state:'failed',errorCode:'interrupted'});
+ assert.equal(resumable.failure.scope,'system');assert.equal(resumable.failure.recovery,'auto_retry');
+ assert.equal(interactive.failure.scope,'system');assert.equal(interactive.failure.recovery,'needs_action');assert.deepEqual(interactive.allowedActions,['retry','reprocess']);
+ const cancelled=executionEnvelope({state:'cancelled',errorCode:'cancelled'});assert.equal(cancelled.status,'cancelled');assert.deepEqual(cancelled.allowedActions,[]);
 });
 
 test('unknown and missing states are rejected instead of granting recovery actions',()=>{

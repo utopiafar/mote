@@ -7,6 +7,7 @@ export class ServerFeatureScope {
   private disposers:Array<()=>unknown|Promise<unknown>>=[];
   private timers=new Set<ReturnType<typeof setInterval>>();
   private pending=new Set<Promise<unknown>>();
+  private closing?:Promise<void>;
   active=true;
   constructor(private onError:(error:unknown)=>void=()=>{}){}
   run(work:()=>unknown|Promise<unknown>){
@@ -20,11 +21,13 @@ export class ServerFeatureScope {
     const timer=setInterval(()=>{if(!this.active||running)return;running=true;void this.run(work).catch(()=>{}).finally(()=>{running=false;});},ms);
     timer.unref();this.timers.add(timer);
   }
-  async close(){if(!this.active)return;this.active=false;for(const timer of this.timers)clearInterval(timer);this.timers.clear();
+  /** Stop admission and timers before the executor drains; keep resources alive. */
+  stop(){this.active=false;for(const timer of this.timers)clearInterval(timer);this.timers.clear();}
+  close(){return this.closing??=(async()=>{this.stop();
     const closed=await Promise.allSettled(this.disposers.reverse().map(dispose=>Promise.resolve().then(dispose)));
     await Promise.allSettled([...this.pending]);
     const errors=closed.flatMap(result=>result.status==='rejected'?[result.reason]:[]);if(errors.length)throw new AggregateError(errors,'Feature disposal failed');
-  }
+  })();}
 }
 
 /** Trusted, build-time server entries. HTTP topology changes require restart.
@@ -32,12 +35,13 @@ export class ServerFeatureScope {
 export class ServerFeatureHost {
   readonly registry=new FeatureRegistry<unknown>();
   private installed=new Map<string,{dispose():Promise<void>}>();
+  private scopes=new Set<ServerFeatureScope>();
   constructor(private root:Context,private app:FastifyInstance,private onError:(error:unknown)=>void=()=>{}){}
   async install(manifest:FeatureManifest,entry:(app:FastifyInstance,scope:ServerFeatureScope)=>void){
     const registry=this.registry,app=this.app,onError=this.onError;
     const fiber=this.root.plugin((ctx:Context)=>{
       ctx.effect(()=>registry.install(manifest));
-      const scope=new ServerFeatureScope(onError);ctx.effect(()=>()=>scope.close());
+      const scope=new ServerFeatureScope(onError);ctx.effect(()=>{this.scopes.add(scope);return()=>{this.scopes.delete(scope);return scope.close();};});
       app.register(async child=>{
         child.addHook('onRequest',async(_req,reply)=>{if(!scope.active)return reply.code(503).send({error:'feature_unavailable'});});
         child.addHook('onRoute',route=>{
@@ -52,6 +56,7 @@ export class ServerFeatureHost {
     try{await fiber;this.installed.set(manifest.id,fiber);return fiber;}catch(error){await fiber.dispose();throw error;}
   }
   async dispose(id:string){const fiber=this.installed.get(id);if(fiber){this.installed.delete(id);await fiber.dispose();}}
+  stop(){for(const scope of this.scopes)scope.stop();}
   async close(){await Promise.all([...this.installed.keys()].map(id=>this.dispose(id)));}
 
 }

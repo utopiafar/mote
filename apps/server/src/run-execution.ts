@@ -87,7 +87,7 @@ export class RunExecution {
  async wait(id:string){this.sync(id);await this.pending.get(id)?.done;await this.engine.drain([this.id(id)]);}
  async close(){for(const id of [...this.pending.keys()])this.sync(id);await Promise.all([...this.pending.values()].map(value=>value.done));await this.engine.drain([...this.started]);this.started.clear();clearInterval(this.heartbeat);this.heartbeat=undefined;this.store.db.prepare('DELETE FROM run_execution_owners WHERE id=?').run(this.ownerId);}
  /** Revoke only this feature's work; other owners and shared pools remain live. */
- stop(){if(this.stopping)return this.stopping;this.stopped=true;for(const id of [...this.pending.keys()]){const step=this.step(id);if(step&&['waiting','running'].includes(step.state))this.engine.cancel(step.id);this.sync(id);}this.stopping=(async()=>{await this.close();await this.unregister();})();return this.stopping;}
+ stop(){if(this.stopping)return this.stopping;this.stopped=true;for(const id of [...this.pending.keys()]){const step=this.step(id);if(step&&['waiting','running'].includes(step.state)){if(this.engine.closed)this.engine.fail(step.id,'interrupted');else this.engine.cancel(step.id);}this.sync(id);}this.stopping=(async()=>{await this.close();await this.unregister();})();return this.stopping;}
  /** Teardown only after close; shared engines retain the same lifetime as the app. */
  dispose(){this.unregister();}
 }

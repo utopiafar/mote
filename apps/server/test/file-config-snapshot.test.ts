@@ -84,11 +84,13 @@ test('legacy fingerprints without declared dependencies require fresh extraction
  assert.equal(f.files.detail(f.id).job.state,'succeeded');assert.equal(f.calls.length,2,'old keys do not prove the new dependency contract');
 });
 
-test('restart reconciles a persisted relevant config change before resuming interrupted work',async t=>{
+test('restart reconciles a persisted config change but requires acknowledgement of the interrupted request',async t=>{
  const f=await fixture(t),running=f.processing.tick();await f.started;
  const settings={...f.processing.currentSettings(),endpoint:'http://127.0.0.1:9050/transcribe'},saved={revision:randomUUID(),settings,policy:fixtureFilePolicy(settings,f.processing.runtime.registry)};
  writeFileSync(join(f.dir,'file-processing.json'),JSON.stringify(saved),{mode:0o600});
  await f.restart();f.finish();await running;
+ await f.processing.tick();assert.equal(f.processing.cancellation(f.id).wait,'unknown');assert.equal(f.calls.length,1);
+ assert.throws(()=>f.processing.retry(f.id),{statusCode:409});f.processing.retry(f.id,'transcribe',false,true);
  for(const until=Date.now()+5000;Date.now()<until&&f.files.detail(f.id).job.state!=='succeeded';){await f.processing.tick();if(f.files.detail(f.id).job.state!=='succeeded')await new Promise(r=>setTimeout(r,25));}
  assert.equal(f.files.detail(f.id).job.state,'succeeded');assert.equal(f.calls.length,2);assert.equal(f.calls[1].settings.endpoint,saved.settings.endpoint);
  assert.equal(f.files.chunks(f.id).length,1);

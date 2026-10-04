@@ -496,7 +496,7 @@ export class ImportStore {
   stop(){
     if(this.closing)return this.closing;this.closed=true;this.lifetime.abort();
     const ids=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind IN ('imports.prepare','imports.commit') AND state IN ('waiting','running','blocked')").all().map(row=>String(row.id));
-    for(const id of ids)this.executor.cancel(id);
+    for(const id of ids){if(this.executor.closed){if(['waiting','running'].includes(this.executor.get(id)!.state))this.executor.fail(id,'interrupted');}else this.executor.cancel(id);}
     this.closing=(async()=>{await Promise.all(this.unregister.map(unregister=>unregister()));await this.executor.drain(ids);await Promise.allSettled([...this.creationJobs]);})();return this.closing;
   }
   delete(id:string){
