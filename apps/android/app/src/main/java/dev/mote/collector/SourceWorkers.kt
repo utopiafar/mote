@@ -18,6 +18,7 @@ class SourceScanWorker(context: Context, params: WorkerParameters) : Worker(cont
             for (source in store.sources().filter { it.enabled && (inputData.getString("sourceId") == null || it.id == inputData.getString("sourceId")) }) {
                 if (isStopped) return Result.retry()
                 val adapter = SourceAdapters.default.forKind(source.kind)
+                if (source.kind == "local-files" && source.retention == "snapshot" && !source.centralProcessingConsent) { store.status(source.id, "consent"); continue }
                 if (!SourceAccess.available(applicationContext, source)) { store.status(source.id, "permission"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.CONFIGURATION); continue }
                 val last = adapter.lastScan(applicationContext, source)
                 if (!inputData.getBoolean("manual", false) && last.isNotEmpty() && Instant.parse(last).plusSeconds(source.intervalMinutes * 60L).isAfter(Instant.now())) continue
@@ -67,6 +68,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                 rotation.edit().putString("target", target).putString("after", source.id).apply()
                 if (isStopped) return Result.retry()
                 SyncSchedule.waitingReason(applicationContext, config)?.let { settings.syncStatus("waiting", it); return Result.retry() }
+                if (source.kind == "local-files" && source.retention == "snapshot" && !source.centralProcessingConsent) { store.status(source.id, "consent"); blocked = true; continue }
                 if (!SourceAccess.available(applicationContext, source)) { store.status(source.id, "permission"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.CONFIGURATION); continue }
                 try {
                     fun stillSelected(): Boolean = !isStopped && !ConnectionGuard.reconfiguring() && store.sources().any { it == source && it.enabled } && settings.read().let { SourceRules.target(it.server, it.token) == target }
@@ -104,7 +106,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         }
                         if (!finished) { more = true; if (applicationContext.fileArchives().transportReady(source.id)) readyMore = true }
                         store.status(source.id, if (finished) "synced" else "scanned")
-                        if (finished) settings.syncStatus("uploading", if (source.retention == "archive") MoteI18n.text("文件原件已归档；手机原文件保留") else MoteI18n.text("文件索引或目录已同步；原件留本机"), uploaded = true)
+                        if (finished) settings.syncStatus("uploading", if (source.retention == "archive") MoteI18n.text("文件原件已归档；手机原文件保留") else MoteI18n.text("文件已接收；中央处理与可搜索状态请在资料库查看"), uploaded = true)
                         continue
                     }
                     while (submitted < 20 && !slice.exhausted) {

@@ -67,10 +67,6 @@ const api: DesktopApi = {
   exportMetadata: () => ipcRenderer.invoke('mote:export-metadata'),
   exportQueue: () => ipcRenderer.invoke('mote:export-queue'),
   importQueue: () => ipcRenderer.invoke('mote:import-queue'),
-  downloadModel: () => ipcRenderer.invoke('mote:model-download'),
-  cancelModelDownload: () => ipcRenderer.invoke('mote:model-cancel'),
-  importModel: () => ipcRenderer.invoke('mote:model-import'),
-  reloadModel: () => ipcRenderer.invoke('mote:model-reload'),
   onStatus: callback => {
     const handler = (_event: Electron.IpcRendererEvent, status: Status) => callback(status);
     ipcRenderer.on('mote:status', handler);

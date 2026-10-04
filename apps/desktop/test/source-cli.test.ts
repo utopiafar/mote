@@ -25,10 +25,10 @@ beforeEach(async () => {
   url = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
 });
 afterEach(async () => { server?.closeAllConnections(); await new Promise<void>(done => server?.close(() => done())); await rm(root, { recursive: true, force: true }); });
-async function run(profile: string, args: string[] = [], token = 'synthetic-cli-token') {
+async function run(profile: string, args: string[] = [], token = 'synthetic-cli-token', confirmTransient = true) {
   const directory = join(root, profile); await mkdir(directory, { recursive: true });
   const envFile = join(directory, 'mote.env'); await writeFile(envFile, `MOTE_PROFILE=${profile}\nMOTE_URL=${url}\nMOTE_TOKEN=${token}\n`);
-  const child = spawn(process.execPath, ['--import', 'tsx', resolve('../../scripts/import-files.ts'), '--root', join(root, 'selected'), ...args], { cwd: resolve('../..'), env: { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('MOTE_'))), MOTE_ENV_FILE: envFile }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, ['--import', 'tsx', resolve('../../scripts/import-files.ts'), '--root', join(root, 'selected'), ...(confirmTransient ? ['--allow-transient-upload'] : []), ...args], { cwd: resolve('../..'), env: { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('MOTE_'))), MOTE_ENV_FILE: envFile }, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = ''; child.stdout.on('data', chunk => output += chunk); child.stderr.on('data', () => {});
   const code = await new Promise<number | null>((done, reject) => { child.once('error', reject); child.once('exit', done); });
   return { code, output, directory };
@@ -66,3 +66,19 @@ it('CLI dry-run writes no sync state, while reference mode sends no body', async
   const dry = await run('dev', ['--dry-run']); expect(dry.code).toBe(0); expect((await readdir(dry.directory))).toEqual(['mote.env']); expect(items).toHaveLength(0);
   expect((await run('dev', ['--retention', 'reference'])).code).toBe(0); expect(items[0].text).toBe(''); expect(items[0].layer).toBe('reference');
 }, 15000);
+
+
+it('CLI refuses snapshot bytes without explicit consent before creating an outbox or contacting central',async()=>{
+ await mkdir(join(root,'selected'));await writeFile(join(root,'selected','a.md'),'Generated consent fixture');
+ const blocked=await run('dev',[],'synthetic-cli-token',false);expect(blocked.code).not.toBe(0);expect(items).toHaveLength(0);expect(await readdir(blocked.directory)).toEqual(['mote.env']);
+ const dry=await run('dev',['--dry-run'],'synthetic-cli-token',false);expect(dry.code).toBe(0);expect(items).toHaveLength(0);expect(await readdir(dry.directory)).toEqual(['mote.env']);
+ const reference=await run('dev',['--retention','reference'],'synthetic-cli-token',false);expect(reference.code).toBe(0);expect(items).toHaveLength(1);expect(items[0].layer).toBe('reference');expect(items[0].text).toBe('');
+},15000);
+
+
+it('CLI resumes a persisted directory checkpoint after a generated file exceeds the per-pass byte budget',async()=>{
+ await mkdir(join(root,'selected'));await writeFile(join(root,'selected','a.md'),Buffer.alloc(17*1024*1024+19,65));await writeFile(join(root,'selected','b.md'),'Generated file after large snapshot');
+ const first=await run('dev');expect(first.code).toBe(0);expect(first.output).toContain('Received 1 changed');expect(items).toHaveLength(1);
+ const second=await run('dev');expect(second.code).toBe(0);expect(second.output).toContain('Received 1 changed');expect(items).toHaveLength(2);expect(new Set(items.map(item=>item.title))).toEqual(new Set(['a.md','b.md']));
+ const reconciled=await run('dev');expect(reconciled.code).toBe(0);expect(reconciled.output).toContain('Received 0 changed');expect(items).toHaveLength(2);
+},20000);

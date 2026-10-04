@@ -35,7 +35,6 @@ import { DurableQueue } from './queue';
 import { BackgroundJobs } from './background-jobs';
 import {ensureStorageFormat} from './storage-format';
 import { browseCaptures, captureDetail, captureImage, type BrowseRequest, type CaptureLocation } from './capture-browser';
-import { NsfwController } from './nsfw';
 import type { Config, ConfigUpdate, Status } from './contracts';
 
 const defaultDataDirectory = app.getPath('userData');
@@ -186,12 +185,11 @@ else {
     await updater.initialize();
     localSources = new LocalSourceManager(join(dataDirectory, 'local-sources'), settings, helperPath, true, events);
     await localSources.initialize();
-    const nsfw = new NsfwController(join(dataDirectory, 'models'), app.isPackaged ? join(process.resourcesPath, 'native', 'mote-qwen') : join(__dirname, '..', 'native', 'bin', 'mote-qwen'), () => { if (collector) updateUi(clientStatus()); }, { events });
     const diagnostics = new DiagnosticsRecorder(join(dataDirectory, 'diagnostics'));
     const configureDiagnostics = async () => diagnostics.configure({ enabled: settings.diagnosticsEnabled, intervalMs: settings.diagnosticIntervalSeconds * 1000 }, async () => ({
-      queueBytes: queue.stats().bytes, modelBytes: nsfw.status().bytes, ...await readPowerState(helperPath).catch(() => ({})),
+      queueBytes: queue.stats().bytes, modelBytes: 0, ...await readPowerState(helperPath).catch(() => ({})),
     }));
-    collector = new Collector(settings, queue, helperPath, encryptedStorageAvailable, updateUi, nsfw, diagnostics, events, localSources);
+    collector = new Collector(settings, queue, helperPath, encryptedStorageAvailable, updateUi, diagnostics, events, localSources);
     let calendarDelivery:Promise<void>|undefined;
     const calendarTimer=setInterval(()=>{
       if(calendarDelivery||!connectionToken(settings)||!settings.serverUrl||settings.syncMode==='manual'||process.platform!=='darwin')return;
@@ -199,7 +197,6 @@ else {
     },60000);calendarTimer.unref();
     app.once('before-quit',()=>clearInterval(calendarTimer));
 
-    // Visual review is paused; initialize its runtime only through model controls.
     await configureDiagnostics();
     const pageUrl = pathToFileURL(join(__dirname, 'index.html')).href;
     window = new BrowserWindow({
@@ -230,7 +227,7 @@ else {
     });
     const operationLabels: Record<string, string> = {
       'mote:configure': moteText("正在应用设置或迁移存储"), 'mote:import-queue': moteText("正在导入队列"), 'mote:export-queue': moteText("正在导出队列"),
-      'mote:model-import': moteText("正在导入并校验模型"), 'mote:model-reload': moteText("正在校验模型"), 'mote:source-sync': moteText("正在扫描并同步来源"),
+      'mote:source-sync': moteText("正在扫描并同步来源"),
       'mote:retry': moteText("正在同步待发记录"), 'mote:source-files': moteText("正在连接文件来源"), 'mote:source-update': moteText("正在保存来源设置"),
       'mote:source-calendar': moteText("正在连接日历"), 'mote:calendar-authorize': moteText("正在读取日历授权"), 'mote:installed-applications': moteText("正在读取应用列表"),
       'mote:support-export': moteText("正在导出支持包"), 'mote:diagnostics-export': moteText("正在导出诊断"), 'mote:diagnostics-sample': moteText("正在读取诊断"),
@@ -239,13 +236,13 @@ else {
       'mote:start': moteText("正在准备采集"), 'mote:stop': moteText("正在结束当前采集"), 'mote:note': moteText("正在保存随手记"),
     };
     const handle = (channel: string, operation: (...args: unknown[]) => unknown) => {
-      const stage: EventStage | undefined = ({ 'mote:source-sync': 'SOURCE', 'mote:source-files': 'SOURCE', 'mote:source-calendar': 'SOURCE', 'mote:source-update': 'SOURCE', 'mote:connection-confirm': 'CONNECTION', 'mote:connection-test': 'CONNECTION', 'mote:update-check': 'UPDATE', 'mote:update-download': 'UPDATE', 'mote:update-install': 'UPDATE', 'mote:retry': 'UPLOAD', 'mote:configure': 'CONFIG', 'mote:start': 'CAPTURE', 'mote:stop': 'CAPTURE', 'mote:note': 'NOTE', 'mote:note-draft-update': 'NOTE', 'mote:model-download': 'MODEL_DOWNLOAD', 'mote:model-import': 'MODEL_DOWNLOAD', 'mote:model-reload': 'MODEL', 'mote:support-export': 'SUPPORT', 'mote:import-queue': 'QUEUE', 'mote:export-queue': 'QUEUE' } as Record<string, EventStage>)[channel];
+      const stage: EventStage | undefined = ({ 'mote:source-sync': 'SOURCE', 'mote:source-files': 'SOURCE', 'mote:source-calendar': 'SOURCE', 'mote:source-update': 'SOURCE', 'mote:connection-confirm': 'CONNECTION', 'mote:connection-test': 'CONNECTION', 'mote:update-check': 'UPDATE', 'mote:update-download': 'UPDATE', 'mote:update-install': 'UPDATE', 'mote:retry': 'UPLOAD', 'mote:configure': 'CONFIG', 'mote:start': 'CAPTURE', 'mote:stop': 'CAPTURE', 'mote:note': 'NOTE', 'mote:note-draft-update': 'NOTE', 'mote:support-export': 'SUPPORT', 'mote:import-queue': 'QUEUE', 'mote:export-queue': 'QUEUE' } as Record<string, EventStage>)[channel];
     ipcMain.handle(channel, async (event, ...args) => {
         trusted(event);
         if (recoveryRequired && !['mote:get-status', 'mote:storage-restart', 'mote:stop', 'mote:note-draft', 'mote:connection-status', 'mote:update-status', 'mote:sources'].includes(channel)) throw new Error(recoveryRequired);
         const startedAt = Date.now();
         if (stage && channel !== 'mote:note-draft-update') void events.record(stage, 'STARTED');
-        try { const label = operationLabels[channel]; const result = await (label ? backgroundJobs.run(channel, label, () => operation(...args)) : operation(...args)); if (stage && channel !== 'mote:note-draft-update' && channel !== 'mote:model-download') void events.record(stage, 'OK', { elapsedMs: Date.now() - startedAt }); return result; }
+        try { const label = operationLabels[channel]; const result = await (label ? backgroundJobs.run(channel, label, () => operation(...args)) : operation(...args)); if (stage && channel !== 'mote:note-draft-update') void events.record(stage, 'OK', { elapsedMs: Date.now() - startedAt }); return result; }
         catch (error) { if (stage) void events.record(stage, failureCode(error, stage), { elapsedMs: Date.now() - startedAt }); throw error; }
       });
     };
@@ -270,11 +267,7 @@ else {
     const applySettings = async (updated: Config): Promise<void> => {
       const previous = settings;
       const relocating = updated.captureStorageDirectory !== previous.captureStorageDirectory;
-      const modelSourceChanged = updated.nsfwSource !== previous.nsfwSource || updated.nsfwCustomUrl !== previous.nsfwCustomUrl;
-      const wasDownloading = modelSourceChanged && nsfw.status().downloading;
-      let saved = false;
       try {
-        if (modelSourceChanged) await nsfw.cancelDownload();
         if (profile.defaultProfile && updated.openAtLogin !== previous.openAtLogin) {
           app.setLoginItemSettings({ openAtLogin: updated.openAtLogin });
           if (app.getLoginItemSettings().openAtLogin !== updated.openAtLogin) throw new Error(moteText("系统未允许修改登录启动项，请在系统设置检查"));
@@ -283,7 +276,6 @@ else {
         settings = updated; collector.updateConfig(updated); await configureDiagnostics();
         if (relocating) await queue.relocate(updated.captureStorageDirectory || storage.defaultDirectory, storage, () => store.save(updated), async () => (await store.load()).captureStorageDirectory || storage.defaultDirectory, value => backgroundJobs.progress('mote:configure', value));
         else await store.save(updated);
-        saved = true;
       } catch (error) {
         // A failed directory fsync may follow a successful rename. Preserve both copies and stop all IO.
         const persisted = await store.load().catch(() => undefined);
@@ -302,8 +294,6 @@ else {
           requireRecovery(moteText("设置未完成；原持久配置和截图保留，运行状态无法安全还原。请重新打开 Mote 后重试")); throw new Error(recoveryRequired);
         }
         throw error;
-      } finally {
-        if (wasDownloading && !quitting && !recoveryRequired) nsfw.startDownload(saved ? updated : previous);
       }
       pendingStorageDirectory = undefined;
     };
@@ -462,19 +452,6 @@ else {
     handle('mote:review-reject', async (id:unknown) => { if(typeof id!=='string')throw Error('Invalid review ID');await queue!.rejectReview(id); });
     handle('mote:review-approve', async (id:unknown) => { if(typeof id!=='string')throw Error('Invalid review ID');await queue!.approveReview(id); });
     handle('mote:retry', async () => { const scan = localSources!.sync(true); await collector.retry(); await scan; await collector.retry(); return clientStatus(); });
-    const requireStopped = async () => {
-      if (clientStatus().running) throw new Error(moteText("请先停止采集，再修改本地模型"));
-      await collector.settleCapture();
-    };
-    handle('mote:model-download', () => serialize(async () => { await requireStopped(); nsfw.startDownload(settings); return clientStatus(); }));
-    handle('mote:model-cancel', async () => { await nsfw.cancelDownload(); return clientStatus(); });
-    handle('mote:model-reload', () => serialize(async () => { await requireStopped(); await nsfw.reload(); return clientStatus(); }));
-    handle('mote:model-import', () => serialize(async () => {
-      await requireStopped();
-      const selected = await dialog.showOpenDialog(window!, { title: moteText("导入千问语言模型和视觉投影 GGUF（校验 SHA-256）"), properties: ['openFile', 'multiSelections'], filters: [{ name: 'GGUF models', extensions: ['gguf'] }] });
-      if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
-      await nsfw.importFiles(selected.filePaths); return { canceled: false };
-    }));
     const askClient = new AskClient(config=>config.serverUrl===settings.serverUrl&&config.token===settings.token&&config.authSignedOut===settings.authSignedOut&&config.authExpiresAt===settings.authExpiresAt);
     let loginGeneration=0;
     const endLogin=()=>serialize(async()=>{

@@ -34,10 +34,4 @@ class StateSeriesTest {
         assertEquals(media.toString(), StateSeries.extend(first, media).toString())
     }
 
-    @Test fun textAndDocxAreParsedLocally() {
-        assertEquals("Generated text", LocalFileIndex.extract("Generated text".toByteArray(), "text/plain", "a.txt").text)
-        val bytes = java.io.ByteArrayOutputStream()
-        java.util.zip.ZipOutputStream(bytes).use { zip -> zip.putNextEntry(java.util.zip.ZipEntry("word/document.xml")); zip.write("<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>Generated Word</w:t></w:r></w:p></w:body></w:document>".toByteArray()); zip.closeEntry() }
-        assertEquals("Generated Word", LocalFileIndex.extract(bytes.toByteArray(), "application/octet-stream", "a.docx").text)
-    }
 }

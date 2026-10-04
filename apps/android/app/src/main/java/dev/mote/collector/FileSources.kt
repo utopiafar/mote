@@ -20,7 +20,6 @@ fun LocalSource.binaryFiles() = SourceAdapters.default.forKind(kind).queueKind =
 
 /** Persistent traversal checkpoints; every directory is eventually reached within bounded slices. */
 class FileSources(private val context: Context, private val cancel: CancellationSignal = CancellationSignal()) {
-    init { com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(context.applicationContext) }
     private val resolver = context.contentResolver
     private val projection = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED)
     fun metadata(uri: Uri, source: LocalSource): JSONObject? = resolver.query(uri, projection, null, null, null, cancel)?.use { c ->
@@ -136,6 +135,7 @@ object FileUpload {
     internal fun sync(context: Context, source: LocalSource, config: CollectorConfig, slice: UploadSlice, stillSelected: () -> Boolean): Boolean = try { syncSlice(context, source, config, slice, stillSelected) } catch (_: SliceYield) { false }
     private class SliceYield : RuntimeException()
     private fun syncSlice(context: Context, source: LocalSource, config: CollectorConfig, slice: UploadSlice, stillSelected: () -> Boolean): Boolean {
+        require(source.retention != "snapshot" || source.centralProcessingConsent) { MoteI18n.text("请编辑来源并确认完整文件上传到中央处理，处理后不保留中央原件。") }
         var selectedRow: JSONObject? = null
         fun send(stage: EventStage, path: String, method: String, body: ByteArray? = null, binary: Boolean = false): JSONObject {
             SyncSchedule.requireConditions(context, config)
@@ -149,6 +149,7 @@ object FileUpload {
             val q = "sourceId=" + java.net.URLEncoder.encode(source.id, "UTF-8") + "&externalId=" + java.net.URLEncoder.encode(external, "UTF-8")
             val head = send(EventStage.FILE_UPLOAD, "/api/file-sync/v1/head?$q", "GET")
             requireCurrentHead(head)
+            check(stillSelected())
             head.optString("revision").takeIf { head.has("revision") && !head.isNull("revision") && it.isNotEmpty() }
         } ?: return queue.pendingCount(source.id) == 0
         selectedRow = row

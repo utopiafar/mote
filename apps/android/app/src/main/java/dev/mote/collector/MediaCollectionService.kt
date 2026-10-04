@@ -23,6 +23,8 @@ import java.util.UUID
 
 /** System-bound read-only observer for independently configured media, notifications and device events. */
 class MediaCollectionService : NotificationListenerService() {
+    private val instanceGeneration = instances.incrementAndGet()
+    @Volatile private var destroyed = false
     private lateinit var thread: HandlerThread
     private lateinit var worker: Handler
     private lateinit var events: SystemEventCollector
@@ -61,10 +63,15 @@ class MediaCollectionService : NotificationListenerService() {
     }
     override fun onCreate() {
         super.onCreate()
-        settings = Settings(this)
         thread = HandlerThread("mote-media-observer").apply { start() }
         worker = Handler(thread.looper)
-        events = SystemEventCollector(this, worker)
+        worker.post {
+            if (destroyed) return@post
+            runCatching {
+                settings = Settings(this)
+                events = SystemEventCollector(this, worker)
+            }.onFailure { thread.quitSafely() }
+        }
         preferences = getSharedPreferences("mote", MODE_PRIVATE)
         preferences.registerOnSharedPreferenceChangeListener(preferenceListener)
         val filter = IntentFilter().apply {
@@ -78,11 +85,12 @@ class MediaCollectionService : NotificationListenerService() {
     }
     override fun onListenerConnected() {
         super.onListenerConnected()
-        worker.post { platformConnected = true; connected = true; refresh() }
+        worker.post { if (!destroyed && instanceGeneration == instances.get() && ::settings.isInitialized && ::events.isInitialized) { platformConnected = true; connected = true; refresh() } }
     }
     override fun onListenerDisconnected() {
-        connected = false; MediaCollection.clear()
+        if (instance === this) { connected = false; MediaCollection.clear() }
         worker.post {
+            if (destroyed || instanceGeneration != instances.get() || !::events.isInitialized) return@post
             platformConnected = false; connected = false
             events.reset(); Notifications.showEvents(this, null)
             detach(); timeline.reset(); publishUnavailable("unavailable")
@@ -90,10 +98,14 @@ class MediaCollectionService : NotificationListenerService() {
         super.onListenerDisconnected()
     }
     override fun onNotificationPosted(sbn: android.service.notification.StatusBarNotification) {
-        runCatching { events.notification(sbn, false) }
-            .onFailure { settings.status("error", MoteI18n.text("系统通知无法读取，部分事件可能缺失")) }
+        worker.post {
+            if (destroyed || instanceGeneration != instances.get() || !::events.isInitialized) return@post
+            runCatching { events.notification(sbn, false) }
+                .onFailure { settings.status("error", MoteI18n.text("系统通知无法读取，部分事件可能缺失")) }
+        }
     }
     private fun eligible(): Boolean = runCatching {
+        if (destroyed || instanceGeneration != instances.get()) return@runCatching false
         val c = settings.read()
         platformConnected && connected && settings.enabled && c.mediaCollectionEnabled && c.metadataEnabled &&
             MediaCollection.permissionAllowed(this) &&
@@ -101,6 +113,7 @@ class MediaCollectionService : NotificationListenerService() {
             MediaPrivacy.powerAllowed(c, Diagnostics.battery(this)) && !ConnectionGuard.changing() && !QueueStorage.recovering
     }.getOrDefault(false)
     private fun refresh() {
+        if (destroyed || instanceGeneration != instances.get() || !::settings.isInitialized || !::events.isInitialized) return
         try {
             val c = settings.read()
             events.refresh()
@@ -259,14 +272,22 @@ class MediaCollectionService : NotificationListenerService() {
         controllers.values.forEach { runCatching { it.controller.unregisterCallback(it.callback) } }; controllers.clear()
     }
     override fun onDestroy() {
-        instance = null; connected = false
+        destroyed = true
+        if (instance === this) { instance = null; connected = false }
         preferences.unregisterOnSharedPreferenceChangeListener(preferenceListener)
         unregisterReceiver(screenReceiver)
         worker.removeCallbacksAndMessages(null)
-        worker.post { platformConnected = false; detach(); timeline.reset(); publishUnavailable("unavailable"); MediaCollection.clear(); Notifications.clearMedia(this); Notifications.showEvents(this, null); thread.quitSafely() }
+        worker.post {
+            platformConnected = false; detach(); timeline.reset()
+            if (instanceGeneration == instances.get()) {
+                publishUnavailable("unavailable"); MediaCollection.clear(); Notifications.clearMedia(this); Notifications.showEvents(this, null)
+            }
+            thread.quitSafely()
+        }
         super.onDestroy()
     }
     companion object {
+        private val instances = java.util.concurrent.atomic.AtomicLong()
         @Volatile var instance: MediaCollectionService? = null; private set
         @Volatile var connected = false; private set
         private val configurationKeys = setOf("enabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "screenCollectionEnabled", "mediaCollectionEnabled", "metadataEnabled", "appCollectionRules", "excluded", "chargingOnly", "batteryPauseBelowPct", "server", "token", "maxQueue", "syncMode", "wifiOnly")

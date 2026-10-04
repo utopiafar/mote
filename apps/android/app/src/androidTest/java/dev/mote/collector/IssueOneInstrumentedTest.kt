@@ -36,8 +36,7 @@ class IssueOneInstrumentedTest {
     @Test fun settingsArchiveRoundTripsAndNeverReusesTokenOnAnotherHost() {
         val current = Settings(context).read()
         val config = current.copy(server = "https://fixture.example", token = "generated-config-fixture-token-12345678", intervalSeconds = 47,
-            uploadedRetentionDays = 30, syncMode = "manual", appCollectionRules = "{\"default\":\"off\",\"apps\":{\"com.miui.home\":\"activity\"}}",
-            nsfw = current.nsfw.copy(threads = 3, enabled = false))
+            uploadedRetentionDays = 30, syncMode = "manual", appCollectionRules = "{\"default\":\"off\",\"apps\":{\"com.miui.home\":\"activity\"}}")
         val encoded = ConfigurationArchive.encode(config, true)
         assertEquals(config, ConfigurationArchive.decode(encoded, current))
         val withoutToken = ConfigurationArchive.encode(config)

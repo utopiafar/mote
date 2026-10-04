@@ -9,7 +9,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import sharp from 'sharp';
-import { prepareVisionImage } from './vision-image';
 import { maskBitmap } from './privacy';
 import { validateRecord, validateImage, type QueueArchive, type QueueRecord } from './queue';
 import type { BackgroundRequest, WorkProgress } from './background';
@@ -46,7 +45,6 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
       return;
     }
     case 'hash': return createHash('sha256').update(request.bytes).digest('hex');
-    case 'vision': return prepareVisionImage(request.bytes, request.width, request.height, request.maxSide);
     case 'mask': return maskBitmap(Buffer.from(request.bytes), request.width, request.height, request.rectangles);
     case 'jpeg': {
       const bytes = Buffer.from(request.bytes);

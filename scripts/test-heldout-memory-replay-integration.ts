@@ -129,7 +129,7 @@ export async function runIntegration(options:{manifest:IntegrationManifest;manif
         }catch(error){activeControl?.abort();ledger.stop(safeCode(error));if(callId&&ledger.pending().some(e=>e.data.callId===callId))ledger.terminal(callId,'failed',safeCode(error),{modelRunStarts:requests||null,repairs:requests?repairs:null});await sealedError(join(output,'DO_NOT_OPEN'),error);throw error;}
         finally{inFlight=false;}
       };
-      const requested=requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,memoryIds:plan.inputs.map(input=>input.id)},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});windowId=requested.id;await privateWrite(join(output,'DO_NOT_OPEN','window.json'),requested);await node.lifecycle.tick();
+      const requested=requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,inputs:plan.inputs.map(input=>{const current=node!.memories.get(input.id);return {id:current.id,version:current.version!,fingerprint:current.fingerprint};})},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});windowId=requested.id;await privateWrite(join(output,'DO_NOT_OPEN','window.json'),requested);await node.lifecycle.tick();
       check(!ledger.stopped,'integration_circuit_stopped');const state=node.lifecycle.view().extensions.find(e=>e.id==='consolidation')!;
       check(!state.active&&!state.error&&state.lastRun?.id===windowId&&node.executor.get('lifecycle:'+windowId)?.state==='succeeded','integration_window_not_committed');report.completedDomainCount=order.activeDomains.length;
       equal(hashObject(protectedTables(node.store.db)),plan.protectedHash,'integration_protected_source_mutated');

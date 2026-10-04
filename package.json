@@ -42,7 +42,7 @@
     "release:verify": "node scripts/release/verify-version.mjs",
     "build:central": "npm run build -w @mote/shared && npm run build -w @mote/agent && npm run build -w @mote/server && npm run build -w @mote/web",
     "check:central": "npm run build:central && npm run typecheck -w @mote/shared -w @mote/agent -w @mote/server -w @mote/web && npm run test -w @mote/shared -w @mote/agent -w @mote/server -w @mote/web && node scripts/test-central-runner.mjs && node --test scripts/release/*.test.mjs",
-    "check:desktop": "npm run build -w @mote/shared -w @mote/local-inference -w @mote/diagnostics && npm run typecheck -w @mote/shared -w @mote/local-inference -w @mote/diagnostics -w @mote/desktop && npm run test -w @mote/shared -w @mote/local-inference -w @mote/diagnostics -w @mote/desktop && node --test scripts/release/*.test.mjs"
+    "check:desktop": "npm run build -w @mote/shared -w @mote/diagnostics && npm run typecheck -w @mote/shared -w @mote/diagnostics -w @mote/desktop && npm run test -w @mote/shared -w @mote/diagnostics -w @mote/desktop && node --test scripts/release/*.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

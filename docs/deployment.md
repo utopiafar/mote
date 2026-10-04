@@ -44,6 +44,8 @@ node scripts/mote.mjs stop --profile prod --home "$HOME/Library/Application Supp
 
 原生启动脚本（包括 `scripts/dev-server.mjs`）为子进程设置 `NODE_USE_ENV_PROXY=1`，Node 下载请求会使用启动环境里的 `HTTP_PROXY` / `HTTPS_PROXY`（或小写同名变量）与 `NO_PROXY`。无需在每个 `mote.env` 中单独开启；代理地址仍由启动环境配置。
 
+启动环境保留原有绕过规则并补齐 IPv4/IPv6 loopback，统一大小写代理变量。本机语音、图像处理和 worker 健康探测另使用强制直连传输，即使直接启动中央并遗漏 `NO_PROXY`，也不会通过环境代理发送本机处理原件或授权头。
+
 原生 stdout/stderr 先经监督进程白名单化：保留固定启动/停止事件，未知 SDK 输出只记流类型与字节数，再写入有上限的 `logs/central.log`，默认每份 2 MiB、总共 3 份；包括单次大输出与反复重启。中央结构化诊断独立写入 `MOTE_LOG_DIR`，使用同样的容量配置，并限制 2000 条记录。`MOTE_DEBUG=0` 默认关闭调试级别。修改参数后重启该环境。
 
 ### 生成与安装 launchd 配置

@@ -19,11 +19,52 @@ class FileArchiveQueueTest {
         restarted.acknowledge(source.id,pending,ack(pending));assertEquals(0,restarted.pendingCount(source.id));assertEquals(0,restarted.processingCount(source.id));assertFalse(restarted.processOne(source,{error("No local reads")},{true},index={_,_,_->error("No local interpretation")}))
         assertFalse(java.io.File(dir,source.id+"/spool").exists())
     }
-    @Test fun snapshotIndexPermissionAndLimitTravelWithTheTransientUpload() {
+    @Test fun seventeenMiBSnapshotUsesDurableChunksAndRespectsExplicitSourceLimit() {
+        val plain = object : ByteCipher { override fun seal(bytes: ByteArray) = bytes; override fun open(bytes: ByteArray) = bytes }
+        val dir = folder.newFolder(); val queue = FileArchiveQueue(dir, plain)
+        val source = source("snapshot").copy(centralProcessingConsent = true, maxFileMiB = 18)
+        val bytes = ByteArray(17 * 1024 * 1024 + 19) { (it % 251).toByte() }
+        queue.observe(source, item(layer = "snapshot", size = bytes.size.toLong()), queue.configure(source).getString("generation"), 0)
+        val pending = queue.prepare(source, { ByteArrayInputStream(bytes) }, { true }, 61000)!!
+        val manifest = pending.getJSONObject("pending").getJSONObject("manifest")
+        assertEquals(bytes.size.toLong(), manifest.getLong("sizeBytes")); assertEquals(LocalFileIndex.hash(bytes), manifest.getString("sha256"))
+        val restarted = FileArchiveQueue(dir, plain)
+        assertEquals(FileArchiveQueue.PART_BYTES, restarted.part(source.id, 0).size)
+        assertArrayEquals(bytes.copyOfRange(4 * FileArchiveQueue.PART_BYTES, bytes.size), restarted.part(source.id, 4))
+        restarted.acknowledge(source.id, pending, ack(pending)); assertNull(restarted.next(source.id))
+        val recoveredCapture = UUID.randomUUID().toString(); val accepted = manifest.getJSONObject("item")
+        restarted.requestSnapshotRecovery(source, org.json.JSONArray().put(JSONObject().put("externalId", accepted.getString("externalId")).put("revision", accepted.getString("revision")).put("captureId", recoveredCapture).put("sha256", manifest.getString("sha256")).put("sizeBytes", bytes.size.toLong()).put("observedAt", accepted.getString("observedAt"))))
+        val recovery = restarted.prepare(source, { ByteArrayInputStream(bytes) }, { true }, 61000)!!
+        assertEquals(recoveredCapture, recovery.getJSONObject("pending").getString("recoveryCaptureId"))
+        assertEquals(accepted.getString("revision"), recovery.getJSONObject("pending").getJSONObject("manifest").getJSONObject("item").getString("revision"))
+        restarted.acknowledge(source.id, recovery, ack(recovery)); assertNull(restarted.next(source.id))
+        val limited = FileArchiveQueue(folder.newFolder(), plain); val narrow = source.copy(maxFileMiB = 16)
+        limited.observe(narrow, item(layer = "snapshot", size = bytes.size.toLong()), limited.configure(narrow).getString("generation"), 0)
+        assertThrows(IllegalStateException::class.java) { limited.prepare(narrow, { ByteArrayInputStream(bytes) }, { true }, 61000) }
+        assertNull(limited.next(source.id))
+    }
+    @Test fun delayedAnchorCannotPublishAChangedCandidateOrRevokedPolicy() {
+        val q = FileArchiveQueue(folder.newFolder(), cipher); val s = source("reference"); val generation = q.configure(s).getString("generation")
+        q.observe(s, item(layer = "reference"), generation)
+        assertNull(q.prepare(s, { error("Reference never opens") }, { true }, anchor = {
+            q.observe(s, item(layer = "reference", size = 1234), generation); "generated-older-anchor"
+        }))
+        assertNull(q.next(s.id)); assertEquals(1, q.pendingCount(s.id))
+        val newer = q.prepare(s, { error("Reference never opens") }, { true })!!
+        assertEquals(1234, newer.getJSONObject("pending").getJSONObject("manifest").getLong("sizeBytes"))
+        assertTrue(newer.getJSONObject("pending").getJSONObject("manifest").isNull("previousRevision"))
+        q.acknowledge(s.id, newer, ack(newer)); q.remove(s.id)
+        q.observe(s, item(layer = "reference", size = 2345), q.configure(s).getString("generation"))
+        assertNull(q.prepare(s, { error("Revoked policy never opens") }, { true }, anchor = {
+            q.configure(s.copy(excluded = "a.wav")); "generated-revoked-anchor"
+        }))
+        assertNull(q.next(s.id)); assertEquals(0, q.pendingCount(s.id))
+    }
+    @Test fun snapshotReadPermissionTravelsButRetiredClientLimitIsIgnored() {
         val queue=FileArchiveQueue(folder.newFolder(),cipher);val source=source("snapshot").copy(lightweightIndex=true,allowRead=true);val bytes="Generated".toByteArray()
         queue.observe(source,item(layer="snapshot",size=bytes.size.toLong()),queue.configure(source).getString("generation"),0)
         val pending=queue.prepare(source,{ByteArrayInputStream(bytes)},{true},61000)!!;val index=pending.getJSONObject("pending").getJSONObject("manifest").getJSONObject("item").getJSONObject("document").getJSONObject("fileIndex")
-        assertTrue(index.getBoolean("allowRead"));assertEquals(8000,index.getInt("maxIndexCharacters"))
+        assertTrue(index.getBoolean("allowRead"));assertEquals(100000,index.getInt("maxIndexCharacters"))
     }
     @Test fun retiredTransportStateIsRejectedWithoutChangingPendingManifest() {
         val dir = folder.newFolder(); val queue = FileArchiveQueue(dir, cipher); val source = source("snapshot")

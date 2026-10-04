@@ -14,7 +14,6 @@ object ConfigurationArchive {
             .put("wifiOnly", c.wifiOnly)
             .put("excludedPackages", c.excludedPackages)
             .put("masks", c.masks)
-            .put("localReviewUrl", c.localReviewUrl)
             .put("debugHttp", c.debugHttp)
             .put("mode", c.mode)
             .put("jpegQuality", c.jpegQuality)
@@ -47,16 +46,6 @@ object ConfigurationArchive {
 
             .put("uploadedRetentionDays", c.uploadedRetentionDays)
         if (includeToken) settings.put("token", c.token)
-        settings.put("nsfw", JSONObject()
-            .put("enabled", c.nsfw.enabled)
-            .put("threads", c.nsfw.threads)
-            .put("timeoutMs", c.nsfw.timeoutMs)
-            .put("source", c.nsfw.source)
-            .put("customUrl", c.nsfw.customUrl)
-            .put("policy", c.nsfw.policy)
-            .put("maxTokens", c.nsfw.maxTokens)
-            .put("reviewMaxSide", c.nsfw.reviewMaxSide)
-        )
         return JSONObject().put("format", "mote-android-settings").put("version", 1).put("settings", settings).toString(2)
     }
     fun decode(raw: String, current: CollectorConfig): CollectorConfig {
@@ -65,10 +54,8 @@ object ConfigurationArchive {
         val root = JSONObject(raw)
         require(root.getString("format") == "mote-android-settings" && root.get("version") == 1) { MoteI18n.text("不支持的配置格式或版本") }
         val values = root.getJSONObject("settings")
+        require(!values.has("nsfw") && !values.has("localReviewUrl")) { MoteI18n.text("配置包含已停用的本机模型设置，请移除后导入") }
         require(values.keys().asSequence().all { it in keys }) { MoteI18n.text("配置包含未知字段") }
-        val n = values.optJSONObject("nsfw") ?: JSONObject()
-        require(!values.has("nsfw") || values.get("nsfw") is JSONObject)
-        require(n.keys().asSequence().all { it in nsfwKeys }) { MoteI18n.text("模型配置包含未知字段") }
         val nextServer = string(values, "server", current.server)
         return current.copy(
             uiPageMode=string(values,"uiPageMode",current.uiPageMode), uiPageRules=string(values,"uiPageRules",current.uiPageRules),
@@ -79,7 +66,6 @@ object ConfigurationArchive {
             wifiOnly = boolean(values, "wifiOnly", current.wifiOnly),
             excludedPackages = string(values, "excludedPackages", current.excludedPackages),
             masks = string(values, "masks", current.masks),
-            localReviewUrl = string(values, "localReviewUrl", current.localReviewUrl),
             debugHttp = boolean(values, "debugHttp", current.debugHttp),
             mode = string(values, "mode", current.mode),
             jpegQuality = int(values, "jpegQuality", current.jpegQuality),
@@ -113,17 +99,7 @@ object ConfigurationArchive {
             imageDedupeDiagnosticsEnabled = boolean(values, "imageDedupeDiagnosticsEnabled", current.imageDedupeDiagnosticsEnabled),
 
             uploadedRetentionDays = int(values, "uploadedRetentionDays", current.uploadedRetentionDays),
-            token = string(values, "token", if (nextServer == current.server) current.token else ""),
-            nsfw = current.nsfw.copy(
-                enabled = boolean(n, "enabled", current.nsfw.enabled),
-                threads = int(n, "threads", current.nsfw.threads),
-                timeoutMs = long(n, "timeoutMs", current.nsfw.timeoutMs),
-                source = string(n, "source", current.nsfw.source),
-                customUrl = string(n, "customUrl", current.nsfw.customUrl),
-                policy = string(n, "policy", current.nsfw.policy),
-                maxTokens = int(n, "maxTokens", current.nsfw.maxTokens),
-                reviewMaxSide = int(n, "reviewMaxSide", current.nsfw.reviewMaxSide),
-            )
+            token = string(values, "token", if (nextServer == current.server) current.token else "")
         ).also { it.validate() }
     }
     private fun string(j: JSONObject, key: String, fallback: String): String = if (!j.has(key)) fallback else j.get(key) as? String ?: error(MoteI18n.text("{0} 必须为文本", key))
@@ -135,6 +111,5 @@ object ConfigurationArchive {
     private fun int(j: JSONObject, key: String, fallback: Int): Int {
         val n = long(j, key, fallback.toLong()); require(n in Int.MIN_VALUE..Int.MAX_VALUE); return n.toInt()
     }
-    private val keys = setOf("packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uiPageMode", "uiPageRules", "server", "token", "deviceName", "intervalSeconds", "maxQueueMiB", "wifiOnly", "excludedPackages", "masks", "localReviewUrl", "debugHttp", "mode", "nsfw", "jpegQuality", "captureMaxSide", "chargingOnly", "batteryPauseBelowPct", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "appCollectionRules", "metadataEnabled", "syncMode", "syncIntervalMinutes", "syncBatchSize", "jsonlWindowMinutes", "mediaCollectionEnabled", "screenCollectionEnabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "syncChargingOnly", "syncBatteryNotLow", "imageDedupeMode", "ocrMode", "ocrAppModes", "imageDedupeDiagnosticsEnabled", "uploadedRetentionDays")
-    private val nsfwKeys = setOf("enabled", "threads", "timeoutMs", "source", "customUrl", "policy", "maxTokens", "reviewMaxSide")
+    private val keys = setOf("packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uiPageMode", "uiPageRules", "server", "token", "deviceName", "intervalSeconds", "maxQueueMiB", "wifiOnly", "excludedPackages", "masks", "debugHttp", "mode", "jpegQuality", "captureMaxSide", "chargingOnly", "batteryPauseBelowPct", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "appCollectionRules", "metadataEnabled", "syncMode", "syncIntervalMinutes", "syncBatchSize", "jsonlWindowMinutes", "mediaCollectionEnabled", "screenCollectionEnabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "syncChargingOnly", "syncBatteryNotLow", "imageDedupeMode", "ocrMode", "ocrAppModes", "imageDedupeDiagnosticsEnabled", "uploadedRetentionDays")
 }

@@ -262,22 +262,27 @@ class NativeCentralInstrumentedTest {
             waitFor(scenario, "Foreground expiry clears private pages") { it.client == null && contains(it, "登录并继续") }
         }
     }
-    @Test fun migratesLegacyOwnerSessionOnceWithoutFallbackAfterCanonicalLogout() {
+    @Test fun retiredOwnerSessionIsPreservedWithoutImportOrFallbackAfterCanonicalLogout() {
         val settings = Settings(context)
         val legacy = java.io.File(context.noBackupFilesDir, "central-owner-session.enc")
         val deadline = System.currentTimeMillis() + 86400000L
         val saved = JSONObject().put("server", origin).put("token", owner).put("expiresAt", deadline)
-        legacy.writeBytes(SecretBox().seal(saved.toString().toByteArray()))
-        UnifiedCentralSession(context)
-        assertFalse(legacy.exists())
-        assertEquals(owner, settings.read().connectionToken())
-        assertEquals(deadline, settings.read().authExpiresAt)
-        settings.signOut()
-        legacy.writeBytes(SecretBox().seal(saved.toString().toByteArray()))
-        UnifiedCentralSession(context)
-        assertFalse(legacy.exists())
-        assertTrue(settings.read().connectionToken().isBlank())
-        assertEquals(owner, settings.read().token)
+        val bytes = SecretBox().seal(saved.toString().toByteArray())
+        legacy.writeBytes(bytes)
+        try {
+            val session = UnifiedCentralSession(context)
+            session.select(origin)
+            assertArrayEquals(bytes, legacy.readBytes())
+            assertTrue(settings.read().connectionToken().isBlank()); assertNull(session.client(origin))
+            assertEquals(0L, settings.read().authExpiresAt)
+            session.signIn(origin, owner, 86400000L)
+            assertEquals(owner, settings.read().connectionToken()); assertNotNull(session.client(origin))
+            session.signOut()
+            val reopened = UnifiedCentralSession(context); reopened.select(origin)
+            assertArrayEquals(bytes, legacy.readBytes())
+            assertTrue(settings.read().connectionToken().isBlank()); assertNull(reopened.client(origin))
+            assertEquals(owner, settings.read().token)
+        } finally { legacy.delete() }
     }
     @Test fun switchingNodeInvalidatesTheClientBeforeAnyNewRequest() {
         val settings = Settings(context); settings.save(settings.read().copy(token = owner), confirmCentralEndpoint = true)

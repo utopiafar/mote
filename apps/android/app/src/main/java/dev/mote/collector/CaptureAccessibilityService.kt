@@ -12,7 +12,9 @@ import java.time.Instant
 
 /** Passive collection. Page text requires explicit rules; no gestures, actions or hidden grants. */
 class CaptureAccessibilityService : AccessibilityService() {
+    private val instanceGeneration = instances.incrementAndGet()
     private val handler = Handler(Looper.getMainLooper())
+    private val stateWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
     private lateinit var settings: Settings
     private var pipeline: CapturePipeline? = null
     private val pixels = java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, java.util.concurrent.ArrayBlockingQueue<Runnable>(1))
@@ -24,25 +26,17 @@ class CaptureAccessibilityService : AccessibilityService() {
         override fun onReceive(context: android.content.Context, intent: android.content.Intent) { refreshSchedule() }
     }
     private var inFlight = false
+    private var preparing = false
     private var nextCapture = 0L
     private var windowCounts = Triple(0, 0, 0)
     private var lastDecision = ""
     private var lastDecisionAt = 0L
     @Volatile private var configurationGeneration = 0L
     private val tick = object : Runnable {
-        override fun run() {
-            try { collectIfEnabled() }
-            catch (error: Exception) {
-                inFlight = false
-                Operations.record(this@CaptureAccessibilityService, OperationKind.CAPTURE_FAILED, Operations.failure(error, EventStage.CAPTURE))
-                settings.status("paused", MoteI18n.text("无障碍采集暂不可用，下一周期重试"))
-            }
-            if (shouldSchedule()) handler.postDelayed(this, (nextCapture - android.os.SystemClock.elapsedRealtime()).coerceIn(1000L, 300_000L))
-        }
+        override fun run() { collectIfEnabled() }
     }
     override fun onServiceConnected() {
         super.onServiceConnected()
-        settings = Settings(this)
         instance = this; connected = true
         val filter = android.content.IntentFilter().apply {
             addAction(android.content.Intent.ACTION_SCREEN_OFF); addAction(android.content.Intent.ACTION_SCREEN_ON)
@@ -51,16 +45,14 @@ class CaptureAccessibilityService : AccessibilityService() {
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenReceiver, filter, RECEIVER_NOT_EXPORTED) else registerReceiver(screenReceiver, filter)
         refreshSchedule()
     }
-    private fun shouldSchedule(): Boolean = !destroyed && ::settings.isInitialized && settings.enabled &&
-        settings.read().let { it.screenCollectionEnabled && it.effectiveMode() == "accessibility" } && CapturePipeline.unlocked(this)
+    private fun shouldSchedule(config: CollectorConfig): Boolean = !destroyed && ::settings.isInitialized && settings.enabled &&
+        config.screenCollectionEnabled && config.effectiveMode() == "accessibility" && CapturePipeline.unlocked(this)
     fun refreshSchedule() {
         handler.post {
+            if (destroyed) return@post
+            configurationGeneration++; inFlight = false; nextCapture = 0
             handler.removeCallbacks(tick)
-            if (shouldSchedule()) handler.post(tick)
-            else if (::settings.isInitialized) {
-                if (!settings.enabled) stopCapture()
-                else { configurationGeneration++; inFlight = false; nextCapture = 0; pipeline?.pause(MoteI18n.text("锁屏或熄屏，暂停采集"), OperationReason.LOCKED) }
-            }
+            handler.post(tick)
         }
     }
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -70,7 +62,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         }
     }
     override fun onInterrupt() {
-        if (::settings.isInitialized) settings.status("permission_required", MoteI18n.text("无障碍服务中断，请检查系统设置"))
+        if (!destroyed) stateWorker.execute { runCatching { Settings(this).status("permission_required", MoteI18n.text("无障碍服务中断，请检查系统设置")) } }
     }
     fun windowSnapshot(): WindowSnapshot {
         return try {
@@ -117,16 +109,51 @@ class CaptureAccessibilityService : AccessibilityService() {
         } catch (_: Exception) { windowCounts = Triple(0, 0, 0); WindowSnapshot(emptySet(), null, false) }
     }
     private fun collectIfEnabled() {
-        if (ConnectionGuard.reconfiguring()) return
-        val config = settings.read()
-        if (!settings.enabled || !config.screenCollectionEnabled || config.effectiveMode() != "accessibility") { stopCapture(); return }
-        UploadWorker.heartbeat(this, config)
-        if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
-            settings.enabled = false
-            settings.status("permission_required", MoteI18n.text("通知权限已关闭，为保持采集可见已停止，请授权通知后重新开始"))
-            stopCapture(); return
+        if (destroyed || preparing) return
+        if (ConnectionGuard.changing()) { handler.postDelayed(tick, 1000); return }
+        preparing = true
+        val generation = configurationGeneration
+        val previous = pipeline
+        stateWorker.execute {
+            val prepared = runCatching {
+                val opened = if (::settings.isInitialized) settings else Settings(this)
+                val config = opened.read()
+                val capture = previous ?: if (opened.enabled && config.screenCollectionEnabled && config.effectiveMode() == "accessibility") CapturePipeline(this) else null
+                Triple(opened, config, capture)
+            }
+            handler.post {
+                preparing = false
+                if (destroyed || generation != configurationGeneration) {
+                    prepared.getOrNull()?.third?.takeIf { it !== previous }?.close()
+                    if (!destroyed) handler.post(tick)
+                    return@post
+                }
+                prepared.onSuccess { (opened, config, capture) ->
+                    settings = opened; pipeline = capture
+                    runCatching { collectWithConfig(config) }.onFailure { error ->
+                        inFlight = false
+                        Operations.record(this, OperationKind.CAPTURE_FAILED, Operations.failure(error, EventStage.CAPTURE))
+                        stateWorker.execute { settings.status("paused", MoteI18n.text("无障碍采集暂不可用，下一周期重试")) }
+                    }
+                    if (shouldSchedule(config)) handler.postDelayed(tick, (nextCapture - android.os.SystemClock.elapsedRealtime()).coerceIn(1000L, 300_000L))
+                    else if (settings.enabled && config.screenCollectionEnabled && config.effectiveMode() == "accessibility")
+                        pipeline?.pause(MoteI18n.text("锁屏或熄屏，暂停采集"), OperationReason.LOCKED)
+                }.onFailure { if (!destroyed) handler.postDelayed(tick, 1000) }
+            }
         }
-        if (pipeline == null) pipeline = CapturePipeline(this)
+    }
+    private fun collectWithConfig(config: CollectorConfig) {
+        if (destroyed || ConnectionGuard.changing()) return
+        if (!settings.enabled || !config.screenCollectionEnabled || config.effectiveMode() != "accessibility") { stopCapture(); return }
+        stateWorker.execute { if (!destroyed) UploadWorker.heartbeat(this, config) }
+        if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
+            stopCapture()
+            stateWorker.execute { if (!destroyed && settings.read() == config) {
+                settings.enabled = false
+                settings.status("permission_required", MoteI18n.text("通知权限已关闭，为保持采集可见已停止，请授权通知后重新开始"))
+            } }
+            return
+        }
         Notifications.show(this, LocalStateRepository.get(this).state.value.captureLabel)
         if (inFlight || android.os.SystemClock.elapsedRealtime() < nextCapture || pipeline!!.isBusy()) return
         nextCapture = android.os.SystemClock.elapsedRealtime() + config.intervalSeconds * 1000L
@@ -150,15 +177,25 @@ class CaptureAccessibilityService : AccessibilityService() {
         if (config.uiPageMode != "screen_only" && config.pageRules.any { it.getString("platform") == "android" && it.getString("appId") == snapshot.foreground }) {
             collectPage(snapshot,config); return
         }
-        if (config.uiPageMode == "page_only") return
+        if (config.uiPageMode == "page_only") { pipeline!!.submitPageActivity(snapshot, config); return }
         captureScreen(snapshot,config)
     }
     private fun captureScreen(snapshot: WindowSnapshot, config: CollectorConfig) {
-        if (destroyed || settings.read()!=config || !settings.enabled || windowSnapshot()!=snapshot || !CapturePipeline.unlocked(this)) {
+        if (destroyed || ConnectionGuard.changing() || !settings.enabled || windowSnapshot()!=snapshot || !CapturePipeline.unlocked(this)) {
             Operations.record(this, OperationKind.FRAME_BLOCKED, OperationReason.WINDOW_CHANGED)
             return
         }
-        if (Build.VERSION.SDK_INT < 30) { settings.status("permission_required", MoteI18n.text("此系统需投屏模式采集内容；仅应用活动无需截图API")); return }
+        val generation = configurationGeneration
+        stateWorker.execute {
+            val current = runCatching { settings.read() == config && settings.enabled && !ConnectionGuard.changing() }.getOrDefault(false)
+            handler.post {
+                if (!destroyed && generation == configurationGeneration && current && !ConnectionGuard.changing() && settings.enabled && windowSnapshot() == snapshot && CapturePipeline.unlocked(this))
+                    requestScreen(snapshot, config)
+            }
+        }
+    }
+    private fun requestScreen(snapshot: WindowSnapshot, config: CollectorConfig) {
+        if (Build.VERSION.SDK_INT < 30) { stateWorker.execute { settings.status("permission_required", MoteI18n.text("此系统需投屏模式采集内容；仅应用活动无需截图API")) }; return }
         val capturePipeline = pipeline!!
         val generation = configurationGeneration
         inFlight = true
@@ -166,29 +203,31 @@ class CaptureAccessibilityService : AccessibilityService() {
         val at = Instant.now().toString()
         val observedAtMs = android.os.SystemClock.elapsedRealtime()
         Operations.record(this, OperationKind.CAPTURE_REQUESTED)
-        Diagnostics(this).add("captureRequests")
+        stateWorker.execute { Diagnostics(this).add("captureRequests") }
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(result: ScreenshotResult) {
                 try {
                     val current = windowSnapshot()
-                    if (generation != configurationGeneration || ConnectionGuard.reconfiguring() || !settings.enabled || current != snapshot || CapturePipeline.policy(settings.read(), current) != AppCollectionMode.CONTENT || !CapturePipeline.unlocked(this@CaptureAccessibilityService)) {
+                    if (generation != configurationGeneration || ConnectionGuard.changing() || !settings.enabled || current != snapshot || CapturePipeline.policy(config, current) != AppCollectionMode.CONTENT || !CapturePipeline.unlocked(this@CaptureAccessibilityService)) {
                         result.hardwareBuffer.close(); if (generation == configurationGeneration) inFlight = false
                         Operations.record(this@CaptureAccessibilityService, OperationKind.FRAME_BLOCKED, OperationReason.WINDOW_CHANGED)
                         return
                     }
                     // Transfer ownership to a worker; no full-size pixel copy on the main looper.
                     pixels.execute {
+                        val settingsValid = runCatching { !destroyed && generation == configurationGeneration && !ConnectionGuard.changing() && settings.enabled && settings.read() == config }.getOrDefault(false)
                         val bitmap = try {
-                            val hardware = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace)
+                            val hardware = if (settingsValid) Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace) else null
                             try { hardware?.copy(Bitmap.Config.ARGB_8888, false) } finally { hardware?.recycle() }
                         } catch (_: Exception) { null } finally { result.hardwareBuffer.close() }
                         handler.post {
                             if (generation == configurationGeneration) inFlight = false
                             if (bitmap != null) {
-                                if (!destroyed && generation == configurationGeneration && settings.enabled && settings.read() == config && windowSnapshot() == snapshot && CapturePipeline.unlocked(this@CaptureAccessibilityService))
+                                if (!destroyed && generation == configurationGeneration && !ConnectionGuard.changing() && settings.enabled && windowSnapshot() == snapshot && CapturePipeline.unlocked(this@CaptureAccessibilityService))
                                     capturePipeline.submit(bitmap, snapshot, config, at, observedAtMs)
                                 else { bitmap.recycle(); Operations.record(this@CaptureAccessibilityService, OperationKind.FRAME_BLOCKED, OperationReason.WINDOW_CHANGED) }
-                            } else Operations.record(this@CaptureAccessibilityService, OperationKind.CAPTURE_FAILED, OperationReason.PIXEL_COPY)
+                            } else if (settingsValid) Operations.record(this@CaptureAccessibilityService, OperationKind.CAPTURE_FAILED, OperationReason.PIXEL_COPY)
+                            else Operations.record(this@CaptureAccessibilityService, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED)
                         }
                     }
                     return
@@ -208,10 +247,13 @@ class CaptureAccessibilityService : AccessibilityService() {
     private fun collectPage(snapshot: WindowSnapshot, config: CollectorConfig) {
         inFlight=true
         val generation=configurationGeneration
+        val sampledAt=Instant.now().toString()
+        val observedAtMs=android.os.SystemClock.elapsedRealtime()
         val activity=if(pagePackage==snapshot.foreground) pageActivity else ""
         ConnectionGuard.processing.incrementAndGet()
         try { pageWorker.execute {
             var suppressScreen=false
+            var privacyRejected=false
             try {
                 val appId=snapshot.foreground ?: return@execute
                 fun valid() = !destroyed && generation==configurationGeneration && !ConnectionGuard.changing() && settings.enabled && settings.read()==config && CapturePipeline.unlocked(this) && windowSnapshot()==snapshot && (pagePackage!=appId || pageActivity==activity)
@@ -240,8 +282,8 @@ class CaptureAccessibilityService : AccessibilityService() {
                 if(!sameWindow)return@execute
                 val page=UiPageRules.extract(pageSnapshot,rules) ?: return@execute
                 val allText=UiPageRules.text(pageSnapshot)
-                if(UploadGate.review(config.uploadGate){allText}!="allow"){suppressScreen=true;settings.status("paused",MoteI18n.text("页面隐私审查未通过，已跳过"));return@execute}
-                val at=Instant.now().toString()
+                if(UploadGate.review(config.uploadGate){allText}!="allow"){suppressScreen=true;privacyRejected=true;pipeline?.pause(MoteI18n.text("页面隐私审查未通过，已跳过"));return@execute}
+                val at=sampledAt
                 val event=org.json.JSONObject().put("id",java.util.UUID.randomUUID().toString()).put("deviceId",settings.deviceId)
                     .put("deviceName",config.deviceName).put("platform","android").put("capturedAt",at).put("durationMs",0)
                     .put("appId",appId).put("appName",CollectorMetadata.appName(this,appId)).put("source","ui_page").put("ocrText",UiPageRules.text(page))
@@ -254,7 +296,13 @@ class CaptureAccessibilityService : AccessibilityService() {
             } catch (_: Exception) { settings.status("paused",MoteI18n.text("页面读取失败，等待下一次采样")) }
             finally {
                 ConnectionGuard.processing.decrementAndGet()
-                handler.post { if(generation==configurationGeneration){inFlight=false;if(!suppressScreen && config.uiPageMode!="page_only") captureScreen(snapshot,config)} }
+                handler.post { if(generation==configurationGeneration){
+                    inFlight=false
+                    if (!privacyRejected && (suppressScreen || config.uiPageMode=="page_only") &&
+                        windowSnapshot()==snapshot && pipeline?.canCapture(config,snapshot)==true)
+                        pipeline!!.submitPageActivity(snapshot,config,sampledAt,observedAtMs)
+                    else if(!suppressScreen && config.uiPageMode!="page_only") captureScreen(snapshot,config)
+                } }
             }
         } } catch (_: java.util.concurrent.RejectedExecutionException) { inFlight=false; ConnectionGuard.processing.decrementAndGet() }
     }
@@ -265,20 +313,26 @@ class CaptureAccessibilityService : AccessibilityService() {
         if (!ProjectionService.running) Notifications.clear(this)
     }
     override fun onDestroy() {
-        destroyed = true; connected = false; instance = null
+        destroyed = true
+        if (instance === this) { connected = false; instance = null }
         runCatching { unregisterReceiver(screenReceiver) }; pixels.shutdown(); pageWorker.shutdown()
         handler.removeCallbacks(tick)
         stopCapture()
-        if (::settings.isInitialized && settings.enabled) {
-            val c = settings.read()
-            val media = c.observesSystem() && MediaCollectionService.connected && MediaCollection.permissionAllowed(this)
-            settings.status(if (media) "capturing" else "permission_required", MoteI18n.text("无障碍服务未连接，等待系统恢复或打开设置重新启用") + if (media) MoteI18n.text("；媒体采集继续运行") else "")
-            MediaCollectionService.refresh()
+        stateWorker.execute {
+            if (instanceGeneration != instances.get()) return@execute
+            if (::settings.isInitialized && settings.enabled) runCatching {
+                val c = settings.read()
+                val media = c.observesSystem() && MediaCollectionService.connected && MediaCollection.permissionAllowed(this)
+                settings.status(if (media) "capturing" else "permission_required", MoteI18n.text("无障碍服务未连接，等待系统恢复或打开设置重新启用") + if (media) MoteI18n.text("；媒体采集继续运行") else "")
+                MediaCollectionService.refresh()
+            }
+            if (::settings.isInitialized) runCatching { UploadWorker.schedule(this, settings.read()) }
         }
-        if (::settings.isInitialized) runCatching { UploadWorker.schedule(this, settings.read()) }
+        stateWorker.shutdown()
         super.onDestroy()
     }
     companion object {
+        private val instances = java.util.concurrent.atomic.AtomicLong()
         @Volatile var connected = false; private set
         @Volatile var instance: CaptureAccessibilityService? = null; private set
     }

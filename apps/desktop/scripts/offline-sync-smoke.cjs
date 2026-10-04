@@ -18,32 +18,38 @@ safeStorage.isEncryptionAvailable = () => true;
 safeStorage.encryptString = value => Buffer.from('fixture:' + Buffer.from(value).toString('base64'));
 safeStorage.decryptString = value => Buffer.from(value.toString().slice(8), 'base64').toString();
 desktopCapturer.getSources = async () => { throw new Error('Real screenshots are forbidden in this generated fixture'); };
-const config = { ...defaultConfig(), serverUrl: '', syncMode: 'manual', deviceName: 'Synthetic offline Mac', metadataEnabled: false, nsfwEnabled: false };
+const config = { ...defaultConfig(), serverUrl: '', syncMode: 'manual', deviceName: 'Synthetic offline Mac', metadataEnabled: false };
 writeFileSync(join(profile, 'config.json'), JSON.stringify({ version:3, config }), { mode: 0o600 });
 writeFileSync(join(profile,'storage-format.json'),JSON.stringify({version:3}),{mode:0o600});
 const file = join(profile, 'generated-source.md'); writeFileSync(file, 'Generated offline source version. No personal files.');
 dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
 const token = 'synthetic-offline-sync-token-' + 'x'.repeat(32), requests = [], captureBodies = [], sourceBodies = [];
-let finished = false, origin, otherOrigin, otherRequests = 0, actualOrigin, central;
+let finished = false, origin, otherOrigin, otherRequests = 0, actualOrigin, central, sessionToken;
 const server = createServer(async (req, res) => {
   try {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
-    const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : undefined;
-    requests.push({ path: req.url, method: req.method });
-    assert.equal(req.headers.authorization, 'Bearer ' + token);
+    const bytes = Buffer.concat(chunks), contentType = req.headers['content-type'] || 'application/json';
+    const body = bytes.length && contentType.includes('application/json') ? JSON.parse(bytes.toString()) : undefined;
+    const observed = { path: req.url, method: req.method, credential: req.headers.authorization === 'Bearer ' + token ? 'owner' : sessionToken && req.headers.authorization === 'Bearer ' + sessionToken ? 'session' : 'unknown' };
+    requests.push(observed);
     res.setHeader('Content-Type', 'application/json');
     if (req.url === '/api/captures') captureBodies.push(body);
     if (req.url === '/api/captures/batch') captureBodies.push(...body.captures);
     if (req.url === '/api/file-sync/v1/manifests') sourceBodies.push(...body.items.map(value=>value.item));
+    if (req.url === '/api/file-sync/v1/uploads' && req.method === 'POST') sourceBodies.push(body.item);
     if (req.method === 'PUT' && (req.url.endsWith('/items') || req.url === '/api/file-sync/v1/revisions')) sourceBodies.push(body.item ?? body);
     // Forward to the real Mote server API/SQLite fixture, retaining transport payloads for equality checks.
-    const response = await fetch(actualOrigin + req.url, { method: req.method, headers: { authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), redirect: 'error' });
-    const text = await response.text(); if(!response.ok)process.stderr.write('Fixture HTTP '+req.url+' '+response.status+' '+text+'\n'); res.writeHead(response.status); res.end(text);
+    const headers = Object.fromEntries(Object.entries(req.headers).filter(([name]) => !['host', 'connection', 'content-length', 'transfer-encoding'].includes(name)));
+    const response = await fetch(actualOrigin + req.url, { method: req.method, headers, ...(bytes.length ? { body: bytes } : {}), redirect: 'error' });
+    const text = await response.text(); observed.status = response.status;
+    if (req.url === '/api/login/session' && response.ok) sessionToken = JSON.parse(text).token;
+    if(!response.ok)process.stderr.write('Fixture HTTP '+req.url+' '+response.status+' '+text+'\n'); res.writeHead(response.status); res.end(text);
   } catch (error) { process.stderr.write('Fixture node rejected request: ' + error.message + '\n'); res.writeHead(500); res.end('{}'); }
 });
 const other = createServer((_req, res) => { otherRequests++; res.writeHead(500); res.end('{}'); });
 const until = async fn => { for (let i = 0; i < 200; i++) { if (await fn()) return; await new Promise(resolve => setTimeout(resolve, 25)); } throw new Error('Offline sync fixture phase timeout'); };
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const contentRequests = () => requests.filter(request => request.path !== '/api/connections/self');
 const queueBodies = () => readdirSync(join(profile, 'queue/events')).filter(name => name.endsWith('.json')).map(name => JSON.parse(readFileSync(join(profile, 'queue/events', name), 'utf8')).event).sort((a, b) => a.id.localeCompare(b.id));
 const sourcePending = (url, credential, id) => {
   const state = require('../dist/source-state-store').sourceState(join(profile, 'local-sources/nodes', createHash('sha256').update(url + ':' + credential).digest('hex'), id + '.json'));
@@ -60,21 +66,34 @@ app.on('browser-window-created', (_event, window) => {
     void (async () => {
       const initial = await invoke('status'); assert.equal(initial.running, false); assert.equal(initial.config.serverUrl, ''); assert.equal(initial.sync.state, 'unconfigured');
       const draft = await invoke('noteDraft'); const note = await invoke('saveNote', { ...draft, text: 'Generated offline note before any URL. 🧑🏽‍💻', revision: draft.revision + 1 });
-      const options = { retention: 'snapshot', intervalSeconds: 30, trackDeletions: false, extensions: ['.md'], excludedPaths: [], redactLiterals: [] };
+      const options = { retention: 'snapshot', centralProcessingConsent: true, intervalSeconds: 30, trackDeletions: false, extensions: ['.md'], excludedPaths: [], redactLiterals: [] };
       await invoke('chooseSourceFiles', 'files', options);
       await until(async () => (await invoke('sources'))[0]?.pending === 1);
       const source = (await invoke('sources'))[0].source;
       const originalNote = queueBodies()[0], originalSource = structuredClone(sourcePending('', '', source.id)[0]);
-      assert.equal(originalNote.id, note.id); assert.equal(originalSource.text, 'Generated offline source version. No personal files.');
+      assert.equal(originalNote.id, note.id); assert.equal(originalSource.text, '', 'Snapshot decoding runs centrally');
+      const originalBytes = readFileSync(file);
+      assert.equal(originalSource.localOriginal.sha256, createHash('sha256').update(originalBytes).digest('hex'));
+      assert.equal(originalSource.localOriginal.sizeBytes, originalBytes.length);
+      const wireSource = value => { const {localOriginal, localOriginalBase64, snapshotRecovery, ...wire} = value; return wire; };
       await pause(2200); assert.equal(requests.length, 0, 'No URL: automatic timer sends no requests');
       const waiting = await invoke('status'); assert.equal(waiting.sync.pendingRecords, 2); assert.equal(waiting.sync.localBacklogUnbound, true);
       const update = { ...waiting.config, serverUrl: origin, token, confirmLocalBacklog: false };
       await assert.rejects(invoke('configure', update), /待上传|归属/);
       assert.equal((await invoke('status')).config.serverUrl, ''); assert.deepEqual(queueBodies(), [originalNote]); assert.deepEqual(sourcePending('', '', source.id), [originalSource]);
+      assert.equal(requests.length, 0, 'Unconfirmed first binding never attempts authentication or sends queued content');
       const bound = await invoke('configure', { ...update, confirmLocalBacklog: true });
       assert.equal(bound.config.serverUrl, origin); assert.equal(bound.sync.mode, 'manual'); assert.equal(bound.sync.localBacklogUnbound, false); assert.equal(bound.running, false);
-      await pause(2200); assert.equal(requests.length, 0, 'First binding in manual mode must not auto-upload or heartbeat');
-      assert.deepEqual(sourcePending(origin, token, source.id), [originalSource]);
+      assert.equal(typeof sessionToken, 'string'); assert.notEqual(sessionToken, token, 'Owner credential is exchanged for a device session');
+      await pause(2200);
+      assert.deepEqual(requests.slice(0, 2).map(({path, method, credential, status}) => ({path, method, credential, status})), [
+        {path:'/api/connections/self',method:'GET',credential:'owner',status:200},
+        {path:'/api/login/session',method:'POST',credential:'owner',status:200},
+      ], 'First binding performs only its necessary identity check and session handshake');
+      assert.ok(requests.slice(2).every(request => request.path === '/api/connections/self' && request.method === 'GET' && request.credential === 'session' && request.status === 200), 'Automatic connection health checks use the issued session and send no content or heartbeat');
+      assert.equal(captureBodies.length, 0); assert.equal(sourceBodies.length, 0);
+      assert.equal(requests.filter(request => request.path.includes('heartbeat')).length, 0, 'First binding in manual mode does not send a heartbeat');
+      assert.deepEqual(sourcePending(origin, sessionToken, source.id), [originalSource]);
       await invoke('retry');
       const synced = await invoke('status');
       const syncedSources = await invoke('sources');
@@ -83,26 +102,27 @@ app.on('browser-window-created', (_event, window) => {
       assert.equal(synced.sync.pendingRecords, 0);
       assert.equal(syncedSources[0].pending, 0);
       assert.ok(requests.some(request => request.path === '/api/captures/batch'), 'Default packed uploads use the batch endpoint');
-      assert.deepEqual(captureBodies, [originalNote]); assert.deepEqual(sourceBodies, [originalSource]);
-      assert.equal(requests.filter(request => request.path.includes('heartbeat')).length, 1, 'Manual sync sends one final explicit heartbeat');
+      assert.deepEqual(captureBodies, [originalNote]); assert.deepEqual(sourceBodies, [wireSource(originalSource)]);
+      assert.ok(requests.slice(2).every(request => request.credential === 'session' && request.status >= 200 && request.status < 300), 'Real central authorization accepts only the issued session for subsequent requests');
+      assert.equal(requests.filter(request => request.path.includes('heartbeat')).length, 2, 'The explicit source-sync operation reports each collector retry pass before and after the source scan');
       const device = (await fetch(actualOrigin + '/api/devices', { headers: { authorization: 'Bearer ' + token } }).then(response => response.json())).items.find(item => item.deviceId === config.deviceId);
       assert.deepEqual({ mode: device.sync.mode, state: device.sync.state, pending: device.sync.pendingRecords }, { mode: 'manual', state: 'idle', pending: 0 });
       const nextDraft = await invoke('noteDraft'); await invoke('saveNote', { ...nextDraft, text: 'Generated note that must stay bound to the first node.', revision: nextDraft.revision + 1 });
       writeFileSync(file, 'Generated second source version still belongs to the first node.');
       // Same-connection config update triggers a local rescan without an upload in manual mode.
-      const requestsBeforeRescan = requests.length;
+      const requestsBeforeRescan = contentRequests().length;
       await invoke('configure', { ...(await invoke('status')).config, token: undefined });
       await until(async () => (await invoke('sources'))[0].pending === 1);
-      assert.equal(requests.length, requestsBeforeRescan, 'Settings resume local scanning without bypassing manual upload policy');
-      const boundNotes = queueBodies(), boundSources = structuredClone(sourcePending(origin, token, source.id));
+      assert.equal(contentRequests().length, requestsBeforeRescan, 'Settings resume local scanning without bypassing manual upload policy');
+      const boundNotes = queueBodies(), boundSources = structuredClone(sourcePending(origin, sessionToken, source.id));
       const beforeAttempt = requests.length;
       await assert.rejects(invoke('configure', { ...(await invoke('status')).config, serverUrl: otherOrigin, token: 'synthetic-other-node-token-' + 'z'.repeat(32), confirmLocalBacklog: true }), /待上传|归属/);
-      assert.equal((await invoke('status')).config.serverUrl, origin); assert.deepEqual(queueBodies(), boundNotes); assert.deepEqual(sourcePending(origin, token, source.id), boundSources);
+      assert.equal((await invoke('status')).config.serverUrl, origin); assert.deepEqual(queueBodies(), boundNotes); assert.deepEqual(sourcePending(origin, sessionToken, source.id), boundSources);
       assert.equal(requests.length, beforeAttempt); assert.equal(otherRequests, 0);
-      await invoke('retry'); assert.deepEqual(captureBodies.at(-1), boundNotes[0]); assert.deepEqual(sourceBodies.at(-1), boundSources[0]);
+      await invoke('retry'); assert.deepEqual(captureBodies.at(-1), boundNotes[0]); assert.deepEqual(sourceBodies.at(-1), wireSource(boundSources[0]));
       assert.equal((await invoke('status')).sync.pendingRecords, 0); assert.equal((await invoke('status')).running, false);
-      const stored = readFileSync(join(profile, 'config.json'), 'utf8'); assert(!stored.includes(token));
-      process.stdout.write(JSON.stringify({ ok: true, fixtureOnly: true, realMainAndPreloadIpc: true, noUrlLocalNoteAndSource: true, firstBindingRequiresConfirmation: true, manualBindingHasNoAutomaticRequests: true, settingsResumeLocalScanWithoutUpload: true, realCentralSqliteAcksDrainBothQueues: true, finalManualHeartbeatVisibleInDevicesApi: true, firstBindingPreservesOriginalPayloads: true, otherNodeRejectedWithoutPayloadMutation: true, captureStayedStopped: true, realKeychainUntouched: true }) + '\n');
+      const stored = readFileSync(join(profile, 'config.json'), 'utf8'); assert(!stored.includes(token)); assert(!stored.includes(sessionToken));
+      process.stdout.write(JSON.stringify({ ok: true, fixtureOnly: true, realMainAndPreloadIpc: true, noUrlLocalNoteAndSource: true, firstBindingRequiresConfirmation: true, necessaryConnectionHandshakeOnly: true, issuedSessionAuthorizedByRealCentral: true, manualBindingHasNoAutomaticUploadsOrHeartbeat: true, settingsResumeLocalScanWithoutUpload: true, realCentralSqliteAcksDrainBothQueues: true, finalManualHeartbeatVisibleInDevicesApi: true, firstBindingPreservesOriginalPayloads: true, otherNodeRejectedWithoutPayloadMutation: true, captureStayedStopped: true, realKeychainUntouched: true }) + '\n');
       finished = true; clearTimeout(timeout); app.quit();
     })().catch(error => { process.stderr.write('Offline sync fixture failed: ' + error.stack + '\n'); app.exit(1); });
   });

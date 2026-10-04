@@ -7,6 +7,7 @@ import {configureLocale} from '@mote/shared/i18n';
 import {importQueue} from '../src/import-queue.js';
 import {Imports} from '../src/Imports.js';
 import {ApiError,type Api} from '../src/api.js';
+import {resources} from '../src/resource-cache.js';
 configureLocale(()=> 'zh-CN');
 const fixtureApis=new Set<Api>();
 async function fixture(t:any){
@@ -31,12 +32,56 @@ test('media admission distinguishes extraction, search and Memory and retries th
  const job=importJob({files:[{id:'generated-media',name:'generated.mp3',relativePath:'generated.mp3',sizeBytes:9}],media:[{fileId:'generated-media',captureId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',format:{id:'mote.media-format',version:'1',mimeType:'audio/mpeg',reason:'Generated format'},processing:{state:'failed',stage:'extract',error:'unsupported_format'},searchable:false,memory:{state:'failed',jobIds:[]}}]});
  const api=apiWith((path,init)=>{
   if(init?.method==='POST'){writes.push(path);return {queued:true};}
+  if(path==='/api/files/cccccccc-cccc-4ccc-8ccc-cccccccccccc')return {job:{state:'failed',summary_state:'cancelled'},cancellation:{canCancel:false,wait:null}};
   if(path==='/api/imports')return {items:[job]};if(path==='/api/imports/'+job.id)return job;return {items:[]};
  });
  await act(async()=>root.render(view(api,{onOpen:(id:string)=>opened.push(id)})));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
  assert.match(d.body.textContent!,/媒体已接入/);assert.match(d.body.textContent!,/内容提取失败/);assert.match(d.body.textContent!,/尚无可搜索片段/);assert.match(d.body.textContent!,/记忆整理失败/);assert.doesNotMatch(d.body.textContent!,/记录已保存到中央归档/);
  await act(async()=>button(d,'重试处理').click());assert.deepEqual(writes,['/api/files/cccccccc-cccc-4ccc-8ccc-cccccccccccc/retry']);
  await act(async()=>button(d,'查看记录').click());assert.deepEqual(opened,['capture:cccccccc-cccc-4ccc-8ccc-cccccccccccc']);
+});
+function mediaImport(id='generated-media-import',captureId='cccccccc-cccc-4ccc-8ccc-cccccccccccc'){
+ return importJob({id,files:[{id:'generated-media',name:'generated.wav',relativePath:'generated.wav',sizeBytes:9}],media:[{fileId:'generated-media',captureId,processing:{state:'failed',stage:'extract'},searchable:false,memory:{state:'disabled',jobIds:[]}}]});
+}
+test('imported media cancellation waits for the physical call, then exposes a confirmed unknown retry through the shared file controls',async t=>{
+ const {root,d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});let wait:'running'|'unknown'|null='running',state='running',reads=0;const writes:{path:string;body:unknown}[]=[],job=mediaImport();
+ const api=apiWith((path,init)=>{
+  if(path==='/api/imports')return {items:[job]};if(path==='/api/import-source-packs')return {items:[]};
+  if(init?.method==='POST'){writes.push({path,body:JSON.parse(String(init.body))});if(path.endsWith('/cancel'))state='cancelled';return {};}
+  if(path==='/api/files/'+job.media![0].captureId){reads++;return {job:{state,summary_state:'cancelled'},cancellation:{canCancel:state==='running',wait}};}
+  throw Error('Unexpected generated path '+path);
+ });
+ await act(async()=>root.render(view(api)));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ assert.match(d.body.textContent!,/当前调用尚在等待结束/);await act(async()=>button(d,'取消处理').click());assert.deepEqual(writes,[{path:'/api/files/'+job.media![0].captureId+'/cancel',body:{}}]);
+ assert.equal(button(d,'重试处理').disabled,true);await act(async()=>button(d,'重试处理').click());assert.equal(writes.length,1);
+ wait=null;await act(async()=>t.mock.timers.tick(2000));assert.equal(button(d,'重试处理').disabled,false);const settledReads=reads;
+ await act(async()=>t.mock.timers.tick(6000));assert.equal(reads,settledReads,'physical-call polling stops after completion');
+ wait='unknown';await act(async()=>resources(api).invalidate(path=>path==='/api/files/'+job.media![0].captureId));
+ await act(async()=>button(d,'重试处理').click());assert.ok(d.querySelector('[role=alertdialog]'));assert.equal(writes.length,1);assert.equal(d.activeElement,button(d,'取消'));
+ await act(async()=>button(d,'取消').click());assert.equal(writes.length,1);assert.equal(d.querySelector('[role=alertdialog]'),null);
+ await act(async()=>button(d,'重试处理').click());await act(async()=>button(d,'确认重试').click());assert.deepEqual(writes[1],{path:'/api/files/'+job.media![0].captureId+'/retry',body:{stage:'transcribe',confirmUnknown:true}});
+});
+test('import media retry confirmation belongs to its selected file and cannot approve a second import',async t=>{
+ const {root,d}=await fixture(t),jobs=[mediaImport('first'),mediaImport('second','dddddddd-dddd-4ddd-8ddd-dddddddddddd')],writes:string[]=[];
+ const api=apiWith((path,init)=>{
+  if(path==='/api/imports')return {items:jobs};if(path==='/api/import-source-packs')return {items:[]};
+  if(init?.method==='POST'){writes.push(path);return {};}
+  return {job:{state:'failed',summary_state:'cancelled'},cancellation:{canCancel:false,wait:'unknown'}};
+ });
+ await act(async()=>root.render(view(api)));await act(async()=>d.querySelectorAll<HTMLButtonElement>('.workspace-select')[0].click());
+ await act(async()=>button(d,'重试处理').click());assert.ok(d.querySelector('[role=alertdialog]'));
+ await act(async()=>d.querySelectorAll<HTMLButtonElement>('.workspace-select')[1].click());assert.equal(d.querySelector('[role=alertdialog]'),null);assert.equal(writes.length,0);
+ await act(async()=>button(d,'重试处理').click());await act(async()=>button(d,'确认重试').click());assert.deepEqual(writes,['/api/files/dddddddd-dddd-4ddd-8ddd-dddddddddddd/retry']);
+});
+test('revoked file controls in an import remove retry approval and require a fresh resource read',async t=>{
+ const {root,d}=await fixture(t),job=mediaImport();let revoked=false,writes=0;
+ const api=apiWith((path,init)=>{
+  if(path==='/api/imports')return {items:[job]};if(path==='/api/import-source-packs')return {items:[]};if(init?.method==='POST'){writes++;return {};}
+  if(revoked)throw new ApiError('Generated media permission revoked',403);return {job:{state:'failed',summary_state:'cancelled'},cancellation:{canCancel:false,wait:'unknown'}};
+ });
+ await act(async()=>root.render(view(api)));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());await act(async()=>button(d,'重试处理').click());assert.ok(d.querySelector('[role=alertdialog]'));
+ revoked=true;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/files/')));assert.equal(d.querySelector('[role=alertdialog]'),null);assert.equal(button(d,'重试处理'),undefined);assert.match(d.body.textContent!,/Generated media permission revoked/);assert.equal(writes,0);
+ revoked=false;await act(async()=>button(d,'重新读取').click());await act(async()=>button(d,'重试处理').click());assert.ok(d.querySelector('[role=alertdialog]'));assert.equal(writes,0);
 });
 
 test('import history failures recover without false empty state, and revoked history is removed',async t=>{

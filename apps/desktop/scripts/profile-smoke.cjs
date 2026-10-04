@@ -26,7 +26,9 @@ app.on('browser-window-created', (_event, window) => {
       assert.equal(status.running, false); assert.equal(status.environment.profile, name);
       assert.equal(status.environment.dataDirectory, join(root, 'legacy-profiles', name));
       assert.equal(app.getPath('sessionData'), join(status.environment.dataDirectory, 'session'));
-      assert.equal(status.nsfw.modelState, 'missing');
+      assert.equal(Object.hasOwn(status, 'nsfw'), false);
+      assert.equal(await run('document.querySelector("#nsfw-enabled")'), null);
+      assert.equal(await run('typeof window.mote.downloadModel'), 'undefined');
       assert.equal(await run('document.querySelector("#login").disabled'), true);
       assert((await run('document.querySelector("#environment").textContent')).includes(name));
       if (phase === 'write') {
@@ -63,7 +65,7 @@ app.on('browser-window-created', (_event, window) => {
       assert.equal(bundle.app.profile, name); assert(bundle.events.some(e => e.stage === 'UPLOAD' && e.code === 'AUTH' && e.httpStatus === 401));
       const strings = value => typeof value === 'string' ? [value] : value && typeof value === 'object' ? Object.values(value).flatMap(strings) : [];
       const exportedStrings = strings(bundle);
-      for (const value of [token, privateNote, 'private remaining draft', 'private mood', 'private fixture device', status.config.deviceId, status.config.reviewPolicy, status.config.serverUrl, root]) { assert(!report.includes(value)); assert(!exportedStrings.some(text => text.includes(value))); }
+      for (const value of [token, privateNote, 'private remaining draft', 'private mood', 'private fixture device', status.config.deviceId, status.config.serverUrl, root]) { assert(!report.includes(value)); assert(!exportedStrings.some(text => text.includes(value))); }
       assert.equal((await run('window.mote.status()')).running, false);
       // Keep both worker processes alive briefly: their instance locks must be independent.
       await new Promise(resolve => setTimeout(resolve, 400));

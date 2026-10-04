@@ -42,8 +42,7 @@ class ServiceResponsivenessInstrumentedTest {
     }
     @Test fun captureEligibilityNeverWaitsForQueueAccountingOrDiagnosticSampling() {
         val settings = Settings(context); val original = settings.read()
-        val config = original.copy(server = "", token = "", diagnosticsEnabled = true, mode = "accessibility",
-            nsfw = original.nsfw.copy(enabled = false), appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
+        val config = original.copy(server = "", token = "", diagnosticsEnabled = true, mode = "accessibility", appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
         val pipeline = CapturePipeline(context) { }
         try {
             settings.save(config); settings.enabled = true

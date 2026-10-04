@@ -9,16 +9,26 @@ import {StoreError,sha256} from './store.js';
 import {MemoryIntegrationSettings,memoryIntegrationSelectionSchema} from './memory-integration-settings.js';
 import {MEMORY_CANDIDATE_OUTPUT_CONTRACT,memoryStrategyRefSchema} from './memory-strategy-contract.js';
 import {reviewMemory,memoryReviewReceipt} from './memory-review.js';
+import {moteText} from '@mote/shared/i18n';
 
 const modelSchema=z.object({model:z.string(),configuration:z.object({owner:z.literal('models'),fingerprint:z.string(),revision:z.number(),profileId:z.string(),provider:z.string(),model:z.string()}).strict().optional()}).strict();
 const checkpointSchema=z.object({selection:memoryIntegrationSelectionSchema,model:modelSchema,inputs:z.array(z.object({id:z.string().uuid(),hash:z.string().length(64)}).strict()).max(50),completed:z.array(z.enum(['personal','coding'])).max(2)}).strict();
+export class MemoryIntegrationSelectionError extends StoreError {
+  readonly code='memory_selection_changed';
+  constructor(){super(moteText('所选记忆已变化，请刷新后重新选择。'),409);}
+}
 
 export function requestMemoryIntegration(raw:unknown,{lifecycle,memories,pipeline}:{lifecycle:MemoryLifecycle;memories:MemoryStore;pipeline:MemoryPipeline}){
-  const input=z.object({recipe:memoryStrategyRefSchema,memoryIds:z.array(z.string().uuid()).min(1).max(50).refine(ids=>new Set(ids).size===ids.length,'Duplicate Memory input')}).strict().parse(raw);
-  let binding;try{binding=pipeline.strategies.resolveIntegration(input.recipe).binding;}catch{throw new StoreError('Memory integration recipe is unavailable',409);}
-  const inputs=input.memoryIds.map(id=>{const m=memories.get(id);if(m.status==='stale'||m.supersededBy||m.admission?.layer!=='memory')throw new StoreError('Integration requires current selected Memory',409);pipeline.assertAdmissibleEvidence(m.evidenceIds);return {id,hash:sha256(JSON.stringify(m))};});
-  const saved={selection:{activation:randomUUID(),afterSequence:0,binding},model:pipeline.modelSnapshot(),inputs,completed:[]};
-  const id=lifecycle.request('consolidation',input.memoryIds,JSON.stringify(saved));return {id,operationId:'workflow:lifecycle:'+id};
+  const input=z.object({recipe:memoryStrategyRefSchema,inputs:z.array(z.object({id:z.string().uuid(),version:z.number().int().positive(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).min(1).max(50).refine(inputs=>new Set(inputs.map(item=>item.id)).size===inputs.length,'Duplicate Memory input')}).strict().parse(raw);
+  // The owner's selection and the executor's frozen input must describe the
+  // same cards. Lock before reading, and hold the lock through journal admission.
+  const db=memories.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+  try{
+    let binding;try{binding=pipeline.strategies.resolveIntegration(input.recipe).binding;}catch{throw new StoreError('Memory integration recipe is unavailable',409);}
+    const inputs=input.inputs.map(selected=>{const m=memories.get(selected.id);if(m.version!==selected.version||m.fingerprint!==selected.fingerprint)throw new MemoryIntegrationSelectionError();if(m.status==='stale'||m.supersededBy||m.admission?.layer!=='memory')throw new StoreError('Integration requires current selected Memory',409);pipeline.assertAdmissibleEvidence(m.evidenceIds);return {id:selected.id,hash:sha256(JSON.stringify(m))};});
+    const saved={selection:{activation:randomUUID(),afterSequence:0,binding},model:pipeline.modelSnapshot(),inputs,completed:[]};
+    const id=lifecycle.request('consolidation',inputs.map(item=>item.id),JSON.stringify(saved));if(own)db.exec('COMMIT');return {id,operationId:'workflow:lifecycle:'+id};
+  }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
 }
 
 /** Integration is a consumer of the existing journal/executor/store. Strategies

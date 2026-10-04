@@ -138,7 +138,7 @@ node --import tsx scripts/review-memory-recipe-live.ts
 
 - `GET /api/memory-integration-recipes`：已安装组合及可用状态。
 - `GET/PUT /api/memory-integration-settings`：选择自动整合配方，写入体为 `{recipe: {id, version}}`，`{recipe: null}` 停用。
-- `POST /api/memory-integrations`：明确选择历史 `memoryIds` 和一个 `recipe`，返回既有生命周期任务及操作 ID；受当前 `consolidation.maxItems` 限制，最多 50 张卡片。
+- `POST /api/memory-integrations`：明确选择 `inputs: [{id, version, fingerprint}]` 和一个 `recipe`，返回既有生命周期任务及操作 ID。服务端在同一事务中核对卡片版本与指纹并冻结输入；发生并发修正时返回 `409 memory_selection_changed`，需要刷新后重新选择。只发送旧式 `memoryIds` 的请求不会被接受。受当前 `consolidation.maxItems` 限制，最多 50 张卡片。
 - `POST /api/memory-integrations/:id/cancel`、`.../:id/retry`：取消或显式重试当前任务；状态沿用 `/api/memory-settings`。
 
 自动配方切换只授权选择之后的 Memory 日志增量，不隐式重跑历史。再次保存同一配方不改变授权起点。初始化默认组合、安装和重启也不会补跑已有卡片。停用或换选会撤销旧的待执行自动窗口，保留已有产物；明确手工发起的历史任务有自己的固定授权，不因自动选择变化而被撤销。自动开关与手工任务分开，采集端令牌无权访问这些管理接口。

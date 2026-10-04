@@ -48,7 +48,7 @@ test('Operation detail identifies Actions and both embedding steps, routes to Ac
 });
 test('Actions and optional Indexer operation IDs invalidate affected domains without reloading unrelated settings',()=>{
  const actions=new Set(['workflow:actions:generated']);assert.equal(affectedResource('/api/actions?cursor=4',actions,false),true);assert.equal(affectedResource('/api/actions',new Set(['workflow:lifecycle:generated']),false),false);assert.equal(affectedResource('/api/actions',new Set(),true),true);
- for(const id of ['capture:generated','file:generated']){for(const path of ['/api/files/generated','/api/capture-browser/generated','/api/operations/'+encodeURIComponent(id)])assert.equal(affectedResource(path,new Set([id]),false),true);assert.equal(affectedResource('/api/model-settings',new Set([id]),false),false);}
+ for(const id of ['capture:generated','file:generated']){for(const path of ['/api/files/generated','/api/capture-browser/generated','/api/conversations/generated','/api/conversations?limit=30','/api/query-runs/generated','/api/operations/'+encodeURIComponent(id)])assert.equal(affectedResource(path,new Set([id]),false),true);assert.equal(affectedResource('/api/model-settings',new Set([id]),false),false);}
  const index=new Set(['material-index:generated']);for(const path of ['/api/materials/generated','/api/materials?limit=12','/api/agent-view/material-read?ref=generated'])assert.equal(affectedResource(path,index,false),true);assert.equal(affectedResource('/api/model-settings',index,false),false);
 });
 test('failed material index operations offer an index-only retry and route to the library',async t=>{

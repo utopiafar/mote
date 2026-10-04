@@ -39,7 +39,7 @@ class ConnectionInstrumentedTest {
             ActivityScenario.launch(ConnectionActivity::class.java).awaitUiText(currentNodePrefix()).use { scenario ->
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
                 Settings(context).saveConnection("https://generated-new.invalid", "synthetic-owner-token-no-network-123456789", "合成设备", false)
-                scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+                scenario.resumeGeneratedTask()
                 scenario.awaitUiText(currentNodePrefix("https://generated-new.invalid"))
                 scenario.onActivity { activity ->
                     val receive = ConnectionActivity::class.java.getDeclaredMethod("onActivityResult", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Intent::class.java).apply { isAccessible = true }
@@ -70,7 +70,7 @@ class ConnectionInstrumentedTest {
             ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
                 Settings(context).saveConnection("https://generated-new.invalid", "synthetic-owner-token-no-network-123456789", "合成设备", false)
-                scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+                scenario.resumeGeneratedTask()
                 scenario.onActivity { activity ->
                     fun views(v: android.view.View): List<android.view.View> = listOf(v) + if (v is android.view.ViewGroup) (0 until v.childCount).flatMap { views(v.getChildAt(it)) } else emptyList()
                     views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString() == MoteI18n.text("本机") }.performClick()

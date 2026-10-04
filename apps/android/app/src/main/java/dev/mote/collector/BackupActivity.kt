@@ -29,7 +29,7 @@ class BackupActivity : MoteActivity() {
         fun button(label: String, action: () -> Unit) = Button(this).apply { text = label; setOnClickListener { if (!task.busy) action() } }.also(body::addView)
         text(MoteI18n.text("导入与导出"), 28f)
         text(MoteI18n.text("客户端配置"), 20f)
-        text(MoteI18n.text("迁移采集、应用规则、同步、模型和诊断设置。系统权限和来源文件授权需在新设备重新授予。"))
+        text(MoteI18n.text("迁移采集、应用规则、同步和诊断设置。系统权限和来源文件授权需在新设备重新授予。"))
         secrets = CheckBox(this).apply { text = MoteI18n.text("导出时包含节点令牌（文件为明文，请妥善保管）"); isChecked = includeToken }.also(body::addView)
         button(MoteI18n.text("导出配置 JSON")) { includeToken = secrets.isChecked; create(10, "application/json", "mote-settings.json") }
         button(MoteI18n.text("导入配置 JSON")) { open(11, "application/json") }

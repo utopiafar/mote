@@ -8,7 +8,7 @@ import {FILE_PART_BYTES,formatEvidenceRef} from '@mote/shared';
 import {FileStore} from './files.js';
 import {FileReviews} from './file-reviews.js';
 import {fileExportEntries,exportTar} from './file-export.js';
-import {isLoopback,readProcessorJson} from './file-processors.js';
+import {isLoopback,requestLocalJson} from './local-http.js';
 import {FileProcessing} from './file-processing.js';
 import {StoreError} from './store.js';
 import {FileAttachments} from './file-attachments.js';
@@ -74,7 +74,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.post('/api/files/:id/reviews/:reviewId',{bodyLimit:65536},async req=>{file(req);return reviews.confirm(fileId(req),(req.params as {reviewId:string}).reviewId,req.body);});
   app.post('/api/files/:id/corrections',{bodyLimit:131072},async req=>{if(device(req))throw new StoreError('Owner access required',403);file(req);return reviews.correct(fileId(req),req.body);});
   app.post('/api/files/:id/speakers',{bodyLimit:16384},async req=>{file(req);return reviews.nameSpeakers(fileId(req),req.body);});
-  app.post('/api/file-processing/test-local',async req=>{const q=z.object({serviceId:z.string().max(100).optional()}).strict().parse(req.body??{}),settings=processing.localService(q.serviceId);if(!isLoopback(settings.endpoint))throw new StoreError('Local worker must use loopback');const endpoint=new URL(settings.endpoint);endpoint.pathname='/health';const response=await fetch(endpoint,{headers:settings.apiKey?{Authorization:`Bearer ${settings.apiKey}`}:{},signal:AbortSignal.timeout(10000),redirect:'error'});return z.object({version:z.number(),execution:z.literal('local'),asr:z.boolean(),diarization:z.boolean()}).strict().parse(await readProcessorJson(response,4096));});
+  app.post('/api/file-processing/test-local',async req=>{const q=z.object({serviceId:z.string().max(100).optional()}).strict().parse(req.body??{}),settings=processing.localService(q.serviceId);if(!isLoopback(settings.endpoint))throw new StoreError('Local worker must use loopback');const endpoint=new URL(settings.endpoint);endpoint.pathname='/health';return z.object({version:z.number(),execution:z.literal('local'),asr:z.boolean(),diarization:z.boolean()}).strict().parse(await requestLocalJson(endpoint,{headers:settings.apiKey?{Authorization:`Bearer ${settings.apiKey}`}:{},signal:AbortSignal.timeout(10000),limit:4096}));});
   app.get('/api/file-processing',async()=>processing.view());
   app.post('/api/file-processing/match',async req=>processing.match(req.body));
   app.post('/api/file-processing/preview',async req=>processing.preview(req.body));

@@ -8,6 +8,7 @@ import {FileProcessing} from './file-processing.js';
 import {StoreError} from './store.js';
 import {writeFileTranscriptChunks} from './file-transcript-chunks.js';
 import {invalidateRetiredFileEvidence} from './evidence-dependencies.js';
+import {invalidateFileSummary} from './file-summary-lineage.js';
 
 export function latestFileTranscript(files:FileStore,id:string){
   files.version(id);
@@ -115,6 +116,7 @@ export class FileReviews {
       if(transcript)writeFileTranscriptChunks(this.files.store,id,artifactId,transcript,{artifactId:current.artifactId});
       if(reviewId)db.prepare("UPDATE file_reviews SET status='accepted' WHERE id=?").run(reviewId);
       if(transcript){
+        invalidateFileSummary(this.files.store,id);
         // A text correction retains the same speaker intervals and confirmed identities.
         const attributions=this.files.speakerAttributions(id,current.artifactId);
         if(Object.keys(attributions).length){
@@ -143,6 +145,7 @@ export class FileReviews {
     db.exec('BEGIN IMMEDIATE');try{
       db.prepare("UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind='speaker-names'").run(id);
       db.prepare('INSERT INTO file_artifacts VALUES(?,?,?,?,?,?,1)').run(confirmationId,id,'speaker-names',confirmedAt,'user-confirmed',json);
+      invalidateFileSummary(this.files.store,id);
       const affected=db.prepare("SELECT id FROM file_chunks WHERE artifact_id=? AND json_extract(metadata,'$.speaker') IN (SELECT value FROM json_each(?))").all(current.artifactId,JSON.stringify(changed));
       for(const chunk of affected){const chunkId=String(chunk.id);this.files.store.invalidateMemoryEvidence(chunkId);db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(chunkId,confirmedAt);}
       db.exec('COMMIT');

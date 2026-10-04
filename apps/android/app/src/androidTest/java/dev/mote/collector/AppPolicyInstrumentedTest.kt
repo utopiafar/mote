@@ -40,7 +40,7 @@ class AppPolicyInstrumentedTest {
         var pipeline: CapturePipeline? = null
         try {
             val baseline = Operations.ledger(context).read().getJSONObject("counts")
-            val config = settings.read().copy(server = "https://127.0.0.1:1", token = "generated-policy-test-token-only-123456789", mode = "projection", nsfw = settings.read().nsfw.copy(enabled = false),
+            val config = settings.read().copy(server = "https://127.0.0.1:1", token = "generated-policy-test-token-only-123456789", mode = "projection",
                 appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
             settings.save(config); settings.enabled = true; assertEquals("accessibility", config.effectiveMode())
             val windows = WindowSnapshot(setOf("com.example.generated"), "com.example.generated", true)
@@ -91,7 +91,7 @@ class AppPolicyInstrumentedTest {
             waitUntil { CaptureAccessibilityService.connected }
             openFixture()
             val config = settings.read().copy(server = server, token = token, deviceName = "合成 Android 分级采集", intervalSeconds = 5, wifiOnly = false, debugHttp = true, syncMode = "realtime", uploadedRetentionDays = 0,
-                mode = "projection", nsfw = settings.read().nsfw.copy(enabled = false), appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
+                mode = "projection", appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
             settings.save(config)
             assertEquals("accessibility", config.effectiveMode())
             androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
@@ -114,7 +114,7 @@ class AppPolicyInstrumentedTest {
             val saved = count("ACTIVITY_QUEUED"); Thread.sleep(5500); stop()
             assertEquals(saved, count("ACTIVITY_QUEUED")); assertEquals(0, count("CAPTURE_REQUESTED"))
             // Explicit fixture setting disables image review only for generated screen/OCR transport validation.
-            val content = config.copy(mode = "accessibility", appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.OFF, "${context.packageName}.test=content\ncom.android.systemui=content").json(), nsfw = config.nsfw.copy(enabled = false))
+            val content = config.copy(mode = "accessibility", appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.OFF, "${context.packageName}.test=content\ncom.android.systemui=content").json())
             settings.save(content); settings.enabled = true; waitUntil { count("SCREEN_ACK") >= 1 }; stop(); waitUntil { context.queue().depth() == 0 }
             val screen = records("screen").getJSONObject(0); assertEquals("content", screen.getJSONObject("privacy").getString("collection"))
             assertEquals("", screen.getString("ocrText")); assertTrue(screen.getJSONObject("metadata").getJSONObject("capture").getInt("width") > 0)
@@ -156,7 +156,7 @@ class AppPolicyInstrumentedTest {
         }
         try {
             val c = settings.read().copy(server = "https://127.0.0.1:1", token = "generated-timing-fixture-only-123456789", intervalSeconds = 15,
-                excludedPackages = "", appCollectionRules = AppCollectionRules.CONTENT_DEFAULT, nsfw = settings.read().nsfw.copy(enabled = false))
+                excludedPackages = "", appCollectionRules = AppCollectionRules.CONTENT_DEFAULT)
             settings.save(c); settings.enabled = true; pipeline = CapturePipeline(context) { }
             pipeline.submit(generated(), windows, c, "2026-09-14T00:00:00Z", 0)
             waitUntil { context.queue().depth() == 1 && pipeline?.isBusy() == false }
@@ -189,8 +189,7 @@ class AppPolicyInstrumentedTest {
                 wifiOnly = false, debugHttp = true, syncMode = "realtime", uploadedRetentionDays = 0, mode = "projection", excludedPackages = "")
             var activityRequests = -1L; var contentRequests = -1L
             for (mode in listOf(AppCollectionMode.ACTIVITY, AppCollectionMode.CONTENT)) {
-                val c = base.copy(appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.OFF, "${context.packageName}.test=${mode.wire}\ncom.android.systemui=content").json(),
-                    nsfw = base.nsfw.copy(enabled = mode == AppCollectionMode.ACTIVITY))
+                val c = base.copy(appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.OFF, "${context.packageName}.test=${mode.wire}\ncom.android.systemui=content").json())
                 settings.save(c)
                 val before = Operations.ledger(context).read().getJSONObject("counts")
                 fun delta(key: String) = Operations.ledger(context).read().getJSONObject("counts").getLong(key) - before.getLong(key)

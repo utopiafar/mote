@@ -11,8 +11,8 @@ data class CollectorConfig(
     val authSignedOut: Boolean = false, val authExpiresAt: Long = 0, val authProcess: String = "",
     val server: String = "", val token: String = "", val deviceName: String = Build.MODEL,
     val intervalSeconds: Int = 30, val maxQueueMiB: Int = 256, val wifiOnly: Boolean = true,
-    val excludedPackages: String = "", val masks: String = "", val localReviewUrl: String = "",
-    val debugHttp: Boolean = false, val mode: String = "accessibility", val nsfw: NsfwConfig = NsfwConfig(),
+    val excludedPackages: String = "", val masks: String = "",
+    val debugHttp: Boolean = false, val mode: String = "accessibility",
     val jpegQuality: Int = 75, val captureMaxSide: Int = 1280, val chargingOnly: Boolean = false, val batteryPauseBelowPct: Int = 0,
     val diagnosticsEnabled: Boolean = false, val diagnosticsIntervalSeconds: Int = 60,
     val appCollectionRules: String = AppCollectionRules.DEFAULT, val metadataEnabled: Boolean = true,
@@ -50,9 +50,7 @@ data class CollectorConfig(
         require(jsonlWindowMinutes in 1..1440) { MoteI18n.text("JSONL 合并窗口为 1..1440 分钟") }
         Mask.parse(masks)
         AppCollectionRules.parse(appCollectionRules)
-        PrivacyRules.validateLocalReview(localReviewUrl)
         require(mode in setOf("accessibility", "projection"))
-        // The optional visual model validates when explicitly invoked.
         require(jpegQuality in 40..95 && captureMaxSide in 640..2560 && batteryPauseBelowPct in 0..95) { MoteI18n.text("检查 JPEG 质量、图片最长边或电量配置") }
         require(diagnosticsIntervalSeconds in 15..3600) { MoteI18n.text("诊断采样间隔为 15..3600 秒") }
     }
@@ -80,6 +78,11 @@ class Settings(private val context: Context) {
         if (prefs.contains("configurationFormat")) {
             check(prefs.getInt("configurationFormat", 0) == LocalDataFormat.VERSION && configurationKeys.all(prefs::contains)) { MoteI18n.text(LocalDataFormat.RESET_MESSAGE) }
         }
+        // Removing a retired control does not reset active consent, connection or privacy rules.
+        if (retiredModelKeys.any(prefs::contains)) {
+            val cleanup = prefs.edit(); retiredModelKeys.forEach(cleanup::remove)
+            if (!cleanup.commit()) throw SettingsWriteFailure()
+        }
         // SharedPreferences already keeps values in memory. Compare only configuration keys,
         // so status/counter writes never rebuild a snapshot or decrypt credentials.
         val values = prefs.all.filterKeys { it in configurationKeys }
@@ -93,12 +96,8 @@ class Settings(private val context: Context) {
         deviceName = prefs.getString("deviceName", Build.MODEL)!!,
         intervalSeconds = prefs.getInt("interval", 30), maxQueueMiB = prefs.getInt("maxQueue", 256),
         wifiOnly = prefs.getBoolean("wifiOnly", true), excludedPackages = prefs.getString("excluded", "")!!,
-        masks = prefs.getString("masks", "")!!, localReviewUrl = prefs.getString("localReview", "")!!,
+        masks = prefs.getString("masks", "")!!,
         debugHttp = prefs.getBoolean("debugHttp", BuildConfig.MOTE_PROFILE == "dev"), mode = prefs.getString("mode", "accessibility")!!,
-        nsfw = NsfwConfig(enabled = false, threads = prefs.getInt("nsfwThreads", 2),
-            timeoutMs = prefs.getLong("qwenTimeout", 60000), source = prefs.getString("nsfwSource", "auto")!!,
-            customUrl = prefs.getString("qwenCustomUrl", "")!!, policy = prefs.getString("qwenPolicy", null) ?: context.assets.open("review-policy.txt").bufferedReader().use { it.readText().trim() },
-            maxTokens = prefs.getInt("qwenMaxTokens", 256), reviewMaxSide = prefs.getInt("qwenMaxSide", 512)),
         jpegQuality = prefs.getInt("jpegQuality", 75), captureMaxSide = prefs.getInt("captureMaxSide", 1280),
         chargingOnly = prefs.getBoolean("chargingOnly", false), batteryPauseBelowPct = prefs.getInt("batteryPauseBelowPct", 0),
         diagnosticsEnabled = prefs.getBoolean("diagnosticsEnabled", false), diagnosticsIntervalSeconds = prefs.getInt("diagnosticsIntervalSeconds", 60),
@@ -145,15 +144,12 @@ class Settings(private val context: Context) {
             "token" to (prefs.getString("token", null)?.takeIf { credentials(it) == c.token }
                 ?: Base64.encodeToString(secret.seal(c.token.toByteArray()), Base64.NO_WRAP)),
             "deviceName" to c.deviceName, "interval" to c.intervalSeconds, "maxQueue" to c.maxQueueMiB,
-            "wifiOnly" to c.wifiOnly, "excluded" to c.excludedPackages, "masks" to c.masks, "localReview" to c.localReviewUrl,
+            "wifiOnly" to c.wifiOnly, "excluded" to c.excludedPackages, "masks" to c.masks,
             "debugHttp" to c.debugHttp, "mode" to c.mode, "appCollectionRules" to c.appCollectionRules, "metadataEnabled" to c.metadataEnabled,
             "jpegQuality" to c.jpegQuality, "captureMaxSide" to c.captureMaxSide, "chargingOnly" to c.chargingOnly,
             "notificationCollectionEnabled" to c.notificationCollectionEnabled, "deviceEventCollectionEnabled" to c.deviceEventCollectionEnabled,
             "mediaCollectionEnabled" to c.mediaCollectionEnabled, "screenCollectionEnabled" to c.screenCollectionEnabled, "batteryPauseBelowPct" to c.batteryPauseBelowPct,
-            "diagnosticsEnabled" to c.diagnosticsEnabled, "diagnosticsIntervalSeconds" to c.diagnosticsIntervalSeconds,
-            "nsfwEnabled" to c.nsfw.enabled, "nsfwThreads" to c.nsfw.threads, "qwenTimeout" to c.nsfw.timeoutMs,
-            "nsfwSource" to c.nsfw.source, "qwenCustomUrl" to c.nsfw.customUrl, "qwenPolicy" to c.nsfw.policy,
-            "qwenMaxTokens" to c.nsfw.maxTokens, "qwenMaxSide" to c.nsfw.reviewMaxSide)
+            "diagnosticsEnabled" to c.diagnosticsEnabled, "diagnosticsIntervalSeconds" to c.diagnosticsIntervalSeconds)
 
     fun save(c: CollectorConfig, expected: CollectorConfig? = null, confirmCentralEndpoint: Boolean = false) = synchronized(Settings::class.java) {
         if (expected != null && read() != expected) throw SettingsChangedFailure()
@@ -228,11 +224,9 @@ class Settings(private val context: Context) {
         private var cachedConfig: CollectorConfig? = null
         private var cachedCiphertext: String? = null
         private var cachedToken = ""
-        private val configurationKeys = setOf("configurationFormat", "dataOrigin", "authSignedOut", "authExpiresAt", "authProcess", "uiPageMode", "uiPageRules", "packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uploadedRetentionDays", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "jsonlWindowMinutes", "localReview", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "nsfwEnabled", "nsfwSource", "nsfwThreads", "ocrAppModes", "ocrMode", "qwenCustomUrl", "qwenMaxSide", "qwenMaxTokens", "qwenPolicy", "qwenTimeout", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
+        private val retiredModelKeys = setOf("localReview", "nsfwEnabled", "nsfwSource", "nsfwThreads", "qwenCustomUrl", "qwenMaxSide", "qwenMaxTokens", "qwenPolicy", "qwenTimeout")
+        private val configurationKeys = setOf("configurationFormat", "dataOrigin", "authSignedOut", "authExpiresAt", "authProcess", "uiPageMode", "uiPageRules", "packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uploadedRetentionDays", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "jsonlWindowMinutes", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "ocrAppModes", "ocrMode", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
 
-    }
-    fun saveNsfw(value: NsfwConfig) {
-        save(read().copy(nsfw = value))
     }
     fun status(state: String, message: String) {
         val changed = state() != state

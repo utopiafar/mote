@@ -13,7 +13,6 @@ val releaseSigningReady = releaseSecrets.values.all { !it.isNullOrBlank() }
 android {
     namespace = "dev.mote.collector"
     compileSdk = 36
-    ndkVersion = "28.2.13676358"
     defaultConfig {
         applicationId = "dev.mote.collector"
         minSdk = 29
@@ -23,8 +22,6 @@ android {
         buildConfigField("String", "MOTE_PROFILE", "\"legacy\"")
         buildConfigField("String", "DEFAULT_SERVER", "\"\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        ndk { abiFilters += "arm64-v8a" }
-        externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_shared"; targets += "mote_vlm" } }
     }
     signingConfigs {
         if (releaseSigningReady) create("distribution") {
@@ -62,7 +59,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { buildConfig = true; aidl = true }
+    buildFeatures { buildConfig = true }
     sourceSets.getByName("test").resources.srcDir(rootProject.file("../../adapters/ui/fixtures"))
     sourceSets.getByName("test").java.srcDir("src/sharedTest/java")
     sourceSets.getByName("androidTest").java.srcDir("src/sharedTest/java")
@@ -77,12 +74,10 @@ android {
         manifest.srcFile("src/debug/AndroidManifest.xml")
     }
     testBuildType = providers.gradleProperty("mote.testBuildType").orElse("debug").get()
-    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/modelAssets"))
-    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
+    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/runtimeAssets"))
     lint { abortOnError = true }
 }
 dependencies {
-    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("com.google.zxing:core:3.5.4")
@@ -98,15 +93,10 @@ dependencies {
 tasks.matching { it.name == "packageRelease" }.configureEach {
     doFirst { check(releaseSigningReady) { "Release signing requires all four MOTE_ANDROID_KEYSTORE_PATH/PASSWORD and MOTE_ANDROID_KEY_ALIAS/PASSWORD environment settings. No unsigned release is produced." } }
 }
-val copyModelManifest by tasks.registering(Sync::class) {
+val copyRuntimeAssets by tasks.registering(Sync::class) {
     from(rootProject.file("../../adapters/ui/builtin.json")) { rename { "ui-page-rules.json" } }
-    from(rootProject.file("../../models/qwen-manifest.json"))
-    from(rootProject.file("../../models/review-policy.txt"))
-    from(rootProject.file("../../models/review-system.txt"))
-    from(rootProject.file("../../models/review-grammar.gbnf"))
     from(rootProject.file("../../release/release-public-key.pem"))
     from(rootProject.file("../../licenses")) { into("licenses") }
-    into(layout.buildDirectory.dir("generated/modelAssets"))
-    doFirst { check(rootProject.file("../../models/qwen-manifest.json").exists()) { "Missing shared models/qwen-manifest.json" } }
+    into(layout.buildDirectory.dir("generated/runtimeAssets"))
 }
-tasks.named("preBuild").configure { dependsOn(copyModelManifest) }
+tasks.named("preBuild").configure { dependsOn(copyRuntimeAssets) }

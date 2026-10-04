@@ -14,6 +14,8 @@ import {MaterialDetail,type Material} from '../src/Materials.js';
 import {SourceMaterialView} from '../src/features/source-material.js';
 import {resources} from '../src/resource-cache.js';
 import {ApiError,dateTime,type Api} from '../src/api.js';
+import {DatabaseSync} from 'node:sqlite';
+import {requestMemoryIntegration} from '../../server/src/memory-integration.js';
 const ids=['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'];
 function deferred(){let resolve!:(value:any)=>void,reject!:(value:unknown)=>void;const promise=new Promise<any>((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 async function fixture(t:any){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),backups=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){backups.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}dom.window.localStorage.setItem('mote.language','zh-CN');const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of backups){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,document:dom.window.document};}
@@ -60,7 +62,7 @@ test('manual consolidation uses one fresh selected card and feature default, nev
  assert.equal(Array.from(d.querySelectorAll('button')).some(b=>b.textContent==='取消整理'),false);
  windowState=undefined;status='waiting_for_increment';await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
  await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='整理这条记忆')!.click());
- assert.deepEqual(writes[0],{path:'/api/memory-integrations',body:{recipe:{id:'mote.memory-integration',version:'2'},memoryIds:[ids[0]]}});
+ assert.deepEqual(writes[0],{path:'/api/memory-integrations',body:{recipe:{id:'mote.memory-integration',version:'2'},inputs:[{id:candidate.id,version:candidate.version,fingerprint:candidate.fingerprint}]}});
  assert.match(d.body.textContent!,/本次所选：Generated a/);
  await act(async()=>root.render(React.createElement(MemoryIntegration,{api})));
  assert.ok(d.querySelector('#manual-memory-integration'),'active manual work remains visible after clearing the card');
@@ -74,7 +76,28 @@ test('manual consolidation uses one fresh selected card and feature default, nev
  assert.ok(Array.from(d.querySelectorAll('button')).some(b=>b.textContent==='显式重试整理'));
  assert.equal(Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='整理这条记忆')!.disabled,false,'a cancelled window does not permanently block a new manual run');
  await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='整理这条记忆')!.click());
- assert.deepEqual(writes[2].body,{recipe:{id:'mote.memory-integration',version:'2'},memoryIds:[ids[0]]});
+ assert.deepEqual(writes[2].body,{recipe:{id:'mote.memory-integration',version:'2'},inputs:[{id:candidate.id,version:candidate.version,fingerprint:candidate.fingerprint}]});
+});
+test('a concurrent correction between the selected-card GET and POST cannot silently become the integration input',async t=>{
+ const {root,document:d}=await fixture(t),db=new DatabaseSync(':memory:');t.after(()=>db.close());
+ const selected={...memory(ids[0]),version:2,fingerprint:'a'.repeat(64),admission:{layer:'memory'}},changed={...selected,title:'Generated owner correction',version:3,fingerprint:'b'.repeat(64)};
+ let current=selected,queued=0,race=true;const writes:any[]=[];
+ const lifecycle={request:()=>{assert.equal(db.isTransaction,true);queued++;return ids[1];}},memories={store:{db},get:()=>current},pipeline={strategies:{resolveIntegration:()=>({binding:{}})},assertAdmissibleEvidence:()=>{},modelSnapshot:()=>({model:'generated-model'})};
+ const api=apiWith((path,init)=>{
+  if(path==='/api/memory-settings')return {settings:{consolidation:{enabled:false,maxItems:3}},extensions:[{id:'consolidation',status:'pending',failures:0}]};
+  if(path==='/api/memory-integration-recipes')return {items:[{id:'mote.memory-integration',version:'2',available:true}]};
+  if(path==='/api/memories/'+selected.id){const fresh={...current};if(race){race=false;current=changed;}return fresh;}
+  if(path==='/api/memory-integrations'&&init?.method==='POST'){
+   const body=JSON.parse(String(init.body));writes.push(body);
+   try{return requestMemoryIntegration(body,{lifecycle,memories,pipeline} as any);}catch(error){throw new ApiError((error as Error).message,(error as any).statusCode);}
+  }
+  throw Error('Unexpected generated path '+path);
+ });
+ await act(async()=>root.render(React.createElement(MemoryIntegration,{api,candidate:selected})));
+ const start=()=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(b=>b.textContent==='整理这条记忆')!;
+ await act(async()=>start().click());assert.deepEqual(writes[0].inputs,[{id:selected.id,version:selected.version,fingerprint:selected.fingerprint}]);assert.equal(queued,0);assert.equal(db.isTransaction,false);assert.match(d.body.textContent!,/所选记忆已变化/);
+ await act(async()=>root.render(React.createElement(MemoryIntegration,{api,candidate:changed})));
+ await act(async()=>start().click());assert.equal(queued,1);assert.deepEqual(writes[1].inputs,[{id:changed.id,version:changed.version,fingerprint:changed.fingerprint}]);assert.equal(db.isTransaction,false);
 });
 test('cancelled consolidation hides its obsolete failure code while failed and retry-wait retain diagnostics',async t=>{
  const {root,document:d}=await fixture(t);let status='failed';

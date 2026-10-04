@@ -26,6 +26,7 @@ internal class CentralContent(
     fun recreate() = activity.recreate()
     private fun localPage(page: String) { openLocalPage?.invoke(page) ?: activity.openMoteLocalPage(page) }
     private val task by lazy { UiTask(activity) }
+    private val accessTask by lazy { UiTask(activity) }
     private val handler = Handler(Looper.getMainLooper())
     private val session by lazy { CentralSession.get(this) }
     private lateinit var body: LinearLayout
@@ -41,6 +42,9 @@ internal class CentralContent(
     private var page = "ask"
     @Volatile private var revision = 0L
     private var resumed = false
+    private var foregroundRevision = 0L
+    // This is a UI routing stamp. Authorization always reads the current session in background work.
+    private var accessGeneration = -1L
     private var accessReady = false
     private var pendingResult: Triple<Int, Int, Intent?>? = null
     private val pending = java.util.ArrayDeque<Pair<Long, () -> Unit>>()
@@ -61,8 +65,19 @@ internal class CentralContent(
     private val refreshLogin = object : Runnable {
         override fun run() {
             if (!resumed) return
-            if (client != null && Settings(this@CentralContent).read().connectionToken().isBlank()) {
-                client = null; screens?.close(); screens?.clearPrivateState(); login()
+            if (accessReady && !accessTask.busy) {
+                val foreground = foregroundRevision
+                val version = revision
+                accessTask.start("", {}, { CentralAccess.resolve(this@CentralContent) }) { result ->
+                    if (resumed && foreground == foregroundRevision && version == revision && !isDestroyed && !isFinishing) {
+                        result.onSuccess { selected ->
+                            if (selected.generation >= accessGeneration && (selected.generation != accessGeneration || selected.server != server || (selected.client == null) != (client == null))) applyAccess(selected)
+                        }.onFailure {
+                            client = null; screens?.close(); screens?.clearPrivateState(); login()
+                            notice(it.message ?: MoteI18n.text("操作失败"))
+                        }
+                    }
+                }
             }
             handler.postDelayed(this, 1000)
         }
@@ -119,32 +134,39 @@ internal class CentralContent(
     }
 
     fun resume() {
-        resumed = true
+        resumed = true; foregroundRevision++
         handler.removeCallbacks(refreshLogin); handler.postDelayed(refreshLogin, 1000)
-        work(MoteI18n.text("正在读取本机设置…"), { CentralAccess.resolve(this) }) { selected ->
-            val endpoint = selected.server
-            if (endpoint.isBlank()) {
-                server = ""; client = null; body.removeAllViews(); collectionBar.visibility = View.GONE
-                title.text = MoteI18n.text("中央节点")
-                text(MoteI18n.text("先在连接设置选择中央节点，再登录中央管理页面。"))
-                connectionButton()
-                deliverPendingResult()
-                return@work
-            }
-            val changed = server != endpoint
-            val authenticated = client == null && selected.client != null
-            server = endpoint; client = selected.client
-            if (changed || screens == null) screens = CentralScreens(this, body, File(noBackupFilesDir, "central-native/" + SourceRules.hash(endpoint)))
-            if (client == null) { screens?.clearPrivateState(); login(); if (browserLoginId != null) pollBrowserLogin() }
-            else if (changed || authenticated || body.childCount == 0) navigate(page) else if (page == "ask") scheduleAskPoll()
+        work(MoteI18n.text("正在读取本机设置…"), { CentralAccess.resolve(this) }, allowSessionChange = true) { selected ->
+            applyAccess(selected)
+            if (client == null && browserLoginId != null && server.isNotBlank()) pollBrowserLogin()
             deliverPendingResult()
         }
+    }
+    private fun applyAccess(selected: CentralAccess.Selection) {
+        if (selected.generation < accessGeneration) return
+        val endpoint = selected.server
+        val sessionChanged = accessGeneration != selected.generation
+        accessGeneration = selected.generation
+        if (endpoint.isBlank()) {
+            server = ""; client = null; revision++; pending.clear(); screens?.close(); screens?.clearPrivateState(); body.removeAllViews(); collectionBar.visibility = View.GONE
+            title.text = MoteI18n.text("中央节点")
+            text(MoteI18n.text("先在连接设置选择中央节点，再登录中央管理页面。"))
+            connectionButton()
+            return
+        }
+        val changed = server != endpoint
+        val authenticated = client == null && selected.client != null
+        if (sessionChanged) { screens?.close(); screens?.clearPrivateState() }
+        server = endpoint; client = selected.client
+        if (changed || screens == null) screens = CentralScreens(this, body, File(noBackupFilesDir, "central-native/" + SourceRules.hash(endpoint)))
+        if (client == null) { screens?.clearPrivateState(); login() }
+        else if (changed || authenticated || sessionChanged || body.childCount == 0) navigate(page) else if (page == "ask") scheduleAskPoll()
     }
     private fun deliverPendingResult() {
         accessReady = true
         pendingResult?.let { (request, result, data) -> pendingResult = null; activityResult(request, result, data) }
     }
-    fun pause() { resumed = false; accessReady = false; handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); screens?.close() }
+    fun pause() { resumed = false; foregroundRevision++; accessReady = false; pending.clear(); handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); screens?.close() }
     fun close() { pause(); pending.clear() }
     fun saveState(state: Bundle) {
         state.putLong("browserDurationMs", browserDurationMs)
@@ -177,9 +199,9 @@ internal class CentralContent(
     private fun more() {
         val titles = MoteNavigation.groups.map { MoteI18n.text(it.titleKey) } + MoteI18n.text("退出登录")
         MoteDialogBuilder(this).setTitle(MoteI18n.text("中央资料库")).setItems(titles.toTypedArray()) { _, index ->
-            if (index == MoteNavigation.groups.size) work(MoteI18n.text("正在退出登录…"), { runCatching { session.signOut() } }) { result ->
-                client = null; revision++; screens?.clearPrivateState(); login()
-                result.exceptionOrNull()?.let { notice(it.message ?: MoteI18n.text("操作失败")) }
+            if (index == MoteNavigation.groups.size) {
+                val expected = accessGeneration
+                work(MoteI18n.text("正在退出登录…"), { session.signOut(expected); CentralAccess.resolve(this) }, allowSessionChange = true) { selected -> applyAccess(selected) }
             }
             else {
                 val group = MoteNavigation.groups[index]
@@ -229,22 +251,24 @@ internal class CentralContent(
         button(MoteI18n.text("登录并继续"), true) {
             val token = credential.text.toString().trim()
             val duration = listOf(0L, 86400000L, 7 * 86400000L, 30 * 86400000L)[lifetime.selectedItemPosition]
-            val origin = server; val generation = session.generation; credential.setText("")
+            val origin = server; val generation = accessGeneration; credential.setText("")
             work(MoteI18n.text("正在验证令牌…"), {
+                check(session.generation == generation) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
                 require(token.length in 32..8192 && token.none { it == '\r' || it == '\n' }) { MoteI18n.text("请输入有效的中央所有者令牌") }
                 CentralClient(origin, token).get("/api/configuration")
                 val config = Settings(this).read()
                 val grant = CentralClient(origin, token).post("/api/login/session", org.json.JSONObject().put("serverUrl", origin).put("deviceId", Settings(this).deviceId)
                     .put("deviceName", config.deviceName).put("platform", "android").put("durationMs", duration))
                 session.signIn(origin, grant.getString("token"), duration, generation)
-            }) { client = session.client(origin); navigate(page) }
+                CentralAccess.resolve(this)
+            }, allowSessionChange = true) { selected -> applyAccess(selected) }
         }
         button(MoteI18n.text("使用浏览器登录")) { beginBrowserLogin(listOf(0L, 86400000L, 604800000L, 2592000000L)[lifetime.selectedItemPosition]) }
         connectionButton()
     }
 
     private fun beginBrowserLogin(durationMs: Long) {
-        val origin = server; val expected = session.generation
+        val origin = server; val expected = accessGeneration
         val verifier = android.util.Base64.encodeToString(ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING)
         work(MoteI18n.text("正在连接中央节点…"), {
             val config = Settings(this).read()
@@ -252,24 +276,26 @@ internal class CentralContent(
                 .put("deviceName", config.deviceName).put("platform", "android").put("challenge", SourceRules.hash(verifier)).put("durationMs", durationMs))
             check(code == 200); requireNotNull(value).getString("id")
         }) { id ->
-            check(origin == server && expected == session.generation)
+            check(origin == server && expected == accessGeneration)
             browserLoginId = id; browserVerifier = verifier; browserGeneration = expected; browserDurationMs = durationMs
             startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(origin + "/#/ask?loginRequest=" + id)))
         }
     }
     private fun pollBrowserLogin() {
-        val id = browserLoginId ?: return; val verifier = browserVerifier ?: return; val origin = server
+        val id = browserLoginId ?: return; val verifier = browserVerifier ?: return; val origin = server; val expected = browserGeneration
         work(MoteI18n.text("正在验证令牌…"), {
+            check(session.generation == expected) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
             val (code, value) = HttpJson.post(origin + "/api/login/poll", org.json.JSONObject().put("id", id).put("verifier", verifier))
             if (code !in 200..299) { browserLoginId = null; browserVerifier = null; error(MoteI18n.text("登录会话已变更，请重新打开中央页面。")) }
             val result = requireNotNull(value)
             if (result.optBoolean("ready")) {
-                session.signIn(origin, result.getString("token"), browserDurationMs, browserGeneration)
+                session.signIn(origin, result.getString("token"), browserDurationMs, expected)
                 runCatching { HttpJson.post(origin + "/api/login/ack", org.json.JSONObject().put("id", id).put("verifier", verifier)) }
             }
-            result.optBoolean("ready")
-        }) { ready ->
-            if (ready) { browserLoginId = null; browserVerifier = null; client = session.client(origin); navigate(page) }
+            if (result.optBoolean("ready")) CentralAccess.resolve(this)
+            else { check(session.generation == expected) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }; null }
+        }, allowSessionChange = true) { selected ->
+            if (selected != null) { browserLoginId = null; browserVerifier = null; applyAccess(selected) }
             else if (resumed) handler.postDelayed({ if (resumed && browserLoginId == id) pollBrowserLogin() }, 1500)
         }
     }
@@ -293,52 +319,72 @@ internal class CentralContent(
     }.also { parent.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(12) }) }
     internal fun notice(message: String) { status.text = message }
     internal fun enterDetail() { backButton.visibility = View.VISIBLE; revision++; pending.clear(); handler.removeCallbacks(refreshRun) }
-    internal fun requestFailure(error: Throwable, generation: Long = session.generation) {
+    internal fun requestFailure(error: Throwable, generation: Long = accessGeneration) {
         status.text = error.message ?: MoteI18n.text("操作失败")
         if (client == null && body.childCount == 0) {
             button(MoteI18n.text("重试")) { recreate() }; connectionButton()
         }
         if (error is CentralFailure && error.status == 401 && error.code in setOf("", "unauthorized")) {
-            work(MoteI18n.text("正在退出登录…"), { session.signOut(generation) }) { client = null; screens?.clearPrivateState(); login(); notice(error.message.orEmpty()) }
-        } else if (Settings(this).read().connectionToken().isBlank()) {
-            client = null; screens?.clearPrivateState(); login(); notice(error.message.orEmpty())
-        } else if (page == "ask") scheduleAskPoll(5000)
+            work(MoteI18n.text("正在退出登录…"), { session.signOut(generation); CentralAccess.resolve(this) }, allowSessionChange = true) { selected -> applyAccess(selected); notice(error.message.orEmpty()) }
+        } else {
+            handler.removeCallbacks(refreshLogin); handler.post(refreshLogin)
+            if (page == "ask") scheduleAskPoll(5000)
+        }
     }
     internal fun scheduleAskPoll(delay: Long = 1500) { handler.removeCallbacks(refreshRun); if (resumed && page == "ask") handler.postDelayed(refreshRun, delay) }
-    internal fun <T> work(label: String, job: (UiTask.Progress) -> T, done: (T) -> Unit) {
-        if (task.busy) { pending.add(revision to { work(label, job, done) }); return }
+    private data class WorkValue<T>(val value: T, val generation: Long)
+    internal fun <T> work(label: String, job: (UiTask.Progress) -> T, done: (T) -> Unit) = work(label, job, false, done)
+    private fun <T> work(label: String, job: (UiTask.Progress) -> T, allowSessionChange: Boolean, done: (T) -> Unit) {
+        if (task.busy) { pending.add(revision to { work(label, job, allowSessionChange, done) }); return }
         val version = revision
-        val generation = session.generation
+        val foreground = foregroundRevision
+        val generation = accessGeneration
+        val origin = server
+        val authenticated = client != null
         val inputs = mutableListOf<View>()
         fun lock(view: View) {
             if (view is EditText || view is Spinner || view is CheckBox) { if (view.isEnabled) { inputs.add(view); view.isEnabled = false } }
             if (view is android.view.ViewGroup) for (i in 0 until view.childCount) lock(view.getChildAt(i))
         }; lock(body)
-        task.start(label, { status.text = it }, job) { result ->
+        task.start(label, { if (foreground == foregroundRevision && resumed) status.text = it }, { progress ->
+            val before = CentralAccess.resolve(this)
+            check(allowSessionChange || generation < 0 || before.generation == generation) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+            check(allowSessionChange || !authenticated || before.client != null && before.server == origin) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+            val value = job(progress)
+            val after = CentralAccess.resolve(this)
+            check(allowSessionChange || after.generation == before.generation) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+            check(allowSessionChange || !authenticated || after.client != null && after.server == origin) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+            check(value !is CentralAccess.Selection || value.generation == after.generation && (value.client == null) == (after.client == null)) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+            WorkValue(value, after.generation)
+        }) { result ->
             inputs.forEach { it.isEnabled = true }
-            if (version == revision) {
-                result.onSuccess { status.text = ""; runCatching { done(it) }.onFailure { error -> status.text = error.message ?: MoteI18n.text("操作失败") } }
+            if (version == revision && foreground == foregroundRevision && resumed && !isDestroyed && !isFinishing) {
+                result.onSuccess { completed ->
+                    if (completed.generation >= accessGeneration) {
+                        status.text = ""; runCatching { done(completed.value) }.onFailure { error -> status.text = error.message ?: MoteI18n.text("操作失败") }
+                    }
+                }
                     .onFailure { error ->
                         requestFailure(error, generation)
                     }
             }
-            while (pending.isNotEmpty()) { val next = pending.removeFirst(); if (next.first == revision) { next.second.invoke(); break } }
+            while (resumed && pending.isNotEmpty()) { val next = pending.removeFirst(); if (next.first == revision) { next.second.invoke(); break } }
         }
     }
     internal fun pickAttachment(chat: Boolean = false) {
-        pickerOrigin = server; pickerChat = chat; pickerGeneration = session.generation
+        pickerOrigin = server; pickerChat = chat; pickerGeneration = accessGeneration
         val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(if (chat) "image/*" else "*/*")
             .putExtra(Intent.EXTRA_MIME_TYPES, if (chat) arrayOf("image/png", "image/jpeg", "image/webp") else arrayOf("image/*", "audio/*"))
             .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         @Suppress("DEPRECATION") activity.startActivityForResult(picker, 71)
     }
     internal fun saveCentral(path: String, name: String, mime: String) {
-        downloadPath = path; downloadOrigin = server; downloadGeneration = session.generation
+        downloadPath = path; downloadOrigin = server; downloadGeneration = accessGeneration
         @Suppress("DEPRECATION") activity.startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
             .setType(mime).putExtra(Intent.EXTRA_TITLE, name), 72)
     }
     internal fun pickImport() {
-        pickerOrigin = server; pickerGeneration = session.generation
+        pickerOrigin = server; pickerGeneration = accessGeneration
         pickerInstruction = screens?.importInstruction.orEmpty()
         @Suppress("DEPRECATION") activity.startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
             .setType("*/*"), 73)
@@ -359,7 +405,7 @@ internal class CentralContent(
         if (request !in setOf(71, 73)) return
         val origin = pickerOrigin; val chat = pickerChat; pickerOrigin = null
         val uris = data.clipData?.let { clip -> (0 until clip.itemCount).map { clip.getItemAt(it).uri } } ?: listOfNotNull(data.data)
-        if (origin != server || client == null || pickerGeneration != session.generation) { notice(MoteI18n.text("登录会话已变更，请重新打开中央页面。")); return }
+        if (origin != server || client == null || pickerGeneration != accessGeneration) { notice(MoteI18n.text("登录会话已变更，请重新打开中央页面。")); return }
         if (request == 73) uris.firstOrNull()?.let { screens?.importInstruction = pickerInstruction; screens?.importFile(it) }
         else screens?.addAttachments(uris, chat)
     }

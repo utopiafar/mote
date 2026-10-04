@@ -22,6 +22,14 @@ function transport(saved: SourceItem[], fail?: (item: SourceItem) => boolean): S
 }
 async function create() { const engine = new SourceSync(join(directory, 'state.json')); await engine.initialize(); return engine; }
 describe('source revisions and durable acknowledgments', () => {
+  it('accepts a known 17MiB snapshot recovery and rejects unknown versions or over-limit bytes',async()=>{
+    const engine=await create(),sent:SourceItem[]=[],large={...item,metadata:{version:1 as const,file:{sizeBytes:17*1024*1024+19}}};
+    await engine.stage(scan([large]),false,'2026-10-05T00:00:00Z');await engine.flush(source,transport(sent));
+    const recovery={externalId:item.externalId,revision:sent[0].revision,captureId:'00000000-0000-4000-8000-000000000035',sha256:'a'.repeat(64),sizeBytes:17*1024*1024+19,observedAt:sent[0].observedAt};
+    expect(await engine.requestSnapshotRecovery([{...recovery,externalId:'unknown'},{...recovery,revision:'changed'},{...recovery,sizeBytes:512*1024*1024+1}])).toBe(0);
+    expect(await engine.requestSnapshotRecovery([recovery])).toBe(1);
+    const reopened=await create();expect((sourceState(join(directory,'state.json')) as any).snapshotRecoveries).toBeDefined();expect(reopened.status().pending).toBe(0);
+  });
   it('rejects pre-v3 saved source JSON and preserves all pending originals',async()=>{
     const path=join(directory,'state.json'),raw=JSON.stringify({version:2,known:{},pendingRealtime:[{...item,revision:'old'}],pendingHistory:[]});await writeFile(path,raw);
     await expect(new SourceSync(path).initialize()).rejects.toThrow('Unsupported desktop storage format');expect(await readFile(path,'utf8')).toBe(raw);

@@ -6,7 +6,7 @@ import {ModelSelector} from './ModelSelector';
 import { moteText } from '@mote/shared/i18n';
 import {QueryProgress,type QueryRun} from './QueryProgress';
 import {uploadChatImage} from './note-attachments';
-import React,{useEffect, useRef, useState, type ReactNode} from 'react';
+import React,{useEffect, useLayoutEffect, useRef, useState, type ReactNode} from 'react';
 import {AlertCircle, ArrowRight, ArrowUp, ImagePlus, LoaderCircle, MessageSquare, Monitor, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Trash2, X} from 'lucide-react';
 import {ApiError,dateTime, errorMessage, type Answer, type Api, type Device, type Range} from './api';
 
@@ -29,7 +29,8 @@ interface ConversationTurn {
   evidenceDeleted?: boolean;
   attachments?: {id:string;name:string;mimeType:string}[];
 }
-interface Conversation extends ConversationSummary {turns: ConversationTurn[];nextCursor?:string|null}
+interface Conversation extends ConversationSummary {turns: ConversationTurn[];revision?:number;nextCursor?:string|null}
+interface OlderTurns {api:Api;id:string;revision?:number;turns:ConversationTurn[];nextCursor:string|null}
 interface HistoryPage {items: ConversationSummary[]; nextCursor?: string | null}
 
 export function Conversations({api, configured, devices, renderAnswer}: {
@@ -40,9 +41,14 @@ export function Conversations({api, configured, devices, renderAnswer}: {
 }) {
   const [modelProfileId,setModelProfileId]=useState(''),[modelOverride,setModelOverride]=useState('');
   const [items, setItems] = useState<ConversationSummary[]>([]), [cursor, setCursor] = useState<string | null>(null);
-  const [selectedId,setSelectedId]=useState<string|null>(null),[olderTurns,setOlderTurns]=useState<ConversationTurn[]>([]),[olderCursor,setOlderCursor]=useState<string|null|undefined>();
+  const [selectedId,setSelectedId]=useState<string|null>(null),[older,setOlder]=useState<OlderTurns|null>(null),[pageRevoked,setPageRevoked]=useState(false);
   const detail=useResource<Conversation>(api,selectedId?`/api/conversations/${encodeURIComponent(selectedId)}`:null);
-  const conversation=detail.data?{...detail.data,turns:[...olderTurns.filter(turn=>!detail.data!.turns.some(next=>next.id===turn.id)),...detail.data.turns],...(olderCursor!==undefined?{nextCursor:olderCursor}:{})}:null;
+  const currentOlder=older?.api===api&&older.id===detail.data?.id&&older.revision===detail.data?.revision?older:null;
+  // A newer revision can withdraw prior evidence. Never merge copied pages from
+  // an older revision while their replacement is still being fetched.
+  const conversation=detail.data&&!pageRevoked?{...detail.data,turns:[...(currentOlder?.turns??[]).filter(turn=>!detail.data!.turns.some(next=>next.id===turn.id)),...detail.data.turns],...(currentOlder?{nextCursor:currentOlder.nextCursor}:{})}:null;
+  const latestDetail=useRef({api,selectedId,data:detail.data,error:detail.error});
+  latestDetail.current={api,selectedId,data:detail.data,error:detail.error};
   const [question, setQuestion] = useState('');
   const [attachments,setAttachments]=useState<{id:string;name:string;mimeType:string}[]>([]);
   const [uploading,setUploading]=useState(false);
@@ -72,8 +78,13 @@ export function Conversations({api, configured, devices, renderAnswer}: {
     } catch (e) { if (!controller.signal.aborted) setHistoryError(errorMessage(e)); }
     finally { if (!controller.signal.aborted) setLoadingPage(false); }
   }
-  useEffect(()=>{selectionMade.current=false;setSelectedId(null);setOlderTurns([]);setOlderCursor(undefined);setItems([]);setCursor(null);setRun(null);setBusy(false);setQuestion('');setAttachments([]);setUploading(false);setPendingQuestion('');setError('');setHistoryError('');setLoadingOlder(false);setLoadingPage(false);
+  useEffect(()=>{selectionMade.current=false;setSelectedId(null);setOlder(null);setItems([]);setCursor(null);setRun(null);setBusy(false);setQuestion('');setAttachments([]);setUploading(false);setPendingQuestion('');setError('');setHistoryError('');setLoadingOlder(false);setLoadingPage(false);
     return()=>{operation.current?.abort();attachmentRequest.current?.abort();historyRequest.current?.abort();olderRequest.current?.abort();};},[api]);
+  const detailRevoked=detail.error instanceof ApiError&&[401,403,404,410].includes(detail.error.status);
+  useLayoutEffect(()=>{
+    olderRequest.current?.abort();olderRequest.current=null;setLoadingOlder(false);setOlder(null);setPageRevoked(false);
+  },[api,selectedId,detail.data?.revision,detailRevoked]);
+  useEffect(()=>{if(detail.data&&!detail.loading&&!detail.error)setPageRevoked(false);},[detail.data,detail.loading,detail.error]);
   useEffect(()=>{if(history.data){setItems(history.data.items);setCursor(history.data.nextCursor??null);}else if(history.error){setItems([]);setCursor(null);}},[history.data,history.error]);
   useEffect(()=>{if(!recentRuns.data||selectionMade.current)return;selectionMade.current=true;
     const recent=recentRuns.data.items.find(r=>r.status==='running')??recentRuns.data.items[0];
@@ -112,19 +123,23 @@ export function Conversations({api, configured, devices, renderAnswer}: {
     if (busy) return;
     selectionMade.current=true;operation.current?.abort();operation.current=null;olderRequest.current?.abort();setLoadingOlder(false);
     setRun(null);setPollError('');setError('');setConfirmDelete(false);setQuestion('');setAttachments([]);setPendingQuestion('');
-    setOlderTurns([]);setOlderCursor(undefined);setSelectedId(id);
+    setOlder(null);setSelectedId(id);
   }
   async function loadOlderTurns(){
     if(!conversation?.nextCursor||opening)return;
-    const id=conversation.id,cursor=conversation.nextCursor,controller=new AbortController();olderRequest.current?.abort();olderRequest.current=controller;setLoadingOlder(true);
+    const id=conversation.id,revision=conversation.revision,cursor=conversation.nextCursor,controller=new AbortController();olderRequest.current?.abort();olderRequest.current=controller;setLoadingOlder(true);setError('');
+    const current=()=>!controller.signal.aborted&&olderRequest.current===controller&&latestDetail.current.api===api&&latestDetail.current.selectedId===id&&latestDetail.current.data?.id===id&&latestDetail.current.data.revision===revision&&!latestDetail.current.error;
     try{const page=await readResource<Conversation>(api,`/api/conversations/${encodeURIComponent(id)}?cursor=${encodeURIComponent(cursor)}`,controller.signal);
-      if(!controller.signal.aborted){setOlderTurns(current=>[...page.turns.filter(turn=>!current.some(old=>old.id===turn.id)),...current]);setOlderCursor(page.nextCursor??null);}
-    }catch(e){if(!controller.signal.aborted)setError(errorMessage(e));}finally{if(!controller.signal.aborted)setLoadingOlder(false);}
+      if(!current())return;
+      if(page.id!==id||page.revision!==revision){setOlder(null);setPageRevoked(true);detail.refresh();return;}
+      setOlder(previous=>{const turns=previous?.api===api&&previous.id===id&&previous.revision===revision?previous.turns:[];return {api,id,revision,turns:[...page.turns.filter(turn=>!turns.some(old=>old.id===turn.id)),...turns],nextCursor:page.nextCursor??null};});
+    }catch(e){if(current()){if(e instanceof ApiError&&[401,403,404,410].includes(e.status)){setOlder(null);setPageRevoked(true);detail.refresh();}setError(errorMessage(e));}}
+    finally{if(olderRequest.current===controller){olderRequest.current=null;setLoadingOlder(false);}}
   }
   function startNew() {
     if (busy) return;
     selectionMade.current=true;operation.current?.abort();operation.current=null;olderRequest.current?.abort();setLoadingOlder(false);
-    setRun(null);setPollError('');setSelectedId(null);setOlderTurns([]);setOlderCursor(undefined);setQuestion('');setAttachments([]);setPendingQuestion('');setError('');setConfirmDelete(false);
+    setRun(null);setPollError('');setSelectedId(null);setOlder(null);setQuestion('');setAttachments([]);setPendingQuestion('');setError('');setConfirmDelete(false);
   }
   function retry(question: string) {
     if (busy || opening) return;
@@ -181,7 +196,7 @@ export function Conversations({api, configured, devices, renderAnswer}: {
     try {
       await api.request(`/api/conversations/${encodeURIComponent(conversation.id)}`, {method: 'DELETE', signal: controller.signal});
       if (controller.signal.aborted) return;
-      setRun(null);setSelectedId(null);setOlderTurns([]);setOlderCursor(undefined);resources(api).invalidate(key=>key.startsWith('/api/conversations')||key.startsWith('/api/query-runs'));setQuestion(''); setConfirmDelete(false); void loadHistory();
+      setRun(null);setSelectedId(null);setOlder(null);resources(api).invalidate(key=>key.startsWith('/api/conversations')||key.startsWith('/api/query-runs'));setQuestion(''); setConfirmDelete(false); void loadHistory();
     } catch (e) {if (!controller.signal.aborted) setError(errorMessage(e));}
     finally {if (!controller.signal.aborted) {setBusy(false); operation.current = null;}}
   }

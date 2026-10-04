@@ -3,7 +3,6 @@ import { connectionToken, sourceConnectionBinding, validSourceBinding } from './
 import {uiRulesSchema,uiModeSchema} from '@mote/shared';
 import { uploadGateConfig } from './upload-gate';
 import { moteText } from '@mote/shared/i18n';
-import { DEFAULT_REVIEW_POLICY } from '@mote/local-inference';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { readFile, mkdir, open, rename, chmod } from 'node:fs/promises';
@@ -20,9 +19,8 @@ export function defaultConfig(): Config {
     syncMode: 'batch', syncIntervalMinutes: 1, syncBatchSize: 100, packedUpload:true,
     intervalMs: 15000, maxQueueBytes: 512 * 1024 * 1024, maxQueueEvents: 10000, captureStorageDirectory: '', notificationCollectionEnabled: false,
     defaultCollection: 'content', appCollectionRules: {}, masks: [], idlePauseSeconds: 300,
-    privacyModelUrl: '', openAtLogin: false,
+    openAtLogin: false,
     metadataEnabled: true, diagnosticsEnabled: false, diagnosticIntervalSeconds: 60, imageDedupeMode: 'off', jpegQuality: 75, captureMaxSide: 1600, pauseOnBattery: false, batteryPauseBelowPct: 0,
-    nsfwEnabled: false, reviewPolicy: DEFAULT_REVIEW_POLICY, reviewMaxTokens: 256, reviewMaxSide: 512, nsfwThreads: 2, nsfwTimeoutMs: 60000, nsfwSource: 'auto', nsfwCustomUrl: '',
   };
 }
 
@@ -56,18 +54,11 @@ export function validateServerUrl(value: unknown): string {
   return url.origin;
 }
 
-export function validateLocalModelUrl(value: unknown): string {
-  if (value === '') return '';
-  if (typeof value !== 'string') throw new Error(moteText("本地隐私模型地址不正确"));
-  let url: URL;
-  try { url = new URL(value); } catch { throw new Error(moteText("本地隐私模型需要完整 HTTP 地址")); }
-  if (!['http:', 'https:'].includes(url.protocol) || !isLoopback(url.hostname) || url.username || url.password || url.search || url.hash) throw new Error(moteText("隐私审查模型仅允许 localhost / 127.0.0.1 / ::1，且不能含账号或查询参数"));
-  return url.toString();
-}
-
+const retiredModelKeys = ['privacyModelUrl','nsfwEnabled','reviewPolicy','reviewMaxTokens','reviewMaxSide','nsfwThreads','nsfwTimeoutMs','nsfwSource','nsfwCustomUrl'];
 export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents = 0, confirmedUnboundBacklog = false): Config {
   if(['excludedAppIds','localContentEncryption','ocrEnabled','ocrOnlyWhileCharging'].some(key=>input&&Object.hasOwn(input,key)))throw Error(RESET_REQUIRED);
   if ((current.credentialScope!==undefined&&current.credentialScope!=='owner')||(input?.credentialScope!==undefined&&input.credentialScope!=='owner'))throw Error(RESET_REQUIRED);
+  if (retiredModelKeys.some(key => input && Object.hasOwn(input,key))) throw new Error(moteText("配置包含已停用的本机模型设置，请移除后导入"));
   if (!input || typeof input !== 'object') throw new Error(moteText("配置格式不正确"));
   if (typeof input.deviceName !== 'string' || !input.deviceName.trim() || input.deviceName.length > 128) throw new Error(moteText("设备名需为 1–128 字符"));
   if (input.metadataEnabled !== undefined && typeof input.metadataEnabled !== 'boolean') throw new Error(moteText("设备元数据开关值无效"));
@@ -99,15 +90,10 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
     defaultCollection: normalizeCollectionMode(input.defaultCollection ?? current.defaultCollection),
     appCollectionRules: normalizeAppCollectionRules(input.appCollectionRules ?? current.appCollectionRules),
     masks: validateRectangles(input.masks),
-    privacyModelUrl: validateLocalModelUrl(input.privacyModelUrl), openAtLogin: input.openAtLogin,
+    openAtLogin: input.openAtLogin,
     metadataEnabled: input.metadataEnabled ?? current.metadataEnabled, diagnosticsEnabled: input.diagnosticsEnabled, diagnosticIntervalSeconds: integer(input.diagnosticIntervalSeconds, 15, 3600, moteText("诊断采样秒数")),
     jpegQuality: integer(input.jpegQuality, 40, 95, moteText("JPEG 质量")), captureMaxSide: integer(input.captureMaxSide, 640, 2560, moteText("截图最大边长")),
     pauseOnBattery: input.pauseOnBattery, batteryPauseBelowPct: integer(input.batteryPauseBelowPct, 0, 95, moteText("低电量暂停百分比")),
-    // Paused visual-review settings belong to its optional model controls.
-    nsfwEnabled: false, reviewPolicy: current.reviewPolicy,
-    reviewMaxTokens: current.reviewMaxTokens, reviewMaxSide: current.reviewMaxSide,
-    nsfwThreads: current.nsfwThreads, nsfwTimeoutMs: current.nsfwTimeoutMs,
-    nsfwSource: current.nsfwSource, nsfwCustomUrl: current.nsfwCustomUrl,
     token: input.token === undefined ? current.token : input.token.trim() || undefined,
   };
   if (config.serverUrl === current.serverUrl && config.token === current.token && current.credentialScope === 'owner') config.credentialScope = current.credentialScope;
@@ -142,12 +128,14 @@ export class ConfigStore {
       // Never accept a plaintext token from a tampered or legacy configuration.
       const required=Object.keys(defaultConfig());
       if(required.some(key=>!Object.hasOwn(stored.config,key))||['excludedAppIds','localContentEncryption','ocrEnabled','ocrOnlyWhileCharging'].some(key=>Object.hasOwn(stored.config,key)))throw Error(RESET_REQUIRED);
-      const current: Config = { ...stored.config, token: undefined };
+      const current: Config = { ...Object.fromEntries(Object.entries(stored.config).filter(([key]) => !retiredModelKeys.includes(key))), token: undefined } as Config;
       if (stored.encryptedToken) {
         if (!this.secrets.available()) throw new Error(moteText("系统密钥存储不可用，无法解密令牌"));
         current.token = this.secrets.decrypt(Buffer.from(stored.encryptedToken, 'base64'));
       }
-      return updateConfig(current, { ...current, token: current.token });
+      const normalized = updateConfig(current, { ...current, token: current.token });
+      if (retiredModelKeys.some(key => Object.hasOwn(stored.config,key))) await this.save(normalized);
+      return normalized;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return this.bootstrap();
       if(error instanceof Error&&error.message===RESET_REQUIRED)throw error;

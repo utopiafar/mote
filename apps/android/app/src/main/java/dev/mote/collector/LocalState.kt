@@ -42,9 +42,9 @@ data class LocalStateSnapshot(
         MoteI18n.text("当前图片 {0} 张 · 采集区 {1} 张 · 待决定区 {2} 张", totalImages, active.images, quarantine.images) +
             if (error != null) MoteI18n.text("（上次结果，暂无法更新）") else ""
     fun storageLabel(): String = if (active == null || quarantine == null) imageLabel() else
-        imageLabel() + MoteI18n.text("\n采集区 {0} 条记录 · 待同步 {1} 条 · 等待 OCR {2} 张", active.records, active.pending, active.awaitingOcr) +
+        imageLabel() + MoteI18n.text("\n采集区 {0} 条记录 · 待同步 {1} 条 · 需处理 {2} 条", active.records, active.pending, active.blocked) +
             MoteI18n.text("\n采集区图片文件 {0} 个 · 待决定区图片文件 {1} 个", active.imageFiles, quarantine.imageFiles) +
-            MoteI18n.text("\n本机队列 {0} · OCR 预留 {1} · 待决定区 {2}", size(active.diskBytes), size(active.reservedOcrBytes), size(quarantine.diskBytes))
+            MoteI18n.text("\n本机队列 {0} · 待决定区 {1}", size(active.diskBytes), size(quarantine.diskBytes))
     private fun size(bytes: Long) = "%.1f MiB".format(bytes / 1048576.0)
 }
 
@@ -66,17 +66,21 @@ class LocalStateRepository private constructor(context: Context) {
                 val previous = mutable.value
                 val next = try {
                     check(!QueueStorage.recovering) { MoteI18n.text("正在恢复本机存储") }
+                    // Settings.save may hold Settings.class while checking queued work.
+                    // Resolve handles before taking the queue lock to keep that lock order.
+                    val activeQueue = app.queue()
+                    val quarantineQueue = BulkDedupeStore(app).quarantine()
                     // Index upgrades inspect a few records per lock acquisition; starting capture
                     // must not wait behind scanning the entire library.
                     if (previous.active == null || previous.error != null || previous.revision.storage != LocalStateChanges.revisions.value.storage) {
-                        app.queue().prepareIndex()
-                        BulkDedupeStore(app).quarantine().prepareIndex()
+                        activeQueue.prepareIndex()
+                        quarantineQueue.prepareIndex()
                     }
                     val (revision, active, pending) = DurableQueue.exclusive {
                         val version = LocalStateChanges.revisions.value
                         if (previous.error == null && previous.active != null && previous.quarantine != null && previous.revision.storage == version.storage)
                             Triple(version, previous.active, previous.quarantine)
-                        else Triple(version, app.queue().inventory(), BulkDedupeStore(app).quarantine().inventory())
+                        else Triple(version, activeQueue.inventory(), quarantineQueue.inventory())
                     }
                     val settings = Settings(app)
                     LocalStateSnapshot(revision, active, pending, app.localSources().pendingSync().count,

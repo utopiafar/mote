@@ -51,7 +51,7 @@ class LibraryResponsivenessInstrumentedTest {
         try {
             settings.save(original.copy(server = "", token = "", syncMode = "manual", mode = "accessibility", screenCollectionEnabled = true,
                 diagnosticsEnabled = false, notificationCollectionEnabled = false, deviceEventCollectionEnabled = false, mediaCollectionEnabled = false,
-                appCollectionRules = AppCollectionRules.CONTENT_DEFAULT, nsfw = original.nsfw.copy(enabled = false)))
+                appCollectionRules = AppCollectionRules.CONTENT_DEFAULT))
             block(settings, ids)
         } finally {
             QueueStorage.maintaining = false

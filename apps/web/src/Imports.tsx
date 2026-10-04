@@ -10,6 +10,7 @@ import {ApiError,type Api,bytes,dateTime,errorMessage} from './api';
 import {ArchivedFileButton} from './ArchivedFileButton';
 import {MemoryProgress,useMemoryJob} from './MemoryProgress';
 import {useResource} from './useResource';
+import {FileProcessingControls} from './FileProcessingControls';
 
 export const importStatusLabels:Record<ImportStatus,string>={queued:moteText("原件已归档"),preparing:moteText("正在理解资料"),awaiting_confirmation:moteText("等待你确认"),importing:moteText("正在保存记录"),completed:moteText("记录已保存"),failed:moteText("需要重试"),cancelled:moteText("已取消"),needs_configuration:moteText("等待配置模型"),unsupported:moteText("原件已保留")};
 const intakeWorking=(job:ImportJob)=>['queued','preparing','importing'].includes(job.status);
@@ -102,10 +103,6 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
     finally{if(current()){jobs.delete(id);setPending(new Set(jobs));}}
   }
   function action(path:string,body?:unknown,confirmJobId?:string){if(!active)return;void mutate(active.id,signal=>api.request<ImportJob>(path,{method:'POST',...(body?{body:JSON.stringify(body)}:{}),signal}),confirmJobId);}
-  function controlMedia(captureId:string,operation:'retry'|'cancel'){
-    if(!active)return;const id=active.id;
-    void mutate(id,async signal=>{await api.request('/api/files/'+encodeURIComponent(captureId)+'/'+operation,{method:'POST',body:'{}',signal});signal.throwIfAborted();return api.request<ImportJob>('/api/imports/'+encodeURIComponent(id),{signal});});
-  }
   function controlMemory(action:'retry'|'pause'|'resume'|'cancel'){if(!memoryJob||!active)return;void mutate(active.id,async signal=>{await api.request('/api/memory-jobs/'+encodeURIComponent(memoryJob.id)+'/'+action,{method:'POST',signal});},undefined,reloadMemory);}
   function remove(){
     if(!active||deleteConfirm!==active.id)return;const id=active.id;
@@ -158,7 +155,7 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
         {Boolean(active.media?.length)&&<section className="import-originals"><h3>{moteText('媒体处理进度')}</h3><p className="muted">{moteText('已接入不等于已可搜索。内容提取、搜索和记忆整理分别显示状态。')}</p>{active.media!.map(item=><article className="preview-sample" key={item.fileId}>
           <strong>{active.files.find(file=>file.id===item.fileId)?.relativePath}</strong><p>{mediaStates[item.processing?.state??'']??moteText('原件已归档')} · {item.searchable?moteText('已有可搜索片段'):moteText('尚无可搜索片段')} · {memoryStates[item.memory?.state??'']??moteText('等待内容就绪')}</p>
           {item.processing?.error&&<p role="status">{item.processing.error}</p>}
-          {item.captureId&&<div className="source-toolbar"><button className="button subtle" onClick={()=>onOpen(formatEvidenceRef('capture',item.captureId!))}>{moteText('查看记录')}</button>{['failed','blocked','cancelled'].includes(item.processing?.state??'')&&<button className="button" disabled={busy} onClick={()=>void controlMedia(item.captureId!,'retry')}>{moteText('重试处理')}</button>}{['waiting','running'].includes(item.processing?.state??'')&&<button className="button subtle" disabled={busy} onClick={()=>void controlMedia(item.captureId!,'cancel')}>{moteText('取消处理')}</button>}</div>}
+          {item.captureId&&<><div className="source-toolbar"><button className="button subtle" onClick={()=>onOpen(formatEvidenceRef('capture',item.captureId!))}>{moteText('查看记录')}</button></div><FileProcessingControls key={item.captureId} api={api} id={item.captureId} mode="import" disabled={busy} onChanged={()=>{setRevision(value=>value+1);onChanged();}}/></>}
         </article>)}</section>}
         {memoryJob&&<MemoryProgress job={memoryJob} onRetry={()=>void controlMemory('retry')} onAction={action=>void controlMemory(action)} onView={onMemories} busy={busy}/>}{memoryError&&<p className="error-banner" role="alert">{moteText("记忆进度暂时无法更新：")}{memoryError}</p>}
         {active.status==='completed'&&!active.memoryJobId&&<button className="button" onClick={onMemories}>{moteText("前往记忆")}</button>}

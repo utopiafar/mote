@@ -128,14 +128,18 @@ internal object CentralSession {
     @Synchronized fun get(context: Context): UnifiedCentralSession = store ?: UnifiedCentralSession(context.applicationContext).also { store = it }
 }
 internal object CentralAccess {
-    data class Selection(val server: String, val client: CentralClient?)
+    data class Selection(val server: String, val client: CentralClient?, val generation: Long)
     fun resolve(context: Context): Selection {
-        val settings = Settings(context); val config = settings.read(); val endpoint = config.server.trim().trimEnd('/')
         val session = CentralSession.get(context)
-        if (endpoint.isBlank() || settings.centralEndpoint().trim().trimEnd('/') != endpoint) { session.select(""); return Selection("", null) }
-        PrivacyRules.validateEndpoint(endpoint, config.debugHttp, BuildConfig.DEBUG)
-        session.select(endpoint)
-        return Selection(endpoint, session.client(endpoint))
+        return synchronized(session) {
+            val settings = Settings(context); val config = settings.read(); val endpoint = config.server.trim().trimEnd('/')
+            if (endpoint.isBlank() || settings.centralEndpoint().trim().trimEnd('/') != endpoint) {
+                session.select(""); return@synchronized Selection("", null, session.generation)
+            }
+            PrivacyRules.validateEndpoint(endpoint, config.debugHttp, BuildConfig.DEBUG)
+            session.select(endpoint)
+            Selection(endpoint, session.client(endpoint), session.generation)
+        }
     }
     fun requireClient(context: Context) = resolve(context).client ?: error(MoteI18n.text("请先登录中央节点，各页面会共用这次登录。"))
 }

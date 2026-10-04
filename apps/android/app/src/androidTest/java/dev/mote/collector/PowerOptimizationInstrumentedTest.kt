@@ -47,8 +47,8 @@ class PowerOptimizationInstrumentedTest {
         val diagnostics = context.getSharedPreferences("numeric_diagnostics", 0)
         val firstCalls = diagnostics.getLong("ocrCalls", 0)
         val firstSkips = diagnostics.getLong("earlySkippedFrames", 0)
-        val config = original.copy(server = "", token = "", syncMode = "manual", nsfw = original.nsfw.copy(enabled = false),
-            localReviewUrl = "", masks = "", excludedPackages = "", appCollectionRules = AppCollectionRules.CONTENT_DEFAULT,
+        val config = original.copy(server = "", token = "", syncMode = "manual",
+            masks = "", excludedPackages = "", appCollectionRules = AppCollectionRules.CONTENT_DEFAULT,
             diagnosticsEnabled = true, imageDedupeMode = "exact", imageDedupeDiagnosticsEnabled = false, ocrMode = "chinese", ocrAppModes = "{}")
         val pipeline = CapturePipeline(context) { }
         try {
@@ -76,7 +76,10 @@ class PowerOptimizationInstrumentedTest {
             assertEquals(firstCalls, diagnostics.getLong("ocrCalls", 0))
         } finally {
             settings.enabled = false; pipeline.close()
-            context.queue().peekBatch().forEach { context.queue().acknowledge(it.getString("id")) }
+            // A transport batch deliberately excludes pixels after a metadata window.
+            // Delete every generated row so later fixture guards see a clean queue.
+            val generated = context.queue().capturePage("2000-01-01T00:00:00Z", "2100-01-01T00:00:00Z", limit = 60, source = "").getJSONArray("items")
+            (0 until generated.length()).forEach { context.queue().acknowledge(generated.getJSONObject(it).getString("id")) }
             settings.save(original)
         }
     }
@@ -93,20 +96,28 @@ class PowerOptimizationInstrumentedTest {
     }
     @Test fun repeatedVisibleNotificationStatePublishesAndCancelsOnlyOnce() {
         val settings = Settings(context); val original = settings.read()
+        fun drainDiagnostics() {
+            val worker = Notifications::class.java.getDeclaredField("diagnosticsWorker").apply { isAccessible = true }.get(null) as java.util.concurrent.ExecutorService
+            worker.submit {}.get(10, java.util.concurrent.TimeUnit.SECONDS)
+        }
         try {
             settings.save(original.copy(diagnosticsEnabled = true))
             instrumentation.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
             Notifications.clear(context); Notifications.clearMedia(context); Notifications.showEvents(context, null)
+            drainDiagnostics()
             val counters = context.getSharedPreferences("numeric_diagnostics", 0)
             val publishes = counters.getLong("notificationPublishes", 0)
             repeat(20) { Notifications.show(context, "generated notification fixture") }
+            drainDiagnostics()
             assertEquals(publishes + 1, counters.getLong("notificationPublishes", 0))
             Notifications.show(context, "generated state changed")
+            drainDiagnostics()
             assertEquals(publishes + 2, counters.getLong("notificationPublishes", 0))
             val cancels = counters.getLong("notificationCancels", 0)
             repeat(20) { Notifications.clear(context) }
+            drainDiagnostics()
             assertEquals(cancels + 1, counters.getLong("notificationCancels", 0))
-        } finally { Notifications.clear(context); settings.save(original) }
+        } finally { Notifications.clear(context); drainDiagnostics(); settings.save(original) }
     }
     @Test fun freshDefaultIsStickyAndMissingRulesNeverInferContentFromOtherPreferences() {
         val prefs = context.getSharedPreferences("power-default-fixture", 0)
@@ -125,15 +136,51 @@ class PowerOptimizationInstrumentedTest {
     private fun views(view: View): List<View> = buildList {
         add(view); if (view is ViewGroup) for (i in 0 until view.childCount) addAll(views(view.getChildAt(i)))
     }
-    @Test fun ocrModeControlDisplaysSavedSelection() {
+    @Test fun pageOnlyForegroundSamplesPreserveMeasuredTimeWithoutImagesOrOcr() {
+        val settings = Settings(context); val original = settings.read()
+        val config = original.copy(server = "", token = "", syncMode = "manual", intervalSeconds = 15,
+            metadataEnabled = false, masks = "", excludedPackages = "", uiPageMode = "page_only",
+            appCollectionRules = AppCollectionRules.CONTENT_DEFAULT, chargingOnly = false, batteryPauseBelowPct = 0, uploadedRetentionDays = 0)
+        val pipeline = CapturePipeline(context) { }
+        val queued = mutableListOf<String>()
+        try {
+            settings.save(config); settings.enabled = true
+            val windows = WindowSnapshot(setOf("generated.page.fixture"), "generated.page.fixture", true)
+            repeat(3) { index ->
+                pipeline.submitPageActivity(windows, config, java.time.Instant.parse("2026-10-05T00:00:00Z").plusSeconds(index * 15L).toString(), index * 15_000L)
+                awaitPipeline(pipeline)
+            }
+            val page = context.queue().capturePage("2026-10-05T00:00:00Z", "2026-10-05T01:00:00Z", limit = 60, source = "activity").getJSONArray("items")
+            val records = (0 until page.length()).map { context.queue().capture(page.getJSONObject(it).getString("id"))!! }.filter { it.optString("appId") == "generated.page.fixture" }
+            queued.addAll(records.map { it.getString("id") }); assertTrue(records.isNotEmpty())
+            val samples = records.flatMap { record -> record.optJSONObject("stateSeries")?.getJSONArray("samples")?.let { series -> (0 until series.length()).map(series::getJSONObject) } ?: listOf(record) }
+            assertEquals(listOf(0L, 15_000L, 15_000L), samples.map { it.getLong("durationMs") }.sorted())
+            for (record in records) { assertEquals("activity", record.getString("source")); assertFalse(record.has("ocrText")); assertFalse(record.has("imageMime")); assertNull(context.queue().image(record.getString("id"))) }
+            pipeline.pause("generated pause")
+            pipeline.submitPageActivity(WindowSnapshot(setOf("generated.page.afterpause"), "generated.page.afterpause", true), config, "2026-10-05T00:01:00Z", 60_000); awaitPipeline(pipeline)
+            val after = context.queue().capturePage("2026-10-05T00:01:00Z", "2026-10-05T00:02:00Z", limit = 60, source = "activity").getJSONArray("items")
+            assertEquals(1, after.length()); queued.add(after.getJSONObject(0).getString("id")); assertEquals(0L, after.getJSONObject(0).getLong("durationMs"))
+        } finally { settings.enabled = false; pipeline.close(); queued.distinct().forEach { context.queue().acknowledge(it) }; settings.save(original) }
+    }
+    @Test fun retiredStoredModelControlsAreRemovedWithoutChangingPrivacyConsent() {
+        val settings = Settings(context); val original = settings.read(); val prefs = context.getSharedPreferences("mote", 0)
+        try {
+            val config = original.copy(uploadGate = UploadGateConfig(blockedText = "generated literal", failureAction = "hold"))
+            settings.save(config)
+            prefs.edit().putBoolean("nsfwEnabled", true).putString("qwenPolicy", "retired generated policy").putString("localReview", "http://127.0.0.1:1/review").commit()
+            val current = Settings(context).read(); assertEquals(config, current)
+            for (key in listOf("nsfwEnabled", "qwenPolicy", "localReview")) assertFalse(prefs.contains(key))
+        } finally { settings.save(original) }
+    }
+    @Test fun privacyReviewEngineControlDisplaysSavedSelection() {
         val settings = Settings(context); val original = settings.read()
         try {
             settings.save(original.copy(ocrMode = "dual"))
             ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.onActivity { activity ->
                     views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == "本机" }.performClick()
-                    views(activity.window.decorView).single { it.isShown && it.tag == "menu:采集与存储" }.performClick()
-                    views(activity.window.decorView).single { it.isShown && it.tag == "menu:图像与文字识别" }.performClick()
+                    views(activity.window.decorView).single { it.isShown && it.tag == "menu:隐私与应用规则" }.performClick()
+                    views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.text.toString() == "高级：截图文字隐私审查" }.performClick()
                     val selectors = views(activity.window.decorView).filterIsInstance<Spinner>()
                     val ocr = selectors.single { it.adapter.count == 3 && it.adapter.getItem(0).toString() == "中文与拉丁文（单引擎）" }
                     assertEquals(2, ocr.selectedItemPosition)

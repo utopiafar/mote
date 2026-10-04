@@ -55,6 +55,7 @@ object QueueArchive {
                             require(UUID.fromString(id).toString() == id)
                             val text = String(bytes, Charsets.UTF_8); StrictJson.validate(text)
                             val event = JSONObject(text); require(event.getString("id") == id); LocalDataFormat.validateEvent(event)
+                            validateAuthorization(event)
                             File(directory, "$id.event").writeBytes(bytes); count++
                         }
                         else -> {
@@ -81,6 +82,12 @@ object QueueArchive {
         } catch (error: Exception) { directory.deleteRecursively(); throw error }
     }
     private fun wire(event: JSONObject) = JSONObject(event.toString()).apply { keys().asSequence().filter { it.startsWith("_") }.toList().forEach(::remove) }
+    private fun validateAuthorization(event: JSONObject) {
+        // A malformed local authorization marker must never become an unheld record.
+        for (key in listOf("_reviewHeld", "_uploadConflict", "_archiveMissing", "_uploaded")) {
+            require(!event.has(key) || event.get(key) is Boolean) { MoteI18n.text("备份中的上传授权状态无效") }
+        }
+    }
     /** Same IDs merge idempotently; a conflicting existing record is rejected before any writes. */
     fun restore(prepared: Prepared, target: DurableQueue, origin: String, maxBytes: Long): Int = DurableQueue.exclusive {
         require(prepared.origin == origin) { MoteI18n.text("备份属于不同中央节点；请连接原节点后导入") }
@@ -88,6 +95,7 @@ object QueueArchive {
         val ids = source.dedupeIds()
         for (id in ids) {
             val archived = requireNotNull(source.archiveRecord(id)).first
+            validateAuthorization(archived)
             require(!archived.has("_archiveOrigin") || archived.getString("_archiveOrigin") == origin.trim().trimEnd('/')) { MoteI18n.text("备份属于不同中央节点；请连接原节点后导入") }
             val existing = target.archiveRecord(id) ?: continue
             val incoming = requireNotNull(source.archiveRecord(id))
@@ -96,7 +104,9 @@ object QueueArchive {
         var count = 0
         for (id in ids) {
             val (event, bytes) = requireNotNull(source.archiveRecord(id))
-            if (target.capture(id) == null) { target.enqueue(wire(event), bytes, maxBytes); count++ }
+            val held = event.optBoolean("_reviewHeld")
+            if (target.capture(id) == null) { target.enqueue(wire(event), bytes, maxBytes, reviewHeld = held); count++ }
+            else if (held) target.holdForReview(id)
         }
         count
     }

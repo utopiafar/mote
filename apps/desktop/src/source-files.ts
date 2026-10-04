@@ -39,7 +39,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
     if (!options.extensions.includes(extension)) { result.skipped++; return 'ok'; }
     const externalId = 'file:' + sourceHash([candidate.fileId, candidate.birthtimeMs].join(':'));
     result.seen.push(externalId); locations?.set(externalId, candidate.path);
-    const maximumFile=options.retention==='archive'&&accessMarkerPath?512*1024*1024:16*1024*1024;
+    const maximumFile=accessMarkerPath?512*1024*1024:16*1024*1024;
     if (options.retention !== 'reference' && candidate.size > maximumFile) { result.skipped++; return 'ok'; }
     if (result.items.length >= 2000 || options.retention !== 'reference' && result.items.length>0 && totalBytes + candidate.size > 16 * 1024 * 1024) return 'stop';
     const unchanged = prior && prior.syncState === 'synced' && prior.contentQuickHash === candidate.quickHash && prior.fileId === candidate.fileId && prior.size === candidate.size && prior.mtimeMs === candidate.mtimeMs && prior.ctimeMs === candidate.ctimeMs && prior.quickHash === candidate.quickHash && prior.contentHash;
@@ -59,7 +59,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
         const stable = await handle.stat();
         if (stable.mtimeMs !== before.mtimeMs || stable.ctimeMs !== before.ctimeMs || stable.size !== before.size) throw new Error('file is still changing');
       }
-      let text = ''; let original: Buffer | undefined; let parsed: import('./content-adapter').ContentReadResult = { text: '', parser: 'none', status: 'ready' as 'ready'|'pending'|'unsupported'|'blocked' };
+      let text = ''; let original: Buffer | undefined; let parsed: {text:string;parser:string;status:'ready'|'pending'|'unsupported'|'blocked';coverage?:'full'|'partial'|'none';warnings?:string[]} = { text: '', parser: 'none', status: 'ready' };
       const mime=fileMime(candidate.path);
       if(options.retention==='snapshot'&&options.redactLiterals.length&&!mime.startsWith('text/')){
         parsed={text:'',parser:'privacy-blocked',status:'blocked',warnings:['Source literal masks cannot be safely applied to this format; input was not uploaded.']};
@@ -78,7 +78,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
       totalBytes += before.size;
       const accessedAtMs = accessMarkers.record(externalId, before, after), fileMetadata = observedFileMetadata(before, accessedAtMs);
       const contentHash = spooled?.sha256??(original ? fileDigest(original) : candidate.quickHash);
-      result.items.push({ externalId, title: redactSourceText(basename(candidate.path), options.redactLiterals), text, uri: options.redactLiterals.length ? undefined : pathToFileURL(candidate.path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention === 'archive' ? 'original' : options.retention, document: { fileIndex: { version: 1, fileId: externalId, contentVersion: contentHash, mode: options.retention === 'archive' ? 'archive' : options.retention === 'reference' ? 'catalog' : 'index', coverage: !text ? 'none' : text.length === parsed.text.length && parsed.coverage !== 'partial' ? 'full' : 'lightweight', parser: parsed.parser, ...(parsed.warnings?.length?{warnings:parsed.warnings.map(warning=>redactSourceText(warning,options.redactLiterals))}:{}), status: options.retention === 'archive' ? 'pending' : parsed.status, totalCharacters: parsed.text.length, offset: 0, length: text.length, ...(options.retention==='snapshot'?{maxIndexCharacters:options.indexMode==='lightweight'?8000:100000}:{}), allowRead: options.retention === 'snapshot' && Boolean(options.allowRead) } }, ...(spooled && options.retention !== 'reference'?{localOriginal:spooled}:{}), ...(options.retention !== 'reference' && original ? { localOriginalBase64: original.toString('base64') } : {}), metadata: { version: 1, file: fileMetadata }, mimeType: fileMime(candidate.path), deleted: false });
+      result.items.push({ externalId, title: redactSourceText(basename(candidate.path), options.redactLiterals), text, uri: options.redactLiterals.length ? undefined : pathToFileURL(candidate.path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention === 'archive' ? 'original' : options.retention, document: { fileIndex: { version: 1, fileId: externalId, contentVersion: contentHash, mode: options.retention === 'archive' ? 'archive' : options.retention === 'reference' ? 'catalog' : 'index', coverage: !text ? 'none' : text.length === parsed.text.length && parsed.coverage !== 'partial' ? 'full' : 'lightweight', parser: parsed.parser, ...(parsed.warnings?.length?{warnings:parsed.warnings.map(warning=>redactSourceText(warning,options.redactLiterals))}:{}), status: options.retention === 'archive' ? 'pending' : parsed.status, totalCharacters: parsed.text.length, offset: 0, length: text.length, ...(options.retention==='snapshot'?{maxIndexCharacters:100000}:{}), allowRead: options.retention === 'snapshot' && Boolean(options.allowRead) } }, ...(spooled && options.retention !== 'reference'?{localOriginal:spooled}:{}), ...(options.retention !== 'reference' && original ? { localOriginalBase64: original.toString('base64') } : {}), metadata: { version: 1, file: fileMetadata }, mimeType: fileMime(candidate.path), deleted: false });
       catalog?.markContent(candidate.relativePath, contentHash, 'synced');
       return 'ok';
     } catch { if(spooled)await rm(spooled.directory,{force:true,recursive:true});result.skipped++; result.complete = false; catalog?.markContent(candidate.relativePath, undefined, 'error'); return 'ok'; }
@@ -94,7 +94,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
       if (outcome === 'stop') { catalog.rollbackSavepoint(); result.complete = false; break; }
     }
     while (examined < 2000 && result.complete) {
-      catalog.savepoint(); const batch = await catalog.next(Math.min(options.retention === 'archive' ? 1 : 256, 2000 - examined, 2000 - result.items.length), options.excludedPaths);
+      catalog.savepoint(); const batch = await catalog.next(Math.min(options.retention !== 'reference' ? 1 : 256, 2000 - examined, 2000 - result.items.length), options.excludedPaths);
       if (!batch.candidates.length) { result.complete = batch.complete; result.skipped += batch.skipped; break; }
       examined += batch.candidates.length;
       const itemsBeforeBatch = result.items.length, seenBeforeBatch = result.seen.length;

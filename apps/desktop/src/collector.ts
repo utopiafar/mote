@@ -9,7 +9,7 @@ import type { DiagnosticsRecorder } from '@mote/diagnostics';
 import { randomUUID, createHash } from 'node:crypto';
 import { desktopCapturer, nativeImage, powerMonitor, screen, systemPreferences } from 'electron';
 import type { NativeImage } from 'electron';
-import type { Config, Status, Platform, CaptureEvent, NsfwGate } from './contracts';
+import type { Config, Status, Platform, CaptureEvent } from './contracts';
 import { imageFeatures, duplicateImage, type FrameFeatures } from './image-dedupe';
 import { decideSync } from './sync-policy';
 import type { LocalSourceManager } from './source-manager';
@@ -51,7 +51,7 @@ export class Collector {
   private lastUploadAt?: string;
   private archiveAcknowledgment?:{at:string;origin:string};
   private lastUploadError?: string;
-  constructor(config: Config, private readonly queue: DurableQueue, private readonly helperPath: string, private readonly tokenStorageAvailable: () => boolean, private readonly onChange: (status: Status) => void, private readonly nsfw?: NsfwGate, private readonly diagnostics?: DiagnosticsRecorder, private readonly events?: EventJournal, private readonly sources?: LocalSourceManager) {
+  constructor(config: Config, private readonly queue: DurableQueue, private readonly helperPath: string, private readonly tokenStorageAvailable: () => boolean, private readonly onChange: (status: Status) => void, private readonly diagnostics?: DiagnosticsRecorder, private readonly events?: EventJournal, private readonly sources?: LocalSourceManager) {
     this.config = config; this.lastUploadAt = this.queue.stats().lastUploadAt; this.archiveAcknowledgment=this.queue.stats().archiveAcknowledgment;
     powerMonitor.on('lock-screen', () => { this.locked = true; this.pause(moteText("屏幕已锁定，暂停采集")); });
     powerMonitor.on('unlock-screen', () => { this.locked = false; this.lastSample = undefined; });
@@ -71,7 +71,7 @@ export class Collector {
       queueDepth: queue.depth, queueBytes: queue.bytes, nextRetryAt: queue.nextRetryAt,
       lastCaptureAt: this.lastCaptureAt, lastUploadAt: this.lastUploadAt, lastUploadError: this.lastUploadError,
       screenPermission: currentPlatform === 'macos' ? systemPreferences.getMediaAccessStatus('screen') : 'unsupported',
-      platform: currentPlatform, encryptedTokenStorage: this.tokenStorageAvailable(), config: publicConfig(this.config), nsfw: this.nsfw?.status(), diagnostics: this.diagnostics?.status(),
+      platform: currentPlatform, encryptedTokenStorage: this.tokenStorageAvailable(), config: publicConfig(this.config), diagnostics: this.diagnostics?.status(),
     };
   }
   private pendingSync() {
@@ -129,7 +129,6 @@ export class Collector {
     if (this.running || this.capturing) throw new Error(moteText("请先停止采集，再修改配置"));
     this.uploadAbort?.abort();
 
-    this.nsfw?.reset();
     this.config = config;
     this.queue.setLimits(config);
     this.publish();
@@ -148,7 +147,7 @@ export class Collector {
   stop(): void {
     this.stopIntent++;
     void this.events?.record('CAPTURE', 'STOPPED');
-    this.running = false; this.lastSample = undefined; this.captureAbort?.abort(); this.nsfw?.reset();
+    this.running = false; this.lastSample = undefined; this.captureAbort?.abort();
     if (this.timer) clearTimeout(this.timer);
     this.state = 'stopped'; this.message = moteText("采集已停止；本地记录保留，同步按设置独立运行"); this.publish(); void this.sendHeartbeat();
   }
@@ -161,7 +160,7 @@ export class Collector {
     if (this.timer) clearTimeout(this.timer);
     if (this.uploadTimer) clearInterval(this.uploadTimer);
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-    this.nsfw?.close(); void this.diagnostics?.close();
+    void this.diagnostics?.close();
   }
   requireRecovery(message: string): void { this.shutdown(); this.state = 'error'; this.message = message; this.publish(); }
   async retry(): Promise<void> { if (this.closed || this.connectionHeld) return; await this.queue.resetRetries(); await this.upload(true); await this.sendHeartbeat(true); }
@@ -196,8 +195,10 @@ export class Collector {
         const observedAt=new Date().toISOString();
         for(const text of visible){
           const key=createHash('sha256').update(text).digest('hex');if(this.notificationSeen.has(key))continue;
+          const gate=await reviewUpload(uploadGateConfig(cfg.uploadGate),async()=>text);
+          if(gate==='drop')continue;
           if(!valid())return;
-          await this.queue.enqueue({id:randomUUID(),deviceId:cfg.deviceId,deviceName:cfg.deviceName,platform:currentPlatform,capturedAt:observedAt,durationMs:0,source:'notification',appId:'com.apple.notificationcenterui',appName:'Notification Center',ocrText:'',privacy:{excluded:false,redacted:false,mode:'none',collection:'content'},metadata:{version:1,observedAt,collector:{method:'accessibility'},observation:{sessionId:this.notificationSession,elapsedRealtimeMs:Math.floor(process.uptime()*1000)},notification:{action:'posted',notificationKey:key,postedAt:observedAt,ongoing:false,groupSummary:false,text}}});
+          await this.queue.enqueue({id:randomUUID(),deviceId:cfg.deviceId,deviceName:cfg.deviceName,platform:currentPlatform,capturedAt:observedAt,durationMs:0,source:'notification',appId:'com.apple.notificationcenterui',appName:'Notification Center',ocrText:'',privacy:{excluded:false,redacted:false,mode:'none',collection:'content',reason:gate==='hold'?'upload review pending':'explicit notification text rules'},metadata:{version:1,observedAt,collector:{method:'accessibility'},observation:{sessionId:this.notificationSession,elapsedRealtimeMs:Math.floor(process.uptime()*1000)},notification:{action:'posted',notificationKey:key,postedAt:observedAt,ongoing:false,groupSummary:false,text}}},undefined,gate==='hold');
           this.notificationSeen.add(key);
         }
         if(this.notificationSeen.size>1000)this.notificationSeen=new Set([...this.notificationSeen].slice(-500));
@@ -243,11 +244,13 @@ export class Collector {
             const at=new Date(startedAt).toISOString();
             await this.queue.enqueue({id:randomUUID(),deviceId:cfg.deviceId,deviceName:cfg.deviceName,platform:currentPlatform,capturedAt:at,durationMs:0,appId:foreground.appId,appName:foreground.appName,source:'ui_page',ocrText:uiPageText(page),privacy:{excluded:false,redacted:true,mode:'local',collection:'content'},metadata:{version:1,observedAt:at,collector:{method:'accessibility'},uiPage:page}});
             this.lastCaptureAt=at;this.state='capturing';this.message=moteText("页面内容已保存");this.publish();void this.upload();
-            if(cfg.uiPageMode==='page_only'||cfg.uiPageMode==='ui_preferred'&&page.status==='ok'){this.lastSample=undefined;return;}
+            if(cfg.uiPageMode==='page_only'||cfg.uiPageMode==='ui_preferred'&&page.status==='ok'){
+              await this.recordPageActivity(cfg,foreground,startedAt,abort.signal);return;
+            }
           }
         }
       }
-      if(cfg.uiPageMode==='page_only'){this.lastSample=undefined;return;}
+      if(cfg.uiPageMode==='page_only'){await this.recordPageActivity(cfg,foreground,startedAt,abort.signal);return;}
       if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
         this.lastSample = undefined; this.state = 'permission_required'; this.message = moteText("完整内容需要屏幕录制授权；仅活动应用仍可采样。请打开系统权限设置");
         void this.events?.record('CAPTURE', 'PERMISSION'); this.publish(); return;
@@ -328,6 +331,27 @@ export class Collector {
       this.capturing = false;
       if (this.running) this.timer = setTimeout(() => void this.capture(), Math.max(1000, cfg.intervalMs - (Date.now() - startedAt)));
     }
+  }
+  /** A page can replace pixels, but not the independent foreground observation. */
+  private async recordPageActivity(cfg: Config, foreground: Awaited<ReturnType<typeof foregroundApplication>>, observedAt: number, signal: AbortSignal): Promise<void> {
+    const metadata = cfg.metadataEnabled ? await collectRecordMetadata(this.helperPath, this.queue.directory, undefined, signal) : undefined;
+    const after = await foregroundApplication(this.helperPath, signal);
+    if (!this.running || signal.aborted || this.locked || this.sleeping || metadata?.state?.screenLocked ||
+      after.appId !== foreground.appId || after.pid !== foreground.pid || collectionForApp(after.appId, cfg) !== 'content') {
+      this.lastSample = undefined; return;
+    }
+    const durationMs = this.lastSample?.appId === foreground.appId && this.lastSample.collection === 'content'
+      ? Math.max(0, Math.min(cfg.intervalMs, observedAt - this.lastSample.at)) : 0;
+    const event: CaptureEvent = {
+      id: randomUUID(), deviceId: cfg.deviceId, deviceName: cfg.deviceName, platform: currentPlatform,
+      capturedAt: new Date(observedAt).toISOString(), durationMs, appId: foreground.appId, appName: foreground.appName,
+      source: 'activity', privacy: { excluded: false, redacted: false, mode: 'none', collection: 'activity' },
+      ...(metadata ? { metadata: { ...metadata, capture: { intervalMs: cfg.intervalMs } } } : {}),
+    };
+    await this.queue.enqueue(event);
+    this.lastSample = { at: observedAt, appId: foreground.appId, collection: 'content' };
+    this.lastCaptureAt = event.capturedAt; this.state = 'capturing';
+    this.message = moteText("页面采样的应用活动已保存"); this.publish(); void this.upload();
   }
   async upload(explicit = false): Promise<void> {
     if (this.closed || this.uploading || this.connectionHeld) return;

@@ -27,7 +27,7 @@ export function affectedResource(key:string,ids:Set<string>,reset:boolean){
  if(/^\/api\/(memories|memory-jobs)(\/|$)/.test(path))return changed('memory','import','capture','file','workflow');
  if(/^\/api\/(files|capture-browser|captures|source-items|sources)(\/|$)/.test(path))return changed('file','capture','import');
  if(/^\/api\/(materials|agent-view\/materials|agent-view\/material-read)(\/|$)/.test(path))return changed('material-index','workflow','file','capture','import');
- if(/^\/api\/(query-runs|conversations)(\/|$)/.test(path))return changed('query');
+ if(/^\/api\/(query-runs|conversations)(\/|$)/.test(path))return changed('query','capture','file','import');
  if(/^\/api\/(insights|insight-runs)(\/|$)/.test(path))return changed('insight','workflow');
  if(/^\/api\/actions(\/|$)/.test(path))return reset||[...ids].some(id=>id.startsWith('workflow:actions:'));
  if(/^\/api\/imports(\/|$)/.test(path))return changed('import');

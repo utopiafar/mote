@@ -22,15 +22,6 @@ export interface Config {
   appCollectionRules: Record<string, CollectionMode>;
   masks: Rectangle[];
   idlePauseSeconds: number;
-  privacyModelUrl: string;
-  nsfwEnabled: boolean;
-  reviewPolicy: string;
-  reviewMaxTokens: number;
-  reviewMaxSide: number;
-  nsfwThreads: number;
-  nsfwTimeoutMs: number;
-  nsfwSource: 'auto' | 'mirror' | 'official' | 'custom';
-  nsfwCustomUrl: string;
   metadataEnabled: boolean;
   diagnosticsEnabled: boolean;
   diagnosticIntervalSeconds: number;
@@ -88,32 +79,7 @@ export interface Status {
   platform: Platform;
   encryptedTokenStorage: boolean;
   config: PublicConfig;
-  nsfw?: NsfwStatus;
   diagnostics?: import('@mote/diagnostics').DiagnosticsStatus;
-}
-export interface NsfwStatus {
-  modelState: 'missing' | 'partial' | 'ready' | 'invalid' | 'verifying';
-  modelId: string;
-  modelRevision: string;
-  bytes: number;
-  totalBytes: number;
-  downloading: boolean;
-  downloadSource?: string;
-  inferenceState: 'stopped' | 'starting' | 'ready' | 'running' | 'error';
-  lastAllowed?: boolean;
-  lastLoadMs?: number;
-  lastVisionMs?: number;
-  lastTokens?: number;
-  lastDurationMs?: number;
-  blockedCount: number;
-  error?: string;
-}
-export interface NsfwGate {
-  status(): NsfwStatus;
-  ensureReady(): Promise<void>;
-  classify(image: { bitmap: Buffer; width: number; height: number }, config: Config, signal?: AbortSignal): Promise<{ allow: boolean; blocked: boolean }>;
-  reset(): void;
-  close(): void;
 }
 export interface DesktopApi {
   ask(command: import('./ask').AskCommand, input?: {id?: string; question?: string; conversationId?: string; token?: string; cursor?: string; durationMs?: number}): Promise<unknown>;
@@ -177,9 +143,5 @@ export interface DesktopApi {
   exportMetadata(): Promise<void>;
   exportQueue(): Promise<{ canceled: boolean; path?: string }>;
   importQueue(): Promise<{ canceled: boolean; imported?: number }>;
-  downloadModel(): Promise<Status>;
-  cancelModelDownload(): Promise<Status>;
-  importModel(): Promise<{ canceled: boolean }>;
-  reloadModel(): Promise<Status>;
   onStatus(callback: (status: Status) => void): () => void;
 }

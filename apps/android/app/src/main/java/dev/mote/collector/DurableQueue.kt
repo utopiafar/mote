@@ -152,7 +152,13 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             count++
         }; count
     }
-    /** Explicit retry revalidates through the existing immutable-ID endpoint; never clears deletion blocks. */
+    /** Importing a held record never grants upload permission to an existing copy. */
+    fun holdForReview(id: String) = guarded {
+        val file = File(dir, "${UUID.fromString(id)}.event")
+        check(file.exists())
+        val event = read(file)
+        if (!event.optBoolean("_reviewHeld")) atomic(file, event.put("_uploadConflict", true).put("_reviewHeld", true).toString().toByteArray())
+    }
     fun retryConflict(id: String, maxBytes: Long): Boolean = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return@guarded false

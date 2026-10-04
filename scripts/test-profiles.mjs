@@ -45,7 +45,7 @@ try {
   assert.equal((await request(test, '/api/notes')).items.length, 0);
   assert.deepEqual(await request(dev, `/api/captures/${screen.id}/image`, { binary: true }), image);
   const source = join(directory, 'selected-files'); await mkdir(source); await writeFile(join(source, 'synthetic.md'), '合成文件同步资料：每个环境独立确认与重试。');
-  const importArgs = ['--', process.execPath, '--import', 'tsx', join(repository, 'scripts/import-files.ts'), '--root', source];
+  const importArgs = ['--', process.execPath, '--import', 'tsx', join(repository, 'scripts/import-files.ts'), '--root', source, '--allow-transient-upload'];
   for (const p of [dev, test]) {
     assert.match((await cli(home, p.profile, 'exec', importArgs)).stdout, /Received 1 changed/);
     assert.match((await cli(home, p.profile, 'exec', importArgs)).stdout, /Received 0 changed/);
@@ -60,7 +60,7 @@ try {
   await writeFile(join(source, 'explicit-env.md'), 'Synthetic explicit MOTE_ENV_FILE, without process MOTE_URL.');
   for (const p of [dev, test]) {
     const clean = Object.fromEntries(Object.keys(process.env).filter(key => key.startsWith('MOTE_')).map(key => [key, undefined]));
-    const imported = await command(process.execPath, ['--import', 'tsx', join(repository, 'scripts/import-files.ts'), '--root', source], { env: { ...clean, MOTE_ENV_FILE: p.envFile } });
+    const imported = await command(process.execPath, ['--import', 'tsx', join(repository, 'scripts/import-files.ts'), '--root', source, '--allow-transient-upload'], { env: { ...clean, MOTE_ENV_FILE: p.envFile } });
     assert.equal(imported.code, 0, imported.stderr); assert.match(imported.stdout, /Received 1 changed/);
     assert.equal((await request(p, '/api/captures?source=file')).items.length, 2);
   }
@@ -71,7 +71,8 @@ try {
   await cli(home, 'dev', 'stop');
   const snapshot = join(directory, 'snapshot'); await cli(home, 'dev', 'backup', ['--out', snapshot]);
   const entries = await readdir(snapshot); assert.deepEqual(entries.sort(), ['backup-manifest.json', 'blobs', 'files', 'mote.sqlite']);
-  const manifest = JSON.parse(await readFile(join(snapshot, 'backup-manifest.json'), 'utf8')); assert.equal(Object.keys(manifest.checksums).length, 2);
+  const manifest = JSON.parse(await readFile(join(snapshot, 'backup-manifest.json'), 'utf8'));
+  assert.ok(Object.hasOwn(manifest.checksums, 'mote.sqlite')); assert.ok(Object.keys(manifest.checksums).length >= 2, 'Backup includes the database and encrypted evidence; formal Material assets may add objects');
   const blob = Object.keys(manifest.checksums).find(name => name.startsWith('files/objects/') && name.endsWith('/0.aes'));
   assert.notDeepEqual(await readFile(join(snapshot, blob)), image, 'Encrypted stored blob must not become plaintext in backup');
   const restored = await initializeFixture(restoreHome, 'test', { dataKey: dev.env.MOTE_DATA_KEY }); profiles.push(restored);

@@ -13,6 +13,7 @@ import {fileAttachmentAvailable,fileAttachmentChildren,fileAttachmentParent} fro
 
 /** Organizers select declared source shapes, never infer a topic or user intent. */
 export interface MaterialOrganizerFile {
+  processingRequired?:boolean;
   providerTranscript?:boolean;
   objectHash?:string;
   attachments:{id:string;hash:string;mimeType:string;relativePath?:string}[];
@@ -73,6 +74,7 @@ const captureText=(record:CaptureRecord)=>{
     ...(record.stateSeries?{stateSeries:record.stateSeries}:{}),
     ...(record.metadata?.state?{state:record.metadata.state}:{}),
     ...(record.metadata?.deviceEvent?{deviceEvent:record.metadata.deviceEvent}:{}),
+    ...(record.metadata?.notification?{notification:record.metadata.notification}:{}),
     ...(media?{media:{status:media.status,observedAt:media.observedAt,sessions:media.sessions.map(session=>({
       appId:session.appId,appName:session.appName,playbackState:session.playbackState,
       appVisibility:session.appVisibility,playbackType:session.playbackType,
@@ -150,7 +152,7 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
     const attachedFiles=includeAttached?fileAttachmentChildren(store,captureId).flatMap(({record,fileId})=>{
       permit(record);const selected=file(record.id,false);return selected?[{fileId,record,file:selected}]:[];
     }):[];
-    return {providerTranscript,objectHash:original?.object_hash??undefined,...(attachedFiles.length?{attachedFiles}:{}),
+    return {processingRequired:!!original,providerTranscript,objectHash:original?.object_hash??undefined,...(attachedFiles.length?{attachedFiles}:{}),
       attachments:attachmentRows.slice(0,2000).map(row=>{
         const metadata=JSON.parse(row.json) as {mimeType?:string;relativePath?:string};
         return {id:row.id,hash:row.hash,mimeType:metadata.mimeType??'application/octet-stream',...(metadata.relativePath?{relativePath:metadata.relativePath}:{})};
@@ -238,7 +240,7 @@ const codingExternalId=(g:Record<string,string>)=>JSON.stringify([g.provider,g.p
 
 /** A source item keeps its own identity; a coding session is assembled separately. */
 const sourceItem:MaterialOrganizer={
-  id:'mote.source-item',version:'9',slot:'source-item',
+  id:'mote.source-item',version:'10',slot:'source-item',
   select:r=>r.provenance&&!r.provenance.document?.coding?{sourceId:r.provenance.sourceId,externalId:r.provenance.externalId}:undefined,
   identity:g=>materialId(g.sourceId,g.externalId),
   build(reader,g){
@@ -285,7 +287,7 @@ const sourceItem:MaterialOrganizer={
     if(file.providerTranscript&&chunks.length>=19991)body.limitations.add('recording_segment_limit');
     const artifact=chunks[0]?.artifact;
     let state:'complete'|'pending'|'partial'='complete',reason:string|undefined;
-    if(file.objectHash){
+    if(file.processingRequired){
       if(['waiting','running'].includes(job?.state??'waiting')){state='pending';reason='processing_pending';}
       else if(job?.state==='blocked'||job?.state==='failed'){state='partial';reason=`processing_${job.state}`;}
       else if(job?.state==='succeeded'&&!artifact){state='partial';reason='processed_body_missing';}
@@ -303,14 +305,14 @@ const sourceItem:MaterialOrganizer={
       {key:'source-body',blockIds:sourceBlocks,state:reference||!hasSourceBody?'unavailable':'ready',
         ...(reference?{reason:'original_body_not_collected'}:!hasSourceBody?{reason:'source_body_empty'}:{})},
       ...(file.objectHash?[{key:'original',blockIds:body.blocks.filter(b=>b.id==='original').map(b=>b.id),state:'ready' as const,revision:file.objectHash}]:[]),
-      ...(file.objectHash?[{key:'extracted-text',blockIds:extractedBlocks,state:['waiting','running'].includes(job?.state??'waiting')?'pending' as const:['blocked','failed'].includes(job?.state??'')?'failed' as const:file.providerTranscript&&body.limited?'unavailable' as const:chunks.length?'ready' as const:'unavailable' as const,...(job?.error?{reason:job.error}:{})}]:[]),
+      ...(file.processingRequired?[{key:'extracted-text',blockIds:extractedBlocks,state:['waiting','running'].includes(job?.state??'waiting')?'pending' as const:['blocked','failed','cancelled'].includes(job?.state??'')?'failed' as const:file.providerTranscript&&body.limited?'unavailable' as const:chunks.length?'ready' as const:'unavailable' as const,...(job?.error?{reason:job.error}:{})}]:[]),
       ...attachedArtifacts,
     ];
     const start=r.provenance?.calendar?.start??sourceContentTime(r),end=r.provenance?.calendar?.end??start;
     return {id:materialId(g.sourceId,g.externalId),kind:r.source==='file'?'mote.file':`mote.${r.source}`,schemaVersion:1,
       title:r.windowTitle||r.appName||r.source,origin:origin(g.sourceId,g.externalId,[r],{firstAt:iso(start),lastAt:iso(end)}),
       blocks:body.blocks,members:body.members,coverage:body.coverage(state,reason),artifacts,fidelity:body.fidelity('derived',limitations),
-      retention:{original:!!file.objectHash||attachments.length>0||!reference?'retained':'unavailable',policy:'keep'}};
+      retention:{original:!!file.objectHash||attachments.length>0||!file.processingRequired&&!reference?'retained':'unavailable',policy:'keep'}};
   },
 };
 
@@ -401,7 +403,7 @@ const stateSeries:MaterialOrganizer={
 };
 
 const authored:MaterialOrganizer={
-  id:'mote.authored-record',version:'2',slot:'authored-record',
+  id:'mote.authored-record',version:'3',slot:'authored-record',
   select:r=>r.provenance||['screen','ui_page','activity','media','device_event'].includes(r.source)?undefined:{deviceId:r.deviceId,captureId:r.id},
   identity:g=>materialId(sourceKey('authored',g.deviceId),g.captureId),
   build(reader,g){
@@ -411,7 +413,7 @@ const authored:MaterialOrganizer={
     const file=reader.file(r.id);if(!file)return;
     for(const attachment of file.attachments)body.asset(`attachment:${attachment.id}`,attachment.hash,attachment.mimeType,r.id,{fileId:attachment.id,...(attachment.relativePath?{relativePath:attachment.relativePath}:{})});
     if(file.attachmentsTruncated)body.limitations.add('attachment_limit');
-    return {id:materialId(sourceId,r.id),kind:`mote.${r.source}`,schemaVersion:1,title:r.windowTitle||r.appName||r.source,
+    return {id:materialId(sourceId,r.id),kind:`mote.${r.source}`,schemaVersion:1,title:r.windowTitle||r.metadata?.notification?.title?.slice(0,500)||r.appName||r.source,
       origin:origin(sourceId,r.id,[r]),blocks:body.blocks,members:body.members,coverage:body.coverage(),artifacts:[{key:'authored-record',state:'ready'}],fidelity:body.fidelity('derived',['metadata_projected']),retention:{original:'retained',policy:'keep'}};
   },
 };

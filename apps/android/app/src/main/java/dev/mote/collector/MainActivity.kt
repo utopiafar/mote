@@ -72,10 +72,10 @@ class MainActivity : MoteActivity() {
     private enum class Page(private val titleKey: String, val parent: String? = null) {
         OVERVIEW("今天"), LIBRARY("资料库"), ASK("问一问"), NOTES("随手记", "LIBRARY"), SOURCES("本机来源", "SETTINGS"), SETTINGS("本机"),
         CONNECTION("连接与同步", "SETTINGS"), CAPTURE("采集与存储", "SETTINGS"),
-        PROCESSING("图像与文字识别", "CAPTURE"), STORAGE("本机存储", "CAPTURE"),
+        PROCESSING("图像质量与去重", "CAPTURE"), STORAGE("本机存储", "CAPTURE"),
         PRIVACY("隐私与应用规则", "SETTINGS"), PERMISSIONS("权限与后台运行", "SETTINGS"),
         ABOUT("关于与更新", "SETTINGS"), DEVELOPER("开发者选项", "SETTINGS"),
-        DIAGNOSTICS("诊断与支持", "DEVELOPER"), MODEL("模型高级设置", "DEVELOPER")
+        DIAGNOSTICS("诊断与支持", "DEVELOPER")
     ;
         val title get() = MoteI18n.text(titleKey)
     }
@@ -91,7 +91,6 @@ class MainActivity : MoteActivity() {
     private lateinit var uiPageMode: Spinner
     private lateinit var uiPageRules: EditText
     private lateinit var masks: EditText
-    private lateinit var review: EditText
     private lateinit var syncMode: Spinner
     private lateinit var syncInterval: EditText
     private lateinit var syncBatch: EditText
@@ -126,18 +125,8 @@ class MainActivity : MoteActivity() {
     private lateinit var gateEnabled: CheckBox
     private lateinit var gateText: EditText
     private lateinit var gateFailure: Spinner
-    private lateinit var nsfwEnabled: CheckBox
-    private lateinit var nsfwPolicy: EditText
-    private lateinit var nsfwMaxTokens: EditText
-    private lateinit var nsfwMaxSide: EditText
-    private lateinit var nsfwThreads: EditText
-    private lateinit var nsfwTimeout: EditText
-    private lateinit var nsfwSource: Spinner
-    private lateinit var nsfwCustom: EditText
-    private lateinit var nsfwStatus: TextView
     private val permissionBadges = linkedMapOf<String, TextView>()
     private lateinit var projectionButton: Button
-    private val nsfwSources = listOf("auto", "mirror", "official", "custom")
     private var notePoll: Runnable? = null
     private val handler = Handler(Looper.getMainLooper())
     private val uiTask by lazy { UiTask(this) }
@@ -148,7 +137,7 @@ class MainActivity : MoteActivity() {
     private var localStateJob: kotlinx.coroutines.Job? = null
     private data class StatusSnapshot(val title: String, val action: String, val status: String, val sync: String,
         val totals: String, val technical: String, val connectionTitle: String, val connection: String,
-        val model: String, val media: String, val config: CollectorConfig?)
+        val media: String, val config: CollectorConfig?)
     private val refresh = object : Runnable {
         override fun run() { refreshStatus(); handler.postDelayed(this, 2000) }
     }
@@ -156,16 +145,18 @@ class MainActivity : MoteActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         if (Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { navigateBack() }
-        try { settings = Settings(this) } catch (error: Exception) {
-            setContentView(TextView(this).apply { text = error.message ?: MoteI18n.text(LocalDataFormat.RESET_MESSAGE); setPadding(dp(24), dp(24), dp(24), dp(24)) })
-            return
-        }
         centralState = savedInstanceState?.getBundle("centralContent")
         val retained = lastNonConfigurationInstance as? RetainedDraft
         val loading = moteDetailPage()
         val label = TextView(this).apply { text = MoteI18n.text("正在读取本机设置…") }; loading.addView(label); loading.addView(ProgressBar(this))
-        uiTask.start(MoteI18n.text("正在读取本机设置…"), { label.text = it }, { settings.read() }) { result ->
-            result.onSuccess { buildUi(it, savedInstanceState, retained); if (resumed) { updatePermissionStatuses(); refreshStatus() } }
+        uiTask.start(MoteI18n.text("正在读取本机设置…"), { label.text = it }, {
+            Settings(applicationContext).let { it to it.read() }
+        }) { result ->
+            result.onSuccess { (opened, config) ->
+                settings = opened
+                buildUi(config, savedInstanceState, retained)
+                if (resumed) resumeUi()
+            }
                 .onFailure { label.text = if (it.message == MoteI18n.text(LocalDataFormat.RESET_MESSAGE)) it.message else MoteI18n.text("设置无法读取，原数据保留。请退出后检查存储或重试。") }
         }
     }
@@ -363,7 +354,7 @@ class MainActivity : MoteActivity() {
         menu(MoteI18n.text("统计中心"), MoteI18n.text("按日期和文件类型查看空间占用"), "chart") { startActivity(Intent(this, StorageStatisticsActivity::class.java)) }
         menu(MoteI18n.text("采集与存储详情"), MoteI18n.text("查看累计结果、队列与使用空间"), "chart") { startActivity(Intent(this, ActivityStatsActivity::class.java)) }
         menu(MoteI18n.text("导入与导出"), MoteI18n.text("迁移配置、备份与恢复本机记录"), "folder") { startActivity(Intent(this, BackupActivity::class.java)) }
-        menu(MoteI18n.text("开发者选项"), MoteI18n.text("诊断、模型高级参数与构建信息"), "settings") { showPage(Page.DEVELOPER) }
+        menu(MoteI18n.text("开发者选项"), MoteI18n.text("诊断、采集排查与构建信息"), "settings") { showPage(Page.DEVELOPER) }
         menu(MoteI18n.text("资料库管理"), MoteI18n.text("模型、存储、处理任务与对外授权"), "settings") { openCentral("about") }
         content = owner
         text(MoteI18n.text("修改后请保存，再切换页面。"), 12, MoteUi.muted)
@@ -464,7 +455,7 @@ class MainActivity : MoteActivity() {
         page(Page.CAPTURE, MoteI18n.text("在记录密度、清晰度和耗电之间找到平衡"))
         section(MoteI18n.text("采集来源"))
         screenCollectionEnabled = check(MoteI18n.text("采集屏幕与前台应用活动"), config.screenCollectionEnabled)
-        notificationCollectionEnabled = check(MoteI18n.text("采集通知（正文、持续状态、更新与移除）"), config.notificationCollectionEnabled)
+        notificationCollectionEnabled = check(MoteI18n.text("采集通知（正文、持续状态与更新）"), config.notificationCollectionEnabled)
         deviceEventCollectionEnabled = check(MoteI18n.text("采集亮屏、熄屏与锁定 / 解锁事件"), config.deviceEventCollectionEnabled)
         help(MoteI18n.text("通知与设备事件说明"), MoteI18n.text("通知与设备事件可独立开启，通过系统通知服务观察，按同步策略上传。通知遵循应用规则：仅活动不读取正文，不记录会完全跳过。系统可能隐藏敏感内容；熄屏不等同于锁定。"))
         mediaCollectionEnabled = check(MoteI18n.text("采集媒体播放状态（需通知使用权）"), config.mediaCollectionEnabled)
@@ -487,7 +478,7 @@ class MainActivity : MoteActivity() {
         chargingOnly = check(MoteI18n.text("仅充电时采集屏幕、活动和媒体"), config.chargingOnly)
         batteryBelow = presetNumber(MoteI18n.text("低于此电量暂停 / % · 0 为关闭"), config.batteryPauseBelowPct, "0", 0..95, listOf(0, 10, 15, 20, 30, 50))
         section(MoteI18n.text("更多采集设置"))
-        menu(MoteI18n.text("图像与文字识别"), MoteI18n.text("清晰度、图片去重与 OCR"), "capture") { showPage(Page.PROCESSING) }
+        menu(MoteI18n.text("图像质量与去重"), MoteI18n.text("清晰度与图片去重"), "capture") { showPage(Page.PROCESSING) }
         menu(MoteI18n.text("本机存储"), MoteI18n.text("上传后保留时间、空间上限与保存位置"), "folder") { showPage(Page.STORAGE) }
     }
     private fun buildStorage(config: CollectorConfig) {
@@ -495,11 +486,11 @@ class MainActivity : MoteActivity() {
         menu(MoteI18n.text("图片保存位置"), MoteI18n.text("选择应用存储空间并迁移已有记录"), "folder") { startActivity(Intent(this, StorageActivity::class.java)) }
         uploadedRetention = presetNumber(MoteI18n.text("上传后本机保留 / 天（0 为立即清理）"), config.uploadedRetentionDays, "7", 0..365, listOf(0, 1, 7, 14, 30, 90, 365))
         maxQueue = presetNumber(MoteI18n.text("本机存储上限 / MiB"), config.maxQueueMiB, "256", 8..4096, listOf(64, 128, 256, 512, 1024, 2048, 4096))
-        text(MoteI18n.text("完成上传与 OCR 后开始计时，到期自动清理本机副本；中央归档继续保留。未上传和冲突记录不会自动删除。"), 13, MoteUi.muted)
+        text(MoteI18n.text("中央确认上传后开始计时，到期自动清理本机副本；中央归档继续保留。未上传和冲突记录不会自动删除。"), 13, MoteUi.muted)
         menu(MoteI18n.text("导入与导出"), MoteI18n.text("备份配置与本机记录"), "folder") { startActivity(Intent(this, BackupActivity::class.java)) }
     }
     private fun buildProcessing(config: CollectorConfig) {
-        page(Page.PROCESSING, MoteI18n.text("图像质量与 OCR"))
+        page(Page.PROCESSING, MoteI18n.text("调整截图清晰度与图片去重"))
         section(MoteI18n.text("图像质量"))
         jpegQuality = presetNumber(MoteI18n.text("图像质量 · 数值越高清晰度越高"), config.jpegQuality, "75", 40..95, listOf(50, 65, 75, 85, 95))
         captureMaxSide = presetNumber(MoteI18n.text("图片最长边 / px"), config.captureMaxSide, "1280", 640..2560, listOf(640, 960, 1280, 1920, 2560))
@@ -510,15 +501,7 @@ class MainActivity : MoteActivity() {
         }
         content.addView(imageDedupeMode, LinearLayout.LayoutParams(-1, dp(56))); track(imageDedupeMode, "imageDedupeMode")
         help(MoteI18n.text("图片去重说明"), MoteI18n.text("与同一应用最近保存的画面比较。重处理前命中时仅记录应用活动，不保存或审查当前图片，也不沿用旧文字。开启图片对比诊断时保留审查后的对比链路。近似档位可能忽略细小变化；重启后重新建立基准。"))
-        text(MoteI18n.text("OCR 识别方式"), 15)
-        ocrMode = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf(MoteI18n.text("中文与拉丁文（单引擎）"), MoteI18n.text("仅拉丁文"), MoteI18n.text("双引擎（高质量）")))
-            setSelection(OcrPolicy.modes.indexOf(config.ocrMode).coerceAtLeast(0))
-        }
-        content.addView(ocrMode); track(ocrMode, "ocrMode")
-        ocrAppModes = field(MoteI18n.text("按应用指定 OCR（JSON）"), config.ocrAppModes, "{}")
-        text(MoteI18n.text("可填写包名到 chinese、latin 或 dual 的映射；未指定的应用使用上方模式。"), 13, MoteUi.muted)
-        text(MoteI18n.text("新截图由中央识别。充电限制仅用于升级前已经排队的本机 OCR。"), 13, MoteUi.muted)
+
     }
 
     private fun buildDiagnostics(config: CollectorConfig) {
@@ -526,7 +509,7 @@ class MainActivity : MoteActivity() {
         technicalStatus = text(MoteI18n.text("正在读取运行状态…"), 13)
         diagnosticEnabled = check(MoteI18n.text("记录数值与事件诊断"), config.diagnosticsEnabled)
         diagnosticInterval = field(MoteI18n.text("诊断采样间隔 / 秒（15–3600）"), config.diagnosticsIntervalSeconds.toString(), "60", InputType.TYPE_CLASS_NUMBER)
-        help(MoteI18n.text("数值诊断说明"), MoteI18n.text("仅在应用/采集运行时采样，最多 1440 条。记录整机电量、队列/模型空间、入队/拦截/失败计数、推理/OCR 耗时和上传字节，不包含截图、文字、笔记、令牌或审查理由。电量变化是整机变化，不能归因于 Mote。"))
+        help(MoteI18n.text("数值诊断说明"), MoteI18n.text("仅在应用/采集运行时采样，最多 1440 条。记录整机电量、本机空间、入队/拦截/失败计数、截图隐私审查耗时和上传字节，不包含截图、文字、笔记、令牌或审查理由。电量变化是整机变化，不能归因于 Mote。"))
         button(MoteI18n.text("导出数值诊断 JSON")) {
             @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mote-diagnostics.json"), 103)
         }
@@ -676,35 +659,21 @@ class MainActivity : MoteActivity() {
             setSelection(listOf("hold", "drop", "allow").indexOf(config.uploadGate.failureAction).coerceAtLeast(0))
         }
         content.addView(gateFailure); track(gateFailure, "gateFailure")
-        text(MoteI18n.text("审查 OCR 仅在规则需要时运行，文字不会保存或上传。应用范围与固定遮罩仍然生效。VLM 接口保留，本版本暂停；中央负责完整 OCR，查询模型可在授权后按需看图。待复核记录请在同步恢复中逐条处理。"), 13)
-        nsfwEnabled = CheckBox(this).apply { isChecked = false }
-        nsfwStatus = TextView(this)
-
-    }
-
-    private fun buildModel(config: CollectorConfig) {
-        page(Page.MODEL, MoteI18n.text("修改前先停止采集；参数影响本机过滤行为"))
-        nsfwPolicy = field(MoteI18n.text("本机图片审查指令"), config.nsfw.policy, "", multiline = true)
-        nsfwMaxTokens = field(MoteI18n.text("输出上限 token（32–1024）"), config.nsfw.maxTokens.toString(), "256", InputType.TYPE_CLASS_NUMBER)
-        nsfwMaxSide = field(MoteI18n.text("审查图最长边（256–1024）"), config.nsfw.reviewMaxSide.toString(), "512", InputType.TYPE_CLASS_NUMBER)
-        nsfwThreads = field(MoteI18n.text("CPU 线程（1–8）"), config.nsfw.threads.toString(), "2", InputType.TYPE_CLASS_NUMBER)
-        nsfwTimeout = field(MoteI18n.text("推理超时 / 毫秒（5000–180000，含首次加载）"), config.nsfw.timeoutMs.toString(), "60000", InputType.TYPE_CLASS_NUMBER)
-        text(MoteI18n.text("模型下载来源"), 13)
-        nsfwSource = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf(MoteI18n.text("自动：ModelScope → Hugging Face"), MoteI18n.text("国内 ModelScope"), MoteI18n.text("官方 Hugging Face"), MoteI18n.text("自定义 HTTPS 目录")))
-            setSelection(nsfwSources.indexOf(config.nsfw.source).coerceAtLeast(0))
-            layoutParams = LinearLayout.LayoutParams(-1, dp(48)); content.addView(this)
+        text(MoteI18n.text("文字规则适用于截图、页面和通知；截图文字仅在本机用于审查，完整内容识别由中央执行。待复核记录请在同步恢复中逐条处理；更改规则不会自动释放旧记录。"), 13)
+        val reviewSettings = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+        val privacyContent = content
+        button(MoteI18n.text("高级：截图文字隐私审查")) { reviewSettings.visibility = if (reviewSettings.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
+        privacyContent.addView(reviewSettings); content = reviewSettings
+        text(MoteI18n.text("截图文字隐私审查引擎"), 15)
+        ocrMode = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf(MoteI18n.text("中文与拉丁文（单引擎）"), MoteI18n.text("仅拉丁文"), MoteI18n.text("双引擎（高质量）")))
+            setSelection(OcrPolicy.modes.indexOf(config.ocrMode).coerceAtLeast(0))
         }
-        track(nsfwSource, "nsfwSource")
-        nsfwCustom = field(MoteI18n.text("自定义 HTTPS 目录（model.gguf / mmproj.gguf）"), config.nsfw.customUrl, "https://your-nas.example/models/qwen", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
-        help(MoteI18n.text("模型下载说明"), MoteI18n.text("双模型共约 703 MiB。自动先尝试国内 ModelScope，失败回退 Hugging Face；支持断点续传，取消后保留断点。可在自定义目录托管两个固定文件，或分两次导入本地 GGUF；每次加载前核对完整 SHA-256。下载速度取决于网络。"))
-        button(MoteI18n.text("重载推理进程")) {
-            uiTask.start(MoteI18n.text("正在重载推理进程…"), { nsfwStatus.text = it }, {
-                NsfwClient.resetAll(); NsfwModelStore(applicationContext).inferenceStatus(MoteI18n.text("已重置推理进程，下一帧重新校验并加载"))
-            }) { result -> result.onFailure { toast(MoteI18n.text("重载失败，请重试")) }; refreshStatus() }
-        }
-        review = field(MoteI18n.text("可选本机隐私模型 URL"), config.localReviewUrl, "http://127.0.0.1:47833/review", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
-        text(MoteI18n.text("这是 NSFW 检查后的额外通用隐私审查。仅允许手机本机 loopback；模型拒绝、超时或格式错误时丢弃此帧。模型新增遮罩后重新 OCR。未填写则不调用此额外 HTTP 钩子。"), 13)
+        content.addView(ocrMode); track(ocrMode, "ocrMode")
+        ocrAppModes = field(MoteI18n.text("按应用指定隐私审查引擎（JSON）"), config.ocrAppModes, "{}")
+        text(MoteI18n.text("可填写包名到 chinese、latin 或 dual 的映射；未指定的应用使用上方模式。"), 13, MoteUi.muted)
+        text(MoteI18n.text("仅在截图文字规则需要时运行本机识别。识别结果仅用于隐私审查，不保存、不上传；完整内容识别由中央执行。"), 13, MoteUi.muted)
+        content = privacyContent
     }
 
     private fun buildDeveloper(config: CollectorConfig) {
@@ -718,7 +687,6 @@ class MainActivity : MoteActivity() {
         help(MoteI18n.text("图片对比诊断说明"), MoteI18n.text("默认关闭。开启并保存后，将已去重图片及对比原图临时保存在本机，供核对分数与判断依据。最多 20 组、32 MiB，24 小时后到期；读取时清理，系统可能延后后台清理。关闭并保存后清空。保留的都是通过隐私检查和遮罩后的图片。"))
         menu(MoteI18n.text("本机图片批量去重"), MoteI18n.text("全量扫描、对比预览、移入待决定区或删除"), "chart") { startActivity(Intent(this, BulkDedupeActivity::class.java)) }
         menu(MoteI18n.text("查看图片去重记录"), MoteI18n.text("对比两张图片、分数与依据，可随时清空"), "chart") { startActivity(Intent(this, ImageDedupeDiagnosticsActivity::class.java)) }
-        menu(MoteI18n.text("模型高级设置"), MoteI18n.text("审查指令、下载来源与推理参数"), "settings") { showPage(Page.MODEL) }
         section(MoteI18n.text("调试连接"))
         http = check(MoteI18n.text("允许调试局域网 HTTP（明文，仅私有 IP）"), config.debugHttp).apply { isEnabled = BuildConfig.DEBUG }
         section(MoteI18n.text("构建与运行环境"))
@@ -734,7 +702,7 @@ class MainActivity : MoteActivity() {
             text(MoteI18n.text("版本 {0}", BuildConfig.VERSION_NAME), 13, MoteUi.muted)
         }
         menu(MoteI18n.text("应用更新"), MoteI18n.text("检查新版本与安装更新"), "sync") { startActivity(Intent(this, AppUpdatesActivity::class.java)) }
-        menu(MoteI18n.text("开发者选项"), MoteI18n.text("诊断、模型高级参数与构建信息"), "settings") { showPage(Page.DEVELOPER) }
+        menu(MoteI18n.text("开发者选项"), MoteI18n.text("诊断、采集排查与构建信息"), "settings") { showPage(Page.DEVELOPER) }
         text("Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT} · ${Build.MANUFACTURER} ${Build.MODEL}", 12, MoteUi.muted)
     }
 
@@ -834,28 +802,16 @@ class MainActivity : MoteActivity() {
         Page.STORAGE -> current.copy(maxQueueMiB = number(maxQueue, 8..4096), uploadedRetentionDays = number(uploadedRetention, 0..365))
         Page.PROCESSING -> current.copy(
             jpegQuality = number(jpegQuality, 40..95), captureMaxSide = number(captureMaxSide, 640..2560),
-            ocrMode = OcrPolicy.modes[ocrMode.selectedItemPosition], ocrAppModes = ocrAppModes.text.toString(),
             imageDedupeMode = imageDedupeModes[imageDedupeMode.selectedItemPosition])
         Page.PRIVACY -> current.copy(
             uiPageMode=UiPageRules.modes[uiPageMode.selectedItemPosition], uiPageRules=checked(uiPageRules){uiPageRules.text.toString().also{UiPageRules.parse(it)}},
             excludedPackages = excludes.text.toString(), masks = checked(masks) { masks.text.toString().also { Mask.parse(it) } },
             appCollectionRules = checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() },
-            metadataEnabled = metadataEnabled.isChecked, uploadGate = UploadGateConfig(gateEnabled.isChecked, gateText.text.toString(), listOf("hold", "drop", "allow")[gateFailure.selectedItemPosition]), nsfw = current.nsfw.copy(enabled = false))
-        Page.MODEL -> current.copy(nsfw = nsfwDraft().copy(enabled = current.nsfw.enabled),
-            localReviewUrl = checked(review) { review.text.toString().trim().also { PrivacyRules.validateLocalReview(it) } })
+            ocrMode = OcrPolicy.modes[ocrMode.selectedItemPosition], ocrAppModes = checked(ocrAppModes) { ocrAppModes.text.toString().also { OcrPolicy.validate(OcrPolicy.modes[ocrMode.selectedItemPosition], it) } },
+            metadataEnabled = metadataEnabled.isChecked, uploadGate = UploadGateConfig(gateEnabled.isChecked, gateText.text.toString(), listOf("hold", "drop", "allow")[gateFailure.selectedItemPosition]))
         Page.DIAGNOSTICS -> current.copy(diagnosticsEnabled = diagnosticEnabled.isChecked, diagnosticsIntervalSeconds = number(diagnosticInterval, 15..3600))
         Page.DEVELOPER -> current.copy(debugHttp = http.isChecked, imageDedupeDiagnosticsEnabled = imageDedupeDiagnosticsEnabled.isChecked)
         else -> current
-    }
-    private fun nsfwDraft(): NsfwConfig {
-        val value = NsfwConfig(enabled = nsfwEnabled.isChecked, threads = number(nsfwThreads, 1..8),
-            timeoutMs = number(nsfwTimeout, 5000..180000).toLong(), source = nsfwSources[nsfwSource.selectedItemPosition],
-            customUrl = checked(nsfwCustom) { nsfwCustom.text.toString().trim().also { if (nsfwSource.selectedItemPosition == 3) {
-                require(NsfwConfig.validateModelUrl(it).rawQuery == null) { MoteI18n.text("自定义来源应为不带查询参数的 HTTPS 目录") }
-            } } },
-            policy = checked(nsfwPolicy) { nsfwPolicy.text.toString().trim().also { require(it.isNotBlank() && it.length <= 4000) { MoteI18n.text("审查指令须为 1..4000 字符") } } },
-            maxTokens = number(nsfwMaxTokens, 32..1024), reviewMaxSide = number(nsfwMaxSide, 256..1024))
-        return value.also { it.validate() }
     }
     private fun number(field: EditText, range: IntRange): Int = checked(field) {
         val value = field.text.toString().trim().toIntOrNull()
@@ -873,11 +829,6 @@ class MainActivity : MoteActivity() {
         field.post { field.requestRectangleOnScreen(android.graphics.Rect(0, 0, field.width, field.height), false) }
         throw IllegalArgumentException(message, error)
     }
-    private fun saveNsfw(after: () -> Unit) = try {
-        val current = freshConfig()
-        val next = current.copy(nsfw = current.nsfw.copy(enabled = nsfwEnabled.isChecked))
-        applySettings(next, expected = current, appliedFields = setOf(nsfwEnabled.tag as String), saved = after)
-    } catch (error: Exception) { toast(error.message ?: MoteI18n.text("请检查 NSFW 配置")) }
     private fun saveConfig(bindLocal: Boolean = false, after: () -> Unit = {}): Unit {
         if (applyingSettings || uiTask.busy) return
         val current = loadedConfig
@@ -1004,7 +955,7 @@ class MainActivity : MoteActivity() {
         if (requestCode == 105 && resultCode == RESULT_OK && data != null) {
             val quality = data.getIntExtra("quality", 75); val side = data.getIntExtra("maxSide", 1280)
             if (quality in 40..95 && side in 640..2560) {
-                showPage(Page.CAPTURE); jpegQuality.setText(quality.toString()); captureMaxSide.setText(side.toString())
+                showPage(Page.PROCESSING); jpegQuality.setText(quality.toString()); captureMaxSide.setText(side.toString())
                 toast(MoteI18n.text("参数已带回采集设置，请点击保存后应用"))
             }
             return
@@ -1015,14 +966,6 @@ class MainActivity : MoteActivity() {
                 val body = if (requestCode == 104) SupportEvents.export(app, logExportHours) else Diagnostics(app).export()
                 app.contentResolver.openOutputStream(uri)!!.use { it.write(body.toByteArray()) }
             }) { result -> toast(if (result.isSuccess) MoteI18n.text("诊断包已导出") else MoteI18n.text("诊断导出失败")) }
-            return
-        }
-        if (requestCode == 102 && resultCode == RESULT_OK && data?.data != null) {
-            val uri = data.data!!; val app = applicationContext
-            uiTask.start(MoteI18n.text("正在导入并校验模型…"), { nsfwStatus.text = it }, {
-                val store = NsfwModelStore(app)
-                app.contentResolver.openInputStream(uri)!!.use { store.importModel(it) }; NsfwClient.resetAll()
-            }) { result -> toast(if (result.isSuccess) MoteI18n.text("模型导入完成") else MoteI18n.text("导入失败，请核对模型大小与 SHA-256；原模型保留")); refreshStatus() }
             return
         }
         if (requestCode == 100 && resultCode == RESULT_OK && data != null) {
@@ -1087,7 +1030,6 @@ class MainActivity : MoteActivity() {
                     totalsStatus.text = snapshot.totals; if (::technicalStatus.isInitialized) technicalStatus.text = snapshot.technical
                     centralConnectionTitle.text = snapshot.connectionTitle; centralConnectionStatus.text = snapshot.connection
                     if (::connectionSummary.isInitialized) connectionSummary.text = snapshot.connection
-                    if (::nsfwStatus.isInitialized) nsfwStatus.text = snapshot.model
                     if (::mediaStatus.isInitialized) mediaStatus.text = snapshot.media
                     updateSaveBar()
                 }.onFailure { captureProgress.visibility = View.GONE; status.text = MoteI18n.text("状态暂不可读取，已有记录保留在本机；稍后自动重试") }
@@ -1107,12 +1049,10 @@ class MainActivity : MoteActivity() {
         val queueStats = local.active
         val pending = local.pending
         val bytes = queueStats?.quotaBytes?.div(1024.0 * 1024)
-        val modelMissing = c != null && c.screenCollectionEnabled && c.nsfw.enabled && AppCollectionRules.parse(c.appCollectionRules).mayCollectContent() && !NsfwModelStore(this).hasFile()
         val queueFull = c != null && bytes != null && bytes >= c.maxQueueMiB
         val title = when {
             settings.enabled && !live -> MoteI18n.text("等待采集权限")
             settings.enabled && queueFull -> MoteI18n.text("本机空间已满")
-            settings.enabled && modelMissing -> MoteI18n.text("等待本机过滤模型")
             settings.enabled && settings.state() == "paused" -> MoteI18n.text("采集暂时等待")
             settings.enabled -> MoteI18n.text("正在本机采集")
             else -> MoteI18n.text("采集已暂停")
@@ -1150,12 +1090,11 @@ class MainActivity : MoteActivity() {
             connectionState == "unchecked" -> MoteI18n.text("节点已保存，但尚未完成最近一次连接验证：{0}", c.server)
             else -> MoteI18n.text("节点：{0} · 最近一次验证成功", c.server)
         }
-        val model = NsfwModelStore(this)
-        return StatusSnapshot(title, action, state, syncText, totalsText, technicalText, connectionTitle, connectionText, "${model.status()}\n${model.inferenceStatus()}", MediaCollection.statusLabel(this), c)
+        return StatusSnapshot(title, action, state, syncText, totalsText, technicalText, connectionTitle, connectionText, MediaCollection.statusLabel(this), c)
     }
     private fun mediaPermission() {
         MoteDialogBuilder(this).setTitle(MoteI18n.text("媒体播放状态授权"))
-            .setMessage(MoteI18n.text("Android 通过通知使用权开放通知与媒体会话。开启通知采集后，Mote 会保存应用公开的标题、正文、持续状态以及更新和移除事件，并按同步策略上传。设备事件单独记录亮屏、熄屏和锁定状态。各来源需单独开启并点击开始；应用的“不记录”和“仅活动”规则仍适用。系统可能隐藏敏感通知；Mote 不回复通知、不控制播放。"))
+            .setMessage(MoteI18n.text("Android 通过通知使用权开放通知与媒体会话。开启通知采集后，Mote 会保存应用公开的标题、正文、持续状态以及发布和更新事件，并按同步策略上传。设备事件单独记录亮屏、熄屏和锁定状态。各来源需单独开启并点击开始；应用的“不记录”和“仅活动”规则仍适用。系统可能隐藏敏感通知；Mote 不回复通知、不控制播放。"))
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("打开系统设置")) { _, _ ->
                 safeOpen(Intent(SystemSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             }.show()
@@ -1181,8 +1120,11 @@ class MainActivity : MoteActivity() {
     }
     override fun onResume() {
         super.onResume()
-        if (!::settings.isInitialized) return
         resumed = true
+        if (!::settings.isInitialized) return
+        resumeUi()
+    }
+    private fun resumeUi() {
         if (currentPage == Page.ASK) centralContent?.resume()
         notePoll?.let { handler.removeCallbacks(it); handler.post(it) }
         updatePermissionStatuses()
@@ -1376,7 +1318,7 @@ class MainActivity : MoteActivity() {
     private fun buildSettingsPage(page: Page, config: CollectorConfig) = when (page) {
         Page.CONNECTION -> buildConnection(config); Page.CAPTURE -> buildCapture(config); Page.PRIVACY -> buildPrivacy(config)
         Page.PROCESSING -> buildProcessing(config); Page.STORAGE -> buildStorage(config)
-        Page.DEVELOPER -> buildDeveloper(config); Page.DIAGNOSTICS -> buildDiagnostics(config); Page.MODEL -> buildModel(config)
+        Page.DEVELOPER -> buildDeveloper(config); Page.DIAGNOSTICS -> buildDiagnostics(config)
         else -> Unit
     }
 

@@ -144,8 +144,16 @@ export function effectiveConfiguration(p) {
 export function isolatedEnvironment(p, extra = {}) {
   const env = { ...process.env };
   for (const key of Object.keys(env)) if (key.startsWith('MOTE_') || key.startsWith('COMPOSE_') || key.startsWith('TUNNEL_') || key.startsWith('CLOUDFLARED_') || key === 'NO_AUTOUPDATE') delete env[key];
-  // Enable Node fetch to honor inherited HTTP(S)_PROXY and NO_PROXY when the child starts.
-  return { ...env, ...p.env, ...deploymentEnvironment(p), NODE_USE_ENV_PROXY: '1', NODE_ENV: p.profile === 'prod' ? 'production' : p.profile === 'test' ? 'test' : 'development', MOTE_ENV_FILE: p.envFile, MOTE_PROFILE: p.profile, MOTE_URL: p.url, MOTE_TOKEN_FILE: join(p.dataDir, 'access-token'), ...extra };
+  const result = { ...env, ...p.env, ...deploymentEnvironment(p), NODE_USE_ENV_PROXY: '1', NODE_ENV: p.profile === 'prod' ? 'production' : p.profile === 'test' ? 'test' : 'development', MOTE_ENV_FILE: p.envFile, MOTE_PROFILE: p.profile, MOTE_URL: p.url, MOTE_TOKEN_FILE: join(p.dataDir, 'access-token'), ...extra };
+  // Keep remote downloads proxied while central/worker loopback traffic stays
+  // local. Node gives lowercase variables precedence; publish identical forms.
+  for (const name of ['HTTP_PROXY', 'HTTPS_PROXY']) {
+    const lower = name.toLowerCase(), value = result[lower] || result[name];
+    if (value !== undefined || result[lower] !== undefined) result[name] = result[lower] = value ?? '';
+  }
+  const bypass = [...new Set([result.NO_PROXY, result.no_proxy, '127.0.0.1,localhost,::1,[::1]'].filter(Boolean).flatMap(value => value.split(',')).map(value => value.trim()).filter(Boolean))].join(',');
+  result.NO_PROXY = result.no_proxy = bypass;
+  return result;
 }
 export function execute(command, args, { env, cwd = repository, capture = false, timeoutMs = 120000 } = {}) {
   return new Promise((resolvePromise, reject) => {

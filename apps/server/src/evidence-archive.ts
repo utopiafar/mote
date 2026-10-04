@@ -67,6 +67,11 @@ export class EvidenceArchive {
       CREATE TRIGGER IF NOT EXISTS artifacts_search_insert AFTER INSERT ON context_artifacts BEGIN INSERT INTO artifacts_fts(id,text) SELECT new.id,json_extract(json,'$.text') FROM context_contents WHERE hash=new.content_hash; END;
       CREATE TRIGGER IF NOT EXISTS artifacts_search_delete AFTER DELETE ON context_artifacts BEGIN DELETE FROM artifacts_fts WHERE id=old.id; END;
 `);
+    if(!db.prepare("SELECT 1 FROM settings WHERE key='notification-evidence-version'").get()){
+      db.exec(`INSERT INTO context_dirty(group_key) SELECT DISTINCT o.group_key FROM context_observations o JOIN captures c ON c.id=o.id
+        WHERE json_extract(c.json,'$.source')='notification' ON CONFLICT(group_key) DO UPDATE SET generation=generation+1,error=NULL;
+        INSERT INTO settings VALUES('notification-evidence-version','1');`);
+    }
 
   }
   revision(id:string){return this.store.db.prepare('SELECT revision FROM context_artifacts WHERE id=?').get(id)?.revision;}
@@ -88,7 +93,7 @@ export class EvidenceArchive {
         (SELECT artifact_id FROM artifact_material_inputs WHERE material_id=old.id);
     END;
   `);}
-  fingerprint(id:string){const row=this.store.db.prepare('SELECT fingerprint FROM captures WHERE id=?').get(id);if(!row||!this.store.isCurrentEvidence(id))return null;return hash([row.fingerprint,this.store.db.prepare("SELECT kind,json_extract(json,'$.text') AS text FROM perception_results WHERE capture_id=? AND current=1 ORDER BY kind").all(id)]);}
+  fingerprint(id:string){const row=this.store.db.prepare("SELECT fingerprint,json_extract(json,'$.source') source FROM captures WHERE id=?").get(id);if(!row||!this.store.isCurrentEvidence(id))return null;return hash([row.fingerprint,...(row.source==='notification'?['notification-fields-v1']:[]),this.store.db.prepare("SELECT kind,json_extract(json,'$.text') AS text FROM perception_results WHERE capture_id=? AND current=1 ORDER BY kind").all(id)]);}
   /** Incremental, deterministic exact-text reduction. No semantic inference or model calls. */
   aggregate(limit=32,settledBefore?:number){
     const db=this.store.db,groups=db.prepare('SELECT group_key,generation FROM context_dirty WHERE error IS NULL AND (? IS NULL OR changed_at<=?) LIMIT ?').all(settledBefore??null,settledBefore??null,Math.min(100,Math.max(1,limit)));

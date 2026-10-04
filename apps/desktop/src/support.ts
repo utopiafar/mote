@@ -103,16 +103,13 @@ function metrics(value: unknown): Record<string, number | boolean | object> {
   return out;
 }
 export function buildSupportBundle(profile: DesktopProfile, version: string, status: Status, events: SupportEvent[]): object {
-  const c = status.config, model = status.nsfw;
+  const c = status.config;
   const config: Record<string, number | boolean> = {};
-  for (const key of ['intervalMs','maxQueueBytes','maxQueueEvents','idlePauseSeconds','diagnosticIntervalSeconds','jpegQuality','captureMaxSide','batteryPauseBelowPct','reviewMaxTokens','reviewMaxSide','nsfwThreads','nsfwTimeoutMs'] as const) if (number(c[key])) config[key] = c[key];
-  for (const key of ['nsfwEnabled','diagnosticsEnabled','pauseOnBattery','openAtLogin'] as const) if (typeof c[key] === 'boolean') config[key] = c[key];
-  const modelMetrics = Object.fromEntries(['bytes','totalBytes','blockedCount','lastLoadMs','lastVisionMs','lastTokens','lastDurationMs'].flatMap(key => {
-    const value = model?.[key as keyof typeof model]; return number(value) ? [[key,value]] : [];
-  }));
+  for (const key of ['intervalMs','maxQueueBytes','maxQueueEvents','idlePauseSeconds','diagnosticIntervalSeconds','jpegQuality','captureMaxSide','batteryPauseBelowPct'] as const) if (number(c[key])) config[key] = c[key];
+  for (const key of ['diagnosticsEnabled','pauseOnBattery','openAtLogin'] as const) if (typeof c[key] === 'boolean') config[key] = c[key];
   return { version: 1, scope: 'local-support-without-content', exportedAt: new Date().toISOString(),
     app: { platform: process.platform, version: /^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(version) ? version : 'unknown', profile: profile.name, defaultProfile: profile.defaultProfile },
     state: { running: Boolean(status.running), state: ['stopped','capturing','paused','permission_required','error'].includes(status.state) ? status.state : 'unknown', queueDepth: number(status.queueDepth) ? status.queueDepth : 0, queueBytes: number(status.queueBytes) ? status.queueBytes : 0, encryptedTokenStorage: Boolean(status.encryptedTokenStorage) },
-    config, model: modelMetrics, diagnostics: metrics(status.diagnostics), events: events.map(cleanEvent).filter(Boolean),
+    config, diagnostics: metrics(status.diagnostics), events: events.map(cleanEvent).filter(Boolean),
     batteryScope: 'whole-device change, not application energy attribution' };
 }

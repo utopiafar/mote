@@ -48,8 +48,7 @@ class AnrRegressionInstrumentedTest {
         WorkManager.getInstance(context).cancelAllWork().result.get(20, TimeUnit.SECONDS)
         val settings = Settings(context)
         original = settings.read()
-        settings.save(original!!.copy(server = "", token = "", syncMode = "manual", diagnosticsEnabled = false,
-            nsfw = original!!.nsfw.copy(enabled = false)))
+        settings.save(original!!.copy(server = "", token = "", syncMode = "manual", diagnosticsEnabled = false))
     }
 
     @After fun restoreSettings() {
@@ -137,7 +136,7 @@ class AnrRegressionInstrumentedTest {
                 field<Handler>(it, "handler").removeCallbacks(field<Runnable>(it, "refresh"))
             }
             application.registerActivityLifecycleCallbacks(lifecycle)
-            executor.submit {}.get(10, TimeUnit.SECONDS)
+            repeat(2) { executor.submit {}.get(10, TimeUnit.SECONDS); instrumentation.runOnMainSync {} }
             instrumentation.runOnMainSync {
                 assertFalse(field<Boolean>(activity, "statusLoading"))
                 field<TextView>(activity, "syncStatus").addTextChangedListener(object : TextWatcher {
@@ -247,6 +246,53 @@ class AnrRegressionInstrumentedTest {
             assertEquals(interval, Settings(context).read().intervalSeconds)
             assertFalse(Settings(context).enabled)
         }
+    }
+
+    private fun <T : android.app.Activity> launchWhileSettingsAreLocked(activity: Class<T>) {
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        val holder = Thread {
+            synchronized(Settings::class.java) { entered.countDown(); release.await(20, TimeUnit.SECONDS) }
+        }.apply { start() }
+        var scenario: ActivityScenario<T>? = null
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val started = SystemClock.elapsedRealtime()
+            scenario = ActivityScenario.launch(activity)
+            assertTrue("${activity.simpleName} launch must not wait on a settings writer", SystemClock.elapsedRealtime() - started < 4000)
+        } finally {
+            release.countDown(); holder.join(5000)
+            scenario?.close()
+        }
+    }
+
+    @Test fun sourceAndStorageLaunchDoNotJoinAnActiveSettingsWriter() {
+        launchWhileSettingsAreLocked(SourcesActivity::class.java)
+        launchWhileSettingsAreLocked(StorageActivity::class.java)
+    }
+
+    @Test fun compressionPreviewLaunchDoesNotJoinAnActiveSettingsWriter() {
+        launchWhileSettingsAreLocked(CompressionPreviewActivity::class.java)
+    }
+
+    @Test fun calendarSuggestionsLaunchDoesNotJoinAnActiveSettingsWriter() {
+        launchWhileSettingsAreLocked(CalendarActionsActivity::class.java)
+    }
+
+    @Test fun stoppingCaptureDoesNotJoinAnActiveSettingsWriter() {
+        val entered = CountDownLatch(1); val release = CountDownLatch(1); val finished = CountDownLatch(1)
+        val holder = Thread {
+            synchronized(Settings::class.java) { entered.countDown(); release.await(20, TimeUnit.SECONDS) }
+        }.apply { start() }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val started = SystemClock.elapsedRealtime()
+            instrumentation.runOnMainSync { RuntimeSettings.stop(context) { assertTrue(it.isSuccess); finished.countDown() } }
+            assertTrue("Stop must suspend producers without joining the settings writer", SystemClock.elapsedRealtime() - started < 1000)
+        } finally { release.countDown(); holder.join(5000) }
+        assertTrue(finished.await(10, TimeUnit.SECONDS))
+        assertFalse(Settings(context).enabled)
+        assertFalse(RuntimeSettings.stopping)
+        assertFalse(ConnectionGuard.reconfiguring())
     }
 
 

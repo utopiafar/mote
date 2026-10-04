@@ -43,7 +43,8 @@ try{
   const call:any={phase:input.traceContext?.phase,startedAt:new Date().toISOString(),status:'running'};report.calls.push(call);await save();console.log(JSON.stringify({stage:'model-start',phase:call.phase}));
   try{const result=await query(input);call.status='completed';call.result=result;return result;}catch(error){call.status='failed';throw error;}finally{call.durationMs=Date.now()-Date.parse(call.startedAt);await save();}
  };
- await save();const response=await node.app.inject({method:'POST',url:'/api/memory-integrations',headers:{authorization:'Bearer '+token},payload:{recipe:{id:'mote.memory-integration',version:'1'},memoryIds:report.memoryIds}});assert.equal(response.statusCode,202,response.body);
+ const integrationInputs=selected.map((card:{id:string})=>{const memory=node!.memories.get(card.id);return {id:memory.id,version:memory.version,fingerprint:memory.fingerprint};});
+ await save();const response=await node.app.inject({method:'POST',url:'/api/memory-integrations',headers:{authorization:'Bearer '+token},payload:{recipe:{id:'mote.memory-integration',version:'2'},inputs:integrationInputs}});assert.equal(response.statusCode,202,response.body);
  report.operationId=response.json().operationId;report.windowId=response.json().id;await save();
  const timer=setTimeout(()=>node?.lifecycle.cancel('consolidation',report.windowId),400000);timer.unref();
  try{await node.lifecycle.tick();}finally{clearTimeout(timer);}

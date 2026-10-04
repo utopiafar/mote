@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 
 object Notifications {
+    private val diagnosticsWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
     const val ID = 4101
     private const val MEDIA_ID = 4102
     private var lastPublished: String? = null
@@ -50,23 +51,24 @@ object Notifications {
         if (!initialized) { manager.cancel(MEDIA_ID); manager.cancel(ID); initialized = true }
         val text = if (screenStatus == null && mediaStatus == null && eventStatus == null) null else visibleText()
         if (text == lastPublished) return
-        if (text == null) { manager.cancel(ID); lastPublished = null; Diagnostics(context).add("notificationCancels") }
-        else if (manager.areNotificationsEnabled()) { manager.notify(ID, build(context)); lastPublished = text; Diagnostics(context).add("notificationPublishes") }
+        if (text == null) { manager.cancel(ID); lastPublished = null; diagnosticsWorker.execute { Diagnostics(context.applicationContext).add("notificationCancels") } }
+        else if (manager.areNotificationsEnabled()) { manager.notify(ID, build(context)); lastPublished = text; diagnosticsWorker.execute { Diagnostics(context.applicationContext).add("notificationPublishes") } }
     }
 }
 
 class StopReceiver : BroadcastReceiver() {
+    companion object { private val actions = java.util.concurrent.Executors.newSingleThreadExecutor() }
     override fun onReceive(context: Context, intent: Intent) {
-        val settings = Settings(context)
         RuntimeSettings.cancelProjectionConsentRequest()
-        settings.enabled = false
-        settings.status("paused", MoteI18n.text("你已停止采集，已有记录保留，同步按所选策略运行"))
-        context.stopService(Intent(context, ProjectionService::class.java))
-        CaptureAccessibilityService.instance?.stopCapture()
-        Notifications.clear(context)
-        Notifications.clearMedia(context)
-        Notifications.showEvents(context, null)
-        MediaCollection.clear(); MediaCollectionService.refresh()
-        runCatching { UploadWorker.schedule(context, settings.read()) }
+        RuntimeSettings.stop(context.applicationContext) { result ->
+            Notifications.showEvents(context, null)
+            if (result.isSuccess) actions.execute { runCatching {
+                val settings = Settings(context.applicationContext)
+                if (!settings.enabled) {
+                    settings.status("paused", MoteI18n.text("你已停止采集，已有记录保留，同步按所选策略运行"))
+                    UploadWorker.schedule(context.applicationContext, settings.read())
+                }
+            } }
+        }
     }
 }

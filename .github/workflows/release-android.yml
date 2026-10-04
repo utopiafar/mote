@@ -34,8 +34,7 @@ jobs:
         with: { distribution: temurin, java-version: '17' }
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
         with: { packages: platform-tools }
-      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
-      - run: sh scripts/setup-vision.sh
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Prepare persistent signing identity
         env:
           MOTE_ANDROID_KEYSTORE_BASE64: ${{ secrets.MOTE_ANDROID_KEYSTORE_BASE64 }}
