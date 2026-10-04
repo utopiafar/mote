@@ -34,6 +34,7 @@ export type SummarizeFiles=(records:ContextRecord[],signal?:AbortSignal)=>Promis
 export class FileProcessing {
   private saved:Saved;private path:string;readonly engine:ExecutionEngine;private owned:boolean;private execution=new AsyncLocalStorage<{step:ExecutionStep;signal:AbortSignal;deadline:number}>();private abort=new AbortController();private stopping=false;
   private activeProcessorCalls=new Set<string>();private manualCancellation=false;
+  private closing?:Promise<void>;
   private reconciledEpoch?:string;private configurationEpoch?:string;private configurationCache=new Map<string,{fingerprint:string;receipt:Record<string,unknown>}>();
   readonly runtime:FileProcessorRuntime;
   private unregister:Array<()=>Promise<void>>=[];
@@ -161,14 +162,16 @@ export class FileProcessing {
     const revoked=new AbortController(),forward=()=>{if(preserveCancellation||!this.manualCancellation)revoked.abort(active?.signal.reason);};
     active?.signal.addEventListener('abort',forward,{once:true});
     const signal=AbortSignal.any([this.abort.signal,revoked.signal,AbortSignal.timeout(Math.max(1,(active?.deadline??Date.now()+this.saved.settings.timeoutMs)-Date.now()))]);
-    const clear=()=>db.prepare('DELETE FROM file_processor_waits WHERE resource_key=? AND token=?').run(key,token);
-    const unknown=()=>db.prepare("UPDATE file_processor_waits SET state='unknown' WHERE resource_key=? AND token=?").run(key,token);
+    const clear=()=>{if(!this.stopping)db.prepare('DELETE FROM file_processor_waits WHERE resource_key=? AND token=?').run(key,token);};
+    const unknown=()=>{if(!this.stopping)db.prepare("UPDATE file_processor_waits SET state='unknown' WHERE resource_key=? AND token=?").run(key,token);};
+    signal.addEventListener('abort',unknown,{once:true});
+    if(signal.aborted)unknown();
     try{const result=await execute(signal);clear();return result;}
     catch(error){
       // Explicit rejection / local validation is distinguishable from a lost response.
       const known=error instanceof ProviderFailure&&!['provider_timeout','provider_unavailable'].includes(error.details.code)||error instanceof StoreError&&[400,409,413,415,422].includes(error.statusCode)||error instanceof z.ZodError;
       if(known&&!signal.aborted)clear();else unknown();throw error;
-    }finally{active?.signal.removeEventListener('abort',forward);this.activeProcessorCalls.delete(token);}
+    }finally{signal.removeEventListener('abort',unknown);active?.signal.removeEventListener('abort',forward);this.activeProcessorCalls.delete(token);}
   }
   retry(id:string,stage:'transcribe'|'diarize'|'summary'='transcribe',reuseMatchingSteps=false,confirmUnknown=false){
     this.files.version(id);const db=this.files.store.db,waits=this.processorWaits(id);
@@ -222,7 +225,7 @@ export class FileProcessing {
   }
   private project(step:ExecutionStep,phase:'pipeline'|'summary'){
     const id=String(step.input.captureId);if(!this.exists(id,String(step.input.revision),phase))return;
-    const state=step.state==='waiting'&&step.error&&step.error!=='daily_budget'?'failed':step.state,db=this.files.store.db;
+    const state=step.state==='waiting'&&step.error&&!['daily_budget','interrupted'].includes(step.error)?'failed':step.state,db=this.files.store.db;
     if(phase==='summary'){db.prepare('UPDATE file_jobs SET summary_state=?,error=? WHERE capture_id=?').run(state,['running','succeeded','blocked'].includes(state)&&step.error!=='processor_still_running'?null:step.error??null,id);return;}
     db.prepare('UPDATE file_jobs SET state=?,attempts=?,available_at=?,error=? WHERE capture_id=?').run(state,step.attempts,step.availableAt,step.error??null,id);
     if(['failed','cancelled','stale'].includes(state)&&['unsupported_format','processing_limit','cancelled','input_changed'].includes(step.error??''))this.files.releaseSnapshotInput(id);
@@ -241,7 +244,7 @@ export class FileProcessing {
   }
   /** Intake discovery only; all claims, retry waits and provider execution live in the engine. */
   prepare(){
-    if(this.stopping)return [];
+    if(this.closing||this.stopping||this.engine.closed)return [];
     if(this.options.mediaAssets?.ready('dialogue'))this.files.store.db.prepare("UPDATE file_jobs SET state='waiting',error=NULL,available_at=0 WHERE auto_eligible=1 AND state='blocked' AND error='model_missing'").run();
     this.files.sweepSnapshotInputs();this.reconcileConfigurations();
     // A confirmed response can release a newer configuration that waited behind it.
@@ -427,6 +430,12 @@ export class FileProcessing {
   private invalidate(id:string){const db=this.files.store.db;invalidateRetiredFileEvidence(this.files.store,id);this.files.store.invalidateConversationAnswers([id]);db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(id,new Date().toISOString());}
   private analysisHost(id:string){const step=this.execution.getStore()?.step;return {operationId:step?.operationId??'file:'+id,jobId:id,requestId:randomUUID()};}
   async analyze(id:string,records:ContextRecord[],prompt:string){if(!this.options.analyze)throw new StoreError('Analysis model is unavailable',409);const job=this.files.store.db.prepare('SELECT local_only,policy_json FROM file_jobs WHERE capture_id=?').get(id);const settings=job?.policy_json?effectiveFileSettings(JSON.parse(String(job.policy_json)),this.policy(),this.saved.settings,this.runtime.registry):this.currentSettings();return this.options.analyze(records,prompt,settings,!!job?.local_only,undefined,this.analysisHost(id));}
-  async close(){if(this.owned)await this.engine.close();else if(!this.engine.closed){this.engine.cancelKind('files.pipeline');this.engine.cancelKind('files.summary');await this.engine.drain(this.engine.list({kind:'files.pipeline',limit:100}).items.map(s=>s.id));}this.stopping=true;this.abort.abort();await this.runtime.close();await Promise.all(this.unregister.splice(0).map(stop=>stop()));}
+  close(){return this.closing??=(async()=>{
+    if(this.owned)await this.engine.close();
+    // Unregister stops this module's claims and interrupts its local work while
+    // keeping queued tasks, admission blocks and completed substeps durable.
+    await Promise.all(this.unregister.splice(0).map(stop=>stop()));
+    this.stopping=true;this.abort.abort();await this.runtime.close();
+  })();}
 }
 async function* ReadableAsync(chunks:Iterable<Buffer>){yield* chunks;}

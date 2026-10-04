@@ -251,7 +251,7 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     },
     probe:settings=>testModelConnection(settings,factory),
   });
-  try{await modelSettings.initialize();}catch(error){await agent.close();await connections.close();await indexer.close();await sourcePipelines.close();await executor.close();await backendContext.fiber.dispose();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
+  try{await modelSettings.initialize();}catch(error){await executor.close();await agent.close();await connections.close();await indexer.close();await sourcePipelines.close();await backendContext.fiber.dispose();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
   const resolveFileModel=(settings:Parameters<FileAnalysis>[2],localOnly:boolean)=>{
@@ -279,7 +279,7 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   const memoryConfiguration=(id?:string,model?:string)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);};
   const codingContext=new CodingConversationContext(store,materials,input=>queryAgent(input,'query','memories'),memoryConfiguration);
   const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:[...new Set([...(config.backendPluginModules??[]),...(config.fileProcessorModules??[])])],analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,pluginContext:backendContext,mediaAssets});
-  try{await processing.runtime.ready;}catch(error){await processing.close();await workflows.close();await sourcePipelines.close();await executor.close();await backendContext.fiber.dispose();await modelSettings.close();await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
+  try{await processing.runtime.ready;}catch(error){await executor.close();await processing.close();await workflows.close();await sourcePipelines.close();await backendContext.fiber.dispose();await modelSettings.close();await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
 
   const perception=new Perception(store,processing.runtime,executor,mediaAssets);
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
@@ -578,10 +578,16 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   app.addHook('onReady',async()=>{
     for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
   });
-  app.addHook('onClose',async()=>{
+  app.addHook('preClose',async()=>{
     closing=true;eventLoop.disable();
+    featureHost.stop();
+    // Interrupt execution while its handlers, checkpoints and storage remain
+    // available. Fastify then drains HTTP requests before resource disposal.
+    await executor.close();
     agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();
-    await featureHost.close();await executor.close();
+  });
+  app.addHook('onClose',async()=>{
+    await featureHost.close();
     await backendContext.fiber.dispose();
     await Promise.allSettled([...importAgents].map(runtime=>runtime.close()));
     await modelSettings.close();
