@@ -92,16 +92,17 @@ test('forget during organization cannot resurrect erased source material',async 
 });
 test('pipeline version change during organization waits for the new version',async t=>{
   const {materials,runtime,sources,store}=await fixture(t);
+  const priorVersion=runtime.registry.get('mote.coding')!.version,nextVersion=String(Number(priorVersion)+1);
   let updated=false;
   const {original}=intercept(runtime,input=>{
-    if(!updated){updated=true;runtime.registry.get('fixture.interceptor')!.version='7';}
+    if(!updated){updated=true;runtime.registry.get('fixture.interceptor')!.version=nextVersion;}
     return original.organize!(input);
   });
   await sources.upsert('coding',item(1));await runtime.tick();
   assert.equal(materials.list().items.length,0);
-  assert.equal(store.db.prepare('SELECT version FROM source_pipeline_work').get()!.version,'6');
+  assert.equal(store.db.prepare('SELECT version FROM source_pipeline_work').get()!.version,priorVersion);
   await runtime.tick();assert.equal(materials.list().items.length,1);
-  assert.equal(store.db.prepare('SELECT version FROM source_pipeline_work').get()!.version,'7');
+  assert.equal(store.db.prepare('SELECT version FROM source_pipeline_work').get()!.version,nextVersion);
 });
 test('1,000 raw events remain file-only; complete conversation is indexed and cited by material sections',async t=>{
   const {store,materials,runtime,sources,reader}=await fixture(t);

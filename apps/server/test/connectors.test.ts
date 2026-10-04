@@ -257,11 +257,12 @@ test('MCP pages ordinary, screen and Coding Materials with one raw pending fallb
   sources.register({id:'page-coding',name:'Generated Coding',kind:'coding-agent',deviceId:'coding-device',platform:'import'});
   const codingRaw=await sources.upsert('page-coding',{externalId:'event-1',revision:'1',observedAt:at,title:'Generated Coding raw',
     text:'PAGE_TOKEN Coding raw',kind:'message',layer:'original',document:{coding:{version:1,provider:'codex',projectKey:'page-project',sessionId:'page-session',eventId:'event-1',role:'user',part:0,parts:1}}});
-  const codingId=materialId('page-coding','page-session'),coding=materials.publish({id:codingId,kind:'mote.coding-session',schemaVersion:1,title:'Generated Coding session',
+  const codingId=materialId('page-coding','page-session'),coding=materials.publish({id:codingId,kind:'mote.coding-session',schemaVersion:5,title:'Generated Coding session',
     origin:{sourceId:'page-coding',externalId:'page-session',deviceId:'coding-device',firstAt:at,lastAt:at,provider:'codex',projectKey:'page-project',sessionId:'page-session'},
     blocks:[{id:'session',kind:'text',format:'markdown-fragment',text:'PAGE_TOKEN whole Coding session',memberIds:['archive-member']}],
     members:[{id:'archive-member',kind:'archive',ref:'archive:page-coding/page-session'}],coverage:{state:'partial'},
-    fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
+    artifacts:[{key:'conversation',state:'ready',revision:'generated-clean-conversation-1'}],
+    fidelity:{state:'derived',limitations:['tool_bodies_omitted','host_context_omitted']},retention:{original:'retained',policy:'keep'}});
   materials.setSearchable(coding.id,true);expected.add(materials.evidenceIds(coding.ref)[0]);
   const app=Fastify(),connector=registerMcp(app,ctx);t.after(async()=>{await connector.close();await app.close();});
   let sequence=0;

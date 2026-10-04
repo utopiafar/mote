@@ -25,10 +25,35 @@ export const codingEvidenceSchema=z.object({
   projectKey:z.string().min(1).max(200),cwd:z.string().max(4000).optional(),
   projectName:z.string().max(400).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),branch:z.string().max(500).optional(),
   eventId:z.string().min(1).max(200),role:z.enum(['user','assistant','tool_call','tool_result','assistant_delta','tool_call_delta','transcript']),
+  /** Provider protocol metadata, not a semantic classification of the message. */
+  channel:z.string().min(1).max(64).optional(),attribution:z.enum(['human','agent','host','unknown']).optional(),
   callId:z.string().max(500).optional(),parentSessionId:z.string().max(500).optional(),
   part:z.number().int().min(0),parts:z.number().int().min(1),
 }).strict();
 export type CodingEvidence=z.infer<typeof codingEvidenceSchema>;
+/** Recognize complete provider-owned envelopes only. Mentioning these names,
+ * quoting an envelope, or appending a human request does not match. This is a
+ * protocol parser; it never dispatches intent, topics or memory value. */
+export function codingHostEnvelope(provider:CodingEvidence['provider'],text:string):boolean {
+  if(provider!=='codex')return false;
+  const value=text.trim();
+  const envelope=(body:string,tag:string)=>body.startsWith(`<${tag}>`)&&body.endsWith(`</${tag}>`)&&body.indexOf(`</${tag}>`)===body.length-tag.length-3;
+  if(/^<external_codex_apps_open_page>\s*\{[\s\S]*\}\s*<\/external_codex_apps_open_page>$/.test(value)){
+    try{const body=JSON.parse(value.slice(value.indexOf('>')+1,value.lastIndexOf('</')));return body!==null&&typeof body==='object'&&!Array.isArray(body)&&Object.keys(body).length===1&&('page_id' in body)&&(body.page_id===null||typeof body.page_id==='string');}catch{return false;}
+  }
+  if(['environment_context','browser_context','browser_ambient_context'].some(tag=>envelope(value,tag)))return true;
+  const agents=/^# AGENTS\.md instructions for [^\r\n]+\r?\n\s*<INSTRUCTIONS>/.exec(value);
+  if(!agents)return false;
+  const close=value.indexOf('</INSTRUCTIONS>',agents[0].length);if(close<0)return false;
+  const suffix=value.slice(close+'</INSTRUCTIONS>'.length).trim();
+  return !suffix||envelope(suffix,'environment_context');
+}
+/** The central conversation projection admits text roles only. Raw archive
+ * retention is independent and never grants an agent access to tool bodies. */
+export function codingConversationEvidence(coding:CodingEvidence,text?:string):boolean {
+  return ['user','assistant','assistant_delta','transcript'].includes(coding.role)&&coding.attribution!=='host'&&
+    !(coding.role==='user'&&text!==undefined&&codingHostEnvelope(coding.provider,text));
+}
 export const documentSchema=z.object({
   fileIndex:fileIndexSchema.optional(),
   coding:codingEvidenceSchema.optional(),

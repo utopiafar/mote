@@ -144,29 +144,36 @@ export class EvidenceReader {
   catalog(args:Range&{path?:string;query?:string}={}){return contextIndex(this.store,{page:args=>this.memoryPage(args)},this.sources,args,args=>this.segments(args));}
   fileCatalog(sourceId:string,args:Parameters<typeof browseSourceCatalog>[2]){this.sources.getSource(sourceId);return browseSourceCatalog(this.store.db,sourceId,args);}
   private artifactMembers(id:string,revision:string,scope:Range={}){
-    const pending=[{id,revision}],seen=new Set<string>(),directMembers=new Set<string>(),materialRefs=new Set<string>();
+    const pending=[{id,revision}],seen=new Set<string>(),directMembers=new Set<string>(),materialRefs=new Map<string,{ref:string;offset?:number;length?:number}[]>();
     while(pending.length){
       const ref=pending.pop()!,key=JSON.stringify(ref);if(seen.has(key))continue;seen.add(key);
       if(seen.size>1000)return;
       const row=this.store.db.prepare('SELECT revision,json FROM context_artifacts WHERE id=?').get(ref.id);
       if(!row||row.revision!==ref.revision)return;
-      const value=JSON.parse(String(row.json)) as {members:string[];parents?:{id:string;revision:string}[];materialInputs?:{ref:string}[]};
+      const value=JSON.parse(String(row.json)) as {members:string[];parents?:{id:string;revision:string}[];materialInputs?:{ref:string;offset?:number;length?:number}[]};
       for(const member of value.members){directMembers.add(member);if(directMembers.size>1000)return;}
-      for(const input of value.materialInputs??[]){materialRefs.add(input.ref);if(materialRefs.size>1000)return;}
+      for(const input of value.materialInputs??[]){const pages=materialRefs.get(input.ref)??[];pages.push(input);materialRefs.set(input.ref,pages);if(materialRefs.size>1000||pages.length>1000)return;}
       pending.push(...value.parents??[]);if(pending.length>1000)return;
     }
     if(!directMembers.size&&!materialRefs.size)return;
     // A material-only artifact still has original captures. The material source
     // ID can be logical (screen/state groups), so its members use the same
     // source-scope rule as material_read rather than the direct-capture rule.
-    const members=new Set(directMembers);
-    for(const ref of materialRefs){
+    const members=new Set(directMembers),archiveTimes=new Map<string,{firstAt?:string;lastAt?:string}>();
+    for(const [ref,inputs] of materialRefs){
       if(!this.materials)return;
       let material:MaterialRecord|undefined;
       try{material=this.materials.get(ref);}catch{return;}
       if(!material||material.ref!==ref||this.materials.get(material.id)?.revision!==material.revision||members.size+material.memberCount>1000)return;
       const scoped=this.scopedMaterial(ref,scope);if(!scoped)return;
-      if(scoped.members[0]?.kind==='archive'){for(const id of this.materials.evidenceIds(ref))members.add(id);continue;}
+      if(scoped.members[0]?.kind==='archive'){
+        const add=(id:string)=>{members.add(id);archiveTimes.set(id,{firstAt:material.origin.firstAt,lastAt:material.origin.lastAt});};
+        if(material.kind==='mote.coding-session'&&inputs.every(input=>Number.isSafeInteger(input.offset)&&Number.isSafeInteger(input.length))){
+          for(const input of inputs){let page;try{page=this.materials.read(ref,{offset:input.offset,length:input.length});}catch{return;}
+            for(const span of page.spans){if(!span.evidenceId)return;add(span.evidenceId);if(members.size>1000)return;}}
+        }else for(const id of this.materials.evidenceIds(ref)){add(id);if(members.size>1000)return;}
+        continue;
+      }
       for(const member of scoped.members){
         const captureId=evidenceRefId(member.ref,'capture');if(!captureId)return;
         members.add(captureId);if(members.size>1000)return;
@@ -175,7 +182,7 @@ export class EvidenceReader {
     let firstAt:string|undefined,lastAt:string|undefined;
     for(const member of members){
       const record=scopeRecord(this.store,member)??this.materials?.evidence([member])[0];if(!record||directMembers.has(member)&&!withinEvidenceScope(record,scope))return;
-      const start=sourceContentTime(record),end=record.stateSeries?.samples.at(-1)?.at??start;
+      const time=archiveTimes.get(member),start=time?.firstAt??sourceContentTime(record),end=time?.lastAt??record.stateSeries?.samples.at(-1)?.at??start;
       if(scope.after&&Date.parse(start)<Date.parse(scope.after)||scope.before&&Date.parse(end)>=Date.parse(scope.before))return;
       if(!firstAt||Date.parse(start)<Date.parse(firstAt))firstAt=start;
       if(!lastAt||Date.parse(end)>Date.parse(lastAt))lastAt=end;
@@ -467,6 +474,9 @@ export class EvidenceReader {
     return original;
   }
   private materialExposure(material:MaterialRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,required?:readonly string[],planning=false){
+    // Older Coding projections contain raw tools. Keep them in the owner
+    // archive while the deterministic source upgrade rebuilds clean evidence.
+    if(material.kind==='mote.coding-session'&&material.schemaVersion<5)return false;
     const access=this.materialMemberAccess(material);if(!access.available)return false;
     if(!planning&&required&&!this.materials?.input(material.ref,required)?.ready)return false;
     if(operation==='memory'&&this.sourceItemRecipes){
@@ -521,6 +531,9 @@ export class EvidenceReader {
       return originals.members.every(id=>{
         const record=scopeRecord(this.store,id)??this.materials?.evidence([id])[0];
         if(!record)return false;
+        const anchor=this.materials&&this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?').get(id);
+        const material=anchor&&this.materials?.get(String(anchor.material_id));
+        if(material?.kind==='mote.coding-session'&&material.schemaVersion<5)return false;
         const sourceKind=record.source==='screen'||record.source==='ui_page'?'screen':record.provenance?.document?.coding?'coding-agent':this.sourceKind(record.provenance?.sourceId,record.source);
         return this.exposureAllows({sourceKind,sourceId:record.provenance?.sourceId,representation:'segment',operation,phase,localOnly:this.evidenceLocalOnly(record.id)},policy);
       });

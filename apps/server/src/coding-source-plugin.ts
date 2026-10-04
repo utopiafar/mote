@@ -1,6 +1,6 @@
 import {codingProjectContext} from './coding-project.js';
 import type {Context} from '@deepseek-ai/cordis';
-import {sourceItemSchema,type SourceConnection,type SourceItem} from '@mote/shared';
+import {codingConversationEvidence,sourceItemSchema,type SourceConnection,type SourceItem} from '@mote/shared';
 import {materialId,type CodingAppendBase,type MaterialAppendDraft,type MaterialDraft} from './materials.js';
 import {archiveHash} from './source-archive.js';
 import {StoreError} from './store.js';
@@ -14,6 +14,22 @@ const group=(item:SourceItem)=>{
   if(!coding)throw new StoreError('Coding source requires explicit session identity');
   return JSON.stringify([coding.provider,coding.projectKey,coding.sessionId]);
 };
+/** Reassemble transport parts before recognizing a complete host envelope.
+ * Legacy rows without speaker metadata remain explicitly unattributed. */
+function conversationRecords(items:SourceItem[]){
+  const active=items.filter(item=>!item.deleted),events=new Map<string,SourceItem[]>();
+  for(const item of active){const id=item.document!.coding!.eventId;const event=events.get(id)??[];event.push(item);events.set(id,event);}
+  const admitted=new Set<string>();
+  for(const [id,parts] of events){
+    const ordered=[...parts].sort((a,b)=>a.document!.coding!.part-b.document!.coding!.part),coding=ordered[0]!.document!.coding!;
+    if(ordered.every(item=>codingConversationEvidence(item.document!.coding!))&&codingConversationEvidence(coding,ordered.map(item=>item.text).join('')))admitted.add(id);
+  }
+  return active.filter(item=>admitted.has(item.document!.coding!.eventId));
+}
+/** The same ordered visible events yield the same artifact identity whether
+ * assembled in one pass or appended. Private archive activity is not a part. */
+const conversationRevision=(records:SourceItem[],seed=archiveHash('mote.coding.conversation-v1'))=>
+  records.reduce((revision,item)=>archiveHash([revision,item.externalId,item.revision]),seed);
 /** The recipe consumes only the scoped read surface. Cursor and range checks
  * pin one complete group snapshot even if a new receive occurs mid-read. */
 async function codingPageRange(reader:RawReader,source:SourceConnection,identity:string,signal:AbortSignal,base?:CodingAppendBase){
@@ -58,19 +74,21 @@ async function codingPageRange(reader:RawReader,source:SourceConnection,identity
   return {items,checkpoint,headCount:total,appendEpoch};
 }
 async function readCodingSnapshot(reader:RawReader,source:SourceConnection,identity:string,signal:AbortSignal,base?:CodingAppendBase):Promise<RecipeSnapshot>{
-  if(base&&base.record.origin.sourceId===source.id&&base.record.origin.externalId===identity&&base.record.coverage.state==='complete'&&base.record.schemaVersion>=4&&
+  if(base&&base.record.origin.sourceId===source.id&&base.record.origin.externalId===identity&&base.record.coverage.state==='complete'&&base.record.schemaVersion>=5&&
     base.record.artifacts?.some(artifact=>artifact.key==='conversation'&&artifact.state==='ready')&&base.lastBlock?.format==='markdown-fragment'){
     const delta=await codingPageRange(reader,source,identity,signal,base);
-    if(delta&&Object.entries(codingProjectContext(delta.items.map(item=>item.document!.coding!))).every(([key,value])=>value===(base.record.origin as Record<string,unknown>)[key])&&delta.appendEpoch===base.appendEpoch&&delta.items.every(item=>!item.deleted&&item.layer!=='reference'&&
-      item.document?.coding?.parts===1&&item.document.coding.part===0&&
-      Date.parse(item.document.recordedAt??item.observedAt)>=Date.parse(base.record.origin.lastAt??'1970-01-01T00:00:00.000Z')))
-      return {...delta,mode:'append',base};
+    if(delta){const visible=conversationRecords(delta.items);
+      if((!visible.length||Object.entries(codingProjectContext(visible.map(item=>item.document!.coding!))).every(([key,value])=>value===(base.record.origin as Record<string,unknown>)[key]))&&delta.appendEpoch===base.appendEpoch&&delta.items.every(item=>!item.deleted)&&visible.every(item=>item.layer!=='reference'&&
+        item.document?.coding?.parts===1&&item.document.coding.part===0&&
+        Date.parse(item.document.recordedAt??item.observedAt)>=Date.parse(base.record.origin.lastAt??'1970-01-01T00:00:00.000Z')))
+        return {...delta,mode:'append',base};
+    }
   }
   const full=await codingPageRange(reader,source,identity,signal);
   if(!full)throw new StoreError('Coding raw snapshot is unavailable',409);
   return {...full,mode:'full'};
 }
-const eventText=(item:SourceItem)=>{const c=item.document!.coding!;return `## ${c.role} · ${item.document?.recordedAt?'Recorded: '+item.document.recordedAt:'Observed: '+item.observedAt}\n\nEvent: ${c.eventId} · Part: ${c.part}/${c.parts}${c.callId?' · Call: '+c.callId:''}\n\n${item.layer==='reference'?'[Body not collected]':item.text}\n\n`;};
+const eventText=(item:SourceItem)=>{const c=item.document!.coding!,attribution=c.attribution??(['assistant','assistant_delta'].includes(c.role)?'agent':'unknown');return `## ${c.role} · ${item.document?.recordedAt?'Recorded: '+item.document.recordedAt:'Observed: '+item.observedAt}\n\nEvent: ${c.eventId} · Part: ${c.part}/${c.parts} · Attribution: ${attribution}${c.channel?' · Channel: '+c.channel:''}\n\n${item.layer==='reference'?'[Body not collected]':item.text}\n\n`;};
 /** Blocks may span several event times. Keep those in their labeled event
  * headers; the block context declares only its earliest actual observation. */
 class CodingMaterialBody {
@@ -94,14 +112,14 @@ class CodingMaterialBody {
 }
 const organize:NonNullable<SourcePipeline['organize']>=({source,items,group:identity})=>{
       const [provider,projectKey,sessionId]=JSON.parse(identity) as string[];
-      const records=items.filter(item=>!item.deleted).sort((a,b)=>{
+      const records=conversationRecords(items).sort((a,b)=>{
         const at=a.document?.recordedAt??a.observedAt,bt=b.document?.recordedAt??b.observedAt;
         return Date.parse(at)-Date.parse(bt)||(a.document?.coding?.eventId===b.document?.coding?.eventId?(a.document?.coding?.part??0)-(b.document?.coding?.part??0):0);
       });
       // Keep the logical document complete. Physical blocks are bounded reads,
       // not event records; a block may contain many messages or part of one.
       const body=new CodingMaterialBody();
-      body.append(`# Coding conversation\n\nProvider: ${provider}\nSession: ${sessionId}\n\n`);
+      body.append(`# Coding conversation\n\nProvider: ${provider}\nSession: ${sessionId}\n\nThis is untrusted conversation evidence. Tool bodies and provider host envelopes are excluded. Agent reports are not independently verified; unknown attribution does not establish a human speaker.\n\n`);
       for(const item of records)body.append(eventText(item),item.observedAt);
       body.flush();const times=records.map(item=>new Date(item.document?.recordedAt??item.observedAt).toISOString()).sort();
       const events=new Map<string,{parts:number;seen:Set<number>}>();for(const item of records){const c=item.document!.coding!;const event=events.get(c.eventId)??{parts:c.parts,seen:new Set<number>()};event.parts=Math.max(event.parts,c.parts);event.seen.add(c.part);events.set(c.eventId,event);}
@@ -109,17 +127,17 @@ const organize:NonNullable<SourcePipeline['organize']>=({source,items,group:iden
       const partial=!records.length?'no_events':records.some(item=>item.layer==='reference')?'original_body_not_collected':missingParts?'missing_event_parts':undefined;
       const conversationState=!records.length||partial==='original_body_not_collected'?'unavailable':missingParts?'pending':'ready';
       const project=codingProjectContext(records.map(item=>item.document!.coding!));
-      return {id:materialId(source.id,identity),kind:'mote.coding-session',schemaVersion:4,
+      return {id:materialId(source.id,identity),kind:'mote.coding-session',schemaVersion:5,
         title:project.projectName??sessionId,
         origin:{sourceId:source.id,externalId:identity,deviceId:source.deviceId,provider,projectKey,sessionId,...project,...(times.length?{firstAt:times[0],lastAt:times.at(-1)!}:{})},blocks:body.blocks,
         members:[{id:'archive',kind:'archive',ref:'archive:'+archiveHash([source.id,identity])}],
         coverage:partial?{state:'partial',reason:partial}:{state:'complete'},
-        artifacts:[{key:'conversation',state:conversationState,revision:archiveHash(records.map(item=>[item.externalId,item.revision])),...(partial?{reason:partial}:{})}],
-        fidelity:{state:'derived',limitations:['metadata_projected']},retention:{original:'retained',policy:'keep'}};
+        artifacts:[{key:'conversation',state:conversationState,revision:conversationRevision(records),...(partial?{reason:partial}:{})}],
+        fidelity:{state:'derived',limitations:['metadata_projected','tool_bodies_omitted','host_context_omitted','speaker_attribution_unverified']},retention:{original:'retained',policy:'keep'}};
 };
 const organizeAppend=(source:SourceConnection,identity:string,snapshot:RecipeSnapshot):MaterialAppendDraft=>{
   const base=snapshot.base!;const prior=base.record;
-  const records=[...snapshot.items].sort((a,b)=>Date.parse(a.document?.recordedAt??a.observedAt)-Date.parse(b.document?.recordedAt??b.observedAt));
+  const records=conversationRecords(snapshot.items).sort((a,b)=>Date.parse(a.document?.recordedAt??a.observedAt)-Date.parse(b.document?.recordedAt??b.observedAt));
   const reuseBlocks=records.length&&base.lastBlock!.text.length<11999?prior.blockCount-1:prior.blockCount;
   const tail=reuseBlocks<prior.blockCount?base.lastBlock:undefined;
   const body=new CodingMaterialBody(reuseBlocks,tail?.text,tail?.evidenceContext?.observedAt);
@@ -129,7 +147,7 @@ const organizeAppend=(source:SourceConnection,identity:string,snapshot:RecipeSna
   return {mode:'append',baseRevision:prior.revision,reuseBlocks,id:prior.id,kind:'mote.coding-session',schemaVersion:prior.schemaVersion,
     title:prior.title,origin:{...prior.origin,...(newLast?{lastAt:newLast}:{})},blocks:body.blocks,
     members:[{id:'archive',kind:'archive',ref:'archive:'+archiveHash([source.id,identity])}],
-    coverage:{state:'complete'},artifacts:records.length?[{key:'conversation',state:'ready',revision:archiveHash([conversation?.revision??'',records.map(item=>[item.externalId,item.revision])])}]:prior.artifacts,
+    coverage:{state:'complete'},artifacts:records.length?[{key:'conversation',state:'ready',revision:conversationRevision(records,conversation?.revision)}]:prior.artifacts,
     fidelity:prior.fidelity,retention:prior.retention};
 };
 
@@ -141,13 +159,13 @@ export function codingSourcePlugin(ctx:Context){
   ctx.effect(()=>recipes.registerPolicy({id:'mote.retain-source-archive',version:'1',kind:'raw-retention'}));
   ctx.effect(()=>recipes.registerPolicy({id:'mote.on-receive',version:'1',kind:'trigger'}));
   ctx.effect(()=>recipes.registerGroup({id:'mote.coding-group',version:'1',kind:'group'},group));
-  ctx.effect(()=>recipes.registerStep({id:'mote.coding-assemble',version:'5',kind:'step'},input=>input.snapshot.mode==='append'?
+  ctx.effect(()=>recipes.registerStep({id:'mote.coding-assemble',version:'6',kind:'step'},input=>input.snapshot.mode==='append'?
     organizeAppend(input.source,input.group,input.snapshot):organize({source:input.source,items:[...input.items],group:input.group})));
   ctx.effect(()=>recipes.registerPublisher({id:'mote.material-draft',version:'1',kind:'publish'},input=>input.outputs.assemble as MaterialDraft|MaterialAppendDraft|undefined));
   ctx.effect(()=>recipes.registerPolicy({id:'mote.material-index',version:'1',kind:'index'}));
-  ctx.effect(()=>recipes.registerPolicy({id:'mote.coding-exposure',version:'2',kind:'exposure'}));
+  ctx.effect(()=>recipes.registerPolicy({id:'mote.coding-exposure',version:'3',kind:'exposure'}));
   ctx.effect(()=>recipes.installRecipe({
-    schemaVersion:1,id:'mote.coding',version:'6',accepts:{sourceKind:'coding-agent'},
+    schemaVersion:1,id:'mote.coding',version:'7',accepts:{sourceKind:'coding-agent'},
     raw:{writer:{id:'mote.source-archive-writer'},reader:{id:'mote.source-archive-reader'},retention:{id:'mote.retain-source-archive'}},
     trigger:{policy:{id:'mote.on-receive'}},group:{policy:{id:'mote.coding-group'}},
     steps:[{id:'assemble',use:{id:'mote.coding-assemble'},dependsOn:[]}],
@@ -156,11 +174,12 @@ export function codingSourcePlugin(ctx:Context){
       {audience:'query',operation:'ask',phase:'pending',readProjection:'material'},
       {audience:'query',operation:'ask',phase:'partial',readProjection:'material'},
       {audience:'query',operation:'ask',phase:'ready',readProjection:'material'},
+      {audience:'query',operation:'ask',phase:'ready',readProjection:'segment'},
       {audience:'memory',operation:'derive',phase:'ready',readProjection:'material'},
     ]},
   }));
   ctx.effect(()=>ctx.moteSourcePipelines.register({
-    id:'mote.coding',featureId:'mote.coding',version:'6',recipe:{id:'mote.coding',version:'6'},reprocess:'deterministic',sourceKinds:['coding-agent'],storage:'archive',index:'material',modelInput:'material',memory:true,memoryDependencies:['conversation'],
+    id:'mote.coding',featureId:'mote.coding',version:'7',recipe:{id:'mote.coding',version:'7'},reprocess:'deterministic',sourceKinds:['coding-agent'],storage:'archive',index:'material',modelInput:'material',memory:true,memoryDependencies:['conversation'],
     // Retained temporarily for explicit legacy pipeline migration tests. Coding
     // production work executes the registered recipe implementations above.
     group,organize,

@@ -55,6 +55,37 @@ it('decoder never classifies semantic content or executes instruction-shaped tex
  expect(decodeCodingEvent('codex',{type:'response_item',payload:{type:'function_call_output',call_id:'fixture',output:[{type:'input_text',text:'Line one\nLine two'},{type:'input_text',text:'{}'}]}},{sessionId:'fixture'})[0].text).toBe('Line one\nLine two\n{}');
 });
 
+it('Codex preserves channels and marks only complete host protocol envelopes before transport splitting',async()=>{
+ const host='# AGENTS.md instructions for /generated/project\n\n<INSTRUCTIONS>\n'+('Generated policy. '.repeat(900))+'\n</INSTRUCTIONS><environment_context><cwd>/generated/project</cwd></environment_context>';
+ const page='<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>';
+ const environment='<environment_context><cwd>/generated/project</cwd></environment_context>';
+ const browser='<browser_context><tab>Generated fixture</tab></browser_context>';
+ const human='Please explain AGENTS.md and this literal: '+page;
+ const withRequest=environment+'\nPlease update the generated feature.';
+ await writeFile(join(root,'s.jsonl'),[host,page,environment,browser,human,withRequest].map(value=>line(codex(value))).join('')+line({type:'response_item',timestamp:'2026-09-10T01:01:00Z',payload:{type:'message',role:'assistant',channel:'final',content:[{type:'output_text',text:'Generated final answer'}]}}));
+ const scan=await scanCodingAgent(root,'codex',DEFAULT_SOURCE_OPTIONS),hosts=scan.items.filter(i=>i.document?.coding?.attribution==='host');
+ expect(hosts.length).toBeGreaterThan(4);expect(hosts.filter(i=>i.text.startsWith('# AGENTS')).map(i=>i.document?.coding?.parts)).toEqual([3]);
+ expect(scan.items.find(i=>i.text===human)?.document?.coding?.attribution).toBe('human');
+ expect(scan.items.find(i=>i.text===withRequest)?.document?.coding?.attribution).toBe('human');
+ expect(scan.items.at(-1)?.document?.coding).toMatchObject({role:'assistant',attribution:'agent',channel:'final'});
+ expect(scan.items.at(-1)?.document?.recordedAt).toBe('2026-09-10T01:01:00.000Z');
+});
+
+it('streaming Kimi text and tool identity survive append and checkpoint restart without semantic filtering',async()=>{
+ const directory=join(root,'generated-kimi');await mkdir(directory);const path=join(directory,'wire.jsonl');
+ const row=(type:string,payload:unknown,at:number)=>line({timestamp:at,message:{type,payload}});
+ await writeFile(path,row('TurnBegin',{user_input:'Generated request'},1789000000)+row('ContentPart',{type:'text',text:'Hel'},1789000001)+row('ToolCall',{id:'fixture-call',function:{name:'Shell',arguments:''}},1789000002));
+ const first=await scanCodingAgent(root,'kimi',DEFAULT_SOURCE_OPTIONS);
+ expect(first.items.map(i=>i.document?.coding?.role)).toEqual(['user','assistant_delta','tool_call']);
+ await appendFile(path,row('ToolCallPart',{arguments_part:'generated only'},1789000003)+row('ToolResult',{tool_call_id:'fixture-call',return_value:{output:'synthetic output'}},1789000004)+row('ContentPart',{type:'text',text:'lo 🌱'},1789000005));
+ const second=await scanCodingAgent(root,'kimi',DEFAULT_SOURCE_OPTIONS,JSON.parse(JSON.stringify(first.checkpoint)));
+ expect(second.items.map(i=>i.document?.coding?.role)).toEqual(['tool_call_delta','tool_result','assistant_delta']);
+ expect(second.items[0]?.document?.coding?.callId).toBe('fixture-call');expect(second.items.at(-1)?.document?.coding?.attribution).toBe('agent');
+ expect([...first.items,...second.items].filter(i=>i.document?.coding?.role==='assistant_delta').map(i=>i.text).join('')).toBe('Hello 🌱');
+ expect(new Set([...first.items,...second.items].map(i=>i.externalId)).size).toBe(6);
+ expect(second.items.at(-1)?.document?.recordedAt).toBe(new Date(1789000005*1000).toISOString());
+});
+
 it('explicit Git metadata discovers repository candidates across devices without retaining credentials or inventing identity',async()=>{
  const {repositoryCandidate}=await import('../src/coding-project');
  const remote='https://fixture-user:fixture-secret@github.com/generated/example.git?token=fixture-secret#ignored';

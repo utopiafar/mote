@@ -27,6 +27,70 @@ async function fixture(t:import('node:test').TestContext){
   return {store,materials,runtime,sources};
 }
 
+test('the Coding conversation projection excludes tool bodies and host envelopes from catalog, reads and evidence',async t=>{
+  const {materials,runtime,sources}=await fixture(t);
+  const withRole=(i:number,role:string,text:string,metadata:Record<string,unknown>={})=>{const item=event(i,text);return {...item,document:{...item.document,coding:{...item.document.coding,role,...metadata}}};};
+  await sources.upsertBatch('coding',[
+    withRole(0,'user','Generated decision: retain the workspace.',{attribution:'human'}),
+    withRole(1,'tool_call','PRIVATE_TOOL_CALL_FIXTURE'),withRole(2,'tool_result','PRIVATE_TOOL_RESULT_FIXTURE'),withRole(3,'tool_call_delta','PRIVATE_TOOL_DELTA_FIXTURE'),
+    withRole(4,'user','PRIVATE_STRUCTURED_HOST_FIXTURE',{attribution:'host'}),
+    withRole(5,'user','# AGENTS.md instructions for /generated/project\n\n<INSTRUCTIONS>PRIVATE_LEGACY_HOST_FIXTURE</INSTRUCTIONS>'),
+    withRole(6,'user','<external_codex_apps_open_page>{"page_id":"PRIVATE_PAGE_FIXTURE"}</external_codex_apps_open_page>'),
+    withRole(7,'assistant','Generated report: completed; device validation unknown.',{attribution:'agent',channel:'final'}),
+    withRole(8,'user','Explain the string tool_call and AGENTS.md.'),
+  ]);await runtime.tick();
+  const record=materials.list().items[0]!;assert.equal(record.schemaVersion,5);
+  const text=materials.read(record.ref,{length:12000}).text;
+  for(const secret of ['PRIVATE_TOOL_CALL_FIXTURE','PRIVATE_TOOL_RESULT_FIXTURE','PRIVATE_TOOL_DELTA_FIXTURE','PRIVATE_STRUCTURED_HOST_FIXTURE','PRIVATE_LEGACY_HOST_FIXTURE','PRIVATE_PAGE_FIXTURE']){
+    assert.equal(materials.list({query:secret}).items.length,0);assert.ok(!text.includes(secret));
+    assert.ok(materials.evidence(materials.evidenceIds(record.ref)).every(evidence=>!evidence.ocrText?.includes(secret)));
+  }
+  assert.match(text,/Generated decision: retain the workspace/);assert.match(text,/Generated report: completed; device validation unknown/);
+  assert.match(text,/Explain the string tool_call and AGENTS.md/);assert.match(text,/Attribution: human/);assert.match(text,/Attribution: agent · Channel: final/);assert.match(text,/Attribution: unknown/);
+  assert.equal(record.origin.firstAt,event(0).observedAt);assert.equal(record.origin.lastAt,event(8).observedAt);
+});
+
+test('tool-only appends advance the private archive checkpoint without changing conversation revision, times or anchors',async t=>{
+  const {materials,runtime,sources}=await fixture(t);
+  await sources.upsert('coding',event(0,'Generated visible request'));await runtime.tick();
+  const before=materials.list().items[0]!,anchors=materials.evidenceIds(before.ref),checkpoint=materials.codingBase(before.id)!;
+  const tool=event(1,'PRIVATE_APPENDED_TOOL_FIXTURE');await sources.upsert('coding',{...tool,document:{...tool.document,coding:{...tool.document.coding,role:'tool_result',branch:'tool-only-metadata'}}});await runtime.tick();
+  const after=materials.list().items[0]!,current=materials.codingBase(after.id)!;
+  assert.equal(after.revision,before.revision);assert.equal(after.origin.lastAt,before.origin.lastAt);assert.deepEqual(materials.evidenceIds(after.ref),anchors);
+  assert.equal(current.headCount,checkpoint.headCount+1);assert.notEqual(current.archiveCheckpoint,checkpoint.archiveCheckpoint);
+  assert.equal(materials.list({query:'PRIVATE_APPENDED_TOOL_FIXTURE'}).items.length,0);
+  await sources.upsert('coding',event(2,'Generated next visible request'));await runtime.tick();
+  const visible=materials.list().items[0]!;assert.notEqual(visible.revision,before.revision);assert.equal(visible.origin.lastAt,event(2).observedAt);
+  assert.match(materials.read(visible.ref,{length:12000}).text,/Generated next visible request/);
+});
+
+test('a private tool revision rebuild after visible append preserves the exact conversation and its evidence',async t=>{
+  const {materials,runtime,sources}=await fixture(t);
+  const rawTool=event(1,'PRIVATE_TOOL_FIRST_REVISION'),tool={...rawTool,document:{...rawTool.document,coding:{...rawTool.document.coding,role:'tool_result'}}};
+  await sources.upsertBatch('coding',[event(0,'Generated initial request'),tool]);await runtime.tick();
+  await sources.upsert('coding',event(2,'Generated later response'));await runtime.tick();
+  const before=materials.list().items[0]!,anchors=materials.evidenceIds(before.ref),base=materials.codingBase(before.id)!;
+  await sources.upsert('coding',{...tool,revision:'2',text:'PRIVATE_TOOL_REPLACEMENT',observedAt:'2026-09-25T01:00:00Z'});await runtime.tick();
+  const after=materials.list().items[0]!,current=materials.codingBase(after.id)!;
+  assert.equal(after.revision,before.revision);assert.deepEqual(after.artifacts,before.artifacts);assert.deepEqual(materials.evidenceIds(after.ref),anchors);
+  assert.equal(after.origin.lastAt,before.origin.lastAt);assert.notEqual(current.appendEpoch,base.appendEpoch);
+  assert.equal(materials.list({query:'PRIVATE_TOOL_REPLACEMENT'}).items.length,0);
+});
+
+test('multi-part host envelopes and streamed assistant text keep exact provenance without admitting tools',async t=>{
+  const {materials,runtime,sources}=await fixture(t);
+  const host='<environment_context><cwd>/generated/project</cwd></environment_context>',parts=[host.slice(0,25),host.slice(25)];
+  const hostItems=parts.map((text,part)=>{const item=event(part,text);return {...item,document:{...item.document,coding:{...item.document.coding,eventId:'legacy-host',part,parts:2}}};});
+  const delta=(i:number,text:string)=>{const item=event(i,text);return {...item,document:{...item.document,recordedAt:`2026-06-01T00:00:0${i}.000Z`,coding:{...item.document.coding,provider:'kimi',projectKey:'kimi-project',sessionId:'streamed-session',role:'assistant_delta',attribution:'agent'}}};};
+  await sources.upsertBatch('coding',[...hostItems,delta(2,'Hel'),delta(3,'lo 🌱')]);await runtime.tick();
+  const codexRecord=materials.list().items.find(record=>record.origin.provider==='codex')!,kimiRecord=materials.list().items.find(record=>record.origin.provider==='kimi')!;
+  assert.doesNotMatch(materials.read(codexRecord.ref,{length:12000}).text,/<environment_context>|generated\/project/);
+  const text=materials.read(kimiRecord.ref,{length:12000}).text;
+  assert.match(text,/Event: event-2 · Part: 0\/1 · Attribution: agent\n\nHel/);assert.match(text,/Event: event-3 · Part: 0\/1 · Attribution: agent\n\nlo 🌱/);
+  assert.match(text,/Recorded: 2026-06-01T00:00:02.000Z/);assert.match(text,/Recorded: 2026-06-01T00:00:03.000Z/);
+  assert.equal(kimiRecord.origin.firstAt,'2026-06-01T00:00:02.000Z');assert.equal(kimiRecord.origin.lastAt,'2026-06-01T00:00:03.000Z');
+});
+
 test('append reads only new refs, reuses prefix blocks and anchors, and keeps the pinned old revision',async t=>{
   const {store,materials,runtime,sources}=await fixture(t);
   await sources.upsertBatch('coding',Array.from({length:301},(_,i)=>event(i)));

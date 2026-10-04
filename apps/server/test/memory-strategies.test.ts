@@ -15,6 +15,7 @@ import type {MemoryStrategyRef} from '../src/memory-strategy-contract.js';
 const ref=(id:string,version='1'):MemoryStrategyRef=>({id:'fixture.'+id,version});
 const contextTime='2026-09-01T12:00:00Z';
 const original='I felt proud of finishing the prototype. I fixed duplicate writes by using an idempotency key and verified the retry.';
+const understanding=(input:QueryInput)=>input.question.includes('FINAL UNIFIED RESPONSE CONTRACT:\nInterpret every supplied part');
 const extraction={...ref('extract'),input:'memory-evidence@1',output:'memory-candidates@1',permissions:['evidence.read'],prompt:'GENERATED_EXTRACTION_1'};
 const review=(id:string,policy:string)=>({...ref(id),input:'memory-candidates@1',output:'memory-candidates@1',permissions:['evidence.read'],policy});
 const recipe=(id:string,extract:string,reviewId:string)=>({...ref(id),extract:ref(extract),review:ref(reviewId)});
@@ -33,6 +34,7 @@ async function fixture(t:any){
   const calls:QueryInput[]=[],control:{failCoding:boolean;duringExtract?:()=>void;duringReview?:()=>void}={failCoding:false};
   const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
     calls.push(input);if(input.traceContext?.phase==='extract')control.duringExtract?.();const id=input.evidenceIds![0],record=node.memories.readEvidence([id])[0];
+    if(understanding(input))assert.ok(input.question.includes('GENERATED_EXTRACTION_1'),'the selected installed extractor also governs unified Coding candidates');
     const common={uncertainty:'Only the supplied generated source is known.',admission:{layer:'memory',reason:'Generated test claim',scope:'Generated session',attribution:'user'},evidenceIds:[id],evidence:[{id,quote:record.ocrText.trim()}]};
     const candidates=[{...common,domain:'personal',title:'Generated personal context',statement:`Felt proud of finishing the prototype [${id}]`},{...common,domain:'coding',title:'Generated coding experience',statement:`Used an idempotency key to prevent duplicate writes and verified retry [${id}]`,coding:{kind:'pitfall',scope:'session',applicability:'Generated prototype retry',validation:'tested'}}];
     let memories=candidates;
@@ -42,7 +44,8 @@ async function fixture(t:any){
       memories=input.question.includes('GENERATED_REJECT')?[]:(input.question.includes('GENERATED_PERSONAL')||input.question.includes('This strategy admits only personal-domain')||input.question.startsWith(personalMemoryReviewStrategyV2.policy))?[candidates[0]]:[candidates[1]];
       if(input.question.includes('GENERATED_INVALID'))memories=[{...candidates[1],evidence:[{id,quote:'This quote never occurred.'}]}];
     }
-    return {answer:JSON.stringify({memories}),citations:[{id,capturedAt:record.capturedAt,appName:record.appName,excerpt:''}],trace:[],runId:randomUUID()};
+    const range=input.evidenceRanges?.find(range=>range.id===id),quote=range?record.ocrText.slice(range.offset,range.offset+Math.min(range.length,120)):record.ocrText.slice(0,120);
+    return {answer:JSON.stringify(understanding(input)?{summary:'Generated bounded conversation interpretation',evidence:[{id,quote,offset:range?.offset??0}],workRecords:[],events:[],memoryCandidates:memories,actionCues:[]}:{memories}),citations:[{id,capturedAt:record.capturedAt,appName:record.appName,excerpt:''}],trace:[],runId:randomUUID()};
   }}};
   let node=await buildApp(config,dependencies);await node.app.ready();
   const disable=()=>{const settings=node.lifecycle.settings();node.lifecycle.configure({...settings,extraction:{...settings.extraction,enabled:false}});};disable();
@@ -104,7 +107,7 @@ test('installed recipes compose independent products, replace either strategy, a
   assert.deepEqual(codingProduct.strategy?.extract,codingBinding.extract,'Coding v2 changes the reviewer independently');
   assert.deepEqual(f.node.memoryStrategies.resolve({id:'mote.coding-memory',version:'1'}).binding,codingBinding);
   for(const [id,json] of existing)assert.equal(f.node.store.db.prepare('SELECT json FROM memories WHERE id=?').get(id)?.json,json);
-  assert.ok(f.calls.every(c=>c.skill==='memory-strategy'&&c.evidenceRanges?.length));
+  assert.ok(f.calls.every(c=>(c.skill==='memory-strategy'||understanding(c))&&c.evidenceRanges?.length));
 });
 
 test('one failed reviewer leaves the other product intact and retries only its needed work',async t=>{

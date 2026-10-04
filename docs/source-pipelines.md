@@ -24,20 +24,41 @@ Other workflows can reuse the same host services, register their own representat
 v2 client events and durable receipt
   → private immutable batch files + file-only version/head manifest
   → one durable work row per source/session group
-  → complete chronological conversation Markdown
+  → complete chronological clean conversation Markdown
   → immutable material revision, bounded text sections
       → optional current-document full-text index
-      → optional settled Memory job over material sections
+      → existing authorized Memory task / receipt
+          → background conversation understanding over bounded sections
+          → summary + work records + optional events + Memory candidates
+          → independent Memory review and publication
       → model catalog, paged reads, verified section citations
 ```
 
 Raw events produce no `captures`, `source_versions`, `source_heads`, observation, segment or raw FTS rows. SQL stores source/group execution state and aggregate archive size only. File manifests retain retry identity and per-event positions without putting them in SQL. ACK means files and the work checkpoint are durable, not that organization or model processing has finished. Retry after an interrupted commit is idempotent; conflicting revisions are rejected. Raw batches are kept for rebuilding, with the existing content-encryption policy.
 
-Grouping uses source, provider, project and session IDs. Rendering preserves roles, event IDs, timestamps, parts and tool-call IDs. Missing event parts or reference-only inputs are marked partial and are not automatically submitted for Memory extraction. No four-million-character tail truncation remains. Physical text blocks are bounded to 12,000 UTF-16 units; they are contiguous document sections, not raw event records. Markdown fragments concatenate without inserting characters inside words or surrogate pairs. Pages and per-model budgets remain bounded.
+Grouping uses source, provider, project and session IDs. The raw archive retains approved input independently of the model-facing projection. The current Coding material admits conversational text roles, excludes tool-call and tool-result bodies, and excludes complete provider-owned host envelopes. This is structural protocol parsing, not intent or topic classification. Rendering preserves the admitted roles, event IDs, timestamps, channel/attribution metadata and transport parts. Missing event parts or reference-only inputs are marked partial and are not automatically submitted for Memory extraction. No four-million-character tail truncation remains. Physical text blocks are bounded to 12,000 UTF-16 units; they are contiguous document sections, not raw event records. Markdown fragments concatenate without inserting characters inside words or surrogate pairs. Pages and per-model budgets remain bounded.
+
+The material declares `tool_bodies_omitted`, `host_context_omitted` and `speaker_attribution_unverified` fidelity limitations. A clean conversation is still untrusted source evidence. Assistant prose may quote an error, a command or third-party content; retaining that prose does not independently verify a tool result or turn it into the owner's personal experience. Legacy messages without verified speaker metadata remain unattributed.
+
+Desktop retains channel and attribution locally and sends those fields only when the registered Central source advertises support. The first-send field format is durably pinned per immutable input version, including across lost ACKs, collector restarts and adapter rescans. A later Central upgrade can accept new fields for new input versions without changing retries of already-sent input.
+
+### Shared conversation understanding
+
+The Coding processor is a child of an existing authorized Memory task, not a model call on every receive. The automatic path requires the source/recipe Memory settings to be enabled and an applicable authorization recorded at raw receipt time; an owner may also explicitly start a Memory task over the selected evidence. Deterministic publication, upgrading the organizer, importing historical raw input or later enabling Memory never creates a new automatic model grant for previously denied input. Tool-only arrivals do not count as new conversational input or renew a completed grant. If Memory is disabled or authorization is absent, clean publication and source retrieval still work without background understanding.
+
+Within that task, the processor uses the existing background execution lane, model selection, usage ledger, parent material authorization and semantic-product contract. It reads a pinned, bounded range of the clean conversation and produces one interpretation for downstream consumers: an attributed summary, work records, optional personal events and proposed Memory candidates. Work records preserve requirements, constraints, decisions, reported results, validation statements, open items and artifact references. The selected extraction policy guides Memory candidates; its fingerprint participates in the processing task identity, so a different extraction policy cannot reuse the old policy's candidate output. The model decides which products are useful; empty events and Memory candidates are valid. Coding understanding emits no calendar action cues.
+
+The readable, searchable semantic body contains the summary, work records and events, including actor, status, basis, source time, uncertainty and original evidence IDs. Memory candidate bodies are not copied into that search/read projection. They remain structured task metadata for the separate Memory admission/review stage, whose published results use the existing Memory surface. A navigable work record or event therefore remains available even when no candidate qualifies for durable Memory.
+
+Every claim retains its actor, status, basis, source time, uncertainty and exact original support. Host validation checks original evidence IDs, unique quotes and absolute UTF-16 offsets inside the supplied range. Derived summaries and work records never become original evidence. Memory admission/review remains an independent decision over those same source anchors; producing a useful work record does not make it durable personal Memory.
+
+`sourceTime` identifies when a supporting statement was recorded; `occurredAt` is present only when the event's occurrence is explicitly established. A reported outcome by the assistant is not independent verification. Conversation gaps do not measure work duration. A bounded processor result does not establish full-session coverage or the absence of events outside the range. Long conversations remain paged source evidence rather than silently keeping only a head or tail.
+
+Publication and indexing do not depend on a model succeeding. Authorized background understanding may remain pending or fail while the clean conversation stays readable. Query agents use the existing read-only catalog/search/read surfaces and decide when to expand from a compact product to supporting source sections. They receive no raw-tool read capability and cannot write back to Claude Code, Codex or Kimi memory/configuration. Raw archival access and query exposure remain separate permissions. See [Coding conversation and Memory](coding-agent-memory.md) for an example and the historical chain.
 
 Unknown original times are labelled observed times. Equal-time events retain received order; the v2 client event shape does not include a recoverable native sequence for every provider, so it cannot reconstruct an ordering absent from the input. Unknown fields, local paths and native system/reasoning data are not invented in the Markdown. Raw received source items retain their approved metadata.
 
-Only the latest document revision is indexed, using a contentless FTS index; search does not keep another full text copy. One/two-character queries use a bounded result query over published indexed material blocks. Historical revisions remain readable by pinned ref but do not appear as duplicate search results.
+Only the latest document revision is indexed, using a contentless FTS index; search does not keep another full text copy. One/two-character queries use a bounded result query over published indexed material blocks. Historical clean revisions remain readable by pinned ref but do not appear as duplicate search results. Legacy Coding materials with schema versions below 5 retain tool bodies and are excluded from query and Memory input, including their dependent semantic artifacts. They stay in the private owner archive while the source organizer rebuilds clean evidence; there is no fallback to those legacy bodies.
 
 Material section evidence IDs resolve to `material ID + revision + block`, never a raw event row. Existing answer/Memory quote verification reads these sections. Revision replacement invalidates dependent memories and in-flight evidence grants. A whole-session view is conservatively excluded when it crosses the selected hard time/device scope; absence in a narrower view is not proof of absent events.
 
