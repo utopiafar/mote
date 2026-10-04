@@ -1,3 +1,4 @@
+import {readAgentCredential} from './login-fixture.js';
 import {legacyAsset} from './fixtures/legacy-asset.js';
 import {ImportUploads} from '../src/import-uploads.js';
 import {test} from 'node:test';
@@ -160,7 +161,7 @@ test('developer content controls require owner auth and return background progre
   const headers={authorization:`Bearer ${config.token}`};
   assert.equal((await app.inject('/api/content-storage')).statusCode,401);
   const {invitation}=connections.invite({serverUrl:'http://127.0.0.1:47832',label:'Generated collector',deviceId:'fixture'});
-  const collector=await connections.redeem({code:invitation.code,deviceId:'fixture',deviceName:'Generated',platform:'android'});
+  const collector=await readAgentCredential(connections);
   const collectorHeaders={authorization:`Bearer ${collector.token}`};
   assert.equal((await app.inject({url:'/api/content-storage',headers:collectorHeaders})).statusCode,403);
   assert.equal((await app.inject({method:'PUT',url:'/api/content-storage',headers:collectorHeaders,payload:{enabled:true}})).statusCode,403);

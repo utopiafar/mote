@@ -29,11 +29,13 @@ class NativeCentralInstrumentedTest {
         assumeTrue("Dedicated generated-only emulator fixture required", InstrumentationRegistry.getArguments().getString("nativeCentralFixture") == "true")
         assertTrue(Build.MODEL.contains("sdk", true) || Build.FINGERPRINT.contains("emulator", true))
         assertEquals("dev.mote.collector.dev", context.packageName)
+        // Each generated fixture starts clean; individual tests still verify restart persistence.
+        java.io.File(context.noBackupFilesDir, "central-native").deleteRecursively()
         Settings(context).enabled = false
         MoteI18n.select(context, "zh-CN")
         CentralSession.get(context).select("")
         val settings = Settings(context)
-        settings.save(settings.read().copy(server = origin, token = "", debugHttp = true), confirmCentralEndpoint = true)
+        settings.save(settings.read().copy(server = origin, token = "", debugHttp = true, authSignedOut = false, authExpiresAt = 0, authProcess = ""), confirmCentralEndpoint = true)
     }
     private fun views(root: View): List<View> = listOf(root) + if (root is ViewGroup) (0 until root.childCount).flatMap { views(root.getChildAt(it)) } else emptyList()
     private fun all(activity: CentralActivity) = views(activity.window.decorView)
@@ -49,6 +51,7 @@ class NativeCentralInstrumentedTest {
     }
     private fun contains(activity: CentralActivity, text: String) = all(activity).filterIsInstance<TextView>().any { it.text.toString().contains(text) }
     private fun click(scenario: ActivityScenario<out CentralActivity>, text: String) {
+        waitFor(scenario, "Button $text") { activity -> all(activity).filterIsInstance<Button>().any { it.text.toString() == text && it.isEnabled } }
         scenario.onActivity { activity -> all(activity).filterIsInstance<Button>().first { it.text.toString() == text }.performClick() }
     }
     private fun login(scenario: ActivityScenario<out CentralActivity>) {
@@ -114,6 +117,7 @@ class NativeCentralInstrumentedTest {
     @Test fun renderGeneratedNativeViewsForVisualReview() {
         open("ask").use { scenario ->
             login(scenario); waitFor(scenario, "Ask ready") { !it.isWorking && contains(it, "你的问题") }
+            click(scenario, "新对话"); waitFor(scenario, "Fresh generated question") { !it.isWorking && contains(it, "你的问题") }
             for (page in listOf("ask", "notes", "settings")) {
                 scenario.onActivity { it.navigate(page) }; waitFor(scenario, "$page ready") { !it.isWorking }
                 // App drawing of this isolated fixture only; never capture another app or a personal device.
@@ -215,16 +219,16 @@ class NativeCentralInstrumentedTest {
         }
     }
 
-    @Test fun pairedCollectorCannotBecomeOwnerButConfiguredOwnerIsReused() {
+    @Test fun pairedLoginIsSharedByCentralPagesAndLogoutStopsAllAccess() {
         val api = CentralClient(origin, owner); val settings = Settings(context)
         val invitation = api.post("/api/connections/invitations", JSONObject().put("serverUrl", origin).put("label", "Generated emulator").put("deviceId", settings.deviceId))
         val response = HttpJson.request("POST", origin + "/api/connections/redeem", JSONObject().put("code", invitation.getJSONObject("invitation").getString("code"))
             .put("deviceId", settings.deviceId).put("deviceName", "Generated emulator").put("platform", "android"), "")
         assertEquals(200, response.first)
         settings.save(settings.read().copy(token = response.second!!.getString("token")), confirmCentralEndpoint = true)
-        assertNull(CentralAccess.resolve(context).client)
+        assertNotNull(CentralAccess.resolve(context).client)
         open().use { scenario ->
-            login(scenario)
+            waitFor(scenario, "Paired login opens central pages") { it.client != null }
             assertNotNull(CentralAccess.resolve(context).client)
             scenario.recreate(); waitFor(scenario, "Shared owner restored") { it.client != null }
         }
@@ -233,6 +237,47 @@ class NativeCentralInstrumentedTest {
         assertNotNull(CentralAccess.resolve(context).client)
         CentralSession.get(context).signOut()
         assertNull(CentralAccess.resolve(context).client)
+    }
+    @Test fun expiryAndBackgroundRejectionInvalidateEveryFeatureAndFenceOldClients() {
+        val settings = Settings(context)
+        settings.signIn(origin, owner, 86400000L)
+        val old = CentralAccess.requireClient(context)
+        settings.save(settings.read().copy(authExpiresAt = 1))
+        assertFalse(settings.read().hasSyncConnection())
+        assertNull(CentralAccess.resolve(context).client)
+        assertThrows(IllegalStateException::class.java) { old.get("/api/status") }
+        settings.signIn(origin, owner, 86400000L)
+        settings.rejectCredential("https://elsewhere.invalid/api/status", owner)
+        assertTrue(settings.read().hasSyncConnection())
+        settings.rejectCredential(origin + "/api/status", "generated-wrong-credential")
+        assertTrue(settings.read().hasSyncConnection())
+        settings.rejectCredential(origin + "/api/status", owner)
+        assertTrue(Settings(context).read().authSignedOut)
+        assertEquals(owner, settings.read().token)
+        assertNull(CentralAccess.resolve(context).client)
+        settings.signIn(origin, owner, 86400000L)
+        open("ask").use { scenario ->
+            waitFor(scenario, "Reauthorization is shared") { it.client != null }
+            settings.save(settings.read().copy(authExpiresAt = 1))
+            waitFor(scenario, "Foreground expiry clears private pages") { it.client == null && contains(it, "登录并继续") }
+        }
+    }
+    @Test fun migratesLegacyOwnerSessionOnceWithoutFallbackAfterCanonicalLogout() {
+        val settings = Settings(context)
+        val legacy = java.io.File(context.noBackupFilesDir, "central-owner-session.enc")
+        val deadline = System.currentTimeMillis() + 86400000L
+        val saved = JSONObject().put("server", origin).put("token", owner).put("expiresAt", deadline)
+        legacy.writeBytes(SecretBox().seal(saved.toString().toByteArray()))
+        UnifiedCentralSession(context)
+        assertFalse(legacy.exists())
+        assertEquals(owner, settings.read().connectionToken())
+        assertEquals(deadline, settings.read().authExpiresAt)
+        settings.signOut()
+        legacy.writeBytes(SecretBox().seal(saved.toString().toByteArray()))
+        UnifiedCentralSession(context)
+        assertFalse(legacy.exists())
+        assertTrue(settings.read().connectionToken().isBlank())
+        assertEquals(owner, settings.read().token)
     }
     @Test fun switchingNodeInvalidatesTheClientBeforeAnyNewRequest() {
         val settings = Settings(context); settings.save(settings.read().copy(token = owner), confirmCentralEndpoint = true)

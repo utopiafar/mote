@@ -1,3 +1,4 @@
+import { connectionToken, sourceConnectionBinding, validSourceBinding } from './login-session';
 import {uiRulesSchema,uiModeSchema} from '@mote/shared';
 import { uploadGateConfig } from './upload-gate';
 import { moteText } from '@mote/shared/i18n';
@@ -80,11 +81,14 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
   if (input.token !== undefined && (typeof input.token !== 'string' || input.token.length > 4096 || /[\r\n]/.test(input.token))) throw new Error(moteText("令牌格式不正确"));
   const syncMode = input.syncMode ?? current.syncMode ?? 'realtime';
   if (!['realtime', 'interval', 'batch', 'manual'].includes(syncMode)) throw new Error(moteText("同步方式无效"));
+  const serverUrl = input.serverUrl === '' ? '' : validateServerUrl(input.serverUrl);
   const config: Config = {
+    authSourceBinding: serverUrl === current.serverUrl && current.authSourceBinding ? validSourceBinding(current.authSourceBinding) : undefined,
+    authSignedOut: current.authSignedOut, authExpiresAt: current.authExpiresAt, authSessionOnly: current.authSessionOnly,
     uiPageMode:uiModeSchema.parse(input.uiPageMode??current.uiPageMode??'screen_only'),
     uiPageRules:uiRulesSchema.parse(input.uiPageRules??current.uiPageRules??[]),
     uploadGate: uploadGateConfig(input.uploadGate ?? current.uploadGate),
-    serverUrl: input.serverUrl === '' ? '' : validateServerUrl(input.serverUrl),
+    serverUrl,
     syncMode, syncIntervalMinutes: integer(input.syncIntervalMinutes ?? current.syncIntervalMinutes ?? 1, 1, 1440, moteText("同步间隔（分钟）")), syncBatchSize: integer(input.syncBatchSize ?? current.syncBatchSize ?? 20, 1, 500, moteText("批量同步条数")), deviceId: current.deviceId, deviceName: input.deviceName.trim(),
     intervalMs: integer(input.intervalMs, 5000, 300000, moteText("采样间隔（毫秒）")),
     maxQueueBytes: integer(input.maxQueueBytes, 1024 * 1024, 20 * 1024 * 1024 * 1024, moteText("本地队列容量")),
@@ -104,22 +108,22 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
     reviewMaxTokens: current.reviewMaxTokens, reviewMaxSide: current.reviewMaxSide,
     nsfwThreads: current.nsfwThreads, nsfwTimeoutMs: current.nsfwTimeoutMs,
     nsfwSource: current.nsfwSource, nsfwCustomUrl: current.nsfwCustomUrl,
-    token: input.token === undefined ? current.token : input.token.trim(),
+    token: input.token === undefined ? current.token : input.token.trim() || undefined,
   };
   if (config.serverUrl === current.serverUrl && config.token === current.token && ['owner', 'collector'].includes(current.credentialScope || '')) config.credentialScope = current.credentialScope;
   if ((config.serverUrl !== current.serverUrl || config.token !== current.token) && queuedEvents > 0 && !confirmedUnboundBacklog) throw new Error(moteText("还有待上传记录，不能切换节点或令牌；请先完成上传或备份处理旧队列"));
   if (config.serverUrl !== current.serverUrl) {
     if (queuedEvents > 0 && !confirmedUnboundBacklog) throw new Error(moteText("还有待上传记录，不能切换中央节点；请先完成上传，或导出并移走旧队列后重启"));
-    if (config.serverUrl && (typeof input.token !== 'string' || !input.token.trim())) throw new Error(moteText("切换中央节点必须明确输入新节点令牌，不能复用已有令牌"));
+    if (config.serverUrl && (typeof input.token !== 'string')) throw new Error(moteText("切换中央节点必须明确输入新节点令牌，不能复用已有令牌"));
   }
   if (!config.serverUrl) config.token = undefined;
-  if (config.serverUrl && !isLoopback(new URL(config.serverUrl).hostname) && (config.token?.length ?? 0) < 32) throw new Error(moteText("远程部署至少需要 32 字符访问令牌"));
+  if (config.serverUrl && config.token && !isLoopback(new URL(config.serverUrl).hostname) && (config.token?.length ?? 0) < 32) throw new Error(moteText("远程部署至少需要 32 字符访问令牌"));
   return config;
 }
 
 export function publicConfig(config: Config): PublicConfig {
   const { token, ...rest } = config;
-  return { ...rest, tokenConfigured: Boolean(token) };
+  return { ...rest, tokenConfigured: Boolean(connectionToken(config)) };
 }
 
 export interface SecretStorage {
@@ -149,7 +153,7 @@ export class ConfigStore {
   async save(config: Config): Promise<void> {
     const { token, ...rest } = config;
     if (token && !this.secrets.available()) throw new Error(moteText("系统加密存储不可用，拒绝保存明文令牌"));
-    const contents = JSON.stringify({ version: 1, config: rest, encryptedToken: token ? this.secrets.encrypt(token).toString('base64') : undefined }, null, 2);
+    const contents = JSON.stringify({ version: 1, config: {...rest,authSourceBinding:config.authSessionOnly?sourceConnectionBinding(config):config.authSourceBinding}, encryptedToken: token && !config.authSessionOnly ? this.secrets.encrypt(token).toString('base64') : undefined }, null, 2);
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     await chmod(this.directory, 0o700);
     const temporary = join(this.directory, `config.${randomUUID()}.tmp`);

@@ -42,7 +42,7 @@ it('uses the latest invitation for repeated pairing and rejects a replaced previ
   ]);
 });
 it('never sends saved credentials during redemption and rejects response origin/scope/token mismatches', async () => {
-  for (const bad of [{ serverUrl: 'https://other.example' }, { scope: 'owner' }, { token: 'short' }, { token: 'a'.repeat(32) + '\n' }, { ownerToken: token }]) {
+  for (const bad of [{ serverUrl: 'https://other.example' }, { scope: 'mcp-read' }, { token: 'short' }, { token: 'a'.repeat(32) + '\n' }, { ownerToken: token }]) {
     const value = new ConnectionOnboarding(async (url, init) => { expect(url).toBe(invitation.serverUrl + '/api/connections/redeem'); expect(init?.redirect).toBe('error'); expect(init?.headers).not.toHaveProperty('Authorization'); expect(JSON.parse(String(init?.body))).toEqual({ code: invitation.code, deviceId: 'fixture-device', deviceName: 'Synthetic', platform: 'macos' }); return response({ serverUrl: invitation.serverUrl, token, credentialId: 'fixture-credential', scope: 'collector', ...bad }); }, () => now);
     const preview = value.preview(JSON.stringify(invitation)); await expect(value.redeem(preview.id, preview.serverUrl, { deviceId: 'fixture-device', deviceName: 'Synthetic' }, 'macos')).rejects.toThrow();
   }
@@ -58,7 +58,7 @@ it('validates connection scope, device binding and bounded responses', async () 
   const config = { serverUrl: invitation.serverUrl, token, deviceId: 'fixture-device' };
   const result = await testConnection(config, async (_url, init) => { expect(init?.headers).toEqual({ Authorization: 'Bearer ' + token, 'Accept-Language': 'zh-CN', 'X-Mote-Protocol-Version': '1' }); expect(init?.redirect).toBe('error'); return response(identity); });
   expect(result.credential.scope).toBe('collector'); expect(result.capabilities.ingressVersion).toBe(2); expect(JSON.stringify(result)).not.toContain(token);
-  for (const bad of [{ ...identity, credential: { ...identity.credential, deviceId: 'other' } }, { ...identity, capabilities: { ...identity.capabilities, archiveRead: true } }, { ...identity, capabilities: { ...identity.capabilities, ingressVersion: '2' } }, { ...identity, credential: { ...identity.credential, token } }]) await expect(testConnection(config, async () => response(bad))).rejects.toThrow();
+  for (const bad of [{ ...identity, credential: { ...identity.credential, deviceId: 'other' } }, { ...identity, capabilities: { ...identity.capabilities, ingressVersion: '2' } }, { ...identity, credential: { ...identity.credential, token } }]) await expect(testConnection(config, async () => response(bad))).rejects.toThrow();
   await expect(testConnection(config, async () => new Response('x'.repeat(16385)))).rejects.toThrow();
 });
 const protocolFixtures = JSON.parse(readFileSync(new URL('../../../protocol/fixtures/compatibility.json', import.meta.url), 'utf8')) as Array<{name:string;protocol?:unknown;expected?:{min:number;max:number};error?:string}>;
@@ -83,4 +83,8 @@ it('allows explicitly confirmed same-node invitations to resume pending data onl
   expect(() => assertConnectionChangeSafe(pending, true)).not.toThrow();
   expect(() => assertConnectionChangeSafe(pending, false)).toThrow('待上传');
   for (const state of [{ running: true }, { inFlight: true }, { sourceInFlight: true }]) expect(() => assertConnectionChangeSafe({ ...pending, ...state }, true)).toThrow();
+});
+
+it('accepts full owner permissions on registered and legacy device credentials',async()=>{
+ for(const scope of ['owner','collector'])expect((await testConnection({serverUrl:invitation.serverUrl,token,deviceId:'fixture-device'},async()=>response({...identity,credential:{...identity.credential,scope},capabilities:{...identity.capabilities,archiveRead:true}}))).capabilities.archiveRead).toBe(true);
 });

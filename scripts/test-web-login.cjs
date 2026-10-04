@@ -3,7 +3,7 @@ require('./fixture-language.cjs');
 const {app,BrowserWindow}=require('electron');
 const {mkdtempSync,mkdirSync,writeFileSync,rmSync}=require('node:fs');
 const {tmpdir}=require('node:os');const {join,resolve}=require('node:path');
-const {spawn}=require('node:child_process');const {randomBytes,randomUUID}=require('node:crypto');
+const {spawn}=require('node:child_process');const {randomBytes,randomUUID,createHash}=require('node:crypto');
 const net=require('node:net');const assert=require('node:assert/strict');
 const repo=resolve(__dirname,'..'),root=mkdtempSync(join(tmpdir(),'mote-login-')),output=join(repo,'.mote/web-login');
 mkdirSync(output,{recursive:true,mode:0o700});app.setPath('userData',join(root,'browser'));app.on('window-all-closed',()=>{});
@@ -32,18 +32,18 @@ async function run(){
  await until(()=>js(`document.querySelector('.welcome')`),'anonymous welcome');
  assert.equal(await js(`!!document.querySelector('.archive-page,.device-overview,.server-settings')`),false);
  await js(`window.fixtureRequests=[];window.fixtureFailures=new Set();window.fixtureExpire=false;const original=fetch.bind(window);window.fetch=async(input,init)=>{const path=new URL(typeof input==='string'?input:input.url,location.href).pathname;window.fixtureRequests.push(path);if(window.fixtureExpire&&path==='/api/status')return new Response(JSON.stringify({message:'Generated expired session'}),{status:401});if(window.fixtureFailures.has(path))return new Response(JSON.stringify({message:'Generated independent endpoint failure'}),{status:503});return original(input,init);};true;`);
- await click('连接');await click('设备');await until(()=>js(`document.querySelector('#connect-title')?.textContent==='登录 Mote'`),'device login guard');
- assert.ok(await js(`document.querySelector('.connect-modal').innerText.includes('进入「设备」')`));
+ await click('采集与设备');await js(`document.querySelector('.welcome button.primary').click()`);await until(()=>js(`document.querySelector('#connect-title')?.textContent==='登录 Mote'`),'device login guard');
+ assert.ok(await js(`document.querySelector('.connect-modal').innerText.includes('进入「采集与设备」')`));
  assert.equal(await js(`!!document.querySelector('.login-advanced,[aria-label="登录节点地址"]')`),false,'management login has no remote node selector');
  assert.equal(await js(`document.querySelector('[aria-label="登录会话有效期"]')?.value`),'session','new login defaults to a tab-scoped session');
  assert.deepEqual(await js('window.fixtureRequests'),[],'anonymous navigation does not request private data');
  await shot('login-desktop');window.setSize(430,900);await delay(150);await shot('login-mobile');window.setSize(1360,1000);
  await input('generated-invalid');await click('登录并继续');await until(()=>js(`document.querySelector('.connect-modal').innerText.includes('令牌无效')`),'invalid token error');
  assert.equal(await js(`sessionStorage.getItem('mote.connection')`),null);
- await input(collector.token);await click('登录并继续');await until(()=>js(`document.querySelector('.connect-modal').innerText.includes('没有管理权限')`),'collector cannot unlock owner UI');
- assert.equal(await js(`!!document.querySelector('.device-overview')`),false);
- await js(`document.querySelector('[aria-label="关闭登录"]').click()`);
- await click('资料库');await until(()=>js(`document.querySelector('.connect-modal').innerText.includes('进入「全部资料」')`),'preserve selected protected page');
+ await input(collector.token);await click('登录并继续');await until(()=>js(`!!document.querySelector('.device-overview')`),'paired client has full device access');
+ assert.equal(await js(`!!document.querySelector('[aria-label="管理访问令牌"]')`),false);
+ await js(`document.querySelector('[aria-label="登录会话"]').click()`);await click('退出登录');
+ await click('资料库');await js(`document.querySelector('.welcome button.primary').click()`);await until(()=>js(`document.querySelector('.connect-modal').innerText.includes('进入「资料库」')`),'preserve selected protected page');
  await js(`window.fixtureFailures.add('/api/insights');window.fixtureFailures.add('/api/status');true;`);
  await input(owner);await click('登录并继续');
  await until(()=>js(`!!document.querySelector('.archive-page .filter-bar')`),'archive opens despite failed status and insights');
@@ -52,8 +52,8 @@ async function run(){
  await selectLifetime('1d');await until(()=>js(`!!localStorage.getItem('mote.connection')&&JSON.parse(localStorage.getItem('mote.connection')).expiresAt> Date.now()`),'persistent browser session');
  assert.equal(await js(`sessionStorage.getItem('mote.connection')`),null);
  await selectLifetime('session');await until(()=>js(`!!sessionStorage.getItem('mote.connection')&&!localStorage.getItem('mote.connection')`),'tab-scoped browser session');
- await click('连接');await click('设备');await until(()=>js(`document.querySelector('.device-overview')?.innerText.includes('合成测试手机')`),'devices load independently');
- await click('扫码连接设备');await until(()=>js(`!!document.querySelector('#connections-title')`),'pairing accessible without overview status');
+ await click('采集与设备');await until(()=>js(`document.querySelector('.device-overview')?.innerText.includes('合成测试手机')`),'devices load independently');
+ await click('连接设备');await until(()=>js(`!!document.querySelector('#connections-title')`),'pairing accessible without overview status');
  await click('生成设备二维码');await until(()=>js(`!!document.querySelector('.connection-qr img')`),'QR accessible after login');
  assert.equal(await js(`document.querySelector('[aria-label="连接邀请 JSON"]').value.includes(${JSON.stringify(owner)})`),false);
  await click('取消邀请');await until(()=>js(`!document.querySelector('.connection-invitation')`),'cancel synthetic invite');
@@ -80,10 +80,7 @@ async function run(){
  await js(`document.querySelector('.welcome button.primary').click()`);
  await until(()=>js(`!!document.querySelector('#connect-title')`),'deep-link login');
  await input(collector.token);await click('登录并继续');
- await until(()=>js(`document.querySelector('.connect-modal')?.innerText.includes('没有管理权限')`),'collector rejected on deep link');
- assert.equal(await js(`window.fixtureEvidenceReads`),0,'collector login cannot read evidence');
- assert.equal(await js(`!!document.querySelector('.evidence-modal')`),false);
- await input(owner);await click('登录并继续');
+
  await until(()=>js(`document.querySelector('.evidence-modal')?.textContent.includes('Generated private note for authentication regression.')`),'owner opens deep-linked note');
  assert.ok(await js(`window.fixtureEvidenceReads>0`),'normal authenticated reader fetches evidence');
  assert.equal(await js(`new URLSearchParams(location.hash.split('?')[1]).get('evidence')`),evidenceRef);
@@ -102,10 +99,30 @@ async function run(){
  await until(()=>js(`!document.querySelector('.evidence-modal')`),'close after relogin');
  await js(`document.querySelector('[aria-label="登录会话"]').click()`);await click('退出登录');
  await until(()=>js(`!new URLSearchParams(location.hash.split('?')[1]).has('evidence')&&sessionStorage.getItem('mote.connection')===null`),'explicit logout clears evidence route before switching node');
- // A saved token is untrusted until the owner-only endpoint validates it again.
+ // Legacy paired credentials restore the canonical full client login.
  await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token:collector.token}))});location.reload()`);
- await until(()=>js(`document.body.innerText.includes('此令牌没有管理权限')`),'restored collector session denied');
- assert.equal(await js(`!!document.querySelector('.archive-page,.device-overview,.capture-card')`),false);
+ await until(()=>js(`document.body.innerText.includes('已登录 · test')`),'restored paired session has full access');
+ assert.equal(await js(`!!document.querySelector('[aria-label="管理访问令牌"]')`),false);
+ // Browser approval and ticket handoff share the real central auth contract.
+ const verifier=randomBytes(32).toString('base64url');
+ const created=await request('/api/login/requests',null,{serverUrl:base,deviceId:'generated-native-login',deviceName:'Generated native client',platform:'macos',challenge:createHash('sha256').update(verifier).digest('hex')});assert.equal(created.status,200);
+ const {id:loginId}=await created.json();
+ await window.loadURL(base+'/#/ask?loginRequest='+loginId);
+ await until(()=>js(`document.body.innerText.includes('Generated native client')`),'browser recognizes native login request');
+ await click('继续登录客户端');
+ await until(()=>js(`document.body.innerText.includes('客户端已登录，可返回客户端继续。')`),'browser approval complete');
+ const ready=await request('/api/login/poll',null,{id:loginId,verifier});assert.equal(ready.status,200);const nativeGrant=await ready.json();assert.equal(nativeGrant.ready,true);assert.equal(nativeGrant.scope,'owner');
+ assert.equal((await request('/api/configuration',nativeGrant.token)).status,200);
+ const handoff=await request('/api/login/ticket',nativeGrant.token,{});assert.equal(handoff.status,200);const {code}=await handoff.json();
+ await window.loadURL(base+'/#/ask?evidence='+encodeURIComponent(evidenceRef)+'&loginTicket='+code);
+ await until(()=>js(`document.querySelector('.evidence-modal')?.textContent.includes('Generated private note for authentication regression.')`),'native handoff opens original evidence automatically');
+ assert.equal(await js(`new URLSearchParams(location.hash.split('?')[1]).has('loginTicket')`),false);
+ assert.equal(await js(`!!document.querySelector('[aria-label="管理访问令牌"]')`),false);
+ assert.equal(await js(`JSON.parse(localStorage.getItem('mote.connection')||sessionStorage.getItem('mote.connection')).token`),nativeGrant.token);
+ await js(`document.querySelector('[aria-label="关闭证据详情"]').click();document.querySelector('[aria-label="登录会话"]').click()`);await click('退出登录');
+ await until(async()=>!(await request('/api/configuration',nativeGrant.token)).ok,'browser logout revokes the shared native credential');
+ await window.loadURL(base+'/#/ask?loginTicket='+code);
+ await until(()=>js(`!!document.querySelector('.welcome')`),'replayed ticket cannot restore another login');
  // Run this same web build inside the real Mac central window, with main-only credentials.
  window.destroy();
  const {openCentralWindow}=require('../apps/desktop/dist/central-window');
@@ -119,8 +136,8 @@ async function run(){
  void window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='退出登录').click()`).catch(()=>{});
  await until(()=>window.isDestroyed(),'native logout closes privileged window');
  await assert.rejects(nativeSession.fetch(base+'/api/configuration'));
- writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,generatedOnly:true,checks:['anonymous page guard','same-origin login','invalid token','collector denied','intended page restored','independent endpoint failures','device QR reachable','expired session clears data','anonymous evidence deep link','collector denied on evidence','owner login opens original evidence','direct detail closes in place','expired deep link resumes after re-login','logout clears evidence route','restored token verification','desktop/mobile layout','native owner-only header authentication','native logout closes authorized session']},null,2));
+ writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,generatedOnly:true,checks:['anonymous page guard','same-origin login','invalid token','paired client full access','intended page restored','independent endpoint failures','device QR reachable','expired session clears data','anonymous evidence deep link','paired client evidence access','owner login opens original evidence','direct detail closes in place','expired deep link resumes after re-login','logout clears evidence route','restored token verification','browser native approval','one-time evidence handoff without token entry','shared native/browser logout','ticket replay rejection','desktop/mobile layout','native owner-only header authentication','native logout closes authorized session']},null,2));
  console.log('PASS: real central + browser login, permission gates, independent navigation and device QR; generated content only.');
 }
 async function finish(code){if(window&&!window.isDestroyed())window.destroy();if(server&&server.exitCode===null){server.kill('SIGTERM');await Promise.race([new Promise(r=>server.once('close',r)),delay(5000)]);}rmSync(root,{recursive:true,force:true});app.exit(code);}
-run().then(()=>finish(0),e=>{console.error(e.message);void finish(1);});
+run().then(()=>finish(0),async e=>{console.error(e.stack);if(window&&!window.isDestroyed())console.error(await window.webContents.executeJavaScript('document.body.innerText').catch(()=>''));void finish(1);});

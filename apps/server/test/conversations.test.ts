@@ -63,7 +63,7 @@ test('new answers receive bounded visible memory leads and respect explicit arch
   assert.deepEqual(seen[2].openingMemories?.map(item=>item.id),[proposed.memory.id]);
 });
 
-test('only the owner can read, continue or delete saved conversations',async t=>{
+test('full client login can read, continue and delete saved conversations',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-conversation-auth-'));
   const {app}=await buildApp(config(dir),{agent:agent(async()=>answer())});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
@@ -72,11 +72,10 @@ test('only the owner can read, continue or delete saved conversations',async t=>
   const redeemed=(await app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invitation.invitation.code,deviceId:'fixture-phone',deviceName:'Fixture phone',platform:'android'}})).json();
   for(const route of ['/api/conversations',`/api/conversations/${first.conversationId}`]) {
     assert.equal((await app.inject(route)).statusCode,401);
-    assert.equal((await app.inject({url:route,headers:{authorization:`Bearer ${redeemed.token}`}})).statusCode,403);
+    assert.equal((await app.inject({url:route,headers:{authorization:`Bearer ${redeemed.token}`}})).statusCode,200);
   }
-  assert.equal((await app.inject({method:'DELETE',url:`/api/conversations/${first.conversationId}`,headers:{authorization:`Bearer ${redeemed.token}`}})).statusCode,403);
-  assert.equal((await app.inject({method:'POST',url:'/api/query',headers:{authorization:`Bearer ${redeemed.token}`},payload:{question:'continue',conversationId:first.conversationId}})).statusCode,403);
-  assert.equal((await app.inject({method:'DELETE',url:`/api/conversations/${first.conversationId}`,headers})).json().deleted,1);
+  assert.equal((await app.inject({method:'POST',url:'/api/query',headers:{authorization:`Bearer ${redeemed.token}`},payload:{question:'continue',conversationId:first.conversationId}})).statusCode,200);
+  assert.equal((await app.inject({method:'DELETE',url:`/api/conversations/${first.conversationId}`,headers:{authorization:`Bearer ${redeemed.token}`}})).json().deleted,1);
   assert.equal((await app.inject({url:`/api/conversations/${first.conversationId}`,headers})).statusCode,404);
   assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'continue',conversationId:first.conversationId}})).statusCode,404);
 });

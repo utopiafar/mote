@@ -49,7 +49,7 @@ describe('native source lifecycle with local HTTP fixtures', () => {
     await writeFile(file, '新节点合成内容'); await app.changeConnection({ serverUrl: second.url, token: 'other-synthetic-token', deviceId: 'synthetic-device' }); await app.sync();
     expect(second.items).toHaveLength(0);
     await app.update(source.id, { ...source, enabled: true }); await app.sync();
-    expect(second.items).toHaveLength(1); expect(second.items[0].text).toBe('新节点合成内容'); expect(second.items[0].revision).not.toBe(first.items[0].revision);
+    expect(second.items).toHaveLength(1); expect(second.items[0].text).toBe(''); await (app as any).processFiles(); await app.flushPending(new AbortController().signal); expect(second.items.at(-1)?.text).toBe('新节点合成内容'); expect(second.items[0].revision).not.toBe(first.items[0].revision);
   });
   it('turning off deletion tracking drops a previously queued tombstone instead of replaying it', async () => {
     const server = await endpoint(); const folder = join(directory, 'selected'); await mkdir(folder); const file = join(folder, 'a.md'); await writeFile(file, 'synthetic');
@@ -76,7 +76,7 @@ it('loads paused durable pending bodies before permitting a connection change an
   let value = await manager(endpointValue.url); await value.addFiles(file, DEFAULT_SOURCE_OPTIONS); await value.sync();
   const source = value.status()[0].source; await value.update(source.id, { ...source, enabled: false }); await value.sync(); await value.close();
   value = await manager(endpointValue.url); await value.sync(); expect(value.connectionActivity().pending).toBe(1);
-  const release = await value.holdConnection(); await value.sync(true); expect(value.connectionActivity()).toEqual({ pending: 1, inFlight: false }); release();
+  const release = await value.holdConnection(); await value.sync(true); expect(value.connectionActivity()).toEqual({ pending: 1, processingPending: 1, inFlight: false }); release();
 });
 
 it('checkpoints pending source bodies before credential persistence and recovers identical revisions after restart', async () => {
@@ -108,7 +108,7 @@ it('a manual sync overlapping an automatic scan waits for one coalesced forced f
   expect(modes).toEqual([false, true]);
 });
 
-it('waits for a watcher scan rerun before flushing a durable pending source item', async () => {
+it('flushes durable pending source versions while watcher scans are still running', async () => {
   const server = await endpoint(true), file = join(directory, 'watcher-rerun.md');
   await writeFile(file, 'Generated pending source body');
   const app = await manager(server.url);
@@ -126,7 +126,7 @@ it('waits for a watcher scan rerun before flushing a durable pending source item
   let scans = 0;
   vi.spyOn(app as any, 'run').mockImplementation(async () => {
     if (++scans === 1) { firstStarted(); await firstGate; }
-    else { (app as any).readable.delete(sourceId); secondStarted(); await secondGate; (app as any).readable.add(sourceId); }
+    else { secondStarted(); await secondGate; }
   });
 
   const initial = app.sync(false); await firstScan;
@@ -134,12 +134,12 @@ it('waits for a watcher scan rerun before flushing a durable pending source item
   let flushed = false;
   const flush = app.flushPending(new AbortController().signal).then(() => { flushed = true; });
   releaseFirst(); await secondScan;
-  await new Promise(resolve => setTimeout(resolve, 30));
+  await vi.waitFor(() => expect(flushed).toBe(true), {timeout:5000,interval:25});
   const flushedDuringScan = flushed;
   const pendingDuringScan = app.pendingStats().pendingRecords;
   releaseSecond(); await Promise.all([initial, flush]);
-  expect(flushedDuringScan).toBe(false);
-  expect(pendingDuringScan).toBe(1);
+  expect(flushedDuringScan).toBe(true);
+  expect(pendingDuringScan).toBe(0);
   expect(scans).toBe(2);
   expect(app.pendingStats().pendingRecords).toBe(0);
   expect(server.items).toHaveLength(2);
@@ -151,5 +151,5 @@ it('serves file evidence from the durable directory catalog immediately after re
  let value=await manager(server.url);await value.addFiles(folder,{...DEFAULT_SOURCE_OPTIONS,indexMode:'lightweight',allowRead:true});await value.sync();
  const source=value.status()[0].source,original=server.items.find(item=>item.title==='first.txt')!;expect(original).toBeTruthy();await value.close();
  server.reads.push({id:'11111111-1111-4111-8111-111111111111',sourceId:source.id,externalId:original.externalId,revision:original.revision,contentVersion:original.document!.fileIndex!.contentVersion,offset:9000,length:100});
- value=await manager(server.url);await value.sync();expect(server.readReplies[0]).toMatchObject({status:'ready',text:text.slice(9000,9100)});
+ value=await manager(server.url);await value.sync();await (value as any).processFiles();expect(server.readReplies[0]).toMatchObject({status:'ready',text:text.slice(9000,9100)});
 });

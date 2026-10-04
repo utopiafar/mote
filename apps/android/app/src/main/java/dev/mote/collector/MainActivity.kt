@@ -397,11 +397,18 @@ class MainActivity : MoteActivity() {
         section(MoteI18n.text("节点与设备"))
         connectionSummary = text("", 13, MoteUi.muted)
         server = field(MoteI18n.text("节点 URL（可留空，仅在本机记录）"), config.server, "https://mote.example.com", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
-        token = field(MoteI18n.text("访问令牌（未连接时可留空）"), config.token, MoteI18n.text("建议通过邀请获取本设备凭据"), InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        token = field(MoteI18n.text("访问令牌（未连接时可留空）"), "", MoteI18n.text("建议通过邀请获取本设备凭据"), InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        fun showTokenField() {
+            val visible = config.connectionToken().isBlank() || server.text.toString().trim().trimEnd('/') != config.server.trimEnd('/')
+            token.visibility = if (visible) View.VISIBLE else View.GONE
+            fieldLabels[token]?.visibility = token.visibility
+        }
+        showTokenField()
         server.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun afterTextChanged(s: Editable?) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                showTokenField()
                 if (!applyingConnectionFields && !loadedServer.isNullOrBlank() && s.toString().trim().trimEnd('/') != loadedServer!!.trimEnd('/') && token.text.isNotEmpty()) {
                     token.text.clear()
                     toast(MoteI18n.text("节点地址已修改，请明确填写新节点令牌；队列未清空时不能换节点"))
@@ -410,7 +417,7 @@ class MainActivity : MoteActivity() {
         })
         name = field(MoteI18n.text("设备名称"), config.deviceName, MoteI18n.text("我的 K90 Pro Max"))
         text(MoteI18n.text("中央节点可在电脑、NAS 或服务器部署。手机的 localhost 指手机本身；跨设备请填写局域网 IP 或 HTTPS 域名。"), 13, MoteUi.muted)
-        text(MoteI18n.text("验证采集连接只检查本设备的上传权限；中央资料仍需在中央界面单独登录。"), 13, MoteUi.muted)
+        text(MoteI18n.text("登录一次即可使用问答、资料库和同步等所有中央功能。"), 13, MoteUi.muted)
         val verification = text("", 13, MoteUi.muted)
         button(MoteI18n.text("验证已保存的采集连接")) {
             if (applyingSettings || uiTask.busy) return@button
@@ -418,7 +425,7 @@ class MainActivity : MoteActivity() {
                 if (!settings.read().hasSyncConnection()) throw ConnectionFailure("authentication")
                 ConnectionClient(applicationContext).test()
             }) { result ->
-                verification.text = if (result.isSuccess) MoteI18n.text("采集连接验证成功；中央资料仍需单独登录。")
+                verification.text = if (result.isSuccess) MoteI18n.text("登录成功，可使用所有中央功能。")
                     else MoteI18n.text("采集连接验证未通过，请检查已保存的地址、凭据和网络后重试。")
                 refreshStatus()
             }
@@ -815,7 +822,7 @@ class MainActivity : MoteActivity() {
     private fun draft(current: CollectorConfig = loadedConfig): CollectorConfig = when (currentPage) {
         Page.CONNECTION -> current.copy(
             server = checked(server) { server.text.toString().trim().let { if (it.isBlank()) "" else PrivacyRules.validateEndpoint(it, current.debugHttp, BuildConfig.DEBUG) } },
-            token = checked(token) { token.text.toString().trim().also { require(it.isBlank() || it.length >= 32) { MoteI18n.text("令牌至少需要 32 个字符；未连接时可留空") } } },
+            token = checked(token) { token.text.toString().trim().ifBlank { if (server.text.toString().trim().trimEnd('/') == current.server.trimEnd('/')) current.token else "" }.also { require(it.isBlank() || it.length >= 32) { MoteI18n.text("令牌至少需要 32 个字符；未连接时可留空") } } },
             deviceName = checked(name) { name.text.toString().trim().also { require(it.isNotBlank() && it.length <= 128) { MoteI18n.text("请填写 1..128 字符的设备名称") } } },
             wifiOnly = wifi.isChecked, syncMode = syncModes[syncMode.selectedItemPosition], syncIntervalMinutes = number(syncInterval, 1..1440),
             packedUpload = packedUpload.isChecked, syncBatchSize = number(syncBatch, 1..500), jsonlWindowMinutes = number(jsonlWindow, 1..1440), syncChargingOnly = syncChargingOnly.isChecked, syncBatteryNotLow = syncBatteryNotLow.isChecked)
@@ -875,7 +882,7 @@ class MainActivity : MoteActivity() {
     private fun saveConfig(bindLocal: Boolean = false, after: () -> Unit = {}): Unit {
         if (applyingSettings || uiTask.busy) return
         val current = loadedConfig
-        val c = runCatching { draft(current).also { it.validate() } }.getOrElse { toast(it.message ?: MoteI18n.text("请检查配置输入")); return }
+        val c = runCatching { draft(current).let { if (it.token != current.token || it.server != current.server) it.copy(authSignedOut = false, authExpiresAt = 0, authProcess = "") else it }.also { it.validate() } }.getOrElse { toast(it.message ?: MoteI18n.text("请检查配置输入")); return }
         val savedFields = pageControlValues().keys
         val submitted = baseline + controlValues().filterKeys { it in savedFields }; val generation = draftGeneration
         if (c.server == current.server && c.token == current.token) {

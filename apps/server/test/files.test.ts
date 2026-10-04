@@ -92,7 +92,7 @@ test('processing settings never expose credentials or silently reuse them at ano
  assert.throws(()=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,endpoint:'http://example.test/transcribe',apiKey:null}}));
 });
 
-test('HTTP binary ingest, authenticated playback cookie, range, unauthenticated denial and source scoping',async t=>{
+test('HTTP binary ingest, authenticated playback cookie, range, unauthenticated denial and full client access and explicit source filters',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-file-http-'));const priorEnv=process.env.MOTE_ENV_FILE;const env=join(dir,'test.env');writeFileSync(env,`MOTE_DATA_DIR=${dir}
 MOTE_TOKEN=generated-files-owner-token-1234567890
 MOTE_MODEL=
@@ -119,12 +119,11 @@ MOTE_LOG_LEVEL=silent
  const phone=await issue('phone'),other=await issue('other');const phoneHeaders={authorization:`Bearer ${phone.token}`},otherHeaders={authorization:`Bearer ${other.token}`};
  const headUrl='/api/file-sync/v1/head?'+new URLSearchParams({sourceId:'phone',externalId:m.item.externalId});
  assert.deepEqual((await app.inject({url:headUrl,headers:phoneHeaders})).json(),{revision:'v1',forgotten:false});
- assert.equal((await app.inject({url:headUrl,headers:otherHeaders})).statusCode,403);
- assert.equal((await app.inject({url:`/api/files/${ack.id}`,headers:otherHeaders})).statusCode,403);
- assert.equal((await app.inject({url:`/api/file-sync/v1/uploads/${session.uploadId}`,headers:otherHeaders})).statusCode,403);
- assert.deepEqual((await app.inject({url:'/api/files',headers:otherHeaders})).json().items,[]);
- assert.equal((await app.inject({method:'DELETE',url:`/api/files/${ack.id}`,headers:phoneHeaders})).statusCode,403);
- assert.equal((await app.inject({method:'PUT',url:'/api/file-processing',headers:phoneHeaders,payload:{}})).statusCode,403);
+ assert.equal((await app.inject({url:headUrl,headers:otherHeaders})).statusCode,200);
+ assert.equal((await app.inject({url:`/api/files/${ack.id}`,headers:otherHeaders})).statusCode,200);
+ assert.equal((await app.inject({url:`/api/file-sync/v1/uploads/${session.uploadId}`,headers:otherHeaders})).statusCode,200);
+ assert.equal((await app.inject({url:'/api/files',headers:otherHeaders})).json().items.length,1);
+ assert.equal((await app.inject({method:'PUT',url:'/api/file-processing',headers:phoneHeaders,payload:{}})).statusCode,400);
  const grant=await app.inject({method:'POST',url:`/api/files/${ack.id}/playback`,headers:phoneHeaders,payload:{}});assert.equal(grant.statusCode,200);
  await connections.revoke(phone.credentialId);
  assert.equal((await app.inject({url:`/api/files/${ack.id}/content`,headers:{cookie:String(grant.headers['set-cookie']).split(';')[0]}})).statusCode,401);

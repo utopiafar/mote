@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 import { encodeLocalContent, decodeLocalContent } from './local-content';
 
 export type StatePatch = { section: string; key: string; value?: unknown };
-const maps = new Set(['known', 'delivered', 'predecessors', 'quarantined', 'codingWireFields']);
+const maps = new Set(['known', 'delivered', 'predecessors', 'quarantined', 'codingWireFields', 'localProcessing']);
 const queues = new Set(['pendingRealtime', 'pendingHistory']);
 const queueKey = (value: any) => JSON.stringify([value.externalId, value.revision]);
 export function sourceStatePatch(previous: Record<string, unknown>, next: Record<string, unknown>): StatePatch[] {

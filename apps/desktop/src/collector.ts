@@ -1,3 +1,4 @@
+import { connectionToken } from './login-session';
 import {collectorStatusView} from './native-status';
 import {extractUiPage,uiSnapshotSchema,uiPageText} from '@mote/shared';
 import {runHelper} from './native';
@@ -429,7 +430,7 @@ export class Collector {
     finally { this.uploading = false; this.publish(); }
   }
   private async sendHeartbeat(explicit = false): Promise<void> {
-    if (this.closed || this.connectionHeld || this.heartbeatInFlight || !this.config.serverUrl || !this.config.token || (this.config.syncMode === 'manual' && !explicit) || !this.queue.binding.matches(this.config)) return;
+    if (this.closed || this.connectionHeld || this.heartbeatInFlight || !this.config.serverUrl || !connectionToken(this.config) || (this.config.syncMode === 'manual' && !explicit) || !this.queue.binding.matches(this.config)) return;
     this.heartbeatInFlight = true;
     const abort=this.heartbeatAbort=new AbortController();
     const state = this.state === 'stopped' ? 'paused' : this.state;

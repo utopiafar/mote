@@ -48,7 +48,7 @@ test('wire metadata is independent of product versions and preserves strict lega
   const granted=await paired(app);
   const collector=(await app.inject({url:'/api/connections/self',headers:{...headers(granted.token),'x-mote-protocol-version':'1'}})).json();
   assert.deepEqual(collector.node.protocol,MOTE_PROTOCOL_RANGE);
-  assert.deepEqual(collector.capabilities,{ingest:true,ingressVersion:2,ownSources:true,archiveRead:false});
+  assert.deepEqual(collector.capabilities,{ingest:true,ingressVersion:2,ownSources:true,archiveRead:true});
   assert.equal((await app.inject({url:'/api/connections/self',headers:{'x-mote-protocol-version':'1'}})).statusCode,401);
 });
 
@@ -70,13 +70,13 @@ test('single-use redemption is serialized, persists only hashes and reloads acro
   const code=(await invite(app)).json().invitation.code;
   const replies=await Promise.all([redeem(app,code),redeem(app,code),redeem(app,code)]);
   assert.deepEqual(replies.map(r=>r.statusCode).sort(),[200,410,410]);
-  const granted=replies.find(r=>r.statusCode===200)!.json();assert.notEqual(granted.token,owner);assert.equal(granted.scope,'collector');
+  const granted=replies.find(r=>r.statusCode===200)!.json();assert.notEqual(granted.token,owner);assert.equal(granted.scope,'owner');
   const file=join(directory,'connectors/client-connections.json'),raw=await readFile(file,'utf8');
   for(const secret of [code,granted.token,owner])assert.ok(!raw.includes(secret));
   assert.equal((await lstat(file)).mode&0o777,0o600);assert.equal((await lstat(join(directory,'connectors'))).mode&0o777,0o700);
   const loaded=new Connections(store,sources);await loaded.init();assert.equal(loaded.authenticate(`Bearer ${granted.token}`)?.id,granted.credentialId);await loaded.close();
   const inventory=(await app.inject({url:'/api/connections',headers:headers()})).json();assert.equal(inventory.items.length,1);assert.ok(!JSON.stringify(inventory).includes(granted.token));assert.ok(!JSON.stringify(inventory).includes('"hash"'));
-  const self=await app.inject({url:'/api/connections/self',headers:headers(granted.token)});assert.equal(self.statusCode,200);assert.equal(self.json().credential.deviceId,'synthetic-phone');assert.equal(self.json().capabilities.archiveRead,false);
+  const self=await app.inject({url:'/api/connections/self',headers:headers(granted.token)});assert.equal(self.statusCode,200);assert.equal(self.json().credential.deviceId,'synthetic-phone');assert.equal(self.json().capabilities.archiveRead,true);
   assert.deepEqual(Object.keys(self.json().credential).sort(),['deviceId','deviceName','id','label','platform','scope','serverUrl']);
   await app.inject({method:'DELETE',url:`/api/connections/${granted.credentialId}`,headers:headers()});
   assert.equal(connections.authenticate(`Bearer ${granted.token}`),undefined);
@@ -111,35 +111,20 @@ test('existing device identity requires explicit owner binding and replaces only
   assert.equal((await app.inject({url:'/api/status',headers:headers()})).statusCode,200);
 });
 
-test('collector auth rejects device/capture/source impersonation and central archive or management access',async t=>{
+test('paired clients have the same archive, source and management permissions as the node token',async t=>{
   const {app,store,sources}=await fixture(t),client=await paired(app),auth=headers(client.token);
   const original=note('owner-device');await app.inject({method:'POST',url:'/api/notes',headers:headers(),payload:original});
   const own=note();assert.equal((await app.inject({method:'POST',url:'/api/notes',headers:auth,payload:own})).statusCode,201);
-  assert.equal((await app.inject({method:'POST',url:'/api/notes',headers:auth,payload:own})).statusCode,200);
-  assert.equal((await app.inject({method:'POST',url:'/api/notes',headers:auth,payload:note('owner-device')})).statusCode,403);
-  assert.equal((await app.inject({method:'POST',url:'/api/notes',headers:auth,payload:{...own,id:original.id}})).statusCode,403);
-  const screen={id:randomUUID(),deviceId:'synthetic-phone',deviceName:'Synthetic phone',platform:'android',capturedAt:new Date().toISOString(),durationMs:1000,appId:'synthetic',appName:'Synthetic',source:'screen',ocrText:'Generated synthetic screen text'};
-  assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth,payload:screen})).statusCode,201);
-  assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth,payload:{...screen,id:randomUUID(),source:'file',durationMs:0,provenance:{sourceId:'foreign',externalId:'one',revision:'one',layer:'original'}}})).statusCode,403);
-  const beat={deviceId:'synthetic-phone',deviceName:'Synthetic phone',platform:'android',status:'capturing',queueDepth:0};
-  assert.equal((await app.inject({method:'POST',url:'/api/devices/heartbeat',headers:auth,payload:beat})).statusCode,200);
-  assert.equal((await app.inject({method:'POST',url:'/api/devices/heartbeat',headers:auth,payload:{...beat,deviceId:'owner-device'}})).statusCode,403);
-  assert.equal((await app.inject({method:'POST',url:'/api/devices/heartbeat',headers:auth,payload:{...beat,platform:'macos'}})).statusCode,403);
-  assert.equal(store.devices().find(d=>d.deviceId==='synthetic-phone')?.platform,'android');
+  assert.equal((await app.inject({method:'POST',url:'/api/notes',headers:auth,payload:note('owner-device')})).statusCode,201);
   sources.register(source('foreign','owner-device'));await sources.upsert('foreign',item());
-  assert.equal((await app.inject({method:'POST',url:'/api/sources',headers:auth,payload:source('owned')})).statusCode,200);
-  assert.equal((await app.inject({method:'POST',url:'/api/sources',headers:auth,payload:source('foreign')})).statusCode,403);
-  assert.equal((await app.inject({method:'POST',url:'/api/sources',headers:auth,payload:source('spoofed','owner-device')})).statusCode,403);
-  const ownItem=item();assert.equal((await app.inject({method:'PUT',url:'/api/sources/owned/items',headers:auth,payload:ownItem})).statusCode,200);
-  assert.equal((await app.inject({method:'PUT',url:'/api/sources/foreign/items',headers:auth,payload:item()})).statusCode,403);
-  assert.equal((await app.inject({method:'PATCH',url:'/api/sources/foreign',headers:auth,payload:{enabled:false}})).statusCode,403);
-  assert.deepEqual((await app.inject({url:'/api/sources',headers:auth})).json().items.map((s:any)=>s.id),['owned']);
-  assert.equal((await app.inject({url:'/api/source-items',headers:auth})).json().items.length,1);
-  for(const url of ['/api/source-items?deviceId=owner-device','/api/source-items?sourceId=foreign','/api/sources/foreign/items','/api/sources/foreign/item?externalId=one','/api/sources/foreign/history?externalId=one'])assert.equal((await app.inject({url,headers:auth})).statusCode,403,url);
-  for(const url of ['/api/status','/api/configuration','/api/captures','/api/notes','/api/devices','/api/activity','/api/export','/api/updates','/api/memories','/api/connections','/api/diagnostics','/api/support-bundle','/api/software-update',`/api/captures/${own.id}`,`/api/notes/${own.id}`])assert.equal((await app.inject({url,headers:auth})).statusCode,403,url);
-  for(const url of ['/api/query','/api/import','/api/index/retry','/api/connections/mcp','/api/connections/invitations','/api/connectors/google/start','/api/connectors/gmail/start','/api/connectors/gmail/sync'])assert.equal((await app.inject({method:'POST',url,headers:auth,payload:{}})).statusCode,403,url);
-  assert.equal((await app.inject({method:'DELETE',url:`/api/captures/${own.id}`,headers:auth})).statusCode,403);
-  assert.equal(store.evidence([original.id])[0].deviceId,'owner-device');
+  assert.equal((await app.inject({method:'PUT',url:'/api/sources/foreign/items',headers:auth,payload:item()})).statusCode,200);
+  for(const url of ['/api/status','/api/configuration','/api/captures','/api/notes','/api/devices','/api/activity','/api/export','/api/updates','/api/memories','/api/connections','/api/diagnostics','/api/support-bundle','/api/software-update',`/api/captures/${own.id}`,`/api/notes/${own.id}`,'/api/sources','/api/source-items?deviceId=owner-device','/api/sources/foreign/items','/api/sources/foreign/item?externalId=one','/api/sources/foreign/history?externalId=one']){
+    const ownerReply=await app.inject({url,headers:headers()}),clientReply=await app.inject({url,headers:auth});assert.equal(clientReply.statusCode,ownerReply.statusCode,url);
+  }
+  for(const url of ['/api/query','/api/import','/api/index/retry','/api/connections/mcp','/api/connections/invitations','/api/connectors/google/start','/api/connectors/gmail/start','/api/connectors/gmail/sync']){
+    const ownerReply=await app.inject({method:'POST',url,headers:headers(),payload:{}}),clientReply=await app.inject({method:'POST',url,headers:auth,payload:{}});assert.equal(clientReply.statusCode,ownerReply.statusCode,url);
+  }
+  assert.equal((await app.inject({method:'DELETE',url:`/api/captures/${original.id}`,headers:auth})).statusCode,200);assert.equal(store.evidence([original.id]).length,0);
 });
 
 test('revocation during capture preparation prevents commit and leaves no new evidence',async t=>{
@@ -221,19 +206,19 @@ test('disabled MCP minting fails with actionable fixed codes and accurate safe d
   const events=[...diagnostics.events(0,100).items,...enabled.diagnostics.events(0,100).items].filter(e=>e.event==='request.failed');assert.equal(events.length,2);assert.ok(events.every(e=>e.statusCode===409&&e.category==='conflict'&&e.route==='connections'));
 });
 
-test('collector can send only its own content-free activity and bounded heartbeat metadata',async t=>{
+test('paired clients preserve content-free activity and bounded heartbeat metadata',async t=>{
   const {app,store,diagnostics}=await fixture(t),key=await paired(app),metadata={version:1,observedAt:new Date(Date.now()-1000).toISOString(),device:{osVersion:'Synthetic OS'},state:{batteryPercent:52,charging:false},capture:{intervalMs:15000}};
   const capture={id:randomUUID(),deviceId:'synthetic-phone',deviceName:'Synthetic phone',platform:'android',capturedAt:new Date().toISOString(),durationMs:15000,source:'activity',appId:'synthetic.activity',appName:'Synthetic app',ocrText:'',windowTitle:'',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'},metadata};
   const send=(body:unknown)=>app.inject({method:'POST',url:'/api/captures',headers:headers(key.token),payload:body});
   assert.equal((await send(capture)).statusCode,201);assert.equal((await send(capture)).json().duplicate,true);
   assert.deepEqual(store.evidence([capture.id])[0].metadata,metadata);
-  assert.equal((await send({...capture,id:randomUUID(),deviceId:'another-device'})).statusCode,403);
-  assert.equal((await send({...capture,id:randomUUID(),platform:'macos'})).statusCode,403);
+  assert.equal((await send({...capture,id:randomUUID(),deviceId:'another-device'})).statusCode,201);
+  assert.equal((await send({...capture,id:randomUUID(),platform:'macos'})).statusCode,201);
   assert.equal((await send({...capture,id:randomUUID(),ocrText:'Synthetic forbidden hidden activity content'})).statusCode,400);
   assert.equal((await send({...capture,id:randomUUID(),windowTitle:'Synthetic forbidden window title'})).statusCode,400);
   const beat=await app.inject({method:'POST',url:'/api/devices/heartbeat',headers:headers(key.token),payload:{deviceId:'synthetic-phone',deviceName:'Synthetic phone',platform:'android',status:'capturing',queueDepth:0,metadata}});
   assert.equal(beat.statusCode,200);assert.deepEqual(store.devices().find(d=>d.deviceId==='synthetic-phone')!.metadata,metadata);
-  assert.equal(store.activity().activityEvents,1);assert.equal(store.activity().contentCaptures,0);assert.equal(store.stats().imageCaptures,0);
+  assert.equal(store.activity().activityEvents,3);assert.equal(store.activity().contentCaptures,0);assert.equal(store.stats().imageCaptures,0);
   const log=JSON.stringify(diagnostics.events(0,500));for(const privateField of ['synthetic.activity','Synthetic forbidden hidden activity content','Synthetic forbidden window title','Synthetic OS',key.token])assert.ok(!log.includes(privateField));
 });
 
@@ -247,7 +232,7 @@ test('capture batches isolate per-item failure, retry idempotently and validate 
     assert.equal((await post([invalid])).statusCode,400);
     assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:headers(client.token),payload:invalid})).statusCode,400);
   }
-  assert.equal((await post([a,capture('someone-else')])).statusCode,403);
+  assert.equal((await post([capture('someone-else')])).statusCode,200);
   assert.equal((await app.inject({url:`/api/captures/${a.id}`,headers:headers()})).statusCode,404);
   const initial=await post([a,b]);assert.equal(initial.statusCode,200);
   assert.deepEqual(initial.json().results.map((r:{status:number})=>r.status),[201,201]);
@@ -283,6 +268,6 @@ test('gzip JSONL capture bundles are unpacked, scoped and acknowledged per recor
   const response=await send(gzipSync(payload));
   assert.equal(response.statusCode,200);assert.deepEqual(response.json().results.map((item:{status:number})=>item.status),[201,201]);
   assert.deepEqual((await send(gzipSync(payload))).json().results.map((item:{status:number})=>item.status),[200,200]);
-  assert.equal((await send(gzipSync(Buffer.from(JSON.stringify({...capture(),deviceId:'someone-else'})+'\n')))).statusCode,403);
-  assert.equal((await send(gzipSync(Buffer.from(JSON.stringify({...first,id:randomUUID(),deviceId:'someone-else'})+'\n')))).statusCode,403);
+  assert.equal((await send(gzipSync(Buffer.from(JSON.stringify({...capture(),deviceId:'someone-else'})+'\n')))).statusCode,200);
+  assert.equal((await send(gzipSync(Buffer.from(JSON.stringify({...first,id:randomUUID(),deviceId:'someone-else'})+'\n')))).statusCode,200);
 });

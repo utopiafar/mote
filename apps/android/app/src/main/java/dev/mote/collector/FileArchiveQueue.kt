@@ -10,7 +10,7 @@ import java.time.Instant
 import java.util.UUID
 
 /** Local per-file journal. A pending manifest and its bytes never change during retry. */
-class FileArchiveQueue(private val directory: File, private val cipher: ByteCipher) {
+class FileArchiveQueue(private val directory: File, private val cipher: ByteCipher, private val processors: LocalFileProcessors = LocalFileProcessors.default) {
     companion object { const val PART_BYTES = 4 * 1024 * 1024; const val MAX_BYTES = 512L * 1024 * 1024; private val lock = Any() }
     init { directory.mkdirs() }
     /** Source definitions live elsewhere; these directories contain only sync state and spool bytes. */
@@ -42,7 +42,8 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     fun saveState(id: String, state: JSONObject) = synchronized(lock) { write(stateFile(id), state) }
     fun candidate(id: String, external: String): JSONObject? = synchronized(lock) { read(itemFile(id, external)).optJSONObject("candidate") }
     fun rows(id: String): List<JSONObject> = synchronized(lock) { root(id).listFiles()?.filter { it.name.startsWith("item-") && it.name.endsWith(".enc") }?.map { read(it) } ?: emptyList() }
-    private fun dirty(row: JSONObject) = row.has("pending") || row.optBoolean("indexPending") || (!row.optBoolean("baseline") && row.optString("signature") != signature(row.getJSONObject("candidate")))
+    // Processing waits are not transport work. A completed local result is a new immutable revision.
+    private fun dirty(row: JSONObject) = row.has("pending") || row.has("indexResult") || (!row.optBoolean("baseline") && row.optString("signature") != signature(row.getJSONObject("candidate")))
     private fun markers(id: String) = root(id).listFiles()?.filter { it.name.matches(Regex("todo-[a-f0-9]{64}")) } ?: emptyList()
     private fun mark(id: String, row: JSONObject) {
         val marker = File(root(id), "todo-" + SourceRules.hash(row.getJSONObject("candidate").getString("externalId")))
@@ -50,9 +51,9 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     }
     private fun indexed(id: String) {
         val state = state(id)
-        if (!state.optBoolean("queueIndexed")) {
+        if (state.optInt("transportQueueVersion") != 2) {
             rows(id).forEach { row -> mark(id, row); if (row.has("pending")) state.put("activeKey", SourceRules.hash(row.getJSONObject("candidate").getString("externalId"))) }
-            state.put("queueIndexed", true); saveState(id, state)
+            state.put("queueIndexed", true).put("transportQueueVersion", 2); saveState(id, state)
         }
     }
     fun saveRow(id: String, row: JSONObject) = synchronized(lock) {
@@ -90,7 +91,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
             rows(source.id).forEach { row ->
                 // An exclusion edit must not turn old new-only baseline files into uploads.
                 if (row.optBoolean("baseline") && allowed(source, row.getJSONObject("candidate"))) {
-                    row.remove("pending"); row.remove("indexPending"); saveRow(source.id, row)
+                    row.remove("pending"); row.remove("indexPending"); row.remove("indexResult"); saveRow(source.id, row)
                 } else discard(source.id, row)
             }
             state.remove("activeKey")
@@ -107,7 +108,9 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
         SourcePrivacyGate.validate(source, item)
         val path = itemFile(source.id, item.getString("externalId")); val row = read(path)
         if (!path.exists()) check((root(source.id).listFiles()?.count { it.name.startsWith("item-") } ?: 0) < 50000) { MoteI18n.text("文件清单达到 50000 项上限，请缩小目录") }
-        if (row.optJSONObject("candidate")?.let { signature(it) } != signature(item)) row.put("stableSince", now)
+        if (row.optJSONObject("candidate")?.let { signature(it) } != signature(item)) {
+            row.put("stableSince", now).put("indexPending", false); row.remove("indexResult"); row.remove("nextProcessingAt"); row.remove("nextPrepareAt")
+        }
         row.put("candidate", item).put("seen", generation)
         if (source.initialSync == "new_only" && !state(source.id).optBoolean("initialized")) row.put("baseline", true)
         saveRow(source.id, row)
@@ -117,7 +120,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
             val item = row.getJSONObject("candidate")
             if (!item.optBoolean("deleted") && absent(item.getString("externalId"))) {
                 item.put("deleted", true).put("observedAt", Instant.now().toString())
-                row.put("candidate", item); saveRow(source.id, row)
+                row.put("candidate", item).put("indexPending", false); row.remove("indexResult"); saveRow(source.id, row)
             }
         }
         val state = state(source.id).put("initialized", true).put("scanComplete", true).put("lastScan", Instant.now().toString()).put("generation", UUID.randomUUID().toString())
@@ -135,6 +138,44 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
         JSONObject().put("total", all.size).put("items", JSONArray(items))
     }
     fun pendingCount(id: String): Int = synchronized(lock) { indexed(id); markers(id).size }
+    fun processingCount(id: String): Int = synchronized(lock) { rows(id).count { it.optBoolean("indexPending") && !it.getJSONObject("candidate").optBoolean("deleted") } }
+    fun processingReady(id: String, now: Long = System.currentTimeMillis()): Boolean = synchronized(lock) {
+        rows(id).any { it.optBoolean("indexPending") && !it.has("indexResult") && !it.has("pending") && !it.getJSONObject("candidate").optBoolean("deleted") && now >= it.optLong("nextProcessingAt") && it.optString("signature") == signature(it.getJSONObject("candidate")) }
+    }
+    fun transportReady(id: String, now: Long = System.currentTimeMillis()): Boolean = synchronized(lock) {
+        indexed(id); rows(id).any { dirty(it) && now >= it.optLong("nextPrepareAt") && (it.has("pending") || it.getJSONObject("candidate").optString("layer") == "reference" || it.getJSONObject("candidate").optBoolean("deleted") || now - it.optLong("stableSince", now) >= 60000) }
+    }
+    /** Read/parse outside the journal lock: upload and other sources keep making progress. */
+    fun processOne(source: LocalSource, open: (JSONObject) -> InputStream, unchanged: (JSONObject) -> Boolean,
+                   selected: () -> Boolean = { true }, now: Long = System.currentTimeMillis(),
+                   index: ((JSONObject, ByteArray, LocalSource) -> Unit)? = null): Boolean {
+        if (source.retention != "snapshot" || !source.enabled) return false
+        val job = synchronized(lock) {
+            configure(source)
+            rows(source.id).firstOrNull { it.optBoolean("indexPending") && !it.has("indexResult") && !it.has("pending") && !it.getJSONObject("candidate").optBoolean("deleted") && it.optString("signature") == signature(it.getJSONObject("candidate")) && now >= it.optLong("nextProcessingAt") }
+                ?.let { row ->
+                    // Legacy index waits pin the existing decoder once; upgrades never rewrite pending wire payloads.
+                    if (!row.has("processor")) { row.put("processor", JSONObject().put("id", "local-file").put("version", 1)); saveRow(source.id, row) }
+                    JSONObject(row.toString())
+                }
+        } ?: return false
+        val candidate = job.getJSONObject("candidate"); val inputSignature = signature(candidate); val policy = state(source.id).getString("policy")
+        val result = JSONObject(candidate.toString()).apply { remove("_relativePath") }
+        val success = runCatching {
+            check(selected() && unchanged(candidate)); val bytes = open(candidate).use { LocalFileIndex.bytes(it) }
+            check(selected() && unchanged(candidate))
+            if (index != null) index(result, bytes, source) else processors.get(job.getJSONObject("processor").getString("id"), job.getJSONObject("processor").getInt("version")).index(result, bytes, source)
+            result.getJSONObject("document").getJSONObject("fileIndex").optString("status") != "pending"
+        }.getOrDefault(false)
+        synchronized(lock) {
+            val current = read(itemFile(source.id, candidate.getString("externalId")))
+            if (!selected() || state(source.id).optString("policy") != policy || current.optJSONObject("candidate")?.let { signature(it) } != inputSignature || !current.optBoolean("indexPending")) return true
+            if (success) { SourcePrivacyGate.validate(source, result); current.put("indexResult", result).put("indexPending", false); current.remove("nextProcessingAt") }
+            else current.put("nextProcessingAt", now + 300000)
+            saveRow(source.id, current)
+        }
+        return true
+    }
     fun pendingSync(): PendingSync = synchronized(lock) {
         var count = 0; var oldest: Long? = null
         directory.listFiles()?.filter { it.isDirectory }?.forEach { dir -> val n = pendingCount(dir.name); count += n; if (n > 0) oldest = minOf(oldest ?: Long.MAX_VALUE, dir.lastModified()) }
@@ -156,7 +197,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
                 if (!allowed(source, row.getJSONObject("candidate"))) { discard(source.id, row); null }
                 else row.also { if (!dirty(it)) marker.delete() }
             }
-        }.firstOrNull { dirty(it) && (source.retention == "reference" || it.getJSONObject("candidate").optBoolean("deleted") || now - it.optLong("stableSince", now) >= 60000) } ?: return@synchronized null
+        }.firstOrNull { dirty(it) && now >= it.optLong("nextPrepareAt") && (source.retention == "reference" || it.getJSONObject("candidate").optBoolean("deleted") || now - it.optLong("stableSince", now) >= 60000) } ?: return@synchronized null
         if (!row.has("revision") && anchor != null) anchor(row.getJSONObject("candidate").getString("externalId"))?.let { row.put("revision", it); saveRow(source.id, row) }
         val candidate = row.getJSONObject("candidate"); val item = JSONObject(candidate.toString()).apply { remove("_relativePath") }; SourcePrivacyGate.validate(source, item); val spool = File(root(source.id), "spool")
         spool.deleteRecursively(); spool.mkdirs()
@@ -182,8 +223,9 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
                 hash = digest.digest().joinToString("") { "%02x".format(it) }
             }
             if (source.retention == "snapshot" && !item.optBoolean("deleted")) {
-                check(unchanged(candidate)); val bytes = open(candidate).use { LocalFileIndex.bytes(it) }; check(unchanged(candidate)); LocalFileIndex.index(item, bytes, source)
-                if (row.optBoolean("indexPending") && item.getJSONObject("document").getJSONObject("fileIndex").optString("status") == "pending" && row.optString("signature") == signature(candidate)) return@synchronized null
+                val result = row.optJSONObject("indexResult")
+                if (result != null) { for (key in listOf("text", "document")) item.put(key, result.get(key)) }
+                else LocalFileIndex.pending(item, signature(candidate), source)
             }
             if (item.optBoolean("deleted") && item.optString("layer") == "snapshot") item.put("layer", "reference")
             SourcePrivacyGate.validate(source, item)
@@ -191,9 +233,10 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
                 .put("item", item).put("relativePath", candidate.optString("_relativePath", item.optString("title"))).put("sizeBytes", size)
             hash?.let { manifest.put("sha256", it) }
             item.put("revision", SourceRules.hash(SourceRules.canonical(manifest)))
-            row.put("pending", JSONObject().put("manifest", manifest).put("signature", signature(candidate)))
+            row.put("pending", JSONObject().put("manifest", manifest).put("signature", signature(candidate)).apply { row.optJSONObject("indexResult")?.let { put("indexResult", it.toString()) } })
+            row.remove("nextPrepareAt")
             saveRow(source.id, row); row
-        } catch (error: Exception) { spool.deleteRecursively(); throw error }
+        } catch (error: Exception) { spool.deleteRecursively(); row.put("nextPrepareAt", now + 60000); saveRow(source.id, row); throw error }
     }
     fun part(id: String, part: Int): ByteArray = synchronized(lock) { require(part >= 0); cipher.open(File(File(root(id), "spool"), part.toString()).readBytes()) }
     fun acknowledge(id: String, row: JSONObject, ack: JSONObject) = synchronized(lock) {
@@ -202,7 +245,9 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
         if (manifest.has("sha256")) check(ack.optString("sha256") == manifest.getString("sha256") && ack.optLong("sizeBytes", -1) == manifest.getLong("sizeBytes")) { MoteI18n.text("中央原件校验确认不匹配") }
         val current = read(itemFile(id, item.getString("externalId")))
         check(current.optJSONObject("pending")?.getJSONObject("manifest")?.getJSONObject("item")?.getString("revision") == item.getString("revision"))
-        current.put("indexPending", item.optJSONObject("document")?.optJSONObject("fileIndex")?.optString("status") == "pending")
+        if (pending.optString("indexResult").isNotEmpty() && pending.optString("indexResult") == current.optJSONObject("indexResult")?.toString()) current.remove("indexResult")
+        if (pending.getString("signature") == signature(current.getJSONObject("candidate")))
+            current.put("indexPending", !current.has("indexResult") && item.optJSONObject("document")?.optJSONObject("fileIndex")?.optString("status") == "pending")
         current.put("signature", pending.getString("signature")).put("revision", item.getString("revision")).remove("pending")
         saveRow(id, current); saveState(id, state(id).put("lastAcknowledgedAt", Instant.now().toString())); File(root(id), "spool").deleteRecursively()
     }

@@ -25,6 +25,9 @@ import {FileStore} from './files.js';
 import {materialId} from './materials.js';
 
 const MAX_INPUT_BYTES=256*1024*1024,MAX_EXPANDED_BYTES=512*1024*1024,MAX_FILES=4000;
+export class ImportInputError extends StoreError {
+  constructor(public code:'import_directory_missing'|'import_directory_unreadable'|'import_directory_required',message:string){super(message,422);}
+}
 export type ImportPreparation={operationId?:string;signal?:AbortSignal;workspace:string;inputPaths:string[];instruction:string;previous?:{summary:string;error?:string}};
 export type ImportPreparationResult={summary:string;recordsPath?:string;warnings?:string[];reviewDecision?:ImportReviewDecision};
 export type ImportRuntime={executor?:ExecutionEngine;intake?:ImportIntakeRegistry;fileStore?:FileStore;prepare?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;sourcePacks?:ReadonlyMap<string,{revision:string;prepare:(input:ImportPreparation)=>Promise<ImportPreparationResult>}>;onImported?:(captureIds:string[],importJobId:string)=>Promise<{memoryJobId?:string}>};
@@ -155,9 +158,10 @@ export class ImportStore {
     }else if(request.files){
       for(const file of request.files){if(!validBase64(file.dataBase64))throw new StoreError('Invalid file base64');add(file.name,Buffer.from(file.dataBase64,'base64'),file.mimeType);}
     }else{
+      try{
       const source=realpathSync(resolve(request.directory!)),vault=realpathSync(this.store.directory);
       if(inside(source,vault)||inside(vault,source))throw new StoreError('Choose a directory outside the Mote data directory');
-      if(!lstatSync(source).isDirectory())throw new StoreError('Import path must be a directory');
+      if(!lstatSync(source).isDirectory())throw new ImportInputError('import_directory_required',moteText('该路径不是目录，请填写中央服务器上可读取的目录。'));
       const walk=async(directory:string,depth:number):Promise<void>=>{if(depth>30)throw new StoreError('Directory nesting exceeds 30 levels',413);for(const name of (await readdir(directory)).sort()){
         const path=join(directory,name),info=await lstat(path,{bigint:true});if(info.isSymbolicLink())throw new StoreError('Directory imports cannot follow symbolic links');
         if(info.isDirectory())await walk(path,depth+1);else if(info.isFile()){
@@ -165,6 +169,12 @@ export class ImportStore {
           const name=archiveRelativePath(relative(source,path).split(sep).join('/'));entries.push({name,path,sizeBytes:size,identity:fileIdentity(info)});total+=size;
         }
       }};await walk(source,0);
+      }catch(error){
+        const code=(error as NodeJS.ErrnoException).code;
+        if(code==='ENOENT'||code==='ENOTDIR')throw new ImportInputError('import_directory_missing',moteText('中央服务器上的目录不存在或文件已移动，请检查路径后重新提交。'));
+        if(code==='EACCES'||code==='EPERM')throw new ImportInputError('import_directory_unreadable',moteText('中央服务器无法读取该目录，请检查访问权限后重新提交。'));
+        throw error;
+      }
     }
     if(!entries.length)throw new StoreError('No files were supplied');
     if(new Set(entries.map(e=>e.name)).size!==entries.length)throw new StoreError('File paths must be unique within an import');

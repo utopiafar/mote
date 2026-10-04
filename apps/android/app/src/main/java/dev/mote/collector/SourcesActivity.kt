@@ -69,7 +69,7 @@ class SourcesActivity : MoteActivity() {
                     val facts = NativeStatus.project(org.json.JSONObject().put("pending", pending).put("lastAcknowledgedAt", state.opt("lastAcknowledgedAt") ?: org.json.JSONObject.NULL).put("syncState", syncState)
                         .put("errorCode", if (state.optString("status") == "permission") "permission_required" else if (state.optString("status") == "provider") "source_unavailable" else org.json.JSONObject.NULL)
                         .put("scanComplete", state.opt("scanComplete") ?: org.json.JSONObject.NULL).put("skipped", state.opt("skipped") ?: org.json.JSONObject.NULL))
-                    source to MoteI18n.text("\n{0}\n{1} · {2} · {3}\n待发 {4} 个版本 · 最近扫描 {5}\n{6}", source.name, if (source.kind == "local-calendar") MoteI18n.text("日历") else MoteI18n.text("文件"), when (source.retention) { "reference" -> MoteI18n.text("仅文件目录"); "archive" -> MoteI18n.text("原件归档"); else -> MoteI18n.text("内容索引，原件留本机") }, if (source.enabled) status else MoteI18n.text("本机已停用"), pending, state.optString("lastScan", MoteI18n.text("尚无")), if (state.has("scanComplete") && !state.optBoolean("scanComplete")) MoteI18n.text("本次扫描未完整：跳过 {0} 项；没有推断这些项已删除。", state.optInt("skipped")) else "") + "\n" + NativeStatus.summary(facts)
+                    source to MoteI18n.text("\n{0}\n{1} · {2} · {3}\n待发 {4} 个版本 · 最近扫描 {5}\n{6}", source.name, if (source.kind == "local-calendar") MoteI18n.text("日历") else MoteI18n.text("文件"), when (source.retention) { "reference" -> MoteI18n.text("仅文件目录"); "archive" -> MoteI18n.text("原件归档"); else -> MoteI18n.text("内容索引，原件留本机") }, if (source.enabled) status else MoteI18n.text("本机已停用"), pending, state.optString("lastScan", MoteI18n.text("尚无")), if (state.has("scanComplete") && !state.optBoolean("scanComplete")) MoteI18n.text("本次扫描未完整：跳过 {0} 项；没有推断这些项已删除。", state.optInt("skipped")) else "") + "\n" + NativeStatus.summary(facts) + if (source.binaryFiles()) "\n" + MoteI18n.text("本机处理中 {0} 个文件；处理等待不计入待发", fileArchives().processingCount(source.id)) else ""
                 }
             }
             runOnUiThread {
@@ -133,7 +133,7 @@ class SourcesActivity : MoteActivity() {
             try {
                 val name = runCatching { contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null } }.getOrNull()
                 localSources().sources().find { it.uri == uri.toString() }
-                    ?: LocalSource(name = (name ?: if (requestCode != 402) MoteI18n.text("选择的文件目录") else MoteI18n.text("选择的文件")).take(200), kind = "local-files", uri = uri.toString(), tree = requestCode != 402, retention = "snapshot", extensions = if (requestCode == 405) "m4a,mp3,wav,aac,amr,ogg,flac,opus" else "md,txt,json,csv,ics,m4a,mp3,wav,aac,amr,ogg,flac,opus,jpg,png,pdf,docx")
+                    ?: LocalSource(name = (name ?: if (requestCode != 402) MoteI18n.text("选择的文件目录") else MoteI18n.text("选择的文件")).take(200), kind = "local-files", uri = uri.toString(), tree = requestCode != 402, retention = if (requestCode == 405) "archive" else "snapshot", extensions = if (requestCode == 405) "m4a,mp3,wav,aac,amr,ogg,flac,opus" else "md,txt,json,csv,ics,m4a,mp3,wav,aac,amr,ogg,flac,opus,jpg,png,pdf,docx")
             } catch (error: Exception) { releaseUnused(uri.toString()); throw error }
         }) { result ->
             result.onSuccess { operationStatus.text = MoteI18n.text("文件已读取，请确认来源设置"); edit(it) }

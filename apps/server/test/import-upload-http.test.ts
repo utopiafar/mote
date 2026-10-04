@@ -1,3 +1,4 @@
+import {readAgentCredential} from './login-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -17,6 +18,10 @@ test('HTTP binary import archives exact generated image without a model, enforci
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  await node.app.ready();
  const headers={authorization:'Bearer '+config.token};
+ const missing=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{directory:join(directory,'missing-source')}});
+ assert.equal(missing.statusCode,422);assert.equal(missing.json().error,'import_directory_missing');
+ assert.ok(missing.json().requestId);assert.equal(missing.body.includes(directory),false,'Input guidance must not expose server paths');
+ assert.equal((await node.app.inject({method:'GET',url:'/api/imports',headers})).json().items.length,0);
  const bytes=await sharp({create:{width:32,height:24,channels:3,background:'#426789'}}).jpeg().toBuffer();
  const begin=await node.app.inject({method:'POST',url:'/api/import-uploads',headers,payload:{name:'generated.jpg',mimeType:'image/jpeg',sizeBytes:bytes.length}});
  assert.equal(begin.statusCode,200,begin.body);
@@ -25,7 +30,7 @@ test('HTTP binary import archives exact generated image without a model, enforci
  assert.equal(put.statusCode,200,put.body);
  assert.equal(put.json().hash,sha256(bytes));
  const {invitation}=node.connections.invite({serverUrl:'http://127.0.0.1:3456',label:'Generated collector'});
- const collector=await node.connections.redeem({code:invitation.code,deviceId:'generated-collector',deviceName:'Generated',platform:'macos'});
+ const collector=await readAgentCredential(node.connections);
  for(const [authorization,status] of [['',401],['Bearer '+collector.token,403]] as const){
   const denied=await node.app.inject({method:'PUT',url,headers:{authorization,'content-type':'application/octet-stream'},payload:bytes});
   assert.equal(denied.statusCode,status,denied.body);
@@ -44,7 +49,7 @@ test('HTTP binary import archives exact generated image without a model, enforci
  let job=created.json();
  // Import completion is asynchronous; a busy CI runner can exceed one second.
  for(const deadline=Date.now()+30_000;Date.now()<deadline&&!['needs_configuration','failed','completed'].includes(job.status);){
-  await setTimeout(10);const response=await node.app.inject({method:'GET',url:`/api/imports/${job.id}`,headers});assert.equal(response.statusCode,200);job=response.json();
+  await setTimeout(250);const response=await node.app.inject({method:'GET',url:`/api/imports/${job.id}`,headers});assert.equal(response.statusCode,200);job=response.json();
  }
  assert.equal(job.status,'completed');assert.equal(job.processingStatus,'saved');
  assert.equal(job.files[0].id,file.id);assert.equal(job.media.length,1);assert.equal(job.media[0].searchable,false);

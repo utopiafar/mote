@@ -12,7 +12,7 @@ internal object SyncHealth {
         val sources = context.localSources()
         val sourceErrors = sources.sources().count { source ->
             val state = sources.state(source.id)
-            ((state.optJSONArray("pending")?.length() ?: 0) > 0 || !state.optBoolean("registered")) && state.optString("status") in setOf("offline", "permission", "configuration", "storage", "provider", "http", "ack", "paused")
+            ((if (source.binaryFiles()) context.fileArchives().pendingCount(source.id) else state.optJSONArray("pending")?.length() ?: 0) > 0 || !state.optBoolean("registered")) && state.optString("status") in setOf("offline", "permission", "configuration", "storage", "provider", "http", "ack", "paused")
         }
         val state: String
         val message: String

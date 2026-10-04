@@ -3,20 +3,19 @@ package dev.mote.collector
 import android.content.Context
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 
 internal class CentralFailure(val status: Int, val code: String = "", val detail: String = "") : IllegalStateException(when {
     status == 401 && code in setOf("", "unauthorized") -> MoteI18n.text("令牌无效或已失效，请检查后重新登录。")
-    status == 403 && code in setOf("", "connection_scope_denied") -> MoteI18n.text("此令牌没有管理权限。请使用中央节点的管理令牌，设备配对凭据不能登录管理页面。")
+    status == 403 && code in setOf("", "connection_scope_denied") -> MoteI18n.text("此凭据不具备客户端权限，请升级中央节点或重新登录。")
     detail.isNotBlank() -> detail.take(2000)
     status in setOf(404, 410) -> MoteI18n.text("资料不存在或已删除。")
     else -> MoteI18n.text("中央请求失败（HTTP {0}），请稍后重试。", status)
 })
 
-/** Fixed-origin native transport. No collector credential, HTML, JS or redirects. */
+/** Fixed-origin native transport shared by every central feature. No HTML, JS or redirects. */
 internal class CentralClient(
     val server: String,
     private val token: String,
@@ -91,106 +90,63 @@ internal class CentralClient(
     override fun toString() = "CentralClient(credentials=redacted)"
 }
 
-/** One owner session shared by native central screens, isolated from Settings.token. */
-internal class CentralSessionStore(private val file: File, private val cipher: ByteCipher, private val clock: () -> Long = System::currentTimeMillis,
-    private val originActive: (String) -> Boolean = { true }) {
-    private var origin = ""
-    private var credential = ""
-    private var expiresAt = 0L
-    private var reuseBlocked = false
-    private var triedCredential = ""
-    @Volatile var generation = 0L; private set
-    @Synchronized fun select(server: String) {
-        val next = server.trim().trimEnd('/')
-        if (origin == next) return
-        origin = next; credential = ""; expiresAt = 0; reuseBlocked = false; triedCredential = ""; generation++
-        if (file.exists()) {
-            val value = runCatching { JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8)) }.getOrNull()
-            if (value?.optString("server") == next) {
-                reuseBlocked = true
-                if (!value.optBoolean("signedOut") && value.optLong("expiresAt") > clock()) {
-                    credential = value.getString("token"); expiresAt = value.getLong("expiresAt")
-                }
-            } else check(file.delete())
+/** Canonical Settings login supplies both collection transport and every central page. */
+internal class UnifiedCentralSession(private val context: Context) {
+    private var stamp = ""
+    private var version = 0L
+    private var selected = ""
+    init {
+        val legacy = File(context.noBackupFilesDir, "central-owner-session.enc")
+        if (legacy.exists()) {
+            val config = Settings(context).read()
+            val saved = runCatching { JSONObject(String(SecretBox().open(legacy.readBytes()))) }.getOrNull()
+            if (config.token.isBlank() && saved?.optString("server") == config.server && !saved.optBoolean("signedOut") && saved.optLong("expiresAt") > System.currentTimeMillis()) {
+                val restored = config.copy(token = saved.getString("token"), authExpiresAt = saved.getLong("expiresAt"), authSignedOut = false, authProcess = "")
+                restored.validateConnection(); Settings(context).save(restored, confirmCentralEndpoint = true)
+            }
+            check(legacy.delete())
         }
     }
-    @Synchronized fun signIn(server: String, token: String, durationMs: Long = 0, expectedGeneration: Long? = null) {
-        check(expectedGeneration == null || expectedGeneration == generation) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
-        check(originActive(server)) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
-        require(token.length in 32..8192 && token.none { it == '\r' || it == '\n' })
-        require(durationMs in setOf(0L, 86400000L, 7 * 86400000L, 30 * 86400000L))
-        select(server)
-        val deadline = if (durationMs == 0L) 0L else clock() + durationMs
-        if (deadline == 0L) { if (file.exists()) check(file.delete()) }
-        else {
-            persist(JSONObject().put("server", origin).put("token", token).put("expiresAt", deadline))
-        }
-        credential = token; expiresAt = deadline; reuseBlocked = true; generation++
+    private val settings get() = Settings(context.applicationContext)
+    @Synchronized private fun refresh(): CollectorConfig {
+        val config = settings.read()
+        val next = SourceRules.hash(listOf(config.server, config.token, config.authSignedOut.toString(), config.authExpiresAt.toString(), config.authProcess).joinToString("\u0000"))
+        if (next != stamp) { stamp = next; version++ }
+        return config
     }
+    val generation: Long @Synchronized get() { refresh(); return version }
+    @Synchronized fun select(server: String) { if (selected != server) { selected = server; version++ }; refresh() }
     @Synchronized fun client(server: String): CentralClient? {
-        if (server.trim().trimEnd('/') != origin) return null
-        if (expiresAt != 0L && expiresAt <= clock()) signOut()
-        val version = generation
-        return credential.takeIf { it.isNotBlank() }?.let { CentralClient(origin, it, active = {
-            synchronized(this) { generation == version && credential.isNotBlank() && (expiresAt == 0L || expiresAt > clock()) && originActive(origin) }
-        }, unauthorized = { signOut(version) }) }
+        val config = refresh(); val token = config.connectionToken()
+        if (server != config.server.trim().trimEnd('/') || server != settings.centralEndpoint().trim().trimEnd('/') || token.isBlank()) return null
+        val expected = generation
+        return CentralClient(server, token, active = { generation == expected && settings.read().connectionToken() == token }, unauthorized = { signOut(expected) })
     }
-    @Synchronized fun mayReuse(token: String): Boolean {
-        if (reuseBlocked || token.length !in 32..8192 || triedCredential == SourceRules.hash(token)) return false
-        triedCredential = SourceRules.hash(token); return true
-    }
-    @Synchronized fun retryReuse(token: String, expectedGeneration: Long) {
-        if (expectedGeneration == generation && !reuseBlocked && triedCredential == SourceRules.hash(token)) triedCredential = ""
+    @Synchronized fun signIn(server: String, token: String, durationMs: Long = 2592000000L, expectedGeneration: Long? = null) {
+        check(expectedGeneration == null || generation == expectedGeneration) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+        val config = refresh()
+        check(server == config.server.trim().trimEnd('/'))
+        settings.signIn(server, token, durationMs); refresh()
     }
     @Synchronized fun signOut(expectedGeneration: Long? = null) {
-        if (expectedGeneration != null && expectedGeneration != generation) return
-        credential = ""; expiresAt = 0; reuseBlocked = true; generation++
-        try { persist(JSONObject().put("server", origin).put("signedOut", true)) }
-        catch (error: Throwable) { file.delete(); throw error }
-    }
-    private fun persist(value: JSONObject) {
-        file.parentFile!!.mkdirs(); val temp = File(file.parentFile, file.name + ".tmp")
-        try {
-            FileOutputStream(temp).use { it.write(cipher.seal(value.toString().toByteArray())); it.fd.sync() }; check(temp.renameTo(file))
-        } finally { temp.delete() }
+        if (expectedGeneration != null && generation != expectedGeneration) return
+        val config = refresh(); val token = config.connectionToken()
+        settings.signOut(); refresh()
+        if (token.isNotBlank()) runCatching { HttpJson.post(config.server + "/api/login/logout", JSONObject(), token) }
     }
 }
-
 internal object CentralSession {
-    private var store: CentralSessionStore? = null
-    @Synchronized fun get(context: Context): CentralSessionStore = store ?: CentralSessionStore(
-        File(context.applicationContext.noBackupFilesDir, "central-owner-session.enc"), SecretBox(), originActive = { origin ->
-            val settings = Settings(context.applicationContext)
-            settings.read().server.trim().trimEnd('/') == origin && settings.centralEndpoint().trim().trimEnd('/') == origin
-        }
-    ).also { store = it }
+    private var store: UnifiedCentralSession? = null
+    @Synchronized fun get(context: Context): UnifiedCentralSession = store ?: UnifiedCentralSession(context.applicationContext).also { store = it }
 }
-
 internal object CentralAccess {
     data class Selection(val server: String, val client: CentralClient?)
-    /** Runs off the UI thread. Old configured owner tokens are verified before reuse. */
     fun resolve(context: Context): Selection {
-        val settings = Settings(context); val config = settings.read()
-        val endpoint = config.server.trim().trimEnd('/')
+        val settings = Settings(context); val config = settings.read(); val endpoint = config.server.trim().trimEnd('/')
         val session = CentralSession.get(context)
-        if (endpoint.isBlank() || settings.centralEndpoint().trim().trimEnd('/') != endpoint) {
-            session.select(""); return Selection("", null)
-        }
+        if (endpoint.isBlank() || settings.centralEndpoint().trim().trimEnd('/') != endpoint) { session.select(""); return Selection("", null) }
         PrivacyRules.validateEndpoint(endpoint, config.debugHttp, BuildConfig.DEBUG)
         session.select(endpoint)
-        session.client(endpoint)?.let { return Selection(endpoint, it) }
-        if (session.mayReuse(config.token)) {
-            val generation = session.generation
-            try {
-                // This owner-only endpoint cannot promote a paired collector credential.
-                CentralClient(endpoint, config.token).get("/api/configuration")
-                session.signIn(endpoint, config.token, expectedGeneration = generation)
-            } catch (failure: CentralFailure) {
-                if (failure.status !in setOf(401, 403)) { session.retryReuse(config.token, generation); throw failure }
-            } catch (failure: Throwable) {
-                session.retryReuse(config.token, generation); throw failure
-            }
-        }
         return Selection(endpoint, session.client(endpoint))
     }
     fun requireClient(context: Context) = resolve(context).client ?: error(MoteI18n.text("请先登录中央节点，各页面会共用这次登录。"))

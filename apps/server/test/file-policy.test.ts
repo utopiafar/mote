@@ -1,3 +1,4 @@
+import {readAgentCredential} from './login-fixture.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,readFileSync} from 'node:fs';
@@ -101,11 +102,11 @@ test('profile-specific summary uses its chosen model and no unrelated credential
  const id=await f.upload('summary.wav');await f.processing.tick();assert.equal(f.files.detail(id).job.summary_state,'succeeded');assert.equal(f.analyses[0].settings.analysisModel.model,'generated-cloud-model');assert.equal(f.analyses[0].settings.analysisModel.apiKey,'generated-model-key');assert.equal(f.analyses[0].localOnly,false);
 });
 
-test('owner policy routes support migration and preview while collector mutation is denied',async t=>{
+test('owner policy routes support migration and preview while query agent mutation is denied',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-policy-http-')),config={...configFromEnv(),dataDir:dir,token:'generated-owner-policy-token',model:'',apiKey:'',logLevel:'silent' as const};const node=await buildApp(config);t.after(async()=>{await node.app.close();rmSync(dir,{force:true,recursive:true});});
  const owner={authorization:'Bearer '+config.token},get=await node.app.inject({method:'GET',url:'/api/file-processing',headers:owner});assert.equal(get.statusCode,200);const body=get.json();const saved=await node.app.inject({method:'PUT',url:'/api/file-processing',headers:owner,payload:{revision:body.revision,settings:body.settings,policy:body.policy}});assert.equal(saved.statusCode,200);
  const match=await node.app.inject({method:'POST',url:'/api/file-processing/match',headers:owner,payload:{sourceId:'fixture',mimeType:'text/plain'}});assert.equal(match.statusCode,200);assert.equal(match.json().profile.processorId,'text.utf8');
- const {invitation}=node.connections.invite({serverUrl:'http://127.0.0.1:57569',label:'Generated',deviceId:'fixture'});const collector=await node.connections.redeem({code:invitation.code,deviceId:'fixture',deviceName:'Generated',platform:'android'});
+ const {invitation}=node.connections.invite({serverUrl:'http://127.0.0.1:57569',label:'Generated',deviceId:'fixture'});const collector=await readAgentCredential(node.connections);
  for(const path of ['match','preview','reprocess']){const response=await node.app.inject({method:'POST',url:'/api/file-processing/'+path,headers:{authorization:'Bearer '+collector.token},payload:{}});assert.equal(response.statusCode,403);}
 });
 

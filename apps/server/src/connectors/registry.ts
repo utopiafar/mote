@@ -131,7 +131,7 @@ export class ConnectorRegistry {
   }
   private mount(){
     const owner=async(request:FastifyRequest,reply:FastifyReply)=>{
-      if(!equalToken(request.headers.authorization,this.context.config.token))return reply.code(401).send({error:'unauthorized'});
+      if(!(this.context.ownerAuthorization?.(request.headers.authorization)??equalToken(request.headers.authorization,this.context.config.token)))return reply.code(401).send({error:'unauthorized'});
       reply.header('Cache-Control','no-store');
     };
     const action=(handler:OwnerRoute['handler'])=>async(request:FastifyRequest,reply:FastifyReply)=>{
