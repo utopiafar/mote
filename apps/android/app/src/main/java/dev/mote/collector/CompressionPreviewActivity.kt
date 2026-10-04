@@ -14,9 +14,11 @@ import kotlin.math.roundToInt
 /** Uses the capture pipeline's Bitmap resize/JPEG codec on generated content only. */
 class CompressionPreviewActivity : MoteActivity() {
     private val executor = Executors.newSingleThreadExecutor()
+    private val task by lazy { UiTask(this, executor, ownsExecutor = false) }
     @Volatile private var revision = 0
     private var quality = 75
     private var maxSide = 1280
+    private var hasParameters = false
     private var images: List<Bitmap> = emptyList()
     private var dialog: AlertDialog? = null
     private lateinit var stats: TextView
@@ -25,8 +27,21 @@ class CompressionPreviewActivity : MoteActivity() {
     private lateinit var apply: Button
     override fun onCreate(state: Bundle?) {
         super.onCreate(state); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        val config = Settings(this).read()
+        quality = state?.getInt("quality") ?: quality; maxSide = state?.getInt("maxSide") ?: maxSide
+        hasParameters = state?.containsKey("quality") == true && state.containsKey("maxSide")
+        val body = moteDetailPage()
+        val label = TextView(this).apply { text = MoteI18n.text("正在读取本机设置…") }; body.addView(label); body.addView(ProgressBar(this))
+        task.start(MoteI18n.text("正在读取本机设置…"), { label.text = it }, {
+            Settings(applicationContext).read()
+        }) { result ->
+            result.onSuccess { buildUi(it, state) }.onFailure {
+                label.text = if (it.message == MoteI18n.text(LocalDataFormat.RESET_MESSAGE)) it.message else MoteI18n.text("设置无法读取，原数据保留。请退出后检查存储或重试。")
+            }
+        }
+    }
+    private fun buildUi(config: CollectorConfig, state: Bundle?) {
         quality = state?.getInt("quality") ?: config.jpegQuality; maxSide = state?.getInt("maxSide") ?: config.captureMaxSide
+        hasParameters = true
         val body = moteDetailPage()
         fun text(value: String, size: Float = 14f) = TextView(this).apply { text = value; textSize = size; setPadding(0, moteDp(8), 0, moteDp(8)); body.addView(this) }
         text(MoteI18n.text("图片压缩预览"), 27f)
@@ -103,6 +118,6 @@ class CompressionPreviewActivity : MoteActivity() {
         dialog!!.show(); dialog!!.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         image.layoutParams = image.layoutParams.apply { height = (resources.displayMetrics.heightPixels * .65).toInt() }
     }
-    override fun onSaveInstanceState(outState: Bundle) { outState.putInt("quality", quality); outState.putInt("maxSide", maxSide); super.onSaveInstanceState(outState) }
-    override fun onDestroy() { revision++; dialog?.dismiss(); executor.shutdownNow(); originalView.setImageDrawable(null); compressedView.setImageDrawable(null); images.forEach(Bitmap::recycle); images = emptyList(); super.onDestroy() }
+    override fun onSaveInstanceState(outState: Bundle) { if (hasParameters) { outState.putInt("quality", quality); outState.putInt("maxSide", maxSide) }; super.onSaveInstanceState(outState) }
+    override fun onDestroy() { revision++; dialog?.dismiss(); executor.shutdownNow(); if (::originalView.isInitialized) originalView.setImageDrawable(null); if (::compressedView.isInitialized) compressedView.setImageDrawable(null); images.forEach(Bitmap::recycle); images = emptyList(); super.onDestroy() }
 }

@@ -38,19 +38,25 @@ class HeartbeatWorker(context: Context, params: WorkerParameters) : Worker(conte
             }
             configured = stamp
         }
-        @Synchronized fun stateChanged(context: Context, config: CollectorConfig) {
-            configure(context, config)
-            if (!config.hasSyncConnection() || config.syncMode == "manual") return
-            val settings = Settings(context)
-            val state = "${settings.enabled}:${settings.state()}:${SyncSchedule.stamp(config)}"
-            val now = android.os.SystemClock.elapsedRealtime()
-            if (requestedState == state) return
-            val request = OneTimeWorkRequestBuilder<HeartbeatWorker>().setConstraints(SyncSchedule.constraints(config))
-                .setInputData(workDataOf("syncStamp" to SyncSchedule.stamp(config), "stateChange" to true))
-                .setInitialDelay(if (lastRequest == 0L) 0 else (60_000 - (now - lastRequest)).coerceAtLeast(0), TimeUnit.MILLISECONDS)
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
-            WorkManager.getInstance(context).enqueueUniqueWork("mote-heartbeat-now", ExistingWorkPolicy.REPLACE, request)
-            requestedState = state; lastRequest = now
+        fun stateChanged(context: Context, config: CollectorConfig) {
+            // A Settings writer can request a heartbeat while still holding Settings.class.
+            // Never wait for that lock while owning the heartbeat scheduling monitor.
+            val state = if (!config.hasSyncConnection() || config.syncMode == "manual") null else {
+                val settings = Settings(context)
+                "${settings.enabled}:${settings.state()}:${SyncSchedule.stamp(config)}"
+            }
+            synchronized(this) {
+                configure(context, config)
+                if (state == null) return@synchronized
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (requestedState == state) return@synchronized
+                val request = OneTimeWorkRequestBuilder<HeartbeatWorker>().setConstraints(SyncSchedule.constraints(config))
+                    .setInputData(workDataOf("syncStamp" to SyncSchedule.stamp(config), "stateChange" to true))
+                    .setInitialDelay(if (lastRequest == 0L) 0 else (60_000 - (now - lastRequest)).coerceAtLeast(0), TimeUnit.MILLISECONDS)
+                    .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
+                WorkManager.getInstance(context).enqueueUniqueWork("mote-heartbeat-now", ExistingWorkPolicy.REPLACE, request)
+                requestedState = state; lastRequest = now
+            }
         }
     }
 }

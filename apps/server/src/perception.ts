@@ -5,12 +5,12 @@ import {fileProcessingSchema,transcriptSchema} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
 import type {FileProcessorRuntime} from './file-processors.js';
 import {MEDIA_CATALOG,type MediaAssets} from './media-assets.js';
+import {requestLocalJson} from './local-http.js';
 const managedOcrEndpoint=()=>process.env.MOTE_MEDIA_OCR_ENDPOINT??'http://127.0.0.1:9010/ocr';
 async function managedOcrReady(){
   const token=process.env.MOTE_MEDIA_WORKER_TOKEN;if(!token)return false;
   const url=new URL(managedOcrEndpoint());url.pathname='/health';
-  try{const response=await fetch(url,{headers:{Authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(1200)});
-    if(!response.ok)return false;const value=await response.json() as {version?:number;execution?:string;ocr?:boolean};
+  try{const value=await requestLocalJson(url,{headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(1200),limit:4096}) as {version?:number;execution?:string;ocr?:boolean};
     return value.version===1&&value.execution==='local'&&value.ocr===true;
   }catch{return false;}
 }

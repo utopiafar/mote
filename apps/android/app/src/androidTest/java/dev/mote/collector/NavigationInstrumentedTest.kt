@@ -227,7 +227,7 @@ class NavigationInstrumentedTest {
                 assertEquals("47", editor(activity, "30").text.toString())
             }
             scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
-            scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+            scenario.resumeGeneratedTask()
             scenario.onActivity { activity ->
                 assertEquals("47", editor(activity, "30").text.toString())
                 assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text == "保存设置" })
@@ -270,10 +270,17 @@ class NavigationInstrumentedTest {
             navigate(scenario,"设置")
             scenario.onActivity { activity -> menu(activity,"隐私与应用规则");tab(activity,"管理应用 · 查看每个应用的记录方式") }
             val appName = instrumentation.targetContext.applicationInfo.loadLabel(instrumentation.targetContext.packageManager).toString()
-            instrumentation.waitForIdleSync()
-            instrumentation.runOnMainSync {
-                dialogViews().filterIsInstance<EditText>().single { it.hint?.toString() == "搜索应用名称" }.setText(appName)
+            val searchDeadline = SystemClock.elapsedRealtime() + 10_000
+            var searched = false
+            while (!searched && SystemClock.elapsedRealtime() < searchDeadline) {
+                instrumentation.runOnMainSync {
+                    dialogViews().filterIsInstance<EditText>().firstOrNull { it.isShown && it.hint?.toString() == "搜索应用名称" }?.let {
+                        it.setText(appName); searched = true
+                    }
+                }
+                if (!searched) Thread.sleep(25)
             }
+            assertTrue("The installed-app dialog must gain focus before entering a search", searched)
             clickDialogLabel(appName); clickDialogLabel("仅应用和时长 · 不保存截图"); clickDialogLabel("完成")
             scenario.onActivity { activity ->
                 assertTrue(editor(activity, "com.example.chat=activity\ncom.example.private=off").text.contains("${activity.packageName}=activity"))
@@ -341,7 +348,7 @@ class NavigationInstrumentedTest {
         val directory = File(context.filesDir, "generated-ui").apply { mkdirs() }
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             // Every primary destination is rendered inside the same generated MainActivity.
-            listOf("今天" to "overview", "问一问" to "ask", "记录" to "notes", "资料库" to "library", "本机来源" to "sources", "本机" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings", "本机存储" to "storage-settings", "图像与文字识别" to "processing-settings").forEach { (label, file) ->
+            listOf("今天" to "overview", "问一问" to "ask", "记录" to "notes", "资料库" to "library", "本机来源" to "sources", "本机" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings", "本机存储" to "storage-settings", "图像质量与去重" to "processing-settings").forEach { (label, file) ->
                 scenario.onActivity {
                     when {
                         file == "sources" -> { tab(it, "本机"); menu(it, label) }

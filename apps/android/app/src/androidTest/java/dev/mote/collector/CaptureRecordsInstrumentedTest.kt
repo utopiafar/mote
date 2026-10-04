@@ -300,6 +300,7 @@ class CaptureRecordsInstrumentedTest {
         val config = settings.read().copy(chargingOnly = false, metadataEnabled = false, masks = "0,0,0.2,1")
         val pipeline = CapturePipeline(context) { }
         try {
+            settings.save(config)
             settings.enabled = true
             val unknown = WindowSnapshot(emptySet(), null, false)
             assertTrue(pipeline.canCapture(config, unknown))

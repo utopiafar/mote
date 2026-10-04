@@ -32,7 +32,6 @@ object RuntimeSettings {
         stopGeneration.incrementAndGet(); stopping = true
         startedAt = SystemClock.elapsedRealtime(); reportProgress(MoteI18n.text("正在停止采集"))
         val app = context.applicationContext
-        Settings(app).enabled = false
         val ownsHold = ConnectionGuard.beginReconfiguration()
         CaptureAccessibilityService.instance?.stopCapture()
         ProjectionService.instance?.pauseForConfiguration()
@@ -56,22 +55,34 @@ object RuntimeSettings {
         nextServer: String = if (next.hasSyncConnection()) next.server else "", expected: CollectorConfig? = null, confirmCentralEndpoint: Boolean = false,
         finished: (kotlin.Result<Applied>) -> Unit) {
         check(Looper.myLooper() == Looper.getMainLooper())
-        val app = context.applicationContext; val settings = Settings(app)
+        val app = context.applicationContext
         next.validate()
         if (QueueStorage.recovering || !ConnectionGuard.beginReconfiguration()) { finished(kotlin.Result.failure(ConnectionFailure("busy"))); return }
         startedAt = SystemClock.elapsedRealtime(); reportProgress(MoteI18n.text("正在暂停当前处理"))
         val stopVersion = stopGeneration.get()
-        val wasEnabled = settings.enabled
+        // The capture flag is already cached by SharedPreferences. Validating/decrypting the
+        // complete configuration can wait behind a writer and belongs on the executor.
+        val wasEnabled = app.getSharedPreferences("mote", Context.MODE_PRIVATE).getBoolean("enabled", false)
         try {
             CaptureAccessibilityService.instance?.stopCapture()
             MediaCollectionService.suspendObservation()
             ProjectionService.instance?.pauseForConfiguration()
-            settings.status(if (wasEnabled) "capturing" else "paused", MoteI18n.text("正在保存设置…"))
         } catch (error: Exception) {
             ConnectionGuard.endReconfiguration(); finished(kotlin.Result.failure(error)); return
         }
         executor.execute {
+            val opened = runCatching { Settings(app) }
+            if (opened.isFailure) {
+                main.post {
+                    ConnectionGuard.endReconfiguration()
+                    finished(kotlin.Result.failure(opened.exceptionOrNull()!!))
+                    configurationObserver?.invoke()
+                }
+                return@execute
+            }
+            val settings = opened.getOrThrow()
             val result = runCatching {
+                settings.status(if (wasEnabled) "capturing" else "paused", MoteI18n.text("正在保存设置…"))
                 HttpJson.cancelActive()
                 reportProgress(MoteI18n.text("正在等待后台处理结束"))
                 val work = WorkManager.getInstance(app)
@@ -118,10 +129,15 @@ object RuntimeSettings {
                         }
                         CaptureResume.STOPPED -> Unit
                     }
-                    if (result.isSuccess) settings.status(if (resume && !needsConsent) "capturing" else "paused", if (resume && !needsConsent) MoteI18n.text("设置已保存") else if (needsConsent) MoteI18n.text("设置已生效，请授权新的投屏会话") else MoteI18n.text("设置已保存"))
-                    else settings.status(if (resume && !needsConsent) "capturing" else "paused", MoteI18n.text("设置未完成，继续使用当前已保存配置"))
+                    executor.execute {
+                        if (result.isSuccess) settings.status(if (resume && !needsConsent) "capturing" else "paused", if (resume && !needsConsent) MoteI18n.text("设置已保存") else if (needsConsent) MoteI18n.text("设置已生效，请授权新的投屏会话") else MoteI18n.text("设置已保存"))
+                        else settings.status(if (resume && !needsConsent) "capturing" else "paused", MoteI18n.text("设置未完成，继续使用当前已保存配置"))
+                    }
                     Applied(needsConsent)
-                }.onFailure { executor.execute { settings.enabled = false }; settings.status("error", MoteI18n.text("采集恢复失败：{0}", it.message ?: MoteI18n.text("请检查权限和所选存储位置"))) }
+                }.onFailure { error -> executor.execute {
+                    settings.enabled = false
+                    settings.status("error", MoteI18n.text("采集恢复失败：{0}", error.message ?: MoteI18n.text("请检查权限和所选存储位置")))
+                } }
                 ConnectionGuard.endReconfiguration()
                 CaptureAccessibilityService.instance?.refreshSchedule()
                 MediaCollectionService.refresh()

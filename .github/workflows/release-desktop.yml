@@ -32,7 +32,7 @@ jobs:
         with: { node-version: '24', cache: npm }
       - run: npm ci
       - name: Build desktop workspace dependencies
-        run: npm run build -w @mote/shared -w @mote/local-inference -w @mote/diagnostics
+        run: npm run build -w @mote/shared -w @mote/diagnostics
       - name: Verify desktop workspaces and generated fixtures
         if: vars.MOTE_PRE_RELEASE_CHECKS == 'true'
         run: npm run check:desktop

@@ -96,20 +96,28 @@ class PowerOptimizationInstrumentedTest {
     }
     @Test fun repeatedVisibleNotificationStatePublishesAndCancelsOnlyOnce() {
         val settings = Settings(context); val original = settings.read()
+        fun drainDiagnostics() {
+            val worker = Notifications::class.java.getDeclaredField("diagnosticsWorker").apply { isAccessible = true }.get(null) as java.util.concurrent.ExecutorService
+            worker.submit {}.get(10, java.util.concurrent.TimeUnit.SECONDS)
+        }
         try {
             settings.save(original.copy(diagnosticsEnabled = true))
             instrumentation.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
             Notifications.clear(context); Notifications.clearMedia(context); Notifications.showEvents(context, null)
+            drainDiagnostics()
             val counters = context.getSharedPreferences("numeric_diagnostics", 0)
             val publishes = counters.getLong("notificationPublishes", 0)
             repeat(20) { Notifications.show(context, "generated notification fixture") }
+            drainDiagnostics()
             assertEquals(publishes + 1, counters.getLong("notificationPublishes", 0))
             Notifications.show(context, "generated state changed")
+            drainDiagnostics()
             assertEquals(publishes + 2, counters.getLong("notificationPublishes", 0))
             val cancels = counters.getLong("notificationCancels", 0)
             repeat(20) { Notifications.clear(context) }
+            drainDiagnostics()
             assertEquals(cancels + 1, counters.getLong("notificationCancels", 0))
-        } finally { Notifications.clear(context); settings.save(original) }
+        } finally { Notifications.clear(context); drainDiagnostics(); settings.save(original) }
     }
     @Test fun freshDefaultIsStickyAndMissingRulesNeverInferContentFromOtherPreferences() {
         val prefs = context.getSharedPreferences("power-default-fixture", 0)

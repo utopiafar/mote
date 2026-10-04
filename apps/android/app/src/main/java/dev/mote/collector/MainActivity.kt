@@ -145,16 +145,18 @@ class MainActivity : MoteActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         if (Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { navigateBack() }
-        try { settings = Settings(this) } catch (error: Exception) {
-            setContentView(TextView(this).apply { text = error.message ?: MoteI18n.text(LocalDataFormat.RESET_MESSAGE); setPadding(dp(24), dp(24), dp(24), dp(24)) })
-            return
-        }
         centralState = savedInstanceState?.getBundle("centralContent")
         val retained = lastNonConfigurationInstance as? RetainedDraft
         val loading = moteDetailPage()
         val label = TextView(this).apply { text = MoteI18n.text("正在读取本机设置…") }; loading.addView(label); loading.addView(ProgressBar(this))
-        uiTask.start(MoteI18n.text("正在读取本机设置…"), { label.text = it }, { settings.read() }) { result ->
-            result.onSuccess { buildUi(it, savedInstanceState, retained); if (resumed) { updatePermissionStatuses(); refreshStatus() } }
+        uiTask.start(MoteI18n.text("正在读取本机设置…"), { label.text = it }, {
+            Settings(applicationContext).let { it to it.read() }
+        }) { result ->
+            result.onSuccess { (opened, config) ->
+                settings = opened
+                buildUi(config, savedInstanceState, retained)
+                if (resumed) resumeUi()
+            }
                 .onFailure { label.text = if (it.message == MoteI18n.text(LocalDataFormat.RESET_MESSAGE)) it.message else MoteI18n.text("设置无法读取，原数据保留。请退出后检查存储或重试。") }
         }
     }
@@ -1118,8 +1120,11 @@ class MainActivity : MoteActivity() {
     }
     override fun onResume() {
         super.onResume()
-        if (!::settings.isInitialized) return
         resumed = true
+        if (!::settings.isInitialized) return
+        resumeUi()
+    }
+    private fun resumeUi() {
         if (currentPage == Page.ASK) centralContent?.resume()
         notePoll?.let { handler.removeCallbacks(it); handler.post(it) }
         updatePermissionStatuses()

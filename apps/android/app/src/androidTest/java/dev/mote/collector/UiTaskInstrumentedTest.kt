@@ -39,7 +39,7 @@ class UiTaskInstrumentedTest {
             Thread.sleep(650); assertTrue(progress.get() >= 2)
             scenario.moveToState(Lifecycle.State.CREATED)
             val paused = progress.get(); Thread.sleep(650); assertEquals(paused, progress.get())
-            scenario.moveToState(Lifecycle.State.RESUMED)
+            scenario.resumeGeneratedTask()
             Thread.sleep(650); assertTrue(progress.get() > paused)
             scenario.close(); val destroyed = progress.get()
             release.countDown(); assertTrue(finishedWork.await(2, TimeUnit.SECONDS))

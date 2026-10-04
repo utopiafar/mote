@@ -5,9 +5,7 @@ import { moteText } from './i18n.js';
 import {Context,type Plugin} from '@deepseek-ai/cordis';
 import {pathToFileURL} from 'node:url';
 import {isAbsolute} from 'node:path';
-import {request as httpRequest} from 'node:http';
-import {request as httpsRequest} from 'node:https';
-import {once} from 'node:events';
+import {isLoopback,requestLocalJson} from './local-http.js';
 import {transcriptSchema,diarizationSchema,fileProcessingSchema,type Transcript,type FileProcessingSettings,processorParameterSchema,type ProcessorParameter} from '@mote/shared';
 import {StoreError} from './store.js';
 import {BackendPluginScope} from './backend-plugin-scope.js';
@@ -17,7 +15,7 @@ import {FileRecipeRegistry,FileOutputRegistry,installFileRecipes,type ComponentR
 export interface TranscriptionProvider {
   transcribe(input:{body:AsyncIterable<Buffer>;sizeBytes:number;mimeType:string;settings:FileProcessingSettings;localOnly?:boolean;maxAudioMs:number;signal:AbortSignal}):Promise<Transcript>;
 }
-export function isLoopback(endpoint:string){try{return ['127.0.0.1','localhost','[::1]'].includes(new URL(endpoint).hostname);}catch{return false;}}
+export {isLoopback} from './local-http.js';
 export async function readProcessorJson(response:Response,limit=32*1024*1024){
   if(!response.ok){await response.body?.cancel();throw new ProviderFailure(providerHttpFailure(response.status,response.headers.get('retry-after')));}
   const reader=response.body?.getReader();if(!reader)throw new StoreError('Empty processing response',502);
@@ -26,28 +24,13 @@ export async function readProcessorJson(response:Response,limit=32*1024*1024){
   finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
   return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
 }
-async function postLocalProcessor(endpoint:string,headers:Record<string,string>,body:AsyncIterable<Buffer>,signal:AbortSignal,limit=32*1024*1024){
-  const url=new URL(endpoint),request=url.protocol==='https:'?httpsRequest:httpRequest;
-  return new Promise<unknown>((resolve,reject)=>{
-    const outgoing=request(url,{method:'POST',headers,signal},async incoming=>{
-      try{
-        if((incoming.statusCode??0)<200||(incoming.statusCode??0)>=300){incoming.resume();throw new ProviderFailure(providerHttpFailure(incoming.statusCode??502,String(incoming.headers['retry-after']??'')));}
-        if(incoming.headers['x-mote-execution']!=='local'){incoming.resume();throw new StoreError('Local worker did not confirm offline execution',502);}
-        const chunks:Buffer[]=[];let length=0;
-        for await(const chunk of incoming){length+=chunk.length;if(length>limit)throw new StoreError('Processing response exceeds limit',502);chunks.push(chunk);}
-        resolve(JSON.parse(Buffer.concat(chunks,length).toString('utf8')));
-      }catch(error){reject(error);}
-    });
-    outgoing.on('error',reject);
-    void (async()=>{let sent=0;for await(const chunk of body){signal.throwIfAborted();sent+=chunk.length;if(!outgoing.write(chunk))await once(outgoing,'drain',{signal});}if(sent!==Number(headers['Content-Length']))throw new StoreError('Local upload size changed',409);outgoing.end();})().catch(error=>{outgoing.destroy();reject(error);});
-  });
-}
+const postLocalProcessor=(endpoint:string,headers:Record<string,string>,body:AsyncIterable<Buffer>,signal:AbortSignal,requireOfflineExecution=true)=>requestLocalJson(endpoint,{method:'POST',headers,body,signal,requireOfflineExecution});
 export class HttpTranscriptionProvider implements TranscriptionProvider {
   async transcribe(input:Parameters<TranscriptionProvider['transcribe']>[0]){
     const {settings,signal,localOnly=false}=input;
     if(localOnly&&!isLoopback(settings.endpoint))throw new StoreError('Local dialogue requires a loopback worker',409);
     const headers={'Content-Type':'application/octet-stream','Content-Length':String(input.sizeBytes),'X-Mote-Max-Audio-Ms':String(input.maxAudioMs),...(localOnly?{'X-Mote-Offline':'1'}:{}),...(settings.apiKey?{Authorization:`Bearer ${settings.apiKey}`}:{})};
-    if(localOnly)return transcriptSchema.parse(await postLocalProcessor(settings.endpoint,headers,input.body,signal));
+    if(localOnly||isLoopback(settings.endpoint))return transcriptSchema.parse(await postLocalProcessor(settings.endpoint,headers,input.body,signal,localOnly));
     const response=await fetch(settings.endpoint,{method:'POST',headers,body:input.body as unknown as BodyInit,duplex:'half',redirect:'error',signal} as RequestInit);
     return transcriptSchema.parse(await readProcessorJson(response));
   }
@@ -136,8 +119,9 @@ export class FileProcessorRuntime {
         await pluginScope.install(builtin({id:'document.generic',version:'1',name:"文档文字提取",stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,dependencies:{settings:[]},process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal)}));
         await pluginScope.install(builtin({id:'image.http',version:'2',name:"图片文字提取接口",stage:'extract',mediaTypes:['image/'],serviceKind:'image',awaitResponseOnCancel:true,reuseByContent:true,dependencies:{settings:['imageEndpoint','apiKey','allowRemote']},async process(input){
           if(!input.settings.imageEndpoint)throw new StoreError('Image processing service is not configured',409);
-          const response=await fetch(input.settings.imageEndpoint,{method:'POST',headers:{'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType,...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})},body:input.readOriginal() as unknown as BodyInit,duplex:'half',signal:input.signal,redirect:'error'} as RequestInit);
-          const transcript=transcriptSchema.parse(await readProcessorJson(response));if(transcript.durationMs!==0)throw new StoreError('Image text cannot have audio duration',502);return transcript;
+          const headers={'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType,...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})};
+          const value=isLoopback(input.settings.imageEndpoint)?await postLocalProcessor(input.settings.imageEndpoint,headers,input.readOriginal(),input.signal,false):await readProcessorJson(await fetch(input.settings.imageEndpoint,{method:'POST',headers,body:input.readOriginal() as unknown as BodyInit,duplex:'half',signal:input.signal,redirect:'error'} as RequestInit));
+          const transcript=transcriptSchema.parse(value);if(transcript.durationMs!==0)throw new StoreError('Image text cannot have audio duration',502);return transcript;
         }}));
         await pluginScope.install(builtin({id:'audio.diarize',version:'2',name:"本地说话人分离",stage:'diarize',mediaTypes:['audio/'],localOnly:true,managedModel:'dialogue',awaitResponseOnCancel:true,dependencies:{settings:['endpoint','apiKey','speakerCount'],parameters:['speakerCount']},async process(input){
           if(!isLoopback(input.settings.endpoint))throw new StoreError('Diarization requires a loopback worker',409);

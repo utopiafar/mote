@@ -40,8 +40,8 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     fun pause(reason: String, category: OperationReason = OperationReason.STATE_CHANGED) {
         if (lastPause != category) { Operations.record(context, OperationKind.CAPTURE_PAUSED, category); lastPause = category }
         observationClock.reset(); dedupeSignature = null; dedupeReference = null; earlySignature = null
-        settings.status("paused", reason)
         settings.screenStatus(reason)
+        if (!closed) try { executor.execute { settings.status("paused", reason) } } catch (_: java.util.concurrent.RejectedExecutionException) { }
     }
     fun canCapture(config: CollectorConfig, windows: WindowSnapshot) = canCollect(config, windows, AppCollectionMode.CONTENT)
     fun canCollect(config: CollectorConfig, windows: WindowSnapshot, expected: AppCollectionMode): Boolean {

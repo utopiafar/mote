@@ -9,7 +9,7 @@
 | 安卓同步音频仍看到轻量索引 | 两端移除轻量选项，兼容读取旧偏好时归一化；客户端不再执行文件解码或转写 | 生成文件与真实中央 API，含旧偏好和权限缩窄 |
 | 截图仍有通用 OCR 与模型设置 | 移除未接入生产链路的 OCR、Qwen/VLM 管理、进程、IPC、JNI/AIDL、构建和安装包依赖；保留明确用于上传文字隐私审查的 Apple Vision/ML Kit | UI、配置导入、JVM/原生编译、Mac 包内依赖检查 |
 | 文件快照没有说明上传完整文件 | 表单与 CLI 明确完整文件临时上传；旧来源缺少确认时停止扫描及发送旧队列，重新保存可见设置后恢复 | 缺失/无效授权、大文件、旧 pending 和 CLI 无确认不产生 outbox |
-| 仍受旧本地解析上限限制 | 两端分块暂存的 snapshot/archive 统一单文件 512 MiB；大文件之后的目录游标继续推进，CLI 跨进程读取持久 checkpoint，保留分块、容量与扫描预算 | 17 MiB 生成文件和大文件后小文件续扫 |
+| 仍受旧本地解析上限限制 | 两端分块暂存及已授权版本恢复统一单文件 512 MiB；大文件之后的目录游标继续推进，CLI 跨进程读取持久 checkpoint，保留分块、容量与扫描预算 | 17 MiB 生成文件、ACK 后恢复同一版本、大文件后小文件续扫；未知或超限版本拒绝 |
 | 快照绕过配置的 recipe | 使用中央实际 recipe、stage pins 与 DAG，保留临时输入清理和全文读取授权 | 自定义多阶段 recipe 到正式 Material 的完整链路 |
 | 索引回执改写原始证据 | 独立 `file_snapshot_index` 投影；修复历史回写，迁移在 SQLite trigger function 注册后执行 | 正式读取的源版本哈希、重启与配置变更 |
 | 安卓恢复备份放行待复核记录 | 保留 held 隔离；重复 ID 合并取严格授权，非法或伪造授权标记拒绝导入 | 生产 durable queue 和恢复、显式释放 |
@@ -22,14 +22,21 @@
 | 展开的旧 Ask 分页继续显示撤销引用 | head 与旧页均按 revision 绑定；版本变化、权限失效、删除和迟到响应立即撤下旧内容 | 超过 20 turns、deferred 请求、撤权后同 revision 恢复 |
 | 手动 Memory 整理选中 v1 却处理 v2 | 提交 ID/version/fingerprint，在入队事务内逐一校验并冻结；所有正式调用者同步新契约 | 实际 UI 与生产 API 并发修正，409 明确回执 |
 | Imports 媒体重试缺少未知调用确认 | 与文件详情共用控件，读取实际 physical call 状态；running 等待，unknown 明确确认，支持取消及切换作用域撤销 | Imports/Files、迟到响应、切换文件、撤权和操作更新 |
-| 设置保存与状态刷新互相等待 | 在取得队列锁之前解析 Settings/queue handles，统一锁顺序 | 隔离模拟器生成进程线程栈、repository barrier 并发回归 |
+| 设置保存、登录与队列状态互相等待 | 在取得队列锁之前解析 Settings/queue handles；file anchor 在锁外请求，回写以完整候选行、policy、generation 和当前来源校验；心跳在取得 monitor 前读取设置快照 | 隔离模拟器生成进程线程栈、repository barrier、真实登录并发；来源撤权、删除重建及晚到结果拒绝 |
+| 并行保存时旋转或打开页面卡顿 | Settings 的构造、读取与写入放入后台任务；登录轮询与后台请求保留 fresh session 校验和生命周期迟到隔离 | 真实 Settings.class 持锁与 ActivityScenario 通过，覆盖 Main、Sources、Storage、预览、日历及中央页面；同实例、同任务停止后恢复与草稿保留通过 |
+| 设置持锁期间启动或停止服务卡顿 | 无障碍、投屏、媒体与通知服务的设置及诊断任务转入后台；投屏状态与心跳任务合并排队，旧服务实例不得覆盖新实例的运行状态或授权 | 调用真实生产方法的生成锁屏障；21 项重点回归及完整安全模拟器验收通过；未读取真实投屏像素 |
 | 组织器升级造成读取和授权不一致 | 补齐来源序列化与 authored organizer 新旧版本契约；仍核验唯一 host owner、当前来源与原始引用 | 引用展示、未知版本拒绝、去重、删除及重查 |
+| 增量打包仍携带已删除的客户端模块 | Desktop 编译前清理 dist；桌面专属检查与发布不再构建独立实验推理包，安装包只包含当前构建产物 | 真实 asar 检查退役模块及依赖不存在；实际 workspace 依赖图校验 |
+| 关闭中央误取消未完成任务 | 合并 PR #67，先停止接收、保留 handler/storage 中断执行，再释放资源；已发出处理请求保留 unknown，用户取消仍终止 | 真实 app.close、180 项模型等待恢复、检查点复用、未知请求与晚到结果 |
+| profile 代理误转发本机语音输入 | PR #66 的环境代理启用后，本地 worker 仍必须直连；补齐 loopback bypass 与独立直连 transport，覆盖 ASR、说话人分离、图像与健康探测 | Node 24 子进程、真实 HTTP/HTTPS 生成 POST 与授权头、大小写代理矩阵通过；远程正向对照走代理，响应上限、abort 与重定向拒绝通过 |
 
 ## 保留的边界
 
 - 完整文件版本和 Coding/source pipeline 绑定仍需要完整节点备份。便携 JSON 不冒充完整运行时快照，遇到这些数据继续明确拒绝并引导完整备份。
+- 512 MiB 输入依赖磁盘分块暂存；没有暂存器的工具路径仍保留 16 MiB 内存读取上限。扫描预算、磁盘/队列容量与用户授权仍决定是否能继续发送。
 - 文字隐私审查是客户端上传前的用户规则执行；中央 OCR、解析、转写与摘要独立运行。截图中的指令及其他采集内容始终是不可信证据。
 - 升级清理退役配置字段，不擅自删除用户目录里的旧模型文件。当前桌面存储格式 3 仍保留队列、草稿、令牌与隐私设置；不承诺支持更早被项目明确拒绝的存储格式。
+- Android 旧 owner session 文件保持原字节，不导入、不回退；登录与退出只认统一的 Settings 会话。退出或会话到期后，旧文件不能使页面再次取得访问权限。
 
 ## 验收记录
 
@@ -37,7 +44,7 @@
 
 | 检查 | 结果 |
 | --- | --- |
-| `npm run check:local`（翻译、共享构建、全量 typecheck、测试） | 最终全量运行中，合并前补齐 |
+| `npm run check:local`（翻译、共享构建、全量 typecheck、测试） | 通过；2,176 项、0 失败、0 跳过；本次显式启用 macOS 沙箱和已安装 Codex 的本地协议 fixture |
 | 中央与 Web 构建 | 通过 |
 | 中央跨端归档/查询/媒体 E2E | 通过；真实 Harness，生成 provider |
 | Privacy gateway | 22 项通过；本地合成 provider |
@@ -45,10 +52,17 @@
 | 两个真实中央进程与 profile 备份/恢复/回滚 | 通过；隔离令牌、加密原件、校验和、仓库锁、进程身份 |
 | Electron UI、离线同步、截图分页、中央窗口 | 通过；真实 IPC/HTTP，采集保持停止 |
 | Mac DEV 包构建、签名与实际 asar 验收 | 通过；元数据/队列/草稿/隐私设置/原生 QR；无退役引擎和解码依赖 |
-| Android JVM 与 development/测试 APK 编译 | 261 项通过，编译通过 |
-| Android API 35 隔离模拟器 | 生成 fixture 验收运行中 |
+| Android JVM 与 development/测试 APK 编译 | 262 项通过，0 失败、0 跳过；两类 APK 编译通过 |
+| Android API 35 隔离模拟器 | 34 组、按 class/test 去重后 126 项通过、0 失败、9 项明确跳过；其中安全 32 组 112 项、中央会话与登录 14 项通过；生成页面绘制与键盘导航通过 |
 | 原生 Apple Vision 生成图片检查 | 冷初始化超出客户端 20 秒预算；独立初始化约 63 秒后返回正确生成文字。初始化后的完整生成图片链路通过（遮挡文字不被识别、图片去重、ACK 后清队列、幂等重试）；不把冷启动超时写成通过 |
-| 实体安卓、个人屏幕与真实模型/ASR | 未执行，不计入通过项 |
+| macOS Python 沙箱与已安装 Codex 协议 | 默认可选项另行启用后通过；6 项沙箱 suite、32 项 Codex suite，本地模拟 Responses provider，无真实模型调用；也已包含在最终全量计数中 |
+| 实体安卓、个人屏幕、真实 MediaProjection 像素与真实模型/ASR | 未执行，不计入通过项；服务锁竞争使用生成的进程内屏障，不能替代实体投屏验收 |
 | 历史 heldout integration/CLI 机械脚本 | 尝试隔离生成输出后，仍因不存在的硬编码私人 supervisor 路径受阻；未读取私人 ancestor，未运行历史付费实验 |
 
 初轮全量检查还捕获了退役解码器的测试依赖、旧索引上限断言和组织器版本契约遗漏。先修生产问题，再更新只绑定旧行为的 fixture；最终检查单独执行，不将失败初轮或重叠 targeted suite 累加为通过数。
+
+Android 的旧失败证据也保留。API 35 回栈失败已定位为测试 APK 的外部 fixture 任务留在前台；修正测试返回任务方式后，核验同一 Activity 对象、taskId 及实际停止后恢复，原草稿和连接断言保留。离线同步旧 404 回退、上传 ACK 屏障位置、旧菜单和旧会话迁移断言已按当前生产契约修正，受影响完整组复测通过。
+
+9 项跳过均不计入通过：AppPolicy 的 2 项专用中央/投屏 fixture、AppUpdate 的 1 项分阶段系统替换、ComplexNotes 的 3 项分阶段离线脚本，以及 Connection、FileSync、LocalSources 各 1 项独立中央 fixture。本轮未启用这些 fixture 的配置或阶段参数；尤其不把文件完整端到端和系统覆盖安装模拟器检查写成已执行。
+
+最终全量分项为 Desktop 385、Server 1,123、Web 244、Agent 222、Diagnostics 5、实验 runtime 14、Shared 127、根目录 release/security/backup 52、CLI 4；另外真实 central runner 的噪声日志、停止与磁盘失败 fixture 通过。Android 单独记录，不混入 TypeScript 计数。

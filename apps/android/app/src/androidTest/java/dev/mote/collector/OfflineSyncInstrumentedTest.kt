@@ -199,14 +199,21 @@ class OfflineSyncInstrumentedTest {
             assertEquals("25 notes use one transport request", 1, archive.batches.get())
         }
     }
-    @Test fun unsupportedLegacyRoutesFallBackToIndividualAcks() = fixture { context, settings ->
+    @Test fun unsupportedV2EndpointKeepsPendingWithoutLegacyFallback() = fixture { context, settings ->
         LoopbackArchive().use { archive ->
             val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "manual")
             settings.save(config); archive.fault = "legacy"
             repeat(2) { QuickNotes.save(context, "Generated legacy $it", "") }
             UploadWorker.schedule(context, config, true)
+            val manager = WorkManager.getInstance(context)
+            waitUntil { settings.syncState() == "error" && manager.getWorkInfosForUniqueWork("mote-upload").get().lastOrNull()?.state == WorkInfo.State.FAILED }
+            assertEquals(2, context.queue().depth()); assertEquals(0, archive.notes.get()); assertEquals(1, archive.batches.get())
+            Thread.sleep(300)
+            assertEquals("Manual failure must not dispatch a legacy route or retry automatically", 1, archive.requests.get())
+            archive.fault = ""
+            UploadWorker.schedule(context, config, true)
             waitUntil { context.queue().depth() == 0 && settings.syncState() == "idle" }
-            assertEquals(2, archive.notes.get()); assertEquals(3, archive.batches.get())
+            assertEquals(2, archive.notes.get()); assertEquals(2, archive.batches.get())
         }
     }
     @Test fun partialBatchAcknowledgementKeepsOnlyUnconfirmedRecords() = fixture { context, settings ->
@@ -362,9 +369,9 @@ class OfflineSyncInstrumentedTest {
             val previous = HttpJson.onComplete
             HttpJson.onComplete = { duration ->
                 previous?.invoke(duration)
-                // Pull is first; hold after the capture response but before the
-                // first worker can acknowledge its queue record.
-                if (completed.incrementAndGet() == 2) { received.countDown(); release.await(20, TimeUnit.SECONDS) }
+                // The current protocol uploads before pulling derived receipts.
+                // Hold the first capture response before its queue acknowledgement.
+                if (completed.incrementAndGet() == 1) { received.countDown(); release.await(20, TimeUnit.SECONDS) }
             }
             fun request() = OneTimeWorkRequestBuilder<UploadWorker>()
                 .setInputData(workDataOf("manual" to true, "syncStamp" to SyncSchedule.stamp(config)))
@@ -391,7 +398,7 @@ class OfflineSyncInstrumentedTest {
                     assertEquals(1, retry.runAttemptCount)
                     assertTrue(retry.nextScheduleTimeMillis > System.currentTimeMillis())
                 }
-                assertEquals("Only the active worker may issue capture-sync HTTP", 2, archive.requests.get())
+                assertEquals("Only the active worker may issue capture-sync HTTP", 1, archive.requests.get())
                 assertEquals(1, archive.notes.get()); assertEquals(1, context.queue().depth())
             } finally {
                 release.countDown()

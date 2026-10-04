@@ -27,7 +27,7 @@ class StorageActivity : MoteActivity() {
         body = moteDetailPage()
         text(body, MoteI18n.text("图片保存位置"), 27f)
         text(body, MoteI18n.text("本机保存待同步与保留期内的记录和图片。中央确认上传后仍可回看，到期才清理。"))
-        text(body, MoteI18n.text("选择内部应用空间，或系统提供的本机／存储卡应用空间。迁移会自动暂停处理、复制并验证已有记录，然后继续原来的采集与同步。模型、草稿、设置及来源缓存保留在内部空间。"))
+        text(body, MoteI18n.text("选择内部应用空间，或系统提供的本机／存储卡应用空间。迁移会自动暂停处理、复制并验证已有记录，然后继续原来的采集与同步。草稿、设置及来源缓存保留在内部空间。"))
         inventory = TextView(this).apply { textSize = 15f }; body.addView(inventory)
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(content)
         text(body, MoteI18n.text("默认明文保存：记录和索引为 JSON，图片保留原始格式。开发者选项可开启本地内容加密，也可批量解密旧文件。这些是本应用专用目录，不是共享相册；卸载应用会删除本机文件。移除存储卡后会停止使用该位置并提示，不会切到空目录；重新连接后可恢复。"))

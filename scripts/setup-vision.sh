@@ -20,4 +20,4 @@ if ! git -C "$MOTE_LLAMA_DIR" cat-file -e "$MOTE_LLAMA_REVISION^{commit}" 2>/dev
   git -C "$MOTE_LLAMA_DIR" fetch --depth 1 https://github.com/ggml-org/llama.cpp.git "$MOTE_LLAMA_REVISION"
 fi
 git -C "$MOTE_LLAMA_DIR" checkout --detach "$MOTE_LLAMA_REVISION"
-echo 'Pinned local vision source ready. Desktop requires CMake and Ninja; Android uses the SDK NDK/CMake.'
+echo 'Pinned experimental local inference source ready.'

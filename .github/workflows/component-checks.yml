@@ -71,8 +71,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with: { node-version: '24', cache: npm }
       - run: npm ci --ignore-scripts
-      - run: npm run build:libs && npm run typecheck -w @mote/desktop
-      - run: npm run test -w @mote/local-inference -w @mote/diagnostics -w @mote/desktop
+      - run: npm run build -w @mote/shared -w @mote/diagnostics && npm run typecheck -w @mote/desktop
+      - run: npm run test -w @mote/diagnostics -w @mote/desktop
   android:
     needs: affected
     if: needs.affected.outputs.android == 'true'
