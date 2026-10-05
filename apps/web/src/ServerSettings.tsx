@@ -5,11 +5,10 @@ import {confirmNavigation} from './unsaved';
 import {PerceptionSettings} from './PerceptionSettings';
 import { moteText } from '@mote/shared/i18n';
 import { useEffect, useState } from 'react';
-import { ArrowLeft, ArrowRight, Bot, Database, FileText, Fingerprint, Link2, RefreshCw, Search, Settings2, ShieldCheck, Terminal } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bot, Database, FileText, Link2, RefreshCw, Search, Settings2, ShieldCheck } from 'lucide-react';
 import type { ServerConfiguration, ConfigurationField, SourceConnection } from '@mote/shared';
 import { type Api, bytes, errorMessage } from './api';
 import {ConfigurationBuilder, type ConfigCategory} from './ConfigurationBuilder';
-import {Feedback} from './Feedback';
 import {MemorySettings} from './MemorySettings';
 import {ModelProfiles} from './ModelProfiles';
 import {ModelAssignments} from './ModelAssignments';
@@ -37,14 +36,12 @@ export function ServerSettings({api,onNavigate,onModelApplied}:{api:Api;onNaviga
  useEffect(()=>{const heading=document.querySelector<HTMLElement>('.server-settings h1');if(heading?.getClientRects().length){heading.tabIndex=-1;heading.focus({preventScroll:true});}},[category]);
  const selected=categories.find(c=>c.id===category);
  return <div className="server-settings">
-  <div className="page-heading settings-heading"><div>{category&&<button className="back-link" onClick={()=>{if(confirmNavigation())setCategory(null);}}><ArrowLeft size={16}/>{moteText("设置")}</button>}<div className="eyebrow">{moteText("按你的方式运行")}</div><h1>{selected?.title||moteText("设置")}</h1><p>{selected?.description||moteText("连接、记录与理解，各自有清楚的位置。")}</p></div><button className="button subtle" disabled={busy} onClick={refresh}><RefreshCw size={15} className={busy?'spin':''}/>{moteText("刷新生效配置")}</button></div>
+  <button className="back-link workspace-back" aria-label={moteText('返回{0}',category?moteText('模型与服务'):moteText('设置'))} onClick={()=>{if(category){if(confirmNavigation())setCategory(null);}else onNavigate('about');}}><ArrowLeft size={16}/>{moteText('返回上级')}</button>
+  <div className="page-heading settings-heading"><div><div className="eyebrow">{moteText("按你的方式运行")}</div><h1>{selected?.title||moteText("模型与服务")}</h1><p>{selected?.description||moteText("连接、记录与理解，各自有清楚的位置。")}</p></div><button className="button subtle" disabled={busy} onClick={refresh}><RefreshCw size={15} className={busy?'spin':''}/>{moteText("刷新生效配置")}</button></div>
   {error!==undefined&&<p className="notice error" role="alert">{errorMessage(error)}</p>}
   {!config&&busy&&<p role="status">{moteText("正在读取节点设置…")}</p>}
   {!category&&<>
    <div className="settings-category-label">{moteText("偏好设置")}</div><div className="preference-menu">{categories.map(item=><button key={item.id} className="preference-menu-row" onClick={()=>setCategory(item.id)}><span className="preference-menu-icon"><item.icon size={21}/></span><span><strong>{item.title}</strong><small>{item.description}</small></span><ArrowRight size={17}/></button>)}</div>
-   <div className="settings-category-label">{moteText("管理与维护")}</div><div className="preference-menu">{([
-    ['imports',moteText("导入"),moteText("将已有文件加入资料库"),FileText],['usage',moteText("用量与费用"),moteText("查看模型调用与费用"),Database],['lark',moteText("飞书"),moteText("安装、登录与文档 / 日历只读同步"),Link2],['vault',moteText("数据与备份"),moteText("空间详情、归档导入与导出"),Database],['connections',moteText("连接授权"),moteText("设备邀请与外部 Chatbot 凭据"),Fingerprint],['about',moteText("关于 Mote"),moteText("软件版本、更新与部署信息"),FileText],['developer',moteText("开发者选项"),moteText("诊断、日志与高级生效配置"),Terminal],
-   ] as const).map(([id,title,description,Icon])=><button key={id} className="preference-menu-row" onClick={()=>onNavigate(id)}><span className="preference-menu-icon neutral"><Icon size={21}/></span><span><strong>{title}</strong><small>{description}</small></span><ArrowRight size={17}/></button>)}<Feedback profile={config?.profile} runtime={config?.runtime}/></div>
    <p className="settings-footnote"><ShieldCheck size={16}/>{moteText("模型、记忆、文件处理与飞书设置可直接保存并生效；其他偏好通过部署草稿修改并重启。离开有未保存修改的配置页面时会先提醒。")}</p>
   </>}
   {category==='file-processing'&&<FileProcessingSettings api={api}/>}

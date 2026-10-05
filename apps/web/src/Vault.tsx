@@ -30,7 +30,9 @@ export function Vault({
   status,
   refresh,
   disconnect,
+  embedded = false,
 }: {
+  embedded?: boolean;
   api: Api;
   status: Status;
   refresh: () => void;
@@ -86,9 +88,9 @@ export function Vault({
     : 0;
   return (
     <>
-      <div className="page-heading">
-        <div className="eyebrow">YOUR CONTEXT BELONGS TO YOU</div>
-        <h1>{moteText("数据与备份")}</h1>
+      <div className={embedded?"section-heading":"page-heading"}>
+        {!embedded&&<div className="eyebrow">YOUR CONTEXT BELONGS TO YOU</div>}
+        {embedded?<h2>{moteText("数据与备份")}</h2>:<h1>{moteText("数据与备份")}</h1>}
         <p>{moteText("知道留下了什么、存在哪里，也随时保留迁移的自由。")}</p>
       </div>
       {error && <ErrorNotice text={error} />}

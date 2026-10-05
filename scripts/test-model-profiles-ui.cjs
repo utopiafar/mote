@@ -31,7 +31,7 @@ async function run(){
  assert.equal(await js(`!!document.querySelector('[aria-label="新的 API key"]')`),false);
  await click('复制预设');await input('副本名称','快速问答副本');await click('创建副本');await until(async()=> (await view()).profiles.some(p=>p.name==='快速问答副本'&&p.settings.apiKeyConfigured),'copied credentials');
  await screenshot('providers-desktop');window.setSize(430,1000);await screenshot('providers-mobile');window.setSize(1360,1000);
- await js(`document.querySelector('.settings-heading .back-link').click()`);await until(()=>js(`!!Array.from(document.querySelectorAll('.preference-menu-row')).find(b=>b.querySelector('strong')?.textContent==='模块与模型')`),'modules entry');await js(`Array.from(document.querySelectorAll('.preference-menu-row')).find(b=>b.querySelector('strong')?.textContent==='模块与模型').click()`);
+ await js(`document.querySelector('.server-settings .back-link').click()`);await until(()=>js(`!!Array.from(document.querySelectorAll('.preference-menu-row')).find(b=>b.querySelector('strong')?.textContent==='模块与模型')`),'modules entry');await js(`Array.from(document.querySelectorAll('.preference-menu-row')).find(b=>b.querySelector('strong')?.textContent==='模块与模型').click()`);
  await until(()=>js(`Array.from(document.querySelectorAll('h2')).some(e=>e.textContent==='中央感知'&&e.closest('section').querySelector('select'))`),'central perception settings');
  await js(`const section=Array.from(document.querySelectorAll('section')).find(e=>e.querySelector('h2')?.textContent==='中央感知');const select=section.querySelector('select');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,'batch');select.dispatchEvent(new Event('change',{bubbles:true}));`);
  await click('保存中央感知设置');

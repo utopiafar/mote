@@ -53,6 +53,7 @@ import { CentralStatusPill,ErrorNotice,EvidenceDialog,LoginDialog,Spinner } from
 import "./styles.css";
 import './workspace.css';
 import './library.css';
+import './settings-ui.css';
 import { confirmNavigation } from './unsaved';
 
 
@@ -378,7 +379,7 @@ function App() {
               {moteText("我")}</button>
           </div>
         </header>
-        <React.Suspense key={page} fallback={<p role="status">{moteText("正在读取…")}</p>}><div className="content">
+        <React.Suspense key={page} fallback={<p role="status">{moteText("正在读取…")}</p>}><div className={`content ${primaryDestination(page)==='about'||['lark','recordings'].includes(page)?'settings-surface':''}`}>
           {connection&&verified&&<WorkspaceNavigation page={page} onPage={onPage}/> }
           <div className="workspace-range">
             {connection&&verified&&(page === "insights" || (page === "archive" && webFeatures.collections().find(entry=>entry.id===archiveTab)?.usesTimeRange !== false)) && (

@@ -68,6 +68,7 @@ app.on('browser-window-created', (_event, window) => {
         })()`);
         assert(await js(`Array.from(document.querySelectorAll('[data-page]')).every(element => element.hidden === (element.dataset.page !== '${page}'))`), `Only ${page} should be visible`);
         assert(await js(`document.activeElement.matches('[data-page-title]')`), 'Navigation focuses the page heading');
+        assert.equal(await js(`document.querySelectorAll('.page .back-button').length`), 0, 'Subpages use the single workspace parent control');
       };
       const status = await window.webContents.executeJavaScript('window.mote.status()');
       // Exercise the picker with generated identities; do not enumerate personal applications.
@@ -186,7 +187,7 @@ app.on('browser-window-created', (_event, window) => {
       assert(await js(`!document.querySelector('#settings-pending').hidden`));
       await js(`window.confirm = () => false; document.querySelector('#note-action').click();`);
       assert(await js(`!document.querySelector('[data-page="connection"]').hidden && !document.querySelector('#settings-pending').hidden && document.querySelector('#device-name').value === '未保存的设备名称'`), 'Cancelling toolbar navigation preserves the settings draft and current route');
-      await js(`window.confirm = () => true; document.querySelector('[data-page="connection"] .back-button').click()`);
+      await js(`window.confirm = () => true; document.querySelector('#workspace-back').click()`);
       assert(await js(`!document.querySelector('[data-page="settings"]').hidden`));
       assert(await js(`document.querySelector('#settings-save-bar').hidden && document.querySelector('#settings-pending').hidden`), 'Settings menu has no abandoned draft or save bar');
       await navigate('connection');

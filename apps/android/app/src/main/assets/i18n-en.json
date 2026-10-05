@@ -6135,5 +6135,12 @@
   "文字规则适用于截图、页面和通知。截图文字仅在本机用于隐私审查，不保存、不上传；完整内容识别由中央执行。应用范围与固定遮挡按你的配置执行。": "Text rules apply to screenshots, pages and notifications. Screenshot text is used only for local privacy review without storage or upload. Full content processing runs centrally. App scopes and fixed masks follow your configuration.",
   "来源上传确认必须为布尔值": "Source upload consent must be a boolean.",
   "{0} 个来源同步需要处理 · 待发 {1} 条；请在来源页面检查上传授权、权限或连接": "{0} sources need attention · awaiting upload {1}. Check upload consent, permissions, or connection on the Sources page.",
-  "文件快照和原件归档每份 ≤512 MiB，分块暂存后上传。解析和转写在中央进行。跳过隐藏项和符号链接。": "File snapshots and original archives support up to 512 MiB each, staged and uploaded in chunks. Parsing and transcription run centrally. Hidden items and symbolic links are skipped."
+  "文件快照和原件归档每份 ≤512 MiB，分块暂存后上传。解析和转写在中央进行。跳过隐藏项和符号链接。": "File snapshots and original archives support up to 512 MiB each, staged and uploaded in chunks. Parsing and transcription run centrally. Hidden items and symbolic links are skipped.",
+  "返回上级": "Back to parent",
+  "第 {0} 页 · {1} 条": "Page {0} · {1} items",
+  "任务分页": "Task pagination",
+  "步骤分页": "Step pagination",
+  "上下文步骤分页": "Context step pagination",
+  "上下文任务状态": "Context task state",
+  "查看任务 {0} 的详情": "View details for task {0}"
 }

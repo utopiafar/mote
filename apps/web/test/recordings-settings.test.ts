@@ -28,6 +28,6 @@ test('the recording page discovers third-party providers from the connector regi
  const status:RecordingStatus={category:'recordings',label:'Generated recorder plugin',provider:'generated',connected:false,setup:{description:'Generated authorization instructions',command:'generated login'},selection:{enabled:false,start:'2026-09-01T00:00:00Z',autoSync:true,backupAudio:true},steps:[],counts:{transcripts:0,audio:0,pending:0,failed:0}};
  const calls:string[]=[],api={request:async(path:string)=>{calls.push(path);return path==='/api/connectors/status'?{'generated-recordings':status,unrelated:null}:structuredClone(status);}} as unknown as Api;
  const element=document.createElement('div');document.body.appendChild(element);const root=createRoot(element);t.after(async()=>{await act(async()=>root.unmount());element.remove();});
- await act(async()=>{root.render(React.createElement(RecordingsSettings,{api,onBack:()=>{},onSources:()=>{},onOpen:()=>{}}));await tick();});
+ await act(async()=>{root.render(React.createElement(RecordingsSettings,{api,onSources:()=>{},onOpen:()=>{}}));await tick();});
  await act(async()=>{await tick();});assert.ok(element.textContent?.includes(status.label!));assert.ok(element.textContent?.includes(status.setup!.description!));assert.ok(calls.includes('/api/connectors/generated-recordings'));assert.ok(!calls.includes('/api/connectors/feishu-recordings'));
 });

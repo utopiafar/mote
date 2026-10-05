@@ -2,7 +2,7 @@ import {useResource} from './useResource';
 import {readResource,resources} from './resource-cache';
 import {ApiError} from './api';
 import React,{useEffect,useRef,useState} from 'react';
-import {ArrowLeft,CheckCircle2,ExternalLink,Link2,RefreshCw} from 'lucide-react';
+import {CheckCircle2,ExternalLink,Link2,RefreshCw} from 'lucide-react';
 import type {LarkStatus,LarkSelection,LarkCalendar,LarkJob} from '@mote/shared';
 import {type Api,errorMessage} from './api';
 import {moteText} from '@mote/shared/i18n';
@@ -37,7 +37,7 @@ export function LarkJobStatus({job}:{job:LarkJob}){
   {job.authorizationUrl&&<div className="lark-authorization"><p>{moteText('在你的手机或当前浏览器完成授权，页面会自动更新。')}</p><a className="button" href={job.authorizationUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{moteText('打开飞书授权页面')}<ExternalLink size={15}/></a><button className="button subtle" onClick={async()=>{try{await navigator.clipboard.writeText(job.authorizationUrl!);setCopyState(moteText('授权链接已复制。'));}catch{setCopyState(moteText('复制失败，请使用二维码或授权链接。'));}}}>{moteText('复制授权链接')}</button><p className="fine-print">{copyState||moteText('如果无法打开，可复制链接到浏览器，或扫码。')}</p>{qr&&<img src={qr} alt={moteText('飞书授权二维码')} width={220} height={220}/>} {qrError&&<p>{moteText('二维码生成失败，请使用上方授权链接。')}</p>}{job.expiresAt&&<p className="fine-print">{moteText('链接有效至')} {new Date(job.expiresAt).toLocaleTimeString()}</p>}</div>}
  </div>;
 }
-export function LarkSettings({api,onBack,onSources}:{api:Api;onBack:()=>void;onSources:()=>void}){
+export function LarkSettings({api,onSources}:{api:Api;onSources:()=>void}){
  const [status,setStatus]=useState<LarkStatus>(),[selection,setSelection]=useState<LarkSelection>(emptySelection),[documents,setDocuments]=useState(''),[calendars,setCalendars]=useState<LarkCalendar[]>([]),[calendarLoaded,setCalendarLoaded]=useState(false);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[appId,setAppId]=useState(''),[secret,setSecret]=useState(''),[brand,setBrand]=useState<'feishu'|'lark'>('feishu'),[disconnecting,setDisconnecting]=useState(false);
  const alive=useRef(true),dirty=useRef(false),wasConnected=useRef(false);
@@ -55,7 +55,7 @@ export function LarkSettings({api,onBack,onSources}:{api:Api;onBack:()=>void;onS
  const running=busy||activeJob(status?.job);
  const update=(patch:Partial<LarkSelection>)=>{dirty.current=true;setSelection(v=>({...v,...patch}));};
  return <div className="lark-settings">
-  <button className="back-link" onClick={onBack}><ArrowLeft size={16}/>{moteText('设置')}</button>
+
   <div className="page-heading"><div className="eyebrow">{moteText('来源与外部应用')}</div><h1>{moteText('飞书')}</h1><p>{moteText('在中央节点连接文档与日历。选择需要保留的资料，让它们成为可追溯的上下文。')}</p></div>
   <div className="lark-boundary"><Link2 size={20}/><div><strong>{moteText('本期只读')}</strong><p>{moteText('只读取你选中的文档和日历，不修改飞书内容。同步的正文进入 Mote 资料库，可由你配置的模型检索和分析。')}</p></div></div>
   {Boolean(error||read.error)&&<div className="notice error" role="alert">{error||requestError(read.error)}<button className="button subtle" disabled={running} onClick={()=>void perform(async()=>accept(await request<LarkStatus>('/api/connectors/lark/check',{method:'POST'})))}>{moteText('重试')}</button></div>}{notice&&<p role="status" className="notice">{notice}</p>}

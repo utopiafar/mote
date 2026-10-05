@@ -16,19 +16,21 @@ export function WorkspaceNavigation({page,onPage}:{page:Page;onPage:(page:Page)=
   if (section==='library') {
     const tools=sections.library.filter(id=>id!=='archive');
     return <div className="workspace-context">
-      {page!=='archive'&&<button className="back-link" onClick={()=>onPage('archive')}><ArrowLeft size={16}/>{moteText('返回资料库')}</button>}
+      {page!=='archive'&&<button className="back-link" aria-label={moteText('返回{0}',pageLabels.archive)} onClick={()=>onPage('archive')}><ArrowLeft size={16}/>{moteText('返回上级')}</button>}
       <label className="workspace-tool-select"><span>{moteText('资料库工具')}</span><select aria-label={moteText('资料库工具')} value={tools.includes(page)?page:''} onChange={event=>{if(event.target.value)onPage(event.target.value);}}><option value="">{moteText('选择工具')}</option>{tools.map(id=><option value={id} key={id}>{pageLabels[id]}</option>)}</select></label>
     </div>;
   }
   if(section==='connections') {
     const tools=sections.connections.filter(id=>id!=='devices');
     return <div className="workspace-context">
-      {page!=='devices'&&<button className="back-link" onClick={()=>onPage('devices')}><ArrowLeft size={16}/>{moteText('返回采集与设备')}</button>}
+      {page!=='devices'&&<button className="back-link" aria-label={moteText('返回{0}',pageLabels.devices)} onClick={()=>onPage('devices')}><ArrowLeft size={16}/>{moteText('返回上级')}</button>}
       <label className="workspace-tool-select"><span>{moteText('来源与连接')}</span><select aria-label={moteText('来源与连接')} value={tools.includes(page)?page:''} onChange={event=>{if(event.target.value)onPage(event.target.value);}}><option value="">{moteText('管理来源或授权')}</option>{tools.map(id=><option value={id} key={id}>{pageLabels[id]}</option>)}</select></label>
     </div>;
   }
-  if(primaryDestination(page)==='about'&&page!=='about') return <button className="back-link workspace-back" onClick={()=>onPage('about')}><ArrowLeft size={16}/>{moteText('返回设置')}</button>;
-  if(page==='actions')return <button className="back-link workspace-back" onClick={()=>onPage('overview')}><ArrowLeft size={16}/>{moteText('返回今天')}</button>;
+  // The models page owns its nested categories and their single parent control.
+  if(page==='settings')return null;
+  if(primaryDestination(page)==='about'&&page!=='about') return <button className="back-link workspace-back" aria-label={moteText('返回{0}',pageLabels.about)} onClick={()=>onPage('about')}><ArrowLeft size={16}/>{moteText('返回上级')}</button>;
+  if(page==='actions')return <button className="back-link workspace-back" aria-label={moteText('返回{0}',pageLabels.overview)} onClick={()=>onPage('overview')}><ArrowLeft size={16}/>{moteText('返回上级')}</button>;
   return null;
 }
 export function SettingsLanding({onPage}:{onPage:(page:Page)=>void}) {
