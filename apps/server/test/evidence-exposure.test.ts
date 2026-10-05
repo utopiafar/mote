@@ -150,7 +150,7 @@ test('trusted rules are explicit over source, operation, phase and representatio
   t.after(async()=>{await diagnostics.close();store.close();rmSync(directory,{recursive:true,force:true});});
   sources.register({id:'generated-coding',name:'Generated Coding',kind:'coding-agent',deviceId:'generated-device',platform:'import'});
   await sources.upsert('generated-coding',{externalId:'event-1',revision:'1',observedAt:'2026-09-20T02:00:00.000Z',title:'Generated event',
-    text:'CODING_RAW_ANCHOR',kind:'message',layer:'original',document:{coding:{version:1,provider:'codex',projectKey:'generated-project',sessionId:'generated-session',eventId:'event-1',role:'user',part:0,parts:1}}});
+    text:'CODING_RAW_ANCHOR',kind:'message',layer:'original',document:{coding:{version:1,provider:'codex',projectKey:'generated-project',sessionId:'generated-session',eventId:'event-1',role:'user',attribution:'human',part:0,parts:1}}});
   const id=sources.getItem('generated-coding','event-1')!.captureId;
   const reader=new EvidenceReader(store,sources),agent=reader.agent({diagnostics});
   const restrictedMemoryId=randomUUID();
@@ -224,7 +224,7 @@ test('Coding append retains an active prefix anchor under the current Material s
   t.after(async()=>{await diagnostics.close();store.close();rmSync(directory,{recursive:true,force:true});});
   sources.register({id:'prefix-coding',name:'Generated Coding',kind:'coding-agent',deviceId:'coding-device',platform:'import'});
   const id=materialId('prefix-coding','session'),member={id:'archive-member',kind:'archive',ref:'archive:prefix-coding/session'};
-  const base={id,kind:'mote.coding-session',schemaVersion:5,title:'Generated session',
+  const base={id,kind:'mote.coding-session',schemaVersion:6,title:'Generated session',
     origin:{sourceId:'prefix-coding',externalId:'session',deviceId:'coding-device',firstAt:'2026-09-20T00:00:00.000Z',
       lastAt:'2026-09-20T00:00:00.000Z',provider:'codex',projectKey:'generated-project',sessionId:'session'},
     members:[member],coverage:{state:'partial' as const},fidelity:{state:'derived' as const},retention:{original:'retained' as const,policy:'keep' as const}};
@@ -257,8 +257,8 @@ test('bounded Coding products use original conversation dates, expand only cover
   sources.register({id:'historical-coding',name:'Generated historical Coding',kind:'coding-agent',deviceId:'generated-device',platform:'import'});
   const observedAt='2001-03-01T00:00:00.000Z',recordedAt='2001-01-01T10:00:00.000Z';
   const event=(id:string,text:string,role:string='user')=>({externalId:id,revision:'1',observedAt,kind:'message',layer:'original',text,
-    document:{recordedAt,timeBasis:'recorded',contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',sessionId:'historical-session',eventId:id,role,part:0,parts:1}}});
-  await sources.upsertBatch('historical-coding',[event('request','Generated historical decision 🌱'),event('followup','Generated additional context. '.repeat(1000)),event('tool','PRIVATE_HISTORICAL_TOOL_FIXTURE','tool_result')]);await runtime.tick();
+    document:{recordedAt,timeBasis:'recorded',contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',sessionId:'historical-session',eventId:id,role,attribution:role==='user'?'human':'unknown',part:0,parts:1}}});
+  await sources.upsertBatch('historical-coding',[event('request','Generated historical decision 🌱'),...Array.from({length:4},(_,i)=>event('followup-'+i,'Generated additional context. '.repeat(280))),event('tool','PRIVATE_HISTORICAL_TOOL_FIXTURE','tool_result')]);await runtime.tick();
   const material=materials.list().items[0]!,anchors=materials.evidenceIds(material.ref);assert.ok(anchors.length>2);
   assert.equal(materials.evidence([anchors[0]!])[0]?.capturedAt,observedAt);
   const artifact=store.archive.save('historical-product','historical-product','1',{kind:'semantic',text:'Generated historical work product',metadata:{complete:true}},[],
@@ -280,7 +280,7 @@ test('bounded Coding products use original conversation dates, expand only cover
   const readable=await agent.segments!({id:formatArtifactRef(proofHeavy.id,proofHeavy.revision),...scope});
   assert.equal(readable.items.length,1,'readable product detail is not dropped merely because exact support quotes are large');
   assert.match(readable.items[0]!.text,/Generated readable work product/);
-  const legacy=materials.publish({id:materialId('historical-coding','legacy-session'),kind:'mote.coding-session',schemaVersion:4,title:'Generated legacy tool projection',
+  const legacy=materials.publish({id:materialId('historical-coding','legacy-session'),kind:'mote.coding-session',schemaVersion:5,title:'Generated legacy process projection',
     origin:{...material.origin,externalId:'legacy-session',sessionId:'legacy-session'},blocks:[{id:'section-0',kind:'text',format:'markdown-fragment',text:'PRIVATE_LEGACY_TOOL_FIXTURE',memberIds:['archive']}],
     members:[{id:'archive',kind:'archive',ref:'archive:generated-legacy'}],coverage:{state:'complete'},artifacts:[{key:'conversation',state:'ready'}],fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
   materials.setSearchable(legacy.id,true);
@@ -349,7 +349,7 @@ test('installed Coding recipe routes query partial materials and gate Memory unt
   t.after(async()=>{await runtime.close();await diagnostics.close();store.close();rmSync(directory,{recursive:true,force:true});});
   sources.register({id:'generated-coding-recipe',name:'Generated Coding',kind:'coding-agent',deviceId:'generated-device',platform:'import'});
   const event=(part:number)=>({externalId:`generated-event-${part}`,revision:'1',observedAt:`2026-09-20T02:00:0${part}.000Z`,kind:'message',layer:'snapshot',text:`GENERATED_CODING_PART_${part}`,
-    document:{contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',sessionId:'generated-session',eventId:'generated-event',role:'user',part,parts:2}}});
+    document:{contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',sessionId:'generated-session',eventId:'generated-event',role:'user',attribution:'human',part,parts:2}}});
   await sources.upsert('generated-coding-recipe',event(0));await runtime.tick();
   const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials,runtime);
   let memory=false;
@@ -358,8 +358,7 @@ test('installed Coding recipe routes query partial materials and gate Memory unt
   assert.equal(partial.coverage.state,'partial');
   assert.equal(partial.artifacts?.find(item=>item.key==='conversation')?.state,'pending');
   assert.deepEqual((await agent.materialCatalog!({})).items.map(item=>item.ref),[partial.ref]);
-  assert.ok((await agent.search({query:'GENERATED_CODING_PART_0'})).some(row=>row.provenance?.uri?.startsWith(partial.ref)),
-    'the aggregated Coding session is searchable without a SourceStore capture head');
+  assert.equal((await agent.search({query:'GENERATED_CODING_PART_0'})).length,0,'incomplete transport bodies stay outside model discovery');
   assert.ok((await agent.materialRead!({ref:partial.ref})).spans.length);
   assert.equal(reader.materialAllowedForMemory(partial.ref),false);
   memory=true;

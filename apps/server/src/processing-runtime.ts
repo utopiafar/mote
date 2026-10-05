@@ -53,7 +53,7 @@ export class ProcessingRuntime {
     if(materials)store.archive.enableMaterialLineage();
     this.engine=engine??new ExecutionEngine(store,now);this.owned=!engine;
     for(const lane of lanes)this.unregister.push(this.engine.register({kind:'context-dag.'+lane,pool:lane,concurrency:()=>this.settings()[lane].concurrency,
-      validate:step=>this.valid(this.job(step.id)),admit:step=>this.admit(this.job(step.id)),execute:(step,signal)=>this.process(this.job(step.id),signal,step),commit:(step,result)=>this.commit(this.job(step.id),result),project:step=>this.project(step),
+      timeoutMs:lane==='semantic'?300000:120000,validate:step=>this.valid(this.job(step.id)),admit:step=>this.admit(this.job(step.id)),execute:(step,signal)=>this.process(this.job(step.id),signal,step),commit:(step,result)=>this.commit(this.job(step.id),result),project:step=>this.project(step),
       classify:error=>{const category=error instanceof ProcessingFailure?error.category:error instanceof z.ZodError?'permanent':error instanceof StoreError?(error.statusCode===409?'blocked':error.statusCode<500?'permanent':'transient'):'transient';return new ExecutionFailure(category,category);},
     }));
     const pluginScope=this.pluginScope;
@@ -115,7 +115,7 @@ export class ProcessingRuntime {
   /** All execution ownership is in the shared engine, including dependency admission. */
   async tick(){if(this.stopping)return;await this.ready;const ids=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE 'context-dag.%' AND (state='waiting' OR (state='running' AND lease_until<=?)) ORDER BY rowid LIMIT 1000").all(this.now()).map(row=>String(row.id));await this.engine.drain(ids);}
   private valid(job:Job){
-    return !this.stopping&&(!job.parentGrant||job.outputs.length>0||this.engine.isCurrentInputGrant(job.parentGrant.stepId,job.parentGrant.fence))&&(job.artifactInputs??[]).every(ref=>this.store.archive.revision(ref.id)===ref.revision)&&(job.materialInputs??[]).every(ref=>{const {id,revision}=parseMaterialRef(ref.ref);return this.materials?.get(id)?.revision===revision;})&&job.inputs.every(i=>this.store.archive.fingerprint(i.id)===i.fingerprint)&&job.dependencies.every(dep=>{
+    return !this.stopping&&(!job.parentGrant||job.outputs.length>0||this.engine.isCurrentInputAuthority(job.parentGrant.stepId))&&(job.artifactInputs??[]).every(ref=>this.store.archive.revision(ref.id)===ref.revision)&&(job.materialInputs??[]).every(ref=>{const {id,revision}=parseMaterialRef(ref.ref);return this.materials?.get(id)?.revision===revision;})&&job.inputs.every(i=>this.store.archive.fingerprint(i.id)===i.fingerprint)&&job.dependencies.every(dep=>{
       const parent=this.engine.get(dep);return parent?.state!=='succeeded'||this.job(dep).outputs.every(out=>this.store.archive.get(out));
     });
   }

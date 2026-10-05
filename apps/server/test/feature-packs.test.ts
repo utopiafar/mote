@@ -30,7 +30,7 @@ test('small Coding upload flows through feature routes to pinned owner and real 
   const call=(url:string,method:'GET'|'POST'|'DELETE'='GET',payload?:unknown)=>node.app.inject({url,method,headers,payload});
   for(const url of ['/api/features','/api/coding/uploads','/api/agent-view/catalog','/api/agent-view/events'])assert.equal((await node.app.inject(url)).statusCode,401);
   assert.equal((await call('/api/sources','POST',{id:'fixture-coding',name:'Generated Coding',kind:'coding-agent',deviceId:'fixture-device',platform:'macos'})).statusCode,200);
-  const event=(i:number)=>({externalId:'event-'+i,revision:'1',observedAt:`2026-09-24T01:00:0${i}.000Z`,kind:'message',layer:'original',text:`Generated event ${i}: everyday plugin fixture`,document:{contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',sessionId:'generated-session',eventId:'event-'+i,role:'user',part:0,parts:1}}});
+  const event=(i:number)=>({externalId:'event-'+i,revision:'1',observedAt:`2026-09-24T01:00:0${i}.000Z`,kind:'message',layer:'original',text:`Generated event ${i}: everyday plugin fixture`,document:{contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',sessionId:'generated-session',eventId:'event-'+i,role:'user',attribution:'human',part:0,parts:1}}});
   const sent=await call('/api/sources/fixture-coding/items/batch','POST',{items:[event(0),event(1),event(2)]});assert.equal(sent.statusCode,200,sent.body);
   assert.ok(sent.json().receipts.every((r:any)=>r.receipt.state==='received'));
   assert.equal((await call('/api/coding/uploads')).json().items[0].received.events,3);

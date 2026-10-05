@@ -26,7 +26,7 @@ async function fixture(t:TestContext){
   async function add(text:string,sessionId='s1',workspace=false,eventId=sessionId,extra:Record<string,unknown>={},at='2026-01-02T08:00:00Z'){
     await sources.upsert('generated',{externalId:eventId,revision:'1',observedAt:at,kind:'message',layer:'snapshot',text,
       document:{contentRole:'transcript',coding:{version:1,provider:'kimi',sessionId,projectKey:workspace?'aster':sha256('kimi:'+sessionId),
-        ...(workspace?{projectName:'Aster',cwd:'/generated/aster',repositoryKey:'a'.repeat(64),branch:'main'}:{}),eventId,role:'user',part:0,parts:1,...extra}}});
+        ...(workspace?{projectName:'Aster',cwd:'/generated/aster',repositoryKey:'a'.repeat(64),branch:'main'}:{}),eventId,role:'user',attribution:'human',part:0,parts:1,...extra}}});
     await runtime.tick();const material=materials.list().items.find(item=>item.origin.sessionId===sessionId)!;
     return {material,id:materials.evidenceIds(material.ref)[0]};
   }
@@ -99,7 +99,8 @@ test('conflicting source workspace metadata is explicit, never resolved by a mod
 
 test('append retains workspace metadata, while a conflicting workspace rebuild invalidates old evidence',async t=>{
   const f=await fixture(t);
-  const first=await f.add('Generated context. '.repeat(800),'append',true,'first');
+  await f.add('Generated context. '.repeat(600),'append',true,'first');
+  const first=await f.add('More generated context. '.repeat(400),'append',true,'buffer');
   const appended=await f.add('An additional owner expression.','append',true,'second');
   assert.equal(appended.material.origin.projectName,'Aster');
   assert.equal(f.materials.isCurrentEvidence(first.id),true,'unchanged prefix remains valid after append');

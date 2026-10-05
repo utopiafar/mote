@@ -23,7 +23,7 @@ async function fixture(t:TestContext){
  t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
  const id='00000000-0000-4000-8000-000000000123';
  await store.ingest({id,deviceId:'fixture',deviceName:'Generated',platform:'import',source:'message',capturedAt:'2026-01-01T00:00:00Z',durationMs:0,ocrText:'Generated source membership'});
- const material=materials.publish({id:materialId('fixture','conversation'),kind:'mote.coding-session',schemaVersion:5,title:'Generated session',
+ const material=materials.publish({id:materialId('fixture','conversation'),kind:'mote.coding-session',schemaVersion:6,title:'Generated session',
   origin:{sourceId:'fixture',externalId:'conversation',deviceId:'fixture',provider:'codex',projectKey:'generated-project',projectIdentity:'workspace',sessionId:'generated-session'},
   blocks:[{id:'section-0',kind:'text',format:'markdown-fragment',text:body,memberIds:['source']}],members:[{id:'source',kind:'capture',ref:'capture:'+id}],
   coverage:{state:'complete'},artifacts:[{key:'conversation',state:'ready'}],fidelity:{state:'derived',limitations:['metadata_projected','tools_excluded']},retention:{original:'retained',policy:'keep'}});
@@ -97,7 +97,7 @@ test('fabricated times, artifact references and uncited or incomplete claims are
 
 test('legacy unfiltered conversation versions and expanded original resolvers cannot enter the model',async t=>{
  const f=await fixture(t),query=async()=>{throw Error('Invalid scope must not query');},legacy=f.page();legacy.material={...legacy.material,schemaVersion:4};
- await assert.rejects(processor(f,query).process(input(legacy)),/tool-free/);
+ await assert.rejects(processor(f,query).process(input(legacy)),/rule-cleaned Coding dialogue/);
  await assert.rejects(processor(f,query,{resolveEvidence:page=>({records:f.records,ranges:[{id:f.anchor,offset:0,length:body.length+1}]})}).process(input(f.page())),/expanded/);
  const tampered=f.page();tampered.text='X'+tampered.text.slice(1);await assert.rejects(processor(f,query).process(input(tampered)),/original anchor/);
 });

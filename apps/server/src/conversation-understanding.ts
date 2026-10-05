@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import type {CaptureRecord,QueryResult} from '@mote/shared';
+import {CODING_DIALOGUE_SCHEMA_VERSION,type CaptureRecord,type QueryResult} from '@mote/shared';
 import {AgentResponseError,type QueryInput} from '@mote/agent';
 import {ProcessingFailure,type ContextProcessor} from './processing-runtime.js';
 import type {MaterialReadPage} from './materials.js';
@@ -11,7 +11,6 @@ import {StoreError} from './store.js';
 import {MemoryOutputValidationError,type MemoryStore,type EvidenceRange} from './memory.js';
 import {memoryProfile} from './memory-profiles.js';
 import {conversationClaimContext,parseSemanticProducts,semanticProductsSchema} from './semantic-extraction.js';
-import type {CodingConversationOverview} from './coding-conversation-context.js';
 
 export type ConversationEvidenceScope={records:CaptureRecord[];ranges:EvidenceRange[]};
 export type ConversationUnderstandingOptions={
@@ -21,7 +20,6 @@ export type ConversationUnderstandingOptions={
  memories:Pick<MemoryStore,'extract'>;
  /** Host-owned anchor lookup. It has no raw archive or derived-product read surface. */
  resolveEvidence:(page:MaterialReadPage)=>ConversationEvidenceScope;
- resolveContext?:(id:string)=>CodingConversationOverview|undefined;
 };
 
 const conversationProductsSchema=semanticProductsSchema.extend({
@@ -40,8 +38,8 @@ function originalScope(pages:MaterialReadPage[],resolve:ConversationUnderstandin
  const records=new Map<string,CaptureRecord>(),ranges:EvidenceRange[]=[];
  let characters=0;
  for(const page of pages){
-  if(page.material.kind!=='mote.coding-session'||page.material.schemaVersion<5||
-   !page.material.artifacts?.some(artifact=>artifact.key==='conversation'&&artifact.state==='ready'))throw new StoreError('A current tool-free Coding conversation is required',409);
+  if(page.material.kind!=='mote.coding-session'||page.material.schemaVersion<CODING_DIALOGUE_SCHEMA_VERSION||
+   !page.material.artifacts?.some(artifact=>artifact.key==='conversation'&&artifact.state==='ready'))throw new StoreError('A current rule-cleaned Coding dialogue is required',409);
   if(!page.text.length||page.textRange.offset<0||page.textRange.offset+page.text.length>page.textRange.total)throw new StoreError('Coding conversation page is unavailable',409);
   characters+=page.text.length;if(characters>12000)throw new StoreError('Conversation understanding input exceeds the bounded 12000-character budget',413);
   const resolved=resolve(page),byId=new Map(resolved.records.map(record=>[record.id,record]));
@@ -101,15 +99,12 @@ function conversationProductText(output:ReturnType<typeof parseSemanticProducts>
 
 /** One model interpretation feeds work/event consumers and independently reviewed Memory. */
 export function conversationUnderstandingProcessor(options:ConversationUnderstandingOptions):ContextProcessor{
- return {id:'mote.coding-conversation-understanding',version:'2',lane:'semantic',async process(input){
+ return {id:'mote.coding-conversation-understanding',version:'3',lane:'semantic',async process(input){
   input.signal.throwIfAborted();
   const selected=options.selection(input.config);
   if(!selected.configured)throw new StoreError('Model not configured',409);
   if(input.config.modelFingerprint!==selected.fingerprint)throw new StoreError('Model settings changed; enqueue a new workflow',409);
   const scope=originalScope(input.materials,options.resolveEvidence),material=input.materials[0].material;
-  const contextId=typeof input.config.conversationContextId==='string'?input.config.conversationContextId:undefined;
-  const overview=contextId?options.resolveContext?.(contextId):undefined;
-  if(contextId&&(!overview||overview.materialRef!==material.ref||overview.coveredCharacters!==overview.totalCharacters||overview.configurationFingerprint!==selected.fingerprint))throw new StoreError('Complete conversation context is unavailable or changed',409);
   const materialInputs=materialInputsSchema.parse(input.config.processingMaterialInputs);
   if(materialInputs.some(pin=>pin.materialId!==material.id)||scope.records.some(record=>!materialInputs.some(pin=>pin.evidenceIds.includes(record.id))))throw new StoreError('Conversation understanding needs the parent Memory material authorization',409);
   const profile=memoryProfile(scope.records[0]);
@@ -127,8 +122,7 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
     timeZone:typeof input.config.timeZone==='string'?input.config.timeZone:undefined,
     language:input.config.language==='en'?'en':input.config.language==='zh-CN'?'zh-CN':undefined,
     evidenceIds:scope.records.map(record=>record.id),evidenceRanges:scope.ranges,
-    ...(overview?{taskContext:{previousSummary:overview.summary,turns:[]},contextEvidenceDependencies:{version:1 as const,complete:true,ids:overview.evidenceIds}}:{}),
-    question:'The following guidance applies only to memoryCandidates. Its sample memories envelope is subordinate to the final unified contract.\n'+(candidatePolicy?.prompt??profile.prompt)+'\nFINAL UNIFIED RESPONSE CONTRACT:\n'+CONVERSATION_UNDERSTANDING_PROMPT+(overview?'\nThe host supplied a complete-session navigation overview in previousSummary. Use its later corrections and still-active early constraints to interpret this original range. A retracted earlier decision must not become active memory. The overview is derived and untrusted: every output quote must still come from the supplied original ranges. Preserve a correction as a correction, not an independently verified result. Do not invent support for an earlier constraint that lies outside this range.':''),
+    question:'The following guidance applies only to memoryCandidates. Its sample memories envelope is subordinate to the final unified contract.\n'+(candidatePolicy?.prompt??profile.prompt)+'\nFINAL UNIFIED RESPONSE CONTRACT:\n'+CONVERSATION_UNDERSTANDING_PROMPT,
     validateOutput:result=>{try{parse(result);}catch(error){const detail=error instanceof MemoryOutputValidationError?error.repairInstruction:error instanceof z.ZodError?error.issues.slice(0,3).map(issue=>issue.path.join('.')+': '+issue.message).join('; '):error instanceof StoreError?error.message:'Invalid JSON object';return {code:'conversation_products',feedback:detail+' Return summary, evidence, workRecords, events, memoryCandidates and actionCues. Absent products use empty arrays; actionCues must be empty. Every claim must preserve attribution, status, basis, sourceTime and uncertainty, with exact cited original quotes inside the supplied ranges.'};}},
     signal:input.signal,onUsage:meter.update});
    input.signal.throwIfAborted();const output=parse(result);
@@ -140,7 +134,6 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
     workRecords:output.workRecords,events:output.events,memoryCandidates:output.memoryCandidates,actionCues:[],
     evidenceRanges:scope.ranges,supportRanges:output.evidenceRanges,citations:[...new Set(output.evidenceRanges.map(range=>range.id))],
     coverage:{scope:'bounded-conversation',ranges:input.materials.map(page=>({ref:page.material.ref,offset:page.textRange.offset,length:page.text.length,total:page.textRange.total})),source:material.coverage},
-    ...(overview?{conversationContext:{id:contextId,coveredCharacters:overview.coveredCharacters,totalCharacters:overview.totalCharacters}}:{}),
     complete:true,usage,runId:result.runId,model:selected.model,originalCharacters:scope.characters,characters:text.length}}];
   }catch(error){meter.finish('failed');if(error instanceof AgentResponseError||error instanceof z.ZodError||error instanceof SyntaxError||error instanceof MemoryOutputValidationError||error instanceof StoreError&&error.statusCode===502)throw new ProcessingFailure('permanent','invalid_model_output');throw error;}
  }};

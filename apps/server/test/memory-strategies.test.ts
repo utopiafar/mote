@@ -53,7 +53,7 @@ async function fixture(t:any){
   const add=async(sourceId:string,coding=false,revision='1')=>{
     if(!node.sources.listSources().some(s=>s.id===sourceId))node.sources.register({id:sourceId,name:'Generated source',kind:coding?'coding-agent':'custom',deviceId:'fixture',platform:'import'});
     if(coding)node.sourcePipelines.configure(sourceId,{memory:false,settleSeconds:0});
-    const ack=await node.sources.upsert(sourceId,{externalId:'original',revision,observedAt:'2026-09-01T00:00:00Z',kind:'message',layer:'original',text:original+(revision==='1'?'':` Revision ${revision}.`),...(coding?{document:{contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'fixture',sessionId:'session',eventId:'original',role:'user',part:0,parts:1}}}:{document:{contentRole:'authored'}})});
+    const ack=await node.sources.upsert(sourceId,{externalId:'original',revision,observedAt:'2026-09-01T00:00:00Z',kind:'message',layer:'original',text:original+(revision==='1'?'':` Revision ${revision}.`),...(coding?{document:{contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'fixture',sessionId:'session',eventId:'original',role:'user',attribution:'human',part:0,parts:1}}}:{document:{contentRole:'authored'}})});
     await node.materialOrganizer.tick();await node.sourcePipelines.tick();
     const material=node.materials.list({sourceId}).items[0];assert.ok(material);
     return {id:ack.id,evidenceIds:node.materials.evidenceIds(material.ref),material};

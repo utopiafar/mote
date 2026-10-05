@@ -85,7 +85,7 @@ export class MemoryPipeline {
     this.recover();
     this.unregister.push(this.engine.register({kind:'memory.batch',pool:'memory.batch',concurrency:()=>this.options.concurrency?.()??1,maxAttempts:1,timeoutMs:3600000,
       resourceKeys:step=>(step.input.evidenceIds as string[]).map(id=>'memory-evidence:'+id),
-      validate:step=>this.validateStep(step),validateGrant:step=>{try{const job=this.storedJob(String(step.input.jobId));if(job.status==='cancelled')return false;this.assertAutomatic(job);return true;}catch{return false;}},admit:step=>{
+      validate:step=>this.validateStep(step),validateGrant:step=>{try{const job=this.storedJob(String(step.input.jobId));if(['cancelled','paused'].includes(job.status))return false;this.assertAutomatic(job);return true;}catch{return false;}},admit:step=>{
         const job=this.storedJob(String(step.input.jobId));
         if(['paused','pausing'].includes(job.status))return new ExecutionFailure('blocked','paused');
         if(job.status==='cancelled'||this.closed)return new ExecutionFailure('blocked','cancelled');
@@ -555,6 +555,7 @@ export class MemoryPipeline {
           if(typeof fence!=='string')throw new ExecutionFailure('waiting','interrupted');
           const policy=chunks[0].strategy?this.strategies.resolvePinned(chunks[0].strategy):undefined;
           const candidatePolicy=policy?{prompt:policy.extract.prompt+'\n'+MEMORY_CANDIDATE_OUTPUT_CONTRACT,profile:'personal' as const,fingerprint:policy.binding.extract.fingerprint}:undefined;
+          observeCurrent(()=>{batch.stage='understanding';batch.lastActivityAt=new Date().toISOString();this.saveBatch(batch);});
           const refs=await withExecutionCancellation(signal,()=>this.options.understand!({candidatePolicy,job,ranges,materialRefs:this.batchScope(job,batch).materialRefs,materialInputs:this.batchScope(job,batch).materialInputs,signal,parentGrant:{stepId:batch.id,fence}}));
           assertGrant();this.admitBatch(job,batch);
           if(refs?.length&&!observeCurrent(()=>{batch.artifactRefs=refs;this.saveBatch(batch);}))throw new ExecutionFailure('waiting','interrupted');

@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import {materialDependencyStatus,type MaterialInputPin} from './material-readiness.js';
 import {scopeRecord} from './evidence-scope-record.js';
-import {sourceContentTime,parseEvidenceRef,evidenceRefId,formatEvidenceRef,formatArtifactRef,parseArtifactRef,sourceItemKinds,sourceTextFormat,decodeSourceText,type CaptureRecord} from '@mote/shared';
+import {CODING_DIALOGUE_SCHEMA_VERSION,sourceContentTime,parseEvidenceRef,evidenceRefId,formatEvidenceRef,formatArtifactRef,parseArtifactRef,sourceItemKinds,sourceTextFormat,decodeSourceText,type CaptureRecord} from '@mote/shared';
 import {ContextToolError,type ContextReader} from '@mote/agent';
 import {StoreError,type Store,type Range} from './store.js';
 import {MemoryStore,memoryEvidenceFingerprint} from './memory.js';
@@ -474,9 +474,9 @@ export class EvidenceReader {
     return original;
   }
   private materialExposure(material:MaterialRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,required?:readonly string[],planning=false){
-    // Older Coding projections contain raw tools. Keep them in the owner
-    // archive while the deterministic source upgrade rebuilds clean evidence.
-    if(material.kind==='mote.coding-session'&&material.schemaVersion<5)return false;
+    // Retain legacy projections for owner inspection without exposing process
+    // text to models. Installing new rules does not rebuild historical data.
+    if(material.kind==='mote.coding-session'&&material.schemaVersion<CODING_DIALOGUE_SCHEMA_VERSION)return false;
     const access=this.materialMemberAccess(material);if(!access.available)return false;
     if(!planning&&required&&!this.materials?.input(material.ref,required)?.ready)return false;
     if(operation==='memory'&&this.sourceItemRecipes){
@@ -520,7 +520,7 @@ export class EvidenceReader {
         if(!record)return false;
         const anchor=this.materials&&this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?').get(id);
         const material=anchor&&this.materials?.get(String(anchor.material_id));
-        if(material?.kind==='mote.coding-session'&&material.schemaVersion<5)return false;
+        if(material?.kind==='mote.coding-session'&&material.schemaVersion<CODING_DIALOGUE_SCHEMA_VERSION)return false;
         const sourceKind=record.source==='screen'||record.source==='ui_page'?'screen':record.provenance?.document?.coding?'coding-agent':this.sourceKind(record.provenance?.sourceId,record.source);
         return this.exposureAllows({sourceKind,sourceId:record.provenance?.sourceId,representation:'segment',operation,phase,localOnly:this.evidenceLocalOnly(record.id)},policy);
       });

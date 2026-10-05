@@ -19,7 +19,7 @@ const group=JSON.stringify(['codex','generated-project','generated-session']);
 const event=(i:number,text=`Generated Coding event ${i}. ${'x'.repeat(200)}`)=>({
   externalId:`event-${i}`,revision:'1',observedAt:new Date(Date.parse('2026-09-24T01:00:00.000Z')+i*1000).toISOString(),
   kind:'message',layer:'original',text,document:{contentRole:'transcript',coding:{version:1,provider:'codex',
-    projectKey:'generated-project',sessionId:'generated-session',eventId:`event-${i}`,role:'user',part:0,parts:1}},
+    projectKey:'generated-project',sessionId:'generated-session',eventId:`event-${i}`,role:'user',attribution:'human',part:0,parts:1}},
 });
 async function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-coding-append-')),store=new Store(directory),materials=new MaterialStore(store);
@@ -41,14 +41,14 @@ test('the Coding conversation projection excludes tool bodies and host envelopes
     withRole(7,'assistant','Generated report: completed; device validation unknown.',{attribution:'agent',channel:'final'}),
     withRole(8,'user','Explain the string tool_call and AGENTS.md.'),
   ]);await runtime.tick();
-  const record=materials.list().items[0]!;assert.equal(record.schemaVersion,5);
+  const record=materials.list().items[0]!;assert.equal(record.schemaVersion,6);
   const text=materials.read(record.ref,{length:12000}).text;
   for(const secret of ['PRIVATE_TOOL_CALL_FIXTURE','PRIVATE_TOOL_RESULT_FIXTURE','PRIVATE_TOOL_DELTA_FIXTURE','PRIVATE_STRUCTURED_HOST_FIXTURE','PRIVATE_LEGACY_HOST_FIXTURE','PRIVATE_PAGE_FIXTURE']){
     assert.equal(materials.list({query:secret}).items.length,0);assert.ok(!text.includes(secret));
     assert.ok(materials.evidence(materials.evidenceIds(record.ref)).every(evidence=>!evidence.ocrText?.includes(secret)));
   }
   assert.match(text,/Generated decision: retain the workspace/);assert.match(text,/Generated report: completed; device validation unknown/);
-  assert.match(text,/Explain the string tool_call and AGENTS.md/);assert.match(text,/Attribution: human/);assert.match(text,/Attribution: agent · Channel: final/);assert.match(text,/Attribution: unknown/);
+  assert.match(text,/Explain the string tool_call and AGENTS.md/);assert.match(text,/Attribution: human/);assert.match(text,/Attribution: agent · Channel: final/);assert.match(text,/Attribution: human/);
   assert.equal(record.origin.firstAt,event(0).observedAt);assert.equal(record.origin.lastAt,event(8).observedAt);
 });
 
@@ -79,16 +79,16 @@ test('a private tool revision rebuild after visible append preserves the exact c
   assert.equal(materials.list({query:'PRIVATE_TOOL_REPLACEMENT'}).items.length,0);
 });
 
-test('multi-part host envelopes and streamed assistant text keep exact provenance without admitting tools',async t=>{
+test('multi-part host envelopes and confirmed final replies retain exact provenance',async t=>{
   const {materials,runtime,sources}=await fixture(t);
   const host='<environment_context><cwd>/generated/project</cwd></environment_context>',parts=[host.slice(0,25),host.slice(25)];
   const hostItems=parts.map((text,part)=>{const item=event(part,text);return {...item,document:{...item.document,coding:{...item.document.coding,eventId:'legacy-host',part,parts:2}}};});
-  const delta=(i:number,text:string)=>{const item=event(i,text);return {...item,document:{...item.document,recordedAt:`2026-06-01T00:00:0${i}.000Z`,coding:{...item.document.coding,provider:'kimi',projectKey:'kimi-project',sessionId:'streamed-session',role:'assistant_delta',attribution:'agent'}}};};
+  const delta=(i:number,text:string)=>{const item=event(i,text);return {...item,document:{...item.document,recordedAt:`2026-06-01T00:00:0${i}.000Z`,coding:{...item.document.coding,provider:'kimi',projectKey:'kimi-project',sessionId:'streamed-session',role:'assistant',attribution:'agent',channel:'final'}}};};
   await sources.upsertBatch('coding',[...hostItems,delta(2,'Hel'),delta(3,'lo 🌱')]);await runtime.tick();
   const codexRecord=materials.list().items.find(record=>record.origin.provider==='codex')!,kimiRecord=materials.list().items.find(record=>record.origin.provider==='kimi')!;
   assert.doesNotMatch(materials.read(codexRecord.ref,{length:12000}).text,/<environment_context>|generated\/project/);
   const text=materials.read(kimiRecord.ref,{length:12000}).text;
-  assert.match(text,/Event: event-2 · Part: 0\/1 · Attribution: agent\n\nHel/);assert.match(text,/Event: event-3 · Part: 0\/1 · Attribution: agent\n\nlo 🌱/);
+  assert.match(text,/Event: event-2 · Part: 0\/1 · Attribution: agent · Channel: final\n\nHel/);assert.match(text,/Event: event-3 · Part: 0\/1 · Attribution: agent · Channel: final\n\nlo 🌱/);
   assert.match(text,/Recorded: 2026-06-01T00:00:02.000Z/);assert.match(text,/Recorded: 2026-06-01T00:00:03.000Z/);
   assert.equal(kimiRecord.origin.firstAt,'2026-06-01T00:00:02.000Z');assert.equal(kimiRecord.origin.lastAt,'2026-06-01T00:00:03.000Z');
 });
@@ -128,8 +128,8 @@ test('append reads only new refs, reuses prefix blocks and anchors, and keeps th
 
 test('Coding blocks retain observation context through append without assigning one event date to the conversation',async t=>{
   const {store,materials,runtime,sources}=await fixture(t);
-  const original=event(0,'Generated multi-block conversation. '.repeat(750));
-  await sources.upsert('coding',{...original,document:{...original.document,recordedAt:'2026-05-01T08:00:00+08:00',timeBasis:'recorded'}});
+  const original=event(0,'Generated multi-block conversation. '.repeat(280));
+  await sources.upsertBatch('coding',[0,1,2].map(i=>({...original,externalId:'bounded-'+i,document:{...original.document,recordedAt:'2026-05-01T08:00:00+08:00',timeBasis:'recorded',coding:{...original.document.coding,eventId:'bounded-'+i}}})));
   await runtime.tick();
   const before=materials.list().items[0]!,old=materials.evidence(materials.evidenceIds(before.ref));
   assert.ok(old.length>2);
@@ -141,7 +141,7 @@ test('Coding blocks retain observation context through append without assigning 
   }
   assert.match(old[0]!.ocrText!,/Recorded: 2026-05-01T08:00:00\+08:00/,'event-specific dates stay in the labeled event text');
   const oldTailContext=materials.codingBase(before.id)!.lastBlock!.evidenceContext;
-  const added=event(1,'Generated appended message. '.repeat(600));
+  const added=event(3,'Generated appended message. '.repeat(300));
   await sources.upsert('coding',{...added,document:{...added.document,recordedAt:'2026-05-02T08:00:00+08:00',timeBasis:'recorded'}});
   await runtime.tick();
   const after=materials.list().items[0]!,current=materials.evidence(materials.evidenceIds(after.ref));

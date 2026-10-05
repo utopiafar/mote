@@ -114,3 +114,40 @@ it('rejects old or incomplete coding checkpoints while leaving the original log 
  for(const old of shapes)await expect(scanCodingAgent(root,'codex',DEFAULT_SOURCE_OPTIONS,old as any)).rejects.toThrow('Unsupported Coding');
  expect(await (await import('node:fs/promises')).readFile(path,'utf8')).toBe(body);
 });
+
+it('uses native Codex phases and completion receipts without admitting process messages or duplicate finals',async()=>{
+ const message=(phase:string,text:string)=>line({type:'response_item',payload:{type:'message',role:'assistant',phase,content:[{type:'output_text',text}]}});
+ await writeFile(join(root,'current.jsonl'),line({type:'event_msg',payload:{type:'task_started',turn_id:'t1'}})+message('commentary','PROCESS_ONLY')+message('analysis','PRIVATE_ANALYSIS')+message('final_answer','Formal reply')+line({type:'event_msg',payload:{type:'task_complete',turn_id:'t1',last_agent_message:'Formal reply'}}));
+ await writeFile(join(root,'older.jsonl'),line({type:'event_msg',payload:{type:'task_started',turn_id:'t2'}})+message('unknown','UNKNOWN_PROCESS')+line({type:'event_msg',payload:{type:'task_complete',turn_id:'t2',last_agent_message:'Older formal reply'}}));
+ const scan=await scanCodingAgent(root,'codex',DEFAULT_SOURCE_OPTIONS);
+ expect(scan.items.filter(i=>i.document?.coding?.channel==='final').map(i=>i.text).sort()).toEqual(['Formal reply','Older formal reply']);
+ expect(scan.items.find(i=>i.text==='PROCESS_ONLY')?.document?.coding?.channel).toBe('commentary');
+});
+
+it('Claude accepts only completed main-session replies and never uploads compaction sidechain copies',async()=>{
+ const row=(uuid:string,stop_reason:string|null,text:string,extra={})=>({type:'assistant',uuid,sessionId:'main',message:{stop_reason,content:[{type:'text',text}]},...extra});
+ await writeFile(join(root,'main.jsonl'),line(row('progress',null,'PROCESS_TEXT'))+line(row('truncated','max_tokens','NOT_A_FINAL'))+line(row('final','end_turn','Formal reply'))+line({type:'user',uuid:'summary',isCompactSummary:true,message:{content:'HOST_SUMMARY'}}));
+ await mkdir(join(root,'subagents'));await writeFile(join(root,'subagents','copy.jsonl'),line(row('final','end_turn','Formal reply',{isSidechain:true,agentId:'compact'})));
+ const scan=await scanCodingAgent(root,'claude',DEFAULT_SOURCE_OPTIONS);
+ expect(scan.items.filter(i=>i.document?.coding?.channel==='final').map(i=>i.text)).toEqual(['Formal reply']);
+ expect(scan.items.find(i=>i.text==='HOST_SUMMARY')?.document?.coding?.attribution).toBe('host');
+ const first=scan.items.find(i=>i.text==='Formal reply')!;
+ await writeFile(join(root,'main.jsonl'),line(row('final','end_turn','Formal reply')));
+ const replaced=await scanCodingAgent(root,'claude',DEFAULT_SOURCE_OPTIONS,scan.checkpoint);
+ expect(replaced.items.find(i=>i.text==='Formal reply')?.externalId).toBe(first.externalId);
+});
+
+it('Codex subagent prompts and replies are process evidence, not owner dialogue',async()=>{
+ await writeFile(join(root,'child.jsonl'),line({type:'session_meta',payload:{id:'child',source:{subagent:{thread_spawn:{parent_thread_id:'parent'}}}}})+line(codex('Delegated internal instructions'))+line({type:'response_item',payload:{type:'message',role:'assistant',phase:'final_answer',content:[{type:'output_text',text:'Internal subagent report'}]}}));
+ expect((await scanCodingAgent(root,'codex',DEFAULT_SOURCE_OPTIONS)).items).toEqual([]);
+});
+
+it('Kimi confirms only the final tool-free step after TurnEnd, including checkpoint restart',async()=>{
+ const dir=join(root,'kimi');await mkdir(dir);const path=join(dir,'wire.jsonl');
+ const row=(type:string,payload:unknown={})=>line({timestamp:1789000000,message:{type,payload}});
+ await writeFile(path,row('TurnBegin',{user_input:'Owner question'})+row('StepBegin',{n:1})+row('ContentPart',{type:'text',text:'PROCESS_ONLY'})+row('ToolCall',{id:'tool',function:{name:'Shell',arguments:''}})+row('StepBegin',{n:2})+row('ContentPart',{type:'text',text:'Formal '}));
+ const first=await scanCodingAgent(root,'kimi',DEFAULT_SOURCE_OPTIONS);expect(first.items.filter(i=>i.document?.coding?.channel==='final')).toEqual([]);
+ await appendFile(path,row('ContentPart',{type:'text',text:'reply'})+row('TurnEnd'));
+ const next=await scanCodingAgent(root,'kimi',DEFAULT_SOURCE_OPTIONS,JSON.parse(JSON.stringify(first.checkpoint)));
+ expect(next.items.filter(i=>i.document?.coding?.channel==='final').map(i=>i.text)).toEqual(['Formal reply']);
+});

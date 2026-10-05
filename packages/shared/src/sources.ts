@@ -31,6 +31,10 @@ export const codingEvidenceSchema=z.object({
   part:z.number().int().min(0),parts:z.number().int().min(1),
 }).strict();
 export type CodingEvidence=z.infer<typeof codingEvidenceSchema>;
+/** Model-visible Coding evidence is a protocol-selected dialogue, never a raw
+ * transcript. These bounds apply before indexing or any model invocation. */
+export const CODING_DIALOGUE_SCHEMA_VERSION=6;
+export const MAX_CODING_DIALOGUE_MESSAGE_CHARACTERS=12000;
 /** Recognize complete provider-owned envelopes only. Mentioning these names,
  * quoting an envelope, or appending a human request does not match. This is a
  * protocol parser; it never dispatches intent, topics or memory value. */
@@ -48,10 +52,28 @@ export function codingHostEnvelope(provider:CodingEvidence['provider'],text:stri
   const suffix=value.slice(close+'</INSTRUCTIONS>'.length).trim();
   return !suffix||envelope(suffix,'environment_context');
 }
+/** Remove leading, explicitly delimited provider context envelopes from a
+ * human message. Quoted examples and text following them remain literal data. */
+export function codingDialogueText(coding:CodingEvidence,text:string):string {
+  if(coding.role!=='user'||coding.provider!=='codex')return text;
+  let value=text;
+  for(;;){
+    const agents=/^\s*# AGENTS\.md instructions for [^\r\n]+\r?\n\s*<INSTRUCTIONS>/.exec(value);
+    if(agents){const end=value.indexOf('</INSTRUCTIONS>',agents[0].length);if(end<0)break;value=value.slice(end+'</INSTRUCTIONS>'.length).trimStart();continue;}
+    const match=/^\s*<(environment_context|browser_context|browser_ambient_context|in-app-browser-context|external_codex_apps_open_page)(?:\s[^>]*)?>/.exec(value);
+    if(!match)break;
+    const close=`</${match[1]}>`,end=value.indexOf(close,match[0].length);
+    if(end<0)break;
+    value=value.slice(end+close.length).trimStart();
+  }
+  return value;
+}
 /** The central conversation projection admits text roles only. Raw archive
  * retention is independent and never grants an agent access to tool bodies. */
 export function codingConversationEvidence(coding:CodingEvidence,text?:string):boolean {
-  return ['user','assistant','assistant_delta','transcript'].includes(coding.role)&&coding.attribution!=='host'&&
+  const dialogue=coding.role==='user'&&coding.attribution==='human'||
+    coding.role==='assistant'&&coding.attribution==='agent'&&coding.channel==='final';
+  return dialogue&&(!text||text.length<=MAX_CODING_DIALOGUE_MESSAGE_CHARACTERS)&&
     !(coding.role==='user'&&text!==undefined&&codingHostEnvelope(coding.provider,text));
 }
 export const documentSchema=z.object({

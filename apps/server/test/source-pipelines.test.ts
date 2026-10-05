@@ -15,7 +15,7 @@ import {EvidenceReader} from '../src/evidence-reader.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {sourceItemSchema,evidenceRefId,formatEvidenceRef} from '@mote/shared';
 
-const item=(i:number,session='session-a',text='Generated user requirement and tool result.')=>({externalId:'event-'+i,revision:'1',observedAt:'2026-09-24T01:00:00.000Z',kind:'message',layer:'snapshot',text,document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:session,projectKey:'generated-project',eventId:String(i).padStart(6,'0'),role:'user',part:0,parts:1}}});
+const item=(i:number,session='session-a',text='Generated user requirement and tool result.')=>({externalId:'event-'+i,revision:'1',observedAt:'2026-09-24T01:00:00.000Z',kind:'message',layer:'snapshot',text,document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:session,projectKey:'generated-project',eventId:String(i).padStart(6,'0'),role:'user',attribution:'human',part:0,parts:1}}});
 async function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-source-pipeline-')),store=new Store(directory),materials=new MaterialStore(store);
   const runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
@@ -25,7 +25,7 @@ async function fixture(t:import('node:test').TestContext){
 }
 function intercept(runtime:SourcePipelineRuntime,hook:FixtureOrganizer){
   const original={...runtime.registry.get('mote.coding')!,organize:codingOrganizer(runtime)};
-  const unregister=fixtureRecipe(runtime,{...original,id:'fixture.interceptor',priority:1,organize:hook});
+  const unregister=fixtureRecipe(runtime,{...original,reprocess:'deterministic',id:'fixture.interceptor',priority:1,organize:hook});
   runtime.configure('coding',{pipelineId:'fixture.interceptor',memory:false,settleSeconds:0});
   return {original,unregister};
 }
@@ -115,7 +115,7 @@ test('1,000 raw events remain file-only; complete conversation is indexed and ci
   const material=materials.list({query:'Unique generated event'}).items[0];assert.ok(material);assert.equal(material.coverage.state,'complete');assert.ok(material.textLength>400_000);
   let text='',offset=0;do{const page=materials.read(material.ref,{offset,length:12000});text+=page.text;if(page.textRange.nextOffset===null)break;assert.ok(page.textRange.nextOffset>offset);offset=page.textRange.nextOffset;}while(true);
   assert.ok(text.includes('Unique generated event 0.'));assert.ok(text.includes('Unique generated event 999.'));assert.equal(materials.list().items.length,1);
-  const page=reader.materialRead({ref:material.ref});assert.ok(page.originalRefs.length);const evidence=reader.evidence(page.originalRefs);assert.ok(evidence[0].ocrText.startsWith('# Coding conversation'));assert.ok(reader.memories.isCurrentEvidence(evidence[0].id));
+  const page=reader.materialRead({ref:material.ref});assert.ok(page.originalRefs.length);const evidence=reader.evidence(page.originalRefs);assert.ok(evidence[0].ocrText.startsWith('# Coding dialogue'));assert.ok(reader.memories.isCurrentEvidence(evidence[0].id));
   assert.equal(reader.materialCatalog({deviceId:'other'}).items.length,0);assert.equal(reader.materialCatalog({sourceId:'other'}).items.length,0);
   assert.equal(store.db.prepare('SELECT count(*) n FROM material_fts_blocks').get()!.n,material.blockCount);
 });
@@ -215,7 +215,7 @@ test('HTTP source upload, material search and actual agent bridge cite assembled
 
 test('fragment boundaries preserve exact text and partial messages wait for their remaining parts',async t=>{
   const {runtime,sources,materials,store}=await fixture(t);
-  const body='甲🙂乙'.repeat(4500);const first=item(1,'session-a',body);first.document.coding.parts=2;
+  const body='甲🙂乙'.repeat(2200);const first=item(1,'session-a',body);first.document.coding.parts=2;
   await sources.upsert('coding',first);await runtime.tick();const partial=materials.list().items[0];assert.equal(partial.coverage.state,'partial');assert.equal(runtime.memoryWork.readyForMemory(partial.ref),false);
   const second={...first,externalId:'part-two',text:'The end.',document:{...first.document,coding:{...first.document.coding,part:1}}};
   await sources.upsert('coding',second);await runtime.tick();const full=materials.list().items[0];assert.equal(full.coverage.state,'complete');

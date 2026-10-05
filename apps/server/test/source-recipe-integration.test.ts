@@ -11,7 +11,7 @@ import {codingSourcePlugin} from '../src/coding-source-plugin.js';
 
 const event=(id:string,text:string)=>({
   externalId:id,revision:'1',observedAt:'2026-09-24T01:00:00.000Z',kind:'message',layer:'snapshot',text,
-  document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'fixture-session',projectKey:'fixture-project',eventId:id,role:'user',part:0,parts:1}},
+  document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'fixture-session',projectKey:'fixture-project',eventId:id,role:'user',attribution:'human',part:0,parts:1}},
 });
 
 async function fixture(t:import('node:test').TestContext){
@@ -28,10 +28,10 @@ test('Coding receipts pin a recipe and execute its registered handlers through t
   const {store,materials,runtime,sources}=await fixture(t);
   await sources.upsert('coding',event('one','Generated recipe evidence'));
   const row=store.db.prepare('SELECT recipe_id,recipe_version,recipe_definition_fingerprint,recipe_config_fingerprint,recipe_component_pins FROM source_pipeline_work').get()!;
-  assert.equal(row.recipe_id,'mote.coding');assert.equal(row.recipe_version,'7');
+  assert.equal(row.recipe_id,'mote.coding');assert.equal(row.recipe_version,'8');
   assert.match(String(row.recipe_definition_fingerprint),/^[a-f0-9]{64}$/);
   assert.match(String(row.recipe_config_fingerprint),/^[a-f0-9]{64}$/);
-  assert.ok(JSON.parse(String(row.recipe_component_pins)).some((pin:{id:string;version:string})=>pin.id==='mote.coding-assemble'&&pin.version==='6'));
+  assert.ok(JSON.parse(String(row.recipe_component_pins)).some((pin:{id:string;version:string})=>pin.id==='mote.coding-assemble'&&pin.version==='7'));
   const pipeline=runtime.registry.get('mote.coding')!;
   assert.equal(Object.hasOwn(pipeline,'organize'),false);assert.equal(Object.hasOwn(pipeline,'group'),false);
   await runtime.tick();
@@ -49,7 +49,7 @@ test('missing or changed components block pinned work and reject fresh Coding re
   assert.equal(store.db.prepare('SELECT state,error FROM source_pipeline_work').get()!.state,'blocked');
   assert.equal(materials.list().items.length,0);
   await assert.rejects(sources.upsert('coding',event('two','New evidence')),/recipe or component unavailable/);
-  runtime.recipes.registry.installComponent({id:'mote.coding-assemble',version:'7',kind:'step'});
+  runtime.recipes.registry.installComponent({id:'mote.coding-assemble',version:'8',kind:'step'});
   await runtime.tick();
   assert.equal(store.db.prepare('SELECT state FROM source_pipeline_work').get()!.state,'blocked');
   assert.equal(materials.list().items.length,0);
