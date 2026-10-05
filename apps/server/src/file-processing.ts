@@ -226,7 +226,7 @@ export class FileProcessing {
   }
   private project(step:ExecutionStep,phase:'pipeline'|'summary'){
     const id=String(step.input.captureId);if(!this.validStep(step,phase))return;
-    const state=step.state==='waiting'&&step.error&&!['daily_budget','interrupted'].includes(step.error)?'failed':step.state,db=this.files.store.db;
+    const state=step.state==='waiting'&&step.error&&step.error!=='interrupted'?'failed':step.state,db=this.files.store.db;
     if(phase==='summary'){db.prepare('UPDATE file_jobs SET summary_state=?,error=? WHERE capture_id=?').run(state,['running','succeeded','blocked'].includes(state)&&step.error!=='processor_still_running'?null:step.error??null,id);return;}
     db.prepare('UPDATE file_jobs SET state=?,attempts=?,available_at=?,error=? WHERE capture_id=?').run(state,step.attempts,step.availableAt,step.error??null,id);
     if(['failed','cancelled','stale'].includes(state)&&['unsupported_format','processing_limit','cancelled','input_changed'].includes(step.error??''))this.files.releaseSnapshotInput(id);

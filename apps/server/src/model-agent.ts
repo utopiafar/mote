@@ -10,7 +10,7 @@ import {isLoopback} from './file-processors.js';
 export const usesLocalModel=(settings:ModelSettings)=>settings.provider==='custom'&&settings.protocol!=='codex-app-server'&&isLoopback(settings.baseUrl);
 
 export type ModelAgentFactory = (settings: ModelSettings, reader: ContextReader) => Promise<QueryAgent>;
-export const createModelAgent = async (settings:ModelSettings, reader:ContextReader, codex?:AgentOptions['codex'],runModel?:AgentOptions['runModel'],admitModelRequest?:AgentOptions['admitModelRequest']):Promise<QueryAgent> => createAgent({ ...settings, reader, runModel, admitModelRequest, requestTimeoutMs: settings.modelRequestTimeoutMs, agentTimeoutMs: settings.agentTimeoutMs, codex });
+export const createModelAgent = async (settings:ModelSettings, reader:ContextReader, codex?:AgentOptions['codex'],runModel?:AgentOptions['runModel'],authorizeModelRequest?:AgentOptions['authorizeModelRequest']):Promise<QueryAgent> => createAgent({ ...settings, reader, runModel, authorizeModelRequest, requestTimeoutMs: settings.modelRequestTimeoutMs, agentTimeoutMs: settings.agentTimeoutMs, codex });
 
 /** A registry generation is immutable. ReloadableAgent leases it for the entire query. */
 export async function createModelRegistry(profiles:ModelProfile[], reader:ContextReader, factory:ModelAgentFactory, initial?:QueryAgent,defaultProfileId=DEPLOYMENT_MODEL_PROFILE_ID):Promise<QueryAgent> {

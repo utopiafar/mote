@@ -75,7 +75,7 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | [memory-review-policy](memory-review-policy.md) | Bounded memory review reuse |
 | [memory-updates](memory-updates.md) | Unified extraction and versioned memory review |
 | [mixed-load-stability](mixed-load-stability.md) | Fixed-data mixed-load stability |
-| [model-budgets](model-budgets.md) | Model budgets |
+| [processing-throughput](processing-throughput.md) | Continuous processing, usage accounting and budget removal |
 | [model-providers](model-providers.md) | 中央模型服务 |
 | [ocr-asr-implementation-plan](ocr-asr-implementation-plan.md) | 中央 OCR 与录音转写：方案与实施 |
 | [operation-import-insight-closure](operation-import-insight-closure.md) | Operation, import, document, and insight closure |

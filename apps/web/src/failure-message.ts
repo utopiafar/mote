@@ -2,6 +2,7 @@ import {moteText} from '@mote/shared/i18n';
 /** Display follows protocol codes, never provider text or semantic matching. The
  * server's allowedActions remains the authority for recovery controls. */
 const messages:Record<string,string>={
+ processing_disabled:'处理队列已停用，请启用后继续。',
  snapshot_input_expired:'快照的临时输入已清理，请重新同步来源文件后重试。',
  context_lineage_incomplete:'这段历史的证据范围不完整，无法安全发送给远程模型。请新建对话，或改用本地模型并重新提供证据。',
  context_evidence_restricted:'这段历史包含当前不可向所选模型披露的资料。请改用本地模型，或新建对话并重新选择可用证据。',
@@ -25,8 +26,6 @@ const messages:Record<string,string>={
  provider_failed:'模型服务未完成请求，请查看任务状态。',model_failed:'模型服务未完成请求，请查看任务状态。',agent_response:'模型返回的结果未通过校验。',
  timeout:'请求等待超时，请查看任务状态。',provider_timeout:'请求等待超时，请查看任务状态。',network:'连接暂时中断，请检查网络。',provider_network:'连接暂时中断，请检查网络。',api_rate_limited:'请求过于频繁，请稍后重试。',rate_limited:'模型服务暂时限流，请等待任务更新。',
  provider_unavailable:'模型服务暂时不可用，请检查服务配置。',provider_quota:'模型服务额度不足，请补充额度后继续。',
- model_token_budget:'当前 token 预算不足，请检查预算设置。',model_cost_budget:'当前金额预算不足，请检查预算设置。',daily_budget:'本日处理预算不足，请检查预算设置。',
- budget_price_required:'请先设置与预算币种一致的模型价格。',budget_unbounded_runtime:'当前模型运行方式无法保证硬预算，请调整预算或模型配置。',model_budget_unavailable:'暂时无法读取模型预算，请查看任务状态。',
  configuration_changed:'模型配置已变化，请在任务中心确认后继续；已完成的步骤会保留。',model_unconfigured:'请先完成模型配置。',
  provider_authentication:'模型服务认证失败，请检查凭据。',provider_endpoint:'模型服务地址不正确，请检查配置。',provider_redirect:'模型服务重定向未获允许，请检查地址配置。',
  worker_offline:'处理服务离线，请检查服务状态。',worker_interrupted:'处理曾中断，请查看任务中心的恢复状态。',interrupted:'运行已中断，请查看历史结果后重新发起。',

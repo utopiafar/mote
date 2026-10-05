@@ -470,7 +470,7 @@ export class MemoryPipeline {
       if(step.state==='running'){batch.phase='extract';batch.stage='starting';batch.startedAt=new Date().toISOString();batch.lastActivityAt=batch.startedAt;}
       this.saveBatch(batch);
     }
-    if(step.state==='blocked'&&['semantic_processing_blocked','model_token_budget','model_cost_budget','budget_price_required','budget_unbounded_runtime','model_budget_unavailable','configuration_changed','model_unconfigured','provider_authentication','provider_endpoint','provider_redirect'].includes(step.error??'')&&!['cancelled','paused','pausing'].includes(job.status)){job.status='waiting_for_model';job.errorCode=step.error;this.saveJob(job);}
+    if(step.state==='blocked'&&['semantic_processing_blocked','configuration_changed','model_unconfigured','provider_authentication','provider_endpoint','provider_redirect'].includes(step.error??'')&&!['cancelled','paused','pausing'].includes(job.status)){job.status='waiting_for_model';job.errorCode=step.error;this.saveJob(job);}
     else if(['waiting','running'].includes(step.state)&&job.status==='waiting_for_model'&&this.active.has(id)){job.status='queued';delete job.errorCode;this.saveJob(job);}
     this.refreshJob(id);this.wake();
   }

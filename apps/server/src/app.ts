@@ -64,7 +64,7 @@ import { MemoryPipeline } from './memory-pipeline.js';
 import { MemoryReviewCache } from './memory-review-cache.js';
 import { reviewMemory } from './memory-review.js';
 import { ReloadableAgent,applyModelSettings,createModelAgent,createModelRegistry,modelSettingsFromConfig,testModelConnection,usesLocalModel,type ModelAgentFactory } from './model-agent.js';
-import { MINIMUM_MODEL_INPUT_RESERVATION_TOKENS,ModelBudgets } from './model-budgets.js';
+import {removeRetiredBudgetState,resumeRetiredBudgetWork} from './retired-budget-migration.js';
 import { ModelCatalogError } from './model-catalog.js';
 import { modelConfiguration } from './model-configuration.js';
 import { ModelSettingsError,ModelSettingsStore,modelProfileIdSchema } from './model-settings.js';
@@ -112,23 +112,24 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   const store=dependencies?.store??new Store(config.dataDir,{dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:Boolean(config.embeddingModel),maintenance:Boolean(dependencies?.backgroundWorker)});
   // MVP cut-over is explicit: never silently keep the old Coding event indexes live.
   if(store.db.prepare("SELECT 1 FROM captures WHERE json_extract(json,'$.provenance.document.coding') IS NOT NULL LIMIT 1").get()){eventLoop.disable();if(!dependencies?.store)store.close();throw new Error('Legacy Coding event vault: back up and use a fresh data directory for the source-pipeline architecture. No automatic migration is performed.');}
+  removeRetiredBudgetState(store);
   const materials=new MaterialStore(store);
   // One service tree owns backend plugins. Each runtime installs into its own
   // managed scope below this root, so closing one cannot dispose a sibling.
   const backendContext=new Context();
   backendContext.provide('moteMaterials',materials);
-  const runtimeSettings=new ExecutionSettings(store,config),execution=runtimeSettings.execution(),providerAdmission=new ProviderAdmission(store),modelBudgets=new ModelBudgets(store);
+  const runtimeSettings=new ExecutionSettings(store,config),execution=runtimeSettings.execution(),providerAdmission=new ProviderAdmission(store);
   const agentGate=new ConcurrencyGate(execution.agentConcurrency),llmGate=new ConcurrencyGate(execution.llmConcurrency);
   const interactiveGate=new ConcurrencyGate(execution.interactiveConcurrency),interactiveModelGate=new ConcurrencyGate(execution.interactiveConcurrency);
   const modelContext=new AsyncLocalStorage<QueryInput>();
   const modelLocality=new AsyncLocalStorage<boolean>();
-  const budgetContext=new AsyncLocalStorage<{id:string;operationId:string;usage?:import('@mote/shared').TokenUsage;price?:import('@mote/shared').ModelPrice}>();
-  const admitModelRequest=(settings:import('@mote/shared/models').ModelSettings)=>(inputBytes:number)=>{assertModelEvidence(settings,modelContext.getStore());const context=budgetContext.getStore();if(!context){if(modelBudgets.enabled(settings.provider))throw new ProviderFailure({category:'blocked',code:'model_budget_unavailable'});return;}modelBudgets.reserve({id:context.id,operationId:context.operationId,provider:settings.provider,model:settings.model,inputTokens:Math.max(MINIMUM_MODEL_INPUT_RESERVATION_TOKENS,inputBytes),outputTokens:settings.maxTokens,price:context.price});};
+  const modelOperation=new AsyncLocalStorage<string>();
+  const authorizeModelRequest=(settings:import('@mote/shared/models').ModelSettings)=>()=>assertModelEvidence(settings,modelContext.getStore());
   const runModelFor=(settings:import('@mote/shared/models').ModelSettings):NonNullable<import('@mote/agent').AgentOptions['runModel']>=>(task,signal)=>{
-    signal?.throwIfAborted();providerAdmission.check(settings);if(settings.protocol==='codex-app-server')modelBudgets.requireBoundedRuntime(settings.provider);
+    signal?.throwIfAborted();providerAdmission.check(settings);
     const queuedAt=performance.now(),input=modelContext.getStore(),gate=input?.executionLane==='interactive'?interactiveModelGate:llmGate;input?.onTrace?.({type:'model.queued',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane:input?.executionLane??'background'}});
     input?.onProgress?.({stage:'model',message:moteText('等待模型执行名额')});
-    return gate.run(async()=>{providerAdmission.check(settings);assertModelEvidence(settings,input);input?.onProgress?.({stage:'model',message:moteText('模型处理中')});input?.onTrace?.({type:'model.admitted',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane:input?.executionLane??'background',queueWaitMs:performance.now()-queuedAt}});return task();},signal??input?.signal,input?.traceContext?.operationId??budgetContext.getStore()?.operationId);
+    return gate.run(async()=>{providerAdmission.check(settings);assertModelEvidence(settings,input);input?.onProgress?.({stage:'model',message:moteText('模型处理中')});input?.onTrace?.({type:'model.admitted',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane:input?.executionLane??'background',queueWaitMs:performance.now()-queuedAt}});return task();},signal??input?.signal,input?.traceContext?.operationId??modelOperation.getStore());
   };
   const diagnostics=new ServerDiagnostics({...runtimeSettings.diagnostics(),directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
   await diagnostics.init();
@@ -142,10 +143,9 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   const mediaAssets=new MediaAssets(process.env.MOTE_MEDIA_MODEL_DIR||join(store.directory,'media-models'));
   const usageLedger=new UsageLedger(store);
   const indexer=new Indexer(store,config,diagnostics,files,input=>{
-    const id=randomUUID(),operationId=input.operationId??modelContext.getStore()?.traceContext?.operationId??'embedding:'+id,provider='embedding',model=config.embeddingModel,price=usageLedger.prices().find(p=>p.provider===provider&&p.model===model);
-    modelBudgets.reserve({id,operationId,provider,model,inputTokens:input.bytes,outputTokens:0,price});
+    const operationId=input.operationId??modelContext.getStore()?.traceContext?.operationId??'embedding:'+randomUUID(),provider='embedding',model=config.embeddingModel;
     const meter=usageLedger.start(provider,model,'embedding',{agentId:'embedding',moduleId:'retrieval',skillId:null,operationId});
-    return {finish:(usage,failed)=>{if(usage)meter.update(usage);meter.finish(failed?'failed':'completed');modelBudgets.finish(id,usage,price);}};
+    return {finish:(usage,failed)=>{if(usage)meter.update(usage);meter.finish(failed?'failed':'completed');}};
   },{executor,operationId:()=>modelContext.getStore()?.traceContext?.operationId});
   const materialOrganizer=new MaterialOrganizerRuntime(store,materials,[],executor,materialMemoryWork);
   backendContext.provide('moteMaterialOrganizers',materialOrganizer.registry);
@@ -235,12 +235,11 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     input.signal?.throwIfAborted();providerAdmission.check(settings);
     input.onProgress?.({stage:'starting',phase:'started',message:moteText('等待 Agent 执行名额')});
     return (input.executionLane==='interactive'?interactiveGate:agentGate).run(async()=>{
-      const id=randomUUID(),context={id,operationId:input.traceContext?.operationId??(input.traceContext?.jobId?'job:'+input.traceContext.jobId:'query:'+id),price:usageLedger.prices().find(p=>p.provider===settings.provider&&p.model===settings.model),usage:undefined as import('@mote/shared').TokenUsage|undefined};
-      const observed={...input,onUsage:(usage:import('@mote/shared').TokenUsage)=>{context.usage=usage;modelBudgets.observe(id,usage,context.price);input.onUsage?.(usage);}};
-      try{return await budgetContext.run(context,()=>providerAdmission.run(settings,()=>{assertModelEvidence(settings,input);return modelLocality.run(local,()=>modelContext.run(observed,()=>inner.query(observed)));}));}finally{modelBudgets.finish(id,context.usage,context.price);}
+      const operationId=input.traceContext?.operationId??(input.traceContext?.jobId?'job:'+input.traceContext.jobId:'query:'+randomUUID());
+      return modelOperation.run(operationId,()=>providerAdmission.run(settings,()=>{assertModelEvidence(settings,input);return modelLocality.run(local,()=>modelContext.run(input,()=>inner.query(input)));}));
     },input.signal,input.traceContext?.operationId);
   }});
-  const factory:ModelAgentFactory=async(settings,reader)=>wrapAgent(await (dependencies?.createModelAgent?dependencies.createModelAgent(settings,reader):createModelAgent(settings,reader,codex,runModelFor(settings),admitModelRequest(settings))),settings);
+  const factory:ModelAgentFactory=async(settings,reader)=>wrapAgent(await (dependencies?.createModelAgent?dependencies.createModelAgent(settings,reader):createModelAgent(settings,reader,codex,runModelFor(settings),authorizeModelRequest(settings))),settings);
   let initialAgent=dependencies?.agent?wrapAgent(dependencies.agent,modelSettingsFromConfig(config)):undefined;
   const modelSettings=new ModelSettingsStore({
     directory:config.dataDir,environment:modelSettingsFromConfig(config),codex,
@@ -466,10 +465,10 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
       const selected=modelSettings.select('import');if(!agent.configuredFor(selected.id))throw new AgentNotConfiguredError();
       const settings=selected.settings,prepared=await prepareImportInput(input);
       const meter=usageLedger.start(settings.provider,settings.model,'document-import',{agentId:'document-import',moduleId:'imports',skillId:'document-import',operationId:input.operationId});
-      const id=randomUUID(),context={id,operationId:input.operationId??'import:'+id,price:usageLedger.prices().find(p=>p.provider===settings.provider&&p.model===settings.model),usage:undefined as import('@mote/shared').TokenUsage|undefined};
+      const operationId=input.operationId??'import:'+randomUUID();
       let runtime:ReturnType<typeof createImportAgent>|undefined;const abort=()=>{void runtime?.close();};input.signal?.addEventListener('abort',abort,{once:true});
-      try{runtime=createImportAgent({...settings,codex,runModel:runModelFor(settings),admitModelRequest:admitModelRequest(settings)});importAgents.add(runtime);const {signal:_signal,operationId:_operationId,...request}=prepared;const result=await agentGate.run(()=>budgetContext.run(context,()=>providerAdmission.run(settings,()=>runtime!.prepare({...request,language:requestLocale.getStore()??'zh-CN'},dependencies?.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined,usage=>{context.usage=usage;modelBudgets.observe(id,usage,context.price);meter.update(usage);}))),input.signal,input.operationId);input.signal?.throwIfAborted();meter.finish('completed');return result;}
-      catch(error){meter.finish('failed');throw error;}finally{input.signal?.removeEventListener('abort',abort);modelBudgets.finish(id,context.usage,context.price);try{await runtime?.close();}finally{if(runtime)importAgents.delete(runtime);}}
+      try{runtime=createImportAgent({...settings,codex,runModel:runModelFor(settings),authorizeModelRequest:authorizeModelRequest(settings)});importAgents.add(runtime);const {signal:_signal,operationId:_operationId,...request}=prepared;const result=await agentGate.run(()=>modelOperation.run(operationId,()=>providerAdmission.run(settings,()=>runtime!.prepare({...request,language:requestLocale.getStore()??'zh-CN'},dependencies?.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined,usage=>meter.update(usage)))),input.signal,input.operationId);input.signal?.throwIfAborted();meter.finish('completed');return result;}
+      catch(error){meter.finish('failed');throw error;}finally{input.signal?.removeEventListener('abort',abort);try{await runtime?.close();}finally{if(runtime)importAgents.delete(runtime);}}
     }),
     // Capture/file journals are durable. Import completion only queues increments;
     // the lifecycle applies the owner's change threshold or maximum wait.
@@ -565,7 +564,8 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     });
   } else app.setNotFoundHandler((req,reply)=>reply.code(404).send({error:'not_found',message:moteText("未找到所请求的资料。"),requestId:req.id}));
   const maintenanceWorker=dependencies?.backgroundWorker?new MaintenanceWorker(config):undefined;
-  const featureServices={connectionIdentity,assertRequestActive,memoryIntegrationSettings,memoryRecipeSettings,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connectionRate,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaRange,memories,memoryPipeline,modelBudgets,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runQuery,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows};
+  const featureServices={connectionIdentity,assertRequestActive,memoryIntegrationSettings,memoryRecipeSettings,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connectionRate,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaRange,memories,memoryPipeline,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runQuery,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows};
+  resumeRetiredBudgetWork(store,executor);
   const featureHost=new ServerFeatureHost(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));
   await installServerFeatures(featureHost,featureServices);
   diagnostics.record('server.started');

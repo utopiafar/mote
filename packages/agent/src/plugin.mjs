@@ -8,7 +8,7 @@ const names = CONTEXT_TOOLS.map(([name])=>name);
 /** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
  * A token parameter and wall-clock timeout do not constrain a hostile response.
  * The limit covers retries and repair turns in this isolated agent process. */
-export function boundedModelFetch(transport, bridge, maximumBytes = 32 * 1024 * 1024, configuration, reportFailure, admitRequest) {
+export function boundedModelFetch(transport, bridge, maximumBytes = 32 * 1024 * 1024, configuration, reportFailure, authorizeRequest) {
   let received = 0;
   let exceeded = false;
   const tooLarge = () => new Error("Model response exceeds the agent byte budget");
@@ -65,7 +65,7 @@ export function boundedModelFetch(transport, bridge, maximumBytes = 32 * 1024 * 
       headers.delete('content-length');
       requestInit = {...requestInit, headers, body: JSON.stringify(customized)};
     }
-    if(admitRequest){const raw=requestInit.body??(input instanceof Request?await input.clone().text():'');if(typeof raw!=='string')throw Error('Model request must contain a JSON body');await admitRequest(Buffer.byteLength(raw));}
+    await authorizeRequest?.();
     let response;
     try {response = await transport(input, requestInit);} catch (error) {if (reportFailure && !requestInit.signal?.aborted) await reportFailure({status:0});throw error;}
     if (reportFailure && !response.ok) {
@@ -111,10 +111,10 @@ export function modelFailureReporter(transport) {
   return async value=>{const response=await transport(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(value),redirect:'error',signal:AbortSignal.timeout(5000)});await response.body?.cancel();if(!response.ok)throw Error('Host transport observer unavailable');};
 }
 
-export function modelRequestAdmission(transport) {
+export function modelRequestAuthorization(transport) {
   const configured=process.env.MOTE_MODEL_OBSERVER;if(!configured)return undefined;
-  const {admissionUrl,token}=JSON.parse(configured);if(!admissionUrl)return undefined;
-  return async inputBytes=>{const response=await transport(admissionUrl,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({inputBytes}),redirect:'error',signal:AbortSignal.timeout(5000)});await response.body?.cancel();if(!response.ok)throw Error('Host model admission denied');};
+  const {authorizationUrl,token}=JSON.parse(configured);if(!authorizationUrl)return undefined;
+  return async ()=>{const response=await transport(authorizationUrl,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:'{}',redirect:'error',signal:AbortSignal.timeout(5000)});await response.body?.cancel();if(!response.ok)throw Error('Host model evidence authorization denied');};
 }
 
 /** A host receipt covers local preparation only, never remote model attention. */
@@ -141,7 +141,7 @@ export async function apply(ctx) {
   if (!endpoint || !token) throw new Error("Mote context bridge is missing");
   const configuration = process.env.MOTE_MODEL_TRANSPORT ? JSON.parse(process.env.MOTE_MODEL_TRANSPORT) : undefined;
   const transport=globalThis.fetch.bind(globalThis);
-  globalThis.fetch = boundedModelFetch(transport, endpoint, undefined, configuration, modelFailureReporter(transport),modelRequestAdmission(transport));
+  globalThis.fetch = boundedModelFetch(transport, endpoint, undefined, configuration, modelFailureReporter(transport),modelRequestAuthorization(transport));
   async function call(tool, args, signal) {
     const response = await fetch(`${endpoint}/${tool}`, {
       method: "POST",

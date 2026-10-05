@@ -121,7 +121,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
                             setSelection(choices.indexOf(raw.toString()).coerceAtLeast(0)) }; target.addView(spinner)
                         reads[key] = { choices[spinner.selectedItemPosition] }; continue
                     }
-                    val nullableNumber = key in setOf("dailyTokens", "dailyCost", "operationTokens", "operationCost", "modelRequestTimeoutMs", "agentTimeoutMs", "speakerCount")
+                    val nullableNumber = key in setOf("modelRequestTimeoutMs", "agentTimeoutMs", "speakerCount")
                     val field = ui.field(caption, if (raw == JSONObject.NULL) "" else raw.toString(),
                         multiline = key in setOf("description", "instruction", "prompt"), password = key in secrets, parent = target)
                     if (raw is Number || nullableNumber) field.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
@@ -157,7 +157,6 @@ internal class CentralAdmin(private val screens: CentralScreens) {
     private fun settings() {
         ui.button(MoteI18n.text("模型配置")) { models() }
         ui.button(MoteI18n.text("并发与执行设置")) { configuration(MoteI18n.text("并发与执行设置"), "/api/execution-settings") { pick(it, "interactiveConcurrency", "agentConcurrency", "llmConcurrency", "memoryConcurrency") } }
-        ui.button(MoteI18n.text("模型预算")) { configuration(MoteI18n.text("模型预算"), "/api/model-budgets") { pick(it, "revision", "limits") } }
         ui.button(MoteI18n.text("处理设置")) { fileSettings() }
         ui.button(MoteI18n.text("记忆设置")) { memorySettings() }
         ui.button(MoteI18n.text("来源与外部应用")) { connectors() }
@@ -678,7 +677,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
         private val enums = mapOf("protocol" to listOf("deepseek", "openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai", "codex-app-server"),
             "reasoningEffort" to listOf("auto", "off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
             "serviceTier" to listOf("default", "fast"),
-            "level" to listOf("debug", "info", "warn", "error", "silent"), "currency" to listOf("USD", "CNY"), "access" to listOf("read", "write"), "brand" to listOf("feishu", "lark"))
+            "level" to listOf("debug", "info", "warn", "error", "silent"), "access" to listOf("read", "write"), "brand" to listOf("feishu", "lark"))
         fun pick(value: JSONObject, vararg keys: String) = JSONObject().apply { keys.forEach { key -> if (value.has(key)) put(key, value.get(key)) } }
         private val labels = mapOf(
             "title" to "标题", "name" to "名称", "description" to "描述", "enabled" to "启用", "status" to "状态", "state" to "状态",
@@ -687,8 +686,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
             "maxTokens" to "最大生成 token", "apiKey" to "API Key（留空保留）", "modelRequestTimeoutMs" to "模型请求超时（毫秒）",
             "agentTimeoutMs" to "Agent 超时（毫秒）", "interactiveConcurrency" to "交互并发", "agentConcurrency" to "Agent 并发",
             "llmConcurrency" to "模型并发", "memoryConcurrency" to "记忆并发", "enabled" to "启用", "debug" to "调试日志",
-            "traceEnabled" to "记录 Agent 读取", "level" to "日志级别", "dailyTokens" to "每日 token 上限", "dailyCost" to "每日费用上限",
-            "operationTokens" to "每次任务 token 上限", "operationCost" to "每次任务费用上限", "currency" to "币种",
+            "traceEnabled" to "记录 Agent 读取", "level" to "日志级别",
             "deviceId" to "设备 ID", "deviceName" to "设备名称", "platform" to "平台", "serverUrl" to "节点地址", "label" to "名称"
         )
     }

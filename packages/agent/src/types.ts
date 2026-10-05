@@ -68,8 +68,8 @@ export interface ContextReader {
 }
 
 export interface AgentOptions {
-  /** Host-only admission before each outbound HTTP model attempt, including SDK turns/repairs. */
-  admitModelRequest?: (inputBytes:number)=>void|Promise<void>;
+  /** Host-only evidence authorization before each outbound HTTP model attempt, including SDK turns/repairs. */
+  authorizeModelRequest?: ()=>void|Promise<void>;
   /** Host-wide admission for model runs; Codex turns include their internal tool loop. */
   runModel?: <T>(task:()=>Promise<T>,signal?:AbortSignal)=>Promise<T>;
   reader: ContextReader;

@@ -83,8 +83,6 @@ export function assertQueryWrites(before:Rows,after:Rows,queryId:string|undefine
   keep('execution_resources',r=>stepIds.has(r.step_id));keep('execution_dependencies',r=>stepIds.has(r.step_id)&&stepIds.has(r.dependency_id));
   keep('execution_operation_steps',r=>r.operation_id===operation&&stepIds.has(r.step_id));keep('execution_fairness',r=>r.operation_id===operation);
   keep('operation_progress',r=>r.id===operation);keep('operation_changes',r=>r.operation_id===operation);keep('operation_generations',r=>r.operation_id===operation);keep('operation_parents',()=>false);
-  const reservations=new Set(after.model_budget_reservations.filter(r=>r.operation_id===operation).map(r=>r.id));
-  keep('model_budget_reservations',r=>r.operation_id===operation);keep('model_budget_attempts',r=>r.operation_id===operation&&reservations.has(r.reservation_id));keep('model_budget_usage',r=>reservations.has(r.reservation_id));
   // Closed query sessions release their owner leases. No inherited row may be renewed.
   if(closedQuery)preserve(before.run_execution_owners,after.run_execution_owners,'ask_owner_lease_left');
   else{const owners=new Set(after.execution_steps.filter(r=>stepIds.has(r.id)).map(r=>JSON.parse(r.input).ownerId));keep('run_execution_owners',r=>owners.has(r.id));}
