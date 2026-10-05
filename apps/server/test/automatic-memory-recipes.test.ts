@@ -39,7 +39,7 @@ async function fixture(t:import('node:test').TestContext){
     assert.equal(r.statusCode,200,r.body);return r.json();
   };
   const source=(id:string,isCoding=false)=>{node.sources.register({id,name:'Generated '+id,kind:isCoding?'coding-agent':'custom',deviceId:'fixture',platform:'import'});node.sourcePipelines.configure(id,{memory:true,settleSeconds:0});};
-  const add=async(sourceId:string,externalId:string,isCoding=false,revision='1',text=body)=>node.sources.upsert(sourceId,{externalId,revision,observedAt:'2020-01-01T00:00:00Z',kind:'message',layer:'original',text,...(isCoding?{document:{contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated',sessionId:externalId,eventId:'event',role:'user',part:0,parts:1}}}:{document:{contentRole:'authored'}})});
+  const add=async(sourceId:string,externalId:string,isCoding=false,revision='1',text=body)=>node.sources.upsert(sourceId,{externalId,revision,observedAt:'2020-01-01T00:00:00Z',kind:'message',layer:'original',text,...(isCoding?{document:{contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated',sessionId:externalId,eventId:'event',role:'user',attribution:'human',part:0,parts:1}}}:{document:{contentRole:'authored'}})});
   const publish=async()=>{await node.materialOrganizer.tick(100);await node.sourcePipelines.tick(100);};
   const run=async()=>{node.sourcePipelines.drainMemory(node.memoryPipeline,true,100);await Promise.all(node.memoryPipeline.list().filter(j=>['queued','running','waiting_for_model'].includes(j.status)).map(j=>node.memoryPipeline.run(j.id)));};
   // Hold scheduling, not admission: the production queue still creates and

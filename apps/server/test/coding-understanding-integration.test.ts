@@ -19,7 +19,7 @@ const token='generated-coding-understanding-owner-token';
 const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-stub',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>resolve=done);return {promise,resolve};};
 function event(id:string,role:string,text:string):SourceItem{return {externalId:id,revision:'1',observedAt:recordedAt,kind:'message',layer:'original',text,
- document:{recordedAt,timeBasis:'recorded',contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',projectName:'Generated project',projectIdentity:'workspace',sessionId:'generated-session',eventId:id,role,attribution:role==='user'?'human':role==='assistant'?'agent':'unknown',part:0,parts:1}}};}
+ document:{recordedAt,timeBasis:'recorded',contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',projectName:'Generated project',projectIdentity:'workspace',sessionId:'generated-session',eventId:id,role,...(role==='assistant'?{channel:'final'}:{}),attribution:role==='user'?'human':role==='assistant'?'agent':'unknown',part:0,parts:1}}};}
 async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,automatic=false){
  const directory=mkdtempSync(join(tmpdir(),'mote-coding-understanding-e2e-'));
  const node=await buildApp(config(directory),{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:input=>query(input,reader)})});
@@ -107,14 +107,14 @@ test('tool-only append advances private archive without renewing automatic under
 test('long Coding conversations cover every original character through bounded interpretations without tail-only truncation',{timeout:30000},async t=>{
  const covered:{id:string;offset:number;length:number}[]=[];let calls=0,overviewCalls=0;
  const node=await appFixture(t,async(input,reader)=>{
-  if(input.question.startsWith('Build a running overview')){overviewCalls++;await supplied(input,reader);return {answer:JSON.stringify({summary:'Generated full-session overview: concise written decisions remain an early constraint; final correction: device checks are still unknown.'}),citations:[],trace:[],runId:randomUUID()};}
-  calls++;assert.ok(isUnderstanding(input),'empty per-range candidates must be reused');assert.ok(overviewCalls>1,'all pages must be covered before any per-range candidate');assert.match(input.taskContext?.previousSummary??'',/early constraint.*final correction/);const originals=await supplied(input,reader),range=input.evidenceRanges![0];
+  assert.ok(!input.question.startsWith('Build a running overview'),'no full-session prepass');
+  calls++;assert.ok(isUnderstanding(input),'empty per-range candidates must be reused');assert.equal(overviewCalls,0);const originals=await supplied(input,reader),range=input.evidenceRanges![0];
   assert.ok(input.evidenceRanges!.reduce((sum,item)=>sum+item.length,0)<=12000);
   covered.push(...input.evidenceRanges!);const record=originals.find(item=>item.id===range.id)!,quote=record.ocrText.slice(range.offset,range.offset+Math.min(range.length,180));
   return response(range.id,quote,{summary:'Generated bounded conversation range; later outcome unknown',evidence:[{id:range.id,quote,offset:range.offset}],workRecords:[],events:[],memoryCandidates:[],actionCues:[]});
  });
  const long=owner+'\n'+('Generated bounded passage with Unicode 😀.\n').repeat(400)+'\nGenerated final correction: device checks are still unknown.';
- await node.sources.upsertBatch('coding',[event('long-owner','user',long),event('tool','tool_result',toolSecret)]);await node.sourcePipelines.tick();
+ await node.sources.upsertBatch('coding',[...Array.from({length:4},(_,i)=>event('owner-'+i,'user',long.slice(i*5000,(i+1)*5000))).filter(item=>item.text),event('tool','tool_result',toolSecret)]);await node.sourcePipelines.tick();
  const material=node.materials.list({kind:'mote.coding-session'}).items[0],ids=node.materials.evidenceIds(material.ref),originals=node.materials.evidence(ids);
  const job=await node.memoryPipeline.run(manualJob(node,ids).id);assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,0);assert.ok(job.totalBatches>1);assert.equal(calls,job.totalBatches);
  for(const original of originals){
@@ -124,4 +124,42 @@ test('long Coding conversations cover every original character through bounded i
  }
  assert.equal(covered.reduce((sum,range)=>sum+range.length,0),material.textLength);
  assert.equal(node.store.archive.page({kind:'semantic'}).items.length,calls);
+});
+
+test('600k process text, unknown replies and host summaries never reach any model input or searchable dialogue',{timeout:15000},async t=>{
+ let calls=0;const node=await appFixture(t,async(input,reader)=>{
+  calls++;assert.ok(isUnderstanding(input));assert.ok(!input.taskContext?.previousSummary);
+  const records=await supplied(input,reader);assert.ok(records.every(r=>!r.ocrText.includes('PRIVATE_PROCESS')));
+  assert.ok(input.evidenceRanges!.reduce((n,r)=>n+r.length,0)<=12000);
+  return response(records[0].id,owner,products(records[0].id,false));
+ });
+ const process=Array.from({length:60},(_,i)=>{const item=event('process-'+i,'assistant','PRIVATE_PROCESS '+('x'.repeat(9980)));return {...item,document:{...item.document,coding:{...item.document!.coding!,channel:'commentary'}}};});
+ const host=event('host','user','PRIVATE_HOST_SUMMARY');host.document!.coding!.attribution='host';
+ const unknown=event('unknown','assistant','PRIVATE_UNKNOWN');delete unknown.document!.coding!.channel;
+ await node.sources.upsertBatch('coding',[event('owner','user',owner),...process,host,unknown,event('assistant','assistant',report),event('oversized','assistant','PRIVATE_OVERSIZED '+('y'.repeat(14000)))]);await node.sourcePipelines.tick();
+ const material=node.materials.list({kind:'mote.coding-session'}).items[0];assert.ok(material.textLength<2000);
+ for(const secret of ['PRIVATE_PROCESS','PRIVATE_HOST_SUMMARY','PRIVATE_UNKNOWN','PRIVATE_OVERSIZED']){
+  assert.equal(node.materials.list({query:secret}).items.length,0);
+ }
+ const job=await node.memoryPipeline.run(manualJob(node,node.materials.evidenceIds(material.ref)).id);
+ assert.equal(job.status,'completed');assert.equal(calls,1);
+ assert.equal(node.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='coding_conversation_contexts'").get(),undefined);
+});
+
+test('a child queued behind the semantic pool retains authority after its Memory parent yields',{timeout:15000},async t=>{
+ const entered=deferred(),release=deferred();t.after(()=>release.resolve());let calls=0;
+ const node=await appFixture(t,async(input,reader)=>{calls++;const originals=await supplied(input,reader);return response(originals[0].id,owner,products(originals[0].id,false));});
+ const f=await receive(node);
+ node.workflows.registry.register({id:'generated.pool-holder',version:'1',lane:'semantic',async process(){entered.resolve();await release.promise;return [{kind:'semantic',text:'Generated holder',metadata:{complete:true}}];}});
+ const holder=node.workflows.enqueue([{name:'holder',processor:'generated.pool-holder',materialInputs:[{ref:f.material.ref,offset:0,length:100}]}]);
+ const holding=node.executor.drain([holder.holder]);await entered.promise;
+ const created=manualJob(node,f.ids),running=node.memoryPipeline.run(created.id);
+ for(let n=0;n<100&&!node.store.db.prepare("SELECT 1 FROM processing_jobs WHERE json_extract(json,'$.processor')='mote.coding-conversation-understanding'").get();n++)await new Promise(r=>setTimeout(r,10));
+ assert.equal(node.memoryPipeline.get(created.id).status,'queued');assert.equal(calls,0);
+ const child=node.store.db.prepare("SELECT id FROM processing_jobs WHERE json_extract(json,'$.processor')='mote.coding-conversation-understanding'").get()!;
+ assert.equal(node.executor.get(String(child.id))!.state,'waiting');release.resolve();await holding;await node.workflows.tick();
+ for(let n=0;n<100&&node.executor.get(String(child.id))!.state==='running';n++)await new Promise(r=>setTimeout(r,10));
+ assert.equal(node.executor.get(String(child.id))!.state,'succeeded','waiting parent must not cause input_changed');
+ node.store.db.prepare("UPDATE execution_steps SET available_at=0 WHERE operation_id=? AND state='waiting'").run('memory:'+created.id);
+ assert.equal((await running).status,'completed');assert.equal(calls,1);
 });

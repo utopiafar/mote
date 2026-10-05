@@ -1,5 +1,5 @@
 import { moteText } from '@mote/shared/i18n';
-import {codingHostEnvelope,type CodingEvidence} from '@mote/shared';
+import {codingHostEnvelope,MAX_CODING_DIALOGUE_MESSAGE_CHARACTERS,type CodingEvidence} from '@mote/shared';
 import {constants} from 'node:fs';
 import {lstat,open,readdir,realpath} from 'node:fs/promises';
 import {homedir} from 'node:os';
@@ -18,11 +18,11 @@ export function codingRoot(provider:CodingProvider,home=homedir()):string {
 export async function discoverCodingAgents(home=homedir()) {
   return Promise.all((Object.keys(codingProviders) as CodingProvider[]).map(async provider=>({provider,name:codingProviders[provider],path:codingRoot(provider,home),available:await lstat(codingRoot(provider,home)).then(s=>s.isDirectory()&&!s.isSymbolicLink(),()=>false)})));
 }
-type Context={sessionId:string;cwd?:string;repositoryKey?:string;branch?:string;parentSessionId?:string;callId?:string};
+type Context={sessionId:string;cwd?:string;repositoryKey?:string;branch?:string;parentSessionId?:string;callId?:string;hostSession?:boolean;turnId?:string;finalEmitted?:boolean;kimiText?:string;kimiOverflow?:boolean;kimiAt?:string};
 type Cursor={offset:number;anchor:string;ino:number;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;generation:number;context:Context};
 export type CodingCatalogEntry={relativePath:string;fileId:string;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;contentHash?:string;lastSeenScan:number;syncState:'pending'|'synced'|'error'};
 export type CodingCheckpoint={version:3;files:Record<string,Cursor>;initialized:boolean;catalog:Record<string,CodingCatalogEntry>;scanNumber:number;scanStartedAt:string;nextFile?:string};
-type Event={role:'user'|'assistant'|'tool_call'|'tool_result'|'assistant_delta'|'tool_call_delta';text:string;callId?:string;at?:string;channel?:string;attribution?:CodingEvidence['attribution']};
+type Event={role:'user'|'assistant'|'tool_call'|'tool_result'|'assistant_delta'|'tool_call_delta';text:string;callId?:string;at?:string;channel?:string;nativeId?:string;attribution?:CodingEvidence['attribution']};
 const time=(v:unknown)=>{const ms=typeof v==='number'?v*1000:typeof v==='string'?Date.parse(v):NaN;return Number.isFinite(ms)?new Date(ms).toISOString():undefined;};
 const textParts=(content:any):string=>typeof content==='string'?content:Array.isArray(content)?content.flatMap(p=>p?.type==='text'||p?.type==='input_text'||p?.type==='output_text'?[String(p.text??'')]:p?.type==='image'||p?.type==='input_image'||p?.type==='image_url'?['[image attachment omitted]']:[]).join('\n'):'';
 /** Decode syntax only; no keywords select topics, intent or memory value. Reasoning and host instructions are not conversation evidence. */
@@ -31,34 +31,66 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
   const at=time(row.timestamp),events:Event[]=[];
   const add=(role:Event['role'],text:string,callId?:string,channel?:unknown)=>{if(text)events.push({role,text,callId,at,
     ...(typeof channel==='string'&&channel.length&&channel.length<=64?{channel}:{}),
-    ...(['user','assistant','assistant_delta'].includes(role)?{attribution:role==='user'?(codingHostEnvelope(provider,text)?'host':'human'):'agent'}:{})});};
+    ...(['user','assistant','assistant_delta'].includes(role)?{attribution:context.hostSession?'host':role==='user'?(codingHostEnvelope(provider,text)?'host':'human'):'agent'}:{})});};
   if(provider==='codex'){
     const p=row.payload;
-    if(row.type==='session_meta'&&p){context.sessionId=String(p.id??p.session_id??context.sessionId);context.cwd=typeof p.cwd==='string'?p.cwd:context.cwd;context.parentSessionId=p.parent_thread_id;context.repositoryKey=repositoryCandidate(p.git?.repository_url);context.branch=typeof p.git?.branch==='string'?p.git.branch:undefined;}
+    if(row.type==='session_meta'&&p){context.sessionId=String(p.id??p.session_id??context.sessionId);context.cwd=typeof p.cwd==='string'?p.cwd:context.cwd;context.parentSessionId=p.parent_thread_id;context.hostSession=Boolean(p.source&&typeof p.source==='object'&&p.source.subagent);context.repositoryKey=repositoryCandidate(p.git?.repository_url);context.branch=typeof p.git?.branch==='string'?p.git.branch:undefined;}
+    if(context.hostSession)return [];
+    if(row.type==='event_msg'&&p?.type==='task_started'){context.turnId=p.turn_id;context.finalEmitted=false;}
+    // Older journals omit message phase but provide an explicit turn-completion
+    // receipt. Use only its final answer, never the preceding message stream.
+    if(row.type==='event_msg'&&p?.type==='task_complete'&&!context.finalEmitted&&typeof p.last_agent_message==='string'){
+      add('assistant',p.last_agent_message,undefined,'final');context.finalEmitted=true;
+      for(const event of events)event.nativeId=String(p.turn_id??context.turnId??'')||undefined;
+      return events;
+    }
     if(row.type!=='response_item'||!p)return [];
-    if(p.type==='message'&&['user','assistant'].includes(p.role))add(p.role,textParts(p.content),undefined,p.channel);
+    if(p.type==='message'&&['user','assistant'].includes(p.role)){
+      const channel=p.role==='assistant'?(p.phase==='final_answer'?'final':p.phase??p.channel??'unknown'):p.channel;
+      add(p.role,textParts(p.content),undefined,channel);
+      if(channel==='final')context.finalEmitted=true;
+    }
     if(['function_call','custom_tool_call'].includes(p.type))add('tool_call',JSON.stringify({name:p.name,arguments:p.arguments??p.input}),p.call_id);
     if(['function_call_output','custom_tool_call_output'].includes(p.type))add('tool_result',typeof p.output==='string'?p.output:Array.isArray(p.output)?textParts(p.output)||JSON.stringify(p.output):JSON.stringify(p.output??''),p.call_id);
+    for(const event of events)if(typeof p.id==='string'&&p.id)event.nativeId=p.id;
   }else if(provider==='claude'){
     if(typeof row.cwd==='string')context.cwd=row.cwd;
     if(typeof row.sessionId==='string')context.sessionId=row.sessionId;
     if(typeof row.gitBranch==='string')context.branch=row.gitBranch;
-    if(!['user','assistant'].includes(row.type)||!row.message||row.isMeta)return [];
-    const m=row.message;add(row.type,textParts(m.content));
+    // Sidechain journals repeat the parent's UUIDs. Do not let a process copy
+    // replace the canonical human/final message in the upload outbox.
+    if(row.isSidechain||row.agentId)return [];
+    if(!['user','assistant'].includes(row.type)||!row.message)return [];
+    const m=row.message,host=row.isMeta||row.isCompactSummary||row.isVisibleInTranscriptOnly||row.userType==='internal'||row.type==='user'&&Array.isArray(m.content)&&m.content.some((part:any)=>part.type==='tool_result');
+    const hasTools=Array.isArray(m.content)&&m.content.some((part:any)=>['tool_use','server_tool_use'].includes(part.type));
+    const channel=!host&&!hasTools&&['end_turn','stop_sequence'].includes(m.stop_reason)?'final':'analysis';
+    add(row.type,textParts(m.content),undefined,row.type==='assistant'?channel:undefined);
+    if(host)for(const event of events)event.attribution='host';
     if(Array.isArray(m.content))for(const part of m.content){
       if(part.type==='tool_use')add('tool_call',JSON.stringify({name:part.name,arguments:part.input}),part.id);
       if(part.type==='tool_result')add('tool_result',textParts(part.content),part.tool_use_id);
     }
+    for(const event of events)if(typeof row.uuid==='string'&&row.uuid)event.nativeId=row.uuid;
   }else if(wire){
     const m=row.message,p=m?.payload;
     if(!m||!p)return [];
+    if(['TurnBegin','StepBegin','ToolCall','TurnInterrupted'].includes(m.type)){context.kimiText='';context.kimiOverflow=false;context.kimiAt=undefined;}
     if(m.type==='TurnBegin')add('user',textParts(p.user_input));
-    if(m.type==='ContentPart'&&p.type==='text')add('assistant_delta',String(p.text??''));
+    if(m.type==='ContentPart'&&p.type==='text'){
+      const text=String(p.text??'');add('assistant_delta',text,undefined,'commentary');
+      context.kimiAt??=at;
+      if((context.kimiText?.length??0)+text.length>MAX_CODING_DIALOGUE_MESSAGE_CHARACTERS){context.kimiOverflow=true;context.kimiText='';}
+      else if(!context.kimiOverflow)context.kimiText=(context.kimiText??'')+text;
+    }
+    if(m.type==='TurnEnd'){
+      if(!context.kimiOverflow&&context.kimiText){add('assistant',context.kimiText,undefined,'final');events.at(-1)!.at=context.kimiAt??at;}
+      context.kimiText='';context.kimiOverflow=false;context.kimiAt=undefined;
+    }
     if(m.type==='ToolCall'){context.callId=p.id;add('tool_call',JSON.stringify({name:p.function?.name,arguments:p.function?.arguments}),p.id);}
     if(m.type==='ToolCallPart')add('tool_call_delta',String(p.arguments_part??''),context.callId);
     if(m.type==='ToolResult')add('tool_result',typeof p.return_value==='string'?p.return_value:JSON.stringify(p.return_value??''),p.tool_call_id);
   }else {
-    if(['user','assistant','tool'].includes(row.role))add(row.role==='tool'?'tool_result':row.role,textParts(row.content),row.tool_call_id);
+    if(['user','assistant','tool'].includes(row.role))add(row.role==='tool'?'tool_result':row.role,textParts(row.content),row.tool_call_id,row.role==='assistant'?(row.finish_reason==='stop'&&!row.tool_calls?.length?'final':'unknown'):undefined);
     if(row.role==='assistant')for(const call of row.tool_calls??[])add('tool_call',JSON.stringify(call.function),call.id);
   }
   return events;
@@ -120,7 +152,7 @@ export async function scanCodingAgent(rootPath:string,provider:CodingProvider,op
           catch{result.complete=false;result.skipped++;break;}
           const items:ScannedItem[]=[];
           for(const [eventIndex,event] of events.entries()){
-            const eventId=hash(`${key}:${cursor.generation}:${cursor.offset}:${eventIndex}`),body=redactSourceText(event.text,options.redactLiterals);
+            const eventId=event.nativeId?hash(`${provider}:${context.sessionId}:${event.nativeId}:${eventIndex}`):hash(`${key}:${cursor.generation}:${cursor.offset}:${eventIndex}`),body=redactSourceText(event.text,options.redactLiterals);
             const pieces:string[]=[];for(let offset=0;offset<body.length;){let end=Math.min(offset+8000,body.length);if(end<body.length&&/[\uD800-\uDBFF]/.test(body[end-1]))end--;pieces.push(body.slice(offset,end));offset=end;}
             const cwd=context.cwd?redactSourceText(context.cwd,options.redactLiterals):undefined;
             for(const [part,text] of pieces.entries())items.push({externalId:`coding:${provider}:${eventId}:${part}`,kind:'message',layer:options.retention==='reference'?'reference':'snapshot',title:`${codingProviders[provider]} · ${redactSourceText(context.sessionId,options.redactLiterals).slice(0,80)} · ${event.role}`,text:options.retention==='reference'?'':text,mimeType:'text/plain',syncQueue:itemQueue,document:{contentRole:'transcript',timeBasis:event.at?'recorded':'unknown',recordedAt:event.at,coding:{version:1,provider,sessionId:redactSourceText(context.sessionId,options.redactLiterals).slice(0,500),projectIdentity:context.cwd?'workspace':'session',projectKey:hash(context.cwd??`${provider}:${context.sessionId}`),cwd,projectName:cwd?basename(cwd).slice(0,400):undefined,repositoryKey:context.repositoryKey,branch:context.branch?redactSourceText(context.branch,options.redactLiterals).slice(0,500):undefined,eventId,role:event.role,...(event.channel?{channel:event.channel}:{}),...(event.attribution?{attribution:event.attribution}:{}),callId:event.callId?redactSourceText(event.callId,options.redactLiterals).slice(0,500):undefined,parentSessionId:context.parentSessionId?redactSourceText(context.parentSessionId,options.redactLiterals).slice(0,500):undefined,part,parts:pieces.length}}});

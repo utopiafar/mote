@@ -12,7 +12,7 @@ import {codingSourcePlugin} from '../src/coding-source-plugin.js';
 import {MAX_RAW_READ_BYTES} from '../src/raw-reader.js';
 
 const event=(id:string,text:string,session='fixture-session')=>({externalId:id,revision:'1',observedAt:'2026-09-24T01:00:00.000Z',kind:'message',layer:'snapshot',text,
-  document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:session,projectKey:'fixture-project',eventId:id,role:'user',part:0,parts:1}}});
+  document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:session,projectKey:'fixture-project',eventId:id,role:'user',attribution:'human',part:0,parts:1}}});
 const group=(session:string)=>JSON.stringify(['codex','fixture-project',session]);
 async function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-recipe-raw-')),store=new Store(directory),materials=new MaterialStore(store);
@@ -24,7 +24,7 @@ async function fixture(t:import('node:test').TestContext){
 
 test('production Coding recipe pages refs and reads bounded chunks instead of the archive snapshot shortcut',async t=>{
   const {materials,runtime,sources}=await fixture(t);
-  await sources.upsertBatch('coding',Array.from({length:102},(_,i)=>event(String(i),i===0?'x'.repeat(90_000):`Generated event ${i}`)));
+  await sources.upsertBatch('coding',Array.from({length:102},(_,i)=>event(String(i),i===0?'x'.repeat(90_000):i<=9?'y'.repeat(10_000):`Generated event ${i}`)));
   const originalPage=SourceArchiveRawReader.prototype.page,originalRead=SourceArchiveRawReader.prototype.read,
     originalSnapshot=runtime.archive.currentSnapshot;
   let pages=0,reads=0;

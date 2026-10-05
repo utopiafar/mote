@@ -1,4 +1,4 @@
-import {documentSchema,type CaptureRecord} from '@mote/shared';
+import {CODING_DIALOGUE_SCHEMA_VERSION,documentSchema,type CaptureRecord} from '@mote/shared';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {StoreError,type Store} from './store.js';
@@ -648,7 +648,7 @@ export class MaterialStore {
 
   /** Host-only conversion from pinned original anchors to bounded model pages. */
   conversationInputs(ref:string,ranges:readonly {id:string;offset:number;length:number}[]){
-    const material=this.get(ref);if(!material||material.kind!=='mote.coding-session'||material.schemaVersion<5)throw new StoreError('Clean conversation unavailable',409);
+    const material=this.get(ref);if(!material||material.kind!=='mote.coding-session'||material.schemaVersion<CODING_DIALOGUE_SCHEMA_VERSION)throw new StoreError('Clean conversation unavailable',409);
     const result=ranges.map(range=>{
       const row=this.store.db.prepare(`SELECT b.start_offset,b.end_offset,(b.end_offset-b.start_offset) characters FROM material_block_versions b WHERE b.material_id=? AND b.anchor_id=?
         AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?)`).get(material.id,range.id,material.sequence,material.sequence);

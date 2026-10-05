@@ -14,20 +14,37 @@ import {MemoryPipeline} from '../src/memory-pipeline.js';
 import type {Context} from '@deepseek-ai/cordis';
 
 const event=(id:string,text:string)=>({externalId:id,revision:'1',observedAt:'2026-09-24T01:00:00Z',kind:'message',layer:'snapshot',text,
-  document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'shared-session',projectKey:'generated',eventId:id,role:'user',part:0,parts:1}}});
+  document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'shared-session',projectKey:'generated',eventId:id,role:'user',attribution:'human',part:0,parts:1}}});
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>resolve=done);return {promise,resolve};};
 const installedCodingVersion=(runtime:SourcePipelineRuntime)=>{
   const recipe=runtime.registry.get('mote.coding')!.recipe!;
   return runtime.recipes.resolve(recipe.id,recipe.version).definition.version;
 };
+const deterministicCoding=(ctx:Context)=>{codingSourcePlugin(ctx);ctx.moteSourcePipelines.get('mote.coding')!.reprocess='deterministic';};
 const codingNextVersion=(ctx:Context)=>{
-  codingSourcePlugin(ctx);
+  deterministicCoding(ctx);
   const prior=ctx.moteSourceRecipes.registry.listRecipes().find(recipe=>recipe.definition.id==='mote.coding')!;
   const version=`${prior.definition.version}.fixture-next`;
   ctx.effect(()=>ctx.moteSourceRecipes.installRecipe({...prior.definition,version}));
   const pipeline=ctx.moteSourcePipelines.get('mote.coding')!;
   pipeline.version=version;pipeline.recipe={id:'mote.coding',version};
 };
+
+test('default Coding upgrade leaves historical materials and generations untouched',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-coding-manual-upgrade-'));
+  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
+  await sources.upsert('coding',event('one','Generated historical dialogue'));await runtime.tick();
+  const before=materials.list().items[0],generation=store.db.prepare('SELECT generation FROM source_pipeline_work').get()!.generation;
+  await runtime.close();store.close();
+  const manualNext=(ctx:Context)=>{codingNextVersion(ctx);ctx.moteSourcePipelines.get('mote.coding')!.reprocess='manual';};
+  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[manualNext]);await runtime.ready;
+  t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  await runtime.tick();
+  assert.equal(materials.list().items[0].ref,before.ref);
+  assert.equal(store.db.prepare('SELECT generation FROM source_pipeline_work').get()!.generation,generation);
+  assert.equal(store.db.prepare("SELECT count(*) n FROM execution_steps WHERE kind='source.archive-group'").get()!.n,1);
+});
 
 test('exact archive retransmission preserves the published Coding revision and input fingerprint',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-duplicate-complete-'));
@@ -124,7 +141,7 @@ test('a newer committed receipt revokes an old worker before material publicatio
 
 test('installed deterministic Coding recipe upgrades persisted groups without a new receipt',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-recipe-upgrade-'));
-  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[deterministicCoding]);await runtime.ready;
   const priorVersion=installedCodingVersion(runtime);
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   t.after(()=>rmSync(directory,{recursive:true,force:true}));
@@ -145,7 +162,7 @@ test('installed deterministic Coding recipe upgrades persisted groups without a 
 
 test('recipe upgrade does not silently replay after out-of-band configuration drift',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-recipe-config-'));
-  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[deterministicCoding]);await runtime.ready;
   const priorVersion=installedCodingVersion(runtime);
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   t.after(()=>rmSync(directory,{recursive:true,force:true}));
@@ -164,7 +181,7 @@ test('recipe upgrade does not silently replay after out-of-band configuration dr
 
 test('Coding recipe upgrade reuses the common queue without paying for historical extraction; explicit work remains available',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-upgrade-memory-'));
-  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[deterministicCoding]);await runtime.ready;
   const priorVersion=installedCodingVersion(runtime);
   let sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   let calls=0;

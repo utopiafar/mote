@@ -1,4 +1,4 @@
-import {formatEvidenceRef} from '@mote/shared';
+import {CODING_DIALOGUE_SCHEMA_VERSION,formatEvidenceRef} from '@mote/shared';
 import {imageOutput} from './evidence-image.js';
 import {fileAttachmentAvailable} from './file-attachments.js';
 import {MemoryRecipeSettings} from './memory-recipe-settings.js';
@@ -24,7 +24,6 @@ import { agentDeadline } from './agent-deadline.js';
 import { installAgentFeatures } from './agent-feature-host.js';
 import { ArchivedFileStore } from './archived-files.js';
 import { codingSourcePlugin } from './coding-source-plugin.js';
-import { CodingConversationContext } from './coding-conversation-context.js';
 import { ConcurrencyGate } from './concurrency.js';
 import { repositoryRoot,type Config } from './config.js';
 import { ConnectionError,Connections,type ConnectionCredential } from './connections.js';
@@ -277,14 +276,13 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   const insightRuns=new InsightRuns(store,{executor,evidenceReader});
   const workflows=new ProcessingRuntime(store,[],{},Date.now,executor,materials,backendContext);
   const memoryConfiguration=(id?:string,model?:string)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);};
-  const codingContext=new CodingConversationContext(store,materials,input=>queryAgent(input,'query','memories'),memoryConfiguration);
   const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:[...new Set([...(config.backendPluginModules??[]),...(config.fileProcessorModules??[])])],analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,pluginContext:backendContext,mediaAssets});
   try{await processing.runtime.ready;}catch(error){await executor.close();await processing.close();await workflows.close();await sourcePipelines.close();await backendContext.fiber.dispose();await modelSettings.close();await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
 
   const perception=new Perception(store,processing.runtime,executor,mediaAssets);
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
   workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return agent.query({...input,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}});},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
-  workflows.registry.register(conversationUnderstandingProcessor({memories,usage:usageLedger,resolveContext:id=>codingContext.get(id),
+  workflows.registry.register(conversationUnderstandingProcessor({memories,usage:usageLedger,
     selection:config=>{const selected=modelSettings.select('memory',typeof config?.profileId==='string'?config.profileId:undefined);
       return {...modelConfiguration(selected.id,{...selected.settings,...(typeof config?.modelOverride==='string'?{model:config.modelOverride}:{})},modelSettings.view().revision),configured:agent.configuredFor(selected.id)};},
     resolveEvidence:page=>({records:materials.evidence([...new Set(page.spans.flatMap(span=>span.evidenceId?[span.evidenceId]:[]))]),
@@ -302,7 +300,7 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
       await workflows.tick();
       const row=store.db.prepare('SELECT state,json,error,available_at FROM processing_jobs WHERE id=?').get(jobs.semantic)!;
       if(row.state==='stale')continue;
-      if(mode==='lifecycle'&&(row.state==='waiting'||row.state==='running'))throw new ExecutionFailure('waiting',String(row.error??'semantic_processing_pending'),Math.max(1000,Number(row.available_at)-Date.now()||60000));
+      if(mode==='lifecycle'&&(row.state==='waiting'||row.state==='running'))throw new ExecutionFailure('waiting',String(row.error??'semantic_processing_pending'),Number(row.available_at)>Date.now()?Math.max(1000,Number(row.available_at)-Date.now()):5000);
       if(mode==='lifecycle'&&(row.state==='failed'||row.state==='blocked'))throw new ExecutionFailure('blocked',row.state==='failed'?'semantic_processing_failed':'semantic_processing_blocked');
       if(row.state!=='succeeded')throw new StoreError('Semantic processing is pending or blocked',409);
       ready.push(...JSON.parse(String(row.json)).outputs);
@@ -430,23 +428,19 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     const refs=[...new Set(input.ranges.map(range=>input.materialRefs[range.id]))];
     if(refs.length!==1||!refs[0])return;
     const material=materials.get(refs[0]);
-    if(!material||material.kind!=='mote.coding-session'||material.schemaVersion<5)return;
-    let conversationContextId:string|undefined;
-    if(material.textLength>12000&&materials.evidenceIds(material.ref).every(id=>input.job.evidenceIds.includes(id))){
-      const contextInput={ref:material.ref,pins:input.materialInputs,configuration:input.job.configuration!,contextTime:input.job.contextTime,timeZone:input.job.timeZone,language:input.job.language,signal:input.signal};
-      await codingContext.prepare(contextInput);conversationContextId=codingContext.key(contextInput);
-    }
+    if(!material||material.kind!=='mote.coding-session')return;
+    if(material.schemaVersion<CODING_DIALOGUE_SCHEMA_VERSION)throw new ExecutionFailure('blocked','coding_dialogue_not_clean');
     const pages=materials.conversationInputs(material.ref,input.ranges);
     const configuration=input.job.configuration!;
     const jobs=workflows.enqueue([{name:'conversation',processor:'mote.coding-conversation-understanding',materialInputs:pages,
-      config:{candidatePolicy:input.candidatePolicy,conversationContextId,modelFingerprint:configuration.fingerprint,profileId:configuration.profileId,modelOverride:configuration.model,
+      config:{candidatePolicy:input.candidatePolicy,modelFingerprint:configuration.fingerprint,profileId:configuration.profileId,modelOverride:configuration.model,
         contextTime:input.job.contextTime,timeZone:input.job.timeZone,language:input.job.language,processingMaterialInputs:input.materialInputs.map(pin=>({materialId:pin.materialId,required:pin.required,fingerprint:pin.fingerprint,evidenceIds:pin.evidenceIds.filter(id=>input.ranges.some(range=>range.id===id))}))}}],input.parentGrant);
     linkOperationParent(store,'memory:'+input.job.id,executor.get(jobs.conversation)!.operationId);
     const abort=()=>executor.abortLocal(jobs.conversation);input.signal.addEventListener('abort',abort,{once:true});
     try{await executor.drain([jobs.conversation]);input.signal.throwIfAborted();}
     finally{input.signal.removeEventListener('abort',abort);}
     const step=executor.get(jobs.conversation)!;
-    if(step.state==='waiting'||step.state==='running')throw new ExecutionFailure('waiting',step.error??'semantic_processing_pending',Math.max(1000,step.availableAt-Date.now()||60000));
+    if(step.state==='waiting'||step.state==='running')throw new ExecutionFailure('waiting',step.error??'semantic_processing_pending',step.availableAt>Date.now()?Math.max(1000,step.availableAt-Date.now()):5000);
     if(step.state!=='succeeded')throw new ExecutionFailure(step.state==='stale'?'stale':step.state==='failed'?'permanent':'blocked',step.state==='blocked'?'semantic_processing_blocked':step.error??'semantic_processing_failed');
     const row=store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(jobs.conversation)!;
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
@@ -597,5 +591,5 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     memoryReviews.clear();
     try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}
   });
-  return {app,featureServices,featureHost,codingContext,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,featureServices,featureHost,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
 }

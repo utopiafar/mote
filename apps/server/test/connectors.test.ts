@@ -276,7 +276,7 @@ test('MCP pages ordinary, screen and Coding Materials with one raw pending fallb
   sources.register({id:'page-coding',name:'Generated Coding',kind:'coding-agent',deviceId:'coding-device',platform:'import'});
   const codingRaw=await sources.upsert('page-coding',{externalId:'event-1',revision:'1',observedAt:at,title:'Generated Coding raw',
     text:'PAGE_TOKEN Coding raw',kind:'message',layer:'original',document:{coding:{version:1,provider:'codex',projectKey:'page-project',sessionId:'page-session',eventId:'event-1',role:'user',part:0,parts:1}}});
-  const codingId=materialId('page-coding','page-session'),coding=materials.publish({id:codingId,kind:'mote.coding-session',schemaVersion:5,title:'Generated Coding session',
+  const codingId=materialId('page-coding','page-session'),coding=materials.publish({id:codingId,kind:'mote.coding-session',schemaVersion:6,title:'Generated Coding session',
     origin:{sourceId:'page-coding',externalId:'page-session',deviceId:'coding-device',firstAt:at,lastAt:at,provider:'codex',projectKey:'page-project',sessionId:'page-session'},
     blocks:[{id:'session',kind:'text',format:'markdown-fragment',text:'PAGE_TOKEN whole Coding session',memberIds:['archive-member']}],
     members:[{id:'archive-member',kind:'archive',ref:'archive:page-coding/page-session'}],coverage:{state:'partial'},

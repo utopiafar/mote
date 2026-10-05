@@ -1,5 +1,7 @@
 # Decision implementation and regression record — 2026-10-05
 
+> Historical validation record. The full-conversation overview described below was removed in 0.0.83 following the clarified rule-only input boundary. Current behavior and separate real-data acceptance are documented in [Coding dialogue acceptance](coding-dialogue-2026-10-05.md). The generated-data claims below apply only to the earlier run.
+
 This follow-up implements the outstanding decisions identified in the conversation audit, on top of merged PRs #61 and #62. Runtime interpretation remains model-led. All new automated and live-model acceptance inputs are generated; no personal archive or screenshot is used.
 
 | Outstanding decision | Implemented behavior | Regression evidence |

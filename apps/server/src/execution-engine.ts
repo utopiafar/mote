@@ -111,6 +111,10 @@ export class ExecutionEngine {
  isCurrentGrant(id:string,fence:string){return Boolean(this.store.db.prepare("SELECT 1 FROM execution_steps WHERE id=? AND fence=? AND state='running' AND lease_until>?").get(id,fence,this.now()));}
  /** A child publication must retain both its parent's lease and input authority. */
  isCurrentInputGrant(id:string,fence:string){const step=this.get(id),handler=step&&this.handlers.get(step.kind);return Boolean(step&&handler&&this.isCurrentGrant(id,fence)&&handler.validate(step)&&(handler.validateGrant?.(step)??true));}
+ /** A queued child retains durable input authority while its parent yields a
+  * worker slot. Cancellation, paused admission and changed inputs still revoke
+  * it. A temporary execution lease is not the authorization for derived work. */
+ isCurrentInputAuthority(id:string){const step=this.get(id),handler=step&&this.handlers.get(step.kind);return Boolean(step&&handler&&['running','waiting'].includes(step.state)&&handler.validate(step)&&(handler.validateGrant?.(step)??true));}
  hasActive(kind:string){return [...this.active.keys()].some(id=>this.get(id)?.kind===kind);}
  async drain(ids:string[]){
   void this.tick().catch(()=>{});
