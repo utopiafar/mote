@@ -140,8 +140,8 @@ internal class CentralAdmin(private val screens: CentralScreens) {
             val next = read(); if (next !== KeepValue && (key !in secrets || next.toString().isNotBlank())) put(key, next)
         }; if (has("protocol") && optString("protocol") != "codex-app-server") remove("serviceTier") } }
     }
-    private fun edit(title: String, path: String, value: JSONObject, method: String = "PUT", completed: (JSONObject) -> Unit = { screens.refresh() }) {
-        body.removeAllViews(); screens.setBack { screens.refresh() }; ui.text(title, 23f)
+    private fun edit(title: String, path: String, value: JSONObject, method: String = "PUT", back: () -> Unit = { screens.refresh() }, completed: (JSONObject) -> Unit = { screens.refresh() }) {
+        body.removeAllViews(); screens.setBack(back); ui.text(title, 23f)
         val collect = form(value, ui.card())
         ui.button(MoteI18n.text("保存设置"), true) {
             val payload = collect(); val api = client
@@ -165,13 +165,15 @@ internal class CentralAdmin(private val screens: CentralScreens) {
         ui.work(MoteI18n.text("正在读取…"), { api.get("/api/configuration") }) { configuration ->
             val groups = configuration.optJSONArray("groups") ?: JSONArray()
             for (i in 0 until groups.length()) {
-                val group = groups.getJSONObject(i); val card = ui.card()
-                ui.text(group.optString("title"), 20f, card); ui.text(group.optString("description"), parent = card)
-                val fields = group.optJSONArray("fields") ?: JSONArray()
-                for (j in 0 until fields.length()) {
-                    val field = fields.getJSONObject(j)
-                    ui.text(field.optString("label") + " · " + field.opt("value"), parent = card)
-                    ui.text(field.optString("description"), 13f, card)
+                val group = groups.getJSONObject(i)
+                ui.disclosure(group.optString("title")) { card ->
+                    ui.text(group.optString("description"), parent = card)
+                    val fields = group.optJSONArray("fields") ?: JSONArray()
+                    for (j in 0 until fields.length()) {
+                        val field = fields.getJSONObject(j)
+                        ui.text(field.optString("label") + " · " + field.opt("value"), parent = card)
+                        ui.text(field.optString("description"), 13f, card)
+                    }
                 }
             }
         }
@@ -183,15 +185,25 @@ internal class CentralAdmin(private val screens: CentralScreens) {
             ui.text(MoteI18n.text("模型配置"), 24f)
             ui.button(MoteI18n.text("功能默认模型")) { modelDefaults(value) }
             val profiles = value.getJSONArray("profiles")
-            for (i in 0 until profiles.length()) {
-                val profile = profiles.getJSONObject(i); val id = profile.getString("id"); val card = ui.card()
+            val choice = Spinner(ui).apply {
+                contentDescription = MoteI18n.text("Provider 预设")
+                adapter = ArrayAdapter(ui, android.R.layout.simple_spinner_dropdown_item,
+                    (0 until profiles.length()).map { profiles.getJSONObject(it).optString("name") })
+            }
+            body.addView(choice, LinearLayout.LayoutParams(-1, ui.moteDp(52)))
+            val selected = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
+            body.addView(selected)
+            fun renderProfile(i: Int) {
+                selected.removeAllViews()
+
+                val profile = profiles.getJSONObject(i); val id = profile.getString("id"); val card = ui.card(selected)
                 ui.text(profile.optString("name") + " · " + profile.getJSONObject("settings").optString("model"), 19f, card)
                 if (!profile.optBoolean("readOnly")) {
                     ui.button(MoteI18n.text("编辑"), parent = card) {
                         val settings = cleanSettings(profile.getJSONObject("settings")).put("apiKey", "").put("headers", JSONObject.NULL).put("extraBody", JSONObject.NULL)
                         val request = JSONObject().put("revision", value.getLong("revision")).put("settings", settings)
                         request.put("name", profile.getString("name"))
-                        edit(MoteI18n.text("模型配置"), "/api/model-settings/profiles/" + enc(id), request)
+                        edit(MoteI18n.text("模型配置"), "/api/model-settings/profiles/" + enc(id), request, back = { models() })
                     }
                     ui.button(MoteI18n.text("删除"), parent = card) { screens.confirm(MoteI18n.text("删除"), MoteI18n.text("删除后无法恢复。")) {
                         ui.work(MoteI18n.text("正在删除…"), { api.delete("/api/model-settings/profiles/" + enc(id), JSONObject().put("revision", value.getLong("revision"))) }) { models() }
@@ -199,12 +211,16 @@ internal class CentralAdmin(private val screens: CentralScreens) {
                 }
                 ui.button(MoteI18n.text("复制为新预设"), parent = card) {
                     edit(MoteI18n.text("复制为新预设"), "/api/model-settings/profiles/" + enc(id) + "/copy",
-                        JSONObject().put("revision", value.getLong("revision")).put("id", "preset-" + UUID.randomUUID().toString().take(8)).put("name", profile.optString("name") + " copy").put("includeCredentials", true), "POST")
+                        JSONObject().put("revision", value.getLong("revision")).put("id", "preset-" + UUID.randomUUID().toString().take(8)).put("name", profile.optString("name") + " copy").put("includeCredentials", true), "POST", back = { models() })
                 }
                 ui.button(MoteI18n.text("测试连接"), parent = card) {
                     action("/api/model-settings/profiles/" + enc(id) + "/test", JSONObject().put("revision", value.getLong("revision")).put("settings", cleanSettings(profile.getJSONObject("settings")))) { values(it, card) }
                 }
                 ui.button(MoteI18n.text("可用模型"), parent = card) { read("/api/model-settings/profiles/" + enc(id) + "/models", card) }
+            }
+            choice.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+                override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) { renderProfile(position) }
             }
         }
     }
@@ -304,7 +320,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
     }
     private fun invitation() {
         edit(MoteI18n.text("生成设备连接邀请"), "/api/connections/invitations",
-            JSONObject().put("serverUrl", ui.server).put("label", "Android"), "POST", ::credentialResult)
+            JSONObject().put("serverUrl", ui.server).put("label", "Android"), "POST", completed = ::credentialResult)
     }
     private fun credentialResult(value: JSONObject) {
         body.removeAllViews(); screens.setBack { screens.refresh() }
@@ -324,7 +340,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
     private fun connections() {
         ui.button(MoteI18n.text("生成设备连接邀请")) { invitation() }
         ui.button(MoteI18n.text("创建 MCP 授权")) {
-            edit(MoteI18n.text("创建 MCP 授权"), "/api/connections/mcp", JSONObject().put("serverUrl", ui.server).put("label", "MCP").put("access", "read"), "POST", ::credentialResult)
+            edit(MoteI18n.text("创建 MCP 授权"), "/api/connections/mcp", JSONObject().put("serverUrl", ui.server).put("label", "MCP").put("access", "read"), "POST", completed = ::credentialResult)
         }
         library.paged("/api/connections", ui.card()) { row, card ->
             values(row, card)
@@ -354,16 +370,67 @@ internal class CentralAdmin(private val screens: CentralScreens) {
             for (i in 0 until refs.length()) ui.button(MoteI18n.text("查看原文依据"), parent = card) { library.captureEvidence(refs.getString(i)) }
         }
     }
-    private fun processing() {
-        library.paged("/api/operations?limit=20", ui.card()) { row, card ->
-            ui.text(row.optString("kind") + " · " + row.optString("state"), 20f, card)
-            ui.button(MoteI18n.text("查看详情"), parent = card) { operation(row.getString("id")) }
+    private val operationStates = listOf("" to "全部", "waiting" to "等待处理", "running" to "运行中", "blocked" to "受阻", "failed" to "失败", "succeeded" to "完成", "cancelled" to "已取消", "stale" to "来源变化待重验", "skipped" to "未安排")
+    private fun stateLabel(state: String) = MoteI18n.text(operationStates.firstOrNull { it.first == state }?.second ?: state)
+    private fun operationTitle(kind: String) = MoteI18n.text(mapOf("file" to "文件处理", "capture" to "截图处理", "memory" to "记忆整理", "workflow" to "上下文处理", "import" to "资料导入", "query" to "问答", "insight" to "洞察", "embedding" to "检索向量计算", "material-index" to "资料检索索引")[kind] ?: "上下文处理")
+    private fun processing(cursors: List<Long?> = listOf(null), state: String = "") {
+        body.removeAllViews()
+        ui.button(MoteI18n.text("刷新")) { processing(cursors, state) }
+        val choice = Spinner(ui).apply {
+            contentDescription = MoteI18n.text("任务状态")
+            adapter = ArrayAdapter(ui, android.R.layout.simple_spinner_dropdown_item, operationStates.map { MoteI18n.text(it.second) })
+            setSelection(operationStates.indexOfFirst { it.first == state }.coerceAtLeast(0))
+        }
+        body.addView(choice, LinearLayout.LayoutParams(-1, ui.moteDp(52)))
+        choice.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                val selected = operationStates[position].first
+                if (selected != state) processing(state = selected)
+            }
+        }
+        val target = ui.card(); val api = client
+        ui.work(MoteI18n.text("正在读取…"), { api.get("/api/operations?limit=10" + (if (state.isEmpty()) "" else "&state=" + enc(state)) + (cursors.last()?.let { "&cursor=$it" } ?: "")) }) { result ->
+            val items = result.optJSONArray("items") ?: JSONArray()
+            if (items.length() == 0) ui.text(MoteI18n.text("没有符合条件的任务"), parent = target)
+            for (i in 0 until items.length()) {
+                val row = items.getJSONObject(i)
+                ui.selectRow(operationTitle(row.optString("kind")) + " · " + stateLabel(row.optString("state")), row.getString("id"), target) {
+                    operation(row.getString("id"), returnTo = { processing(cursors, state) })
+                }.apply { tag = "operation:" + row.getString("id"); contentDescription = MoteI18n.text("查看任务 {0} 的详情", row.getString("id")) }
+            }
+            pageButtons(cursors, result, items.length(), target) { processing(it, state) }
         }
         ui.button(MoteI18n.text("处理设置")) { processingSettings() }
     }
-    fun operation(id: String) {
-        body.removeAllViews(); screens.setBack { screens.refresh() }; read("/api/operations/" + enc(id) + "?limit=50")
-        ui.button(MoteI18n.text("刷新")) { operation(id) }
+    private fun pageButtons(cursors: List<Long?>, result: JSONObject, count: Int, target: LinearLayout, load: (List<Long?>) -> Unit) {
+        ui.text(MoteI18n.text("第 {0} 页 · {1} 条", cursors.size, count), 13f, target)
+        val paging = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL }
+        target.addView(paging)
+        ui.button(MoteI18n.text("上一页"), parent = paging) { load(cursors.dropLast(1)) }.apply {
+            isEnabled = cursors.size > 1; layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.moteDp(4) }
+        }
+        val next = result.optLong("nextCursor").takeIf { it > 0 }
+        ui.button(MoteI18n.text("下一页"), parent = paging) { next?.let { load(cursors + it) } }.apply {
+            isEnabled = next != null; layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.moteDp(4) }
+        }
+    }
+    fun operation(id: String, cursors: List<Long?> = listOf(null), returnTo: () -> Unit = { screens.refresh() }) {
+        body.removeAllViews(); screens.setBack(returnTo)
+        ui.text(MoteI18n.text("任务详情"), 23f)
+        ui.button(MoteI18n.text("刷新")) { operation(id, cursors, returnTo) }
+        val target = ui.card(); val api = client
+        ui.work(MoteI18n.text("正在读取…"), { api.get("/api/operations/" + enc(id) + "?limit=10" + (cursors.last()?.let { "&cursor=$it" } ?: "")) }) { result ->
+            val operation = result.getJSONObject("operation")
+            ui.text(operationTitle(operation.optString("kind")) + " · " + stateLabel(operation.optString("state")), 18f, target)
+            ui.text(id, 13f, target)
+            val steps = result.optJSONArray("steps") ?: JSONArray()
+            for (i in 0 until steps.length()) {
+                val step = steps.getJSONObject(i)
+                ui.disclosure(step.optString("kind") + " · " + stateLabel(step.optString("state")), target) { values(step, it) }
+            }
+            pageButtons(cursors, result, steps.length(), target) { operation(id, it, returnTo) }
+        }
     }
     private fun extensions() {
         read("/api/features")

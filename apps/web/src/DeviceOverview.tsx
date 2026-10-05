@@ -24,4 +24,3 @@ export function DeviceOverview({devices,onConnect}:{devices:Device[];onConnect:(
  <p className="fine-print collection-control-note">{moteText("开始、暂停与隐私范围请在对应设备的本机采集页调整。这里查看上报状态，管理来源和连接授权。")}</p>
  <button className="button subtle manage-authorizations" onClick={onConnect}>{moteText("管理连接授权")}<ArrowRight size={15}/></button></div>;
 }
-export function PageBack({title,onBack}:{title:string;onBack:()=>void}) {return <button className="back-link" onClick={onBack}><ArrowLeft size={16}/>{title}</button>;}

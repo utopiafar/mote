@@ -42,7 +42,7 @@ test('Actions consumes operation changes through the shared resource and explain
 });
 test('Operation detail identifies Actions and both embedding steps, routes to Actions and counts optional issues as settled',async t=>{
  const {root,d}=await fixture(t),navigations:string[]=[];const operation={id:'workflow:actions:generated',kind:'workflow',state:'succeeded',total:4,notScheduled:0,optionalIssues:1,counts:{waiting:0,running:0,blocked:0,failed:0,cancelled:0,succeeded:3,stale:0,skipped:0},updatedAt:Date.now()};
- const api={request:async(path:string)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:1,reset:false,hasMore:false};if(path.startsWith('/api/processing?'))return {jobs:[],processors:[],limit:30};if(path==='/api/operations')return {items:[operation]};return {operation,steps:['actions.extract','embedding.capture','embedding.file','embedding.query.generated'].map((kind,i)=>({id:kind,kind,state:i===2?'failed':'succeeded',reason:i===2?'embedding_http':null,attempts:1,dependencies:[],current:true,optional:i>0})),nextCursor:null};},setAgentTimeout:()=>{}} as Api;
+ const api={request:async(path:string)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:1,reset:false,hasMore:false};if(path.startsWith('/api/processing?'))return {jobs:[],processors:[],limit:30};if(path.startsWith('/api/operations?'))return {items:[operation]};return {operation,steps:['actions.extract','embedding.capture','embedding.file','embedding.query.generated'].map((kind,i)=>({id:kind,kind,state:i===2?'failed':'succeeded',reason:i===2?'embedding_http':null,attempts:1,dependencies:[],current:true,optional:i>0})),nextCursor:null};},setAgentTimeout:()=>{}} as Api;
  await act(async()=>root.render(React.createElement(Processing,{api,onNavigate:page=>navigations.push(page)})));assert.match(d.body.textContent!,/已完成 3 \/ 3 步.*1 个可选步骤未完成/);assert.equal(d.querySelector('progress')!.value,d.querySelector('progress')!.max);
  await act(async()=>button(d,'查看详情').click());const detail=d.querySelector('[aria-label="任务详情"]')!;assert.match(detail.textContent!,/日程分析/);assert.match(detail.textContent!,/记录向量索引/);assert.match(detail.textContent!,/文件片段向量索引/);assert.match(detail.textContent!,/检索向量计算/);assert.match(detail.textContent!,/embedding_http/);await act(async()=>button(d,'打开来源与处理操作').click());assert.deepEqual(navigations,['actions']);
 });
@@ -54,9 +54,30 @@ test('Actions and optional Indexer operation IDs invalidate affected domains wit
 test('failed material index operations offer an index-only retry and route to the library',async t=>{
  const {root,d}=await fixture(t),writes:string[]=[],navigation:string[]=[];
  const operation={id:'material-index:generated',kind:'material-index',state:'failed',total:1,notScheduled:0,counts:{waiting:0,running:0,blocked:0,failed:1,cancelled:0,succeeded:0,stale:0,skipped:0},updatedAt:Date.now()};
- const api={request:async(path:string,init?:RequestInit)=>{if(init?.method==='POST'){writes.push(path);return {indexing:{state:'pending'}};}if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:1,reset:false,hasMore:false};if(path.startsWith('/api/processing?'))return {jobs:[],processors:[],limit:30};if(path==='/api/operations')return {items:[operation]};return {operation,steps:[{id:'generated',kind:'material.index',state:'failed',attempts:1,dependencies:[],current:true}],nextCursor:null};},setAgentTimeout:()=>{}} as Api;
+ const api={request:async(path:string,init?:RequestInit)=>{if(init?.method==='POST'){writes.push(path);return {indexing:{state:'pending'}};}if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:1,reset:false,hasMore:false};if(path.startsWith('/api/processing?'))return {jobs:[],processors:[],limit:30};if(path.startsWith('/api/operations?'))return {items:[operation]};return {operation,steps:[{id:'generated',kind:'material.index',state:'failed',attempts:1,dependencies:[],current:true}],nextCursor:null};},setAgentTimeout:()=>{}} as Api;
  await act(async()=>root.render(React.createElement(Processing,{api,onNavigate:page=>navigation.push(page)})));
  await act(async()=>button(d,'查看详情').click());assert.match(d.querySelector('[aria-label="任务详情"]')!.textContent!,/资料检索索引/);
  await act(async()=>button(d,'仅重试检索索引').click());assert.deepEqual(writes,['/api/materials/generated/index/retry']);
  await act(async()=>button(d,'打开来源与处理操作').click());assert.deepEqual(navigation,['library']);
+});
+
+test('task pagination returns from page three to two and resets boundaries when filters or page size change',async t=>{
+ const {root,d}=await fixture(t),reads:string[]=[];
+ const api={request:async(path:string)=>{
+  reads.push(path);if(path.startsWith('/api/operations/changes'))return new Promise(()=>{});
+  const query=new URL('http://fixture'+path).searchParams,offset=Number(query.get('cursor')??0),limit=Number(query.get('limit'));
+  const state=query.get('state');return {items:state?[]:Array.from({length:limit},(_,i)=>({id:'file:generated-'+(offset+i),kind:'file',state:'succeeded',total:1,notScheduled:0,counts:{succeeded:1},updatedAt:1})),nextCursor:offset+limit,changeCursor:0};
+ },setAgentTimeout:()=>{}} as Api;
+ await act(async()=>root.render(React.createElement(Processing,{api,onNavigate:()=>{}})));
+ const paging=()=>d.querySelector('[aria-label="任务分页"]')!,ids=()=>Array.from(d.querySelectorAll('.operation-title code')).map(e=>e.textContent);
+ assert.equal(d.querySelectorAll('.operation-row').length,10);assert.equal(button(d,'上一页').disabled,true);
+ await act(async()=>button(d,'下一页').click());const second=ids();assert.match(paging().textContent!,/第 2 页/);
+ await act(async()=>button(d,'下一页').click());assert.match(paging().textContent!,/第 3 页/);
+ await act(async()=>button(d,'上一页').click());assert.deepEqual(ids(),second);assert.match(paging().textContent!,/第 2 页/);
+ async function select(label:string,value:string){await act(async()=>{const field=d.querySelector<HTMLSelectElement>('select[aria-label="'+label+'"]')!;field.value=value;field.dispatchEvent(new d.defaultView!.Event('change',{bubbles:true}));});}
+ await select('任务状态','blocked');assert.match(paging().textContent!,/第 1 页/);assert.equal(d.querySelectorAll('.operation-row').length,0);assert.equal(button(d,'上一页').disabled,true);
+ assert(reads.some(path=>path.includes('state=blocked')&&!path.includes('cursor=')));
+ await select('任务状态','');await select('每页条数','20');assert.equal(d.querySelectorAll('.operation-row').length,20);assert.match(paging().textContent!,/第 1 页/);
+ await select('任务类型','capture');assert(reads.at(-1)?.includes('kind=capture'));assert(!reads.at(-1)?.includes('cursor='));
+ assert(!reads.some(path=>path.startsWith('/api/processing')),'closed advanced list does not fetch or render another task centre');
 });

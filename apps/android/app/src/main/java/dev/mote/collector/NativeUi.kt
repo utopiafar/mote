@@ -34,7 +34,7 @@ object MoteUi {
     }
 
     fun clickable(context: Context, fill: Int = Color.WHITE, radius: Int = 18) = RippleDrawable(
-        ColorStateList.valueOf(Color.argb(24, 28, 103, 84)), shape(context, fill, radius), shape(context, Color.WHITE, radius)
+        ColorStateList.valueOf(Color.argb(24, Color.red(accent), Color.green(accent), Color.blue(accent))), shape(context, fill, radius), shape(context, Color.WHITE, radius)
     )
 
     fun button(button: Button, primary: Boolean = false) = button.apply {
@@ -167,7 +167,7 @@ fun Activity.moteDetailPage(primary: MotePrimaryTab? = detailTab(), onBack: () -
     val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(MoteUi.background); moteInsets() }
     val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
     header.addView(TextView(this).apply {
-        text = MoteI18n.text("‹  返回"); textSize = 15f; setTextColor(MoteUi.accent)
+        text = "‹  " + MoteI18n.text("返回上级"); textSize = 15f; setTextColor(MoteUi.accent)
         gravity = Gravity.CENTER_VERTICAL; minHeight = moteDp(48)
         setPadding(moteDp(22), moteDp(4), moteDp(22), moteDp(4))
         contentDescription = MoteI18n.text("返回上一页"); isFocusable = true; setOnClickListener { onBack() }

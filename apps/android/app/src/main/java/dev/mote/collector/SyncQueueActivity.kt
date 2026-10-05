@@ -17,6 +17,7 @@ class SyncQueueActivity : MoteActivity() {
     private lateinit var paging: LinearLayout
     private lateinit var categories: Spinner
     private var sources = emptyList<LocalSource>()
+    private val pageSize = 10
     private var offset = 0
     private lateinit var speed: TextView
     private val speedHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -33,8 +34,8 @@ class SyncQueueActivity : MoteActivity() {
         body.addView(Button(this).apply { text = MoteI18n.text("刷新"); setOnClickListener { load() } })
         rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }.also(body::addView)
         paging = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }.also(body::addView)
-        previous = Button(this).apply { text = MoteI18n.text("上一页"); setOnClickListener { offset = (offset - 30).coerceAtLeast(0); load() } }.also { paging.addView(it, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = moteDp(6) }) }
-        next = Button(this).apply { text = MoteI18n.text("下一页"); setOnClickListener { offset += 30; load() } }.also { paging.addView(it, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = moteDp(6) }) }
+        previous = Button(this).apply { text = MoteI18n.text("上一页"); setOnClickListener { offset = (offset - pageSize).coerceAtLeast(0); load() } }.also { paging.addView(it, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = moteDp(6) }) }
+        next = Button(this).apply { text = MoteI18n.text("下一页"); setOnClickListener { offset += pageSize; load() } }.also { paging.addView(it, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = moteDp(6) }) }
         body.addView(Button(this).apply { text = MoteI18n.text("同步与恢复"); setOnClickListener { startActivity(Intent(this@SyncQueueActivity, SyncRecoveryActivity::class.java)) } })
         MoteUi.styleTree(body)
         task.start(MoteI18n.text("正在读取来源…"), { summary.text = it }, { localSources().sources() }) { result ->
@@ -56,11 +57,11 @@ class SyncQueueActivity : MoteActivity() {
         val source = sources.getOrNull(categories.selectedItemPosition - 1)
         previous.isEnabled = false; next.isEnabled = false; categories.isEnabled = false
         task.start(MoteI18n.text("正在读取队列…"), { summary.text = it }, {
-            val page = if (source == null) queue().pendingPage(offset)
-            else if (source.binaryFiles()) fileArchives().pendingPage(source.id, offset)
+            val page = if (source == null) queue().pendingPage(offset, pageSize)
+            else if (source.binaryFiles()) fileArchives().pendingPage(source.id, offset, pageSize)
             else {
                 val pending = localSources().state(source.id).optJSONArray("pending") ?: JSONArray()
-                JSONObject().put("total", pending.length()).put("items", JSONArray((offset until minOf(offset + 30, pending.length())).map {
+                JSONObject().put("total", pending.length()).put("items", JSONArray((offset until minOf(offset + pageSize, pending.length())).map {
                     val item = pending.getJSONObject(it)
                     JSONObject().put("name", item.optString("title", item.optString("externalId"))).put("status", MoteI18n.text("等待上传"))
                 }))
@@ -70,9 +71,9 @@ class SyncQueueActivity : MoteActivity() {
             categories.isEnabled = true
             result.onSuccess { (page, reason) ->
                 val total = page.getInt("total")
-                summary.text = MoteI18n.text("共 {0} 条 · 第 {1} 页\n{2}", total, offset / 30 + 1, reason)
-                previous.isEnabled = offset > 0; next.isEnabled = offset + 30 < total
-                paging.visibility = if (total > 30 || offset > 0) android.view.View.VISIBLE else android.view.View.GONE
+                summary.text = MoteI18n.text("共 {0} 条 · 第 {1} 页\n{2}", total, offset / pageSize + 1, reason)
+                previous.isEnabled = offset > 0; next.isEnabled = offset + pageSize < total
+                paging.visibility = if (total > pageSize || offset > 0) android.view.View.VISIBLE else android.view.View.GONE
                 rows.removeAllViews()
                 val items = page.getJSONArray("items")
                 if (items.length() == 0) rows.addView(TextView(this).apply { text = MoteI18n.text("暂无待上传记录"); setPadding(0, moteDp(24), 0, moteDp(24)) })

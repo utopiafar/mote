@@ -8,7 +8,7 @@ const Sources = React.lazy(()=>import('../Sources').then(module=>({default:modul
 import type { PageEntry,PageProps } from './types';
 
 export const pages:PageEntry[]=[
-{id:'recordings',route:'connections/recordings',label:moteText('录音归档'),section:'connections',order:4,featureId:'mote.sources',render:({api,onPage,onOpen}:PageProps)=><RecordingsSettings onOpen={onOpen} api={api} onBack={()=>onPage('settings')} onSources={()=>onPage('sources')}/>},
+{id:'recordings',route:'connections/recordings',label:moteText('录音归档'),section:'connections',order:4,featureId:'mote.sources',render:({api,onPage,onOpen}:PageProps)=><RecordingsSettings onOpen={onOpen} api={api} onSources={()=>onPage('sources')}/>},
 {id:'sources',route:'connections',label:moteText('来源'),section:'connections',order:0,featureId:'mote.sources',render:({api,onPage,onOpen:setEvidenceId,setArchiveTab}:PageProps)=><Sources onBrowse={()=>{setArchiveTab("sources");onPage("archive");}} api={api} onOpen={setEvidenceId} onImport={()=>onPage("imports")} />},
-{id:'lark',route:'connections/lark',label:moteText('飞书'),section:'connections',order:3,featureId:'mote.sources',render:({api,onPage}:PageProps)=><LarkSettings api={api} onBack={()=>onPage("settings")} onSources={()=>onPage("sources")}/>},
+{id:'lark',route:'connections/lark',label:moteText('飞书'),section:'connections',order:3,featureId:'mote.sources',render:({api,onPage}:PageProps)=><LarkSettings api={api} onSources={()=>onPage("sources")}/>},
 ];

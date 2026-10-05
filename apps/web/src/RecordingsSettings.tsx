@@ -1,7 +1,7 @@
 import {formatEvidenceRef} from '@mote/shared';
 import {ArchivedAudio} from './ArchivedAudio';
 import React,{useEffect,useRef,useState} from 'react';
-import {ArrowLeft,RefreshCw} from 'lucide-react';
+import {RefreshCw} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import type {RecordingStatus,RecordingSelection} from '@mote/shared';
 import {type Api,errorMessage} from './api';
@@ -43,8 +43,8 @@ export function RecordingConnection({api,provider,onOpen}:{api:Api;provider:stri
  {Boolean(archive.data?.items.length)&&<details><summary>{moteText('最近归档的录音')}</summary>{archive.data!.items.map(item=><div className="source-item" key={item.captureId}><button className="text-button" onClick={()=>onOpen(formatEvidenceRef('capture',item.captureId))}>{item.title||moteText('原始录音')}</button>{item.audio&&<ArchivedAudio api={api} id={item.audio.id} name={item.audio.name} mimeType={item.audio.mimeType}/>}</div>)}</details>}
  </section>;
 }
-export function RecordingsSettings({api,onBack,onSources,onOpen}:{api:Api;onBack:()=>void;onSources:()=>void;onOpen:(ref:string)=>void}){
+export function RecordingsSettings({api,onSources,onOpen}:{api:Api;onSources:()=>void;onOpen:(ref:string)=>void}){
  const registry=useResource<Record<string,RecordingStatus>>(api,'/api/connectors/status');
  const providers=Object.values(registry.data??{}).filter(status=>status?.category==='recordings').map(status=>status.provider);
- return <div className="lark-settings"><button className="back-link" onClick={onBack}><ArrowLeft size={16}/>{moteText('设置')}</button><div className="page-heading"><h1>{moteText('录音归档')}</h1><p>{moteText('照常使用录音笔。厂商完成上传和转写后，Mote 自动归档并生成可追溯的 Memory。')}</p></div><div className="lark-boundary"><p>{moteText('默认用转写生成洞察，原始音频在后台备份。厂商端删除后，Mote 归档继续保留。停止同步或断开连接会保留历史资料。')}</p></div>{Boolean(registry.error)&&<p role="alert">{errorMessage(registry.error)}</p>}{providers.map(provider=><RecordingConnection key={provider} api={api} provider={provider} onOpen={onOpen}/>)}<button className="button subtle" onClick={onSources}>{moteText('查看来源与归档')}</button></div>;
+ return <div className="lark-settings"><div className="page-heading"><h1>{moteText('录音归档')}</h1><p>{moteText('照常使用录音笔。厂商完成上传和转写后，Mote 自动归档并生成可追溯的 Memory。')}</p></div><div className="lark-boundary"><p>{moteText('默认用转写生成洞察，原始音频在后台备份。厂商端删除后，Mote 归档继续保留。停止同步或断开连接会保留历史资料。')}</p></div>{Boolean(registry.error)&&<p role="alert">{errorMessage(registry.error)}</p>}{providers.map(provider=><RecordingConnection key={provider} api={api} provider={provider} onOpen={onOpen}/>)}<button className="button subtle" onClick={onSources}>{moteText('查看来源与归档')}</button></div>;
 }

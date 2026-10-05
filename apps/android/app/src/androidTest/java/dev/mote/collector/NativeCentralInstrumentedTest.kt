@@ -131,6 +131,47 @@ class NativeCentralInstrumentedTest {
             }
         }
     }
+    @Test fun settingsUiUsesOneSelectedProviderAndTenTaskPages() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("settingsUiFixture") == "true")
+        fun screenshot(scenario: ActivityScenario<out CentralActivity>, name: String) {
+            scenario.onActivity { activity ->
+                val root = activity.window.decorView
+                val bitmap = android.graphics.Bitmap.createBitmap(root.width, root.height, android.graphics.Bitmap.Config.ARGB_8888)
+                root.draw(android.graphics.Canvas(bitmap))
+                java.io.File(context.cacheDir, "settings-ui-$name.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+            }
+        }
+        open("settings").use { scenario ->
+            login(scenario); waitFor(scenario, "Settings loaded") { !it.isWorking }
+            screenshot(scenario, "settings")
+            click(scenario, "模型配置"); waitFor(scenario, "Provider choice") { !it.isWorking && all(it).any { view -> view.contentDescription == "Provider 预设" } }
+            scenario.onActivity { activity ->
+                assertEquals(1, all(activity).filterIsInstance<Button>().count { it.text.toString() == "复制为新预设" })
+                assertEquals(1, all(activity).count { it.contentDescription == "返回上级" })
+            }
+            scenario.onActivity { activity ->
+                val choice = all(activity).filterIsInstance<android.widget.Spinner>().first { it.contentDescription == "Provider 预设" }
+                assertTrue(choice.count > 1); choice.setSelection(1)
+            }
+            waitFor(scenario, "Selected provider only") { !it.isWorking && contains(it, "合成预设 1 ·") }
+            scenario.onActivity { activity -> assertEquals(1, all(activity).filterIsInstance<Button>().count { it.text.toString() == "复制为新预设" }) }
+            screenshot(scenario, "models")
+            scenario.onActivity { all(it).first { view -> view.contentDescription == "返回上级" }.performClick(); it.navigate("processing") }
+            waitFor(scenario, "First ten tasks") { !it.isWorking && all(it).count { view -> view.tag?.toString()?.startsWith("operation:") == true } == 10 }
+            fun ids(): List<String> { var result = emptyList<String>(); scenario.onActivity { activity -> result = all(activity).mapNotNull { it.tag?.toString()?.takeIf { tag -> tag.startsWith("operation:") } } }; return result }
+            screenshot(scenario, "processing")
+            click(scenario, "下一页"); waitFor(scenario, "Page two") { !it.isWorking && contains(it, "第 2 页") }; val second = ids()
+            click(scenario, "下一页"); waitFor(scenario, "Page three") { !it.isWorking && contains(it, "第 3 页") }
+            click(scenario, "上一页"); waitFor(scenario, "Previous page two") { !it.isWorking && contains(it, "第 2 页") }; assertEquals(second, ids())
+            scenario.onActivity { activity -> all(activity).first { it.tag?.toString()?.startsWith("operation:") == true }.performClick() }
+            waitFor(scenario, "Task detail") { !it.isWorking && contains(it, "任务详情") }; screenshot(scenario, "detail")
+            scenario.onActivity { all(it).first { view -> view.contentDescription == "返回上级" }.performClick() }; waitFor(scenario, "Detail returns to page two") { !it.isWorking && contains(it, "第 2 页") }; assertEquals(second, ids())
+            scenario.onActivity { activity -> all(activity).filterIsInstance<android.widget.Spinner>().first { it.contentDescription == "任务状态" }.setSelection(4) }
+            waitFor(scenario, "Empty failed filter") { !it.isWorking && contains(it, "没有符合条件的任务") && contains(it, "第 1 页") }
+            assertTrue(ids().isEmpty())
+        }
+    }
     @Test fun queryAndDraftSurviveNavigationAndActivityRecreation() {
         open("ask").use { scenario ->
             login(scenario); waitFor(scenario, "Ask ready") { !it.isWorking && contains(it, "你的问题") }

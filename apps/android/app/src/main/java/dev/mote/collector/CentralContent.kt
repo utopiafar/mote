@@ -96,7 +96,7 @@ internal class CentralContent(
         root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(MoteUi.background) }
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; tag = "central-header"; setPadding(moteDp(12), 0, moteDp(12), 0) }
         backButton = TextView(this).apply {
-            text = "‹"; contentDescription = MoteI18n.text("返回上一页"); textSize = 28f; gravity = Gravity.CENTER
+            text = "‹"; contentDescription = MoteI18n.text("返回上级"); textSize = 28f; gravity = Gravity.CENTER
             isFocusable = true; minHeight = moteDp(48); setOnClickListener { if (!back()) { if (openLocalPage != null) localPage("OVERVIEW") else activity.finish() } }
         }
         header.addView(backButton, LinearLayout.LayoutParams(moteDp(44), -2))
@@ -314,9 +314,34 @@ internal class CentralContent(
         }).also(parent::addView)
     }
     internal fun card(parent: LinearLayout = body): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL; background = MoteUi.shape(this@CentralContent, android.graphics.Color.WHITE, 16, true)
+        orientation = LinearLayout.VERTICAL; background = MoteUi.shape(this@CentralContent, DesignTokens.surface, 10, true)
         setPadding(moteDp(14), moteDp(10), moteDp(14), moteDp(10))
     }.also { parent.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(12) }) }
+    internal fun selectRow(title: String, subtitle: String, parent: LinearLayout, action: () -> Unit): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; minimumHeight = moteDp(64)
+        setPadding(moteDp(14), moteDp(10), moteDp(14), moteDp(10))
+        background = MoteUi.clickable(this@CentralContent, DesignTokens.surface, 10)
+        isFocusable = true; contentDescription = title + ". " + subtitle
+        val copy = LinearLayout(this@CentralContent).apply { orientation = LinearLayout.VERTICAL }
+        copy.addView(TextView(this@CentralContent).apply { text = title; textSize = 14f; setTextColor(MoteUi.ink); maxLines = 2 })
+        copy.addView(TextView(this@CentralContent).apply {
+            text = subtitle; textSize = 12f; setTextColor(MoteUi.muted); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(0, moteDp(4), 0, 0)
+        })
+        addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(TextView(this@CentralContent).apply { text = "›"; textSize = 20f; setTextColor(MoteUi.accent) }, LinearLayout.LayoutParams(moteDp(20), -2))
+        setOnClickListener { if (!task.busy) runCatching(action).onFailure { notice(it.message ?: MoteI18n.text("操作失败")) } }
+    }.also { parent.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(4) }) }
+    internal fun disclosure(label: String, parent: LinearLayout = body, build: (LinearLayout) -> Unit) {
+        val section = card(parent)
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+        var built = false
+        button(label + "  ›", parent = section) {
+            if (!built) { build(content); built = true }
+            content.visibility = if (content.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }.apply { contentDescription = label; accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        section.addView(content)
+    }
     internal fun notice(message: String) { status.text = message }
     internal fun enterDetail() { backButton.visibility = View.VISIBLE; revision++; pending.clear(); handler.removeCallbacks(refreshRun) }
     internal fun requestFailure(error: Throwable, generation: Long = accessGeneration) {

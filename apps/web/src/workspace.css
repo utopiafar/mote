@@ -1,8 +1,9 @@
 /* Library-first workspace: a stable four-destination shell and contextual tools. */
 :root {
-  --paper:#f6f8fc; --panel:#ffffff; --ink:#1e2b40; --muted:#69758a;
-  --line:#e2e7f0; --green:#4268dc; --soft:#edf2ff;
-  --green-dark:#3154bc; --green-light:#edf2ff;
+  --paper:var(--mote-background); --panel:var(--mote-surface);
+  --ink:var(--mote-ink); --muted:var(--mote-muted); --line:var(--mote-border);
+  --green:var(--mote-accent); --soft:var(--mote-tint);
+  --green-dark:var(--mote-accent-hover); --green-light:var(--mote-tint);
 }
 .sidebar { width:224px; background:#fff; border-right:1px solid var(--line); padding:30px 18px 18px; }
 .sidebar nav { display:flex; flex-direction:column; gap:7px; }

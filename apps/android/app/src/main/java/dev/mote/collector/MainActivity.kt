@@ -1175,7 +1175,7 @@ class MainActivity : MoteActivity() {
         }
         pages[page] = scroll; pagesHost.addView(scroll, FrameLayout.LayoutParams(-1, -1))
         if (page.parent != null) {
-            text("‹  ${Page.valueOf(page.parent).title}", 14, MoteUi.accent).apply {
+            text("‹  " + MoteI18n.text("返回上级"), 14, MoteUi.accent).apply {
                 minHeight = dp(44); gravity = Gravity.CENTER_VERTICAL; isFocusable = true
                 contentDescription = MoteI18n.text("返回{0}", Page.valueOf(page.parent).title); setOnClickListener { showPage(Page.valueOf(page.parent)) }
             }

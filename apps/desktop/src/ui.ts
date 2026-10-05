@@ -54,7 +54,7 @@ function showPage(page: Page, focus = true, preserveSettingsDraft = false): bool
   byId('workspace-location').textContent = page === selected ? title : `${sectionTitle} / ${title}`;
   byId('workspace-back').hidden = !navigation.canGoBack;
   updateNoteAction();
-  for (const button of Array.from(document.querySelectorAll<HTMLElement>('.back-button'))) button.textContent = `‹ ${heading(navigation.backTarget)}`;
+  byId('workspace-back').setAttribute('aria-label', moteText("返回{0}", heading(navigation.backTarget)));
   updateSettingsHint();
   if (focus) document.querySelector<HTMLElement>(`[data-page="${page}"] [data-page-title]`)?.focus({ preventScroll: true });
   window.scrollTo({ top: pageScroll.get(page) || 0, behavior: 'instant' });
@@ -67,7 +67,7 @@ function showPage(page: Page, focus = true, preserveSettingsDraft = false): bool
   return true;
 }
 for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-nav]'))) button.addEventListener('click', () => {
-  const page = button.classList.contains('back-button') ? navigation.backTarget : button.dataset.nav as Page;
+  const page = button.dataset.nav as Page;
   if (pageNames.includes(page)) showPage(page);
 });
 byId('workspace-back').addEventListener('click', () => showPage(navigation.backTarget));

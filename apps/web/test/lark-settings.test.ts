@@ -17,7 +17,7 @@ const button=(name:string)=>{const b=[...document.querySelectorAll('button')].fi
 async function click(name:string){await act(async()=>{button(name).click();await tick();});}
 async function input(element:HTMLInputElement|HTMLTextAreaElement,value:string){await act(async()=>{const proto=element instanceof dom.window.HTMLTextAreaElement?dom.window.HTMLTextAreaElement.prototype:dom.window.HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value')!.set!.call(element,value);element.dispatchEvent(new dom.window.Event('input',{bubbles:true}));await tick();});}
 async function mount(t:any,status:LarkStatus,fail=false){
- const container=document.createElement('div');document.body.appendChild(container);const root=createRoot(container),calls:{path:string;init?:RequestInit}[]=[];let back=0,sources=0;
+ const container=document.createElement('div');document.body.appendChild(container);const root=createRoot(container),calls:{path:string;init?:RequestInit}[]=[];let sources=0;
  const api={request:async(path:string,init?:RequestInit)=>{calls.push({path,init});if(fail)throw Error('fixture network unavailable');
   if(path.endsWith('/calendars'))return {calendars:[{id:'fixture-calendar',name:'合成日历',primary:true}]};
   if(path.endsWith('/selection')){status.selection=JSON.parse(String(init?.body));return structuredClone(status);}
@@ -27,16 +27,16 @@ async function mount(t:any,status:LarkStatus,fail=false){
   if(init?.method==='DELETE'){status.connected=false;return structuredClone(status);}
   return structuredClone(status);
  }} as unknown as Api;
- await act(async()=>{root.render(React.createElement(LarkSettings,{api,onBack:()=>back++,onSources:()=>sources++}));await tick();});
+ await act(async()=>{root.render(React.createElement(LarkSettings,{api,onSources:()=>sources++}));await tick();});
  t.after(async()=>{await act(async()=>root.unmount());container.remove();});
- return {calls,container,get back(){return back;},get sources(){return sources;}};
+ return {calls,container,get sources(){return sources;}};
 }
 
 test('setup page offers install, locks read scope before login and keeps navigation working',async t=>{
  const f=await mount(t,{...base(),installed:false,configured:false,connected:false});
  assert.equal(button('安装 Lark CLI').disabled,false);assert.equal(button('扫码登录并授权只读权限').disabled,true);assert.equal(document.querySelector('fieldset')?.disabled,true);
  await click('安装 Lark CLI');assert.ok(f.calls.some(c=>c.path.endsWith('/install')));assert.match(f.container.textContent!,/安装 CLI · 正在处理/);
- await click('设置');assert.equal(f.back,1);await click('查看来源与归档');assert.equal(f.sources,1);
+ await click('查看来源与归档');assert.equal(f.sources,1);
 });
 
 test('authorization shows exact external URL and QR then removes them on cancel',async t=>{
@@ -59,7 +59,7 @@ test('scope edits and calendar choice are saved explicitly; dirty scope prevents
 
 test('disconnect explains retained history and requires its own explicit click',async t=>{
  const f=await mount(t,base());await click('断开连接');assert.equal(f.calls.filter(c=>c.init?.method==='DELETE').length,0);assert.match(document.body.textContent!,/保留已归档资料/);
- await click('返回');assert.equal(document.querySelector('button')?.textContent,'设置');assert.equal(f.calls.filter(c=>c.init?.method==='DELETE').length,0);
+ await click('返回');assert.equal(document.querySelector('.back-link'),null);assert.equal(f.calls.filter(c=>c.init?.method==='DELETE').length,0);
  await click('断开连接');await click('确认断开');assert.equal(f.calls.filter(c=>c.init?.method==='DELETE').length,1);assert.equal(document.querySelector('fieldset')?.disabled,true);
 });
 
