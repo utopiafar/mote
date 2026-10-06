@@ -1,3 +1,4 @@
+import {ImageProgress} from './ImageProgress';
 import {captureOcrState,decodeSourceText,parseEvidenceRef,systemEventText} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import {ArrowLeft,FileText,RefreshCw,X} from 'lucide-react';
@@ -43,6 +44,7 @@ function LibraryCaptureDetail({api,reference,onOpen}:{api:Api;reference:string;o
     <span className="eyebrow">{sourceLabels[capture.source]??capture.source}</span><h2>{capture.windowTitle||capture.appName||moteText('原始上下文')}</h2><p className="muted">{dateTime(capture.capturedAt)} · {capture.deviceName}</p><EvidenceState/>
     {capture.revisionState==='historical'&&<p role="status">{moteText('历史证据，仅用于核对当时的内容。')}</p>}
     {presentation.nativeFile&&<FileDetail api={api} id={presentation.nativeFile.captureId} startMs={presentation.nativeFile.startMs} onOpen={onOpen}/>}
+    {capture.blobHash&&capture.revisionState!=='historical'&&<ImageProgress api={api} id={capture.id}/>}
     {capture.blobHash&&<OriginalImage api={api} capture={capture}/>}
     {ocr&&<div className="evidence-ocr-status" role="status"><span className={'badge '+ocr.tone}>{ocr.label}</span><p>{ocr.description}</p></div>}
     <h3>{presentation.textLabel}</h3><pre className="library-original-text">{capture.source==='media'?mediaExplanation:capture.source==='activity'?activityExplanation:systemEventText(capture.metadata)||text||(capture.provenance?.deleted?moteText('来源已报告删除；本次只保留来源元数据。'):capture.provenance?.layer==='reference'?moteText('此来源仅保留引用与元数据，未导入正文。'):presentation.nativeFile&&capture.provenance?.layer==='original'?moteText('原件单独保存；转写与摘要见上方。'):capture.blobHash?moteText('暂无文字。'):moteText('此记录没有正文。'))}</pre>

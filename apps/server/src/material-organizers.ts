@@ -10,9 +10,12 @@ import {SourceItemRecipeCatalog,type SourceItemRecipePin} from './source-item-re
 import type {MaterialMemoryWork} from './material-memory-work.js';
 import {readFileSpeakerAttributions} from './file-speaker-attribution.js';
 import {fileAttachmentAvailable,fileAttachmentChildren,fileAttachmentParent} from './file-attachments.js';
+import {imageMaterialProjection,type ImageMaterialProjection} from './image-materials.js';
 
 /** Organizers select declared source shapes, never infer a topic or user intent. */
 export interface MaterialOrganizerFile {
+  image?:ImageMaterialProjection;
+  extraction?:{complete?:boolean;coverage?:string};
   processingRequired?:boolean;
   providerTranscript?:boolean;
   objectHash?:string;
@@ -152,7 +155,9 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
     const attachedFiles=includeAttached?fileAttachmentChildren(store,captureId).flatMap(({record,fileId})=>{
       permit(record);const selected=file(record.id,false);return selected?[{fileId,record,file:selected}]:[];
     }):[];
-    return {processingRequired:!!original,providerTranscript,objectHash:original?.object_hash??undefined,...(attachedFiles.length?{attachedFiles}:{}),
+    const extraction=store.db.prepare("SELECT json FROM file_artifacts WHERE capture_id=? AND current=1 AND kind IN ('text','image-text','transcript','dialogue','corrected-dialogue') ORDER BY rowid DESC LIMIT 1").get(captureId);
+    const extracted=extraction?JSON.parse(String(extraction.json)):undefined;
+    return {image:imageMaterialProjection(store,captureId),extraction:extracted?{complete:extracted.complete,coverage:extracted.coverage}:undefined,processingRequired:!!original,providerTranscript,objectHash:original?.object_hash??undefined,...(attachedFiles.length?{attachedFiles}:{}),
       attachments:attachmentRows.slice(0,2000).map(row=>{
         const metadata=JSON.parse(row.json) as {mimeType?:string;relativePath?:string};
         return {id:row.id,hash:row.hash,mimeType:metadata.mimeType??'application/octet-stream',...(metadata.relativePath?{relativePath:metadata.relativePath}:{})};
@@ -237,10 +242,20 @@ class MaterialBody {
 }
 
 const codingExternalId=(g:Record<string,string>)=>JSON.stringify([g.provider,g.projectKey,g.sessionId]);
+function imageBlocks(body:MaterialBody,record:CaptureRecord,image:ImageMaterialProjection|undefined,prefix='image'):NonNullable<MaterialDraft['artifacts']>{
+  if(!image||image.archiveOnly)return [];
+  return image.jobs.filter(job=>job.name!=='ocr').map(job=>{
+    const product=image.products.find(p=>p.name===job.name),start=body.blocks.length;
+    if(product?.text)body.text(`${prefix}:${job.name}`,JSON.stringify({imageInterpretation:product.text,regions:product.regions,originalEvidence:product.evidence,productVersion:product.revision,
+      evidenceKind:'model_interpretation',attribution:'Preserve the depicted author and uncertainty; this is not a verbatim original or an owner statement.'}),record.id,'json',
+      {imageEvidence:product.evidence,productVersion:product.revision},undefined,evidenceContext(record,'summary'));
+    return {key:prefix==='image'?`image-${job.name}`:`${prefix}/${job.name}`,state:job.state,blockIds:body.blocks.slice(start).map(b=>b.id),...(product?{revision:product.revision}:{}),...(job.reason?{reason:job.reason}:{})};
+  });
+}
 
 /** A source item keeps its own identity; a coding session is assembled separately. */
 const sourceItem:MaterialOrganizer={
-  id:'mote.source-item',version:'10',slot:'source-item',
+  id:'mote.source-item',version:'11',slot:'source-item',
   select:r=>r.provenance&&!r.provenance.document?.coding?{sourceId:r.provenance.sourceId,externalId:r.provenance.externalId}:undefined,
   identity:g=>materialId(g.sourceId,g.externalId),
   build(reader,g){
@@ -260,6 +275,7 @@ const sourceItem:MaterialOrganizer={
         evidenceContext(r,c.startMs===null?undefined:'transcript'));
     }
     const extractedBlocks=body.blocks.filter(block=>!sourceBlocks.includes(block.id)).map(block=>block.id);
+    const imageArtifacts=imageBlocks(body,r,file.image);
     const attachedArtifacts:NonNullable<MaterialDraft['artifacts']>=[];
     let attachmentPartial=false;
     for(const {fileId,record:attached,file:processed} of file.attachedFiles??[]){
@@ -276,7 +292,12 @@ const sourceItem:MaterialOrganizer={
         blockIds.push(...body.blocks.slice(before).map(b=>b.id));
       }
       const waiting=['waiting','running'].includes(processed.job?.state??'waiting'),failed=['blocked','failed'].includes(processed.job?.state??'');
-      attachedArtifacts.push({key:`attachment/${fileId}/text`,blockIds,state:waiting?'pending':failed?'failed':blockIds.length?'ready':'unavailable',...(processed.job?.error?{reason:processed.job.error}:{})});
+      attachedArtifacts.push({key:`attachment/${fileId}/text`,blockIds,state:processed.extraction?'ready':waiting?'pending':failed?'failed':'unavailable',...(!processed.extraction&&processed.job?.error?{reason:processed.job.error}:{})});
+      attachedArtifacts.push(...imageBlocks(body,attached,processed.image,`attachment/${fileId}`));
+    }
+    for(const attachment of attachments.filter(a=>a.mimeType.startsWith('image/')&&!(file.attachedFiles??[]).some(f=>f.fileId===a.id))){
+      attachedArtifacts.push({key:`attachment/${attachment.id}/text`,state:'pending',blockIds:[],reason:'attachment_admission_pending'});
+      attachedArtifacts.push({key:`attachment/${attachment.id}/understanding`,state:'pending',blockIds:[],reason:'attachment_admission_pending'});
     }
     if(file.objectHash)body.asset('original',file.objectHash,r.provenance?.mimeType??'application/octet-stream',r.id);
     for(const attachment of attachments){
@@ -285,12 +306,12 @@ const sourceItem:MaterialOrganizer={
     }
     if(file.attachmentsTruncated)body.limitations.add('attachment_limit');
     if(file.providerTranscript&&chunks.length>=19991)body.limitations.add('recording_segment_limit');
-    const artifact=chunks[0]?.artifact;
+    const artifact=file.extraction??chunks[0]?.artifact;
     let state:'complete'|'pending'|'partial'='complete',reason:string|undefined;
     if(file.processingRequired){
       if(['waiting','running'].includes(job?.state??'waiting')){state='pending';reason='processing_pending';}
       else if(job?.state==='blocked'||job?.state==='failed'){state='partial';reason=`processing_${job.state}`;}
-      else if(job?.state==='succeeded'&&!artifact){state='partial';reason='processed_body_missing';}
+      else if(job?.state==='succeeded'&&!artifact&&!file.image?.archiveOnly){state='partial';reason='processed_body_missing';}
       else if(artifact&&(artifact.complete===false||artifact.coverage==='partial')){state='partial';reason='processor_partial';}
     }
     if(r.provenance?.document?.fileIndex&&r.provenance.document.fileIndex.coverage!=='full'){state='partial';reason='source_index_partial';}
@@ -305,7 +326,8 @@ const sourceItem:MaterialOrganizer={
       {key:'source-body',blockIds:sourceBlocks,state:reference||!hasSourceBody?'unavailable':'ready',
         ...(reference?{reason:'original_body_not_collected'}:!hasSourceBody?{reason:'source_body_empty'}:{})},
       ...(file.objectHash?[{key:'original',blockIds:body.blocks.filter(b=>b.id==='original').map(b=>b.id),state:'ready' as const,revision:file.objectHash}]:[]),
-      ...(file.processingRequired?[{key:'extracted-text',blockIds:extractedBlocks,state:['waiting','running'].includes(job?.state??'waiting')?'pending' as const:['blocked','failed','cancelled'].includes(job?.state??'')?'failed' as const:file.providerTranscript&&body.limited?'unavailable' as const:chunks.length?'ready' as const:'unavailable' as const,...(job?.error?{reason:job.error}:{})}]:[]),
+      ...(file.processingRequired?[{key:'extracted-text',blockIds:extractedBlocks,state:artifact&&artifact.complete!==false&&artifact.coverage!=='partial'?'ready' as const:['waiting','running'].includes(job?.state??'waiting')?'pending' as const:['blocked','failed','cancelled'].includes(job?.state??'')?'failed' as const:'unavailable' as const,...(!artifact&&job?.error?{reason:job.error}:{})}]:[]),
+      ...imageArtifacts,
       ...attachedArtifacts,
     ];
     const start=r.provenance?.calendar?.start??sourceContentTime(r),end=r.provenance?.calendar?.end??start;
@@ -345,7 +367,7 @@ const codingSession:MaterialOrganizer={
 };
 
 const screenGroup:MaterialOrganizer={
-  id:'mote.screen-segment',version:'2',slot:'screen-segment',
+  id:'mote.screen-segment',version:'3',slot:'screen-segment',
   select:r=>{if(r.source!=='screen'&&r.source!=='ui_page')return;const row=(r as CaptureRecord&{groupKey?:string}).groupKey;return {deviceId:r.deviceId,groupKey:row??''};},
   identity:g=>g.groupKey?materialId(sourceKey('screen',g.deviceId),g.groupKey):undefined,
   build(reader,g){
@@ -359,12 +381,14 @@ const screenGroup:MaterialOrganizer={
     const durationMs=records.reduce((sum,r)=>sum+Math.max(0,r.durationMs??0),0);
     const applications=new Map<string,{appId:string;appName:string;samples:number;durationMs:number}>();
     const distinctOcr=new Map<string,string>();
+    const imageArtifacts:NonNullable<MaterialDraft['artifacts']>=[];
     for(const r of records){
       const appId=r.appId??'',appName=r.appName??'',key=JSON.stringify([appId,appName]);
       const item=applications.get(key)??{appId,appName,samples:0,durationMs:0};
       item.samples++;item.durationMs+=Math.max(0,r.durationMs??0);applications.set(key,item);
       const ocr=(r.ocrText??'').trim().replace(/\s+/g,' ');
       if(ocr&&!distinctOcr.has(ocr))distinctOcr.set(ocr,ocr);
+      imageArtifacts.push(...imageBlocks(body,r,reader.file(r.id)?.image,`frame/${r.id}`));
     }
     const apps=[...applications.values()].sort((a,b)=>b.durationMs-a.durationMs||a.appId.localeCompare(b.appId));
     body.text('overview',JSON.stringify({sampleCount:records.length,firstAt:sourceContentTime(records[0]!),lastAt:sourceContentTime(records.at(-1)!),
@@ -383,7 +407,8 @@ const screenGroup:MaterialOrganizer={
     return {id:materialId(sourceId,externalId),kind:'mote.screen-segment',schemaVersion:1,title:records.at(-1)?.appName||'Screen',
       origin:origin(sourceId,externalId,records),blocks:body.blocks,members:body.members,
       coverage:body.coverage(ocrFailed?'partial':ocrPending?'pending':'complete',ocrFailed?'ocr_failed':ocrPending?'ocr_pending':undefined),
-      artifacts:[{key:'screen-observations',state:'ready'},{key:'ocr',state:ocrFailed?'failed':ocrPending?'pending':'ready',...(ocrFailed?{reason:'ocr_failed'}:ocrPending?{reason:'ocr_pending'}:{})}],
+      artifacts:[{key:'screen-observations',state:'ready'},{key:'ocr',state:ocrFailed?'failed':ocrPending?'pending':'ready',...(ocrFailed?{reason:'ocr_failed'}:ocrPending?{reason:'ocr_pending'}:{})},...imageArtifacts,
+        ...(imageArtifacts.length?[{key:'image-understanding',state:imageArtifacts.some(a=>a.state==='failed')?'failed' as const:imageArtifacts.every(a=>a.state==='ready')?'ready' as const:'pending' as const,blockIds:imageArtifacts.flatMap(a=>a.blockIds??[])}]:[])],
       fidelity:body.fidelity('derived',['metadata_projected','screen_samples_compressed']),retention:{original:'retained',policy:'keep'}};
   },
 };
@@ -531,10 +556,14 @@ export class MaterialOrganizerRuntime {
           materials.publish(prepared.draft,{expectedRevision:prior?.revision??null});
           materials.setSearchable(input.materialId,true);
           if(input.organizerId===sourceItem.id){
-            const required=prepared.draft.artifacts?.some(item=>item.key==='original')?'extracted-text':'source-body';
-            if(prepared.pinnedSourceHead)this.memoryWork?.observe(input.materialId,[required],{
+            const required=prepared.draft.artifacts?.some(item=>item.key==='image-understanding')?'image-understanding':prepared.draft.artifacts?.some(item=>item.key==='original')?'extracted-text':'source-body';
+            const attachments=prepared.draft.artifacts?.filter(item=>item.key.startsWith('attachment/')&&item.key.endsWith('/understanding')).map(item=>item.key)??[];
+            if(prepared.pinnedSourceHead)this.memoryWork?.observe(input.materialId,[required,...attachments],{
               inputKey:prepared.pinnedSourceHead,change:input.sourceChanged?'source':'rebuild',
             });
+          }else if(input.organizerId===screenGroup.id){
+            const last=prepared.draft.members.at(-1)?.id;
+            if(last)this.memoryWork?.observe(input.materialId,prepared.draft.artifacts?.some(item=>item.key==='image-understanding')?['image-understanding']:['ocr'],{inputKey:last,change:'source'},15000);
           }
         }else if(!other){
           const prior=materials.get(input.materialId);if(prior)materials.retire(input.materialId,{expectedRevision:prior.revision});

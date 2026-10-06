@@ -14,10 +14,11 @@ import {ModelProfiles} from './ModelProfiles';
 import {ModelAssignments} from './ModelAssignments';
 import {FileProcessingSettings} from './FileProcessingSettings';
 export type SettingsDestination = 'imports'|'usage'|'lark'|'vault'|'developer'|'about'|'connections';
-type SettingsCategory = ConfigCategory|'providers'|'model'|'file-processing';
+type SettingsCategory = ConfigCategory|'providers'|'model'|'file-processing'|'images';
 const categories: {id:SettingsCategory;title:string;description:string;icon:typeof Bot}[] = [
   {id:'providers',title:moteText("模型 Provider"),description:moteText("连接预设、模型目录、凭据与测试"),icon:Bot},
   {id:'model',title:moteText("模块与模型"),description:moteText("为各模块分配预设和模型，设置记忆与回顾"),icon:Settings2},
+  {id:'images',title:moteText('图片'),description:moteText('统一文字识别、画面理解与历史补处理'),icon:FileText},
   {id:'file-processing',title:moteText("文件与语音"),description:moteText("本地语音模型、转写与文件处理策略"),icon:FileText},
   {id:'storage',title:moteText("保留与容量"),description:moteText("历史保留周期与资料库容量"),icon:Database},
   {id:'embedding',title:moteText("检索索引"),description:moteText("全文检索与可选向量模型"),icon:Search},
@@ -45,7 +46,8 @@ export function ServerSettings({api,onNavigate,onModelApplied}:{api:Api;onNaviga
    <p className="settings-footnote"><ShieldCheck size={16}/>{moteText("模型、记忆、文件处理与飞书设置可直接保存并生效；其他偏好通过部署草稿修改并重启。离开有未保存修改的配置页面时会先提醒。")}</p>
   </>}
   {category==='file-processing'&&<FileProcessingSettings api={api}/>}
-  {config&&categories.filter(item=>category===item.id&&item.id!=='file-processing').map(item=><div key={item.id}>{item.id==='providers'&&<ModelProfiles api={api} revision={revision} onApplied={()=>{setRevision(n=>n+1);onModelApplied();}}/>}{item.id==='model'&&<><ModelAssignments api={api} revision={revision} onApplied={()=>{setRevision(n=>n+1);onModelApplied();}} onManage={()=>{if(confirmNavigation())setCategory('providers');}}/><RuntimeSettings api={api} kind="execution"/><PerceptionSettings api={api}/><MemorySettings api={api}/></>} {item.id!=='model'&&item.id!=='providers'&&item.id!=='file-processing'&&<><ConfigurationBuilder config={config} category={item.id} sources={sources} sourcesError={sourcesError}/><section className="panel effective-settings"><div className="section-heading"><div><h2>{moteText("当前生效值")}</h2><p>{moteText("来自运行中的中央节点；与上方尚未应用的草稿分开显示。")}</p></div><span className="badge muted">{moteText("只读")}</span></div>{config.groups.find(g=>g.id===item.id)?.fields.map(field=><EffectiveField key={field.key} field={field}/>)}</section></>}</div>)}
+  {category==='images'&&<PerceptionSettings api={api} onMemory={()=>{if(confirmNavigation())setCategory('model');}} onAdvanced={()=>{if(confirmNavigation())setCategory('file-processing');}}/>}
+  {config&&categories.filter(item=>category===item.id&&item.id!=='file-processing'&&item.id!=='images').map(item=><div key={item.id}>{item.id==='providers'&&<ModelProfiles api={api} revision={revision} onApplied={()=>{setRevision(n=>n+1);onModelApplied();}}/>}{item.id==='model'&&<><ModelAssignments api={api} revision={revision} onApplied={()=>{setRevision(n=>n+1);onModelApplied();}} onManage={()=>{if(confirmNavigation())setCategory('providers');}}/><RuntimeSettings api={api} kind="execution"/><MemorySettings api={api}/></>} {item.id!=='model'&&item.id!=='providers'&&item.id!=='file-processing'&&item.id!=='images'&&<><ConfigurationBuilder config={config} category={item.id} sources={sources} sourcesError={sourcesError}/><section className="panel effective-settings"><div className="section-heading"><div><h2>{moteText("当前生效值")}</h2><p>{moteText("来自运行中的中央节点；与上方尚未应用的草稿分开显示。")}</p></div><span className="badge muted">{moteText("只读")}</span></div>{config.groups.find(g=>g.id===item.id)?.fields.map(field=><EffectiveField key={field.key} field={field}/>)}</section></>}</div>)}
  </div>;
 }
 export function AdvancedConfiguration({api}:{api:Api}) {

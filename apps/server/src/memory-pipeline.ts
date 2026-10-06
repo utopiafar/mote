@@ -188,7 +188,8 @@ export class MemoryPipeline {
       const evidenceIds=artifact.kind==='segment'?artifact.members:
         artifact.kind==='semantic'&&Array.isArray(artifact.metadata.evidenceRanges)?
           artifact.metadata.evidenceRanges.flatMap(range=>range&&typeof range==='object'&&'id' in range&&typeof range.id==='string'?[range.id]:[]):[];
-      return !evidenceIds.some(evidenceId=>this.rawSourceItem(evidenceId));
+      const images=Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='image_inputs'").get());
+      return !evidenceIds.some(evidenceId=>this.rawSourceItem(evidenceId)||images&&this.store.db.prepare('SELECT 1 FROM image_inputs WHERE capture_id=?').get(evidenceId));
     });
   }
   private storedJob(id:string):MemoryJob {

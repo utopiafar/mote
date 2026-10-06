@@ -27,7 +27,7 @@ export class Operations {
 }
 export function registerOperations(app:FastifyInstance,operations:Operations,isCollector:(request:FastifyRequest)=>boolean){
  const owner=(req:FastifyRequest)=>{if(isCollector(req))throw new StoreError('Owner access required',403);};
- app.get('/api/operations',async req=>{owner(req);return operations.page(z.object({state:operationStateSchema.optional(),kind:z.enum(['capture','file','workflow','memory','import','query','insight','embedding','material-index']).optional(),cursor:z.coerce.number().int().max(Number.MAX_SAFE_INTEGER).positive().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query));});
+ app.get('/api/operations',async req=>{owner(req);return operations.page(z.object({state:operationStateSchema.optional(),kind:z.enum(['image','capture','file','workflow','memory','import','query','insight','embedding','material-index']).optional(),cursor:z.coerce.number().int().max(Number.MAX_SAFE_INTEGER).positive().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query));});
  app.get('/api/operations/changes',async req=>{owner(req);return operations.changes(z.object({since:z.coerce.number().int().max(Number.MAX_SAFE_INTEGER).nonnegative().default(0)}).strict().parse(req.query).since);});
  app.get('/api/operations/:id',async req=>{owner(req);const {cursor,limit}=z.object({cursor:z.coerce.number().int().max(Number.MAX_SAFE_INTEGER).nonnegative().default(0),limit:z.coerce.number().int().min(1).max(100).default(50)}).strict().parse(req.query);return operations.detail(z.object({id:z.string().min(1).max(256)}).parse(req.params).id,cursor,limit);});
 }

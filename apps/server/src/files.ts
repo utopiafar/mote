@@ -183,9 +183,9 @@ export class FileStore {
   }
   /** Owner intake reuses retained bytes and the same file revision transaction as
    * collector uploads. No transcription or semantic attribution happens here. */
-  async archivedRevision(file:ArchivedFile,sourceId:string,mimeType:string,observedAt:string,authorize:()=>void,onCommit?:(id:string)=>void){
+  async archivedRevision(file:ArchivedFile,sourceId:string,mimeType:string,observedAt:string,authorize:()=>void,onCommit?:(id:string)=>void,processingProfileId?:string){
     const externalId='file:'+file.relativePath,revision=sha256(JSON.stringify([file.hash,mimeType])),head=this.sources.getItem(sourceId,externalId);
-    let input:FileRevision={sourceId,relativePath:file.relativePath,previousRevision:head?.revision===revision?null:head?.revision??null,
+    let input:FileRevision={sourceId,relativePath:file.relativePath,...(processingProfileId?{processingProfileId}:{}),previousRevision:head?.revision===revision?null:head?.revision??null,
       item:{externalId,revision,kind:'file',layer:'original',title:file.name,text:'',mimeType,observedAt,deleted:false,
         document:{fileId:file.id,path:file.relativePath,contentRole:'other',timeBasis:'unknown'}},sha256:file.hash,sizeBytes:file.sizeBytes};
     const prior=this.store.db.prepare('SELECT manifest FROM file_versions WHERE source_id=? AND external_id=? AND revision=?').get(sourceId,externalId,revision);
@@ -208,6 +208,7 @@ export class FileStore {
         else this.store.db.prepare('INSERT INTO file_heads VALUES(?,?,?,0) ON CONFLICT(source_id,external_id) DO UPDATE SET capture_id=excluded.capture_id,origin_missing=0').run(input.sourceId,input.item.externalId,captureId);
         if(input.sha256&&!input.item.deleted&&input.item.layer==='snapshot')this.store.db.prepare('INSERT INTO file_snapshot_inputs VALUES(?,?,?)').run(captureId,input.sha256,Date.now()+86400000);
         if(input.sha256&&!input.item.deleted)this.store.db.prepare('INSERT INTO file_jobs(capture_id) VALUES(?)').run(captureId);
+        this.store.reserveMetadata(0);
   }
   private needsSnapshotInput(v:Version){
     const input=JSON.parse(v.manifest) as FileRevision;
