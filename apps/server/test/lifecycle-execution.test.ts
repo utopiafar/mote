@@ -99,7 +99,7 @@ test('legacy artifact extraction stops after three failed provider turns across 
  fail=false;const resumed=await app.inject({method:'POST',url:'/api/memory-settings/extraction/'+exhausted.active!.id+'/retry'});assert.equal(resumed.statusCode,202);await lifecycle.tick();assert.equal(calls,4);assert.equal(lifecycle.view().extensions.find(e=>e.id==='extraction')!.active,undefined);
 });
 
-test('legacy extraction waits for semantic dependencies or allowance without spending failure attempts',async t=>{
+test('legacy extraction waits for semantic dependencies without spending failure attempts',async t=>{
  const {store,engine,closers}=fixture(t),sources=new SourceStore(store),files=new FileStore(store,sources),memories=new MemoryStore(store),working=new WorkingMemory(store,new Conversations(store));
  sources.register({id:'generated-wait',name:'Generated wait source',kind:'custom',deviceId:'fixture',platform:'import'});
  const content='Generated waiting input.',record=await sources.upsert('generated-wait',{externalId:'one',revision:'1',observedAt:'2026-09-27T00:00:00Z',kind:'message',layer:'original',text:content});
@@ -107,9 +107,9 @@ test('legacy extraction waits for semantic dependencies or allowance without spe
  let now=Date.now(),checks=0,calls=0,modelReady=false;
  const pipeline=fixtureMemoryPipeline({store,memories,executor:engine,configured:()=>modelReady,model:()=> 'generated',query:async()=>{calls++;return {runId:randomUUID(),answer:'{"memories":[]}',citations:[],trace:[]};}});closers.push(()=>pipeline.close());
  const lifecycle=new MemoryLifecycle(store,()=>true,()=>now);closers.push(()=>lifecycle.close());
- registerMemoryExtensions({store,files,memories,pipeline,working,lifecycle,model:()=> 'generated',query:async()=>{throw Error('Unexpected integration query');},semanticArtifacts:async ids=>{checks++;if(checks<3)throw new ExecutionFailure('waiting','daily_budget',60000);return ids;}});
+ registerMemoryExtensions({store,files,memories,pipeline,working,lifecycle,model:()=> 'generated',query:async()=>{throw Error('Unexpected integration query');},semanticArtifacts:async ids=>{checks++;if(checks<3)throw new ExecutionFailure('waiting','semantic_processing_pending',60000);return ids;}});
  const settings=lifecycle.settings();for(const id of ['consolidation','insights','working'] as const)settings[id].enabled=false;settings.extraction.minChanges=1;lifecycle.configure(settings);
- for(let i=0;i<2;i++){await lifecycle.tick();const state=lifecycle.view().extensions.find(e=>e.id==='extraction')!;assert.equal(state.failures,0);assert.equal(state.error,'daily_budget');assert.equal(state.status,'retry_wait');assert.equal(calls,0);now+=60000;}
+ for(let i=0;i<2;i++){await lifecycle.tick();const state=lifecycle.view().extensions.find(e=>e.id==='extraction')!;assert.equal(state.failures,0);assert.equal(state.error,'semantic_processing_pending');assert.equal(state.status,'retry_wait');assert.equal(calls,0);now+=60000;}
  await lifecycle.tick();assert.equal(checks,3);assert.equal(calls,0);assert.equal(lifecycle.view().extensions.find(e=>e.id==='extraction')!.failures,0,'model admission is also not a provider failure');
  modelReady=true;now+=60000;await lifecycle.tick();assert.equal(calls,1);assert.equal(lifecycle.view().extensions.find(e=>e.id==='extraction')!.failures,0);
 });

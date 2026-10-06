@@ -27,17 +27,12 @@ const levels = ['debug','info','warn','error','silent'] as const;
 const operations:Operation[] = ['recording_metadata','recording_discover','recording_transcript','recording_media','recording_decode','recording_publish','capture','note','import','embedding','search','timeline','evidence','activity','devices','query','insight','retention','extract','diarize','align','turns','summary','file_upload','file_part','file_commit','file_revision','file_process','file_settings','file_retry'];
 const events = new Set(['server.started','server.stopping','request.started','request.completed','request.failed','queue.snapshot','support.exported','agent.trace','agent.tool_rejected','agent.memory_validation_failed','agent.waiting','agent.heartbeat','file.blocked','file.retry','file.cached','file.cancelled','file.settings','file.step.started','file.step.completed','file.step.failed',...['ingest','index','agent','source','maintenance','file'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
 const routes = new Set(['files','file-sync','file-processing','conversations','configuration','sources','memories','layers','connectors','health','status','captures','notes','image','devices','connections','updates','activity','query','insights','index','export','import','diagnostics','support','web','unknown']);
-const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','deleted','too_large','rate_limited','api_rate_limited','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','daily_budget','local_only','summary_disabled','cancelled']);
+const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','deleted','too_large','rate_limited','api_rate_limited','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','local_only','summary_disabled','cancelled']);
 const numberKeys = ['durationMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted','attempt','retryAfterMs','part','batchIndex','candidateIndex','spanIndex','declaredOffset','declaredLength','quoteLength','sourceLength','authorizedMatches','idleMs','elapsedMs','remainingCalls','remainingCharacters','repeatCount'] as const;
 const responseReasons:Record<string,string>={
   provider_quota:"模型服务额度不足，恢复账户额度后再继续。",
   provider_policy:"模型服务拒绝了本次请求，请调整内容或处理范围。",
   recovery_window_exhausted:"自动恢复时间已用完，可手动重试开启新的恢复周期。",
-  model_token_budget:"模型 token 预算不足，等待预算重置或调整预算后继续。",
-  model_cost_budget:"模型金额预算不足，等待预算重置或调整预算后继续。",
-  budget_price_required:"金额预算需要当前币种的模型价格，请先设置价格。",
-  budget_unbounded_runtime:"当前运行时无法强制限制每次请求的预算，请选择支持预算限制的运行时或调整预算。",
-  model_budget_unavailable:"模型预算服务不可用，请稍后重试。",
   configuration_changed:"相关模型配置已改变，请重试以使用新配置；已完成批次会保留。",
   provider_authentication:"处理服务拒绝了凭据，请检查服务权限与密钥。",
   provider_endpoint:"处理服务地址不可用，请检查端点配置。",

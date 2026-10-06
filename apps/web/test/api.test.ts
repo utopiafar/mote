@@ -98,7 +98,7 @@ test('management requests stay on the current service and reject external paths 
 
 test('structured provider errors use localized codes and retain correlation without rendering external text',async t=>{
  const requestId='c919bc95-272d-4094-92a1-7f9c0ae944ca';
- for(const code of ['provider_quota','budget_unbounded_runtime','unknown_generated_code']){
+ for(const code of ['provider_quota','provider_authentication','unknown_generated_code']){
   const mock=t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({error:code,message:'RAW EXTERNAL ENGINE TEXT',requestId}),{status:503}));
   await assert.rejects(createApi({token:'synthetic'}).request('/api/query-runs'),error=>{assert.ok(error instanceof ApiError);assert.equal(error.code,code);assert.doesNotMatch(errorMessage(error),/RAW EXTERNAL/);assert.match(errorMessage(error),new RegExp(requestId));if(code==='unknown_generated_code')assert.match(errorMessage(error),/错误码：unknown_generated_code/);return true;});mock.mock.restore();
  }

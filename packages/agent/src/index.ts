@@ -217,7 +217,7 @@ export function createAgent(options: AgentOptions) {
     let primaryFailure = false;
     let abortListener: (() => void) | undefined;
     try {
-      transportObserver=await observeModelTransport(options.admitModelRequest);
+      transportObserver=await observeModelTransport(options.authorizeModelRequest);
       await mkdir(join(root, "workspace"));
       const patch = join(root, "mote.patch.json");
       const pluginPath=join(root,"mote-plugin.mjs");

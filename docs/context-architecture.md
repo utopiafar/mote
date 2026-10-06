@@ -43,11 +43,11 @@ flowchart LR
 
 ## 插件与可靠工作流
 
-Cordis 管注册和生命周期。部署模块可通过 `ctx.moteContextProcessors.register()` 注册 `id`、`version`、`lane` 和 `process()`；返回的注销函数应通过插件生命周期清理。宿主管输入版本、事务、预算、重试和取消。既有文件处理器继续运行，通过同一模块入口注册新上下文处理器；没有假装所有历史队列都已迁到新表。
+Cordis 管注册和生命周期。部署模块可通过 `ctx.moteContextProcessors.register()` 注册 `id`、`version`、`lane` 和 `process()`；返回的注销函数应通过插件生命周期清理。宿主管输入版本、事务、并发、重试和取消。既有文件处理器继续运行，通过同一模块入口注册新上下文处理器；没有假装所有历史队列都已迁到新表。
 
 新契约支持多输入、多产物、显式产物修订依赖和 DAG；工作流最多 32 步，每步含祖先在内最多 100 条原文。处理器收到证据、上游产物、配置和 AbortSignal，不获得查询 Agent 的写权限。安装的服务端插件本身仍属于可信代码，Cordis 不是恶意插件沙箱。
 
-四类队列 `extract / aggregate / semantic / memory` 独立并发和每日调用、输入字符预算。默认 semantic / memory 各 100 次、1,200,000 字符/UTC 日，extract / aggregate 各 10,000 次、120,000,000 字符；可设调用数为 0 暂停准入。预算在调用前预留，失败不退还；超出当天预算推迟到下一 UTC 日，单项超过全天字符预算则显式阻塞。字符不是 token，最终模型使用量单独记账。旧文件与 Memory 生命周期使用各自已有的准入设置，不能把新队列预算误当成全站统一花费上限。
+四类队列 `extract / aggregate / semantic / memory` 分别配置并发和启用状态。已启用且获授权的任务持续处理，不设每日次数、输入字符、token 或费用准入额度，也不因 UTC 跨日等待。去重、缓存、增量处理和公平调度控制重复工作；实际模型用量与已知费用独立统计。升级会恢复仅因旧预算受阻的可重放后台任务；原额度为 0 的队列转为明确停用。单次输入输出边界及来源授权继续生效，详见 [持续处理](processing-throughput.md)。
 
 上下文处理步骤保留 120 秒处理期限和最多 4 次尝试；租约已交由共享 ExecutionEngine 管理，每 10 秒续约、失联 30 秒过期，不能再用旧 DAG 的 130 秒租约描述当前恢复。瞬时错误按执行器策略退避。永久失败不自动重试；处理器或版本缺失阻塞。重启恢复过期租约，取消/超时/删除/版本变化均不能让晚到结果重新写入。多个产物与成功状态同事务提交。外部调用是至少一次语义，崩溃后的重试可能重复收费；提交去重不等于远端只调用一次。
 
@@ -55,8 +55,8 @@ Cordis 管注册和生命周期。部署模块可通过 `ctx.moteContextProcesso
 
 | API | 用途 |
 | --- | --- |
-| `GET /api/processing` | 队列、处理器、配额、用量与归档覆盖 |
-| `PUT /api/processing/settings` | 提交完整四队列策略 |
+| `GET /api/processing` | 队列、处理器、并发和启用状态 |
+| `PUT /api/processing/settings` | 提交完整四队列的并发和启用策略 |
 | `POST /api/processing/workflows` | `{steps:[{name,processor,inputs,dependsOn,artifactInputs,config}]}` |
 | `POST /api/processing/:id/retry` / `cancel` | 显式重试与取消 |
 | `GET /api/context/segments` | 卡片或按 `id` 展开；支持范围、分页和字符预算 |

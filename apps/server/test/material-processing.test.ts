@@ -18,11 +18,11 @@ function draft(text='Generated session evidence'):MaterialDraft {
     blocks:[{id:'message-1',kind:'text',format:'plain',text,memberIds:[]}],members:[],
     coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}};
 }
-function fixture(t:import('node:test').TestContext,dailyInputCharacters=1200000){
+function fixture(t:import('node:test').TestContext,enabled=true){
   const directory=mkdtempSync(join(tmpdir(),'mote-material-processing-'));
   const store=new Store(directory),materials=new MaterialStore(store),sources=new SourceStore(store);
   const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials);
-  const runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:1,dailyCalls:100,dailyInputCharacters}},Date.now,undefined,materials);
+  const runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:1,enabled}},Date.now,undefined,materials);
   t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
   return {store,materials,sources,reader,runtime};
 }
@@ -44,7 +44,6 @@ test('a material-only processor reads a pinned page and its output follows revis
   assert.equal(output.text,'Generated');assert.deepEqual(output.materialInputs,[{ref:first.ref,offset:0,length:9}]);
   assert.equal(output.firstAt,'2026-09-24T01:00:00.000Z');
   assert.equal(store.db.prepare('SELECT revision FROM artifact_material_inputs WHERE artifact_id=?').get(outputId)?.revision,first.revision);
-  assert.equal(store.db.prepare("SELECT input_characters FROM processing_usage WHERE lane='semantic'").get()?.input_characters,9);
   const child=store.archive.save('generated-child',outputId,'revision-1',{kind:'generated-child',text:'Derived page',metadata:{}},[],'fixture.child','1','fixture',[],[{id:outputId,revision:output.revision}]);
   assert.equal(store.archive.get(child.id)?.text,'Derived page');
   const revised=materials.publish(draft('Generated session evidence, revised'),{expectedRevision:first.revision});expectedRef=revised.ref;
@@ -56,13 +55,13 @@ test('a material-only processor reads a pinned page and its output follows revis
   assert.equal(store.archive.get(runtime.view().jobs.find(job=>job.id===next)!.outputs[0]!),undefined);
 });
 
-test('material page characters are charged to the lane budget before processor execution',async t=>{
-  const {store,materials,runtime}=fixture(t,5),record=materials.publish(draft());
-  let called=0;runtime.registry.register({id:'fixture.budget',version:'1',lane:'semantic',async process(){called++;return [{kind:'generated',text:'never',metadata:{}}];}});
-  const id=runtime.enqueue([{name:'page',processor:'fixture.budget',materialInputs:[{ref:record.ref,offset:0,length:9}]}]).page;
+test('disabled lanes do not execute material processors',async t=>{
+  const {store,materials,runtime}=fixture(t,false),record=materials.publish(draft());
+  let called=0;runtime.registry.register({id:'fixture.disabled',version:'1',lane:'semantic',async process(){called++;return [{kind:'generated',text:'never',metadata:{}}];}});
+  const id=runtime.enqueue([{name:'page',processor:'fixture.disabled',materialInputs:[{ref:record.ref,offset:0,length:9}]}]).page;
   await runtime.tick();
   assert.equal(called,0);assert.equal(runtime.view().jobs.find(job=>job.id===id)?.state,'blocked');
-  assert.equal(store.db.prepare("SELECT count(*) n FROM processing_usage WHERE lane='semantic'").get()!.n,0);
+  assert.equal(runtime.engine.get(id)?.error,'processing_disabled');assert.equal(runtime.engine.get(id)?.attempts,0);
 });
 
 test('a material revision that changes during processing cannot commit stale output',async t=>{

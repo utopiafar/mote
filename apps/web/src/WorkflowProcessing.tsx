@@ -6,7 +6,7 @@ import type {Page} from './navigation';
 
 import type {ProcessingJobView as Job,ProcessingView as View} from '@mote/shared';
 const states:Record<string,string> = {waiting:'等待处理',running:'运行中',blocked:'受阻',failed:'失败',cancelled:'已取消',succeeded:'完成',stale:'来源变化待重验'};
-const reasons:Record<string,string> = {dependency_failed:'依赖步骤未完成，请先检查上游任务',processor_version_unavailable:'处理器版本不可用',daily_budget:'等待每日额度',budget:'等待每日额度',cancelled:'用户取消',lease_expired:'运行中断，等待恢复'};
+const reasons:Record<string,string> = {dependency_failed:'依赖步骤未完成，请先检查上游任务',processor_version_unavailable:'处理器版本不可用',processing_disabled:'处理队列已停用',cancelled:'用户取消',lease_expired:'运行中断，等待恢复'};
 export function WorkflowProcessing({api,extensions=false,embedded=false,onNavigate}:{api:Api;extensions?:boolean;embedded?:boolean;onNavigate:(page:Page)=>void}) {
   const [view,setView]=useState<View>(),[loading,setLoading]=useState(true),[error,setError]=useState(''),[revision,setRevision]=useState(0),[busy,setBusy]=useState(''),[filter,setFilter]=useState('all');
   const paging=useCursorPages();

@@ -278,16 +278,7 @@ test('pinned derived refs retain the same identity through text continuation and
  deleted=true;await act(async()=>root.render(React.createElement(ReferenceDetail,{key:'reload',api,reference:ref,onOpen:()=>{}})));assert.match(d.body.textContent!,/资料不存在或已删除/);assert.doesNotMatch(d.body.textContent!,/headtail/);
 });
 
-test('budget editor preserves a stale draft on conflict and reloads before saving its new revision',async t=>{
- const {ModelBudgets}=await import('../src/ModelBudgets.js');const {root,document:d}=await fixture(t);let revision=7,conflict=true;const writes:any[]=[];
- const value=()=>({revision,limits:{dailyTokens:null,dailyCost:null,operationTokens:null,operationCost:null,providerDailyTokens:{},providerDailyCost:{},currency:'USD'},day:'2026-09-22',timeZone:'UTC',usage:[{provider:'generated',currency:'USD',tokens:100,cost:null,active:1,unknown:1,runs:2}]});
- const api=apiWith((_path,init)=>{if(init?.method==='PUT'){writes.push(JSON.parse(String(init.body)));if(conflict){revision=8;throw new ApiError('stale',409);}return {...value(),revision:++revision,limits:writes.at(-1).limits};}return value();});
- await act(async()=>root.render(React.createElement(ModelBudgets,{api})));assert.match(d.body.textContent!,/未知用量保留预留额度/);assert.match(d.body.textContent!,/Codex 内置循环/);assert.match(d.body.textContent!,/未估算/);
- const change=async()=>{const select=d.querySelector<HTMLSelectElement>('select')!;await act(async()=>{select.value='CNY';select.dispatchEvent(new window.Event('change',{bubbles:true}));});};
- const submit=async()=>{await act(async()=>d.querySelector('form')!.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));};
- await change();await submit();assert.equal(writes[0].revision,7);assert.equal(d.querySelector('select')!.value,'CNY');assert.match(d.querySelector('[role=alert]')!.textContent!,/当前修改已保留/);
- await act(async()=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(b=>b.textContent==='放弃修改并重新加载')!.click());assert.equal(d.querySelector('select')!.value,'USD');conflict=false;await change();await submit();assert.equal(writes[1].revision,8);assert.equal(writes[1].limits.currency,'CNY');assert.deepEqual(Object.keys(writes[1]).sort(),['limits','revision']);assert.match(d.body.textContent!,/已保存，立即生效/);
-});
+
 
 test('model selectors share configuration reads and fence late provider catalogs',async t=>{
  const {ModelSelector}=await import('../src/ModelSelector.js');const {root,document:d}=await fixture(t),old=deferred(),fresh=deferred();let settingsReads=0;
@@ -334,15 +325,7 @@ test('successful evidence read displays archival presence independently of unkno
  assert.equal(d.querySelector('[data-archive-state]')?.getAttribute('data-archive-state'),'acknowledged');assert.equal(d.querySelector('[data-processing-state]')?.getAttribute('data-processing-state'),'unknown');assert.doesNotMatch(d.body.textContent!,/记忆已完成/);
 });
 
-test('budget settings explain reservations and remove editable drafts after revocation or session change',async t=>{
- const {ModelBudgets}=await import('../src/ModelBudgets.js'),{resources}=await import('../src/resource-cache.js'),{root,document:d}=await fixture(t);let revoked=false;
- const value=(currency='USD')=>({minimumInputReservationTokens:128000,revision:1,limits:{dailyTokens:300000,dailyCost:null,operationTokens:null,operationCost:null,providerDailyTokens:{},providerDailyCost:{},currency},day:'2026-09-23',timeZone:'UTC',usage:[]});
- const api=apiWith(()=>{if(revoked)throw new ApiError('Generated budget revoked',403);return value();});
- await act(async()=>root.render(React.createElement(ModelBudgets,{api})));assert.match(d.body.textContent!,/128,000 个输入 token/);
- await act(async()=>{const input=d.querySelector('select')!;input.value='CNY';input.dispatchEvent(new window.Event('change',{bubbles:true}));});
- revoked=true;await act(async()=>resources(api).invalidate(key=>key==='/api/model-budgets'));assert.equal(d.querySelector('form'),null);assert.match(d.body.textContent!,/Generated budget revoked/);
- const next=apiWith(()=>value());await act(async()=>root.render(React.createElement(ModelBudgets,{api:next})));assert.equal(d.querySelector('select')!.value,'USD');assert.doesNotMatch(d.body.textContent!,/Generated budget revoked/);
-});
+
 
 
 test('full record uses a visible heading and unnamed text content without losing whitespace or interpreting markup',async t=>{

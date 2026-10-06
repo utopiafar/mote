@@ -7,6 +7,7 @@ import {artifactOutput,type ArtifactOutput} from './evidence-archive.js';
 import {parseMaterialRef,type MaterialReadPage,type MaterialStore} from './materials.js';
 import {StoreError,type Store} from './store.js';
 import {BackendPluginScope} from './backend-plugin-scope.js';
+import {removeRetiredBudgetState} from './retired-budget-migration.js';
 
 const fingerprint=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])):value;
@@ -32,24 +33,24 @@ export class ProcessingFailure extends Error {constructor(readonly category:'tra
 const materialInputSchema=z.object({ref:z.string().regex(/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/),offset:z.number().int().min(0).default(0),length:z.number().int().min(1).max(12000).default(4000)}).strict();
 const stepSchema=z.object({name:z.string().regex(/^[\w.-]{1,80}$/),processor:z.string().max(100),inputs:z.array(z.string().uuid()).max(100).default([]),materialInputs:z.array(materialInputSchema).max(32).default([]),dependsOn:z.array(z.string().max(80)).max(32).default([]),artifactInputs:z.array(z.object({id:z.string().length(64),revision:z.string().length(64)}).strict()).max(32).default([]),config:z.record(z.unknown()).default({})}).strict();
 export type ProcessingStep=z.input<typeof stepSchema>;
-const lanePolicy=z.object({concurrency:z.number().int().min(1).max(8),dailyCalls:z.number().int().min(0).max(100000),dailyInputCharacters:z.number().int().min(0).max(1000000000).default(1200000)}).strict();
+const lanePolicy=z.object({concurrency:z.number().int().min(1).max(8),enabled:z.boolean().default(true)}).strict();
 const policies=z.object({extract:lanePolicy,aggregate:lanePolicy,semantic:lanePolicy,memory:lanePolicy}).strict();
 type ParentGrant={stepId:string;fence:string};
 type Job={parentGrant?:ParentGrant;id:string;processor:string;version:string;lane:ProcessingLane;inputs:ProcessingInput[];materialInputs:ProcessingMaterialInput[];config:Record<string,unknown>;dependencies:string[];artifactInputs:{id:string;revision:string}[];outputs:string[]};
 const lanes:ProcessingLane[]=['extract','aggregate','semantic','memory'];
 /** Durable DAG with fenced commits and per-lane admission. Cordis owns plugin life;
- * this host owns retries, budgets, lineage, cancellation and transaction boundaries. */
+ * this host owns retries, lineage, cancellation and transaction boundaries. */
 export class ProcessingRuntime {
   readonly registry=new ContextProcessorRegistry();readonly context:Context;private readonly pluginScope:BackendPluginScope;
   readonly ready:Promise<void>;readonly engine:ExecutionEngine;private owned:boolean;private stopping=false;
   private unregister:Array<()=>Promise<void>>=[];
-  constructor(readonly store:Store,plugins:Plugin[]=[],private limits:Partial<Record<ProcessingLane,{concurrency:number;dailyCalls:number;dailyInputCharacters?:number}>>={},private now=Date.now,engine?:ExecutionEngine,private materials?:MaterialStore,root?:Context){
+  constructor(readonly store:Store,plugins:Plugin[]=[],private limits:Partial<Record<ProcessingLane,{concurrency:number;enabled?:boolean}>>={},private now=Date.now,engine?:ExecutionEngine,private materials?:MaterialStore,root?:Context){
+    removeRetiredBudgetState(store);
     this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
     this.pluginScope.provide('moteContextProcessors',this.registry);
     store.db.exec(`CREATE TABLE IF NOT EXISTS processing_jobs(id TEXT PRIMARY KEY,lane TEXT NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,available_at INTEGER NOT NULL DEFAULT 0,lease_until INTEGER NOT NULL DEFAULT 0,fence TEXT,error TEXT,json TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS processing_ready ON processing_jobs(lane,state,available_at);
-      CREATE TABLE IF NOT EXISTS processing_dependencies(job_id TEXT NOT NULL REFERENCES processing_jobs(id) ON DELETE CASCADE,dependency_id TEXT NOT NULL REFERENCES processing_jobs(id),PRIMARY KEY(job_id,dependency_id));
-      CREATE TABLE IF NOT EXISTS processing_usage(day TEXT NOT NULL,lane TEXT NOT NULL,calls INTEGER NOT NULL,input_characters INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(day,lane));`);
+      CREATE TABLE IF NOT EXISTS processing_dependencies(job_id TEXT NOT NULL REFERENCES processing_jobs(id) ON DELETE CASCADE,dependency_id TEXT NOT NULL REFERENCES processing_jobs(id),PRIMARY KEY(job_id,dependency_id));`);
     if(materials)store.archive.enableMaterialLineage();
     this.engine=engine??new ExecutionEngine(store,now);this.owned=!engine;
     for(const lane of lanes)this.unregister.push(this.engine.register({kind:'context-dag.'+lane,pool:lane,concurrency:()=>this.settings()[lane].concurrency,
@@ -93,8 +94,15 @@ export class ProcessingRuntime {
       db.exec('COMMIT');return Object.fromEntries(ids);
     }catch(error){db.exec('ROLLBACK');throw error;}
   }
-  settings(){const saved=this.store.db.prepare("SELECT value FROM settings WHERE key='processing-policy'").get();return saved?policies.parse(JSON.parse(String(saved.value))):policies.parse(Object.fromEntries(lanes.map(lane=>[lane,{concurrency:this.limits[lane]?.concurrency??(lane==='aggregate'?2:1),dailyCalls:this.limits[lane]?.dailyCalls??(lane==='semantic'||lane==='memory'?100:10000),dailyInputCharacters:this.limits[lane]?.dailyInputCharacters??(lane==='semantic'||lane==='memory'?1200000:120000000)}])));}
-  configure(input:unknown){const policy=policies.parse(input);this.store.db.prepare("INSERT INTO settings VALUES('processing-policy',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(policy));return this.settings();}
+  settings(){const saved=this.store.db.prepare("SELECT value FROM settings WHERE key='processing-policy'").get();return saved?policies.parse(JSON.parse(String(saved.value))):policies.parse(Object.fromEntries(lanes.map(lane=>[lane,{concurrency:this.limits[lane]?.concurrency??(lane==='aggregate'?2:1),enabled:this.limits[lane]?.enabled??true}])));}
+  configure(input:unknown){
+    const policy=policies.parse(input),db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+    try{
+      db.prepare("INSERT INTO settings VALUES('processing-policy',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(policy));
+      for(const row of db.prepare("SELECT e.id,p.lane FROM execution_steps e JOIN processing_jobs p ON p.id=e.id WHERE e.state='blocked' AND e.error='processing_disabled'").all())if(policy[row.lane as ProcessingLane].enabled)this.engine.retry(String(row.id),false);
+      if(own)db.exec('COMMIT');return this.settings();
+    }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
+  }
   view(args:{state?:string;cursor?:number;limit?:number}={}){
     const limit=Math.max(1,Math.min(args.limit??100,100)),clauses:string[]=[],values:(string|number)[]=[];
     if(args.state){clauses.push('state=?');values.push(args.state);}if(args.cursor!==undefined){clauses.push('rowid<?');values.push(args.cursor);}
@@ -105,7 +113,7 @@ export class ProcessingRuntime {
       return {id:String(row.id),engine:'context-dag' as const,title:job.processor,state,attempts:Number(row.attempts),lane:String(row.lane),reason:row.error?String(row.error):undefined,availableAt:Number(row.available_at),dependencies:job.dependencies,outputs:job.outputs,
         allowedActions:[...(['failed','blocked','cancelled'].includes(state)?['retry-step' as const]:[]),...(!['succeeded','cancelled'].includes(state)?['cancel' as const]:[])]};
     });
-    return {jobs,limit,nextCursor:rows.length>limit?Number(rows[limit-1].rowid):null,settings:this.settings(),processors:this.registry.list(),queues:this.store.db.prepare('SELECT lane,state,COUNT(*) AS count FROM processing_jobs GROUP BY lane,state').all(),usage:this.store.db.prepare('SELECT * FROM processing_usage ORDER BY day DESC LIMIT 28').all(),delivery:'at_least_once; output commit is fenced; provider retries may incur additional cost'};}
+    return {jobs,limit,nextCursor:rows.length>limit?Number(rows[limit-1].rowid):null,settings:this.settings(),processors:this.registry.list(),queues:this.store.db.prepare('SELECT lane,state,COUNT(*) AS count FROM processing_jobs GROUP BY lane,state').all(),delivery:'at_least_once; output commit is fenced; provider retries may incur additional cost'};}
   retry(id:string){this.job(id);const state=this.engine.get(id)?.state;if(!state||!['failed','blocked','cancelled'].includes(state))throw new StoreError('Workflow step cannot be retried in its current state',409);this.engine.retry(id);}
   cancel(id:string){this.job(id);const state=this.engine.get(id)?.state;if(!state||state==='succeeded'||state==='cancelled')throw new StoreError('Workflow step cannot be cancelled in its current state',409);this.engine.cancel(id);}
   private job(id:string):Job{const row=this.store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(id);if(!row)throw new StoreError('Workflow step unavailable',404);return JSON.parse(String(row.json));}
@@ -127,13 +135,7 @@ export class ProcessingRuntime {
   private admit(job:Job){
     const processor=this.registry.get(job.processor);
     if(!processor||processor.version!==job.version)return new ExecutionFailure('blocked','processor_version_unavailable');
-    const {observations,materials,artifacts}=this.inputs(job),characters=observations.reduce((n,r)=>n+r.ocrText.length,0)+materials.reduce((n,page)=>n+page.text.length,0)+artifacts.reduce((n,a)=>n+a.outputs.reduce((m,o)=>m+o.text.length,0),0);
-    const day=new Date(this.now()).toISOString().slice(0,10),policy=this.settings()[job.lane],db=this.store.db;
-    const usage=db.prepare('SELECT calls,input_characters FROM processing_usage WHERE day=? AND lane=?').get(day,job.lane);
-    if(characters>policy.dailyInputCharacters)return new ExecutionFailure('blocked','input_budget');
-    if(Number(usage?.calls??0)>=policy.dailyCalls||Number(usage?.input_characters??0)+characters>policy.dailyInputCharacters)return new ExecutionFailure('waiting','daily_budget',Date.parse(day)+86400000-this.now());
-    // Runs within the same claim transaction, so concurrent admissions cannot spend twice.
-    db.prepare('INSERT INTO processing_usage(day,lane,calls,input_characters) VALUES(?,?,1,?) ON CONFLICT(day,lane) DO UPDATE SET calls=calls+1,input_characters=input_characters+excluded.input_characters').run(day,job.lane,characters);
+    if(!this.settings()[job.lane].enabled)return new ExecutionFailure('blocked','processing_disabled');
   }
   private process(job:Job,signal:AbortSignal,step:ExecutionStep){return this.registry.get(job.processor)!.process({...this.inputs(job),config:job.config,signal,execution:{operationId:step.operationId,jobId:job.id,stepId:step.id}});}
   private commit(job:Job,result:unknown){
