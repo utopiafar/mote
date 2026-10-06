@@ -299,7 +299,7 @@ test('file processing settings preserve edited drafts on refresh, show source er
 test('processing controls use plugin capabilities independently of built-in names',async t=>{
  const {FileProcessingSettings}=await import('../src/FileProcessingSettings.js'),{root,document:d}=await fixture(t);
  const processors=[
-  {id:'extension.private',name:'Private alias',stage:'extract',mediaTypes:['audio/'],serviceKind:'asr',localOnly:true,contentPolicy:'local-only',dialogue:true,allowSummary:false},
+  {id:'extension.private',name:'Summary-disabled alias',stage:'extract',mediaTypes:['audio/'],serviceKind:'asr',localOnly:true,dialogue:true,allowSummary:false},
   {id:'extension.analysis',name:'Analysis alias',stage:'extract',mediaTypes:['audio/'],serviceKind:'asr',localOnly:true,dialogue:true,allowSummary:true},
   {id:'extension.text',name:'Text alias',stage:'extract',mediaTypes:['text/'],localOnly:true},
   {id:'extension.local-speaker',name:'Local speaker',stage:'diarize',mediaTypes:['audio/'],localOnly:true},
@@ -313,9 +313,9 @@ test('processing controls use plugin capabilities independently of built-in name
  await act(async()=>root.render(React.createElement(FileProcessingSettings,{api})));
  const card=(name:string)=>Array.from(d.querySelectorAll('details.policy-card')).find(element=>element.querySelector('summary')?.textContent?.startsWith(name))!;
  const options=(element:Element,label:string)=>Array.from(element.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!.options).map(option=>option.value);
- const privateCard=card('Private alias'),analysisCard=card('Analysis alias'),textCard=card('Text alias');
- assert.deepEqual(options(privateCard,'说话人分离插件'),['extension.local-speaker']);
- assert.deepEqual(options(privateCard,'处理服务'),['','asr-local']);assert.deepEqual(options(privateCard,'分析语言模型'),['','model-local']);
+ const privateCard=card('Summary-disabled alias'),analysisCard=card('Analysis alias'),textCard=card('Text alias');
+ assert.deepEqual(options(privateCard,'说话人分离插件'),['extension.local-speaker','extension.remote-speaker']);
+ assert.deepEqual(options(privateCard,'处理服务'),['','asr-local']);assert.deepEqual(options(privateCard,'分析语言模型'),['','model-local','model-remote']);
  assert.equal(privateCard.querySelector('input[type=checkbox]'),null);
  assert.deepEqual(options(analysisCard,'处理服务'),['','asr-local']);assert.deepEqual(options(analysisCard,'分析语言模型'),['','model-local','model-remote']);assert.ok(analysisCard.querySelector('input[type=checkbox]'));
  assert.equal(textCard.querySelector('select[aria-label="说话人分离插件"]'),null);assert.ok(textCard.querySelector('input[type=checkbox]'));
@@ -357,30 +357,30 @@ test('registered source originals navigate through verified Material mapping and
 
 test('failed speaker separation keeps raw transcript readable with current summary-disabled policy',async t=>{
  const {root,document:d}=await fixture(t),mutations:any[]=[];let dialogue=false;
- const value=()=>({captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated recording',mimeType:'audio/wav',observedAt:'2026-09-27T00:00:00Z'},job:{state:dialogue?'succeeded':'failed',error:dialogue?'cancelled':'provider_failed',summary_state:dialogue?'cancelled':'waiting',local_only:1},processingPolicy:{applied:{revision:'generated',profile:{name:'Generated local',processorId:'generated',summarize:false},rule:{type:'audio/*'}},current:{profile:{name:'Generated local',summarize:false},rule:{type:'audio/*'}}},steps:[{step:'extract',state:'succeeded',attempts:1},{step:'diarize',state:dialogue?'succeeded':'failed',attempts:dialogue?5:4}],artifacts:[{id:'raw-generated',kind:'transcript'},...(dialogue?[{id:'dialogue-generated',kind:'dialogue'}]:[])]});
+ const value=()=>({captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated recording',mimeType:'audio/wav',observedAt:'2026-09-27T00:00:00Z'},job:{state:dialogue?'succeeded':'failed',error:dialogue?'cancelled':'provider_failed',summary_state:dialogue?'cancelled':'waiting'},processingPolicy:{capabilities:{dialogue:true,summary:true},applied:{revision:'generated',profile:{name:'Generated local',processorId:'generated',summarize:false},rule:{type:'audio/*'}},current:{profile:{name:'Generated local',summarize:false},rule:{type:'audio/*'}}},steps:[{step:'extract',state:'succeeded',attempts:1},{step:'diarize',state:dialogue?'succeeded':'failed',attempts:dialogue?5:4}],artifacts:[{id:'raw-generated',kind:'transcript'},...(dialogue?[{id:'dialogue-generated',kind:'dialogue'}]:[])]});
  const api=apiWith((path,init)=>{if(path.endsWith('/reviews'))return {items:[]};if(path.endsWith('/retry')){mutations.push(JSON.parse(String(init?.body)));return {};}if(path.includes('/chunks?'))return {items:[{id:'generated-chunk',ocrText:dialogue?'Generated dialogue':'Generated raw <b>words</b>',fileEvidence:{startMs:0}}],nextOffset:null};assert.equal(path,'/api/files/'+ids[0]);return value();});
  await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
  const click=async(label:string)=>act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent===label)!.click());
- assert.match(d.body.textContent!,/整体处理：处理失败/);assert.match(d.body.textContent!,/摘要：未启用/);assert.doesNotMatch(d.body.textContent!,/转写服务未完成/);
+ assert.match(d.body.textContent!,/整体处理：处理失败/);assert.match(d.body.textContent!,/摘要：未安排摘要/);assert.doesNotMatch(d.body.textContent!,/转写服务未完成/);
  assert.match(d.body.textContent!,/转写 \/ 提取：已完成/);assert.match(d.body.textContent!,/说话人分离：处理失败/);
  await click('展开原始转写（未校正）');assert.match(d.body.textContent!,/Generated raw <b>words<\/b>/);assert.equal(d.querySelector('.file-text b'),null);assert.match(d.body.textContent!,/原始转写 · 未校正/);
  await click('重新分离说话人（保留转写）');assert.deepEqual(mutations,[{stage:'diarize'}]);
  dialogue=true;await act(async()=>resources(api).invalidate(key=>key==='/api/files/'+ids[0]));
- assert.match(d.body.textContent!,/整体处理：已完成；摘要：未启用/);assert.doesNotMatch(d.body.textContent!,/处理未完成/);
+ assert.match(d.body.textContent!,/整体处理：已完成；摘要：未安排摘要/);assert.doesNotMatch(d.body.textContent!,/处理未完成/);
  assert.doesNotMatch(d.body.textContent!,/Generated raw/);await click('展开转写 / 原文片段');assert.match(d.body.textContent!,/Generated dialogue/);
 });
 
 
 test('summary failure is attributed to summary after extraction succeeds',async t=>{
  const {root,document:d}=await fixture(t);
- const api=apiWith(()=>({captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated recording',mimeType:'audio/wav',observedAt:'2026-09-27T00:00:00Z'},job:{state:'succeeded',error:'summary_failed',summary_state:'failed',local_only:0},artifacts:[]}));
+ const api=apiWith(()=>({captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated recording',mimeType:'audio/wav',observedAt:'2026-09-27T00:00:00Z'},job:{state:'succeeded',error:'summary_failed',summary_state:'failed'},artifacts:[]}));
  await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
  assert.match(d.body.textContent!,/整体处理：已完成；摘要：处理失败（摘要生成失败，可单独重试）/);
 });
 
 test('late raw reply cannot repopulate dialogue view',async t=>{
  const {root,document:d}=await fixture(t),raw=deferred();let dialogue=false;
- const value=()=>({captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated',mimeType:'audio/wav',observedAt:'2026-09-27T00:00:00Z'},job:{state:dialogue?'succeeded':'failed',error:dialogue?'cancelled':'provider_failed',summary_state:'cancelled',local_only:1},artifacts:[{id:'raw-generated',kind:'transcript'},...(dialogue?[{id:'dialogue-generated',kind:'dialogue'}]:[])]});
+ const value=()=>({captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated',mimeType:'audio/wav',observedAt:'2026-09-27T00:00:00Z'},job:{state:dialogue?'succeeded':'failed',error:dialogue?'cancelled':'provider_failed',summary_state:'cancelled'},artifacts:[{id:'raw-generated',kind:'transcript'},...(dialogue?[{id:'dialogue-generated',kind:'dialogue'}]:[])]});
  const api=apiWith(path=>path.endsWith('/reviews')?{items:[]}:path.includes('/chunks?')?raw.promise:value());
  await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
  await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='展开原始转写（未校正）')!.click());
@@ -411,7 +411,7 @@ test('manual segment editor preserves literal speaker prefix, cancels without mu
  // React was imported before this fixture's DOM; support its legacy input-event probe.
  (window.HTMLElement.prototype as any).attachEvent=()=>{};(window.HTMLElement.prototype as any).detachEvent=()=>{};
  const original='[SPEAKER_0] Literal original\n  second line';
- const api=apiWith((path,init)=>{if(path.endsWith('/reviews'))return {items:[]};if(path.endsWith('/corrections')){writes.push(JSON.parse(String(init?.body)));throw new ApiError('Generated stale segment',409);}if(path.includes('/chunks?'))return {items:[{id:ids[1],ocrText:'[SPEAKER_0] '+original,fileEvidence:{artifactId:ids[0],speaker:'SPEAKER_0',startMs:0}}],nextOffset:null};return {captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated recording',observedAt:'2026-09-27T00:00:00Z'},job:{state:'succeeded',summary_state:'cancelled',local_only:1},artifacts:[{id:ids[0],kind:'dialogue'}]};});
+ const api=apiWith((path,init)=>{if(path.endsWith('/reviews'))return {items:[]};if(path.endsWith('/corrections')){writes.push(JSON.parse(String(init?.body)));throw new ApiError('Generated stale segment',409);}if(path.includes('/chunks?'))return {items:[{id:ids[1],ocrText:'[SPEAKER_0] '+original,fileEvidence:{artifactId:ids[0],speaker:'SPEAKER_0',startMs:0}}],nextOffset:null};return {captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated recording',observedAt:'2026-09-27T00:00:00Z'},job:{state:'succeeded',summary_state:'cancelled'},artifacts:[{id:ids[0],kind:'dialogue'}]};});
  await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
  const click=async(label:string)=>act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent===label)!.click());
  await click('展开转写 / 原文片段');await click('纠正此段');assert.equal(d.querySelector('textarea')!.value,original);
@@ -623,7 +623,7 @@ test('source drawer decodes only declared organizer text once and separates acti
 test('file processing cancellation distinguishes waiting from unknown and requires explicit retry confirmation',async t=>{
  const {root,document:d}=await fixture(t);let wait:'running'|'unknown'|null='running',state='running';const writes:Array<{path:string;body:any}>=[];
  const api=apiWith((path,init)=>{if(init?.method==='POST'){writes.push({path,body:JSON.parse(String(init.body))});if(path.endsWith('/cancel'))state='cancelled';return {};}
- return {captureId:ids[0],item:{title:'Generated WAV',mimeType:'audio/wav'},sizeBytes:100,hasOriginal:true,job:{state,summary_state:'cancelled',local_only:1},cancellation:{canCancel:state==='running',wait},artifacts:[]};});
+ return {captureId:ids[0],item:{title:'Generated WAV',mimeType:'audio/wav'},sizeBytes:100,hasOriginal:true,job:{state,summary_state:'cancelled'},processingPolicy:{capabilities:{dialogue:true,summary:true},current:{profile:{summarize:false},rule:{type:'audio/*'}}},cancellation:{canCancel:state==='running',wait},artifacts:[]};});
  await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
  const button=(label:string)=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent===label)!;
  assert.equal(button('重新转写 / 提取').disabled,true);
@@ -667,4 +667,18 @@ test('file processor wait polling enables retry after raw completion without an 
  const retry=()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='重新转写 / 提取')!;assert.equal(retry().disabled,true);
  waiting=false;await act(async()=>t.mock.timers.tick(2000));assert.equal(retry().disabled,false);const before=reads;
  await act(async()=>t.mock.timers.tick(6000));assert.equal(reads,before,'polling stops after the physical wait settles');
+});
+
+
+test('dialogue detail offers summary and separation together without a content-locality flag',async t=>{
+ const {FileProcessingControls}=await import('../src/FileProcessingControls.js'),{root,document:d}=await fixture(t),writes:any[]=[];
+ const api=apiWith((path,init)=>{
+  if(path.endsWith('/retry')){writes.push(JSON.parse(String(init?.body)));return {};}
+  return {job:{state:'succeeded',summary_state:'succeeded'},processingPolicy:{capabilities:{dialogue:true,summary:true},current:{profile:{summarize:true}}}};
+ });
+ await act(async()=>root.render(React.createElement(FileProcessingControls,{api,id:ids[0]})));
+ for(const label of ['重新生成摘要','重新分离说话人（保留转写）']){
+  const button=Array.from(d.querySelectorAll('button')).find(b=>b.textContent===label)!;assert.ok(button);await act(async()=>button.click());
+ }
+ assert.deepEqual(writes,[{stage:'summary'},{stage:'diarize'}]);
 });

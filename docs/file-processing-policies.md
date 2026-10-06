@@ -5,7 +5,7 @@
 ## 用户配置
 
 1. 在“服务连接”中填写服务名称、类型、运行位置、地址和密钥。同一服务可供多个方案复用。远程服务必须显式选择远程 HTTPS；本地服务只允许中央本机的回环地址。录音服务遵循 Mote 的二进制转写协议，不是任意厂商 ASR 地址的直接替换；厂商协议可通过适配服务或 Cordis 插件接入。
-2. 在“处理方案”中选择插件、绑定服务，并设置参数。可复制“本地多人录音”，分别建立“两人电话”和“四人访谈”：两个方案使用同一本地服务，各自保存说话人数。语义分组和人工校正建议可选择本地语言模型；不配置时仍可完成转写、分离和时间对齐。
+2. 在“处理方案”中选择插件、绑定服务，并设置参数。可复制“本地多人录音”，分别建立“两人电话”和“四人访谈”：两个方案使用同一本地转写服务，各自保存说话人数。语义分组、摘要和人工校正建议可选择本地或远程语言模型；未选择独立模型时使用中央文件分析模型。关闭这些可选步骤仍可完成转写、分离和时间对齐。
 3. 在“类型策略”中将录音、图片、文本、PDF 或精确 MIME 类型绑定到方案。没有合适插件的类型保持“仅归档原件”。本期内置 UTF-8 文本、PDF/DOCX/XLSX 文档提取、录音接口、本地多人录音、图片文字接口与本地说话人分离。`document.generic` 读取 PDF 文本层、DOCX 段落和 XLSX 单元格，不做扫描件 OCR 或公式重算；无文本层或超限会明确报告覆盖限制。
 4. 在“来源覆盖”中选择来源和类型。例如手机录音目录的 `audio/*` 使用“四人访谈”，同目录 `image/*` 仍使用全局图片方案。
 5. 保存后，可通过 MIME 类型试算命中规则；文件详情显示实际执行的配置版本、规则、方案和参数，也显示按照当前设置重新处理会选什么。
@@ -23,7 +23,7 @@
 
 重新提取生成新的派生结果，旧校正标为过期，原件继续保留。原件被手机删除不删除中央归档；这里只配置处理策略，采集方式、增量/回填和手机暂存清理由同步配置管理。
 
-本地多人录音不会自动调用云端摘要或云端向量模型。其他方案可选择独立语言模型生成摘要，未选模型时继承中央模型设置。说话人仍匿名，名称、术语与场次需要用户确认。
+本地多人录音的文字正常进入配置的向量索引、Memory 和问答。所有支持摘要的方案都由摘要开关决定是否生成摘要，未选独立模型时继承中央文件模型设置。说话人仍匿名，名称、术语与场次需要用户确认。
 
 ## 开发者扩展
 
@@ -49,7 +49,7 @@ ctx.effect(() => ctx.moteFileProcessors.register({
 
 参数声明支持 string / number / boolean、枚举、默认值、可空、数值范围和整数。服务端验证参数与类型兼容性，网页按声明生成表单。秘钥放服务，不放 parameters。处理器返回共享 Transcript 契约；非音频使用零时间，代码负责可靠提取，内容理解由模型完成。
 
-当前 `ProcessorInput.settings` 提供所选服务的执行配置，`parameters` 提供所选方案参数。模型服务使用 OpenAI 兼容的 completions 协议，独立于提取服务。本地多人录音保留既有的转写 → 分离 → 对齐 → 可选本地语义分组流程。
+当前 `ProcessorInput.settings` 提供所选服务的执行配置，`parameters` 提供所选方案参数。独立模型服务使用 OpenAI 兼容的 completions 协议，独立于提取服务；中央文件模型支持其配置的模型协议。本地多人录音保留转写 → 分离 → 对齐 → 可选语义分组流程，执行位置不限制派生文字的模型使用权限。
 
 ## 配置与 API
 
@@ -58,7 +58,7 @@ ctx.effect(() => ctx.moteFileProcessors.register({
 - `POST /api/file-processing/match`：`{sourceId, mimeType}`，只试算已保存规则。
 - `POST /api/file-processing/preview`：`{revision, sourceId?, type?, profileId?}`，返回有时限的一次性 token 和范围。
 - `POST /api/file-processing/reprocess`：`{token}`，按预览范围入队。
-- `GET /api/files/:id`：增加 `processingPolicy.applied/current`；导出 manifest 也包含实际方案快照，无密钥。
+- `GET /api/files/:id`：包含 `processingPolicy.applied/current` 和 `capabilities`；详情操作按对话、摘要能力展示。导出 manifest 也包含实际方案快照，无密钥。
 
 当前 `file-processing.json` 必须包含 revision、settings 与 version 1 的 policy。新资料库直接建立显式默认方案；缺 policy 的旧文件及不带 policy 的更新请求拒绝。旧 flat selector 不转换成 policy，也不作为任务路由回退。任务执行时保存实际命中方案与配置指纹；中央 epoch 3 直接建立最终 schema。
 
@@ -70,7 +70,7 @@ ctx.effect(() => ctx.moteFileProcessors.register({
 
 ```sh
 MOTE_FILE_TEST_DIR=<测试目录> node --import tsx scripts/verify-file-sync.ts --live-model --policy
-MOTE_FILE_TEST_DIR=<测试目录> node --import tsx scripts/test-file-dialogue.ts <合成录音.wav> --policy
+MOTE_FILE_TEST_DIR=<测试目录> node --import tsx scripts/test-file-dialogue.ts <合成录音.wav>
 ```
 
 前者需要已生成的模拟器结果和显式真实模型配置；后者需要本地 ASR/分离模型。fixture 测试、真实模型测试、模拟器与真机验证应分别报告。

@@ -42,8 +42,6 @@ export interface ProcessorInput {
 }
 export interface FileProcessor {
   id:string;version:string;name:string;stage:'extract'|'diarize';mediaTypes:string[];localOnly?:boolean;serviceKind?:'asr'|'image'|'file';parameters?:ProcessorParameter[];
-  /** Execution location and downstream disclosure are separate contracts. */
-  contentPolicy?:'local-only';
   allowSummary?:boolean;
   /** Compose the selected diarizer, exact alignment and optional semantic grouping. */
   dialogue?:boolean;
@@ -67,7 +65,6 @@ export class ProcessorRegistry {
   register(processor:FileProcessor){
     if(!/^[a-z][a-z0-9.-]{0,99}$/.test(processor.id)||!processor.version||this.entries.has(processor.id))throw new Error('Invalid or duplicate file processor');
     if(processor.awaitResponseOnCancel!==undefined&&typeof processor.awaitResponseOnCancel!=='boolean')throw new Error('Invalid processor cancellation capability');
-    if(processor.contentPolicy!==undefined&&(processor.contentPolicy!=='local-only'||processor.localOnly!==true))throw new Error('Local-only content requires a local processor');
     if(processor.dialogue&&(processor.stage!=='extract'||!processor.mediaTypes.length||!processor.mediaTypes.every(type=>type.startsWith('audio/'))))throw new Error('Dialogue composition requires an audio extraction processor');
     if(processor.managedModel!==undefined&&processor.managedModel!=='dialogue')throw new Error('Unknown managed processing model');
     if(processor.reuseByContent!==undefined&&(typeof processor.reuseByContent!=='boolean'||processor.stage!=='extract'))throw new Error('Invalid content reuse capability');
@@ -106,8 +103,8 @@ export class FileProcessorRuntime {
     this.pluginScope.provide('moteFileOutputs',this.outputs);
     if(contextProcessors&&!root)this.pluginScope.provide('moteContextProcessors',contextProcessors);
     const audio=(id:string,localOnly=false)=>builtin({id,version:localOnly?'3':'2',name:localOnly?"本地多人录音":"转写接口",stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',awaitResponseOnCancel:true,
-      ...(localOnly?{contentPolicy:'local-only' as const,allowSummary:false,dialogue:true,managedModel:'dialogue' as const}:{}),dependencies:{settings:['endpoint','apiKey','allowRemote'],parameters:[]},
-      parameters:localOnly?[{key:'speakerCount',label:"预期说话人数",type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:"留空由模型自动识别"},{key:'semanticTurns',label:"使用本地语言模型合并自然发言轮次",type:'boolean',default:false}]:[],
+      ...(localOnly?{dialogue:true,managedModel:'dialogue' as const}:{}),dependencies:{settings:['endpoint','apiKey','allowRemote'],parameters:[]},
+      parameters:localOnly?[{key:'speakerCount',label:"预期说话人数",type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:"留空由模型自动识别"},{key:'semanticTurns',label:"使用所选语言模型合并自然发言轮次",type:'boolean',default:false}]:[],
       process:input=>provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,localOnly,maxAudioMs:input.maxAudioMs,signal:input.signal})});
     const pluginScope=this.pluginScope;
     this.ready=(async()=>{

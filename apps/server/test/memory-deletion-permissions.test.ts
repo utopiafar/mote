@@ -57,10 +57,7 @@ async function fixture(t:TestContext){
   return {node,privateId,queued};
 }
 
-test('a deletion context root becoming local-only while queued prevents remote model admission',async t=>{
-  const f=await fixture(t);
-  await f.queued(()=>{f.node.store.db.prepare('UPDATE file_jobs SET local_only=1 WHERE capture_id=?').run(f.privateId);});
-});
+
 
 test('a deletion context root revoked while queued prevents model admission',async t=>{
   const f=await fixture(t);

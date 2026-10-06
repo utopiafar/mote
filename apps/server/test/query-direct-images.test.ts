@@ -57,7 +57,7 @@ test('the Agent bridge grants only the listed direct image without a screenshot 
   assert.equal((await fetch(bridge.url+'/read_image',{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify({id:randomUUID()})})).status,400);
 });
 
-test('direct metadata grants never survive local-only changes or source deletion before a region read',async t=>{
+test('direct metadata grants never survive file or source deletion before a region read',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-query-image-permission-')),token='generated-owner',bytes=await sharp({create:{width:4,height:4,channels:3,background:'#224466'}}).png().toBuffer(),hash=createHash('sha256').update(bytes).digest('hex');
  const config:Config={dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  let revoke=()=>{},blocked=0;
@@ -67,10 +67,10 @@ test('direct metadata grants never survive local-only changes or source deletion
   return {answer:'Generated revoked image unavailable',citations:[],trace:[],runId:randomUUID()};
  }})});t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
  node.sources.register({id:'generated-upload',name:'Generated',kind:'upload',deviceId:'generated',platform:'import',retention:'archive'});
- for(const mode of ['local','deleted']){
+ for(const mode of ['file','deleted']){
   const manifest={sourceId:'generated-upload',item:{externalId:mode,revision:'1',observedAt:'2026-09-27T00:00:00Z',kind:'file',layer:'original',text:'',mimeType:'image/png'},sha256:hash,sizeBytes:bytes.length};
   const upload=node.files.begin(manifest,()=>{});node.files.part(upload.uploadId,0,bytes,()=>{});const ack=await node.files.commit(upload.uploadId,()=>{});
-  revoke=()=>{if(mode==='local')node.store.db.prepare('UPDATE file_jobs SET local_only=1 WHERE capture_id=?').run(ack.captureId);else node.store.db.prepare('UPDATE source_heads SET deleted=1 WHERE source_id=? AND external_id=?').run('generated-upload',mode);};
+  revoke=()=>{if(mode==='file')node.store.delete(ack.captureId);else node.store.db.prepare('UPDATE source_heads SET deleted=1 WHERE source_id=? AND external_id=?').run('generated-upload',mode);};
   await node.app.inject({method:'POST',url:'/api/query',headers:{authorization:'Bearer '+token},payload:{question:'Generated revocation',attachmentIds:[ack.captureId]}});
  }
  assert.equal(blocked,2);

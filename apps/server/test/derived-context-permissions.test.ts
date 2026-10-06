@@ -25,33 +25,30 @@ async function fixture(t:TestContext){
  await node.modelSettings.updateProfile('local',{revision:node.modelSettings.view().revision,name:'Generated local',settings:{...node.modelSettings.current(),provider:'custom',protocol:'openai-completions',model:'fixture-local',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true}});
  node.sources.register({id:'generated-context-files',name:'Generated files',kind:'local-files',deviceId:'generated',platform:'import',retention:'archive'});
  const bytes=Buffer.from('Generated recording bytes'),upload=node.files.begin({sourceId:'generated-context-files',item:{externalId:'recording',revision:'1',observedAt:'2026-09-27T00:00:00Z',title:'Generated recording',kind:'file',layer:'original',text:'',mimeType:'audio/wav'},sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});
- node.files.part(upload.uploadId,0,bytes,()=>{});const parent=await node.files.commit(upload.uploadId,()=>{}),chunk=randomUUID(),artifact=randomUUID(),text='PRIVATE_GENERATED_CONTEXT original fixture evidence';
+ node.files.part(upload.uploadId,0,bytes,()=>{});const parent=await node.files.commit(upload.uploadId,()=>{}),chunk=randomUUID(),artifact=randomUUID(),text='GENERATED_CONTEXT original fixture evidence';
  node.store.db.prepare('INSERT INTO file_artifacts VALUES(?,?,?,?,?,?,1)').run(artifact,parent.id,'transcript','2026-09-27T00:00:00Z','fixture',JSON.stringify({complete:true,coverage:'full'}));
  node.store.db.prepare('INSERT INTO file_chunks(id,artifact_id,capture_id,start_ms,end_ms,text,metadata) VALUES(?,?,?,?,?,?,?)').run(chunk,artifact,parent.id,0,1000,text,'{}');
- node.store.db.prepare("UPDATE file_jobs SET state='succeeded',local_only=1 WHERE capture_id=?").run(parent.id);
+ node.store.db.prepare("UPDATE file_jobs SET state='succeeded' WHERE capture_id=?").run(parent.id);
  const conversations=new Conversations(node.store);
- const save=(answer='PRIVATE_GENERATED_CONTEXT prior answer',complete=true)=>conversations.append(undefined,{question:'Generated earlier question'}, {...reply(answer),evidenceDependencies:{version:1,complete,ids:[chunk]}}).conversationId;
+ const save=(answer='GENERATED_CONTEXT prior answer',complete=true)=>conversations.append(undefined,{question:'Generated earlier question'}, {...reply(answer),evidenceDependencies:{version:1,complete,ids:[chunk]}}).conversationId;
  return {node,calls,parent,chunk,text,conversations,save,set respond(value:typeof respond){respond=value;}};
 }
 
-test('remote dialogue and working compaction reject private originals before provider dispatch, while local keeps the full history',async t=>{
+test('recording-derived dialogue and working compaction use either configured model',async t=>{
  const f=await fixture(t),id=f.save();
- const remote=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated followup',conversationId:id}});
- assert.equal(remote.statusCode,409,remote.body);assert.equal(remote.json().error,'context_evidence_restricted');assert.equal(f.calls.length,0);
- const local=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated local followup',conversationId:id,modelProfileId:'local'}});
- assert.equal(local.statusCode,200,local.body);assert.match(f.calls.at(-1)!.conversation!.turns[0].answer,/PRIVATE_GENERATED_CONTEXT/);
- const longId=f.save('PRIVATE_GENERATED_CONTEXT '.repeat(3000)),before=f.calls.length;
+ for(const modelProfileId of ['env:deployment','local']){
+  const response=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated followup',conversationId:id,modelProfileId}});
+  assert.equal(response.statusCode,200,response.body);assert.match(f.calls.at(-1)!.conversation!.turns[0].answer,/GENERATED_CONTEXT/);
+ }
+ const longId=f.save('GENERATED_CONTEXT '.repeat(5000)),before=f.calls.length;
  const compact=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated long followup',conversationId:longId}});
- assert.equal(compact.statusCode,409,compact.body);assert.equal(f.calls.length,before,'private text never reaches the summary model');
- const localCompact=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated local long followup',conversationId:longId,modelProfileId:'local'}});
- assert.equal(localCompact.statusCode,200,localCompact.body);const summaries=f.calls.slice(before).filter(call=>call.skill==='working-memory');
+ assert.equal(compact.statusCode,200,compact.body);const summaries=f.calls.slice(before).filter(call=>call.skill==='working-memory');
  assert.ok(summaries.length>1,'the actual long-answer span path ran');assert.ok(summaries.every(call=>call.contextEvidenceDependencies?.ids.includes(f.parent.id)));
  assert.ok(f.node.working.get(f.conversations.get(longId))?.evidenceDependencies?.ids.includes(f.parent.id));
 });
 
-test('remote incomplete history fails closed and queued derived dialogue rechecks changed locality',async t=>{
+test('incomplete history fails closed and queued derived dialogue rechecks source revocation',async t=>{
  const f=await fixture(t),legacyId=f.save('Generated unknown-lineage answer',false);
- f.node.store.db.prepare('UPDATE file_jobs SET local_only=0 WHERE capture_id=?').run(f.parent.id);
  const legacy=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated legacy followup',conversationId:legacyId}});
  assert.equal(legacy.statusCode,409,legacy.body);assert.equal(legacy.json().error,'context_lineage_incomplete');assert.match(legacy.json().message,/新建对话/);assert.equal(f.calls.length,0);
  const context=f.node.working.context(f.conversations.get(f.save()),f.node.lifecycle.settings());
@@ -59,12 +56,12 @@ test('remote incomplete history fails closed and queued derived dialogue recheck
  let release!:()=>void,entered!:()=>void,n=0;const held=new Promise<void>(resolve=>release=resolve),full=new Promise<void>(resolve=>entered=resolve);
  const occupying=Array.from({length:limit},()=>gate.run(async()=>{if(++n===limit)entered();await held;}));await full;
  const queued=f.node.agent.query({question:'Generated queued history',conversation:context});
- assert.equal(gate.snapshot().waiting,1);f.node.store.db.prepare('UPDATE file_jobs SET local_only=1 WHERE capture_id=?').run(f.parent.id);release();await Promise.all(occupying);
- await assert.rejects(queued,/context_evidence_restricted/);assert.equal(f.calls.length,0,'queued history was never sent after policy changed');
+ assert.equal(gate.snapshot().waiting,1);f.node.store.db.prepare('UPDATE source_heads SET deleted=1 WHERE source_id=? AND external_id=?').run('generated-context-files','recording');release();await Promise.all(occupying);
+ await assert.rejects(queued,/context_evidence_restricted/);assert.equal(f.calls.length,0,'queued history was never sent after its source was revoked');
 });
 
 test('opening-memory originals enter saved answer lineage and fence even when the model emits zero citations',async t=>{
- const f=await fixture(t);f.node.store.db.prepare('UPDATE file_jobs SET local_only=0 WHERE capture_id=?').run(f.parent.id);
+ const f=await fixture(t);
  const original=f.node.memories.readEvidence([f.chunk])[0];
  f.node.memories.extract(fixtureMemoryResult(f.node.memories,{...reply(JSON.stringify({memories:[{title:'Generated memory',statement:`Generated decision [${f.chunk}]`,uncertainty:'Generated fixture',evidenceIds:[f.chunk]}]})),citations:[{id:f.chunk,capturedAt:original.capturedAt,appName:original.appName,excerpt:f.text}]}),'fixture');
  const first=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated decision'}});assert.equal(first.statusCode,200,first.body);

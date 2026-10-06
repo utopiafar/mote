@@ -16,7 +16,6 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import type {ContextReader} from '@mote/agent';
 import {EvidenceReader} from '../src/evidence-reader.js';
-import {EvidenceExposurePolicy} from '../src/evidence-exposure.js';
 
 function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-files-generated-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources);
@@ -173,8 +172,9 @@ test('deleting file Memory retains the original, rejects reprocessed chunk alias
 });
 
 
-test('derived deletion context rechecks local-only policy on retained original files',async t=>{
+test('derived deletion context remains subject to source revocation',async t=>{
  const {store,sources,files}=fixture(t),parent=await upload(files),reader=new EvidenceReader(store,sources,files);
- assert.equal(reader.deletionContextAllowed(parent.id),true);store.db.prepare('UPDATE file_jobs SET local_only=1 WHERE capture_id=?').run(parent.id);
- assert.equal(reader.deletionContextAllowed(parent.id),false);assert.equal(reader.deletionContextAllowed(parent.id,new EvidenceExposurePolicy([],()=>true)),true);
+ assert.equal(reader.deletionContextAllowed(parent.id),true);
+ const version=files.version(parent.id);store.db.prepare('UPDATE source_heads SET deleted=1 WHERE source_id=? AND external_id=?').run(version.source_id,version.external_id);
+ assert.equal(reader.deletionContextAllowed(parent.id),false);
 });

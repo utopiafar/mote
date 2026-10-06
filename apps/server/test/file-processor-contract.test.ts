@@ -19,12 +19,11 @@ test('offline transcription uses explicit transport constraints with an unrelate
 
 test('processor registration rejects contradictory or malformed capability declarations',()=>{
  const registry=new ProcessorRegistry(),base:FileProcessor={id:'fixture.contract',name:'Generated',version:'1',stage:'extract',mediaTypes:['text/'],process:async()=>({durationMs:0,segments:[]})};
- assert.throws(()=>registry.register({...base,contentPolicy:'local-only'}),/local processor/);
  assert.throws(()=>registry.register({...base,dialogue:true}),/audio extraction/);
  assert.throws(()=>registry.register({...base,dependencies:{settings:['invented' as any]}}),/dependencies/);
  assert.throws(()=>registry.register({...base,allowSummary:'yes' as any}),/capability/);
  assert.throws(()=>registry.register({...base,stage:'diarize',reuseByContent:true}),/reuse capability/);
  assert.throws(()=>registry.register({...base,reuseByContent:'yes' as any}),/reuse capability/);
- assert.doesNotThrow(()=>registry.register({...base,localOnly:true,contentPolicy:'local-only',allowSummary:true,dependencies:{settings:[]}}));
- assert.equal(registry.list()[0].contentPolicy,'local-only');
+ assert.doesNotThrow(()=>registry.register({...base,localOnly:true,allowSummary:true,dependencies:{settings:[]}}));
+ assert.equal(registry.list()[0].localOnly,true);
 });

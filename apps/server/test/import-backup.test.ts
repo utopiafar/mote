@@ -57,7 +57,7 @@ for(const mode of ['plain','encrypted','mixed'] as const)test(`${mode} backup re
    // Reader precedence is explicit: a selected plaintext copy wins over an older copy.
    writeFileSync(join(partBase,'0.aes'),original.contentEncryption.seal(bytes.subarray(0,FILE_PART_BYTES)));
  }
- original.db.prepare("UPDATE file_jobs SET state='running',summary_state='running',attempts=2,available_at=12345,local_only=1 WHERE capture_id=?").run(ack.id);
+ original.db.prepare("UPDATE file_jobs SET state='running',summary_state='running',attempts=2,available_at=12345 WHERE capture_id=?").run(ack.id);
  takeBackup(source,snapshot);
  const manifest=JSON.parse(readFileSync(join(snapshot,'backup-manifest.json'),'utf8'));
  const selectedPartSuffix=mode==='mixed'?'.plain':suffix;
@@ -75,7 +75,7 @@ for(const mode of ['plain','encrypted','mixed'] as const)test(`${mode} backup re
  assert.equal(restoredArchived.read(imported.files[0].id).toString('utf8'),'Synthetic imported original');assert.equal(restoredImports.get(imported.id).status,'queued');
  if(plainOriginal)assert.equal(restoredArchived.read(plainOriginal.id).toString(),'Generated plaintext after opt-out');
  assert.deepEqual(Buffer.concat([...restoredFiles.bytes(ack.id)]),bytes);assert.deepEqual(Buffer.concat([...restoredFiles.bytes(ack.id,FILE_PART_BYTES-3,FILE_PART_BYTES+3)]),bytes.subarray(FILE_PART_BYTES-3,FILE_PART_BYTES+4));
- const job=restoredFiles.detail(ack.id).job;assert.equal(job.state,'waiting');assert.equal(job.summary_state,'waiting');assert.equal(job.attempts,2);assert.equal(job.local_only,1);
+ const job=restoredFiles.detail(ack.id).job;assert.equal(job.state,'waiting');assert.equal(job.summary_state,'waiting');assert.equal(job.attempts,2);
  assert.equal(restored.db.prepare('SELECT available_at FROM file_jobs WHERE capture_id=?').get(ack.id)!.available_at,12345);assert.equal(restored.db.prepare('SELECT COUNT(*) n FROM file_uploads').get()!.n,0);
  assert.equal(restoredFiles.detail(ack.id).hasOriginal,true);assert.equal(restoredSources.history('backup-phone',revision.item.externalId).length,1);
 });

@@ -43,7 +43,7 @@ async function fixture(t:any,options:any={}){
  const diagnostics=new ServerDiagnostics({directory:join(dir,'logs'),debug:true});await diagnostics.init();
  const instances:FileProcessing[]=[];const createProcessing=(executor?:ExecutionEngine)=>{const instance=new FileProcessing(files,{transcribe:async input=>{asrCalls++;return options.transcribe?options.transcribe(input):raw;}},async()=>{summaries++;throw Error('Unexpected cloud summary');},{executor,plugins:[plugin],analyze:options.analyze,diagnostics});instances.push(instance);return instance;};const processing=createProcessing();
  await processing.runtime.ready;
- processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:true,...options.settings},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:true,...options.settings},processing.runtime.registry)});
+ processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:false,...options.settings},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:false,...options.settings},processing.runtime.registry)});
  t.after(async()=>{for(const instance of instances)await instance.close();await diagnostics.close();store.close();rmSync(dir,{recursive:true,force:true});});
  return {dir,store,sources,files,processing,createProcessing,diagnostics,id:ack.id,counts:()=>({asrCalls,diaryCalls,summaries,disposed})};
 }
@@ -67,7 +67,7 @@ test('actual Cordis registration and disposal; local pipeline checkpoints resume
  assert.equal(resumed.cancellation(f.id).wait,'unknown');assert.throws(()=>resumed.retry(f.id,'diarize'),{statusCode:409});resumed.retry(f.id,'diarize',false,true);
  f.store.db.prepare("UPDATE execution_steps SET available_at=0 WHERE kind='files.pipeline'").run();f.store.db.prepare('UPDATE file_jobs SET available_at=0').run();await resumed.tick();assert.equal(f.files.detail(f.id).job.state,'succeeded');assert.deepEqual(f.counts(),{asrCalls:1,diaryCalls:2,summaries:0,disposed:true});
  const chunks=f.files.chunks(f.id);assert.equal(chunks.length,2);assert.equal(chunks[0].ocrText,'[SPEAKER_0] 使用扣迪斯插件。');assert.equal(chunks[1].fileEvidence?.speaker,'SPEAKER_1');
- assert.equal(f.files.pendingIndex('cloud-model').length,0);assert.equal(f.files.pendingIndex('local-model',true).length,2);
+ assert.equal(f.files.pendingIndex('cloud-model').length,2);assert.equal(f.files.pendingIndex('local-model').length,2);
  await f.processing.close();assert.equal(f.counts().disposed,true);assert.equal(f.processing.runtime.registry.list().length,0);
 });
 
@@ -95,7 +95,7 @@ test('export contains raw and speaker transcripts, valid tar headers, encrypted 
 });
 
 test('term proposals require exact cited text and explicit selection; correction preserves raw export and rejects stale proposals',async t=>{
- const f=await fixture(t,{analyze:async(records:any[],_prompt:string,_settings:any,local:boolean)=>{assert.equal(local,true);const chunk=JSON.parse(records[0].ocrText);return {answer:JSON.stringify({suggestions:[{chunkId:chunk.chunkId,original:'扣迪斯',replacement:'Cordis',reason:'请确认框架名称'}]}),citations:[{id:chunk.chunkId}]};}});await f.processing.tick();const reviews=new FileReviews(f.files,f.processing),proposal=await reviews.propose(f.id,{kind:'terms'}),other=await reviews.propose(f.id,{kind:'terms'});
+ const f=await fixture(t,{analyze:async(records:any[],_prompt:string,_settings:any)=>{const chunk=JSON.parse(records[0].ocrText);return {answer:JSON.stringify({suggestions:[{chunkId:chunk.chunkId,original:'扣迪斯',replacement:'Cordis',reason:'请确认框架名称'}]}),citations:[{id:chunk.chunkId}]};}});await f.processing.tick();const reviews=new FileReviews(f.files,f.processing),proposal=await reviews.propose(f.id,{kind:'terms'}),other=await reviews.propose(f.id,{kind:'terms'});
  assert.match(f.files.chunks(f.id)[0].ocrText,/扣迪斯/);assert.throws(()=>reviews.confirm(f.id,proposal.id,{action:'accept'}));
  const before=f.files.chunks(f.id)[0];reviews.nameSpeakers(f.id,{artifactId:before.fileEvidence!.artifactId,names:{SPEAKER_0:'Generated Alice'}});const attribution=f.files.chunks(f.id)[0].fileEvidence!.speakerAttribution;
  const suggestion=proposal.suggestions[0];reviews.confirm(f.id,proposal.id,{action:'accept',selected:[suggestion.id]});assert.match(f.files.chunks(f.id)[0].ocrText,/Cordis/);assert.throws(()=>reviews.confirm(f.id,other.id,{action:'accept',selected:[other.suggestions[0].id]}),{statusCode:409});
@@ -332,8 +332,8 @@ test('local semantic grouping blocks without a local model and never invokes the
 });
 
 test('local settings redact all credentials and reject remote destinations',async t=>{
- const f=await fixture(t);f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,apiKey:'cloud-test-secret',localModelApiKey:'local-test-secret',localWorkerApiKey:'worker-test-secret'},policy:fixtureFilePolicy({...f.processing.view().settings,apiKey:'cloud-test-secret',localModelApiKey:'local-test-secret',localWorkerApiKey:'worker-test-secret'},f.processing.runtime.registry)});assert.ok(!JSON.stringify(f.processing.view()).includes('test-secret'));
- for(const field of ['localEndpoint','localModelEndpoint'])assert.throws(()=>fileProcessingSchema.parse({[field]:'https://example.test/api',allowRemote:true}));
+ const f=await fixture(t);f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,apiKey:'cloud-test-secret',localWorkerApiKey:'worker-test-secret'},policy:fixtureFilePolicy({...f.processing.view().settings,apiKey:'cloud-test-secret',localWorkerApiKey:'worker-test-secret'},f.processing.runtime.registry)});assert.ok(!JSON.stringify(f.processing.view()).includes('test-secret'));
+ for(const field of ['localEndpoint'])assert.throws(()=>fileProcessingSchema.parse({[field]:'https://example.test/api',allowRemote:true}));
  assert.throws(()=>f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,localEndpoint:'http://127.0.0.1:12345/transcribe'},policy:fixtureFilePolicy({...f.processing.view().settings,localEndpoint:'http://127.0.0.1:12345/transcribe'},f.processing.runtime.registry)}),{statusCode:409});
 });
 
@@ -351,8 +351,8 @@ test('calendar association is model-proposed, requires evidence from both sides,
  const second=await reviews.propose(f.id,{kind:'calendar'});await f.sources.upsert('calendar',{...event,revision:'2',observedAt:new Date(Date.now()+1000).toISOString(),title:'Changed session'});assert.throws(()=>reviews.confirm(f.id,second.id,{action:'accept'}),{statusCode:409});
 });
 
-test('changing defaults cannot send completed local-only transcripts into a cloud summary',async t=>{
- const f=await fixture(t);await f.processing.tick();f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,audioProcessor:'audio.http',summarize:true},policy:fixtureFilePolicy({...f.processing.view().settings,audioProcessor:'audio.http',summarize:true},f.processing.runtime.registry)});await f.processing.tick();assert.equal(f.counts().summaries,0);assert.equal(f.files.detail(f.id).job.local_only,1);
+test('changing defaults preserves the explicit summary choice of a completed file',async t=>{
+ const f=await fixture(t);await f.processing.tick();f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,audioProcessor:'audio.http',summarize:true},policy:fixtureFilePolicy({...f.processing.view().settings,audioProcessor:'audio.http',summarize:true},f.processing.runtime.registry)});await f.processing.tick();assert.equal(f.counts().summaries,0);assert.equal(f.processing.explain(f.id).applied?.profile.summarize,false);
 });
 
 
@@ -366,7 +366,7 @@ test('file diagnostics trace retries and checkpoint reuse without original conte
  assert.ok(events.some(e=>e.event==='file.failed'&&e.attempt===1&&e.retryAfterMs===30000));
  assert.ok(events.some(e=>e.event==='file.cached'&&e.operation==='extract'));
  assert.ok(events.some(e=>e.event==='file.completed'&&e.attempt===1));
- assert.ok(events.some(e=>e.event==='file.blocked'&&e.category==='local_only'));
+ assert.ok(events.some(e=>e.event==='file.blocked'&&e.category==='summary_disabled'));
  assert.ok(events.filter(e=>e.operation==='extract').every(e=>e.jobId===f.id&&e.requestId));
  const serialized=JSON.stringify(events);for(const privateText of ['Synthetic interview','generated failure','使用扣迪斯','fixture.diarize'])assert.ok(!serialized.includes(privateText));
 });
@@ -500,7 +500,7 @@ test('cancelling diarization retains already committed raw transcript and preven
 
 test('summary receives cancellation signal and its late response is not published',async t=>{
  let release!:()=>void,entered!:()=>void;const started=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);let signal:AbortSignal|undefined;
- const f=await fixture(t,{settings:{audioProcessor:'audio.http',summarize:true},analyze:async(records:any[],_prompt:any,_settings:any,_local:any,current:AbortSignal)=>{signal=current;entered();await gate;return {answer:'Generated summary',citations:[{id:records[0].id}]};}});
+ const f=await fixture(t,{settings:{audioProcessor:'audio.http',summarize:true},analyze:async(records:any[],_prompt:any,_settings:any,current:AbortSignal)=>{signal=current;entered();await gate;return {answer:'Generated summary',citations:[{id:records[0].id}]};}});
  const task=f.processing.tick();await started;const before=JSON.stringify(f.files.detail(f.id).artifacts);f.processing.cancel(f.id);assert.equal(signal!.aborted,true);await task;
  assert.throws(()=>f.processing.retry(f.id,'summary'),{statusCode:409});release();await new Promise(resolve=>setImmediate(resolve));assert.equal(JSON.stringify(f.files.detail(f.id).artifacts),before);assert.equal(f.files.detail(f.id).job.summary_state,'cancelled');
 });

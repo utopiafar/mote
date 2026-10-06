@@ -63,7 +63,7 @@ import type {MemoryReviewStrategy} from './memory-strategy-contract.js';
 import { MemoryPipeline } from './memory-pipeline.js';
 import { MemoryReviewCache } from './memory-review-cache.js';
 import { reviewMemory } from './memory-review.js';
-import { ReloadableAgent,applyModelSettings,createModelAgent,createModelRegistry,modelSettingsFromConfig,testModelConnection,usesLocalModel,type ModelAgentFactory } from './model-agent.js';
+import { ReloadableAgent,applyModelSettings,createModelAgent,createModelRegistry,modelSettingsFromConfig,testModelConnection,type ModelAgentFactory } from './model-agent.js';
 import {removeRetiredBudgetState,resumeRetiredBudgetWork} from './retired-budget-migration.js';
 import { ModelCatalogError } from './model-catalog.js';
 import { modelConfiguration } from './model-configuration.js';
@@ -122,14 +122,13 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   const agentGate=new ConcurrencyGate(execution.agentConcurrency),llmGate=new ConcurrencyGate(execution.llmConcurrency);
   const interactiveGate=new ConcurrencyGate(execution.interactiveConcurrency),interactiveModelGate=new ConcurrencyGate(execution.interactiveConcurrency);
   const modelContext=new AsyncLocalStorage<QueryInput>();
-  const modelLocality=new AsyncLocalStorage<boolean>();
   const modelOperation=new AsyncLocalStorage<string>();
-  const authorizeModelRequest=(settings:import('@mote/shared/models').ModelSettings)=>()=>assertModelEvidence(settings,modelContext.getStore());
+  const authorizeModelRequest=()=>assertModelEvidence(modelContext.getStore());
   const runModelFor=(settings:import('@mote/shared/models').ModelSettings):NonNullable<import('@mote/agent').AgentOptions['runModel']>=>(task,signal)=>{
     signal?.throwIfAborted();providerAdmission.check(settings);
     const queuedAt=performance.now(),input=modelContext.getStore(),gate=input?.executionLane==='interactive'?interactiveModelGate:llmGate;input?.onTrace?.({type:'model.queued',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane:input?.executionLane??'background'}});
     input?.onProgress?.({stage:'model',message:moteText('等待模型执行名额')});
-    return gate.run(async()=>{providerAdmission.check(settings);assertModelEvidence(settings,input);input?.onProgress?.({stage:'model',message:moteText('模型处理中')});input?.onTrace?.({type:'model.admitted',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane:input?.executionLane??'background',queueWaitMs:performance.now()-queuedAt}});return task();},signal??input?.signal,input?.traceContext?.operationId??modelOperation.getStore());
+    return gate.run(async()=>{providerAdmission.check(settings);assertModelEvidence(input);input?.onProgress?.({stage:'model',message:moteText('模型处理中')});input?.onTrace?.({type:'model.admitted',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane:input?.executionLane??'background',queueWaitMs:performance.now()-queuedAt}});return task();},signal??input?.signal,input?.traceContext?.operationId??modelOperation.getStore());
   };
   const diagnostics=new ServerDiagnostics({...runtimeSettings.diagnostics(),directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
   await diagnostics.init();
@@ -169,13 +168,12 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     ...(input?.derivedContextEvidenceIds?[{version:1 as const,complete:true,ids:[...input.derivedContextEvidenceIds]}]:[]),
   ]));
   const contextFailure=(code:'context_lineage_incomplete'|'context_evidence_restricted')=>Object.assign(new StoreError(code,409),{code});
-  const assertModelEvidence=(settings:import('@mote/shared/models').ModelSettings,input:QueryInput|undefined)=>{
-    if(input?.derivedContextEvidenceIds?.some(id=>!evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(settings)))))throw new StoreError('Derived context evidence is no longer permitted for this model',409);
-    if(!usesLocalModel(settings)&&[...(input?.evidenceIds??[]),...(input?.directImages??[]).map(image=>image.id)].some(id=>evidenceReader.evidenceLocalOnly(id)))throw new StoreError('Local-only evidence requires a local model',409);
+  const assertModelEvidence=(input:QueryInput|undefined)=>{
+    if(input?.derivedContextEvidenceIds?.some(id=>!evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy())))throw new StoreError('Derived context evidence is no longer permitted for this model',409);
     const conversationText=Boolean(input?.conversation?.workingMemory?.text||input?.conversation?.turns.some(turn=>!turn.evidenceDeleted&&turn.answer));
     const taskText=Boolean(input?.taskContext?.previousSummary||input?.taskContext?.turns?.length);
-    if(!usesLocalModel(settings)&&((conversationText&&input?.conversation?.evidenceDependencies?.complete!==true)||((taskText||input?.openingMemories?.length)&&input?.contextEvidenceDependencies?.complete!==true)||input?.openingMemories?.length&&!input?.contextEvidenceDependencies?.ids.length))throw contextFailure('context_lineage_incomplete');
-    const dependencies=contextDependencies(input),policy=new EvidenceExposurePolicy([],()=>usesLocalModel(settings));
+    if((conversationText&&input?.conversation?.evidenceDependencies?.complete!==true)||((taskText||input?.openingMemories?.length)&&input?.contextEvidenceDependencies?.complete!==true)||input?.openingMemories?.length&&!input?.contextEvidenceDependencies?.ids.length)throw contextFailure('context_lineage_incomplete');
+    const dependencies=contextDependencies(input),policy=new EvidenceExposurePolicy();
     for(const id of dependencies?.ids??[]){
       // Derived nodes are retained in the fence alongside their resolved original
       // ancestors. They never grant a raw read; current originals carry policy.
@@ -185,7 +183,7 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     }
   };
   const agentFeatures=await installAgentFeatures(backendContext,evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
-    exposurePolicy:new EvidenceExposurePolicy([],()=>modelLocality.getStore()===true),
+    exposurePolicy:new EvidenceExposurePolicy(),
     currentOperation:()=>modelContext.getStore()?.responseMode==='memory-extraction'?'memory':'query',
     currentContextTime:()=>modelContext.getStore()?.contextTime,
     currentGrantContext:()=>modelContext.getStore(),currentProcessingEvidence:()=>modelContext.getStore()?.processingEvidence,currentMaterialInputs:()=>modelContext.getStore()?.processingMaterialInputs}));
@@ -194,8 +192,7 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   const directImageAllowed=(id:string)=>{
     try{const image=directImage(id),version=files.version(id);
       return Boolean(image&&version.object_hash===image.hash&&store.evidence([id]).length&&fileAttachmentAvailable(store,id)&&
-        !store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(version.source_id,version.external_id)?.deleted&&
-        (modelLocality.getStore()===true||!evidenceReader.evidenceLocalOnly(id)));
+        !store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(version.source_id,version.external_id)?.deleted);
     }catch{return false;}
   };
   const fileRawReader=new FileRawReader(store,files,archivedFiles,{
@@ -229,17 +226,16 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   const agent=new ReloadableAgent(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));
   const codex={executable:config.codexBin,home:config.codexHome};
   const wrapAgent=(inner:QueryAgent,settings:import('@mote/shared/models').ModelSettings):QueryAgent=>({get configured(){return inner.configured;},close:()=>inner.close(),query:async input=>{
-    const local=usesLocalModel(settings);
-    assertModelEvidence(settings,input);
+    assertModelEvidence(input);
     if(input.evidenceIds&&input.executionLane!=='interactive')input={...input,processingEvidence:Object.fromEntries(memories.readEvidence(input.evidenceIds).map(record=>[record.id,memoryEvidenceFingerprint(record)]))};
     input.signal?.throwIfAborted();providerAdmission.check(settings);
     input.onProgress?.({stage:'starting',phase:'started',message:moteText('等待 Agent 执行名额')});
     return (input.executionLane==='interactive'?interactiveGate:agentGate).run(async()=>{
       const operationId=input.traceContext?.operationId??(input.traceContext?.jobId?'job:'+input.traceContext.jobId:'query:'+randomUUID());
-      return modelOperation.run(operationId,()=>providerAdmission.run(settings,()=>{assertModelEvidence(settings,input);return modelLocality.run(local,()=>modelContext.run(input,()=>inner.query(input)));}));
+      return modelOperation.run(operationId,()=>providerAdmission.run(settings,()=>{assertModelEvidence(input);return modelContext.run(input,()=>inner.query(input));}));
     },input.signal,input.traceContext?.operationId);
   }});
-  const factory:ModelAgentFactory=async(settings,reader)=>wrapAgent(await (dependencies?.createModelAgent?dependencies.createModelAgent(settings,reader):createModelAgent(settings,reader,codex,runModelFor(settings),authorizeModelRequest(settings))),settings);
+  const factory:ModelAgentFactory=async(settings,reader)=>wrapAgent(await (dependencies?.createModelAgent?dependencies.createModelAgent(settings,reader):createModelAgent(settings,reader,codex,runModelFor(settings),authorizeModelRequest)),settings);
   let initialAgent=dependencies?.agent?wrapAgent(dependencies.agent,modelSettingsFromConfig(config)):undefined;
   const modelSettings=new ModelSettingsStore({
     directory:config.dataDir,environment:modelSettingsFromConfig(config),codex,
@@ -252,20 +248,17 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   try{await modelSettings.initialize();}catch(error){await executor.close();await agent.close();await connections.close();await indexer.close();await sourcePipelines.close();await backendContext.fiber.dispose();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
-  const resolveFileModel=(settings:Parameters<FileAnalysis>[2],localOnly:boolean)=>{
+  const resolveFileModel=(settings:Parameters<FileAnalysis>[2])=>{
     let selected=modelSettings.select('file').settings;
     if(settings.analysisModel){
-      const m=settings.analysisModel;if(localOnly&&m.execution!=='local')throw new StoreError(moteText("本地文件不能使用远程语言模型"),409);
+      const m=settings.analysisModel;
       selected={...selected,provider:'custom',protocol:'openai-completions',baseUrl:m.endpoint,model:m.model,apiKey:m.apiKey??'',headers:{},extraBody:{},allowUnauthenticatedLocal:m.execution==='local',reasoningEffort:'auto',serviceTier:undefined};
-    }else if(localOnly){
-      if(!settings.localModelName||!['127.0.0.1','localhost','[::1]'].includes(new URL(settings.localModelEndpoint).hostname))throw new StoreError('Configure a local language model for this operation',409);
-      selected={...selected,provider:'custom',protocol:'openai-completions',baseUrl:settings.localModelEndpoint,model:settings.localModelName,apiKey:settings.localModelApiKey??'',headers:{},extraBody:{},allowUnauthenticatedLocal:true,reasoningEffort:'auto',serviceTier:undefined};
     }
     return structuredClone(selected);
   };
-  const analyzeFile:FileAnalysis=async(records,prompt,settings,localOnly,signal,host)=>{
+  const analyzeFile:FileAnalysis=async(records,prompt,settings,signal,host)=>{
     const scoped:ContextReader={search:async()=>records,timeline:async()=>({items:records,nextCursor:null}),evidence:async args=>records.filter(r=>args.ids.includes(r.id)),activity:async()=>({}),devices:async()=>[]};
-    const selected=settings.modelSnapshot??resolveFileModel(settings,localOnly);
+    const selected=settings.modelSnapshot??resolveFileModel(settings);
     const meter=usageLedger.start(selected.provider,selected.model,'file-analysis',{agentId:'file-analysis',moduleId:'files',skillId:null,...host});
     let model:QueryAgent|undefined;
     try{model=await factory(selected,scoped);const result=await model.query({question:prompt,language:requestLocale.getStore()??'zh-CN',signal,traceContext:host,onUsage:meter.update});return {...result,usage:meter.finish('completed')};}
@@ -397,7 +390,7 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed).then(result=>{
       taskSignal?.throwIfAborted();
-      assertModelEvidence(profile.settings,input);
+      assertModelEvidence(input);
       const evidenceDependencies=resolveDependencies(store,combineDependencies([contextDependencies(input),result.evidenceDependencies]));
       // A long-running review may overlap routine imports and derived-layer updates.
       // Only an original actually disclosed to this run being deleted can make
@@ -444,7 +437,7 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
     const row=store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(jobs.conversation)!;
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
   };
-  const memoryPipeline=new MemoryPipeline({understand:understandConversation,materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:(id,profileId)=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&(!job.automaticGrant||sourcePipelines.memoryAllowed(job.automaticGrant.sourceId)),strategies:memoryStrategies,executor,store,memories,deletionEvidenceAllowedForMemory:(id,profileId)=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),evidenceAllowedForMemory:(id,profileId)=>!evidenceReader.evidenceLocalOnly(id)||usesLocalModel(modelSettings.select('memory',profileId).settings),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings)),required),configuration:memoryConfiguration,concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
+  const memoryPipeline=new MemoryPipeline({understand:understandConversation,materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:id=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy()),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&(!job.automaticGrant||sourcePipelines.memoryAllowed(job.automaticGrant.sourceId)),strategies:memoryStrategies,executor,store,memories,deletionEvidenceAllowedForMemory:id=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy()),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy(),required),configuration:memoryConfiguration,concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
   memoryRecipeSettings.onChange=()=>materialMemoryWork.inputs.revokeDisabled();
   memoryRecipeSettings.onApplied=()=>materialMemoryWork.reconcile(memoryPipeline);
   materialMemoryWork.reconcile(memoryPipeline);
@@ -467,7 +460,7 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
       const meter=usageLedger.start(settings.provider,settings.model,'document-import',{agentId:'document-import',moduleId:'imports',skillId:'document-import',operationId:input.operationId});
       const operationId=input.operationId??'import:'+randomUUID();
       let runtime:ReturnType<typeof createImportAgent>|undefined;const abort=()=>{void runtime?.close();};input.signal?.addEventListener('abort',abort,{once:true});
-      try{runtime=createImportAgent({...settings,codex,runModel:runModelFor(settings),authorizeModelRequest:authorizeModelRequest(settings)});importAgents.add(runtime);const {signal:_signal,operationId:_operationId,...request}=prepared;const result=await agentGate.run(()=>modelOperation.run(operationId,()=>providerAdmission.run(settings,()=>runtime!.prepare({...request,language:requestLocale.getStore()??'zh-CN'},dependencies?.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined,usage=>meter.update(usage)))),input.signal,input.operationId);input.signal?.throwIfAborted();meter.finish('completed');return result;}
+      try{runtime=createImportAgent({...settings,codex,runModel:runModelFor(settings),authorizeModelRequest:authorizeModelRequest});importAgents.add(runtime);const {signal:_signal,operationId:_operationId,...request}=prepared;const result=await agentGate.run(()=>modelOperation.run(operationId,()=>providerAdmission.run(settings,()=>runtime!.prepare({...request,language:requestLocale.getStore()??'zh-CN'},dependencies?.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined,usage=>meter.update(usage)))),input.signal,input.operationId);input.signal?.throwIfAborted();meter.finish('completed');return result;}
       catch(error){meter.finish('failed');throw error;}finally{input.signal?.removeEventListener('abort',abort);try{await runtime?.close();}finally{if(runtime)importAgents.delete(runtime);}}
     }),
     // Capture/file journals are durable. Import completion only queues increments;
@@ -510,7 +503,7 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
       const previousAvailable=previousIds.filter(id=>{try{return Boolean(files.detail(id).hasOriginal);}catch{return false;}});
       const directImages=queryImages([...new Set([...attachmentIds,...previousAvailable.slice(-4)])]);
       const [opening,conversation]=await Promise.all([
-        modelLocality.run(usesLocalModel(selectedProfile.settings),()=>openingMemoryContext(archiveReader,question,{...scope,contextTime})),
+        openingMemoryContext(archiveReader,question,{...scope,contextTime}),
         previous?working.prepare(previous,lifecycle.settings(),question,input=>queryAgent({...input,contextTime,traceContext:{...input.traceContext,operationId},executionLane:'interactive',modelProfileId,modelOverride,signal},'query','conversations'),execution):undefined,
       ]);
       const result=await queryAgent({traceContext:{operationId},executionLane:'interactive',question,...scope,contextTime,modelProfileId,modelOverride,onProgress,signal,directImages,openingMemories:opening.leads,contextEvidenceDependencies:opening.evidenceDependencies,...(conversation?{conversation}:{})});

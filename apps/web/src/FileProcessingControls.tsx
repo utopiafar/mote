@@ -8,8 +8,8 @@ import {useOperationUpdates} from './useOperationUpdates';
 
 type ProcessingFile={
  cancellation?:{canCancel:boolean;wait:'running'|'unknown'|null};
- job:null|{state:string;summary_state:string;local_only?:number};
- processingPolicy?:{applied?:{profile?:{summarize?:boolean}};current?:{profile?:{summarize?:boolean}}};
+ job:null|{state:string;summary_state:string};
+ processingPolicy?:{capabilities?:{dialogue:boolean;summary:boolean};applied?:{profile?:{summarize?:boolean}};current?:{profile?:{summarize?:boolean}}};
 };
 
 function UnknownRetryConfirmation({onCancel,onConfirm}:{onCancel:()=>void;onConfirm:()=>void}){
@@ -49,7 +49,7 @@ export function FileProcessingControls({api,id,mode='detail',disabled=false,onCh
  }
  if(!file)return <>{readError&&<p className="error-banner" role="alert">{errorMessage(readError)}<button className="button" onClick={refresh}>{moteText('重新读取')}</button></p>}</>;
  const locked=disabled||busy||loading||!!readError,waiting=file.cancellation?.wait==='running';
- const summaryDisabled=(file.processingPolicy?.applied??file.processingPolicy?.current)?.profile?.summarize===false;
+ const summaryDisabled=file.processingPolicy?.capabilities?.summary===false||(file.processingPolicy?.applied??file.processingPolicy?.current)?.profile?.summarize===false;
  const canRetry=mode==='detail'||['failed','blocked','cancelled'].includes(file.job?.state??'')||file.cancellation?.wait==='unknown';
  return <>
   {unknownStage!==null&&<UnknownRetryConfirmation onCancel={()=>setUnknownStage(null)} onConfirm={()=>{const stage=unknownStage;setUnknownStage(null);void action('retry',stage,true);}}/>}
@@ -59,8 +59,8 @@ export function FileProcessingControls({api,id,mode='detail',disabled=false,onCh
   {file.job&&<div className="source-toolbar">
    {file.cancellation?.canCancel&&<button className="button" disabled={locked} onClick={()=>void action('cancel')}>{mode==='import'?moteText('取消处理'):moteText('取消本次处理')}</button>}
    {canRetry&&<button className="button" disabled={locked||waiting} onClick={()=>void action('retry')}>{mode==='import'?moteText('重试处理'):moteText('重新转写 / 提取')}</button>}
-   {mode==='detail'&&!file.job.local_only&&!summaryDisabled&&<button className="button" disabled={locked||waiting} onClick={()=>void action('retry','summary')}>{moteText('重新生成摘要')}</button>}
-   {mode==='detail'&&!!file.job.local_only&&<button className="button" disabled={locked||waiting} onClick={()=>void action('retry','diarize')}>{moteText('重新分离说话人（保留转写）')}</button>}
+   {mode==='detail'&&!summaryDisabled&&<button className="button" disabled={locked||waiting} onClick={()=>void action('retry','summary')}>{moteText('重新生成摘要')}</button>}
+   {mode==='detail'&&file.processingPolicy?.capabilities?.dialogue&&<button className="button" disabled={locked||waiting} onClick={()=>void action('retry','diarize')}>{moteText('重新分离说话人（保留转写）')}</button>}
    <button className="button" onClick={refresh}>{moteText('刷新处理状态')}</button>
   </div>}
   {(error||readError)&&<p role="alert" className="error-banner">{error||errorMessage(readError)}</p>}

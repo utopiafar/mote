@@ -66,15 +66,12 @@ export const fileProcessingSchema=z.object({
   localWorkerApiKey:z.string().max(4096).optional(),
   speakerCount:z.number().int().min(1).max(16).nullable().default(null),
   semanticTurns:z.boolean().default(false),
-  localModelEndpoint:z.string().max(2000).default('http://127.0.0.1:8080/v1'),
-  localModelName:z.string().max(200).default(''),
-  localModelApiKey:z.string().max(4096).optional(),
   sourceProfiles:z.record(sourceIdSchema,z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/)).default({}),
   typeProfiles:z.record(z.string().regex(/^[a-z0-9.+-]+\/(?:[a-z0-9.+-]+|\*)$/),z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/)).default({}),
   maxAudioMinutes:z.number().int().min(1).max(1440).default(120),
   timeoutMs:z.number().int().min(1000).max(3600000).default(600000),
 }).strict().superRefine((v,c)=>{
   for(const endpoint of [v.endpoint,v.imageEndpoint].filter(Boolean))try{const u=new URL(endpoint);if(u.username||u.password||u.hash||u.search||!['http:','https:'].includes(u.protocol))throw Error();const local=['127.0.0.1','localhost','[::1]'].includes(u.hostname);if(!local&&(!v.allowRemote||u.protocol!=='https:'))throw Error();}catch{c.addIssue({code:'custom',message:'Use a local endpoint or explicitly allow an HTTPS remote endpoint'});}
-  for(const endpoint of [v.localModelEndpoint,v.localEndpoint])try{const u=new URL(endpoint);if(!['http:','https:'].includes(u.protocol)||!['127.0.0.1','localhost','[::1]'].includes(u.hostname)||u.username||u.password||u.search||u.hash)throw Error();}catch{c.addIssue({code:'custom',message:'Local processing endpoints must use loopback'});}
+  for(const endpoint of [v.localEndpoint])try{const u=new URL(endpoint);if(!['http:','https:'].includes(u.protocol)||!['127.0.0.1','localhost','[::1]'].includes(u.hostname)||u.username||u.password||u.search||u.hash)throw Error();}catch{c.addIssue({code:'custom',message:'Local processing endpoints must use loopback'});}
 });
 export type FileProcessingSettings=z.infer<typeof fileProcessingSchema>;

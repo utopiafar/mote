@@ -2,7 +2,6 @@ import {ProviderFailure,providerHttpFailure,type TokenUsage} from '@mote/shared'
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {withExecutionCancellation} from './execution-cancellation.js';
 import {sha256} from './store.js';
-import {isLoopback} from './file-processors.js';
 import type {FileStore} from './files.js';
 import type { Config } from './config.js';
 import type { Store, Range } from './store.js';
@@ -34,7 +33,7 @@ export class Indexer {
     }));
   }
   private modelFingerprint(){return sha256(JSON.stringify([this.config.embeddingModel,this.config.embeddingBaseUrl]));}
-  private fileInput(id:string){if(!this.files?.isCurrentEvidence(id))return;const row=this.store.db.prepare('SELECT c.id,c.capture_id,c.text,c.metadata,c.start_ms,c.end_ms,v.revision,j.local_only FROM file_chunks c JOIN file_versions v ON v.capture_id=c.capture_id JOIN file_jobs j ON j.capture_id=c.capture_id WHERE c.id=?').get(id);if(!row||row.local_only&&!isLoopback(this.config.embeddingBaseUrl))return;return {id,captureId:String(row.capture_id),text:String(row.text),fingerprint:sha256(JSON.stringify([row.capture_id,row.text,row.metadata,row.start_ms,row.end_ms,row.revision]))};}
+  private fileInput(id:string){if(!this.files?.isCurrentEvidence(id))return;const row=this.store.db.prepare('SELECT c.id,c.capture_id,c.text,c.metadata,c.start_ms,c.end_ms,v.revision FROM file_chunks c JOIN file_versions v ON v.capture_id=c.capture_id JOIN file_jobs j ON j.capture_id=c.capture_id WHERE c.id=?').get(id);if(!row)return;return {id,captureId:String(row.capture_id),text:String(row.text),fingerprint:sha256(JSON.stringify([row.capture_id,row.text,row.metadata,row.start_ms,row.end_ms,row.revision]))};}
   private valid(step:ExecutionStep){if(step.input.modelFingerprint!==this.modelFingerprint())return false;const id=String(step.input.evidenceId);return step.kind==='embedding.file'?this.fileInput(id)?.fingerprint===step.input.fingerprint:this.store.archive.fingerprint(id)===step.input.fingerprint;}
   private inputText(step:ExecutionStep){const id=String(step.input.evidenceId);if(step.kind==='embedding.file')return this.fileInput(id)!.text;const item=this.store.evidence([id])[0];return [item.appName,item.windowTitle,item.ocrText,...(item.mood===undefined?[]:[`User-provided mood: ${item.mood}`])].join('\n');}
   private project(step:ExecutionStep){
@@ -107,7 +106,7 @@ export class Indexer {
   }
   private async run() {
     for(const item of this.store.pending(8)){const fingerprint=this.store.archive.fingerprint(item.id);if(fingerprint)this.enqueue('capture',item.id,item.id,fingerprint);}
-    for(const item of this.files?.pendingIndex(this.config.embeddingModel,isLoopback(this.config.embeddingBaseUrl))??[]){const current=this.fileInput(item.id);if(current)this.enqueue('file',item.id,current.captureId,current.fingerprint);}
+    for(const item of this.files?.pendingIndex(this.config.embeddingModel)??[]){const current=this.fileInput(item.id);if(current)this.enqueue('file',item.id,current.captureId,current.fingerprint);}
     const ids=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind IN ('embedding.capture','embedding.file') AND state IN ('waiting','running') ORDER BY rowid LIMIT 200").all().map(row=>String(row.id));await this.engine.drain(ids);for(const id of ids)this.engine.project(id);
     const counts=this.store.indexCounts();this.diagnostics?.record('queue.snapshot',{pending:counts.pending,failed:counts.failed});
   }
