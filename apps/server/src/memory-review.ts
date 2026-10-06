@@ -24,10 +24,11 @@ export async function reviewMemory(input:QueryInput,draft:QueryResult,query:(inp
   const receipt=(result:QueryResult,decision:MemoryReviewReceipt['decision'],inputHash?:string,model=result.usage?.model)=>{
     receipts.set(result,{deletionSnapshot,resultHash:sha256(result.answer),strategy:memoryStrategyPin(strategy??defaultMemoryReviewStrategy),policy:'bounded-exact-review@1',decision,draftRunId:draft.runId,reviewRunId:decision==='empty'?undefined:result.runId,checkedAt:new Date().toISOString(),contextTime:input.contextTime,inputHash,model});return result;
   };
-  if(!value.memories.length)return receipt(await finish({...draft}),'empty');
+  const workPackage=Boolean(input.taskContext?.memoryWork);
+  if(!value.memories.length&&!workPackage)return receipt(await finish({...draft}),'empty');
   // Only fixed, bounded extraction tools may reuse a verdict. Consolidation and
   // open retrieval can see changing context outside the supplied originals.
-  const bounded=options?.cache&&options.snapshot&&input.validateOutput&&input.contextTime&&input.evidenceIds?.length&&input.evidenceRanges?.length&&['memory-extraction','coding-memory','memory-strategy'].includes(input.skill??'');
+  const bounded=!workPackage&&options?.cache&&options.snapshot&&input.validateOutput&&input.contextTime&&input.evidenceIds?.length&&input.evidenceRanges?.length&&['memory-extraction','coding-memory','memory-strategy'].includes(input.skill??'');
   const snapshot=bounded?options!.snapshot!():undefined;
   const {signal,validateOutput,onProgress,onTrace,onUsage,traceContext,...semanticInput}=input;
   const key=bounded?sha256(JSON.stringify(['bounded-exact-review@1',strategy??defaultMemoryReviewStrategy,options?.taskInstructions,semanticInput,value,draft.citations,snapshot,deletionSnapshot])):undefined;
@@ -48,8 +49,8 @@ export async function reviewMemory(input:QueryInput,draft:QueryResult,query:(inp
   }
   // Keep one authoritative policy and the complete task; do not exceed the Agent input limit by duplicating it.
   const taskQuestion=input.question.startsWith(MEMORY_ADMISSION_PROMPT)?input.question.slice(MEMORY_ADMISSION_PROMPT.length):input.question;
-  const question=strategy?strategy.policy+'\n'+MEMORY_CANDIDATE_OUTPUT_CONTRACT+(options?.taskInstructions?'\n'+options.taskInstructions:''):
-    MEMORY_ADMISSION_PROMPT+'\n'+taskQuestion+'\n'+defaultMemoryReviewStrategy.policy.slice(MEMORY_ADMISSION_PROMPT.length+1);
+  const question=(strategy?strategy.policy+'\n'+MEMORY_CANDIDATE_OUTPUT_CONTRACT+(options?.taskInstructions?'\n'+options.taskInstructions:''):
+    MEMORY_ADMISSION_PROMPT+'\n'+taskQuestion+'\n'+defaultMemoryReviewStrategy.policy.slice(MEMORY_ADMISSION_PROMPT.length+1))+(workPackage?'\nIndependently inspect every full authorized original range and verify each member coverage decision, including all no_candidates entries and omitted or saturated candidates. Return the complete work-package coverage and capacity contract from the task context. An empty candidate array still requires this independent review.':'');
   const reviewed=await query({...input,traceContext:{...traceContext,phase:'review'},taskContext:{turns:[],...input.taskContext,untrustedMemoryDraft:value},question});
   await validate(reviewed);
   if(key)options!.cache!.put(key,reviewed);

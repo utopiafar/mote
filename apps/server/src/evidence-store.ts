@@ -671,6 +671,16 @@ export class EvidenceStore {
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
   invalidateConversationAnswers(evidenceIds?:string[]) {
+    // Resolve formal-original lineage before its anchors are removed. Private
+    // delegated products and replay prompts retain the same disclosure boundary.
+    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='delegation_dependencies'").get()){
+      const affected=evidenceIds?this.db.prepare('SELECT DISTINCT work_id FROM delegation_dependencies WHERE evidence_id IN (SELECT value FROM json_each(?))').all(JSON.stringify(evidenceIds)):this.db.prepare('SELECT id work_id FROM delegation_works').all();
+      for(const row of affected){
+        for(const table of ['delegation_artifacts','delegation_payloads','delegation_results','delegation_events'])this.db.prepare(`DELETE FROM ${table} WHERE work_id=?`).run(row.work_id);
+        this.db.prepare("UPDATE delegation_works SET json=json_set(json_remove(json,'$.private'),'$.status','stale','$.goal','','$.error','evidence_deleted') WHERE id=?").run(row.work_id);
+        this.db.prepare("UPDATE delegation_units SET json=json_set(json_remove(json,'$.private'),'$.status','stale','$.title','','$.goal','','$.input',json('{}'),'$.error','evidence_deleted') WHERE work_id=?").run(row.work_id);
+      }
+    }
     const affected=(path:string,table:string)=>evidenceIds?`(coalesce(json_extract(${table}.json,'${path}.version'),0)!=1 OR coalesce(json_extract(${table}.json,'${path}.complete'),0)!=1 OR EXISTS(SELECT 1 FROM json_each(${table}.json,'${path}.ids') d JOIN json_each(?) removed ON removed.value=d.value))`:'1';
     const parameters=evidenceIds?[JSON.stringify(evidenceIds)]:[];
     if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='working_memories'").get())this.db.prepare('DELETE FROM working_memories WHERE '+affected('$.evidenceDependencies','working_memories')).run(...parameters);

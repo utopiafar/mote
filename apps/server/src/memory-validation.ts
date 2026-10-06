@@ -1,6 +1,7 @@
 import {CODING_MEMORY_CONTRACT} from './memory-schema.js';
 const MEMORY_SCHEMA_FEEDBACK='Every candidate needs admission (layer observation|memory, reason, scope, attribution user|third_party|observed|inferred) and exact evidence quotes. Consolidated candidates must be layer memory and include only relatedMemoryIds actually used from supplied cards. Empty output is valid.';
 export const validationFeedback={
+  coverage:'Work-package output requires coverage for every host member key, with checked or no_candidates or needs_context, matching zero-based candidateIndexes, and capacity:{saturated:boolean}. Preserve exactly the host member identities. Do not claim completion when a range was omitted; report needs_context. The host capacity replaces the ordinary eight-candidate limit.',
   json:'The answer field must be a string containing one valid JSON object with a memories array. Do not put Markdown fences or prose around that JSON.',
   schema:MEMORY_SCHEMA_FEEDBACK+' Use exactly a memories array with at most 8 objects (at most 3 for coding-memory extraction). Each object requires string title, string statement, string uncertainty, and a nonempty evidenceIds array of complete UUIDs. Evidence entries require id and an exact quote. Omit offset and length by default; the host resolves a unique exact match. If supplied, offset must be absolute UTF-16 and length must equal the UTF-16 quote length. '+CODING_MEMORY_CONTRACT+' Do not add other keys.',
   coding_contract:CODING_MEMORY_CONTRACT,

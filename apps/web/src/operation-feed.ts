@@ -20,6 +20,7 @@ export function operationFeed(api:Api){let feed=feeds.get(api);if(!feed){feed=ne
 
 export function affectedResource(key:string,ids:Set<string>,reset:boolean){
  const path=key.split('?')[0];
+ if(path==='/api/work-activity'||path.startsWith('/api/work-activity/'))return true;
  if(path==='/api/operations')return true;
  if(path.startsWith('/api/operations/'))return reset||ids.has(decodeURIComponent(path.slice('/api/operations/'.length)));
  const kinds=new Set([...ids].map(id=>id.split(':')[0]));

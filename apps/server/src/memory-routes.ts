@@ -54,7 +54,10 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
   app.post('/api/memory-integrations/:id/cancel',async req=>lifecycle.cancel('consolidation',jobId(req.params)));
   app.post('/api/memory-integrations/:id/retry',async(req,reply)=>{const result=lifecycle.retry('consolidation',jobId(req.params));void lifecycle.tick().catch(()=>{});return reply.code(202).send(result);});
   app.get('/api/memory-recipes',async()=>({items:memoryPipeline.strategies.list()}));
-  app.get('/api/memory-jobs',async()=>({items:memoryPipeline.list()}));
+  app.get('/api/memory-jobs',async req=>memoryPipeline.page(z.object({
+    limit:z.coerce.number().int().min(1).max(100).default(30),
+    cursor:z.string().min(1).max(1000).optional(),
+  }).strict().parse(req.query)));
   app.get('/api/memory-jobs/:id',async req=>memoryPipeline.get(jobId(req.params)));
   app.post('/api/memory-jobs',async(req,reply)=>{
     const scope=z.object({...scopeFields,contextTime:z.string().datetime({offset:true}).optional(),recipes:z.array(memoryStrategyRefSchema).min(1).max(8).optional(),modelProfileId:modelProfileIdSchema.optional(),evidenceIds:z.array(z.string().uuid()).min(1).max(20000).optional()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body??{});

@@ -20,6 +20,7 @@ import {ImageProcessing} from '../src/image-processing.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialMemoryWork} from '../src/material-memory-work.js';
+import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-planning.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 
 async function fixture(t:import('node:test').TestContext){
@@ -166,7 +167,8 @@ test('production image intake enters the existing automatic Memory pipeline once
  let visual=0,extractions=0;
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   if(input.directImages?.length){visual++;await reader.readImage!({id:input.directImages[0].id});return {answer:JSON.stringify({text:'Generated chart from a third-party reference; owner authorship is unknown.',regions:[]}),citations:[],trace:[],runId:randomUUID()};}
-  extractions++;return {answer:JSON.stringify({memories:[]}),citations:[],trace:[],runId:randomUUID()};
+  if(await planGeneratedMemory(input))return {answer:'Generated packages submitted.',citations:[],trace:[],runId:randomUUID()};
+  if(input.traceContext?.phase!=='review')extractions++;return {answer:generatedMemoryOutput(input),citations:[],trace:[],runId:randomUUID()};
  }})});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  node.processing.configureImageDefault({endpoint:'http://127.0.0.1:9011/ocr'});node.processing.runtime.registry.get('image.http').process=async()=>({durationMs:0,segments:[]});
@@ -174,9 +176,9 @@ test('production image intake enters the existing automatic Memory pipeline once
  const bytes=await sharp({create:{width:16,height:16,channels:3,background:'#ddeeff'}}).png().toBuffer(),id=randomUUID();
  await node.store.ingest({id,deviceId:'generated-screen',deviceName:'Generated screen',platform:'android',source:'screen',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'',ocr:{status:'disabled'},privacy:{excluded:false,redacted:false,mode:'local'},imageMime:'image/png',imageBase64:bytes.toString('base64')});
  await node.perception.tick();for(let i=0;i<20;i++)if(await node.materialOrganizer.tick(100)===0)break;
- node.store.db.prepare('UPDATE material_memory_requests SET ready_at=0').run();node.sourcePipelines.drainMemory(node.memoryPipeline,true,10);
+ node.store.db.prepare('UPDATE material_memory_requests SET ready_at=0').run();await node.sourcePipelines.drainMemory(node.memoryPipeline,true,10);
  const job=node.memoryPipeline.list()[0];assert.ok(job,'image Material should admit an automatic Memory job');const result=await node.memoryPipeline.run(job.id);assert.equal(result.status,'completed',JSON.stringify(result));assert.equal(result.memoryCount,0);
  const detail=node.perception.detail(id);assert.equal(detail.memory[0].state,'completed');assert.equal(detail.memory[0].count,0);assert.equal(visual,1);assert.equal(extractions,1);
  node.perception.retry(id,true);await node.perception.tick();for(let i=0;i<20;i++)if(await node.materialOrganizer.tick(100)===0)break;
- node.store.db.prepare('UPDATE material_memory_requests SET ready_at=0').run();node.sourcePipelines.drainMemory(node.memoryPipeline,true,10);assert.equal(node.memoryPipeline.list().length,1);assert.equal(extractions,1);
+ node.store.db.prepare('UPDATE material_memory_requests SET ready_at=0').run();await node.sourcePipelines.drainMemory(node.memoryPipeline,true,10);assert.equal(node.memoryPipeline.list().length,1);assert.equal(extractions,1);
 });

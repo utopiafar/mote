@@ -80,6 +80,7 @@ export function Conversations({api, configured, devices, renderAnswer}: {
   }
   useEffect(()=>{selectionMade.current=false;setSelectedId(null);setOlder(null);setItems([]);setCursor(null);setRun(null);setBusy(false);setQuestion('');setAttachments([]);setUploading(false);setPendingQuestion('');setError('');setHistoryError('');setLoadingOlder(false);setLoadingPage(false);
     return()=>{operation.current?.abort();attachmentRequest.current?.abort();historyRequest.current?.abort();olderRequest.current?.abort();};},[api]);
+  useEffect(()=>{const explicit=new URLSearchParams(window.location.hash.split('?')[1]).get('conversation');if(explicit){selectionMade.current=true;setSelectedId(explicit);setRun(null);}const changed=()=>{const next=new URLSearchParams(window.location.hash.split('?')[1]).get('conversation');if(next){selectionMade.current=true;setSelectedId(next);setRun(null);}};window.addEventListener('hashchange',changed);return()=>window.removeEventListener('hashchange',changed);},[api]);
   const detailRevoked=detail.error instanceof ApiError&&[401,403,404,410].includes(detail.error.status);
   useLayoutEffect(()=>{
     olderRequest.current?.abort();olderRequest.current=null;setLoadingOlder(false);setOlder(null);setPageRevoked(false);
@@ -223,7 +224,7 @@ export function Conversations({api, configured, devices, renderAnswer}: {
         {turn.status === 'failed' || !turn.result ? <div className="failed-answer" role="alert"><div className="failed-answer-icon"><AlertCircle size={18}/></div><div><strong>{moteText("这次回答没有完成")}</strong><p>{failureMessage(turn.error)}</p><button className="text-button" disabled={busy || opening} onClick={() => retry(turn.question)}><RotateCcw size={14}/>{moteText("再次提问")}</button></div></div> : <>{turn.result.modelSelection&&<small className="model-used">{turn.result.modelSelection.profileName} · {turn.result.modelSelection.model}</small>}{turn.evidenceDeleted ? <p className="notice">{moteText("相关证据已删除，这条历史回答已清除。可以继续提问查阅现有记录。")}</p> : renderAnswer(turn.result)}</>}
       </article>)}
       {pendingQuestion && <div className="asked-question"><MessageSquare size={16}/><span>{pendingQuestion}</span></div>}
-      {run&&<QueryProgress run={run} error={pollError}/>}
+      {run&&<QueryProgress api={api} run={run} error={pollError}/>}
       {run?.status==='running'&&<button className="button subtle" onClick={()=>void api.request<QueryRun>(`/api/query-runs/${run.id}/cancel`,{method:'POST'}).then(setRun).catch(e=>setError(errorMessage(e)))}>{moteText("停止生成")}</button>}
       <div ref={end}/>
       </div>

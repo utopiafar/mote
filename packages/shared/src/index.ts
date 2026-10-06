@@ -177,3 +177,5 @@ export * from './evidence-ref.js';
 export type {InsightSnapshot} from './insight-snapshot.js';
 export * from './feature-packs.js';
 export * from './recordings.js';
+
+export * from './activity.js';

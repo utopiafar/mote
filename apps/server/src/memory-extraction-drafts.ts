@@ -1,3 +1,4 @@
+import {encodeMemoryPrivate,decodeMemoryPrivate} from './memory-private-storage.js';
 import type {QueryResult} from '@mote/shared';
 import type {Store} from './store.js';
 
@@ -24,17 +25,18 @@ export class MemoryExtractionDrafts {
   // Evidence invalidation/deletion and bounded eviction remove shared drafts;
   // the cancelled producer cannot add or update them after its fence closes.
   get(batchId:string,inputHash:string,shared=false):QueryResult|undefined {
-    if(shared){const common=this.store.db.prepare('SELECT json FROM memory_extraction_drafts WHERE input_hash=? AND shared=1 LIMIT 1').get(inputHash);if(common)return JSON.parse(String(common.json));}
+    if(shared){const common=this.store.db.prepare('SELECT json FROM memory_extraction_drafts WHERE input_hash=? AND shared=1 LIMIT 1').get(inputHash);if(common)return this.decode(String(common.json));}
     const row=this.store.db.prepare('SELECT input_hash,json FROM memory_extraction_drafts WHERE batch_id=?').get(batchId);
     if(!row)return;
     if(row.input_hash!==inputHash){this.clear(batchId);return;}
-    return JSON.parse(String(row.json));
+    return this.decode(String(row.json));
   }
+  private decode(json:string):QueryResult {const value=JSON.parse(json);return value.private?decodeMemoryPrivate<QueryResult>(this.store,value.private):value;}
   /** Caller supplies the active execution fence and host validation transaction. */
   put(batchId:string,inputHash:string,result:QueryResult,shared=false){
     if(shared&&this.store.db.prepare('SELECT 1 FROM memory_extraction_drafts WHERE input_hash=? AND shared=1').get(inputHash))return;
     // Reusing generation does not create another call, trace or usage receipt.
-    const json=JSON.stringify({answer:result.answer,citations:result.citations,runId:result.runId,trace:[]}),bytes=Buffer.byteLength(json);
+    const value={answer:result.answer,citations:result.citations,runId:result.runId,trace:[]},json=JSON.stringify(this.store.contentEncryption.enabled?{private:encodeMemoryPrivate(this.store,value)}:value),bytes=Buffer.byteLength(json);
     this.clear(batchId);
     if(bytes>Math.min(this.maxBytes,512*1024))return;
     const rows=this.store.db.prepare('SELECT batch_id,length(CAST(json AS BLOB)) bytes FROM memory_extraction_drafts ORDER BY created_at,rowid').all();

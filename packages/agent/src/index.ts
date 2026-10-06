@@ -1,4 +1,5 @@
 import {SYSTEM_PROMPT,systemInstructions} from './instructions.js';
+import {AgentYieldError} from './host-controls.js';
 import {observeModelTransport} from './model-transport-observer.js';
 import {contextToolDefinitions,pinContextTools} from './tool-contributions.js';
 export {ContextToolRegistry,contextToolDefinitions,type ContextToolContribution} from './tool-contributions.js';
@@ -35,7 +36,9 @@ import {
   type ContextRecord,
 } from "./types.js";
 export * from "./types.js";
+export {AgentYieldError,hostControlDefinitions,type HostControlChannel,type HostControlDefinition,type HostControlResult} from './host-controls.js';
 export {ContextToolError} from './tool-errors.js';
+export {originalEvidenceReceipt} from './bridge.js';
 export {validateInlineCitations} from "./citations.js";
 export {validateModelOptions} from './model-runtime.js';
 
@@ -347,6 +350,7 @@ export function createAgent(options: AgentOptions) {
       };
     } catch (error) {
       primaryFailure = true;
+      if(error instanceof AgentYieldError){trace({type:'run.yielded',status:'waiting'});throw error;}
       trace({type:'run.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:error instanceof AgentResponseError?error.reason:undefined}});
       // The SDK message may contain child stderr. Class identity establishes the
       // timeout; never inspect or forward provider/runtime message text.

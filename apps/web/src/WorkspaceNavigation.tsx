@@ -8,8 +8,9 @@ export function primaryDestination(page: Page) {
   const section=sectionFor(page);
   if (section === 'library') return 'archive';
   if (section === 'connections') return 'devices';
+  if (page === 'processing') return 'activity';
   if (page === 'actions') return 'overview';
-  return ['overview','archive','ask','devices'].includes(page)?page:'about';
+  return ['overview','archive','ask','activity','devices'].includes(page)?page:'about';
 }
 export function WorkspaceNavigation({page,onPage}:{page:Page;onPage:(page:Page)=>void}) {
   const section=sectionFor(page);
@@ -29,12 +30,13 @@ export function WorkspaceNavigation({page,onPage}:{page:Page;onPage:(page:Page)=
   }
   // The models page owns its nested categories and their single parent control.
   if(page==='settings')return null;
+  if(page==='processing')return <button className="back-link workspace-back" aria-label={moteText('返回活动')} onClick={()=>onPage('activity')}><ArrowLeft size={16}/>{moteText('返回上级')}</button>;
   if(primaryDestination(page)==='about'&&page!=='about') return <button className="back-link workspace-back" aria-label={moteText('返回{0}',pageLabels.about)} onClick={()=>onPage('about')}><ArrowLeft size={16}/>{moteText('返回上级')}</button>;
   if(page==='actions')return <button className="back-link workspace-back" aria-label={moteText('返回{0}',pageLabels.overview)} onClick={()=>onPage('overview')}><ArrowLeft size={16}/>{moteText('返回上级')}</button>;
   return null;
 }
 export function SettingsLanding({onPage}:{onPage:(page:Page)=>void}) {
   const system=sections.system;
-  const extra=webFeatures.pages().filter(entry=>!entry.section&&!new Set(['overview','ask','actions','about','help']).has(entry.id)).map(entry=>entry.id);
+  const extra=webFeatures.pages().filter(entry=>!entry.section&&!new Set(['overview','ask','actions','activity','processing','about','help']).has(entry.id)).map(entry=>entry.id);
   return <section className="settings-destinations"><LanguageSelector/><div><h2>{moteText('服务与资料')}</h2><p>{moteText('模型、存储与处理方式都在这里调整。')}</p></div><div className="settings-link-grid">{[...system,...extra,'help'].filter(id=>pageLabels[id]).map(id=><button key={id} onClick={()=>onPage(id)}><Settings2 size={18}/><span>{pageLabels[id]}</span><ArrowRight size={16}/></button>)}</div></section>;
 }

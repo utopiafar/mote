@@ -3,6 +3,7 @@ import {sha256,StoreError,type Store} from './store.js';
 import type {MaterialStore} from './materials.js';
 import {materialRequirementsSchema} from './material-readiness.js';
 import {DEFAULT_MEMORY_INPUT_SCOPE,MemoryInputAuthorization,type AutomaticMemoryGrant} from './memory-input-authorization.js';
+import {memoryWorkPackageSchema,type MemoryWorkPackage} from './memory-work-contract.js';
 import type {MemoryRecipeSettings} from './memory-recipe-settings.js';
 import {memoryRecipeBindingSchema,type MemoryStrategyRef} from './memory-strategy-contract.js';
 
@@ -10,15 +11,19 @@ const requiredSchema=materialRequirementsSchema;
 type WorkRow={material_id:string;scope:string;revision:string;required_json:string;source_required_json:string;input_fingerprint:string|null;ready_at:number;job_id:string|null;error:string|null;input_key:string;auto_authorized:number;binding_json:string|null;context_time:string|null};
 const TERMINAL_AT=Number.MAX_SAFE_INTEGER,RESUME_DELAY_MS=5000,RETRY_DELAY_MS=60000;
 export type MaterialMemoryRunner={
-  create:(input:{evidenceIds:string[];originKey:string;contextTime?:string;recipes?:MemoryStrategyRef[];automaticGrant?:AutomaticMemoryGrant})=>{id:string};
+  create:(input:{evidenceIds:string[];originKey:string;contextTime?:string;recipes?:MemoryStrategyRef[];automaticGrant?:AutomaticMemoryGrant;automaticGrants?:AutomaticMemoryGrant[];workPackage?:MemoryWorkPackage})=>{id:string};
   get:(id:string)=>{status:string};run:(id:string)=>Promise<unknown>;cancel:(id:string)=>unknown;
 };
+export type MemoryWorkCandidate={key:string;materialId:string;ref:string;title:string;sourceId:string;inputKey:string;scope:string;contextTime:string;fingerprint:string;characters:number;evidenceCount:number;evidenceIds:string[];recipe?:MemoryStrategyRef};
+export type MemoryWorkProposal={id?:string;members:string[];goal:string;instruction:string};
+export type MaterialMemoryPlanner=(catalog:MemoryWorkCandidate[])=>Promise<MemoryWorkProposal[]>;
 export type MaterialMemoryObservation={inputKey:string;change:'source'|'rebuild';automatic?:boolean};
 
 /** One common durable queue, independently scoped by selected product recipe.
  * Readiness is separate from the raw receipt's permission to run paid work. */
 export class MaterialMemoryWork {
   private readonly active=new Set<string>();
+  private planning=false;
   readonly inputs:MemoryInputAuthorization;
   constructor(private readonly store:Store,private readonly materials:MaterialStore,private readonly now=Date.now,private readonly automaticEnabled=()=>true,private readonly recipes?:MemoryRecipeSettings){
     this.inputs=new MemoryInputAuthorization(store,automaticEnabled,now,recipes);
@@ -86,6 +91,12 @@ export class MaterialMemoryWork {
   }
   withdraw(materialId:string){this.transaction(()=>{for(const row of this.rows(materialId))this.revoke(row);this.store.db.prepare('DELETE FROM material_memory_requests WHERE material_id=?').run(materialId);});}
   private selection(row:WorkRow){return this.materials.input(row.material_id,requiredSchema.parse(JSON.parse(row.required_json)));}
+  planningEvidence(materialId:string,scope:string):string[]{const row=this.rows(materialId).find(row=>row.scope===scope);return row?this.selection(row)?.evidenceIds??[]:[];}
+  /** A sample uses the candidate's independently pinned recipe selection. */
+  planningInput(candidate:MemoryWorkCandidate,jobId?:string){const row=this.rows(candidate.materialId).find(row=>row.scope===candidate.scope),material=this.materials.get(candidate.materialId),selection=row&&this.selection(row);
+    if(!row?.auto_authorized||!material||material.origin.sourceId!==candidate.sourceId||row.input_key!==candidate.inputKey||!selection?.ready||selection.fingerprint!==candidate.fingerprint||!this.available(row,candidate.sourceId,jobId)||jobId&&row.job_id!==jobId)throw new StoreError('Memory sample authorization changed',409);
+    return selection;
+  }
   sourceRequirements(ref:string):string[]|undefined {const material=this.materials.get(ref),row=material&&this.rows(material.id)[0];return row?requiredSchema.parse(JSON.parse(row.source_required_json)):undefined;}
   readyForMemory(ref:string,scope?:string):boolean{
     try{const pinned=this.materials.get(ref);if(!pinned)return false;const current=this.materials.get(pinned.id);if(current?.revision!==pinned.revision)return false;
@@ -94,12 +105,15 @@ export class MaterialMemoryWork {
     }catch{return false;}
   }
   /** Execution and commit both check this, including a retry of an old auto job. */
-  authorized(job:{id:string;automaticGrant?:AutomaticMemoryGrant}):boolean{
-    if(!job.automaticGrant)return true;
-    const {sourceId,inputKey,scope}=job.automaticGrant;
-    if(!this.automaticEnabled()||!this.inputs.available(sourceId,inputKey,job.id,scope))return false;
+  authorized(job:{id:string;automaticGrant?:AutomaticMemoryGrant;automaticGrants?:AutomaticMemoryGrant[]}):boolean{
+    const grants=job.automaticGrants??(job.automaticGrant?[job.automaticGrant]:[]);
+    return grants.every(grant=>this.authorizedGrant(job.id,grant));
+  }
+  private authorizedGrant(jobId:string,authorization:AutomaticMemoryGrant):boolean{
+    const {sourceId,inputKey,scope}=authorization;
+    if(!this.automaticEnabled()||!this.inputs.available(sourceId,inputKey,jobId,scope))return false;
     const grant=this.inputs.list(sourceId,inputKey).find(g=>g.scope===scope);
-    const row=this.store.db.prepare('SELECT * FROM material_memory_requests WHERE scope=? AND input_key=? AND job_id=?').get(scope,inputKey,job.id) as WorkRow|undefined;
+    const row=this.store.db.prepare('SELECT r.* FROM material_memory_requests r JOIN material_heads m ON m.id=r.material_id WHERE r.scope=? AND r.input_key=? AND r.job_id=? AND m.source_id=?').get(scope,inputKey,jobId,sourceId) as WorkRow|undefined;
     const selection=row&&this.selection(row);
     return Boolean(grant&&row?.auto_authorized&&selection?.ready&&selection.fingerprint===row.input_fingerprint&&(!this.recipes||grant.binding&&this.recipes.enabled(sourceId,grant.binding)));
   }
@@ -126,6 +140,73 @@ export class MaterialMemoryWork {
       if(material?.revision!==current.revision||!this.readyForMemory(material.ref,current.scope)||!this.available(current,material.origin.sourceId,id))return;
       return runner.run(id);
     }).catch(()=>this.update(row,"error='memory_run_failed'")).finally(()=>this.active.delete(id));
+  }
+  /** A metadata catalog supports model planning without another full-corpus read. */
+  catalog(limit=64,allowed:(materialId:string)=>boolean=()=>true,allowCandidate:(candidate:MemoryWorkCandidate)=>boolean=()=>true):MemoryWorkCandidate[]{
+    if(!Number.isSafeInteger(limit)||limit<1||limit>64)throw Error('Invalid Memory planning catalog limit');
+    const catalog:MemoryWorkCandidate[]=[];
+    // Interleave source queues before applying the metadata bound. This is
+    // admission fairness, not a decision about which inputs belong together.
+    for(const row of this.store.db.prepare(`SELECT r.* FROM material_memory_requests r JOIN material_heads m ON m.id=r.material_id
+      WHERE r.auto_authorized=1 AND r.job_id IS NULL AND r.ready_at<=?
+      ORDER BY row_number() OVER (PARTITION BY m.source_id ORDER BY r.ready_at,r.material_id,r.scope),r.ready_at,r.material_id,r.scope LIMIT ?`).all(this.now(),limit) as WorkRow[]){
+      const material=this.materials.get(row.material_id),selection=this.selection(row);
+      if(!material||material.revision!==row.revision||!selection?.ready||selection.fingerprint!==row.input_fingerprint||!allowed(material.id)||!this.available(row,material.origin.sourceId)){this.update(row,'ready_at=?',[this.now()+RETRY_DELAY_MS]);continue;}
+      const binding=row.binding_json?memoryRecipeBindingSchema.parse(JSON.parse(row.binding_json)):undefined;
+      const candidate:MemoryWorkCandidate={key:sha256(JSON.stringify([material.ref,row.scope,row.input_key,selection.fingerprint])),materialId:material.id,ref:material.ref,title:material.title.slice(0,200),sourceId:material.origin.sourceId,inputKey:row.input_key,scope:row.scope,contextTime:row.context_time??new Date(this.now()).toISOString(),fingerprint:selection.fingerprint,characters:material.textLength,evidenceCount:selection.evidenceIds.length,evidenceIds:selection.evidenceIds.slice(0,8),recipe:binding?{id:binding.recipe.id,version:binding.recipe.version}:undefined};
+      if(!allowCandidate(candidate)){this.update(row,'ready_at=?',[this.now()+RETRY_DELAY_MS]);continue;}catalog.push(candidate);
+    }
+    return catalog;
+  }
+  /** Model-defined bounded packages; receipt claims and queue insertion are atomic. */
+  async drainPlanned(runner:MaterialMemoryRunner,enabled:boolean,planner:MaterialMemoryPlanner,limit=64,allowed:(materialId:string)=>boolean=()=>true,onCreated?:(proposal:MemoryWorkProposal,job:{id:string})=>void,onSkipped?:(proposal:MemoryWorkProposal)=>void,allowCandidate:(candidate:MemoryWorkCandidate)=>boolean=()=>true):Promise<number>{
+    if(!this.cancelRevocations(runner,limit)||!enabled||this.planning)return 0;
+    // Resume prior packages first; do not create ordinary per-material jobs.
+    for(const row of this.store.db.prepare('SELECT * FROM material_memory_requests WHERE auto_authorized=1 AND job_id IS NOT NULL AND ready_at<=? ORDER BY ready_at LIMIT ?').all(this.now(),limit) as WorkRow[]){
+      let status:string;try{status=runner.get(row.job_id!).status;}catch{this.update(row,"ready_at=?,error='memory_job_unavailable'",[TERMINAL_AT]);continue;}
+      if(status==='completed')this.update(row,'ready_at=?,error=NULL',[TERMINAL_AT]);
+      else if(['queued','running','waiting_for_model','waiting_for_input'].includes(status)){this.update(row,'ready_at=?',[this.now()+RESUME_DELAY_MS]);this.launch(runner,row,allowed);}
+      else this.update(row,'ready_at=?,error=?',[TERMINAL_AT,'memory_job_'+status]);
+    }
+    const catalog=this.catalog(limit,allowed,allowCandidate);if(!catalog.length)return 0;
+    this.planning=true;
+    try{return this.acceptPackages(runner,catalog,await planner(catalog),allowed,onCreated,onSkipped,allowCandidate);}finally{this.planning=false;}
+  }
+  /** Resume durable model proposals without another planning call. Fresh
+   * receipt claims and each product queue insertion still share one transaction. */
+  acceptPackages(runner:MaterialMemoryRunner,catalog:MemoryWorkCandidate[],rawProposals:MemoryWorkProposal[],allowed:(materialId:string)=>boolean=()=>true,onCreated?:(proposal:MemoryWorkProposal,job:{id:string})=>void,onSkipped?:(proposal:MemoryWorkProposal)=>void,allowCandidate:(candidate:MemoryWorkCandidate)=>boolean=()=>true):number{
+      let started=0;
+      const proposals=z.array(z.object({id:z.string().min(1).max(200).optional(),members:z.array(z.string().regex(/^[a-f0-9]{64}$/)).min(1).max(8),goal:z.string().min(1).max(2000),instruction:z.string().min(1).max(4000)}).strict()).max(64).parse(rawProposals);
+      const seen=new Set<string>();
+      for(const proposal of proposals){
+        const members=proposal.members.map(key=>catalog.find(member=>member.key===key));
+        if(members.some(member=>!member)||proposal.members.some(key=>seen.has(key))||new Set(proposal.members).size!==proposal.members.length)throw new StoreError('Memory planner selected unknown or duplicate inputs',409);
+        const selected=members as MemoryWorkCandidate[];
+        if(new Set(selected.map(member=>JSON.stringify(member.recipe))).size!==1||selected.length>1&&selected.reduce((sum,member)=>sum+member.characters,0)>12000)throw new StoreError('Memory package exceeds policy or context compatibility',409);
+        for(const key of proposal.members)seen.add(key);
+      }
+      for(const proposal of proposals){
+        const members=proposal.members.map(key=>catalog.find(member=>member.key===key)!);
+        // Recovery and a concurrently finishing planner can hand off the same
+        // persisted proposal. Reuse its queue row, never revoke that product.
+        const prior=proposal.id&&this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_jobs'").get()?this.store.db.prepare("SELECT id,json FROM memory_jobs WHERE json_extract(json,'$.workPackage.id')=?").get(proposal.id):undefined;
+        if(prior){const job=JSON.parse(String(prior.json));if(job.originKey!=='memory-package:'+sha256(JSON.stringify(proposal.members)))throw new StoreError('Memory package belongs to another input grant',409);onCreated?.(proposal,{id:String(prior.id)});const row=this.rows(members[0].materialId).find(row=>row.scope===members[0].scope&&row.job_id===prior.id);if(row)this.launch(runner,row,allowed);continue;}
+        let created:{id:string}|undefined,rows:WorkRow[]=[];
+        try{this.transaction(()=>{
+          rows=members.map(member=>this.rows(member.materialId).find(row=>row.scope===member.scope)!);
+          if(rows.some((row,index)=>{const member=members[index];return !row||row.job_id||!row.auto_authorized||row.revision!==this.materials.get(member.materialId)?.revision||this.selection(row)?.fingerprint!==member.fingerprint||row.input_key!==member.inputKey||!this.available(row,member.sourceId)||!allowed(member.materialId)||!allowCandidate(member);}))return;
+          const grants=members.map(member=>({sourceId:member.sourceId,inputKey:member.inputKey,scope:member.scope})),evidenceIds=[...new Set(rows.flatMap(row=>this.selection(row)!.evidenceIds))];
+          if(!evidenceIds.length)return;
+          const binding=rows[0].binding_json?memoryRecipeBindingSchema.parse(JSON.parse(rows[0].binding_json)):undefined;
+          const packageId=proposal.id??sha256(JSON.stringify(proposal.members));
+          created=runner.create({evidenceIds,originKey:'memory-package:'+sha256(JSON.stringify(proposal.members)),contextTime:members.map(member=>member.contextTime).sort().at(-1),recipes:binding?[{id:binding.recipe.id,version:binding.recipe.version}]:undefined,automaticGrants:grants,workPackage:memoryWorkPackageSchema.parse({id:packageId,goal:proposal.goal,instruction:proposal.instruction,inputs:members.map(({materialId,ref,sourceId,inputKey,scope,contextTime,fingerprint})=>({materialId,ref,sourceId,inputKey,scope,contextTime,fingerprint}))})});
+          if(!this.inputs.claimMany(grants,created.id))throw new StoreError('Memory package authorization changed',409);
+          for(const row of rows)if(!this.update(row,'job_id=?,error=NULL',[created.id]).changes)throw new StoreError('Memory package input changed',409);
+        });}catch(error){for(const row of rows)if(row)this.update(row,"error='memory_enqueue_failed',ready_at=?",[this.now()+RETRY_DELAY_MS]);onSkipped?.(proposal);continue;}
+        if(!created)onSkipped?.(proposal);
+        if(created){onCreated?.(proposal,created);this.launch(runner,{...rows[0],job_id:created.id},allowed);started++;}
+      }
+      return started;
   }
   drain(runner:MaterialMemoryRunner,enabled:boolean,limit=10,allowed:(materialId:string)=>boolean=()=>true):number{
     if(!Number.isSafeInteger(limit)||limit<1||limit>100)throw Error('Invalid material Memory drain limit');

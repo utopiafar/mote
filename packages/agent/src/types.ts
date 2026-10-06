@@ -96,6 +96,12 @@ export interface AgentOptions {
 }
 
 export interface QueryInput {
+  /** Explicit host-only mutation authority, separate from archive retrieval. */
+  hostControlChannel?:import('./host-controls.js').HostControlChannel;
+  /** Host-only metadata planning sessions can disable every archive read. */
+  hostRetrieval?:'none';
+  /** Host-local receipts of exactly delivered original ranges; never model output. */
+  onEvidence?: (records:readonly ContextRecord[])=>void;
   /** Host-only pinned tool contributions; never accepted from query HTTP input. */
   toolContributions?:readonly import('./tool-contributions.js').ContextToolContribution[];
   /** Host-verified originals deliberately attached to this dialogue. Bytes remain in the vault. */
@@ -129,7 +135,7 @@ export interface QueryInput {
   onUsage?: (usage: import('@mote/shared').TokenUsage) => void;
   question: string;
   /** Bounded host-owned input for background tasks, separate from the user question. */
-  taskContext?: {untrustedMemoryDraft?:unknown;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
+  taskContext?: {delegation?:unknown;memoryWork?:unknown;untrustedMemoryDraft?:unknown;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
   responseMode?: 'answer'|'personal-insight'|'memory-extraction'|'calendar-extraction';
   /** Host-selected procedure, never selected from captured text. */
   skill?: Exclude<MoteSkillId,'document-import'>;

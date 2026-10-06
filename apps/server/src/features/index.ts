@@ -3,6 +3,7 @@ import type { ServerFeatureHost } from '../feature-host.js';
 import { featureInventory } from '../feature-inventory.js';
 import type { FeatureServices } from '../feature-services.js';
 import { register as actionsEntry } from './actions.js';
+import { register as activityEntry } from './activity.js';
 import { register as agentView } from './agent-view.js';
 import { register as askEntry } from './ask.js';
 import { register as captureEntry } from './capture.js';
@@ -24,6 +25,7 @@ import { register as storageEntry } from './storage.js';
 import { register as systemEntry } from './system.js';
 import { register as usageEntry } from './usage.js';
 export async function installServerFeatures(host:ServerFeatureHost,services:FeatureServices){
+  await host.install({id:'mote.activity',version:'1',components:[]},app=>activityEntry(app,services));
   await host.install({id:'mote.files',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.files'));filesEntry(app,services,scope);});
   await host.install({id:'mote.actions',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.actions'));actionsEntry(app,services,scope);});
   await host.install({id:'mote.connections',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.connections'));connectionsEntry(app,services);});

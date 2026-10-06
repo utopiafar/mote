@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {MaterialMemoryWork,type MaterialMemoryRunner} from './material-memory-work.js';
+import {MaterialMemoryWork,type MaterialMemoryRunner,type MaterialMemoryPlanner,type MemoryWorkProposal,type MemoryWorkCandidate} from './material-memory-work.js';
 import {Context,type Plugin} from '@deepseek-ai/cordis';
 import type {SourceConnection,SourceItem} from '@mote/shared';
 import {materialId,type CodingArchiveSnapshot,type MaterialAppendDraft,type MaterialDraft,type MaterialStore} from './materials.js';
@@ -334,7 +334,17 @@ export class SourcePipelineRuntime {
       const pipeline=this.registry.get(String(binding.pipeline_id));return Boolean(pipeline&&(options.memory??pipeline.memory??false));
     }catch{return false;}
   }
+  private memoryPlanner?:MaterialMemoryPlanner;
+  private memoryPackageCreated?:((proposal:MemoryWorkProposal,job:{id:string})=>void);
+  private memoryPlannerReconcile?:()=>void;
+  private memoryPackageSkipped?:((proposal:MemoryWorkProposal)=>void);
+  private memoryCandidateAllowed?:((candidate:MemoryWorkCandidate)=>boolean);
+  setMemoryPlanner(planner:MaterialMemoryPlanner|undefined,onCreated?:(proposal:MemoryWorkProposal,job:{id:string})=>void,onSkipped?:(proposal:MemoryWorkProposal)=>void,onReconcile?:()=>void,allowCandidate?:(candidate:MemoryWorkCandidate)=>boolean){this.memoryPlanner=planner;this.memoryPackageCreated=onCreated;this.memoryPackageSkipped=onSkipped;this.memoryPlannerReconcile=onReconcile;this.memoryCandidateAllowed=allowCandidate;}
   drainMemory(pipeline:MaterialMemoryRunner,enabled:boolean,limit=1){
+    this.memoryPlannerReconcile?.();
+    if(this.memoryPlanner&&(!enabled||!this.store.db.prepare('SELECT 1 FROM material_memory_requests WHERE auto_authorized=1 AND ready_at<=? LIMIT 1').get(Date.now())))return this.memoryWork.drain(pipeline,false,limit);
+    if(this.memoryPlanner)return this.memoryWork.drainPlanned(pipeline,enabled,this.memoryPlanner,64,materialId=>{const material=this.materials.get(materialId);return Boolean(material&&this.memoryAllowed(material.origin.sourceId));},this.memoryPackageCreated,this.memoryPackageSkipped,this.memoryCandidateAllowed);
+
     return this.memoryWork.drain(pipeline,enabled,limit,materialId=>{
       const material=this.materials.get(materialId);if(!material)return true;
       return this.memoryAllowed(material.origin.sourceId);

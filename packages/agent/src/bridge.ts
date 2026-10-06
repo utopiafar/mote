@@ -1,7 +1,8 @@
 import {imageReadSchema,imageViewSchema,IMAGE_MAX_BYTES,IMAGE_REGION_MAX_SIDE,type ImageView,type ImageViewTrace} from '@mote/shared';
 import {CONTEXT_TOOLS} from './context-tools.js';
 import {pinContextTools} from './tool-contributions.js';
-import {rememberEvidence,projectEvidencePresentation,copyEvidencePresentation} from './evidence-ledger.js';
+import {rememberEvidence,evidenceLayers,projectEvidencePresentation,copyEvidencePresentation} from './evidence-ledger.js';
+import {AgentYieldError,hostControlDefinitions} from './host-controls.js';
 import {taskTools,HOST_CONTEXT_LIMITS,retrievalLimits} from './task-context.js';
 import {actionEvidenceText,parseEvidenceRef,parseEvidenceId,formatEvidenceRef} from '@mote/shared';
 import {ContextToolError} from './tool-errors.js';
@@ -141,6 +142,8 @@ function project(record: ContextRecord, offset = 0, length = 600, timeZone = 'UT
   };
   return projectEvidencePresentation(record,projected);
 }
+/** Host adapters may create receipts only from a freshly authorized full original. */
+export function originalEvidenceReceipt(record:ContextRecord,offset=0,length=600,timeZone='UTC'){return project(record,offset,length,timeZone);}
 
 /** Health reports are not archive coverage. Keep their timestamps out of the record namespace. */
 function projectDevice(value: unknown, timeZone = 'UTC'): Record<string, unknown> {
@@ -202,9 +205,11 @@ export async function startBridge(
 ) {
   bounds=pinContextTools(bounds,reader);
   const contributions=new Map((bounds.toolContributions??[]).map(tool=>[tool.name,tool]));
+  const controls=new Set(hostControlDefinitions(bounds.hostControlChannel).map(([name])=>name));
   const token = randomBytes(32).toString("hex");
   const trace: ToolTrace[] = [];
   const records = new Map<string, ContextRecord>();
+  const remember=(record:ContextRecord)=>{rememberEvidence(records,record);try{bounds.onEvidence?.([record]);}catch{/* Receipt observation cannot grant new reads. */}};
   const disclosedIds=new Set([...(bounds.conversation?.evidenceDependencies?.ids??[]),...(bounds.contextEvidenceDependencies?.ids??[]),...(bounds.derivedContextEvidenceIds??[])]);
   let completeLineage=(!bounds.conversation||bounds.conversation.evidenceDependencies?.complete===true)&&
     (!bounds.contextEvidenceDependencies||bounds.contextEvidenceDependencies.complete)&&
@@ -234,7 +239,7 @@ export async function startBridge(
   }
   const seedEvidence=ranges.flatMap(r=>{const record=permitted.get(r.id);return record?[project(record,r.offset,r.length,bounds.timeZone)]:[];});
   if(Buffer.byteLength(JSON.stringify(seedEvidence))>1_500_000)throw hostError('Extraction evidence exceeds the byte budget');
-  for(const record of seedEvidence){rememberEvidence(records,record);disclosedIds.add(record.id);}
+  for(const record of seedEvidence){remember(record);disclosedIds.add(record.id);}
   const directImages=bounds.directImages??[];
   if(directImages.length>8||new Set(directImages.map(image=>image.id)).size!==directImages.length||directImages.some(image=>
     !/^[0-9a-f-]{36}$/i.test(image.id)||!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||
@@ -260,7 +265,7 @@ export async function startBridge(
     const entry=[...disclosedImages].find(([,value])=>value.token===token);
     if(!entry){if(delivered)throw hostError('Image delivery receipt expired');return;}
     const [key,value]=entry;clearTimeout(value.timer);
-    if(delivered){value.confirmed=true;if(!records.has(value.selection.id))rememberEvidence(records,value.record);disclosedIds.add(value.selection.id);}else disclosedImages.delete(key);
+    if(delivered){value.confirmed=true;if(!records.has(value.selection.id))remember(value.record);disclosedIds.add(value.selection.id);}else disclosedImages.delete(key);
     if(value.imageView)value.imageView.delivery=delivered?'prepared':'failed';
     value.settle();
   };
@@ -317,6 +322,39 @@ export async function startBridge(
         ready = true;
         res.end('{"ok":true}');
         return;
+      }
+      if(controls.has(tool)){
+        if(++calls>maxToolCalls)throw hostError('Host control call budget reached');
+        bounds.signal?.throwIfAborted();
+        const result=await bounds.hostControlChannel!.execute(tool,Object.freeze(args));
+        bounds.signal?.throwIfAborted();
+        const delivered:ContextRecord[]=[],dependencyIds=new Set<string>();
+        const citations=new Set(result.evidence??[]);
+        for(const receipt of [...(result.dependencies??[]),...(result.evidence??[])]){
+          const citation=citations.has(receipt);
+          if(citation&&receipt.contentLayer==='L2_model_interpretation'||typeof receipt.evidenceFingerprint!=='string')throw hostError('A child interpretation is not original evidence');
+          const fresh=result.authorizedOriginals!==undefined?result.authorizedOriginals.find(record=>record.id===receipt.id):(await reader.evidence({...(citation?range({},bounds):{}),ids:[receipt.id]})).find(record=>record.id===receipt.id);
+          if(!fresh)throw hostError('Delegated evidence is no longer authorized or current');
+          const scope=range({},bounds),at=sourceContentTime(fresh);
+          if(citation&&(scope.deviceId&&fresh.deviceId!==scope.deviceId||scope.after&&Date.parse(at)<Date.parse(scope.after)||scope.before&&Date.parse(at)>=Date.parse(scope.before)||restricted&&!bounds.evidenceIds!.includes(receipt.id)))throw hostError('Delegated evidence is outside the parent scope');
+          const spans=receipt.deliveredRanges as {start:number;end:number;text:string}[]|undefined;
+          const supplied=spans?.length?spans:[{...(receipt.textRange as {start:number;end:number}),text:receipt.ocrText}];
+          for(const span of supplied){
+            if(!Number.isSafeInteger(span.start)||!Number.isSafeInteger(span.end)||span.start<0||span.end<span.start||span.end>fresh.ocrText.length)throw hostError('Invalid delegated original range');
+            if(citation&&restricted&&!ranges.some(r=>r.id===receipt.id&&span.start>=r.offset&&span.end<=r.offset+r.length))throw hostError('Delegated range exceeds parent authorization');
+            const selected=project(fresh,span.start,span.end-span.start,bounds.timeZone);
+            if(selected.evidenceFingerprint!==receipt.evidenceFingerprint||selected.ocrText!==span.text)throw hostError('Delegated original revision changed');
+            if(citation)delivered.push(selected);
+          }
+          dependencyIds.add(receipt.id);
+        }
+        const serialized=JSON.stringify({source:'untrusted_delegated_result',data:result.data,evidence:delivered,hostBudget:hostBudget()});
+        if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters)throw budgetError();
+        for(const record of delivered){remember(record);discovered.add(record.id);disclosedIds.add(record.id);expanded.add(record.id);}
+        for(const id of dependencyIds)disclosedIds.add(id);
+        deliveredCharacters+=serialized.length;trace.push({tool,arguments:args,count:delivered.length});
+        reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:delivered.length});
+        res.end(serialized,()=>{if(result.yield)rejectFailure(new AgentYieldError());});return;
       }
       if (!TOOL_NAMES.includes(tool)&&!contributions.has(tool)) {
         res.writeHead(404).end('{"error":"Unknown tool"}');
@@ -525,7 +563,7 @@ export async function startBridge(
             imageDisclosure:{status:'already_disclosed',sha256,mimeType:image.mimeType,firstSelection,...(existing?.imageView?{firstImageView:existing.imageView}:{})},
             message:'These exact image bytes were already supplied in this query. Use the earlier image with this selection’s own source attribution.',
           }:{image:{mimeType:image.mimeType,data:image.data},imageDelivery:delivery!.token}),imageBudget:imageBudget(),hostBudget:hostBudget()},{tool,arguments:selection,count:1,...(publicView?{imageView:publicView}:{})});
-          if(existing?.confirmed){if(!records.has(selection.id))rememberEvidence(records,project({...record,ocrText:''},0,0,bounds.timeZone));disclosedIds.add(selection.id);}
+          if(existing?.confirmed){if(!records.has(selection.id))remember(project({...record,ocrText:''},0,0,bounds.timeZone));disclosedIds.add(selection.id);}
           return;
         }
       }
@@ -726,10 +764,10 @@ export async function startBridge(
       // Only a successfully serialized, deliverable tool result authorizes evidence.
       if (!metadataOnly&&(tool === "search_context" || tool === "timeline" || tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks' || tool==='changes')) {
         for (const [index,record] of (safeValue as ContextRecord[]).entries())
-          {copyEvidencePresentation((value as ContextRecord[])[index],record);rememberEvidence(records,record);discovered.add(record.id);disclosedIds.add(record.id);}
+          {copyEvidencePresentation((value as ContextRecord[])[index],record);remember(record);discovered.add(record.id);disclosedIds.add(record.id);}
         if(tool==='evidence')for(const record of safeValue as ContextRecord[])expanded.add(record.id);
       }
-      for(const record of memoryEvidence){rememberEvidence(records,record);discovered.add(record.id);disclosedIds.add(record.id);if(tool==='memories')expanded.add(record.id);}
+      for(const record of memoryEvidence){remember(record);discovered.add(record.id);disclosedIds.add(record.id);if(tool==='memories')expanded.add(record.id);}
       trace.push({
         tool,
         arguments: effective,
@@ -777,6 +815,7 @@ export async function startBridge(
       return ready;
     },
     async close() {
+      try{bounds.onEvidence?.(evidenceLayers(records));}catch{/* Host observation cannot grant reads or change the result. */}
       closing=true;
       for(const value of disclosedImages.values()){clearTimeout(value.timer);if(!value.confirmed&&value.imageView)value.imageView.delivery='failed';value.settle();}
       disclosedImages.clear();
