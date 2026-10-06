@@ -53,6 +53,7 @@ export class ExecutionEngine {
    CREATE INDEX IF NOT EXISTS execution_resource_owners ON execution_resources(resource_key,step_id);
    CREATE TABLE IF NOT EXISTS execution_dependencies(step_id TEXT NOT NULL REFERENCES execution_steps(id) ON DELETE CASCADE,dependency_id TEXT NOT NULL REFERENCES execution_steps(id),PRIMARY KEY(step_id,dependency_id));
    CREATE INDEX IF NOT EXISTS execution_dependents ON execution_dependencies(dependency_id,step_id);
+   CREATE TABLE IF NOT EXISTS execution_cancellation_aliases(alias_id TEXT PRIMARY KEY,step_id TEXT NOT NULL REFERENCES execution_steps(id) ON DELETE CASCADE,cancelled INTEGER NOT NULL DEFAULT 0);
    CREATE TABLE IF NOT EXISTS execution_operation_steps(operation_id TEXT NOT NULL,step_id TEXT NOT NULL REFERENCES execution_steps(id) ON DELETE CASCADE,slot TEXT NOT NULL DEFAULT '',generation TEXT NOT NULL DEFAULT '',active INTEGER NOT NULL DEFAULT 1,optional INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(operation_id,step_id));
    CREATE INDEX IF NOT EXISTS execution_ready ON execution_steps(pool,state,available_at,created_at);
    CREATE INDEX IF NOT EXISTS execution_operations ON execution_steps(operation_id,created_at);
@@ -91,8 +92,17 @@ export class ExecutionEngine {
  }
  project(id:string){const step=this.get(id);if(step)this.handlers.get(step.kind)?.project?.(step);}
  cancel(id:string){
+  const alias=this.store.db.prepare('SELECT step_id FROM execution_cancellation_aliases WHERE alias_id=?').get(id);
+  if(alias){this.store.db.prepare('UPDATE execution_cancellation_aliases SET cancelled=1 WHERE alias_id=?').run(id);id=String(alias.step_id);}
   const db=this.store.db;db.prepare("UPDATE execution_steps SET state='cancelled',fence=NULL,error='cancelled',updated_at=? WHERE id=? AND state!='succeeded'").run(this.now(),id);this.active.get(id)?.controller.abort();this.project(id);
  }
+ /** Stable operation identities can revoke the currently active resumable
+  * fragment from another host without depending on its revision number. */
+ bindCancellationAlias(aliasId:string,stepId:string){
+  if(this.cancellationAliasRevoked(aliasId))throw new ExecutionFailure('stale','cancelled');
+  this.store.db.prepare('INSERT INTO execution_cancellation_aliases(alias_id,step_id) VALUES(?,?) ON CONFLICT(alias_id) DO UPDATE SET step_id=excluded.step_id').run(aliasId,stepId);
+ }
+ cancellationAliasRevoked(aliasId:string){return Boolean(this.store.db.prepare('SELECT 1 FROM execution_cancellation_aliases WHERE alias_id=? AND cancelled=1').get(aliasId));}
  /** Revoke an unfinished run after a host deadline without pretending the user cancelled. */
  fail(id:string,code:string){
   if(!/^[a-z][a-z0-9_]{0,80}$/.test(code))throw new StoreError('Invalid execution failure code',400);

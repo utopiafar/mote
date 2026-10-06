@@ -1,4 +1,5 @@
 import {CONTEXT_TOOLS} from './context-tools.js';
+import {hostControlDefinitions} from './host-controls.js';
 import type {ContextRange,ContextReader,QueryInput} from './types.js';
 
 /** Trusted host code only. Contributions are read-only, bounded metadata tools;
@@ -16,7 +17,7 @@ export interface ContextToolContribution {
 export class ContextToolRegistry {
   private entries=new Map<string,ContextToolContribution>();
   register(tool:ContextToolContribution){
-    if(!/^[a-z][a-z0-9_]{0,63}$/.test(tool.name)||!tool.version||this.entries.has(tool.name)||CONTEXT_TOOLS.some(([name])=>name===tool.name)||['skill','_ready'].includes(tool.name))throw Error('Invalid or duplicate context tool');
+    if(!/^[a-z][a-z0-9_]{0,63}$/.test(tool.name)||tool.name.startsWith('delegation_')||!tool.version||this.entries.has(tool.name)||CONTEXT_TOOLS.some(([name])=>name===tool.name)||['skill','_ready'].includes(tool.name))throw Error('Invalid or duplicate context tool');
     if(!Number.isSafeInteger(tool.maxCharacters)||tool.maxCharacters<1||tool.maxCharacters>16000)throw Error('Invalid context tool budget');
     const entry=Object.freeze({...tool,fields:structuredClone(tool.fields)});this.entries.set(tool.name,entry);
     return ()=>{if(this.entries.get(tool.name)===entry)this.entries.delete(tool.name);};
@@ -32,5 +33,5 @@ export function pinContextTools(input:QueryInput,reader:ContextReader):QueryInpu
   return input.toolContributions?input:{...input,toolContributions:reader.contextTools?.()??[]};
 }
 export function contextToolDefinitions(input:QueryInput){
-  return [...CONTEXT_TOOLS,...(input.toolContributions??[]).map(tool=>[tool.name,tool.description,tool.fields] as [string,string,Record<string,Record<string,unknown>>])];
+  return [...CONTEXT_TOOLS,...(input.toolContributions??[]).map(tool=>[tool.name,tool.description,tool.fields] as [string,string,Record<string,Record<string,unknown>>]),...hostControlDefinitions(input.hostControlChannel)];
 }

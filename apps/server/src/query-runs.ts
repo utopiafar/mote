@@ -8,7 +8,7 @@ import type {ExecutionEnvelope} from '@mote/shared/execution';
 import {RunExecution,runEnvelope,type RunExecutionOptions,type RunDeadline,type RunExecutionContext} from './run-execution.js';
 import type {ExecutionStep} from './execution-engine.js';
 type QueryReceipt={conversationId:string;turnId:string};
-type QueryWork<T extends QueryReceipt=QueryReceipt>=(observe:(event:AgentProgress)=>void,signal:AbortSignal,execution:RunExecutionContext)=>Promise<T|(()=>T)>;
+export type QueryWork<T extends QueryReceipt=QueryReceipt>=(observe:(event:AgentProgress)=>void,signal:AbortSignal,execution:RunExecutionContext)=>Promise<T|(()=>T)>;
 export interface QueryRun {
   id:string;operationId?:string;status:'running'|'completed'|'failed'|'cancelled';createdAt:string;updatedAt:string;
   evidenceRevision?:number;conversationId?:string;turnId?:string;events:(AgentProgress&{at:string})[];
@@ -19,7 +19,7 @@ export interface QueryRun {
 /** Only identifiers and projected execution metadata; answers resolve from the conversation vault. */
 export class QueryRuns {
   private execution:RunExecution;
-  constructor(private store:Store,options:RunExecutionOptions={}){
+  constructor(private store:Store,options:RunExecutionOptions&{ignoreDurable?:boolean}={}){
     store.db.exec('CREATE TABLE IF NOT EXISTS query_runs(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,json TEXT NOT NULL)');
     this.execution=new RunExecution(store,'query',{
       exists:id=>Boolean(store.db.prepare('SELECT 1 FROM query_runs WHERE id=?').get(id)),
@@ -27,7 +27,7 @@ export class QueryRuns {
       commit:(id,result)=>{const run=this.raw(id);Object.assign(run,typeof result==='function'?result():result);if(run.turnId&&store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='conversation_turns'").get()){const row=store.db.prepare("SELECT json_extract(json,'$.result.evidenceDependencies') dependencies FROM conversation_turns WHERE id=?").get(run.turnId);if(row?.dependencies)run.evidenceDependencies=JSON.parse(String(row.dependencies));}this.save(run);},
       failure:(id,error)=>{const run=this.raw(id),saved=(error&&typeof error==='object'?(error as {conversation?:{conversationId:string;turnId:string}}).conversation:undefined);if(saved)Object.assign(run,saved);const safe=safeError(error);run.error={code:error instanceof ProviderFailure?safe.reason??safe.category:safe.category,message:safe.message};run.availableAt=error instanceof ProviderFailure&&error.details.retryAfterMs!==undefined?Date.now()+error.details.retryAfterMs:undefined;this.save(run);},
     },options);
-    for(const row of store.db.prepare('SELECT json FROM query_runs').all() as {json:string}[]){const run=JSON.parse(row.json) as QueryRun;this.execution.restore(run.id,{state:run.status==='completed'?'succeeded':run.status,attempts:run.execution?.attempts,createdAt:run.createdAt,updatedAt:run.updatedAt,error:run.error?.code,availableAt:run.availableAt});}
+    for(const row of store.db.prepare('SELECT json FROM query_runs').all() as {json:string}[]){const run=JSON.parse(row.json) as QueryRun;if(options.ignoreDurable&&store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='delegation_works'").get()&&store.db.prepare('SELECT 1 FROM delegation_works WHERE id=?').get('query:'+run.id))continue;this.execution.restore(run.id,{state:run.status==='completed'?'succeeded':run.status,attempts:run.execution?.attempts,createdAt:run.createdAt,updatedAt:run.updatedAt,error:run.error?.code,availableAt:run.availableAt});}
   }
   private raw(id:string):QueryRun{const row=this.store.db.prepare('SELECT json FROM query_runs WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Query run not found',404);return JSON.parse(row.json);}
   private save(run:QueryRun){this.store.db.prepare('UPDATE query_runs SET json=? WHERE id=?').run(JSON.stringify(run),run.id);}

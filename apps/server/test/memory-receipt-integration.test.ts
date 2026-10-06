@@ -8,6 +8,7 @@ import {buildApp} from '../src/app.js';
 import {materialId} from '../src/materials.js';
 import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
+import {fixtureMemoryPlan,fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 
 const config=(dataDir:string):Config=>({dataDir,token:'generated-receipt-grant-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
 const original=(id:string,revision='1')=>({externalId:id,revision,observedAt:'2020-01-01T00:00:00Z',text:`Generated original ${id} revision ${revision}`,kind:'message',layer:'original'});
@@ -21,7 +22,7 @@ const empty=(input:QueryInput,node:Awaited<ReturnType<typeof buildApp>>)=>{
 test('receipt-time disable survives restart, enable-before-publication and duplicate ACK for ordinary and Coding inputs',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-receipt-')),cfg=config(directory);
   let calls=0;
-  const dependencies={agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{calls++;return empty(input,node);}}};
+  const dependencies={agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{const plan=await fixtureMemoryPlan(input);if(plan)return plan;calls++;return fixtureMemoryWorkResult(input,empty(input,node));}}};
   let node=await buildApp(cfg,dependencies);await node.app.ready();
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const setEnabled=(enabled:boolean)=>{const settings=node.lifecycle.settings();node.lifecycle.configure({...settings,extraction:{...settings.extraction,enabled}});};
@@ -62,9 +63,9 @@ test('receipt-time disable survives restart, enable-before-publication and dupli
   await node.sources.upsert('ordinary',original('diary','2'));
   await node.sources.upsert('coding',coding('two'));
   await node.materialOrganizer.tick();await node.sourcePipelines.tick();
-  assert.equal(node.sourcePipelines.drainMemory(node.memoryPipeline,true,10),2);
+  assert.equal(await node.sourcePipelines.drainMemory(node.memoryPipeline,true,10),2);
   for(const row of node.store.db.prepare('SELECT job_id FROM material_memory_requests WHERE auto_authorized=1').all())await node.memoryPipeline.run(String(row.job_id));
-  assert.equal(calls,4);
+  assert.equal(calls,7,'automatic zero outputs receive independent review; Coding interpretation is navigation for its full-source worker');
   assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE authorized=1 AND job_id IS NOT NULL').get()!.n,2);
 });
 

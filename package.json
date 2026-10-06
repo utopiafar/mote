@@ -20,6 +20,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.scripts.json",
     "test": "npm run test --workspaces --if-present && node --test scripts/release/*.test.mjs scripts/media-workers.test.mjs scripts/security-tests.mjs scripts/reset-mvp-vault.test.mjs scripts/journey-network-proxy.test.mjs && node --import tsx --test scripts/client.test.ts && node scripts/test-central-runner.mjs",
     "test:settings-ui": "npm run build && electron scripts/test-settings-ui.cjs",
+    "test:activity-ui": "npm run build:central && electron scripts/test-activity-ui.cjs",
     "test:e2e": "node --import tsx scripts/e2e.ts",
     "test:media-e2e": "node --import tsx scripts/media-e2e.ts",
     "test:container": "node scripts/test-container.mjs",

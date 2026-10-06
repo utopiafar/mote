@@ -61,5 +61,15 @@ export class MemoryInputAuthorization {
     return Boolean(this.store.db.prepare(`UPDATE memory_input_authorizations SET job_id=? WHERE source_id=? AND input_key=? AND scope=?
       AND authorized=1 AND revoked_at IS NULL AND (job_id IS NULL OR job_id=?)`).run(jobId,sourceId,inputKey,scopeId,jobId).changes);
   }
+  /** Every member retains its own receipt. A failed claim cannot consume a prefix. */
+  claimMany(grants:readonly AutomaticMemoryGrant[],jobId:string):boolean {
+    if(!this.store.db.isTransaction)throw Error('Memory package authorization requires a queue transaction');
+    const selected=grants.map(grant=>automaticMemoryGrantSchema.parse(grant)),keys=selected.map(grant=>JSON.stringify(grant));
+    if(!selected.length||new Set(keys).size!==keys.length)throw Error('Invalid Memory package grants');
+    if(selected.some(grant=>!this.available(grant.sourceId,grant.inputKey,jobId,grant.scope)))return false;
+    this.store.db.exec('SAVEPOINT memory_package_claim');
+    try{for(const grant of selected)if(!this.claim(grant.sourceId,grant.inputKey,jobId,grant.scope)){this.store.db.exec('ROLLBACK TO memory_package_claim');this.store.db.exec('RELEASE memory_package_claim');return false;}this.store.db.exec('RELEASE memory_package_claim');return true;}
+    catch(error){this.store.db.exec('ROLLBACK TO memory_package_claim');this.store.db.exec('RELEASE memory_package_claim');throw error;}
+  }
   forgetSource(sourceId:string):void {this.store.db.prepare('DELETE FROM memory_input_authorizations WHERE source_id=?').run(sourceId);}
 }

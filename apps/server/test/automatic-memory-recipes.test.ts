@@ -1,4 +1,5 @@
 import {readAgentCredential} from './login-fixture.js';
+import {fixtureMemoryPlan,fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -20,6 +21,7 @@ async function fixture(t:import('node:test').TestContext){
   const calls:QueryInput[]=[],control:{failCoding:boolean;emptyResults?:boolean;duringReview?:(input:QueryInput)=>Promise<void>}={failCoding:false};
   let node:Awaited<ReturnType<typeof buildApp>>;
   const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
+    const plan=await fixtureMemoryPlan(input);if(plan)return plan;
     calls.push(input);const evidence=node.memories.readEvidence(input.evidenceIds!)[0],id=evidence.id;
     const common={uncertainty:'Generated session only.',admission:{layer:'memory',reason:'Generated fixture personal experience or evidenced retry decision',scope:'Generated prototype',attribution:'user'},evidenceIds:[id],evidence:[{id,quote:evidence.ocrText.trim()}]};
     const candidates=[{...common,domain:'personal',title:'Generated pride',statement:`Felt proud of finishing the prototype [${id}]`},{...common,domain:'coding',title:'Generated retry decision',statement:`For the prototype retry path, used an idempotency key and verified retry [${id}]`,coding:{kind:'decision',scope:'session',applicability:'Generated prototype retry path',validation:'tested'}}];
@@ -31,7 +33,7 @@ async function fixture(t:import('node:test').TestContext){
       values=recipe.id===coding.id?[candidates[1]]:[candidates[0]];
     }
     const range=input.evidenceRanges?.find(range=>range.id===id),quote=range?evidence.ocrText.slice(range.offset,range.offset+Math.min(range.length,120)):evidence.ocrText.slice(0,120);
-    return {answer:JSON.stringify(understanding(input)?{summary:'Generated bounded conversation interpretation',evidence:[{id,quote,offset:range?.offset??0}],workRecords:[],events:[],memoryCandidates:control.emptyResults?[]:values,actionCues:[]}:{memories:control.emptyResults?[]:values}),citations:[{id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}],trace:[],runId:randomUUID()};
+    return fixtureMemoryWorkResult(input,{answer:JSON.stringify(understanding(input)?{summary:'Generated bounded conversation interpretation',evidence:[{id,quote,offset:range?.offset??0}],workRecords:[],events:[],memoryCandidates:control.emptyResults?[]:values,actionCues:[]}:{memories:control.emptyResults?[]:values}),citations:[{id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}],trace:[],runId:randomUUID()});
   }}};
   node=await buildApp(config,dependencies);await node.app.ready();
   const configure=async(recipes:typeof personal[]|null,sourceId?:string)=>{
@@ -41,10 +43,10 @@ async function fixture(t:import('node:test').TestContext){
   const source=(id:string,isCoding=false)=>{node.sources.register({id,name:'Generated '+id,kind:isCoding?'coding-agent':'custom',deviceId:'fixture',platform:'import'});node.sourcePipelines.configure(id,{memory:true,settleSeconds:0});};
   const add=async(sourceId:string,externalId:string,isCoding=false,revision='1',text=body)=>node.sources.upsert(sourceId,{externalId,revision,observedAt:'2020-01-01T00:00:00Z',kind:'message',layer:'original',text,...(isCoding?{document:{contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated',sessionId:externalId,eventId:'event',role:'user',attribution:'human',part:0,parts:1}}}:{document:{contentRole:'authored'}})});
   const publish=async()=>{await node.materialOrganizer.tick(100);await node.sourcePipelines.tick(100);};
-  const run=async()=>{node.sourcePipelines.drainMemory(node.memoryPipeline,true,100);await Promise.all(node.memoryPipeline.list().filter(j=>['queued','running','waiting_for_model'].includes(j.status)).map(j=>node.memoryPipeline.run(j.id)));};
+  const run=async()=>{await node.sourcePipelines.drainMemory(node.memoryPipeline,true,100);await Promise.all(node.memoryPipeline.list().filter(j=>['queued','running','waiting_for_model'].includes(j.status)).map(j=>node.memoryPipeline.run(j.id)));};
   // Hold scheduling, not admission: the production queue still creates and
   // claims actual jobs. Tests can then choose a producer or restart before work.
-  const queue=async()=>{const p=node.memoryPipeline;node.sourcePipelines.drainMemory({create:input=>p.create(input),get:id=>p.get(id),cancel:id=>p.cancel(id),run:async()=>{}},true,100);await new Promise(resolve=>setImmediate(resolve));};
+  const queue=async()=>{const p=node.memoryPipeline;await node.sourcePipelines.drainMemory({create:input=>p.create(input),get:id=>p.get(id),cancel:id=>p.cancel(id),run:async()=>{}},true,100);await new Promise(resolve=>setImmediate(resolve));};
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   return {get node(){return node;},jobs:()=>node.memoryPipeline.list().map(j=>node.memoryPipeline.get(j.id)),calls,control,config,configure,source,add,publish,run,queue,count:(phase:string)=>calls.filter(c=>c.traceContext?.phase===phase||phase==='extract'&&understanding(c)).length,async restart(){await node.app.close();node=await buildApp(config,dependencies);await node.app.ready();}};
 }
@@ -54,17 +56,17 @@ test('owner-selected automatic recipes share one generation, support source over
   await f.configure([personal,coding]);f.source('diary');f.source('coding-source',true);
   const override=await f.configure([coding],'coding-source');assert.equal(override.inherited,false);
   await f.add('diary','first');await f.add('coding-source','second',true);await f.publish();await f.run();
-  assert.equal(f.count('extract'),2);assert.equal(f.count('review'),3);
-  const jobs=f.jobs();assert.equal(jobs.length,3);assert.ok(jobs.every(j=>j.status==='completed'&&j.automaticGrant));
-  const shared=jobs.filter(j=>j.automaticGrant!.sourceId==='diary');assert.equal(new Set(shared.map(j=>j.contextTime)).size,1);
+  assert.equal(f.count('extract'),3,'the two diary reviewers share a draft; Coding interpretation is navigation for its full-source worker');assert.equal(f.count('review'),3);
+  const jobs=f.jobs();assert.equal(jobs.length,3);assert.ok(jobs.every(j=>j.status==='completed'&&j.automaticGrants?.length===1));
+  const shared=jobs.filter(j=>j.automaticGrants![0].sourceId==='diary');assert.equal(new Set(shared.map(j=>j.contextTime)).size,1);
   const products=jobs.flatMap(j=>j.memoryIds.map(id=>f.node.memories.get(id)));assert.equal(products.length,3);
   const one=products.find(m=>m.domain==='personal')!;f.node.memories.publish(one.id);
-  await f.restart();await f.publish();await f.run();assert.equal(f.count('extract'),2);assert.equal(f.count('review'),3);
+  await f.restart();await f.publish();await f.run();assert.equal(f.count('extract'),3);assert.equal(f.count('review'),3);
   await f.configure([coding]);assert.equal(f.node.memories.get(one.id).status,'published','disabling does not erase confirmed products');
   const inherited=await f.configure(null,'coding-source');assert.equal(inherited.inherited,true);assert.equal(inherited.items[0].binding.recipe.id,coding.id);
   const material=f.node.materials.list({sourceId:'diary'}).items[0];
-  const inputKey=shared[0].automaticGrant!.inputKey;
-  f.node.materialMemoryWork.observe(material.id,['source-body'],{inputKey,change:'rebuild'});await f.run();assert.equal(f.calls.length,5,'changing selection or rebuilding does not backfill');
+  const inputKey=shared[0].automaticGrants![0].inputKey;
+  f.node.materialMemoryWork.observe(material.id,['source-body'],{inputKey,change:'rebuild'});await f.run();assert.equal(f.calls.length,6,'changing selection or rebuilding does not backfill');
 });
 
 test('receipt pins scopes before publication; later enablement, version replacement and duplicate delivery do not backfill',async t=>{

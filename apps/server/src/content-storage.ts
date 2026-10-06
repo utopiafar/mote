@@ -74,6 +74,23 @@ export class ContentStorageService {
         const path=join(parent,match[1]);steps.set(path,()=>{directory(rawRoot,parent);return this.store.contentEncryption.decrypt(path,bytes=>{JSON.parse(bytes.toString());});});
       }
     }
+    // Durable private model products use the same encryption policy as managed
+    // objects. Convert these before releasing an environment-only key identity.
+    for(const [table,column,nested] of [['delegation_payloads','json',false],['delegation_results','json',false],['delegation_artifacts','json',false],['delegation_artifacts','metadata',false],['delegation_works','json',true],['delegation_units','json',true],['delegation_events','message',false],['memory_jobs','json',true],['memory_batches','json',true],['memory_extraction_drafts','json',true]] as const){
+      if(!this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table))continue;
+      for(const row of this.store.db.prepare(`SELECT rowid row_id,${column} value FROM ${table}`).all()){
+        const saved=typeof row.value==='string'?row.value:'',encoded=nested?JSON.parse(saved).private:saved;
+        if(typeof encoded!=='string'||!encoded.startsWith('aes:'))continue;
+        const rowId=row.row_id;steps.set(`${table}:${column}:${rowId}`,()=>{
+          const current=this.store.db.prepare(`SELECT ${column} value FROM ${table} WHERE rowid=?`).get(rowId);if(!current)return false;
+          const currentValue=String(current.value),value=nested?JSON.parse(currentValue).private:currentValue;
+          if(typeof value!=='string'||!value.startsWith('aes:'))return false;
+          const plain=this.store.contentEncryption.open(Buffer.from(value.slice(4),'base64')).toString('utf8');JSON.parse(plain);
+          this.store.db.prepare(`UPDATE ${table} SET ${column}=? WHERE rowid=? AND ${column}=?`).run(nested?JSON.stringify({...JSON.parse(currentValue),private:'json:'+plain}):'json:'+plain,rowId,currentValue);
+          return true;
+        });
+      }
+    }
     this.progress.total=steps.size;
     for(const step of steps.values()){
       await setImmediate();if(this.stopped){this.progress.state='cancelled';return;}

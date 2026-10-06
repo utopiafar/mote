@@ -18,6 +18,7 @@ import {ServerFeatureScope} from '../src/feature-host.js';
 import {materialId} from '../src/materials.js';
 import {ImportIntakeRegistry,installImportIntake} from '../src/import-intake.js';
 import {FileRecipeRegistry,FileOutputRegistry,installFileRecipes} from '../src/file-recipes.js';
+import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-planning.js';
 
 async function fixture(t:import('node:test').TestContext,modules:string[]=[],seed?:(directory:string)=>Promise<void>){
   // Advance durable workers explicitly, so wall-clock load cannot race assertions.
@@ -33,8 +34,9 @@ async function fixture(t:import('node:test').TestContext,modules:string[]=[],see
       if(failed.has(key))throw new StoreError('Generated unsupported response',422);
       return {durationMs:1000,segments:[{startMs:0,endMs:1000,text:'Generated participant described a plan; its outcome is unknown.'}]};
     }},agent:{configured:true,close:async()=>{},query:async input=>{
+      if(await planGeneratedMemory(input))return {answer:'Generated packages submitted.',citations:[],trace:[],runId:'generated-media-planner'};
       modelCalls.push(input.traceContext?.phase??'query');const evidence=node.memories.readEvidence(input.evidenceIds!)[0];
-      return {answer:JSON.stringify({memories:[]}),citations:evidence?[{id:evidence.id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}]:[],trace:[],runId:'generated-media-model'};
+      return {answer:generatedMemoryOutput(input),citations:evidence?[{id:evidence.id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}]:[],trace:[],runId:'generated-media-model'};
     }}});await node.app.ready();
   };
   await start();node.processing.update({revision:node.processing.view().revision,settings:{...node.processing.view().settings,enabled:true,audioProcessor:'audio.http',summarize:false},policy:fixtureFilePolicy({...node.processing.view().settings,enabled:true,audioProcessor:'audio.http',summarize:false},node.processing.runtime.registry)});
@@ -57,7 +59,7 @@ test('61 generated MP3 container members use the Android file pipeline without m
   assert.equal(job.progress.imported,61);assert.equal(f.calls.length,0);assert.equal(f.modelCalls.length,0);
   assert.ok(job.media!.every(item=>item.format.mimeType==='audio/mpeg'&&!item.searchable&&item.processing?.state==='waiting'));
   for(const item of job.media!){const record=f.node.files.detail(item.captureId!).item;assert.equal(record.observedAt,job.createdAt);assert.equal(record.document?.recordedAt,undefined);assert.equal(record.document?.occurredAt,undefined);}
-  await f.organize();f.node.sourcePipelines.drainMemory(f.node.memoryPipeline,true,100);assert.equal(f.node.memoryPipeline.list().length,0,'Memory waits for extracted text');
+  await f.organize();await f.node.sourcePipelines.drainMemory(f.node.memoryPipeline,true,100);assert.equal(f.node.memoryPipeline.list().length,0,'Memory waits for extracted text');
   await f.node.processing.tick();await f.organize();const ready=f.node.imports.get(job.id);assert.equal(f.calls.length,61);assert.ok(ready.media!.every(item=>item.searchable&&item.processing?.state==='succeeded'));
   assert.equal(f.node.files.search({query:'Generated participant',limit:100}).length,61);
   const imported=job.media![0].captureId!,receipt=f.node.processing.explain(imported).snapshots[0] as any;assert.equal(receipt.recipe.id,'mote.file-extraction');assert.equal(receipt.stagePins[0].id,'mote.extract');
@@ -70,7 +72,7 @@ test('one failed extraction is isolated, retries without reupload, then enters a
   await f.node.processing.tick();await f.organize();const first=f.node.imports.get(job.id);assert.equal(first.media![0].processing?.state,'failed');assert.equal(first.media![1].searchable,true);
   assert.equal(f.node.materials.input(materialId(job.sourceId,'file:bad.mp3'),['extracted-text'])?.ready,false);
   const count=f.calls.length;f.failed.clear();f.node.processing.retry(first.media![0].captureId!,'transcribe');await f.node.processing.tick();await f.organize();assert.equal(f.calls.length,count+1);
-  f.node.sourcePipelines.drainMemory(f.node.memoryPipeline,true,100);await Promise.all(f.node.memoryPipeline.list().map(item=>f.node.memoryPipeline.run(item.id)));
+  await f.node.sourcePipelines.drainMemory(f.node.memoryPipeline,true,100);await Promise.all(f.node.memoryPipeline.list().map(item=>f.node.memoryPipeline.run(item.id)));
   assert.equal(f.node.memoryPipeline.list().length,2);assert.ok(f.node.memoryPipeline.list().every(item=>item.status==='completed'));assert.ok(f.modelCalls.length>0);
   assert.ok(f.node.imports.get(job.id).media!.every(item=>item.memory?.state==='completed'),'zero admitted memories still have completed processing receipts');
   const memoryId=f.node.imports.get(job.id).media![0].memory!.jobIds[0];

@@ -1,4 +1,5 @@
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
+import {fixtureMemoryPlan,fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -28,6 +29,7 @@ async function fixture(t:import('node:test').TestContext,remote=false){
     node=await buildApp(config,{backgroundWorker:false,
       transcriptionProvider:{transcribe:async input=>{for await(const _ of input.body){}asrCalls++;if(control.failASR)throw Error('Generated ASR failure');const texts=control.segments??[control.transcript];return {durationMs:1000,segments:texts.map((text,i)=>({startMs:Math.floor(i*1000/texts.length),endMs:Math.floor((i+1)*1000/texts.length),text}))};}},
       createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
+        const plan=await fixtureMemoryPlan(input);if(plan)return plan;
         calls.push(input);
         // Exercise the actual model-facing reader, not only MemoryStore reads.
         const visible=await reader.evidence({ids:input.evidenceIds!});assert.equal(visible.length,input.evidenceIds!.length,'named ready inputs reach the model-facing reader');
@@ -47,7 +49,7 @@ async function fixture(t:import('node:test').TestContext,remote=false){
           if(coding&&control.failCoding)throw Error('Generated review failure');
           memories=[candidates[coding?1:0]];
         }
-        return {answer:JSON.stringify({memories}),citations:[{id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}],trace:[],runId:randomUUID()};
+        return fixtureMemoryWorkResult(input,{answer:JSON.stringify({memories}),citations:[{id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}],trace:[],runId:randomUUID()});
       }})});
     const extract={id:'mote.context-extraction',version:'3.4.0'};
     node.memoryStrategies.registerReview({id:'fixture.record-review',version:'1',input:'memory-candidates@1',output:'memory-candidates@1',permissions:['evidence.read'],policy:'Generated index policy: keep only an observation supported by the supplied record.'});
@@ -65,7 +67,7 @@ async function fixture(t:import('node:test').TestContext,remote=false){
     return {id:(await node.files.commit(begun.uploadId,()=>{})).id,materialId:materialId(sourceId,'sample')};
   };
   const organize=async()=>{for(let i=0;i<10;i++)if(await node.materialOrganizer.tick(100)===0)return;throw Error('Organizer did not drain');};
-  const queue=async()=>{const p=node.memoryPipeline;node.sourcePipelines.drainMemory({create:i=>p.create(i),get:id=>p.get(id),cancel:id=>p.cancel(id),run:async()=>{}},true,100);await new Promise(resolve=>setImmediate(resolve));};
+  const queue=async()=>{const p=node.memoryPipeline;await node.sourcePipelines.drainMemory({create:i=>p.create(i),get:id=>p.get(id),cancel:id=>p.cancel(id),run:async()=>{}},true,100);await new Promise(resolve=>setImmediate(resolve));};
   const run=async()=>{await queue();await Promise.all(node.memoryPipeline.list().filter(j=>['queued','running'].includes(j.status)).map(j=>node.memoryPipeline.run(j.id)));};
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   return {get node(){return node;},control,calls,upload,organize,queue,run,request:(payload:Record<string,unknown>)=>node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token},payload}),count:(phase:string)=>calls.filter(c=>c.traceContext?.phase===phase).length,asrCalls:()=>asrCalls,async restart(){await node.app.close();await start();}};

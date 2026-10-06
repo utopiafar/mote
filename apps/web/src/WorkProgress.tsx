@@ -1,0 +1,9 @@
+import {moteText} from '@mote/shared/i18n';
+import type {WorkProgress as Progress,WorkState} from '@mote/shared';
+export const workStateLabels:Record<WorkState,string>={waiting:'等待开始',running:'正在进行',needs_input:'需要处理',completed:'已完成',failed:'未能完成',cancelled:'已停止',stale:'资料变化，需要重新检查',excluded:'按设置跳过'};
+export function WorkStateBadge({state}:{state:WorkState}){return <span className={'badge '+(['failed','needs_input','stale'].includes(state)?'amber':state==='completed'?'green':'muted')}>{moteText(workStateLabels[state])}</span>;}
+const stages={preparing:'准备资料',planning:'组织工作',searching:'查找资料',checking:'交叉核对',organizing:'整理结果',saving:'保存成果',finished:'工作完成'};
+export function WorkProgress({progress,compact=false}:{progress:Progress;compact?:boolean}){
+ if(progress.mode==='determinate')return <div className="work-progress"><p>{moteText('已处理 {0} / {1} 条资料',progress.completed,progress.total)}</p>{progress.total>0&&<progress aria-label={moteText('资料处理进度')} value={progress.completed} max={progress.total}/>} {!compact&&(progress.failed>0||progress.needsInput>0||progress.excluded>0)&&<p className="fine-print">{progress.failed>0&&moteText('{0} 条资料未完成',progress.failed)}{progress.needsInput>0&&' · '+moteText('{0} 条资料等待补充',progress.needsInput)}{progress.excluded>0&&' · '+moteText('{0} 条资料按设置跳过',progress.excluded)}</p>}</div>;
+ return <div className="work-progress semantic-progress"><p>{progress.summary??moteText(stages[progress.stage])}</p><span className="work-stage" aria-label={moteText('当前工作阶段')}>{moteText(stages[progress.stage])}</span>{!compact&&<p className="fine-print">{progress.returnedItems!==undefined&&moteText('检索已返回 {0} 项资料',progress.returnedItems)}{progress.totalBranches!==undefined&&' · '+moteText('{0} / {1} 个工作分支已完成',progress.completedBranches??0,progress.totalBranches)}</p>}</div>;
+}

@@ -36,6 +36,51 @@ function fakeRunner(){
   return {runner,jobs,created,ran,cancelled};
 }
 
+test('model-selected packages atomically consume independent receipts and preserve cross-source identities',async t=>{
+  const {store,materials,work,draft,receive}=fixture(t),fake=fakeRunner();
+  const one=materials.publish(draft('Generated first diary'));receive('first-raw');work.observe(one.id,['source-body'],{inputKey:'first-raw',change:'source'});
+  new SourceStore(store).register({id:'generated-other',name:'Other generated source',kind:'custom',deviceId:'other-fixture',platform:'import'});
+  const two=materials.publish({...draft('Generated second diary'),id:materialId('generated-other','second'),origin:{sourceId:'generated-other',externalId:'second'}});store.db.exec('BEGIN IMMEDIATE');work.inputs.receive({sourceId:'generated-other',inputKey:'second-raw'});store.db.exec('COMMIT');work.observe(two.id,['source-body'],{inputKey:'second-raw',change:'source'});
+  let created:Parameters<MaterialMemoryRunner['create']>[0]|undefined;const runner={...fake.runner,create:(input:Parameters<MaterialMemoryRunner['create']>[0])=>{created=input;return fake.runner.create(input);}};
+  assert.equal(await work.drainPlanned(runner,true,async catalog=>[{members:catalog.map(item=>item.key),goal:'Inspect both original diaries',instruction:'Keep each original identity'}]),1);
+  assert.equal(created?.automaticGrants?.length,2);assert.equal(created?.workPackage?.inputs?.length,2);assert.deepEqual(created?.workPackage?.inputs?.map(input=>input.inputKey).sort(),['first-raw','second-raw']);
+  assert.equal(store.db.prepare('SELECT count(DISTINCT job_id) n FROM memory_input_authorizations WHERE job_id IS NOT NULL').get()!.n,1);
+  assert.equal(work.authorized({id:'memory-1',automaticGrants:created!.automaticGrants}),true);
+  work.observe(two.id,['source-body'],{inputKey:'second-raw',change:'rebuild',automatic:false});
+  assert.equal(work.authorized({id:'memory-1',automaticGrants:created!.automaticGrants}),false,'one revoked receipt cannot retain a package grant');
+  work.drain(fake.runner,false);assert.deepEqual(fake.cancelled,['memory-1']);
+});
+
+test('a planning race leaves every receipt unconsumed and planning metadata never grants unseen content',async t=>{
+  const {store,materials,work,draft,receive}=fixture(t),fake=fakeRunner();
+  const material=materials.publish(draft());receive('fresh');work.observe(material.id,['source-body'],{inputKey:'fresh',change:'source'});
+  assert.equal(await work.drainPlanned(fake.runner,true,async catalog=>{assert.ok(!JSON.stringify(catalog).includes('Generated material body'));work.observe(material.id,['source-body'],{inputKey:'fresh',change:'rebuild',automatic:false});return [{members:[catalog[0].key],goal:'Inspect',instruction:'Original only'}];}),0);
+  assert.equal(store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE job_id IS NOT NULL').get()!.n,0);assert.equal(fake.created.length,0);
+});
+
+test('a failed member claim does not consume the successful prefix of a package',t=>{
+  const {store,work,receive}=fixture(t);receive('one');receive('two',false);
+  store.db.exec('BEGIN IMMEDIATE');try{assert.equal(work.inputs.claimMany([{sourceId:'generated-source',inputKey:'one',scope:'memory.default'},{sourceId:'generated-source',inputKey:'two',scope:'memory.default'}],'package'),false);store.db.exec('COMMIT');}catch(error){store.db.exec('ROLLBACK');throw error;}
+  assert.equal(work.inputs.available('generated-source','one'),true);assert.equal(store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE job_id IS NOT NULL').get()!.n,0);
+});
+
+test('bounded planning catalogs interleave sources before a large older backlog can hide a newer source',t=>{
+  const {store,materials,work,draft,receive,advance}=fixture(t);
+  for(let index=0;index<20;index++){
+    const externalId='generated-backlog-'+index,material=materials.publish({...draft('Generated older diary '+index),id:materialId('generated-source',externalId),origin:{sourceId:'generated-source',externalId}});
+    receive('older-'+index);work.observe(material.id,['source-body'],{inputKey:'older-'+index,change:'source'});
+  }
+  advance(1000);
+  new SourceStore(store).register({id:'generated-later-source',name:'Later generated source',kind:'custom',deviceId:'fixture-later',platform:'import'});
+  const externalId='generated-later-diary',later=materials.publish({...draft('Generated later source diary'),id:materialId('generated-later-source',externalId),origin:{sourceId:'generated-later-source',externalId}});
+  store.db.exec('BEGIN IMMEDIATE');work.inputs.receive({sourceId:'generated-later-source',inputKey:'later'});store.db.exec('COMMIT');work.observe(later.id,['source-body'],{inputKey:'later',change:'source'});
+  const catalog=work.catalog(8);
+  assert.equal(catalog.length,8);
+  assert.equal(catalog[1].sourceId,'generated-later-source','the first pending member of each source precedes a second member');
+  assert.equal(new Set(catalog.map(member=>member.key)).size,8);
+  assert.equal(store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE job_id IS NOT NULL').get()!.n,0,'catalog fairness cannot consume grants');
+});
+
 test('raw input grant survives initial processing, but completed input cannot be replayed by a derived revision',async t=>{
   const {materials,work,draft,receive}=fixture(t),fake=fakeRunner();
   const first=materials.publish(draft('',[{key:'source-body',state:'pending'}]));

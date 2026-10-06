@@ -75,4 +75,19 @@ test('opening-memory originals enter saved answer lineage and fence even when th
  const denied=await f.node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated removal overlap'}});assert.equal(denied.statusCode,409,denied.body);
  const failed=f.conversations.list().items.find(item=>item.title==='Generated removal overlap')!;
  const removed=f.conversations.get(failed.id);assert.ok(removed.turns.every(turn=>!turn.result),'answer derived from removed lead cannot commit');
+ assert.equal(removed.turns.length,1);assert.equal(removed.turns[0].status,'failed');assert.equal(removed.turns[0].question,'Generated removal overlap');
+ const run=f.node.featureServices.queryRuns.list().find(run=>run.conversationId===failed.id)!;assert.equal(run.turnId,removed.turns[0].id,'the failed question and public receipt commit together');
+ assert.equal(f.node.featureServices.delegation.get(run.operationId!).status,'stale');assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM delegation_payloads WHERE work_id=?').get(run.operationId!)!.n,0,'failed history never restores the erased model input');
+ assert.equal(f.node.featureServices.delegation.result(run.operationId!),undefined);assert.doesNotMatch(JSON.stringify(removed),/Generated answer using removed opening lead/);
+});
+
+test('background source invalidation erases replay context without recreating a failed question from it',async t=>{
+ const f=await fixture(t),original=f.node.memories.readEvidence([f.chunk])[0];
+ f.node.memories.extract(fixtureMemoryResult(f.node.memories,{...reply(JSON.stringify({memories:[{title:'Generated memory',statement:`Generated decision [${f.chunk}]`,uncertainty:'Generated fixture',evidenceIds:[f.chunk]}]})),citations:[{id:f.chunk,capturedAt:original.capturedAt,appName:original.appName,excerpt:f.text}]}),'fixture');
+ f.respond=async()=>{f.node.store.delete(f.parent.id);return reply('Generated background answer that must stay erased');};
+ const id=randomUUID(),accepted=await f.node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated background removal'}}});assert.equal(accepted.statusCode,202,accepted.body);
+ let run=f.node.featureServices.queryRuns.get(id);for(let attempt=0;attempt<100&&run.status==='running';attempt++){await new Promise(resolve=>setImmediate(resolve));run=f.node.featureServices.queryRuns.get(id);}
+ assert.equal(run.status,'failed');assert.equal(run.conversationId,undefined);assert.equal(f.conversations.list().items.length,0);
+ assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM delegation_payloads WHERE work_id=?').get('query:'+id)!.n,0);assert.equal(f.node.featureServices.delegation.result('query:'+id),undefined);
+ assert.doesNotMatch(JSON.stringify(run),/Generated background removal|Generated background answer/);
 });

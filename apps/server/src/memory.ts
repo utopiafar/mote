@@ -1,3 +1,4 @@
+import {memoryWorkCoverageSchema,memoryWorkCapacitySchema} from './memory-work-contract.js';
 import {MemoryDeletions} from './memory-deletions.js';
 import {PERSONAL_CONTEXT_POLICY} from './memory-policy.js';
 import {codingProjectIdentity} from './coding-project.js';
@@ -36,7 +37,7 @@ function reference(record:MemoryRecord,span?:{offset:number;length:number;quote?
     ...(record.fileEvidence?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
     ...(d?.fileIndex?{fileIndex:d.fileIndex}:{}),...span,contentHash:memoryEvidenceFingerprint(record)};
 }
-export type MemoryExtractOptions={integration?:Memory['integration'];strategy?:Memory['strategy'];requireAdmission?:boolean;reviewRunId?:string;reviewReceipt?:MemoryReviewReceipt;validateOnly?:boolean;profile?:'personal'|'coding';tier?:Memory['tier'];relatedMemoryIds?:string[];skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};
+export type MemoryExtractOptions={maxCandidates?:number;integration?:Memory['integration'];strategy?:Memory['strategy'];requireAdmission?:boolean;reviewRunId?:string;reviewReceipt?:MemoryReviewReceipt;validateOnly?:boolean;profile?:'personal'|'coding';tier?:Memory['tier'];relatedMemoryIds?:string[];skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};
 const initializedStores=new WeakSet<Store>();
 export class MemoryStore {
   readonly deletions:MemoryDeletions;
@@ -85,7 +86,10 @@ export class MemoryStore {
     // derived records (including model summaries and memories) are not evidence.
     return file.success&&file.data.chunkId===id&&file.data.captureId!==id;
   }
-  dependencyIds(id:string):string[]{const record=this.readEvidence([id])[0],file=fileEvidenceSchema.safeParse(record?.fileEvidence);return file.success?[id,file.data.captureId]:[id];}
+  dependencyIds(id:string):string[]{const record=this.readEvidence([id])[0],file=fileEvidenceSchema.safeParse(record?.fileEvidence),ids=new Set(file.success?[id,file.data.captureId]:[id]);
+    if(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence_dependencies'").get())for(const row of this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(id))ids.add(String(row.evidence_id));
+    return [...ids];
+  }
   page(args:{includeHistory?:boolean;asOf?:string;sourceId?:string;projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string;id?:string;query?:string;tier?:Memory['tier'];kind?:Memory['kind'];status?:Memory['status'];layer?:'observation'|'memory';cursor?:string;level?:'overview'|'detail';limit?:number;includeStale?:boolean;deviceId?:string;after?:string;before?:string}={}) {
     const conditions:string[]=[],values:(string|number)[]=[],limit=Math.max(1,Math.min(args.limit??30,100));
     if(!args.includeStale)conditions.push("status!='stale'");
@@ -126,8 +130,9 @@ export class MemoryStore {
   private validatedClaims=new Map<string,unknown>();
   extract(result:QueryResult,model:string,options:MemoryExtractOptions={}) {
     let input:unknown;try{input=JSON.parse(result.answer);}catch{throw new MemoryOutputValidationError('json','Model returned an invalid memory format; no memories were saved');}
-    const parsed=z.object({memories:z.array(claimSchema).max(8),citationIds:z.array(z.string().uuid()).max(240).optional()}).strict().safeParse(input);
-    if(parsed.success&&options.profile==='coding'&&parsed.data.memories.length>3)throw new MemoryOutputValidationError('schema','Coding extraction allows at most three durable memories');
+    const maxCandidates=Math.min(32,Math.max(1,options.maxCandidates??8));
+    const parsed=z.object({memories:z.array(claimSchema).max(maxCandidates),citationIds:z.array(z.string().uuid()).max(960).optional(),...(options.maxCandidates?{coverage:memoryWorkCoverageSchema,capacity:memoryWorkCapacitySchema}:{})}).strict().safeParse(input);
+    if(parsed.success&&!options.maxCandidates&&options.profile==='coding'&&parsed.data.memories.length>3)throw new MemoryOutputValidationError('schema','Coding extraction allows at most three durable memories');
     if(!parsed.success){
       const codingIssue=parsed.error.issues.find(issue=>issue.path[2]==='coding'||issue.code==='unrecognized_keys'&&issue.keys.includes('applicability'));
       throw new MemoryOutputValidationError(codingIssue?'coding_contract':'schema','Model returned an invalid memory structure; no memories were saved',codingIssue&&typeof codingIssue.path[1]==='number'?{candidateIndex:codingIssue.path[1]}:{});

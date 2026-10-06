@@ -3,6 +3,7 @@ import {consumeLoginTicket,loginRequestId,removeLoginParameter} from './login-ha
 import { getLocale,moteText } from '@mote/shared/i18n';
 import {
 ArrowRight,
+Activity as ActivityIcon,
 Database,
 FileText,
 Info,
@@ -64,6 +65,7 @@ const nav = [
   {id:'overview' as const,label:moteText('今天'),icon:LayoutDashboard},
   {id:'archive' as const,label:moteText('资料库'),icon:Database},
   {id:'ask' as const,label:moteText('问一问'),icon:MessageSquare},
+  {id:'activity' as const,label:moteText('活动'),icon:ActivityIcon},
   {id:'devices' as const,label:moteText('采集与设备'),icon:Monitor},
 ];
 

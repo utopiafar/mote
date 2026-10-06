@@ -60,6 +60,7 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | [development](development.md) | 开发与测试环境隔离 |
 | [evidence-reader](evidence-reader.md) | Shared evidence reads |
 | [execution-engine](execution-engine.md) | Common execution engine migration |
+| [delegation-and-activity](delegation-and-activity.md) | 自主委派、逐输入覆盖与活动界面 |
 | [execution-protocol](execution-protocol.md) | Execution protocol |
 | [file-processing-policies](file-processing-policies.md) | 中央文件类型策略 |
 | [file-processing](file-processing.md) | 中央文件处理：Cordis 插件与本地多人录音 |
