@@ -110,14 +110,14 @@ test('backup preserves current plain/encrypted chunks and processing history whi
   const db=new DatabaseSync(join(source,'mote.sqlite'));
   db.exec(`CREATE TABLE file_uploads(id TEXT PRIMARY KEY);
     CREATE TABLE file_parts(upload_id TEXT REFERENCES file_uploads(id) ON DELETE CASCADE,part INTEGER);
-    CREATE TABLE file_jobs(capture_id TEXT PRIMARY KEY,state TEXT,summary_state TEXT,stage TEXT,attempts INTEGER,available_at INTEGER,policy_json TEXT,local_only INTEGER,trace_json TEXT);
+    CREATE TABLE file_jobs(capture_id TEXT PRIMARY KEY,state TEXT,summary_state TEXT,stage TEXT,attempts INTEGER,available_at INTEGER,policy_json TEXT,trace_json TEXT);
     CREATE TABLE file_steps(capture_id TEXT,state TEXT,attempts INTEGER,artifact_id TEXT);
     CREATE TABLE file_usage(day TEXT,audio_ms REAL);
     CREATE TABLE file_artifacts(id TEXT,json TEXT);
     CREATE TABLE file_reviews(id TEXT,json TEXT);`);
   db.exec("INSERT INTO file_uploads VALUES('pending'); INSERT INTO file_parts VALUES('pending',0); INSERT INTO file_usage VALUES('2026-09-16',3456); INSERT INTO file_artifacts VALUES('artifact','{\"preserved\":true}'); INSERT INTO file_reviews VALUES('review','{\"approved\":true}')");
-  const job={capture_id:'running',state:'running',summary_state:'running',stage:'align',attempts:3,available_at:12345,policy_json:'{"profile":"generated"}',local_only:1,trace_json:'{"event":"generated"}'};
-  const insert=db.prepare('INSERT INTO file_jobs VALUES(?,?,?,?,?,?,?,?,?)');insert.run(...Object.values(job));insert.run('done','succeeded','succeeded','indexed',2,999,'{}',0,'{}');insert.run('blocked','blocked','blocked','transcribe',1,555,'{}',1,'{}');
+  const job={capture_id:'running',state:'running',summary_state:'running',stage:'align',attempts:3,available_at:12345,policy_json:'{"profile":"generated"}',trace_json:'{"event":"generated"}'};
+  const insert=db.prepare('INSERT INTO file_jobs VALUES(?,?,?,?,?,?,?,?)');insert.run(...Object.values(job));insert.run('done','succeeded','succeeded','indexed',2,999,'{}','{}');insert.run('blocked','blocked','blocked','transcribe',1,555,'{}','{}');
   db.exec("INSERT INTO file_steps VALUES('running','running',2,'cached'); INSERT INTO file_steps VALUES('done','succeeded',1,'artifact')");db.close();
   await backup(source,out);const checked=await verifiedBackup(out);
   for(const name of [`files/objects/${originalHash}/0.aes`,`files/objects/${hash}/0.plain`,`files/objects/${hash}/1.aes`])assert.ok(checked.names.includes(name));

@@ -24,12 +24,10 @@ async function fixture(t:any){
  const plugin:Plugin={name:'policy-fixture',inject:['moteFileProcessors'],apply(ctx){ctx.effect(()=>ctx.moteFileProcessors.register({id:'fixture.audio',name:'Parameterized ASR',version:'1',stage:'extract',mediaTypes:['audio/'],serviceKind:'asr',parameters:[{key:'speakerCount',label:'人数',type:'number',min:1,max:16,integer:true,default:2}],async process(input){calls.push(input);return {durationMs:1000,segments:[{startMs:0,endMs:1000,text:`Generated speakers ${input.parameters?.speakerCount}`} ]};}}));ctx.effect(()=>ctx.moteFileProcessors.register({id:'fixture.diarize',name:'Generated speakers',version:'1',stage:'diarize',mediaTypes:['audio/'],localOnly:true,async process(input){return {durationMs:1000,engine:'fixture',expectedSpeakers:input.settings.speakerCount,observedSpeakers:2,overlapDetection:'unknown',segments:[{startMs:0,endMs:1000,speaker:'SPEAKER_0'}],samples:[],warnings:[]};}}));}};
  const aliasPlugin:Plugin={name:'replacement-dialogue',inject:['moteFileProcessors'],apply(ctx){
   const native=ctx.moteFileProcessors.get('audio.local-dialogue');
-  ctx.effect(()=>ctx.moteFileProcessors.register({...native,id:'fixture.dialogue',name:'Replacement private dialogue'}));
-  ctx.effect(()=>ctx.moteFileProcessors.register({...native,id:'fixture.dialogue-analysis',name:'Local ASR with selected analysis',contentPolicy:undefined,allowSummary:true,managedModel:undefined}));
-  ctx.effect(()=>ctx.moteFileProcessors.register({...ctx.moteFileProcessors.get('text.utf8'),id:'fixture.private-text',name:'Local text and analysis',contentPolicy:'local-only',allowSummary:true}));
+  ctx.effect(()=>ctx.moteFileProcessors.register({...native,id:'fixture.dialogue',name:'Replacement dialogue'}));
  }};
  const analyses:any[]=[];const provider={transcribe:async(input:any)=>{calls.push(input);return {durationMs:1000,segments:[{startMs:0,endMs:1000,text:'Synthetic offline dialogue'}]};}};
- const options={plugins:[plugin,aliasPlugin],analyze:async(records:any[],prompt:string,settings:any,localOnly:boolean)=>{analyses.push({settings,localOnly,prompt});return {answer:prompt===TURN_GROUP_PROMPT?JSON.stringify({groups:[[0]]}):'Synthetic summary',citations:[{id:records[0].id}]};}};
+ const options={plugins:[plugin,aliasPlugin],analyze:async(records:any[],prompt:string,settings:any)=>{analyses.push({settings,prompt});return {answer:prompt===TURN_GROUP_PROMPT?JSON.stringify({groups:[[0]]}):'Synthetic summary',citations:[{id:records[0].id}]};}};
  let processing=new FileProcessing(files,provider,undefined,options);await processing.runtime.ready;
  const save=(policy:any=processing.view().policy,settings:any={})=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,...settings},policy});
  async function upload(name:string,mime='audio/wav',sourceId='phone',layer:'original'|'reference'='original',revision='1',previousRevision:string|null=null){const bytes=Buffer.from('Generated fixture '+name),manifest:FileRevision={sourceId,previousRevision,item:{externalId:name,revision,observedAt:new Date().toISOString(),title:name,kind:'file',layer,text:'',mimeType:mime,deleted:false},relativePath:name,sizeBytes:bytes.length,...(layer==='original'?{sha256:sha256(bytes)}:{})};if(layer==='reference')return (await files.revision(manifest,()=>{})).id;const session=files.begin(manifest,()=>{});files.part(session.uploadId,0,bytes,()=>{});return (await files.commit(session.uploadId,()=>{})).id;}
@@ -94,14 +92,14 @@ test('batch preview excludes Shadow, archive-only, superseded and active files a
 
 test('local completed files use their original model service for reviews after routing edits and restart',async t=>{
  const f=await fixture(t),p=f.processing.view().policy;const local=p.profiles.find(p=>p.processorId==='audio.local-dialogue')!;local.diarizationProcessor='fixture.diarize';local.parameters.speakerCount=2;local.modelServiceId='llm';p.services.push({id:'llm',name:'Local language model',kind:'model',endpoint:'http://127.0.0.1:8800/v1',execution:'local',model:'generated-model',apiKeyConfigured:false});p.rules.find(r=>r.type==='audio/*')!.profileId=local.id;f.save(p);
- const id=await f.upload('private.wav');await f.processing.tick();assert.equal(f.files.detail(id).job.state,'succeeded');assert.equal(f.files.pendingIndex('cloud').length,0);
- const changed=f.processing.view().policy;changed.rules.find(r=>r.type==='audio/*')!.profileId='profile.audio.http';f.save(changed);await f.restart();await f.processing.analyze(id,f.files.chunks(id),'generated review');assert.equal(f.analyses[0].localOnly,true);assert.equal(f.analyses[0].settings.analysisModel.model,'generated-model');assert.equal(f.files.pendingIndex('cloud').length,0);
+ const id=await f.upload('private.wav');await f.processing.tick();assert.equal(f.files.detail(id).job.state,'succeeded');assert.ok(f.files.pendingIndex('cloud').length>0);
+ const changed=f.processing.view().policy;changed.rules.find(r=>r.type==='audio/*')!.profileId='profile.audio.http';f.save(changed);await f.restart();await f.processing.analyze(id,f.files.chunks(id),'generated review');assert.equal(f.analyses[0].settings.analysisModel.model,'generated-model');assert.ok(f.files.pendingIndex('cloud').length>0);
  const serviceChanged=f.processing.view().policy;serviceChanged.services.find(s=>s.id==='llm')!.endpoint='http://127.0.0.1:8801/v1';f.save(serviceChanged);await assert.rejects(f.processing.analyze(id,f.files.chunks(id),'review'),{statusCode:409});
 });
 
 test('profile-specific summary uses its chosen model and no unrelated credentials',async t=>{
  const f=await fixture(t),p=customPolicy(f);p.services.push({id:'model-api',kind:'model',name:'Profile cloud model',endpoint:'https://example.test/v1',execution:'remote',model:'generated-cloud-model',apiKey:'generated-model-key'});const profile=p.profiles.find(p=>p.id==='four')!;profile.modelServiceId='model-api';profile.summarize=true;f.save(p);
- const id=await f.upload('summary.wav');await f.processing.tick();assert.equal(f.files.detail(id).job.summary_state,'succeeded');assert.equal(f.analyses[0].settings.analysisModel.model,'generated-cloud-model');assert.equal(f.analyses[0].settings.analysisModel.apiKey,'generated-model-key');assert.equal(f.analyses[0].localOnly,false);
+ const id=await f.upload('summary.wav');await f.processing.tick();assert.equal(f.files.detail(id).job.summary_state,'succeeded');assert.equal(f.analyses[0].settings.analysisModel.model,'generated-cloud-model');assert.equal(f.analyses[0].settings.analysisModel.apiKey,'generated-model-key');
 });
 
 test('owner policy routes support explicit policy and preview while query agent mutation is denied',async t=>{
@@ -141,7 +139,7 @@ test('changing dialogue speaker count reuses transcription while rebuilding down
  assert.equal(f.files.detail(id).job.state,'succeeded');assert.equal(f.calls.length,1,'downstream-only settings do not spend ASR again');assert.notEqual(f.files.detail(id).artifacts.find((a:any)=>a.kind==='diarization')!.id,oldDiarization);
 });
 
-test('a replacement dialogue plugin composes stages and retains local disclosure through restart',async t=>{
+test('a replacement dialogue plugin composes stages and keeps derived text available through restart',async t=>{
  const f=await fixture(t),policy=f.processing.view().policy;
  policy.profiles.push({id:'replacement',name:'Replacement',processorId:'fixture.dialogue',serviceId:'asr-local',parameters:{speakerCount:2,semanticTurns:false},diarizationProcessor:'fixture.diarize',summarize:false});
  policy.rules.find(rule=>rule.type==='audio/*')!.profileId='replacement';f.save(policy);
@@ -149,37 +147,37 @@ test('a replacement dialogue plugin composes stages and retains local disclosure
  assert.equal(f.files.detail(id).job.state,'succeeded');assert.equal(f.calls.length,1);
  assert.equal((f.calls[0] as any).localOnly,true,'offline transport is explicit, independent of processor ID');
  assert.deepEqual(f.files.detail(id).artifacts.map((artifact:any)=>artifact.kind).sort(),['dialogue','diarization','transcript']);
- assert.equal(f.files.pendingIndex('cloud').length,0);
+ assert.ok(f.files.pendingIndex('cloud').length>0);
  const updated=f.processing.view().policy;updated.profiles.find(p=>p.id==='replacement')!.parameters.speakerCount=3;f.save(updated);
  const preview=f.processing.preview({revision:f.processing.view().revision});f.processing.reprocess({token:preview.token});await f.processing.tick();
  assert.equal(f.calls.length,1,'declared extraction dependencies exclude downstream speaker count');
- await f.restart();assert.equal(f.files.pendingIndex('cloud').length,0);
+ await f.restart();assert.ok(f.files.pendingIndex('cloud').length>0);
  const invalid=f.processing.view().policy;invalid.services.push({id:'remote',name:'Remote',kind:'asr',execution:'remote',endpoint:'https://example.test/transcribe',model:''});invalid.profiles.find(p=>p.id==='replacement')!.serviceId='remote';
  assert.throws(()=>f.save(invalid),{statusCode:400});
 });
 
-test('local ASR can declare dialogue plus selected-model grouping and summaries independently of content privacy',async t=>{
+test('built-in local ASR supports central-model grouping and summaries',async t=>{
  const f=await fixture(t),policy=f.processing.view().policy;
- policy.profiles.push({id:'analysis',name:'Composed analysis',processorId:'fixture.dialogue-analysis',serviceId:'asr-local',parameters:{speakerCount:2,semanticTurns:true},diarizationProcessor:'fixture.diarize',summarize:true});
+ policy.profiles.push({id:'analysis',name:'Composed analysis',processorId:'audio.local-dialogue',serviceId:'asr-local',parameters:{speakerCount:2,semanticTurns:true},diarizationProcessor:'fixture.diarize',summarize:true});
  policy.rules.find(rule=>rule.type==='audio/*')!.profileId='analysis';f.save(policy);
  const id=await f.upload('analysis.wav');await f.processing.tick();
  assert.equal(f.files.detail(id).job.state,'succeeded');assert.equal(f.files.detail(id).job.summary_state,'succeeded');
  assert.equal((f.calls[0] as any).localOnly,true);
- assert.equal(f.analyses.length,2);assert.ok(f.analyses.every(call=>call.localOnly===false));assert.equal(f.analyses[0].prompt,TURN_GROUP_PROMPT);
+ assert.equal(f.analyses.length,2);assert.equal(f.analyses[0].prompt,TURN_GROUP_PROMPT);
  assert.ok(f.files.detail(id).artifacts.some((artifact:any)=>artifact.kind==='dialogue'&&artifact.semanticGrouping===true));
- assert.ok(f.files.pendingIndex('cloud').length>0,'this separately selected plugin permits downstream model disclosure');
+ assert.ok(f.files.pendingIndex('cloud').length>0,'local ASR text enters the configured embedding pipeline');
 });
 
-test('local-only text supports an explicitly enabled local summary without entering the dialogue pipeline',async t=>{
+test('local text extraction supports either model service without entering the dialogue pipeline',async t=>{
  const f=await fixture(t),policy=f.processing.view().policy;
  policy.services.push({id:'local-analysis',name:'Local model',kind:'model',execution:'local',endpoint:'http://127.0.0.1:8800/v1',model:'generated-local'});
- policy.profiles.push({id:'private-text',name:'Private text',processorId:'fixture.private-text',modelServiceId:'local-analysis',parameters:{},diarizationProcessor:'fixture.diarize',summarize:true});
- policy.rules.find(rule=>rule.type==='text/*')!.profileId='private-text';f.save(policy);
+ policy.profiles.push({id:'text-analysis',name:'Text analysis',processorId:'text.utf8',modelServiceId:'local-analysis',parameters:{},diarizationProcessor:'fixture.diarize',summarize:true});
+ policy.rules.find(rule=>rule.type==='text/*')!.profileId='text-analysis';f.save(policy);
  const id=await f.upload('local.txt','text/plain');await f.processing.tick();
  assert.equal(f.files.detail(id).job.state,'succeeded');assert.equal(f.files.detail(id).job.summary_state,'succeeded');
- assert.equal(f.calls.length,0);assert.equal(f.analyses.length,1);assert.equal(f.analyses[0].localOnly,true);
- assert.equal(f.analyses[0].settings.analysisModel.model,'generated-local');assert.equal(f.files.pendingIndex('cloud').length,0);
+ assert.equal(f.calls.length,0);assert.equal(f.analyses.length,1);
+ assert.equal(f.analyses[0].settings.analysisModel.model,'generated-local');assert.ok(f.files.pendingIndex('cloud').length>0);
  assert.ok(f.files.detail(id).artifacts.every((artifact:any)=>!['dialogue','diarization','transcript'].includes(artifact.kind)));
- const invalid=f.processing.view().policy;invalid.services.push({id:'remote-model',name:'Remote',kind:'model',execution:'remote',endpoint:'https://example.test/v1',model:'generated-remote'});invalid.profiles.find(p=>p.id==='private-text')!.modelServiceId='remote-model';
- assert.throws(()=>f.save(invalid),{statusCode:400});
+ const invalid=f.processing.view().policy;invalid.services.push({id:'remote-model',name:'Remote',kind:'model',execution:'remote',endpoint:'https://example.test/v1',model:'generated-remote'});invalid.profiles.find(p=>p.id==='text-analysis')!.modelServiceId='remote-model';
+ f.save(invalid);const remote=await f.upload('remote.txt','text/plain');await f.processing.tick();assert.equal(f.files.detail(remote).job.summary_state,'succeeded');assert.equal(f.analyses.at(-1).settings.analysisModel.model,'generated-remote');
 });

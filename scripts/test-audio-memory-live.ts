@@ -22,12 +22,12 @@ for(const [a,b] of [[source,directory],[directory,source]]){const part=relative(
 async function empty(path:string){try{assert.equal((await stat(path)).size,0,`Source has live state: ${path}`);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}
 const sourceBytes=await readFile(join(source,'report.json')),seed=JSON.parse(sourceBytes.toString('utf8'));
 const qualityBytes=await readFile(join(source,'quality.json')),quality=JSON.parse(qualityBytes.toString('utf8'));
-assert.ok(seed.status==='passed'&&seed.finishedAt&&!seed.personalDataUsed&&seed.centralAnalysisAllowed&&seed.files.length===1&&seed.modelUsage.runs===0,'Source must be a generated central-readable native run without LLM calls');
+assert.ok(seed.status==='passed'&&seed.finishedAt&&!seed.personalDataUsed&&seed.files.length===1&&seed.modelUsage.runs===0,'Source must be a generated native run without LLM calls');
 assert.ok(quality.status==='passed'&&!quality.personalDataUsed&&!quality.humanAudioAccuracyVerified);assert.equal(quality.sourceReportSha256,sha256(sourceBytes));
 assert.equal(quality.audioSha256,seed.files[0].sha256);
 const sourceVault=join(source,'vault'),sourceDb=join(sourceVault,'mote.sqlite');await empty(join(sourceVault,'logs','central.lock'));await empty(sourceDb+'-wal');
 const databaseHash=sha256(await readFile(sourceDb));assert.equal(databaseHash,quality.sourceDatabaseSha256);
-const modulePath=resolve(seed.processorModule.path);assert.equal(sha256(await readFile(modulePath)),seed.processorModule.sha256,'Trusted processor module changed since acoustic processing');
+const modules:string[]=[];if(seed.processorModule){const modulePath=resolve(seed.processorModule.path);assert.equal(sha256(await readFile(modulePath)),seed.processorModule.sha256,'Trusted processor module changed since acoustic processing');modules.push(modulePath);}
 const fixtureBytes=await readFile(join(repositoryRoot,'scripts/fixtures/audio-memory.json'));
 const fixture=z.object({speakerNamesByVoice:z.object({A:z.string(),B:z.string()}).strict(),question:z.string(),rubric:z.string()}).strict().parse(JSON.parse(fixtureBytes.toString('utf8')));
 const retryDirectory=values['retry-from']?external(values['retry-from']):undefined;
@@ -61,9 +61,9 @@ async function request(method:'GET'|'POST'|'PUT',url:string,payload?:unknown){co
 async function stage<T>(name:string,work:()=>Promise<T>){const entry:Record<string,unknown>={name,status:'running',startedAt:new Date().toISOString()},start=Date.now();report.stages.push(entry);console.log(JSON.stringify({stage:name}));await save();try{const value=await work();entry.status='completed';return value;}catch(error){entry.status='failed';throw error;}finally{entry.durationMs=Date.now()-start;await save();}}
 try{
  await save();const catalog=await codexModels(undefined,{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME});report.catalog=catalog.items.find(item=>item.id==='gpt-6-sol');assert.ok(report.catalog?.reasoningEfforts?.includes('max'));
- await open('vault',[modulePath]);
- const captureId=seed.files[0].captureId,detail=await request('GET','/api/files/'+captureId);assert.equal(detail.job.state,'succeeded');assert.equal(detail.job.local_only,0);
- const view=await request('GET','/api/file-processing');await request('PUT','/api/file-processing',{revision:view.revision,settings:{...view.settings,enabled:false}});
+ await open('vault',modules);
+ const captureId=seed.files[0].captureId,detail=await request('GET','/api/files/'+captureId);assert.equal(detail.job.state,'succeeded');
+ const view=await request('GET','/api/file-processing');await request('PUT','/api/file-processing',{revision:view.revision,settings:{...view.settings,enabled:false},policy:view.policy});
  const chunks=()=>node!.files.chunks(captureId,0,200).map(record=>({...record,fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}));
  const originalChunks=chunks();assert.ok(originalChunks.length&&originalChunks.length<200,'Control must fit completely; no truncated input');
  const artifactId=originalChunks[0].fileEvidence!.artifactId;assert.ok(originalChunks.every(record=>record.fileEvidence?.artifactId===artifactId));

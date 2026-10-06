@@ -140,16 +140,13 @@ test('changing a required transcript fences its in-flight result while unrelated
   assert.deepEqual(f.node.memories.get(saved),record);assert.equal(f.node.memoryPipeline.list().map(j=>f.node.memoryPipeline.get(j.id)).length,3);
 });
 
-test('named ready outputs cannot bypass local-only policy at creation or late result commit',async t=>{
+test('named ready outputs recheck original deletion before result commit',async t=>{
   const f=await fixture(t,true),file=await f.upload();await f.organize();
   const ids=f.node.materials.input(file.materialId,['source-record'])!.evidenceIds;
-  f.node.store.db.prepare('UPDATE file_jobs SET local_only=1 WHERE capture_id=?').run(file.id);
-  assert.throws(()=>f.node.memoryPipeline.create({evidenceIds:ids,recipes:[bodyRecipe]}),/not allowed|not ready/);assert.equal(f.calls.length,0);
-  f.node.store.db.prepare('UPDATE file_jobs SET local_only=0 WHERE capture_id=?').run(file.id);
   let enter!:()=>void,release!:()=>void;const entered=new Promise<void>(r=>enter=r),held=new Promise<void>(r=>release=r);
   f.control.review=async()=>{enter();await held;};
   const job=f.node.memoryPipeline.create({evidenceIds:ids,recipes:[bodyRecipe]}),running=f.node.memoryPipeline.run(job.id);await entered;
-  f.node.store.db.prepare('UPDATE file_jobs SET local_only=1 WHERE capture_id=?').run(file.id);release();
+  f.node.store.delete(file.id);release();
   const result=await running;assert.notEqual(result.status,'completed');assert.equal(result.memoryIds.length,0);
   assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
 });

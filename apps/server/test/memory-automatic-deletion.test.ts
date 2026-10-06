@@ -174,7 +174,7 @@ test('an independent later expression is new evidence and unrelated private dele
  const later=await f.add(text,'2026-02-01T00:00:00Z');
  const result=await reviewed(f,output(f,[later]),undefined,{authorize:()=>assert.fail('Unrelated private deletion must not be disclosed')});
  assert.equal(result.comparisons,0);assert.equal(f.memories.extract(fixtureMemoryResult(f.memories,result.result),'fixture',{reviewReceipt:result.receipt}).items.length,1);
- await assert.rejects(reviewed(f,output(f,[id]),undefined,{authorize:()=>{throw Object.assign(new Error('local-only'),{statusCode:403});}}),{statusCode:403});
+ await assert.rejects(reviewed(f,output(f,[id]),undefined,{authorize:()=>{throw Object.assign(new Error('evidence-revoked'),{statusCode:403});}}),{statusCode:403});
 });
 
 test('a cached or in-flight verdict cannot commit after a new deletion, and cancellation issues no receipt',async t=>{

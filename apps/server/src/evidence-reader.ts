@@ -388,19 +388,8 @@ export class EvidenceReader {
   private exposureAllows(context:EvidenceExposureContext,policy:EvidenceExposurePolicy,screenOriginalGrant=false){
     return policy.allows(context,this.recipeRoutes(context.sourceKind,context.sourceId),screenOriginalGrant);
   }
-  /** Content restrictions follow original file lineage, including excerpts and
-   * formal Material anchors. Owner archive reads do not use this model gate. */
-  evidenceLocalOnly(id:string):boolean {
-    const anchor=this.materials&&this.store.db.prepare('SELECT material_id,revision FROM material_evidence WHERE id=?').get(id);
-    if(anchor){const material=this.materials!.get(`material:${anchor.material_id}@${anchor.revision}`);return !material||this.materialLocalOnly(material);}
-    const row=this.store.db.prepare(`WITH RECURSIVE originals(id) AS (
-      SELECT ? UNION SELECT c.capture_id FROM file_chunks c JOIN originals o ON c.id=o.id
-      UNION SELECT l.parent_id FROM file_evidence_links l JOIN originals o ON l.capture_id=o.id
-    ) SELECT 1 FROM originals o JOIN file_jobs j ON j.capture_id=o.id WHERE j.local_only=1 LIMIT 1`).get(id);
-    return Boolean(row);
-  }
   /** Owner deletion rules carry derived text, not a grant to seed raw originals.
-   * Check their retained lineage against current source revocation and locality. */
+   * Check their retained lineage against current source revocation. */
   deletionContextAllowed(id:string,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy):boolean {
     const record=this.memories.readEvidence([id])[0];if(!record)return false;
     if(!fileAttachmentAvailable(this.store,id))return false;
@@ -408,26 +397,21 @@ export class EvidenceReader {
     if(p?.sourceId&&p.externalId&&this.store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId)?.deleted)return false;
     const anchor=this.materials&&this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?').get(id);
     const material=anchor?this.materials?.get(String(anchor.material_id)):p?.sourceId&&p.externalId&&this.materials?this.materials.get(materialId(p.sourceId,p.externalId)):undefined;
-    if(material)return this.materialExposure(material,'expand',policy)&&policy.allows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation:'expand',phase:material.coverage.state,localOnly:this.evidenceLocalOnly(id)});
+    if(material)return this.materialExposure(material,'expand',policy)&&policy.allows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation:'expand',phase:material.coverage.state});
     return this.captureExposure(record,'expand',policy,'capture',true);
   }
-  private materialLocalOnly(material:MaterialRecord):boolean {
-    return this.materialMemberAccess(material).localOnly;
-  }
-  private materialMemberAccess(material:MaterialRecord):{available:boolean;localOnly:boolean} {
-    if(!this.materials)return {available:false,localOnly:true};
-    let localOnly=false;
+  private materialMembersAvailable(material:MaterialRecord):boolean {
+    if(!this.materials)return false;
     for(let offset=0;offset<material.memberCount;offset+=200){
       const page=this.materials.members(material.ref,{offset,limit:200});
-      if(!page.items.length)return {available:false,localOnly:true};
+      if(!page.items.length)return false;
       for(const member of page.items){
         if(member.kind==='capture'){
-          const id=evidenceRefId(member.ref,'capture');if(!id||!fileAttachmentAvailable(this.store,id))return {available:false,localOnly:true};
-          if(this.evidenceLocalOnly(id))localOnly=true;
+          const id=evidenceRefId(member.ref,'capture');if(!id||!fileAttachmentAvailable(this.store,id))return false;
         }
       }
     }
-    return {available:true,localOnly};
+    return true;
   }
   private captureExposure(record:CaptureRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,representation:EvidenceRepresentation='capture',screenOriginalGrant=false){
     if(!fileAttachmentAvailable(this.store,record.id))return false;
@@ -450,7 +434,7 @@ export class EvidenceReader {
     }
     const sourceKind=record.source==='screen'||record.source==='ui_page'?'screen':provenance?.document?.coding?'coding-agent':this.sourceKind(provenance?.sourceId,record.source);
     const phase:EvidencePhase=record.ocr?.status==='pending'?'pending':record.ocr?.status==='failed'?'partial':'complete';
-    return this.exposureAllows({sourceKind,sourceId:provenance?.sourceId,representation,operation,phase,localOnly:this.evidenceLocalOnly(record.id)},policy,screenOriginalGrant);
+    return this.exposureAllows({sourceKind,sourceId:provenance?.sourceId,representation,operation,phase},policy,screenOriginalGrant);
   }
   /** The built-in authored organizer binds a logical Material to one current
    * owner capture. A string prefix alone is never an authorization claim. */
@@ -477,7 +461,7 @@ export class EvidenceReader {
     // Retain legacy projections for owner inspection without exposing process
     // text to models. Installing new rules does not rebuild historical data.
     if(material.kind==='mote.coding-session'&&material.schemaVersion<CODING_DIALOGUE_SCHEMA_VERSION)return false;
-    const access=this.materialMemberAccess(material);if(!access.available)return false;
+    if(!this.materialMembersAvailable(material))return false;
     if(!planning&&required&&!this.materials?.input(material.ref,required)?.ready)return false;
     if(operation==='memory'&&this.sourceItemRecipes){
       const original=this.authoredMaterialOriginal(material);
@@ -494,7 +478,7 @@ export class EvidenceReader {
       }
     }
     const phase=planning?'complete':required&&material.coverage.state==='pending'?'partial':material.coverage.state;
-    return this.exposureAllows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation,phase,localOnly:access.localOnly},policy);
+    return this.exposureAllows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation,phase},policy);
   }
   /** Memory runners can inspect a material only after its declared route admits the current phase. */
   materialAllowedForMemory(ref:string,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy,required?:readonly string[]){
@@ -522,7 +506,7 @@ export class EvidenceReader {
         const material=anchor&&this.materials?.get(String(anchor.material_id));
         if(material?.kind==='mote.coding-session'&&material.schemaVersion<CODING_DIALOGUE_SCHEMA_VERSION)return false;
         const sourceKind=record.source==='screen'||record.source==='ui_page'?'screen':record.provenance?.document?.coding?'coding-agent':this.sourceKind(record.provenance?.sourceId,record.source);
-        return this.exposureAllows({sourceKind,sourceId:record.provenance?.sourceId,representation:'segment',operation,phase,localOnly:this.evidenceLocalOnly(record.id)},policy);
+        return this.exposureAllows({sourceKind,sourceId:record.provenance?.sourceId,representation:'segment',operation,phase},policy);
       });
     })};
   }

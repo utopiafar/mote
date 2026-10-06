@@ -29,10 +29,9 @@ export function parseFilePolicy(raw:unknown,previous:FilePolicy,registry:Process
     if(service&&service.kind!==plugin.serviceKind)throw new StoreError(moteText("服务类型与处理插件不匹配"),400);
     if(model?.kind!=='model'&&profile.modelServiceId)throw new StoreError(moteText("分析步骤需要语言模型服务"),400);
     if(plugin.localOnly&&service?.execution==='remote')throw new StoreError(moteText("本地处理插件只能绑定本地服务"),400);
-    if(plugin.contentPolicy==='local-only'&&model?.execution==='remote')throw new StoreError(moteText("此方案只允许本地模型"),400);
     if(plugin.allowSummary===false&&profile.summarize)throw new StoreError(moteText("此处理插件不支持自动摘要"),400);
     if(plugin.dialogue){
-      const diarizer=registry.get(profile.diarizationProcessor);if(diarizer.stage!=='diarize'||plugin.contentPolicy==='local-only'&&!diarizer.localOnly)throw new StoreError(moteText("需要本地说话人分离插件"),400);
+      const diarizer=registry.get(profile.diarizationProcessor);if(diarizer.stage!=='diarize')throw new StoreError(moteText("需要说话人分离插件"),400);
       if(diarizer.localOnly&&service?.execution==='remote')throw new StoreError(moteText("本地处理插件只能绑定本地服务"),400);
     }
     const definitions=plugin.parameters??[];
@@ -61,11 +60,10 @@ export function effectiveFileSettings(applied:AppliedFilePolicy,policy:FilePolic
   const endpoint=service(profile.serviceId),model=service(profile.modelServiceId),plugin=registry.get(profile.processorId);
   if(plugin.serviceKind&&!endpoint)throw new StoreError(moteText("请为方案选择处理服务"),409);
   if(endpoint&&endpoint.kind!==plugin.serviceKind)throw new StoreError(moteText("服务类型与处理插件不匹配"),409);
-  if(plugin.localOnly&&endpoint?.execution==='remote'||plugin.contentPolicy==='local-only'&&model?.execution==='remote')throw new StoreError('Local processing requires local services',409);
-  const settings:FileProcessingSettings={...base,apiKey:undefined,localWorkerApiKey:undefined,localModelApiKey:undefined,localModelName:'',imageEndpoint:'',audioProcessor:profile.processorId,
+  if(plugin.localOnly&&endpoint?.execution==='remote')throw new StoreError('Local processing requires local services',409);
+  const settings:FileProcessingSettings={...base,apiKey:undefined,localWorkerApiKey:undefined,imageEndpoint:'',audioProcessor:profile.processorId,
     diarizationProcessor:profile.diarizationProcessor,speakerCount:typeof profile.parameters.speakerCount==='number'?profile.parameters.speakerCount:null,semanticTurns:profile.parameters.semanticTurns===true,summarize:profile.summarize,
     ...(endpoint?{endpoint:endpoint.endpoint,apiKey:endpoint.apiKey,allowRemote:endpoint.execution==='remote',...(endpoint.kind==='image'?{imageEndpoint:endpoint.endpoint}:{}),...(endpoint.execution==='local'?{localEndpoint:endpoint.endpoint,localWorkerApiKey:endpoint.apiKey}:{})}:{}),
-    ...(model?.execution==='local'?{localModelEndpoint:model.endpoint,localModelName:model.model,localModelApiKey:model.apiKey}:{}),
   };
   return {...fileProcessingSchema.parse(settings),analysisModel:model};
 }

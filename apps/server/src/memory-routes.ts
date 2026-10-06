@@ -18,7 +18,6 @@ import type {EvidenceReader} from './evidence-reader.js';
 import type {FileStore} from './files.js';
 import {StoreError,type Store} from './store.js';
 import {EvidenceExposurePolicy} from './evidence-exposure.js';
-import {usesLocalModel} from './model-agent.js';
 import type {ManualMemoryInputPlanRequest} from './memory-input-plans.js';
 export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSettings,memoryRecipeSettings,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{memoryIntegrationSettings:MemoryIntegrationSettings;memoryRecipeSettings:MemoryRecipeSettings;store:Store;files:FileStore;evidenceReader:EvidenceReader;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult)=>Promise<QueryResult>}){
  const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
@@ -60,7 +59,7 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
   app.post('/api/memory-jobs',async(req,reply)=>{
     const scope=z.object({...scopeFields,contextTime:z.string().datetime({offset:true}).optional(),recipes:z.array(memoryStrategyRefSchema).min(1).max(8).optional(),modelProfileId:modelProfileIdSchema.optional(),evidenceIds:z.array(z.string().uuid()).min(1).max(20000).optional()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body??{});
     const profile=modelSettings.select('memory',scope.modelProfileId);
-    const policy=new EvidenceExposurePolicy([],()=>usesLocalModel(profile.settings));
+    const policy=new EvidenceExposurePolicy();
     const bindings=scope.recipes?.map(ref=>{try{return memoryPipeline.strategies.resolve(ref).binding;}catch{throw new StoreError('Memory recipe is unavailable',409);}});
     const create=(ids:string[],manualPlans?:ManualMemoryInputPlanRequest[],selection?:unknown)=>{
       const job=memoryPipeline.create({contextTime:scope.contextTime,recipes:scope.recipes,evidenceIds:ids,...(manualPlans?.length?{manualPlans}:{}),timeZone:scope.timeZone,batchCharacters:lifecycle.settings().batchCharacters,modelProfileId:profile.id,modelOverride:scope.modelProfileId?undefined:modelSettings.view().defaultModels?.memory});
@@ -72,7 +71,7 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
       return create(selected.evidenceIds,selected.manualPlans,{unavailable:selected.unavailable});
     }
     const requirements=bindings?.map(binding=>binding.requires);
-    const selection=scope.evidenceIds?undefined:evidenceReader.memorySelection(scope,undefined,new EvidenceExposurePolicy([],()=>usesLocalModel(profile.settings)),requirements);
+    const selection=scope.evidenceIds?undefined:evidenceReader.memorySelection(scope,undefined,new EvidenceExposurePolicy(),requirements);
     let ids=scope.evidenceIds??selection!.evidenceIds;
     if(!ids.length)throw new StoreError('No evidence in this range',409);
     ids=[...new Set(ids)];
@@ -105,7 +104,7 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
   app.post('/api/memory-jobs/:id/retry',async(req,reply)=>{const id=jobId(req.params);memoryPipeline.get(id);void memoryPipeline.retry(id).catch(()=>{});return reply.code(202).send(memoryPipeline.get(id));});
   app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{
     const {modelProfileId,...scope}=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional()}).strict().refine(validRange).parse(req.body??{}),profile=modelSettings.select('memory',modelProfileId);
-    const selected=evidenceReader.memorySelection(scope,100,new EvidenceExposurePolicy([],()=>usesLocalModel(profile.settings)));
+    const selected=evidenceReader.memorySelection(scope,100,new EvidenceExposurePolicy());
     if(!selected.evidenceIds.length)throw new StoreError('No processed evidence in this range',409);
     const records=memories.readEvidence(selected.evidenceIds),expectedFingerprints=Object.fromEntries(records.map(record=>[record.id,memoryEvidenceFingerprint(record)]));
     const evidenceRanges=records.map(record=>({id:record.id,offset:0,length:record.ocrText.length}));

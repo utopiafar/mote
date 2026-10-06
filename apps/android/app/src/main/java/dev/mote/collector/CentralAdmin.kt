@@ -125,7 +125,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
                     val field = ui.field(caption, if (raw == JSONObject.NULL) "" else raw.toString(),
                         multiline = key in setOf("description", "instruction", "prompt"), password = key in secrets, parent = target)
                     if (raw is Number || nullableNumber) field.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
-                    val clear = if (key in setOf("apiKey", "localModelApiKey", "localWorkerApiKey")) CheckBox(ui).apply { text = MoteI18n.text("清除已保存的密钥") }.also(target::addView) else null
+                    val clear = if (key in setOf("apiKey", "localWorkerApiKey")) CheckBox(ui).apply { text = MoteI18n.text("清除已保存的密钥") }.also(target::addView) else null
                     reads[key] = {
                         val input = field.text.toString()
                         if (clear?.isChecked == true) JSONObject.NULL
@@ -256,9 +256,9 @@ internal class CentralAdmin(private val screens: CentralScreens) {
         val api = client
         ui.work(MoteI18n.text("正在读取…"), { api.get("/api/file-processing") }) { value ->
             val settings = JSONObject(value.getJSONObject("settings").toString())
-            listOf("apiKeyConfigured", "localModelApiKeyConfigured", "localWorkerApiKeyConfigured").forEach(settings::remove)
+            listOf("apiKeyConfigured", "localWorkerApiKeyConfigured").forEach(settings::remove)
             val payload = JSONObject().put("revision", value.getString("revision")).put("settings", settings)
-            listOf("apiKey", "localModelApiKey", "localWorkerApiKey").forEach { settings.put(it, "") }
+            listOf("apiKey", "localWorkerApiKey").forEach { settings.put(it, "") }
             if (value.optBoolean("policyConfigured")) payload.put("policy", value.getJSONObject("policy"))
             edit(MoteI18n.text("处理设置"), "/api/file-processing", payload)
         }
@@ -673,7 +673,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
     private fun label(key: String): String = MoteI18n.text(labels[key] ?: key)
     companion object {
         private object KeepValue
-        private val secrets = setOf("apiKey", "token", "secret", "clientSecret", "localModelApiKey", "localWorkerApiKey")
+        private val secrets = setOf("apiKey", "token", "secret", "clientSecret", "localWorkerApiKey")
         private val enums = mapOf("protocol" to listOf("deepseek", "openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai", "codex-app-server"),
             "reasoningEffort" to listOf("auto", "off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
             "serviceTier" to listOf("default", "fast"),

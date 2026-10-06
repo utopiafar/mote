@@ -15,12 +15,10 @@ import {repositoryRoot,type Config} from '../apps/server/src/config.js';
 import {sha256} from '../apps/server/src/store.js';
 import {materialId} from '../apps/server/src/materials.js';
 
-const {values}=parseArgs({options:{manifest:{type:'string'},output:{type:'string'},python:{type:'string'},'ocr-model-root':{type:'string'},'asr-model-root':{type:'string'},'processor-module':{type:'string'},'audio-processor':{type:'string'},'allow-generated-central-analysis':{type:'boolean',default:false}}});
+const {values}=parseArgs({options:{manifest:{type:'string'},output:{type:'string'},python:{type:'string'},'ocr-model-root':{type:'string'},'asr-model-root':{type:'string'},'processor-module':{type:'string'},'audio-processor':{type:'string'}}});
 const audioProcessor=values['audio-processor']??'audio.local-dialogue';
 assert.ok(values.manifest&&values.output&&values.python,'Required: --manifest --output --python; plus model roots for the selected types');
 const manifest=z.object({personalDataUsed:z.boolean(),files:z.array(z.object({id:z.string().regex(/^[a-z0-9-]+$/),path:z.string(),mimeType:z.string(),observedAt:z.string().datetime({offset:true}),expectedLines:z.array(z.string()).optional()})).min(1).max(10)}).parse(JSON.parse(await readFile(values.manifest,'utf8')));
-const centralAnalysisAllowed=values['allow-generated-central-analysis'];
-assert.ok(!centralAnalysisAllowed||!manifest.personalDataUsed,'Central-analysis control must use generated inputs');
 assert.equal(new Set(manifest.files.map(file=>file.id)).size,manifest.files.length);
 const directory=resolve(values.output),outside=relative(repositoryRoot,directory);
 assert.ok(outside==='..'||outside.startsWith('../'),'Reports and originals must stay outside the repository');
@@ -41,7 +39,7 @@ const config:Config={dataKey:undefined,dataDir:join(directory,'vault'),token,tok
   diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,
   ...(values['processor-module']?{fileProcessorModules:[resolve(values['processor-module'])]}:{})};
 const report:Record<string,unknown>={startedAt:new Date().toISOString(),status:'running',personalDataUsed:manifest.personalDataUsed,
-  browserTested:false,physicalDeviceTested:false,liveLlmUsed:false,localInference:true,semanticQualityVerified:false,centralAnalysisAllowed,
+  browserTested:false,physicalDeviceTested:false,liveLlmUsed:false,localInference:true,semanticQualityVerified:false,
   runtime:{python:resolve(values.python),asrModelRoot:values['asr-model-root']?resolve(values['asr-model-root']):undefined,ocrModelRoot:values['ocr-model-root']?resolve(values['ocr-model-root']):undefined},
   ...(previous?{resumedFrom:previous.startedAt}:{}),files:[]};
 const save=()=>writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});
@@ -90,14 +88,27 @@ try{
   node=await buildApp(config);const lifecycle=node.lifecycle.settings();
   for(const key of ['extraction','consolidation','insights','working'] as const)lifecycle[key].enabled=false;
   node.lifecycle.configure(lifecycle);await node.app.ready();
-  if(hasAudio){const selected=node.processing.runtime.registry.get(audioProcessor);assert.ok(selected.localOnly&&selected.dialogue&&(centralAnalysisAllowed?selected.contentPolicy!=='local-only':selected.contentPolicy==='local-only'&&selected.allowSummary===false),'Select an offline dialogue processor matching the explicit disclosure mode');report.audioProcessor=node.processing.runtime.registry.list().find(processor=>processor.id===audioProcessor);}
+  if(hasAudio){const selected=node.processing.runtime.registry.get(audioProcessor);assert.ok(selected.localOnly&&selected.dialogue,'Select a local dialogue processor');report.audioProcessor=node.processing.runtime.registry.list().find(processor=>processor.id===audioProcessor);}
   const view=(await request('GET','/api/file-processing')).json();
   if(priorSettings)assert.equal(asr+'/transcribe',priorSettings.localEndpoint,'Keep worker identity to reuse the saved extraction');
-  else await request('PUT','/api/file-processing',{revision:view.revision,settings:{...view.settings,
-    enabled:true,summarize:false,semanticTurns:false,requestTimeoutMs:600000,
-    ...(ocr?{imageProcessor:'image.http',imageEndpoint:ocr+'/ocr',apiKey:workerToken}:{}),
-    ...(asr?{audioProcessor,localEndpoint:asr+'/transcribe',localWorkerApiKey:workerToken}:{}),
-  }});
+  else {
+    const policy=view.policy;
+    if(asr){
+      const service=policy.services.find((s:any)=>s.id==='asr-local');service.endpoint=asr+'/transcribe';service.apiKey=workerToken;
+      let profile=policy.profiles.find((p:any)=>p.processorId===audioProcessor);
+      if(!profile){profile={id:'journey-audio',name:'Generated audio journey',processorId:audioProcessor,parameters:{},diarizationProcessor:'audio.diarize',summarize:false};policy.profiles.push(profile);}
+      profile.serviceId='asr-local';profile.parameters={speakerCount:null,semanticTurns:false};profile.summarize=false;
+      policy.rules.find((r:any)=>r.type==='audio/*').profileId=profile.id;
+    }
+    if(ocr){
+      policy.services.push({id:'journey-ocr',name:'Generated OCR',kind:'image',execution:'local',endpoint:ocr+'/ocr',model:'',apiKey:workerToken});
+      policy.profiles.push({id:'journey-ocr',name:'Generated OCR journey',processorId:'image.http',serviceId:'journey-ocr',parameters:{},diarizationProcessor:'audio.diarize',summarize:false});
+      policy.rules.find((r:any)=>r.type==='image/*').profileId='journey-ocr';
+    }
+    await request('PUT','/api/file-processing',{revision:view.revision,settings:{...view.settings,enabled:true,summarize:false,semanticTurns:false,timeoutMs:600000,
+      ...(asr?{audioProcessor,localEndpoint:asr+'/transcribe',localWorkerApiKey:workerToken}:{}),
+    },policy});
+  }
   for(const file of manifest.files){
     const result:Record<string,unknown>={id:file.id,mimeType:file.mimeType,observedAt:file.observedAt,status:'running'};
     (report.files as unknown[]).push(result);await save();const started=Date.now();

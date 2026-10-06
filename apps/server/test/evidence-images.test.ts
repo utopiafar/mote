@@ -45,9 +45,7 @@ test('query reads exact uploaded image revisions while disclosure, policy and to
  });f.setEnabled(true);
  const denied=f.reader.agent({diagnostics:f.diagnostics,allowQueryImages:()=>true,exposurePolicy:new EvidenceExposurePolicy([{sourceKind:'upload',representation:'image',allow:false}])});
  await assert.rejects(denied.readImage!({id:one.id}),/Image not found/);
- f.store.db.prepare('UPDATE file_jobs SET local_only=1 WHERE capture_id=?').run(one.id);
- await assert.rejects(f.agent.readImage!({id:one.id}),/Image not found/);
- f.store.db.prepare('UPDATE file_jobs SET local_only=0 WHERE capture_id=?').run(one.id);
+ assert.equal((await f.agent.readImage!({id:one.id})).data,f.bytes.toString('base64'));
  const next=await sharp({create:{width:2,height:2,channels:3,background:'#abcdef'}}).png().toBuffer(),two=await f.upload('same','2',next);
  assert.equal((await f.agent.readImage!({id:one.id})).data,f.bytes.toString('base64'),'a discovered historical version never redirects to the new image');
  assert.equal((await f.agent.readImage!({id:two.id})).data,next.toString('base64'));
@@ -122,7 +120,6 @@ test('image regions pin original versions while metadata, history and attachment
  const read={id:one.id,expectedImageSha256:sha256(f.bytes),region};
  const cropped=await f.agent.readImage!(read);assert.deepEqual(cropped.imageView!.region,region);assert.equal(cropped.imageView!.output!.width,1);
  f.setEnabled(false);await assert.rejects(f.agent.readImage!({id:one.id,view:'metadata'}),(error:any)=>error.code==='image_disclosure_disabled'&&error.recovery==='stop');f.setEnabled(true);
- f.store.db.prepare('UPDATE file_jobs SET local_only=1 WHERE capture_id=?').run(one.id);await assert.rejects(f.agent.readImage!(read),/Image not found/);f.store.db.prepare('UPDATE file_jobs SET local_only=0 WHERE capture_id=?').run(one.id);
  const next=await sharp({create:{width:2,height:2,channels:3,background:'#556677'}}).png().toBuffer(),two=await f.upload('regions','2',next);
  assert.equal((await f.agent.readImage!(read)).data,cropped.data,'a retained explicit history version keeps its own pixels');
  await assert.rejects(f.agent.readImage!({...read,id:two.id}),(error:any)=>error.code==='image_version_changed');
