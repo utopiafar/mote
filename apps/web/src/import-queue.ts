@@ -4,7 +4,7 @@ import {ApiError,errorMessage,type Api} from './api';
 import {uploadImportFiles} from './import-upload-scheduler';
 
 export type ImportSource={kind:'files';files:readonly File[]}|{kind:'directory';path:string};
-export type ImportDraft={source:ImportSource;name:string;instruction:string;sourcePackId:string};
+export type ImportDraft={source:ImportSource;name:string;instruction:string;sourcePackId:string;imageProfileId?:string};
 export type ImportQueueState='queued'|'uploading'|'creating'|'waiting'|'paused'|'failed'|'submitted';
 export type ImportQueueEntry={
   id:string;name:string;createdAt:string;state:ImportQueueState;uploadedBytes:number;totalBytes:number;
@@ -88,7 +88,7 @@ export class ImportQueue {
       const archivedFileIds=draft.source.kind==='files'?await uploadImportFiles(this.api,draft.source.files,task.uploadIds,bytes=>{if(current()&&!controller.signal.aborted)this.patch(task,{uploadedBytes:bytes});},controller.signal,task.archived):undefined;
       controller.signal.throwIfAborted();if(!current())return;
       this.patch(task,{state:'creating'});
-      const payload={requestId:task.entry.id,name:draft.name||undefined,instruction:draft.instruction,processing:draft.sourcePackId?'automatic':draft.instruction.trim()?'preview':'automatic',...(draft.sourcePackId?{sourcePackId:draft.sourcePackId}:{}),...(draft.source.kind==='files'?{archivedFileIds}:{directory:draft.source.path})};
+      const payload={...(draft.imageProfileId?{imageProfileId:draft.imageProfileId}:{}),requestId:task.entry.id,name:draft.name||undefined,instruction:draft.instruction,processing:draft.sourcePackId?'automatic':draft.instruction.trim()?'preview':'automatic',...(draft.sourcePackId?{sourcePackId:draft.sourcePackId}:{}),...(draft.source.kind==='files'?{archivedFileIds}:{directory:draft.source.path})};
       const job=await this.api.request<ImportJob>('/api/imports',{method:'POST',body:JSON.stringify(payload),signal:AbortSignal.any([controller.signal,AbortSignal.timeout(180000)])});
       controller.signal.throwIfAborted();if(!current())return;
       // Release browser File references as soon as the server owns the originals.

@@ -70,7 +70,8 @@ import { modelConfiguration } from './model-configuration.js';
 import { ModelSettingsError,ModelSettingsStore,modelProfileIdSchema } from './model-settings.js';
 import { openingMemoryContext } from './opening-memory.js';
 import { linkOperationParent } from './operation-projection.js';
-import { Perception } from './perception.js';
+import {ImageProcessing} from './image-processing.js';
+import {imageUnderstanding} from './image-understanding.js';
 import { ProcessingRuntime } from './processing-runtime.js';
 import { ProviderAdmission } from './provider-admission.js';
 import { PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation,type PythonImportOutput } from './python-source-pack-executor.js';
@@ -271,7 +272,10 @@ export async function buildApp(config:Config,dependencies?:{connectorTesting?:im
   const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:[...new Set([...(config.backendPluginModules??[]),...(config.fileProcessorModules??[])])],analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,pluginContext:backendContext,mediaAssets});
   try{await processing.runtime.ready;}catch(error){await executor.close();await processing.close();await workflows.close();await sourcePipelines.close();await backendContext.fiber.dispose();await modelSettings.close();await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
 
-  const perception=new Perception(store,processing.runtime,executor,mediaAssets);
+  const perception=new ImageProcessing(store,processing,executor,{mediaAssets,memoryWork:materialMemoryWork,understanding:imageUnderstanding({factory,usage:usageLedger,selection:service=>{
+    const selected=modelSettings.select('file'),settings=resolveFileModel({...processing.currentSettings(),analysisModel:service}),configuration=modelConfiguration(service?.id??selected.id,settings,modelSettings.view().revision);
+    return {fingerprint:configuration.fingerprint,configured:service?Boolean(service.apiKey||service.execution==='local'):agent.configuredFor(selected.id),settings,receipt:{profileId:service?.id??selected.id,provider:settings.provider,model:settings.model,revision:modelSettings.view().revision}};
+  }})});
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
   workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return agent.query({...input,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}});},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
   workflows.registry.register(conversationUnderstandingProcessor({memories,usage:usageLedger,

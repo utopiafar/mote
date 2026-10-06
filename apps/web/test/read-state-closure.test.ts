@@ -8,6 +8,7 @@ import {Conversations} from '../src/Conversations.js';
 import {Insights} from '../src/Insights.js';
 import {Connections} from '../src/Connections.js';
 import {RuntimeSettings,ExecutionQueueOverview} from '../src/RuntimeSettings.js';
+import {ImageProgress} from '../src/ImageProgress.js';
 import {PerceptionSettings} from '../src/PerceptionSettings.js';
 import {ApiError,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
@@ -136,7 +137,7 @@ test('execution overview shares initial settings read; dirty runtime draft survi
  revoked=true;await act(async()=>resources(api).invalidate(path=>path==='/api/execution-settings'));assert.equal(d.querySelector('form'),null);assert.match(d.body.textContent!,/generated revoked/);
 });
 test('perception refresh retains owner draft and revoked settings never remain editable',async t=>{
- const {root,d}=await fixture(t);let revoked=false;const api=apiWith(()=>{if(revoked)throw new ApiError('generated permission revoked',403);return {settings:{providerRevision:'1',enabled:true,ocrEndpoint:'',allowExternalProcessing:false,allowQueryImages:false},recent:[],jobs:[]};});
+ const {root,d}=await fixture(t);let revoked=false;const api=apiWith(path=>{if(revoked)throw new ApiError('generated permission revoked',403);if(path==='/api/file-processing')return {policy:{profiles:[]},processors:[]};if(path==='/api/memory-settings')return {settings:{extraction:{enabled:false}}};if(path==='/api/sources')return {items:[]};if(path==='/api/media-models')return {ocr:{state:'missing',bytes:0,totalBytes:0}};return {settings:{providerRevision:'1',enabled:true,ocrEndpoint:'',allowExternalProcessing:false,allowQueryImages:false,understandingEnabled:true},model:null,recent:[],jobs:[],backfills:[]};});
  await act(async()=>root.render(React.createElement(PerceptionSettings,{api})));assert.doesNotMatch(d.body.textContent!,/语义理解 Worker 地址|语义理解时机/);await act(async()=>d.querySelector<HTMLInputElement>('input[type=checkbox]')!.click());await act(async()=>button(d,'刷新').click());assert.equal(d.querySelector<HTMLInputElement>('input[type=checkbox]')!.checked,false);
  revoked=true;await act(async()=>button(d,'刷新').click());assert.equal(d.querySelector('form'),null);assert.match(d.body.textContent!,/generated permission revoked/);
 });
@@ -219,4 +220,15 @@ test('Insight cancellation on a new node is not blocked or overwritten by an old
  await act(async()=>button(d,'取消回顾').click());assert.equal(newCancels,1);
  await act(async()=>oldReply.resolve(run('completed')));
  assert.match(d.querySelector('.insight-progress')!.textContent!,/回顾已取消/);assert.doesNotMatch(d.querySelector('.insight-progress')!.textContent!,/回顾已完成/);
+});
+
+
+test('image progress keeps ready OCR visible after vision failure and reports a successful empty Memory result',async t=>{
+ const {root,d}=await fixture(t),writes:unknown[]=[];
+ const value={wait:null,original:{state:'ready'},automatic:true,understandingEnabled:true,policy:{profile:{name:'Generated images',processorId:'image.http'}},jobs:[{name:'ocr',state:'succeeded'},{name:'understanding',state:'failed',error:'unsupported_image'}],products:[{id:'generated-ocr',name:'ocr',kind:'ocr',text:'Generated searchable text'}],materials:[{id:'generated-material',state:'indexed'}],memory:[{state:'completed',count:0}]};
+ const api=apiWith((path,init)=>{if(init?.method==='POST'){writes.push(JSON.parse(String(init.body)));return {queued:true};}return value;});
+ await act(async()=>root.render(React.createElement(ImageProgress,{api,id:'generated-image'})));
+ const state=(name:string)=>[...d.querySelectorAll('dt')].find(n=>n.textContent===name)?.nextElementSibling?.textContent;
+ assert.equal(state('文字识别'),'已就绪');assert.equal(state('内容理解'),'处理失败');assert.equal(state('Memory'),'已完成，未生成新记忆');assert.equal(writes.length,0);
+ await act(async()=>button(d,'补齐未完成步骤').click());assert.deepEqual(writes,[{mode:'complete',confirmUnknown:false}]);
 });

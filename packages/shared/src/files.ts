@@ -11,6 +11,8 @@ export const fileRevisionSchema=z.object({
   sizeBytes:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   sha256:z.string().regex(/^[a-f0-9]{64}$/).optional(),
   relativePath:z.string().max(4000).default(''),
+  /** Explicit item/batch override; omission preserves source/default inheritance. */
+  processingProfileId:z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/).optional(),
 }).strict().superRefine((v,c)=>{
   if(v.item.kind!=='file'||(!['snapshot'].includes(v.item.layer)&&v.item.text)||!['original','reference','snapshot'].includes(v.item.layer)||v.item.layer==='snapshot'&&!v.item.document?.fileIndex)c.addIssue({code:'custom',message:'Files require empty text and original/reference layer'});
   if(v.item.layer==='snapshot'&&v.sha256&&(v.sizeBytes>16*1024*1024||v.item.text||v.item.document?.fileIndex?.status!=='pending'||v.item.document?.fileIndex?.contentVersion!==v.sha256))c.addIssue({code:'custom',message:'Snapshot processing input must be pending, empty and at most 16 MiB'});

@@ -2,19 +2,22 @@ import type {FastifyInstance} from 'fastify';
 import {z} from 'zod';
 import type {Store} from './store.js';
 import type {ProcessingRuntime} from './processing-runtime.js';
-import type {Perception} from './perception.js';
+import type {ImageProcessing} from './image-processing.js';
 import type {MediaAssets} from './media-assets.js';
 /** Routes admit work; the shared execution engine remains the only executor. */
-export function registerProcessingRoutes(app:FastifyInstance,{store,workflows,perception,mediaAssets,semanticFingerprint}:{store:Store;workflows:ProcessingRuntime;perception:Perception;mediaAssets:MediaAssets;semanticFingerprint:()=>string}){
+export function registerProcessingRoutes(app:FastifyInstance,{store,workflows,perception,mediaAssets,semanticFingerprint}:{store:Store;workflows:ProcessingRuntime;perception:ImageProcessing;mediaAssets:MediaAssets;semanticFingerprint:()=>string}){
   app.get('/api/processing',async req=>{const q=z.object({state:z.enum(['waiting','running','blocked','failed','cancelled','succeeded','stale']).optional(),cursor:z.coerce.number().int().positive().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);return {archive:store.archive.stats(),...workflows.view(q)};});
   app.put('/api/processing/settings',async req=>workflows.configure(req.body));
   app.post('/api/processing/workflows',async(req,reply)=>{const {steps}=z.object({steps:z.array(z.any()).min(1).max(32)}).strict().parse(req.body);return reply.code(202).send(workflows.enqueue(steps.map(step=>step.processor==='mote.segment-understanding'?{...step,artifactInputs:[{id:step.config?.artifactId,revision:store.archive.get(step.config?.artifactId)?.revision}],config:{...step.config,modelFingerprint:semanticFingerprint()}}:step)));});
   app.post('/api/processing/:id/retry',async req=>{workflows.retry((req.params as {id:string}).id);return {queued:true};});
   app.post('/api/processing/:id/cancel',async req=>{workflows.cancel((req.params as {id:string}).id);return {cancelled:true};});
   app.get('/api/perception',async()=>perception.view());
+  app.get('/api/images/:id',async req=>perception.detail(z.object({id:z.string().uuid()}).parse(req.params).id));
+  app.post('/api/images/:id/cancel',async req=>perception.cancel(z.object({id:z.string().uuid()}).parse(req.params).id));
+  app.post('/api/images/:id/retry',async req=>{const {mode,confirmUnknown}=z.object({mode:z.enum(['complete','recompute']).default('complete'),confirmUnknown:z.boolean().default(false)}).strict().parse(req.body??{});return perception.retry(z.object({id:z.string().uuid()}).parse(req.params).id,mode==='recompute',confirmUnknown);});
   app.put('/api/perception',async req=>perception.configure(req.body));
   app.post('/api/perception/:id/retry',async req=>{const {id}=z.object({id:z.string().uuid()}).parse(req.params);z.object({kind:z.literal('ocr')}).strict().parse(req.body);return perception.retry(id);});
-  app.post('/api/perception/ocr/historical-preview',async()=>perception.previewHistoricalOcr());
+  app.post('/api/perception/ocr/historical-preview',async req=>perception.previewHistoricalOcr(req.body??{}));
   app.post('/api/perception/ocr/historical-process',async req=>perception.processHistoricalOcr(req.body));
   app.get('/api/media-models',async()=>{
     const status=mediaAssets.statuses(),token=process.env.MOTE_MEDIA_WORKER_TOKEN;

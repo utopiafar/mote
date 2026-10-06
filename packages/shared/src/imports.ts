@@ -13,6 +13,7 @@ export type ImportMediaItem={fileId:string;format:{id:string;version:string;mime
   processing?:{state:string;stage:string;error?:string};searchable?:boolean;
   memory?:{state:string;jobIds:string[]}};
 export type ImportJob={
+  imageProfileId?:string;
   id:string;operationId?:string;execution?:import('./execution.js').ExecutionEnvelope;name:string;instruction:string;sourceId:string;sourcePackId?:string;status:ImportStatus;
   processingStatus:'archived'|'analyzing'|'preview_ready'|'saving'|'saved'|'blocked';
   createdAt:string;updatedAt:string;files:ArchivedFile[];summary:string;warnings:string[];
@@ -22,6 +23,7 @@ export type ImportJob={
   media?:ImportMediaItem[];
 };
 export const importRequestSchema=z.object({
+  imageProfileId:z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/).optional(),
   requestId:z.string().uuid().optional(),
   name:z.string().trim().min(1).max(200).optional(),
   processing:z.enum(['automatic','preview']).default('preview'),

@@ -26,6 +26,7 @@ export const processingProfileSchema=z.object({
   parameters:z.record(z.string().max(64),z.union([z.string().max(4000),z.number().finite(),z.boolean(),z.null()])).default({}),
   diarizationProcessor:id.default('audio.diarize'),modelServiceId:id.optional(),
   summarize:z.boolean().default(false),
+  imageRecipe:z.object({id,version:z.string().min(1).max(100)}).strict().optional(),
 }).strict();
 export const filePolicySchema=z.object({
   version:z.literal(1),services:z.array(processingServiceSchema).max(100),profiles:z.array(processingProfileSchema).min(1).max(100),

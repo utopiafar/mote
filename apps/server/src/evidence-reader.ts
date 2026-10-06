@@ -119,7 +119,7 @@ export class EvidenceReader {
     if(material&&material.schemaVersion===1&&sourceItemKinds.some(kind=>material.kind==='mote.'+kind)&&
       this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_organizer_groups'").get()){
       const owners=this.store.db.prepare('SELECT organizer_id,version FROM material_organizer_groups WHERE material_id=? AND active=1').all(material.id);
-      if(owners.length===1&&owners[0].organizer_id==='mote.source-item'&&['9','10'].includes(String(owners[0].version))){
+      if(owners.length===1&&owners[0].organizer_id==='mote.source-item'&&['9','10','11'].includes(String(owners[0].version))){
         const block=this.store.db.prepare(`SELECT b.block_id,b.format,b.locator,p.text FROM material_blocks b
           JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.revision=? AND b.anchor_id=?`).get(material.id,material.revision,record.id);
         if(block&&block.text===record.ocrText){

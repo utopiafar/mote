@@ -38,7 +38,7 @@ export class FileAttachments {
  constructor(private readonly files:FileStore){this.archived=new ArchivedFileStore(files.store);}
  async prepare(parentId:string,fileId:string,raw:unknown,authorize:(sourceId:string)=>void){
   z.string().uuid().parse(parentId);z.string().uuid().parse(fileId);
-  const options=z.object({mimeType:z.string().regex(/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/).max(200).optional()}).strict().parse(raw??{}),store=this.files.store;
+  const options=z.object({processingProfileId:z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/).optional(),mimeType:z.string().regex(/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/).max(200).optional()}).strict().parse(raw??{}),store=this.files.store;
   const parent=()=>{
    const record=store.evidence([parentId])[0],p=record?.provenance;
    if(!p)throw new StoreError('Attachment parent is unavailable',404);authorize(p.sourceId);
@@ -54,7 +54,7 @@ export class FileAttachments {
   const existing=this.files.sources.getItem(p.sourceId,externalId),document=p.document!;
   // The date is the authored record's attachment context, not a claim about when
   // the image was captured or its described event happened.
-  const input:FileRevision={sourceId:p.sourceId,relativePath:original.relativePath,previousRevision:existing?.revision===revision?null:existing?.revision??null,
+  const input:FileRevision={sourceId:p.sourceId,processingProfileId:options.processingProfileId,relativePath:original.relativePath,previousRevision:existing?.revision===revision?null:existing?.revision??null,
    item:{externalId,revision,kind:'file',layer:'original',title:original.name,observedAt:record.capturedAt,mimeType:mime,text:'',deleted:false,
     document:{attachmentOf:{captureId:parentId,fileId},contentRole:'other',recordedAt:document.recordedAt,timeBasis:document.recordedAt?'recorded':'unknown'}},
    sha256:original.hash,sizeBytes:original.sizeBytes};

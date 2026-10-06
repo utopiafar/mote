@@ -18,6 +18,9 @@ export class StorageLedger {
   private refresh(){
     const jsonTables=['import_uploads','todos','perception_results','captures','memories','memory_deletions','memory_input_plans','source_connections','conversations','conversation_turns','memory_jobs','memory_batches','memory_extraction_drafts','archived_files','import_jobs','file_artifacts','file_reviews','insight_runs','query_runs','model_usage','model_prices','memory_lifecycle_settings','memory_recipe_settings','memory_lifecycle_state','working_memories','action_meta','action_proposals','action_targets','context_contents','context_artifacts','processing_jobs','coding_conversation_contexts'];
     const expressions:Record<string,string>=Object.fromEntries(jsonTables.map(t=>[t,'length(CAST(json AS BLOB))']));
+    expressions.image_products='length(CAST(json AS BLOB))+length(CAST(fingerprint AS BLOB))+256';
+    expressions.image_inputs='coalesce(length(CAST(policy_json AS BLOB)),0)+512';
+    expressions.image_attachment_intents='256';expressions.image_intake_overrides='192';expressions.image_backfills='length(CAST(query AS BLOB))+256';
     expressions.file_snapshot_inputs='256';expressions.file_snapshot_text='192';
     expressions.mcp_import_manifests='length(CAST(source_id AS BLOB))+length(CAST(identity AS BLOB))+length(CAST(members AS BLOB))+128';
     expressions.material_index_requests='length(CAST(material_id AS BLOB))+length(CAST(revision AS BLOB))+length(CAST(state AS BLOB))+coalesce(length(CAST(error AS BLOB)),0)+128';

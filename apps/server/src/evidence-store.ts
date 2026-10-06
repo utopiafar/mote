@@ -11,7 +11,7 @@ import {isStateExtension,samples as stateSamples} from '@mote/shared/state-serie
 import { moteText } from './i18n.js';
 import {textSearch} from './text-search.js';
 import {fileSchema,migrateSnapshotIndexProjection} from './file-schema.js';
-import {systemEventText,sourceContentTime} from '@mote/shared';
+import {systemEventText,sourceContentTime,resolveFileRule,type FilePolicy} from '@mote/shared';
 import {MemoryDeletions} from './memory-deletions.js';
 import {notificationEvidenceText} from './notification-evidence.js';
 import {exportPortableMaterials,preparePortableMaterials,restorePortableMaterials,portableMaterialEstimate} from './material-portable.js';
@@ -40,6 +40,8 @@ function searchText(record:Pick<CaptureInput,'appId'|'appName'|'windowTitle'|'oc
     ...(record.metadata?.media?.sessions??[]).flatMap(s=>[s.appId,s.appName,s.title,s.artist,s.album,s.displaySubtitle,s.mediaId])].filter(Boolean).join('\n');
 }
 export class EvidenceStore {
+  /** Trusted intake observers run in the receive transaction, never on replay. */
+  imageReceived?: (input:CaptureInput)=>void;
   db:DatabaseSync;
   readonly archive:EvidenceArchive;
   readonly assets:AssetStore;
@@ -53,6 +55,13 @@ export class EvidenceStore {
     privateSqliteFile(join(directory,'mote.sqlite'),true);
     for(const suffix of ['-wal','-shm','-journal'])privateSqliteFile(join(directory,`mote.sqlite${suffix}`));
     this.db=new DatabaseSync(join(directory,'mote.sqlite'));
+    this.db.function('mote_image_device_hash',{deterministic:true},value=>sha256(JSON.stringify(String(value))));
+    this.db.function('mote_image_policy',{deterministic:true},(raw,sourceId,mime,override)=>{
+      if(raw===null)return null;
+      const saved=JSON.parse(String(raw)) as {revision:string;policy:FilePolicy},rule=override?{sourceId:String(sourceId),type:String(mime),profileId:String(override)}:resolveFileRule(saved.policy,String(sourceId),String(mime)),profile=saved.policy.profiles.find(p=>p.id===rule.profileId);
+      if(!profile)return null;
+      return JSON.stringify({revision:saved.revision,rule,profile,services:saved.policy.services.filter(s=>s.id===profile.serviceId||s.id===profile.modelServiceId)});
+    });
     // Backend epoch 3 is a deliberate vault cutover. Never infer that an old
     // populated schema has the new archive and visibility semantics.
     const priorTable=this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1").get();
@@ -203,7 +212,7 @@ export class EvidenceStore {
     return {input,bytes,hash,fingerprint:sha256(JSON.stringify({...metadata,blobHash:hash}))};
   }
   private writeBlob(hash:string,bytes:Buffer) {this.assets.putParts([bytes],bytes.length,hash).release();}
-  private insert(p:Prepared) {
+  private insert(p:Prepared,automatic=true) {
     const prior=this.db.prepare('SELECT fingerprint,blob_hash,index_status,json,mime FROM captures WHERE id=?').get(p.input.id) as {fingerprint:string;blob_hash:string|null;index_status:string;json:string;mime:string|null}|undefined;
     if(prior) {
       if(p.input.stateSeries){const previous=JSON.parse(prior.json) as CaptureInput;
@@ -242,8 +251,10 @@ export class EvidenceStore {
     const receivedAt=p.receivedAt??new Date().toISOString();
     this.db.prepare('INSERT INTO captures(id,device_id,captured_at,received_at,json,fingerprint,blob_hash,mime,index_status) VALUES(?,?,?,?,?,?,?,?,?)')
       .run(p.input.id,p.input.deviceId,p.input.capturedAt,receivedAt,json,p.fingerprint,p.hash,imageMime??null,status);
+    if(p.hash&&automatic)this.imageReceived?.(p.input);
     this.db.prepare('INSERT INTO captures_fts(rowid,id,text) VALUES((SELECT rowid FROM captures WHERE id=?),?,?)').run(p.input.id,p.input.id,searchText(p.input));
     this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(p.input.id,'upsert',new Date().toISOString());
+    this.reserveMetadata(0);
     const device=this.db.prepare('SELECT json FROM devices WHERE id=?').get(p.input.deviceId) as {json:string}|undefined;
     if(!device)this.heartbeat({deviceId:p.input.deviceId,deviceName:p.input.deviceName,platform:p.input.platform,status:'offline',queueDepth:0,lastCaptureAt:p.input.capturedAt,...(p.input.metadata?{metadata:p.input.metadata}:{})});
     return {id:p.input.id,duplicate:false,blobHash:p.hash,indexingStatus:status};
@@ -311,8 +322,9 @@ export class EvidenceStore {
     try {
       let imported=0,duplicates=0;
       archivedFiles.restorePortable(portableFiles);
-      for(const p of prepared)this.insert(p).duplicate?duplicates++:imported++;
+      const restored:string[]=[];for(const p of prepared){if(this.insert(p,false).duplicate)duplicates++;else{imported++;restored.push(p.input.id);}}
       for(const link of fileLinks)archivedFiles.attach(link.captureId,[link.fileId]);
+      if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='image_inputs'").get())for(const id of restored){this.db.prepare('UPDATE image_inputs SET auto_eligible=0 WHERE capture_id=?').run(id);this.db.prepare("UPDATE image_attachment_intents SET state='cancelled' WHERE parent_id=?").run(id);}
       for(const c of connections){const prior=this.db.prepare('SELECT json FROM source_connections WHERE id=?').get(c.id) as {json:string}|undefined;if(prior){const original=JSON.parse(prior.json);if(original.deviceId!==c.deviceId||original.kind!==c.kind)throw new StoreError('Source identity conflict',409);}else this.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?)').run(c.id,JSON.stringify({...c,enabled:false}));}
       for(const rawVersion of archive.sourceVersions??[]){const v=rawVersion as Record<string,unknown>;if(typeof v.capture_id!=='string'||typeof v.source_id!=='string'||typeof v.external_id!=='string'||typeof v.revision!=='string'||typeof v.hash!=='string'||!(/^[a-f0-9]{64}$/.test(v.hash)))throw new StoreError('Invalid source revision');const e=this.evidence([v.capture_id])[0];if(!e?.provenance||e.provenance.sourceId!==v.source_id||e.provenance.externalId!==v.external_id||e.provenance.revision!==v.revision||!this.db.prepare('SELECT id FROM source_connections WHERE id=?').get(v.source_id))throw new StoreError('Source revision evidence mismatch');const p=e.provenance;const {observedAt:_,...semantic}=sourceItemSchema.parse({externalId:p.externalId,revision:p.revision,observedAt:e.capturedAt,modifiedAt:p.modifiedAt,title:e.windowTitle,text:p.deleted||p.layer==='reference'?'':e.ocrText,uri:p.uri,kind:e.source,layer:p.layer,mimeType:p.mimeType,calendar:p.calendar,deleted:p.deleted,metadata:p.metadata,document:p.document});if(sha256(JSON.stringify(semantic))!==v.hash)throw new StoreError('Source revision checksum mismatch');this.db.prepare('INSERT OR IGNORE INTO source_versions(source_id,external_id,revision,capture_id,hash) VALUES(?,?,?,?,?)').run(v.source_id,v.external_id,v.revision,v.capture_id,v.hash);}
       for(const rawHead of archive.sourceHeads??[]){const h=rawHead as Record<string,unknown>;if(typeof h.capture_id!=='string'||typeof h.source_id!=='string'||typeof h.external_id!=='string'||typeof h.observed_at!=='string'||!Number.isFinite(Date.parse(h.observed_at))||![0,1].includes(Number(h.deleted)))throw new StoreError('Invalid source pointer');const v=this.db.prepare('SELECT capture_id FROM source_versions WHERE source_id=? AND external_id=? AND capture_id=?').get(h.source_id,h.external_id,h.capture_id);if(!v)throw new StoreError('Source pointer has no revision');const e=this.evidence([h.capture_id])[0];if(!e||Date.parse(h.observed_at)!==Date.parse(e.capturedAt)||Number(h.deleted)!==Number(e.provenance?.deleted))throw new StoreError('Source pointer metadata mismatch');const priorHead=this.db.prepare('SELECT capture_id,observed_at FROM source_heads WHERE source_id=? AND external_id=?').get(h.source_id,h.external_id) as {capture_id:string;observed_at:string}|undefined;if(priorHead&&Date.parse(priorHead.observed_at)===Date.parse(h.observed_at)&&priorHead.capture_id!==h.capture_id)throw new StoreError('Equal observation times contain conflicting source heads',409);const moved=this.db.prepare('INSERT INTO source_heads(source_id,external_id,capture_id,observed_at,deleted) VALUES(?,?,?,?,?) ON CONFLICT(source_id,external_id) DO UPDATE SET capture_id=excluded.capture_id,observed_at=excluded.observed_at,deleted=excluded.deleted WHERE excluded.observed_at>source_heads.observed_at').run(h.source_id,h.external_id,h.capture_id,new Date(h.observed_at).toISOString(),Number(h.deleted));if(moved.changes&&priorHead&&priorHead.capture_id!==h.capture_id){this.invalidateMemoryEvidence(priorHead.capture_id);this.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(priorHead.capture_id,new Date().toISOString());}}
@@ -616,6 +628,7 @@ export class EvidenceStore {
     this.db.prepare("INSERT INTO settings VALUES('physical-storage-snapshot',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(snapshot));return snapshot;
   }
   exportArchive(maxBytes:number) {
+    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='image_products'").get()&&this.db.prepare('SELECT 1 FROM image_products LIMIT 1').get())throw new StoreError(moteText('图片处理成果请使用 npm run backup 完整备份；JSON 导出不包含图片理解版本。'),409);
     if(this.db.prepare('SELECT 1 FROM file_versions LIMIT 1').get())throw new StoreError(moteText("文件归档请使用 npm run backup 完整备份；JSON 导出不包含文件原件和转写。"),409);
     if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='source_pipeline_bindings'").get()&&this.db.prepare('SELECT 1 FROM source_pipeline_bindings LIMIT 1').get())throw new StoreError('Source archives require a complete backup; portable JSON excludes them',409);
     const stats=this.stats() as {logicalBytes:number;captures:number};

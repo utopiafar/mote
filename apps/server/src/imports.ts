@@ -67,6 +67,7 @@ export class ImportStore {
   constructor(public store:Store,public files:ArchivedFileStore,public sources:SourceStore,private runtime:ImportRuntime={}) {
     this.intake=runtime.intake??new ImportIntakeRegistry();if(!runtime.intake)installImportIntake(this.intake);
     const directory=join(store.directory,'imports');privateDirectory(directory);this.directory=realpathSync(directory);
+    store.db.exec('CREATE TABLE IF NOT EXISTS image_intake_overrides(capture_id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE,profile_id TEXT NOT NULL)');
     store.db.exec('CREATE TABLE IF NOT EXISTS import_jobs(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,json TEXT NOT NULL)');
     store.db.exec('CREATE TABLE IF NOT EXISTS import_create_requests(request_id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,job_id TEXT NOT NULL)');
     this.executor=runtime.executor??new ExecutionEngine(store);
@@ -191,7 +192,7 @@ export class ImportStore {
     // Directory enumeration yields; another host may have accepted this request meanwhile.
     if(request.requestId){const existing=this.createdRequest(request.requestId,createFingerprint!);if(existing)return existing;}
     const now=new Date().toISOString(),id=request.requestId??randomUUID(),workspace=join(this.directory,id);privateDirectory(workspace);privateDirectory(join(workspace,'inputs'));
-    const job:InternalJob={preparationRevision:0,recordsProcessed:0,...(createFingerprint?{createFingerprint}:{}),...(request.sourcePackId?{sourcePackId:request.sourcePackId,sourcePackRevision:configuredPack!.revision}:{}),...(request.processing==='automatic'&&!request.sourcePackId&&!request.instruction.trim()&&entries.every(entry=>/\.(txt|md|markdown|csv|tsv|json|jsonl|ndjson|yaml|yml|log|ics|pdf|docx|xlsx)$/i.test(entry.name))?{parserMode:'plain' as const}:{}),processing:request.processing,id,name:request.name??(entries.length===1?basename(entries[0].name):moteText("导入 {0} 个文件", entries.length)),instruction:request.instruction,sourceId:'',status:'queued',processingStatus:'archived',createdAt:now,updatedAt:now,files:[],summary:'',warnings:[],archive:{files:0,bytes:0,expandedFiles:0},progress:{total:0,processed:0,imported:0,duplicates:0},captureIds:[],workspace,inputs:[]};
+    const job:InternalJob={preparationRevision:0,recordsProcessed:0,...(createFingerprint?{createFingerprint}:{}),...(request.sourcePackId?{sourcePackId:request.sourcePackId,sourcePackRevision:configuredPack!.revision}:{}),...(request.processing==='automatic'&&!request.sourcePackId&&!request.instruction.trim()&&entries.every(entry=>/\.(txt|md|markdown|csv|tsv|json|jsonl|ndjson|yaml|yml|log|ics|pdf|docx|xlsx)$/i.test(entry.name))?{parserMode:'plain' as const}:{}),processing:request.processing,...(request.imageProfileId?{imageProfileId:request.imageProfileId}:{}),id,name:request.name??(entries.length===1?basename(entries[0].name):moteText("导入 {0} 个文件", entries.length)),instruction:request.instruction,sourceId:'',status:'queued',processingStatus:'archived',createdAt:now,updatedAt:now,files:[],summary:'',warnings:[],archive:{files:0,bytes:0,expandedFiles:0},progress:{total:0,processed:0,imported:0,duplicates:0},captureIds:[],workspace,inputs:[]};
     const stage=(entry:{name:string;bytes?:Buffer;fileId?:string;mimeType?:string;path?:string;sizeBytes?:number;identity?:string})=>{
       this.lifetime.signal.throwIfAborted();
       if(job.inputs.length>=MAX_FILES)throw new StoreError('Expanded archive exceeds 4000 files',413);
@@ -408,13 +409,13 @@ export class ImportStore {
           if(duplicate)job.progress.duplicates++;else{job.progress.imported++;job.captureIds.push(captureId);}
           job.progress.processed++;this.save(job);
         };
-        const ack=await this.runtime.fileStore.archivedRevision(file,job.sourceId,media.format.mimeType,job.createdAt,()=>grant.assert(),captureId=>record(captureId,false));
+        const ack=await this.runtime.fileStore.archivedRevision(file,job.sourceId,media.format.mimeType,job.createdAt,()=>grant.assert(),captureId=>record(captureId,false),media.format.mimeType.startsWith('image/')?job.imageProfileId:undefined);
         if(ack.duplicate)grant.commit(()=>record(ack.id,true));
       }
       let index=-1;for await(const record of this.validatedRecords(validated,signal)){
         index++;if(index<(job.recordsProcessed))continue;signal?.throwIfAborted();grant.assert();const fileIds=[...record.evidencePaths,...record.attachments].map(path=>job.inputs.find(input=>input.path===path)!.fileId);
         await this.sources.upsert(job.sourceId,record.item,()=>grant.assert(),result=>{
-          grant.assert();this.files.attach(result.id,fileIds);
+          grant.assert();if(!result.duplicate&&job.imageProfileId)this.store.db.prepare('INSERT OR IGNORE INTO image_intake_overrides VALUES(?,?)').run(result.id,job.imageProfileId);this.files.attach(result.id,fileIds);
           linkOperationParent(this.store,`import:${id}`,`capture:${result.id}`);linkOperationParent(this.store,`import:${id}`,`file:${result.id}`);
           if(result.duplicate)job.progress.duplicates++;else{job.progress.imported++;job.captureIds.push(result.id);}
           job.recordsProcessed=index+1;job.progress.processed=job.recordsProcessed+(job.media?.filter(item=>item.captureId).length??0);this.save(job);
