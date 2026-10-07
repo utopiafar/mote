@@ -4,6 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {QueryInput} from '@mote/agent';
+import {AgentYieldError} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
@@ -98,6 +99,49 @@ test('partial proposal handoff recovers remaining groups from the journal before
  // A planner fragment returning at the same handoff window reuses the product.
  assert.equal(f.work.acceptPackages(held,catalog,proposals,()=>true,f.adapter.onCreated),0);assert.ok(f.pipeline.list().every(job=>job.status!=='cancelled'));
  for(const job of f.pipeline.list())await f.pipeline.run(job.id);await f.finish();assert.deepEqual(f.counts(),{planning:1,extraction:2,reviews:2});assert.equal(f.runtime.list().length,1);assert.equal(f.runtime.list()[0].status,'succeeded');assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE job_id IS NOT NULL').get()!.n,2);
+});
+
+test('pre-upgrade Memory proposal wait validates saved packages without another model call and completes independently reviewed coverage',async t=>{
+ const f=await fixture(t,4),catalog=f.work.catalog();
+ await f.adapter.plan(catalog);const owner=f.runtime.list()[0],unitIds=owner.units.map(unit=>unit.id);
+ f.store.db.prepare("UPDATE delegation_works SET json=json_set(json_remove(json,'$.planningComplete','$.plannedUnitIds'),'$.wait',json(?)) WHERE id=?").run(JSON.stringify({unitIds,mode:'any'}),owner.id);
+ await f.runtime.tick();await new Promise(resolve=>setTimeout(resolve,100));f.adapter.reconcile();await f.finish();
+ assert.equal(f.runtime.get(owner.id).status,'succeeded');assert.deepEqual(f.runtime.get(owner.id).units.map(unit=>unit.id),unitIds);
+ assert.deepEqual(f.counts(),{planning:1,extraction:1,reviews:1});assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,4);
+ f.adapter.reconcile();await f.runtime.tick();assert.deepEqual(f.counts(),{planning:1,extraction:1,reviews:1});
+});
+
+test('an incomplete legacy plan resumes the model with exact local IDs and cannot hand off until all members are covered',async t=>{
+ const f=await fixture(t,2),catalog=f.work.catalog();let fragments=0;
+ f.setPlanning(async(input,selected)=>{
+  if(++fragments===1){
+   await input.hostControlChannel!.execute('delegation_submit',{units:[{id:'original-part',capabilityId:'memory.package',title:'Generated part',goal:'Inspect one original',input:{members:[selected[0].key],instruction:'Preserve original attribution'}}]});
+   const owner=f.runtime.list()[0];f.store.db.prepare("UPDATE delegation_works SET json=json_set(json,'$.wait',json(?)) WHERE id=?").run(JSON.stringify({unitIds:owner.units.map(unit=>unit.id),mode:'any'}),owner.id);
+   // Reproduce the pre-upgrade yield through the real fragment lifecycle.
+   throw new AgentYieldError();
+  }
+  const units=(input.taskContext!.memoryWork as {units:{id:string;localId:string;capabilityId:string;title:string;goal:string;input:Record<string,unknown>}[]}).units;
+  assert.equal(units.length,1);assert.equal(units[0].localId,'original-part');assert.ok(units[0].id.endsWith(':unit:original-part'));
+  assert.equal(f.pipeline.list().length,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE job_id IS NOT NULL').get()!.n,0);
+  const {localId,capabilityId,title,goal,input:priorInput}=units[0];await input.hostControlChannel!.execute('delegation_submit',{units:[{id:localId,capabilityId,title,goal,input:priorInput}]});
+  await input.hostControlChannel!.execute('delegation_submit',{units:[{id:'missing-part',capabilityId:'memory.package',title:'Generated remainder',goal:'Inspect the remaining original',input:{members:[selected[1].key],instruction:'Preserve original attribution'}}]});
+ });
+ const planned=f.adapter.plan(catalog);
+ for(let n=0;n<30;n++){await f.runtime.tick();if(f.runtime.list()[0]?.planningComplete)break;await new Promise(resolve=>setTimeout(resolve,10));}
+ const proposals=await planned;assert.equal(proposals.length,2);assert.ok(proposals[0].id!.endsWith(':unit:original-part'));assert.equal(f.counts().planning,2);
+ f.adapter.reconcile();await f.finish();assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,2);assert.deepEqual(f.counts(),{planning:2,extraction:2,reviews:2});
+});
+
+test('overlapping recovered plans never claim one original twice and remaining originals stay eligible',async t=>{
+ const f=await fixture(t,4),catalog=f.work.catalog();
+ const a=await f.adapter.plan(catalog.slice(0,3)),b=await f.adapter.plan(catalog.slice(1));assert.equal(a.length,1);assert.equal(b.length,1);
+ for(const owner of f.runtime.list())f.store.db.prepare("UPDATE delegation_works SET json=json_set(json_remove(json,'$.planningComplete','$.plannedUnitIds'),'$.wait',json(?)) WHERE id=?").run(JSON.stringify({unitIds:owner.units.map(unit=>unit.id),mode:'any'}),owner.id);
+ await f.runtime.tick();await new Promise(resolve=>setTimeout(resolve,100));f.adapter.reconcile();
+ assert.equal(f.pipeline.list().length,1,'the overlapping package must not partially claim its remaining original');
+ await f.finish();assert.equal(await f.sourcePipelines.drainMemory(f.pipeline,true),0);
+ assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,4);
+ assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE job_id IS NOT NULL').get()!.n,4);
+ assert.equal(f.pipeline.list().length,2);assert.equal(f.pipeline.list().every(job=>job.status==='completed'),true);
 });
 
 test('a thousand generated originals drain bounded catalogs with complete independently reviewed coverage',{timeout:90000},async t=>{

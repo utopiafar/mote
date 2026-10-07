@@ -1,6 +1,16 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {buildContextEnvelope,taskTools} from '../dist/task-context.js';
+import {systemInstructions} from '../dist/instructions.js';
+
+test('proposal lifecycle has the same completion contract in system and task envelopes',()=>{
+ const input={question:'Generated plan',hostRetrieval:'none',hostControlChannel:{phase:'proposal',definitions:[],execute:async()=>({data:{}})}};
+ const envelope=buildContextEnvelope(input,[]),system=systemInstructions(input);
+ assert.equal(envelope.delegation.phase,'proposal');assert.ok(system.endsWith(envelope.delegation.instruction));
+ assert.match(system,/return the requested final JSON/);assert.match(system,/Never call delegation_yield to finish planning/);
+ const ordinary=buildContextEnvelope({...input,hostControlChannel:{...input.hostControlChannel,phase:'execution'}},[]);
+ assert.match(ordinary.delegation.instruction,/use delegation_yield while independently scheduled workers run/);
+});
 
 test('durable task retries keep their host-owned time even across a clock boundary',()=>{
  const input={question:'Review a proposed event',contextTime:'2026-09-01T23:59:59Z',timeZone:'UTC'};

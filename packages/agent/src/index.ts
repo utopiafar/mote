@@ -36,7 +36,7 @@ import {
   type ContextRecord,
 } from "./types.js";
 export * from "./types.js";
-export {AgentYieldError,hostControlDefinitions,type HostControlChannel,type HostControlDefinition,type HostControlResult} from './host-controls.js';
+export {AgentYieldError,hostControlDefinitions,hostControlInstructions,type HostControlChannel,type HostControlDefinition,type HostControlResult} from './host-controls.js';
 export {ContextToolError} from './tool-errors.js';
 export {originalEvidenceReceipt} from './bridge.js';
 export {validateInlineCitations} from "./citations.js";

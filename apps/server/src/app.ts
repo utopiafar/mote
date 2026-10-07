@@ -604,7 +604,7 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
       const failure=safeError(error);return conversations.appendFailure(conversationId?conversations.get(conversationId):undefined,{question,...scope},{code:failure.category,message:failure.message});
     },
   });
-  const memoryDelegation=registerMemoryDelegation({runtime:delegation,pipeline:memoryPipeline,work:materialMemoryWork,sourcePipelines,configuration:()=>memoryConfiguration(),allowCandidate:(candidate,input)=>evidenceReader.materialAllowedForMemory(candidate.ref,new EvidenceExposurePolicy(),input.required),query:input=>queryAgent(input,'query','memories'),sample:async(candidate,offset,length)=>{
+  const memoryDelegation=registerMemoryDelegation({runtime:delegation,pipeline:memoryPipeline,work:materialMemoryWork,sourcePipelines,configuration:()=>memoryConfiguration(),recoveryAllowed:()=>agent.configured&&lifecycle.settings().extraction.enabled,allowCandidate:(candidate,input)=>evidenceReader.materialAllowedForMemory(candidate.ref,new EvidenceExposurePolicy(),input.required),query:input=>queryAgent(input,'query','memories'),sample:async(candidate,offset,length)=>{
     const input=materialMemoryWork.planningInput(candidate);
     if(!input?.ready||input.fingerprint!==candidate.fingerprint||!materialMemoryWork.inputs.available(candidate.sourceId,candidate.inputKey,undefined,candidate.scope)||!sourcePipelines.memoryAllowed(candidate.sourceId))throw new StoreError('Memory sample authorization changed',409);
     const records=await archiveReader.evidence({ids:input.evidenceIds.slice(0,8)});return records.flatMap(record=>offset<record.ocrText.length?[originalEvidenceReceipt(record,offset,Math.min(length,record.ocrText.length-offset))]:[]);
