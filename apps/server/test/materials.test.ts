@@ -51,6 +51,21 @@ test('formal material revisions are immutable, independently readable, deduplica
   assert.equal(store.db.prepare('SELECT COUNT(*) n FROM material_block_payloads').get()!.n,0);
 });
 
+test('host processing readiness can revisit an old state with a new immutable revision, without content rollback',t=>{
+  const {materials}=fixture(t),base=draft();
+  const pending:MaterialDraft={...base,coverage:{state:'pending',reason:'processing_pending'},artifacts:[{key:'extracted-text',state:'pending',blockIds:[]}]};
+  const first=materials.publish(pending);
+  const failed=materials.publish({...pending,coverage:{state:'partial',reason:'processing_blocked'},artifacts:[{key:'extracted-text',state:'failed',reason:'processor_still_running',blockIds:[]}]},{expectedRevision:first.revision});
+  assert.throws(()=>materials.publish(pending,{expectedRevision:failed.revision}),{statusCode:409},'ordinary historical republishing remains rejected');
+  assert.throws(()=>materials.publish(pending,{expectedRevision:first.revision,processingStateTransition:true}),{statusCode:409},'readiness updates still require current CAS');
+  const resumed=materials.publish(pending,{expectedRevision:failed.revision,processingStateTransition:true});
+  assert.notEqual(resumed.revision,first.revision);assert.equal(resumed.sequence,failed.sequence+1);
+  assert.equal(resumed.coverage.state,'pending');assert.equal(materials.get(first.ref)?.coverage.state,'pending');assert.equal(materials.get(failed.ref)?.coverage.state,'partial');
+  assert.equal(materials.publish(pending,{expectedRevision:resumed.revision,processingStateTransition:true}).changed,false);
+  const changed=materials.publish({...pending,blocks:[{...base.blocks[0]!,text:'Generated different body'}]},{expectedRevision:resumed.revision});
+  assert.throws(()=>materials.publish(pending,{expectedRevision:changed.revision,processingStateTransition:true}),{statusCode:409},'the host readiness option cannot restore old source content');
+});
+
 test('block paging, exact lineage and material-held assets remain bounded and survive restart',t=>{
   const {store,materials,directory}=fixture(t);
   const asset=store.assets.put(Buffer.from('Generated asset bytes'));
