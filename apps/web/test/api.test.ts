@@ -3,6 +3,16 @@ import assert from 'node:assert/strict';
 import { ApiError, createApi, errorMessage } from '../src/api.js';
 import {configureLocale,getLocale,type Locale} from '@mote/shared/i18n';
 
+test('overlong routes show a path error with its request ID',async t=>{
+ const requestId='c919bc95-272d-4094-92a1-7f9c0ae944ca';
+ t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({error:'request_path_too_long',requestId}),{status:414,headers:{'Content-Type':'application/json'}}));
+ await assert.rejects(createApi({token:'synthetic'}).request('/api/work-activity/generated'),error=>{
+  assert.ok(error instanceof ApiError);assert.equal(error.status,414);
+  assert.match(errorMessage(error),/请求路径过长|request path is too long/i);assert.match(errorMessage(error),new RegExp(requestId));
+  assert.doesNotMatch(errorMessage(error),/资料不存在|no longer exists/i);return true;
+ });
+});
+
 test('failed requests retain validated request IDs for cross-service diagnostics', async t => {
   const requestId = 'c919bc95-272d-4094-92a1-7f9c0ae944ca';
   let unauthorized = 0;

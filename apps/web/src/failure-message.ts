@@ -31,7 +31,7 @@ const messages:Record<string,string>={
  worker_offline:'处理服务离线，请检查服务状态。',worker_interrupted:'处理曾中断，请查看任务中心的恢复状态。',interrupted:'运行已中断，请查看历史结果后重新发起。',
  recovery_window_exhausted:'自动恢复期限已结束，请在任务中心手动重试。',awaiting_confirmation:'等待你确认后继续。',evidence_changed:'原始资料已变化，此结果不能发布，请重新处理。',
  memory_input_pending:'所需资料仍在处理中，就绪后会自动继续。',memory_input_failed:'所需资料处理失败，请查看来源并修复后重新检查。',memory_input_unavailable:'所需资料不可用，请查看来源与处理状态。',memory_input_outside_selection:'新产物不在本次选择的证据范围内，请重新发起提取。',memory_strategy_unavailable:'本次选择的方案已不可用，请重新选择方案并发起提取。',memory_authorization_revoked:'来源授权已撤销，未完成的方案已停止。',
- cancelled:'已停止',cancelled_by_user:'已停止',unauthorized:'访问凭据已失效，请重新连接。',forbidden:'当前连接没有访问权限。',not_found:'资料不存在或已删除。',
+ cancelled:'已停止',cancelled_by_user:'已停止',unauthorized:'访问凭据已失效，请重新连接。',forbidden:'当前连接没有访问权限。',not_found:'资料不存在或已删除。',request_path_too_long:'请求路径过长，请检查链接。',
 };
 export function failureMessage(failure?:{code?:string;message?:string;safeMessage?:string}|string|null):string{
  const code=typeof failure==='string'?failure:failure?.code;
