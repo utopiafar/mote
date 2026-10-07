@@ -6,11 +6,17 @@ export function alignDialogue(raw:Transcript,diarization:Diarization):Transcript
   type Segment=Transcript['segments'][number];
   const units:(Segment&{sentence:number;word:boolean})[]=[];
   const timeline=[...diarization.segments].sort((a,b)=>a.startMs-b.startMs);
-  let cursor=0,active:typeof timeline=[];
+  let cursor=0,active:typeof timeline=[],overlappingWordTimings=false;
   for(const [sentenceIndex,sentence] of raw.segments.entries()){
     const words=sentence.words;
-    // Only use word timings when they preserve the sentence's recognized text.
-    const isWords=!!words?.length&&words.map(w=>w.text).join('').trim()===sentence.text.trim();
+    // Valid ASR sentences may overlap. Expanding an earlier sentence into words
+    // that start after the next sentence would reverse the derived timeline.
+    // Keep that whole sentence and disclose the lower attribution precision;
+    // never sort recognized words, shift timestamps or modify the raw input.
+    const matchingWords=!!words?.length&&words.map(w=>w.text).join('').trim()===sentence.text.trim();
+    const next=raw.segments[sentenceIndex+1],timingConflict=Boolean(matchingWords&&next&&words!.at(-1)!.startMs>next.startMs);
+    overlappingWordTimings ||= timingConflict;
+    const isWords=matchingWords&&!timingConflict;
     const parts=isWords?words!:[sentence];
     for(const word of parts){
       while(cursor<timeline.length&&timeline[cursor].startMs<word.endMs)active.push(timeline[cursor++]);
@@ -19,7 +25,7 @@ export function alignDialogue(raw:Transcript,diarization:Diarization):Transcript
       for(const s of relevant)scores.set(s.speaker,(scores.get(s.speaker)??0)+Math.max(0,Math.min(word.endMs,s.endMs)-Math.max(word.startMs,s.startMs)));
       const ranked=[...scores].sort((a,b)=>b[1]-a[1]),width=Math.max(1,word.endMs-word.startMs);
       const overlap=relevant.some((a,i)=>relevant.slice(i+1).some(b=>a.speaker!==b.speaker&&Math.min(a.endMs,b.endMs,word.endMs)-Math.max(a.startMs,b.startMs,word.startMs)>20));
-      const uncertain=!ranked.length||ranked[0][1]/width<0.5||(ranked.length>1&&ranked[1][1]>=ranked[0][1]*0.8)||overlap;
+      const uncertain=timingConflict||!ranked.length||ranked[0][1]/width<0.5||(ranked.length>1&&ranked[1][1]>=ranked[0][1]*0.8)||overlap;
       units.push({startMs:word.startMs,endMs:word.endMs,text:word.text,speaker:ranked[0]?.[0]??'SPEAKER_UNKNOWN',uncertain,overlap,sentence:sentenceIndex,word:isWords});
     }
   }
@@ -32,7 +38,9 @@ export function alignDialogue(raw:Transcript,diarization:Diarization):Transcript
     }else {const {sentence,word,...segment}=unit;turns.push(segment);}
     previous=unit;
   }
-  return transcriptSchema.parse({durationMs:raw.durationMs,segments:turns,uncorrected:true,engine:'mote-time-alignment-v1',warnings:[...diarization.warnings,...(diarization.overlapDetection==='unknown'?[moteText("重叠检测覆盖未知；未标记不代表没有重叠说话。")]:[])]});
+  return transcriptSchema.parse({durationMs:raw.durationMs,segments:turns,uncorrected:true,engine:'mote-time-alignment-v1',warnings:[...diarization.warnings,
+    ...(overlappingWordTimings?[moteText("部分词级时间与相邻片段重叠，已保留整句并标记说话人不确定；原始转写未改动。")]:[]),
+    ...(diarization.overlapDetection==='unknown'?[moteText("重叠检测覆盖未知；未标记不代表没有重叠说话。")]:[])]});
 }
 
 /** A model may group adjacent turns, but cannot rewrite text, relabel a speaker, omit or reorder a span. */

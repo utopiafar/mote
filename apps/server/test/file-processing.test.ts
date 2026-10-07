@@ -33,6 +33,11 @@ import {sourceMaterialView} from '../src/source-material-view.js';
 const raw:Transcript={durationMs:3000,segments:[{startMs:0,endMs:1000,text:'使用扣迪斯插件。',words:[{startMs:0,endMs:300,text:'使用'},{startMs:300,endMs:700,text:'扣迪斯'},{startMs:700,endMs:1000,text:'插件。'}]},{startMs:1500,endMs:2500,text:'嗯，对，尚未完成。'}]};
 const wave=Buffer.alloc(32044);wave.write('RIFF');wave.writeUInt32LE(wave.length-8,4);wave.write('WAVEfmt ',8);wave.writeUInt32LE(16,16);wave.writeUInt16LE(1,20);wave.writeUInt16LE(1,22);wave.writeUInt32LE(16000,24);wave.writeUInt32LE(32000,28);wave.writeUInt16LE(2,32);wave.writeUInt16LE(16,34);wave.write('data',36);wave.writeUInt32LE(32000,40);
 const diary=diarizationSchema.parse({durationMs:3000,engine:'synthetic',expectedSpeakers:2,observedSpeakers:2,overlapDetection:'unknown',segments:[{startMs:0,endMs:1100,speaker:'SPEAKER_0'},{startMs:1400,endMs:2600,speaker:'SPEAKER_1'}],samples:[{speaker:'SPEAKER_0',startMs:0,endMs:1000,wavBase64:wave.toString('base64')}]});
+const overlappingRaw:Transcript={durationMs:3000,segments:[
+ {startMs:0,endMs:2200,text:'Alpha beta',words:[{startMs:0,endMs:700,text:'Alpha '},{startMs:1800,endMs:2200,text:'beta'}]},
+ {startMs:1500,endMs:2800,text:'Gamma delta',words:[{startMs:1500,endMs:2100,text:'Gamma '},{startMs:2600,endMs:2800,text:'delta'}]},
+]};
+const overlappingDiarization={...diary,segments:[{startMs:0,endMs:1700,speaker:'SPEAKER_0'},{startMs:1900,endMs:3000,speaker:'SPEAKER_1'}]};
 async function fixture(t:any,options:any={}){
  const dir=mkdtempSync(join(tmpdir(),'mote-processing-')),store=new Store(dir,{dataKey:'41'.repeat(32),contentEncryptionEnabled:true}),sources=new SourceStore(store),files=new FileStore(store,sources);
  sources.register({id:'phone',name:'Synthetic phone',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'});
@@ -82,6 +87,34 @@ test('alignment preserves Chinese characters, anonymous overlap/unknown markers,
  assert.equal(alignDialogue(raw,{...diary,segments:[]}).segments[0].speaker,'SPEAKER_UNKNOWN');
  assert.throws(()=>applySemanticGroups(result,[[1],[0]]));assert.throws(()=>applySemanticGroups(result,[[0]]));assert.throws(()=>applySemanticGroups(result,[[0,1]]));assert.deepEqual(applySemanticGroups(result,[[0],[1]]).segments,result.segments);
  assert.throws(()=>transcriptSchema.parse({...raw,segments:[{...raw.segments[0],words:[{startMs:900,endMs:100,text:'bad'}]}]}));
+});
+
+test('alignment retains overlapping ASR sentences without producing a backwards word timeline',()=>{
+ const input=transcriptSchema.parse(overlappingRaw),saved=structuredClone(input);
+ const result=alignDialogue(input,diary);
+ assert.doesNotThrow(()=>transcriptSchema.parse(result));
+ assert.deepEqual(input,saved,'the original recognized text and timestamps remain unchanged');
+ assert.equal(result.segments[0].text,input.segments[0].text);
+ assert.equal(result.segments[0].startMs,input.segments[0].startMs);
+ assert.equal(result.segments[0].endMs,input.segments[0].endMs);
+ assert.equal(result.segments[0].uncertain,true);
+ assert.equal(result.segments.map(s=>s.text).join('').replaceAll('\n',''),input.segments.map(s=>s.text).join(''));
+ assert.ok(result.warnings?.some(w=>w.includes('词级时间')));
+ const conflict=alignDialogue(input,overlappingDiarization);
+ assert.doesNotThrow(()=>transcriptSchema.parse(conflict));
+ assert.equal(conflict.segments.map(s=>s.text).join('').replaceAll('\n',''),input.segments.map(s=>s.text).join(''));
+ assert.equal(conflict.segments[0].uncertain,true);
+});
+
+test('retained recording finishes alignment of overlapping ASR and preserves the original transcript across restart',async t=>{
+ const f=await fixture(t,{transcribe:async()=>structuredClone(overlappingRaw),diarization:overlappingDiarization});
+ await f.processing.tick();assert.equal(f.files.detail(f.id).job.state,'succeeded');
+ const original=f.files.detail(f.id).artifacts.find((a:any)=>a.kind==='transcript')!.id;
+ assert.deepEqual(f.processing.artifact(original).transcript,overlappingRaw);
+ const chunks=f.files.chunks(f.id);assert.ok(chunks.length);assert.equal(chunks[0].fileEvidence?.uncertain,true);
+ await f.processing.close();const resumed=f.createProcessing();await resumed.runtime.ready;await resumed.tick();
+ assert.equal(f.files.detail(f.id).job.state,'succeeded');assert.equal(f.counts().asrCalls,1);assert.equal(f.counts().diaryCalls,1);
+ assert.deepEqual(resumed.artifact(original).transcript,overlappingRaw);
 });
 
 test('export contains raw and speaker transcripts, valid tar headers, encrypted samples, and forget cascades derived state',async t=>{
