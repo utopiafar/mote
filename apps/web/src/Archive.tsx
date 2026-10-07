@@ -29,9 +29,9 @@ type Device,
 type Range
 } from "./api";
 import { captureDateRange,localDateInput,ocrPresentation } from './capture-presentation';
+import { CollectionContent } from './features/runtime';
 import { webFeatures } from './features/runtime';
-import type {CollectionEntry,CollectionProps} from './features/types';
-import {LibraryBrowseLayout,LibraryMaterials} from './LibraryBrowse';
+import {LibraryBrowseLayout} from './LibraryBrowse';
 const CaptureSessions = React.lazy(()=>import('./CaptureSessions').then(module=>({default:module.CaptureSessions})));
 
 import { sourceLabels } from './Metadata';
@@ -51,12 +51,16 @@ export function Archive({api,devices,range,rangeSelectionKey,activity,revision,o
  useLayoutEffect(()=>{if(!selected&&opener.current?.isConnected)opener.current.focus();},[selected]);
  const clearSelection=useCallback(()=>{setSelection(undefined);},[]);
  const select=useCallback((ref:string)=>{opener.current=document.activeElement as HTMLElement|null;const parsed=parseEvidenceRef(ref);setSelection({owner:api,view:entry?.id??tab,reference:parsed?formatEvidenceRef(parsed.kind,parsed.id):ref});},[api,entry?.id,tab]);
- const props={api,devices,range,rangeSelectionKey,activity,revision,onOpen:select,onChanged};
- return <div className={'archive-page library-archive'+(selected?' has-selection':'')}><div className="page-heading library-heading"><div><div className="eyebrow">{moteText("有来处，也有脉络")}</div><h1>{moteText("资料库")}</h1><p>{moteText("所有记录放在一处。选择资料，查看内容与来源。")}</p></div><a className="button primary" href="#/library/import"><Upload size={16}/>{moteText('导入资料')}</a></div><div className="library-controls"><label>{moteText('资料类型')}<select aria-label={moteText('资料类型')} value={entry?.id??''} onChange={event=>{clearSelection();setTab(event.target.value);}}>{entries.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div><LibraryBrowseLayout reference={selected} api={api} onClose={clearSelection} onOpen={onOpen} supporting={!['records','materials'].includes(entry?.id??'')}><LibraryCollectionBoundary key={entry?.id}>
-   {entry?.id==='records'?<RecordTimeline api={api} devices={devices} revision={revision} onOpen={select} library selectedReference={selected} onBrowseChanged={clearSelection}/>:entry?.id==='materials'?<LibraryMaterials api={api} revision={revision} selected={selected} onSelect={select} onBrowseChanged={clearSelection}/>:entry?<LibraryCollection entry={entry} props={props}/>:<Spinner/>}
- </LibraryCollectionBoundary></LibraryBrowseLayout></div>;
+ const props={api,devices,range,rangeSelectionKey,activity,revision,onOpen:entry?.layout==='standalone'?onOpen:select,onChanged,selectedReference:selected,onBrowseChanged:clearSelection};
+ const content=<LibraryCollectionBoundary key={entry?.id}>{entry?<CollectionContent entry={entry} props={props}/>:<Spinner/>}</LibraryCollectionBoundary>;
+ return <div className={'archive-page library-archive'+(selected?' has-selection':'')}>
+   <div className="page-heading library-heading"><div><div className="eyebrow">{moteText('有来处，也有脉络')}</div><h1>{moteText('资料库')}</h1><p>{moteText('按来源浏览已发布资料，上传与处理状态单独查看。')}</p></div><a className="button primary" href="#/library/import"><Upload size={16}/>{moteText('导入资料')}</a></div>
+   <div className="library-workspace"><nav className="library-navigation" aria-label={moteText('资料库分类')}>
+     {(['browse','records','views','processing'] as const).map(group=>{const items=entries.filter(item=>(item.group??'views')===group);return items.length?<section key={group}><h2>{({browse:moteText('资料'),records:moteText('原始记录'),views:moteText('专用视图'),processing:moteText('上传与处理')})[group]}</h2>{items.map(item=><button key={item.id} data-collection-id={item.id} aria-current={item.id===entry?.id?'page':undefined} onClick={()=>{clearSelection();setTab(item.id);}}>{item.label}</button>)}</section>:null;})}
+   </nav><div className="library-content">{entry?.layout==='standalone'?content:<LibraryBrowseLayout reference={selected} api={api} onClose={clearSelection} onOpen={onOpen} supporting={entry?.layout!=='browser'}>{content}</LibraryBrowseLayout>}</div></div>
+ </div>;
 }
-function LibraryCollection({entry,props}:{entry:CollectionEntry;props:CollectionProps}){return entry.render(props);}
+
 class LibraryCollectionBoundary extends React.Component<{children:React.ReactNode},{failed:boolean}>{
  state={failed:false};static getDerivedStateFromError(){return {failed:true};}
  render(){return this.state.failed?<p role="status">{moteText('专用视图暂不可用，请查看资料库或重试。')}</p>:this.props.children;}

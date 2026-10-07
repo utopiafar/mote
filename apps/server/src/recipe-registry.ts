@@ -1,3 +1,4 @@
+import {InstallationEpochs} from './installation-epochs.js';
 import {z} from 'zod';
 import {
   freezeRecipe,parseRecipeDefinition,recipeFingerprint,recipeIdentifierSchema,
@@ -58,6 +59,7 @@ function bindings(recipe:RecipeDefinition):{path:string;kind:RecipeComponentKind
 
 /** Deployment scoped. Missing or upgraded components make existing recipes unavailable. */
 export class RecipeRegistry {
+  readonly epochs=new InstallationEpochs();
   private readonly components=new Map<string,RecipeComponentManifest>();
   private readonly recipes=new Map<string,InstalledRecipe>();
   private readonly identities=new Map<string,{definitionFingerprint:string;configFingerprint:string}>();
@@ -68,11 +70,12 @@ export class RecipeRegistry {
     if(component.configSchema!==undefined&&typeof component.configSchema.safeParse!=='function')throw Error('Invalid recipe component config schema');
     if(this.components.has(component.id))throw Error(`Recipe component ${component.id} is already installed`);
     const installed={...component};
-    this.components.set(component.id,installed);
-    return ()=>{if(this.components.get(component.id)===installed)this.components.delete(component.id);};
+    const revoke=this.epochs.install(component.id);this.components.set(component.id,installed);
+    return ()=>{revoke();if(this.components.get(component.id)===installed)this.components.delete(component.id);};
   }
 
   uninstallComponent(id:string):void {
+    if(this.components.has(id))this.epochs.install(id)();
     if(!this.components.delete(id))throw Error(`Unknown recipe component: ${id}`);
   }
 

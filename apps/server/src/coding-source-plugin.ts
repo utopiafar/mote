@@ -158,6 +158,7 @@ const organizeAppend=(source:SourceConnection,identity:string,snapshot:RecipeSna
 /** The recipe selects trusted, versioned capabilities; its data never carries code. */
 export function codingSourcePlugin(ctx:Context){
   const recipes=ctx.moteSourceRecipes;
+  ctx.effect(()=>ctx.moteMaterialCatalog.register({id:'mote.coding-session',kind:'mote.coding-session',schemaVersion:CODING_DIALOGUE_SCHEMA_VERSION,label:'Coding Agent 会话'}));
   ctx.effect(()=>recipes.registerRawWriter({id:'mote.source-archive-writer',version:'1',kind:'raw-writer'},(archive,source,items,groups)=>archive.receive(source.id,items,groups)));
   ctx.effect(()=>recipes.registerRawReader({id:'mote.source-archive-reader',version:'1',kind:'raw-reader'},readCodingSnapshot));
   ctx.effect(()=>recipes.registerPolicy({id:'mote.retain-source-archive',version:'1',kind:'raw-retention'}));

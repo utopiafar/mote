@@ -6,7 +6,10 @@ import type {FeatureServices} from './feature-services.js';
 export function featureInventory(host:ServerFeatureHost,services:Pick<FeatureServices,'connectors'|'agentFeatures'|'sourcePipelines'|'processing'|'workflows'>):FeatureInventory{
   const server=host.registry.inventory(),agent=services.agentFeatures.registry.inventory();
   const processing:FeatureCapability[]=[
-    ...services.sourcePipelines.registry.list().map(p=>({id:'pipeline:'+p.id,version:p.version,surface:'processing' as const,featureId:p.featureId??'mote.sources',state:'active' as const})),
+    ...services.sourcePipelines.registry.list().map(p=>{
+      let available=true;try{if(p.recipe)services.sourcePipelines.recipes.resolve(p.recipe.id,p.recipe.version);}catch{available=false;}
+      return {id:'pipeline:'+p.id,version:p.version,surface:'processing' as const,featureId:p.featureId??'mote.sources',state:available?'active' as const:'unavailable' as const,...(!available?{reason:'recipe_unavailable'}:{})};
+    }),
     ...services.processing.runtime.registry.list().map(p=>({id:'file-processor:'+p.id,version:p.version,surface:'processing' as const,featureId:'mote.files',state:'active' as const})),
     ...services.workflows.registry.list().map(p=>({id:'context-processor:'+p.id,version:p.version,surface:'processing' as const,featureId:'mote.processing',state:'active' as const})),
   ];

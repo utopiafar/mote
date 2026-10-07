@@ -1,3 +1,4 @@
+import {InstallationEpochs} from './installation-epochs.js';
 import {ProviderFailure,providerHttpFailure} from '@mote/shared';
 import {DOCUMENT_MIME_TYPES} from '@mote/shared/document-decoder';
 import {extractDocument,extractUtf8} from './format-work.js';
@@ -64,6 +65,7 @@ export interface FileProcessor {
 const builtinProcessors=new WeakSet<FileProcessor>();
 export class ProcessorRegistry {
   private entries=new Map<string,FileProcessor>();
+  readonly epochs=new InstallationEpochs();
   register(processor:FileProcessor){
     if(!/^[a-z][a-z0-9.-]{0,99}$/.test(processor.id)||!processor.version||this.entries.has(processor.id))throw new Error('Invalid or duplicate file processor');
     if(processor.awaitResponseOnCancel!==undefined&&typeof processor.awaitResponseOnCancel!=='boolean')throw new Error('Invalid processor cancellation capability');
@@ -77,8 +79,8 @@ export class ProcessorRegistry {
         parameters!==undefined&&(!Array.isArray(parameters)||parameters.some(key=>typeof key!=='string'||!key||key.length>128)||new Set(parameters).size!==parameters.length))throw new Error('Invalid processor dependencies');
     }
     if(processor.parameters){processor.parameters=processor.parameters.map(p=>processorParameterSchema.parse(p));if(new Set(processor.parameters.map(p=>p.key)).size!==processor.parameters.length)throw new Error('Duplicate processor parameter');}
-    this.entries.set(processor.id,processor);
-    return ()=>{if(this.entries.get(processor.id)===processor)this.entries.delete(processor.id);};
+    const revoke=this.epochs.install(processor.id);this.entries.set(processor.id,processor);
+    return ()=>{revoke();if(this.entries.get(processor.id)===processor)this.entries.delete(processor.id);};
   }
   get(id:string){const processor=this.entries.get(id);if(!processor)throw new StoreError('Processing plugin is unavailable',409);return processor;}
   list(){return [...this.entries.values()].map(processor=>{

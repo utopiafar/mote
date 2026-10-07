@@ -43,3 +43,5 @@ node --import tsx --test apps/server/test/community-plugin.test.ts
 ```
 
 其他入口保持各自契约：新来源遵循 source capabilities 与幂等版本协议；新的定时整理注册 MemoryLifecycle extension；检索消费 EvidenceReader 的授权、范围及证据引用契约，不在插件里另建一套 Agent 工具权限。接口边界分别见 [上下文架构](context-architecture.md)、[Memory 生命周期](memory-lifecycle.md) 和 [来源](connectors.md)。
+
+命名正式资料输入、声明产物消费者、中央 window/join/aggregation 和 Web/Android 展示锚点，见 [资料库与插件扩展契约](library-plugin-contracts.md)。这些扩展复用现有队列与授权；注册消费者不启动历史扫描或收费模型任务。

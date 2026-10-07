@@ -14,16 +14,39 @@ test('scoped web features reject duplicates, isolate disposal and preserve safe 
   }finally{await host.close();}
 });
 test('registry pins descriptors and disposal cannot remove a newer registration',()=>{
-  const registry=new FeatureRegistry<number>(),manifest={id:'fixture',version:'1',components:[]};
+  const registry=new FeatureRegistry<number>(),manifest={id:'fixture',version:'1',components:[{id:'read',version:'1',surface:'data' as const}]};
   const dispose=registry.install(manifest);manifest.version='mutated';assert.equal(registry.inventory().features[0].version,'1');
   const descriptor={id:'read',version:'1',surface:'data' as const};const remove=registry.register('fixture',descriptor,1);
   assert.throws(()=>registry.register('fixture',descriptor,2),/already registered/);remove();
   registry.register('fixture',descriptor,2);remove();assert.equal(registry.get('read'),2);dispose();assert.equal(registry.get('read'),undefined);
 });
 test('dependency removal revokes dependent capabilities and reinstall restores them',()=>{
- const registry=new FeatureRegistry<number>();registry.install({id:'fixture',version:'1',components:[]});
+ const registry=new FeatureRegistry<number>();registry.install({id:'fixture',version:'1',components:[{id:'view',version:'1',surface:'renderer',requires:['reader']},{id:'reader',version:'1',surface:'data'}]});
  registry.register('fixture',{id:'view',version:'1',surface:'renderer',requires:['reader']},2);
  assert.equal(registry.get('view'),undefined);assert.equal(registry.inventory().capabilities[0].reason,'dependency_unavailable');
  const remove=registry.register('fixture',{id:'reader',version:'1',surface:'data'},1);assert.equal(registry.get('view'),2);remove();assert.equal(registry.get('view'),undefined);
  registry.register('fixture',{id:'reader',version:'1',surface:'data'},3);assert.equal(registry.get('view'),2);
+});
+
+test('manifests reject undeclared and mismatched registrations; dependencies pin exact versions',()=>{
+ const registry=new FeatureRegistry<number>();
+ registry.install({id:'fixture',version:'1',components:[{id:'reader',version:'2',surface:'data'},{id:'view',version:'1',surface:'renderer',requires:[{id:'reader',version:'2'}]}]});
+ assert.throws(()=>registry.register('fixture',{id:'unexpected',version:'1',surface:'data'},1),/not declared/);
+ assert.throws(()=>registry.register('fixture',{id:'reader',version:'1',surface:'data'},1),/mismatch/);
+ registry.register('fixture',{id:'view',version:'1',surface:'renderer',requires:[{id:'reader',version:'2'}]},2);assert.equal(registry.get('view'),undefined);
+ const remove=registry.register('fixture',{id:'reader',version:'2',surface:'data'},1);assert.equal(registry.get('view'),2);remove();assert.equal(registry.get('view'),undefined);
+});
+test('card, action and collection contributions propagate server versions and revoke together',async()=>{
+ const host=new WebFeatureHost(),requires=[{id:'http:GET:/fixture',version:'2',host:'server' as const}];
+ const value={kind:'fixture.journal',schemaVersion:1,representation:'owner-material'};
+ try{
+  const fiber=await host.install({id:'fixture',version:'1',components:[]},[
+   {surface:'collection',entry:{id:'journal',featureId:'fixture',label:'Generated journal',order:1,requires,render:()=>null}},
+   {surface:'card',entry:{id:'journal-card',...value,requires,render:()=>null}},
+   {surface:'action',entry:{id:'journal-action',...value,requires,position:'detail',render:()=>null}},
+  ]);
+  assert.equal(host.views('card',value).length,1);assert.equal(host.views('action',value).length,1);
+  assert.ok(host.registry.inventory().capabilities.every(capability=>JSON.stringify(capability.requires)===JSON.stringify(requires)));
+  await fiber.dispose();assert.equal(host.collections().length,0);assert.equal(host.views('card',value).length,0);assert.equal(host.views('action',value).length,0);
+ }finally{await host.close();}
 });

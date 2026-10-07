@@ -1,3 +1,4 @@
+import {InstallationEpochs} from './installation-epochs.js';
 import {z} from 'zod';
 import {MaterialMemoryWork,type MaterialMemoryRunner,type MaterialMemoryPlanner,type MemoryWorkProposal,type MemoryWorkCandidate} from './material-memory-work.js';
 import {Context,type Plugin} from '@deepseek-ai/cordis';
@@ -17,7 +18,7 @@ type WorkRow={id:string;source_id:string;pipeline_id:string;version:string;group
 type GroupInput={workId:string;sourceId:string;pipelineId:string;version:string;group:string;generation:number;checkpoint:string|null;memoryTrigger:'source'|'rebuild';
   recipeId:string|null;recipeVersion:string|null;recipeDefinitionFingerprint:string|null;recipeConfigFingerprint:string|null;recipeComponentPins:string|null;
   sourceFingerprint:string;configFingerprint:string;policyFingerprint:string;reprocess:'deterministic'|'manual'};
-type PreparedGroup={draft:MaterialDraft|MaterialAppendDraft|undefined;pipeline:SourcePipeline;recipe:InstalledRecipe|undefined;sourceJson:string;configJson:string|null;checkpoint:string;policyFingerprint:string;
+type PreparedGroup={installationEpoch:string|undefined;componentEpochs:string|undefined;draft:MaterialDraft|MaterialAppendDraft|undefined;pipeline:SourcePipeline;recipe:InstalledRecipe|undefined;sourceJson:string;configJson:string|null;checkpoint:string;policyFingerprint:string;
   priorRevision:string|null;codingSnapshot?:CodingArchiveSnapshot;
   options:z.infer<typeof configuration>};
 const STEP_KIND='source.archive-group';
@@ -40,12 +41,13 @@ export interface SourcePipeline {
 }
 export class SourcePipelineRegistry {
   private entries=new Map<string,SourcePipeline>();
+  readonly epochs=new InstallationEpochs();
   private declaredKinds=new Set<string>();
   register(pipeline:SourcePipeline){
     if(!/^[a-z0-9.-]+$/.test(pipeline.id)||!pipeline.version||this.entries.has(pipeline.id)||!pipeline.sourceKinds.length||pipeline.modelInput!=='material'||!['records','archive'].includes(pipeline.storage)||!['none','material'].includes(pipeline.index)||pipeline.storage==='archive'&&!pipeline.recipe)throw Error('Invalid source pipeline');
     if([...this.entries.values()].some(p=>(p.priority??0)===(pipeline.priority??0)&&p.sourceKinds.some(kind=>pipeline.sourceKinds.includes(kind))))throw Error('Ambiguous source pipeline');
     pipeline.sourceKinds.forEach(kind=>this.declaredKinds.add(kind));
-    this.entries.set(pipeline.id,pipeline);return ()=>{if(this.entries.get(pipeline.id)===pipeline)this.entries.delete(pipeline.id);};
+    const revoke=this.epochs.install(pipeline.id);this.entries.set(pipeline.id,pipeline);return ()=>{revoke();if(this.entries.get(pipeline.id)===pipeline)this.entries.delete(pipeline.id);};
   }
   declared(kind:string){return this.declaredKinds.has(kind);}
   get(id:string){return this.entries.get(id);}
@@ -60,11 +62,13 @@ export class SourcePipelineRuntime {
   readonly engine:ExecutionEngine;private readonly ownsEngine:boolean;private readonly unregisterHandler:()=>void;
   readonly memoryWork:MaterialMemoryWork;
   readonly ready:Promise<void>;
+  private productConsumer?:{observeProducts:(ref:string,bindingIds:readonly string[])=>void};
+  setProductConsumer(consumer:{observeProducts:(ref:string,bindingIds:readonly string[])=>void}){this.productConsumer=consumer;}
   constructor(readonly store:Store,readonly materials:MaterialStore,plugins:Plugin[]=[],root?:Context,executor?:ExecutionEngine,memoryWork?:MaterialMemoryWork){
     this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
     this.engine=executor??new ExecutionEngine(store);this.ownsEngine=!executor;
     materials.bindIndexEngine(this.engine);
-    this.archive=new SourceArchive(store);this.pluginScope.provide('moteSourcePipelines',this.registry);this.pluginScope.provide('moteSourceRecipes',this.recipes);
+    this.archive=new SourceArchive(store);this.pluginScope.provide('moteSourcePipelines',this.registry);this.pluginScope.provide('moteSourceRecipes',this.recipes);this.pluginScope.provide('moteMaterialCatalog',materials.catalog.registry);
     store.db.exec(`CREATE TABLE IF NOT EXISTS source_pipeline_bindings(source_id TEXT PRIMARY KEY,pipeline_id TEXT NOT NULL,storage TEXT);
       CREATE TABLE IF NOT EXISTS source_pipeline_work(id TEXT PRIMARY KEY,source_id TEXT NOT NULL,pipeline_id TEXT NOT NULL,version TEXT NOT NULL,group_key TEXT NOT NULL,state TEXT NOT NULL,error TEXT,updated_at INTEGER NOT NULL,material_ref TEXT,generation INTEGER NOT NULL DEFAULT 0,archive_checkpoint TEXT,memory_trigger TEXT NOT NULL,
         recipe_id TEXT,recipe_version TEXT,recipe_definition_fingerprint TEXT,recipe_config_fingerprint TEXT,recipe_component_pins TEXT);
@@ -89,7 +93,7 @@ export class SourcePipelineRuntime {
     return {
       id:recipe.definition.id,version:recipe.definition.version,
       definitionFingerprint:recipe.definitionFingerprint,
-      configFingerprint:recipeFingerprint({recipe:recipe.configFingerprint,sourceConfig:options}),
+      configFingerprint:recipeFingerprint({recipe:recipe.configFingerprint,sourceConfig:organizationOptions(options)}),
       componentPins:JSON.stringify(recipe.componentPins),
     };
   }
@@ -148,6 +152,7 @@ export class SourcePipelineRuntime {
     const sourceJson=(db.prepare('SELECT json FROM source_connections WHERE id=?').get(input.sourceId) as {json:string}).json,
       configJson=(db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(input.sourceId) as {json:string}|undefined)?.json??null,
       source=JSON.parse(sourceJson) as SourceConnection,options=configuration.parse(configJson?JSON.parse(configJson):{}),recipe=this.recipeFor(pipeline,source);
+    const installationEpoch=this.registry.epochs.get(pipeline.id),componentEpochs=recipe?this.recipes.executionIdentity(recipe):undefined;
     // The reader and organizer run outside the engine transaction. This stage
     // may become asynchronous without changing its fenced host commit.
     const base=recipe?this.materials.codingBase(materialId(input.sourceId,input.group)):undefined;
@@ -165,17 +170,18 @@ export class SourcePipelineRuntime {
     const pinned=recipe?snapshot as RecipeSnapshot:undefined;
     const codingSnapshot=pinned&&typeof pinned.headCount==='number'&&typeof pinned.appendEpoch==='number'?
       {checkpoint:pinned.checkpoint,headCount:pinned.headCount,appendEpoch:pinned.appendEpoch}:undefined;
-    return {draft,pipeline,recipe,sourceJson,configJson,checkpoint:snapshot.checkpoint,policyFingerprint:this.policyFingerprint(pipeline),options,
+    return {installationEpoch,componentEpochs,draft,pipeline,recipe,sourceJson,configJson,checkpoint:snapshot.checkpoint,policyFingerprint:this.policyFingerprint(pipeline),options,
       priorRevision,codingSnapshot};
   }
   private publishGroup(step:ExecutionStep,result:PreparedGroup){
     const input=this.input(step),db=this.store.db;
     if(!this.validWork(step))throw new ExecutionFailure('stale','input_changed');
     const pipeline=this.registry.get(input.pipelineId);
+    if(!this.registry.epochs.matches(input.pipelineId,result.installationEpoch)||result.recipe&&this.recipes.executionIdentity(result.recipe)!==result.componentEpochs)throw new ExecutionFailure('blocked','pipeline_instance_unavailable');
     if(pipeline!==result.pipeline||!pipeline||pipeline.version!==input.version||this.policyFingerprint(pipeline)!==result.policyFingerprint)throw new ExecutionFailure('blocked','pipeline_unavailable');
     const sourceJson=(db.prepare('SELECT json FROM source_connections WHERE id=?').get(input.sourceId) as {json:string}|undefined)?.json,
       configJson=(db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(input.sourceId) as {json:string}|undefined)?.json??null;
-    if(!sourceJson||this.sourceFingerprint(sourceJson)!==this.sourceFingerprint(result.sourceJson)||configJson!==result.configJson||this.archive.groupCheckpoint(input.sourceId,input.group)!==result.checkpoint)throw new ExecutionFailure('stale','input_changed');
+    if(!sourceJson||this.sourceFingerprint(sourceJson)!==this.sourceFingerprint(result.sourceJson)||JSON.stringify(organizationOptions(configuration.parse(configJson?JSON.parse(configJson):{})))!==JSON.stringify(organizationOptions(configuration.parse(result.configJson?JSON.parse(result.configJson):{})))||this.archive.groupCheckpoint(input.sourceId,input.group)!==result.checkpoint)throw new ExecutionFailure('stale','input_changed');
     const source=JSON.parse(sourceJson!) as SourceConnection;
     try{if(this.select(source)!==pipeline||result.recipe&&this.recipeFor(pipeline,source)!==result.recipe)throw Error('Component changed');}
     catch{throw new ExecutionFailure('blocked','recipe_unavailable');}
@@ -188,7 +194,8 @@ export class SourcePipelineRuntime {
       const required=result.options.memoryDependencies??pipeline.memoryDependencies??['material'];
       const observe=published.changed?this.memoryWork.observe.bind(this.memoryWork):this.memoryWork.observeUnchanged.bind(this.memoryWork);
       observe(published.id,required,{inputKey:result.checkpoint,change:input.memoryTrigger??'rebuild',
-        automatic:result.options.memory??pipeline.memory??false},result.options.settleSeconds*1000);}
+        automatic:result.options.memory??pipeline.memory??false},result.options.settleSeconds*1000);
+      const consumers=this.options(input.sourceId).consumers;if(consumers.length)this.productConsumer?.observeProducts(published.ref,consumers);}
     const changed=db.prepare("UPDATE source_pipeline_work SET state='complete',error=NULL,material_ref=? WHERE id=? AND generation=?").run(ref,input.workId,input.generation).changes;
     if(changed!==1)throw new ExecutionFailure('stale','input_changed');
   }
@@ -306,7 +313,7 @@ export class SourcePipelineRuntime {
     return rows.length;
   }
   options(sourceId:string){const row=this.store.db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(sourceId);return configuration.parse(row?JSON.parse(String(row.json)):{});}
-  configure(sourceId:string,input:unknown){const value=configuration.parse(input);const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{
+  configure(sourceId:string,input:unknown){const value=configuration.parse(input),priorOptions=this.options(sourceId);const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{
     const sourceRow=db.prepare('SELECT json FROM source_connections WHERE id=?').get(sourceId);
     const source=sourceRow?JSON.parse(String(sourceRow.json)) as SourceConnection:undefined;
     let selected:SourcePipeline|undefined;
@@ -323,6 +330,8 @@ export class SourcePipelineRuntime {
     const metadata=recipe?this.recipeMetadata(recipe,sourceId,value):undefined;
     const previous=db.prepare('SELECT * FROM source_pipeline_work WHERE source_id=?').all(sourceId) as WorkRow[];
     db.prepare('INSERT INTO source_pipeline_config VALUES(?,?) ON CONFLICT(source_id) DO UPDATE SET json=excluded.json').run(sourceId,JSON.stringify(value));
+    // Consumer authorization alone does not re-organize historical source groups.
+    if(JSON.stringify(priorOptions.consumers)!==JSON.stringify(value.consumers)&&JSON.stringify(organizationOptions(priorOptions))===JSON.stringify(organizationOptions(value))){db.exec('COMMIT');return value;}
     db.prepare(`UPDATE source_pipeline_work SET memory_trigger=CASE WHEN state='complete' THEN 'rebuild' ELSE memory_trigger END,state='pending',error=NULL,generation=generation+1,updated_at=?,pipeline_id=coalesce(?,pipeline_id),version=coalesce(?,version),
       recipe_id=?,recipe_version=?,recipe_definition_fingerprint=?,recipe_config_fingerprint=?,recipe_component_pins=? WHERE source_id=?`).run(
         Date.now(),selected?.id??null,selected?.version??null,metadata?.id??null,metadata?.version??null,metadata?.definitionFingerprint??null,metadata?.configFingerprint??null,metadata?.componentPins??null,sourceId);
@@ -376,4 +385,6 @@ export class SourcePipelineRuntime {
   async close(){await this.ready.catch(()=>{});if(this.ownsEngine)await this.engine.close();this.unregisterHandler();await this.pluginScope.close();}
 }
 
-const configuration=z.object({pipelineId:z.string().regex(/^[a-z0-9.-]+$/).optional(),index:z.boolean().optional(),memory:z.boolean().optional(),memoryDependencies:z.array(z.string().regex(/^[a-z0-9][a-z0-9._/-]*$/).max(128)).min(1).max(16).optional(),settleSeconds:z.number().int().min(0).max(86400).default(300)}).strict();
+const configuration=z.object({pipelineId:z.string().regex(/^[a-z0-9.-]+$/).optional(),index:z.boolean().optional(),memory:z.boolean().optional(),memoryDependencies:z.array(z.string().regex(/^[a-z0-9][a-z0-9._/-]*$/).max(128)).min(1).max(16).optional(),consumers:z.array(z.string().regex(/^[a-zA-Z0-9_.-]{1,100}$/)).max(32).refine(values=>new Set(values).size===values.length).default([]),settleSeconds:z.number().int().min(0).max(86400).default(300)}).strict();
+
+function organizationOptions(options:z.infer<typeof configuration>){const {consumers:_,...organization}=options;return organization;}

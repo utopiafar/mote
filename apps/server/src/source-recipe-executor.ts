@@ -9,10 +9,14 @@ import type {RecipeComponentRef} from './recipe-contract.js';
 type RecipeConfig=RecipeComponentRef['config'];
 export type RecipeSnapshot={items:SourceItem[];checkpoint:string;headCount?:number;appendEpoch?:number;
   mode?:'full'|'append';base?:CodingAppendBase};
+export type FlowInput={source:SourceConnection;group:string;snapshot:RecipeSnapshot;config:RecipeConfig;signal:AbortSignal};
 type Handler=
   | {kind:'raw-writer';version:string;run:(archive:SourceArchive,source:SourceConnection,items:SourceItem[],groups:string[])=>ReturnType<SourceArchive['receive']>}
   | {kind:'raw-reader';version:string;run:(reader:RawReader,source:SourceConnection,group:string,signal:AbortSignal,base?:CodingAppendBase)=>Promise<RecipeSnapshot>}
   | {kind:'group';version:string;run:(item:SourceItem,config:RecipeConfig)=>string}
+  | {kind:'window';version:string;run:(input:FlowInput)=>readonly SourceItem[]|Promise<readonly SourceItem[]>}
+  | {kind:'join';version:string;run:(input:FlowInput)=>readonly SourceItem[]|Promise<readonly SourceItem[]>}
+  | {kind:'aggregation';version:string;run:(input:PublishInput)=>unknown}
   | {kind:'step';version:string;run:(input:StepInput)=>unknown}
   | {kind:'publish';version:string;run:(input:PublishInput)=>MaterialDraft|MaterialAppendDraft|undefined};
 
@@ -45,9 +49,13 @@ export class SourceRecipeExecutor {
   }
 
   registerPolicy(component:RecipeComponentManifest):()=>void {
-    if(['raw-writer','raw-reader','group','step','publish'].includes(component.kind))throw Error(`Recipe component ${component.id} requires an executable handler`);
+    if(['raw-writer','raw-reader','group','step','publish','window','join','aggregation'].includes(component.kind))throw Error(`Recipe component ${component.id} requires an executable handler`);
     return this.register(component);
   }
+  registerWindow(component:RecipeComponentManifest,run:Extract<Handler,{kind:'window'|'join'}>['run']){return this.register(component,{kind:'window',version:component.version,run});}
+  registerJoin(component:RecipeComponentManifest,run:Extract<Handler,{kind:'window'|'join'}>['run']){return this.register(component,{kind:'join',version:component.version,run});}
+  registerAggregation(component:RecipeComponentManifest,run:Extract<Handler,{kind:'aggregation'}>['run']){return this.register(component,{kind:'aggregation',version:component.version,run});}
+  executionIdentity(recipe:InstalledRecipe){return JSON.stringify(recipe.componentPins.map(pin=>[pin.id,this.registry.epochs.get(pin.id)]));}
   registerRawWriter(component:RecipeComponentManifest,run:Extract<Handler,{kind:'raw-writer'}>['run']):()=>void {
     return this.register(component,{kind:'raw-writer',version:component.version,run});
   }
@@ -68,7 +76,11 @@ export class SourceRecipeExecutor {
     return ()=>this.registry.uninstallRecipe(installed.definition.id,installed.definition.version);
   }
 
-  resolve(id:string,version:string):InstalledRecipe {return this.registry.resolveRecipe(id,version);}
+  resolve(id:string,version:string):InstalledRecipe {
+    const recipe=this.registry.resolveRecipe(id,version);
+    for(const kind of ['window','join','aggregation'] as const)if(recipe.definition[kind])this.handler(recipe,kind+'.policy',kind);
+    return recipe;
+  }
   private handler<T extends Handler['kind']>(recipe:InstalledRecipe,path:string,kind:T):Extract<Handler,{kind:T}> {
     const pin=recipe.componentPins.find(value=>value.path===path);
     if(!pin||pin.kind!==kind)throw Error(`Recipe has no ${kind} component at ${path}`);
@@ -82,8 +94,19 @@ export class SourceRecipeExecutor {
   receive(recipe:InstalledRecipe,archive:SourceArchive,source:SourceConnection,items:SourceItem[],groups:string[]){
     return this.handler(recipe,'raw.writer','raw-writer').run(archive,source,items,groups);
   }
-  snapshot(recipe:InstalledRecipe,reader:RawReader,source:SourceConnection,group:string,signal:AbortSignal,base?:CodingAppendBase){
-    return this.handler(recipe,'raw.reader','raw-reader').run(reader,source,group,signal,base);
+  async snapshot(recipe:InstalledRecipe,reader:RawReader,source:SourceConnection,group:string,signal:AbortSignal,base?:CodingAppendBase){
+    let snapshot=await this.handler(recipe,'raw.reader','raw-reader').run(reader,source,group,signal,base);
+    // Bounded snapshot policies share the archive checkpoint and durable engine step.
+    // No policy obtains an unrestricted archive reader or creates another scheduler.
+    for(const kind of ['window','join'] as const)if(recipe.definition[kind]){
+      signal.throwIfAborted();this.assertBounded(snapshot.items);
+      const items=await this.handler(recipe,kind+'.policy',kind).run({source,group,snapshot,config:recipe.definition[kind]!.policy.config,signal});
+      signal.throwIfAborted();this.assertBounded(items);snapshot={...snapshot,items:[...items],mode:'full',base:undefined};
+    }
+    return snapshot;
+  }
+  private assertBounded(items:readonly SourceItem[]){
+    if(items.length>10000||Buffer.byteLength(JSON.stringify(items))>16*1024*1024)throw Error('Recipe policy input/output exceeds limits');
   }
   organize(recipe:InstalledRecipe,source:SourceConnection,group:string,snapshot:RecipeSnapshot):MaterialDraft|MaterialAppendDraft|undefined {
     const outputs=Object.create(null) as Record<string,unknown>;
@@ -94,6 +117,7 @@ export class SourceRecipeExecutor {
       for(const id of step.dependsOn)dependencies[id]=outputs[id];
       outputs[stepId]=this.handler(recipe,`steps.${stepId}`,'step').run({source,group,items:snapshot.items,dependencies,config:step.use.config,snapshot});
     }
+    if(recipe.definition.aggregation){this.assertBounded(snapshot.items);outputs.aggregation=this.handler(recipe,'aggregation.policy','aggregation').run({source,group,items:snapshot.items,outputs:{...outputs},config:recipe.definition.aggregation.policy.config});if(outputs.aggregation&&typeof (outputs.aggregation as {then?:unknown}).then==='function')throw Error('Recipe aggregation must return a synchronous value');if(Buffer.byteLength(JSON.stringify(outputs.aggregation)??'null')>1024*1024)throw Error('Recipe aggregation output exceeds limits');}
     return this.handler(recipe,'publish.use','publish').run({source,group,items:snapshot.items,outputs,config:recipe.definition.publish.use.config});
   }
 }

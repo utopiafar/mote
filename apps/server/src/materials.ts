@@ -1,3 +1,4 @@
+import {MaterialCatalog} from './material-catalog.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION,documentSchema,type CaptureRecord} from '@mote/shared';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
@@ -88,6 +89,11 @@ export function materialId(sourceId:string,externalId:string):string {
   if(!sourceId||!externalId)throw new StoreError('Material source identity is required');
   return MATERIAL_PREFIX+hash(JSON.stringify([sourceId,externalId]));
 }
+/** Preserve the default logical ID; additional outputs occupy explicit, unambiguous slots. */
+export function materialOutputIdentity(sourceId:string,nativeObjectId:string,outputSlot='material'){
+  const externalId=outputSlot==='material'?nativeObjectId:JSON.stringify(['mote.output.v1',nativeObjectId,outputSlot]);
+  return {id:materialId(sourceId,externalId),externalId};
+}
 export function formatMaterialRef(id:string,revision:string):string{return `material:${parseId(id)}@${parseRevision(revision)}`;}
 export function parseMaterialRef(value:string):{id:string;revision?:string} {
   const raw=currentRef(value),at=raw.indexOf('@');
@@ -98,6 +104,7 @@ export function parseMaterialRef(value:string):{id:string;revision?:string} {
 /** Immutable formal material revisions. All content is evidence, never agent instructions. */
 export class MaterialStore {
   index?:MaterialIndexRuntime;
+  readonly catalog=new MaterialCatalog(this);
   constructor(readonly store:Store){
     store.db.exec(`
       CREATE TABLE IF NOT EXISTS material_searchable(material_id TEXT PRIMARY KEY REFERENCES material_heads(id) ON DELETE CASCADE);
@@ -565,7 +572,7 @@ export class MaterialStore {
     }catch(error){if(ownTransaction&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
 
-  list(args:{sourceId?:string;kind?:string;deviceId?:string;after?:string;before?:string;limit?:number;cursor?:string;query?:string}={}):MaterialPage {
+  list(args:{sourceId?:string;kind?:string;deviceId?:string;after?:string;before?:string;limit?:number;cursor?:string;query?:string;order?:'source'}={}):MaterialPage {
     const limit=args.limit??30;if(!Number.isInteger(limit)||limit<1||limit>100)throw new StoreError('Invalid material page size');
     const clauses=[`h.retired=0`,`h.sequence>=h.min_visible_sequence`],values:(string|number)[]=[];
     if(args.query){const terms=args.query.trim().split(/\s+/).filter(Boolean);for(const term of terms){
@@ -603,14 +610,15 @@ export class MaterialStore {
     for(const [key,column] of [['sourceId','source_id'],['kind','kind'],['deviceId','device_id']] as const)if(args[key]){clauses.push(`h.${column}=?`);values.push(args[key]!);}
     if(args.after){const after=new Date(args.after).toISOString();clauses.push('h.last_at>=?');values.push(after);}
     if(args.before){const before=new Date(args.before).toISOString();clauses.push('h.first_at<?');values.push(before);}
+    const sort=args.order==='source'?'COALESCE(h.last_at,h.first_at,h.updated_at)':'h.updated_at';
     if(args.cursor){
       let cursor:{u:string;id:string};try{cursor=JSON.parse(Buffer.from(args.cursor,'base64url').toString()) as typeof cursor;if(typeof cursor.u!=='string'||!materialIdSchema.safeParse(cursor.id).success)throw Error();}catch{throw new StoreError('Invalid material cursor');}
-      clauses.push('(h.updated_at<? OR (h.updated_at=? AND h.id<?))');values.push(cursor.u,cursor.u,cursor.id);
+      clauses.push(`(${sort}<? OR (${sort}=? AND h.id<?))`);values.push(cursor.u,cursor.u,cursor.id);
     }
-    const rows=this.store.db.prepare(`SELECT h.*,r.manifest,r.text_length,r.block_count,r.member_count,r.asset_count,r.created_at AS version_created_at FROM material_heads h JOIN material_revisions r ON r.material_id=h.id AND r.revision=h.revision WHERE ${clauses.join(' AND ')} ORDER BY h.updated_at DESC,h.id DESC LIMIT ?`).all(...values,limit+1) as (HeadRow&RevisionRow)[];
+    const rows=this.store.db.prepare(`SELECT h.*,${sort} AS sort_at,r.manifest,r.text_length,r.block_count,r.member_count,r.asset_count,r.created_at AS version_created_at FROM material_heads h JOIN material_revisions r ON r.material_id=h.id AND r.revision=h.revision WHERE ${clauses.join(' AND ')} ORDER BY ${sort} DESC,h.id DESC LIMIT ?`).all(...values,limit+1) as (HeadRow&RevisionRow&{sort_at:string})[];
     const page=rows.slice(0,limit).map(row=>this.record(row,row));
     const last=rows.length>limit?rows[limit-1]:undefined;
-    return {items:page,nextCursor:last?Buffer.from(JSON.stringify({u:last.updated_at,id:last.id})).toString('base64url'):null};
+    return {items:page,nextCursor:last?Buffer.from(JSON.stringify({u:last.sort_at,id:last.id})).toString('base64url'):null};
   }
 
   /** Read a pinned revision through a bounded character window and at most 64 blocks. */
@@ -644,6 +652,27 @@ export class MaterialStore {
     }
     const nextOffset=cursor<total?cursor:null;
     return {material,text,textRange:{offset,total,nextOffset},spans};
+  }
+
+  /** Named-product ranges are resolved by the content authority, not by a plugin reading SQL or paths. */
+  product(ref:string,key:string,args:{offset?:number;length?:number}={}){
+    const pin=this.input(ref,[key]);if(!pin?.ready)throw new StoreError('Material product is not ready',409);
+    const material=this.get(ref)!,artifact=material.artifacts?.find(value=>value.key===key);
+    const offset=args.offset??0,length=args.length??4000;
+    if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(length)||length<1||length>12000)throw new StoreError('Invalid product range',400);
+    if(!artifact?.blockIds){const page=this.read(ref,{offset,length});return {pin,pages:[page],ranges:[{ref,offset,length:page.text.length}]};}
+    const coding=this.codingLayout(material.id,material.revision);
+    const rows=this.store.db.prepare(coding?`SELECT start_offset,end_offset FROM material_block_versions WHERE material_id=? AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?) AND block_id IN (SELECT value FROM json_each(?)) ORDER BY idx`:
+      `SELECT start_offset,end_offset FROM material_blocks WHERE material_id=? AND revision=? AND block_id IN (SELECT value FROM json_each(?)) ORDER BY idx`)
+      .all(material.id,...(coding?[material.sequence,material.sequence]:[material.revision]),JSON.stringify(artifact.blockIds)) as {start_offset:number;end_offset:number}[];
+    const total=rows.reduce((n,row)=>n+row.end_offset-row.start_offset,0);if(offset>total)throw new StoreError('Product offset exceeds length',416);
+    let remaining=length,skip=offset;const pages:MaterialReadPage[]=[],ranges:{ref:string;offset:number;length:number}[]=[];
+    for(const row of rows){const size=row.end_offset-row.start_offset;if(skip>=size){skip-=size;continue;}
+      const readLength=Math.min(remaining,size-skip),range={ref,offset:row.start_offset+skip,length:readLength};
+      if(readLength>0){const page=this.read(ref,range);pages.push(page);ranges.push({...range,length:page.text.length});remaining-=page.text.length;}
+      skip=0;if(!remaining||pages.length===32)break;
+    }
+    return {pin,pages,ranges};
   }
 
   /** Host-only conversion from pinned original anchors to bounded model pages. */
