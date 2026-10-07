@@ -47,7 +47,7 @@ const lanePolicy=z.object({concurrency:z.number().int().min(1).max(8),enabled:z.
 const policies=z.object({extract:lanePolicy,aggregate:lanePolicy,semantic:lanePolicy,memory:lanePolicy}).strict();
 type ParentGrant={stepId:string;fence:string};
 type ConsumerGrant={sourceId:string;bindingId:string;version:string;bindingFingerprint:string};
-type Job={productInputs?:z.output<typeof productInputSchema>[];products?:Record<string,string>;consumerGrant?:ConsumerGrant;parentGrant?:ParentGrant;id:string;processor:string;version:string;lane:ProcessingLane;inputs:ProcessingInput[];materialInputs:ProcessingMaterialInput[];config:Record<string,unknown>;dependencies:string[];artifactInputs:{id:string;revision:string}[];outputs:string[]};
+type Job={contextInputs?:ProcessingInput[];productInputs?:z.output<typeof productInputSchema>[];products?:Record<string,string>;consumerGrant?:ConsumerGrant;parentGrant?:ParentGrant;id:string;processor:string;version:string;lane:ProcessingLane;inputs:ProcessingInput[];materialInputs:ProcessingMaterialInput[];config:Record<string,unknown>;dependencies:string[];artifactInputs:{id:string;revision:string}[];outputs:string[]};
 const lanes:ProcessingLane[]=['extract','aggregate','semantic','memory'];
 /** Durable DAG with fenced commits and per-lane admission. Cordis owns plugin life;
  * this host owns retries, lineage, cancellation and transaction boundaries. */
@@ -110,9 +110,11 @@ export class ProcessingRuntime {
       for(const ref of step.materialInputs){const {id,revision}=parseMaterialRef(ref.ref);if(this.materials?.get(id)?.revision!==revision)throw new StoreError('Input material changed',409);this.materials!.read(ref.ref,{offset:ref.offset,length:ref.length});}
       if(!step.inputs.length&&!step.materialInputs.length&&!step.artifactInputs.length&&!step.dependsOn.length&&!step.productInputs.length)throw new StoreError('Workflow needs execution inputs',400);
       const inputs=[...new Set(step.inputs)].sort().map(id=>{const version=this.store.archive.fingerprint(id);if(!version)throw new StoreError('Workflow evidence unavailable',409);return {id,fingerprint:version};});
+      const contextInputs=this.materials?inputs.map(input=>({id:input.id,fingerprint:this.attributionFingerprint(input.id)})):undefined;
+      const contextIdentity=contextInputs?.some(input=>input.fingerprint!==fingerprint(null))?contextInputs:undefined;
       const config=canonical(step.config) as Record<string,unknown>,dependencies=step.dependsOn.map(n=>ids.get(n)!).sort();
-      const id=fingerprint([processor.id,processor.version,inputs,step.materialInputs,config,dependencies,step.artifactInputs,...(step.productInputs.length?[step.productInputs]:[])]);ids.set(step.name,id);
-      jobs.push({...(consumerGrant?{consumerGrant}:{}),...(step.productInputs.length?{productInputs:step.productInputs}:{}),...(parentGrant?{parentGrant}:{}),id,processor:processor.id,version:processor.version,lane:processor.lane,inputs,materialInputs:step.materialInputs,config,dependencies,artifactInputs:step.artifactInputs,outputs:[]});
+      const id=fingerprint([processor.id,processor.version,inputs,step.materialInputs,config,dependencies,step.artifactInputs,...(step.productInputs.length?[step.productInputs]:[]),...(contextIdentity?[contextIdentity]:[])]);ids.set(step.name,id);
+      jobs.push({...(contextInputs?{contextInputs}:{}),...(consumerGrant?{consumerGrant}:{}),...(step.productInputs.length?{productInputs:step.productInputs}:{}),...(parentGrant?{parentGrant}:{}),id,processor:processor.id,version:processor.version,lane:processor.lane,inputs,materialInputs:step.materialInputs,config,dependencies,artifactInputs:step.artifactInputs,outputs:[]});
     }
     const db=this.store.db,own=!db.isTransaction;db.exec(own?'BEGIN IMMEDIATE':'SAVEPOINT processing_enqueue');try{
       this.store.reserveMetadata(jobs.reduce((n,j)=>n+Buffer.byteLength(JSON.stringify(j))+1024,0));
@@ -166,8 +168,12 @@ export class ProcessingRuntime {
   }
   /** All execution ownership is in the shared engine, including dependency admission. */
   async tick(){if(this.stopping)return;await this.ready;const ids=this.store.db.prepare("SELECT id FROM execution_steps WHERE (kind LIKE 'context-dag.%' OR kind='material-consumer.plan') AND (state='waiting' OR (state='running' AND lease_until<=?)) ORDER BY rowid LIMIT 1000").all(this.now()).map(row=>String(row.id));await this.engine.drain(ids);}
+  private attributionFingerprint(id:string){
+    const record=this.store.evidence([id])[0],context=record&&this.materials?.contextForEvidence(record);
+    return fingerprint(context&&(context.basis!=='default'||context.correction||context.sourceDeclaration||context.materialDeclarations)?context:null);
+  }
   private valid(job:Job){
-    return !this.stopping&&(!job.consumerGrant||this.consumerAllowed(job.consumerGrant.sourceId,job.consumerGrant.bindingId)&&fingerprint(this.consumers.get(job.consumerGrant.bindingId))===job.consumerGrant.bindingFingerprint)&&(job.productInputs??[]).every(product=>{try{return product.authority==='artifact'?this.store.archive.revision(product.id)===product.revision:Boolean(this.materials?.product(product.ref,product.key,product));}catch{return false;}})&&(!job.parentGrant||job.outputs.length>0||this.engine.isCurrentInputAuthority(job.parentGrant.stepId))&&(job.artifactInputs??[]).every(ref=>this.store.archive.revision(ref.id)===ref.revision)&&(job.materialInputs??[]).every(ref=>{const {id,revision}=parseMaterialRef(ref.ref);return this.materials?.get(id)?.revision===revision;})&&job.inputs.every(i=>this.store.archive.fingerprint(i.id)===i.fingerprint)&&job.dependencies.every(dep=>{
+    return !this.stopping&&(!this.materials||(job.contextInputs??job.inputs.map(input=>({id:input.id,fingerprint:fingerprint(null)}))).every(input=>input.fingerprint===this.attributionFingerprint(input.id)))&&(!job.consumerGrant||this.consumerAllowed(job.consumerGrant.sourceId,job.consumerGrant.bindingId)&&fingerprint(this.consumers.get(job.consumerGrant.bindingId))===job.consumerGrant.bindingFingerprint)&&(job.productInputs??[]).every(product=>{try{return product.authority==='artifact'?this.store.archive.revision(product.id)===product.revision:Boolean(this.materials?.product(product.ref,product.key,product));}catch{return false;}})&&(!job.parentGrant||job.outputs.length>0||this.engine.isCurrentInputAuthority(job.parentGrant.stepId))&&(job.artifactInputs??[]).every(ref=>this.store.archive.revision(ref.id)===ref.revision)&&(job.materialInputs??[]).every(ref=>{const {id,revision}=parseMaterialRef(ref.ref);return this.materials?.get(id)?.revision===revision;})&&job.inputs.every(i=>this.store.archive.fingerprint(i.id)===i.fingerprint)&&job.dependencies.every(dep=>{
       const parent=this.engine.get(dep);return parent?.state!=='succeeded'||this.job(dep).outputs.every(out=>this.store.archive.get(out));
     });
   }
@@ -175,7 +181,7 @@ export class ProcessingRuntime {
     const productArtifacts=(job.productInputs??[]).filter((p):p is Extract<z.output<typeof productInputSchema>,{authority:'artifact'}>=>p.authority==='artifact');
     const artifacts=job.dependencies.map(dep=>this.job(dep)).map(parent=>({id:parent.id,outputs:parent.outputs.map(id=>this.store.archive.get(id)!)})).concat([...job.artifactInputs??[],...productArtifacts].map(ref=>({id:ref.id,outputs:[this.store.archive.get(ref.id)!]})));
     const materials=(job.materialInputs??[]).map(ref=>this.materials!.read(ref.ref,{offset:ref.offset,length:ref.length})).concat((job.productInputs??[]).flatMap(product=>product.authority==='material'?this.materials!.product(product.ref,product.key,product).pages:[]));
-    return {observations:this.store.evidence(job.inputs.map(i=>i.id)),materials,artifacts};
+    return {observations:this.store.evidence(job.inputs.map(i=>i.id)).map(record=>({...record,...(this.materials?{attributionContext:this.materials.contextForEvidence(record)}:{})})),materials,artifacts};
   }
   private admit(job:Job){
     const processor=this.registry.get(job.processor);
@@ -189,6 +195,7 @@ export class ProcessingRuntime {
     return {installationEpoch,outputs};
   }
   private commit(job:Job,result:unknown){
+    if(!this.valid(job))throw new ExecutionFailure('stale','evidence_changed');
     const prepared=result as {installationEpoch?:string;outputs:unknown};
     if(!this.registry.epochs.matches(job.processor,prepared.installationEpoch))throw new ExecutionFailure('blocked','processor_instance_unavailable');
     if(this.registry.get(job.processor)?.version!==job.version)throw new ExecutionFailure('blocked','processor_version_unavailable');

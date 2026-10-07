@@ -5,6 +5,8 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {zipSync,strToU8} from 'fflate';
 import sharp from 'sharp';
+import {randomUUID} from 'node:crypto';
+import {memoryEvidenceFingerprint} from '../src/memory.js';
 import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
@@ -138,4 +140,20 @@ test('original identity is rechecked after image processing even if authority st
   return true;
  }));
  f.store.db.prepare('UPDATE file_versions SET object_hash=? WHERE capture_id=?').run(original,one.id);assert.ok(calls>=4);
+});
+
+
+test('screen processing grants use canonical attribution fingerprints for declarations and corrections',async t=>{
+ const f=await fixture(t),id=randomUUID();f.sources.update('generated-images',{ownerRelation:'owner'});
+ await f.store.ingest({id,deviceId:'generated-screen',deviceName:'Generated screen',platform:'android',source:'screen',capturedAt:'2026-10-01T01:00:00Z',durationMs:0,ocrText:'Generated screen text',ocr:{status:'completed'},privacy:{excluded:false,redacted:false,mode:'local'},imageMime:'image/png',imageBase64:f.bytes.toString('base64')});
+ const material=f.materials.publish({id:materialId('generated-images','generated-screen'),kind:'mote.message',schemaVersion:1,title:'Generated screen material',origin:{sourceId:'generated-images',externalId:'generated-screen'},members:[{id,kind:'capture',ref:'capture:'+id}],blocks:[{id:'body',kind:'text',format:'plain',text:'Generated screen text',memberIds:[id]}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}});
+ let pinned=memoryEvidenceFingerprint(f.reader.memories.readEvidence([id])[0]);
+ const agent=f.reader.agent({diagnostics:f.diagnostics,allowQueryImages:()=>true,currentOperation:()=> 'memory',currentProcessingEvidence:()=>({[id]:pinned})});
+ assert.equal((await agent.readImage!({id})).data,f.bytes.toString('base64'),'an owner declaration does not revoke a current processing grant');
+ f.materials.correctContext(material.id,material.revision,'third_party');
+ await assert.rejects(agent.readImage!({id}),/Image not found/,'a changed declaration still revokes the old fingerprint');
+ pinned=memoryEvidenceFingerprint(f.reader.memories.readEvidence([id])[0]);
+ assert.equal((await agent.readImage!({id})).data,f.bytes.toString('base64'),'an explicitly refreshed processing grant uses corrected context');
+ f.store.db.prepare("UPDATE captures SET json=json_set(json,'$.ocr.status','pending') WHERE id=?").run(id);
+ pinned=memoryEvidenceFingerprint(f.reader.memories.readEvidence([id])[0]);await assert.rejects(agent.readImage!({id}),/Image not found/,'a current attribution fingerprint cannot bypass pending OCR');
 });

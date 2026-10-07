@@ -29,7 +29,7 @@ const fixture=createServer(async(req,res)=>{
 });
 await new Promise<void>(resolve=>fixture.listen(0,'127.0.0.1',resolve));
 const config:Config={dataDir:directory,token:'generated-fixture-only-credential',tokenPath:'unused',host:'127.0.0.1',port:0,contentEncryptionEnabled:true,dataKey:'4a'.repeat(32),maxStorageBytes:10000000,maxExportBytes:10000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-provider',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(fixture.address() as AddressInfo).port}/v1`,apiKey:'generated-fixture',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
-const {app}=await buildApp(config);
+const {app}=await buildApp(config,{backgroundWorker:false});
 const headers={authorization:`Bearer ${config.token}`};
 try {
   const session={sessionId:'generated-session',appId:'fixture.audio',appName:'Generated Audio',playbackState:'playing',appVisibility:'background',playbackType:'local',title:'Generated chapter 7',artist:'Generated narrator'};

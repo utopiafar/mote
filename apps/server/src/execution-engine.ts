@@ -91,10 +91,11 @@ export class ExecutionEngine {
   return {items:rows.slice(0,limit).map(view),nextCursor:rows.length>limit?rows[limit-1].rowid:null};
  }
  project(id:string){const step=this.get(id);if(step)this.handlers.get(step.kind)?.project?.(step);}
- cancel(id:string){
+ /** Transactional callers may defer local abort; lease renewal observes committed revocation. */
+ cancel(id:string,abortLocal=true){
   const alias=this.store.db.prepare('SELECT step_id FROM execution_cancellation_aliases WHERE alias_id=?').get(id);
   if(alias){this.store.db.prepare('UPDATE execution_cancellation_aliases SET cancelled=1 WHERE alias_id=?').run(id);id=String(alias.step_id);}
-  const db=this.store.db;db.prepare("UPDATE execution_steps SET state='cancelled',fence=NULL,error='cancelled',updated_at=? WHERE id=? AND state!='succeeded'").run(this.now(),id);this.active.get(id)?.controller.abort();this.project(id);
+  const db=this.store.db;db.prepare("UPDATE execution_steps SET state='cancelled',fence=NULL,error='cancelled',updated_at=? WHERE id=? AND state!='succeeded'").run(this.now(),id);if(abortLocal)this.active.get(id)?.controller.abort();this.project(id);
  }
  /** Stable operation identities can revoke the currently active resumable
   * fragment from another host without depending on its revision number. */

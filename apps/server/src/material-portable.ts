@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {MaterialStore,materialId,materialManifestSchema} from './materials.js';
+import {MaterialStore,materialId,materialManifestSchema,materialEvidenceContextSchema} from './materials.js';
 import {StoreError,sha256,type Store} from './store.js';
 
 const hash=z.string().regex(/^[a-f0-9]{64}$/),id=z.string().regex(/^mat_[a-f0-9]{64}$/),uuid=z.string().uuid();
@@ -131,7 +131,7 @@ export function restorePortableMaterials(store:Store,portable:Portable|undefined
     if(blocks.some(row=>proof(row)!==proof(original)))throw new StoreError('Material evidence anchor refers to divergent block proof');
   }
   for(const row of portable.dependencies)if(!anchors.has(row.anchor_id))throw new StoreError('Material dependency has no anchor');
-  for(const row of portable.contexts){if(!anchors.has(row.anchor_id))throw new StoreError('Material context has no anchor');z.object({observedAt:at,document:z.object({recordedAt:at.optional(),occurredAt:at.optional(),timeBasis:z.enum(['recorded','occurred','unknown']),contentRole:z.enum(['authored','transcript','summary','reference','other'])}).strict()}).strict().parse(JSON.parse(String(row.json)));}
+  for(const row of portable.contexts){if(!anchors.has(row.anchor_id))throw new StoreError('Material context has no anchor');materialEvidenceContextSchema.parse(JSON.parse(String(row.json)));}
   for(const row of portable.codingSnapshots)if(!revisions.has(revisionKey(row)))throw new StoreError('Coding material snapshot has no revision');
   for(const row of portable.indexing)if(!heads.has(row.material_id))throw new StoreError('Material search projection has no head');
 

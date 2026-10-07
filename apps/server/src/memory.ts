@@ -28,13 +28,14 @@ type MemoryRecord=CaptureRecord&{fileEvidence?:unknown};
 export function memoryEvidenceFingerprint(record:MemoryRecord):string {
   // A processing container can change while the exact versioned chunk remains identical.
   const file=record.fileEvidence&&typeof record.fileEvidence==='object'?Object.fromEntries(Object.entries(record.fileEvidence).filter(([key])=>key!=='artifactId')):record.fileEvidence;
-  return sha256(JSON.stringify([record.id,record.ocrText,record.capturedAt,record.provenance??null,record.metadata??null,...(file?[file]:[])]));
+  return sha256(JSON.stringify([record.id,record.ocrText,record.capturedAt,record.provenance??null,record.metadata??null,...(file?[file]:[]),...(record.attributionContext&&(record.attributionContext.basis!=='default'||record.attributionContext.correction||record.attributionContext.sourceDeclaration||record.attributionContext.materialDeclarations)?[record.attributionContext]:[])]));
 }
 function reference(record:MemoryRecord,span?:{offset:number;length:number;quote?:string}):MemoryEvidence {
   const p=record.provenance,d=p?.document;
   return {id:record.id,deviceId:record.deviceId,sourceId:p?.sourceId,externalId:p?.externalId,revision:p?.revision,capturedAt:record.capturedAt,receivedAt:record.receivedAt,
     recordedAt:d?.recordedAt,occurredAt:d?.occurredAt,fileId:d?.fileId,path:d?.path,uri:p?.uri,timeBasis:d?.timeBasis,contentRole:d?.contentRole,
     ...(record.fileEvidence?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
+    ...(record.attributionContext?{attributionContext:record.attributionContext}:{}),
     ...(d?.fileIndex?{fileIndex:d.fileIndex}:{}),...span,contentHash:memoryEvidenceFingerprint(record)};
 }
 export type MemoryExtractOptions={maxCandidates?:number;integration?:Memory['integration'];strategy?:Memory['strategy'];requireAdmission?:boolean;reviewRunId?:string;reviewReceipt?:MemoryReviewReceipt;validateOnly?:boolean;profile?:'personal'|'coding';tier?:Memory['tier'];relatedMemoryIds?:string[];skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};

@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
-import {Store,sha256} from '../src/store.js';
+import {Store,StoreError,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
@@ -22,13 +22,16 @@ import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialMemoryWork} from '../src/material-memory-work.js';
 import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-planning.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
+import {processorContract,processorSettingsFingerprint} from '../src/file-configuration.js';
+import {DEFAULT_IMAGE_RECIPE} from '../src/image-recipes.js';
+import {MEDIA_CATALOG} from '../src/media-assets.js';
 
 async function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-unified-images-')),store=new Store(directory),materials=new MaterialStore(store);let clock=Date.now();const memoryWork=new MaterialMemoryWork(store,materials,()=>clock,()=>true);
  const sources=new SourceStore(store,undefined,memoryWork.inputs),files=new FileStore(store,sources),archived=new ArchivedFileStore(store),engine=new ExecutionEngine(store),processing=new FileProcessing(files,undefined,undefined,{executor:engine});await processing.runtime.ready;
  let ocrCalls=0,visualCalls=0,empty=false,failVisual=false;
  processing.runtime.registry.get('image.http').process=async()=>{ocrCalls++;return {durationMs:0,segments:empty?[]:[{startMs:0,endMs:0,text:'Generated third-party article: I resigned.'}]};};
- const images=new ImageProcessing(store,processing,engine,{memoryWork,understanding:{selection:()=>({fingerprint:'fixture-model-1',configured:true,receipt:{model:'fixture'}}),run:async input=>{visualCalls++;if(failVisual)throw Error('Generated visual failure');const image=await input.readImage({id:input.record.id});assert.equal(image.imageView!.original.sha256,input.original.hash);return {text:'A third-party article says its author resigned. The owner is not identified as that author.',regions:[]};}}});
+ const images=new ImageProcessing(store,processing,engine,{materials,memoryWork,understanding:{selection:()=>({fingerprint:'fixture-model-1',configured:true,receipt:{model:'fixture'}}),run:async input=>{visualCalls++;if(failVisual)throw Error('Generated visual failure');const image=await input.readImage({id:input.record.id});assert.equal(image.imageView!.original.sha256,input.original.hash);return {text:'A third-party article says its author resigned. The owner is not identified as that author.',regions:[]};}}});
  const organizer=new MaterialOrganizerRuntime(store,materials,[],engine,memoryWork);
  const bytes=await sharp({create:{width:16,height:16,channels:3,background:'#aabbcc'}}).png().toBuffer();
  for(const id of ['generated-import','generated-sync','generated-parent'])sources.register({id,name:id,kind:'upload',deviceId:'generated-device',platform:'import',retention:'archive'});
@@ -181,4 +184,160 @@ test('production image intake enters the existing automatic Memory pipeline once
  const detail=node.perception.detail(id);assert.equal(detail.memory[0].state,'completed');assert.equal(detail.memory[0].count,0);assert.equal(visual,1);assert.equal(extractions,1);
  node.perception.retry(id,true);await node.perception.tick();for(let i=0;i<20;i++)if(await node.materialOrganizer.tick(100)===0)break;
  node.store.db.prepare('UPDATE material_memory_requests SET ready_at=0').run();await node.sourcePipelines.drainMemory(node.memoryPipeline,true,10);assert.equal(node.memoryPipeline.list().length,1);assert.equal(extractions,1);
+});
+
+test('attribution correction retires image interpretation immediately, preserves OCR, and awaits explicit historical retry',async t=>{
+ const f=await fixture(t),id=await f.upload();await f.images.tick();await f.organize();
+ const material=f.materials.get(materialId('generated-import',f.files.detail(id).item.externalId))!,before=f.calls();
+ const ocr=f.store.db.prepare("SELECT * FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(id);
+ const receipts=f.store.db.prepare('SELECT * FROM memory_input_authorizations WHERE capture_id=?').all(id);
+ const corrected=f.materials.correctContext(material.id,material.revision,'third_party');
+ assert.notEqual(corrected.revision,material.revision);assert.equal(f.store.db.prepare("SELECT count(*) n FROM image_products WHERE capture_id=? AND kind!='ocr' AND current=1").get(id)!.n,0);
+ assert.ok(!f.materials.read(corrected.ref).text.includes('The owner is not identified as that author.'));
+ assert.deepEqual(f.store.db.prepare("SELECT * FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(id),ocr);
+ assert.deepEqual(f.store.db.prepare('SELECT * FROM memory_input_authorizations WHERE capture_id=?').all(id),receipts);
+ await f.images.tick();await f.organize();assert.deepEqual(f.calls(),before,'refresh and deterministic publication cannot bill corrected history');
+ f.images.retry(id,false);await f.images.tick();await f.organize();assert.equal(f.calls().ocr,before.ocr);assert.equal(f.calls().visual,before.visual+1,'explicit retry grants current-context understanding');
+});
+
+test('attribution correction fences a late image interpretation and a cancelled stage cannot automatically retry',async t=>{
+ const f=await fixture(t),id=await f.upload();await f.organize();
+ let begin!:()=>void,release!:()=>void,calls=0;const entered=new Promise<void>(resolve=>begin=resolve),held=new Promise<void>(resolve=>release=resolve);t.after(()=>release());
+ f.processing.runtime.imageRecipes.get({id:'mote.image-understanding',version:'1'}).run=async()=>{calls++;begin();await held;return {text:'Generated stale interpretation',regions:[]};};
+ const running=f.images.tick();await entered;
+ const material=f.materials.get(materialId('generated-import',f.files.detail(id).item.externalId))!;f.materials.correctContext(material.id,material.revision,'owner');
+ release();await running;await f.images.tick();await f.organize();
+ assert.equal(calls,1);assert.equal(f.store.db.prepare("SELECT count(*) n FROM image_products WHERE capture_id=? AND kind!='ocr' AND current=1").get(id)!.n,0);
+ assert.equal(f.store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='understanding'").get(id)!.state,'cancelled');
+ assert.equal(f.store.db.prepare("SELECT count(*) n FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(id)!.n,1);
+});
+
+test('truly default attribution preserves the prior image interpretation fingerprint',async t=>{
+ const f=await fixture(t),id=await f.upload();await f.images.tick();
+ const row=f.store.db.prepare('SELECT * FROM image_inputs WHERE capture_id=?').get(id)!,record=f.store.evidence([id])[0];
+ assert.deepEqual(f.materials.contextForEvidence(record),{version:1,ownerRelation:'unknown',basis:'default'});
+ const binding=f.processing.imageConfiguration(String(row.source_id),String(row.mime),row.override_id?String(row.override_id):undefined,JSON.parse(String(row.policy_json))),processor=f.processing.runtime.registry.get(binding.applied.profile.processorId),settings=f.images.settings();
+ const recipe=f.processing.runtime.imageRecipes.resolve(binding.applied.profile.imageRecipe??DEFAULT_IMAGE_RECIPE,true),stage=recipe.steps.find(step=>step.kind==='understanding')!;
+ // Frozen pre-attribution identity. Host metadata with no declaration or
+ // correction must not turn a cached default-context interpretation into work.
+ const legacyContext={id:record.id,source:record.source,capturedAt:record.capturedAt,appName:record.appName,title:record.windowTitle,sourceVersion:record.provenance?{sourceId:record.provenance.sourceId,revision:record.provenance.revision,document:{contentRole:record.provenance.document?.contentRole,timeBasis:record.provenance.document?.timeBasis,recordedAt:record.provenance.document?.recordedAt,attachmentOf:record.provenance.document?.attachmentOf}}:undefined};
+ const dependencies=stage.dependsOn.map(name=>f.store.db.prepare('SELECT fingerprint FROM image_products WHERE capture_id=? AND name=? AND current=1').get(id,name)?.fingerprint??null);
+ const expected=sha256(JSON.stringify([row.hash,row.mime,processorContract(processor),processor.output?f.processing.runtime.outputs.list():null,processorSettingsFingerprint(processor,binding.settings,binding.applied.profile.parameters),settings.providerRevision,binding.settings.imageEndpoint===(process.env.MOTE_MEDIA_OCR_ENDPOINT??'http://127.0.0.1:9010/ocr')?MEDIA_CATALOG.ocr.version:'',stage.stage,recipe.fingerprint,dependencies,'fixture-model-1',legacyContext]));
+ assert.equal(f.store.db.prepare("SELECT fingerprint FROM image_products WHERE capture_id=? AND kind='understanding' AND current=1").get(id)!.fingerprint,expected);
+});
+
+
+test('failed attribution publication preserves the running image grant without abort or extra paid retry',async t=>{
+ const f=await fixture(t),id=await f.upload();await f.organize();
+ let begin!:()=>void,release!:()=>void,calls=0,signal!:AbortSignal;
+ const entered=new Promise<void>(resolve=>begin=resolve),held=new Promise<void>(resolve=>release=resolve);t.after(()=>release());
+ f.processing.runtime.imageRecipes.get({id:'mote.image-understanding',version:'1'}).run=async input=>{calls++;signal=input.signal;begin();await held;return {text:'Generated valid unchanged-context interpretation',regions:[]};};
+ const running=f.images.tick();await entered;
+ const material=f.materials.get(materialId('generated-import',f.files.detail(id).item.externalId))!,publish=f.materials.publish;
+ f.materials.publish=()=>{throw new StoreError('Generated publication quota failure',507);};
+ try{assert.throws(()=>f.materials.correctContext(material.id,material.revision,'owner'),{statusCode:507});}finally{f.materials.publish=publish;}
+ assert.equal(signal.aborted,false,'rolled-back cancellation must not abort the provider');
+ assert.equal(f.store.db.prepare('SELECT semantic_withdrawn FROM image_inputs WHERE capture_id=?').get(id)!.semantic_withdrawn,0);
+ assert.equal(f.materials.get(material.id)!.revision,material.revision);
+ release();await running;await f.images.tick();await f.organize();
+ assert.equal(calls,1);assert.equal(f.store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='understanding'").get(id)!.state,'succeeded');
+ assert.equal(f.store.db.prepare("SELECT count(*) n FROM image_products WHERE capture_id=? AND kind='understanding' AND current=1").get(id)!.n,1);
+});
+
+for(const outcome of ['rollback','commit'] as const)test(`snapshot image correction ${outcome} releases pixels only after committed completion`,async t=>{
+ const f=await fixture(t);f.sources.register({id:'generated-snapshot',name:'Generated snapshot',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'snapshot'});
+ const hash=sha256(f.bytes),begun=f.files.begin({sourceId:'generated-snapshot',previousRevision:null,relativePath:'generated.png',sha256:hash,sizeBytes:f.bytes.length,item:{externalId:'generated-snapshot-image',revision:hash,observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'snapshot',mimeType:'image/png',text:'',document:{fileIndex:{version:1,fileId:'generated-snapshot-image',contentVersion:hash,mode:'index',coverage:'none',parser:'central-pending',status:'pending',totalCharacters:0,offset:0,length:0,maxIndexCharacters:8000,allowRead:true}}}},()=>{});
+ f.files.part(begun.uploadId,0,f.bytes,()=>{});const ack=await f.files.commit(begun.uploadId,()=>{}),id=String(ack.id);await f.organize();
+ let begin!:()=>void,release!:()=>void,calls=0,signal!:AbortSignal;
+ const entered=new Promise<void>(resolve=>begin=resolve),held=new Promise<void>(resolve=>release=resolve);t.after(()=>release());
+ f.processing.runtime.imageRecipes.get({id:'mote.image-understanding',version:'1'}).run=async input=>{calls++;signal=input.signal;begin();await held;return {text:'Generated snapshot interpretation',regions:[]};};
+ const running=f.images.tick();await entered;
+ const material=f.materials.get(materialId('generated-snapshot','generated-snapshot-image'))!,publish=f.materials.publish;
+ if(outcome==='rollback'){
+  f.materials.publish=()=>{throw new StoreError('Generated publication quota failure',507);};
+  try{assert.throws(()=>f.materials.correctContext(material.id,material.revision,'owner'),{statusCode:507});}finally{f.materials.publish=publish;}
+  assert.equal(signal.aborted,false);assert.equal(f.materials.get(material.id)!.revision,material.revision);
+ }else f.materials.correctContext(material.id,material.revision,'owner');
+ assert.deepEqual(Buffer.concat([...f.files.processingBytes(id)]),f.bytes,'transactional publication never physically deletes rollback-capable pixels');
+ f.images.prepare();
+ if(outcome==='rollback')assert.deepEqual(Buffer.concat([...f.files.processingBytes(id)]),f.bytes,'preparation preserves the restored running input');
+ else{assert.equal(f.store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=?').get(id),undefined);assert.throws(()=>f.store.assets.get(hash),{statusCode:404});}
+ release();await running;await f.images.tick();await f.organize();
+ assert.equal(calls,1);assert.equal(f.calls().ocr,1);
+ assert.equal(f.store.db.prepare("SELECT count(*) n FROM image_products WHERE capture_id=? AND kind='understanding' AND current=1").get(id)!.n,outcome==='rollback'?1:0);
+ assert.equal(f.store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=?').get(id),undefined,'completed snapshot input retention stays unchanged');
+ assert.throws(()=>f.store.assets.get(hash),{statusCode:404});
+});
+
+for(const timing of ['before preparation','while OCR runs'] as const)test('correction preserves custom named OCR '+timing,async t=>{
+ const f=await fixture(t),registry=f.processing.runtime.imageRecipes;
+ registry.registerRecipe({id:'fixture.named-ocr',version:'1',steps:[{name:'text-recognition',stage:{id:'mote.image-ocr',version:'1'},dependsOn:[]},{name:'interpretation',stage:{id:'mote.image-understanding',version:'1'},dependsOn:['text-recognition']}]});
+ const view=f.processing.view(),policy=structuredClone(view.policy);
+ policy.profiles.push({...policy.profiles.find(profile=>profile.id==='central-image')!,id:'named-ocr',name:'Named OCR fixture',imageRecipe:{id:'fixture.named-ocr',version:'1'}});
+ f.processing.update({revision:view.revision,settings:view.settings,policy});
+ const id=await f.upload('generated-import','named-ocr');await f.organize();
+ let begin!:()=>void,release!:()=>void,signal:AbortSignal|undefined;
+ const entered=new Promise<void>(resolve=>begin=resolve),held=new Promise<void>(resolve=>release=resolve);t.after(()=>release());
+ const stage=registry.get({id:'mote.image-ocr',version:'1'}),original=stage.run;
+ stage.run=async input=>{signal=input.signal;begin();await held;return original(input);};
+ const running=timing==='while OCR runs'?f.images.tick():undefined;if(running)await entered;
+ const material=f.materials.get(materialId('generated-import',f.files.detail(id).item.externalId))!;
+ f.materials.correctContext(material.id,material.revision,'third_party');
+ if(signal)assert.equal(signal.aborted,false);
+ assert.equal(f.store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='text-recognition'").get(id)!.state,timing==='while OCR runs'?'running':'waiting');
+ release();if(running)await running;else await f.images.tick();await f.organize();
+ assert.equal(f.calls().ocr,1);assert.equal(f.calls().visual,0);
+ assert.equal(f.store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='text-recognition'").get(id)!.state,'succeeded');
+ assert.equal(f.store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='interpretation'").get(id)!.state,'cancelled');
+ assert.equal(f.store.db.prepare("SELECT count(*) n FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(id)!.n,1);
+});
+
+test('corrected input with missing pinned recipe remains semantically withdrawn after reinstall until explicit retry',async t=>{
+ const f=await fixture(t),registry=f.processing.runtime.imageRecipes,recipe={id:'fixture.unavailable',version:'1',steps:[{name:'ocr',stage:{id:'mote.image-ocr',version:'1'},dependsOn:[]},{name:'semantic',stage:{id:'mote.image-understanding',version:'1'},dependsOn:['ocr']}]};
+ const uninstall=registry.registerRecipe(recipe),view=f.processing.view(),policy=structuredClone(view.policy);
+ policy.profiles.push({...policy.profiles.find(profile=>profile.id==='central-image')!,id:'unavailable-image',name:'Unavailable fixture',imageRecipe:{id:recipe.id,version:recipe.version}});
+ f.processing.update({revision:view.revision,settings:view.settings,policy});
+ const id=await f.upload('generated-import','unavailable-image');await f.organize();uninstall();
+ const material=f.materials.get(materialId('generated-import',f.files.detail(id).item.externalId))!;f.materials.correctContext(material.id,material.revision,'owner');
+ await f.images.tick();registry.registerRecipe(recipe);await f.images.tick();await f.organize();
+ assert.equal(f.calls().ocr,1);assert.equal(f.calls().visual,0);assert.equal(f.store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='semantic'").get(id)!.state,'cancelled');
+ f.images.retry(id,false);await f.images.tick();assert.equal(f.calls().visual,1);
+});
+
+test('owner source correction before the first image Material withdraws cached and future semantic work through the real API',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-image-source-context-')),config:Config={dataDir:directory,token:'generated-image-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ let visual=0;
+ const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{visual++;await reader.readImage!({id:input.directImages![0].id});return {answer:JSON.stringify({text:'Generated source interpretation',regions:[]}),citations:[],trace:[],runId:randomUUID()};}})});
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});await node.app.ready();
+ node.processing.configureImageDefault({endpoint:'http://127.0.0.1:9011/ocr'});node.processing.runtime.registry.get('image.http').process=async()=>({durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated original source text'}]});
+ const bytes=await sharp({create:{width:16,height:16,channels:3,background:'#ddeeff'}}).png().toBuffer(),id=randomUUID();
+ await node.store.ingest({id,deviceId:'generated-screen',deviceName:'Generated screen',platform:'android',source:'screen',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'',ocr:{status:'disabled'},privacy:{excluded:false,redacted:false,mode:'local'},imageMime:'image/png',imageBase64:bytes.toString('base64')});
+ await node.perception.tick();assert.equal(visual,1);assert.equal(node.materials.list().items.length,0);
+ const sourceId=String(node.store.db.prepare('SELECT source_id FROM image_inputs WHERE capture_id=?').get(id)!.source_id);
+ const result=await node.app.inject({method:'PATCH',url:'/api/sources/'+encodeURIComponent(sourceId),headers:{authorization:'Bearer '+config.token},payload:{ownerRelation:'third_party'}});assert.equal(result.statusCode,200,result.body);
+ assert.equal(node.store.db.prepare("SELECT count(*) n FROM image_products WHERE capture_id=? AND kind!='ocr' AND current=1").get(id)!.n,0);
+ assert.equal(node.store.db.prepare("SELECT count(*) n FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(id)!.n,1);
+ await node.perception.tick();assert.equal(visual,1,'source declaration grants no historical rerun');
+ node.perception.retry(id,false);await node.perception.tick();assert.equal(visual,2,'owner explicit retry remains available');
+});
+
+test('shared image interpretation retires from every Material without withdrawing unrelated image products',async t=>{
+ const f=await fixture(t);let calls=0;
+ f.processing.runtime.imageRecipes.get({id:'mote.image-understanding',version:'1'}).run=async input=>{calls++;return {text:'Generated image interpretation '+input.record.id,regions:[]};};
+ const shared=await f.upload(),unrelated=await f.upload();await f.images.tick();await f.organize();
+ const original=f.materials.get(materialId('generated-import',f.files.detail(shared).item.externalId))!;
+ const sharedProduct=f.store.db.prepare("SELECT * FROM image_products WHERE capture_id=? AND kind='understanding' AND current=1").get(shared)!;
+ const unrelatedProduct=f.store.db.prepare("SELECT * FROM image_products WHERE capture_id=? AND kind='understanding' AND current=1").get(unrelated)!;
+ const ocr=f.store.db.prepare("SELECT * FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(shared)!;
+ const bundle=f.materials.publish({id:materialId('generated-import','generated-image-bundle'),kind:'mote.message',schemaVersion:1,title:'Generated image bundle',origin:{sourceId:'generated-import',externalId:'generated-image-bundle'},
+  members:[{id:shared,kind:'capture',ref:'capture:'+shared},{id:unrelated,kind:'capture',ref:'capture:'+unrelated}],
+  blocks:[{id:'shared-interpretation',kind:'text',format:'plain',text:'Generated image interpretation '+shared,memberIds:[shared]},{id:'unrelated-interpretation',kind:'text',format:'plain',text:'Generated image interpretation '+unrelated,memberIds:[unrelated]},{id:'original-ocr',kind:'text',format:'plain',text:'Generated third-party article: I resigned.',memberIds:[shared]}],
+  artifacts:[{key:'shared-interpretation',state:'ready',revision:String(sharedProduct.id),blockIds:['shared-interpretation']},{key:'unrelated-interpretation',state:'ready',revision:String(unrelatedProduct.id),blockIds:['unrelated-interpretation']},{key:'extracted-text',state:'ready',revision:String(ocr.id),blockIds:['original-ocr']}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
+ f.materials.correctContext(original.id,original.revision,'owner');
+ const next=f.materials.get(bundle.id)!;assert.notEqual(next.revision,bundle.revision);assert.deepEqual(next.attributionContext,bundle.attributionContext);
+ assert.ok(!f.materials.read(next.ref).text.includes(shared));assert.ok(f.materials.read(next.ref).text.includes(unrelated));assert.ok(f.materials.read(next.ref).text.includes('Generated third-party article: I resigned.'));
+ assert.deepEqual(f.store.db.prepare("SELECT * FROM image_products WHERE capture_id=? AND kind='understanding' AND current=1").get(unrelated),unrelatedProduct);
+ assert.deepEqual(f.store.db.prepare("SELECT * FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(shared),ocr);
+ assert.equal(f.store.db.prepare('SELECT semantic_withdrawn FROM image_inputs WHERE capture_id=?').get(unrelated)!.semantic_withdrawn,0);
+ await f.images.tick();await f.organize();assert.equal(calls,2);
 });

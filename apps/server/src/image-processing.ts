@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {fileProcessingSchema,transcriptSchema,type CaptureInput,type CaptureRecord,type Transcript,type ProcessingService} from '@mote/shared';
+import {fileProcessingSchema,transcriptSchema,unknownAttributionContext,type CaptureInput,type CaptureRecord,type Transcript,type ProcessingService} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {FileProcessing} from './file-processing.js';
@@ -16,6 +16,7 @@ import {perceptionSettingsSchema} from './perception.js';
 import {MEDIA_CATALOG,type MediaAssets} from './media-assets.js';
 import {requestLocalJson} from './local-http.js';
 import type {MaterialMemoryWork} from './material-memory-work.js';
+import type {MaterialStore} from './materials.js';
 
 const settingsSchema=perceptionSettingsSchema.extend({understandingEnabled:z.boolean().default(true),profileId:z.string().max(100).optional()});
 export type ImageSettings=z.infer<typeof settingsSchema>;
@@ -35,7 +36,7 @@ export class ImageProcessing {
  private attachments:ImageAttachmentIntake;private closed=false;private workerReady=false;private checkedAt=0;private probe?:Promise<void>;
  private prepareCursor=0;
  private previews=new Map<string,{expires:number;watermark:number;query:z.infer<typeof historicalSchema>}>();
- constructor(private store:Store,private processing:FileProcessing,engine:ExecutionEngine,private options:{understanding?:ImageUnderstanding;mediaAssets?:MediaAssets;memoryWork?:MaterialMemoryWork;probeOcr?:()=>Promise<boolean>}={}){
+ constructor(private store:Store,private processing:FileProcessing,engine:ExecutionEngine,private options:{understanding?:ImageUnderstanding;mediaAssets?:MediaAssets;memoryWork?:MaterialMemoryWork;materials?:MaterialStore;probeOcr?:()=>Promise<boolean>}={}){
   this.engine=engine;this.inputs=processing.runtime.imageInputs;installImageSchema(store);
   this.disposeInputs=installImageInputs(store,processing.files,this.inputs);
   this.attachments=new ImageAttachmentIntake(store,processing.files);
@@ -57,6 +58,10 @@ export class ImageProcessing {
    FROM file_versions v JOIN captures c ON c.id=v.capture_id WHERE json_extract(v.manifest,'$.item.mimeType') LIKE 'image/%' AND coalesce(json_extract(v.manifest,'$.item.deleted'),0)=0;
    CREATE TABLE IF NOT EXISTS image_backfills(id TEXT PRIMARY KEY,query TEXT NOT NULL,watermark INTEGER NOT NULL,cursor INTEGER NOT NULL DEFAULT 0,queued INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL DEFAULT 'waiting');`);
   processing.imageControl=this;
+  const materials=this.materials();if(materials){
+   const previous=materials.onContextChanged;materials.onContextChanged=(id,cause)=>{previous?.(id,cause);if(cause!=='derived')this.invalidateAttribution(id);};
+   const priorSource=materials.onSourceContextChanged;materials.onSourceContextChanged=id=>{priorSource?.(id);for(const row of db.prepare('SELECT capture_id FROM image_inputs WHERE source_id=?').all(id))this.invalidateImageAttribution(String(row.capture_id));};
+  }
   store.imageReceived=input=>this.receive(input);
   for(const kind of ['ocr','understanding','derived'])this.unregister.push(engine.register({kind:'images.'+kind,pool:'images.'+kind,concurrency:()=>this.settings().concurrency,timeoutMs:()=>this.processing.currentSettings().timeoutMs,
    resourceKeys:step=>['image-product:'+String(step.input.fingerprint)],validate:step=>this.valid(step),
@@ -110,14 +115,50 @@ export class ImageProcessing {
   const {binding,fingerprint:recipe}=this.recipe(row),settings=this.settings(),processor=this.processing.runtime.registry.get(binding.applied.profile.processorId);
   const dependencyProducts=step.dependsOn.map(name=>this.product(row.capture_id,name)?.fingerprint??null);
   const model=step.kind==='ocr'?null:this.options.understanding?.selection(binding.settings.analysisModel).fingerprint??'unconfigured';
-  const context=step.kind==='ocr'&&processor.reuseByContent===true&&this.processing.runtime.imageRecipes.get(step.stage).reuseByContent===true?null:this.context(this.store.evidence([row.capture_id])[0]);
+  const record=this.store.evidence([row.capture_id])[0];
+  const attribution=step.kind==='ocr'?undefined:this.materials()?.contextForEvidence(record);
+  const meaningful=attribution&&(attribution.basis!=='default'||attribution.correction||attribution.sourceDeclaration||attribution.materialDeclarations);
+  // Truly unknown/default context retains the pre-attribution cache identity.
+  // Declaration and correction versions (including cleared values) fence ABA.
+  const context=step.kind==='ocr'&&processor.reuseByContent===true&&this.processing.runtime.imageRecipes.get(step.stage).reuseByContent===true?null:{...this.context(record),...(meaningful?{attributionContext:attribution}:{})};
   return sha256(JSON.stringify([row.hash,row.mime,processorContract(processor),processor.output?this.processing.runtime.outputs.list():null,processorSettingsFingerprint(processor,binding.settings,binding.applied.profile.parameters),settings.providerRevision,
    binding.settings.imageEndpoint===managedEndpoint()?MEDIA_CATALOG.ocr.version:'',step.stage,step.kind==='ocr'?null:recipe,dependencyProducts,model,context]));
  }
+ private materials(){return this.options.materials??this.processing.files.sources.pipelines?.materials;}
+ /** Context correction retires interpretations, keeps reusable OCR, and waits
+  * for an explicit historical retry instead of billing on a changed context. */
+ private invalidateAttribution(materialId:string){
+  const members=this.store.db.prepare('SELECT DISTINCT m.ref FROM material_members m JOIN material_heads h ON h.id=m.material_id AND h.revision=m.revision WHERE m.material_id=?').all(materialId);
+  for(const member of members){const ref=String(member.ref);if(ref.startsWith('capture:'))this.invalidateImageAttribution(ref.slice(8));}
+ }
+ private invalidateImageAttribution(id:string){
+  if(!this.owns(id))return;
+  const db=this.store.db,row=this.row(id)!,semanticNames=new Set<string>(),ocrNames=new Set<string>();
+  // This durable authority does not depend on installed recipe capabilities.
+  // Reinstalling a missing stage cannot grant historical model work.
+  db.prepare('UPDATE image_inputs SET semantic_withdrawn=1 WHERE capture_id=?').run(id);
+  try{for(const stage of this.recipe(row).steps){
+   if(stage.kind!=='ocr')semanticNames.add(stage.name);else ocrNames.add(stage.name);
+   db.prepare("INSERT OR IGNORE INTO perception_jobs(capture_id,kind,state,created_at,error,auto_eligible) VALUES(?,?,?,?,?,1)").run(id,stage.name,stage.kind==='ocr'?'waiting':'cancelled',Date.now(),stage.kind==='ocr'?null:'attribution_context_changed');
+  }}catch{/* Missing recipes remain unavailable; durable metadata still revokes known semantic steps. */}
+  for(const product of db.prepare("SELECT name FROM image_products WHERE capture_id=? AND kind!='ocr' AND current=1").all(id))semanticNames.add(String(product.name));
+  for(const raw of db.prepare("SELECT id FROM execution_steps WHERE operation_id=? AND kind IN ('images.understanding','images.derived')").all('image:'+id)){
+   const step=this.engine.get(String(raw.id))!;semanticNames.add(String(step.input.name));
+   if(!['succeeded','cancelled','stale'].includes(step.state)){
+    // Cancellation is part of the correction transaction. Immediate local abort
+    // would survive rollback and turn a failed correction into another paid retry.
+    this.engine.cancel(step.id,false);
+   }
+  }
+  db.prepare("UPDATE image_products SET current=0 WHERE capture_id=? AND kind!='ocr' AND current=1").run(id);
+  for(const name of semanticNames)if(!ocrNames.has(name))db.prepare("UPDATE perception_jobs SET state='cancelled',error='attribution_context_changed' WHERE capture_id=? AND kind=?").run(id,name);
+  this.projectFile(row);
+ }
  private context(record:CaptureRecord){return {id:record.id,source:record.source,capturedAt:record.capturedAt,appName:record.appName,title:record.windowTitle,sourceVersion:record.provenance?{sourceId:record.provenance.sourceId,revision:record.provenance.revision,document:{contentRole:record.provenance.document?.contentRole,timeBasis:record.provenance.document?.timeBasis,recordedAt:record.provenance.document?.recordedAt,attachmentOf:record.provenance.document?.attachmentOf}}:undefined};}
  private product(id:string,name:string){return this.store.db.prepare('SELECT * FROM image_products WHERE capture_id=? AND name=? AND current=1 ORDER BY rowid DESC LIMIT 1').get(id,name);}
+ private semanticWithdrawn(id:string){return Boolean(this.row(id)?.semantic_withdrawn);}
  private valid(step:ExecutionStep){
-  if(this.closed)return false;const row=this.row(String(step.input.captureId));if(!row||row.hash!==step.input.hash||row.generation!==step.input.generation||!this.store.isCurrentEvidence(row.capture_id))return false;
+  if(this.closed)return false;if(step.kind!=='images.ocr'&&this.semanticWithdrawn(String(step.input.captureId)))return false;const row=this.row(String(step.input.captureId));if(!row||row.hash!==step.input.hash||row.generation!==step.input.generation||!this.store.isCurrentEvidence(row.capture_id))return false;
   try{const plan=this.recipe(row),stage=plan.steps.find(s=>s.name===step.input.name);return Boolean(stage&&this.fingerprint(row,stage)===step.input.fingerprint&&this.inputs.get(row.adapter)?.version===step.input.adapterVersion);}catch{return false;}
  }
  private admit(step:ExecutionStep){
@@ -147,7 +188,14 @@ export class ImageProcessing {
   const state=jobs.some(j=>j.state==='running')?'running':jobs.some(j=>j.state==='failed')?'failed':jobs.some(j=>j.state==='blocked')?'blocked':jobs.some(j=>j.state==='waiting')?'waiting':jobs.length&&jobs.every(j=>['succeeded','cancelled'].includes(String(j.state)))?(jobs.some(j=>j.error==='cancelled')?'cancelled':'succeeded'):'waiting';
   const error=jobs.find(j=>j.error)?.error??null;
   this.store.db.prepare("UPDATE file_jobs SET state=?,stage=?,error=?,summary_state='blocked' WHERE capture_id=?").run(state,ocr?.state==='succeeded'?'understanding':'ocr',error,row.capture_id);
-  if(state==='succeeded')this.processing.files.releaseSnapshotInput(row.capture_id);
+  // Physical asset removal cannot roll back with a correction or executor
+  // transaction. The next prepare pass releases committed terminal inputs.
+  if(state==='succeeded'&&!this.store.db.isTransaction)this.processing.files.releaseSnapshotInput(row.capture_id);
+ }
+ private releaseCompletedSnapshotInputs(){
+  if(this.store.db.isTransaction)return;
+  const rows=this.store.db.prepare("SELECT s.capture_id FROM file_snapshot_inputs s JOIN image_inputs i ON i.capture_id=s.capture_id JOIN file_jobs j ON j.capture_id=s.capture_id WHERE j.state='succeeded'").all();
+  for(const row of rows)this.processing.files.releaseSnapshotInput(String(row.capture_id));
  }
  private async refreshWorker(){
   if(this.probe)return this.probe;
@@ -160,6 +208,7 @@ export class ImageProcessing {
  }
  prepare(){
   if(this.closed)return [];
+  this.releaseCompletedSnapshotInputs();
   if(Date.now()-this.checkedAt>=5000)void this.refreshWorker();
   void this.attachments.prepare();this.backfillBatch();
   const ids:string[]=[],db=this.store.db;
@@ -182,6 +231,7 @@ export class ImageProcessing {
     const plan=this.recipe(row);
     for(const obsolete of db.prepare('SELECT kind FROM perception_jobs WHERE capture_id=?').all(row.capture_id))if(!plan.steps.some(s=>s.name===obsolete.kind))db.prepare("UPDATE perception_jobs SET state='cancelled',error='not_scheduled' WHERE capture_id=? AND kind=?").run(row.capture_id,obsolete.kind);
     for(const stage of plan.steps){
+     if(stage.kind!=='ocr'&&this.semanticWithdrawn(row.capture_id)){db.prepare("INSERT INTO perception_jobs(capture_id,kind,state,created_at,error) VALUES(?,?,'cancelled',?,'attribution_context_changed') ON CONFLICT(capture_id,kind) DO UPDATE SET state='cancelled',error='attribution_context_changed'").run(row.capture_id,stage.name,Date.now());continue;}
      db.prepare("INSERT OR IGNORE INTO perception_jobs(capture_id,kind,state,created_at,auto_eligible) VALUES(?,?,'waiting',?,1)").run(row.capture_id,stage.name,Date.now());
      const job=db.prepare('SELECT * FROM perception_jobs WHERE capture_id=? AND kind=?').get(row.capture_id,stage.name) as JobRow;
      if(['succeeded','cancelled'].includes(job.state)||job.attempts>=4||job.available_at>Date.now())continue;
@@ -203,7 +253,8 @@ export class ImageProcessing {
   const row=this.row(String(step.input.captureId))!,original=this.original(row)!;
   const cached=row.reuse_allowed?this.store.db.prepare('SELECT json,id,capture_id FROM image_products WHERE fingerprint=? AND current=1 LIMIT 1').get(String(step.input.fingerprint)):undefined;
   if(cached)return {...JSON.parse(String(cached.json)),reuse:{productId:cached.id,captureId:cached.capture_id}};
-  const plan=this.recipe(row),stage=this.processing.runtime.imageRecipes.get(step.input.stage as {id:string;version:string}),record=this.store.evidence([row.capture_id])[0];
+  const plan=this.recipe(row),stage=this.processing.runtime.imageRecipes.get(step.input.stage as {id:string;version:string}),rawRecord=this.store.evidence([row.capture_id])[0];
+  const record={...rawRecord,attributionContext:this.materials()?.contextForEvidence(rawRecord)??unknownAttributionContext()};
   const dependencies=Object.fromEntries(plan.steps.find(s=>s.name===step.input.name)!.dependsOn.map(name=>[name,this.product(row.capture_id,name)?JSON.parse(String(this.product(row.capture_id,name)!.json)).payload:undefined]));
   const readImage=async(input:Omit<import('@mote/shared').ImageReadInput,'id'>)=>{signal.throwIfAborted();const bytes:Buffer[]=[];for await(const part of original.read())bytes.push(part);return imageOutput(Buffer.concat(bytes),original.mimeType,{...input,id:row.capture_id},()=>this.valid(step));};
   const payload=await stage.run({record,hash:original.hash,mimeType:original.mimeType,dependencies,signal,readImage,
@@ -241,7 +292,7 @@ export class ImageProcessing {
  retry(id:string,recompute=true,confirmUnknown=false){
   const row=this.row(id);if(!row||!this.store.isCurrentEvidence(id))throw new StoreError('Image not found',404);
   const wait=this.processing.imageProcessorWait(id);if(wait==='running'||wait==='unknown'&&!confirmUnknown)throw new StoreError('Previous image processing has not finished or its completion is unknown',409);if(confirmUnknown)this.processing.clearImageProcessorWait(id);
-  this.cancel(id,false);this.store.db.prepare('UPDATE image_inputs SET auto_eligible=1,generation=generation+?,reuse_allowed=?,policy_json=NULL,understanding_enabled=? WHERE capture_id=?').run(Number(recompute),Number(!recompute),Number(this.settings().understandingEnabled),id);
+  this.cancel(id,false);this.store.db.prepare('UPDATE image_inputs SET semantic_withdrawn=0 WHERE capture_id=?').run(id);this.store.db.prepare('UPDATE image_inputs SET auto_eligible=1,generation=generation+?,reuse_allowed=?,policy_json=NULL,understanding_enabled=? WHERE capture_id=?').run(Number(recompute),Number(!recompute),Number(this.settings().understandingEnabled),id);
   this.store.db.prepare("UPDATE perception_jobs SET state='waiting',attempts=0,available_at=0,error=NULL,auto_eligible=1 WHERE capture_id=? AND (?=1 OR state!='succeeded')").run(id,Number(recompute));return {queued:true};
  }
  previewHistoricalOcr(raw:unknown={}){

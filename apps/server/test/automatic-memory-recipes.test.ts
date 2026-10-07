@@ -70,8 +70,11 @@ test('owner-selected automatic recipes share one generation, support source over
 });
 
 test('receipt pins scopes before publication; later enablement, version replacement and duplicate delivery do not backfill',async t=>{
-  const f=await fixture(t);f.source('diary');await f.configure([]);
-  const denied=await f.add('diary','disabled');await f.configure([personal,coding]);await f.publish();await f.run();assert.equal(f.calls.length,0);
+  const f=await fixture(t);f.source('diary');
+  const denied=await f.add('diary','disabled');
+  // Seed a durable denial from the superseded intake policy. Current API
+  // choices cannot disable admission or upgrade that historical receipt.
+  f.node.store.db.prepare('UPDATE memory_input_authorizations SET authorized=0 WHERE capture_id=?').run(denied.id);await f.configure([personal,coding]);await f.publish();await f.run();assert.equal(f.calls.length,0);
   assert.equal((await f.add('diary','disabled')).duplicate,true);await f.publish();await f.run();assert.equal(f.calls.length,0);
   assert.ok(f.node.materials.list({sourceId:'diary'}).items.some(m=>f.node.materialMemoryWork.readyForMemory(m.ref)));
   await f.add('diary','pinned');
@@ -182,7 +185,7 @@ test('enablement and revocation commit atomically and query agent credentials ca
   const f=await fixture(t);f.source('diary');await f.configure([personal,coding]);await f.add('diary','first');
   const before=f.node.memoryRecipeSettings.view(),hook=f.node.memoryRecipeSettings.onChange;
   f.node.memoryRecipeSettings.onChange=()=>{hook?.();throw Error('Generated config failure');};
-  assert.throws(()=>f.node.memoryRecipeSettings.configure({recipes:[]}),/Generated config failure/);
+  assert.throws(()=>f.node.memoryRecipeSettings.configure({recipes:[coding]}),/Generated config failure/);
   assert.deepEqual(f.node.memoryRecipeSettings.view(),before);
   assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE revoked_at IS NOT NULL').get()!.n,0);
   f.node.memoryRecipeSettings.onChange=hook;
@@ -192,4 +195,39 @@ test('enablement and revocation commit atomically and query agent credentials ca
   f.node.store.logicalBytes();
   assert.ok(Number(f.node.store.db.prepare("SELECT bytes FROM storage_ledger WHERE name='memory_recipe_settings'").get()!.bytes)>0);
   await f.publish();assert.ok(Number(f.node.store.db.prepare("SELECT bytes FROM storage_ledger WHERE name='material_memory_requests'").get()!.bytes)>0);
+});
+
+test('legacy empty selections inherit continuous strategies without authorizing old receipts or changing v2 definition pins',async t=>{
+  const f=await fixture(t);f.source('diary');f.source('inherited');
+  const pinned=f.node.memoryRecipeSettings.selection()[0];assert.equal(pinned.recipe.version,'2');
+  await f.add('diary','legacy-denied');f.node.store.db.prepare("UPDATE memory_input_authorizations SET authorized=0 WHERE source_id='diary'").run();
+  f.node.store.db.prepare("UPDATE memory_recipe_settings SET json='[]' WHERE id='default'").run();
+  f.node.store.db.prepare("INSERT INTO memory_recipe_settings VALUES('source:inherited','inherited','[]')").run();
+  await f.restart();
+  assert.deepEqual(f.node.memoryRecipeSettings.selection(),[pinned]);
+  assert.equal(f.node.memoryRecipeSettings.view().items[0].available,true,'host attribution upgrades preserve immutable personal@2 component definitions');
+  assert.equal(f.node.memoryRecipeSettings.view('inherited').inherited,true);
+  assert.deepEqual(f.node.memoryRecipeSettings.selection('inherited'),[pinned]);
+  await f.publish();await f.run();assert.equal(f.calls.length,0,'empty-selection cutover cannot upgrade a durable denial');
+  await f.add('diary','fresh');await f.add('inherited','fresh');
+  // Startup organization owns its existing run; drive the real scheduler once
+  // that run yields so post-startup receipts cannot be mistaken for completion.
+  for(let attempt=0;attempt<20;attempt++){
+    await f.publish();if(f.node.materialOrganizer.status().pendingChanges===0)break;
+    await new Promise(resolve=>setImmediate(resolve));
+  }
+  await f.run();assert.equal(f.jobs().length,2);assert.ok(f.jobs().every(job=>job.status==='completed'&&job.recipes![0].id===personal.id));
+  for(const sourceId of [undefined,'diary']){
+    const response=await f.node.app.inject({method:'PUT',url:'/api/memory-recipe-settings',headers:{authorization:'Bearer '+f.config.token},payload:{recipes:[],...(sourceId?{sourceId}:{})}});
+    assert.equal(response.statusCode,400,'a new empty selection cannot disable continuous processing');
+  }
+});
+
+test('pausing source intake rejects new receipts while previously accepted work retains its authorization',async t=>{
+  const f=await fixture(t);f.source('diary');await f.add('diary','accepted');
+  f.node.sources.update('diary',{enabled:false});
+  await assert.rejects(f.add('diary','after-pause'),{statusCode:409});
+  assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM memory_input_authorizations WHERE source_id='diary'").get()!.n,1);
+  await f.publish();await f.run();assert.equal(f.jobs().length,1);assert.equal(f.jobs()[0].status,'completed');
+  f.node.sources.update('diary',{enabled:true});await f.add('diary','after-resume');await f.publish();await f.run();assert.equal(f.jobs().length,2);
 });

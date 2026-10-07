@@ -92,14 +92,14 @@ try{
   for(const memory of report.memories){assert.ok(memory.strategy&&memory.reviewReceipt);assert.equal(memory.reviewReceipt.strategy.fingerprint,memory.strategy.review.fingerprint);for(const span of memory.evidence){const e=node!.memories.readEvidence([span.id])[0];assert.equal(e.ocrText.slice(span.offset,span.offset+span.length),span.quote);}}
   const products=new Map(node!.store.db.prepare('SELECT id,json FROM memories').all().map(r=>[String(r.id),String(r.json)])),jobIds=report.jobs.map((j:any)=>j.id).sort();
   const count=report.calls.length;noModel=true;await close();await start();
-  await request('PUT','/api/memory-recipe-settings',{recipes:[]});
+  await request('PUT','/api/memory-recipe-settings',{recipes:[recipes[1]]});
   for(const original of manifest.records)assert.equal((await request('PUT',`/api/sources/${sourceId}/items`,payload(original))).duplicate,true);
   await request('PUT','/api/memory-recipe-settings',{recipes});
   for(let i=0;i<6;i++){node!.sourcePipelines.drainMemory(node!.memoryPipeline,true,100);await delay(1000);}
   assert.equal(report.unexpectedReplayAttempts,0);assert.equal(report.calls.length,count);assert.deepEqual(node!.memoryPipeline.list().map(j=>j.id).sort(),jobIds);
   for(const [id,json] of products)assert.equal(node!.store.db.prepare('SELECT json FROM memories WHERE id=?').get(id)?.json,json);
   for(const original of report.records)assert.equal(sha256(node!.memories.readEvidence([original.id])[0].ocrText),original.textSha256);
-  report.restartAndSelectionNoReplay=true;report.productsUnchangedAfterDisable=true;report.sourceHashesUnchanged=true;await close();
+  report.restartAndSelectionNoReplay=true;report.productsUnchangedAfterStrategyChange=true;report.sourceHashesUnchanged=true;await close();
   const traces=[];for(const name of await readdir(join(vault,'logs'))){if(!/^central\.\d+\.ndjson$/.test(name))continue;for(const line of (await readFile(join(vault,'logs',name),'utf8')).trim().split('\n')){if(line){const event=JSON.parse(line);if(event.trace?.type==='query.started')traces.push(event.trace);}}}
   report.traceCalls=traces.map(t=>({traceId:t.traceId,jobId:t.jobId,batchId:t.batchId,phase:t.tracePhase,model:t.model}));assert.equal(traces.length,report.calls.length);assert.ok(traces.every(t=>t.model==='gpt-6-sol'));
   report.status='passed';

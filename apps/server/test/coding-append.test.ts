@@ -352,3 +352,18 @@ test('chunk search finds boundary text and excludes superseded tails while pinne
   assert.equal(store.db.prepare('SELECT count(*) n FROM material_fts_blocks').get()!.n,0);
   assert.equal(store.db.prepare('SELECT count(*) n FROM material_block_payloads').get()!.n,0);
 });
+
+
+test('owner context correction survives Coding append without exposing raw tool bodies',async t=>{
+  const {materials,runtime,sources}=await fixture(t);
+  await sources.upsert('coding',event(0,'Generated visible request'));await runtime.tick();
+  const first=materials.list().items[0]!,corrected=materials.correctContext(first.id,first.revision,'mixed');
+  assert.equal(materials.get(first.ref),undefined);
+  const tool=event(1,'PRIVATE_CONTEXT_TOOL_FIXTURE');await sources.upsert('coding',{...tool,document:{...tool.document,coding:{...tool.document.coding,role:'tool_result'}}});await runtime.tick();
+  assert.equal(materials.get(first.id)?.attributionContext?.ownerRelation,'mixed');
+  await sources.upsert('coding',event(2,'Generated appended owner request'));await runtime.tick();
+  const current=materials.get(first.id)!,page=materials.read(current.ref,{length:12000});
+  assert.equal(current.attributionContext?.correction?.version,corrected.attributionContext?.correction?.version);
+  assert.ok(page.spans.every(span=>span.attributionContext.ownerRelation==='mixed'));
+  assert.match(page.text,/Generated appended owner request/);assert.doesNotMatch(page.text,/PRIVATE_CONTEXT_TOOL_FIXTURE/);
+});

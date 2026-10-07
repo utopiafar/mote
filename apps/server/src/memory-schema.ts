@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {fileIndexSchema,fileEvidenceSchema,memoryScopeRefSchema} from '@mote/shared';
+import {fileIndexSchema,fileEvidenceSchema,memoryScopeRefSchema,attributionContextSchema} from '@mote/shared';
 import {memoryRecipeBindingSchema,memoryStrategyPinSchema,memoryIntegrationBindingSchema} from './memory-strategy-contract.js';
 
 const timestamp=z.string().max(64).datetime({offset:true});
@@ -10,6 +10,7 @@ export const memoryEvidenceSchema=z.object({
   timeBasis:z.enum(['recorded','occurred','unknown']).optional(),contentRole:z.enum(['authored','transcript','summary','reference','other']).optional(),
   offset:z.number().int().min(0).max(100000).optional(),length:z.number().int().min(0).max(100000).optional(),quote:z.string().max(12000).optional(),
   fileEvidence:fileEvidenceSchema.optional(),fileIndex:fileIndexSchema.optional(),
+  attributionContext:attributionContextSchema.optional(),
   contentHash:z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
 export const codingMemorySchema=z.object({

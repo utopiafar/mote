@@ -1,3 +1,4 @@
+import {ownerRelationSchema} from '@mote/shared';
 import type {FastifyInstance} from 'fastify';
 import {z} from 'zod';
 import {MaterialStore,formatMaterialRef} from './materials.js';
@@ -20,6 +21,7 @@ export function registerMaterialRoutes(app:FastifyInstance,materials:MaterialSto
   if(organizers)app.get('/api/materials/status',async()=>organizers.status());
   app.get('/api/library/descriptor',async()=>materials.catalog.registry.describe());
   app.get('/api/library/catalog',async req=>materials.catalog.list(listQuery.parse(req.query),String(req.headers.authorization??'')));
+  app.patch('/api/materials/:id/context',async req=>{const materialId=id.parse((req.params as {id:string}).id);const body=z.object({expectedRevision:revision,ownerRelation:ownerRelationSchema.nullable()}).strict().parse(req.body);return materials.correctContext(materialId,body.expectedRevision,body.ownerRelation);});
   app.get('/api/materials',async req=>materials.list(listQuery.parse(req.query)));
   app.post('/api/materials/:id/index/retry',async req=>{
     const materialId=id.parse((req.params as {id:string}).id);

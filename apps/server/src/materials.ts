@@ -1,5 +1,5 @@
 import {MaterialCatalog} from './material-catalog.js';
-import {CODING_DIALOGUE_SCHEMA_VERSION,documentSchema,type CaptureRecord} from '@mote/shared';
+import {CODING_DIALOGUE_SCHEMA_VERSION,documentSchema,attributionContextSchema,ownerRelationSchema,unknownAttributionContext,type AttributionContext,type OwnerRelation,type CaptureRecord} from '@mote/shared';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {StoreError,type Store} from './store.js';
@@ -20,17 +20,18 @@ const memberSchema=z.object({
   revision:z.string().min(1).max(256).optional(),locator:locatorSchema.optional(),
 }).strict();
 /** Declared by a trusted organizer, never decoded from captured prose. */
-const evidenceContextSchema=z.object({observedAt:z.string().datetime({offset:true}),
+export const materialEvidenceContextSchema=z.object({attributionContext:attributionContextSchema.optional(),observedAt:z.string().datetime({offset:true}),
   document:documentSchema.pick({recordedAt:true,occurredAt:true,timeBasis:true,contentRole:true}).strict()}).strict();
-export type MaterialEvidenceContext=z.infer<typeof evidenceContextSchema>;
+export type MaterialEvidenceContext=z.infer<typeof materialEvidenceContextSchema>;
 const blockBase={id:z.string().min(1).max(128),memberIds:z.array(z.string().min(1).max(128)).max(32).default([]),locator:locatorSchema.optional(),
   /** Fine-grained inputs supplement the original members used for authorization. */
   evidenceIds:z.array(z.string().uuid()).max(32).optional()};
 const blockSchema=z.discriminatedUnion('kind',[
-  z.object({...blockBase,kind:z.literal('text'),format:nameSchema,text:z.string().max(250_000),evidenceContext:evidenceContextSchema.optional()}).strict(),
+  z.object({...blockBase,kind:z.literal('text'),format:nameSchema,text:z.string().max(250_000),evidenceContext:materialEvidenceContextSchema.optional()}).strict(),
   z.object({...blockBase,kind:z.literal('asset'),hash:revisionSchema,mimeType:z.string().min(1).max(200)}).strict(),
 ]);
 const draftSchema=z.object({
+  attributionContext:attributionContextSchema.optional(),
   id:materialIdSchema,kind:nameSchema,schemaVersion:z.number().int().min(1).max(1_000_000),
   title:z.string().min(1).max(500),
   origin:z.object({sourceId:z.string().min(1).max(128),externalId:z.string().min(1).max(2048),
@@ -63,18 +64,19 @@ export type MaterialRecord=Omit<MaterialDraft,'blocks'|'members'> & {
   blockCount:number;memberCount:number;textLength:number;assetCount:number;
   indexing:MaterialIndexStatus;
 };
-export type MaterialReadSpan={blockId:string;kind:'text'|'asset';format?:string;
+export type MaterialReadSpan={attributionContext:AttributionContext;blockId:string;kind:'text'|'asset';format?:string;
   evidenceId?:string;evidenceOffset?:number;
   pageRange:{start:number;end:number};materialRange:{start:number;end:number};
   memberIds:string[];locator?:Record<string,unknown>;asset?:{hash:string;mimeType:string};};
 export type MaterialReadPage={material:MaterialRecord;text:string;textRange:{offset:number;total:number;nextOffset:number|null};spans:MaterialReadSpan[]};
-export type MaterialStoredBlock={id:string;kind:'text'|'asset';format?:string;text:string;memberIds:string[];locator?:Record<string,unknown>;asset?:{hash:string;mimeType:string}};
+export type MaterialStoredBlock={attributionContext:AttributionContext;id:string;kind:'text'|'asset';format?:string;text:string;memberIds:string[];locator?:Record<string,unknown>;asset?:{hash:string;mimeType:string}};
 export type MaterialPage={items:MaterialRecord[];nextCursor:string|null};
 export type MaterialMemberPage={items:MaterialMember[];nextOffset:number|null;total:number};
 
 type HeadRow={id:string;source_id:string;external_id:string;kind:string;revision:string;sequence:number;retired:number;min_visible_sequence:number;created_at:string;updated_at:string};
 type RevisionRow={manifest:string;revision:string;sequence:number;version_created_at:string;text_length:number;block_count:number;member_count:number;asset_count:number;draft_hash:string|null};
 type BlockRow={block_id:string;anchor_id?:string|null;kind:'text'|'asset';format:string|null;payload:string;asset_hash:string|null;mime_type:string|null;member_ids:string;locator:string|null;start_offset:number;end_offset:number};
+const canonicalContext=(value:unknown):unknown=>Array.isArray(value)?value.map(canonicalContext):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonicalContext(item)])):value;
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 const parseId=(id:string)=>materialIdSchema.parse(id);
 const parseRevision=(revision:string)=>revisionSchema.parse(revision);
@@ -104,6 +106,8 @@ export function parseMaterialRef(value:string):{id:string;revision?:string} {
 /** Immutable formal material revisions. All content is evidence, never agent instructions. */
 export class MaterialStore {
   index?:MaterialIndexRuntime;
+  onContextChanged?:(materialId:string,cause?:'attribution'|'derived')=>void;
+  onSourceContextChanged?:(sourceId:string)=>void;
   readonly catalog=new MaterialCatalog(this);
   constructor(readonly store:Store){
     store.db.exec(`
@@ -197,6 +201,127 @@ export class MaterialStore {
     installEvidenceDependencies(store);
   }
 
+  /** The current manifest owns overrides; source prose never enters this resolver. */
+  private resolveContext(id:string,sourceId:string,correction?:AttributionContext['correction']):AttributionContext {
+    const row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(sourceId);
+    const source=row?JSON.parse(String(row.json)):undefined;
+    const declaration=source&&(source.ownerRelation!==undefined||source.ownerRelationVersion)?{sourceId,version:source.ownerRelationVersion??1,ownerRelation:source.ownerRelation===undefined?null:ownerRelationSchema.parse(source.ownerRelation)}:undefined;
+    const previous=this.head(id),manifest=previous&&this.version(id,previous.revision);
+    const saved=manifest?JSON.parse(manifest.manifest).attributionContext?.correction:undefined;
+    const effectiveCorrection=correction??(this.pendingCorrection?.id===id?this.pendingCorrection.correction:undefined)??saved;
+    return attributionContextSchema.parse({version:1,ownerRelation:effectiveCorrection?.ownerRelation??declaration?.ownerRelation??'unknown',
+      basis:effectiveCorrection?.ownerRelation!=null?'owner_material':declaration?.ownerRelation!=null?'owner_source':'default',
+      ...(declaration?{sourceDeclaration:declaration}:{}),...(effectiveCorrection?{correction:effectiveCorrection}:{})});
+  }
+  private withContext<T extends MaterialDraft|MaterialAppendDraft>(draft:T):T {
+    const attributionContext=this.resolveContext(draft.id,draft.origin.sourceId);
+    return {...draft,attributionContext,blocks:draft.blocks.map(block=>block.kind==='text'&&block.evidenceContext?{...block,
+      evidenceContext:{...block.evidenceContext,attributionContext}}:block)};
+  }
+  /** Host-owned projection for originals as well as formal evidence. */
+  contextForEvidence(record:CaptureRecord):AttributionContext {
+    const anchor=this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?').get(record.id);
+    if(anchor)return this.get(String(anchor.material_id))?.attributionContext??unknownAttributionContext();
+    const file=this.store.db.prepare('SELECT capture_id FROM file_chunks WHERE id=?').get(record.id);
+    const captureId=String(file?.capture_id??record.id);
+    const parents=this.store.db.prepare(`WITH RECURSIVE originals(id) AS (SELECT ? UNION SELECT l.parent_id FROM file_evidence_links l JOIN originals o ON l.capture_id=o.id)
+      SELECT DISTINCT h.id,h.revision,r.manifest FROM material_heads h
+      JOIN material_members m ON m.material_id=h.id AND m.revision=h.revision
+      JOIN material_revisions r ON r.material_id=h.id AND r.revision=h.revision
+      JOIN originals o ON m.ref='capture:'||o.id
+      WHERE m.kind='capture' AND h.retired=0 AND h.sequence>=h.min_visible_sequence ORDER BY h.id`).iterate(captureId);
+    let first:AttributionContext|undefined,firstJson:string|undefined,conflict=false,total=0;
+    const digest=createHash('sha256'),items:NonNullable<AttributionContext['materialDeclarations']>['items']=[];
+    for(const parent of parents){
+      const context=attributionContextSchema.parse(JSON.parse(String(parent.manifest)).attributionContext??unknownAttributionContext());
+      const contextJson=JSON.stringify(canonicalContext(context));
+      if(firstJson===undefined){first=context;firstJson=contextJson;}else if(firstJson!==contextJson)conflict=true;
+      total++;digest.update(JSON.stringify([parent.id,parent.revision,contextJson])+'\n');
+      if(items.length<32)items.push({materialId:String(parent.id),revision:String(parent.revision),ownerRelation:context.ownerRelation});
+    }
+    if(first)return conflict?{...unknownAttributionContext(),materialDeclarations:{items,total,digest:digest.digest('hex')}}:first;
+    const imageSource=this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='image_inputs'").get()?this.store.db.prepare('SELECT source_id FROM image_inputs WHERE capture_id=?').get(captureId):undefined;
+    const sourceId=record.provenance?.sourceId??(imageSource?String(imageSource.source_id):undefined);
+    return sourceId?this.resolveContext('',sourceId):unknownAttributionContext();
+  }
+  private contextDraft(material:MaterialRecord):MaterialDraft {
+    const {ref:_,revision:__,sequence:___,createdAt:____,updatedAt:_____,blockCount:______,memberCount:_______,textLength:________,assetCount:_________,indexing:__________,...manifest}=material;
+    const members=this.store.db.prepare('SELECT id,kind,ref,source_revision,locator FROM material_members WHERE material_id=? AND revision=? ORDER BY idx').all(material.id,material.revision).map(row=>({id:String(row.id),kind:String(row.kind),ref:String(row.ref),...(row.source_revision?{revision:String(row.source_revision)}:{}),...(row.locator?{locator:JSON.parse(String(row.locator))}:{})}));
+    const coding=this.codingLayout(material.id,material.revision);
+    const rows=this.store.db.prepare(`SELECT b.*,p.text,c.json evidence_context FROM ${coding?'material_block_versions':'material_blocks'} b JOIN material_block_payloads p ON p.hash=b.payload_hash LEFT JOIN material_evidence_context c ON c.anchor_id=b.anchor_id WHERE b.material_id=? AND ${coding?'b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?)':'b.revision=?'} ORDER BY idx`).all(material.id,...(coding?[material.sequence,material.sequence]:[material.revision]));
+    const blocks=rows.map(row=>({id:String(row.block_id),memberIds:JSON.parse(String(row.member_ids)),...(row.locator?{locator:JSON.parse(String(row.locator))}:{}),
+      ...(row.kind==='text'?{kind:'text' as const,format:String(row.format),text:String(row.text),...(row.evidence_context?{evidenceContext:JSON.parse(String(row.evidence_context))}:{}),
+        evidenceIds:this.store.db.prepare('SELECT d.evidence_id FROM material_evidence_dependencies d JOIN file_chunks c ON c.id=d.evidence_id WHERE d.anchor_id=?').all(row.anchor_id).map(d=>String(d.evidence_id))}:
+        {kind:'asset' as const,hash:String(row.asset_hash),mimeType:String(row.mime_type)})}));
+    const hasImages=this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='image_products'").get();
+    const retiredProducts=hasImages?new Set(this.store.db.prepare("SELECT id FROM image_products WHERE current=0 AND kind!='ocr' AND id IN (SELECT value FROM json_each(?))").all(JSON.stringify(manifest.artifacts?.flatMap(artifact=>artifact.revision?[artifact.revision]:[])??[])).map(row=>String(row.id))):new Set<string>();
+    const retiredArtifacts=manifest.artifacts?.filter(artifact=>artifact.revision&&retiredProducts.has(artifact.revision))??[];
+    const removedBlocks=new Set(retiredArtifacts.flatMap(artifact=>artifact.blockIds??[]));
+    const artifacts=manifest.artifacts?.map(artifact=>retiredArtifacts.includes(artifact)?{key:artifact.key,state:'unavailable' as const,reason:'attribution_context_changed',blockIds:[]}:artifact);
+    return {...manifest,...(artifacts?{artifacts}:{}),blocks:blocks.filter(block=>!removedBlocks.has(block.id)),members};
+  }
+  /** Republishes only immutable stored content; never runs a processor or grants paid work. */
+  private republishContext(material:MaterialRecord,cause:'attribution'|'derived'='attribution'){
+    if(cause==='attribution')for(const member of this.store.db.prepare("SELECT ref FROM material_members WHERE material_id=? AND revision=? AND kind='capture'").all(material.id,material.revision))this.invalidateCaptureSemantics(String(member.ref).slice('capture:'.length));
+    this.onContextChanged?.(material.id,cause);
+    const snapshot=this.store.db.prepare('SELECT archive_checkpoint,append_epoch,head_count FROM material_coding_snapshots WHERE material_id=? AND revision=?').get(material.id,material.revision);
+    const invalidatedBlocks=new Set(this.store.db.prepare('SELECT block_id FROM material_evidence WHERE id IN (SELECT value FROM json_each(?)) AND invalidated=1').all(JSON.stringify(this.evidenceIds(material.ref))).map(row=>String(row.block_id)));
+    const result=this.publish(this.contextDraft(material),{expectedRevision:material.revision,...(snapshot?.archive_checkpoint!=null&&snapshot.append_epoch!=null&&snapshot.head_count!=null?{codingSnapshot:{checkpoint:String(snapshot.archive_checkpoint),appendEpoch:Number(snapshot.append_epoch),headCount:Number(snapshot.head_count)}}:{})});
+    if(result.changed){
+      if(invalidatedBlocks.size)for(const anchor of this.evidenceIds(result.ref)){const row=this.store.db.prepare('SELECT block_id FROM material_evidence WHERE id=?').get(anchor);if(row&&invalidatedBlocks.has(String(row.block_id)))this.store.invalidateMemoryEvidence(anchor);}
+      this.store.db.prepare('UPDATE material_heads SET min_visible_sequence=? WHERE id=?').run(result.sequence,material.id);}
+    if(cause==='attribution')this.refreshRetiredImageMaterials(material.id);
+    return {...this.get(result.ref)!,changed:result.changed};
+  }
+  /** Shared originals can embed one interpretation in several Materials. Retiring
+   * that product withdraws every such view without changing their owner declarations. */
+  private refreshRetiredImageMaterials(changedId:string){
+    if(!this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='image_products'").get())return;
+    const ids=this.store.db.prepare(`SELECT DISTINCT h.id FROM material_heads h
+      JOIN material_revisions r ON r.material_id=h.id AND r.revision=h.revision
+      JOIN json_each(r.manifest,'$.artifacts') artifact
+      JOIN image_products p ON p.id=json_extract(artifact.value,'$.revision')
+      WHERE h.retired=0 AND h.id!=? AND p.current=0 AND p.kind!='ocr'
+      AND EXISTS(SELECT 1 FROM material_members m JOIN material_heads changed ON changed.id=m.material_id AND changed.revision=m.revision
+        WHERE changed.id=? AND m.kind='capture' AND m.ref='capture:'||p.capture_id)`).all(changedId,changedId);
+    for(const row of ids){const material=this.get(String(row.id));if(material)this.republishContext(material,'derived');}
+  }
+  correctContext(id:string,expectedRevision:string,ownerRelation:OwnerRelation|null):MaterialRecord {
+    ownerRelation=ownerRelationSchema.nullable().parse(ownerRelation);
+    const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+    try{
+      const material=this.get(id);if(!material)throw new StoreError('Material not found',404);
+      if(material.revision!==expectedRevision)throw new StoreError('Material revision changed; refresh and retry',409);
+      if(material.attributionContext?.correction?.ownerRelation===ownerRelation){if(own)db.exec('COMMIT');return material;}
+      const correction={version:(material.attributionContext?.correction?.version??0)+1,ownerRelation};
+      // A temporary host resolver override is local to this synchronous transaction.
+      this.pendingCorrection={id,correction};
+      const result=this.republishContext(material);if(own)db.exec('COMMIT');return result;
+    }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}finally{this.pendingCorrection=undefined;}
+  }
+  private pendingCorrection?:{id:string;correction:NonNullable<AttributionContext['correction']>};
+  /** Semantic dependencies follow original and excerpt lineage without revoking either original. */
+  private invalidateCaptureSemantics(captureId:string){
+    const pending=[captureId],visited=new Set<string>();
+    while(pending.length){const id=pending.pop()!;if(visited.has(id))continue;visited.add(id);
+      this.store.invalidateSemanticEvidence(id);
+      // Generic processing products interpret their inputs, including attribution.
+      // Deletion cascades to downstream products; FileStore OCR/ASR remains intact.
+      this.store.db.prepare('DELETE FROM context_artifacts WHERE id IN (SELECT artifact_id FROM artifact_inputs WHERE observation_id=?)').run(id);
+      for(const chunk of this.store.db.prepare('SELECT id FROM file_chunks WHERE capture_id=?').all(id)){
+        this.store.invalidateSemanticEvidence(String(chunk.id));
+        this.store.db.prepare('DELETE FROM context_artifacts WHERE id IN (SELECT artifact_id FROM artifact_inputs WHERE observation_id=?)').run(String(chunk.id));
+      }
+      for(const excerpt of this.store.db.prepare('SELECT capture_id FROM file_evidence_links WHERE parent_id=?').all(id))pending.push(String(excerpt.capture_id));
+    }
+  }
+  refreshSourceContext(sourceId:string){
+    const hasImages=Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='image_inputs'").get());
+    for(const capture of this.store.db.prepare('SELECT capture_id FROM source_versions WHERE source_id=?'+(hasImages?' UNION SELECT capture_id FROM image_inputs WHERE source_id=?':'')).all(sourceId,...(hasImages?[sourceId]:[])))this.invalidateCaptureSemantics(String(capture.capture_id));
+    this.onSourceContextChanged?.(sourceId);
+    const ids=this.store.db.prepare('SELECT id FROM material_heads WHERE source_id=? AND retired=0').all(sourceId);
+    for(const row of ids){const material=this.get(String(row.id));if(material)this.republishContext(material);}
+  }
   private codingLayout(id:string,revision:string):boolean {
     return Boolean(this.store.db.prepare('SELECT 1 FROM material_coding_snapshots WHERE material_id=? AND revision=?').get(id,revision));
   }
@@ -228,7 +353,7 @@ export class MaterialStore {
     if(record.blockCount&&!tail)return;
     return {record,archiveCheckpoint:row.archive_checkpoint,appendEpoch:row.append_epoch,headCount:row.head_count,
       lastBlock:tail?{id:tail.block_id,text:tail.text,format:tail.format,
-        ...(tail.context_json?{evidenceContext:evidenceContextSchema.parse(JSON.parse(tail.context_json))}:{})}:null};
+        ...(tail.context_json?{evidenceContext:materialEvidenceContextSchema.parse(JSON.parse(tail.context_json))}:{})}:null};
   }
 
   bindIndexEngine(engine:ExecutionEngine){return this.index=materialIndexRuntime(this,engine);}
@@ -279,7 +404,7 @@ export class MaterialStore {
     const mapped=required.every((key,i)=>key!=='material'&&artifacts[i]?.blockIds!==undefined);
     const evidenceIds=this.evidenceIds(ref,mapped?[...new Set(artifacts.flatMap(a=>a!.blockIds!))]:undefined);
     return {...status,ready:status.ready&&evidenceIds.length>0&&evidenceIds.every(id=>this.isCurrentEvidence(id)),materialId:material.id,required,evidenceIds,
-      fingerprint:hash(JSON.stringify([material.id,required,mapped?artifacts.map(a=>[a!.key,a!.revision??null,a!.blockIds]):material.ref,evidenceIds]))};
+      fingerprint:hash(JSON.stringify([material.id,material.attributionContext,required,mapped?artifacts.map(a=>[a!.key,a!.revision??null,a!.blockIds]):material.ref,evidenceIds]))};
   }
   /** includeRetired is only for host archive proof validation; product readers
    * always use the default visibility and retirement fences. */
@@ -293,13 +418,13 @@ export class MaterialStore {
       .get(material.id,material.revision,anchor.block_id,id):this.store.db.prepare(`SELECT p.text,b.start_offset FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash
       WHERE b.material_id=? AND b.revision=? AND b.block_id=?`).get(material.id,material.revision,anchor.block_id);if(!block)return [];
     const contextRow=this.store.db.prepare('SELECT json FROM material_evidence_context WHERE anchor_id=?').get(id);
-    const context=contextRow?evidenceContextSchema.parse(JSON.parse(String(contextRow.json))):undefined;
+    const context=contextRow?materialEvidenceContextSchema.parse(JSON.parse(String(contextRow.json))):undefined;
     const coding=material.origin.provider&&material.origin.projectKey&&material.origin.sessionId;
     const at=context?.observedAt??material.createdAt;
     // A material's range is not a block's authored/recording/event time. Only
     // the organizer can declare that context; captured prose cannot supply it.
     const document=context?.document??{timeBasis:'unknown',contentRole:'other'};
-    return [{id,deviceId:material.origin.deviceId??material.origin.sourceId,deviceName:'Material',platform:'import',capturedAt:at,receivedAt:material.createdAt,durationMs:0,source:'message',appId:'mote.material',appName:material.title,windowTitle:material.title,ocrText:String(block.text),indexingStatus:'indexed',privacy:{excluded:false,redacted:false,mode:'none'},provenance:{sourceId:material.origin.sourceId,externalId:material.id,revision:material.revision,layer:'snapshot',deleted:false,uri:material.ref+'#'+anchor.block_id,document:{...document,...(coding?{coding:{version:1,provider:material.origin.provider,projectKey:material.origin.projectKey,projectName:material.origin.projectName,projectIdentity:material.origin.projectIdentity,cwd:material.origin.cwd,repositoryKey:material.origin.repositoryKey,branch:material.origin.branch,sessionId:material.origin.sessionId,eventId:String(anchor.block_id),role:'transcript',part:0,parts:1}}:{})}}} as CaptureRecord];
+    return [{id,attributionContext:material.attributionContext??unknownAttributionContext(),deviceId:material.origin.deviceId??material.origin.sourceId,deviceName:'Material',platform:'import',capturedAt:at,receivedAt:material.createdAt,durationMs:0,source:'message',appId:'mote.material',appName:material.title,windowTitle:material.title,ocrText:String(block.text),indexingStatus:'indexed',privacy:{excluded:false,redacted:false,mode:'none'},provenance:{sourceId:material.origin.sourceId,externalId:material.id,revision:material.revision,layer:'snapshot',deleted:false,uri:material.ref+'#'+anchor.block_id,document:{...document,...(coding?{coding:{version:1,provider:material.origin.provider,projectKey:material.origin.projectKey,projectName:material.origin.projectName,projectIdentity:material.origin.projectIdentity,cwd:material.origin.cwd,repositoryKey:material.origin.repositoryKey,branch:material.origin.branch,sessionId:material.origin.sessionId,eventId:String(anchor.block_id),role:'transcript',part:0,parts:1}}:{})}}} as CaptureRecord];
   });}
   isCurrentEvidence(id:string){const row=this.store.db.prepare(`SELECT h.source_id,h.sequence,h.min_visible_sequence,h.retired,h.revision,e.revision evidence_revision,e.invalidated,
     EXISTS(SELECT 1 FROM material_blocks b WHERE b.material_id=h.id AND b.revision=h.revision AND b.anchor_id=e.id) snapshot_active,
@@ -323,7 +448,7 @@ export class MaterialStore {
     const invalidBlocks=rebuilding?new Set(this.store.db.prepare(`SELECT b.block_id FROM material_blocks b JOIN material_evidence e ON e.id=b.anchor_id
       WHERE b.material_id=? AND b.revision=? AND e.invalidated=1 UNION SELECT b.block_id FROM material_block_versions b JOIN material_evidence e ON e.id=b.anchor_id
       WHERE b.material_id=? AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?) AND e.invalidated=1`).all(head.id,row.revision,head.id,row.sequence,row.sequence).map(b=>String(b.block_id))):undefined;
-    return {...manifest,...(rebuilding?{coverage:{state:'pending' as const,reason:'source_evidence_changed'},
+    return {...manifest,attributionContext:manifest.attributionContext??unknownAttributionContext(),...(rebuilding?{coverage:{state:'pending' as const,reason:'source_evidence_changed'},
       artifacts:manifest.artifacts?.map(artifact=>artifact.blockIds&&!artifact.blockIds.some(id=>invalidBlocks!.has(id))?artifact:{...artifact,state:'pending' as const,reason:'source_evidence_changed'})}:{}),
       ref:formatMaterialRef(head.id,row.revision),revision:row.revision,sequence:row.sequence,
       createdAt:head.created_at,updatedAt:row.version_created_at,blockCount:row.block_count,memberCount:row.member_count,
@@ -369,7 +494,7 @@ export class MaterialStore {
   /** Same draft is idempotent. A changed head requires explicit compare-and-swap. */
   publish(raw:MaterialDraft|MaterialAppendDraft,options:{expectedRevision?:string|null;codingSnapshot?:CodingArchiveSnapshot}={}):MaterialRecord & {changed:boolean} {
     if('mode' in raw)return this.publishAppend(raw,options);
-    const draft=draftSchema.parse(raw),{id}=draft;
+    const draft=this.withContext(draftSchema.parse(raw)),{id}=draft;
     if(id!==materialId(draft.origin.sourceId,draft.origin.externalId))throw new StoreError('Material ID does not match source identity',409);
     if(draft.origin.firstAt&&draft.origin.lastAt&&draft.origin.firstAt>draft.origin.lastAt)throw new StoreError('Invalid material time range');
     if(new Set(draft.blocks.map(block=>block.id)).size!==draft.blocks.length||new Set(draft.members.map(member=>member.id)).size!==draft.members.length)throw new StoreError('Duplicate material block or member ID');
@@ -451,7 +576,7 @@ export class MaterialStore {
           const end=offset+display.length+(block.kind==='text'&&block.format==='markdown-fragment'?0:1);
           const members=draft.members.filter(member=>block.memberIds.includes(member.id));
           const dependencies=this.blockDependencies(block,members);
-          const identity=hash(JSON.stringify([draft.kind,draft.schemaVersion,draft.title,draft.origin,draft.fidelity,draft.retention,block,members]));
+          const identity=hash(JSON.stringify([draft.kind,draft.schemaVersion,draft.title,draft.origin,draft.attributionContext,draft.fidelity,draft.retention,block,members]));
           const prior=!coding&&head?db.prepare(`SELECT b.anchor_id FROM material_blocks b JOIN material_evidence e ON e.id=b.anchor_id
             WHERE b.material_id=? AND b.revision=? AND b.block_id=? AND b.identity_hash=? AND e.invalidated=0`).get(id,head.revision,block.id,identity):undefined;
           const anchor=block.kind==='text'&&block.memberIds.some(memberId=>lineageIds.has(memberId))?String(prior?.anchor_id??this.anchor(id,revision,block.id)):null;
@@ -484,7 +609,7 @@ export class MaterialStore {
   /** Coding's append path reuses immutable active prefix blocks and their
    * evidence anchors. Only the mutable tail obtains a new interval and FTS row. */
   private publishAppend(raw:MaterialAppendDraft,options:{expectedRevision?:string|null;codingSnapshot?:CodingArchiveSnapshot}):MaterialRecord & {changed:boolean} {
-    const draft=appendDraftSchema.parse(raw),snapshot=options.codingSnapshot;
+    const draft=this.withContext(appendDraftSchema.parse(raw)),snapshot=options.codingSnapshot;
     if(draft.kind!=='mote.coding-session'||!snapshot||draft.id!==materialId(draft.origin.sourceId,draft.origin.externalId))throw new StoreError('Invalid Coding append',409);
     if(new Set(draft.blocks.map(block=>block.id)).size!==draft.blocks.length||new Set(draft.members.map(member=>member.id)).size!==draft.members.length)
       throw new StoreError('Duplicate material block or member ID');
@@ -644,7 +769,7 @@ export class MaterialStore {
       const rendered=row.payload+(row.format==='markdown-fragment'?'':'\n');
       const slice=rendered.slice(start-row.start_offset,stop-row.start_offset);
       const pageStart=text.length;text+=slice;cursor=stop;
-      spans.push({blockId:row.block_id,kind:row.kind,...(row.format?{format:row.format}:{}),
+      spans.push({attributionContext:material.attributionContext??unknownAttributionContext(),blockId:row.block_id,kind:row.kind,...(row.format?{format:row.format}:{}),
         ...(row.anchor_id?{evidenceId:row.anchor_id,evidenceOffset:start-row.start_offset}:{}),
         pageRange:{start:pageStart,end:text.length},materialRange:{start, end:stop},
         memberIds:JSON.parse(row.member_ids) as string[],...(row.locator?{locator:JSON.parse(row.locator) as Record<string,unknown>}:{}) ,
@@ -699,7 +824,7 @@ export class MaterialStore {
     const columns='b.block_id,b.kind,b.format,p.text payload,b.asset_hash,b.mime_type,b.member_ids,b.locator';
     const row=(this.codingLayout(material.id,material.revision)?this.store.db.prepare(`SELECT ${columns} FROM material_block_versions b JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.idx=? AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?)`).get(material.id,index,material.sequence,material.sequence):this.store.db.prepare(`SELECT ${columns} FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.revision=? AND b.idx=?`).get(material.id,material.revision,index)) as BlockRow|undefined;
     if(!row)throw new StoreError('Material block is unavailable',404);
-    return {material,block:{id:row.block_id,kind:row.kind,text:row.payload,...(row.format?{format:row.format}:{}),memberIds:JSON.parse(row.member_ids),...(row.locator?{locator:JSON.parse(row.locator)}:{}),...(row.asset_hash?{asset:{hash:row.asset_hash,mimeType:row.mime_type!}}:{})}};
+    return {material,block:{attributionContext:material.attributionContext??unknownAttributionContext(),id:row.block_id,kind:row.kind,text:row.payload,...(row.format?{format:row.format}:{}),memberIds:JSON.parse(row.member_ids),...(row.locator?{locator:JSON.parse(row.locator)}:{}),...(row.asset_hash?{asset:{hash:row.asset_hash,mimeType:row.mime_type!}}:{})}};
   }
 
   members(ref:string,args:{offset?:number;limit?:number}={}):MaterialMemberPage {

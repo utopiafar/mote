@@ -19,19 +19,21 @@ const empty=(input:QueryInput,node:Awaited<ReturnType<typeof buildApp>>)=>{
   return {answer:JSON.stringify({summary:'Generated bounded conversation interpretation',evidence:[{id:range.id,quote,offset:range.offset}],workRecords:[],events:[],memoryCandidates:[],actionCues:[]}),citations:[{id:range.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:''}],trace:[],runId:randomUUID()};
 };
 
-test('receipt-time disable survives restart, enable-before-publication and duplicate ACK for ordinary and Coding inputs',async t=>{
+test('legacy denied receipts survive cutover, restart and duplicate ACK while new ordinary and Coding inputs continue',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-receipt-')),cfg=config(directory);
   let calls=0;
-  const dependencies={agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{const plan=await fixtureMemoryPlan(input);if(plan)return plan;calls++;return fixtureMemoryWorkResult(input,empty(input,node));}}};
+  const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{const plan=await fixtureMemoryPlan(input);if(plan)return plan;calls++;return fixtureMemoryWorkResult(input,empty(input,node));}}};
   let node=await buildApp(cfg,dependencies);await node.app.ready();
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const setEnabled=(enabled:boolean)=>{const settings=node.lifecycle.settings();node.lifecycle.configure({...settings,extraction:{...settings.extraction,enabled}});};
-  setEnabled(false);
+  setEnabled(false);assert.equal(node.lifecycle.settings().extraction.enabled,true);
   node.sources.register({id:'ordinary',name:'Generated diary',kind:'custom',deviceId:'fixture',platform:'import'});
   node.sources.register({id:'coding',name:'Generated coding',kind:'coding-agent',deviceId:'fixture',platform:'import'});
   node.sourcePipelines.configure('coding',{memory:true,settleSeconds:0});
   const diary=original('diary'),event=coding('one');
   await node.sources.upsert('ordinary',diary);await node.sources.upsert('coding',event);
+  node.store.db.prepare('UPDATE memory_input_authorizations SET authorized=0').run();
+  const legacy=node.lifecycle.settings();legacy.extraction.enabled=false;node.store.db.prepare('UPDATE memory_lifecycle_settings SET json=? WHERE id=1').run(JSON.stringify(legacy));
   assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE authorized=0').get()!.n,2);
   await node.app.close();
 
@@ -69,7 +71,7 @@ test('receipt-time disable survives restart, enable-before-publication and dupli
   assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE authorized=1 AND job_id IS NOT NULL').get()!.n,2);
 });
 
-test('source policy enable-before-publication cannot authorize a Coding receipt accepted while disabled',async t=>{
+test('legacy source Memory off settings cannot disable newly authorized Coding intake',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-source-receipt-')),cfg=config(directory);
   let calls=0;
   const node=await buildApp(cfg,{agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{calls++;return empty(input,node);}}});
@@ -79,7 +81,8 @@ test('source policy enable-before-publication cannot authorize a Coding receipt 
   await node.sources.upsert('coding',coding('one'));
   node.sourcePipelines.configure('coding',{memory:true,settleSeconds:0});
   await node.sourcePipelines.tick();
-  assert.equal(node.sourcePipelines.drainMemory(node.memoryPipeline,true),0);assert.equal(calls,0);
+  assert.equal(node.sourcePipelines.options('coding').memory,true);
+  assert.equal(node.store.db.prepare('SELECT authorized FROM memory_input_authorizations WHERE source_id=?').get('coding')!.authorized,1);assert.equal(calls,0);
   assert.equal(node.materials.list().items.length,1);
   // Erasure removes authorization as well as derived material state.
   node.sourcePipelines.forget('coding');
@@ -87,12 +90,12 @@ test('source policy enable-before-publication cannot authorize a Coding receipt 
   assert.equal(node.materials.get(materialId('coding',JSON.stringify(['codex','fixture','session']))),undefined);
 });
 
-test('connector startup intake observes saved disablement before the lifecycle service is initialized',async t=>{
+test('connector startup fresh intake uses continuous processing after legacy global off cutover',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-startup-receipt-')),cfg=config(directory),modulePath=join(directory,'generated-connector.mjs');
   let calls=0;
   const dependencies={agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{calls++;return empty(input,node);}}};
   let node=await buildApp(cfg,dependencies);await node.app.ready();
-  const settings=node.lifecycle.settings();node.lifecycle.configure({...settings,extraction:{...settings.extraction,enabled:false}});
+  const settings=node.lifecycle.settings();node.store.db.prepare('UPDATE memory_lifecycle_settings SET json=? WHERE id=1').run(JSON.stringify({...settings,extraction:{...settings.extraction,enabled:false}}));
   await node.app.close();
   writeFileSync(modulePath,`export default {apiVersion:1,id:'generated-startup',sourceKinds:['custom'],create:ctx=>({init:async()=>{
     ctx.sources.register({id:'startup',name:'Generated startup',kind:'custom',deviceId:'fixture',platform:'import'});
@@ -101,8 +104,23 @@ test('connector startup intake observes saved disablement before the lifecycle s
   node=await buildApp({...cfg,connectors:{modules:[modulePath]}},dependencies);
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const grant=node.store.db.prepare('SELECT authorized FROM memory_input_authorizations WHERE source_id=?').get('startup');
-  assert.equal(grant?.authorized,0);
+  assert.equal(grant?.authorized,1);
   node.lifecycle.configure(settings);await node.materialOrganizer.tick();
-  assert.equal(node.sourcePipelines.drainMemory(node.memoryPipeline,true),0);assert.equal(calls,0);
+  assert.equal(calls,0,'intake and deterministic publication do not invoke a model');
   assert.equal(node.materials.list({query:'startup original'}).items.length,1);
+  assert.equal(node.materialMemoryWork.catalog().length,1);
+});
+
+for(const backgroundWorker of [false,undefined])test(`Memory timer ${backgroundWorker===false?'is isolated by the explicit test dependency':'runs continuously with production defaults'}`,{timeout:20000},async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-timer-')),cfg=config(directory);let calls=0;
+ const node=await buildApp(cfg,{backgroundWorker,agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{const plan=await fixtureMemoryPlan(input);if(plan)return plan;calls++;return fixtureMemoryWorkResult(input,empty(input,node));}}});
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});await node.app.ready();
+ node.sources.register({id:'timer-source',name:'Generated timer source',kind:'custom',deviceId:'fixture',platform:'import'});
+ await node.sources.upsert('timer-source',original('automatic-timer'));await node.materialOrganizer.tick();
+ assert.equal(node.store.db.prepare("SELECT authorized FROM memory_input_authorizations WHERE source_id='timer-source'").get()!.authorized,1,'test scheduling never changes intake authority');
+ if(backgroundWorker===false){await new Promise(resolve=>setTimeout(resolve,5500));assert.equal(calls,0);assert.equal(node.memoryPipeline.list().length,0);}
+ else{
+  const deadline=Date.now()+15000;while(Date.now()<deadline&&!node.memoryPipeline.list().some(job=>job.status==='completed'))await new Promise(resolve=>setTimeout(resolve,100));
+  assert.ok(node.memoryPipeline.list().some(job=>job.status==='completed'));assert.equal(calls,2,'the real feature timer admits extraction and independent empty review');
+ }
 });

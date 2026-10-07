@@ -67,12 +67,13 @@ export function registerMemoryExtensions({integrationSettings,lifecycle,store,fi
 }
 
 /** Active windows own their retry schedule; only detached queued jobs need recovery. */
-export function recoverableMemoryJobs(store:Store,lifecycle:MemoryLifecycle):string[]{
-  const state=lifecycle.view(),active=state.extensions.find(e=>e.id==='extraction')?.active?.checkpoint;
+export function recoverableMemoryJobs(store:Store,_lifecycle:MemoryLifecycle):string[]{
   return (store.db.prepare("SELECT id,json FROM memory_jobs WHERE json_extract(json,'$.status') IN ('queued','running') OR (json_extract(json,'$.inputPlanVersion')=1 AND json_extract(json,'$.status')='waiting_for_input')").all() as {id:string;json:string}[]).filter(row=>{
     const job=JSON.parse(row.json) as {importJobId?:string;originKey?:string};
     // Material work is resumed only by its durable, currently authorized queue.
     if(job.originKey?.startsWith('material:'))return false;
-    return !job.importJobId?.startsWith('lifecycle:')||(state.settings.extraction.enabled&&row.id!==active);
+    // Lifecycle windows own recovery. A detached child has no independent
+    // authorization to resume historical model work.
+    return !job.importJobId?.startsWith('lifecycle:');
   }).map(row=>row.id);
 }

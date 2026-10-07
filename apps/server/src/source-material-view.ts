@@ -24,7 +24,7 @@ export function sourceMaterialView(materials:MaterialStore,id:string,input:unkno
   if(!material||!sourceItemKinds.some(kind=>material.kind==='mote.'+kind)||material.schemaVersion!==1)throw new StoreError('Source material view is unavailable',404);
   let index=args.block,offset=args.offset,remaining=args.length;
   if(index>material.blockCount||index===material.blockCount&&offset)throw new StoreError('Invalid material view range');
-  const items:(Omit<Display,'text'>&{blockId:string;text:string;offset:number;total:number;continued:boolean})[]=[];
+  const items:(Omit<Display,'text'>&{attributionContext:MaterialStoredBlock['attributionContext'];blockId:string;text:string;offset:number;total:number;continued:boolean})[]=[];
   while(index<material.blockCount&&items.length<32&&remaining>0){
     const entry=materials.block(ref,index);if(!entry)break;
     const body=display(entry.block);if(offset>body.text.length)throw new StoreError('Invalid material view offset');
@@ -34,7 +34,7 @@ export function sourceMaterialView(materials:MaterialStore,id:string,input:unkno
     if(split(offset))throw new StoreError('Invalid material view character boundary');
     let end=Math.min(body.text.length,offset+remaining);if(split(end))end--;
     if(end===offset&&offset<body.text.length){if(items.length)break;end=Math.min(offset+2,body.text.length);}
-    items.push({...body,blockId:entry.block.id,text:body.text.slice(offset,end),offset,total:body.text.length,continued:end<body.text.length});
+    items.push({...body,attributionContext:entry.block.attributionContext,blockId:entry.block.id,text:body.text.slice(offset,end),offset,total:body.text.length,continued:end<body.text.length});
     remaining-=end-offset;
     if(end<body.text.length){offset=end;break;}
     index++;offset=0;

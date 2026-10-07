@@ -144,7 +144,9 @@ test('overlapping recovered plans never claim one original twice and remaining o
  assert.equal(f.pipeline.list().length,2);assert.equal(f.pipeline.list().every(job=>job.status==='completed'),true);
 });
 
-test('a thousand generated originals drain bounded catalogs with complete independently reviewed coverage',{timeout:90000},async t=>{
+// This corpus runs alongside three other server test files in the workspace suite.
+// Preserve all 1,000 inputs and 125 reviewed jobs while allowing suite CPU contention.
+test('a thousand generated originals drain bounded catalogs with complete independently reviewed coverage',{timeout:120000},async t=>{
  const f=await fixture(t,1000);
  f.setPlanning(async(input,catalog)=>{
   assert.ok(catalog.length<=64,'the coordinator never receives the full archive');

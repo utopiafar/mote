@@ -93,7 +93,7 @@ test('explicit config reprocessing with an empty Coding delta keeps the same Mat
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   await sources.upsert('coding',event('one','Generated config reprocessing fixture'));await runtime.tick();const before=materials.list().items[0],input=materials.input(before.ref,['conversation']);
   runtime.configure('coding',{memory:false});await runtime.tick();const after=materials.list().items[0];assert.equal(after.revision,before.revision);assert.equal(after.sequence,before.sequence);assert.deepEqual(materials.input(after.ref,['conversation']),input);
-  assert.equal(runtime.memoryAllowed('coding'),false);assert.equal(store.db.prepare('SELECT generation FROM source_pipeline_work').get()!.generation,1,'configuration change still executes its new pinned work');
+  assert.equal(runtime.memoryAllowed('coding'),true);assert.equal(store.db.prepare('SELECT generation FROM source_pipeline_work').get()!.generation,1,'configuration change still executes its new pinned work');
 });
 
 test('archive group is an engine step that survives a runtime restart',async t=>{

@@ -31,6 +31,7 @@ export interface SourcePipeline {
   storage:'records'|'archive';
   index:'none'|'material';
   modelInput:'material';
+  /** Retained compatibility metadata; source intake always authorizes Memory. */
   memory?:boolean;
   /** Default named outputs for Memory recipes without their own requirements. */
   memoryDependencies?:string[];
@@ -89,7 +90,7 @@ export class SourcePipelineRuntime {
     if(recipe.definition.accepts.sourceKind!==source.kind)throw new StoreError('Source recipe kind mismatch',409);
     return recipe;
   }
-  private recipeMetadata(recipe:InstalledRecipe,sourceId:string,options=this.options(sourceId)){
+  private recipeMetadata(recipe:InstalledRecipe,sourceId:string,options=this.storedOptions(sourceId)){
     return {
       id:recipe.definition.id,version:recipe.definition.version,
       definitionFingerprint:recipe.definitionFingerprint,
@@ -140,7 +141,7 @@ export class SourcePipelineRuntime {
       if(!pipeline||pipeline.version!==input.version||pipeline.storage!=='archive'||this.policyFingerprint(pipeline)!==input.policyFingerprint)throw Error('pipeline_unavailable');
       const source=JSON.parse(String((this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(input.sourceId) as {json:string}).json)) as SourceConnection;
       if(this.select(source)!==pipeline)throw Error('pipeline_unavailable');
-      const recipe=this.recipeFor(pipeline,source),options=this.options(input.sourceId);
+      const recipe=this.recipeFor(pipeline,source),options=this.storedOptions(input.sourceId);
       if(recipe){const metadata=this.recipeMetadata(recipe,input.sourceId,options);
         if(input.recipeId!==metadata.id||input.recipeVersion!==metadata.version||input.recipeDefinitionFingerprint!==metadata.definitionFingerprint||input.recipeConfigFingerprint!==metadata.configFingerprint||input.recipeComponentPins!==metadata.componentPins)throw Error('recipe_unavailable');
       }else throw Error('recipe_unavailable');
@@ -194,7 +195,7 @@ export class SourcePipelineRuntime {
       const required=result.options.memoryDependencies??pipeline.memoryDependencies??['material'];
       const observe=published.changed?this.memoryWork.observe.bind(this.memoryWork):this.memoryWork.observeUnchanged.bind(this.memoryWork);
       observe(published.id,required,{inputKey:result.checkpoint,change:input.memoryTrigger??'rebuild',
-        automatic:result.options.memory??pipeline.memory??false},result.options.settleSeconds*1000);
+        automatic:true},result.options.settleSeconds*1000);
       const consumers=this.options(input.sourceId).consumers;if(consumers.length)this.productConsumer?.observeProducts(published.ref,consumers);}
     const changed=db.prepare("UPDATE source_pipeline_work SET state='complete',error=NULL,material_ref=? WHERE id=? AND generation=?").run(ref,input.workId,input.generation).changes;
     if(changed!==1)throw new ExecutionFailure('stale','input_changed');
@@ -224,8 +225,7 @@ export class SourcePipelineRuntime {
       if(recipe&&(this.recipeFor(pipeline,source)!==recipe||this.recipeMetadata(recipe,source.id).configFingerprint!==metadata!.configFingerprint))throw new StoreError('Source recipe configuration changed',409);
       const archived=recipe?this.recipes.receive(recipe,this.archive,source,items,groups):this.archive.receive(source.id,items,groups);
       if(recipe&&(this.recipeFor(pipeline,source)!==recipe||this.recipeMetadata(recipe,source.id).configFingerprint!==metadata!.configFingerprint))throw new StoreError('Source recipe configuration changed',409);
-      const automatic=this.options(source.id).memory??pipeline.memory??false;
-      for(const group of archived.changedGroups)this.memoryWork.inputs.receive({sourceId:source.id,inputKey:archived.groupCheckpoints[group]},automatic);
+      for(const group of archived.changedGroups)this.memoryWork.inputs.receive({sourceId:source.id,inputKey:archived.groupCheckpoints[group]});
       // A repeated tombstone has already revoked its old projection. Hiding
       // its unchanged current Material again would require a rebuild that an
       // immutable replay must not enqueue. New deletions still revoke every
@@ -312,8 +312,11 @@ export class SourcePipelineRuntime {
     await this.materials.index?.tick();
     return rows.length;
   }
-  options(sourceId:string){const row=this.store.db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(sourceId);return configuration.parse(row?JSON.parse(String(row.json)):{});}
-  configure(sourceId:string,input:unknown){const value=configuration.parse(input),priorOptions=this.options(sourceId);const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{
+  // Preserve old organization pins without letting legacy Memory booleans
+  // govern receipt authorization or current execution.
+  private storedOptions(sourceId:string){const row=this.store.db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(sourceId);return configuration.parse(row?JSON.parse(String(row.json)):{});}
+  options(sourceId:string){return {...this.storedOptions(sourceId),memory:true};}
+  configure(sourceId:string,input:unknown){const parsed=configuration.parse(input),value={...parsed,...(parsed.memory===undefined?{}:{memory:true})},priorOptions=this.storedOptions(sourceId);const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{
     const sourceRow=db.prepare('SELECT json FROM source_connections WHERE id=?').get(sourceId);
     const source=sourceRow?JSON.parse(String(sourceRow.json)) as SourceConnection:undefined;
     let selected:SourcePipeline|undefined;
@@ -331,16 +334,16 @@ export class SourcePipelineRuntime {
     const previous=db.prepare('SELECT * FROM source_pipeline_work WHERE source_id=?').all(sourceId) as WorkRow[];
     db.prepare('INSERT INTO source_pipeline_config VALUES(?,?) ON CONFLICT(source_id) DO UPDATE SET json=excluded.json').run(sourceId,JSON.stringify(value));
     // Consumer authorization alone does not re-organize historical source groups.
-    if(JSON.stringify(priorOptions.consumers)!==JSON.stringify(value.consumers)&&JSON.stringify(organizationOptions(priorOptions))===JSON.stringify(organizationOptions(value))){db.exec('COMMIT');return value;}
+    if(JSON.stringify(priorOptions.consumers)!==JSON.stringify(value.consumers)&&JSON.stringify(organizationOptions(priorOptions))===JSON.stringify(organizationOptions(value))){db.exec('COMMIT');return this.options(sourceId);}
     db.prepare(`UPDATE source_pipeline_work SET memory_trigger=CASE WHEN state='complete' THEN 'rebuild' ELSE memory_trigger END,state='pending',error=NULL,generation=generation+1,updated_at=?,pipeline_id=coalesce(?,pipeline_id),version=coalesce(?,version),
       recipe_id=?,recipe_version=?,recipe_definition_fingerprint=?,recipe_config_fingerprint=?,recipe_component_pins=? WHERE source_id=?`).run(
         Date.now(),selected?.id??null,selected?.version??null,metadata?.id??null,metadata?.version??null,metadata?.definitionFingerprint??null,metadata?.configFingerprint??null,metadata?.componentPins??null,sourceId);
     for(const prior of previous){const old=stepId(prior.id,prior.generation);this.revoke(old);superseded.push(old);this.enqueueWork(this.row(prior.id)!);}
-    db.exec('COMMIT');for(const id of superseded)this.engine.abortLocal(id);return value;}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}}
+    db.exec('COMMIT');for(const id of superseded)this.engine.abortLocal(id);return this.options(sourceId);}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}}
   memoryAllowed(sourceId:string):boolean {
-    try{const options=this.options(sourceId),binding=this.store.db.prepare('SELECT pipeline_id,storage FROM source_pipeline_bindings WHERE source_id=?').get(sourceId);
-      if(!binding||binding.storage!=='archive')return options.memory!==false;
-      const pipeline=this.registry.get(String(binding.pipeline_id));return Boolean(pipeline&&(options.memory??pipeline.memory??false));
+    try{const binding=this.store.db.prepare('SELECT pipeline_id,storage FROM source_pipeline_bindings WHERE source_id=?').get(sourceId);
+      if(!binding||binding.storage!=='archive')return true;
+      return Boolean(this.registry.get(String(binding.pipeline_id)));
     }catch{return false;}
   }
   private memoryPlanner?:MaterialMemoryPlanner;

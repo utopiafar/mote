@@ -9,7 +9,7 @@ type Settings={providerRevision:string;enabled:boolean;ocrProcessorId:string;ocr
 type View={settings:Settings;model:{model?:string;profileId?:string}|null;jobs:{kind:string;state:string;count:number;autoEligible:number}[];backfills:{id:string;state:string;queued:number}[]};
 type ModelState={state:string;bytes:number;totalBytes:number;source:string;error?:string;runtimeReady:boolean};
 export function PerceptionSettings({api,onMemory,onAdvanced}:{api:Api;onMemory?:()=>void;onAdvanced?:()=>void}){
- const read=useResource<View>(api,'/api/perception',5000),policy=useResource<{policy:{profiles:ProcessingProfile[]};processors:{id:string;stage:string;mediaTypes:string[]}[]}>(api,'/api/file-processing'),memory=useResource<{settings:{extraction:{enabled:boolean}}}>(api,'/api/memory-settings');
+ const read=useResource<View>(api,'/api/perception',5000),policy=useResource<{policy:{profiles:ProcessingProfile[]};processors:{id:string;stage:string;mediaTypes:string[]}[]}>(api,'/api/file-processing');
  const models=useResource<{ocr:ModelState}>(api,'/api/media-models',5000),ocr=models.data?.ocr;
  const [settings,setSettings]=useState<Settings>(),[dirty,setDirty]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState(false);
  const [range,setRange]=useState({after:'',before:'',sourceId:'',mode:'complete' as 'complete'|'recompute'}),[preview,setPreview]=useState<{token:string;count:number}|null>(null);
@@ -28,7 +28,7 @@ export function PerceptionSettings({api,onMemory,onAdvanced}:{api:Api;onMemory?:
  <p>{moteText('文字识别服务')} · {settings.ocrEndpoint||moteText('仅保存原件')}</p>
  <label><input type="checkbox" checked={settings.understandingEnabled} onChange={e=>change('understandingEnabled',e.target.checked)}/>{moteText('后台理解画面与来源上下文')}</label>
  <p>{moteText('内容理解使用中央文件分析模型：{0}',read.data?.model?.model??moteText('未配置'))}</p>
- <p>{moteText('记忆整理')} · {memory.data?.settings.extraction.enabled?moteText('已开启'):moteText('已关闭')} {onMemory&&<button className="text-button" type="button" onClick={onMemory}>{moteText('查看记忆设置')}</button>}</p>
+ <p>{moteText('记忆整理')} · {moteText('持续整理新资料')} {onMemory&&<button className="text-button" type="button" onClick={onMemory}>{moteText('查看记忆设置')}</button>}</p>
  <div className="policy-card"><strong>{moteText('本地 OCR 模型：')}{ocr?.state??moteText('读取中')}</strong>{ocr?.state==='ready'&&<p role="status">{ocr.runtimeReady?moteText('OCR Worker 已就绪'):moteText('模型已安装，正在准备本地 OCR 服务；就绪后会自动处理')}</p>}{ocr&&ocr.totalBytes>0&&['downloading','verifying','installing'].includes(ocr.state)&&<progress value={ocr.bytes} max={ocr.totalBytes}/>} {ocr?.state!=='ready'&&<button type="button" className="button" disabled={busy||['downloading','verifying','installing'].includes(ocr?.state??'')} onClick={()=>void action(async()=>{await api.request('/api/media-models/ocr/install',{method:'POST',body:JSON.stringify({source:'auto'})});models.refresh();})}>{moteText('下载并安装 OCR 模型')}</button>}{ocr?.error&&<p role="alert">{ocr.error}</p>}</div>
  <details><summary>{moteText('高级设置')}</summary><p>{moteText('服务、插件参数与来源覆盖在文件处理策略中维护。图片设置通过引用复用这些配置。')}</p>{onAdvanced&&<button type="button" className="button" onClick={onAdvanced}>{moteText('查看处理策略')}</button>}
  <label>{moteText('处理模型／配置版本')}<input value={settings.providerRevision} maxLength={128} required onChange={e=>change('providerRevision',e.target.value)}/></label>
