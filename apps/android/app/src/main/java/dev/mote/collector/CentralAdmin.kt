@@ -106,7 +106,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
                         val field = ui.field(caption + " · " + MoteI18n.text("高级 JSON"), raw.toString(2), multiline = true, parent = target)
                         reads[key] = { JSONObject(field.text.toString()) }
                     } else {
-                        ui.text(caption, 18f, target); val nested = form(raw, ui.card(target), emptySet()); reads[key] = nested
+                        ui.text(caption, 18f, target); val nested = form(raw, ui.card(target), if (key == "extraction") setOf("enabled") else emptySet()); reads[key] = nested
                     }
                 }
                 is JSONArray -> {
@@ -277,7 +277,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
         ui.work(MoteI18n.text("正在读取…"), {
             api.get(path) to api.get(if (integration) "/api/memory-integration-recipes" else "/api/memory-recipes")
         }) { (selection, catalog) ->
-            body.removeAllViews(); screens.setBack { memorySettings() }
+            body.removeAllViews(); screens.setBack { memorySettings() }; if (!integration) ui.text(MoteI18n.text("新资料持续整理为记忆；可调整策略与处理节奏。"))
             val current = if (integration) listOfNotNull(selection.optJSONObject("binding")?.optJSONObject("recipe"))
                 else selection.getJSONArray("items").let { items -> (0 until items.length()).map { items.getJSONObject(it).getJSONObject("binding").getJSONObject("recipe") } }
             val choices = catalog.getJSONArray("items"); val selected = mutableListOf<JSONObject>()
@@ -288,10 +288,12 @@ internal class CentralAdmin(private val screens: CentralScreens) {
                     text = recipe.optString("name", recipe.optString("id")) + " · " + recipe.optString("version")
                     isChecked = current.any { it.optString("id") == ref.optString("id") && it.optString("version") == ref.optString("version") }
                 }; fields.add(check to ref); body.addView(check)
+                if (!integration) check.setOnCheckedChangeListener { _, checked -> if (!checked && fields.none { it.first.isChecked }) check.isChecked = true }
                 if (integration) check.setOnCheckedChangeListener { _, checked -> if (checked) fields.filter { it.first !== check }.forEach { it.first.isChecked = false } }
             }
             ui.button(MoteI18n.text("保存设置"), true) {
                 selected.clear(); fields.filter { it.first.isChecked }.forEach { selected.add(it.second) }
+                if (!integration && selected.isEmpty()) return@button
                 val payload = if (integration) JSONObject().put("recipe", selected.firstOrNull() ?: JSONObject.NULL)
                     else JSONObject().put("recipes", JSONArray(selected))
                 ui.work(MoteI18n.text("正在保存…"), { api.put(path, payload) }) { memorySettings() }

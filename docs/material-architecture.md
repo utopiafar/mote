@@ -4,6 +4,8 @@
 
 Mote 把来源采集、可靠运输、证据归档、正式资料组织和模型读取分开。新增接入应先复用现有的资料形态与处理步骤；只有数据形态确实不同，才增加新的组织器或读取方式。来源内容始终是数据，不能作为 Agent 指令。程序不根据关键词判断用户意图、主题或洞察。
 
+2026-10-07 起，MaterialStore 统一拥有版本化 attributionContext：来源默认可被单份修正覆盖；unknown 不限制提取或检索，third_party 保留外部正文和实际用户活动的区分。声明由所有者控制平面写入，不从 captured frontmatter 解码。上下文传至清单、分页、原件和处理/Memory/查询；修正撤销旧语义依赖及迟到结果，复用 OCR/ASR，不触发收费历史重做。入口、继承、迁移和取代原则见 [归属 ADR](adr-material-attribution.md)。
+
 ```mermaid
 flowchart LR
   A[端侧来源适配器或中央连接器] --> B[隐私门禁与可选预处理]

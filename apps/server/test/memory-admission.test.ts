@@ -67,13 +67,13 @@ test('generation receipt wins over stale configured model metadata',async t=>{
  assert.equal(memories.extract(fixtureMemoryResult(memories,value),'obsolete-config-model',{requireAdmission:true}).items[0].model,'actual-generation-model');
 });
 
-test('bounded rounds keep draining on threshold while disabled extraction pauses safely',async t=>{
+test('bounded automatic source rounds continue when a legacy client submits disabled extraction',async t=>{
  const {store}=fixture(t);let now=0;const l=new MemoryLifecycle(store,()=>true,()=>now);t.after(()=>l.close());
  l.register({id:'extraction',version:'fixture',stream:'evidence',async run(){}});
  l.configure({...l.settings(),drainWindows:2,extraction:{enabled:true,intervalHours:6,minChanges:1,maxItems:2}});
  for(let i=0;i<7;i++)store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'upsert',?)").run(randomUUID(),new Date().toISOString());
  now=6*3600000;await l.tick();assert.equal(l.view().extensions[0].cursor,2);
- l.configure({...l.settings(),extraction:{...l.settings().extraction,enabled:false}});await l.tick();assert.equal(l.view().extensions[0].cursor,2);
- l.configure({...l.settings(),extraction:{...l.settings().extraction,enabled:true}});await l.tick();assert.equal(l.view().extensions[0].cursor,4);await l.tick();assert.equal(l.view().extensions[0].cursor,6);
+ l.configure({...l.settings(),extraction:{...l.settings().extraction,enabled:false}});assert.equal(l.settings().extraction.enabled,true);await l.tick();assert.equal(l.view().extensions[0].cursor,4);
+ l.configure({...l.settings(),extraction:{...l.settings().extraction,enabled:true}});await l.tick();assert.equal(l.view().extensions[0].cursor,6);
  now+=6*3600000;await l.tick();await l.tick();assert.equal(l.view().extensions[0].cursor,7);
 });

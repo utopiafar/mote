@@ -1,7 +1,8 @@
+import {MaterialStore} from './materials.js';
 import type {SourcePipelineRuntime} from './source-pipelines.js';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
-import {sourceCapabilities,sourceConnectionSchema,sourceItemSchema,type SourceConnection,type SourceItem,type SourceItemRecord,type CaptureRecord} from '@mote/shared';
+import {ownerRelationSchema,type OwnerRelation,sourceCapabilities,sourceConnectionSchema,sourceItemSchema,type SourceConnection,type SourceItem,type SourceItemRecord,type CaptureRecord} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
 import type {MemoryInputAuthorization} from './memory-input-authorization.js';
 
@@ -19,15 +20,19 @@ export class SourceStore {
     if(!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     if(existing){if(existing.kind!==input.kind||existing.deviceId!==input.deviceId||existing.platform!==input.platform)throw new StoreError('Source identity cannot be changed',409);return existing;}
     if(this.listSources().length>=500)throw new StoreError('Maximum 500 sources',413);
-    const now=new Date().toISOString(),value={...input,createdAt:now,updatedAt:now};this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.save(value);return this.present(value);
+    const now=new Date().toISOString(),value={...input,ownerRelationVersion:input.ownerRelation?1:undefined,createdAt:now,updatedAt:now};this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.save(value);return this.present(value);
   }
-  update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention'];initialSync?:'all'|'new_only'}):SourceConnection {
-    const existing=this.getSource(id),{createdAt:_,updatedAt:__,status:___,capabilities:____,...fields}=existing,input=sourceConnectionSchema.parse({...fields,...patch});
+  update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention'];initialSync?:'all'|'new_only';ownerRelation?:OwnerRelation|null}):SourceConnection {
+    const existing=this.getSource(id),{createdAt:_,updatedAt:__,status:___,capabilities:____,...fields}=existing,input=sourceConnectionSchema.parse({...fields,...patch,...('ownerRelation' in patch?{ownerRelation:patch.ownerRelation??undefined,ownerRelationVersion:(existing.ownerRelationVersion??0)+(patch.ownerRelation!==(existing.ownerRelation??null)?1:0)||undefined}:{})});
     if(input.enabled&&!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     const value={...existing,...input,updatedAt:new Date().toISOString()};
     const growth=Buffer.byteLength(JSON.stringify(value))-Buffer.byteLength(JSON.stringify(existing));
     if(growth>0)this.store.reserveMetadata(growth);
-    this.save(value);return this.present(value);
+    const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+    try{this.save(value);if('ownerRelation' in patch&&patch.ownerRelation!==(existing.ownerRelation??null))
+      (this.pipelines?.materials??new MaterialStore(this.store)).refreshSourceContext(id);
+      if(own)db.exec('COMMIT');return this.present(value);
+    }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   private present(value:SourceConnection):SourceConnection{return this.capabilities.has(value.kind)?{...value,capabilities:{...this.capabilities.describe(value),...(value.kind==='coding-agent'?{codingEvidenceFieldsVersion:1 as const}:{})}}:{...value,enabled:false,status:{...value.status,state:'error',code:'source_adapter_unavailable'}};}
   private save(value:SourceConnection){const {capabilities,...persisted}=value;this.store.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,JSON.stringify(persisted));}
@@ -86,7 +91,7 @@ export class SourceStore {
       if(!prior){
         const head=this.store.db.prepare('SELECT * FROM source_heads WHERE source_id=? AND external_id=?').get(sourceId,item.externalId) as Head|undefined;
         this.store.db.prepare('INSERT INTO source_versions(source_id,external_id,revision,capture_id,hash) VALUES(?,?,?,?,?)').run(sourceId,item.externalId,item.revision,id,hash);
-        if(!ack.duplicate)this.memoryInputs?.receive({sourceId,inputKey:id,captureId:id},!item.deleted&&this.pipelines?.options(sourceId).memory!==false);
+        if(!ack.duplicate)this.memoryInputs?.receive({sourceId,inputKey:id,captureId:id},!item.deleted);
         if(!head||Date.parse(item.observedAt)>=Date.parse(head.observed_at)){
           this.store.db.prepare('INSERT INTO source_heads(source_id,external_id,capture_id,observed_at,deleted) VALUES(?,?,?,?,?) ON CONFLICT(source_id,external_id) DO UPDATE SET capture_id=excluded.capture_id,observed_at=excluded.observed_at,deleted=excluded.deleted').run(sourceId,item.externalId,id,new Date(item.observedAt).toISOString(),Number(item.deleted));
           if(head){this.store.invalidateMemoryEvidence(head.capture_id);this.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(head.capture_id,new Date().toISOString());}

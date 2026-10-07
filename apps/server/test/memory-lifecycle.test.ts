@@ -164,7 +164,7 @@ test('a slow insight does not block subsequent extraction windows or overlap its
   release();await Promise.all([first,second]);assert.ok(lifecycle.view().extensions.find(e=>e.id==='insights')!.cursor>0);
 });
 
-test('startup recovers detached queued jobs without bypassing active retry or disabled extraction',async t=>{
+test('startup recovers explicit jobs while lifecycle windows retain their own recovery authority',async t=>{
   const {recoverableMemoryJobs}=await import('../src/lifecycle-extensions.js');
   const store=fixture(t),lifecycle=new MemoryLifecycle(store,()=>true);t.after(()=>lifecycle.close());
   lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(){}});
@@ -172,7 +172,7 @@ test('startup recovers detached queued jobs without bypassing active retry or di
   for(const [id,status,importJobId] of [['manual','queued',null],['orphan','queued','lifecycle:old'],['active','queued','lifecycle:current'],['paused','paused','lifecycle:paused'],['cancelled','cancelled',null]])store.db.prepare('INSERT INTO memory_jobs VALUES(?,?,?)').run(id,new Date().toISOString(),JSON.stringify({id,status,importJobId}));
   store.db.prepare('INSERT INTO memory_jobs VALUES(?,?,?)').run('material',new Date().toISOString(),JSON.stringify({id:'material',status:'queued',originKey:'material:generated@revision'}));
   store.db.prepare('UPDATE memory_lifecycle_state SET json=? WHERE id=?').run(JSON.stringify({cursor:0,lastSuccess:0,failures:1,retryAt:Date.now()+60000,active:{id:'generated-window',contextTime:new Date().toISOString(),checkpoint:'active',ids:[]}}),'extraction');
-  assert.deepEqual(recoverableMemoryJobs(store,lifecycle),['manual','orphan']);
+  assert.deepEqual(recoverableMemoryJobs(store,lifecycle),['manual']);
   const settings=lifecycle.settings();lifecycle.configure({...settings,extraction:{...settings.extraction,enabled:false}});
   assert.deepEqual(recoverableMemoryJobs(store,lifecycle),['manual']);
 });
@@ -207,4 +207,25 @@ test('provider Retry-After survives lifecycle restart and exceeds the ordinary b
  for(let i=0;i<25;i++)event(store);await lifecycle.tick();assert.equal(calls,1);assert.equal(lifecycle.view().extensions[0].retryAt,now+86400000);assert.equal(lifecycle.view().extensions[0].error,'rate_limited');await lifecycle.close();
  lifecycle=new MemoryLifecycle(store,()=>true,()=>now);t.after(()=>lifecycle.close());lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(){calls++;}});
  now+=86399999;await lifecycle.tick();assert.equal(calls,1);now++;await lifecycle.tick();assert.equal(calls,2);assert.equal(lifecycle.view().extensions[0].pendingChanges,0);
+});
+
+for(const active of ['none','manual','authorized'] as const)test(`legacy extraction off cutover skips old journal and detached jobs while preserving ${active} work`,async t=>{
+  const store=fixture(t);let calls=0,lifecycle=new MemoryLifecycle(store,()=>true,()=>0);
+  const register=()=>lifecycle.register({id:'extraction',version:'fixture',stream:'artifact',async run(){calls++;}});register();
+  lifecycle.configure({...lifecycle.settings(),extraction:{...lifecycle.settings().extraction,minChanges:1}});
+  for(let n=0;n<3;n++)store.db.prepare("INSERT INTO artifact_events(entity,operation) VALUES(?,'publish')").run('generated-old-'+n);
+  if(active!=='none')lifecycle.request('extraction',['generated-explicit-history'],'manual-child');
+  if(active==='authorized'){const state=JSON.parse(String(store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='extraction'").get()!.json));delete state.active.manual;store.db.prepare("UPDATE memory_lifecycle_state SET json=? WHERE id='extraction'").run(JSON.stringify(state));}
+  if(active==='none'){const state=JSON.parse(String(store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='extraction'").get()!.json));state.drainThrough=1;store.db.prepare("UPDATE memory_lifecycle_state SET json=? WHERE id='extraction'").run(JSON.stringify(state));}
+  const old=lifecycle.settings();old.extraction.enabled=false;store.db.prepare('UPDATE memory_lifecycle_settings SET json=? WHERE id=1').run(JSON.stringify(old));
+  store.db.exec('CREATE TABLE IF NOT EXISTS memory_jobs(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL)');
+  for(const id of ['orphan-child','manual-child'])store.db.prepare('INSERT INTO memory_jobs VALUES(?,?,?)').run(id,new Date().toISOString(),JSON.stringify({id,status:'queued',importJobId:'lifecycle:generated-old'}));
+  await lifecycle.close();lifecycle=new MemoryLifecycle(store,()=>true,()=>0);register();t.after(()=>lifecycle.close());
+  assert.equal(lifecycle.settings().extraction.enabled,true);
+  assert.equal(lifecycle.view().extensions[0].cursor,3);
+  assert.equal(JSON.parse(String(store.db.prepare("SELECT json FROM memory_jobs WHERE id='orphan-child'").get()!.json)).status,'cancelled');
+  assert.equal(JSON.parse(String(store.db.prepare("SELECT json FROM memory_jobs WHERE id='manual-child'").get()!.json)).status,active!=='none'?'queued':'cancelled');
+  await lifecycle.tick();assert.equal(calls,active!=='none'?1:0);assert.equal(lifecycle.view().extensions[0].cursor,3,'manual completion cannot undo the historical cutoff');
+  store.db.prepare("INSERT INTO artifact_events(entity,operation) VALUES('generated-new','publish')").run();
+  await lifecycle.tick();assert.equal(calls,active!=='none'?2:1);assert.equal(lifecycle.view().extensions[0].cursor,4);
 });

@@ -5,9 +5,9 @@ import {memoryRecipeBindingSchema,memoryStrategyRefSchema,type MemoryRecipeBindi
 
 export const memoryRecipeScope=(binding:MemoryRecipeBinding)=>'recipe/'+sha256(JSON.stringify(binding));
 const bindingsSchema=z.array(memoryRecipeBindingSchema).max(8);
-const selectionSchema=z.array(memoryStrategyRefSchema).max(8).refine(values=>new Set(values.map(v=>v.id+'@'+v.version)).size===values.length,'Duplicate Memory recipe');
+const selectionSchema=z.array(memoryStrategyRefSchema).min(1).max(8).refine(values=>new Set(values.map(v=>v.id+'@'+v.version)).size===values.length,'Duplicate Memory recipe');
 
-/** Owner enablement is separate from installation. Persist exact selected
+/** Owner strategy selection is separate from installation. Persist exact selected
  * definitions; neither a newer installed version nor a missing plugin changes
  * the selection or authorizes historical work. */
 export class MemoryRecipeSettings {
@@ -23,13 +23,17 @@ export class MemoryRecipeSettings {
   }
   private key(sourceId?:string){return sourceId===undefined?'default':'source:'+sourceId;}
   private source(sourceId?:string){if(sourceId!==undefined&&!this.store.db.prepare('SELECT 1 FROM source_connections WHERE id=?').get(sourceId))throw new StoreError('Source not found',404);}
+  private baseline(){return [this.strategies.resolve({id:'mote.personal-memory',version:'2'}).binding];}
   selection(sourceId?:string):MemoryRecipeBinding[]{
-    const row=this.store.db.prepare('SELECT json FROM memory_recipe_settings WHERE id=?').get(this.key(sourceId))??this.store.db.prepare("SELECT json FROM memory_recipe_settings WHERE id='default'").get();
-    return bindingsSchema.parse(JSON.parse(String(row!.json)));
+    const own=sourceId===undefined?undefined:this.store.db.prepare('SELECT json FROM memory_recipe_settings WHERE id=?').get(this.key(sourceId));
+    const selected=own?bindingsSchema.parse(JSON.parse(String(own.json))):[];
+    if(selected.length)return selected;
+    const defaults=bindingsSchema.parse(JSON.parse(String(this.store.db.prepare("SELECT json FROM memory_recipe_settings WHERE id='default'").get()!.json)));
+    return defaults.length?defaults:this.baseline();
   }
   enabled(sourceId:string,binding:MemoryRecipeBinding){return this.selection(sourceId).some(selected=>memoryRecipeScope(selected)===memoryRecipeScope(binding));}
   available(binding:MemoryRecipeBinding){try{this.strategies.resolvePinned(binding);return true;}catch{return false;}}
-  view(sourceId?:string){this.source(sourceId);return {sourceId:sourceId??null,inherited:sourceId!==undefined&&!this.store.db.prepare('SELECT 1 FROM memory_recipe_settings WHERE id=?').get(this.key(sourceId)),items:this.selection(sourceId).map(binding=>({binding,available:this.available(binding)}))};}
+  view(sourceId?:string){this.source(sourceId);const own=sourceId===undefined?undefined:this.store.db.prepare('SELECT json FROM memory_recipe_settings WHERE id=?').get(this.key(sourceId));return {sourceId:sourceId??null,inherited:sourceId!==undefined&&(!own||!bindingsSchema.parse(JSON.parse(String(own.json))).length),items:this.selection(sourceId).map(binding=>({binding,available:this.available(binding)}))};}
   configure(raw:unknown){
     const input=z.object({sourceId:z.string().min(1).max(256).optional(),recipes:selectionSchema.nullable()}).strict().parse(raw);this.source(input.sourceId);
     const db=this.store.db;db.exec('BEGIN IMMEDIATE');

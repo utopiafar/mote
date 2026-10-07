@@ -111,6 +111,8 @@ export function noteCapture(note: NoteInput): CaptureInput {
   });
 }
 export type CaptureRecord = Omit<CaptureInput,'imageBase64'|'imageMime'> & {
+  /** Host-resolved view metadata; not accepted by capture ingestion. */
+  attributionContext?:import('./material-context.js').AttributionContext;
   receivedAt: string; blobHash: string | null; imageMime: string | null;
   indexingStatus: 'text_ready'|'pending'|'indexed'|'failed'; summary?: string;
 };
@@ -181,3 +183,5 @@ export * from './recordings.js';
 export * from './activity.js';
 
 export * from './library-catalog.js';
+
+export * from './material-context.js';

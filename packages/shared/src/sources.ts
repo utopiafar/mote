@@ -1,3 +1,4 @@
+import {ownerRelationSchema} from './material-context.js';
 import type {SourceCapabilities} from './source-capabilities.js';
 import {fileIndexSchema} from './file-index.js';
 import {z} from 'zod';
@@ -105,6 +106,7 @@ export const sourceConnectionSchema=z.object({
   id:sourceIdSchema,name:z.string().trim().min(1).max(200),
   kind:sourceKindSchema,
   deviceId:sourceIdSchema,platform:z.enum(['macos','windows','linux','android','import']),
+  ownerRelation:ownerRelationSchema.optional(),ownerRelationVersion:z.number().int().positive().optional(),
   initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).default('snapshot'),enabled:z.boolean().default(true),
 }).strict();
 export type SourceConnection=z.infer<typeof sourceConnectionSchema>&{capabilities?:SourceCapabilities;createdAt:string;updatedAt:string;status?:{state:'idle'|'syncing'|'error'|'permission_required';code?:string;lastSyncAt?:string}};

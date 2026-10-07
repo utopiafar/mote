@@ -235,3 +235,20 @@ test('a removed job in the cancellation journal does not indefinitely block unre
   const cancel=fake.runner.cancel;fake.runner.cancel=id=>{if(!fake.jobs.has(id))throw new StoreError('Memory job not found',404);return cancel(id);};
   assert.equal(work.drain(fake.runner,true),1);
 });
+
+test('pure attribution correction withdraws claimed and unclaimed work without renewing a raw receipt',async t=>{
+  const {store,materials,work,draft,receive}=fixture(t),fake=fakeRunner();
+  let current=materials.publish(draft());receive('initial');work.observe(current.id,['source-body'],{inputKey:'initial',change:'source'});
+  assert.equal(work.drain(fake.runner,true),1);await new Promise(resolve=>setImmediate(resolve));
+  const receipt=store.db.prepare('SELECT * FROM memory_input_authorizations').get();
+  const corrected=materials.correctContext(current.id,current.revision,'third_party');
+  assert.notEqual(corrected.revision,current.revision);assert.equal(store.db.prepare('SELECT count(*) n FROM material_memory_requests').get()!.n,0);
+  work.drain(fake.runner,true);assert.deepEqual(fake.cancelled,['memory-1']);assert.deepEqual(store.db.prepare('SELECT * FROM memory_input_authorizations').get(),receipt);
+  work.observe(corrected.id,['source-body'],{inputKey:'initial',change:'rebuild'});assert.equal(work.drain(fake.runner,true),0);
+  current=materials.publish(draft('Generated new input'),{expectedRevision:corrected.revision});receive('second');work.observe(current.id,['source-body'],{inputKey:'second',change:'source'});
+  const before=store.db.prepare('SELECT * FROM memory_input_authorizations ORDER BY input_key').all();
+  const second=materials.correctContext(current.id,current.revision,'mixed');
+  work.observe(second.id,['source-body'],{inputKey:'second',change:'rebuild'});assert.equal(work.drain(fake.runner,true),0);
+  assert.deepEqual(store.db.prepare('SELECT * FROM memory_input_authorizations ORDER BY input_key').all(),before,'an unclaimed receipt is not reused by correction');
+  assert.equal(fake.created.length,1);
+});

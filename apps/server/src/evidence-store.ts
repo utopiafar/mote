@@ -397,6 +397,10 @@ export class EvidenceStore {
     // A revision preserves its previous original for as-of reports. Explicit
     // deletion removes reports conservatively because their lineage may be incomplete.
     if(deleted)this.db.exec('DELETE FROM insights');
+    this.invalidateSemanticEvidence(id,deleted);
+  }
+  /** Changes interpretation without retiring original bytes, text, quote anchors, or linked excerpts. */
+  invalidateSemanticEvidence(id:string,deleted=false) {
     this.invalidateConversationAnswers([id]);
     if(deleted)this.db.prepare('DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)').run(id);
     else this.db.prepare("UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed','$.updatedAt',?) WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)").run(new Date().toISOString(),id);

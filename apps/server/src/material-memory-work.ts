@@ -26,6 +26,8 @@ export class MaterialMemoryWork {
   private planning=false;
   readonly inputs:MemoryInputAuthorization;
   constructor(private readonly store:Store,private readonly materials:MaterialStore,private readonly now=Date.now,private readonly automaticEnabled=()=>true,private readonly recipes?:MemoryRecipeSettings){
+    const priorContextChanged=materials.onContextChanged;
+    materials.onContextChanged=(id,cause)=>{priorContextChanged?.(id,cause);this.withdraw(id);};
     this.inputs=new MemoryInputAuthorization(store,automaticEnabled,now,recipes);
     const db=store.db;
     this.transaction(()=>{

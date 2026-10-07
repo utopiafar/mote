@@ -271,3 +271,19 @@ test('gzip JSONL capture bundles are unpacked, scoped and acknowledged per recor
   assert.equal((await send(gzipSync(Buffer.from(JSON.stringify({...capture(),deviceId:'someone-else'})+'\n')))).statusCode,200);
   assert.equal((await send(gzipSync(Buffer.from(JSON.stringify({...first,id:randomUUID(),deviceId:'someone-else'})+'\n')))).statusCode,200);
 });
+
+
+test('attribution controls require owner authority and paired owner clients can correct a material',async t=>{
+  const {app,materials,materialOrganizer,sources}=await fixture(t,{mcp:true}),client=await paired(app);
+  sources.register(source('attribution'));
+  const patch={ownerRelation:'third_party'};
+  assert.equal((await app.inject({method:'PATCH',url:'/api/sources/attribution',payload:patch})).statusCode,401);
+  assert.equal((await app.inject({method:'PATCH',url:'/api/sources/attribution',headers:headers('synthetic-static-write-mcp-token-123456789'),payload:patch})).statusCode,401);
+  const declared=await app.inject({method:'PATCH',url:'/api/sources/attribution',headers:headers(client.token),payload:patch});assert.equal(declared.statusCode,200);assert.equal(declared.json().ownerRelationVersion,1);
+  await sources.upsert('attribution',item());await materialOrganizer.tick(50);
+  const material=materials.list({sourceId:'attribution'}).items[0]!;assert.equal(material.attributionContext?.ownerRelation,'third_party');
+  const payload={expectedRevision:material.revision,ownerRelation:'owner'};
+  assert.equal((await app.inject({method:'PATCH',url:`/api/materials/${material.id}/context`,payload})).statusCode,401);
+  const corrected=await app.inject({method:'PATCH',url:`/api/materials/${material.id}/context`,headers:headers(client.token),payload});assert.equal(corrected.statusCode,200);assert.equal(corrected.json().attributionContext.basis,'owner_material');
+  assert.equal((await app.inject({method:'PATCH',url:`/api/materials/${material.id}/context`,headers:headers(),payload})).statusCode,409);
+});

@@ -3,6 +3,22 @@ import assert from 'node:assert/strict';
 import {startBridge} from '../dist/bridge.js';
 
 const at='2026-09-14T01:00:00.000Z';
+test('trusted attribution survives bounded reads and fences a correction without changing body text',async()=>{
+  let context={version:1,ownerRelation:'unknown',basis:'default'};
+  const record={id:'52c64706-e538-421e-ab8f-d06bdb1d28dd',capturedAt:at,appName:'Generated',sourceType:'note',ocrText:'原文🙂 quoted speaker',get attributionContext(){return context;}};
+  const bridge=await startBridge({search:async()=>[record],timeline:async()=>({items:[record],nextCursor:null}),evidence:async()=>[record],activity:async()=>({}),devices:async()=>[]},{question:'Generated attribution correction'},5);
+  try {
+    const original=(await call(bridge,'search_context')).body.data[0];
+    assert.deepEqual(original.attributionContext,context);
+    context={version:1,ownerRelation:'third_party',basis:'owner_material',correction:{version:1,ownerRelation:'third_party'}};
+    const corrected=(await call(bridge,'evidence',{ids:[record.id]})).body.data[0];
+    assert.deepEqual(corrected.attributionContext,context);assert.equal(corrected.ocrText,original.ocrText);
+    assert.notEqual(corrected.evidenceFingerprint,original.evidenceFingerprint);
+    context={...context,privateToken:'never-pass'};
+    const invalid=(await call(bridge,'search_context')).body.data[0];
+    assert.equal(invalid.attributionContext,undefined);assert.ok(!JSON.stringify(invalid).includes('never-pass'));
+  } finally {await bridge.close();}
+});
 const sample={id:'f20b8ba9-f160-558e-8198-5a42e2589160',capturedAt:at,appName:'Generated',appId:'test.generated',sourceType:'activity',ocrText:'',durationMs:15000,privacy:{collection:'activity'},metadata:{version:1,observedAt:at,state:{batteryPercent:0,charging:false}},deviceId:'fixture-device'};
 async function call(bridge,tool,args={}) {const response=await fetch(`${bridge.url}/${tool}`,{method:'POST',headers:{Authorization:`Bearer ${bridge.token}`,'Content-Type':'application/json'},body:JSON.stringify(args)});return {status:response.status,body:await response.json()};}
 test('agent chooses exact app/source/collection filters and expands content-free measured evidence',async()=>{

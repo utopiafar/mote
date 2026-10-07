@@ -2,6 +2,8 @@
 
 本工作稿把 [Source pipelines](source-pipelines.md)、[资料架构](material-architecture.md) 与本次 Cordis 方案落到当前代码。它记录目标边界与验收要求。
 
+2026-10-07 取代说明：普通新输入提取持续工作，旧 extraction/source memory 关闭及空自动选择被取代；安装能力、非空策略选择、来源授权/暂停、独立整合/洞察开关和显式收费历史授权仍保留。归属元数据、纠正及 KEEP/CHANGE/REMOVE/EXCEPTION/UNKNOWN 检查见 [Material 归属 ADR](adr-material-attribution.md)。下文「启用」不能再解释为普通用户必须另开 Memory 才处理获授权新资料。
+
 ## 插件组合与迭代约束（2026-09-27 补充）
 
 功能与效果优先于性能，性能优先于成本；超时、取消、有限重试与预算核算始终属于公共保证。下列要求也是验收标准，不能由接口存在或单个插件运行成功代替。

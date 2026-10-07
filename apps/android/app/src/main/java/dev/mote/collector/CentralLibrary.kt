@@ -199,15 +199,48 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             }
         }
     }
+    private fun relationLabel(value: String): String = when (value) {
+        "owner" -> MoteI18n.text("我的表达或经历")
+        "third_party" -> MoteI18n.text("第三方内容")
+        "mixed" -> MoteI18n.text("混合内容")
+        else -> MoteI18n.text("归属未知")
+    }
+    private fun relationSelector(value: String, source: Boolean, card: LinearLayout): Pair<Spinner, List<String>> {
+        val options = listOf("", "owner", "third_party", "mixed", "unknown")
+        ui.text(MoteI18n.text("内容与我的关系"), parent = card)
+        val selector = Spinner(ui).apply {
+            adapter = ArrayAdapter(ui, android.R.layout.simple_spinner_dropdown_item, options.map { if (it.isEmpty()) { if (source) MoteI18n.text("不声明") else MoteI18n.text("跟随来源") } else relationLabel(it) })
+            setSelection(options.indexOf(value).coerceAtLeast(0))
+        }; card.addView(selector)
+        ui.text(MoteI18n.text("声明帮助模型区分你的表达、第三方内容和混合引用；归属未知也能查询和整理。"), parent = card)
+        return selector to options
+    }
     private fun material(id: String, revision: String?, offset: Int = 0) {
         val api = client
         ui.work(MoteI18n.text("正在读取原文…"), {
-            api.get("/api/materials/" + enc(id) + "/read?offset=$offset&length=4000" + (revision?.let { "&revision=" + enc(it) } ?: ""))
-        }) { value ->
+            api.get("/api/materials/" + enc(id) + "/read?offset=$offset&length=4000" + (revision?.let { "&revision=" + enc(it) } ?: "")) to api.get("/api/materials/" + enc(id))
+        }) { (value, current) ->
             body.removeAllViews(); screens.setBack { screens.refresh() }
             val item = value.getJSONObject("material"); ui.text(item.getString("title"), 24f)
             ui.text(MoteI18n.text("版本 {0}", item.opt("sequence"))); ui.text(value.getString("text"))
             values(item.getJSONObject("origin"), ui.card())
+            item.optJSONObject("attributionContext")?.let { context ->
+                val card = ui.card(); ui.text(MoteI18n.text("内容与我的关系") + " · " + relationLabel(context.optString("ownerRelation")), parent = card)
+                val basis = when (context.optString("basis")) {
+                    "owner_material" -> MoteI18n.text("你对这份资料的声明")
+                    "owner_source" -> MoteI18n.text("你对来源的声明")
+                    "connector" -> MoteI18n.text("来源提供的上下文")
+                    else -> MoteI18n.text("尚无归属声明")
+                }; ui.text(MoteI18n.text("归属依据") + " · " + basis, parent = card)
+                if (current.getString("revision") == item.getString("revision")) {
+                    ui.text(MoteI18n.text("纠正内容归属（可选）"), parent = card)
+                    val (choice, options) = relationSelector(context.optJSONObject("correction")?.optString("ownerRelation").orEmpty().let { if (it == "null") "" else it }, false, card)
+                    ui.button(MoteI18n.text("保存归属声明"), parent = card) {
+                        val relation = options[choice.selectedItemPosition]
+                        ui.work(MoteI18n.text("正在保存…"), { api.patch("/api/materials/" + enc(id) + "/context", JSONObject().put("expectedRevision", item.getString("revision")).put("ownerRelation", relation.ifEmpty { null } ?: JSONObject.NULL)) }) { updated -> material(id, updated.getString("revision")) }
+                    }
+                } else ui.button(MoteI18n.text("查看当前版本"), parent = card) { material(id, current.getString("revision")) }
+            }
             val range = value.getJSONObject("textRange")
             if (!range.isNull("nextOffset")) ui.button(MoteI18n.text("继续展开")) { material(id, revision, range.getInt("nextOffset")) }
             ui.button(MoteI18n.text("来源与处理")) {
@@ -283,12 +316,15 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             ui.text(row.optString("name"), 20f, card); ui.text(row.optString("kind") + " · " + row.optString("deviceId"), parent = card)
             ui.button(MoteI18n.text("编辑来源"), parent = card) {
                 val name = ui.field(MoteI18n.text("名称"), row.optString("name"), parent = card)
+                ui.text(MoteI18n.text("来源内容归属（可选）"), parent = card)
+                ui.text(MoteI18n.text("来源声明应用于已有和新资料；单份资料的声明优先。"), parent = card)
+                val (relation, relations) = relationSelector(row.optString("ownerRelation"), true, card)
                 val enabled = CheckBox(ui).apply { text = MoteI18n.text("启用"); isChecked = row.optBoolean("enabled") }; card.addView(enabled)
                 val policies = listOf("archive", "snapshot", "reference")
                 val policy = Spinner(ui).apply { adapter = ArrayAdapter(ui, android.R.layout.simple_spinner_dropdown_item, policies)
                     setSelection(policies.indexOf(row.optString("retention")).coerceAtLeast(0)) }; card.addView(policy)
                 ui.button(MoteI18n.text("保存设置"), parent = card) {
-                    val api = client; val request = JSONObject().put("name", name.text.toString()).put("enabled", enabled.isChecked).put("retention", policies[policy.selectedItemPosition])
+                    val api = client; val request = JSONObject().put("name", name.text.toString()).put("enabled", enabled.isChecked).put("retention", policies[policy.selectedItemPosition]).put("ownerRelation", relations[relation.selectedItemPosition].ifEmpty { null } ?: JSONObject.NULL)
                     ui.work(MoteI18n.text("正在保存…"), { api.patch("/api/sources/" + enc(row.getString("id")), request) }) { screens.refresh() }
                 }
             }

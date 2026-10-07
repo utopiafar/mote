@@ -47,7 +47,7 @@ export class EvidenceReader {
     // Memory dependencies must use the canonical Material anchor. The query
     // projection below decorates it with source metadata for display and must
     // not replace its identity when validating a durable dependency.
-    this.memories=new MemoryStore(store,ids=>[...store.evidence(ids),...(materials?.evidence(ids)??[]),...(files?.evidence(ids)??[])],id=>Boolean(materials?.isCurrentEvidence(id)||files?.isCurrentEvidence(id)||store.isCurrentEvidence(id)));
+    this.memories=new MemoryStore(store,ids=>[...store.evidence(ids),...(materials?.evidence(ids)??[]),...(files?.evidence(ids)??[])].map(record=>({...record,...(materials?{attributionContext:materials.contextForEvidence(record)}:{})})),id=>Boolean(materials?.isCurrentEvidence(id)||files?.isCurrentEvidence(id)||store.isCurrentEvidence(id)));
   }
   imageReference(ref:string,scope:Range={}){
     const id=evidenceRefId(ref,'capture');if(!id)return;
@@ -74,7 +74,7 @@ export class EvidenceReader {
       const head=this.materialHead(material,scope);
       return [head?this.materialCard(material,head,undefined,selected)??selected:selected];
     });
-    return [...this.store.evidence(ids),...materialRecords,...(this.files?.evidence(ids)??[])].filter(record=>withinEvidenceScope(record,scope));
+    return [...this.store.evidence(ids),...materialRecords,...(this.files?.evidence(ids)??[])].map(record=>({...record,...(this.materials?{attributionContext:this.materials.contextForEvidence(record)}:{})})).filter(record=>withinEvidenceScope(record,scope));
   }
   /** An unchanged block can reuse an anchor created by an earlier revision. Bind
    * it to the active block in the current head before exposing it to a model. */
@@ -128,7 +128,7 @@ export class EvidenceReader {
         }
       }
     }
-    return {...record,ref:formatEvidenceRef('capture',record.id),sourceType:record.source,...(record.provenance?{revisionState:current?'current':'historical'}:{}),evidencePresentation};
+    return {...record,...(this.materials?{attributionContext:this.materials.contextForEvidence(record)}:{}),ref:formatEvidenceRef('capture',record.id),sourceType:record.source,...(record.provenance?{revisionState:current?'current':'historical'}:{}),evidencePresentation};
   });}
   records(args:Range&{query?:string},search=false){
     const base=search&&args.query?this.store.searchPage({...args,includeTotal:false}):this.store.list({...args,includeTotal:false});
@@ -189,10 +189,16 @@ export class EvidenceReader {
     }
     return {members:[...members],firstAt:firstAt!,lastAt:lastAt!};
   }
+  private artifactAttribution(members:readonly string[]){
+    return Object.fromEntries(members.flatMap(id=>{
+      const record=scopeRecord(this.store,id)??this.materials?.evidence([id])[0];
+      return record&&this.materials?[[id,this.materials.contextForEvidence(record)]]:[];
+    }));
+  }
   artifact(ref:string,scope:Range={}){
     const parsed=parseArtifactRef(ref);if(!parsed)return;
     const originals=this.artifactMembers(parsed.id,parsed.revision,scope);if(!originals)return;
-    const value=this.store.archive.get(parsed.id);return value?{...value,ref:formatArtifactRef(value.id,value.revision),...originals}:undefined;
+    const value=this.store.archive.get(parsed.id),members=originals.members.slice(0,30);return value?{...value,ref:formatArtifactRef(value.id,value.revision),...originals,members,evidenceCount:originals.members.length,membersTruncated:originals.members.length>30,attributionContexts:this.artifactAttribution(members)}:undefined;
   }
   segments(args:NonNullable<Parameters<Store['archive']['page']>[0]>={}){
     const parsed=args.id?.startsWith('artifact:')?parseArtifactRef(args.id):undefined;
@@ -203,7 +209,7 @@ export class EvidenceReader {
       if(!item||parsed&&item.revision!==parsed.revision)return [];
       const originals=this.artifactMembers(item.id,item.revision,args);if(!originals)return [];
       const {members}=originals,limit=args.id?30:3;
-      return [{...item,...originals,ref:formatArtifactRef(item.id,item.revision),members:members.slice(0,limit),evidenceCount:members.length,membersTruncated:members.length>limit}];
+      return [{...item,...originals,ref:formatArtifactRef(item.id,item.revision),members:members.slice(0,limit),attributionContexts:this.artifactAttribution(members.slice(0,limit)),evidenceCount:members.length,membersTruncated:members.length>limit}];
     })};
   }
   chunks(args:Range&{id:string;offset?:number}){
@@ -773,8 +779,8 @@ export class EvidenceReader {
     };
     const hasScreenGrant=(id:string)=>{
       const pinned=options.currentProcessingEvidence?.()?.[id];
-      if(pinned){const record=this.store.evidence([id])[0];
-        if(record&&this.store.isCurrentEvidence(id)&&record.ocr?.status!=='pending'&&record.ocr?.status!=='failed'&&memoryEvidenceFingerprint(record)===pinned)return true;
+      if(pinned){const record=this.store.evidence([id])[0],canonical=this.memories.readEvidence([id])[0];
+        if(record&&canonical&&this.store.isCurrentEvidence(id)&&record.ocr?.status!=='pending'&&record.ocr?.status!=='failed'&&memoryEvidenceFingerprint(canonical)===pinned)return true;
       }
       return operation('expand')==='expand'&&Boolean(currentGrants()?.get(id)?.some(source=>grantIsCurrent(id,source)));
     };

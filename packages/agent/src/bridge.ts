@@ -11,7 +11,7 @@ import { createServer, type Server } from "node:http";
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { displayTime } from './time.js';
-import {stateSeriesSchema,fileEvidenceSchema,recordMetadataSchema, sourceMetadataSchema, sourceSchema,documentSchema,sourceContentTime} from '@mote/shared';
+import {stateSeriesSchema,fileEvidenceSchema,recordMetadataSchema, sourceMetadataSchema, sourceSchema,documentSchema,sourceContentTime,attributionContextSchema} from '@mote/shared';
 import type {
   ContextReader,
   ContextRecord,
@@ -86,11 +86,13 @@ function project(record: ContextRecord, offset = 0, length = 600, timeZone = 'UT
   const metadata = recordMetadataSchema.safeParse(record.metadata);
   const sourceMetadata = sourceMetadataSchema.safeParse((record.provenance as Record<string, unknown> | undefined)?.metadata);
   const document = documentSchema.safeParse((record.provenance as Record<string, unknown> | undefined)?.document);
+  const attribution = attributionContextSchema.safeParse(record.attributionContext);
   const contentAt = sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
   const projected:ContextRecord = {
     ...(fileEvidenceSchema.safeParse(record.fileEvidence).success?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
     ...(stateSeriesSchema.safeParse(record.stateSeries).success?{stateSeries:stateSeriesSchema.parse(record.stateSeries)}:{}),
-    evidenceFingerprint:createHash('sha256').update(JSON.stringify([text,record.provenance,record.fileEvidence])).digest('hex'),
+    evidenceFingerprint:createHash('sha256').update(JSON.stringify([text,record.provenance,record.fileEvidence,...(attribution.success&&(attribution.data.basis!=='default'||attribution.data.correction||attribution.data.sourceDeclaration||attribution.data.materialDeclarations)?[attribution.data]:[])])).digest('hex'),
+    ...(attribution.success?{attributionContext:attribution.data}:{}),
     ...(record.retrieval?{retrieval:record.retrieval}:{}),
     estimatedReadCharacters:text.length,
     id: record.id,
@@ -179,7 +181,9 @@ function materialMetadata(value: unknown, scope: ContextRange): Record<string, u
   const firstAt=typeof origin.firstAt==='string'&&Number.isFinite(Date.parse(origin.firstAt))?new Date(origin.firstAt).toISOString():undefined;
   const lastAt=typeof origin.lastAt==='string'&&Number.isFinite(Date.parse(origin.lastAt))?new Date(origin.lastAt).toISOString():undefined;
   if(scope.deviceId&&origin.deviceId!==scope.deviceId||scope.after&&(!firstAt||firstAt<scope.after)||scope.before&&(!lastAt||lastAt>=scope.before))return;
+  const attribution=attributionContextSchema.safeParse(row.attributionContext);
   return {id:row.id,ref:row.ref,kind:row.kind,title:row.title.slice(0,500),
+    ...(attribution.success?{attributionContext:attribution.data}:{}),
     ...(Number.isSafeInteger(row.schemaVersion)?{schemaVersion:row.schemaVersion}:{}),
     origin:{sourceId:origin.sourceId,...(typeof origin.deviceId==='string'?{deviceId:origin.deviceId}:{}),...(firstAt?{firstAt}:{}),...(lastAt?{lastAt}:{})},
     revision:row.revision,
@@ -443,7 +447,8 @@ export async function startBridge(
             const pageRange=span?.pageRange as {start?:unknown;end?:unknown}|undefined;
             const materialRange=span?.materialRange as {start?:unknown;end?:unknown}|undefined;
             if(!span||typeof span.blockId!=='string'||span.blockId.length>128||typeof span.kind!=='string'||!['text','asset'].includes(span.kind)||!Array.isArray(span.memberIds)||span.memberIds.length>32||span.memberIds.some(id=>typeof id!=='string'||id.length>128)||!pageRange||!materialRange||!Number.isSafeInteger(pageRange.start)||!Number.isSafeInteger(pageRange.end)||Number(pageRange.start)<0||Number(pageRange.end)<Number(pageRange.start)||Number(pageRange.end)>page.text.length||!Number.isSafeInteger(materialRange.start)||!Number.isSafeInteger(materialRange.end)||Number(materialRange.start)<0||Number(materialRange.end)<Number(materialRange.start))throw hostError('Invalid material span');
-            return {blockId:span.blockId,kind:span.kind,...(typeof span.format==='string'&&span.format.length<=128?{format:span.format}:{}),pageRange:{start:pageRange.start,end:pageRange.end},materialRange:{start:materialRange.start,end:materialRange.end},memberIds:span.memberIds};
+            const attribution=attributionContextSchema.safeParse(span.attributionContext);
+            return {blockId:span.blockId,kind:span.kind,...(attribution.success?{attributionContext:attribution.data}:{}),...(typeof span.format==='string'&&span.format.length<=128?{format:span.format}:{}),pageRange:{start:pageRange.start,end:pageRange.end},materialRange:{start:materialRange.start,end:materialRange.end},memberIds:span.memberIds};
           });
           const refs=[...new Set(page.originalRefs.slice(0,30).map(ref=>{const parsed=parseEvidenceRef(ref);return parsed?.kind==='capture'?parsed.id:undefined;}))];
           if(refs.some(id=>typeof id!=='string'||!id||id.length>300))throw hostError('Invalid material original reference');

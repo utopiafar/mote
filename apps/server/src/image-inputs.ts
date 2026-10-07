@@ -2,7 +2,7 @@ import {fileAttachmentAvailable,FileAttachments} from './file-attachments.js';
 import type {Store} from './store.js';
 import type {FileStore} from './files.js';
 
-export type ImageInputRow={capture_id:string;adapter:string;source_id:string;hash:string|null;mime:string;revision:string;override_id:string|null;auto_eligible:number;generation:number;policy_json:string|null;created_at:number;understanding_enabled:number;reuse_allowed:number};
+export type ImageInputRow={capture_id:string;adapter:string;source_id:string;hash:string|null;mime:string;revision:string;override_id:string|null;auto_eligible:number;generation:number;policy_json:string|null;created_at:number;understanding_enabled:number;reuse_allowed:number;semantic_withdrawn:number};
 export type ImageOriginal={hash:string;mimeType:string;sizeBytes:number;read():AsyncIterable<Buffer>};
 export type ImageInputAdapter={id:string;version:string;resolve(row:ImageInputRow):ImageOriginal|undefined};
 /** Trusted adapters read accepted originals. Thumbnail/region outputs never enter
@@ -34,7 +34,7 @@ export function installImageSchema(store:Store){
  db.exec(`CREATE TABLE IF NOT EXISTS image_inputs(
   capture_id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE,adapter TEXT NOT NULL,source_id TEXT NOT NULL,
   hash TEXT,mime TEXT NOT NULL,revision TEXT NOT NULL,override_id TEXT,auto_eligible INTEGER NOT NULL DEFAULT 1,
-  generation INTEGER NOT NULL DEFAULT 0,reuse_allowed INTEGER NOT NULL DEFAULT 1,understanding_enabled INTEGER NOT NULL DEFAULT 1,policy_json TEXT,created_at INTEGER NOT NULL);
+  generation INTEGER NOT NULL DEFAULT 0,reuse_allowed INTEGER NOT NULL DEFAULT 1,understanding_enabled INTEGER NOT NULL DEFAULT 1,semantic_withdrawn INTEGER NOT NULL DEFAULT 0,policy_json TEXT,created_at INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS image_products(
   id TEXT PRIMARY KEY,capture_id TEXT NOT NULL REFERENCES image_inputs(capture_id) ON DELETE CASCADE,
   name TEXT NOT NULL,kind TEXT NOT NULL,fingerprint TEXT NOT NULL,json TEXT NOT NULL,current INTEGER NOT NULL DEFAULT 1);
@@ -68,6 +68,7 @@ export function installImageSchema(store:Store){
  CREATE TRIGGER IF NOT EXISTS image_product_retire AFTER UPDATE OF current ON image_products WHEN new.current!=old.current BEGIN
   INSERT INTO changes(id,operation,changed_at) VALUES(new.capture_id,'supersede',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
  END;`);
+ if(!db.prepare('PRAGMA table_info(image_inputs)').all().some(row=>row.name==='semantic_withdrawn'))db.exec('ALTER TABLE image_inputs ADD COLUMN semantic_withdrawn INTEGER NOT NULL DEFAULT 0');
 }
 /** Persisted attachment intents are replayable; a stopped/missing OCR plugin has
  * no effect on attachment admission or the parent retention policy. */

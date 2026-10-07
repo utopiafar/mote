@@ -11,6 +11,8 @@ export interface ContextRecord {
   deviceId?: string;
   sourceType?: string;
   durationMs?: number;
+  /** Host-resolved declaration context; captured prose cannot create this field. */
+  attributionContext?: import('@mote/shared').AttributionContext;
   [field: string]: unknown;
 }
 

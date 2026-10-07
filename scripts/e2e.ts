@@ -14,7 +14,7 @@ import {writeMessagesResponse} from './fixtures/messages-provider.js';
 const dir=await mkdtemp(join(tmpdir(),'mote-e2e-'));const id=randomUUID();const noteId=randomUUID();let rounds=0;
 const fixtureModel=createServer(async(req,res)=>{
   let raw='';for await(const c of req)raw+=c;
-  const body=JSON.parse(raw);assert.deepEqual(body.tools.map((t:any)=>t.name).sort(),['activity','changes','context_index','devices','evidence','file_chunks','material_catalog','material_read','media_activity','memories','progress_update','read_file_evidence','read_image','search_context','segments','skill','source_history','source_items','sources','timeline']);
+  const body=JSON.parse(raw);assert.deepEqual(body.tools.map((t:any)=>t.name).sort(),['activity','changes','context_index','delegation_cancel','delegation_capabilities','delegation_read','delegation_results','delegation_retry','delegation_submit','delegation_yield','devices','evidence','file_chunks','material_catalog','material_read','media_activity','memories','progress_update','read_file_evidence','read_image','search_context','segments','skill','source_history','source_items','sources','timeline']);
   assert.equal(req.url,'/v1/messages');assert.equal(req.headers['x-api-key'],'synthetic-fixture');
   assert.equal(body.dsh_session_log,undefined);
   assert.ok(JSON.stringify(body.messages).includes('\\"language\\":\\"en\\"'), 'The selected language must be explicit in every model request');
@@ -41,7 +41,9 @@ const fixtureModel=createServer(async(req,res)=>{
 });
 await new Promise<void>(r=>fixtureModel.listen(0,'127.0.0.1',r));
 const config:Config={dataDir:dir,token:'synthetic-e2e-not-a-real-secret',tokenPath:'unused',host:'127.0.0.1',port:0,contentEncryptionEnabled:true,dataKey:'3c'.repeat(32),maxStorageBytes:10000000,maxExportBytes:10000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'synthetic-fixture',modelBaseUrl:`http://127.0.0.1:${(fixtureModel.address() as AddressInfo).port}/v1`,apiKey:'synthetic-fixture',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
-const {app,materialOrganizer}=await buildApp(config);await app.listen({port:process.argv.includes('--serve')?47835:0,host:'127.0.0.1'});const base=`http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
+// This provider implements only the foreground query; continuous Memory timers
+// have their own real startup/automatic-processing journey.
+const {app,materialOrganizer}=await buildApp(config,{backgroundWorker:false});await app.listen({port:process.argv.includes('--serve')?47835:0,host:'127.0.0.1'});const base=`http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
 const headers={Authorization:`Bearer ${config.token}`,'Content-Type':'application/json','Accept-Language':'en','X-Mote-Ingress-Version':'2'};
 async function call(path:string,body?:unknown,method=body?'POST':'GET') {const res=await fetch(base+path,{method,headers,...(body?{body:JSON.stringify(body)}:{})});assert.ok(res.ok,`${path} returned ${res.status}: ${res.ok?'':await res.text()}`);return res.json();}
 try {

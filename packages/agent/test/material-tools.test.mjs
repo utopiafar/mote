@@ -51,6 +51,18 @@ test('material catalog and read enforce host time and device scope',async t=>{
   assert.equal((await changed.call('evidence',{ids:[original.id]})).status,400);
 });
 
+test('material context reaches both catalog and spans without admitting arbitrary metadata',async t=>{
+  const attributionContext={version:1,ownerRelation:'mixed',basis:'owner_source',sourceDeclaration:{sourceId:'generated-source',version:2,ownerRelation:'mixed'}};
+  const declared={...material,attributionContext};
+  const {call}=await fixture(t,{...baseReader,materialCatalog:async()=>({items:[declared],nextCursor:null}),materialRead:async()=>({...page,material:declared,spans:page.spans.map(span=>({...span,attributionContext}))})});
+  const catalog=await call('material_catalog');
+  assert.deepEqual(catalog.body.data.items[0].attributionContext,attributionContext);
+  const read=await call('material_read',{ref});
+  assert.deepEqual(read.body.data.material.attributionContext,attributionContext);
+  assert.deepEqual(read.body.data.spans[0].attributionContext,attributionContext);
+  assert.ok(!JSON.stringify(read.body).includes('/hidden'));
+});
+
 test('a reader that ignores a smaller page request cannot grant its original evidence ID',async t=>{
   const large='x'.repeat(12000),largePage={...page,text:large,textRange:{offset:0,total:12000,nextOffset:null},spans:[{...page.spans[0],pageRange:{start:0,end:12000},materialRange:{start:0,end:12000},memberIds:Array.from({length:32},(_,i)=>`member-${i}-${'m'.repeat(110)}`)}]};
   const {call}=await fixture(t,{...baseReader,materialRead:async()=>largePage});
