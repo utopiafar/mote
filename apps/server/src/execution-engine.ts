@@ -47,6 +47,7 @@ export class ExecutionEngine {
  private stopping=false;
  private pumping=false;
  private pumpAgain=false;
+ private scheduled=false;
  constructor(readonly store:Store,private now=Date.now){
   store.db.exec(`CREATE TABLE IF NOT EXISTS execution_steps(id TEXT PRIMARY KEY,operation_id TEXT NOT NULL,kind TEXT NOT NULL,pool TEXT NOT NULL,input TEXT NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,available_at INTEGER NOT NULL DEFAULT 0,lease_until INTEGER NOT NULL DEFAULT 0,fence TEXT,error TEXT,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,recovery_deadline INTEGER NOT NULL DEFAULT 0);
    CREATE TABLE IF NOT EXISTS execution_resources(step_id TEXT NOT NULL REFERENCES execution_steps(id) ON DELETE CASCADE,resource_key TEXT NOT NULL,PRIMARY KEY(step_id,resource_key));
@@ -127,6 +128,11 @@ export class ExecutionEngine {
   * it. A temporary execution lease is not the authorization for derived work. */
  isCurrentInputAuthority(id:string){const step=this.get(id),handler=step&&this.handlers.get(step.kind);return Boolean(step&&handler&&['running','waiting'].includes(step.state)&&handler.validate(step)&&(handler.validateGrant?.(step)??true));}
  hasActive(kind:string){return [...this.active.keys()].some(id=>this.get(id)?.kind===kind);}
+ /** Several completions in one turn need only one admission pass. */
+ private scheduleTick(){
+  if(this.stopping||this.scheduled)return;
+  this.scheduled=true;queueMicrotask(()=>{this.scheduled=false;void this.tick().catch(()=>{});});
+ }
  async drain(ids:string[]){
   void this.tick().catch(()=>{});
   for(;;){const tasks=ids.flatMap(id=>{const task=this.active.get(id)?.task;return task?[task]:[];});if(!tasks.length)return;await Promise.all(tasks);void this.tick().catch(()=>{});}
@@ -160,11 +166,11 @@ export class ExecutionEngine {
      const row=this.store.db.prepare(`SELECT e.* FROM execution_steps e LEFT JOIN execution_fairness f ON f.pool=e.pool AND f.operation_id=e.operation_id WHERE e.pool=? AND e.state='waiting' AND e.available_at<=? AND e.kind IN (SELECT value FROM json_each(?)) AND NOT EXISTS(SELECT 1 FROM execution_dependencies d JOIN execution_steps parent ON parent.id=d.dependency_id WHERE d.step_id=e.id AND parent.state!='succeeded') AND NOT EXISTS(SELECT 1 FROM execution_resources requested JOIN execution_resources held ON held.resource_key=requested.resource_key JOIN execution_steps owner ON owner.id=held.step_id WHERE requested.step_id=e.id AND owner.id!=e.id AND owner.state='running' AND owner.lease_until>?) ORDER BY coalesce(f.last_started,0),e.created_at,e.rowid LIMIT 1`).get(pool,this.now(),JSON.stringify(handlers.map(h=>h.kind)),this.now()) as Row|undefined;
      if(!row)break;
      const handler=this.handlers.get(row.kind)!;if(!handler.validate(view(row))){this.store.db.prepare("UPDATE execution_steps SET state='stale',error='input_changed',updated_at=? WHERE id=? AND state='waiting'").run(this.now(),row.id);this.project(row.id);continue;}
-     const controller=new AbortController();let completed=true;const task=this.execute(row,handler,controller).catch(error=>{completed=false;throw error;}).finally(()=>{this.active.delete(row.id);if(!this.stopping&&completed)queueMicrotask(()=>{void this.tick().catch(()=>{});});});
+     const controller=new AbortController();let completed=true;const task=this.execute(row,handler,controller).catch(error=>{completed=false;throw error;}).finally(()=>{this.active.delete(row.id);if(completed)this.scheduleTick();});
      this.active.set(row.id,{controller,task,pool,kind:row.kind});started.push(task);
     }
    }
-  }finally{this.pumping=false;if(this.pumpAgain){this.pumpAgain=false;queueMicrotask(()=>{void this.tick().catch(()=>{});});}}
+  }finally{this.pumping=false;if(this.pumpAgain){this.pumpAgain=false;this.scheduleTick();}}
   return Promise.all(started).then(()=>{});
  }
  private async execute(row:Row,handler:ExecutionHandler,controller:AbortController){
@@ -178,7 +184,11 @@ export class ExecutionEngine {
    if(!handler.validate(view(row))){db.prepare("UPDATE execution_steps SET state='stale',error='input_changed',updated_at=? WHERE id=? AND state='waiting'").run(now,row.id);this.project(row.id);db.exec('COMMIT');return;}
    const admission=handler.admit?.(view(row));
    if(admission){
-    db.prepare("UPDATE execution_steps SET state=?,available_at=?,error=?,updated_at=? WHERE id=? AND state='waiting'").run(admission.category==='waiting'?'waiting':'blocked',admission.category==='waiting'?this.now()+Math.max(1,admission.retryAfterMs??1000):0,admission.code,now,row.id);this.project(row.id);db.exec('COMMIT');return;
+    db.prepare("UPDATE execution_steps SET state=?,available_at=?,error=?,updated_at=? WHERE id=? AND state='waiting'").run(admission.category==='waiting'?'waiting':'blocked',admission.category==='waiting'?this.now()+Math.max(1,admission.retryAfterMs??1000):0,admission.code,now,row.id);this.project(row.id);db.exec('COMMIT');
+    // A short retry can become due again while the backlog is being checked.
+    // Yield after the durable decision, with no transaction or running lease,
+    // so both background completion wakes and explicit drains allow timers.
+    if(admission.category==='waiting')await yieldTurn();return;
    }
    const claimed=db.prepare("UPDATE execution_steps SET state='running',attempts=attempts+1,fence=?,lease_until=?,error=NULL,updated_at=? WHERE id=? AND state='waiting'").run(fence,now+Math.min(timeout+10000,30000),now,row.id).changes;
    if(!claimed){db.exec('COMMIT');return;}

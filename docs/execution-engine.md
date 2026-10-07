@@ -4,6 +4,8 @@
 
 Pool capacity is checked inside the claim transaction, including leases held by other database connections. Fairness uses a monotonic admission sequence per operation, independent of clock resolution. Configuration waits do not consume attempts; transient execution errors have a finite retry limit. A noncooperative plugin cannot hold shutdown or a cancelled slot indefinitely. Physical provider cancellation still depends on that provider honoring the signal; late local results remain fenced.
 
+Admission waits yield an event-loop turn after persisting their decision and releasing the transaction, before a completion wake or explicit drain can pump again. Completion wakes in the same turn are coalesced. A large backlog of short admission waits must leave timers, provider callbacks and lease renewal runnable. This preserves existing pool limits, retry times, attempts and processing scope; it does not extend leases or processing deadlines. See the [admission fairness regression](validation/execution-admission-yield.md).
+
 Server shutdown first stops feature admission and recurring scheduling in Fastify's `preClose`, then closes the shared executor while handlers and storage are still available. After execution settles and HTTP requests drain, `onClose` disposes feature/plugin resources and closes storage. Handler removal on a live shared executor similarly stops only that handler's claims and interrupts its local work; it does not cancel the queued backlog. `cancelled` remains terminal for explicit cancellation.
 
 | State at shutdown | Durable state and restart behavior |
