@@ -31,10 +31,12 @@
 ### 构建、回归与真实入口
 
 - 最终修复后的 `npm run check:local` 完整通过：2,339 项测试通过、2 项跳过、0 失败。覆盖共享契约、Agent、服务器、Web、桌面、诊断、本地推理、发布/安全与 CLI；中央 runner 的日志与恢复检查也通过。新文案的英文和 Android 目录一致。
-- 最终 `npm run build:central` 通过。Web 构建仍有既有大 bundle 提示。Android `:app:compileDebugKotlin` 通过，未运行实体设备或 Android 界面验收。
+- 最终 `npm run build:central` 及边界修复后的服务器构建通过。Web 构建仍有既有大 bundle 提示。Android `:app:compileDebugKotlin` 与 `:app:testDebugUnitTest` 通过（58 个 suite、264 项、0 失败/跳过），未运行实体设备或 Android 界面验收。
 - `npm run test:e2e` 与最终 `npm run test:media-e2e` 通过：生成资料经真实 Harness、接收与归档入口，验证精确引用、幂等、作用域和媒体账本。Fixture provider 不证明模型语义质量。
 - 最终 Electron 旅程通过：实际 Owner 登录、来源默认刷新、既有资料详情修正、Unicode/emoji 长文本三页精确重构、430px 布局无溢出、无 renderer 错误。使用生成文本，不采集截图。
 - Offline HTTP 回放通过：每臂按一个合并任务执行的 12 次调用、按三个独立任务执行的 20 次调用；部分恢复仅补缺失查询、不重复完成的提取。调用数包含规划、提取、审核与查询。
+
+[PR #80](https://github.com/utopiafar/mote/pull/80) 创建后没有自动 CI 运行。GitHub 公开 API 在交付时返回 Component checks 的状态为 `disabled_manually`；本次不改变仓库该设置，也不声称 CI 通过。除全仓本地检查外，补跑本地 Android 单元测试及 `scripts/update-tests.mjs` / `scripts/update-deployment-tests.mjs`（14/14）均通过。GitHub/Linux 环境未执行本次检查。
 
 千份资料/125 个自动工作 fixture 在首次完整并发检查超过既有 90 秒测试上限。单独当前代码耗时约 42–43 秒，同一依赖与共享包构建下隔离 HEAD 约 46 秒；未发现归属 SQL 成为热点。该测试沿用工作区 120 秒上限后全仓通过，保留原样本数量及完成条件。这一对照不是 pristine 旧版本性能 A/B；大队列已有的反复排位/重建开销仍值得单独优化。
 
