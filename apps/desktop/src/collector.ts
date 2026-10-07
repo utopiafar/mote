@@ -1,3 +1,4 @@
+import { SyncHistory, captureHistoryItem } from './sync-history';
 import { connectionToken } from './login-session';
 import {collectorStatusView} from './native-status';
 import {extractUiPage,uiSnapshotSchema,uiPageText} from '@mote/shared';
@@ -51,7 +52,7 @@ export class Collector {
   private lastUploadAt?: string;
   private archiveAcknowledgment?:{at:string;origin:string};
   private lastUploadError?: string;
-  constructor(config: Config, private readonly queue: DurableQueue, private readonly helperPath: string, private readonly tokenStorageAvailable: () => boolean, private readonly onChange: (status: Status) => void, private readonly diagnostics?: DiagnosticsRecorder, private readonly events?: EventJournal, private readonly sources?: LocalSourceManager) {
+  constructor(config: Config, private readonly queue: DurableQueue, private readonly helperPath: string, private readonly tokenStorageAvailable: () => boolean, private readonly onChange: (status: Status) => void, private readonly diagnostics?: DiagnosticsRecorder, private readonly events?: EventJournal, private readonly sources?: LocalSourceManager, private readonly history?: SyncHistory) {
     this.config = config; this.lastUploadAt = this.queue.stats().lastUploadAt; this.archiveAcknowledgment=this.queue.stats().archiveAcknowledgment;
     powerMonitor.on('lock-screen', () => { this.locked = true; this.pause(moteText("屏幕已锁定，暂停采集")); });
     powerMonitor.on('unlock-screen', () => { this.locked = false; this.lastSample = undefined; });
@@ -360,6 +361,8 @@ export class Collector {
     if (!pending.eligibleRecords && !pending.pendingUpdates && (pending.heldRecords || pending.heldUpdates)) { this.publish(); return; }
     if (!policy.ready) { this.publish(); return; }
     if (!this.queue.binding.matches(this.config)) { this.lastUploadError = moteText("本地队列仍绑定原节点，请恢复已确认的连接"); this.publish(); return; }
+    const historyRun = this.history?.begin(this.config, explicit ? 'manual' : 'automatic');
+    const onBytes = historyRun ? (bytes: number) => this.history!.addBytes(historyRun, bytes) : undefined;
     this.uploading = true; this.lastUploadError = undefined;
     const abort = this.uploadAbort = new AbortController();
     this.publish();
@@ -371,6 +374,7 @@ export class Collector {
       for (let count = 0, limit = Math.min(25,this.queue.stats().depth); count < limit && sliceBytes<4*1024*1024 && (count===0||performance.now()-sliceStarted<15000) && !abort.signal.aborted; count++) {
         const entry = await this.queue.next(Date.now(),preferSince);
         if (!entry) break;
+        let attempted = [entry];
         const uploadStarted = Date.now();
         void this.events?.record('UPLOAD', 'STARTED');
         try {
@@ -378,10 +382,14 @@ export class Collector {
             const batch = await this.queue.nextBatch(25, Date.now(), preferSince);
             if (!batch.length) continue;
             sliceBytes+=batch.reduce((sum,item)=>sum+Buffer.byteLength(JSON.stringify(item.record.event))+Math.ceil((item.image?.length??0)/3)*4+64,0);
-            const receipts = await uploadCaptureBatch(this.config, batch.map(item => ({ event: item.record.event, image: item.image })), abort.signal);
+            attempted = batch;
+            if (historyRun) this.history!.attempt(historyRun, batch.map(item => captureHistoryItem(item.record.event)));
+            const receipts = await uploadCaptureBatch(this.config, batch.map(item => ({ event: item.record.event, image: item.image })), abort.signal, onBytes,
+              historyRun ? (id, code) => this.history!.settle(historyRun, id, code === 200 || code === 201, id, code) : undefined);
             let incomplete = false;
             for (const item of batch) {
               const code = receipts.get(item.record.event.id);
+              if (historyRun) this.history!.settle(historyRun, item.record.event.id, code === 200 || code === 201, item.record.event.id, code);
               if (code === 200 || code === 201) {
                 await this.queue.acknowledge(item.record.event.id, item.record.event.stateSeries?.samples.length ?? 0);
                 this.diagnostics?.recordUpload(Buffer.byteLength(JSON.stringify({ ...item.record.event, ...(item.image ? {imageBase64: item.image.toString('base64')} : {}) })));
@@ -394,13 +402,16 @@ export class Collector {
             count += batch.length - 1;
           } else {
             sliceBytes+=Buffer.byteLength(JSON.stringify(entry.record.event))+Math.ceil((entry.image?.length??0)/3)*4+64;
-            await uploadCapture(this.config, entry.record.event, entry.image, abort.signal);
+            if (historyRun) this.history!.attempt(historyRun, [captureHistoryItem(entry.record.event)]);
+            await uploadCapture(this.config, entry.record.event, entry.image, abort.signal, onBytes);
+            if (historyRun) this.history!.settle(historyRun, entry.record.event.id, true, entry.record.event.id);
             await this.queue.acknowledge(entry.record.event.id, entry.record.event.stateSeries?.samples.length??0);
           }
           void this.events?.record('UPLOAD', 'OK', { elapsedMs: Date.now() - uploadStarted });
           if (!this.config.packedUpload) this.diagnostics?.recordUpload(Buffer.byteLength(JSON.stringify({ ...entry.record.event, ...(entry.image ? { imageBase64: entry.image.toString('base64') } : {}) })));
           this.lastUploadAt = new Date().toISOString(); if(!this.config.packedUpload)this.archiveAcknowledgment={at:this.lastUploadAt,origin:this.config.serverUrl}; this.lastUploadError = undefined;completed++;
         } catch (error) {
+          if (historyRun) for (const item of attempted) this.history!.settle(historyRun, item.record.event.id, false, undefined, error instanceof TransportFailure ? error.httpStatus : undefined, abort.signal.aborted);
           if (abort.signal.aborted) break;
           const stage: EventStage = error instanceof TransportFailure ? 'UPLOAD' : 'QUEUE';
           void this.events?.record(stage, failureCode(error, stage), error instanceof TransportFailure ? { httpStatus: error.httpStatus } : {});
@@ -418,7 +429,7 @@ export class Collector {
       };
       await flushCaptures();
       if (!abort.signal.aborted && !this.lastUploadError) {
-        await this.sources?.flushPending(abort.signal,async()=>{await flushCaptures();if(this.lastUploadError)throw new Error(this.lastUploadError);});
+        await this.sources?.flushPending(abort.signal,async()=>{await flushCaptures();if(this.lastUploadError)throw new Error(this.lastUploadError);}, historyRun ? {observer:this.history!.observer(historyRun),onBytes:onBytes!} : undefined);
         for(let round=1;round<captureRounds&&!abort.signal.aborted&&!this.lastUploadError;round++){
           if(!await flushCaptures())break;
         }
@@ -429,7 +440,7 @@ export class Collector {
     } catch (error) {
       if (!abort.signal.aborted) { this.lastUploadError = error instanceof Error ? error.message : moteText("同步失败，本地记录已保留"); await this.queue.syncCheckpoint(this.lastUploadAt, new Date(Date.now() + 30000).toISOString(),this.archiveAcknowledgment).catch(() => undefined); }
       void this.events?.record('QUEUE', 'STORAGE'); }
-    finally { this.uploading = false; this.publish(); }
+    finally { try { if (historyRun) this.history!.finish(historyRun, abort.signal.aborted); } finally { this.uploading = false; this.publish(); } }
   }
   private async sendHeartbeat(explicit = false): Promise<void> {
     if (this.closed || this.connectionHeld || this.heartbeatInFlight || !this.config.serverUrl || !connectionToken(this.config) || (this.config.syncMode === 'manual' && !explicit) || !this.queue.binding.matches(this.config)) return;

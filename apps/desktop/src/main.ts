@@ -1,4 +1,6 @@
 import { connectionToken, loginRequest, loginVerifier } from './login-session';
+import { SyncHistory, type SyncHistoryQuery, type SyncHistoryContentQuery } from './sync-history';
+import { syncContent } from './sync-content';
 import { AskClient } from './ask';
 import {storageStatistics} from '@mote/shared/storage-statistics';
 import { moteText, statusMessage, configureLocale, getLocale, negotiateLocale, languagePreference, type LanguagePreference } from '@mote/shared/i18n';
@@ -189,7 +191,8 @@ else {
     const configureDiagnostics = async () => diagnostics.configure({ enabled: settings.diagnosticsEnabled, intervalMs: settings.diagnosticIntervalSeconds * 1000 }, async () => ({
       queueBytes: queue.stats().bytes, modelBytes: 0, ...await readPowerState(helperPath).catch(() => ({})),
     }));
-    collector = new Collector(settings, queue, helperPath, encryptedStorageAvailable, updateUi, diagnostics, events, localSources);
+    const syncHistory = new SyncHistory(join(dataDirectory,'sync-history.sqlite')); await syncHistory.initialize();
+    collector = new Collector(settings, queue, helperPath, encryptedStorageAvailable, updateUi, diagnostics, events, localSources,syncHistory);
     let calendarDelivery:Promise<void>|undefined;
     const calendarTimer=setInterval(()=>{
       if(calendarDelivery||!connectionToken(settings)||!settings.serverUrl||settings.syncMode==='manual'||process.platform!=='darwin')return;
@@ -355,6 +358,14 @@ else {
       const requested = settings; const result = await operation(requested);
       if (settings !== requested) throw new Error(moteText("连接已改变，请刷新采集记录")); return result;
     };
+    handle('mote:sync-history', input => syncHistory.page(settings,input as SyncHistoryQuery));
+    handle('mote:sync-history-contents', input => syncHistory.contents(settings,input as SyncHistoryContentQuery));
+    handle('mote:sync-history-content', (runId,key,offset) => browseWithConnection(config => { if(typeof runId!=='string'||typeof key!=='string')throw Error('Invalid sync content reference'); return syncContent(syncHistory,queue,localSources!,config,runId,key,offset as number|undefined); }));
+    handle('mote:sync-history-pending', () => {
+      const pending=queue.historyPending();
+      const rows=localSources!.status();
+      return [...pending,...(['file','calendar','coding'] as const).map(source=>{const sources=rows.filter(r=>source==='file'?r.source.kind==='local-files':source==='calendar'?r.source.kind==='local-calendar':r.source.kind.startsWith('coding-'));return {source,pending:sources.reduce((sum,r)=>sum+r.pending+(r.blocked??0),0),review:0,blocked:sources.reduce((sum,r)=>sum+(r.blocked??0),0),retrying:sources.reduce((sum,r)=>sum+(r.state==='error'?r.pending:0),0)};})];
+    });
     handle('mote:compression-preview', (quality, maxSide) => previewWork.run({kind:'compression-preview', quality:quality as number,maxSide:maxSide as number}));
     handle('mote:captures-browse', input => browseWithConnection(config => browseCaptures(queue, config, input as BrowseRequest)));
     handle('mote:captures-detail', (location, id) => browseWithConnection(config => captureDetail(queue, config, location as CaptureLocation, id as string)));

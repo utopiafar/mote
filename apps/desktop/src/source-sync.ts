@@ -1,3 +1,4 @@
+import type {SourceUploadObserver} from './sync-history';
 import {DESKTOP_STORAGE_VERSION,RESET_REQUIRED} from './storage-format';
 import {rm} from 'node:fs/promises';
 import {sourceStatePatch,type StatePatch} from './source-state-store';
@@ -76,6 +77,7 @@ export class SourceSync {
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
   }
 
+  pendingForHistory(versionKey: string): SourceItem | undefined { const item = [...this.pendingItems(), ...Object.values(this.data.quarantined ?? {}).map(value => value.item)].find(item => sourceHash(`${item.externalId}\0${item.revision}`) === versionKey); return item ? structuredClone(item) : undefined; }
   checkpoint(): SourceCheckpoint | undefined { return structuredClone(this.data.checkpoint); }
   /** Scanner borrows immutable catalog rows and records changes in its own draft. */
   fileCheckpoint(): LocalFileCheckpoint | undefined {
@@ -197,7 +199,7 @@ export class SourceSync {
     await prepare?.(); return { changes, state: await this.flush(source, request, signal) };
   }
 
-  async flush(source: SourceDefinition, request: SourceRequest, signal?: AbortSignal): Promise<'ready' | 'paused'> {
+  async flush(source: SourceDefinition, request: SourceRequest, signal?: AbortSignal, observer?: SourceUploadObserver): Promise<'ready' | 'paused'> {
     signal?.throwIfAborted();
     const registered = await request('/api/sources', source, 'POST', signal) as { id?: unknown; enabled?: unknown };
     if (!registered || registered.id !== source.id || typeof registered.enabled !== 'boolean') throw new Error(moteText("中央来源注册确认无效"));
@@ -212,12 +214,13 @@ export class SourceSync {
       const batches = this.takeBatches(queue,deferred);
       let bytes=0;
       const measured:SourceRequest=(path,body,method,signal)=>{const pending=request(path,body,method,signal);bytes+=requestBytes(body);return pending;};
-      const outcomes = await Promise.all(batches.map(async batch => { try { return { batch, result: await this.sendBatch(source, batch, measured, signal) }; } catch (error) { return { batch, error }; } }));
+      const outcomes = await Promise.all(batches.map(async batch => { try { observer?.attempt(source,batch); return { batch, result: await this.sendBatch(source, batch, measured, signal, observer) }; } catch (error) { observer?.failed(source,batch,error); return { batch, error }; } }));
       let failure: unknown;
       for (const outcome of outcomes) {
         if ('error' in outcome) { if(!failure||failure instanceof UploadSliceYield)failure=outcome.error;continue; }
         const {acks,rejected=[]}=outcome.result;
         const accepted=new Set(acks.map(ack=>itemKey({externalId:String(ack.externalId),revision:String(ack.revision)})));
+        observer?.settle(source,outcome.batch,acks,rejected);
         const permanent=rejected.filter(value=>[400,409,410,413,422].includes(value.status));
         await this.acknowledge(source,outcome.batch.filter(item=>accepted.has(itemKey(item))),acks,permanent);
         for(const value of rejected)if(!permanent.includes(value)){deferred.add(itemKey(value.item));rejectedStatus??=value.status;}
@@ -229,10 +232,10 @@ export class SourceSync {
     await this.mutate(()=>this.commit({ ...this.data, lastSyncAt: new Date().toISOString() })); return 'ready';
   }
 
-  async flushSlice(source:SourceDefinition,request:SourceRequest,signal?:AbortSignal){
+  async flushSlice(source:SourceDefinition,request:SourceRequest,signal?:AbortSignal,observer?:SourceUploadObserver){
     const slice=new UploadSlice();
     const bounded:SourceRequest=(path,body,method,requestSignal)=>{signal?.throwIfAborted();slice.admit(body);return request(path,body,method,requestSignal);};
-    try{return {state:await this.flush(source,bounded,signal),bytes:slice.bytes,requests:slice.requests};}
+    try{return {state:await this.flush(source,bounded,signal,observer),bytes:slice.bytes,requests:slice.requests};}
     catch(error){if(!(error instanceof UploadSliceYield))throw error;return {state:'yielded' as const,bytes:slice.bytes,requests:slice.requests};}
   }
 
@@ -250,12 +253,21 @@ export class SourceSync {
     return batches;
   }
 
-  private async sendBatch(source: SourceDefinition, batch: SourceItem[], request: SourceRequest, signal?: AbortSignal): Promise<BatchResult> {
+  private async sendBatch(source: SourceDefinition, batch: SourceItem[], request: SourceRequest, signal?: AbortSignal, observer?: SourceUploadObserver): Promise<BatchResult> {
     const first = batch[0]!;
     if (first.kind === 'file' && first.document?.fileIndex) {
       if(first.localOriginalBase64||first.localOriginal)return {acks:[await this.sendFile(source,first,request,signal)]};
       if(this.manifestBatch===undefined){const cap=await request('/api/file-sync/v1/capabilities',undefined,'GET',signal) as {manifestBatch?:number};this.manifestBatch=typeof cap.manifestBatch==='number'&&cap.manifestBatch>=this.limits.batchSize;}
-      if(!this.manifestBatch){const acks=[];for(const item of batch)acks.push(await this.sendFile(source,item,request,signal));return {acks};}
+      if (!this.manifestBatch) {
+        const acks = [];
+        for (const item of batch) {
+          const ack = await this.sendFile(source, item, request, signal);
+          // Preserve each validated receipt even if a later individual request fails.
+          observer?.settle(source, [item], [ack]);
+          acks.push(ack);
+        }
+        return { acks };
+      }
       const manifests=batch.map(({localOriginalBase64:_,localOriginal:__,snapshotRecovery:___,...item})=>({sourceId:source.id,item,sizeBytes:item.metadata?.file?.sizeBytes??0,...(this.data.delivered?.[sourceHash(item.externalId)]?{previousRevision:this.data.delivered[sourceHash(item.externalId)]}: {})}));
       const response=await request('/api/file-sync/v1/manifests',{items:manifests},'POST',signal) as {results?:{externalId:string;revision:string;state?:string;status?:number;ack?:unknown}[]};
       if(!Array.isArray(response?.results)||response.results.length!==batch.length)throw Error('Invalid manifest acknowledgement');

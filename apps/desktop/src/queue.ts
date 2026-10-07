@@ -236,6 +236,8 @@ export class DurableQueue {
     });
   }
   contains(id: string): boolean { return this.records.has(id); }
+  recordForHistory(id: string): QueueRecord | undefined { const record = this.records.get(id); return record ? structuredClone(record) : undefined; }
+  historyPending(): {source: CaptureEvent['source']; pending: number; review: number; blocked: number; retrying: number}[] { return ['screen','ui_page','note','activity','notification'].map(source => {const records=[...this.records.values()].filter(record=>record.event.source===source);return {source:source as CaptureEvent['source'],pending:records.length,review:records.filter(r=>r.syncError==='upload_review_pending').length,blocked:records.filter(r=>r.syncBlocked&&r.syncError!=='upload_review_pending').length,retrying:records.filter(r=>!r.syncBlocked&&r.attempts>0).length};}); }
   recordsForBrowser(): QueueRecord[] { return structuredClone([...this.records.values()].filter(r => r.event.source === 'screen')); }
   async pageForBrowser(after: string, before: string, offset: number, limit: number, source: 'screen'|'ui_page' = 'screen'): Promise<{ records: QueueRecord[]; total: number }> {
     // Snapshot immutable references while uploads may continue, then send only IDs/times to the worker.

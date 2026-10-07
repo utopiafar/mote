@@ -5,6 +5,19 @@ import { captureAck,event, image } from './fixtures';
 
 afterEach(() => vi.unstubAllGlobals());
 describe('acknowledgment-gated uploads', () => {
+  it('journals validated split receipts before a later subrequest fails and meters attempted bytes', async () => {
+    const entries = [0, 1].map(i => ({ event: event(`00000000-0000-4000-8000-${String(i).padStart(12, '0')}`) }));
+    const confirmed = vi.fn(), metered = vi.fn(); let count = 0;
+    vi.stubGlobal('fetch', vi.fn(async (_url, options: RequestInit) => {
+      const body = JSON.parse(await new Response(options.body).text()); count++;
+      if (count === 1) return new Response('', { status: 413 });
+      if (count === 3) throw Error('generated failure');
+      return new Response(JSON.stringify({ results: body.captures.map((c: { id: string }) => ({ ...captureAck(c.id), status: 201 })) }));
+    }));
+    await expect(uploadCaptureBatch({ ...defaultConfig(), token: 'generated' }, entries, undefined, metered, confirmed)).rejects.toThrow();
+    expect(confirmed).toHaveBeenCalledExactlyOnceWith(entries[0].event.id, 201);
+    expect(metered.mock.calls.reduce((sum, [bytes]) => sum + bytes, 0)).toBeGreaterThan(Buffer.byteLength(JSON.stringify({ captures: entries.map(e => e.event) })));
+  });
   it('normalizes batch network failures without exposing transport internals', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('synthetic-private-server synthetic-secret')));
     await expect(uploadCaptureBatch({ ...defaultConfig(), token: 'synthetic-secret' }, [{ event: event() }])).rejects.toMatchObject({ classification: 'NETWORK', message: '无法连接中央节点，已保留本地队列并等待重试' });

@@ -1,6 +1,6 @@
 {
   "name": "@mote/desktop",
-  "version": "0.0.83",
+  "version": "0.0.84",
   "private": true,
   "description": "Mote privacy-first personal context collector",
   "main": "dist/main.js",
@@ -12,7 +12,7 @@
     "test": "vitest run --maxWorkers=2 --testTimeout=15000",
     "test:fixture": "npm run build && electron scripts/fixture-smoke.cjs",
     "test:profiles": "npm run build && node scripts/test-profiles.mjs",
-    "test:ui": "npm run build && electron scripts/ui-smoke.cjs",
+    "test:ui": "npm run build && electron scripts/ui-smoke.cjs && electron scripts/sync-history-smoke.cjs",
     "package": "npm run build && electron-builder --dir",
     "test:central": "npm run build && electron scripts/central-smoke.cjs"
   },

@@ -1,8 +1,8 @@
-export const desktopPages = ['ask', 'statistics', 'overview', 'notes', 'records', 'sources', 'settings', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity', 'compression', 'permissions'] as const;
+export const desktopPages = ['ask', 'statistics', 'overview', 'notes', 'records', 'uploads', 'sources', 'settings', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity', 'compression', 'permissions'] as const;
 export type DesktopPage = typeof desktopPages[number];
-export type DesktopSection = 'overview' | 'records' | 'ask' | 'settings';
+export type DesktopSection = 'overview' | 'records' | 'uploads' | 'ask' | 'settings';
 
-const roots = new Set<DesktopPage>(['overview', 'records', 'ask', 'settings']);
+const roots = new Set<DesktopPage>(['overview', 'records', 'uploads', 'ask', 'settings']);
 const advanced = new Set<DesktopPage>(['statistics', 'activity', 'developer', 'about', 'compression']);
 
 /** UI routes only. Captured content never influences navigation or authorization. */
@@ -23,7 +23,7 @@ export class DesktopNavigation {
     } else {
       if (this.trail.at(-1) === next) this.trail.pop();
       else this.trail.push(this.page);
-      if (next !== 'notes') this.section = advanced.has(next) || this.section === 'settings' ? 'settings' : 'overview';
+      if (next !== 'notes') this.section = this.section === 'uploads' && !advanced.has(next) ? 'uploads' : advanced.has(next) || this.section === 'settings' ? 'settings' : 'overview';
     }
     this.page = next;
     return true;

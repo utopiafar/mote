@@ -12,7 +12,7 @@ import {INGRESS_VERSION_HEADERS,requireIngressReceipt} from './ingress-protocol'
 export class DeletedCaptureFailure extends TransportFailure {}
 
 
-export async function uploadCapture(config: Config, event: CaptureEvent, image?: Buffer, signal?: AbortSignal): Promise<void> {
+export async function uploadCapture(config: Config, event: CaptureEvent, image?: Buffer, signal?: AbortSignal, onBytes?: (bytes: number) => void): Promise<void> {
   const origin = validateServerUrl(config.serverUrl);
   if (!connectionToken(config)) throw new TransportFailure(moteText("请配置中央节点访问令牌"), 'CONFIG_INVALID');
   let response: Response;
@@ -20,7 +20,7 @@ export async function uploadCapture(config: Config, event: CaptureEvent, image?:
     response = await fetch(`${origin}/api/captures`, {
       method: 'POST', headers: { ...INGRESS_VERSION_HEADERS,'Accept-Language': getLocale(), 'Authorization': `Bearer ${requireConnectionToken(config)}`, 'Content-Type': 'application/json' },
       credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
-      body: meteredBody(JSON.stringify({ ...event, ...(image ? { imageBase64: image.toString('base64') } : {}) })),
+      body: meteredBody(JSON.stringify({ ...event, ...(image ? { imageBase64: image.toString('base64') } : {}) }), onBytes),
       ...({ duplex: 'half' } as object),
     });
   } catch (error) { const code = failureCode(error, 'UPLOAD'); throw new TransportFailure(moteText("无法连接中央节点，已保留本地队列并等待重试"), code === 'RESPONSE' ? 'NETWORK' : code); }
@@ -46,14 +46,14 @@ export async function heartbeat(config: Config, body: object, events?: EventJour
   } catch (error) { const code = failureCode(error, 'HEARTBEAT'); void events?.record('HEARTBEAT', code === 'RESPONSE' ? 'NETWORK' : code); }
 }
 
-export async function uploadCaptureBatch(config: Config, entries: { event: CaptureEvent; image?: Buffer }[], signal?: AbortSignal): Promise<Map<string, number>> {
+export async function uploadCaptureBatch(config: Config, entries: { event: CaptureEvent; image?: Buffer }[], signal?: AbortSignal, onBytes?: (bytes: number) => void, onReceipt?: (id: string, status: number) => void): Promise<Map<string, number>> {
   if (!connectionToken(config)) throw new TransportFailure(moteText("请配置中央节点访问令牌"), 'CONFIG_INVALID');
   const origin = validateServerUrl(config.serverUrl);
   let response: Response;
   try { response = await fetch(`${origin}/api/captures/batch`, {
     method: 'POST', credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000),
     headers: { ...INGRESS_VERSION_HEADERS,Authorization: `Bearer ${requireConnectionToken(config)}`, 'Content-Type': 'application/json', 'Accept-Language': getLocale() },
-    body: meteredBody(JSON.stringify({ captures: entries.map(({event, image}) => ({ ...event, ...(image ? { imageBase64: image.toString('base64') } : {}) })) })),
+    body: meteredBody(JSON.stringify({ captures: entries.map(({event, image}) => ({ ...event, ...(image ? { imageBase64: image.toString('base64') } : {}) })) }), onBytes),
     ...({ duplex: 'half' } as object),
   }); } catch (error) {
     const code = failureCode(error, 'UPLOAD');
@@ -61,8 +61,8 @@ export async function uploadCaptureBatch(config: Config, entries: { event: Captu
   }
   if (response.status===413&&entries.length>1) {
     await response.body?.cancel();
-    const middle=Math.ceil(entries.length/2),receipts=await uploadCaptureBatch(config,entries.slice(0,middle),signal);
-    for(const [id,status] of await uploadCaptureBatch(config,entries.slice(middle),signal))receipts.set(id,status);
+    const middle=Math.ceil(entries.length/2),receipts=await uploadCaptureBatch(config,entries.slice(0,middle),signal,onBytes,onReceipt);
+    for(const [id,status] of await uploadCaptureBatch(config,entries.slice(middle),signal,onBytes,onReceipt))receipts.set(id,status);
     return receipts;
   }
   if (response.status !== 200) { await response.body?.cancel(); throw new TransportFailure(moteText("批量上传未确认（HTTP {0}）", response.status), httpFailure(response.status), response.status); }
@@ -77,5 +77,6 @@ export async function uploadCaptureBatch(config: Config, entries: { event: Captu
     else if(receipt.receipt!==undefined)throw new TransportFailure('Invalid batch receipts', 'RESPONSE');
     result.set(receipt.id, receipt.status);
   }
+  for (const [id, status] of result) onReceipt?.(id, status);
   return result;
 }
