@@ -224,12 +224,15 @@ export class MaterialStore {
     if(anchor)return this.get(String(anchor.material_id))?.attributionContext??unknownAttributionContext();
     const file=this.store.db.prepare('SELECT capture_id FROM file_chunks WHERE id=?').get(record.id);
     const captureId=String(file?.capture_id??record.id);
+    // Keep the selected ancestor set outside the member join. Without CROSS
+    // JOIN, SQLite may use only the kind prefix and scan every capture member
+    // for each image fingerprint, delaying worker probes during bulk imports.
     const parents=this.store.db.prepare(`WITH RECURSIVE originals(id) AS (SELECT ? UNION SELECT l.parent_id FROM file_evidence_links l JOIN originals o ON l.capture_id=o.id)
-      SELECT DISTINCT h.id,h.revision,r.manifest FROM material_heads h
-      JOIN material_members m ON m.material_id=h.id AND m.revision=h.revision
+      SELECT DISTINCT h.id,h.revision,r.manifest FROM originals o
+      CROSS JOIN material_members m ON m.kind='capture' AND m.ref='capture:'||o.id
+      JOIN material_heads h ON h.id=m.material_id AND h.revision=m.revision
       JOIN material_revisions r ON r.material_id=h.id AND r.revision=h.revision
-      JOIN originals o ON m.ref='capture:'||o.id
-      WHERE m.kind='capture' AND h.retired=0 AND h.sequence>=h.min_visible_sequence ORDER BY h.id`).iterate(captureId);
+      WHERE h.retired=0 AND h.sequence>=h.min_visible_sequence ORDER BY h.id`).iterate(captureId);
     let first:AttributionContext|undefined,firstJson:string|undefined,conflict=false,total=0;
     const digest=createHash('sha256'),items:NonNullable<AttributionContext['materialDeclarations']>['items']=[];
     for(const parent of parents){

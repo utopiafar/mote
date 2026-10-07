@@ -173,6 +173,36 @@ test('shared originals reuse identical context and expose bounded complete linea
   assert.deepEqual(runtime.view().jobs.find(j=>j.id===job)?.outputs,[]);
 });
 
+test('raw attribution looks up linked originals by member reference and excludes retired parents',async t=>{
+  const {materials,store,sources,draft,receipt,item}=await fixture(t);
+  const original=materials.publish(draft),owner=materials.correctContext(original.id,original.revision,'owner');
+  const middle=await sources.upsert('fixture',{...item,externalId:'middle'}),leaf=await sources.upsert('fixture',{...item,externalId:'leaf'});
+  store.db.prepare('INSERT INTO file_evidence_links VALUES(?,?)').run(receipt.id,middle.id);
+  store.db.prepare('INSERT INTO file_evidence_links VALUES(?,?)').run(middle.id,leaf.id);
+  store.db.prepare('INSERT INTO file_evidence_links VALUES(?,?)').run(leaf.id,middle.id);
+  const unrelated=await sources.upsert('fixture',{...item,externalId:'unrelated'});
+  for(let i=0;i<32;i++)materials.publish({...draft,id:materialId('fixture','unrelated-'+i),origin:{sourceId:'fixture',externalId:'unrelated-'+i},
+    members:[{id:unrelated.id,kind:'capture',ref:'capture:'+unrelated.id}],blocks:[{id:'body',kind:'text',format:'plain',text:item.text,memberIds:[unrelated.id]}]});
+  const prepare=store.db.prepare.bind(store.db),queries:string[]=[];
+  t.mock.method(store.db,'prepare',(sql:string)=>{if(sql.includes('WITH RECURSIVE originals'))queries.push(sql);return prepare(sql);});
+  const raw=store.evidence([leaf.id])[0];
+  assert.equal(materials.contextForEvidence(raw).ownerRelation,'owner','linked ancestors inherit the current owner correction even with a cycle');
+  const parent=materials.publish({...draft,id:materialId('fixture','leaf'),origin:{sourceId:'fixture',externalId:'leaf'},
+    members:[{id:leaf.id,kind:'capture',ref:'capture:'+leaf.id}],blocks:[{id:'body',kind:'text',format:'plain',text:item.text,memberIds:[leaf.id]}]});
+  const thirdParty=materials.correctContext(parent.id,parent.revision,'third_party'),conflict=materials.contextForEvidence(raw);
+  assert.equal(conflict.ownerRelation,'unknown');assert.equal(conflict.materialDeclarations?.total,2);
+  materials.retire(owner.id,{expectedRevision:owner.revision});
+  assert.equal(materials.contextForEvidence(raw).ownerRelation,'third_party');
+  materials.retire(thirdParty.id,{expectedRevision:thirdParty.revision});
+  assert.equal(materials.contextForEvidence(raw).ownerRelation,'unknown');
+  assert.ok(queries.length>0);
+  for(const sql of new Set(queries)){
+    const plan=prepare('EXPLAIN QUERY PLAN '+sql).all(leaf.id).map(row=>String(row.detail));
+    assert.ok(plan.some(detail=>detail.includes('SEARCH m')&&detail.includes('(kind=? AND ref=?)')),
+      'each original must use the member-reference lookup instead of scanning all capture members: '+plan.join('; '));
+  }
+});
+
 
 function semanticClaim(memories:MemoryStore,record:CaptureRecord,label:string,layer:'memory'|'observation'='memory',publish=false,expectedFingerprints?:Record<string,string>){
   const result={answer:JSON.stringify({memories:[{title:'Generated '+label,statement:'Generated '+label+' ['+record.id+']',uncertainty:'Generated fixture',admission:{layer,reason:'Generated review',scope:'Generated only',attribution:'observed'},evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:'Generated',excerpt:record.ocrText}],trace:[],runId:randomUUID()};
