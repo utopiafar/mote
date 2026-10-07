@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi, Status } from './contracts';
 
 const api: DesktopApi = {
+  syncHistory: input => ipcRenderer.invoke('mote:sync-history',input),
+  syncHistoryContents: input => ipcRenderer.invoke('mote:sync-history-contents',input),
+  syncHistoryContent: (runId,key,chunkOffset) => ipcRenderer.invoke('mote:sync-history-content',runId,key,chunkOffset),
+  syncHistoryPending: () => ipcRenderer.invoke('mote:sync-history-pending'),
   ask: (command, input) => ipcRenderer.invoke('mote:ask', command, input),
   storageStatistics: () => ipcRenderer.invoke('mote:storage-statistics'),
   language: () => ipcRenderer.invoke('mote:language'),

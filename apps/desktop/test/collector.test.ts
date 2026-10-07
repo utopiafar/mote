@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { DurableQueue } from '../src/queue';
 import { defaultConfig } from '../src/config';
 import { captureAck } from './fixtures';
+import { SyncHistory } from '../src/sync-history';
 
 const fixtureConfig=()=>({...defaultConfig(),syncMode:'realtime' as const,syncIntervalMinutes:15,syncBatchSize:20,packedUpload:false});
 
@@ -37,6 +38,7 @@ import { nativeImage, powerMonitor } from 'electron';
 
 let directory: string;
 let collector: Collector | undefined;
+let syncHistory: SyncHistory | undefined;
 const application = { appId: 'dev.mote.fixture', appName: 'Generated Fixture', pid: 1, visibleAppIds: ['dev.mote.fixture'], unknownVisibleWindows: false };
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'mote-pipeline-test-'));
@@ -58,6 +60,7 @@ afterEach(async () => {
   // Background encoders add async boundaries; wait for the final uploader before removing fixture files.
   if (collector) { const release = await collector.holdConnection(); release(); }
   collector = undefined;
+  syncHistory?.close(); syncHistory = undefined;
   (powerMonitor as unknown as EventEmitter).removeAllListeners();
   await rm(directory, { recursive: true, force: true }); vi.unstubAllGlobals();
 });
@@ -67,6 +70,30 @@ async function makeCollector(extra: object = {}) {
   collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, () => undefined);
   return { collector, queue };
 }
+
+it('records partial capture results and deduplicates a manual retry through the real collector', async () => {
+  const { event } = await import('./fixtures');
+  const config = { ...fixtureConfig(), token: 'generated-token', syncMode: 'manual' as const, packedUpload: true };
+  const queue = new DurableQueue(directory, config); await queue.initialize();
+  const notes = [0, 1].map(i => ({ ...event(`00000000-0000-4000-8000-${String(i).padStart(12, '0')}`), deviceId: config.deviceId, source: 'note' as const, imageMime: undefined, durationMs: 0, privacy: { excluded: false as const, redacted: false, mode: 'none' as const } }));
+  for (const note of notes) await queue.enqueue(note);
+  syncHistory = new SyncHistory(join(directory, 'history.sqlite')); await syncHistory.initialize();
+  collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, () => undefined, undefined, undefined, undefined, syncHistory);
+  let first = true;
+  vi.mocked(fetch).mockImplementation(async (_url, init) => {
+    const body = JSON.parse(await new Response(init!.body).text());
+    const results = body.captures.map((item: { id: string }, index: number) => first && index === 1 ? { id: item.id, status: 503 } : { ...captureAck(item.id), status: 201 }); first = false;
+    return new Response(JSON.stringify({ results }));
+  });
+  await collector.upload(true);
+  const d = new Date(), day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  expect(syncHistory.page(config, { day })).toMatchObject({ total: 1, received: 1, items: [expect.objectContaining({ outcome: 'partial' })] });
+  expect(queue.stats().depth).toBe(1);
+  // Explicit retry also clears the transport backoff while preserving the old receipt.
+  await collector.retry();
+  expect(syncHistory.page(config, { day })).toMatchObject({ total: 2, received: 2 });
+  expect(queue.stats().depth).toBe(0);
+});
 
 it('one manual flush drains 400 historical notes while admitting a new note between source upload slices',async()=>{
  const {event}=await import('./fixtures'),config={...fixtureConfig(),token:'synthetic-token',syncMode:'manual' as const,packedUpload:true};

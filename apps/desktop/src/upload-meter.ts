@@ -6,11 +6,11 @@ export class UploadMeter {
   rate(now = performance.now()): number { this.trim(now); return this.samples.reduce((sum, sample) => sum + sample.bytes, 0) / 2; }
 }
 export const uploadMeter = new UploadMeter();
-export function meteredBody(body: string | Uint8Array): ReadableStream<Uint8Array> {
+export function meteredBody(body: string | Uint8Array, onBytes?: (bytes: number) => void): ReadableStream<Uint8Array> {
   const bytes = Buffer.from(body); let offset = 0;
   return new ReadableStream({ pull(controller) {
     if (offset >= bytes.length) { controller.close(); return; }
     const chunk = bytes.subarray(offset, offset + 64 * 1024); offset += chunk.length;
-    uploadMeter.add(chunk.length); controller.enqueue(chunk);
+    uploadMeter.add(chunk.length); onBytes?.(chunk.length); controller.enqueue(chunk);
   } }, { highWaterMark: 0 });
 }

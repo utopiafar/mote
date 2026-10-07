@@ -1,3 +1,4 @@
+import {createSyncHistoryUi} from './sync-history-ui';
 import {nativeStatusSummary} from './native-status';
 import { renderAskAnswer, renderAskCitation } from './ask-presentation';
 import { moteText, getLocale } from '@mote/shared/i18n';
@@ -23,6 +24,7 @@ let wasRunningBeforeSave = false;
 let pageRevision = 0;
 const pageScroll = new Map<Page, number>();
 const settingsPages = new Set<Page>(['connection', 'sync', 'capture', 'privacy', 'developer']);
+const syncHistoryUi = createSyncHistoryUi(desktopApi, page => showPage(page));
 let setupReviewed = false;
 try { setupReviewed = localStorage.getItem('mote-desktop-collection-reviewed') === '1'; } catch { /* Collection remains usable without local storage. */ }
 
@@ -41,7 +43,9 @@ function showPage(page: Page, focus = true, preserveSettingsDraft = false): bool
       if (!settingsApplying) void desktopApi.cancelConnection().catch(() => {});
     }
   }
+  if (currentPage === 'uploads' && page !== 'uploads') syncHistoryUi.hide();
   currentPage = page;
+  if (page === 'uploads') syncHistoryUi.show();
   const selected = navigation.section;
   for (const element of Array.from(document.querySelectorAll<HTMLElement>('[data-page]'))) element.hidden = element.dataset.page !== page;
   for (const button of Array.from(document.querySelectorAll<HTMLElement>('aside [data-nav]'))) {
@@ -109,6 +113,7 @@ function revealField(element: HTMLElement): void {
 }
 document.addEventListener('keydown', event => {
   if ((event.metaKey || event.ctrlKey) && event.key === ',') { event.preventDefault(); showPage('settings'); }
+  if (event.key === 'Escape' && document.querySelector('dialog[open]')) return;
   if (event.key === 'Escape' && currentPage === 'records' && !byId('record-detail').hidden) closeRecordDetail();
   else if (event.key === 'Escape' && navigation.canGoBack) showPage(navigation.backTarget);
 });
@@ -288,6 +293,7 @@ byId('capture-directory-default').addEventListener('click', () => { captureStora
 byId('capture-directory-open').addEventListener('click', () => void perform(() => desktopApi.openCaptureDirectory()));
 let connectionPreview: import('./connection').ConnectionPreview | undefined;
 function render(status: import('./contracts').Status): void {
+  syncHistoryUi.update(status);
   if(currentStatus&&(currentStatus.config.serverUrl!==status.config.serverUrl||currentStatus.config.tokenConfigured!==status.config.tokenConfigured||currentStatus.config.authSignedOut!==status.config.authSignedOut||currentStatus.config.authExpiresAt!==status.config.authExpiresAt)){
     askGeneration++;clearTimeout(askTimer);askRun=undefined;askConversation=undefined;askPendingInput=undefined;byId('ask-history').replaceChildren();renderAsk();setText('ask-login-status','');
   }

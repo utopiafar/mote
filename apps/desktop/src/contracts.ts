@@ -82,6 +82,10 @@ export interface Status {
   diagnostics?: import('@mote/diagnostics').DiagnosticsStatus;
 }
 export interface DesktopApi {
+  syncHistory(input: import('./sync-history').SyncHistoryQuery): Promise<import('./sync-history').SyncHistoryPage>;
+  syncHistoryContents(input: import('./sync-history').SyncHistoryContentQuery): Promise<ReturnType<import('./sync-history').SyncHistory['contents']>>;
+  syncHistoryContent(runId: string, key: string, chunkOffset?: number): Promise<import('./sync-content').SyncContent>;
+  syncHistoryPending(): Promise<{source:import('./sync-history').SyncSource;pending:number;review:number;blocked:number;retrying:number}[]>;
   ask(command: import('./ask').AskCommand, input?: {id?: string; question?: string; conversationId?: string; token?: string; cursor?: string; durationMs?: number}): Promise<unknown>;
   permissionStatus(): Promise<{screen: string; accessibility: string; calendar: string; appPath?: string; bundleId?: string}>;
   permissionSettings(kind: 'screen' | 'accessibility' | 'calendar' | 'files'): Promise<void>;

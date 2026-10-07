@@ -1,3 +1,4 @@
+import type {SourceUploadObserver} from './sync-history';
 import {ensureStorageFormat,DESKTOP_STORAGE_VERSION} from './storage-format';
 import { connectionToken, requireConnectionToken, sourceConnectionBinding, type LoginSettings } from './login-session';
 import {nativeStatusView} from './native-status';
@@ -77,6 +78,7 @@ export class LocalSourceManager {
     void this.sync(false);
   }
   status(): SourceStatus[] { return this.sources.map<SourceStatus>(source => ({ state: source.enabled ? 'idle' : 'paused', message: source.enabled ? moteText("等待首次同步") : moteText("本机已暂停"), pending: 0, items: 0, skipped: 0, ...this.states.get(source.id), ...this.engines.get(source.id)?.status(), source: structuredClone(source), ...(!source.enabled ? { state: 'paused' as const, message: moteText("本机已暂停") } : {}) })).map(row => ({...row, message: statusMessage(row.blocked?moteText("中央记录冲突或已删除，本机副本保留待处理。"):row.message), facts:nativeStatusView({pending:row.pending+(row.blocked??0),lastAcknowledgedAt:row.lastAcknowledgedAt,syncState:!this.connection.serverUrl||!connectionToken(this.connection)?'unconfigured':row.blocked&&row.state!=='syncing'?'blocked':row.state==='permission_required'?'blocked':row.state==='syncing'?'uploading':row.state==='idle'&&row.pending>0?'waiting':row.state,errorCode:row.blocked?'retained_conflict':row.state==='permission_required'?'permission_required':row.state==='error'?'source_unavailable':null,scanComplete:row.scanComplete,knownItems:row.items,skipped:row.skipped})})); }
+  pendingForHistory(sourceId: string, versionKey: string): import('./source-types').SourceItem | undefined { return this.engines.get(sourceId)?.pendingForHistory(versionKey); }
   connectionActivity(): { pending: number; processingPending: number; inFlight: boolean } { return { pending: [...this.engines.values()].reduce((sum, engine) => sum + engine.status().pending, 0), processingPending: [...this.engines.values()].reduce((sum,engine)=>sum+engine.status().processingPending,0), inFlight: Boolean(this.task || this.uploadTask || this.permissionTask) }; }
   async holdConnection(): Promise<() => void> {
     if (this.connectionHeld || this.permissionTask) throw new Error(moteText("本地来源授权尚未结束，请稍后重试连接"));
@@ -243,10 +245,10 @@ export class LocalSourceManager {
       } finally { if (unqueuedScan) await this.engines.get(source.id)?.discardUnqueuedOriginals(unqueuedScan.items); }
     }
   }
-  private request(signal: AbortSignal): SourceRequest {
+  private request(signal: AbortSignal, onBytes?: (bytes: number) => void): SourceRequest {
     return async (path, body, method, requestSignal) => {
       if (!this.connection.serverUrl || !connectionToken(this.connection) || !this.nodeBinding.matches(this.connection)) throw new Error(moteText("本地来源没有匹配的中央连接"));
-      const response = await fetch(this.connection.serverUrl + path, { method, headers: { ...INGRESS_VERSION_HEADERS,Authorization: 'Bearer ' + requireConnectionToken(this.connection), 'Content-Type': body instanceof Uint8Array?'application/octet-stream':'application/json' }, body: method==='GET'?undefined:meteredBody(body instanceof Uint8Array?body:JSON.stringify(body)), ...({duplex:'half'} as object), signal: AbortSignal.any([requestSignal || signal, AbortSignal.timeout(20000)]), redirect: 'error' });
+      const response = await fetch(this.connection.serverUrl + path, { method, headers: { ...INGRESS_VERSION_HEADERS,Authorization: 'Bearer ' + requireConnectionToken(this.connection), 'Content-Type': body instanceof Uint8Array?'application/octet-stream':'application/json' }, body: method==='GET'?undefined:meteredBody(body instanceof Uint8Array?body:JSON.stringify(body),onBytes), ...({duplex:'half'} as object), signal: AbortSignal.any([requestSignal || signal, AbortSignal.timeout(20000)]), redirect: 'error' });
       if (!response.ok) { await response.body?.cancel().catch(() => undefined); throw new TransportFailure(response.status === 401 ? moteText("中央认证失败，请检查令牌") : response.status === 409 ? moteText("中央来源已暂停，请在中央来源页恢复") : moteText("中央同步失败，已保留本地版本，稍后重试"), httpFailure(response.status), response.status); }
       return JSON.parse(await readResponseText(response, 1024 * 1024));
     };
@@ -283,7 +285,7 @@ export class LocalSourceManager {
     await this.watcher.setTargets(this.sources.filter(source => source.enabled && this.adapters.get(source.kind).watchesPath && source.path).map(source => ({ sourceId: source.id, path: source.path! })));
   }
   /** Managed by the collector's one sync decision across screenshots, notes and source versions. */
-  async flushPending(signal: AbortSignal,betweenSlices?:()=>Promise<void>): Promise<void> {
+  async flushPending(signal: AbortSignal,betweenSlices?:()=>Promise<void>, history?: {observer:SourceUploadObserver;onBytes:(bytes:number)=>void}): Promise<void> {
     if (this.stopped || this.connectionHeld) return;
     if(this.uploadTask)return this.uploadTask;
     if(this.stopped||this.connectionHeld)return;
@@ -303,7 +305,7 @@ export class LocalSourceManager {
           // check revokes the right to send already journaled versions.
           if (!source.enabled || source.kind==='local-files'&&source.retention==='snapshot'&&!source.centralProcessingConsent || !this.readable.has(source.id) || this.states.get(source.id)?.state === 'paused') continue;
           const engine = this.engines.get(source.id)!;
-          const request = this.request(combined);
+          const request = this.request(combined,history?.onBytes);
           try {
           if(!recovered.has(source.id)){
             if(!engine.status().pending&&!this.metadataDirty.has(source.id)&&source.retention!=='snapshot')continue;
@@ -311,7 +313,7 @@ export class LocalSourceManager {
             await this.recoverSnapshot(source,engine,request,combined);recovered.add(source.id);
           }
           if(!engine.status().pending)continue;
-          const slice = await engine.flushSlice(sourceDefinition(source), request, combined);
+          const slice = await engine.flushSlice(sourceDefinition(source), request, combined,history?.observer);
           const previous = this.states.get(source.id);
           this.states.set(source.id, { source, skipped: 0, ...previous, ...engine.status(), state: slice.state === 'paused' ? 'paused' : slice.state==='yielded'?'syncing':'idle', message: slice.state === 'paused' ? moteText("中央已暂停，待传版本保留在本机") : slice.state==='yielded'?moteText("部分内容已上传，等待下一轮同步"):moteText("已同步；后台继续检查本地变化") });
           if(slice.state==='yielded')again.push(source);
