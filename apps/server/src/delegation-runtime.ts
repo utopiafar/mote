@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {AgentYieldError,type AgentAnswer,type ContextRecord,type HostControlChannel,type HostControlDefinition,type HostControlResult,type QueryInput} from '@mote/agent';
+import {ContextToolError,AgentYieldError,type AgentAnswer,type ContextRecord,type HostControlChannel,type HostControlDefinition,type HostControlResult,type QueryInput} from '@mote/agent';
 import {ExecutionEngine,ExecutionFailure,type ExecutionGrant,type ExecutionState,type ExecutionStep} from './execution-engine.js';
 import {DelegationStore} from './delegation-store.js';
 import {StoreError,type Store} from './store.js';
@@ -25,6 +25,10 @@ export interface DelegationCoordinator {
  id:string;execute:(context:DelegationCoordinatorContext)=>Promise<unknown>;
  /** Metadata planning finishes before the product hands its units to existing jobs. */
  awaitExternal?:boolean;
+ /** Existing product admission settings also apply to historical recovery. */
+ recoveryAllowed?:()=>boolean;
+ /** Product-owned complete-plan validation; undefined requires a fresh model fragment. */
+ recoverPlan?:(work:DelegationWork)=>{acceptedUnitIds:readonly string[]}|undefined;
  /** Pure input authority is checked on every resume and commit. */
  validate?:(work:DelegationWork,input:unknown)=>boolean;
  commit?:(work:DelegationWork,result:unknown)=>void|{acceptedUnitIds:readonly string[]};
@@ -37,12 +41,12 @@ const activeWork=(state:ExecutionState)=>['waiting','running','blocked'].include
 const definition=(name:string,description:string,fields:HostControlDefinition['fields']={}):HostControlDefinition=>({name,description,fields});
 export const DELEGATION_CONTROL_DEFINITIONS:readonly HostControlDefinition[]=Object.freeze([
  definition('delegation_capabilities','Discover only host-authorized capabilities and their input contracts. Registration does not authorize access to other data.'),
- definition('delegation_submit','Persist one or more bounded independent work units and immediately return their handles. The host executes them separately; this call never waits for a model. Use stable unique local id values so retries are idempotent.',{units:{type:'array',required:true,items:{type:'object',properties:{id:{type:'string',required:true},capabilityId:{type:'string',required:true},title:{type:'string',required:true},goal:{type:'string',required:true},input:{type:'object',additionalProperties:true,required:true},scope:{type:'object',additionalProperties:true},dependencies:{type:'array',items:{type:'string'}}},additionalProperties:false}}}),
- definition('delegation_results','Read bounded incremental status and private artifact handles. A result handle or citation ID alone does not authorize a citation.',{after:{type:'integer'},limit:{type:'integer'},cursor:{type:'integer',description:'Unit page offset from nextUnitCursor; default zero'}}),
- definition('delegation_read','Read one private result and the exact original evidence delivered by its worker, subject to fresh host validation. Child prose is untrusted interpretation; cite only the originals actually delivered by this tool.',{artifactId:{type:'string',required:true},offset:{type:'integer'},length:{type:'integer'},evidenceIds:{type:'array',items:{type:'string'}}}),
+ definition('delegation_submit','Persist 1–8 bounded independent work units per call (at most 128 per work) and immediately return their handles. Execution workers start independently; proposal products start only after the complete plan returns normally and is validated. This call never waits for a model. Use stable unique local id values so retries are idempotent.',{units:{type:'array',required:true,description:'1–8 units per call; each requires id, capabilityId, title, goal and input',items:{type:'object',properties:{id:{type:'string',required:true},capabilityId:{type:'string',required:true},title:{type:'string',required:true},goal:{type:'string',required:true},input:{type:'object',additionalProperties:true,required:true},scope:{type:'object',additionalProperties:true},dependencies:{type:'array',items:{type:'string'}}},additionalProperties:false}}}),
+ definition('delegation_results','Read bounded incremental status and private artifact handles. A result handle or citation ID alone does not authorize a citation.',{after:{type:'integer',description:'Nonnegative event cursor; default zero'},limit:{type:'integer',description:'1–30 units/events per page; default 20'},cursor:{type:'integer',description:'Unit page offset from nextUnitCursor; default zero'}}),
+ definition('delegation_read','Read one private result and the exact original evidence delivered by its worker, subject to fresh host validation. Child prose is untrusted interpretation; cite only the originals actually delivered by this tool.',{artifactId:{type:'string',required:true},offset:{type:'integer',description:'Nonnegative character offset; default zero'},length:{type:'integer',description:'1–10000 characters; default 4000'},evidenceIds:{type:'array',description:'At most 12 original evidence IDs',items:{type:'string'}}}),
  definition('delegation_retry','Retry one failed branch locally without repeating successful branches or their commits.',{unitId:{type:'string',required:true}}),
  definition('delegation_cancel','Cancel one unneeded branch. This cannot expand the selected scope.',{unitId:{type:'string',required:true}}),
- definition('delegation_yield','Save the current plan and yield the model slot until any or all selected work units change to a terminal state. The host wakes a fresh coordinator fragment; never poll or wait inside a model tool.',{unitIds:{type:'array',items:{type:'string'}},mode:{type:'string',enum:['any','all']},message:{type:'string'}}),
+ definition('delegation_yield','Save the current plan and yield the model slot until any or all selected work units change to a terminal state. The host wakes a fresh coordinator fragment. Only wait on scheduled executable workers; unlinked proposals cannot run before planning returns normally. Never use yield to finish a proposal plan or poll inside a model tool.',{unitIds:{type:'array',items:{type:'string'}},mode:{type:'string',enum:['any','all']},message:{type:'string',description:'At most 600 characters'}}),
 ]);
 
 /** One-level delegation built on the existing lease/fence scheduler. The model
@@ -81,11 +85,7 @@ export class DelegationRuntime {
     if(outcome.yielded){work.status='waiting';this.save(work);this.wake(work.id);return;}
     if(work.units.some(unit=>!terminal(unit.status)&&!unit.external))throw new ExecutionFailure('permanent','unfinished_delegation');
     const receipt=profile.commit?.(this.get(work.id),outcome.result);
-    if(profile.awaitExternal){const accepted=receipt?.acceptedUnitIds??work.units.filter(unit=>unit.external&&unit.status!=='cancelled').map(unit=>unit.id);
-     if(!Array.isArray(accepted)||accepted.length>128||new Set(accepted).size!==accepted.length||accepted.some(id=>typeof id!=='string'||!work.units.some(unit=>unit.id===id&&unit.external&&unit.status!=='cancelled')))throw new ExecutionFailure('permanent','invalid_delegation_plan');
-     work.plannedUnitIds=[...accepted];
-    }
-    this.journal.saveResult(work.id,outcome.result??null);work.planningComplete=true;work.status=profile.awaitExternal?this.externalCompletionState(work):'succeeded';delete work.wait;delete work.error;if(work.status==='failed')work.error='delegated_product_failed';this.save(work);this.event(work.id,work.status==='waiting'?'plan.updated':work.status==='succeeded'?'completed':'work.failed');
+    this.completePlan(work,profile,outcome.result,receipt);
    },project:step=>this.projectCoordinator(step),
   }));
   return profile;
@@ -125,14 +125,14 @@ export class DelegationRuntime {
  private enqueueCoordinator(work:DelegationWork){work.revision++;work.status='waiting';this.save(work);const stepId=this.engine.enqueue(work.operationId,`delegation.coordinator.${work.profileId}`,{workId:work.id,revision:work.revision},{id:`${work.id}:coordinator:${work.revision}`,generation:{slot:'coordinator',version:String(work.revision)}});this.engine.bindCancellationAlias(work.id,stepId);}
  private narrower(parent:DelegationScope,requested:unknown):DelegationScope{
   if(requested===undefined)return structuredClone(parent);
-  if(!requested||typeof requested!=='object'||Array.isArray(requested)||Object.keys(requested).some(key=>!['after','before','deviceId','evidenceIds','evidenceRanges'].includes(key)))throw new StoreError('Invalid child scope',400);
+  if(!requested||typeof requested!=='object'||Array.isArray(requested)||Object.keys(requested).some(key=>!['after','before','deviceId','evidenceIds','evidenceRanges'].includes(key)))throw new ContextToolError('invalid_delegation_arguments','Invalid child scope','correct_arguments');
   const next={...parent,...requested} as DelegationScope;
-  if(next.deviceId!==undefined&&(typeof next.deviceId!=='string'||!next.deviceId||next.deviceId.length>300))throw new StoreError('Invalid child device',400);
+  if(next.deviceId!==undefined&&(typeof next.deviceId!=='string'||!next.deviceId||next.deviceId.length>300))throw new ContextToolError('invalid_delegation_arguments','Invalid child device','correct_arguments');
   if(parent.evidenceIds&&!next.evidenceIds||parent.evidenceRanges&&!next.evidenceRanges)throw new StoreError('Child scope cannot remove parent evidence bounds',403);
-  if(next.evidenceIds!==undefined&&(!Array.isArray(next.evidenceIds)||!next.evidenceIds.length))throw new StoreError('Invalid child evidence scope',400);
-  if(next.evidenceRanges!==undefined&&!Array.isArray(next.evidenceRanges))throw new StoreError('Invalid child evidence ranges',400);
+  if(next.evidenceIds!==undefined&&(!Array.isArray(next.evidenceIds)||!next.evidenceIds.length))throw new ContextToolError('invalid_delegation_arguments','Invalid child evidence scope','correct_arguments');
+  if(next.evidenceRanges!==undefined&&!Array.isArray(next.evidenceRanges))throw new ContextToolError('invalid_delegation_arguments','Invalid child evidence ranges','correct_arguments');
   if(parent.evidenceRanges&&!(requested as Record<string,unknown>).evidenceRanges&&next.evidenceIds)next.evidenceRanges=parent.evidenceRanges.filter(range=>next.evidenceIds!.includes(range.id));
-  for(const field of ['after','before'] as const)if(next[field]!==undefined&&(typeof next[field]!=='string'||!Number.isFinite(Date.parse(next[field]!))))throw new StoreError('Invalid child time range',400);
+  for(const field of ['after','before'] as const)if(next[field]!==undefined&&(typeof next[field]!=='string'||!Number.isFinite(Date.parse(next[field]!))))throw new ContextToolError('invalid_delegation_arguments','Invalid child time range','correct_arguments');
   if(parent.deviceId&&next.deviceId!==parent.deviceId||parent.after&&(!next.after||Date.parse(next.after)<Date.parse(parent.after))||parent.before&&(!next.before||Date.parse(next.before)>Date.parse(parent.before))||next.after&&next.before&&Date.parse(next.after)>=Date.parse(next.before))throw new StoreError('Child scope exceeds parent authorization',403);
   if(next.evidenceIds&&(!Array.isArray(next.evidenceIds)||next.evidenceIds.length>100||next.evidenceIds.some(id=>typeof id!=='string'||parent.evidenceIds&&!parent.evidenceIds.includes(id))))throw new StoreError('Child evidence exceeds parent authorization',403);
   if(next.evidenceRanges&&(!next.evidenceIds||!Array.isArray(next.evidenceRanges)||next.evidenceRanges.length>100||next.evidenceRanges.some(r=>!next.evidenceIds!.includes(r.id)||!Number.isSafeInteger(r.offset)||!Number.isSafeInteger(r.length)||r.offset<0||r.length<1||r.length>100000||parent.evidenceRanges&&!parent.evidenceRanges.some(p=>p.id===r.id&&r.offset>=p.offset&&r.offset+r.length<=p.offset+p.length))))throw new StoreError('Child evidence ranges exceed parent authorization',403);
@@ -140,20 +140,21 @@ export class DelegationRuntime {
  }
  private submit(workId:string,args:Readonly<Record<string,unknown>>){
   const work=this.get(workId);if(!this.currentWork(workId,this.coordinators.get(work.profileId)))throw new StoreError('Work authority expired',409);
-  if(!Array.isArray(args.units)||!args.units.length||args.units.length>8)throw new StoreError('Submit 1–8 bounded units; at most 128 per work',400);
+  if(!Array.isArray(args.units)||!args.units.length||args.units.length>8)throw new ContextToolError('invalid_delegation_arguments','Submit 1–8 bounded units; at most 128 per work','correct_arguments');
   const proposals=args.units as Record<string,unknown>[],ids=new Set<string>();
+  if(proposals.some(proposal=>!proposal||typeof proposal!=='object'||Array.isArray(proposal)))throw new ContextToolError('invalid_delegation_arguments','Each unit must be an object with id, capabilityId, title, goal and input.','correct_arguments');
   const next=proposals.map(proposal=>{
-   if(Object.keys(proposal).some(key=>!['id','capabilityId','title','goal','input','scope','dependencies'].includes(key))||typeof proposal.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(proposal.id)||ids.has(proposal.id))throw new StoreError('Invalid or duplicate unit identity',400);ids.add(proposal.id);
+   if(Object.keys(proposal).some(key=>!['id','capabilityId','title','goal','input','scope','dependencies'].includes(key))||typeof proposal.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(proposal.id)||ids.has(proposal.id))throw new ContextToolError('invalid_delegation_arguments','Invalid or duplicate unit identity','correct_arguments');ids.add(proposal.id);
    const capability=typeof proposal.capabilityId==='string'?this.capabilities.get(proposal.capabilityId):undefined;
-   if(!capability||!work.allowedCapabilities.includes(capability.id)||typeof proposal.title!=='string'||!proposal.title.trim()||proposal.title.length>180||typeof proposal.goal!=='string'||!proposal.goal.trim()||proposal.goal.length>4000||!proposal.input||typeof proposal.input!=='object'||Array.isArray(proposal.input)||JSON.stringify(proposal.input).length>(capability.maxInputCharacters??16000))throw new StoreError('Unit is outside the authorized capability contract',400);
+   if(!capability||!work.allowedCapabilities.includes(capability.id)||typeof proposal.title!=='string'||!proposal.title.trim()||proposal.title.length>180||typeof proposal.goal!=='string'||!proposal.goal.trim()||proposal.goal.length>4000||!proposal.input||typeof proposal.input!=='object'||Array.isArray(proposal.input)||JSON.stringify(proposal.input).length>(capability.maxInputCharacters??16000))throw new ContextToolError('invalid_delegation_arguments','Each unit requires an allowed capabilityId, nonempty title (at most 180), goal (at most 4000), and input matching the discovered capability contract','correct_arguments');
    const id=`${workId}:unit:${proposal.id}`,dependencies=proposal.dependencies??[];
-   if(!Array.isArray(dependencies)||dependencies.length>16||dependencies.some(dep=>typeof dep!=='string'))throw new StoreError('Invalid unit dependencies',400);
+   if(!Array.isArray(dependencies)||dependencies.length>16||dependencies.some(dep=>typeof dep!=='string'))throw new ContextToolError('invalid_delegation_arguments','Invalid unit dependencies','correct_arguments');
    const unit:DelegationUnit={id,workId,capabilityId:capability.id,capabilityVersion:capability.version,title:proposal.title,goal:proposal.goal,input:structuredClone(proposal.input as Record<string,unknown>),scope:this.narrower(work.scope,proposal.scope),dependencies:dependencies.map(dep=>String(dep).startsWith(`${workId}:unit:`)?String(dep):`${workId}:unit:${dep}`),stepId:id,status:'waiting',attempts:0,...(capability.proposal?{external:true}:{})};
-   if(capability.validate&&!capability.validate(unit,work))throw new StoreError('Unit input contract rejected',400);return unit;
+   if(capability.validate&&!capability.validate(unit,work))throw new ContextToolError('invalid_delegation_arguments','Unit input contract rejected','correct_arguments');return unit;
   });
-  if(work.units.length+next.filter(unit=>!work.units.some(prior=>prior.id===unit.id)).length>128)throw new StoreError('At most 128 branches per work',400);
+  if(work.units.length+next.filter(unit=>!work.units.some(prior=>prior.id===unit.id)).length>128)throw new ContextToolError('invalid_delegation_arguments','At most 128 branches per work','correct_arguments');
   const graph=new Map([...work.units,...next].map(unit=>[unit.id,unit.dependencies])),visiting=new Set<string>(),visited=new Set<string>();
-  const visit=(id:string)=>{if(visiting.has(id)||!graph.has(id))throw new StoreError('Dependencies must be an acyclic graph within this work',400);if(visited.has(id))return;visiting.add(id);for(const dep of graph.get(id)!)visit(dep);visiting.delete(id);visited.add(id);};for(const id of graph.keys())visit(id);
+  const visit=(id:string)=>{if(visiting.has(id)||!graph.has(id))throw new ContextToolError('invalid_delegation_arguments','Dependencies must be an acyclic graph within this work','correct_arguments');if(visited.has(id))return;visiting.add(id);for(const dep of graph.get(id)!)visit(dep);visiting.delete(id);visited.add(id);};for(const id of graph.keys())visit(id);
   for(const unit of next){const prior=work.units.find(old=>old.id===unit.id);if(prior){const {status:_,attempts:__,artifactId:___,error:____,...a}=prior,{status:_s,attempts:_a,...b}=unit;if(digest(a)!==digest(b))throw new StoreError('Unit ID belongs to another package',409);continue;}const encoded=this.serializeUnit(unit);this.store.reserveMetadata(Buffer.byteLength(encoded)+1024);this.store.db.prepare('INSERT INTO delegation_units VALUES(?,?,?)').run(unit.id,workId,encoded);this.event(workId,'branch_started',unit.title,unit.id);}
   // Every metadata row exists before dependencies are inserted (including forward refs).
   for(const unit of next)if(!unit.external)this.engine.enqueue(work.operationId,`delegation.unit.${unit.capabilityId}`,{unitId:unit.id},{id:unit.stepId});
@@ -163,15 +164,16 @@ export class DelegationRuntime {
  controlChannel(workId:string,grant?:ExecutionGrant):HostControlChannel {
   const authorize=()=>{grant?.assert();const work=this.get(workId);if(!this.currentWork(workId,this.coordinators.get(work.profileId)))throw new StoreError('Work authority expired',409);return work;};
   const write=<T>(callback:()=>T)=>grant?grant.commit(callback):this.transaction(callback);
-  return {definitions:DELEGATION_CONTROL_DEFINITIONS,execute:async(name,args):Promise<HostControlResult>=>{
+  const owner=this.get(workId),phase=this.coordinators.get(owner.profileId)?.awaitExternal&&!owner.planningComplete?'proposal':'execution';
+  return {phase,definitions:DELEGATION_CONTROL_DEFINITIONS,execute:async(name,args):Promise<HostControlResult>=>{
    let work=authorize();
    const keys:Record<string,readonly string[]>={delegation_capabilities:[],delegation_submit:['units'],delegation_results:['after','limit','cursor'],delegation_read:['artifactId','offset','length','evidenceIds'],delegation_retry:['unitId'],delegation_cancel:['unitId'],delegation_yield:['unitIds','mode','message']};
-   if(!keys[name]||Object.keys(args).some(key=>!keys[name].includes(key)))throw new StoreError('Invalid host control arguments',400);
+   if(!keys[name]||Object.keys(args).some(key=>!keys[name].includes(key)))throw new ContextToolError('invalid_delegation_arguments','Invalid host control arguments','correct_arguments');
    if(name==='delegation_capabilities')return {data:{capabilities:work.allowedCapabilities.map(id=>this.capabilities.get(id)!).filter(Boolean).map(({id,version,description,inputSchema})=>({id,version,description,inputSchema,maxDepth:1}))}};
    if(name==='delegation_submit')return {data:{units:write(()=>{authorize();return this.submit(workId,args);})}};
-   if(name==='delegation_results'){const after=args.after??0,cursor=args.cursor??0,limit=args.limit??20;if(!Number.isSafeInteger(after)||Number(after)<0||!Number.isSafeInteger(cursor)||Number(cursor)<0||!Number.isSafeInteger(limit)||Number(limit)<1||Number(limit)>30)throw new StoreError('Invalid result cursor',400);const units=work.units.slice(Number(cursor),Number(cursor)+Number(limit)),events=work.events.filter(event=>event.id>Number(after)).slice(0,Number(limit)),selected=new Set(units.map(unit=>unit.id));return {data:{units:units.map(({id,title,status,attempts,artifactId,error})=>({id,title,status,attempts,artifactId,error})),events,artifacts:this.artifactMetadata(workId).filter(artifact=>selected.has(artifact.unitId)).map(({id,workId,unitId})=>({id,workId,unitId})),next:events.at(-1)?.id??after,nextUnitCursor:Number(cursor)+units.length<work.units.length?Number(cursor)+units.length:null}};}
-   if(name==='delegation_read'){if(typeof args.artifactId!=='string')throw new StoreError('Artifact handle required',400);const unit=work.units.find(item=>item.artifactId===args.artifactId);if(!unit||unit.status!=='succeeded')throw new StoreError('Artifact is outside this work or no longer valid',403);const product=this.journal.artifact<DelegationProduct>(args.artifactId),offset=args.offset??0,length=args.length??4000;
-    if(!Number.isSafeInteger(offset)||Number(offset)<0||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>10000||args.evidenceIds!==undefined&&(!Array.isArray(args.evidenceIds)||args.evidenceIds.length>12||args.evidenceIds.some(id=>typeof id!=='string')))throw new StoreError('Invalid artifact page',400);
+   if(name==='delegation_results'){const after=args.after??0,cursor=args.cursor??0,limit=args.limit??20;if(!Number.isSafeInteger(after)||Number(after)<0||!Number.isSafeInteger(cursor)||Number(cursor)<0||!Number.isSafeInteger(limit)||Number(limit)<1||Number(limit)>30)throw new ContextToolError('invalid_delegation_arguments','after and cursor must be nonnegative integers; limit must be 1–30 (default 20)','correct_arguments');const units=work.units.slice(Number(cursor),Number(cursor)+Number(limit)),events=work.events.filter(event=>event.id>Number(after)).slice(0,Number(limit)),selected=new Set(units.map(unit=>unit.id));return {data:{units:units.map(({id,title,status,attempts,artifactId,error})=>({id,title,status,attempts,artifactId,error})),events,artifacts:this.artifactMetadata(workId).filter(artifact=>selected.has(artifact.unitId)).map(({id,workId,unitId})=>({id,workId,unitId})),next:events.at(-1)?.id??after,nextUnitCursor:Number(cursor)+units.length<work.units.length?Number(cursor)+units.length:null}};}
+   if(name==='delegation_read'){if(typeof args.artifactId!=='string')throw new ContextToolError('invalid_delegation_arguments','Artifact handle required','correct_arguments');const unit=work.units.find(item=>item.artifactId===args.artifactId);if(!unit||unit.status!=='succeeded')throw new StoreError('Artifact is outside this work or no longer valid',403);const product=this.journal.artifact<DelegationProduct>(args.artifactId),offset=args.offset??0,length=args.length??4000;
+    if(!Number.isSafeInteger(offset)||Number(offset)<0||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>10000||args.evidenceIds!==undefined&&(!Array.isArray(args.evidenceIds)||args.evidenceIds.length>12||args.evidenceIds.some(id=>typeof id!=='string')))throw new ContextToolError('invalid_delegation_arguments','Invalid artifact page','correct_arguments');
     const text=JSON.stringify(product.value),selected=(product.evidence??[]).filter(record=>args.evidenceIds===undefined||(args.evidenceIds as string[]).includes(record.id)),dependencies=product.dependencies??product.evidence??[];
     this.options.validateDependencies?.(product.dependencyIds??dependencies.map(record=>record.id));
     const authorizedOriginals=this.options.revalidateEvidence?await this.options.revalidateEvidence(dependencies,unit.scope):undefined;authorize();
@@ -180,7 +182,8 @@ export class DelegationRuntime {
    if(name==='delegation_retry'||name==='delegation_cancel'){if(typeof args.unitId!=='string'||!work.units.some(unit=>unit.id===args.unitId))throw new StoreError('Branch handle is outside this work',403);write(()=>{authorize();if(name==='delegation_retry')this.retryUnit(String(args.unitId));else this.cancelUnit(String(args.unitId));});return {data:{unitId:args.unitId,status:this.unit(args.unitId).status}};}
    if(name==='delegation_yield'){
     const ids=args.unitIds??work.units.filter(unit=>!terminal(unit.status)).map(unit=>unit.id),mode=args.mode??'all';
-    if(!Array.isArray(ids)||!ids.length||ids.some(id=>typeof id!=='string'||!work.units.some(unit=>unit.id===id))||!['any','all'].includes(String(mode))||args.message!==undefined&&(typeof args.message!=='string'||args.message.length>600))throw new StoreError('Invalid wait condition',400);
+    if(!Array.isArray(ids)||!ids.length||ids.some(id=>typeof id!=='string'||!work.units.some(unit=>unit.id===id))||!['any','all'].includes(String(mode))||args.message!==undefined&&(typeof args.message!=='string'||args.message.length>600))throw new ContextToolError('invalid_delegation_arguments','Invalid wait condition','correct_arguments');
+    if(ids.some(id=>{const unit=work.units.find(unit=>unit.id===id)!;return unit.external&&!terminal(unit.status)&&!this.engine.get(unit.stepId);}))throw new ContextToolError('proposal_not_executable','These proposal products cannot start until planning finishes. Submit all catalog members exactly once, then return the requested final JSON normally; do not yield on proposals.','correct_arguments');
     write(()=>{authorize();work=this.raw(workId);work.wait={unitIds:ids as string[],mode:mode as 'any'|'all'};this.save(work);this.event(workId,'waiting',typeof args.message==='string'?args.message:undefined);});return {data:{saved:true,waitingFor:ids,mode},yield:true};
    }
    throw new StoreError('Unknown host control tool',404);
@@ -200,6 +203,32 @@ export class DelegationRuntime {
   * external jobs have their own independent grants and lifecycle. */
  private failUnfinishedChildren(work:DelegationWork){for(const unit of work.units){if(unit.external)continue;const step=this.engine.get(unit.stepId);if(step&&activeWork(step.state))this.engine.fail(unit.stepId,'parent_failed');}}
  private externalCompletionState(work:DelegationWork):ExecutionState {const selected=work.plannedUnitIds??work.units.filter(unit=>unit.external).map(unit=>unit.id),units=selected.map(id=>work.units.find(unit=>unit.id===id));if(units.some(unit=>!unit))return 'failed';if(units.some(unit=>!terminal(unit!.status)))return 'waiting';return units.some(unit=>unit!.status!=='succeeded')?'failed':'succeeded';}
+ private completePlan(work:DelegationWork,profile:DelegationCoordinator,result:unknown,receipt:void|{acceptedUnitIds:readonly string[]}){
+  if(work.units.some(unit=>!terminal(unit.status)&&!unit.external))throw new ExecutionFailure('permanent','unfinished_delegation');
+  if(profile.awaitExternal){const accepted=receipt?.acceptedUnitIds??work.units.filter(unit=>unit.external&&unit.status!=='cancelled').map(unit=>unit.id);
+   if(!Array.isArray(accepted)||accepted.length>128||new Set(accepted).size!==accepted.length||accepted.some(id=>typeof id!=='string'||!work.units.some(unit=>unit.id===id&&unit.external&&unit.status!=='cancelled')))throw new ExecutionFailure('permanent','invalid_delegation_plan');
+   work.plannedUnitIds=[...accepted];
+  }
+  this.journal.saveResult(work.id,result??null);work.planningComplete=true;work.status=profile.awaitExternal?this.externalCompletionState(work):'succeeded';delete work.wait;delete work.error;if(work.status==='failed')work.error='delegated_product_failed';this.save(work);this.event(work.id,work.status==='waiting'?'plan.updated':work.status==='succeeded'?'completed':'work.failed');
+ }
+ /** Repair pre-upgrade waits on proposals that were never handed to a product.
+  * Revalidate authority and accept a product-validated complete persisted plan,
+  * or resume a fresh fragment with saved handles when it needs completion;
+  * never mark an unchecked plan complete or duplicate a product grant. */
+ private recoverProposalWait(work:DelegationWork){
+  const profile=this.coordinators.get(work.profileId);
+  if(!profile?.awaitExternal||work.status!=='waiting'||work.planningComplete||!work.wait||!work.wait.unitIds.some(id=>{const unit=work.units.find(unit=>unit.id===id);return unit?.external&&!terminal(unit.status)&&!this.engine.get(unit.stepId);}))return;
+  const coordinator=this.engine.get(`${work.id}:coordinator:${work.revision}`);
+  if(coordinator&&['waiting','running'].includes(coordinator.state))return;
+  this.transaction(()=>{
+   work=this.get(work.id);
+   if(!this.currentWork(work.id,profile)){work.status='stale';work.error='input_changed';delete work.wait;this.save(work);for(const unit of work.units)if(unit.external&&!terminal(unit.status)&&!this.engine.get(unit.stepId)){unit.status='stale';unit.error='input_changed';this.saveUnit(unit);}this.event(work.id,'work.stale');return;}
+   if(profile.recoveryAllowed&&!profile.recoveryAllowed())return;
+   const receipt=work.units.some(unit=>!terminal(unit.status)&&!unit.external)?undefined:profile.recoverPlan?.(work);
+   if(receipt){this.completePlan(work,profile,{recovered:true},receipt);this.event(work.id,'plan.recovered');return;}
+   delete work.wait;this.enqueueCoordinator(work);this.event(work.id,'resumed');
+  });
+ }
  private wake(workId:string){const work=this.raw(workId);if(work.status!=='waiting'||!work.wait||!this.currentWork(workId,this.coordinators.get(work.profileId)))return;const states=work.wait.unitIds.map(id=>this.unit(id).status),ready=work.wait.mode==='all'?states.every(terminal):states.some(terminal);if(ready){delete work.wait;this.enqueueCoordinator(work);this.event(workId,'resumed');}}
  cancelUnit(id:string){const unit=this.unit(id);if(unit.status==='succeeded'||unit.status==='cancelled')return;this.capabilities.get(unit.capabilityId)?.cancel?.(unit,this.get(unit.workId));this.engine.cancel(unit.stepId);unit.status='cancelled';this.saveUnit(unit);this.event(unit.workId,'branch_cancelled',undefined,id);}
  retryUnit(id:string){const unit=this.unit(id);if(!['failed','blocked','stale'].includes(unit.status))throw new StoreError('Only a failed branch can be retried',409);this.capabilities.get(unit.capabilityId)?.retry?.(unit,this.get(unit.workId));if(unit.artifactId)this.store.db.prepare('DELETE FROM delegation_artifacts WHERE id=?').run(unit.artifactId);delete unit.artifactId;delete unit.error;unit.status='waiting';this.saveUnit(unit);this.engine.retry(unit.stepId);this.event(unit.workId,'branch_retried',undefined,id);}
@@ -218,7 +247,7 @@ export class DelegationRuntime {
  private activeExecutionIds(operationId:string){return this.store.db.prepare("SELECT e.id FROM execution_steps e WHERE e.operation_id=? AND e.state IN ('waiting','running','blocked')").all(operationId).map(row=>String(row.id));}
  dependencyIds(workId:string){return this.store.db.prepare('SELECT evidence_id FROM delegation_dependencies WHERE work_id=?').all(workId).map(row=>String(row.evidence_id));}
  recordEvidence(workId:string,ids:readonly string[]){for(const id of new Set(ids)){if(this.store.db.prepare('SELECT 1 FROM delegation_dependencies WHERE work_id=? AND evidence_id=?').get(workId,id))continue;this.store.reserveMetadata(Buffer.byteLength(workId)+Buffer.byteLength(id)+128);this.store.db.prepare('INSERT INTO delegation_dependencies VALUES(?,?)').run(workId,id);}}
- async tick(){if(this.closed)return;for(const id of this.activeIds()){const work=this.get(id);if(this.engine.cancellationAliasRevoked(work.id)&&activeWork(this.raw(work.id).status))this.cancel(work.id);if(work.status==='stale'||work.status==='cancelled'){this.engine.cancel(work.id);for(const stepId of this.activeExecutionIds(work.operationId))this.engine.cancel(stepId);for(const unit of work.units)if(this.engine.get(unit.stepId)&&activeWork(this.engine.get(unit.stepId)!.state)){this.capabilities.get(unit.capabilityId)?.cancel?.(unit,work);this.engine.cancel(unit.stepId);}continue;}if(work.status==='failed'||work.status==='blocked')this.failUnfinishedChildren(work);for(const unit of work.units)if(unit.external){const step=this.engine.get(unit.stepId);if(step&&unit.status!==step.state)this.projectUnit({...step,input:{...step.input,unitId:unit.id}});}const current=this.raw(work.id);if(current.status==='waiting'&&current.planningComplete&&!current.wait){const state=this.externalCompletionState(current);if(state!=='waiting'){current.status=state;if(state==='failed')current.error='delegated_product_failed';this.save(current);this.event(current.id,current.status==='succeeded'?'completed':'work.failed');}}else this.wake(work.id);}await this.engine.tick();}
+ async tick(){if(this.closed)return;for(const id of this.activeIds()){const work=this.get(id);if(this.engine.cancellationAliasRevoked(work.id)&&activeWork(this.raw(work.id).status))this.cancel(work.id);if(work.status==='stale'||work.status==='cancelled'){this.engine.cancel(work.id);for(const stepId of this.activeExecutionIds(work.operationId))this.engine.cancel(stepId);for(const unit of work.units)if(this.engine.get(unit.stepId)&&activeWork(this.engine.get(unit.stepId)!.state)){this.capabilities.get(unit.capabilityId)?.cancel?.(unit,work);this.engine.cancel(unit.stepId);}continue;}if(work.status==='failed'||work.status==='blocked')this.failUnfinishedChildren(work);for(const unit of work.units)if(unit.external){const step=this.engine.get(unit.stepId);if(step&&unit.status!==step.state)this.projectUnit({...step,input:{...step.input,unitId:unit.id}});}const current=this.raw(work.id);if(current.status==='waiting'&&current.planningComplete&&!current.wait){const state=this.externalCompletionState(current);if(state!=='waiting'){current.status=state;if(state==='failed')current.error='delegated_product_failed';this.save(current);this.event(current.id,current.status==='succeeded'?'completed':'work.failed');}}else {this.recoverProposalWait(current);this.wake(work.id);}}await this.engine.tick();}
  async close(){this.closed=true;clearInterval(this.timer);await Promise.all(this.unregister.map(unregister=>unregister()));}
 }
 
