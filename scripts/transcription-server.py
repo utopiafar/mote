@@ -103,7 +103,12 @@ def main():
             worker = None
             released = False
             try:
-                self.connection.settimeout(args.timeout)
+                requested_timeout = self.headers.get('X-Mote-Processing-Timeout-Ms')
+                if requested_timeout is not None and (len(requested_timeout) > 7 or not requested_timeout.isascii() or not requested_timeout.isdecimal() or not 1000 <= int(requested_timeout) <= 3600000):
+                    self.send_error(400, 'Invalid processing timeout')
+                    return
+                timeout = min(args.timeout, int(requested_timeout) / 1000) if requested_timeout is not None else args.timeout
+                self.connection.settimeout(timeout)
                 length = int(self.headers.get('Content-Length', '-1'))
                 budget = min(float(self.headers.get('X-Mote-Max-Audio-Ms', '14400000')), 86400000)
                 speakers = int(self.headers.get('X-Mote-Speaker-Count', '0'))
@@ -121,11 +126,11 @@ def main():
                             output.write(block)
                             remaining -= len(block)
                     receiver, sender = mp.Pipe(duplex=False)
-                    worker = mp.Process(target=recognize, args=(str(audio), self.path[1:], settings, budget, speakers, sender))
+                    worker = mp.Process(target=recognize, args=(str(audio), self.path[1:], {**settings, 'timeout': timeout}, budget, speakers, sender))
                     worker.start()
                     sender.close()
                     try:
-                        if not receiver.poll(args.timeout):
+                        if not receiver.poll(timeout):
                             self.send_error(504, 'Audio processing timeout')
                             return
                         response = json.loads(receiver.recv_bytes(32 * 1024 * 1024))

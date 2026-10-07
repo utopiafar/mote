@@ -58,7 +58,7 @@ services:
         format: raw
     volumes:
       - mote-models:/models:ro
-    command: ["/opt/mote-media-venv/bin/python", "scripts/transcription-server.py", "--model", "/models/dialogue", "--segmentation-model", "/models/dialogue/segmentation.onnx", "--speaker-model", "/models/dialogue/speaker.onnx", "--port", "9009"]
+    command: ["/opt/mote-media-venv/bin/python", "scripts/transcription-server.py", "--model", "/models/dialogue", "--segmentation-model", "/models/dialogue/segmentation.onnx", "--speaker-model", "/models/dialogue/speaker.onnx", "--timeout", "3600", "--port", "9009"]
     security_opt:
       - no-new-privileges:true
     cap_drop:

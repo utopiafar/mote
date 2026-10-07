@@ -12,7 +12,7 @@ await new Promise<void>((resolve,reject)=>{
   req.on('error',reject);req.end();
 });
 const audio=Buffer.from([0,255,1,2,3,10,13,0]),image=Buffer.from([137,80,78,71,0,255,3]),apiKey='generated-worker-token';
-const settings=fileProcessingSchema.parse({endpoint:endpoint+'/transcribe',imageEndpoint:endpoint+'/ocr',apiKey});
+const settings=fileProcessingSchema.parse({endpoint:endpoint+'/transcribe',imageEndpoint:endpoint+'/ocr',apiKey,timeoutMs:1800000});
 const body=(bytes:Buffer)=>(async function*(){yield bytes.subarray(0,3);yield bytes.subarray(3);})();
 const provider=new HttpTranscriptionProvider(),input=()=>({body:body(audio),sizeBytes:audio.length,mimeType:'audio/wav',settings,maxAudioMs:2000,signal:AbortSignal.timeout(5000)});
 assert.equal((await provider.transcribe({...input(),localOnly:true})).segments[0].text,'Generated speech');

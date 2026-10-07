@@ -76,7 +76,7 @@ export function startMediaWorkers({ root = process.cwd(), env = process.env, sig
     const workerEnv = { ...mediaEnvironment(env), PYTHONUNBUFFERED: '1', MOTE_MEDIA_WORKER_TOKEN: env.MOTE_MEDIA_WORKER_TOKEN };
     const specs = [
       ['ocr-server.py', ['--model-root', join(env.MOTE_MEDIA_MODEL_DIR, 'ocr'), '--port', env.MOTE_MEDIA_OCR_PORT || '9010']],
-      ['transcription-server.py', ['--model', join(env.MOTE_MEDIA_MODEL_DIR, 'dialogue'), '--segmentation-model', join(env.MOTE_MEDIA_MODEL_DIR, 'dialogue/segmentation.onnx'), '--speaker-model', join(env.MOTE_MEDIA_MODEL_DIR, 'dialogue/speaker.onnx'), '--port', env.MOTE_MEDIA_ASR_PORT || '9009']],
+      ['transcription-server.py', ['--model', join(env.MOTE_MEDIA_MODEL_DIR, 'dialogue'), '--segmentation-model', join(env.MOTE_MEDIA_MODEL_DIR, 'dialogue/segmentation.onnx'), '--speaker-model', join(env.MOTE_MEDIA_MODEL_DIR, 'dialogue/speaker.onnx'), '--timeout', '3600', '--port', env.MOTE_MEDIA_ASR_PORT || '9009']],
     ];
     await Promise.all(specs.map(async ([script, args]) => {
       while (!controller.signal.aborted) {
