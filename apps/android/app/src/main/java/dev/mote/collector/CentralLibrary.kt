@@ -17,6 +17,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
     private var day = ""
     private var source = ""
     private var query = ""
+    private var rawSource = ""
 
     fun show(page: String) {
         when (page) {
@@ -30,24 +31,66 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         }
     }
     private fun archive() {
+        val api = client
+        val path = "/api/library/catalog?limit=24" + (if (source.isNotBlank()) "&sourceId=" + enc(source) else "")
+        ui.work(MoteI18n.text("正在读取…"), { api.get(path) }) { result ->
+            val descriptor = CentralCatalogDescriptor.read(result)
+            ui.text(MoteI18n.text("全部资料"), 24f)
+            ui.text(MoteI18n.text("包括 Coding Agent 会话；可读内容不等待记忆整理。"))
+            val filters = ui.card()
+            val facets = result.optJSONArray("sources") ?: JSONArray()
+            val choices = listOf("" to MoteI18n.text("全部来源")) + (0 until facets.length()).map { index ->
+                facets.getJSONObject(index).let { it.getString("id") to it.getString("label") }
+            }
+            val selection = Spinner(ui).apply {
+                adapter = ArrayAdapter(ui, android.R.layout.simple_spinner_dropdown_item, choices.map { it.second })
+                setSelection(choices.indexOfFirst { it.first == source }.coerceAtLeast(0))
+            }; filters.addView(selection)
+            ui.button(MoteI18n.text("筛选"), parent = filters) { source = choices[selection.selectedItemPosition].first; screens.refresh() }
+            ui.button(MoteI18n.text("原始采集记录"), parent = filters) { body.removeAllViews(); screens.setBack { screens.refresh() }; rawArchive() }
+            ui.button(MoteI18n.text("上传与处理"), parent = filters) { body.removeAllViews(); screens.setBack { screens.refresh() }; codingStatus() }
+            val target = ui.card()
+            val render: (JSONObject, LinearLayout) -> Unit = { row, card ->
+                val type = descriptor.type(row.optString("kind"), row.optInt("schemaVersion"))
+                ui.text(row.getString("title"), 19f, card)
+                ui.text(type?.let { MoteI18n.text(it.label) } ?: row.optString("kind"), parent = card)
+                ui.text(row.optJSONObject("coverage")?.optString("state").orEmpty(), parent = card)
+                ui.button(MoteI18n.text("查看原文"), parent = card) { material(row.getString("id"), row.getString("revision")) }
+            }
+            renderPage(path, target, null, result, render)
+        }
+    }
+    private fun codingStatus() {
+        ui.text(MoteI18n.text("上传与处理"), 24f)
+        ui.text(MoteI18n.text("接收成功表示原件已保留；正文发布、索引和记忆整理分别显示状态。"))
+        paged("/api/coding/uploads?limit=20", ui.card()) { row, card ->
+            val source = row.getJSONObject("source")
+            ui.text(source.getString("name"), 19f, card)
+            ui.text(MoteI18n.text("已接收事件") + ": " + row.getJSONObject("received").getInt("events"), parent = card)
+            ui.text(MoteI18n.text("已发布资料") + ": " + row.getInt("materials"), parent = card)
+            ui.text(MoteI18n.text("已索引资料") + ": " + row.getInt("indexedMaterials"), parent = card)
+            ui.button(MoteI18n.text("查看聚合正文"), parent = card) { this.source = source.getString("id"); screens.refresh() }
+        }
+    }
+    private fun rawArchive() {
         val filters = ui.card()
         val search = ui.field(MoteI18n.text("搜索原文"), query, parent = filters)
         ui.button(if (day.isBlank()) MoteI18n.text("全部日期") else day, parent = filters) {
             val date = day.takeIf { it.isNotBlank() }?.let(LocalDate::parse) ?: LocalDate.now()
             DatePickerDialog(ui, { _, year, month, dateOfMonth ->
-                day = LocalDate.of(year, month + 1, dateOfMonth).toString(); screens.refresh()
+                day = LocalDate.of(year, month + 1, dateOfMonth).toString(); body.removeAllViews(); rawArchive()
             }, date.year, date.monthValue - 1, date.dayOfMonth).show()
         }
-        if (day.isNotBlank()) ui.button(MoteI18n.text("全部日期"), parent = filters) { day = ""; screens.refresh() }
+        if (day.isNotBlank()) ui.button(MoteI18n.text("全部日期"), parent = filters) { day = ""; body.removeAllViews(); rawArchive() }
         val choices = listOf("" to "全部记录", "screen" to "截图", "ui_page" to "页面内容采集", "note" to "随手记", "notification" to "通知", "file" to "文件")
         val choice = Spinner(ui).apply { adapter = ArrayAdapter(ui, android.R.layout.simple_spinner_dropdown_item, choices.map { MoteI18n.text(it.second) })
-            setSelection(choices.indexOfFirst { it.first == source }.coerceAtLeast(0)) }; filters.addView(choice)
-        ui.button(MoteI18n.text("搜索"), parent = filters) { query = search.text.toString(); source = choices[choice.selectedItemPosition].first; screens.refresh() }
-        ui.button(MoteI18n.text("刷新"), parent = filters) { screens.refresh() }
+            setSelection(choices.indexOfFirst { it.first == rawSource }.coerceAtLeast(0)) }; filters.addView(choice)
+        ui.button(MoteI18n.text("搜索"), parent = filters) { query = search.text.toString(); rawSource = choices[choice.selectedItemPosition].first; body.removeAllViews(); rawArchive() }
+        ui.button(MoteI18n.text("刷新"), parent = filters) { body.removeAllViews(); rawArchive() }
         ui.button(MoteI18n.text("应用活动与媒体")) { activity() }
         val list = ui.card()
         val params = mutableListOf("limit=24")
-        if (source.isNotBlank()) params.add("source=" + enc(source))
+        if (rawSource.isNotBlank()) params.add("source=" + enc(rawSource))
         if (day.isNotBlank()) {
             val date = LocalDate.parse(day); val zone = ZoneId.systemDefault()
             params.add("after=" + enc(date.atStartOfDay(zone).toInstant().toString()))
@@ -325,6 +368,10 @@ internal class CentralLibrary(private val screens: CentralScreens) {
     fun paged(path: String, target: LinearLayout, cursor: String? = null, render: (JSONObject, LinearLayout) -> Unit) {
         val api = client
         ui.work(MoteI18n.text("正在读取…"), { api.get(path + (cursor?.let { (if (path.contains('?')) "&" else "?") + "cursor=" + enc(it) } ?: "")) }) { result ->
+            renderPage(path, target, cursor, result, render)
+        }
+    }
+    private fun renderPage(path: String, target: LinearLayout, cursor: String?, result: JSONObject, render: (JSONObject, LinearLayout) -> Unit) {
             target.removeAllViews()
             val items = result.optJSONArray("items") ?: result.optJSONArray("entries") ?: result.optJSONArray("jobs") ?: JSONArray()
             if (items.length() == 0) ui.text(MoteI18n.text("当前范围内暂无条目。没有列出不代表不存在。"), parent = target)
@@ -336,7 +383,6 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                     else path + (if (path.contains('?')) "&" else "?") + "offset=" + result.getInt("nextOffset")
                 paged(nextPath, target, render = render)
             }
-        }
     }
     private fun values(value: JSONObject, target: LinearLayout) = CentralAdmin(screens).values(value, target)
 }

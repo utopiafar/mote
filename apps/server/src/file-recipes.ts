@@ -1,3 +1,4 @@
+import {InstallationEpochs} from './installation-epochs.js';
 import {transcriptSchema,type Transcript} from '@mote/shared';
 import type {ProcessorInput} from './file-processors.js';
 import {StoreError} from './store.js';
@@ -30,9 +31,10 @@ export type FileRecipeContext={
 };
 export interface FileRecipeStage extends ComponentRef {run(context:FileRecipeContext):Promise<string>;}
 export class FileRecipeRegistry {
+  readonly epochs=new InstallationEpochs();
   private stages=new Map<string,FileRecipeStage>();
   private recipes=new Map<string,Readonly<FileRecipe>>();
-  registerStage(stage:FileRecipeStage){const key=componentKey(stage);if(this.stages.has(key))throw Error('Duplicate file stage');this.stages.set(key,stage);return ()=>{if(this.stages.get(key)===stage)this.stages.delete(key);};}
+  registerStage(stage:FileRecipeStage){const key=componentKey(stage);if(this.stages.has(key))throw Error('Duplicate file stage');const revoke=this.epochs.install(key);this.stages.set(key,stage);return ()=>{revoke();if(this.stages.get(key)===stage)this.stages.delete(key);};}
   registerRecipe(recipe:FileRecipe){const key=componentKey(recipe);if(this.recipes.has(key))throw Error('Duplicate file recipe');this.order(recipe);const value=freezeRecipe(structuredClone(recipe));this.recipes.set(key,value);return ()=>{if(this.recipes.get(key)===value)this.recipes.delete(key);};}
   private order(recipe:FileRecipe){
     const names=new Map(recipe.steps.map(step=>[step.name,step]));

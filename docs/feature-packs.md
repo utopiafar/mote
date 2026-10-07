@@ -2,6 +2,8 @@
 
 The central Web console and server now have independent Cordis hosts. Shared, browser-safe descriptors join transport, read APIs, commands, processing registrations, UI pages/collections/detail panels and read-only Agent capabilities by feature ID. The execution engine, receipt protocol, material publisher, privacy rules and existing feature behavior remain authoritative.
 
+资料库默认正式资料、命名产物消费者、安装实例代际与展示锚点的完整契约见 [资料库与插件扩展契约](library-plugin-contracts.md)。
+
 ## Ownership
 
 - `apps/server/src/features/`: per-feature HTTP entries. Capture, notes, devices, media, files, sources, Coding, materials, context, imports, memory, Ask, insights, actions, processing, models, storage, usage, diagnostics and system routes mount through `ServerFeatureHost`. Its child Fastify scopes inherit authentication, protocol gates, request budgets and diagnostics. Binary begin/chunk/commit and playback continue to use the existing file store and durable receipts.
@@ -38,8 +40,8 @@ This MVP bundles trusted plugins with the deployment. Changing HTTP topology or 
 
 - `npm run check:local`: all workspace type checks, i18n synchronization and unit/integration fixture suites.
 - `node --import tsx --test apps/server/test/feature-packs.test.ts apps/web/test/feature-host.test.ts`: scoped lifecycle, duplicate upload, publication, inventory, Agent scope and stale-revision fixtures (three initial Coding events and one append).
-- `node_modules/.bin/electron scripts/test-web-feature-packs.cjs`: isolated server and actual renderer, three generated Coding events, upload/aggregate/Agent views, all 26 pages, mobile overflow and screenshots under ignored `.mote/feature-packs`.
-- `node_modules/.bin/electron scripts/test-web-navigation.cjs`: existing navigation, settings, identity, diagnostics and responsive regression flow.
+- `node_modules/.bin/electron scripts/test-web-feature-packs.cjs`: isolated server and actual renderer, three generated Coding events, upload/aggregate/Agent views, 29 route smoke probes, mobile overflow and screenshots under ignored `.mote/feature-packs`.
+- `node_modules/.bin/electron scripts/test-web-navigation.cjs`: existing navigation, settings, identity, diagnostics and responsive regression flow. Use `--library-only` for the focused library/keyboard/history/responsive acceptance slice.
 - `MOTE_TEST_CODEX_MODEL=gpt-6-luna node --import tsx scripts/test-codex-provider-live.ts`: opt-in real local Codex App Server model catalog, probe, retrieval/evidence tool call and citation against a generated note. No personal captures are collected or sent.
 
 Physical Android/Mac capture and external-account writes are not covered by these fixtures; report them separately. Release CI builds and verifies both platform packages, which does not establish a physical-device capture check.

@@ -10,6 +10,7 @@ export type ProcessingJobView = {
   availableAt:number;
   dependencies:string[];
   outputs:string[];
+  products?:Record<string,string>;
   allowedActions:('retry-step'|'cancel')[];
 };
 export type ProcessingView = {

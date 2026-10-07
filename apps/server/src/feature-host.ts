@@ -40,7 +40,7 @@ export class ServerFeatureHost {
   async install(manifest:FeatureManifest,entry:(app:FastifyInstance,scope:ServerFeatureScope)=>void){
     const registry=this.registry,app=this.app,onError=this.onError;
     const fiber=this.root.plugin((ctx:Context)=>{
-      ctx.effect(()=>registry.install(manifest));
+      ctx.effect(()=>registry.install(manifest,{completeTrustedTopology:manifest.components.length===0}));
       const scope=new ServerFeatureScope(onError);ctx.effect(()=>{this.scopes.add(scope);return()=>{this.scopes.delete(scope);return scope.close();};});
       app.register(async child=>{
         child.addHook('onRequest',async(_req,reply)=>{if(!scope.active)return reply.code(503).send({error:'feature_unavailable'});});
