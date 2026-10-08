@@ -114,6 +114,7 @@ export class MaterialStore {
       CREATE TABLE IF NOT EXISTS material_searchable(material_id TEXT PRIMARY KEY REFERENCES material_heads(id) ON DELETE CASCADE);
       CREATE TABLE IF NOT EXISTS material_evidence(id TEXT PRIMARY KEY,material_id TEXT NOT NULL,revision TEXT NOT NULL,block_id TEXT NOT NULL,invalidated INTEGER NOT NULL DEFAULT 0,FOREIGN KEY(material_id,revision) REFERENCES material_revisions(material_id,revision) ON DELETE CASCADE);
       CREATE INDEX IF NOT EXISTS material_evidence_parent ON material_evidence(material_id,revision);
+      CREATE INDEX IF NOT EXISTS material_evidence_invalidated ON material_evidence(material_id,id) WHERE invalidated=1;
       CREATE TABLE IF NOT EXISTS material_evidence_context(
         anchor_id TEXT PRIMARY KEY REFERENCES material_evidence(id) ON DELETE CASCADE,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS material_evidence_dependencies(
@@ -151,6 +152,7 @@ export class MaterialStore {
         UNIQUE(material_id,from_revision,idx));
       CREATE INDEX IF NOT EXISTS material_block_versions_range ON material_block_versions(material_id,start_offset,from_sequence,until_sequence);
       CREATE INDEX IF NOT EXISTS material_block_versions_index ON material_block_versions(material_id,idx,from_sequence,until_sequence);
+      CREATE INDEX IF NOT EXISTS material_block_versions_anchor ON material_block_versions(material_id,anchor_id,from_sequence,until_sequence);
       CREATE TABLE IF NOT EXISTS material_blocks(
         material_id TEXT NOT NULL,revision TEXT NOT NULL,idx INTEGER NOT NULL,block_id TEXT NOT NULL,
         kind TEXT NOT NULL,format TEXT,payload_hash TEXT NOT NULL REFERENCES material_block_payloads(hash),
@@ -159,6 +161,7 @@ export class MaterialStore {
         anchor_id TEXT,identity_hash TEXT,PRIMARY KEY(material_id,revision,idx),UNIQUE(material_id,revision,block_id),
         FOREIGN KEY(material_id,revision) REFERENCES material_revisions(material_id,revision) ON DELETE CASCADE);
       CREATE INDEX IF NOT EXISTS material_blocks_range ON material_blocks(material_id,revision,end_offset);
+      CREATE INDEX IF NOT EXISTS material_blocks_anchor ON material_blocks(material_id,revision,anchor_id);
       CREATE TABLE IF NOT EXISTS material_members(
         material_id TEXT NOT NULL,revision TEXT NOT NULL,idx INTEGER NOT NULL,id TEXT NOT NULL,
         kind TEXT NOT NULL,ref TEXT NOT NULL,source_revision TEXT,locator TEXT,
