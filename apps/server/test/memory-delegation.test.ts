@@ -34,8 +34,48 @@ async function fixture(t:TestContext,count=4){
  let allow:((candidate:MemoryWorkCandidate)=>boolean)=()=>true;
  const adapter=registerMemoryDelegation({runtime,pipeline,work,sourcePipelines,allowCandidate:candidate=>allow(candidate),query:async input=>{planning++;const catalog=(input.taskContext!.memoryWork as {catalog:MemoryWorkCandidate[]}).catalog;if(planningHook)await planningHook(input,catalog);else await input.hostControlChannel!.execute('delegation_submit',{units:[{id:'joint',capabilityId:'memory.package',title:'Inspect selected originals',goal:'Inspect the complete synthetic set',input:{members:catalog.map(candidate=>candidate.key),instruction:'Preserve separate source identities and verify every input'}}]});return {runId:'generated-plan',answer:'The bounded input catalog was delegated.',citations:[],trace:[]};}});
  t.after(async()=>{await engine.close();await adapter.close();await runtime.close();await pipeline.close();await sourcePipelines.close();store.close();rmSync(directory,{recursive:true,force:true});});
- return {store,runtime,sourcePipelines,work,pipeline,adapter,counts:()=>({planning,extraction,reviews}),setPlanning(hook:NonNullable<typeof planningHook>){planningHook=hook;},setAllowed(hook:typeof allow){allow=hook;},async finish(){for(let tick=0;tick<30;tick++){await runtime.tick();await sourcePipelines.drainMemory(pipeline,true);if(runtime.list().every(owner=>['succeeded','failed','blocked','stale'].includes(owner.status)))return;await new Promise(resolve=>setTimeout(resolve,100));}throw Error('Synthetic Memory work did not settle');}};
+ return {store,engine,runtime,sourcePipelines,work,pipeline,adapter,counts:()=>({planning,extraction,reviews}),setPlanning(hook:NonNullable<typeof planningHook>){planningHook=hook;},setAllowed(hook:typeof allow){allow=hook;},async finish(){for(let tick=0;tick<30;tick++){await runtime.tick();await sourcePipelines.drainMemory(pipeline,true);if(runtime.list().every(owner=>['succeeded','failed','blocked','stale'].includes(owner.status)))return;await new Promise(resolve=>setTimeout(resolve,100));}throw Error('Synthetic Memory work did not settle');}};
 }
+
+for(const historicalAuthority of ['stale','revoked'] as const)test(`resumed Memory rejoins its plan behind a full page of ${historicalAuthority} historical status units`,async t=>{
+ const f=await fixture(t,2),catalog=f.work.catalog(),history=catalog.find(candidate=>candidate.inputKey==='raw-0')!,current=catalog.find(candidate=>candidate.inputKey==='raw-1')!,pipeline=f.pipeline;
+ const held={create:(input:Parameters<MemoryPipeline['create']>[0])=>pipeline.create(input),get:(id:string)=>pipeline.get(id),cancel:(id:string)=>pipeline.cancel(id),run:async()=>{}};
+ const oldProposals=await f.adapter.plan([history]);f.work.acceptPackages(held,[history],oldProposals,()=>true,f.adapter.onCreated);
+ const oldJob=f.pipeline.get(f.pipeline.list()[0].id);await f.pipeline.run(oldJob.id);
+ for(let n=0;n<30&&f.runtime.get(oldJob.workPackage!.id!.split(':unit:')[0]).status!=='succeeded';n++){await f.runtime.tick();await new Promise(resolve=>setTimeout(resolve,100));}
+ const oldUnit=f.runtime.unit(oldProposals[0].id!),oldOwner=f.runtime.get(oldUnit.workId);
+ const persistedJob=JSON.parse(String(f.store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(oldJob.id)!.json));
+ assert.equal(oldOwner.status,'succeeded');
+ // Seed the persisted historical projection seen after invalidation/upgrades.
+ // The current product below still enters pause/resume and completion through
+ // the real executor; these completed history rows must never run again.
+ f.store.db.prepare("UPDATE delegation_works SET json=json_set(json,'$.status',?) WHERE id=?").run(historicalAuthority==='stale'?'stale':'failed',oldOwner.id);
+ for(let n=0;n<65;n++){
+  const id='historical-status-'+n,unitId='000-history:unit:'+String(n).padStart(3,'0'),stepId='memory-package-status:'+id,unit={...oldUnit,id:unitId,stepId,status:'blocked',error:'interrupted'};delete unit.artifactId;
+  f.store.db.prepare('INSERT INTO delegation_units VALUES(?,?,?)').run(unitId,oldOwner.id,JSON.stringify(unit));
+  f.store.db.prepare('INSERT INTO memory_jobs(id,created_at,json) VALUES(?,?,?)').run(id,n,JSON.stringify({...persistedJob,id,status:'completed',workPackage:{...persistedJob.workPackage,id:unitId}}));
+  f.engine.enqueue('memory:'+id,'memory.package-status',{jobId:id,workId:oldOwner.id,unitId},{id:stepId,initial:{state:'blocked',attempts:1,availableAt:0,error:'interrupted'}});
+ }
+ const planned=f.adapter.plan([current]);
+ for(let n=0;n<30;n++){await f.runtime.tick();if(f.runtime.list().some(owner=>owner.id!==oldOwner.id&&owner.planningComplete))break;await new Promise(resolve=>setTimeout(resolve,100));}
+ const proposals=await planned;f.work.acceptPackages(held,[current],proposals,()=>true,f.adapter.onCreated);
+ const job=f.pipeline.get(String(f.store.db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.workPackage.id')=?").get(proposals[0].id!)!.id)),unit=f.runtime.unit(proposals[0].id!);
+ f.pipeline.pause(job.id);
+ for(let n=0;n<30&&f.runtime.unit(unit.id).status!=='blocked';n++){await f.runtime.tick();await new Promise(resolve=>setTimeout(resolve,100));}
+ assert.equal(f.runtime.unit(unit.id).status,'blocked');
+ if(historicalAuthority==='revoked')f.setAllowed(candidate=>candidate.inputKey!=='raw-0');
+ f.pipeline.resume(job.id);
+ for(let n=0;n<3;n++)f.adapter.reconcile();
+ assert.equal(f.runtime.unit(unit.id).status,'waiting','expired or rejected history cannot monopolize bounded reconciliation');
+ assert.equal(f.runtime.get(unit.workId).status,'waiting');
+ assert.equal(f.store.db.prepare("SELECT count(*) n FROM delegation_units WHERE id LIKE '000-history:%' AND json_extract(json,'$.status')='blocked'").get()!.n,65,'historical authority remains unchanged');
+ await f.pipeline.run(job.id);
+ for(let n=0;n<30&&f.runtime.get(unit.workId).status!=='succeeded';n++){await f.runtime.tick();f.adapter.reconcile();await new Promise(resolve=>setTimeout(resolve,100));}
+ assert.equal(f.runtime.get(unit.workId).status,'succeeded');
+ assert.deepEqual(f.counts(),{planning:2,extraction:2,reviews:2});
+ assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,2);
+ f.adapter.reconcile();await f.runtime.tick();assert.deepEqual(f.counts(),{planning:2,extraction:2,reviews:2});
+});
 
 test('production adapter uses the generic model control channel and existing Memory commits with per-input coverage',async t=>{
  const f=await fixture(t);assert.equal(await f.sourcePipelines.drainMemory(f.pipeline,true),1);await f.finish();

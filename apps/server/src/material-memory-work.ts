@@ -24,6 +24,7 @@ export type MaterialMemoryObservation={inputKey:string;change:'source'|'rebuild'
 export class MaterialMemoryWork {
   private readonly active=new Set<string>();
   private planning=false;
+  private dormantCursor:[string,string]=['',''];
   readonly inputs:MemoryInputAuthorization;
   constructor(private readonly store:Store,private readonly materials:MaterialStore,private readonly now=Date.now,private readonly automaticEnabled=()=>true,private readonly recipes?:MemoryRecipeSettings){
     const priorContextChanged=materials.onContextChanged;
@@ -143,6 +144,16 @@ export class MaterialMemoryWork {
       return runner.run(id);
     }).catch(()=>this.update(row,"error='memory_run_failed'")).finally(()=>this.active.delete(id));
   }
+  /** A product resume/retry has already changed its job state. Rejoin that
+   * existing claimed queue entry after a previous pause/failure parked it;
+   * never retry a terminal product or renew its raw-input authority. */
+  private rejoinResumed(runner:MaterialMemoryRunner,limit:number){
+    const rows=this.store.db.prepare('SELECT * FROM material_memory_requests WHERE auto_authorized=1 AND job_id IS NOT NULL AND ready_at=? AND error IS NOT NULL AND (material_id,scope)>(?,?) ORDER BY material_id,scope LIMIT ?').all(TERMINAL_AT,...this.dormantCursor,limit) as WorkRow[];
+    this.dormantCursor=rows.length===limit?[rows.at(-1)!.material_id,rows.at(-1)!.scope]:['',''];
+    for(const row of rows){let status:string;try{status=runner.get(row.job_id!).status;}catch{continue;}
+      if(['queued','running','waiting_for_model','waiting_for_input'].includes(status))this.update(row,'ready_at=?,error=NULL',[this.now()]);
+    }
+  }
   /** A metadata catalog supports model planning without another full-corpus read. */
   catalog(limit=64,allowed:(materialId:string)=>boolean=()=>true,allowCandidate:(candidate:MemoryWorkCandidate)=>boolean=()=>true):MemoryWorkCandidate[]{
     if(!Number.isSafeInteger(limit)||limit<1||limit>64)throw Error('Invalid Memory planning catalog limit');
@@ -163,6 +174,7 @@ export class MaterialMemoryWork {
   /** Model-defined bounded packages; receipt claims and queue insertion are atomic. */
   async drainPlanned(runner:MaterialMemoryRunner,enabled:boolean,planner:MaterialMemoryPlanner,limit=64,allowed:(materialId:string)=>boolean=()=>true,onCreated?:(proposal:MemoryWorkProposal,job:{id:string})=>void,onSkipped?:(proposal:MemoryWorkProposal)=>void,allowCandidate:(candidate:MemoryWorkCandidate)=>boolean=()=>true):Promise<number>{
     if(!this.cancelRevocations(runner,limit)||!enabled||this.planning)return 0;
+    this.rejoinResumed(runner,limit);
     // Resume prior packages first; do not create ordinary per-material jobs.
     for(const row of this.store.db.prepare('SELECT * FROM material_memory_requests WHERE auto_authorized=1 AND job_id IS NOT NULL AND ready_at<=? ORDER BY ready_at LIMIT ?').all(this.now(),limit) as WorkRow[]){
       let status:string;try{status=runner.get(row.job_id!).status;}catch{this.update(row,"ready_at=?,error='memory_job_unavailable'",[TERMINAL_AT]);continue;}
@@ -213,6 +225,7 @@ export class MaterialMemoryWork {
   drain(runner:MaterialMemoryRunner,enabled:boolean,limit=10,allowed:(materialId:string)=>boolean=()=>true):number{
     if(!Number.isSafeInteger(limit)||limit<1||limit>100)throw Error('Invalid material Memory drain limit');
     if(!this.cancelRevocations(runner,limit)||!enabled)return 0;
+    this.rejoinResumed(runner,limit);
     let started=0;
     for(const existing of [true,false])for(const row of this.store.db.prepare(`SELECT * FROM material_memory_requests WHERE auto_authorized=1 AND job_id IS ${existing?'NOT ':''}NULL AND ready_at<=? ORDER BY ready_at,material_id,scope LIMIT ?`).all(this.now(),limit) as WorkRow[]){
       if(!allowed(row.material_id)){this.update(row,'ready_at=?',[this.now()+RETRY_DELAY_MS]);continue;}

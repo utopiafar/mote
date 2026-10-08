@@ -13,6 +13,10 @@
 | Overlapping historical plans → remaining input | No double claims or partial admission; remaining originals processed. | memory-delegation.test.ts |
 | Feedback regroup/stop, frozen ranges and restart | Proposal phase, independent review and exact authority retained. | memory-feedback.test.ts, memory-feedback-status.test.ts |
 | 1000 generated originals | Bounded catalogs and all original checkpoints. | memory-delegation.test.ts |
+| Product pause → resume behind 65 stale historical branches | Current parent rejoins and completes; stale authority stays stale; no model or checkpoint replay. | memory-delegation.test.ts |
+| Product pause → resume behind 65 authority-rejected branches | Bounded reconciliation advances past rejected history and wraps its cursor; grants and original product attempt policy remain unchanged. | memory-delegation.test.ts |
+| Paused/failed source queue → explicit product resume → queue restart | Planned and legacy queues relaunch the same claimed product; terminal products and disabled scheduling stay stopped. | material-memory-work.test.ts |
+| A full page of paused entries → later resumed entry; revoked grant | Dormant queue cursor advances; only the explicitly resumed authorized product launches; revoked claims are cancelled. | material-memory-work.test.ts |
 
 These tests use generated data and responses; they do not prove live-model or
 device behavior.

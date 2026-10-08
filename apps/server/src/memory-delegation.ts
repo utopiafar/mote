@@ -65,9 +65,15 @@ export function registerMemoryDelegation(options:MemoryDelegationOptions){
   runtime.engine.enqueue('memory:'+job.id,'memory.package-status',{jobId:job.id,workId,unitId},{id:stepId});
   runtime.linkExternalUnit(workId,unitId,stepId);
  };
+ let statusCursor='';
  const reconcile=()=>{
   for(const row of runtime.store.db.prepare("SELECT j.id, json_extract(j.json,'$.workPackage.id') unit_id FROM memory_jobs j JOIN delegation_units u ON u.id=json_extract(j.json,'$.workPackage.id') WHERE json_extract(u.json,'$.external')=1 AND (json_extract(u.json,'$.stepId') != ('memory-package-status:' || j.id) OR NOT EXISTS(SELECT 1 FROM execution_steps e WHERE e.id=('memory-package-status:' || j.id))) LIMIT 64").all()){const unit=runtime.unit(String(row.unit_id));if(unit.status==='cancelled'){pipeline.cancel(String(row.id));continue;}onCreated({id:unit.id,members:[],goal:unit.goal,instruction:String(unit.input.instruction)}, {id:String(row.id)});}
-  for(const row of runtime.store.db.prepare("SELECT u.id,u.work_id FROM memory_jobs j JOIN delegation_units u ON u.id=json_extract(j.json,'$.workPackage.id') WHERE json_extract(u.json,'$.external')=1 AND json_extract(u.json,'$.status') IN ('failed','blocked','stale') AND json_extract(j.json,'$.status') IN ('queued','running','waiting_for_input','completed') LIMIT 64").all()){
+  // Expired parent works cannot rejoin a product. Other rejected authority can
+  // remain in the journal, so advance a bounded keyset even when resume returns
+  // 409; an immutable prefix must not hide later independently resumed jobs.
+  const statuses=runtime.store.db.prepare("SELECT u.id,u.work_id FROM memory_jobs j JOIN delegation_units u ON u.id=json_extract(j.json,'$.workPackage.id') JOIN delegation_works w ON w.id=u.work_id WHERE json_extract(w.json,'$.planningComplete')=1 AND json_extract(w.json,'$.status') NOT IN ('stale','cancelled','succeeded') AND json_extract(u.json,'$.external')=1 AND json_extract(u.json,'$.status') IN ('failed','blocked','stale') AND json_extract(j.json,'$.status') IN ('queued','running','waiting_for_input','completed') AND u.id>? ORDER BY u.id LIMIT 64").all(statusCursor);
+  statusCursor=statuses.length===64?String(statuses.at(-1)!.id):'';
+  for(const row of statuses){
    try{runtime.resumeExternalUnit(String(row.work_id),String(row.id));}catch(error){if(!(error instanceof StoreError&&error.statusCode===409))throw error;}
   }
   // Planning may have committed several groups before a process stopped after
