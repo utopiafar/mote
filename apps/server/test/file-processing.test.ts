@@ -19,6 +19,7 @@ import {ExecutionEngine} from '../src/execution-engine.js';
 import {FileProcessorRuntime} from '../src/file-processors.js';
 import {alignDialogue,applySemanticGroups} from '../src/file-dialogue.js';
 import {FileReviews} from '../src/file-reviews.js';
+import {defaultFileOutput,defaultFileRecipe,FileOutputRegistry,FileRecipeRegistry,installFileRecipes} from '../src/file-recipes.js';
 import {Conversations} from '../src/conversations.js';
 import {fileExportEntries,exportTar} from '../src/file-export.js';
 import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
@@ -54,15 +55,71 @@ async function fixture(t:any,options:any={}){
 }
 
 test('unverified acoustic labels can outnumber bounded speaker previews without losing the transcript',async t=>{
- const data={...diary,expectedSpeakers:null,observedSpeakers:48,segments:Array.from({length:48},(_,i)=>({startMs:i*50,endMs:(i+1)*50,speaker:'SPEAKER_'+i})),samples:diary.samples,warnings:['Generated labels are not confirmed people.']};
+ const data={...diary,durationMs:9450,expectedSpeakers:null,observedSpeakers:189,segments:Array.from({length:189},(_,i)=>({startMs:i*50,endMs:(i+1)*50,speaker:'SPEAKER_'+i})),samples:[{...diary.samples[0],speaker:'SPEAKER_188',startMs:9400,endMs:9450}],warnings:['Generated labels are not confirmed people.']};
  assert.doesNotThrow(()=>diarizationSchema.parse(data));
- assert.throws(()=>diarizationSchema.parse({...data,observedSpeakers:101}));
+ assert.throws(()=>diarizationSchema.parse({...data,observedSpeakers:100001}));
+ assert.throws(()=>diarizationSchema.parse({...data,segments:[{startMs:0,endMs:1000,speaker:'SPEAKER_100000'}]}));
  assert.throws(()=>diarizationSchema.parse({...data,samples:Array(17).fill(diary.samples[0])}));
- const f=await fixture(t,{diarization:data,settings:{speakerCount:null}});await f.processing.tick();
+ const f=await fixture(t,{diarization:data,transcribe:async()=>({durationMs:9450,segments:[{startMs:9400,endMs:9450,text:'Generated final cluster'}]}),settings:{speakerCount:null}});await f.processing.tick();
  const detail=f.files.detail(f.id);assert.equal(detail.job.state,'succeeded');
- const artifact=detail.artifacts.find((a:any)=>a.kind==='diarization')!;assert.equal(artifact.observedSpeakers,48);
+ const artifact=detail.artifacts.find((a:any)=>a.kind==='diarization')!;assert.equal(artifact.observedSpeakers,189);
+ assert.equal(f.files.chunks(f.id)[0].fileEvidence?.speaker,'SPEAKER_188');
+ assert.equal(f.files.chunks(f.id)[0].fileEvidence?.speakerAttribution,undefined);
+ assert.deepEqual(f.files.asset(f.id,artifact.id,'speaker_samples/SPEAKER_188.wav').bytes,wave);
+ const reviews=new FileReviews(f.files,f.processing),dialogueId=f.files.chunks(f.id)[0].fileEvidence!.artifactId;
+ assert.throws(()=>reviews.nameSpeakers(f.id,{artifactId:dialogueId,names:{SPEAKER_189:'Generated unknown'}}));
+ reviews.nameSpeakers(f.id,{artifactId:dialogueId,names:{SPEAKER_188:'Generated owner-confirmed participant'}});
+ assert.equal(f.files.chunks(f.id)[0].fileEvidence?.speakerAttribution?.confirmedBy,'owner');
+ const exported=fileExportEntries(f.files,f.id);
+ assert.ok(exported.some(e=>e.name==='speaker_samples/SPEAKER_188.wav'));
+ assert.match(exported.find(e=>e.name==='已确认说话人.json')!.bytes.toString(),/Generated owner-confirmed participant/);
  assert.ok(detail.artifacts.some((a:any)=>a.kind==='transcript'));assert.ok(f.files.chunks(f.id).length>0);
  assert.equal(f.counts().asrCalls,1);assert.equal(f.counts().diaryCalls,1);
+});
+
+test('raw ASR word times outside a sentence retain evidence and use uncertain sentence alignment',()=>{
+ for(const words of [[{startMs:1000,endMs:2056,text:'Generated evidence'}],[{startMs:944,endMs:2000,text:'Generated evidence'}]]){
+  const input=transcriptSchema.parse({durationMs:3000,segments:[{startMs:1000,endMs:2000,text:'Generated evidence',words}]}),saved=structuredClone(input);
+  const aligned=alignDialogue(input,diary);
+  assert.deepEqual(input,saved);
+  assert.equal(aligned.segments[0].text,input.segments[0].text);
+  assert.equal(aligned.segments[0].startMs,1000);assert.equal(aligned.segments[0].endMs,2000);
+  assert.equal(aligned.segments[0].uncertain,true);
+  assert.ok(aligned.warnings?.some(w=>w.includes('超出句子范围')));
+ }
+ for(const words of [[{startMs:-1,endMs:1000,text:'Negative'}],[{startMs:2000,endMs:1000,text:'Invalid'}],[{startMs:1000,endMs:4001,text:'Outside recording'}],[{startMs:1500,endMs:1700,text:'First'},{startMs:1400,endMs:1600,text:'Backwards'}]])
+  assert.throws(()=>transcriptSchema.parse({durationMs:3000,segments:[{startMs:1000,endMs:2000,text:'Generated evidence',words}]}));
+});
+
+test('new audio contracts keep retained legacy recipes available and leave image output pins unchanged',()=>{
+ const recipes=new FileRecipeRegistry(),outputs=new FileOutputRegistry(),dispose=installFileRecipes(recipes,outputs);
+ try{
+  assert.deepEqual(defaultFileOutput({mediaTypes:['image/']}),{id:'mote.transcript',version:'1'});
+  assert.deepEqual(defaultFileOutput({mediaTypes:['text/']}),{id:'mote.transcript',version:'1'});
+  const audioOutput=defaultFileOutput({mediaTypes:['audio/']}),audioRecipe=defaultFileRecipe({dialogue:true});
+  assert.equal(audioOutput.version,'2');assert.equal(audioRecipe.version,'2');
+  assert.equal(recipes.resolve(audioRecipe,{semanticTurns:false}).pins.find(pin=>pin.name==='align')?.version,'2');
+  const legacy={id:'mote.audio-dialogue',version:'1'};
+  assert.equal(recipes.resolve(legacy,{semanticTurns:false}).pins.find(pin=>pin.name==='align')?.version,'1');
+  assert.deepEqual(outputs.decode({id:'mote.transcript',version:'1'},raw).transcript,raw);
+  const boundary={durationMs:3000,segments:[{startMs:1000,endMs:2000,text:'Generated',words:[{startMs:1000,endMs:2056,text:'Generated'}]}]};
+  assert.deepEqual(outputs.decode(audioOutput,boundary).transcript,boundary);
+  assert.throws(()=>outputs.decode({id:'mote.transcript',version:'1'},boundary));
+  assert.throws(()=>alignDialogue(boundary,diary,1));
+  assert.equal(alignDialogue(boundary,diary,2).segments[0].uncertain,true);
+ }finally{dispose();}
+});
+
+test('retained recording publishes ASR with a 56ms sentence-boundary discrepancy and survives restart',async t=>{
+ const raw={durationMs:3000,segments:[{startMs:1000,endMs:2000,text:'Generated evidence',words:[{startMs:1000,endMs:2056,text:'Generated evidence'}]}],uncorrected:true as const};
+ const f=await fixture(t,{transcribe:async()=>structuredClone(raw)});await f.processing.tick();
+ assert.equal(f.files.detail(f.id).job.state,'succeeded');
+ const original=f.files.detail(f.id).artifacts.find((a:any)=>a.kind==='transcript')!.id;
+ assert.deepEqual(f.processing.artifact(original).transcript,raw);
+ assert.equal(f.files.chunks(f.id)[0].fileEvidence?.uncertain,true);
+ await f.processing.close();const resumed=f.createProcessing();await resumed.runtime.ready;await resumed.tick();
+ assert.equal(f.files.detail(f.id).job.state,'succeeded');assert.equal(f.counts().asrCalls,1);assert.equal(f.counts().diaryCalls,1);
+ assert.deepEqual(resumed.artifact(original).transcript,raw);
 });
 
 test('actual Cordis registration and disposal; local pipeline checkpoints resume without repeating ASR',async t=>{

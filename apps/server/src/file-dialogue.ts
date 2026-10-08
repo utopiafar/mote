@@ -2,11 +2,11 @@ import { moteText } from './i18n.js';
 import {type Transcript,type Diarization,transcriptSchema} from '@mote/shared';
 
 /** Acoustic/time alignment only. It never identifies people or corrects recognized text. */
-export function alignDialogue(raw:Transcript,diarization:Diarization):Transcript {
+export function alignDialogue(raw:Transcript,diarization:Diarization,version:1|2=2):Transcript {
   type Segment=Transcript['segments'][number];
   const units:(Segment&{sentence:number;word:boolean})[]=[];
   const timeline=[...diarization.segments].sort((a,b)=>a.startMs-b.startMs);
-  let cursor=0,active:typeof timeline=[],overlappingWordTimings=false;
+  let cursor=0,active:typeof timeline=[],overlappingWordTimings=false,outsideSentenceWordTimings=false;
   for(const [sentenceIndex,sentence] of raw.segments.entries()){
     const words=sentence.words;
     // Valid ASR sentences may overlap. Expanding an earlier sentence into words
@@ -14,8 +14,11 @@ export function alignDialogue(raw:Transcript,diarization:Diarization):Transcript
     // Keep that whole sentence and disclose the lower attribution precision;
     // never sort recognized words, shift timestamps or modify the raw input.
     const matchingWords=!!words?.length&&words.map(w=>w.text).join('').trim()===sentence.text.trim();
-    const next=raw.segments[sentenceIndex+1],timingConflict=Boolean(matchingWords&&next&&words!.at(-1)!.startMs>next.startMs);
-    overlappingWordTimings ||= timingConflict;
+    const next=raw.segments[sentenceIndex+1],overlapping=Boolean(matchingWords&&next&&words!.at(-1)!.startMs>next.startMs);
+    const outsideSentence=Boolean(words?.some(word=>word.startMs<sentence.startMs||word.endMs>sentence.endMs+1));
+    if(version===1&&outsideSentence)throw new Error('Invalid word timeline');
+    const timingConflict=overlapping||outsideSentence;
+    overlappingWordTimings ||= overlapping;outsideSentenceWordTimings ||= outsideSentence;
     const isWords=matchingWords&&!timingConflict;
     const parts=isWords?words!:[sentence];
     for(const word of parts){
@@ -38,8 +41,9 @@ export function alignDialogue(raw:Transcript,diarization:Diarization):Transcript
     }else {const {sentence,word,...segment}=unit;turns.push(segment);}
     previous=unit;
   }
-  return transcriptSchema.parse({durationMs:raw.durationMs,segments:turns,uncorrected:true,engine:'mote-time-alignment-v1',warnings:[...diarization.warnings,
+  return transcriptSchema.parse({durationMs:raw.durationMs,segments:turns,uncorrected:true,engine:'mote-time-alignment-v'+version,warnings:[...diarization.warnings,
     ...(overlappingWordTimings?[moteText("部分词级时间与相邻片段重叠，已保留整句并标记说话人不确定；原始转写未改动。")]:[]),
+    ...(outsideSentenceWordTimings?[moteText("部分词级时间超出句子范围，已保留整句并标记说话人不确定；原始转写未改动。")]:[]),
     ...(diarization.overlapDetection==='unknown'?[moteText("重叠检测覆盖未知；未标记不代表没有重叠说话。")]:[])]});
 }
 

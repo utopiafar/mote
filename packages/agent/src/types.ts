@@ -51,8 +51,9 @@ export interface ContextReader {
   /** Host registry, snapshotted before each model run. */
   contextTools?():readonly import('./tool-contributions.js').ContextToolContribution[];
   catalog?(args:ContextRange&{path?:string;query?:string}):Promise<unknown>;
-  materialCatalog?(args:ContextRange&{sourceId?:string;kind?:string;query?:string}):Promise<{items:{id:string;ref:string;[field:string]:unknown}[];nextCursor:string|null}>;
-  materialRead?(args:ContextRange&{ref:string;offset?:number;length?:number}):Promise<{material:{id:string;ref:string;[field:string]:unknown};text:string;textRange:{offset:number;total:number;nextOffset:number|null};spans:{memberIds:string[];[field:string]:unknown}[];originalRefs:string[];originalRefsTotal:number;originalRefsTruncated:boolean}>;
+  /** Private host lineage receipt. Recording dependencies never grants model reads. */
+  materialCatalog?(args:ContextRange&{sourceId?:string;kind?:string;query?:string}):Promise<{items:{id:string;ref:string;[field:string]:unknown}[];nextCursor:string|null;disclosureDependencies?:import('@mote/shared').EvidenceDependencies}>;
+  materialRead?(args:ContextRange&{ref:string;offset?:number;length?:number}):Promise<{material:{id:string;ref:string;[field:string]:unknown};text:string;textRange:{offset:number;total:number;nextOffset:number|null};spans:{memberIds:string[];[field:string]:unknown}[];originalRefs:string[];originalRefsTotal:number;originalRefsTruncated:boolean;disclosureDependencies?:import('@mote/shared').EvidenceDependencies}>;
   segments?(args:ContextRange & {id?:string;query?:string}):Promise<{items:{members:string[];[key:string]:unknown}[];nextCursor:string|null;[key:string]:unknown}>;
   readImage?(args:import('@mote/shared').ImageReadInput):Promise<import('@mote/shared').ImageReadResult>;
   search(args: ContextRange & { query?: string }): Promise<ContextRecord[]>;

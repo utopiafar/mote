@@ -51,6 +51,30 @@ test('material catalog and read enforce host time and device scope',async t=>{
   assert.equal((await changed.call('evidence',{ids:[original.id]})).status,400);
 });
 
+test('complete host material receipts preserve lineage without authorizing metadata-only originals',async t=>{
+  const hidden=fixtureCaptureId('material-private-lineage'),receipt={version:1,complete:true,ids:[original.id,hidden]};
+  const {bridge,call}=await fixture(t,{...baseReader,materialCatalog:async()=>({items:[material],nextCursor:null,disclosureDependencies:receipt}),materialRead:async()=>({...page,disclosureDependencies:receipt})});
+  const catalog=await call('material_catalog');assert.equal(catalog.status,200);
+  assert.equal(JSON.stringify(catalog.body).includes(hidden),false);
+  assert.equal(bridge.evidenceDependencies.complete,true);
+  assert.equal(bridge.evidenceDependencies.ids.includes(hidden),true);
+  assert.equal((await call('evidence',{ids:[hidden]})).status,400);
+  const read=await call('material_read',{ref});assert.equal(read.status,200);
+  assert.equal(bridge.evidenceDependencies.complete,true);
+  assert.equal(bridge.records.has(hidden),false);
+  assert.equal((await call('evidence',{ids:[hidden]})).status,400);
+  assert.equal((await call('evidence',{ids:[original.id]})).status,200);
+});
+
+test('missing, incomplete and malformed material receipts remain conservative',async t=>{
+  for(const receipt of [undefined,{version:1,complete:false,ids:[original.id]},{version:1,complete:true,ids:['invalid-id']},{version:1,complete:true,ids:[original.id],extra:'untrusted'}]){
+    const {bridge,call}=await fixture(t,{...baseReader,materialCatalog:async()=>({items:[material],nextCursor:null,disclosureDependencies:receipt})});
+    assert.equal((await call('material_catalog')).status,200);
+    assert.equal(bridge.evidenceDependencies.complete,false);
+    assert.equal((await call('evidence',{ids:[original.id]})).status,400);
+  }
+});
+
 test('material context reaches both catalog and spans without admitting arbitrary metadata',async t=>{
   const attributionContext={version:1,ownerRelation:'mixed',basis:'owner_source',sourceDeclaration:{sourceId:'generated-source',version:2,ownerRelation:'mixed'}};
   const declared={...material,attributionContext};

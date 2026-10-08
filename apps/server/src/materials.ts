@@ -114,6 +114,7 @@ export class MaterialStore {
       CREATE TABLE IF NOT EXISTS material_searchable(material_id TEXT PRIMARY KEY REFERENCES material_heads(id) ON DELETE CASCADE);
       CREATE TABLE IF NOT EXISTS material_evidence(id TEXT PRIMARY KEY,material_id TEXT NOT NULL,revision TEXT NOT NULL,block_id TEXT NOT NULL,invalidated INTEGER NOT NULL DEFAULT 0,FOREIGN KEY(material_id,revision) REFERENCES material_revisions(material_id,revision) ON DELETE CASCADE);
       CREATE INDEX IF NOT EXISTS material_evidence_parent ON material_evidence(material_id,revision);
+      CREATE INDEX IF NOT EXISTS material_evidence_invalidated ON material_evidence(material_id,id) WHERE invalidated=1;
       CREATE TABLE IF NOT EXISTS material_evidence_context(
         anchor_id TEXT PRIMARY KEY REFERENCES material_evidence(id) ON DELETE CASCADE,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS material_evidence_dependencies(
@@ -151,6 +152,7 @@ export class MaterialStore {
         UNIQUE(material_id,from_revision,idx));
       CREATE INDEX IF NOT EXISTS material_block_versions_range ON material_block_versions(material_id,start_offset,from_sequence,until_sequence);
       CREATE INDEX IF NOT EXISTS material_block_versions_index ON material_block_versions(material_id,idx,from_sequence,until_sequence);
+      CREATE INDEX IF NOT EXISTS material_block_versions_anchor ON material_block_versions(material_id,anchor_id,from_sequence,until_sequence);
       CREATE TABLE IF NOT EXISTS material_blocks(
         material_id TEXT NOT NULL,revision TEXT NOT NULL,idx INTEGER NOT NULL,block_id TEXT NOT NULL,
         kind TEXT NOT NULL,format TEXT,payload_hash TEXT NOT NULL REFERENCES material_block_payloads(hash),
@@ -159,6 +161,7 @@ export class MaterialStore {
         anchor_id TEXT,identity_hash TEXT,PRIMARY KEY(material_id,revision,idx),UNIQUE(material_id,revision,block_id),
         FOREIGN KEY(material_id,revision) REFERENCES material_revisions(material_id,revision) ON DELETE CASCADE);
       CREATE INDEX IF NOT EXISTS material_blocks_range ON material_blocks(material_id,revision,end_offset);
+      CREATE INDEX IF NOT EXISTS material_blocks_anchor ON material_blocks(material_id,revision,anchor_id);
       CREATE TABLE IF NOT EXISTS material_members(
         material_id TEXT NOT NULL,revision TEXT NOT NULL,idx INTEGER NOT NULL,id TEXT NOT NULL,
         kind TEXT NOT NULL,ref TEXT NOT NULL,source_revision TEXT,locator TEXT,
@@ -393,11 +396,27 @@ export class MaterialStore {
       if(own)db.exec('COMMIT');
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
-  evidenceIds(ref:string,blockIds?:readonly string[]){const material=this.get(ref);if(!material)return [];
+  evidenceIds(ref:string,blockIds?:readonly string[],maximum?:number){const material=this.get(ref);if(!material)return [];
+    if(maximum!==undefined&&(!Number.isSafeInteger(maximum)||maximum<1||maximum>20000))throw new StoreError('Invalid material evidence limit');
+    const limit=maximum===undefined?'':' LIMIT ?',limitArgs=maximum===undefined?[]:[maximum];
     if(this.codingLayout(material.id,material.revision))return (this.store.db.prepare(`SELECT anchor_id FROM material_block_versions
-      WHERE material_id=? AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?) AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx`)
-      .all(material.id,material.sequence,material.sequence,...(blockIds?[JSON.stringify(blockIds)]:[])) as {anchor_id:string}[]).map(row=>row.anchor_id);
-    return this.store.db.prepare(`SELECT anchor_id FROM material_blocks WHERE material_id=? AND revision=? AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx`).all(material.id,material.revision,...(blockIds?[JSON.stringify(blockIds)]:[])).map(r=>String(r.anchor_id));}
+      WHERE material_id=? AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?) AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx${limit}`)
+      .all(material.id,material.sequence,material.sequence,...(blockIds?[JSON.stringify(blockIds)]:[]),...limitArgs) as {anchor_id:string}[]).map(row=>row.anchor_id);
+    return this.store.db.prepare(`SELECT anchor_id FROM material_blocks WHERE material_id=? AND revision=? AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx${limit}`).all(material.id,material.revision,...(blockIds?[JSON.stringify(blockIds)]:[]),...limitArgs).map(r=>String(r.anchor_id));}
+  /** An explicit owner selection pins the named outputs containing its current
+   * anchors. Automatic source defaults cannot silently discard selected OCR or
+   * other independently ready outputs. Unmapped legacy blocks stay conservative. */
+  requirementsForEvidence(ref:string,ids:readonly string[]):string[] {
+    const material=this.get(ref);
+    if(!material||this.get(material.id)?.ref!==material.ref||!ids.length)throw new StoreError('Selected Material evidence is unavailable',409);
+    const current=new Set(this.evidenceIds(ref));
+    if(ids.some(id=>!current.has(id)||!this.isCurrentEvidence(id)))throw new StoreError('Selected Material evidence changed',409);
+    const blocks=new Set(this.store.db.prepare('SELECT block_id FROM material_evidence WHERE material_id=? AND id IN (SELECT value FROM json_each(?))')
+      .all(material.id,JSON.stringify(ids)).map(row=>String(row.block_id)));
+    const outputs=(material.artifacts??[]).filter(output=>output.state==='ready'&&output.blockIds?.some(id=>blocks.has(id)));
+    const mapped=new Set(outputs.flatMap(output=>output.blockIds??[]));
+    return outputs.length>0&&outputs.length<=64&&[...blocks].every(id=>mapped.has(id))?outputs.map(output=>output.key):['material'];
+  }
   /** A named output pins its declared blocks, not unrelated processing state.
    * Older organizers without block mappings retain whole-revision semantics. */
   input(ref:string,rawRequired:readonly string[]):(MaterialInputPin&ReturnType<typeof materialDependencyStatus>)|undefined {

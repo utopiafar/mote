@@ -48,7 +48,8 @@ test('real server candidate grants cannot bypass bridge disclosure after a mater
           assert.equal((await call('file_chunks',{id:reference})).status,400);
           assert.equal((await call('source_history',{id:reference})).status,400);
         }
-        assert.equal(bridge.records.has(id),false);assert.equal(bridge.evidenceDependencies.ids.includes(id),false);
+        assert.equal(bridge.records.has(id),false);
+        assert.equal(bridge.evidenceDependencies.ids.includes(id),true,'catalog metadata lineage is recorded privately, without granting evidence reads or citations');
         assert.throws(()=>parseAnswer(JSON.stringify({answer:'Generated omitted citation',citationIds:[id]}),bridge.records),/not retrieved/);
       }
       assert.equal((await call('read_raw',{id:ids[1]})).status,404,'read_raw is not an exposed tool in this production revision');

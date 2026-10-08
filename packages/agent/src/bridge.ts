@@ -219,6 +219,13 @@ export async function startBridge(
     (!bounds.contextEvidenceDependencies||bounds.contextEvidenceDependencies.complete)&&
     (!bounds.openingMemories?.length||bounds.contextEvidenceDependencies?.complete===true&&bounds.contextEvidenceDependencies.ids.length>0)&&
     (!bounds.taskContext?.previousSummary&&!bounds.taskContext?.turns?.length||bounds.contextEvidenceDependencies?.complete===true);
+  const rememberDisclosureDependencies=(receipt:unknown)=>{
+    const value=receipt&&typeof receipt==='object'&&!Array.isArray(receipt)?receipt as Record<string,unknown>:undefined;
+    if(!value||value.version!==1||typeof value.complete!=='boolean'||!Array.isArray(value.ids)||value.ids.length>1000||
+      Object.keys(value).some(key=>!['version','complete','ids'].includes(key))||value.ids.some(id=>typeof id!=='string'||!parseEvidenceId(id))){completeLineage=false;return;}
+    completeLineage &&= value.complete;
+    for(const id of value.ids as string[])disclosedIds.add(parseEvidenceId(id)!);
+  };
   const restricted = bounds.evidenceIds !== undefined;
   const limits=retrievalLimits(bounds);
   const permitted = new Map<string,ContextRecord>();
@@ -423,7 +430,7 @@ export async function startBridge(
         if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>1_500_000)throw budgetError();
         deliveredCharacters+=serialized.length;
         for(const item of items)pinnedMaterials.add(item.ref as string);
-        completeLineage=false;
+        rememberDisclosureDependencies(page.disclosureDependencies);
         trace.push({tool,arguments:effective,count:items.length});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:items.length});res.end(serialized);return;
       }
       if(tool==='material_read'){
@@ -470,7 +477,7 @@ export async function startBridge(
           }
           deliveredCharacters+=serialized.length;
           for(const id of ids){discovered.add(id);disclosedIds.add(id);}
-          completeLineage=false;
+          rememberDisclosureDependencies(page.disclosureDependencies);
           trace.push({tool,arguments:{ref:args.ref,offset,length},count:1,materialPage:{readAttempts,requestedLength:Number(length),returnedLength:page.text.length,budgetLimited:readAttempts>1}});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
         }
         throw budgetError();

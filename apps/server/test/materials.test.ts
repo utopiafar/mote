@@ -218,3 +218,29 @@ test('source invalidation permits an identical rebuild once, preserves other anc
   assert.throws(()=>reopened.publish(illegal,{expectedRevision:renamed.revision}),{statusCode:409});
   assert.equal(reopened.get(value.id)?.ref,renamed.ref,'invalid provenance rolls back publication');
 });
+
+test('revalidating a rebuilt long transcript remains bounded with invalidated historical anchors',async t=>{
+  const {store,materials}=fixture(t),captureId=randomUUID();
+  await store.ingest({id:captureId,deviceId:'fixture',deviceName:'Generated',platform:'import',source:'note',
+    capturedAt:'2026-09-24T01:00:00Z',durationMs:0,ocrText:'Generated transcript original'});
+  const value:MaterialDraft={...draft('fixture-source','long-transcript'),
+    members:[{id:'original',kind:'capture',ref:'capture:'+captureId}],
+    blocks:Array.from({length:2000},(_,index)=>({id:'turn-'+index,kind:'text' as const,format:'plain',
+      text:'Generated anonymous turn '+index,memberIds:['original']}))};
+  const first=materials.publish(value),historical=materials.evidenceIds(first.ref);
+  store.invalidateMemoryEvidence(captureId);
+  assert.equal(materials.get(value.id)?.coverage.reason,'source_evidence_changed');
+  const rebuilt=new MaterialStore(store),current=rebuilt.publish(value,{expectedRevision:first.revision});
+  const anchors=rebuilt.evidenceIds(current.ref);
+  assert.equal(anchors.length,2000);
+  assert.equal(rebuilt.isCurrentEvidence(historical[0]),false);
+  assert.equal(rebuilt.isCurrentEvidence(anchors[0]),true);
+  const started=performance.now();
+  // Model handoffs revalidate many anchors of this same current Material. Old
+  // invalidations must not trigger a nested scan of every active transcript block.
+  for(let index=0;index<100;index++)assert.equal(rebuilt.get(current.ref)?.coverage.state,'complete');
+  assert.ok(performance.now()-started<2000,'100 current transcript fences must finish within two seconds');
+  store.invalidateMemoryEvidence(anchors[0]);
+  assert.equal(rebuilt.get(current.ref)?.coverage.reason,'source_evidence_changed','indexing must preserve live revocation');
+  assert.equal(rebuilt.get(first.ref)?.revision,first.revision,'the immutable historical revision remains addressable');
+});

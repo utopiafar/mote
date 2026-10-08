@@ -36,6 +36,35 @@ function fakeRunner(){
   return {runner,jobs,created,ran,cancelled};
 }
 
+for(const planned of [false,true])for(const prior of ['paused','failed'])test(`explicitly resumed ${prior} product rejoins the ${planned?'planned':'legacy'} queue after restart without renewing a grant`,async t=>{
+  const {store,materials,work,draft,receive,advance}=fixture(t),fake=fakeRunner(),material=materials.publish(draft());receive('raw');work.observe(material.id,['source-body'],{inputKey:'raw',change:'source'});
+  const planner=async(catalog:import('../src/material-memory-work.js').MemoryWorkCandidate[])=>[{members:catalog.map(item=>item.key),goal:'Inspect generated original',instruction:'Preserve identity'}];
+  const drain=(queue:MaterialMemoryWork,enabled=true)=>planned?queue.drainPlanned(fake.runner,enabled,planner):queue.drain(fake.runner,enabled);
+  await drain(work);await new Promise(resolve=>setImmediate(resolve));fake.jobs.get('memory-1')!.status=prior;advance(6000);await drain(work);
+  assert.equal(store.db.prepare('SELECT ready_at FROM material_memory_requests').get()!.ready_at,Number.MAX_SAFE_INTEGER);
+  fake.ran.length=0;
+  const recovered=new MaterialMemoryWork(store,materials,()=>7000);
+  await drain(recovered);await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(fake.ran,[],'terminal failures and pauses do not automatically retry');
+  fake.jobs.get('memory-1')!.status='queued';
+  await drain(recovered,false);await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(fake.ran,[],'disabled scheduling cannot launch an explicit resume');
+  await drain(recovered);await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(fake.ran,['memory-1']);assert.equal(fake.created.length,1);
+  const row=store.db.prepare('SELECT ready_at,error,job_id FROM material_memory_requests').get()!;
+  assert.equal(row.job_id,'memory-1');assert.equal(row.error,null);assert.ok(Number(row.ready_at)<Number.MAX_SAFE_INTEGER);
+  assert.equal(store.db.prepare('SELECT job_id FROM memory_input_authorizations').get()!.job_id,'memory-1','the existing claim is preserved');
+});
+
+test('dormant queue rotation skips a full page of paused products and preserves a revoked resumed grant',async t=>{
+  const {store,materials,work,draft,receive,advance}=fixture(t),fake=fakeRunner();
+  for(let n=0;n<12;n++){const externalId='item-'+String(n).padStart(2,'0'),material=materials.publish({...draft(),id:materialId('generated-source',externalId),origin:{sourceId:'generated-source',externalId}});receive(externalId);work.observe(material.id,['source-body'],{inputKey:externalId,change:'source'});}
+  work.drain(fake.runner,true,100);await new Promise(resolve=>setImmediate(resolve));for(const job of fake.jobs.values())job.status='paused';advance(6000);work.drain(fake.runner,true,100);fake.ran.length=0;
+  const rows=store.db.prepare('SELECT material_id,scope,job_id FROM material_memory_requests ORDER BY material_id,scope').all(),last=rows.at(-1)!;fake.jobs.get(String(last.job_id))!.status='queued';
+  const recovered=new MaterialMemoryWork(store,materials,()=>7000);recovered.drain(fake.runner,true,10);await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(fake.ran,[]);recovered.drain(fake.runner,true,10);await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(fake.ran,[last.job_id]);
+  const revoked=rows[0];fake.jobs.get(String(revoked.job_id))!.status='queued';store.db.prepare('UPDATE memory_input_authorizations SET authorized=0 WHERE job_id=?').run(revoked.job_id);
+  recovered.drain(fake.runner,true,10);await new Promise(resolve=>setImmediate(resolve));assert.equal(fake.ran.includes(String(revoked.job_id)),false);
+  recovered.drain(fake.runner,false,10);assert.ok(fake.cancelled.includes(String(revoked.job_id)));
+  assert.equal(fake.created.length,12);
+});
+
 test('model-selected packages atomically consume independent receipts and preserve cross-source identities',async t=>{
   const {store,materials,work,draft,receive}=fixture(t),fake=fakeRunner();
   const one=materials.publish(draft('Generated first diary'));receive('first-raw');work.observe(one.id,['source-body'],{inputKey:'first-raw',change:'source'});
