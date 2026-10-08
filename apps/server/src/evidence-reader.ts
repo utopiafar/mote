@@ -299,7 +299,7 @@ export class EvidenceReader {
       if(!scoped||!this.materialPlanAllowed(material.id,policy)){unavailable.push(material.ref);return;}
       const sourcePin=materialSourcePin(this.store,this.materials!,material,this.sourcePipelines?.archive);
       for(const strategy of bindings){
-        const required=[...(strategy.requires??this.sourcePipelines?.memoryWork.sourceRequirements(material.ref)??['material'])];
+        const required=[...(strategy.requires??(allowList?this.materials!.requirementsForEvidence(material.ref,allowList):this.sourcePipelines?.memoryWork.sourceRequirements(material.ref))??['material'])];
         manualPlans.push({materialId:material.id,selectedRef:material.ref,sourcePin,strategy,required,...(allowList?{evidenceAllowList:allowList}:{})});
       }
       // Only the built-in authored projection is known to represent this one

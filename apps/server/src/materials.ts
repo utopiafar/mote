@@ -403,6 +403,20 @@ export class MaterialStore {
       WHERE material_id=? AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?) AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx${limit}`)
       .all(material.id,material.sequence,material.sequence,...(blockIds?[JSON.stringify(blockIds)]:[]),...limitArgs) as {anchor_id:string}[]).map(row=>row.anchor_id);
     return this.store.db.prepare(`SELECT anchor_id FROM material_blocks WHERE material_id=? AND revision=? AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx${limit}`).all(material.id,material.revision,...(blockIds?[JSON.stringify(blockIds)]:[]),...limitArgs).map(r=>String(r.anchor_id));}
+  /** An explicit owner selection pins the named outputs containing its current
+   * anchors. Automatic source defaults cannot silently discard selected OCR or
+   * other independently ready outputs. Unmapped legacy blocks stay conservative. */
+  requirementsForEvidence(ref:string,ids:readonly string[]):string[] {
+    const material=this.get(ref);
+    if(!material||this.get(material.id)?.ref!==material.ref||!ids.length)throw new StoreError('Selected Material evidence is unavailable',409);
+    const current=new Set(this.evidenceIds(ref));
+    if(ids.some(id=>!current.has(id)||!this.isCurrentEvidence(id)))throw new StoreError('Selected Material evidence changed',409);
+    const blocks=new Set(this.store.db.prepare('SELECT block_id FROM material_evidence WHERE material_id=? AND id IN (SELECT value FROM json_each(?))')
+      .all(material.id,JSON.stringify(ids)).map(row=>String(row.block_id)));
+    const outputs=(material.artifacts??[]).filter(output=>output.state==='ready'&&output.blockIds?.some(id=>blocks.has(id)));
+    const mapped=new Set(outputs.flatMap(output=>output.blockIds??[]));
+    return outputs.length>0&&outputs.length<=64&&[...blocks].every(id=>mapped.has(id))?outputs.map(output=>output.key):['material'];
+  }
   /** A named output pins its declared blocks, not unrelated processing state.
    * Older organizers without block mappings retain whole-revision semantics. */
   input(ref:string,rawRequired:readonly string[]):(MaterialInputPin&ReturnType<typeof materialDependencyStatus>)|undefined {
