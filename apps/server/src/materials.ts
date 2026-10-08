@@ -224,12 +224,15 @@ export class MaterialStore {
     if(anchor)return this.get(String(anchor.material_id))?.attributionContext??unknownAttributionContext();
     const file=this.store.db.prepare('SELECT capture_id FROM file_chunks WHERE id=?').get(record.id);
     const captureId=String(file?.capture_id??record.id);
+    // Keep the selected ancestor set outside the member join. Without CROSS
+    // JOIN, SQLite may use only the kind prefix and scan every capture member
+    // for each image fingerprint, delaying worker probes during bulk imports.
     const parents=this.store.db.prepare(`WITH RECURSIVE originals(id) AS (SELECT ? UNION SELECT l.parent_id FROM file_evidence_links l JOIN originals o ON l.capture_id=o.id)
-      SELECT DISTINCT h.id,h.revision,r.manifest FROM material_heads h
-      JOIN material_members m ON m.material_id=h.id AND m.revision=h.revision
+      SELECT DISTINCT h.id,h.revision,r.manifest FROM originals o
+      CROSS JOIN material_members m ON m.kind='capture' AND m.ref='capture:'||o.id
+      JOIN material_heads h ON h.id=m.material_id AND h.revision=m.revision
       JOIN material_revisions r ON r.material_id=h.id AND r.revision=h.revision
-      JOIN originals o ON m.ref='capture:'||o.id
-      WHERE m.kind='capture' AND h.retired=0 AND h.sequence>=h.min_visible_sequence ORDER BY h.id`).iterate(captureId);
+      WHERE h.retired=0 AND h.sequence>=h.min_visible_sequence ORDER BY h.id`).iterate(captureId);
     let first:AttributionContext|undefined,firstJson:string|undefined,conflict=false,total=0;
     const digest=createHash('sha256'),items:NonNullable<AttributionContext['materialDeclarations']>['items']=[];
     for(const parent of parents){
@@ -491,8 +494,18 @@ export class MaterialStore {
         row.context_json===(block.kind==='text'&&block.evidenceContext?JSON.stringify(block.evidenceContext):null);
     });
   }
+  /** Processing may revisit a readiness state without restoring historical content. */
+  private sameReadinessBody(head:HeadRow,draft:MaterialDraft):boolean {
+    const current=this.get(formatMaterialRef(head.id,head.revision));if(!current)return false;
+    const body=(value:MaterialDraft)=>{
+      const {coverage:_,artifacts,blocks,...rest}=value;
+      return canonicalContext({...rest,artifacts:artifacts?.map(({state:__,reason:___,...artifact})=>artifact),
+        blocks:blocks.map(block=>{if(!block.evidenceIds?.length){const {evidenceIds:__,...plain}=block;return plain;}return block;})});
+    };
+    return JSON.stringify(body(this.contextDraft(current)))===JSON.stringify(body(draft));
+  }
   /** Same draft is idempotent. A changed head requires explicit compare-and-swap. */
-  publish(raw:MaterialDraft|MaterialAppendDraft,options:{expectedRevision?:string|null;codingSnapshot?:CodingArchiveSnapshot}={}):MaterialRecord & {changed:boolean} {
+  publish(raw:MaterialDraft|MaterialAppendDraft,options:{expectedRevision?:string|null;codingSnapshot?:CodingArchiveSnapshot;processingStateTransition?:boolean}={}):MaterialRecord & {changed:boolean} {
     if('mode' in raw)return this.publishAppend(raw,options);
     const draft=this.withContext(draftSchema.parse(raw)),{id}=draft;
     if(id!==materialId(draft.origin.sourceId,draft.origin.externalId))throw new StoreError('Material ID does not match source identity',409);
@@ -518,9 +531,11 @@ export class MaterialStore {
         return {...this.record(original,prior),changed:false};
       }
     }
-    const revision=original&&(original.min_visible_sequence>original.sequence||rebuilding)?
+    let revision=original&&(original.min_visible_sequence>original.sequence||rebuilding)?
       hash(JSON.stringify([draft,options.codingSnapshot?.checkpoint??null,original.min_visible_sequence,original.sequence+1])):draftHash;
     if(original&&!original.retired&&original.revision===revision)return {...this.record(original,this.version(id,revision)!),changed:false};
+    if(original&&options.processingStateTransition&&this.version(id,revision)&&this.sameReadinessBody(original,draft))
+      revision=hash(JSON.stringify([draft,'processing-state-transition',original.sequence+1]));
     const releases:(()=>void)[]=[];
     try{
       for(const assetHash of new Set(draft.blocks.flatMap(block=>block.kind==='asset'?[block.hash]:[]))){

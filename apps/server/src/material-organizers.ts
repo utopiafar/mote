@@ -553,7 +553,7 @@ export class MaterialOrganizerRuntime {
         if(prepared.draft){
           const prior=materials.get(input.materialId);
           if(!prior&&(store.db.prepare('SELECT retired FROM material_heads WHERE id=?').get(input.materialId) as {retired:number}|undefined)?.retired)materials.forget(input.materialId);
-          materials.publish(prepared.draft,{expectedRevision:prior?.revision??null});
+          materials.publish(prepared.draft,{expectedRevision:prior?.revision??null,processingStateTransition:input.organizerId===sourceItem.id});
           materials.setSearchable(input.materialId,true);
           if(input.organizerId===sourceItem.id){
             const required=prepared.draft.artifacts?.some(item=>item.key==='image-understanding')?'image-understanding':prepared.draft.artifacts?.some(item=>item.key==='original')?'extracted-text':'source-body';

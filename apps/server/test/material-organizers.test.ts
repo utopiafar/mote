@@ -22,6 +22,25 @@ function fixture(t:TestContext){
 }
 const at=(seconds:number)=>new Date(Date.parse('2026-09-20T00:00:00.000Z')+seconds*1000).toISOString();
 
+test('retained uploaded recording moves from pending through blocked to pending again without losing its original or anchors',async t=>{
+  const {store,sources,files,materials,organizers}=fixture(t);
+  sources.register({id:'fixture-readiness',name:'Generated audio source',kind:'local-files',deviceId:'fixture-device',platform:'import',retention:'archive'});
+  const bytes=Buffer.from('Generated retained recording');
+  const upload=files.begin({sourceId:'fixture-readiness',previousRevision:null,item:{externalId:'recording',revision:'v1',observedAt:at(0),title:'Generated recording',text:'',kind:'file',layer:'original',mimeType:'audio/wav'},relativePath:'generated.wav',sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});
+  files.part(upload.uploadId,0,bytes,()=>{});const receipt=await files.commit(upload.uploadId,()=>{});
+  await organizers.tick(20);const id=materialId('fixture-readiness','recording'),pending=materials.get(id)!,anchors=materials.evidenceIds(id);
+  assert.equal(pending.coverage.state,'pending');
+  store.db.prepare("UPDATE file_jobs SET state='blocked',error='processor_still_running' WHERE capture_id=?").run(receipt.id);
+  await organizers.tick(20);const blocked=materials.get(id)!;assert.equal(blocked.coverage.state,'partial');
+  store.db.prepare("UPDATE file_jobs SET state='waiting',error=NULL WHERE capture_id=?").run(receipt.id);
+  await organizers.tick(20);const resumed=materials.get(id)!;
+  assert.equal(resumed.coverage.state,'pending');assert.equal(resumed.artifacts?.find(a=>a.key==='extracted-text')?.state,'pending');
+  assert.notEqual(resumed.revision,pending.revision);assert.equal(resumed.sequence,blocked.sequence+1);
+  assert.equal(materials.get(blocked.ref)?.coverage.state,'partial');assert.deepEqual(materials.evidenceIds(id),anchors);
+  assert.ok(materials.read(id).spans.some(span=>span.asset?.hash===sha256(bytes)));assert.equal(organizers.status().pendingSteps,0);
+  const revision=resumed.revision;assert.equal(await organizers.tick(20),0);assert.equal(materials.get(id)?.revision,revision);
+});
+
 test('formal evidence preserves declared source role and three distinct times without interpreting body metadata',async t=>{
   const {sources,materials,organizers}=fixture(t);
   sources.register({id:'fixture-provenance',name:'Generated source',kind:'custom',deviceId:'fixture-device',platform:'import',retention:'archive'});
