@@ -82,9 +82,21 @@ class AudioPrimitives(unittest.TestCase):
             self.assertIsNone(result['expectedSpeakers'])
 
     def test_label_output_keeps_a_hard_bound(self):
-        segments = [SimpleNamespace(speaker=i, start=i, end=i + 0.5) for i in range(101)]
+        segments = (SimpleNamespace(speaker=i, start=i, end=i + 0.5) for i in range(100001))
         with self.assertRaises(OverflowError):
-            diarization_output('no-file-needed', segments, 102000, 0)
+            diarization_output('no-file-needed', segments, 100002000, 0)
+
+    def test_long_recording_fragmentation_retains_every_model_label(self):
+        for count in (140, 189):
+            segments = [SimpleNamespace(speaker=i, start=i * 0.5, end=i * 0.5 + 0.4) for i in range(count)]
+            # Generated sample bytes; no personal recording or model inference.
+            with patch('mote_audio.sample_bytes', return_value=b'generated-preview'):
+                result = diarization_output('generated.wav', segments, count * 500, 0)
+            self.assertEqual(result['observedSpeakers'], count)
+            self.assertEqual([r['speaker'] for r in result['segments']], ['SPEAKER_' + str(i) for i in range(count)])
+            self.assertEqual(len(result['samples']), 16)
+            self.assertIsNone(result['expectedSpeakers'])
+            self.assertTrue(any('不等于已确认的真人数量' in warning for warning in result['warnings']))
 
     def test_exclusive_samples_exclude_other_speakers(self):
         rows = [{'startMs': 0, 'endMs': 5000, 'speaker': 'SPEAKER_0'},

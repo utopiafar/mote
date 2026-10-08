@@ -48,7 +48,7 @@ flowchart LR
 
 ## 默认组合与自定义组合
 
-默认配方为 `mote.file-extraction@1` 的提取，以及 `mote.audio-dialogue@1` 的提取 → 说话人分离 → 对齐 → 可选语义轮次。提供方可通过 `recipe: {id, version}` 选择另一条 DAG，通过 `output: {id, version}` 选择原生输出类型。
+默认配方为 `mote.file-extraction@1` 的提取，以及 `mote.audio-dialogue@2` 的提取 → 说话人分离 → 对齐 → 可选语义轮次。音频默认输出为 `mote.transcript@2`，保留录音范围内的原生词级时间差异；图片和文字提取继续使用 `mote.transcript@1`。旧的音频配方、对齐阶段及输出版本仍注册，保留产物可读取；不会因升级自动重算已完成的文件。提供方可通过 `recipe: {id, version}` 选择另一条 DAG，通过 `output: {id, version}` 选择原生输出类型。
 
 自定义阶段用 `context.dependencies` 获得依赖产物 ID，`context.readArtifact` 只能读声明的依赖。通过 `context.transform(outputType, execute)` 计算原生产物；宿主负责校验投影、持久检查点、提交和索引。需要复用默认阶段时使用 `mote.extract` 等已有注册。默认说话人阶段分别使用名为 `extract`、`diarize`、`align` 的依赖。
 

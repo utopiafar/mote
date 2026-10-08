@@ -11,7 +11,11 @@ import socket
 import subprocess
 import wave
 
-MAX_SPEAKER_LABELS = 100
+MAX_DIARIZATION_SEGMENTS = 100000
+# A model can fragment a long recording into many anonymous clusters. Keep
+# labels bounded by the existing segment budget, independently of person-count
+# constraints and preview clips; never merge them to satisfy a presentation cap.
+MAX_SPEAKER_LABELS = MAX_DIARIZATION_SEGMENTS
 MAX_SPEAKER_PREVIEWS = 16
 
 
@@ -151,7 +155,7 @@ def diarization_output(normalized, segments, duration_ms, speaker_count):
         start, end = max(0, round(segment.start * 1000)), min(round(duration_ms), round(segment.end * 1000))
         if end > start:
             rows.append({'startMs': start, 'endMs': end, 'speaker': labels[segment.speaker]})
-        if len(rows) > 100000 or len(labels) > MAX_SPEAKER_LABELS:
+        if len(rows) > MAX_DIARIZATION_SEGMENTS or len(labels) > MAX_SPEAKER_LABELS:
             raise OverflowError('Diarization output exceeds limit')
     warnings = []
     if speaker_count and len(labels) != speaker_count:

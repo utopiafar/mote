@@ -266,6 +266,30 @@ export class EvidenceReader {
     const page=this.materials.list({query:args.query,sourceId:args.sourceId,kind:args.kind,deviceId:args.deviceId,after:args.after,before:args.before,limit:args.limit,cursor:args.cursor});
     return {...page,items:page.items.filter(item=>Boolean(this.scopedMaterial(item.ref,args)))};
   }
+  /** Record metadata/body lineage without loading text or expanding read grants.
+   * If a bounded proof cannot cover all contributors, keep legacy invalidation. */
+  private materialDisclosureDependencies(refs:readonly string[]){
+    const ids=new Set<string>();let complete=true;const maximum=1000;
+    const add=(id:string)=>{if(ids.has(id))return;if(ids.size>=maximum){complete=false;return;}ids.add(id);};
+    for(const ref of refs){
+      if(ids.size>=maximum){complete=false;break;}
+      const material=this.materials?.get(ref);if(!material){complete=false;continue;}
+      const anchors=this.materials!.evidenceIds(ref,undefined,maximum-ids.size+1);
+      for(const id of anchors)add(id);
+      if(!material.memberCount)complete=false;
+      for(let offset=0;offset<material.memberCount&&offset<=maximum;offset+=200){
+        const page=this.materials!.members(ref,{offset,limit:200});
+        for(const member of page.items){
+          if(member.kind==='archive'){if(!anchors.length)complete=false;continue;}
+          const id=member.kind==='capture'?evidenceRefId(member.ref,'capture'):undefined;
+          if(id)add(id);else complete=false;
+        }
+        if(page.nextOffset!==null&&page.nextOffset>maximum){complete=false;break;}
+      }
+      if(ids.size>=maximum&&refs.at(-1)!==ref)complete=false;
+    }
+    return {version:1 as const,complete,ids:[...ids]};
+  }
   /** A manual selection names fixed originals and recipes, including inputs
    * still being processed. It never authorizes a later range rescan. */
   memoryPlanSelection(scope:Range,bindings:readonly MemoryRecipeBinding[],policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy,evidenceIds?:readonly string[],maximum=20000){
@@ -799,8 +823,8 @@ export class EvidenceReader {
     };
     return {
       catalog:async args=>contextIndex(this.store,{page:scope=>this.agentMemoryPage({...scope,asOf:scope?.asOf??options.currentContextTime?.()},policy,operation('discover'))},this.sources,args,scope=>this.agentSegments(scope,policy,operation('discover'))),
-      materialCatalog:async args=>{const page=this.materialCatalog(args);return {...page,items:page.items.filter(material=>this.materialExposure(material,operation('discover'),policy))};},
-      materialRead:async args=>{const material=this.materials?.get(args.ref);if(!material||this.materials?.get(material.id)?.ref!==material.ref||!this.materialExposure(material,operation('expand'),policy))throw new StoreError('Material not found in selected scope',404);const page=this.materialRead(args);grant(page.originalRefs,{kind:'material',ref:material.ref,scope:{...args}});return page;},
+      materialCatalog:async args=>{const page=this.materialCatalog(args),items=page.items.filter(material=>this.materialExposure(material,operation('discover'),policy));return {...page,items,disclosureDependencies:this.materialDisclosureDependencies(items.map(item=>item.ref))};},
+      materialRead:async args=>{const material=this.materials?.get(args.ref);if(!material||this.materials?.get(material.id)?.ref!==material.ref||!this.materialExposure(material,operation('expand'),policy))throw new StoreError('Material not found in selected scope',404);const page=this.materialRead(args);grant(page.originalRefs,{kind:'material',ref:material.ref,scope:{...args}});return {...page,disclosureDependencies:this.materialDisclosureDependencies([material.ref])};},
       readImage:async (input)=>{
         const {id,attachmentId}=input;
         if(!options.allowQueryImages?.())throw new ContextToolError('image_disclosure_disabled','Original-image access for queries is off. The owner must enable on-demand image access in Central Perception settings before a new query. Do not repeat this image request.','stop');

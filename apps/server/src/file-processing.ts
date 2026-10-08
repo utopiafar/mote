@@ -21,7 +21,7 @@ import {FileProcessorRuntime,isLoopback,type FileProcessor,type TranscriptionPro
 import {MEDIA_CATALOG,type MediaAssets} from './media-assets.js';
 import {fileAttachmentAvailable} from './file-attachments.js';
 import {alignDialogue,applySemanticGroups,TURN_GROUP_PROMPT} from './file-dialogue.js';
-import {defaultFileRecipe,TRANSCRIPT_OUTPUT,type FileRecipeContext} from './file-recipes.js';
+import {defaultFileRecipe,defaultFileOutput,type FileRecipeContext} from './file-recipes.js';
 export {HttpTranscriptionProvider,type TranscriptionProvider} from './file-processors.js';
 
 import {createDefaultFilePolicy,publicFilePolicy,parseFilePolicy,selectFilePolicy,effectiveFileSettings,type AppliedFilePolicy} from './file-policy.js';
@@ -103,7 +103,7 @@ export class FileProcessing {
     const result:{fingerprint:string;receipt:Record<string,unknown>}={fingerprint:resolved.fingerprint,receipt:resolved.receipt};
     const descriptor=this.runtime.registry.list().find(p=>p.id===resolved.receipt.processorId);
     if(descriptor){
-      try{const plan=this.runtime.recipes.resolve(defaultFileRecipe(descriptor),{semanticTurns:resolved.analysisSettings.semanticTurns});const output=descriptor.output??TRANSCRIPT_OUTPUT;this.runtime.outputs.get(output);result.fingerprint=sha256(JSON.stringify([result.fingerprint,plan.fingerprint,output]));result.receipt={...result.receipt,recipe:plan.recipe,stagePins:plan.pins,output};}
+      try{const plan=this.runtime.recipes.resolve(defaultFileRecipe(descriptor),{semanticTurns:resolved.analysisSettings.semanticTurns});const output=defaultFileOutput(descriptor);this.runtime.outputs.get(output);result.fingerprint=sha256(JSON.stringify([result.fingerprint,plan.fingerprint,output]));result.receipt={...result.receipt,recipe:plan.recipe,stagePins:plan.pins,output};}
       catch{result.fingerprint=sha256(JSON.stringify([result.fingerprint,'file-capability-unavailable']));result.receipt={...result.receipt,capabilityUnavailable:true};}
     }
     if(resolved.managedModels.length&&this.options.mediaAssets&&resolved.analysisSettings.endpoint===managedAsrEndpoint()){
@@ -378,7 +378,7 @@ export class FileProcessing {
       }else{
         if(this.files.detail(id,false).item.layer==='snapshot'&&!this.files.store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=? AND expires>?').get(id,Date.now())&&!this.files.store.db.prepare("SELECT 1 FROM file_steps s JOIN file_artifacts a ON a.id=s.artifact_id WHERE s.capture_id=? AND s.step='extract' AND s.state='succeeded' AND a.config_revision=? AND json_extract(a.json,'$.snapshot')=1").get(id,this.configuration(id,'pipeline').fingerprint))return new ExecutionFailure('blocked','snapshot_input_expired');
         const processor=this.runtime.registry.get(processorId);
-        try{this.runtime.recipes.resolve(defaultFileRecipe(processor),{semanticTurns:settings.semanticTurns});this.runtime.outputs.get(processor.output??TRANSCRIPT_OUTPUT);}catch{return new ExecutionFailure('blocked','file_capability_unavailable');}
+        try{this.runtime.recipes.resolve(defaultFileRecipe(processor),{semanticTurns:settings.semanticTurns});this.runtime.outputs.get(defaultFileOutput(processor));}catch{return new ExecutionFailure('blocked','file_capability_unavailable');}
         if(processor.stage!=='extract'||!processor.mediaTypes.some(t=>t.endsWith('/')?mime.startsWith(t):t===mime||t.endsWith('/*')&&mime.startsWith(t.slice(0,-1))))return new ExecutionFailure('blocked','unsupported_format');
         const stages=[processor,...(processor.dialogue?[this.runtime.registry.get(settings.diarizationProcessor)]:[])];
         if(stages.some(stage=>stage.managedModel&&effective.endpoint===managedAsrEndpoint()&&this.options.mediaAssets&&!this.options.mediaAssets.ready(stage.managedModel)))return new ExecutionFailure('blocked','model_missing');
@@ -390,7 +390,7 @@ export class FileProcessing {
     const budget=settings.maxAudioMinutes*60000,signal=AbortSignal.any([executionSignal,this.abort.signal]),processor=this.runtime.registry.get(processorId);
     db.prepare('UPDATE file_jobs SET config_revision=? WHERE capture_id=?').run(revision,id);
     if(applied)db.prepare('UPDATE file_jobs SET policy_json=? WHERE capture_id=?').run(JSON.stringify(applied),id);
-    const outputType=this.runtime.outputs.get(processor.output??TRANSCRIPT_OUTPUT);
+    const outputType=this.runtime.outputs.get(defaultFileOutput(processor));
     const decodeOutput=(value:unknown)=>{const payload=outputType.parse(value);return {payload,transcript:transcriptSchema.parse(outputType.project(payload)),kind:outputType.kind};};
     const input:ProcessorInput={parameters,file:{id,title:file.item.title,mimeType:mime,sizeBytes:file.sizeBytes},settings:effective,signal,maxAudioMs:Math.max(1,budget),readOriginal:()=>ReadableAsync(this.files.processingBytes(id))};
     const started=performance.now();this.log('file.started',id,{operation:'file_process',attempt:job.attempts+1,bytes:file.sizeBytes});
@@ -402,7 +402,7 @@ export class FileProcessing {
             const decoded=this.runtime.outputs.decode(type,value);return this.saveArtifact(id,decoded.kind,{transcript:decoded.transcript,output:{type,payload:decoded.payload},complete:decoded.transcript.coverage!=='partial',coverage:decoded.transcript.coverage??'full',inputArtifacts:Object.values(dependencies),snapshot:file.item.layer==='snapshot'},revision,decoded.transcript);
           }),
           builtin:async operation=>{
-            if(operation==='extract')return this.step(id,stage.name,processor.id,processor.version,[file.sha256,processor.id,processor.version,stage.stage,processor.output??TRANSCRIPT_OUTPUT,processorSettingsFingerprint(processor,effective,parameters),this.modelVersion(processor,effective)],revision,
+            if(operation==='extract')return this.step(id,stage.name,processor.id,processor.version,[file.sha256,processor.id,processor.version,stage.stage,defaultFileOutput(processor),processorSettingsFingerprint(processor,effective,parameters),this.modelVersion(processor,effective)],revision,
               async processorSignal=>{
                 const raw=await processor.process({...input,signal:processorSignal}),decoded=decodeOutput(raw);
                 if(mime.startsWith('audio/')&&decoded.transcript.durationMs>budget)throw new StoreError('Audio budget exceeded',413);
@@ -413,7 +413,7 @@ export class FileProcessing {
                 db.prepare('UPDATE file_artifacts SET current=0 WHERE capture_id=?').run(id);
                 db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=?").run(id);
                 return this.saveArtifact(id,processor.output?decoded.kind:mime.startsWith('audio/')?'transcript':mime.startsWith('image/')?'image-text':'text',
-                  {transcript,output:{type:processor.output??TRANSCRIPT_OUTPUT,...(processor.output?{payload:decoded.payload}:{})},durationMs:transcript.durationMs,segments:transcript.segments.length,complete:transcript.coverage!=='partial',coverage:transcript.coverage??'full',processor:processor.id,processorVersion:processor.version,uncorrected:true,snapshot:file.item.layer==='snapshot'},revision,transcript);
+                  {transcript,output:{type:defaultFileOutput(processor),...(processor.output?{payload:decoded.payload}:{})},durationMs:transcript.durationMs,segments:transcript.segments.length,complete:transcript.coverage!=='partial',coverage:transcript.coverage??'full',processor:processor.id,processorVersion:processor.version,uncorrected:true,snapshot:file.item.layer==='snapshot'},revision,transcript);
               },!processor.output&&processor.reuseByContent===true&&job.reuse_allowed!==0);
             if(operation==='diarize'){
               const extractId=read('extract'),raw=this.transcript(extractId),diarizer=this.runtime.registry.get(settings.diarizationProcessor);
@@ -432,7 +432,7 @@ export class FileProcessing {
             }
             if(operation==='align'){
               const extractId=read('extract'),diarizeId=read('diarize'),{complete:_,...diarization}=this.artifact(diarizeId);
-              const aligned=alignDialogue(this.transcript(extractId),diarizationSchema.parse({...diarization,samples:[]}));
+              const aligned=alignDialogue(this.transcript(extractId),diarizationSchema.parse({...diarization,samples:[]}),stage.stage.version==='1'?1:2);
               return this.step(id,stage.name,stage.stage.id,stage.stage.version,[extractId,diarizeId,stage.stage],revision,async()=>aligned,result=>this.saveArtifact(id,'dialogue',{transcript:result,complete:true,uncorrected:true,semanticGrouping:false,inputArtifacts:[extractId,diarizeId],snapshot:file.item.layer==='snapshot'},revision,result));
             }
             const alignId=read('align'),aligned=this.transcript(alignId);

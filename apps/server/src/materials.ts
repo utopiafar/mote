@@ -393,11 +393,13 @@ export class MaterialStore {
       if(own)db.exec('COMMIT');
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
-  evidenceIds(ref:string,blockIds?:readonly string[]){const material=this.get(ref);if(!material)return [];
+  evidenceIds(ref:string,blockIds?:readonly string[],maximum?:number){const material=this.get(ref);if(!material)return [];
+    if(maximum!==undefined&&(!Number.isSafeInteger(maximum)||maximum<1||maximum>20000))throw new StoreError('Invalid material evidence limit');
+    const limit=maximum===undefined?'':' LIMIT ?',limitArgs=maximum===undefined?[]:[maximum];
     if(this.codingLayout(material.id,material.revision))return (this.store.db.prepare(`SELECT anchor_id FROM material_block_versions
-      WHERE material_id=? AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?) AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx`)
-      .all(material.id,material.sequence,material.sequence,...(blockIds?[JSON.stringify(blockIds)]:[])) as {anchor_id:string}[]).map(row=>row.anchor_id);
-    return this.store.db.prepare(`SELECT anchor_id FROM material_blocks WHERE material_id=? AND revision=? AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx`).all(material.id,material.revision,...(blockIds?[JSON.stringify(blockIds)]:[])).map(r=>String(r.anchor_id));}
+      WHERE material_id=? AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?) AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx${limit}`)
+      .all(material.id,material.sequence,material.sequence,...(blockIds?[JSON.stringify(blockIds)]:[]),...limitArgs) as {anchor_id:string}[]).map(row=>row.anchor_id);
+    return this.store.db.prepare(`SELECT anchor_id FROM material_blocks WHERE material_id=? AND revision=? AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx${limit}`).all(material.id,material.revision,...(blockIds?[JSON.stringify(blockIds)]:[]),...limitArgs).map(r=>String(r.anchor_id));}
   /** A named output pins its declared blocks, not unrelated processing state.
    * Older organizers without block mappings retain whole-revision semantics. */
   input(ref:string,rawRequired:readonly string[]):(MaterialInputPin&ReturnType<typeof materialDependencyStatus>)|undefined {

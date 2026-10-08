@@ -38,14 +38,19 @@ export const transcriptSchema=z.object({
   durationMs:z.number().finite().nonnegative(),
   segments:z.array(transcriptSegmentSchema).max(50000),
   coverage:z.enum(['full','partial','none']).optional(),engine:z.string().max(200).optional(),uncorrected:z.literal(true).optional(),warnings:z.array(z.string().max(1000)).max(30).optional(),
-}).strict().superRefine((v,c)=>{let last=0;for(const s of v.segments){if(s.endMs<s.startMs||s.endMs>v.durationMs+1000||s.startMs<last)c.addIssue({code:'custom',message:'Invalid transcript timeline'});last=s.startMs;let wordLast=s.startMs;for(const w of s.words??[]){if(w.endMs<w.startMs||w.startMs<wordLast||w.startMs<s.startMs||w.endMs>s.endMs+1)c.addIssue({code:'custom',message:'Invalid word timeline'});wordLast=w.startMs;}}});
+}).strict().superRefine((v,c)=>{let last=0;for(const s of v.segments){if(s.endMs<s.startMs||s.endMs>v.durationMs+1000||s.startMs<last)c.addIssue({code:'custom',message:'Invalid transcript timeline'});last=s.startMs;
+  // Native ASR can place a word outside its sentence while both remain within
+  // the recording. Preserve that raw timing; alignment must use the sentence
+  // with explicit uncertainty rather than shifting or discarding model words.
+  let wordLast=0;for(const w of s.words??[]){if(w.endMs<w.startMs||w.startMs<wordLast||w.endMs>v.durationMs+1000)c.addIssue({code:'custom',message:'Invalid word timeline'});wordLast=w.startMs;}
+}});
 export type Transcript=z.infer<typeof transcriptSchema>;
-const speakerLabel=z.string().regex(/^SPEAKER_(?:[0-9]{1,2}|UNKNOWN)$/);
+const speakerLabel=z.string().regex(/^SPEAKER_(?:[0-9]{1,5}|UNKNOWN)$/);
 export const diarizationSchema=z.object({
   durationMs:z.number().finite().nonnegative(),engine:z.string().min(1).max(200),
   // Model labels are unverified clusters. Their bounded count is independent of
   // the configured person-count constraint and the 16-clip preview allowance.
-  expectedSpeakers:z.number().int().min(1).max(16).nullable(),observedSpeakers:z.number().int().min(0).max(100),
+  expectedSpeakers:z.number().int().min(1).max(16).nullable(),observedSpeakers:z.number().int().min(0).max(100000),
   overlapDetection:z.enum(['available','unknown']),
   segments:z.array(z.object({startMs:z.number().finite().nonnegative(),endMs:z.number().finite().nonnegative(),speaker:speakerLabel}).strict()).max(100000),
   samples:z.array(z.object({speaker:speakerLabel,startMs:z.number().finite().nonnegative(),endMs:z.number().finite().nonnegative(),wavBase64:z.string().max(1024*1024)}).strict()).max(16).default([]),

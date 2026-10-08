@@ -41,8 +41,24 @@ async function fixture(t:import('node:test').TestContext){
  };
  const organize=async()=>{for(let i=0;i<20;i++)if(await organizer.tick(200)===0)return;throw Error('Organizer did not settle');};
  t.after(async()=>{await engine.close();await images.close();await organizer.close();await processing.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
- return {store,sources,files,archived,processing,images,engine,bytes,materials,organizer,memoryWork,advance:(ms:number)=>{clock+=ms;},screen,upload,organize,calls:()=>({ocr:ocrCalls,visual:visualCalls}),empty:()=>{empty=true;},failVisual:()=>{failVisual=true;}};
+ return {store,sources,files,archived,processing,images,engine,bytes,materials,organizer,memoryWork,advance:(ms:number)=>{clock+=ms;},screen,upload,organize,calls:()=>({ocr:ocrCalls,visual:visualCalls}),empty:()=>{empty=true;},failVisual:(failed=true)=>{failVisual=failed;}};
 }
+
+test('explicit image completion renews an exhausted execution budget and preserves successful OCR',async t=>{
+ const f=await fixture(t),id=await f.upload();f.failVisual();await f.images.tick();
+ const step=f.engine.list({operationId:'image:'+id}).items.find(s=>s.kind==='images.understanding')!;
+ f.store.db.prepare("UPDATE execution_steps SET state='waiting',attempts=4,recovery_deadline=? WHERE id=?").run(Date.now()-1,step.id);
+ await f.engine.tick();assert.equal(f.engine.get(step.id)!.error,'recovery_window_exhausted');
+ const original=f.images.detail(id).original,ocr=f.store.db.prepare("SELECT * FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(id),before=f.calls();
+ f.failVisual(false);f.images.retry(id,false);
+ const retry=f.store.db.prepare('SELECT attempts,recovery_deadline FROM execution_steps WHERE id=?').get(step.id)!;
+ assert.equal(retry.attempts,0);assert.equal(retry.recovery_deadline,0);
+ await f.images.tick();await f.organize();
+ assert.equal(f.engine.get(step.id)!.state,'succeeded');assert.equal(f.calls().ocr,before.ocr);assert.equal(f.calls().visual,before.visual+1);
+ assert.deepEqual(f.store.db.prepare("SELECT * FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(id),ocr);
+ assert.equal(f.images.detail(id).original.hash,original.hash);assert.equal(f.files.detail(id).job!.state,'succeeded');
+ await f.images.tick();assert.equal(f.calls().visual,before.visual+1,'refresh never repeats successful understanding');
+});
 
 test('screenshots, imports, synchronization and accepted attachments share OCR and retain independent visual context',async t=>{
  const f=await fixture(t),screen=await f.screen(),imported=await f.upload(),synced=await f.upload('generated-sync');

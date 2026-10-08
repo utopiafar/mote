@@ -134,7 +134,7 @@ export class FileReviews {
     return {status:'accepted',artifactId};
   }
   nameSpeakers(id:string,raw:unknown){
-    const input=z.object({artifactId:z.string().uuid(),names:z.record(z.string().regex(/^SPEAKER_[0-9]{1,2}$/),z.string().trim().min(1).max(100))}).strict().parse(raw);
+    const input=z.object({artifactId:z.string().uuid(),names:z.record(z.string().regex(/^SPEAKER_[0-9]{1,5}$/),z.string().trim().min(1).max(100))}).strict().parse(raw);
     const current=latestFileTranscript(this.files,id);if(current.artifactId!==input.artifactId)throw new StoreError('Transcript changed',409);
     const known=new Set(current.transcript.segments.map(s=>s.speaker));if(Object.keys(input.names).length>16||Object.keys(input.names).some(s=>!known.has(s)))throw new StoreError('Unknown speaker label');
     const db=this.files.store.db,previous=this.files.speakerAttributions(id,current.artifactId),confirmationId=randomUUID(),confirmedAt=new Date().toISOString();

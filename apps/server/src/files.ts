@@ -246,7 +246,7 @@ export class FileStore {
     return {captureId:id,...manifest,hasOriginal:!!v.object_hash,originMissing:!!head?.origin_missing,job,artifacts,steps};
   }
   saveAsset(artifactId:string,name:string,mime:string,bytes:Buffer){
-    if(!/^speaker_samples\/SPEAKER_[0-9]{1,2}\.wav$/.test(name)||bytes.length>768*1024)throw new StoreError('Invalid artifact asset');
+    if(!/^speaker_samples\/SPEAKER_[0-9]{1,5}\.wav$/.test(name)||bytes.length>768*1024)throw new StoreError('Invalid artifact asset');
     this.store.reserveMetadata(bytes.length+1024);const asset=this.store.assets.put(bytes),hash=asset.hash;
     try{
     this.store.db.prepare('INSERT OR IGNORE INTO file_objects VALUES(?,?,?)').run(hash,bytes.length,1);
