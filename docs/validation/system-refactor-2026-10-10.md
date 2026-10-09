@@ -18,8 +18,9 @@ macOS，Node24.15.0/npm11.12.1，Codex CLI0.159.3；模型使用本地 Codex App
 | Harness E2E | `npm run test:e2e`、`npm run test:media-e2e` 通过。实际工具适配器使用生成provider，含加密/去重/图片、精确原文、目录媒体统计、范围和便携归档。 |
 | Web/Electron | `test:settings-ui`、`test:activity-ui`、`electron scripts/test-import-memory-ui.cjs` 通过。实际上传/确认，归档完成后Memory继续运行，失败/重试/完成，中英、窄屏与既有导航；没有浏览器控制台错误或页面溢出。 |
 | 进程生命周期 | `node scripts/test-central-process-lifecycle.mjs` 通过。构建后的正式入口经实际 supervisor 启动，HTTP接收生成笔记，SIGTERM停止并释放PID锁，同vault重启；便携归档恢复至新vault并删除原件。 |
-| 真实模型预验收 | 本地Codex真实导入9条、两包自动提取与独立审核，注入coverage错误只重跑对应审核；直接问答2arm无worker、目录查询2arm、显式研究1child、重启无重放和删除引用失效通过。首次续跑报告只作为预验收，不代表最终提交。 |
-| 真实语义正例 | `test-system-refactor-memory-quality-live.ts`：带所有者控制平面声明的个人经历与第三方访谈同包；1提取+1独立审核，生成1个人Memory和1计划observation。交叉审查确认情绪支持偏好保留适用条件，已完成姊妹散步与未发生父亲谈话分离；Mira未变为所有者偏好；5个引句offset/length与原文逐一相符。 |
+| 独立安装的真实模型 | 源码包独立安装、构建后，经实际HTTP和生产后台导入9条，形成8+1两包；2提取+3审核，注入coverage错误只重跑对应审核。直接问答2arm各1片段、0worker；目录查询2arm无worker；显式研究1child、3片段，重启无重放、删除引用失效通过。全部原件的原文、时间、角色和修订在删除前核验。 |
+| 独立安装的真实语义正例 | `test-system-refactor-memory-quality-live.ts`：带所有者控制平面声明的个人经历与第三方访谈同包；1提取+1独立审核，最终复验生成2个人Memory和1计划observation。交叉审查确认表达的家庭聚会困扰与情绪支持偏好均保留适用条件，已完成姊妹散步与未发生父亲谈话分离；Mira未变为所有者偏好；8个引句offset/length与当前原文和授权范围逐一相符。 |
+| 真实Coding合同复用与计量 | `test-coding-memory-refactor-codex-live.ts`：实际认证HTTP及生产后台处理3个生成事件，原始tool正文不进入正式对话。1,541字符的完整未饱和v2合同直接复用，1理解+1独立审核、0重复提取，发布1 Coding Memory；2次实际调用对应2条独立完成回执，共25,977 reported tokens。模型为本地Codex gpt-6.1-sol/high，持续149.582秒，不能推导一般时延或成本保证。 |
 
 ## 发现与修正
 
@@ -28,10 +29,27 @@ macOS，Node24.15.0/npm11.12.1，Codex CLI0.159.3；模型使用本地 Codex App
 - split后已提交成员被整job失败状态覆盖，现按授权范围的完整checkpoint并集投影。
 - 正常委派yield的Harness计时误标失败、独立审核诊断重复归到draft；已按实际阶段/运行身份修正。
 - 正向个人Memory试验最初使用了技术经验，个人recipe正确未收录；换用预先声明的个人经历rubric，未放宽产品准入规则。缺少所有者声明的另一生成样本真实进入有限feedback后`waiting_for_input / memory_context_required`，该结果保留为需要上下文案例，不能算9条处理完成。
+- Coding真实链路发现理解阶段的producer与Agent包装器重复记账。保留producer唯一计量归属，host内部接线跳过包装器计量，所有授权/并发/超时/诊断继续执行；成功、provider失败、解析失败和取消回归通过。既有provider有限重试仍产生4次真实尝试，回归按每次尝试1条失败回执断言，不把它误报为1次调用。最终实模复验确认2次调用、2条回执。
+
+## 实际模型结果的解释
+
+安装代码 `4ae41ce` 的主链路报告为 `mote-system-refactor-live-ScnoXB/report.json`，正例为 `mote-refactor-memory-quality-6U8NSV/report.json`。报告存放系统临时目录，内容为生成资料。主链路在删除前两次断言全部9条完成；最终快照在故意删除第1条之后读取，8成员包因依赖失效而撤销，其余1成员包仍完成，不能把最终快照解读为导入处理失败或仍有9条有效Memory覆盖。
+
+计量修复的固定代码为 `9b985c4`；仅纠正测试重试断言的提交为 `f15440f`，没有继续改动运行代码。Coding复验报告为 `mote-coding-refactor-live-tKQoDA/report.json`；修复前的3回执/2调用失败报告 `mote-coding-refactor-live-86qd8T/report.json` 保留。此版主链路报告将删除前完成里程碑与删除后的 `finalState` 分开保存，并保存实际用量回执。
+
+固定代码正例复验报告为 `mote-refactor-memory-quality-VN2NW1/report.json`：生成2 Memory、1 observation，共8个精确支持片段；三张卡片都有匹配的独立审核回执。其数量与上一次正例不同，验收依据是提前声明的语义rubric、原文支持、归属及独立审核，不要求模型每次生成固定卡片数量。
+
+固定代码主链路复验报告为 `mote-system-refactor-live-TqI4Yh/report.json`，状态passed：删除前9/9 completed；删除后状态独立记录，重启无重放与引用失效均通过。共12个实际Agent片段、13条用量回执（另含导入理解），与当前ledger逐一匹配；12条token样本完整，1条委派yield样本未完整，保留已报告用量。provider内部请求数不可见，requests=0不能理解为没有真实请求。直接问答目录/全原生分别24.690/24.345秒；来源目录查询分别30.199/23.353秒；显式研究1子任务、3片段、71.519秒。延迟结论仍仅限这次生成资料下的观察。
+
+能力目录在本次观测中将声明工具schema从28,198减至18,709个UTF-16字符。直接问答目录/全原生分别28.333/24.775秒；目录查询分别25.257/18.705秒；显式委派84.872秒。目录在这两次小样本中更慢，本轮不声称延迟或P95改善，也不由schema缩减推导固定token节省。
 
 ## 最终门槛与发布
 
-最终 `check:local`、版本化Android检查、固定代码的独立源码安装和真实Codex复验正在执行；结果将于发布前更新。已通过的单模块/预验收不能代替该门槛。
+最终 `npm run check:local` 退出0，2,371项通过、2项既有跳过项；i18n、库构建、全workspace和scripts类型检查通过。跳过项为平台/opt-in限定的macOS sandbox测试和installed-Codex synthetic Responses测试，不能视为执行过系统sandbox验收。本轮另行执行了上述真实Codex链路。
+
+Android `testDebugUnitTest assembleDebug lintDebug` 已通过，产物版本0.0.83/code94。固定代码 `9b985c4` 经独立源码包 `npm ci --ignore-scripts`、`build:central` 和正式入口生命周期复验通过；核验1,831个Git跟踪文件，按仓库 `.gitattributes` 还原唯一的Windows脚本CRLF后全部内容匹配。主链路实模复验已通过。最后全仓检查的1,000条真实HTTP/后台fixture回归持续140.947秒，覆盖全部目标，没有规划模型调用；该时间包含本机并发测试负载，不能视作真实模型吞吐。
+
+发布采用PR合并后同一main提交上的 `central-v0.0.85` 与 `android-v0.0.83`，由既有组件workflow构建和核验发布资产；发布状态、实际资产SHA和安装核验在本轮最终交付中报告。GitHub的可选pre-release全组件检查开关仍维持仓库配置，不能以其跳过结果替代上述本地门槛。
 
 ## 未执行与限制
 
