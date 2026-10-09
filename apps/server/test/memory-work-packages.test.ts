@@ -1,6 +1,6 @@
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,rmSync,writeFileSync,readFileSync,chmodSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {QueryResult} from '@mote/shared';
@@ -10,6 +10,7 @@ import {SourceStore} from '../src/sources.js';
 import {MemoryStore} from '../src/memory.js';
 import {MemoryPipeline,type MemoryPipelineQuery} from '../src/memory-pipeline.js';
 import {reviewMemory} from '../src/memory-review.js';
+import {createAgent} from '@mote/agent';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 
 function members(input:MemoryPipelineQuery){return (input.taskContext!.memoryWork as {members:MemoryWorkMember[]}).members;}
@@ -21,11 +22,47 @@ async function fixture(t:TestContext,count=4){
  const dir=mkdtempSync(join(tmpdir(),'mote-memory-package-')),store=new Store(dir),sources=new SourceStore(store),memories=new MemoryStore(store);
  sources.register({id:'generated',name:'Generated',kind:'custom',deviceId:'generated',platform:'import'});
  const ids:string[]=[];for(let i=0;i<count;i++)ids.push((await sources.upsert('generated',{externalId:String(i),revision:'1',text:'I prefer a blue bowl.',observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original'})).id);
- const seen:MemoryPipelineQuery[]=[],reviews:MemoryPipelineQuery[]=[];let generate=(input:MemoryPipelineQuery)=>output(input,'extract',false),review=(input:MemoryPipelineQuery,draft:QueryResult)=>Promise.resolve({...draft,runId:'review'});
+ const seen:MemoryPipelineQuery[]=[],reviews:MemoryPipelineQuery[]=[];let generate:(input:MemoryPipelineQuery)=>QueryResult|Promise<QueryResult>=input=>output(input,'extract',false),review=(input:MemoryPipelineQuery,draft:QueryResult)=>Promise.resolve({...draft,runId:'review'});
  const pipeline=new MemoryPipeline({store,memories,configured:()=>true,model:()=> 'generated-model',requireAdmission:true,query:async input=>{seen.push(input);return generate(input);},review:(input,draft)=>reviewMemory(input,draft,async reviewed=>{reviews.push(reviewed as MemoryPipelineQuery);return review(reviewed as MemoryPipelineQuery,draft);})});
  t.after(async()=>{await pipeline.close();store.close();rmSync(dir,{recursive:true,force:true});});
- return {store,sources,memories,pipeline,ids,seen,reviews,setGenerate(fn:typeof generate){generate=fn;},setReview(fn:typeof review){review=fn;},create(){return pipeline.create({evidenceIds:ids,workPackage:{id:'synthetic-package',goal:'Inspect the authorized originals',instruction:'Preserve independent provenance'}});}};
+ return {directory:dir,store,sources,memories,pipeline,ids,seen,reviews,setGenerate(fn:typeof generate){generate=fn;},setReview(fn:typeof review){review=fn;},create(){return pipeline.create({evidenceIds:ids,workPackage:{id:'synthetic-package',goal:'Inspect the authorized originals',instruction:'Preserve independent provenance'}});}};
 }
+
+test('wide packages reach the real Codex adapter for extraction and independent review without dropping members',async t=>{
+ const f=await fixture(t,20),executable=join(f.directory,'generated-codex.mjs'),delivered=join(f.directory,'delivered.ndjson');
+ const summary='Generated derived context. '.repeat(500).slice(0,12000),artifact=f.store.archive.save('3'.repeat(64),'generated-group','1'.repeat(64),{kind:'semantic',text:summary,metadata:{evidenceRanges:f.ids.map(id=>({id,offset:0,length:20}))}},f.ids.map(id=>({id,fingerprint:f.store.archive.fingerprint(id)!})),'generated-only','1','2'.repeat(64));
+ writeFileSync(join(f.directory,'auth.json'),JSON.stringify({OPENAI_API_KEY:'synthetic-unused-key'}),{mode:0o600});
+ writeFileSync(executable,`#!${process.execPath}
+import readline from 'node:readline';
+import {appendFileSync} from 'node:fs';
+const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
+readline.createInterface({input:process.stdin}).on('line',line=>{
+ const m=JSON.parse(line);
+ if(m.method==='initialize')send({id:m.id,result:{}});
+ else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
+ else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'generated-thread'},approvalPolicy:'never',sandbox:{type:'readOnly'}}});
+ else if(m.method==='turn/start'){
+  const context=JSON.parse(m.params.input[0].text),work=context.untrustedTaskContext.memoryWork;
+  appendFileSync(${JSON.stringify(delivered)},JSON.stringify({request:context.request,work,interpretations:context.untrustedTaskContext.untrustedInterpretations,evidenceIds:context.untrustedEvidence.map(r=>r.id),review:Boolean(context.untrustedTaskContext.untrustedMemoryDraft)})+'\\n');
+  const value={memories:[],coverage:work.members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]})),capacity:{saturated:false}};
+  send({id:m.id,result:{turn:{id:'generated-turn'}}});
+  send({method:'item/completed',params:{threadId:'generated-thread',item:{id:'generated-answer',type:'agentMessage',text:JSON.stringify({answer:JSON.stringify(value),citationIds:[]})}}});
+  send({method:'turn/completed',params:{threadId:'generated-thread',turn:{status:'completed'}}});
+ }
+});
+`,{mode:0o700});chmodSync(executable,0o700);
+ const agent=createAgent({reader:{search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async({ids})=>f.memories.readEvidence(ids),devices:async()=>[],activity:async()=>({})},protocol:'codex-app-server',model:'generated-only',codex:{executable,home:f.directory},agentTimeoutMs:10000});t.after(()=>agent.close());
+ f.setGenerate(input=>agent.query(input));f.setReview(async input=>agent.query(input));
+ const job=f.pipeline.create({evidenceIds:f.ids,artifactRefs:[{id:artifact.id,revision:artifact.revision}],workPackage:{id:'synthetic-package',goal:'Inspect the authorized originals',instruction:'Preserve generated provenance and original scope. '.repeat(70)}}),done=await f.pipeline.run(job.id);
+ assert.equal(done.status,'completed',`the real adapter must accept both calls (extract=${f.seen[0]?.question.length}, review=${f.reviews[0]?.question.length}, error=${done.errorCode})`);
+ const calls=readFileSync(delivered,'utf8').trim().split('\n').map(line=>JSON.parse(line));assert.equal(calls.length,2);
+ assert.deepEqual(calls.map(call=>call.review),[false,true]);
+ for(const call of calls){assert.equal(call.work.members.length,20);assert.deepEqual(new Set(call.evidenceIds),new Set(f.ids));assert.ok(call.request.length<=20000);assert.ok(call.interpretations.includes(summary.slice(0,11000)));assert.equal(call.work.package.instruction,job.workPackage!.instruction);}
+ assert.equal(calls[0].interpretations,calls[1].interpretations);
+ assert.ok(calls[0].request.length+calls[0].work.instruction.length+calls[0].work.package.instruction.length+calls[0].interpretations.length>20000,'putting the complete task in question reproduces the former adapter limit');
+ assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,20);
+ assert.ok(done.batches[0].coverage!.every(member=>member.state==='no_candidates'));
+});
 
 test('a work package independently reviews every zero-candidate input and checkpoints exact ranges',async t=>{
  const f=await fixture(t),job=f.create(),done=await f.pipeline.run(job.id);
