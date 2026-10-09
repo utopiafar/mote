@@ -53,7 +53,7 @@ export interface ContextReader {
   catalog?(args:ContextRange&{path?:string;query?:string}):Promise<unknown>;
   /** Private host lineage receipt. Recording dependencies never grants model reads. */
   materialCatalog?(args:ContextRange&{sourceId?:string;kind?:string;query?:string}):Promise<{items:{id:string;ref:string;[field:string]:unknown}[];nextCursor:string|null;disclosureDependencies?:import('@mote/shared').EvidenceDependencies}>;
-  materialRead?(args:ContextRange&{ref:string;offset?:number;length?:number}):Promise<{material:{id:string;ref:string;[field:string]:unknown};text:string;textRange:{offset:number;total:number;nextOffset:number|null};spans:{memberIds:string[];[field:string]:unknown}[];originalRefs:string[];originalRefsTotal:number;originalRefsTruncated:boolean;disclosureDependencies?:import('@mote/shared').EvidenceDependencies}>;
+  materialRead?(args:ContextRange&{ref:string;offset?:number;length?:number}):Promise<{material:{id:string;ref:string;[field:string]:unknown};text:string;textRange:{offset:number;total:number;nextOffset:number|null};spans:{memberIds:string[];[field:string]:unknown}[];originalRefs:string[];originalRefsTotal:number;originalRefsTruncated:boolean;sourceSpans?:{record:ContextRecord;offset:number;length:number}[];disclosureDependencies?:import('@mote/shared').EvidenceDependencies}>;
   segments?(args:ContextRange & {id?:string;query?:string}):Promise<{items:{members:string[];[key:string]:unknown}[];nextCursor:string|null;[key:string]:unknown}>;
   readImage?(args:import('@mote/shared').ImageReadInput):Promise<import('@mote/shared').ImageReadResult>;
   search(args: ContextRange & { query?: string }): Promise<ContextRecord[]>;
@@ -71,6 +71,8 @@ export interface ContextReader {
 }
 
 export interface AgentOptions {
+  /** Trusted benchmark arm only; no profile, HTTP or product setting. */
+  contextToolMode?:'all-native'|'catalog';
   /** Host-only evidence authorization before each outbound HTTP model attempt, including SDK turns/repairs. */
   authorizeModelRequest?: ()=>void|Promise<void>;
   /** Host-wide admission for model runs; Codex turns include their internal tool loop. */
@@ -99,6 +101,11 @@ export interface AgentOptions {
 }
 
 export interface QueryInput {
+  /** Internal adapter selection for the trusted benchmark arm. */
+  hostContextToolMode?:'all-native'|'catalog';
+  /** Immutable host manifest receipts for a durable query, never read grants. */
+  contextCapabilitySnapshot?:readonly {name:string;version:string;fingerprint:string}[];
+  onContextCapabilities?:(snapshot:readonly {name:string;version:string;fingerprint:string}[])=>void;
   /** Explicit host-only mutation authority, separate from archive retrieval. */
   hostControlChannel?:import('./host-controls.js').HostControlChannel;
   /** Host-only metadata planning sessions can disable every archive read. */
@@ -138,7 +145,7 @@ export interface QueryInput {
   onUsage?: (usage: import('@mote/shared').TokenUsage) => void;
   question: string;
   /** Bounded host-owned input for background tasks, separate from the user question. */
-  taskContext?: {delegation?:unknown;memoryWork?:unknown;untrustedMemoryDraft?:unknown;untrustedInterpretations?:string;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
+  taskContext?: {queryWorkspace?:unknown;delegation?:unknown;memoryWork?:unknown;untrustedMemoryDraft?:unknown;untrustedInterpretations?:string;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
   responseMode?: 'answer'|'personal-insight'|'memory-extraction'|'calendar-extraction';
   /** Host-selected procedure, never selected from captured text. */
   skill?: Exclude<MoteSkillId,'document-import'>;

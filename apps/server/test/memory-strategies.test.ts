@@ -83,12 +83,12 @@ test('installed recipes compose independent products, replace either strategy, a
   assert.equal(f.calls.length,before,'restart and plugin installation do not replay history');
   assert.equal((await f.run(source.evidenceIds,['personal','coding'])).batches.length,0);assert.equal(f.calls.length,before);
   const coding=await f.add('coding',true);await f.run(coding.evidenceIds,['reject','coding']);
-  assert.equal(f.count('extract'),3);assert.equal(f.count('review'),6);
+  assert.equal(f.count('extract'),4,'legacy bounded Coding products lack complete Memory coverage and require one compatible generation');assert.equal(f.count('review'),6);
   const codingProducts=f.node.memories.list().map(m=>f.node.memories.get(m.id)).filter(m=>m.evidenceIds.some(id=>coding.evidenceIds.includes(id)));
   assert.equal(codingProducts.length,1);assert.equal(codingProducts[0].domain,'coding','one strategy refusing input does not veto another');
   const builtin=await f.run(source.evidenceIds,['mote.personal-memory','mote.coding-memory']);
   assert.equal(builtin.status,'completed');assert.deepEqual(builtin.memoryIds.map(id=>f.node.memories.get(id).domain).sort(),['coding','personal']);
-  assert.equal(f.count('extract'),4);assert.equal(f.count('review'),8);
+  assert.equal(f.count('extract'),5);assert.equal(f.count('review'),8);
   const personalBinding=f.node.memoryStrategies.resolve({id:'mote.personal-memory',version:'2'}).binding;
   const codingBinding=f.node.memoryStrategies.resolve({id:'mote.coding-memory',version:'2'}).binding;
   assert.equal(personalBinding.review.version,'2');assert.equal(codingBinding.review.version,'2');
@@ -123,7 +123,7 @@ test('revising one source invalidates and recomputes only its product while anot
   const rawB=()=>f.node.store.db.prepare('SELECT json FROM memories WHERE id=?').get(keptB)!.json;
   const beforeB=rawB(),beforeCalls=f.calls.length;
   const callsForB=()=>f.calls.filter(call=>call.evidenceIds?.some(id=>b.evidenceIds.includes(id))).length;
-  const beforeBCalls=callsForB();assert.equal(beforeBCalls,2);
+  const beforeBCalls=callsForB();assert.equal(beforeBCalls,3,'legacy Coding understanding, compatible generation and independent review each have their own run');
   assert.equal(f.node.memories.get(keptB).status,'published');
   const revisedA=await f.add('generated-source-a',false,'2');
   assert.equal(f.node.memories.get(oldA).status,'stale');

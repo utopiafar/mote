@@ -824,7 +824,26 @@ export class EvidenceReader {
     return {
       catalog:async args=>contextIndex(this.store,{page:scope=>this.agentMemoryPage({...scope,asOf:scope?.asOf??options.currentContextTime?.()},policy,operation('discover'))},this.sources,args,scope=>this.agentSegments(scope,policy,operation('discover'))),
       materialCatalog:async args=>{const page=this.materialCatalog(args),items=page.items.filter(material=>this.materialExposure(material,operation('discover'),policy));return {...page,items,disclosureDependencies:this.materialDisclosureDependencies(items.map(item=>item.ref))};},
-      materialRead:async args=>{const material=this.materials?.get(args.ref);if(!material||this.materials?.get(material.id)?.ref!==material.ref||!this.materialExposure(material,operation('expand'),policy))throw new StoreError('Material not found in selected scope',404);const page=this.materialRead(args);grant(page.originalRefs,{kind:'material',ref:material.ref,scope:{...args}});return {...page,disclosureDependencies:this.materialDisclosureDependencies([material.ref])};},
+      materialRead:async args=>{
+        const material=this.materials?.get(args.ref);if(!material||this.materials?.get(material.id)?.ref!==material.ref||!this.materialExposure(material,operation('expand'),policy))throw new StoreError('Material not found in selected scope',404);
+        const page=this.materialRead(args);grant(page.originalRefs,{kind:'material',ref:material.ref,scope:{...args}});
+        // Compressed screen blocks do not declare a capture OCR offset map.
+        const mappedRefs=material.kind==='mote.screen-segment'?[]:page.spans.flatMap(span=>span.evidenceId?[formatEvidenceRef('capture',span.evidenceId)]:[]);
+        const originalRefs=[...new Set([...mappedRefs,...page.originalRefs])].slice(0,30);
+        const originals=this.context(this.evidence(originalRefs,args).filter(record=>boundedEvidenceAllowed(record)));
+        const sourceSpans=page.spans.flatMap(span=>{
+          const record=originals.find(record=>record.id===span.evidenceId),offset=span.evidenceOffset;
+          // The organizer's immutable block mapping identifies source offsets.
+          // Derived summaries/interpretations and mapping-less capture members
+          // remain navigation only and require a separate original read.
+          if(!record||record.provenance?.document?.contentRole==='summary'||!Number.isSafeInteger(offset)||offset!<0)return [];
+          const body=page.text.slice(span.pageRange.start,span.pageRange.end),length=Math.min(body.length,record.ocrText.length-offset!);
+          if(length<1||record.ocrText.slice(offset!,offset!+length)!==body.slice(0,length))return [];
+          return [{record,offset:offset!,length}];
+        });
+        const originalRefsTotal=Math.max(page.originalRefsTotal,new Set([...mappedRefs,...page.originalRefs]).size);
+        return {...page,originalRefs,originalRefsTotal,originalRefsTruncated:page.originalRefsTruncated||originalRefsTotal>originalRefs.length,sourceSpans,disclosureDependencies:this.materialDisclosureDependencies([material.ref])};
+      },
       readImage:async (input)=>{
         const {id,attachmentId}=input;
         if(!options.allowQueryImages?.())throw new ContextToolError('image_disclosure_disabled','Original-image access for queries is off. The owner must enable on-demand image access in Central Perception settings before a new query. Do not repeat this image request.','stop');

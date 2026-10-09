@@ -22,7 +22,7 @@ const answerSchema={type:'object',properties:{answer:{type:'string'},citationIds
 export function createCodexAgent(options:AgentOptions){
   let closed=false;const sessions=new Set<CodexSession>(),pending=new Set<Promise<AgentAnswer>>();
   async function execute(input:QueryInput):Promise<AgentAnswer>{
-    input=pinContextTools(input,options.reader);
+    input=pinContextTools({...input,...(options.contextToolMode?{hostContextToolMode:options.contextToolMode}:{})},options.reader);
     const runTools=toolsFor(input).filter(t=>taskTools(input).includes(t.name)||t.name==='skill');
     input.signal?.throwIfAborted();
     if(closed)throw new AgentProviderError();if(!options.model?.trim())throw new AgentNotConfiguredError();

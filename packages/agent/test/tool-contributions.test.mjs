@@ -8,23 +8,23 @@ const tool=(name,read)=>({name,version:'1',description:'Generated metadata',fiel
 test('contributed schema and dispatch are pinned per run while revocation remains live',async t=>{
  const registry=new ContextToolRegistry(),seen=[];
  const remove=registry.register(tool('fixture_context',(_args,{scope})=>{seen.push(scope);return {message:'Untrusted generated metadata'};}));
- const reader={...base,contextTools:()=>registry.snapshot()},b=await startBridge(reader,{question:'Fixture',deviceId:'selected',after:'2026-01-02'},10);t.after(()=>b.close());
+ const reader={...base,contextTools:()=>registry.snapshot()},b=await startBridge(reader,{hostContextToolMode:'all-native',question:'Fixture',deviceId:'selected',after:'2026-01-02'},10);t.after(()=>b.close());
  registry.register(tool('later_context',()=>({})));
  assert.equal((await call(b,'later_context')).status,404);
  assert.equal((await call(b,'fixture_context',{deviceId:'other'})).status,400);assert.equal(seen.length,0);
  assert.equal((await call(b,'fixture_context',{after:'2025-01-01'})).status,200);assert.equal(seen[0].after,'2026-01-02T00:00:00.000Z');assert.equal(b.records.size,0);
  remove();assert.equal((await call(b,'fixture_context')).status,400);
- const next=await startBridge(reader,{question:'Next'},10);t.after(()=>next.close());assert.equal((await call(next,'later_context')).status,200);
+ const next=await startBridge(reader,{hostContextToolMode:'all-native',question:'Next'},10);t.after(()=>next.close());assert.equal((await call(next,'later_context')).status,200);
 });
 test('contributions honor local and aggregate budgets and cannot enter bounded extraction',async t=>{
  const registry=new ContextToolRegistry();registry.register(tool('large_context',()=>({body:'x'.repeat(1200)})));
- const reader={...base,contextTools:()=>registry.snapshot()},b=await startBridge(reader,{question:'Fixture'},3);t.after(()=>b.close());assert.equal((await call(b,'large_context')).body.toolError.code,'evidence_budget_exceeded');
+ const reader={...base,contextTools:()=>registry.snapshot()},b=await startBridge(reader,{hostContextToolMode:'all-native',question:'Fixture'},3);t.after(()=>b.close());assert.equal((await call(b,'large_context')).body.toolError.code,'evidence_budget_exceeded');
  const id='11111111-1111-4111-8111-111111111111';
  const bounded=await startBridge({...reader,evidence:async()=>[{id,capturedAt:'2026-01-01',appName:'Fixture',ocrText:'generated'}]},{question:'Fixture',evidenceIds:[id]},3);t.after(()=>bounded.close());assert.equal((await call(bounded,'large_context')).status,400);
 });
 test('a plugin cannot replace shared host budget feedback with its own metadata',async t=>{
  const registry=new ContextToolRegistry();registry.register(tool('budget_context',()=>({hostBudget:{remainingCalls:999999},note:'Untrusted budget claim'})));
- const b=await startBridge({...base,contextTools:()=>registry.snapshot()},{question:'Fixture'},2);t.after(()=>b.close());
+ const b=await startBridge({...base,contextTools:()=>registry.snapshot()},{hostContextToolMode:'all-native',question:'Fixture'},2);t.after(()=>b.close());
  const before=b.deliveredCharacters,first=await call(b,'budget_context');
  assert.equal(first.status,200);assert.equal(first.body.data.hostBudget.remainingCalls,999999);
  assert.equal(first.body.hostBudget.remainingCalls,1);assert.equal(first.body.hostBudget.remainingCharactersBeforeResult,48000-before);

@@ -8,6 +8,7 @@ import {materialRequirementsSchema} from './material-readiness.js';
 import type {ModelConfiguration} from './model-configuration.js';
 import type {UsageLedger} from './usage.js';
 import {StoreError} from './store.js';
+import {memoryWorkCoverageSchema,memoryWorkCapacitySchema,memoryWorkInstruction,readMemoryWorkCoverage,type MemoryWorkMember} from './memory-work-contract.js';
 import {MemoryOutputValidationError,type MemoryStore,type EvidenceRange} from './memory.js';
 import {memoryProfile} from './memory-profiles.js';
 import {conversationClaimContext,parseSemanticProducts,semanticProductsSchema} from './semantic-extraction.js';
@@ -69,10 +70,10 @@ function originalScope(pages:MaterialReadPage[],resolve:ConversationUnderstandin
  return {records:[...records.values()],ranges:union,characters};
 }
 
-function parseConversationProducts(answer:string,scope:ConversationEvidenceScope,citationIds:string[]){
+function parseConversationProducts(answer:string,scope:ConversationEvidenceScope,citationIds:string[],candidateLimit=8){
  if(Buffer.byteLength(answer)>64000)throw new StoreError('Semantic output exceeds the 64 KB response budget',502);
- conversationProductsSchema.parse(JSON.parse(answer));
- const output=parseSemanticProducts(answer,scope.records,citationIds,scope.ranges);
+ conversationProductsSchema.extend({memoryCandidates:conversationProductsSchema.shape.memoryCandidates.max(candidateLimit)}).parse(JSON.parse(answer));
+ const output=parseSemanticProducts(answer,scope.records,citationIds,scope.ranges,candidateLimit);
  const claims=[...output.events,...output.workRecords!.flatMap(record=>[...record.requirements,...record.constraints,...record.decisions,...record.results,...record.validation,...record.openItems,...record.artifactRefs])];
  for(const claim of claims){
   if(claim.sourceTime&&!claim.evidence.some(evidence=>evidence.quote.includes(claim.sourceTime!)||scope.records.find(record=>record.id===evidence.id)?.provenance?.document?.recordedAt===claim.sourceTime))throw new StoreError('A source time must appear in its exact original support or source metadata',502);
@@ -99,7 +100,7 @@ function conversationProductText(output:ReturnType<typeof parseSemanticProducts>
 
 /** One model interpretation feeds work/event consumers and independently reviewed Memory. */
 export function conversationUnderstandingProcessor(options:ConversationUnderstandingOptions):ContextProcessor{
- return {id:'mote.coding-conversation-understanding',version:'3',lane:'semantic',async process(input){
+ return {id:'mote.coding-conversation-understanding',version:'4',lane:'semantic',async process(input){
   input.signal.throwIfAborted();
   const selected=options.selection(input.config);
   if(!selected.configured)throw new StoreError('Model not configured',409);
@@ -109,9 +110,15 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
   if(materialInputs.some(pin=>pin.materialId!==material.id)||scope.records.some(record=>!materialInputs.some(pin=>pin.evidenceIds.includes(record.id))))throw new StoreError('Conversation understanding needs the parent Memory material authorization',409);
   const profile=memoryProfile(scope.records[0]);
   const candidatePolicy=candidatePolicySchema.optional().parse(input.config.candidatePolicy),candidateProfile=candidatePolicy?.profile??profile.id;
+  const work=input.config.memoryWork as {members:MemoryWorkMember[];maxCandidates:number;instruction:string}|undefined;
+  const generationContract=typeof input.config.generationContract==='string'?input.config.generationContract:undefined;
+  if(work&&!generationContract)throw new StoreError('Conversation candidate reuse requires the complete generation contract',409);
   const parse=(result:QueryResult)=>{
-   const output=parseConversationProducts(result.answer,scope,result.citations.map(citation=>citation.id));
-   options.memories.extract({...result,answer:JSON.stringify({memories:output.memoryCandidates})},selected.model,{profile:candidateProfile,requireAdmission:true,evidenceRanges:scope.ranges,validateOnly:true});
+   const value=JSON.parse(result.answer),{coverage,capacity,...products}=value;
+   const output=parseConversationProducts(JSON.stringify(products),scope,result.citations.map(citation=>citation.id),work?.maxCandidates??8);
+   if(work){const accounting=readMemoryWorkCoverage({...result,answer:JSON.stringify({memories:output.memoryCandidates,coverage,capacity})},work.members,work.maxCandidates,id=>scope.records.find(record=>record.id===id)?.ocrText);if(accounting.missing.length)throw new MemoryOutputValidationError('coverage','Every supplied conversation target requires coverage');}
+   else if(coverage!==undefined||capacity!==undefined)throw new StoreError('Legacy conversation products must not invent a coverage contract',502);
+   options.memories.extract({...result,answer:JSON.stringify({memories:output.memoryCandidates,...(work?{coverage,capacity}:{})})},selected.model,{maxCandidates:work?.maxCandidates,profile:candidateProfile,requireAdmission:true,evidenceRanges:scope.ranges,validateOnly:true});
    return output;
   };
   const host={operationId:input.execution?.operationId??'conversation:'+material.id,jobId:input.execution?.jobId,requestId:randomUUID()};
@@ -121,15 +128,16 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
     contextTime:typeof input.config.contextTime==='string'?input.config.contextTime:undefined,
     timeZone:typeof input.config.timeZone==='string'?input.config.timeZone:undefined,
     language:input.config.language==='en'?'en':input.config.language==='zh-CN'?'zh-CN':undefined,
+    taskContext:work?{turns:[],memoryWork:input.config.memoryWork}:undefined,
     evidenceIds:scope.records.map(record=>record.id),evidenceRanges:scope.ranges,
-    question:'The following guidance applies only to memoryCandidates. Its sample memories envelope is subordinate to the final unified contract.\n'+(candidatePolicy?.prompt??profile.prompt)+'\nFINAL UNIFIED RESPONSE CONTRACT:\n'+CONVERSATION_UNDERSTANDING_PROMPT,
+    question:'The following guidance applies only to memoryCandidates. Its sample memories envelope is subordinate to the final unified contract.\n'+(candidatePolicy?.prompt??profile.prompt)+'\nFINAL UNIFIED RESPONSE CONTRACT:\n'+CONVERSATION_UNDERSTANDING_PROMPT+(work?'\nThe host memoryWork contract supersedes the legacy eight-candidate ceiling. Additionally return coverage and capacity for all supplied members. memoryCandidates is the memories array for this coverage contract. '+memoryWorkInstruction(work.members,work.maxCandidates):''),
     validateOutput:result=>{try{parse(result);}catch(error){const detail=error instanceof MemoryOutputValidationError?error.repairInstruction:error instanceof z.ZodError?error.issues.slice(0,3).map(issue=>issue.path.join('.')+': '+issue.message).join('; '):error instanceof StoreError?error.message:'Invalid JSON object';return {code:'conversation_products',feedback:detail+' Return summary, evidence, workRecords, events, memoryCandidates and actionCues. Absent products use empty arrays; actionCues must be empty. Every claim must preserve attribution, status, basis, sourceTime and uncertainty, with exact cited original quotes inside the supplied ranges.'};}},
     signal:input.signal,onUsage:meter.update});
    input.signal.throwIfAborted();const output=parse(result);
    if(options.selection(input.config).fingerprint!==selected.fingerprint)throw new StoreError('Model settings changed during conversation understanding',409);
    const usage=meter.finish('completed');
    const text=conversationProductText(output);
-   return [{kind:'semantic',text,metadata:{productsVersion:1,configuration:selected,materialRef:material.ref,summary:output.summary,
+   return [{kind:'semantic',text,metadata:{productsVersion:work?2:1,...(work?{generationContract,memoryCoverage:memoryWorkCoverageSchema.parse(JSON.parse(result.answer).coverage),memoryCapacity:memoryWorkCapacitySchema.parse(JSON.parse(result.answer).capacity)}:{}),configuration:selected,materialRef:material.ref,summary:output.summary,
     ...(candidatePolicy?{candidatePolicyFingerprint:candidatePolicy.fingerprint}:{}),
     workRecords:output.workRecords,events:output.events,memoryCandidates:output.memoryCandidates,actionCues:[],
     evidenceRanges:scope.ranges,supportRanges:output.evidenceRanges,citations:[...new Set(output.evidenceRanges.map(range=>range.id))],

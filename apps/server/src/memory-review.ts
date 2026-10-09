@@ -28,7 +28,7 @@ export async function reviewMemory(input:QueryInput,draft:QueryResult,query:(inp
   if(!value.memories.length&&!workPackage)return receipt(await finish({...draft}),'empty');
   // Only fixed, bounded extraction tools may reuse a verdict. Consolidation and
   // open retrieval can see changing context outside the supplied originals.
-  const bounded=!workPackage&&options?.cache&&options.snapshot&&input.validateOutput&&input.contextTime&&input.evidenceIds?.length&&input.evidenceRanges?.length&&['memory-extraction','coding-memory','memory-strategy'].includes(input.skill??'');
+  const bounded=options?.cache&&options.snapshot&&input.validateOutput&&input.contextTime&&input.evidenceIds?.length&&input.evidenceRanges?.length&&['memory-extraction','coding-memory','memory-strategy'].includes(input.skill??'');
   const snapshot=bounded?options!.snapshot!():undefined;
   const {signal,validateOutput,onProgress,onTrace,onUsage,traceContext,...semanticInput}=input;
   const key=bounded?sha256(JSON.stringify(['bounded-exact-review@1',strategy??defaultMemoryReviewStrategy,options?.taskInstructions,semanticInput,value,draft.citations,snapshot,deletionSnapshot])):undefined;

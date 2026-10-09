@@ -185,7 +185,7 @@ export function createAgent(options: AgentOptions) {
   const configured =
     !!options.model?.trim() && (!!options.apiKey?.trim() || localWithoutKey);
   async function execute(input: QueryInput): Promise<AgentAnswer> {
-    input=pinContextTools(input,options.reader);
+    input=pinContextTools({...input,...(options.contextToolMode?{hostContextToolMode:options.contextToolMode}:{})},options.reader);
     input.signal?.throwIfAborted();
     if (closed) throw new AgentClosedError();
     if (!configured) throw new AgentNotConfiguredError();

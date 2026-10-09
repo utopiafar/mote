@@ -19,4 +19,4 @@
 - 网页用 `POST /api/query-runs` 提交并读取持久进度，见 [进度协议](usage-and-query-progress.md)；兼容的 `POST /api/query` 传入 `question`；可选 `conversationId` 表示续聊。返回答案、`conversationId` 与 `turnId`。
 - `DELETE /api/conversations/:id`：删除一段对话。
 
-续聊省略 `after`、`before`、`deviceId` 或 `timeZone` 时，各字段继承上轮值；显式传 `null` 清除该字段。页面会明确传入当前筛选。同一对话同时生成第二条回答会返回 409，避免互相覆盖。
+续聊省略 `timeZone` 时继承上轮时区；`after`、`before`、`deviceId` 省略表示本次未设置该硬范围，不继承上轮过滤。显式 `null` 清除对应字段。当前问一问页面没有独立硬范围筛选控件。同一对话同时生成第二条回答会返回 409，避免互相覆盖。

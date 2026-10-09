@@ -1,10 +1,11 @@
+import {catalogRequest} from './catalog-request.mjs';
 import {fixtureCaptureId} from './capture-fixture-id.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {startBridge} from '../dist/bridge.js';
 const records=Array.from({length:65},(_,i)=>({id:fixtureCaptureId('memory-original-'+i),capturedAt:'2026-03-01T00:00:00Z',appName:'Synthetic',ocrText:'原始文本 '+i,deviceId:i===64?'outside':'inside'}));
 const reader={evidence:async({ids})=>records.filter(r=>ids.includes(r.id)),search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),activity:async()=>({}),devices:async()=>[]};
-async function call(bridge,tool,args){const r=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify(args)});return {status:r.status,body:await r.json()};}
+async function call(bridge,tool,args){const r=await catalogRequest(bridge,tool,args);return {status:r.status,body:await r.json()};}
 test('incremental disclosure paginates a host snapshot, respects hard scope and authorizes only delivered originals',async t=>{
  const b=await startBridge(reader,{question:'generated',incrementalEvidenceIds:records.map(r=>r.id),deviceId:'inside'},10);t.after(()=>b.close());
  assert.equal((await call(b,'evidence',{ids:[fixtureCaptureId('memory-original-40')]})).status,400);

@@ -352,14 +352,11 @@ export class SourcePipelineRuntime {
   setMemoryPlanner(planner:MaterialMemoryPlanner|undefined,onCreated?:(proposal:MemoryWorkProposal,job:{id:string})=>void,onSkipped?:(proposal:MemoryWorkProposal)=>void,onReconcile?:()=>void,allowCandidate?:(candidate:MemoryWorkCandidate)=>boolean){this.memoryPlanner=planner;this.memoryPackageCreated=onCreated;this.memoryPackageSkipped=onSkipped;this.memoryPlannerReconcile=onReconcile;this.memoryCandidateAllowed=allowCandidate;}
   drainMemory(pipeline:MaterialMemoryRunner,enabled:boolean,limit=1){
     this.memoryPlannerReconcile?.();
-    if(this.memoryPlanner&&(!enabled||!this.store.db.prepare('SELECT 1 FROM material_memory_requests WHERE auto_authorized=1 AND ready_at<=? LIMIT 1').get(Date.now())))return this.memoryWork.drain(pipeline,false,limit);
-    if(this.memoryPlanner)return this.memoryWork.drainPlanned(pipeline,enabled,this.memoryPlanner,64,materialId=>{const material=this.materials.get(materialId);return Boolean(material&&this.memoryAllowed(material.origin.sourceId));},this.memoryPackageCreated,this.memoryPackageSkipped,this.memoryCandidateAllowed);
-
-    return this.memoryWork.drain(pipeline,enabled,limit,materialId=>{
-      const material=this.materials.get(materialId);if(!material)return true;
-      return this.memoryAllowed(material.origin.sourceId);
-    });
+    return this.memoryWork.drainBounded(pipeline,enabled,64,materialId=>{
+      const material=this.materials.get(materialId);return Boolean(material&&this.memoryAllowed(material.origin.sourceId));
+    },this.memoryCandidateAllowed);
   }
+
   forget(sourceId:string){
     if(!this.store.db.prepare('SELECT 1 FROM source_pipeline_bindings WHERE source_id=?').get(sourceId))throw new StoreError('Source has no archive pipeline',409);
     const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{

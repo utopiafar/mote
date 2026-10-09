@@ -12,6 +12,8 @@ export type ImportReviewGate={decision:'automatic'|'confirmation';reason:string}
 export type ImportMediaItem={fileId:string;format:{id:string;version:string;mimeType:string;reason:string};captureId?:string;
   processing?:{state:string;stage:string;error?:string};searchable?:boolean;
   memory?:{state:string;jobIds:string[]}};
+/** Counts original records, aggregating all receipt-selected recipes for each record. */
+export type ImportMemoryProgress={total:number;receipts:number;completed:number;pending:number;running:number;failed:number;waitingForModel:number;paused:number;cancelled:number;disabled:number;unavailable:number;jobIds:string[]};
 export type ImportJob={
   imageProfileId?:string;
   id:string;operationId?:string;execution?:import('./execution.js').ExecutionEnvelope;name:string;instruction:string;sourceId:string;sourcePackId?:string;status:ImportStatus;
@@ -21,6 +23,7 @@ export type ImportJob={
   progress:{total:number;processed:number;imported:number;duplicates:number};
   preview?:ImportPreview;dispositions?:ImportDispositions;reviewDecision?:ImportReviewDecision;reviewGate?:ImportReviewGate;error?:string;captureIds:string[];memoryJobId?:string;
   media?:ImportMediaItem[];
+  memoryProgress?:ImportMemoryProgress;
 };
 export const importRequestSchema=z.object({
   imageProfileId:z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/).optional(),

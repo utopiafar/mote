@@ -6,6 +6,10 @@ import {StoreError,type Store} from './store.js';
 import {withExecutionCancellation} from './execution-cancellation.js';
 
 export type ExecutionState='waiting'|'running'|'blocked'|'succeeded'|'failed'|'cancelled'|'stale';
+export type ExecutionLane='background'|'interactive';
+/** Trusted host configuration. Lane is derived from existing product identity,
+ * never from model-authored input or a new persistent authority field. */
+export type ExecutionPoolAdmission={concurrency:Record<ExecutionLane,()=>number>;lane:(step:ExecutionStep)=>ExecutionLane};
 export type ExecutionStep={id:string;operationId:string;kind:string;pool:string;input:Record<string,unknown>;state:ExecutionState;attempts:number;availableAt:number;error?:string};
 /** A running handler can publish incremental progress only through its current lease. */
 export interface ExecutionGrant {
@@ -43,7 +47,8 @@ const interrupted=new Error('Execution interrupted');
 export class ExecutionEngine {
  private programs=new Map<string,Promise<unknown>>();
  private handlers=new Map<string,ExecutionHandler>();
- private active=new Map<string,{controller:AbortController;task:Promise<void>;pool:string;kind:string}>();
+ private admissions=new Map<string,ExecutionPoolAdmission>();
+ private active=new Map<string,{controller:AbortController;task:Promise<void>;pool:string;kind:string;lane:ExecutionLane}>();
  private stopping=false;
  private pumping=false;
  private pumpAgain=false;
@@ -65,6 +70,21 @@ export class ExecutionEngine {
   installOperationProjection(store);
  }
  get closed(){return this.stopping;}
+ configurePool(pool:string,admission:ExecutionPoolAdmission){this.admissions.set(pool,admission);}
+ private lane(step:ExecutionStep):ExecutionLane{return this.admissions.get(step.pool)?.lane(step)==='interactive'?'interactive':'background';}
+ private limit(pool:string,lane:ExecutionLane){
+  const admission=this.admissions.get(pool),configured=admission?admission.concurrency[lane]():Math.min(...[...this.handlers.values()].filter(handler=>handler.pool===pool).map(handler=>handler.concurrency()));
+  return Math.max(1,Math.min(lane==='background'?32:Number.MAX_SAFE_INTEGER,Math.floor(configured)));
+ }
+ private running(pool:string,lane:ExecutionLane,now=this.now()){
+  return (this.store.db.prepare("SELECT * FROM execution_steps WHERE pool=? AND state='running' AND lease_until>?").all(pool,now) as Row[]).filter(row=>this.lane(view(row))===lane).length;
+ }
+ /** Safe resource projection: no goals, evidence, provider credentials or prose. */
+ poolSnapshot(pool:string){
+  const lanes=this.admissions.has(pool)?['background','interactive'] as const:['background'] as const;
+  const waiting=this.store.db.prepare("SELECT * FROM execution_steps WHERE pool=? AND state='waiting'").all(pool) as Row[];
+  return Object.fromEntries(lanes.map(lane=>[lane,{limit:this.limit(pool,lane),running:this.running(pool,lane),waiting:waiting.filter(row=>this.lane(view(row))===lane).length}]));
+ }
  register(handler:ExecutionHandler){if(this.handlers.has(handler.kind))throw Error('Duplicate execution handler');this.handlers.set(handler.kind,handler);return async()=>{if(this.handlers.get(handler.kind)!==handler)return;this.handlers.delete(handler.kind);const running=[...this.active.values()].filter(value=>value.kind===handler.kind);for(const value of running)value.controller.abort(interrupted);await Promise.allSettled(running.map(value=>value.task));};}
  enqueue(operationId:string,kind:string,input:Record<string,unknown>,options:OperationMembership&{id?:string;dependencies?:string[];initial?:{state:ExecutionState;attempts:number;availableAt:number;error?:string}}={}){
   if(this.stopping)throw new StoreError('Execution engine is closed',503);
@@ -161,14 +181,17 @@ export class ExecutionEngine {
    for(const row of blocked){this.store.db.prepare("UPDATE execution_steps SET state='blocked',error='dependency_failed',updated_at=? WHERE id=? AND state='waiting'").run(this.now(),String(row.id));this.project(String(row.id));}
    const pools=[...new Set([...this.handlers.values()].map(h=>h.pool))];
    for(const pool of pools){
-    const handlers=[...this.handlers.values()].filter(h=>h.pool===pool),limit=Math.max(1,Math.min(32,...handlers.map(h=>h.concurrency())));
-    while([...this.active.values()].filter(a=>a.pool===pool).length<limit){
-     if(Number(this.store.db.prepare("SELECT count(*) n FROM execution_steps WHERE pool=? AND state='running' AND lease_until>?").get(pool,this.now())!.n)>=limit)break;
-     const row=this.store.db.prepare(`SELECT e.* FROM execution_steps e LEFT JOIN execution_fairness f ON f.pool=e.pool AND f.operation_id=e.operation_id WHERE e.pool=? AND e.state='waiting' AND e.available_at<=? AND e.kind IN (SELECT value FROM json_each(?)) AND NOT EXISTS(SELECT 1 FROM execution_dependencies d JOIN execution_steps parent ON parent.id=d.dependency_id WHERE d.step_id=e.id AND parent.state!='succeeded') AND NOT EXISTS(SELECT 1 FROM execution_resources requested JOIN execution_resources held ON held.resource_key=requested.resource_key JOIN execution_steps owner ON owner.id=held.step_id WHERE requested.step_id=e.id AND owner.id!=e.id AND owner.state='running' AND owner.lease_until>?) ORDER BY coalesce(f.last_started,0),e.created_at,e.rowid LIMIT 1`).get(pool,this.now(),JSON.stringify(handlers.map(h=>h.kind)),this.now()) as Row|undefined;
+    const handlers=[...this.handlers.values()].filter(h=>h.pool===pool),lanes:ExecutionLane[]=this.admissions.has(pool)?['background','interactive']:['background'];
+    for(const lane of lanes){const limit=this.limit(pool,lane);
+    while([...this.active.values()].filter(a=>a.pool===pool&&a.lane===lane).length<limit){
+     if(this.running(pool,lane)>=limit)break;
+     const candidates=this.store.db.prepare(`SELECT e.* FROM execution_steps e LEFT JOIN execution_fairness f ON f.pool=e.pool AND f.operation_id=e.operation_id WHERE e.pool=? AND e.state='waiting' AND e.available_at<=? AND e.kind IN (SELECT value FROM json_each(?)) AND NOT EXISTS(SELECT 1 FROM execution_dependencies d JOIN execution_steps parent ON parent.id=d.dependency_id WHERE d.step_id=e.id AND parent.state!='succeeded') AND NOT EXISTS(SELECT 1 FROM execution_resources requested JOIN execution_resources held ON held.resource_key=requested.resource_key JOIN execution_steps owner ON owner.id=held.step_id WHERE requested.step_id=e.id AND owner.id!=e.id AND owner.state='running' AND owner.lease_until>?) ORDER BY coalesce(f.last_started,0),e.created_at,e.rowid`).iterate(pool,this.now(),JSON.stringify(handlers.map(h=>h.kind)),this.now());
+     let row:Row|undefined;for(const candidate of candidates){if(this.lane(view(candidate as Row))===lane){row=candidate as Row;break;}}
      if(!row)break;
      const handler=this.handlers.get(row.kind)!;if(!handler.validate(view(row))){this.store.db.prepare("UPDATE execution_steps SET state='stale',error='input_changed',updated_at=? WHERE id=? AND state='waiting'").run(this.now(),row.id);this.project(row.id);continue;}
      const controller=new AbortController();let completed=true;const task=this.execute(row,handler,controller).catch(error=>{completed=false;throw error;}).finally(()=>{this.active.delete(row.id);if(completed)this.scheduleTick();});
-     this.active.set(row.id,{controller,task,pool,kind:row.kind});started.push(task);
+     this.active.set(row.id,{controller,task,pool,kind:row.kind,lane});started.push(task);
+    }
     }
    }
   }finally{this.pumping=false;if(this.pumpAgain){this.pumpAgain=false;this.scheduleTick();}}
@@ -178,9 +201,9 @@ export class ExecutionEngine {
   const db=this.store.db,now=this.now(),fence=randomUUID(),timeout=(typeof handler.timeoutMs==='function'?handler.timeoutMs():handler.timeoutMs)??120000;
   db.exec('BEGIN IMMEDIATE');
   try{
-   const limit=Math.max(1,Math.min(32,...[...this.handlers.values()].filter(h=>h.pool===row.pool).map(h=>h.concurrency())));
+   const lane=this.lane(view(row)),limit=this.limit(row.pool,lane);
    if(db.prepare("SELECT state FROM execution_steps WHERE id=?").get(row.id)?.state!=='waiting'){db.exec('COMMIT');return;}
-   if(Number(db.prepare("SELECT count(*) n FROM execution_steps WHERE pool=? AND state='running' AND lease_until>?").get(row.pool,now)!.n)>=limit){db.exec('COMMIT');return;}
+   if(this.running(row.pool,lane,now)>=limit){db.exec('COMMIT');return;}
    if(db.prepare("SELECT 1 FROM execution_resources requested JOIN execution_resources held ON held.resource_key=requested.resource_key JOIN execution_steps owner ON owner.id=held.step_id WHERE requested.step_id=? AND owner.id!=? AND owner.state='running' AND owner.lease_until>? LIMIT 1").get(row.id,row.id,now)){db.exec('COMMIT');return;}
    if(!handler.validate(view(row))){db.prepare("UPDATE execution_steps SET state='stale',error='input_changed',updated_at=? WHERE id=? AND state='waiting'").run(now,row.id);this.project(row.id);db.exec('COMMIT');return;}
    const admission=handler.admit?.(view(row));

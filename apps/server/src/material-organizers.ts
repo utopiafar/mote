@@ -646,9 +646,20 @@ export class MaterialOrganizerRuntime {
     if(Boolean(selected)!==input.active)return false;
     // A new capture, tombstone or file artifact may arrive before discovery.
     // Reject only changes that could alter this group; unrelated writes proceed.
-    const pending=db.prepare('SELECT DISTINCT id FROM changes WHERE seq>?').all(input.checkpoint) as {id:string}[];
+    if(db.prepare(`SELECT 1 FROM changes c JOIN material_organizer_inputs m ON m.capture_id=c.id
+      WHERE c.seq>? AND m.organizer_id=? AND m.group_json=? LIMIT 1`).get(input.checkpoint,input.organizerId,row.group_json))return false;
+    // The built-in source item has an exact declared identity. Unrelated source
+    // backlog cannot join that group; do not run every organizer selector for
+    // every later source on every lease check. Attachment children can join the
+    // parent's group, so retain their host lineage as a conservative candidate.
+    // Plugins retain the general selector path rather than inheriting this rule.
+    const pending=(organizer===sourceItem?db.prepare(`SELECT DISTINCT c.id FROM changes c JOIN captures original ON original.id=c.id
+      WHERE c.seq>? AND ((json_extract(original.json,'$.provenance.sourceId')=? AND json_extract(original.json,'$.provenance.externalId')=?)
+        OR EXISTS(SELECT 1 FROM file_evidence_links l JOIN captures parent ON parent.id=l.parent_id
+          WHERE l.capture_id=c.id AND json_extract(parent.json,'$.provenance.sourceId')=? AND json_extract(parent.json,'$.provenance.externalId')=?))`)
+      .all(input.checkpoint,input.group.sourceId,input.group.externalId,input.group.sourceId,input.group.externalId):
+      db.prepare('SELECT DISTINCT id FROM changes WHERE seq>?').all(input.checkpoint)) as {id:string}[];
     for(const {id} of pending){
-      if(db.prepare('SELECT 1 FROM material_organizer_inputs WHERE capture_id=? AND organizer_id=? AND group_json=?').get(id,input.organizerId,row.group_json))return false;
       if(this.selectedFor(id).some(value=>value.organizer.id===input.organizerId&&JSON.stringify(value.group)===row.group_json))return false;
     }
     return true;

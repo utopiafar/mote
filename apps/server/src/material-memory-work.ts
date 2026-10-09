@@ -186,6 +186,18 @@ export class MaterialMemoryWork {
     this.planning=true;
     try{return this.acceptPackages(runner,catalog,await planner(catalog),allowed,onCreated,onSkipped,allowCandidate);}finally{this.planning=false;}
   }
+  /** Ready receipt inputs are independent tasks. Packing is transport capacity,
+   * never a claim that their topics or evaluation times are interchangeable. */
+  drainBounded(runner:MaterialMemoryRunner,enabled:boolean,limit=64,allowed:(materialId:string)=>boolean=()=>true,allowCandidate:(candidate:MemoryWorkCandidate)=>boolean=()=>true):Promise<number>{
+    return this.drainPlanned(runner,enabled,async catalog=>{
+      const groups:MemoryWorkCandidate[][]=[];
+      for(const member of catalog){
+        const group=groups.find(group=>group.length<8&&JSON.stringify(group[0].recipe)===JSON.stringify(member.recipe)&&group.reduce((sum,item)=>sum+item.characters,0)+member.characters<=12000);
+        if(group)group.push(member);else groups.push([member]);
+      }
+      return groups.map(group=>({members:group.map(member=>member.key),goal:'Independently inspect each authorized original range',instruction:'These members share a transport batch only. Interpret each member using its own contextTime and attributionContext. Preserve every source and its supported time. Do not infer shared authorship, chronology, topic or evaluation time from this batch.'}));
+    },limit,allowed,undefined,undefined,allowCandidate);
+  }
   /** Resume durable model proposals without another planning call. Fresh
    * receipt claims and each product queue insertion still share one transaction. */
   acceptPackages(runner:MaterialMemoryRunner,catalog:MemoryWorkCandidate[],rawProposals:MemoryWorkProposal[],allowed:(materialId:string)=>boolean=()=>true,onCreated?:(proposal:MemoryWorkProposal,job:{id:string})=>void,onSkipped?:(proposal:MemoryWorkProposal)=>void,allowCandidate:(candidate:MemoryWorkCandidate)=>boolean=()=>true):number{
@@ -213,7 +225,7 @@ export class MaterialMemoryWork {
           if(!evidenceIds.length)return;
           const binding=rows[0].binding_json?memoryRecipeBindingSchema.parse(JSON.parse(rows[0].binding_json)):undefined;
           const packageId=proposal.id??sha256(JSON.stringify(proposal.members));
-          created=runner.create({evidenceIds,originKey:'memory-package:'+sha256(JSON.stringify(proposal.members)),contextTime:members.map(member=>member.contextTime).sort().at(-1),recipes:binding?[{id:binding.recipe.id,version:binding.recipe.version}]:undefined,automaticGrants:grants,workPackage:memoryWorkPackageSchema.parse({id:packageId,goal:proposal.goal,instruction:proposal.instruction,inputs:members.map(({materialId,ref,sourceId,inputKey,scope,contextTime,fingerprint})=>({materialId,ref,sourceId,inputKey,scope,contextTime,fingerprint}))})});
+          created=runner.create({evidenceIds,originKey:'memory-package:'+sha256(JSON.stringify(proposal.members)),contextTime:members[0].contextTime,recipes:binding?[{id:binding.recipe.id,version:binding.recipe.version}]:undefined,automaticGrants:grants,workPackage:memoryWorkPackageSchema.parse({id:packageId,goal:proposal.goal,instruction:proposal.instruction,inputs:members.map(({materialId,ref,sourceId,inputKey,scope,contextTime,fingerprint})=>({materialId,ref,sourceId,inputKey,scope,contextTime,fingerprint}))})});
           if(!this.inputs.claimMany(grants,created.id))throw new StoreError('Memory package authorization changed',409);
           for(const row of rows)if(!this.update(row,'job_id=?,error=NULL',[created.id]).changes)throw new StoreError('Memory package input changed',409);
         });}catch(error){for(const row of rows)if(row)this.update(row,"error='memory_enqueue_failed',ready_at=?",[this.now()+RETRY_DELAY_MS]);onSkipped?.(proposal);continue;}

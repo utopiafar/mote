@@ -1,3 +1,4 @@
+import {catalogRequest} from './catalog-request.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {startBridge} from '../dist/bridge.js';
@@ -15,7 +16,7 @@ test('selected device is enforced on every range tool and cannot be broadened',a
  const seen=[];const record={id:'bcbc6e3a-9b40-5499-945a-70ffb10dc2a7',deviceId:'selected',capturedAt:'2026-06-10T17:35:00Z',appName:'Diary',ocrText:'Generated evidence'};
  const reader={search:async r=>{seen.push(r);return [record];},timeline:async r=>{seen.push(r);return ({items:([record]),nextCursor:null});},activity:async r=>{seen.push(r);return {};},evidence:async()=>[record],devices:async()=>[{deviceId:'selected'},{deviceId:'other'}]};
  const bridge=await startBridge(reader,{question:'Generated',deviceId:'selected',timeZone:'Asia/Shanghai'},16);
- const call=async(tool,body={})=>{const r=await fetch(`${bridge.url}/${tool}`,{method:'POST',headers:{Authorization:`Bearer ${bridge.token}`,'Content-Type':'application/json'},body:JSON.stringify(body)});return {status:r.status,body:await r.json()};};
+ const call=async(tool,body={})=>{const r=await catalogRequest(bridge,tool,body);return {status:r.status,body:await r.json()};};
  try {
   for(const tool of ['search_context','timeline','activity']){assert.equal((await call(tool,{deviceId:'other'})).status,400);assert.equal((await call(tool)).status,200);}
   assert.equal(seen.length,3);assert.ok(seen.every(r=>r.deviceId==='selected'));

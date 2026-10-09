@@ -73,7 +73,7 @@ test('one failed extraction is isolated, retries without reupload, then enters a
   assert.equal(f.node.materials.input(materialId(job.sourceId,'file:bad.mp3'),['extracted-text'])?.ready,false);
   const count=f.calls.length;f.failed.clear();f.node.processing.retry(first.media![0].captureId!,'transcribe');await f.node.processing.tick();await f.organize();assert.equal(f.calls.length,count+1);
   await f.node.sourcePipelines.drainMemory(f.node.memoryPipeline,true,100);await Promise.all(f.node.memoryPipeline.list().map(item=>f.node.memoryPipeline.run(item.id)));
-  assert.equal(f.node.memoryPipeline.list().length,2);assert.ok(f.node.memoryPipeline.list().every(item=>item.status==='completed'));assert.ok(f.modelCalls.length>0);
+  assert.equal(f.node.memoryPipeline.list().length,1);assert.equal(f.node.memoryPipeline.get(f.node.memoryPipeline.list()[0].id).automaticGrants?.length,2);assert.ok(f.node.memoryPipeline.list().every(item=>item.status==='completed'));assert.ok(f.modelCalls.length>0);
   assert.ok(f.node.imports.get(job.id).media!.every(item=>item.memory?.state==='completed'),'zero admitted memories still have completed processing receipts');
   const memoryId=f.node.imports.get(job.id).media![0].memory!.jobIds[0];
   f.node.store.db.prepare("UPDATE memory_jobs SET json=json_set(json,'$.status','waiting_for_model') WHERE id=?").run(memoryId);

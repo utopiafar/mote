@@ -8,7 +8,7 @@ import {ProviderFailure} from '@mote/shared';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryStore} from '../src/memory.js';
-import {MemoryPipeline,type MemoryPipelineQuery} from '../src/memory-pipeline.js';
+import {MemoryPipeline,type MemoryPipelineQuery,type ConversationPreparation} from '../src/memory-pipeline.js';
 import {reviewMemory} from '../src/memory-review.js';
 import {createAgent} from '@mote/agent';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
@@ -23,9 +23,10 @@ async function fixture(t:TestContext,count=4){
  sources.register({id:'generated',name:'Generated',kind:'custom',deviceId:'generated',platform:'import'});
  const ids:string[]=[];for(let i=0;i<count;i++)ids.push((await sources.upsert('generated',{externalId:String(i),revision:'1',text:'I prefer a blue bowl.',observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original'})).id);
  const seen:MemoryPipelineQuery[]=[],reviews:MemoryPipelineQuery[]=[];let generate:(input:MemoryPipelineQuery)=>QueryResult|Promise<QueryResult>=input=>output(input,'extract',false),review=(input:MemoryPipelineQuery,draft:QueryResult)=>Promise.resolve({...draft,runId:'review'});
- const pipeline=new MemoryPipeline({store,memories,configured:()=>true,model:()=> 'generated-model',requireAdmission:true,query:async input=>{seen.push(input);return generate(input);},review:(input,draft)=>reviewMemory(input,draft,async reviewed=>{reviews.push(reviewed as MemoryPipelineQuery);return review(reviewed as MemoryPipelineQuery,draft);})});
+ let understand:((input:ConversationPreparation)=>Promise<{id:string;revision:string}[]|undefined>)|undefined;
+ const pipeline=new MemoryPipeline({store,memories,understand:input=>understand?.(input)??Promise.resolve(undefined),configured:()=>true,model:()=> 'generated-model',requireAdmission:true,query:async input=>{seen.push(input);return generate(input);},review:(input,draft)=>reviewMemory(input,draft,async reviewed=>{reviews.push(reviewed as MemoryPipelineQuery);return review(reviewed as MemoryPipelineQuery,draft);})});
  t.after(async()=>{await pipeline.close();store.close();rmSync(dir,{recursive:true,force:true});});
- return {directory:dir,store,sources,memories,pipeline,ids,seen,reviews,setGenerate(fn:typeof generate){generate=fn;},setReview(fn:typeof review){review=fn;},create(){return pipeline.create({evidenceIds:ids,workPackage:{id:'synthetic-package',goal:'Inspect the authorized originals',instruction:'Preserve independent provenance'}});}};
+ return {directory:dir,store,sources,memories,pipeline,ids,seen,reviews,setUnderstand(fn:NonNullable<typeof understand>){understand=fn;},setGenerate(fn:typeof generate){generate=fn;},setReview(fn:typeof review){review=fn;},create(){return pipeline.create({evidenceIds:ids,workPackage:{id:'synthetic-package',goal:'Inspect the authorized originals',instruction:'Preserve independent provenance'}});}};
 }
 
 test('wide packages reach the real Codex adapter for extraction and independent review without dropping members',async t=>{
@@ -84,7 +85,7 @@ for(const mode of ['missing','saturated'] as const)test(`${mode} coverage subdiv
  const done=await f.pipeline.run(f.create().id);assert.equal(done.status,'completed');assert.equal(done.batches.length,3);
  const parent=done.batches.find(batch=>batch.supersededBy);assert.equal(parent?.supersededBy?.length,2);
  const leaves=done.batches.filter(batch=>!batch.supersededBy);assert.equal(leaves.flatMap(batch=>batch.coverage!).length,4);assert.ok(leaves.every(batch=>batch.coverage!.every(member=>member.state==='no_candidates')));
- assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,4);assert.equal(f.seen.length,3);assert.equal(f.reviews.length,3);
+ assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,4);assert.equal(f.seen.length,mode==='missing'?4:3);assert.equal(f.reviews.length,mode==='missing'?2:3);
 });
 
 test('review timeout preserves the private package draft and retries only fresh independent review',async t=>{
@@ -103,4 +104,32 @@ test('candidate capacity scales with package members and a revised input fences 
  f.setGenerate(input=>{assert.equal((input.taskContext!.memoryWork as {maxCandidates:number}).maxCandidates,32);return output(input,'old',false);});
  f.setReview(async(_input,draft)=>{await f.sources.upsert('generated',{externalId:'1',revision:'2',text:'A corrected generated preference.',observedAt:'2026-09-02T00:00:00Z',kind:'file',layer:'original'});return {...draft,runId:'changed-review'};});
  const done=await f.pipeline.run(job.id);assert.equal(done.status,'failed');assert.ok(done.batches[0].coverage!.every(member=>member.state==='stale'));assert.equal(f.memories.list().length,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+});
+
+for(const broken of ['json','coverage','quote'] as const)test(`invalid ${broken} reviewer output repairs only review and preserves the validated draft`,async t=>{
+ const f=await fixture(t);let attempts=0;
+ f.setReview(async(input,draft)=>{attempts++;if(attempts>1)return {...draft,runId:'repaired-review'};
+  if(broken==='json')return {...draft,answer:'invalid json',runId:'invalid-review'};
+  if(broken==='coverage'){const value=JSON.parse(draft.answer);value.coverage=[];return {...draft,answer:JSON.stringify(value),runId:'invalid-review'};}
+  const invalid=output(input,'invalid-review',true),value=JSON.parse(invalid.answer);value.memories[0].evidence[0].quote='Invented quote';return {...invalid,answer:JSON.stringify(value)};
+ });
+ const done=await f.pipeline.run(f.create().id);assert.equal(done.status,'completed');assert.equal(f.seen.length,1);assert.equal(f.reviews.length,2);assert.equal(done.batches[0].reviewReceipt?.draftRunId,'extract');assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,4);
+ assert.deepEqual(done.batches[0].validationFailures?.map(failure=>({phase:failure.phase,runId:failure.runId})),[{phase:'review',runId:'invalid-review'}],'one invalid reviewer response records one reviewer failure, never a failure on the valid draft');
+});
+
+for(const variant of ['valid','legacy','missing','saturated','contract','range'] as const)test(`Coding candidate reuse consumes only an exact complete unsaturated artifact: ${variant}`,async t=>{
+ const f=await fixture(t,1);
+ f.setUnderstand(async preparation=>{
+  const member=preparation.memoryWork!.members[0],coverage=variant==='missing'?[]:[{key:member.key,state:'no_candidates',candidateIndexes:[]}];
+  const artifact=f.store.archive.save('3'.repeat(64),'generated-coding-'+variant,'1'.repeat(64),{kind:'semantic',text:'Generated interpretation',metadata:{productsVersion:variant==='legacy'?1:2,generationContract:variant==='contract'?'different':preparation.generationContract,complete:true,runId:'authentic-understanding-run',memoryCandidates:[],memoryCoverage:coverage,memoryCapacity:{saturated:variant==='saturated'},evidenceRanges:variant==='range'?[]:preparation.ranges}},f.ids.map(id=>({id,fingerprint:f.store.archive.fingerprint(id)!})),'generated-only','1','2'.repeat(64));
+  return [{id:artifact.id,revision:artifact.revision}];
+ });
+ const done=await f.pipeline.run(f.create().id);assert.equal(done.status,'completed');assert.equal(f.seen.length,variant==='valid'?0:1);assert.equal(f.reviews.length,1);assert.equal(done.batches[0].reviewReceipt?.draftRunId,variant==='valid'?'authentic-understanding-run':'extract');
+});
+
+test('compatible reviewers reuse a complete draft when transport target ordering changes',async t=>{
+ const f=await fixture(t,2),common={contextTime:'2026-10-01T00:00:00Z',workPackage:{id:'generated-order',goal:'Inspect each selected original independently',instruction:'Preserve each original context and attribution'}};
+ const first=f.pipeline.create({...common,evidenceIds:f.ids,recipes:[{id:'mote.personal-memory',version:'2'}]});assert.equal((await f.pipeline.run(first.id)).status,'completed');
+ const second=f.pipeline.create({...common,evidenceIds:[...f.ids].reverse(),recipes:[{id:'mote.coding-memory',version:'2'}]});assert.equal((await f.pipeline.run(second.id)).status,'completed');
+ assert.equal(f.seen.length,1,'transport order does not change an otherwise exact generation contract');assert.equal(f.reviews.length,2,'each reviewer remains independent');
 });

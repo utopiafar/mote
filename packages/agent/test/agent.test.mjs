@@ -8,6 +8,7 @@ import {
   createRuntimePatch,
 } from "../dist/index.js";
 import { startBridge, TOOL_NAMES } from "../dist/bridge.js";
+import {taskTools} from '../dist/task-context.js';
 import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider.ts';
 
 const record = {
@@ -149,7 +150,7 @@ test("bridge authentication, bounded scope, evidence discovery and field project
       (await request("_ready", { tools: [...TOOL_NAMES, "bash"] })).status,
       400,
     );
-    assert.equal((await request("_ready", { tools: [...TOOL_NAMES.filter(name=>name!=='action_catalog'),"skill"] })).status, 200);
+    assert.equal((await request("_ready", { tools: [...taskTools({question:'Generated'}),"skill"] })).status, 200);
     const response = await request("search_context", {
       query: "orbital observatory",
       after: "2020-01-01T00:00:00Z",
@@ -233,7 +234,7 @@ test(
         assert.equal(body.output_config.effort, "high");
         assert.equal(body.dsh_session_log,undefined);
         const exposed = body.tools.map((tool) => tool.name).sort();
-        assert.deepEqual(exposed, [...TOOL_NAMES.filter(name=>name!=='action_catalog'),"skill"].sort());
+        assert.deepEqual(exposed, [...taskTools({question:'Generated'}),"skill"].sort());
         assert.ok(!JSON.stringify(body.system??[]).includes(record.ocrText),'Captured evidence never becomes the trusted system prompt');
       }
       const toolMessages = requests[2].messages.filter(
@@ -333,4 +334,17 @@ test('wire normalization preserves literal JSON string controls without inventin
  assert.equal(parseAnswer(valid,records).answer,answer);
  assert.throws(()=>parseAnswer('{"answer":"text\nnext","citationIds":["unknown"]}',records),/not retrieved/);
  assert.throws(()=>parseAnswer('{"answer":"unterminated\n',records),/valid evidence-backed/);
+});
+
+test('real Harness discovers a special capability and repairs invalid JSON arguments through the strict bridge', {timeout:90000},async()=>{
+ const requests=[];let reads=0;
+ const fixture=createServer(async(req,res)=>{
+  let raw='';for await(const part of req)raw+=part;const body=JSON.parse(raw);requests.push(body);const stage=requests.length-1;
+  const tool=stage===0?{name:'capability_discover',args:{name:'media_activity'}}:stage<3?{name:'capability_execute',args:{name:'media_activity',version:'1',argumentsJson:JSON.stringify({screenLocked:stage===1?'true':true})}}:undefined;
+  writeMessagesResponse(res,{stage,tool,text:JSON.stringify({answer:'Generated playback measurement is provider-reported, not proof of listening.',citationIds:[]})});
+ });
+ await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));
+ const agent=createAgent({reader:{...reader,mediaActivity:async args=>{reads++;assert.equal(args.screenLocked,true);return {observations:1};}},baseUrl:`http://127.0.0.1:${fixture.address().port}/v1`,apiKey:'generated-key',model:'fixture',agentTimeoutMs:60000});
+ try{const answer=await agent.query({question:'Generated media measurement'});assert.equal(reads,1);assert.equal(requests.length,4);assert.deepEqual(answer.trace.map(row=>row.tool),['capability_discover','media_activity']);assert.deepEqual(answer.citations,[]);assert.ok(JSON.stringify(requests[2].messages).includes('invalid_tool_arguments'));assert.ok(requests[0].tools.some(t=>t.name==='read_image'));assert.ok(!requests[0].tools.some(t=>t.name==='media_activity'));}
+ finally{await agent.close();fixture.closeAllConnections();await new Promise(resolve=>fixture.close(resolve));}
 });

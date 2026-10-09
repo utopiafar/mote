@@ -8,6 +8,7 @@ import {AgentYieldError,originalEvidenceReceipt,parseAnswer,type QueryInput} fro
 import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import type {Config} from '../src/config.js';
+import {startBridge} from '../../../packages/agent/dist/bridge.js';
 
 const token='generated-delegation-app-owner',headers={authorization:`Bearer ${token}`};
 const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentConcurrency:1,llmConcurrency:1,agentTimeoutMs:30000});
@@ -34,15 +35,22 @@ for(const restart of [false,true])test(`full app delegation ${restart?'resumes a
    if(!delegation.units.length){
     const submitted=await controls.execute('delegation_submit',{units:[{id:'original',capabilityId:'context.research',title:'Check the generated original',goal:'Read the scoped source',input:{question:'Inspect the generated original'},scope:{deviceId:scope.deviceId,after:scope.after,before:scope.before}}]});
     assert.equal((submitted.data as {units:unknown[]}).units.length,1);assert.equal(childCalls,0,'submission must immediately return a handle without waiting for the child');
-    const yielded=await controls.execute('delegation_yield',{mode:'all',message:'Wait for the generated original check'});assert.equal(yielded.yield,true);throw new AgentYieldError();
+    const yielded=await controls.execute('delegation_yield',{mode:'all',message:'Wait for the generated original check',workspaceJson:JSON.stringify({unresolved:['Check the generated local archive choice'],workerIds:[`query:${id}:unit:original`],searches:[{tool:'material_catalog',query:'local archive'}]})});assert.equal(yielded.yield,true);throw new AgentYieldError();
    }
    assert.equal(delegation.units[0].status,'succeeded');assert.ok(delegation.units[0].artifactId);
-   if(holdResume){heldResume=true;await new Promise<void>(resolve=>input.signal!.addEventListener('abort',()=>resolve(),{once:true}));throw input.signal!.reason;}
-   const result=await controls.execute('delegation_read',{artifactId:delegation.units[0].artifactId,evidenceIds:[original.id]});readCalls++;
+   const workspace=input.taskContext!.queryWorkspace as {revision:number;unresolved:string[];supported:unknown[];citationAuthority:boolean};assert.equal(workspace.citationAuthority,false);assert.equal(workspace.unresolved[0],'Check the generated local archive choice');
+   if(holdResume){await controls.execute('delegation_workspace',{workspaceJson:JSON.stringify({unresolved:workspace.unresolved,supported:[{statement:'Generated child inspected the local archive choice',evidenceIds:[original.id]}],inspected:[{id:original.id,start:0,end:original.ocrText.length}],workerIds:[delegation.units[0].id]})});heldResume=true;await new Promise<void>(resolve=>input.signal!.addEventListener('abort',()=>resolve(),{once:true}));throw input.signal!.reason;}
+   const bridge=await startBridge(node.featureServices.archiveReader,input,12);
+   try{
+   assert.throws(()=>parseAnswer(JSON.stringify({answer:'Historical workspace claim',citationIds:[original.id]}),bridge.records),/not retrieved/,'restored workspace/child IDs do not seed a fresh ledger');
+   const response=await fetch(bridge.url+'/delegation_read',{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify({artifactId:delegation.units[0].artifactId,evidenceIds:[original.id]})});assert.equal(response.status,200);const wire=await response.json() as {data:{text:string};evidence:import('@mote/agent').ContextRecord[]};
+   const result={data:wire.data,evidence:wire.evidence};readCalls++;
    assert.equal(result.evidence?.length,1);assert.equal(result.evidence![0].ocrText,original.ocrText);assert.deepEqual(result.evidence![0].textRange,{start:0,end:original.ocrText.length,total:original.ocrText.length,nextOffset:null});
    assert.match((result.data as {text:string}).text,/Generated child found/);
    input.onEvidence?.(result.evidence!);
-   return {...parseAnswer(JSON.stringify({answer:`Generated final answer grounded in the original [${original.id}]`,citationIds:[original.id]}),new Map(result.evidence!.map(record=>[record.id,record]))),trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[original.id]}};
+   if(restart){assert.equal(workspace.revision,2);assert.equal(workspace.supported.length,1);}
+   return {...parseAnswer(JSON.stringify({answer:`Generated final answer grounded in the original [${original.id}]`,citationIds:[original.id]}),bridge.records),trace:bridge.trace,runId:randomUUID(),evidenceDependencies:bridge.evidenceDependencies};
+   }finally{await bridge.close();}
   }finally{active--;}
  }});
  node=await buildApp(config(directory),{agent:fixtureAgent(restart),backgroundWorker:false});
@@ -57,6 +65,7 @@ for(const restart of [false,true])test(`full app delegation ${restart?'resumes a
  assert.equal(childCalls,1);assert.equal(maxActive,1);assert.equal(readCalls,1);assert.equal(coordinatorCalls,restart?3:2);assert.deepEqual(order.slice(0,3),['coordinator','child','coordinator']);
  const conversation=(await node.app.inject({url:'/api/conversations/'+run.conversationId,headers})).json();assert.equal(conversation.turnCount,1);assert.equal(conversation.turns[0].result.citations[0].id,original.id);assert.equal(conversation.turns[0].result.citations[0].excerpt,original.ocrText);
  const work=node.featureServices.delegation.get('query:'+id);assert.equal(work.status,'succeeded');assert.equal(work.units.length,1);assert.equal(work.units[0].attempts,1);assert.equal(work.events.filter(event=>event.type==='branch.completed').length,1);
+ assert.ok(!JSON.stringify(run).includes('Generated child inspected'));assert.ok(!JSON.stringify(run).includes('Check the generated local archive choice'));
  const activity=(await node.app.inject({url:'/api/work-activity/'+encodeURIComponent('query:'+id),headers})).json();assert.equal(activity.state,'completed');assert.equal(activity.branches[0].state,'completed');assert.ok(activity.artifacts.some((artifact:{kind:string})=>artifact.kind==='answer'));assert.ok(activity.events.some((event:{type:string})=>event.type==='branch.completed'));
  assert.equal(observed.filter(input=>!input.hostControlChannel).length,1);
 });
@@ -77,4 +86,27 @@ test('durable query metadata omits model-authored progress prose while retaining
  const id=randomUUID(),accepted=await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated progress privacy question'}}});assert.equal(accepted.statusCode,202,accepted.body);
  const run=await until(()=>{const receipt=node.featureServices.queryRuns.get(id);return receipt.status==='completed'?receipt:undefined;});
  const raw=String(node.store.db.prepare('SELECT json FROM query_runs WHERE id=?').get(id)!.json);assert.ok(!raw.includes(secret));assert.ok(run.events.every(event=>event.message===undefined));assert.ok(run.events.some(event=>event.stage==='model'&&event.step===2));assert.ok(run.events.some(event=>event.tool==='evidence'&&event.phase==='completed'&&event.count===1));
+});
+
+test('real Coding HTTP intake and durable query can deliver citable material originals and finish without a worker',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-direct-material-query-'));let node:Awaited<ReturnType<typeof buildApp>>,calls=0;
+ const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{
+  calls++;const bridge=await startBridge(node.featureServices.archiveReader,input,16);
+  const call=async(tool:string,args:unknown)=>{const response=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify(args)});assert.equal(response.status,200);return response.json();};
+  try{
+   const catalog=await call('material_catalog',{query:'Generated local archive choice'}),ref=catalog.data.items[0].ref;
+   const page=await call('material_read',{ref,length:4000});assert.ok(page.data.sourceEvidence.length>0);
+   const delivered=page.data.sourceEvidence.find((record:{ocrText:string})=>record.ocrText.includes('Generated local archive choice'));assert.ok(delivered);
+   assert.equal(bridge.records.has(delivered.id),true);assert.equal(bridge.trace.some(row=>row.tool==='evidence'),false,'one material read already delivered the exact formal original');
+   return {...parseAnswer(JSON.stringify({answer:`Generated project chose a local archive [${delivered.id}]`,citationIds:[delivered.id]}),bridge.records),trace:bridge.trace,runId:randomUUID(),evidenceDependencies:bridge.evidenceDependencies};
+  }finally{await bridge.close();}
+ }};
+ node=await buildApp(config(directory),{agent,backgroundWorker:false});t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ const source='generated-coding-direct';assert.equal((await node.app.inject({method:'POST',url:'/api/sources',headers,payload:{id:source,name:'Generated Coding',kind:'coding-agent',deviceId:scope.deviceId,platform:'macos'}})).statusCode,200);
+ const upload=await node.app.inject({method:'PUT',url:`/api/sources/${source}/items`,headers,payload:{externalId:'event-one',revision:'1',observedAt:original.capturedAt,kind:'message',layer:'snapshot',text:'Generated local archive choice: use SQLite for the sample project.',document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'generated-session',projectKey:'generated-project',eventId:'000001',role:'user',attribution:'human',part:0,parts:1}}}});assert.equal(upload.statusCode,200,upload.body);
+ await node.sourcePipelines.tick();
+ const id=randomUUID(),request={id,input:{question:'Why did the generated project choose the local archive?',...scope}},accepted=await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:request});assert.equal(accepted.statusCode,202,accepted.body);
+ const run=await until(()=>{const receipt=node.featureServices.queryRuns.get(id);return receipt.status==='completed'?receipt:undefined;});assert.equal(calls,1);assert.equal(node.featureServices.delegation.get('query:'+id).units.length,0);
+ const saved=(await node.app.inject({url:'/api/conversations/'+run.conversationId,headers})).json();assert.match(saved.turns[0].result.citations[0].excerpt,/Generated local archive choice/);assert.equal(saved.turns[0].result.trace.some((row:{tool:string})=>row.tool==='evidence'),false);
+ assert.equal((await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:request})).json().status,'completed');assert.equal(calls,1,'same durable HTTP ID is idempotent');
 });
