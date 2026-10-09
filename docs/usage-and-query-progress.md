@@ -29,9 +29,9 @@ Skill 表示入口指定的主流程：个人洞察 `personal-insight`、记忆�
 - DeepSeek / OpenAI-compatible: `/models`；Anthropic: `/v1/models`；Gemini: `/models`，仅显示支持 generateContent 的条目。
 - 凭据仅由中央节点发送，复用凭据到改变后的目标沿用既有显式确认规则。禁止重定向，限制读取时长、响应体和分页数，错误不回显原始响应。
 - “本机 Codex App Server”调用中央节点 PATH 上的 `codex app-server`，只执行 initialize / initialized / model/list（含分页），不创建 thread/turn、不执行模型。需要中央节点本机已安装并登录 Codex。
-- Codex 是额外的目录来源，选择仅填写模型 ID，**不会把当前 API/Harness 运行时切换成 Codex 登录态推理**。目录可见性不保证当前 API 凭据可调用该模型，仍可使用既有“测试连接”。原生 Codex 问答执行适配不在本次变更范围。
+- 目录读取不改变已保存配置。保存 `codex-app-server` 协议与模型后，查询、理解、Memory 和洞察使用本机原生 Codex 执行适配；HTTP 协议仍使用 Harness。目录可见性不是成功生成的保证，可使用既有“测试连接”。
 
-协议参考：[Codex App Server 官方文档](https://learn.chatgpt.com/docs/app-server#list-models-modellist)。Harness 事件字段对照仓库锁定的 `@deepseek-ai/dsh-sdk-client` / `dsh-session` / `dsh-token-meter` 0.1.5-rc.2 类型和实现。
+协议参考：[Codex App Server 官方文档](https://learn.chatgpt.com/docs/app-server#list-models-modellist)。Harness 事件字段以当前 lockfile 固定的 0.2.0-rc.2 类型和实际实现为准。
 
 所有接口沿用 owner 权限和 no-store 响应。计量、目录及任务测试使用合成记录与本地模拟服务；浏览器检查同样使用独立临时资料库。
 

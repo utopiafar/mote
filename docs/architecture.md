@@ -12,7 +12,7 @@ flowchart LR
   R --> P[OCR / ASR / 文件解码]
   P --> M
   M --> E[只读 EvidenceReader / ArchiveReader]
-  M --> W[获授权的 Memory 规划与独立审核]
+  M --> W[获授权的滚动 Memory 提取与独立审核]
   W --> E
   E <--> A[Agent / 持久委派 / 模型]
   A --> U[网页 / 原生中央窗口 / 回答与洞察]
@@ -55,7 +55,7 @@ flowchart LR
 
 ExecutionEngine 负责并发、资源互斥、持久租约、输入版本、取消、超时、重试与提交 fence。当前任务中断可恢复成功检查点；删除、授权撤销和配置变化阻止晚到输出发布。没有每日调用、字符、token 或费用硬预算；实际用量和价格记录继续保留，未知用量不当作零费用。
 
-问答统一通过 DelegatedQueryRuns 和 DelegationRuntime。协调器可提交有界只读研究子任务，等待时释放模型槽，重启复用已完成子任务和 journal。Memory 规划提交有界 package，产品验证完整覆盖后交给现有 MemoryPipeline；独立审核决定长期记忆，模型语义结论不会由宿主关键词替代。新接收输入持续记录自动 Memory 授权，重复确认、派生更新和重启不产生新授权。
+问答统一通过 DelegatedQueryRuns 和 DelegationRuntime，普通问题默认直接查证；模型可提交有界只读研究子任务，等待时释放模型槽，重启复用已完成子任务和 journal。普通就绪自动 Memory 按冻结的配方/授权合同结构装成有界滚动 package，直接交给现有 MemoryPipeline；需要语义规划或额外上下文时仍由模型决定。逐成员覆盖与独立审核决定长期记忆，模型语义结论不会由宿主关键词替代。新接收输入持续记录自动 Memory 授权，重复确认、派生更新和重启不产生新授权。可信前后台 lane 在同一执行器中准入，工具采用小原生核心与版本固定的按需能力目录；见 [本轮ADR](adr-system-refactor.md)。
 
 查询、理解、Memory 与洞察运行时仅提供宿主授予的只读上下文工具与 Skill。原文、OCR、元数据和模型产物都是证据，不能改变权限或系统指令。引用必须指向本轮实际读取且范围允许的原始片段；派生摘要不授予未读原文的引用权限。
 

@@ -38,6 +38,8 @@ Codex App Server 可能在工具完成事件中回显图片。适配器允许最
 
 ## 检索与证据
 
+常驻原生核心为 `material_catalog`、`material_read`、`search_context`、`timeline`、`evidence`、`memories`、`read_image` 和 `progress_update`。下表中的统计与来源能力通过 `capability_discover` 返回固定版本与schema，再由 `capability_execute` 调用；每次都复核权限与预算，不能执行任意URL/RPC。`skill` 和受宿主约束的委派控制通道保留。普通问答默认直接查证，模型按需选择研究；目录发现状态不跨片段继承，workspace也不恢复引用授权。
+
 | 工具 | 行为 |
 |---|---|
 | `search_context` | 使用模型生成的查询表达式检索，可带时间、设备和数量范围 |
@@ -84,7 +86,7 @@ Harness 查询创建独立临时目录、Harness home 和会话，通过带随�
 
 ## 导入运行时与 Skill
 
-通用文件导入使用 `createImportAgent()` 与 `document-import` Skill，在独立工作目录中启动原生文件读写和 `bash` 工具，检查用户选定的资料并生成转换清单。原件保存、路径与结构校验、用户确认和实际归档由中央宿主完成，之后另建只读 Memory 批处理任务。导入解析期限至少 300 秒，与普通查询请求的期限不同。
+通用文件导入使用 `createImportAgent()` 与 `document-import` Skill，在独立工作目录中启动原生文件读写和 `bash` 工具，检查用户选定的资料并生成转换清单。原件保存、路径与结构校验、用户确认和实际归档由中央宿主完成；每条接收回执保留其自动配方授权，资料就绪后进入滚动 Memory 队列，不在整次导入结束时另建重复任务。导入解析期限至少 300 秒，与普通查询请求的期限不同。
 
 导入会话没有查询 Agent 的中央资料桥，但其 shell 仍拥有服务账户允许的权限。精简环境、临时 home、工作目录及“不读无关文件、不联网”的提示不构成操作系统沙箱；提示是行为约束，不能当作强制安全边界。模型传输检查也不能限制 shell 子进程自行访问网络。
 
@@ -94,7 +96,7 @@ Harness 查询创建独立临时目录、Harness home 和会话，通过带随�
 
 `@mote/agent` 暴露 `createAgent({reader, provider, protocol, model, baseUrl, apiKey, headers, extraBody, reasoningEffort, maxTokens, requestTimeoutMs, agentTimeoutMs})`。`requestTimeoutMs` 是单次 Provider 请求期限；`agentTimeoutMs` 是整个 Agent 运行期限，传入 `null` 可关闭宿主总期限。`ContextReader` 提供检索、时间线、证据、活动、设备及来源/记忆等只读入口，实现见 [类型定义](../packages/agent/src/types.ts)。存储或检索引擎可替换，工具权限与证据 ID 保持稳定；关闭时调用 `agent.close()`。
 
-`@deepseek-ai/dsh`、SDK 和工具包固定为 `0.1.5-rc.2`，Cordis 固定为 `4.0.2`，通用协议使用同版本 `@deepseek-ai/dsh-llm-pi-ai`，传递依赖由 lockfile 锁定。升级框架时需重新验证工具清单、只读限制、会话清理和引用校验。官方契约见 [SDK](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/sdk/client/README.md) 和 [工具插件](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/docs/cookbook/adding-a-tool.md)。
+`@deepseek-ai/dsh`、SDK 和工具包固定为 `0.2.0-rc.2`，Cordis 固定为 `4.0.4`，通用协议使用同版本 `@deepseek-ai/dsh-llm-pi-ai`，传递依赖由 lockfile 锁定。升级框架时需重新验证工具清单、只读限制、会话清理和引用校验。旧版本官方契约参考见 [SDK](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/sdk/client/README.md) 和 [工具插件](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/docs/cookbook/adding-a-tool.md)，当前行为以锁定实现与适配器回归为准。
 
 ```sh
 npm run build:libs
