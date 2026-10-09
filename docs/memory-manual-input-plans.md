@@ -15,6 +15,15 @@ their existing dependency policies. See the [selection correction ADR](adr-manua
 
 Ready plans keep the existing same-recipe batching budget. Each generated batch owns only its applicable input pins and Material references; validation, model reads, review, commit and timeout subdivision use that scope. A failed transcript does not invalidate an independent body batch. Timeout subdivision preserves its child scopes and updates the plans' batch associations. Existing jobs retain their saved evidence and strategy bindings; ambiguous old scope metadata keeps conservative validation instead of inventing a new authorization.
 
+Package metadata and the full coverage contract are supplied through the task
+context once, keeping internal extraction and review questions within the existing
+Agent limit. Coverage describes each listed target range, not completion of the
+whole original. Separately scheduled ranges alone do not require more context;
+genuine missing interpretive evidence remains explicit. The host aggregates job
+completion and preserves all original range grants. See the
+[batch context ADR](adr-memory-batch-context.md) and
+[generated regression](memory-batch-context-validation.md).
+
 `memory.input` is a metadata-only execution pool. Pending output uses admission waiting with a bounded retry delay, before any attempt or model slot is claimed. The existing memory feature's tick rechecks original plans; a host wake hook can shorten that delay. Failed/unavailable inputs remain blocked until explicit retry; retrying Memory does not initiate media processing. A pending input's readiness timer does not block an explicit retry of another failed input; actual provider cooldowns still apply. Binding a newly ready input, creating its batches, saving plan associations and registering execution steps occur in the same fenced transaction. Quota failure rolls the entire operation back.
 
 The job and operation remain waiting while required input steps are unfinished, even after body batches complete. `run()` returns the current durable stopping point rather than waiting hours for OCR. Manual execution permission comes from the durable uncancelled, unpaused job; the in-process promise map only tracks callers awaiting the current pass. Automatic Material and lifecycle jobs retain their existing grant and activation rules. Pausing blocks new work, cancellation revokes all unfinished input and model steps, and completed batches are not replayed on recovery.
