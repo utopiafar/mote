@@ -81,9 +81,9 @@ test('clean Coding material runs one authorized understanding and reuses its can
  assert.equal((full.metadata.usage as UsageReceipt).id,receipts[0].id);assert.equal(receipts[0].attribution?.agentId,'coding-conversation-understanding');assert.ok(receipts[0].attribution?.operationId?.startsWith('workflow:'));
 });
 
-for(const failure of ['provider','post-query-parse'] as const)test(`Coding ${failure} failure retains one producer-owned usage receipt through the real app query wrapper`,async t=>{
+for(const failure of ['provider','post-query-parse'] as const)test(`Coding ${failure} failure retains one producer-owned usage receipt per actual call through the real app query wrapper`,async t=>{
  let calls=0;const node=await appFixture(t,async input=>{calls++;assert.ok(isUnderstanding(input));input.onUsage?.(tokens(47,3,failure!=='provider'));if(failure==='provider')throw Error('Generated provider failure');return {answer:'Invalid generated unified output',citations:[],trace:[],runId:randomUUID()};});
- const fixture=await receive(node),job=await node.memoryPipeline.run(manualJob(node,fixture.ids).id);assert.equal(job.status,'failed');assert.equal(calls,1);const receipts=usage(node);assert.equal(receipts.length,1);assert.equal(receipts[0].operation,'coding-conversation-understanding');assert.equal(receipts[0].status,'failed');assert.equal(receipts[0].tokens?.totalTokens,50);assert.equal(node.store.archive.page({kind:'semantic'}).items.length,0);assert.equal(node.memories.list().length,0);
+ const fixture=await receive(node),job=await node.memoryPipeline.run(manualJob(node,fixture.ids).id);assert.equal(job.status,'failed');assert.equal(calls,failure==='provider'?4:1);const receipts=usage(node);assert.equal(receipts.length,calls,'each actual provider attempt has exactly one producer-owned receipt');assert.ok(receipts.every(receipt=>receipt.operation==='coding-conversation-understanding'&&receipt.status==='failed'&&receipt.tokens?.totalTokens===50&&receipt.tokens.complete===(failure!=='provider')));assert.equal(node.store.archive.page({kind:'semantic'}).items.length,0);assert.equal(node.memories.list().length,0);
 });
 
 test('empty Coding candidates publish work/events and receive independent review without a second extraction',{timeout:15000},async t=>{
