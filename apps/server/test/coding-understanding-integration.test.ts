@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {ContextReader,QueryInput} from '@mote/agent';
-import type {QueryResult,SourceItem} from '@mote/shared';
+import type {QueryResult,SourceItem,TokenUsage,UsageReceipt} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 
@@ -16,6 +16,8 @@ const recordedAt='2001-01-01T10:00:00Z',contextTime='2001-01-02T00:00:00Z';
 const owner='Generated owner: In this workspace I prefer concise written decisions.';
 const report='Generated assistant: Automatic tests passed; physical-device checks remain unknown. PR #123 is ready.';
 const toolSecret='PRIVATE_GENERATED_TOOL_BODY';
+const tokens=(inputTokens:number,outputTokens:number,complete=true):TokenUsage=>({measurement:'thread_cumulative',complete,inputTokens,outputTokens,totalTokens:inputTokens+outputTokens,requests:0,reportedRequests:0,cacheReadTokens:0,cacheWriteTokens:0});
+const usage=(node:Node)=>node.store.db.prepare('SELECT json FROM model_usage ORDER BY created_at,id').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt);
 const token='generated-coding-understanding-owner-token';
 const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-stub',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>resolve=done);return {promise,resolve};};
@@ -58,6 +60,7 @@ test('clean Coding material runs one authorized understanding and reuses its can
  let understanding=0,review=0,extraction=0;const calls:QueryInput[]=[];
  const node=await appFixture(t,async(input,reader)=>{
   calls.push(input);const records=await supplied(input,reader),id=records[0].id;
+  input.onUsage?.(isUnderstanding(input)?tokens(101,17):tokens(51,9));
   if(isUnderstanding(input)){understanding++;return response(id,owner,products(id,true));}
   if(input.traceContext?.phase==='review'){
    review++;assert.ok(input.taskContext?.untrustedMemoryDraft);assert.equal(input.contextTime,contextTime);
@@ -73,6 +76,14 @@ test('clean Coding material runs one authorized understanding and reuses its can
  assert.equal(full.processor,'mote.coding-conversation-understanding');assert.equal(full.metadata.materialRef,fixture.material.ref);assert.ok(full.text.includes('device validation remains unknown'));
  assert.deepEqual(full.metadata.evidenceRanges,job.batches[0].evidenceRanges);assert.ok((full.metadata.memoryCandidates as unknown[]).length);
  assert.equal(calls.filter(input=>isUnderstanding(input)).length,1);assert.ok(calls.filter(isUnderstanding).every(input=>input.executionLane==='background'));
+ const receipts=usage(node);assert.equal(receipts.length,2,'the real app query wrapper and producer share one usage owner per actual call');
+ assert.deepEqual(receipts.map(receipt=>receipt.operation),['coding-conversation-understanding','memory-strategy']);assert.ok(receipts.every(receipt=>receipt.status==='completed'));assert.deepEqual(receipts.map(receipt=>receipt.tokens?.totalTokens),[118,60]);
+ assert.equal((full.metadata.usage as UsageReceipt).id,receipts[0].id);assert.equal(receipts[0].attribution?.agentId,'coding-conversation-understanding');assert.ok(receipts[0].attribution?.operationId?.startsWith('workflow:'));
+});
+
+for(const failure of ['provider','post-query-parse'] as const)test(`Coding ${failure} failure retains one producer-owned usage receipt through the real app query wrapper`,async t=>{
+ let calls=0;const node=await appFixture(t,async input=>{calls++;assert.ok(isUnderstanding(input));input.onUsage?.(tokens(47,3,failure!=='provider'));if(failure==='provider')throw Error('Generated provider failure');return {answer:'Invalid generated unified output',citations:[],trace:[],runId:randomUUID()};});
+ const fixture=await receive(node),job=await node.memoryPipeline.run(manualJob(node,fixture.ids).id);assert.equal(job.status,'failed');assert.equal(calls,1);const receipts=usage(node);assert.equal(receipts.length,1);assert.equal(receipts[0].operation,'coding-conversation-understanding');assert.equal(receipts[0].status,'failed');assert.equal(receipts[0].tokens?.totalTokens,50);assert.equal(node.store.archive.page({kind:'semantic'}).items.length,0);assert.equal(node.memories.list().length,0);
 });
 
 test('empty Coding candidates publish work/events and receive independent review without a second extraction',{timeout:15000},async t=>{
@@ -85,13 +96,14 @@ test('empty Coding candidates publish work/events and receive independent review
 test('revoking the parent Memory grant during understanding prevents semantic and memory commits',{timeout:15000},async t=>{
  const started=deferred(),release=deferred();let calls=0;
  t.after(()=>release.resolve());
- const node=await appFixture(t,async(input,reader)=>{calls++;assert.ok(isUnderstanding(input));const originals=await supplied(input,reader);started.resolve();await release.promise;return response(originals[0].id,owner,products(originals[0].id,true));});
+ const node=await appFixture(t,async(input,reader)=>{calls++;assert.ok(isUnderstanding(input));const originals=await supplied(input,reader);input.onUsage?.(tokens(31,2,false));started.resolve();await release.promise;return response(originals[0].id,owner,products(originals[0].id,true));});
  const fixture=await receive(node),created=manualJob(node,fixture.ids),running=node.memoryPipeline.run(created.id);
  await started.promise;node.memoryPipeline.cancel(created.id);release.resolve();const job=await running;
  assert.equal(job.status,'cancelled');await node.workflows.tick();
  assert.equal(node.store.archive.page({kind:'semantic'}).items.length,0);assert.equal(node.memories.list().length,0);assert.equal(calls,1);
  const children=node.store.db.prepare("SELECT json FROM processing_jobs WHERE json_extract(json,'$.processor')='mote.coding-conversation-understanding'").all();
  assert.ok(children.length);assert.ok(children.every(row=>{const child=JSON.parse(String(row.json));return child.parentGrant&&child.outputs.length===0;}));
+ const receipts=usage(node);assert.equal(receipts.length,1);assert.equal(receipts[0].operation,'coding-conversation-understanding');assert.equal(receipts[0].status,'failed');assert.equal(receipts[0].tokens?.totalTokens,33);assert.equal(receipts[0].tokens?.complete,false);
 });
 
 test('tool-only append advances private archive without renewing automatic understanding',{timeout:15000},async t=>{
