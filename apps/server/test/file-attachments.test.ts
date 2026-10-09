@@ -31,7 +31,7 @@ async function fixture(t:import('node:test').TestContext){
    return {answer:JSON.stringify({memories}),citations:visible.map(r=>({id:r.id,capturedAt:r.capturedAt,appName:r.appName,excerpt:''})),trace:[],runId:randomUUID()};
   }})});
   await node.processing.runtime.ready;node.processing.runtime.registry.get('image.http').process=async input=>{ocrCalls++;if(failed.has(input.file.id))throw Error('Generated processing failure');return {durationMs:0,segments:[{startMs:0,endMs:0,text:words,imageLocation:location}]};};
-  const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
+  const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
   node.perception.configure({...node.perception.settings(),allowQueryImages:true,understandingEnabled:false});await node.app.ready();
  };
  await start();node.processing.update({revision:node.processing.view().revision,settings:{...node.processing.view().settings,enabled:true,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/ocr',summarize:false},policy:fixtureFilePolicy({...node.processing.view().settings,enabled:true,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/ocr',summarize:false},node.processing.runtime.registry)});

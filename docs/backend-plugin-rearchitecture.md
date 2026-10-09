@@ -1,5 +1,7 @@
 # 后端流程重构工作稿
 
+> 历史设计或验收记录。2026-10-09 的 [MVP 基线](adr-mvp-baseline.md) 已替代旧迁移、预算、推理工具及旧提案等待修复；本文的原始测试结果不代表本次执行。当前结构见 [架构](architecture.md)。
+
 本工作稿把 [Source pipelines](source-pipelines.md)、[资料架构](material-architecture.md) 与本次 Cordis 方案落到当前代码。它记录目标边界与验收要求。
 
 2026-10-07 取代说明：普通新输入提取持续工作，旧 extraction/source memory 关闭及空自动选择被取代；安装能力、非空策略选择、来源授权/暂停、独立整合/洞察开关和显式收费历史授权仍保留。归属元数据、纠正及 KEEP/CHANGE/REMOVE/EXCEPTION/UNKNOWN 检查见 [Material 归属 ADR](adr-material-attribution.md)。下文「启用」不能再解释为普通用户必须另开 Memory 才处理获授权新资料。

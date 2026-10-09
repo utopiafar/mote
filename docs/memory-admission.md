@@ -10,12 +10,12 @@
 
 长期整合只接收 layer=memory 的未失效 episode。仅重述或将无关约束打包为检查清单不算新增价值。每条结果提供实际使用的 relatedMemoryIds，宿主验证其属于本轮候选、未失效且贡献了引用证据。原始证据仍直接挂在每条结果上。独立审核和生成均计入模型调用账本，reviewRunId 指向最终审核运行，模型字段优先使用宿主生成的用量回执。
 
-当前持久 Memory 使用严格 schema：版本、domain、tier、kind、admission、fingerprint 和原件证据结构必须明确保存，证据条目必须有 contentHash。读取不补分类、版本或 admission；`layer=legacy` 已删除，缺字段的旧记录拒绝读取，旧中央库也由 epoch 3 边界拒绝启动，不会自动转换或发布。MVP 切换需按清理记录先用旧版本备份/导出，再建立当前格式环境；升级不会自动把旧私人资料发送给模型。
+当前持久 Memory 使用严格 schema：版本、domain、tier、kind、admission、fingerprint 和原件证据结构必须明确保存，证据条目必须有 contentHash。读取不补分类、版本或 admission；`layer=legacy` 已删除，缺字段的旧记录拒绝读取，旧中央库也由 epoch 4 边界拒绝启动，不会自动转换或发布。MVP 切换需按清理记录先用旧版本备份/导出，再建立当前格式环境；升级不会自动把旧私人资料发送给模型。
 
 Owner 的列表 API 不传 layer 时可列出当前合法的 observation 和 memory；网页默认显示精选记忆。Agent 的 memories 工具默认 layer=memory，也可显式查询 observation，或回到 search_context 搜索原始资料。生效状态不会改变分类；审核后生效的观察不等于升级为个人事实。重新处理资料必须通过当前授权范围建立新任务，并使用本轮固定的原件版本与检查点。
 
 提取任务将校验失败的时间、阶段和固定错误码保留在批次 validationFailures（最近 20 项），不额外保存私人模型失败原文。最终成功不会清掉失败历史。
 
-当前自动提取在有增量时，达到 25 次增量或最长等待到达即可启动。默认 `intervalHours=6`，但未显式设置 `maxWaitHours` 时实际最长等待为 `min(intervalHours, 1)`，即 1 小时；并非 6 小时 AND 25 条。启动时固定最多 maxItems × drainWindows 条增量的水位（默认 100 × 100），每个 tick 最多处理一个窗口，让其他工作流有机会执行。该轮次的不足 25 条尾部仍会处理；新到达的增量留到下一轮。整个轮次完成后更新成功时钟，下一轮重新检查数量或最长等待门槛。drainWindows 可设为 1–1000；提取持续处理获授权新输入，失败按原窗口退避，水位跨重启保存。2026-10-07 起不再提供普通提取关闭开关；旧未授权历史不回放，详见 [归属 ADR](adr-material-attribution.md)。该上限是增量数量预算，不是美元或 token 预算；单窗口中的模型批次数取决于原文长度，非空产物还需一次审核。整合、洞察和对话摘要保留原本的独立周期。
+当前自动提取在有增量时，达到 25 次增量或最长等待到达即可启动。默认 `intervalHours=6`，但未显式设置 `maxWaitHours` 时实际最长等待为 `min(intervalHours, 1)`，即 1 小时；并非 6 小时 AND 25 条。启动时固定最多 maxItems × drainWindows 条增量的水位（默认 100 × 100），每个 tick 最多处理一个窗口，让其他工作流有机会执行。该轮次的不足 25 条尾部仍会处理；新到达的增量留到下一轮。整个轮次完成后更新成功时钟，下一轮重新检查数量或最长等待门槛。drainWindows 可设为 1–1000；提取持续处理获授权新输入，失败按原窗口退避，水位跨重启保存。不提供普通提取关闭开关；`extraction.enabled=false` 会被拒绝，source 配置不再接受 `memory` 字段。启动不转换旧开关或回放旧水位，详见 [MVP 基线 ADR](adr-mvp-baseline.md)。该上限是增量数量预算，不是美元或 token 预算；单窗口中的模型批次数取决于原文长度，非空产物还需一次审核。整合、洞察和对话摘要保留原本的独立周期。
 
 新 Memory 在内部模型审核、原件精确引用、版本和权限校验通过后，由当前提交事务自动生效；用户无需逐条确认。启动时不发布或修复历史 proposed 记录。当前 proposed 候选仍有显式 publish 路径，执行时重新核对版本、原件是否失效、删除意图和关系目标；它不会为缺 admission 或缺原件证明的旧内容建立迁移入口。删除语义见 [版本更新](memory-updates.md#automatic-activation-and-deletion-intent-2026-09-27)。

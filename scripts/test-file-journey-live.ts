@@ -86,7 +86,7 @@ try{
   const ocr=hasImage?await worker('ocr-server.py',['--model-root',values['ocr-model-root']!],'ocr'):undefined;
   const asr=hasAudio?await worker('transcription-server.py',['--model',values['asr-model-root']!,'--segmentation-model',join(values['asr-model-root']!,'segmentation.onnx'),'--speaker-model',join(values['asr-model-root']!,'speaker.onnx')],'asr'):undefined;
   node=await buildApp(config);const lifecycle=node.lifecycle.settings();
-  for(const key of ['extraction','consolidation','insights','working'] as const)lifecycle[key].enabled=false;
+  for(const key of ['consolidation','insights','working'] as const)lifecycle[key].enabled=false;
   node.lifecycle.configure(lifecycle);await node.app.ready();
   if(hasAudio){const selected=node.processing.runtime.registry.get(audioProcessor);assert.ok(selected.localOnly&&selected.dialogue,'Select a local dialogue processor');report.audioProcessor=node.processing.runtime.registry.list().find(processor=>processor.id===audioProcessor);}
   const view=(await request('GET','/api/file-processing')).json();

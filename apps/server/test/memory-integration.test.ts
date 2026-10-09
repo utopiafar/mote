@@ -40,7 +40,7 @@ async function fixture(t:any){
  }}};
  const nodeDependencies={...dependencies,createModelAgent:async()=>dependencies.agent};
  let node=await buildApp(config,nodeDependencies);await node.app.ready();
- const disable=()=>{const s=node.lifecycle.settings();node.lifecycle.configure({...s,extraction:{...s.extraction,enabled:false},consolidation:{...s.consolidation,enabled:false,minChanges:1},insights:{...s.insights,enabled:false},working:{...s.working,enabled:false}});};disable();
+ const disable=()=>{const s=node.lifecycle.settings();node.lifecycle.configure({...s,consolidation:{...s.consolidation,enabled:false,minChanges:1},insights:{...s.insights,enabled:false},working:{...s.working,enabled:false}});};disable();
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const api=(method:'GET'|'PUT'|'POST',url:string,payload?:any,token=config.token)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+token}});
  const add=async(name:string,both=false)=>{

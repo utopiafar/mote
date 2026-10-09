@@ -21,7 +21,7 @@ test('MVP vault reset removes evidence storage only with an explicit flag',t=>{
   const result=resetMvpVault(directory,{confirm:true});
   assert.ok(result.removed.includes('mote.sqlite'));
   assert.ok(result.removed.includes('source-archive'));
-  assert.equal(result.storageEpoch,3);
+  assert.equal(result.storageEpoch,4);
   for(const name of ['model-settings.json','file-processing.json']){assert.ok(result.removed.includes(name));assert.equal(existsSync(join(directory,name)),false);}
   assert.equal(readFileSync(join(directory,'connectors','client-connections.json'),'utf8'),'generated old client');
   assert.equal(readFileSync(join(directory,'content-key'),'utf8'),'generated encryption key');

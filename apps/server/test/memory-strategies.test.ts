@@ -48,18 +48,18 @@ async function fixture(t:any){
     return {answer:JSON.stringify(understanding(input)?{summary:'Generated bounded conversation interpretation',evidence:[{id,quote,offset:range?.offset??0}],workRecords:[],events:[],memoryCandidates:memories,actionCues:[]}:{memories}),citations:[{id,capturedAt:record.capturedAt,appName:record.appName,excerpt:''}],trace:[],runId:randomUUID()};
   }}};
   let node=await buildApp(config,dependencies);await node.app.ready();
-  const disable=()=>{const settings=node.lifecycle.settings();node.lifecycle.configure({...settings,extraction:{...settings.extraction,enabled:false}});};disable();
+  const disable=()=>{const settings=node.lifecycle.settings();node.lifecycle.configure({...settings});};disable();
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const add=async(sourceId:string,coding=false,revision='1')=>{
     if(!node.sources.listSources().some(s=>s.id===sourceId))node.sources.register({id:sourceId,name:'Generated source',kind:coding?'coding-agent':'custom',deviceId:'fixture',platform:'import'});
-    if(coding)node.sourcePipelines.configure(sourceId,{memory:false,settleSeconds:0});
+    if(coding)node.sourcePipelines.configure(sourceId,{settleSeconds:0});
     const ack=await node.sources.upsert(sourceId,{externalId:'original',revision,observedAt:'2026-09-01T00:00:00Z',kind:'message',layer:'original',text:original+(revision==='1'?'':` Revision ${revision}.`),...(coding?{document:{contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'fixture',sessionId:'session',eventId:'original',role:'user',attribution:'human',part:0,parts:1}}}:{document:{contentRole:'authored'}})});
     await node.materialOrganizer.tick();await node.sourcePipelines.tick();
     const material=node.materials.list({sourceId}).items[0];assert.ok(material);
     return {id:ack.id,evidenceIds:node.materials.evidenceIds(material.ref),material};
   };
   const run=async(evidenceIds:string[],ids:string[])=>{
-    const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token},payload:{contextTime,evidenceIds,recipes:ids.map(id=>id.includes('.')?{id,version:'1'}:ref(id))}});
+    const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token},payload:{contextTime,evidenceIds,recipes:ids.map(id=>id.startsWith('mote.')?{id,version:'2'}:ref(id))}});
     assert.equal(response.statusCode,202,response.body);return node.memoryPipeline.run(response.json().id);
   };
   return {get node(){return node;},calls,control,add,run,async restart(changed=false){await node.app.close();const selectedConfig={...config};if(changed){const changedPath=join(directory,'changed-strategies.mjs');writeFileSync(changedPath,readFileSync(modulePath,'utf8').replace('GENERATED_EXTRACTION_1','Changed generation'));selectedConfig.connectors={...config.connectors!,modules:[changedPath]};}node=await buildApp(selectedConfig,dependencies);await node.app.ready();disable();},count:(phase:string)=>calls.filter(c=>(c.traceContext?.phase??'extract')===phase).length};
@@ -89,24 +89,13 @@ test('installed recipes compose independent products, replace either strategy, a
   const builtin=await f.run(source.evidenceIds,['mote.personal-memory','mote.coding-memory']);
   assert.equal(builtin.status,'completed');assert.deepEqual(builtin.memoryIds.map(id=>f.node.memories.get(id).domain).sort(),['coding','personal']);
   assert.equal(f.count('extract'),4);assert.equal(f.count('review'),8);
-  const oldBinding=f.node.memoryStrategies.resolve({id:'mote.personal-memory',version:'1'}).binding;
-  const next=f.node.memoryPipeline.create({contextTime,evidenceIds:source.evidenceIds,recipes:[{id:'mote.personal-memory',version:'2'}]});
-  const nextResult=await f.node.memoryPipeline.run(next.id);
-  assert.equal(nextResult.status,'completed');
-  assert.equal(f.node.memories.get(nextResult.memoryIds[0]).domain,'personal','the selected v2 reviewer receives its own policy');
-  assert.equal(f.count('extract'),4,'the new personal review recipe reuses the unchanged extractor');
-  assert.equal(f.count('review'),9);assert.equal(next.batches[0].strategy?.review.version,'2');
-  assert.deepEqual(f.node.memoryStrategies.resolve({id:'mote.personal-memory',version:'1'}).binding,oldBinding,'prior strategy pins remain available and unchanged');
-  const codingBinding=f.node.memoryStrategies.resolve({id:'mote.coding-memory',version:'1'}).binding;
-  const existing=new Map(f.node.store.db.prepare('SELECT id,json FROM memories').all().map(row=>[row.id,row.json]));
-  const codingV2=f.node.memoryPipeline.create({contextTime,evidenceIds:source.evidenceIds,recipes:[{id:'mote.coding-memory',version:'2'}]});
-  const codingResult=await f.node.memoryPipeline.run(codingV2.id);
-  assert.equal(codingResult.status,'completed');assert.equal(f.count('extract'),4);assert.equal(f.count('review'),10);
-  const codingProduct=f.node.memories.get(codingResult.memoryIds[0]);assert.equal(codingProduct.domain,'coding');
-  assert.equal(codingProduct.strategy?.review.version,'2');assert.equal(codingProduct.reviewReceipt?.strategy?.fingerprint,codingProduct.strategy?.review.fingerprint);
-  assert.deepEqual(codingProduct.strategy?.extract,codingBinding.extract,'Coding v2 changes the reviewer independently');
-  assert.deepEqual(f.node.memoryStrategies.resolve({id:'mote.coding-memory',version:'1'}).binding,codingBinding);
-  for(const [id,json] of existing)assert.equal(f.node.store.db.prepare('SELECT json FROM memories WHERE id=?').get(id)?.json,json);
+  const personalBinding=f.node.memoryStrategies.resolve({id:'mote.personal-memory',version:'2'}).binding;
+  const codingBinding=f.node.memoryStrategies.resolve({id:'mote.coding-memory',version:'2'}).binding;
+  assert.equal(personalBinding.review.version,'2');assert.equal(codingBinding.review.version,'2');
+  assert.deepEqual(codingBinding.extract,personalBinding.extract,'current personal and Coding recipes share extraction with independent review');
+  for(const id of ['mote.personal-memory','mote.coding-memory'])assert.throws(()=>f.node.memoryStrategies.resolve({id,version:'1'}),/not installed/);
+  const beforeReplay=f.calls.length,replayed=await f.run(source.evidenceIds,['mote.personal-memory','mote.coding-memory']);
+  assert.equal(replayed.status,'completed');assert.equal(replayed.batches.length,0);assert.equal(f.calls.length,beforeReplay);
   assert.ok(f.calls.every(c=>(c.skill==='memory-strategy'||understanding(c))&&c.evidenceRanges?.length));
 });
 

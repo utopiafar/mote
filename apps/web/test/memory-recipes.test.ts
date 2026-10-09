@@ -12,7 +12,7 @@ test('recipe selection saves default combinations, source overrides and inherita
   for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){backups.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
   dom.window.localStorage.setItem('mote.language','zh-CN');const root=createRoot(dom.window.document.getElementById('root')!);
   t.after(async()=>{await act(async()=>root.unmount());for(const [key,value] of backups){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
-  const personal={id:'mote.personal-memory',version:'2'},coding={id:'mote.coding-memory',version:'1'},missing={id:'generated.missing',version:'1'};
+  const personal={id:'mote.personal-memory',version:'2'},coding={id:'mote.coding-memory',version:'2'},missing={id:'generated.missing',version:'1'};
   const configurations=new Map<string,typeof personal[]>([['',[personal]]]),writes:unknown[]=[],paths:string[]=[];
   const view=(sourceId:string)=>({sourceId:sourceId||null,inherited:!!sourceId&&!configurations.has(sourceId),items:(configurations.get(sourceId)??configurations.get('')!).map(recipe=>({binding:{recipe},available:recipe.id!==missing.id}))});
   const api={request:async(path:string,init?:RequestInit)=>{

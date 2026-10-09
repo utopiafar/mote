@@ -9,7 +9,6 @@ const graph = [
   { name: '@mote/desktop', path: 'apps/desktop', dependencies: ['@mote/diagnostics', '@mote/shared'] },
   { name: '@mote/diagnostics', path: 'packages/diagnostics', dependencies: [] },
   { name: '@mote/agent', path: 'packages/agent', dependencies: ['@mote/shared'] },
-  { name: '@mote/local-inference', path: 'packages/local-inference', dependencies: ['@mote/shared'] },
   { name: '@mote/shared', path: 'packages/shared', dependencies: [] },
 ];
 const changed = (...paths) => affectedComponents(paths, graph);
@@ -23,10 +22,8 @@ test('individual clients and central plugins select only their build consumers',
 });
 test('shared workspace changes traverse actual npm dependencies', () => {
   assert.deepEqual(groups(changed('packages/agent/src/index.ts')), ['central']);
-  assert.deepEqual(groups(changed('packages/local-inference/src/index.ts')), []);
   assert.deepEqual(groups(changed('packages/diagnostics/src/index.ts')), ['desktop']);
   const actual = workspaceGraph(fileURLToPath(new URL('../../', import.meta.url)));
-  assert.deepEqual(groups(affectedComponents(['packages/local-inference/src/index.ts'], actual)), []);
   assert.deepEqual(groups(affectedComponents(['packages/diagnostics/src/index.ts'], actual)), ['desktop']);
   assert.deepEqual(groups(changed('packages/shared/src/connection.ts')), ['central', 'desktop', 'android']);
   assert.equal(changed('packages/shared/src/connection.ts').protocol, true);

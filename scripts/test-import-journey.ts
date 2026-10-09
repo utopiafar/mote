@@ -33,7 +33,7 @@ if(previous){
 const save=()=>writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});
 async function stage<T>(name:string,run:()=>Promise<T>){const row:Record<string,unknown>={name,startedAt:new Date().toISOString(),status:'running'};(report.stages as unknown[]).push(row);await save();console.log(JSON.stringify({stage:name}));const start=Date.now();try{const result=await run();row.status='passed';return result;}catch(error){row.status='failed';throw error;}finally{row.durationMs=Date.now()-start;await save();}}
 async function start(){
-  node=await buildApp(config);const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);await node.app.ready();
+  node=await buildApp(config);const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);await node.app.ready();
   const processing=(await request('GET','/api/file-processing')).json();await request('PUT','/api/file-processing',{revision:processing.revision,settings:{...processing.settings,enabled:false}});
 }
 async function request(method:'GET'|'POST'|'PUT',url:string,payload?:Record<string,unknown>){

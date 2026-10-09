@@ -5,7 +5,6 @@ import {sourceStatePatch,type StatePatch} from './source-state-store';
 import { moteText } from '@mote/shared/i18n';
 import { createHash } from 'node:crypto';
 import { sourceWork } from './background';
-import type { LegacyLocalFileInput as LocalFileInput } from './source-types';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import type { LocalFileCheckpoint, SourceCheckpoint, SourceDefinition, SourceItem, SourceRequest, SourceScan, ScannedItem } from './source-types';
 import { PriorityScheduler } from './priority-scheduler';
@@ -25,7 +24,6 @@ function snapshotMetadataIdentity(raw:ScannedItem):string{
   return sourceHash(JSON.stringify(item));
 }
 interface Known { policy?:string; contentHash: string; discoveryHash?: string; revision: string; item: ScannedItem }
-interface ProcessingJob { input: LocalFileInput; item: ScannedItem; discoveryHash: string; policy?: string; nextAttemptAt: number }
 interface RejectedItem { item: SourceItem; status: number }
 interface BatchResult { acks: Record<string, unknown>[]; rejected?: RejectedItem[] }
 export interface SnapshotRecovery {captureId:string;externalId:string;revision:string;sha256:string;sizeBytes:number;observedAt:string}
@@ -43,7 +41,6 @@ interface State {
   policy?: string;
   adapterVersion: number;
   known: Record<string, Known>;
-  localProcessing?: Record<string, ProcessingJob>;
   snapshotRecoveries?: Record<string,SnapshotRecovery&{identityHash:string}>;
   pendingRealtime: SourceItem[];
   pendingHistory: SourceItem[];
@@ -70,7 +67,7 @@ export class SourceSync {
       const value = await sourceWork.run<Record<string, unknown> | undefined>({ kind: 'source-state', path: this.path });
       if (value === undefined) {await sourceWork.run({kind:'source-state',path:this.path,patches:sourceStatePatch({},this.data as unknown as Record<string,unknown>)});return;}
       const next = value as unknown as State;
-      if (next.version !== DESKTOP_STORAGE_VERSION || next.ingressVersion!==2 || !Number.isSafeInteger(next.adapterVersion) || next.adapterVersion<1 || !next.known || !Array.isArray(next.pendingRealtime) || !Array.isArray(next.pendingHistory)) throw Error(RESET_REQUIRED);
+      if (Object.hasOwn(next,'localProcessing') || next.version !== DESKTOP_STORAGE_VERSION || next.ingressVersion!==2 || !Number.isSafeInteger(next.adapterVersion) || next.adapterVersion<1 || !next.known || !Array.isArray(next.pendingRealtime) || !Array.isArray(next.pendingHistory)) throw Error(RESET_REQUIRED);
       if (next.pendingRealtime.length + next.pendingHistory.length + Object.keys(next.quarantined??{}).length > this.limits.maxEvents) throw new Error(moteText("来源同步状态超过本地队列上限，请恢复网络后重试"));
       this.data = next;
       this.knownItems=Object.values(next.known).filter(value=>!value.item.deleted).length;
@@ -86,18 +83,18 @@ export class SourceSync {
   }
   initialized() { return Boolean(this.data.initialized); }
   private pendingItems(): SourceItem[] { return [...this.data.pendingRealtime, ...this.data.pendingHistory]; }
-  status(): { processingPending: number; blocked: number; failures: {externalId:string;title:string;status:number}[]; pending: number; realtimePending: number; historyPending: number; items: number; lastSyncAt?: string; lastAcknowledgedAt?: string; oldestPendingAt?: string } {
+  status(): { blocked: number; failures: {externalId:string;title:string;status:number}[]; pending: number; realtimePending: number; historyPending: number; items: number; lastSyncAt?: string; lastAcknowledgedAt?: string; oldestPendingAt?: string } {
     const pending = this.pendingItems();
     const rejected=Object.values(this.data.quarantined??{});
-    return { processingPending:Object.keys(this.data.localProcessing??{}).length, blocked:rejected.length,failures:rejected.slice(0,100).map(({item,status})=>({externalId:item.externalId,title:item.title,status})),oldestPendingAt: pending.reduce<string | undefined>((oldest, item) => !oldest || item.observedAt < oldest ? item.observedAt : oldest, undefined), pending: pending.length, realtimePending: this.data.pendingRealtime.length, historyPending: this.data.pendingHistory.length, items: this.data.collectedItems ?? this.knownItems, lastSyncAt: this.data.lastSyncAt, lastAcknowledgedAt:this.data.lastAcknowledgedAt };
+    return { blocked:rejected.length,failures:rejected.slice(0,100).map(({item,status})=>({externalId:item.externalId,title:item.title,status})),oldestPendingAt: pending.reduce<string | undefined>((oldest, item) => !oldest || item.observedAt < oldest ? item.observedAt : oldest, undefined), pending: pending.length, realtimePending: this.data.pendingRealtime.length, historyPending: this.data.pendingHistory.length, items: this.data.collectedItems ?? this.knownItems, lastSyncAt: this.data.lastSyncAt, lastAcknowledgedAt:this.data.lastAcknowledgedAt };
   }
   async checkpointTo(path: string): Promise<void> { const previous=await sourceWork.run<Record<string,unknown>|undefined>({kind:'source-state',path});await sourceWork.run({kind:'source-state',path,patches:sourceStatePatch(previous??{},this.data as unknown as Record<string,unknown>)}); }
 
   async ensurePolicy(policy:string):Promise<void>{return this.mutate(()=>this.ensurePolicyInternal(policy));}
   private async ensurePolicyInternal(policy: string): Promise<void> {
     if (this.data.policy === policy) return;
-    const next = { ...this.data, checkpoint: undefined, localProcessing: undefined, delivered: undefined, predecessors: undefined, quarantined: undefined, snapshotRecoveries:undefined, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '', discoveryHash: undefined }])), pendingRealtime: [], pendingHistory: [] } as State;
-    const retired = [...Object.values(this.data.localProcessing??{}).map(job=>({...job.item,localProcessing:job.input})),...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)];
+    const next = { ...this.data, checkpoint: undefined, delivered: undefined, predecessors: undefined, quarantined: undefined, snapshotRecoveries:undefined, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '', discoveryHash: undefined }])), pendingRealtime: [], pendingHistory: [] } as State;
+    const retired = [...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)];
     await this.commit(next);
     await this.discardUnqueuedOriginals(retired);
   }
@@ -107,11 +104,8 @@ export class SourceSync {
   async ensureAdapterVersion(version:number):Promise<void>{
     if(!Number.isSafeInteger(version)||version<1)throw Error('Invalid source adapter version');
     return this.mutate(async()=>{
-      if(this.data.adapterVersion===version&&!Object.keys(this.data.localProcessing??{}).length)return;
-      const retired=Object.values(this.data.localProcessing??{}).map(job=>({...job.item,localProcessing:job.input}));
-      const known=Object.fromEntries(Object.entries(this.data.known).map(([key,value])=>[key,this.data.localProcessing?.[key]?{...value,contentHash:'',discoveryHash:undefined}:value]));
-      await this.commit({...this.data,known,localProcessing:undefined,adapterVersion:version,checkpoint:undefined});
-      await this.discardUnqueuedOriginals(retired);
+      if(this.data.adapterVersion===version)return;
+      await this.commit({...this.data,adapterVersion:version,checkpoint:undefined});
     });
   }
 
@@ -127,15 +121,13 @@ export class SourceSync {
   }
 
   async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString(), initialSync: 'all' | 'new_only' = 'all', defaultQueue: QueueName = scan.queue ?? 'realtime'): Promise<number> {
-    const retired = Object.values(this.data.localProcessing??{}).map(job=>({...job.item,localProcessing:job.input}));
     try { return await this.mutate(()=>this.stageInternal(scan, trackDeletions, observedAt, initialSync, defaultQueue)); }
-    finally { await this.discardUnqueuedOriginals([...scan.items,...retired]); }
+    finally { await this.discardUnqueuedOriginals(scan.items); }
   }
 
   async discardUnqueuedOriginals(items: ScannedItem[]): Promise<void> {
-    const inputs = Object.values(this.data.localProcessing??{}).map(job=>({...job.item,localProcessing:job.input}));
-    const directories = (item: ScannedItem) => [item.localOriginal?.directory,item.localProcessing?.spool?.directory].filter((value): value is string=>Boolean(value));
-    const retained = new Set([...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item),...inputs].flatMap(directories));
+    const directories = (item: ScannedItem) => [item.localOriginal?.directory].filter((value): value is string=>Boolean(value));
+    const retained = new Set([...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)].flatMap(directories));
     for (const directory of items.flatMap(directories)) if (!retained.has(directory)) await rm(directory, {force:true, recursive:true}).catch(() => {});
   }
 
@@ -150,12 +142,11 @@ export class SourceSync {
     if (scan.complete) next.initialized = true;
     const baseline = new Set(next.baseline ?? []);
     const stage = (raw: ScannedItem) => {
-      const { syncQueue, localProcessing, ...item } = raw;
-      if(localProcessing)throw Error('Local file interpretation is retired; upload immutable input for central processing');
+      const { syncQueue, ...item } = raw;
+      if(Object.hasOwn(raw,'localProcessing'))throw Error('Local file interpretation is retired; upload immutable input for central processing');
       const {localOriginal, ...identity} = item;
       const key = sourceHash(item.externalId), previous = knownChanges.get(key)??next.known[key], contentHash = sourceHash(JSON.stringify({...identity, ...(localOriginal ? {originalSha256:localOriginal.sha256} : {})}));
       if (previous?.contentHash === contentHash) return;
-      if (next.localProcessing?.[key]) { next.localProcessing = { ...next.localProcessing }; delete next.localProcessing[key]; }
       const recovery=next.snapshotRecoveries?.[key],bytes=localOriginal?undefined:item.localOriginalBase64?Buffer.from(item.localOriginalBase64,'base64'):undefined;
       const recoveryMatches=recovery&&recovery.identityHash===snapshotMetadataIdentity(item)&&previous?.policy===next.policy&&item.layer==='snapshot'&&!item.deleted&&recovery.revision===previous?.revision&&(localOriginal?.sha256??(bytes?sourceHash(bytes):undefined))===recovery.sha256&&(localOriginal?.sizeBytes??bytes?.length)===recovery.sizeBytes;
       const revision = recoveryMatches?recovery.revision:sourceHash(contentHash + ':' + (previous?.revision ?? '')), queued: SourceItem = { ...item, revision, observedAt:recoveryMatches?recovery.observedAt:observedAt,...(recoveryMatches?{snapshotRecovery:{captureId:recovery.captureId,sha256:recovery.sha256,sizeBytes:recovery.sizeBytes}}:{}) };
@@ -181,7 +172,7 @@ export class SourceSync {
     if (next.pendingRealtime.length + next.pendingHistory.length + Object.keys(next.quarantined??{}).length > this.limits.maxEvents) throw new Error(moteText("来源待同步队列已满（4000 项 / 32 MiB），请恢复网络后重试"));
     if (scan.catalogChanges && !isFileCheckpoint(scan.checkpoint)) throw new Error('File catalog changes require a file checkpoint');
     if (scan.checkpoint) { next.checkpoint = scan.catalogChanges&&isFileCheckpoint(scan.checkpoint)?{...scan.checkpoint,catalog:isFileCheckpoint(this.data.checkpoint)?this.data.checkpoint.catalog:{}}:scan.checkpoint; next.collectedItems = (next.collectedItems ?? 0) + changes; }
-    if(Object.values(next.localProcessing??{}).reduce((sum,job)=>sum+(job.input.spool?.sizeBytes??0),0)+[...next.pendingRealtime,...next.pendingHistory].reduce((n,item)=>n+(item.localOriginal?.sizeBytes??(item.localOriginalBase64?Math.floor(item.localOriginalBase64.length*3/4):0)),0)>512*1024*1024)throw Error('Original outbox exceeds 512 MiB; upload pending files before scanning more');
+    if([...next.pendingRealtime,...next.pendingHistory].reduce((n,item)=>n+(item.localOriginal?.sizeBytes??(item.localOriginalBase64?Math.floor(item.localOriginalBase64.length*3/4):0)),0)>512*1024*1024)throw Error('Original outbox exceeds 512 MiB; upload pending files before scanning more');
     await this.commit(next, this.limits.maxBytes,[...sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>),...Array.from(knownChanges,([key,value])=>({section:'known',key,value})),...(scan.catalogChanges??[]).map(change=>({section:'catalog',...change}))]);
     for(const [key,value] of knownChanges){const previous=this.data.known[key];this.knownItems+=Number(!value.item.deleted)-Number(Boolean(previous&&!previous.item.deleted));this.data.known[key]=value;}
     if(scan.catalogChanges&&isFileCheckpoint(this.data.checkpoint))for(const {key,value} of scan.catalogChanges){if(value)this.data.checkpoint.catalog[key]=value;else delete this.data.checkpoint.catalog[key];}

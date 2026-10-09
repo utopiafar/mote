@@ -1,6 +1,6 @@
 # Mote 电脑采集器
 
-当前使用说明更新于 2026-10-05。本次 MVP 清理采用桌面存储格式 3，旧配置、队列、草稿和来源状态明确拒绝读取，不执行运行时升级迁移。文中带历史版本或日期的验收记录保留当时原文，仅说明历史结果，不代表本次执行或当前升级兼容承诺。
+当前使用说明更新于 2026-10-09。本次 MVP 清理采用桌面存储格式 3，旧配置、队列、草稿和来源状态明确拒绝读取，不执行运行时升级迁移。文中带历史版本或日期的验收记录保留当时原文，仅说明历史结果，不代表本次执行或当前升级兼容承诺。
 
 当前客户端按概览、随手记、本地来源、设置分层。支持未连接中央时先在本机采集，上传方式在「设置 → 上传与同步」选择实时、定时、积攒一批或仅手动；频率、容量、电量和画质提供预设，隐私设置提供已安装应用选择器与遮挡示意编辑。详见 [统一采集与上传行为](collection-and-sync.md)。
 
@@ -36,7 +36,7 @@ Windows/Linux 可编译 TypeScript、运行界面和队列逻辑，但采集按�
 
 原生采集窗口提供「应用更新」：选择稳定 / 预览渠道，点击「检查更新」，再下载、校验，最后「安装并重启」。只手动发起检查，不上传中央令牌、截图、笔记或路径。默认只信任 GitHub `utopiafar/mote` 的签名发布。首次提供该能力的版本为 0.5.0，旧版需先手动安装；没有可信发布清单时会显示暂不可用，不能把旧的普通 ZIP 当成应用内更新。
 
-App 内置发布公钥，使用 RSA-3072 / SHA-256 验证 `mote-release.json` 原始 payload 字节；清单绑定渠道、版本、仓库、架构、Bundle ID、安装包大小与 SHA-256。下载临时文件校验成功后才转为完整包。解压前拒绝路径穿越、跨目录/循环符号链接、不支持的 ZIP 格式和过大展开体积；解压后再次核验 ZIP 哈希，随后验证应用签名、版本、架构以及文件树摘要。安装前和旧进程退出后都重新检查文件树，校验后被篡改或被重新 ad-hoc 签名的包仍被拒绝。更新缓存限于一个下载批次，取消后重新下载；不会占用模型下载缓存。
+App 内置发布公钥，使用 RSA-3072 / SHA-256 验证 `mote-release.json` 原始 payload 字节；清单绑定渠道、版本、仓库、架构、Bundle ID、安装包大小与 SHA-256。下载临时文件校验成功后才转为完整包。解压前拒绝路径穿越、跨目录/循环符号链接、不支持的 ZIP 格式和过大展开体积；解压后再次核验 ZIP 哈希，随后验证应用签名、版本、架构以及文件树摘要。安装前和旧进程退出后都重新检查文件树，校验后被篡改或被重新 ad-hoc 签名的包仍被拒绝。更新缓存限于一个下载批次，取消后重新下载；使用独立的更新缓存。
 
 当前 ad-hoc 构建使用独立 Swift 助手，不依赖 Electron 的内置自动更新器。[Electron 官方说明](https://www.electronjs.org/docs/latest/api/auto-updater)指出 macOS 自动更新基于 Squirrel.Mac，要求应用签名；本项目不把该机制等同于已验证可用的 ad-hoc 自更新。这里的发布者信任来自固定密钥签名，Apple Developer ID、公证与 Gatekeeper 的系统信任仍是另一层。ad-hoc 更新后系统可能再次要求 Keychain、屏幕或日历授权；应用不会为绕过授权重置资料或令牌。
 
@@ -236,7 +236,6 @@ Content-Type: application/json
 storage-format.json          # 当前桌面存储格式 3
 config.json                 # 格式 3 设备配置与 Keychain 加密的令牌
 notes/draft.json             # 原生随手记草稿、已准备的稳定提交与完成标记
-models/qwen/                # 已验证双模型及可续传部分
 local-sources/              # 显式日历/文件来源配置及按连接隔离的持久版本队列
 diagnostics/diagnostics.json # 可选、有界数值诊断
 diagnostics/events.0.ndjson  # 当前固定阶段事件日志，按大小轮转
@@ -278,8 +277,7 @@ MOTE_FIXTURE_SERVER=http://127.0.0.1:47835 MOTE_FIXTURE_TOKEN='<测试节点令�
 
 ```sh
 npm run test:central -w @mote/desktop
-# 先用 npm run models:download 或 App 导入模型。以下只处理程序生成的图：
-npm run test:vision -w @mote/desktop
+# 历史 test:vision / models:download 已移除，不再是当前验收入口。
 ```
 
 

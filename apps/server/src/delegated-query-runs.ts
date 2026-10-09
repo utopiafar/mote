@@ -5,7 +5,7 @@ import {StoreError,type Store} from './store.js';
 import {safeError} from './diagnostics.js';
 import {moteText,requestLocale} from './i18n.js';
 import {DelegationRuntime,registerQueryDelegation,type DelegationWork} from './delegation-runtime.js';
-import {QueryRuns,type QueryRun,type QueryWork} from './query-runs.js';
+import type {QueryRun} from './query-run-types.js';
 import type {RunDeadline} from './run-execution.js';
 import {ExecutionFailure} from './execution-engine.js';
 
@@ -29,13 +29,11 @@ export class DelegatedQueryRuns {
   private foreground=new Set<string>();
   /** Only the current trusted HTTP request; never a cached model context. */
   private foregroundRequests=new Map<string,{hostRequest:unknown;deadlineAt?:number;cancelled?:boolean}>();
-  private legacy:QueryRuns;
   private waiters=new Map<string,Set<()=>void>>();
   private stopped=false;
   private interrupted=false;
   constructor(private store:Store,readonly runtime:DelegationRuntime,private callbacks:QueryCallbacks){
     store.db.exec('CREATE TABLE IF NOT EXISTS query_runs(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,json TEXT NOT NULL)');
-    this.legacy=new QueryRuns(store,{executor:runtime.engine,ignoreDurable:true});
     registerQueryDelegation(runtime,{
       prepare:async(work,saved,signal)=>{
         const id=work.id.slice('query:'.length),input=saved as SavedInput;
@@ -136,7 +134,7 @@ export class DelegatedQueryRuns {
   private notify(id:string){for(const resolve of this.waiters.get(id)??[])resolve();this.waiters.delete(id);}
   get(id:string):QueryRun{
     const run=this.raw(id);let work:DelegationWork;
-    try{work=this.runtime.get('query:'+id);}catch(error){if(error instanceof StoreError&&error.statusCode===404)return this.legacy.get(id);throw error;}
+    work=this.runtime.get('query:'+id);
     const stepId=work.id+':coordinator:'+work.revision,step=this.runtime.engine.get(stepId);
     if(step&&['failed','blocked','stale','cancelled'].includes(step.state)&&['running','waiting'].includes(work.status)){this.runtime.engine.project(stepId);work=this.runtime.get(work.id);}
     if(['failed','blocked','stale','cancelled'].includes(work.status))this.runtime.engine.abortLocal(stepId);
@@ -156,9 +154,9 @@ export class DelegatedQueryRuns {
     this.save(run);return run;
   }
   list(){return this.store.db.prepare("SELECT id FROM query_runs ORDER BY json_extract(json,'$.createdAt') DESC,id DESC LIMIT 100").all().map(row=>this.get(String(row.id)));}
-  start(id:string,input:unknown,_work?:QueryWork,deadline:RunDeadline={}){
+  start(id:string,input:unknown,deadline:RunDeadline={}){
     if(this.stopped)throw new StoreError('Feature is closed',503);
-    if(typeof (input as {question?:unknown})?.question!=='string'&&_work)return this.legacy.start(id,input,_work,deadline);
+    if(typeof (input as {question?:unknown})?.question!=='string')throw new StoreError('Query requires a question',400);
     const requestHash=createHash('sha256').update(JSON.stringify(input)).digest('hex'),existing=this.store.db.prepare('SELECT request_hash FROM query_runs WHERE id=?').get(id);
     if(existing){if(existing.request_hash!==requestHash)throw new StoreError('Run ID belongs to a different request',409);return this.get(id);}
     if(Number(this.store.db.prepare("SELECT count(*) n FROM query_runs WHERE json_extract(json,'$.status')='running'").get()?.n??0)>=1000)throw new StoreError('Conversation queue is full',429);
@@ -175,12 +173,12 @@ export class DelegatedQueryRuns {
     }catch(error){if(this.store.db.isTransaction)this.store.db.exec('ROLLBACK');throw error;}
     return this.get(id);
   }
-  cancel(id:string){const foreground=this.foregroundRequests.get(id);if(foreground)foreground.cancelled=true;this.get(id);if(this.store.db.prepare('SELECT 1 FROM delegation_works WHERE id=?').get('query:'+id))this.runtime.cancel('query:'+id);else this.legacy.cancel(id);this.notify(id);return this.get(id);}
-  async perform<T extends Receipt>(id:string,input:unknown,work?:QueryWork<T>,deadline:RunDeadline={}):Promise<T>{
+  cancel(id:string){const foreground=this.foregroundRequests.get(id);if(foreground)foreground.cancelled=true;this.get(id);this.runtime.cancel('query:'+id);this.notify(id);return this.get(id);}
+  async perform<T extends Receipt>(id:string,input:unknown,deadline:RunDeadline={}):Promise<T>{
     this.foreground.add(id);
     try{
     if(typeof (input as {question?:unknown})?.question==='string')this.foregroundRequests.set(id,{hostRequest:structuredClone(input)});
-    this.start(id,input,work,deadline);
+    this.start(id,input,deadline);
     const read=()=>{if(!this.exists(id))throw new StoreError('Query was deleted while running',409);return this.get(id);};
     while(read().status==='running'){if(this.interrupted)throw new StoreError('Central node is shutting down; the saved work will resume',503);await new Promise<void>(resolve=>{const listeners=this.waiters.get(id)??new Set();listeners.add(resolve);this.waiters.set(id,listeners);});}
     const run=read(),savedResult=run.status==='completed'?this.runtime.result<QueryResult>('query:'+id):undefined,result=this.results.get(id)??(savedResult&&run.conversationId&&run.turnId?{...savedResult,conversationId:run.conversationId,turnId:run.turnId}:undefined);this.results.delete(id);
@@ -190,7 +188,7 @@ export class DelegatedQueryRuns {
     const error=new StoreError(run.error?.message??'Query did not complete',409);if(run.conversationId&&run.turnId)Object.assign(error,{conversation:{conversationId:run.conversationId,turnId:run.turnId}});throw error;
     }finally{this.foreground.delete(id);this.foregroundRequests.delete(id);this.results.delete(id);this.errors.delete(id);}
   }
-  async close(){clearInterval(this.timer);for(const id of this.waiters.keys())this.notify(id);await this.legacy.close();}
+  async close(){clearInterval(this.timer);for(const id of this.waiters.keys())this.notify(id);}
   interrupt(){this.interrupted=true;for(const id of this.waiters.keys())this.notify(id);}
-  async stop(){this.stopped=true;if(!this.runtime.engine.closed)for(const run of this.list())if(run.status==='running')this.cancel(run.id);await this.legacy.stop();await this.close();}
+  async stop(){this.stopped=true;if(!this.runtime.engine.closed)for(const run of this.list())if(run.status==='running')this.cancel(run.id);await this.close();}
 }

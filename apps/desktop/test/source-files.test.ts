@@ -26,7 +26,7 @@ describe('explicit local text sources', () => {
   });
   it('uploads bounded bytes without decoding or classifying text on the collector', async () => {
     await writeFile(join(root, 'large.md'), 'x'.repeat(100001)); await writeFile(join(root, 'invalid.md'), Buffer.from([0xff, 0xfe])); await writeFile(join(root, 'limit.md'), 'a'.repeat(100000));
-    const result=await scanSourceFiles(root,DEFAULT_SOURCE_OPTIONS);expect(result.items).toHaveLength(3);for(const item of result.items){expect(item.text).toBe('');expect(item.document?.fileIndex).toMatchObject({status:'pending',parser:'central-pending',maxIndexCharacters:100000});expect(item.localProcessing).toBeUndefined();expect(item.localOriginalBase64).toBeDefined();}expect(result.complete).toBe(true);
+    const result=await scanSourceFiles(root,DEFAULT_SOURCE_OPTIONS);expect(result.items).toHaveLength(3);for(const item of result.items){expect(item.text).toBe('');expect(item.document?.fileIndex).toMatchObject({status:'pending',parser:'central-pending',maxIndexCharacters:100000});expect(item).not.toHaveProperty('localProcessing');expect(item.localOriginalBase64).toBeDefined();}expect(result.complete).toBe(true);
   });
   it('reference mode emits only metadata and does not decode file bodies', async () => {
     await writeFile(join(root, 'synthetic.md'), Buffer.from([0xff, 0xfe]));

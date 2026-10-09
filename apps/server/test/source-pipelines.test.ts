@@ -26,7 +26,7 @@ async function fixture(t:import('node:test').TestContext){
 function intercept(runtime:SourcePipelineRuntime,hook:FixtureOrganizer){
   const original={...runtime.registry.get('mote.coding')!,organize:codingOrganizer(runtime)};
   const unregister=fixtureRecipe(runtime,{...original,reprocess:'deterministic',id:'fixture.interceptor',priority:1,organize:hook});
-  runtime.configure('coding',{pipelineId:'fixture.interceptor',memory:false,settleSeconds:0});
+  runtime.configure('coding',{pipelineId:'fixture.interceptor',settleSeconds:0});
   return {original,unregister};
 }
 test('a receipt arriving during organization invalidates the draft before publication',async t=>{
@@ -64,7 +64,7 @@ test('configuration and plugin changes during organization leave newer work unto
   const {store,materials,runtime,sources}=await fixture(t);
   let reconfigured=false;
   const {original}=intercept(runtime,input=>{
-    if(!reconfigured){reconfigured=true;runtime.configure('coding',{pipelineId:'fixture.interceptor',index:false,memory:false,settleSeconds:0});}
+    if(!reconfigured){reconfigured=true;runtime.configure('coding',{pipelineId:'fixture.interceptor',index:false,settleSeconds:0});}
     return original.organize!(input);
   });
   await sources.upsert('coding',item(1));await runtime.tick();
@@ -78,7 +78,7 @@ test('configuration and plugin changes during organization leave newer work unto
   const next=fixtureRecipe(runtime,{...legacy,id:'fixture.uninstall',priority:2,organize:input=>{
     if(!uninstall){uninstall=true;unregister();}return original.organize!(input);
   }});unregister=next;
-  runtime.configure('coding',{pipelineId:'fixture.uninstall',memory:false});
+  runtime.configure('coding',{pipelineId:'fixture.uninstall'});
   await runtime.tick();
   assert.equal(materials.list().items[0].title,'session-a');
   assert.equal(store.db.prepare('SELECT state FROM source_pipeline_work').get()!.state,'blocked');
@@ -136,7 +136,7 @@ test('Cordis uninstall blocks archive work, ordinary records stay supported, ind
   sources.register({id:'notes',name:'Generated notes',kind:'upload',deviceId:'device',platform:'import'});
   await sources.upsert('notes',{externalId:'note',revision:'1',observedAt:'2026-09-24T01:00:00Z',kind:'file',layer:'snapshot',text:'ordinary record'});
   assert.equal(store.db.prepare('SELECT count(*) n FROM captures').get()!.n,1);
-  await sources.upsert('coding',item(1));runtime.configure('coding',{index:false,memory:false,settleSeconds:0});await runtime.tick();assert.equal(materials.list({query:'Generated'}).items.length,0);
+  await sources.upsert('coding',item(1));runtime.configure('coding',{index:false,settleSeconds:0});await runtime.tick();assert.equal(materials.list({query:'Generated'}).items.length,0);
   await runtime.close();await assert.rejects(sources.upsert('coding',item(2)),/unavailable/);
   const empty=new SourcePipelineRuntime(store,materials);await empty.ready;await assert.rejects(new SourceStore(store,empty).upsert('coding',item(2)),/unavailable/);await empty.close();
 });
@@ -177,7 +177,7 @@ test('a second installed pipeline composes the same archive and publishing servi
 test('Memory waits for named outputs while a partial material remains queryable',async t=>{
   const {sources,runtime,materials,reader,store}=await fixture(t);
   sources.capabilities.register('fixture.partial',{lifecycle:'one-shot',discovery:'explicit-selection',listening:'none',readOriginal:'none',synchronization:'import-only',externalWrite:false});
-  fixtureRecipe(runtime,{id:'fixture.partial',version:'1',sourceKinds:['fixture.partial'],storage:'archive',index:'material',modelInput:'material',memory:true,memoryDependencies:['parsed-text'],group:item=>item.externalId,
+  fixtureRecipe(runtime,{id:'fixture.partial',version:'1',sourceKinds:['fixture.partial'],storage:'archive',index:'material',modelInput:'material',memoryDependencies:['parsed-text'],group:item=>item.externalId,
     organize:({source,items,group})=>({id:materialId(source.id,group),kind:'fixture.partial',schemaVersion:1,title:'Partial fixture',origin:{sourceId:source.id,externalId:group,deviceId:source.deviceId},
       blocks:[{id:'body',kind:'text',format:'plain',text:items[0]!.text,memberIds:['archive']}],members:[{id:'archive',kind:'archive',ref:'archive:fixture'}],
       coverage:{state:'partial',reason:'attachment_pending'},artifacts:[{key:'parsed-text',state:'ready'},{key:'attachment',state:'pending'}],fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}})});
@@ -227,7 +227,7 @@ test('explicit pipeline replacement rebuilds groups without introducing raw reco
   const installed=runtime.registry.get('mote.coding')!;
   const {recipe:_,...legacy}=installed;
   fixtureRecipe(runtime,{...legacy,id:'fixture.replacement',version:'3',priority:1,organize:input=>({...codingOrganizer(runtime)(input)!,title:'Replacement title'})});
-  runtime.configure('coding',{pipelineId:'fixture.replacement',memory:false});await runtime.tick();assert.equal(materials.list().items[0].title,'Replacement title');assert.equal(runtime.options('coding').pipelineId,'fixture.replacement');
+  runtime.configure('coding',{pipelineId:'fixture.replacement'});await runtime.tick();assert.equal(materials.list().items[0].title,'Replacement title');assert.equal(runtime.options('coding').pipelineId,'fixture.replacement');
 });
 
 test('file journal preserves both groups when a move is interrupted before SQL commit',async t=>{
@@ -262,8 +262,8 @@ test('encrypted raw archive survives bulk decrypt and a keyless restart',async t
 
 test('a missing pipeline can be replaced from its persisted storage contract',async t=>{
  const {runtime,sources,materials}=await fixture(t);const original=runtime.registry.get('mote.coding')!;
- const unregister=runtime.registry.register({...original,id:'fixture.old',priority:2});runtime.configure('coding',{pipelineId:'fixture.old',memory:false,settleSeconds:0});
+ const unregister=runtime.registry.register({...original,id:'fixture.old',priority:2});runtime.configure('coding',{pipelineId:'fixture.old',settleSeconds:0});
  await sources.upsert('coding',item(1));await runtime.tick();unregister();
  runtime.registry.register({...original,id:'fixture.new',priority:2});
- assert.doesNotThrow(()=>runtime.configure('coding',{pipelineId:'fixture.new',memory:false,settleSeconds:0}));await runtime.tick();assert.equal(materials.list().items.length,1);
+ assert.doesNotThrow(()=>runtime.configure('coding',{pipelineId:'fixture.new',settleSeconds:0}));await runtime.tick();assert.equal(materials.list().items.length,1);
 });

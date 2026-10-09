@@ -31,8 +31,6 @@ export interface SourcePipeline {
   storage:'records'|'archive';
   index:'none'|'material';
   modelInput:'material';
-  /** Retained compatibility metadata; source intake always authorizes Memory. */
-  memory?:boolean;
   /** Default named outputs for Memory recipes without their own requirements. */
   memoryDependencies?:string[];
   /** A declarative recipe pins trusted implementations used by this pipeline. */
@@ -99,7 +97,7 @@ export class SourcePipelineRuntime {
     };
   }
   private policyFingerprint(pipeline:SourcePipeline){return archiveHash({id:pipeline.id,version:pipeline.version,storage:pipeline.storage,index:pipeline.index,
-    memory:pipeline.memory??false,memoryDependencies:pipeline.memoryDependencies??['material'],recipe:pipeline.recipe??null,reprocess:pipeline.reprocess??'manual'});}
+    memoryDependencies:pipeline.memoryDependencies??['material'],recipe:pipeline.recipe??null,reprocess:pipeline.reprocess??'manual'});}
   private sourceFingerprint(json:string){if(!json)return archiveHash('');const source=JSON.parse(json) as SourceConnection;
     // Availability and intake retention govern future receipts. Neither may
     // reinterpret raw input already accepted for this immutable source identity.
@@ -124,7 +122,7 @@ export class SourcePipelineRuntime {
   }
   private validWork(step:ExecutionStep){
     try{
-      const input=this.input(step),row=this.row(input.workId);if(!row||row.generation!==input.generation||row.source_id!==input.sourceId||row.pipeline_id!==input.pipelineId||row.version!==input.version||row.group_key!==input.group||row.archive_checkpoint!==input.checkpoint||row.memory_trigger!==(input.memoryTrigger??'rebuild'))return false;
+      const input=this.input(step),row=this.row(input.workId);if(!row||row.generation!==input.generation||row.source_id!==input.sourceId||row.pipeline_id!==input.pipelineId||row.version!==input.version||row.group_key!==input.group||row.archive_checkpoint!==input.checkpoint||row.memory_trigger!==input.memoryTrigger)return false;
       if(row.recipe_id!==input.recipeId||row.recipe_version!==input.recipeVersion||row.recipe_definition_fingerprint!==input.recipeDefinitionFingerprint||row.recipe_config_fingerprint!==input.recipeConfigFingerprint||row.recipe_component_pins!==input.recipeComponentPins)return false;
       const db=this.store.db,sourceJson=(db.prepare('SELECT json FROM source_connections WHERE id=?').get(row.source_id) as {json:string}|undefined)?.json??'',
         configJson=(db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(row.source_id) as {json:string}|undefined)?.json??null;
@@ -194,7 +192,7 @@ export class SourcePipelineRuntime {
       this.materials.setSearchable(published.id,result.options.index??pipeline.index==='material');
       const required=result.options.memoryDependencies??pipeline.memoryDependencies??['material'];
       const observe=published.changed?this.memoryWork.observe.bind(this.memoryWork):this.memoryWork.observeUnchanged.bind(this.memoryWork);
-      observe(published.id,required,{inputKey:result.checkpoint,change:input.memoryTrigger??'rebuild',
+      observe(published.id,required,{inputKey:result.checkpoint,change:input.memoryTrigger,
         automatic:true},result.options.settleSeconds*1000);
       const consumers=this.options(input.sourceId).consumers;if(consumers.length)this.productConsumer?.observeProducts(published.ref,consumers);}
     const changed=db.prepare("UPDATE source_pipeline_work SET state='complete',error=NULL,material_ref=? WHERE id=? AND generation=?").run(ref,input.workId,input.generation).changes;
@@ -312,11 +310,11 @@ export class SourcePipelineRuntime {
     await this.materials.index?.tick();
     return rows.length;
   }
-  // Preserve old organization pins without letting legacy Memory booleans
+  // Preserve organization pins without letting Memory recipe selection
   // govern receipt authorization or current execution.
   private storedOptions(sourceId:string){const row=this.store.db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(sourceId);return configuration.parse(row?JSON.parse(String(row.json)):{});}
-  options(sourceId:string){return {...this.storedOptions(sourceId),memory:true};}
-  configure(sourceId:string,input:unknown){const parsed=configuration.parse(input),value={...parsed,...(parsed.memory===undefined?{}:{memory:true})},priorOptions=this.storedOptions(sourceId);const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{
+  options(sourceId:string){return this.storedOptions(sourceId);}
+  configure(sourceId:string,input:unknown){const value=configuration.parse(input),priorOptions=this.storedOptions(sourceId);const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{
     const sourceRow=db.prepare('SELECT json FROM source_connections WHERE id=?').get(sourceId);
     const source=sourceRow?JSON.parse(String(sourceRow.json)) as SourceConnection:undefined;
     let selected:SourcePipeline|undefined;
@@ -388,6 +386,6 @@ export class SourcePipelineRuntime {
   async close(){await this.ready.catch(()=>{});if(this.ownsEngine)await this.engine.close();this.unregisterHandler();await this.pluginScope.close();}
 }
 
-const configuration=z.object({pipelineId:z.string().regex(/^[a-z0-9.-]+$/).optional(),index:z.boolean().optional(),memory:z.boolean().optional(),memoryDependencies:z.array(z.string().regex(/^[a-z0-9][a-z0-9._/-]*$/).max(128)).min(1).max(16).optional(),consumers:z.array(z.string().regex(/^[a-zA-Z0-9_.-]{1,100}$/)).max(32).refine(values=>new Set(values).size===values.length).default([]),settleSeconds:z.number().int().min(0).max(86400).default(300)}).strict();
+const configuration=z.object({pipelineId:z.string().regex(/^[a-z0-9.-]+$/).optional(),index:z.boolean().optional(),memoryDependencies:z.array(z.string().regex(/^[a-z0-9][a-z0-9._/-]*$/).max(128)).min(1).max(16).optional(),consumers:z.array(z.string().regex(/^[a-zA-Z0-9_.-]{1,100}$/)).max(32).refine(values=>new Set(values).size===values.length).default([]),settleSeconds:z.number().int().min(0).max(86400).default(300)}).strict();
 
 function organizationOptions(options:z.infer<typeof configuration>){const {consumers:_,...organization}=options;return organization;}

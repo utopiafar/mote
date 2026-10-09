@@ -19,9 +19,6 @@ function fixture(t:any){
  return {store,get runtime(){return runtime;},get engine(){return engine;},async restart(){await runtime.close();await engine.close();engine=new ExecutionEngine(store);runtime=new DelegationRuntime(store,engine,{autoPump:false});register();}};
 }
 async function finishPlanning(f:ReturnType<typeof fixture>,id:string){for(let n=0;n<30;n++){await f.runtime.tick();if(f.runtime.get(id).planningComplete||['stale','cancelled','failed'].includes(f.runtime.get(id).status))return;await new Promise(resolve=>setImmediate(resolve));}throw Error('Generated planning did not finish');}
-function legacyWait(f:ReturnType<typeof fixture>,id:string){
- f.store.db.prepare("UPDATE delegation_works SET json=json_set(json_remove(json,'$.planningComplete','$.plannedUnitIds'),'$.status','waiting','$.wait',json(?)) WHERE id=?").run(JSON.stringify({unitIds:[id+':unit:one'],mode:'any'}),id);
-}
 
 test('proposal yield is rejected before durable wait; the model can finish normally with the same handles',async t=>{
  const f=fixture(t);
@@ -32,30 +29,6 @@ test('proposal yield is rejected before durable wait; the model can finish norma
  }});
  f.runtime.start({id:'generated-plan',profileId:'generated.plan',goal:'Generated goal',input:{},allowedCapabilities:['generated.package']});await finishPlanning(f,'generated-plan');
  assert.equal(f.runtime.get('generated-plan').planningComplete,true);assert.equal(f.runtime.get('generated-plan').units.length,1);
-});
-
-for(const valid of [true,false])test(`restart repairs an old proposal wait with ${valid?'fresh authority and reused handles':'revoked authority and no model call'}`,async t=>{
- const f=fixture(t);let calls=0,allowed=true;
- const profile={id:'generated.plan',awaitExternal:true,validate:()=>allowed,execute:async({work,controls}:any)=>{calls++;if(!work.units.length)await controls.execute('delegation_submit',{units:[proposal()]});else assert.equal(work.units[0].id,work.id+':unit:one');return 'Complete generated plan';}};
- f.runtime.registerCoordinator(profile);f.runtime.start({id:'legacy-plan',profileId:profile.id,goal:'Generated goal',input:{},allowedCapabilities:['generated.package']});await finishPlanning(f,'legacy-plan');legacyWait(f,'legacy-plan');
- await f.restart();allowed=valid;f.runtime.registerCoordinator(profile);await finishPlanning(f,'legacy-plan');
- const work=f.runtime.get('legacy-plan');assert.equal(work.units.length,1);assert.equal(work.wait,undefined);assert.equal(calls,valid?2:1);assert.equal(work.planningComplete??false,valid);
- if(valid){assert.equal(work.revision,2);assert.equal(work.status,'waiting');await f.runtime.tick();assert.equal(calls,2,'repeated ticks must not rerun a recovered fragment');}
- else {assert.equal(work.status,'stale');assert.equal(work.units[0].status,'stale');assert.equal(work.error,'input_changed');}
-});
-
-test('a cancelled pre-upgrade plan never resumes or grants its proposals',async t=>{
- const f=fixture(t);let calls=0;
- f.runtime.registerCoordinator({id:'generated.plan',awaitExternal:true,execute:async({controls})=>{calls++;await controls.execute('delegation_submit',{units:[proposal()]});return 'Generated';}});
- f.runtime.start({id:'cancelled-plan',profileId:'generated.plan',goal:'Generated',input:{},allowedCapabilities:['generated.package']});await finishPlanning(f,'cancelled-plan');legacyWait(f,'cancelled-plan');f.runtime.cancel('cancelled-plan');await f.runtime.tick();assert.equal(calls,1);assert.equal(f.runtime.get('cancelled-plan').status,'cancelled');
-});
-
-test('disabled automatic admission holds historical recovery until the existing setting is enabled',async t=>{
- const f=fixture(t);let enabled=false,calls=0;
- f.runtime.registerCoordinator({id:'generated.plan',awaitExternal:true,recoveryAllowed:()=>enabled,execute:async({work,controls})=>{calls++;if(!work.units.length)await controls.execute('delegation_submit',{units:[proposal()]});return 'Generated';}});
- f.runtime.start({id:'disabled-plan',profileId:'generated.plan',goal:'Generated',input:{},allowedCapabilities:['generated.package']});await finishPlanning(f,'disabled-plan');legacyWait(f,'disabled-plan');
- await f.runtime.tick();assert.equal(calls,1);assert.equal(f.runtime.get('disabled-plan').revision,1);assert.ok(f.runtime.get('disabled-plan').wait);
- enabled=true;await finishPlanning(f,'disabled-plan');assert.equal(calls,2);assert.equal(f.runtime.get('disabled-plan').planningComplete,true);
 });
 
 test('proposal planners can still yield for independently scheduled inspections',async t=>{

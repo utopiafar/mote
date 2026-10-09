@@ -14,11 +14,11 @@ import {ModelSettingsStore} from '../src/model-settings.js';
 const inactive={configured:false,query:async()=>{throw Error('No fixture model call authorized');},close:async()=>{}};
 const config=(dataDir:string):Config=>({dataDir,token:'generated-contract-owner',tokenPath:'generated',profile:'test',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:20_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://generated.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
 
-test('fresh epoch 3 installs final schema and refuses an old epoch without changing its persisted rows',async t=>{
- const directory=mkdtempSync(join(tmpdir(),'mote-epoch3-contract-')),node=await buildApp(config(directory),{agent:inactive,backgroundWorker:false});
+test('fresh epoch 4 installs final schema and refuses an old epoch without changing its persisted rows',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-epoch4-contract-')),node=await buildApp(config(directory),{agent:inactive,backgroundWorker:false});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
- assert.equal(node.store.db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()!.value,'3');
- assert.equal(node.store.db.prepare('PRAGMA user_version').get()!.user_version,3);
+ assert.equal(node.store.db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()!.value,'4');
+ assert.equal(node.store.db.prepare('PRAGMA user_version').get()!.user_version,4);
  for(const [table,column] of [['execution_steps','recovery_deadline'],['material_blocks','anchor_id'],['file_jobs','policy_json'],['memory_deletion_dependencies','lineage_keys'],['material_memory_requests','scope']])assert.ok(node.store.db.prepare(`PRAGMA table_info(${table})`).all().some(row=>row.name===column),table+'.'+column);
  assert.ok(node.store.db.prepare("SELECT sql FROM sqlite_master WHERE name='material_block_payload_delete'").get()!.sql.includes('material_block_versions'));
  node.store.db.prepare("INSERT INTO settings(key,value) VALUES('generated-preserved','yes')").run();node.store.db.prepare("UPDATE settings SET value='2' WHERE key='backend_epoch'").run();

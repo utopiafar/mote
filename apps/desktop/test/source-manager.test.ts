@@ -81,7 +81,7 @@ it('loads paused durable pending bodies before permitting a connection change an
   let value = await manager(endpointValue.url); await value.addFiles(file, DEFAULT_SOURCE_OPTIONS); await value.sync();
   const source = value.status()[0].source; await value.update(source.id, { ...source, enabled: false }); await value.sync(); await value.close();
   value = await manager(endpointValue.url); await value.sync(); expect(value.connectionActivity().pending).toBe(1);
-  const release = await value.holdConnection(); await value.sync(true); expect(value.connectionActivity()).toEqual({ pending: 1, processingPending: 0, inFlight: false }); release();
+  const release = await value.holdConnection(); await value.sync(true); expect(value.connectionActivity()).toEqual({ pending: 1, inFlight: false }); release();
 });
 
 it('checkpoints pending source bodies before credential persistence and recovers identical revisions after restart', async () => {
@@ -152,7 +152,7 @@ it('flushes durable pending source versions while watcher scans are still runnin
 
 
 it('does not serve a device-decoded file range after restart',async()=>{
- const server=await endpoint(),folder=join(directory,'catalog');await mkdir(folder);await writeFile(join(folder,'first.txt'),'Generated long evidence '.repeat(700));let value=await manager(server.url);await value.addFiles(folder,{...DEFAULT_SOURCE_OPTIONS,indexMode:'lightweight',allowRead:true});await value.sync();await value.close();value=await manager(server.url);await value.sync();expect(server.readReplies).toEqual([]);expect(value.status()[0].processingPending).toBe(0);
+ const server=await endpoint(),folder=join(directory,'catalog');await mkdir(folder);await writeFile(join(folder,'first.txt'),'Generated long evidence '.repeat(700));let value=await manager(server.url);await value.addFiles(folder,{...DEFAULT_SOURCE_OPTIONS,indexMode:'lightweight',allowRead:true});await value.sync();await value.close();value=await manager(server.url);await value.sync();expect(server.readReplies).toEqual([]);
 });
 
 it('an existing snapshot source with no central upload consent stays held across restart and ordinary sync',async()=>{

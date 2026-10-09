@@ -30,8 +30,7 @@ object SyncSchedule {
         val captures = context.queue().pendingSync(); val sources = context.localSources().pendingSync(); val files = context.fileArchives().pendingSync()
         return PendingSync(captures.count + sources.count + files.count, listOfNotNull(captures.oldestAt, sources.oldestAt, files.oldestAt).minOrNull(), sources.pendingUpdates)
     }
-    // A queued WorkRequest from the retired protocol must not replay retained
-    // records after the one-time ingress migration has cleared its outbox.
+    // Scheduling identity binds current ingress, connection and dispatch policy.
     fun stamp(config: CollectorConfig) = SourceRules.hash(listOf(IngressV2Protocol.VERSION, config.server, config.connectionToken(), config.syncMode, config.syncIntervalMinutes, config.syncBatchSize, config.wifiOnly, config.syncChargingOnly, config.syncBatteryNotLow).joinToString("\u0000"))
     fun delay(context: Context, config: CollectorConfig, explicit: Boolean = false): Long? {
         if (!config.hasSyncConnection()) return null

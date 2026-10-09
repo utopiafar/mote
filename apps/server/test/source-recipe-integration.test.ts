@@ -75,7 +75,7 @@ test('source configuration changes create a new pinned config fingerprint before
   const {store,materials,runtime,sources}=await fixture(t);
   await sources.upsert('coding',event('one','Generated configurable evidence'));
   const before=store.db.prepare('SELECT recipe_config_fingerprint FROM source_pipeline_work').get()!.recipe_config_fingerprint;
-  runtime.configure('coding',{index:false,memory:false,settleSeconds:0});
+  runtime.configure('coding',{index:false,settleSeconds:0});
   const after=store.db.prepare('SELECT recipe_config_fingerprint,state FROM source_pipeline_work').get()!;
   assert.notEqual(after.recipe_config_fingerprint,before);assert.equal(after.state,'pending');
   await runtime.tick();

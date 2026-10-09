@@ -3,9 +3,6 @@ WORKDIR /app
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages ./packages
-COPY models/qwen-manifest.json ./models/qwen-manifest.json
-COPY models/review-policy.txt ./models/review-policy.txt
-COPY models/review-system.txt models/review-grammar.gbnf ./models/
 COPY apps/server ./apps/server
 COPY apps/web ./apps/web
 COPY apps/desktop/package.json ./apps/desktop/package.json

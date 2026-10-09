@@ -18,10 +18,9 @@ export class FileOutputRegistry {
   decode(ref:ComponentRef,value:unknown){const type=this.get(ref),payload=type.parse(value);return {payload,transcript:transcriptSchema.parse(type.project(payload)),kind:type.kind,type:ref};}
   list(){return [...this.entries.values()].map(({id,version,kind})=>({id,version,kind}));}
 }
-export const TRANSCRIPT_OUTPUT:ComponentRef={id:'mote.transcript',version:'1'};
-export const AUDIO_TRANSCRIPT_OUTPUT:ComponentRef={id:'mote.transcript',version:'2'};
+export const TRANSCRIPT_OUTPUT:ComponentRef={id:'mote.transcript',version:'2'};
 export function defaultFileOutput(processor:{output?:ComponentRef;mediaTypes:string[]}):ComponentRef {
-  return processor.output??(processor.mediaTypes.length&&processor.mediaTypes.every(type=>type.startsWith('audio/'))?AUDIO_TRANSCRIPT_OUTPUT:TRANSCRIPT_OUTPUT);
+  return processor.output??TRANSCRIPT_OUTPUT;
 }
 const componentKey=(ref:ComponentRef)=>{if(!/^[a-z][a-z0-9.-]{2,127}$/.test(ref.id)||!ref.version)throw Error('Invalid file component');return `${ref.id}@${ref.version}`;};
 export type FileRecipeStep={name:string;stage:ComponentRef;dependsOn:string[];enabled?:'semanticTurns'};
@@ -68,18 +67,10 @@ export class FileRecipeRegistry {
 }
 export function defaultFileRecipe(processor:{dialogue?:boolean;recipe?:ComponentRef}):ComponentRef{return processor.recipe??{id:processor.dialogue?'mote.audio-dialogue':'mote.file-extraction',version:processor.dialogue?'2':'1'};}
 export function installFileRecipes(recipes:FileRecipeRegistry,outputs:FileOutputRegistry){
-  // Retained version-1 artifacts stay readable; new extraction records its
-  // expanded native word-timing contract explicitly instead of reusing v1.
-  const dispose=['1','2'].map(version=>outputs.register({id:TRANSCRIPT_OUTPUT.id,version,kind:'text',parse:value=>{
-    const transcript=transcriptSchema.parse(value);
-    if(version==='1'&&transcript.segments.some(segment=>segment.words?.some(word=>word.startMs<segment.startMs||word.endMs>segment.endMs+1)))throw new StoreError('Invalid word timeline',502);
-    return transcript;
-  },project:value=>value as Transcript}));
-  for(const name of ['extract','diarize','align','turns'] as const)dispose.push(recipes.registerStage({id:'mote.'+name,version:'1',run:context=>context.builtin(name)}));
-  dispose.push(recipes.registerStage({id:'mote.align',version:'2',run:context=>context.builtin('align')}));
+  const dispose=[outputs.register({...TRANSCRIPT_OUTPUT,kind:'text',parse:value=>transcriptSchema.parse(value),project:value=>value as Transcript})];
+  for(const name of ['extract','diarize','align','turns'] as const)dispose.push(recipes.registerStage({id:'mote.'+name,version:name==='align'?'2':'1',run:context=>context.builtin(name)}));
   const stage=(name:string,dependsOn:string[]=[],enabled?:'semanticTurns'):FileRecipeStep=>({name,stage:{id:'mote.'+name,version:'1'},dependsOn,...(enabled?{enabled}:{})});
   dispose.push(recipes.registerRecipe({id:'mote.file-extraction',version:'1',steps:[stage('extract')],output:'extract'}));
-  dispose.push(recipes.registerRecipe({id:'mote.audio-dialogue',version:'1',steps:[stage('extract'),stage('diarize',['extract']),stage('align',['extract','diarize']),stage('turns',['align'],'semanticTurns')],output:'turns'}));
   dispose.push(recipes.registerRecipe({id:'mote.audio-dialogue',version:'2',steps:[stage('extract'),stage('diarize',['extract']),{...stage('align',['extract','diarize']),stage:{id:'mote.align',version:'2'}},stage('turns',['align'],'semanticTurns')],output:'turns'}));
   return ()=>dispose.reverse().forEach(stop=>stop());
 }

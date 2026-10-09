@@ -105,9 +105,9 @@ TLS overlay 使用固定 Caddy 2.11.4 Alpine 镜像；与中央在独立 Compose
 
 ## 升级与回退
 
-本轮是 **MVP 破坏升级**：中央 `backend_epoch=3`，Desktop/Android 本机格式 3，模型 registry version 2，HTTP 便携归档 version 2。旧 schema、客户端队列/配置、旧模型及文件处理配置、旧内容包装和旧便携包不会自动转换。请先在旧版本完成必要导出、停止全部写入并保留完整旧目录、凭据及密钥，随后使用新空目录；明确放弃旧资料时才按 [兼容清理操作](audits/compatibility-cleanup-2026-10-04.md#升级操作和风险) 执行 reset。当前程序不能替旧程序读取和备份旧格式。
+本轮是 **MVP 破坏升级**：中央 `backend_epoch=4`，Desktop/Android 本机格式 3，模型 registry version 2，HTTP 便携归档 version 2。旧 schema、客户端队列/配置、旧模型及文件处理配置、旧内容包装和旧便携包不会自动转换。请先在旧版本完成必要导出、停止全部写入并保留完整旧目录、凭据及密钥，随后使用新空目录；明确放弃旧资料时才按 [MVP 基线操作](audits/mvp-baseline-cleanup-2026-10-09.md) 执行 reset。当前程序不能替旧程序读取和备份旧格式。
 
-新空环境可使用 `node scripts/mote.mjs init --profile prod --home /srv/mote-epoch3/profiles`，再重新配置当前模型、文件 policy、来源和客户端连接。若在已备份且停止的原目录明确放弃旧资料，可执行 `npm run reset:mvp-vault -- --data-dir /absolute/old-vault --confirm-clear`；该命令会清空资料及旧模型/文件处理配置。它保留令牌、content-key 和 connectors，不能把旧 collector 凭据改成 owner；旧 collector 文件需另行备份并移走后重新配对，见上述实施记录。
+新空环境可使用 `node scripts/mote.mjs init --profile prod --home /srv/mote-epoch4/profiles`，再重新配置当前模型、文件 policy、来源和客户端连接。若在已备份且停止的原目录明确放弃旧资料，可执行 `npm run reset:mvp-vault -- --data-dir /absolute/old-vault --confirm-clear`；该命令会清空资料及旧模型/文件处理配置。它保留令牌、content-key 和 connectors，不能把旧 collector 凭据改成 owner；旧 collector 文件需另行备份并移走后重新配对，见上述实施记录。
 
 以下 `upgrade` / `rollback` 事务用于同一存储代际内的部署切换，不能把它当作跨代迁移。升级和回退会短暂停机，本代采集端保留未确认的本地队列。先确认新的 release 已构建或镜像已拉取，使用版本目录/不可变镜像，不要在旧 release 中直接覆盖代码。
 
@@ -164,7 +164,7 @@ node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restor
 
 回退先验证旧快照，另存当前仓库的 `pre-rollback-*` 备份，恢复升级前的数据和版本。**升级后新增资料不会出现在回退后的活动仓库中**，但会保存在额外快照，以及原生的 `data.before-rollback-*` 目录或 Docker 原来的命名卷中。CLI 不删除这些保留副本，可验收后导出需要的数据再迁入。只保留一级直接回退元数据；备份目录中更早的快照仍在。
 
-跨代回滚需要旧程序配套完整旧备份，不能让旧程序直接打开 epoch 3，也不能让本代程序打开旧库。reset/newdir 后的资料与旧库彼此独立；先保留两代目录，按 [清理实施记录](audits/compatibility-cleanup-2026-10-04.md#升级操作和风险) 手动选择。
+跨代回滚需要旧程序配套完整旧备份，不能让旧程序直接打开 epoch 4，也不能让本代程序打开旧库。reset/newdir 后的资料与旧库彼此独立；先保留两代目录，按 [本次清理实施记录](audits/mvp-baseline-cleanup-2026-10-09.md) 手动选择。
 
 使用 launchd 的环境：先 `launchctl bootout` 停止自动管理，再执行升级或回退；验收后用 CLI `stop` 停止临时后台实例，再 `launchctl bootstrap` 原 plist，使 launchd 重新接管新版本。不要在 job 正在自动重启时迁移数据。
 
@@ -179,7 +179,7 @@ node scripts/mote.mjs stop --profile prod --home /srv/mote/profiles
 node scripts/mote.mjs backup --profile prod --home /srv/mote/profiles --out /srv/mote-backups/mote-2026-09-13
 ```
 
-CLI 复用 `scripts/backup.ts`：SQLite backup API 生成一致数据库，只对 epoch 3 的完整当前库按资产目录复制截图与文件原件（`files/objects/` 分片，仅 `.plain` / `.aes` 后缀），不读取旧 `blobs/`、`files/<hash>`、source-archive manifest 或旧内容包装，写 SHA-256 manifest。不复制导入脚本和临时工作目录；未完成的导入在备份中标记为需要重新分析，保留已经入库的证据 ID。恢复到新目录后按新仓库位置重建输入路径，重新生成预览并确认；已保存的记录去重，Memory 仍按实际新增证据处理。原生 `server.pid` 活跃时拒绝备份；Docker 必须已停止，先复制该环境卷到私有临时目录再备份，因此需预留约两份仓库的临时/备份磁盘空间。临时复制会在结束后清理。
+CLI 复用 `scripts/backup.ts`：SQLite backup API 生成一致数据库，只对 epoch 4 的完整当前库按资产目录复制截图与文件原件（`files/objects/` 分片，仅 `.plain` / `.aes` 后缀），包含当前 `source-archive/` 批次、索引与校验；不读取旧 `blobs/`、`files/<hash>` 或旧内容包装，写 SHA-256 manifest。不复制导入脚本和临时工作目录；未完成的导入在备份中标记为需要重新分析，保留已经入库的证据 ID。恢复到新目录后按新仓库位置重建输入路径，重新生成预览并确认；已保存的记录去重，Memory 仍按实际新增证据处理。原生 `server.pid` 活跃时拒绝备份；Docker 必须已停止，先复制该环境卷到私有临时目录再备份，因此需预留约两份仓库的临时/备份磁盘空间。临时复制会在结束后清理。
 
 在另一台机器初始化本代新的空环境，然后恢复本代完整离线备份：
 
@@ -190,7 +190,7 @@ node scripts/mote.mjs restore --profile prod --home /srv/mote-new/profiles --fro
 node scripts/mote.mjs start --profile prod --home /srv/mote-new/profiles
 ```
 
-恢复会验证当前备份 manifest、文件类型、所有 SHA-256，并二次校验复制结果。启动仍要求数据库 epoch 3，不能通过恢复旧快照绕过格式边界。活动服务、非空数据目录/卷都会拒绝。Docker 恢复需已准备好 profile 选择的本地镜像。恢复不复制 `server.pid`、令牌、模型 API key 或数据加密 key；新节点使用自己的访问令牌。验证记录数量、原文、图片和时间线，再修改客户端 URL/令牌。保留旧节点备份直到迁移验收完成。
+恢复会验证当前备份 manifest、文件类型、所有 SHA-256，并二次校验复制结果。启动仍要求数据库 epoch 4，不能通过恢复旧快照绕过格式边界。活动服务、非空数据目录/卷都会拒绝。Docker 恢复需已准备好 profile 选择的本地镜像。恢复不复制 `server.pid`、令牌、模型 API key 或数据加密 key；新节点使用自己的访问令牌。验证记录数量、原文、图片和时间线，再修改客户端 URL/令牌。保留旧节点备份直到迁移验收完成。
 
 内容加密默认关闭，`MOTE_DATA_KEY` 本身不再开启加密；可以在开发者页面或首次启动时用 `MOTE_CONTENT_ENCRYPTION=1` 主动开启，界面保存的选择优先。`MOTE_DATA_KEY` 是可选的 64 位十六进制 AES-256-GCM 图片及文件原件密钥；显式开启且未配置时会生成资料库私有的 `content-key` 文件。存在密文时必须单独备份原环境密钥或该文件，离线内容备份不携带密钥。解析文本、元数据与导入工作产物保持明文。尚有密文时不要更换原密钥；丢失密钥不能通过重新下载模型或更换访问令牌恢复内容。已有内容可在开发者页面一次性批量解密，详见[内容存储设置](content-storage.md)。
 

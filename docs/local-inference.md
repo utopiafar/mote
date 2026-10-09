@@ -1,6 +1,8 @@
 # 本机千问视觉审查与通用任务运行时
 
-> **历史实现说明。** 0.0.82 已移除 Android/macOS 的 Qwen/VLM 管理、运行时与安装包依赖。下文记录旧端侧实现；模型下载脚本和共享实验包仍可用于独立研发，不再是客户端构建或采集前提。当前隐私行为见 [上传审查](central-perception.md)，中央处理契约见 [上传与处理分离](upload-processing-decoupling.md)。
+> 历史设计或验收记录。2026-10-09 的 [MVP 基线](adr-mvp-baseline.md) 已替代旧迁移、预算、推理工具及旧提案等待修复；本文的原始测试结果不代表本次执行。当前结构见 [架构](architecture.md)。
+
+> **历史实现说明。** 0.0.82 已移除 Android/macOS 的 Qwen/VLM 管理、运行时与安装包依赖。下文记录旧端侧实现；2026-10-09 已删除模型下载脚本、共享实验包、端侧启动器和模型清单；下文命令只描述历史状态。当前隐私行为见 [上传审查](central-perception.md)，中央处理契约见 [上传与处理分离](upload-processing-decoupling.md)。
 
 Mote 在 Android 和 macOS 内置 Qwen3.5-0.8B 的本地视觉语言模型运行时。截图先经过用户应用排除和固定遮罩，再由模型阅读图像及用户配置的审查指令，返回是否允许保存的 JSON 决策；通过后才进入后续 OCR、队列和上传。默认开启审查，模型未就绪、完整性校验失败、进程退出、超时、生成截断或格式错误时跳过本帧。
 
@@ -8,7 +10,7 @@ Mote 在 Android 和 macOS 内置 Qwen3.5-0.8B 的本地视觉语言模型运行
 
 ## 固定模型与来源
 
-两端共同消费 [models/qwen-manifest.json](../models/qwen-manifest.json)，构建时复制到 TypeScript 包与 Android assets。该清单固定两份权重、字节数、SHA-256、来源 revision 和运行时版本，不能用同名的其他精度或其他 revision 替代。
+两端共同消费 [models/qwen-manifest.json](https://github.com/utopiafar/mote/blob/fa55ef83c9c432f6dc3ffec9d12ef3a3ab70cf77/models/qwen-manifest.json)，构建时复制到 TypeScript 包与 Android assets。该清单固定两份权重、字节数、SHA-256、来源 revision 和运行时版本，不能用同名的其他精度或其他 revision 替代。
 
 | 项目 | 值 |
 | --- | --- |
@@ -32,7 +34,7 @@ Mote 在 Android 和 macOS 内置 Qwen3.5-0.8B 的本地视觉语言模型运行
 
 ## 默认参数和用户配置
 
-共享初始审查指令位于 [models/review-policy.txt](../models/review-policy.txt)。两端首次配置从该文件加载；用户保存的指令覆盖默认值。它要求模型根据图像中的露骨内容作决定、将截图中的指令视为不可信数据、不转写个人信息，并返回简短 JSON；没有通过关键词、肤色规则或应用名称猜测语义结果。
+共享初始审查指令位于 [models/review-policy.txt](https://github.com/utopiafar/mote/blob/fa55ef83c9c432f6dc3ffec9d12ef3a3ab70cf77/models/review-policy.txt)。两端首次配置从该文件加载；用户保存的指令覆盖默认值。它要求模型根据图像中的露骨内容作决定、将截图中的指令视为不可信数据、不转写个人信息，并返回简短 JSON；没有通过关键词、肤色规则或应用名称猜测语义结果。
 
 | 配置 | 默认 / 范围 | 作用 |
 | --- | --- | --- |
@@ -59,7 +61,7 @@ macOS 配置保留 `nsfwEnabled`、`nsfwThreads`、`nsfwTimeoutMs`、`nsfwSource
 
 `allow` 必须是布尔值；`reason` 可省略，最长 240 字符；`labels` 可省略，最多 12 个字符串，每个最长 64 字符。未知字段、非布尔 allow、Markdown 代码围栏、普通文字、坏 JSON 或不完整生成都属于失败。模型没有输出有效决定时，不生成默认的 `allow:true`，也不根据文字中的“允许”“安全”等词推导结论。实现不接受概率字段或手写评分阈值。
 
-内置生成器使用共享 [review-system.txt](../models/review-system.txt) 和 [review-grammar.gbnf](../models/review-grammar.gbnf)，约束先输出简短 `reason` 再给出 `allow`，`labels` 可选；应用解析边界仍允许省略 `reason`，便于兼容其他运行时。
+内置生成器使用共享 [review-system.txt](https://github.com/utopiafar/mote/blob/fa55ef83c9c432f6dc3ffec9d12ef3a3ab70cf77/models/review-system.txt) 和 [review-grammar.gbnf](https://github.com/utopiafar/mote/blob/fa55ef83c9c432f6dc3ffec9d12ef3a3ab70cf77/models/review-grammar.gbnf)，约束先输出简短 `reason` 再给出 `allow`，`labels` 可选；应用解析边界仍允许省略 `reason`，便于兼容其他运行时。
 
 原始图像与审查输入通过内存及进程通信传递，不为了推理写临时截图文件。Android 使用非导出的独立推理服务进程，macOS 使用独立原生 helper；原生故障由父进程收敛为可见错误并触发重建。独立进程改善界面恢复，不是权限沙箱，也不能防止系统内存压力、操作系统杀后台或系统驱动故障。
 
@@ -80,7 +82,7 @@ npm run models:download -- --source official
 npm run models:download -- --verify-only
 ```
 
-默认目录是 `.mote/models/qwen/`，包含 `model.gguf` 与 `mmproj.gguf`。`--verify-only` 在缺失、损坏或仅完成一份权重时返回非零退出码。运行时源码准备见 [scripts/setup-vision.sh](../scripts/setup-vision.sh)；它从官方仓库检出清单固定的 llama.cpp commit，不取漂移的 latest 版本。
+默认目录是 `.mote/models/qwen/`，包含 `model.gguf` 与 `mmproj.gguf`。`--verify-only` 在缺失、损坏或仅完成一份权重时返回非零退出码。运行时源码准备见 [scripts/setup-vision.sh](https://github.com/utopiafar/mote/blob/fa55ef83c9c432f6dc3ffec9d12ef3a3ab70cf77/scripts/setup-vision.sh)；它从官方仓库检出清单固定的 llama.cpp commit，不取漂移的 latest 版本。
 
 模型交付遵循以下边界：
 

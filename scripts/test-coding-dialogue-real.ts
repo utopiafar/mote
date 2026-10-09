@@ -44,7 +44,7 @@ try{
  for(const path of kimiFiles){if((await stat(path)).size<100)continue;const body=await readFile(path,'utf8');if(body.split('\n').some(line=>{try{return JSON.parse(line).message?.type==='TurnBegin';}catch{return false;}})){samples.push({provider:'kimi',files:[path]});break;}}
  assert.ok(samples.some(sample=>sample.provider==='codex')&&samples.some(sample=>sample.provider==='kimi'),'real native Codex and Kimi samples are required');
  node=await buildApp(config,{backgroundWorker:false});await node.app.ready();
- const settings=node.lifecycle.settings();for(const id of ['extraction','consolidation','insights','working'] as const)settings[id].enabled=false;node.lifecycle.configure(settings);
+ const settings=node.lifecycle.settings();for(const id of ['consolidation','insights','working'] as const)settings[id].enabled=false;node.lifecycle.configure(settings);
  const counters:unknown[]=[];
  for(const sample of samples){
   const root=join(directory,'input',sample.provider);await mkdir(root,{recursive:true,mode:0o700});
@@ -57,7 +57,7 @@ try{
    if(scan.complete)break;assert.ok(n<299,'native scanner did not finish');
   }
   const unique=[...new Map(items.map(item=>[item.externalId,item])).values()];const id='real-'+sample.provider;
-  node.sources.register({id,name:'Owner-authorized real Coding acceptance',kind:'coding-agent',deviceId:'local-acceptance',platform:'macos'});node.sourcePipelines.configure(id,{settleSeconds:0,memory:false});
+  node.sources.register({id,name:'Owner-authorized real Coding acceptance',kind:'coding-agent',deviceId:'local-acceptance',platform:'macos'});node.sourcePipelines.configure(id,{settleSeconds:0});
   for(let i=0;i<unique.length;i+=100)await node.sources.upsertBatch(id,unique.slice(i,i+100));
   await node.sourcePipelines.tick(100);
   const materials=node.materials.list({kind:'mote.coding-session'}).items.filter(m=>m.origin.sourceId===id);

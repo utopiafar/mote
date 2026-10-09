@@ -17,22 +17,22 @@ function vault(t:{after(fn:()=>void):void},options:ConstructorParameters<typeof 
 }
 test('pre-created storage and restored databases gain private permissions before use',t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-store-permissions-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
-  chmodSync(directory,0o755);mkdirSync(join(directory,'blobs'),{mode:0o755});
+  chmodSync(directory,0o755);mkdirSync(join(directory,'files'),{mode:0o755});
   const first=new Store(directory);first.close();chmodSync(join(directory,'mote.sqlite'),0o644);
   const reopened=new Store(directory);t.after(()=>reopened.close());
-  assert.equal(statSync(directory).mode&0o777,0o700);assert.equal(statSync(join(directory,'blobs')).mode&0o777,0o700);
+  assert.equal(statSync(directory).mode&0o777,0o700);assert.equal(statSync(join(directory,'files')).mode&0o777,0o700);
   assert.equal(statSync(join(directory,'mote.sqlite')).mode&0o777,0o600);
   for(const name of readdirSync(directory).filter(name=>name.startsWith('mote.sqlite-')))assert.equal(statSync(join(directory,name)).mode&0o777,0o600);
 });
-test('vault, blob directories, database and sidecar links cannot redirect private storage',t=>{
+test('vault, asset directories, database and sidecar links cannot redirect private storage',t=>{
   const root=mkdtempSync(join(tmpdir(),'mote-store-links-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
   const external=join(root,'external');mkdirSync(external,{mode:0o755});
   const linked=join(root,'linked');symlinkSync(external,linked);assert.throws(()=>new Store(linked),/owned directory/);
   assert.equal(statSync(external).mode&0o777,0o755);
   const outside=join(root,'outside-file');writeFileSync(outside,'synthetic external file',{mode:0o644});
-  for(const [index,name] of ['blobs','mote.sqlite','mote.sqlite-wal','mote.sqlite-shm','mote.sqlite-journal'].entries()){
+  for(const [index,name] of ['files','mote.sqlite','mote.sqlite-wal','mote.sqlite-shm','mote.sqlite-journal'].entries()){
     const directory=join(root,`vault-${index}`);mkdirSync(directory);
-    symlinkSync(name==='blobs'?external:outside,join(directory,name));assert.throws(()=>new Store(directory));
+    symlinkSync(name==='files'?external:outside,join(directory,name));assert.throws(()=>new Store(directory));
   }
   const hardlink=join(root,'hardlink-vault');mkdirSync(hardlink);linkSync(outside,join(hardlink,'mote.sqlite'));
   assert.throws(()=>new Store(hardlink),/one link/);
@@ -67,7 +67,7 @@ test('privacy-excluded, oversized/mismatched image and invalid events fail befor
   await assert.rejects(store.ingest({...f,imageMime:'image/jpeg'}),/MIME/);
   await assert.rejects(store.ingest({...f,imageBase64:'<script>alert(1)</script>'}),/base64/);
   await assert.rejects(store.ingest({...f,durationMs:-5}));
-  assert.equal((store.stats() as {captures:number}).captures,0);assert.equal(readdirSync(store.blobsDir).length,0);
+  assert.equal((store.stats() as {captures:number}).captures,0);assert.equal(readdirSync(store.assets.directory).length,0);
 });
 test('bounded capacity rejects new data but still acknowledges already saved retries',async t=>{
   const sample=await fixture();const store=vault(t,{maxStorageBytes:1500});await store.ingest(sample);
@@ -95,7 +95,7 @@ test('deletion respects shared blobs and invalidates derived insights',async t=>
   const store=vault(t);const a=await fixture(),b={...a,id:randomUUID()};await store.ingest(a);await store.ingest(b);
   store.saveInsight({answer:'fixture'},randomUUID());store.delete(a.id);
   assert.equal((store.stats() as {blobs:number}).blobs,1);assert.equal(store.insights().length,0);
-  store.delete(b.id);assert.equal((store.stats() as {blobs:number}).blobs,0);assert.equal(readdirSync(store.blobsDir).length,0);assert.equal(store.search({query:'Mote'}).length,0);
+  store.delete(b.id);assert.equal((store.stats() as {blobs:number}).blobs,0);assert.equal(readdirSync(store.assets.directory).length,0);assert.equal(store.search({query:'Mote'}).length,0);
 });
 test('sampled intervals clip to range, do not overlap within a device, and keep device time separate',async t=>{
   const store=vault(t);

@@ -84,7 +84,7 @@ function config(vault:string):Config{return {dataKey:undefined,dataDir:vault,tok
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 async function open(vault:string){
  node=await buildApp(config(vault),{backgroundWorker:false});const settings=node.lifecycle.settings();
- for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;
+ for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;
  node.lifecycle.configure(settings);await node.app.ready();
  const selected=node.modelSettings.select('chat').settings;
  assert.equal(selected.model,'gpt-6-sol');assert.equal(selected.reasoningEffort,'max');assert.equal(selected.protocol,'codex-app-server');assert.equal(selected.agentTimeoutMs,300000);

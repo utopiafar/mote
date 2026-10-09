@@ -2,9 +2,9 @@
 
 > 保留 npm Monorepo，Central（server + web）、macOS、Android 独立维护版本与发布；开发阶段分别提供中央源码包、Mac DEV ZIP、Android DEV APK，手动升级。版本与标签入口见 [发布流程](docs/releasing.md)，当前能力及历史验收见 [文档索引](docs/README.md)。
 
-> 截图采用端侧文字规则审查与中央 OCR；端侧 Qwen/VLM 暂停执行，下载模型不是采集前提。中央本地 OCR、录音转写和说话人分离的安装与边界见 [部署说明](docs/ocr-asr-implementation-plan.md)。
+> 截图采用端侧文字规则审查与中央 OCR；端侧 Qwen/VLM 运行时与下载工具已移除。中央本地 OCR、录音转写和说话人分离的安装与边界见 [部署说明](docs/ocr-asr-implementation-plan.md)。
 
-> 本次 MVP 使用存储格式 3，拒绝旧格式数据，升级前须备份并明确选择新目录或重置。具体操作、风险和回归结果见 [兼容清理实施记录](docs/audits/compatibility-cleanup-2026-10-04.md)。
+> 本次 MVP 使用 Central epoch 4、客户端本机格式 3，拒绝旧格式数据，升级前须备份并明确选择新目录或重置。具体操作、风险和回归结果见 [MVP 基线与清理审计](docs/audits/mvp-baseline-cleanup-2026-10-09.md)。
 
 **自己的上下文，自己的资料库。**
 
@@ -35,8 +35,8 @@ Mote 把电脑与手机上的屏幕采样、主动写下的日记、选定文件
 - **问答与回顾**：Agent 自主选择只读工具、查找材料、解释证据；答案附可点击的原始记录。对话历史保存在中央节点，刷新或重启后可选择旧对话继续，见[对话说明](docs/conversations.md)。可手动或按配置周期生成回顾。
 - **离线可用、资料可迁移**：持久上传队列、幂等确认、当前格式 JSON 导入导出、离线完整备份与保留期限。客户端内容保存原始字节，中央可选内容加密；连接凭据仍使用系统加密存储。
 - **便捷连接**：中央生成一次性二维码或 JSON 邀请，采集端确认后获得独立凭据；Chatbot 可导入专用 MCP JSON。按连接撤销，不必给每个端点分发中央管理令牌。
-- **版本更新**：当前 DEV 客户端从 Release 手动覆盖安装，服务端从源码构建并按命名环境备份、升级与回退；同代更新保留原位置的数据，本次存储格式 3 的破坏升级需按升级说明处理旧资料。
-- **可观测与可调节**：查看同步、索引、存储和请求状态；按需记录客户端资源样本，调整采样频率、图片尺寸、质量、推理线程和低电量策略。
+- **版本更新**：当前 DEV 客户端从 Release 手动覆盖安装，服务端从源码构建并按命名环境备份、升级与回退；同代更新保留原位置的数据，本次 Central epoch 4 的破坏升级需按升级说明处理旧资料。
+- **可观测与可调节**：查看同步、索引、存储和请求状态；按需记录客户端资源样本，调整采样频率、图片尺寸、质量和低电量策略。
 
 “采样时间”是根据实际观察计算的覆盖时间，包含采样空缺的限制，不能当作连续专注时长或 App 独占耗电。Mote 不会用应用名称或关键词硬编码“工作”“娱乐”“待办”等语义判断。
 
@@ -263,7 +263,7 @@ MOTE_ENV_FILE=/absolute/path/to/mote.env npm run import:files -- --root /path/to
 | [故障排查](docs/troubleshooting.md) | 日志、请求编号、诊断包与常见故障 |
 | [架构](docs/architecture.md) / [协议](docs/protocol.md) | 数据流、边界、扩展接入与一致性 |
 | [macOS](docs/desktop.md) / [Android](docs/android.md) | 安装构建、采集权限、后台行为 |
-| [端上推理](docs/local-inference.md) / [Agent](docs/agent.md) | 本地模型、下载源、策略、中央模型与工具 |
+| [架构](docs/architecture.md) / [Agent](docs/agent.md) | 当前目录、中央模型与只读工具 |
 | [部署与诊断验证](docs/operations-validation.md) / [真实模型验证](docs/live-validation.md) | 自动化、模拟器、真实模型与真机的范围和限制 |
 | [第三方组件](THIRD_PARTY_NOTICES.md) | 实际依赖与模型许可说明 |
 

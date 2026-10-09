@@ -53,7 +53,7 @@ async function fixture(t:import('node:test').TestContext,remote=false){
       }})});
     const extract={id:'mote.context-extraction',version:'3.4.0'};
     node.memoryStrategies.registerReview({id:'fixture.record-review',version:'1',input:'memory-candidates@1',output:'memory-candidates@1',permissions:['evidence.read'],policy:'Generated index policy: keep only an observation supported by the supplied record.'});
-    for(const [recipe,requires,review] of [[bodyRecipe,['source-record'],{id:'fixture.record-review',version:'1'}],[extractedPersonal,['extracted-text'],{id:'mote.personal-review',version:'2'}],[extractedCoding,['extracted-text'],{id:'mote.coding-review',version:'1'}]] as const)
+    for(const [recipe,requires,review] of [[bodyRecipe,['source-record'],{id:'fixture.record-review',version:'1'}],[extractedPersonal,['extracted-text'],{id:'mote.personal-review',version:'2'}],[extractedCoding,['extracted-text'],{id:'mote.coding-review',version:'2'}]] as const)
       node.memoryStrategies.registerRecipe({...recipe,extract,review,requires});
     await node.app.ready();
   };

@@ -92,7 +92,7 @@ test('explicit config reprocessing with an empty Coding delta keeps the same Mat
   t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
   await sources.upsert('coding',event('one','Generated config reprocessing fixture'));await runtime.tick();const before=materials.list().items[0],input=materials.input(before.ref,['conversation']);
-  runtime.configure('coding',{memory:false});await runtime.tick();const after=materials.list().items[0];assert.equal(after.revision,before.revision);assert.equal(after.sequence,before.sequence);assert.deepEqual(materials.input(after.ref,['conversation']),input);
+  runtime.configure('coding',{});await runtime.tick();const after=materials.list().items[0];assert.equal(after.revision,before.revision);assert.equal(after.sequence,before.sequence);assert.deepEqual(materials.input(after.ref,['conversation']),input);
   assert.equal(runtime.memoryAllowed('coding'),true);assert.equal(store.db.prepare('SELECT generation FROM source_pipeline_work').get()!.generation,1,'configuration change still executes its new pinned work');
 });
 
@@ -218,8 +218,8 @@ test('Coding recipe upgrade reuses the common queue without paying for historica
   const explicit=memory.create({evidenceIds:materials.evidenceIds(upgraded.ref)});
   await memory.run(explicit.id);assert.equal(calls,2,'a separate explicit request can use the new revision');
   // Changing enablement/configuration on this same input cannot manufacture a grant.
-  runtime.configure('coding',{memory:false,settleSeconds:0});await runtime.tick();
-  runtime.configure('coding',{memory:true,settleSeconds:0});await runtime.tick();
+  runtime.configure('coding',{settleSeconds:0});await runtime.tick();
+  runtime.configure('coding',{settleSeconds:0});await runtime.tick();
   assert.equal(runtime.drainMemory(memory,true),0);assert.equal(calls,2);
   await sources.upsert('coding',event('two','Generated newly received evidence'));await runtime.tick();
   assert.equal(runtime.drainMemory(memory,true),1);

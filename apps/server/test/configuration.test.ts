@@ -36,7 +36,7 @@ test('configuration projection is serializable, preserves effective values and s
   assert.equal(view.envFile, config.configuration!.hostConfigFile);
   assert.equal(all.get('effectiveEnvFile')!.value, '/app/deploy/empty.env');
   assert.equal(view.baseDir, '/app/deploy'); assert.equal(view.runtime, 'docker'); assert.equal(view.readOnly, true); assert.equal(view.restartRequired, true);
-  assert.equal(view.storage.sqlitePath, join(config.dataDir, 'mote.sqlite')); assert.equal(view.storage.blobsDir, join(config.dataDir, 'blobs'));
+  assert.equal(view.storage.sqlitePath, join(config.dataDir, 'mote.sqlite')); assert.equal(view.storage.assetDir, join(config.dataDir, 'files', 'objects'));
   assert.equal(view.storage.kind, 'docker-volume'); assert.equal(view.storage.source, 'synthetic-private-volume-name'); assert.equal(view.storage.mountPath, '/data');
   assert.equal(all.get('maxStorageBytes')!.value, 23 * 1024 * 1024); assert.equal(all.get('maxStorageBytes')!.unit, 'bytes'); assert.match(all.get('maxStorageBytes')!.description, /逻辑字节/);
   assert.equal(all.get('modelRequestTimeoutMs')!.value,300000); assert.equal(all.get('modelRequestTimeoutMs')!.envVar,'MOTE_MODEL_REQUEST_TIMEOUT_MS');

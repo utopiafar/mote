@@ -79,7 +79,7 @@ export class LocalSourceManager {
   }
   status(): SourceStatus[] { return this.sources.map<SourceStatus>(source => ({ state: source.enabled ? 'idle' : 'paused', message: source.enabled ? moteText("等待首次同步") : moteText("本机已暂停"), pending: 0, items: 0, skipped: 0, ...this.states.get(source.id), ...this.engines.get(source.id)?.status(), source: structuredClone(source), ...(!source.enabled ? { state: 'paused' as const, message: moteText("本机已暂停") } : {}) })).map(row => ({...row, message: statusMessage(row.blocked?moteText("中央记录冲突或已删除，本机副本保留待处理。"):row.message), facts:nativeStatusView({pending:row.pending+(row.blocked??0),lastAcknowledgedAt:row.lastAcknowledgedAt,syncState:!this.connection.serverUrl||!connectionToken(this.connection)?'unconfigured':row.blocked&&row.state!=='syncing'?'blocked':row.state==='permission_required'?'blocked':row.state==='syncing'?'uploading':row.state==='idle'&&row.pending>0?'waiting':row.state,errorCode:row.blocked?'retained_conflict':row.state==='permission_required'?'permission_required':row.state==='error'?'source_unavailable':null,scanComplete:row.scanComplete,knownItems:row.items,skipped:row.skipped})})); }
   pendingForHistory(sourceId: string, versionKey: string): import('./source-types').SourceItem | undefined { return this.engines.get(sourceId)?.pendingForHistory(versionKey); }
-  connectionActivity(): { pending: number; processingPending: number; inFlight: boolean } { return { pending: [...this.engines.values()].reduce((sum, engine) => sum + engine.status().pending, 0), processingPending: [...this.engines.values()].reduce((sum,engine)=>sum+engine.status().processingPending,0), inFlight: Boolean(this.task || this.uploadTask || this.permissionTask) }; }
+  connectionActivity(): { pending: number; inFlight: boolean } { return { pending: [...this.engines.values()].reduce((sum, engine) => sum + engine.status().pending, 0), inFlight: Boolean(this.task || this.uploadTask || this.permissionTask) }; }
   async holdConnection(): Promise<() => void> {
     if (this.connectionHeld || this.permissionTask) throw new Error(moteText("本地来源授权尚未结束，请稍后重试连接"));
     this.connectionHeld = true;
@@ -91,7 +91,7 @@ export class LocalSourceManager {
     const binding = sourceConnectionBinding(connection);
     if (binding === this.binding) return;
     for (const [id, engine] of this.engines) await engine.checkpointTo(join(this.directory, 'nodes', binding, id + '.json'));
-    await this.nodeBinding.commit(connection, (this.connectionActivity().pending > 0 || this.connectionActivity().processingPending > 0), false, true);
+    await this.nodeBinding.commit(connection, (this.connectionActivity().pending > 0), false, true);
   }
   async prepareInitialConnection(connection: SourceConnection): Promise<void> {
     if (!this.connectionHeld || !this.nodeBinding.unbound() || this.task || this.uploadTask || this.permissionTask || connection.deviceId !== this.connection.deviceId) throw new Error(moteText("仅允许为未绑定的本地来源确认首次连接"));
@@ -157,7 +157,7 @@ export class LocalSourceManager {
     await this.interrupt();
     const binding = sourceConnectionBinding(connection);
     const switchingBucket = binding !== this.binding;
-    if (!switchingBucket) this.nodeBinding.assertChange(connection, (this.connectionActivity().pending > 0 || this.connectionActivity().processingPending > 0));
+    if (!switchingBucket) this.nodeBinding.assertChange(connection, (this.connectionActivity().pending > 0));
     if (switchingBucket) {
       const dirty = new Set(this.sources.map(s => s.id));
       // Persist before mutating the connection so an I/O failure can retain the old in-memory node.
@@ -166,7 +166,7 @@ export class LocalSourceManager {
       for (const source of this.sources) { const engine = new SourceSync(join(this.directory, 'nodes', binding, source.id + '.json')); await engine.initialize(); engines.set(source.id, engine); }
       this.binding = binding; this.engines = engines; this.states.clear(); this.readable.clear(); this.metadataDirty = dirty; this.metadataDirtyAt ??= new Date().toISOString();
     }
-    await this.nodeBinding.commit(connection, !switchingBucket && (this.connectionActivity().pending > 0 || this.connectionActivity().processingPending > 0));
+    await this.nodeBinding.commit(connection, !switchingBucket && (this.connectionActivity().pending > 0));
     this.connection = connection; void this.sync(true);
   }
   async sync(force = true): Promise<void> {

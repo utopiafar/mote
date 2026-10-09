@@ -65,7 +65,7 @@
 
 ## 存储与保留
 
-本轮采用 MVP 破坏升级：中央只接受 `backend_epoch=3` 的库，模型 registry 为 version 2，HTTP 便携归档为完整 version 2。旧库、旧资产包装、旧模型/文件处理配置和旧便携包不自动转换。旧安装先用旧程序完成所需导出并停止，保留完整目录与凭据备份，再使用新空目录；明确放弃旧资料时才运行 reset。操作与风险见 [兼容清理实施记录](audits/compatibility-cleanup-2026-10-04.md#升级操作和风险)。离线备份是当前库的快照，不是跨代升级工具。
+本轮采用 MVP 破坏升级：中央只接受 `backend_epoch=4` 的库，模型 registry 为 version 2，HTTP 便携归档为完整 version 2。旧库、旧资产包装、旧模型/文件处理配置和旧便携包不自动转换。旧安装先用旧程序完成所需导出并停止，保留完整目录与凭据备份，再使用新空目录；明确放弃旧资料时才运行 reset。操作与风险见 [MVP 基线](adr-mvp-baseline.md)。离线备份是当前库的快照，不是跨代升级工具。
 
 | 变量 | 默认值 | 范围及行为 |
 |---|---|---|
@@ -101,7 +101,7 @@
 | `MOTE_EMBEDDING_BASE_URL` | 空 | 启用 embedding 必填，模型请求可达的服务基址 |
 | `MOTE_EMBEDDING_API_KEY` | 空 | embedding 服务凭据，独立于 Agent key |
 
-中央模型接收查询与检索到的文本证据；启用 embedding 还会发送待索引的原文。端上 Qwen 的下载源、线程、图片预处理和 NSFW 审查策略由各客户端管理，见 [端上推理配置](local-inference.md)。这两套模型设置不混用。
+中央模型接收查询与检索到的文本证据；启用 embedding 还会发送待索引的原文。端侧 Qwen 运行时及下载配置已移除。本机 OCR 只处理明确的文字隐私规则，中央 OCR/ASR 安装与模型配置见 [媒体处理](ocr-asr-implementation-plan.md)。
 
 ## 日志与调试
 

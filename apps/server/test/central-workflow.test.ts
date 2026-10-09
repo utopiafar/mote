@@ -26,7 +26,7 @@ test('legacy denied source history stays searchable and supports an explicit HTT
     calls++;return {answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()};
   }}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
-  const settings=node.lifecycle.settings();node.lifecycle.configure({...settings,extraction:{...settings.extraction,enabled:false}});
+  const settings=node.lifecycle.settings();node.lifecycle.configure({...settings});
   node.sources.register({id:'fixture-disabled-memory',name:'Generated',kind:'custom',deviceId:'fixture',platform:'import',retention:'archive'});
   await node.sources.upsert('fixture-disabled-memory',{externalId:'original',revision:'1',observedAt:'2026-09-20T00:00:00Z',text:'Generated independently readable original',kind:'message',layer:'original'});
   node.store.db.prepare("UPDATE memory_input_authorizations SET authorized=0 WHERE source_id='fixture-disabled-memory'").run();

@@ -60,16 +60,3 @@ test('snapshot dialogue executes diarization, alignment and semantic turns with 
  await processing.tick();assert.equal(files.detail(ack.id).job.state,'succeeded',JSON.stringify(files.detail(ack.id).job));assert.deepEqual([asr,diarize,turns],[1,1,1]);assert.deepEqual(files.chunks(ack.id).map(chunk=>chunk.fileEvidence?.speaker),['SPEAKER_0','SPEAKER_1']);
  const receipt=processing.explain(ack.id).snapshots[0] as any;assert.deepEqual(receipt.stagePins.map((pin:any)=>pin.name),['extract','diarize','align','turns']);assert.equal(store.db.prepare('SELECT 1 FROM file_snapshot_inputs WHERE capture_id=?').get(ack.id),undefined);assert.equal(files.detail(ack.id).hasOriginal,false);
 });
-
-test('restart repairs legacy snapshot receipt rewrites while preserving source checksums and readable formal Material',async()=>{
- const directory=mkdtempSync(join(tmpdir(),'mote-snapshot-legacy-upgrade-'));let store=new Store(directory);
- try{
-  let sources=new SourceStore(store),files=new FileStore(store,sources);sources.register({id:'fixture',name:'Generated',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'snapshot'});
-  const ack=await upload(files,Buffer.from('GENERATED_SNAPSHOT_UPGRADE'),true),processing=new FileProcessing(files);try{await processing.tick();}finally{await processing.close();}
-  const derived=files.detail(ack.id).item.document!.fileIndex!;store.db.prepare("UPDATE captures SET json=json_set(json,'$.provenance.document.fileIndex',json(?)) WHERE id=?").run(JSON.stringify(derived),ack.id);store.db.exec('DELETE FROM file_snapshot_index');store.close();store=new Store(directory);sources=new SourceStore(store);files=new FileStore(store,sources);
-  const raw=JSON.parse(String(store.db.prepare('SELECT json FROM captures WHERE id=?').get(ack.id)!.json));assert.equal(raw.provenance.document.fileIndex.status,'pending');assert.equal(files.detail(ack.id).item.document?.fileIndex?.status,'ready');
-  const reader=new CaptureRawReader(store,{mayReadSource:()=>true,mayReadGroup:()=>true,mayListKind:()=>true});assert.ok(reader.snapshotForItem('fixture','generated-file'));
-  const materials=new MaterialStore(store),organizers=new MaterialOrganizerRuntime(store,materials);try{while(await organizers.tick(100));assert.match(materials.read(materials.get(materialId('fixture','generated-file'))!.ref).text,/GENERATED_SNAPSHOT_UPGRADE/);}finally{await organizers.close();}
-  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_inputs').get()!.n,0);assert.equal(files.detail(ack.id).hasOriginal,false);
- }finally{store.close();rmSync(directory,{recursive:true,force:true});}
-});

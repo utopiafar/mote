@@ -19,7 +19,7 @@ android {
         targetSdk = 36
         versionCode = releaseVersion.getProperty("versionCode").toInt()
         versionName = releaseVersion.getProperty("versionName")
-        buildConfigField("String", "MOTE_PROFILE", "\"legacy\"")
+        buildConfigField("String", "MOTE_PROFILE", "\"default\"")
         buildConfigField("String", "DEFAULT_SERVER", "\"\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

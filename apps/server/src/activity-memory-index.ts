@@ -18,10 +18,7 @@ const publicRank=(value:string)=>`CASE ${value} WHEN 'running' THEN 6 WHEN 'need
  * never parse complete historic job or batch payloads to find the newest goals. */
 export class ActivityMemoryIndex {
  constructor(private store:Store){
-  const db=store.db,initialized=Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE name='activity_memory_jobs'").get()),itemsInitialized=Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE name='activity_memory_items'").get());
-  // Drop legacy prose projections before schema migration; metadata never caches model text.
-  db.exec('DROP TRIGGER IF EXISTS activity_memory_job_insert;DROP TRIGGER IF EXISTS activity_memory_job_update;DROP TRIGGER IF EXISTS activity_memory_batch_insert;DROP TRIGGER IF EXISTS activity_memory_batch_update;');
-  if(initialized&&db.prepare('PRAGMA table_info(activity_memory_jobs)').all().some(row=>row.name==='goal'))db.exec('ALTER TABLE activity_memory_jobs DROP COLUMN goal');
+  const db=store.db;
   db.exec(`CREATE TABLE IF NOT EXISTS activity_memory_jobs(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,status TEXT NOT NULL,import_id TEXT);
    CREATE INDEX IF NOT EXISTS activity_memory_jobs_recent ON activity_memory_jobs(updated_at DESC,id);
    CREATE INDEX IF NOT EXISTS activity_memory_jobs_import ON activity_memory_jobs(import_id,id);
@@ -70,12 +67,7 @@ export class ActivityMemoryIndex {
    CREATE TRIGGER IF NOT EXISTS activity_memory_batch_insert AFTER INSERT ON memory_batches BEGIN INSERT INTO activity_memory_batches VALUES(${batchValues('new')});INSERT INTO activity_memory_coverage ${coverageSql('new')}; END;
    CREATE TRIGGER IF NOT EXISTS activity_memory_batch_update AFTER UPDATE OF json ON memory_batches BEGIN INSERT OR REPLACE INTO activity_memory_batches VALUES(${batchValues('new')});INSERT INTO activity_memory_coverage ${coverageSql('new')}; END;
    CREATE TRIGGER IF NOT EXISTS activity_memory_batch_delete AFTER DELETE ON memory_batches BEGIN DELETE FROM activity_memory_batches WHERE id=old.id; END;`);
-  // A single migration backfill; subsequent reads use trigger-maintained rows.
-  if(!initialized)db.exec(`INSERT OR IGNORE INTO activity_memory_jobs SELECT ${jobValues('j')} FROM memory_jobs j;
-   INSERT OR IGNORE INTO activity_memory_sources SELECT j.id,json_extract(g.value,'$.sourceId') FROM memory_jobs j,json_each(${grantArray('j')}) g WHERE json_extract(g.value,'$.sourceId') IS NOT NULL;
-   INSERT OR IGNORE INTO activity_memory_batches SELECT ${batchValues('b')} FROM memory_batches b;
-   INSERT OR IGNORE INTO activity_memory_outputs SELECT j.id,m.value FROM memory_jobs j,json_each(j.json,'$.memoryIds') m;`);
-  if(!itemsInitialized)db.exec(`INSERT OR IGNORE INTO activity_memory_items ${itemsSql('j','memory_jobs j,')};INSERT OR IGNORE INTO activity_memory_coverage ${coverageSql('b','memory_batches b,')};`);
+
  }
  groups(){
   const parent=new Map<string,string>(),root=(source:string):string=>{const next=parent.get(source);if(!next){parent.set(source,source);return source;}return next===source?source:root(next);};

@@ -1,3 +1,4 @@
+import {ActivityMemoryIndex} from './activity-memory-index.js';
 import {memoryFeedbackBatchId,validMemoryFeedbackPlan,type MemoryFeedbackPlanner,type MemoryFeedbackRequest,type MemoryFeedbackPlan,type MemoryFeedbackGroup} from './memory-feedback.js';
 import {decodeMemoryJob,encodeMemoryJob,decodeMemoryBatch,encodeMemoryBatch,installMemoryPrivateRetirement} from './memory-private-storage.js';
 import {memoryWorkPackageSchema,memoryWorkInstruction,memoryWorkCandidateLimit,readMemoryWorkCoverage,type MemoryWorkPackage,type MemoryWorkMember,type MemoryWorkCoverage} from './memory-work-contract.js';
@@ -85,6 +86,7 @@ export class MemoryPipeline {
   constructor(private options:MemoryPipelineOptions){
     this.strategies=options.strategies??new MemoryStrategies();
     this.batchBudget();
+    new ActivityMemoryIndex(this.store);
     this.initializeCounts();
     this.initializePrivateStorage();
     this.drafts=new MemoryExtractionDrafts(this.store);
@@ -115,9 +117,7 @@ export class MemoryPipeline {
   private initializePrivateStorage(){
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
     try{
-      if(installMemoryPrivateRetirement(this.store))for(const row of db.prepare('SELECT id,json FROM memory_jobs').all()){
-        const job=decodeMemoryJob(this.store,String(row.json));for(const id of new Set((job.evidenceIds??[]).flatMap(id=>this.options.memories.dependencyIds(id))))if(!db.prepare('SELECT 1 FROM memory_job_dependencies WHERE job_id=? AND evidence_id=?').get(job.id,id)){this.store.reserveMetadata(Buffer.byteLength(job.id)+Buffer.byteLength(id)+64);db.prepare('INSERT OR IGNORE INTO memory_job_dependencies VALUES(?,?)').run(job.id,id);}
-      }
+      installMemoryPrivateRetirement(this.store);
       if(own)db.exec('COMMIT');
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }

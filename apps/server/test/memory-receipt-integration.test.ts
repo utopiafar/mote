@@ -19,25 +19,23 @@ const empty=(input:QueryInput,node:Awaited<ReturnType<typeof buildApp>>)=>{
   return {answer:JSON.stringify({summary:'Generated bounded conversation interpretation',evidence:[{id:range.id,quote,offset:range.offset}],workRecords:[],events:[],memoryCandidates:[],actionCues:[]}),citations:[{id:range.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:''}],trace:[],runId:randomUUID()};
 };
 
-test('legacy denied receipts survive cutover, restart and duplicate ACK while new ordinary and Coding inputs continue',async t=>{
+test('denied receipts survive restart and duplicate ACK while new ordinary and Coding inputs continue',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-receipt-')),cfg=config(directory);
   let calls=0;
   const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{const plan=await fixtureMemoryPlan(input);if(plan)return plan;calls++;return fixtureMemoryWorkResult(input,empty(input,node));}}};
   let node=await buildApp(cfg,dependencies);await node.app.ready();
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
-  const setEnabled=(enabled:boolean)=>{const settings=node.lifecycle.settings();node.lifecycle.configure({...settings,extraction:{...settings.extraction,enabled}});};
-  setEnabled(false);assert.equal(node.lifecycle.settings().extraction.enabled,true);
+  assert.equal(node.lifecycle.settings().extraction.enabled,true);
   node.sources.register({id:'ordinary',name:'Generated diary',kind:'custom',deviceId:'fixture',platform:'import'});
   node.sources.register({id:'coding',name:'Generated coding',kind:'coding-agent',deviceId:'fixture',platform:'import'});
-  node.sourcePipelines.configure('coding',{memory:true,settleSeconds:0});
+  node.sourcePipelines.configure('coding',{settleSeconds:0});
   const diary=original('diary'),event=coding('one');
   await node.sources.upsert('ordinary',diary);await node.sources.upsert('coding',event);
   node.store.db.prepare('UPDATE memory_input_authorizations SET authorized=0').run();
-  const legacy=node.lifecycle.settings();legacy.extraction.enabled=false;node.store.db.prepare('UPDATE memory_lifecycle_settings SET json=? WHERE id=1').run(JSON.stringify(legacy));
   assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE authorized=0').get()!.n,2);
   await node.app.close();
 
-  node=await buildApp(cfg,dependencies);setEnabled(true);
+  node=await buildApp(cfg,dependencies);
   // Shutdown can interrupt an admitted organizer and leave its persisted
   // retry delay. Drive the real recovery until both materials are published.
   for(let attempt=0;attempt<100;attempt++){
@@ -71,17 +69,17 @@ test('legacy denied receipts survive cutover, restart and duplicate ACK while ne
   assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE authorized=1 AND job_id IS NOT NULL').get()!.n,2);
 });
 
-test('legacy source Memory off settings cannot disable newly authorized Coding intake',async t=>{
+test('removed source Memory controls are rejected while current Coding intake is authorized',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-source-receipt-')),cfg=config(directory);
   let calls=0;
   const node=await buildApp(cfg,{agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{calls++;return empty(input,node);}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   node.sources.register({id:'coding',name:'Generated coding',kind:'coding-agent',deviceId:'fixture',platform:'import'});
-  node.sourcePipelines.configure('coding',{memory:false,settleSeconds:0});
+  node.sourcePipelines.configure('coding',{settleSeconds:0});
   await node.sources.upsert('coding',coding('one'));
-  node.sourcePipelines.configure('coding',{memory:true,settleSeconds:0});
+  node.sourcePipelines.configure('coding',{settleSeconds:0});
   await node.sourcePipelines.tick();
-  assert.equal(node.sourcePipelines.options('coding').memory,true);
+  assert.throws(()=>node.sourcePipelines.configure('coding',{memory:false}));
   assert.equal(node.store.db.prepare('SELECT authorized FROM memory_input_authorizations WHERE source_id=?').get('coding')!.authorized,1);assert.equal(calls,0);
   assert.equal(node.materials.list().items.length,1);
   // Erasure removes authorization as well as derived material state.
@@ -90,12 +88,12 @@ test('legacy source Memory off settings cannot disable newly authorized Coding i
   assert.equal(node.materials.get(materialId('coding',JSON.stringify(['codex','fixture','session']))),undefined);
 });
 
-test('connector startup fresh intake uses continuous processing after legacy global off cutover',async t=>{
+test('fresh connector startup installs continuous processing before intake',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-startup-receipt-')),cfg=config(directory),modulePath=join(directory,'generated-connector.mjs');
   let calls=0;
   const dependencies={agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{calls++;return empty(input,node);}}};
   let node=await buildApp(cfg,dependencies);await node.app.ready();
-  const settings=node.lifecycle.settings();node.store.db.prepare('UPDATE memory_lifecycle_settings SET json=? WHERE id=1').run(JSON.stringify({...settings,extraction:{...settings.extraction,enabled:false}}));
+  const settings=node.lifecycle.settings();
   await node.app.close();
   writeFileSync(modulePath,`export default {apiVersion:1,id:'generated-startup',sourceKinds:['custom'],create:ctx=>({init:async()=>{
     ctx.sources.register({id:'startup',name:'Generated startup',kind:'custom',deviceId:'fixture',platform:'import'});

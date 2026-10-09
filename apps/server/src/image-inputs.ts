@@ -68,7 +68,6 @@ export function installImageSchema(store:Store){
  CREATE TRIGGER IF NOT EXISTS image_product_retire AFTER UPDATE OF current ON image_products WHEN new.current!=old.current BEGIN
   INSERT INTO changes(id,operation,changed_at) VALUES(new.capture_id,'supersede',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
  END;`);
- if(!db.prepare('PRAGMA table_info(image_inputs)').all().some(row=>row.name==='semantic_withdrawn'))db.exec('ALTER TABLE image_inputs ADD COLUMN semantic_withdrawn INTEGER NOT NULL DEFAULT 0');
 }
 /** Persisted attachment intents are replayable; a stopped/missing OCR plugin has
  * no effect on attachment admission or the parent retention policy. */

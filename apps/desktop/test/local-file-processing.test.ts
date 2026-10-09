@@ -16,13 +16,13 @@ it('uploads snapshot bytes once per immutable revision with no local processing 
  await writeFile(join(root,'a.wav'),'Generated audio A');await writeFile(join(root,'b.wav'),'Generated audio B');let sync=await engine(),lost=true;const manifests:any[]=[];
  const transport=fileTransport(()=>source.id,item=>{manifests.push(item);if(lost){lost=false;throw Error('Generated lost ACK');}});
  const request:SourceRequest=async(path,body,method)=>{if(path==='/api/sources')return source;const response=await transport('https://fixture.example'+path,{method,body:body instanceof Uint8Array?body:JSON.stringify(body)});return response!.json();};
- const discovered=await scan();expect(discovered.items.every(item=>item.localOriginal&&!item.localProcessing)).toBe(true);await sync.stage(discovered,false);
- await expect(sync.flush(source,request)).rejects.toThrow('lost ACK');expect(sync.status()).toMatchObject({pending:2,processingPending:0});
- sync=await engine();await sync.flush(source,request);expect(sync.status()).toMatchObject({pending:0,processingPending:0});expect(manifests.every(item=>item.text===''&&item.document.fileIndex.parser==='central-pending')).toBe(true);expect(manifests[0]).toEqual(manifests[1]);
+ const discovered=await scan();expect(discovered.items.every(item=>item.localOriginal&&!Object.hasOwn(item,'localProcessing'))).toBe(true);await sync.stage(discovered,false);
+ await expect(sync.flush(source,request)).rejects.toThrow('lost ACK');expect(sync.status()).toMatchObject({pending:2});
+ sync=await engine();await sync.flush(source,request);expect(sync.status()).toMatchObject({pending:0});expect(manifests.every(item=>item.text===''&&item.document.fileIndex.parser==='central-pending')).toBe(true);expect(manifests[0]).toEqual(manifests[1]);
  for(const item of discovered.items)await expect(access(item.localOriginal!.directory)).rejects.toThrow();
 });
-it('the file adapter upgrade retires device processing waits and rescans without hidden pending jobs',async()=>{
+it('an adapter rescan retains unacknowledged originals and clears the checkpoint',async()=>{
  await writeFile(join(root,'generated.wav'),'Generated old input');const sync=await engine(),discovered=await scan(),item=discovered.items[0],spool=item.localOriginal!;
- const data=(sync as any).data;data.localProcessing={old:{item:{...item,localOriginal:undefined},input:{spool},discoveryHash:'old',nextAttemptAt:0}};data.adapterVersion=1;
- await sync.ensureAdapterVersion(2);expect(sync.status().processingPending).toBe(0);expect(sync.checkpoint()).toBeUndefined();await expect(access(spool.directory)).rejects.toThrow();
+ await sync.stage(discovered,false);
+ await sync.ensureAdapterVersion(2);expect(sync.checkpoint()).toBeUndefined();await expect(access(spool.directory)).resolves.toBeUndefined();expect(sync.status().pending).toBe(1);
 });

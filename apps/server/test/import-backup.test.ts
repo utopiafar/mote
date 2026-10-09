@@ -117,12 +117,12 @@ test('restore format allowlist rejects traversal, credentials, unsupported suffi
  const root=realpathSync(mkdtempSync(join(tmpdir(),'mote-backup-manifest-'))),hash='ab'.repeat(32),database=Buffer.from('Generated manifest validation fixture');
  t.after(()=>rmSync(root,{recursive:true,force:true}));writeFileSync(join(root,'mote.sqlite'),database);
  for(const name of [`files/${hash}.plain/../content-key`,`files/${hash}.aes.tmp`,`blobs/${hash}.plain`,`blobs/${hash}`,`files/${hash}.plain`,`files/objects/${hash}/0`,`files/objects/${hash}/128.aes`,`files/objects/${hash}/00.plain`,`source-archive/${hash}/manifest.plain`,'content-key']){
-   writeFileSync(join(root,'backup-manifest.json'),JSON.stringify({version:1,storageEpoch:3,checksums:{'mote.sqlite':sha256(database),[name]:sha256(database)}}));
+   writeFileSync(join(root,'backup-manifest.json'),JSON.stringify({version:1,storageEpoch:4,checksums:{'mote.sqlite':sha256(database),[name]:sha256(database)}}));
    await assert.rejects(verifiedBackup(root),/Unsafe backup manifest entry/);
  }
  const file=`files/objects/${hash}/0.plain`;mkdirSync(join(root,'files','objects',hash),{recursive:true});
  const outside=join(root,'original');writeFileSync(outside,database);linkSync(outside,join(root,file));
- writeFileSync(join(root,'backup-manifest.json'),JSON.stringify({version:1,storageEpoch:3,checksums:{'mote.sqlite':sha256(database),[file]:sha256(database)}}));
+ writeFileSync(join(root,'backup-manifest.json'),JSON.stringify({version:1,storageEpoch:4,checksums:{'mote.sqlite':sha256(database),[file]:sha256(database)}}));
  await assert.rejects(verifiedBackup(root),/Backup links are not allowed/);
 });
 
@@ -136,7 +136,7 @@ test('backup rejects an old or unmarked vault without adopting its schema or lea
  }
 });
 
-test('epoch 3 backup rejects retired asset formats and does not adopt bare chunk bytes',t=>{
+test('epoch 4 backup rejects retired asset formats and does not adopt bare chunk bytes',t=>{
  const root=realpathSync(mkdtempSync(join(tmpdir(),'mote-backup-current-format-'))),source=join(root,'source'),store=new Store(source),archived=new ArchivedFileStore(store);
  t.after(()=>{store.close();rmSync(root,{recursive:true,force:true});});
  const bytes=Buffer.from('Generated canonical asset'),file=archived.put({name:'generated.txt',bytes}),part=join(store.assets.directory,file.hash,'0.plain');
@@ -155,7 +155,7 @@ for(const encrypted of [false,true])test(`${encrypted?'encrypted':'plain'} curre
  const sourceId='generated-coding-source',group='generated-session',items=[{externalId:'generated-message',revision:'v1',observedAt:'2026-10-01T00:00:00Z',title:'Generated archive message',kind:'message' as const,layer:'original' as const,text:'Generated retained source content'}];
  original.db.exec('BEGIN IMMEDIATE');archive.receive(sourceId,items,[group]);original.db.exec('COMMIT');
  takeBackup(source,snapshot);const manifest=JSON.parse(readFileSync(join(snapshot,'backup-manifest.json'),'utf8')),name=`source-archive/${archiveHash(sourceId)}/${archiveHash(items)}${encrypted?'.aes':'.plain'}`;
- assert.equal(manifest.storageEpoch,3);assert.ok(Object.hasOwn(manifest.checksums,name));assert.deepEqual(readFileSync(join(snapshot,name)),readFileSync(join(source,name)));
+ assert.equal(manifest.storageEpoch,4);assert.ok(Object.hasOwn(manifest.checksums,name));assert.deepEqual(readFileSync(join(snapshot,name)),readFileSync(join(source,name)));
  await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(root,'none')},snapshot);restored=new Store(target,{dataKey:key});
  assert.deepEqual(new SourceArchive(restored).currentSnapshot(sourceId,group),archive.currentSnapshot(sourceId,group));
 });

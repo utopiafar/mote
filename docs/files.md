@@ -107,7 +107,7 @@ Agent 和只读 MCP 可用 `file_chunks` / `mote_file_chunks` 逐页展开转写
 
 Shadow 和来源消失：`PUT /revisions`。携带前驱 revision，中央拒绝乱序覆盖。来源授权、排除规则、去重、传输和保留使用确定性代码；正文含义交由模型判断。
 
-私有文件对象存于 `files/objects/<sha256>/<part>`。显式开启内容加密后逐块 AES-GCM 加密；单独设置 `MOTE_DATA_KEY` 不会开启加密，见 [内容存储](content-storage.md)；数据库保存元数据、转写和索引，因此仍需要保护数据目录和磁盘。未完成上传 7 天过期；客户端保留暂存并可重新建会话。
+私有文件对象存于 `files/objects/<sha256>/<part>.plain|.aes`。显式开启内容加密后逐块 AES-GCM 加密；单独设置 `MOTE_DATA_KEY` 不会开启加密，见 [内容存储](content-storage.md)；数据库保存元数据、转写和索引，因此仍需要保护数据目录和磁盘。未完成上传 7 天过期；客户端保留暂存并可重新建会话。
 
 ## 备份与恢复
 

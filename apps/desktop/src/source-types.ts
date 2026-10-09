@@ -30,11 +30,9 @@ export interface LocalFileCheckpoint {
 export type SourceCheckpoint = LocalFileCheckpoint | import('./coding-agents').CodingCheckpoint | { version: number; [key: string]: unknown };
 export type ScannedItem = Omit<SourceItem, 'revision' | 'observedAt'> & {
   /** Read only to retire obsolete processing inputs during an adapter upgrade. */
-  localProcessing?: LegacyLocalFileInput;
   /** Client-only routing hint; SourceSync strips it before persistence and upload. */
   syncQueue?: 'realtime' | 'history';
 };
-export interface LegacyLocalFileInput { path: string; expected: import("./original-spool").OriginalIdentity; spool?: import("./original-spool").OriginalSpool; processor: { id: string; version: number } }
 export interface SourceScan {
   checkpoint?: SourceCheckpoint;
   /** Changed directory rows; checkpoint.catalog is omitted from incremental scans. */
@@ -56,7 +54,6 @@ export interface LocalSource extends SourceDefinition, SourceOptions {
   path?: string; calendarId?: string; agent?: 'claude' | 'codex' | 'kimi';
 }
 export interface SourceStatus {
-  processingPending?: number;
   blocked?: number;
   failures?: {externalId:string;title:string;status:number}[];
   facts?: import('@mote/shared/native-status').NativeStatusView;

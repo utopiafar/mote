@@ -21,7 +21,7 @@ test('local file outputs are available to remote and local models across every e
  const node=await buildApp(config,{createModelAgent:async(settings,reader)=>({configured:true,close:async()=>{},query:async()=>{
   const views=await inspect(reader);calls.push({model:settings.model,views});return {answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()};
  }})});
- const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
+ const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  node.sources.register({id:'generated-files',name:'Generated files',kind:'local-files',deviceId:'fixture-device',platform:'import',retention:'archive'});
  const bytes=Buffer.from('Generated original recording');

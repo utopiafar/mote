@@ -184,6 +184,6 @@ export function codingSourcePlugin(ctx:Context){
     ]},
   }));
   ctx.effect(()=>ctx.moteSourcePipelines.register({
-    id:'mote.coding',featureId:'mote.coding',version:'8',recipe:{id:'mote.coding',version:'8'},reprocess:'manual',sourceKinds:['coding-agent'],storage:'archive',index:'material',modelInput:'material',memory:true,memoryDependencies:['conversation'],
+    id:'mote.coding',featureId:'mote.coding',version:'8',recipe:{id:'mote.coding',version:'8'},reprocess:'manual',sourceKinds:['coding-agent'],storage:'archive',index:'material',modelInput:'material',memoryDependencies:['conversation'],
   }));
 }

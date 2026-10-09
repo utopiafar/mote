@@ -50,7 +50,7 @@ function save(){
 }
 async function open(){
   node=await buildApp(config,{backgroundWorker:false});
-  const settings=node.lifecycle.settings();settings.batchCharacters=12000;for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
+  const settings=node.lifecycle.settings();settings.batchCharacters=12000;for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
   assert.equal(node.modelSettings.current().model,'gpt-6-sol');assert.equal(node.modelSettings.current().reasoningEffort,'max');
   const query=node.agent.query.bind(node.agent);
   node.agent.query=async input=>{

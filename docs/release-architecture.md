@@ -24,13 +24,13 @@ flowchart LR
   Contract --- Android
 ```
 
-兼容范围由 [protocol/contract.json](../protocol/contract.json) 声明，当前为 `{min:1,max:1}`。Central 的公开健康接口声明协议范围；新客户端在连接自检时主动请求协议元数据，校验范围交集，缺失字段按旧 v1 处理。原有 ingest/ownSources/archiveRead 能力继续反映当前凭据的实际授权，ingressVersion 保留已有的批量接收子协议约束。任何资料内容都不能改变客户端、Agent 或发布器的权限。
+兼容范围由 [protocol/contract.json](../protocol/contract.json) 声明，当前为 `{min:1,max:1}`。Central 的公开健康接口声明协议范围；新客户端在连接自检时主动请求协议元数据，校验范围交集，缺失或错误的元数据会拒绝连接。原有 ingest/ownSources/archiveRead 能力继续反映当前凭据的实际授权，ingressVersion 保留已有的批量接收子协议约束。任何资料内容都不能改变客户端、Agent 或发布器的权限。
 
-协议 v1 内保持向后兼容；严格旧客户端无法接受的新字段应显式选择加入。未来 breaking change 才提高协议版本，并保留迁移期旧读写接口。平台 feature inventory 与来源 capability registry 继续描述实际安装能力；产品版本号不能用来猜测设备能做什么。TS、Kotlin 与连接链路共用生成的协议 fixture，真机和真实模型验证另行记录。
+当前只接受声明的 wire 1 / Ingress 2 契约，不保留旧字段读写或迁移期接口。破坏契约的修改应同步调整受影响消费者与 fixture。平台 feature inventory 与来源 capability registry 继续描述实际安装能力；产品版本号不能用来猜测设备能做什么。TS、Kotlin 与连接链路共用生成的协议 fixture，真机和真实模型验证另行记录。
 
 三个工作流分别匹配三个标签前缀。版本脚本只递增选中的产品；Android versionCode 仅随 Android 升级单调递增。CI 根据 workspace 依赖图和非 npm 构建输入选择检查范围：共享协议检查全部端，中央插件只检查 Central。根配置、lockfile 或未知构建输入采取保守的全消费者检查。测试范围和发布范围分开，CI 检查通过不会替任何端自动发版。
 
-旧 `vX.Y.Z` 标签与签名清单保留。新的历史更新器支持所属组件流与旧统一流，并校验签名、组件、仓库、标签、资产和安装身份。当前 DEV 发布不附签名清单，用户仍手动安装；因此此拆分无需立即发一个全端 Bridge Release。若未来重新启用签名更新，先确保已安装版本包含新流读取器，或安排使用旧统一清单分发的过渡版本；旧更新器不能自行理解新标签。
+历史统一标签仍可作为发布记录阅读。当前更新器只读取所属组件标签和明确声明组件的签名清单，拒绝统一旧流及缺失组件。DEV 发布不附签名清单，仍由用户手动安装。签名验证与安装身份校验是当前功能，不能用旧清单兜底。
 
 中央源码发布包含构建所需工作区及锁文件，在独立目录安装依赖、构建 server/web 后，沿用现有 profile 的备份、切换和回退流程。它不把用户配置、密钥、模型权重或归档数据编入产物，不创建新的镜像发布通道。
 

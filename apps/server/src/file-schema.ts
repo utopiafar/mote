@@ -33,22 +33,3 @@ export function fileSchema(db:DatabaseSync){db.exec(`
  `);
 
 }
-
-/** Run only after all persisted capture-trigger functions are registered. */
-export function migrateSnapshotIndexProjection(db:DatabaseSync){
- // Earlier snapshot processing rewrote the accepted source record's index
- // receipt, making its source-version checksum unreadable. Preserve the derived
- // receipt separately and recover the immutable input from the upload manifest.
- db.exec(`INSERT OR IGNORE INTO file_snapshot_index(capture_id,json)
-   SELECT v.capture_id,json_extract(c.json,'$.provenance.document.fileIndex') FROM file_versions v JOIN captures c ON c.id=v.capture_id
-   WHERE json_extract(v.manifest,'$.item.layer')='snapshot'
-     AND json_extract(c.json,'$.provenance.document.fileIndex') IS NOT NULL
-     AND json_extract(v.manifest,'$.item.document.fileIndex') IS NOT NULL
-     AND json_extract(c.json,'$.provenance.document.fileIndex')!=json_extract(v.manifest,'$.item.document.fileIndex');
-   UPDATE captures SET json=json_set(json,'$.provenance.document.fileIndex',json((SELECT json_extract(v.manifest,'$.item.document.fileIndex') FROM file_versions v WHERE v.capture_id=captures.id)))
-   WHERE id IN (SELECT v.capture_id FROM file_versions v JOIN captures c ON c.id=v.capture_id
-     WHERE json_extract(v.manifest,'$.item.layer')='snapshot'
-       AND json_extract(v.manifest,'$.item.document.fileIndex') IS NOT NULL
-       AND json_extract(c.json,'$.provenance.document.fileIndex')!=json_extract(v.manifest,'$.item.document.fileIndex'));`);
-
-}

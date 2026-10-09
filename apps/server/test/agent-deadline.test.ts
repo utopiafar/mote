@@ -56,9 +56,7 @@ test('ordinary query host rejects a late successful result with its typed timeou
     calls++;await untilAborted(input.signal!);hostReason=input.signal!.reason;
     await new Promise<void>(resolve=>setImmediate(resolve));return answer();
   });
-  // Isolate runQuery's own deadline from the HTTP route's earlier RunExecution
-  // deadline, whose cancellation reason must remain owned by that executor.
-  await assert.rejects(f.featureServices.runQuery({question:'Generated deadline question'}),AgentTimeoutError);
+  await assert.rejects(f.featureServices.queryAgent({question:'Generated deadline question'}),AgentTimeoutError);
   assert.ok(hostReason instanceof AgentTimeoutError);
   assert.equal(calls,1);const receipts=f.receipts();assert.equal(receipts.length,1);assert.equal(receipts[0].status,'failed');assert.equal(receipts[0].estimatedCost,null);
 });

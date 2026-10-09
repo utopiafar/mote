@@ -28,7 +28,7 @@
 
 ## 构建和安装
 
-需要 JDK 17+、Android SDK 36、NDK 28.2.13676358 和 CMake 3.22.1，项目内已含 Gradle 8.14 wrapper。先在仓库根目录运行 `npm run models:setup` 准备固定版本 `vendor/llama.cpp`。当前 APK 含 CPU 原生推理引擎，仅构建 `arm64-v8a`（ARMv8.2 + dotprod，面向 K90 及现代 arm64 设备；不支持 x86 模拟器或更旧 ARM CPU）。Android Studio 打开 `apps/android`；将 SDK 路径写入该目录下未纳入版本控制的 `local.properties`：
+需要 JDK 17+、Android SDK 36，项目内已含 Gradle 8.14 wrapper。当前 APK 不构建端侧 Qwen / llama.cpp，也不需要 NDK、CMake 或模型源码准备。平台测试可使用受支持的 Android 模拟器；物理设备采集需单独验收。Android Studio 打开 `apps/android`；将 SDK 路径写入该目录下未纳入版本控制的 `local.properties`：
 
 ```properties
 sdk.dir=/absolute/path/to/Android/sdk
@@ -150,7 +150,7 @@ MOTE_ANDROID_KEY_PASSWORD
    → JPEG / 元数据持久队列 → 逐条 ACK → 中央 OCR
 ```
 
-文字规则按用户输入的原文精确包含匹配。命中则丢弃；识别异常默认隔离待复核，也可显式配置丢弃或放行。隔离图片占用本机容量，普通重试不能自动放行。新截图的 `ocrText` 为空、`ocr.status=disabled`，本机审查文字不上传，也不创建补识别任务。端侧 Qwen 和额外 HTTP 视觉钩子暂停执行，旧运行时仍保留，详见 [当前审查边界](central-perception.md) 和 [历史视觉运行时](local-inference.md)。
+文字规则按用户输入的原文精确包含匹配。命中则丢弃；识别异常默认隔离待复核，也可显式配置丢弃或放行。隔离图片占用本机容量，普通重试不能自动放行。新截图的 `ocrText` 为空、`ocr.status=disabled`，本机审查文字不上传，也不创建补识别任务。端侧 Qwen、额外 HTTP 视觉钩子及预留接口已移除，详见 [当前审查边界](central-perception.md) 和 [历史视觉运行时](local-inference.md)。
 
 固定遮罩使用 0..1 的归一化矩形，边界向外取整；配置错误不能静默忽略。纯活动不读取像素或正文。经严格识别的系统导航表面豁免不代表任意系统应用可绕过规则，详见 [窗口与采集恢复](android-capture-recovery.md)。
 

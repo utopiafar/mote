@@ -140,14 +140,14 @@ export class AssetStore {
  }
  read(hash:string){const asset=this.get(hash),bytes=Buffer.concat([...this.bytes(hash)],asset.bytes);if(hashOf(bytes)!==hash)throw new StoreError('Asset checksum mismatch',500);return bytes;}
  sweep(now=Date.now()){
-  this.directories();privateDirectory(this.store.blobsDir);
+  this.directories();
   const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
   try{
   this.store.db.prepare('DELETE FROM asset_pins WHERE expires<=?').run(now);
   let removed=0;
   for(const row of this.store.db.prepare('SELECT * FROM assets a WHERE NOT EXISTS(SELECT 1 FROM asset_references r WHERE r.hash=a.hash) AND NOT EXISTS(SELECT 1 FROM asset_pins p WHERE p.hash=a.hash)').all() as Asset[]){
    this.get(row.hash);
-   this.store.db.prepare('DELETE FROM assets WHERE hash=?').run(row.hash);rmSync(join(this.directory,row.hash),{recursive:true,force:true});this.store.contentEncryption.remove(join(this.store.directory,'files',row.hash));rmSync(join(this.store.blobsDir,row.hash),{force:true});removed++;
+   this.store.db.prepare('DELETE FROM assets WHERE hash=?').run(row.hash);rmSync(join(this.directory,row.hash),{recursive:true,force:true});removed++;
   }
   for(const name of readdirSync(this.directory))if(/^[a-f0-9]{64}(?:\.[a-f0-9-]+\.tmp)?$/.test(name)&&!this.store.db.prepare('SELECT 1 FROM assets WHERE hash=?').get(name)&&!this.store.db.prepare('SELECT 1 FROM asset_pins WHERE hash=?').get(name.split('.')[0])){const path=join(this.directory,name);if(/^[a-f0-9]{64}$/.test(name)||now-statSync(path).mtimeMs>3600000)rmSync(path,{recursive:true,force:true});}
   if(own)db.exec('COMMIT');return removed;

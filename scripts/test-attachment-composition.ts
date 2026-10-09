@@ -31,7 +31,7 @@ async function start(){
  node=await buildApp(config,{backgroundWorker:false,createModelAgent:async()=>({configured:false,close:async()=>{},query:async()=>{report.modelCalls++;throw Error('Live models are not authorized by this composition check');}})});
  await node.processing.runtime.ready;
  node.processing.runtime.registry.get('image.http').process=async()=>{report.extractionCalls++;throw Error('Expected existing compatible extraction; do not reprocess');};
- const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
+ const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
  node.perception.configure({...node.perception.settings(),allowQueryImages:true});await node.app.ready();
 }
 async function request(method:'GET'|'POST',url:string,payload?:Record<string,unknown>){const response=await node!.app.inject({method,url,headers:{authorization:'Bearer '+token},...(payload?{payload}:{})});assert.ok(response.statusCode>=200&&response.statusCode<300,`${method} ${url}: ${response.statusCode}`);return response;}

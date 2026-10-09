@@ -54,7 +54,7 @@ async function save(){
 function progress(stage:string,details:Record<string,unknown>={}){console.log(JSON.stringify({stage,...details}));}
 try{
   await save();node=await buildApp(config,{backgroundWorker:false});
-  const settings=node.lifecycle.settings();for(const id of ['extraction','consolidation','insights','working'] as const)settings[id].enabled=false;node.lifecycle.configure(settings);
+  const settings=node.lifecycle.settings();for(const id of ['consolidation','insights','working'] as const)settings[id].enabled=false;node.lifecycle.configure(settings);
   await node.app.ready();
   assert.equal(node.modelSettings.current().model,'gpt-6-sol');assert.equal(node.modelSettings.current().reasoningEffort,'max');
   report.binding=node.memoryStrategies.resolve(recipe).binding;

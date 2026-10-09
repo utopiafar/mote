@@ -60,7 +60,7 @@ ctx.effect(() => ctx.moteFileProcessors.register({
 - `POST /api/file-processing/reprocess`：`{token}`，按预览范围入队。
 - `GET /api/files/:id`：包含 `processingPolicy.applied/current` 和 `capabilities`；详情操作按对话、摘要能力展示。导出 manifest 也包含实际方案快照，无密钥。
 
-当前 `file-processing.json` 必须包含 revision、settings 与 version 1 的 policy。新资料库直接建立显式默认方案；缺 policy 的旧文件及不带 policy 的更新请求拒绝。旧 flat selector 不转换成 policy，也不作为任务路由回退。任务执行时保存实际命中方案与配置指纹；中央 epoch 3 直接建立最终 schema。
+当前 `file-processing.json` 必须包含 revision、settings 与 version 1 的 policy。新资料库直接建立显式默认方案；缺 policy 的旧文件及不带 policy 的更新请求拒绝。旧 flat selector 不转换成 policy，也不作为任务路由回退。任务执行时保存实际命中方案与配置指纹；中央 epoch 4 直接建立最终 schema。
 
 ## 验证
 

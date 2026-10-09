@@ -54,7 +54,6 @@ object ConfigurationArchive {
         val root = JSONObject(raw)
         require(root.getString("format") == "mote-android-settings" && root.get("version") == 1) { MoteI18n.text("不支持的配置格式或版本") }
         val values = root.getJSONObject("settings")
-        require(!values.has("nsfw") && !values.has("localReviewUrl")) { MoteI18n.text("配置包含已停用的本机模型设置，请移除后导入") }
         require(values.keys().asSequence().all { it in keys }) { MoteI18n.text("配置包含未知字段") }
         val nextServer = string(values, "server", current.server)
         return current.copy(

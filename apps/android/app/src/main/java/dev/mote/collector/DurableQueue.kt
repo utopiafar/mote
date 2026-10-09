@@ -297,7 +297,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val priorFloor = committed?.optJSONObject("privacyFloor")
         // Review holds control upload authorization. Content shape is validated per source,
         // not inferred from the most restrictive unrelated input in a stage batch.
-        // Keep the checkpoint key for compatibility with existing pending captures.
+        // Persist authorization while held captures cross processing stages.
         val floor = JSONObject().put("reviewHeld", priorFloor?.optBoolean("reviewHeld") == true || inbox.optBoolean("reviewHeld"))
         if (result.heldCount > 0) result.checkpoint.put("privacyFloor", floor)
         val returnedIds = result.outputs.map { it.event.getString("id") }

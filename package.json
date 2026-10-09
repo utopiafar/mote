@@ -10,7 +10,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "build:libs": "npm run build -w @mote/shared && npm run build -w @mote/agent && npm run build -w @mote/local-inference && npm run build -w @mote/diagnostics",
+    "build:libs": "npm run build -w @mote/shared && npm run build -w @mote/agent && npm run build -w @mote/diagnostics",
     "dev": "npm run build:libs && node scripts/mote.mjs exec --profile dev -- npm run dev:workspace",
     "build": "npm run build:libs && npm run build -w @mote/server && npm run build -w @mote/web && npm run build -w @mote/desktop",
     "start": "npm run start -w @mote/server",
@@ -30,8 +30,6 @@
     "backup": "node --import tsx scripts/backup.ts",
     "privacy": "node --import tsx scripts/privacy-gateway.ts",
     "test:privacy": "node --import tsx scripts/test-privacy.ts",
-    "models:download": "npm run build -w @mote/local-inference && node scripts/download-model.cjs",
-    "models:setup": "sh scripts/setup-vision.sh",
     "mote": "node scripts/mote.mjs",
     "up": "node scripts/mote.mjs run-all --profile dev",
     "dev:workspace": "concurrently -k -n server,web \"npm run dev -w @mote/server\" \"npm run dev -w @mote/web\"",
