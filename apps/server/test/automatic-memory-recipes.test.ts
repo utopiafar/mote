@@ -56,17 +56,17 @@ test('owner-selected automatic recipes share one generation, support source over
   await f.configure([personal,coding]);f.source('diary');f.source('coding-source',true);
   const override=await f.configure([coding],'coding-source');assert.equal(override.inherited,false);
   await f.add('diary','first');await f.add('coding-source','second',true);await f.publish();await f.run();
-  assert.equal(f.count('extract'),3,'the two diary reviewers share a draft; Coding interpretation is navigation for its full-source worker');assert.equal(f.count('review'),3);
-  const jobs=f.jobs();assert.equal(jobs.length,3);assert.ok(jobs.every(j=>j.status==='completed'&&j.automaticGrants?.length===1));
-  const shared=jobs.filter(j=>j.automaticGrants![0].sourceId==='diary');assert.equal(new Set(shared.map(j=>j.contextTime)).size,1);
+  assert.equal(f.count('extract'),2,'the two diary reviewers share a draft; Coding understanding supplies the complete candidate artifact');assert.equal(f.count('review'),3);
+  const jobs=f.jobs();assert.equal(jobs.length,2);assert.ok(jobs.every(j=>j.status==='completed'));assert.equal(jobs.reduce((sum,j)=>sum+(j.automaticGrants?.length??0),0),3);
+  const shared=jobs.filter(j=>j.automaticGrants!.some(grant=>grant.sourceId==='diary'));assert.equal(new Set(shared.flatMap(j=>j.workPackage!.inputs!.filter(input=>input.sourceId==='diary').map(input=>input.contextTime))).size,1,'the same diary receipt keeps its semantic time across transport packages');
   const products=jobs.flatMap(j=>j.memoryIds.map(id=>f.node.memories.get(id)));assert.equal(products.length,3);
   const one=products.find(m=>m.domain==='personal')!;f.node.memories.publish(one.id);
-  await f.restart();await f.publish();await f.run();assert.equal(f.count('extract'),3);assert.equal(f.count('review'),3);
+  await f.restart();await f.publish();await f.run();assert.equal(f.count('extract'),2);assert.equal(f.count('review'),3);
   await f.configure([coding]);assert.equal(f.node.memories.get(one.id).status,'published','disabling does not erase confirmed products');
   const inherited=await f.configure(null,'coding-source');assert.equal(inherited.inherited,true);assert.equal(inherited.items[0].binding.recipe.id,coding.id);
   const material=f.node.materials.list({sourceId:'diary'}).items[0];
   const inputKey=shared[0].automaticGrants![0].inputKey;
-  f.node.materialMemoryWork.observe(material.id,['source-body'],{inputKey,change:'rebuild'});await f.run();assert.equal(f.calls.length,6,'changing selection or rebuilding does not backfill');
+  f.node.materialMemoryWork.observe(material.id,['source-body'],{inputKey,change:'rebuild'});await f.run();assert.equal(f.calls.length,5,'changing selection or rebuilding does not backfill');
 });
 
 test('receipt pins scopes before publication; later enablement, version replacement and duplicate delivery do not backfill',async t=>{
@@ -159,7 +159,7 @@ test('automatic source jobs use the owner batch limit and keep existing ranges t
   const setBudget=async(batchCharacters:number)=>{const r=await f.node.app.inject({method:'PUT',url:'/api/memory-settings',headers:{authorization:'Bearer '+f.config.token},payload:{...f.node.lifecycle.settings(),batchCharacters}});assert.equal(r.statusCode,200,r.body);};
   await setBudget(257);const text='🍃'.repeat(700)+body;
   await f.add('diary','first',false,'1',text);await f.add('coding-source','first',true,'1',text);await f.publish();await f.queue();
-  const jobs=f.jobs();assert.equal(jobs.length,2);
+  const jobs=f.jobs();assert.equal(jobs.length,1);assert.equal(jobs[0].automaticGrants?.length,2);
   const assertBudget=(job:typeof jobs[number],limit:number)=>{assert.equal(job.batchCharacters,limit);const ranges=job.batches.flatMap(b=>b.evidenceRanges);assert.ok(job.batches.every(b=>b.evidenceRanges.reduce((n,r)=>n+r.length,0)<=limit));
     for(const evidence of f.node.memories.readEvidence(job.evidenceIds)){let end=0;for(const range of ranges.filter(r=>r.id===evidence.id).sort((a,b)=>a.offset-b.offset)){assert.equal(range.offset,end);end+=range.length;const part=evidence.ocrText.slice(range.offset,end);assert.ok(!/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/.test(part),'Unicode remains whole');}assert.equal(end,evidence.ocrText.length);}
   };
@@ -168,7 +168,7 @@ test('automatic source jobs use the owner batch limit and keep existing ranges t
   await setBudget(512);await f.restart();for(const old of before)assert.deepEqual(f.node.memoryPipeline.get(old.id).batches.map(b=>b.evidenceRanges),old.ranges);
   await f.add('diary','second',false,'1',text);await f.publish();await f.queue();
   const fresh=f.jobs().find(j=>!before.some(old=>old.id===j.id))!;assertBudget(fresh,512);assert.ok(fresh.batches.some(b=>b.evidenceRanges.some(r=>r.length>257)));
-  await f.run();assert.ok(f.jobs().every(j=>j.status==='completed'));assert.equal(f.jobs().length,3,'settings changes do not create history jobs');
+  await f.run();assert.ok(f.jobs().every(j=>j.status==='completed'));assert.equal(f.jobs().length,2,'settings changes do not create history jobs');
   for(const call of f.calls.filter(c=>c.traceContext?.phase==='extract'||understanding(c)))assert.ok(call.evidenceRanges!.reduce((n,r)=>n+r.length,0)<=(call.traceContext!.jobId===fresh.id?512:257));
 });
 
@@ -222,7 +222,7 @@ test('current defaults and source inheritance preserve denied receipts across re
     await f.publish();if(f.node.materialOrganizer.status().pendingChanges===0)break;
     await new Promise(resolve=>setImmediate(resolve));
   }
-  await f.run();assert.equal(f.jobs().length,2);assert.ok(f.jobs().every(job=>job.status==='completed'&&job.recipes![0].id===personal.id));
+  await f.run();assert.equal(f.jobs().length,1);assert.equal(f.jobs()[0].automaticGrants?.length,2);assert.ok(f.jobs().every(job=>job.status==='completed'&&job.recipes![0].id===personal.id));
   for(const sourceId of [undefined,'diary']){
     const response=await f.node.app.inject({method:'PUT',url:'/api/memory-recipe-settings',headers:{authorization:'Bearer '+f.config.token},payload:{recipes:[],...(sourceId?{sourceId}:{})}});
     assert.equal(response.statusCode,400,'a new empty selection cannot disable continuous processing');

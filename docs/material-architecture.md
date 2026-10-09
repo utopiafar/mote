@@ -124,7 +124,7 @@ export default {
 
 目前**不因聚合完成而清理采集记录或来源条目**。上传分片在成功转为内容寻址资产后可以清除暂存副本；正式资料的成员和现有记忆仍引用原始采集 ID。隐私删除原始记录时，依赖它的资料会随之删除。以后要压缩碎片，需先将必要的原文、成员定位与删除语义迁移到可独立存活的资料锚点，并核验导出、恢复与记忆失效路径。不能仅凭“资料已发布”就删除其唯一原件。
 
-完整 SQLite 资料库备份会保留正式资料及其修订。现有便携 JSON 导出不包含正式资料表；若来源记录与相同组织器仍可用，导入后可从最终来源状态重建当前资料，但不会恢复过去已发布资料修订的固定 `ref`。需要保存正式资料的修订历史时应使用完整资料库备份。
+完整 SQLite 资料库备份保留正式资料及其修订。当前便携 JSON v2 也包含 Material 修订历史、来源归档批次、原件与校验关系，拒绝旧格式或缺失必需集合的包；它不包含执行状态、对话、凭据或工作目录。同 epoch 运行状态恢复仍使用完整离线备份。
 
 ## 模型能看到哪一层
 
@@ -146,3 +146,5 @@ export default {
 - 自动测试只用合成资料；真实个人截图、真实外部账户、实体设备同步和真实模型质量必须分别验收，不能由 fixture 测试推断为已验证。
 
 更细的保留和删除语义见[资料分层](context-layers.md)，来源和 MCP 的具体配置见[中央连接器](connectors.md)。
+
+Internal query material_read may deliver exact permitted original source ranges with the page. The Bridge rechecks scope, current version, text and serialized delivery budget before registering citations. L2 interpretation, private lineage and undelivered locators never grant citations. Public HTTP/MCP boundaries remain unchanged. See [ADR](adr-system-refactor.md).

@@ -14,12 +14,17 @@ const id=randomUUID(),at='2026-09-15T02:00:30.000Z';let rounds=0;
 const fixture=createServer(async(req,res)=>{
   let raw='';for await(const chunk of req)raw+=chunk;
   const body=JSON.parse(raw),responses=body.messages.filter((message:{role:string})=>message.role==='tool');
-  assert.ok(body.tools.some((tool:{function:{name:string}})=>tool.function.name==='media_activity'));
+  const names=body.tools.map((tool:{function:{name:string}})=>tool.function.name);
+  assert.ok(names.includes('capability_discover')&&names.includes('capability_execute'));
+  assert.ok(!names.includes('media_activity'),'Special media accounting must use the registered capability gateway');
+  const schema=responses[1]?JSON.parse(responses[1].content).data:undefined;
   const steps=[{name:'timeline',arguments:JSON.stringify({source:'media'})},
-    {name:'media_activity',arguments:JSON.stringify({screenLocked:true,appVisibility:'background'})},
+    {name:'capability_discover',arguments:JSON.stringify({name:'media_activity'})},
+    {name:'capability_execute',arguments:JSON.stringify({name:'media_activity',version:schema?.version,argumentsJson:JSON.stringify({screenLocked:true,appVisibility:'background'})})},
     {name:'evidence',arguments:JSON.stringify({ids:[id]})}];
-  if(responses.length===1){const page=JSON.parse(responses[0].content);assert.equal(page.data[0].metadata.media.sessions[0].title,'Generated chapter 7');}
-  if(responses.length===2){const stats=JSON.parse(responses[1].content);assert.equal(stats.data.totalDurationMs,30000);}
+  if(responses.length>=1){const page=JSON.parse(responses[0].content);assert.equal(page.data[0].metadata.media.sessions[0].title,'Generated chapter 7');}
+  if(responses.length>=2){assert.equal(schema.name,'media_activity');assert.equal(typeof schema.version,'string');assert.equal(schema.fields.screenLocked.type,'boolean');}
+  if(responses.length>=3){const stats=JSON.parse(responses[2].content);assert.equal(stats.data.totalDurationMs,30000);}
   const tool=steps[responses.length];rounds++;
   const delta=tool?{role:'assistant',tool_calls:[{index:0,id:`generated-${responses.length}`,type:'function',function:tool}]}:
     {role:'assistant',content:JSON.stringify({answer:`合成记录显示锁屏后台播放 Generated chapter 7，观察到的播放区间为 30 秒；不代表已经听完。[${id}]`,citationIds:[id]})};
@@ -38,8 +43,9 @@ try {
   assert.equal((await app.inject({url:'/api/activity',headers})).json().totalDurationMs,0);
   const result=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'解释这段合成锁屏音频记录',deviceId:'generated-phone',after:'2026-09-15T02:00:00Z',before:'2026-09-15T02:01:00Z',timeZone:'Asia/Shanghai'}});
   assert.equal(result.statusCode,200,result.body);const answer=result.json();
-  assert.deepEqual(answer.trace.map((entry:{tool:string})=>entry.tool),['timeline','media_activity','evidence']);
-  assert.equal(answer.citations[0].id,id);assert.match(answer.citations[0].excerpt,/Generated chapter 7/);assert.equal(rounds,4);
+  assert.deepEqual(answer.trace.map((entry:{tool:string})=>entry.tool),['timeline','capability_discover','media_activity','evidence']);
+  for(const entry of answer.trace.filter((entry:{tool:string})=>['timeline','media_activity'].includes(entry.tool))){assert.equal(entry.arguments.deviceId,'generated-phone');assert.equal(entry.arguments.after,'2026-09-15T02:00:00.000Z');assert.equal(entry.arguments.before,'2026-09-15T02:01:00.000Z');}
+  assert.equal(answer.citations[0].id,id);assert.match(answer.citations[0].excerpt,/Generated chapter 7/);assert.equal(rounds,5);
   const archive=(await app.inject({url:'/api/export',headers})).json();
   assert.equal((await app.inject({method:'POST',url:'/api/import',headers,payload:archive})).json().duplicates,1);
   console.info('PASS: generated locked-screen media → idempotent archive → real Harness with fixture provider → scoped media accounting → cited provider metadata → archive round trip. No physical-device capture or live-model quality tested.');

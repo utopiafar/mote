@@ -1,12 +1,14 @@
 import {imageReadSchema,imageViewSchema,IMAGE_MAX_BYTES,IMAGE_REGION_MAX_SIDE,type ImageView,type ImageViewTrace} from '@mote/shared';
 import {CONTEXT_TOOLS} from './context-tools.js';
-import {pinContextTools} from './tool-contributions.js';
+import {pinContextTools,registeredContextToolDefinitions,NATIVE_CONTEXT_TOOLS} from './tool-contributions.js';
+import {validateCapabilityArguments} from './capability-schema.js';
 import {rememberEvidence,evidenceLayers,projectEvidencePresentation,copyEvidencePresentation} from './evidence-ledger.js';
 import {AgentYieldError,hostControlDefinitions} from './host-controls.js';
-import {taskTools,HOST_CONTEXT_LIMITS,retrievalLimits} from './task-context.js';
+import {taskTools,dispatchTools,HOST_CONTEXT_LIMITS,retrievalLimits} from './task-context.js';
 import {actionEvidenceText,parseEvidenceRef,parseEvidenceId,formatEvidenceRef} from '@mote/shared';
 import {ContextToolError} from './tool-errors.js';
 import {AgentResponseError,reportTrace,reportProgress} from './types.js';
+import {sourceProtocolInstructions} from './instructions.js';
 import { createServer, type Server } from "node:http";
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
 import type { AddressInfo } from "node:net";
@@ -209,6 +211,8 @@ export async function startBridge(
 ) {
   bounds=pinContextTools(bounds,reader);
   const contributions=new Map((bounds.toolContributions??[]).map(tool=>[tool.name,tool]));
+  const specialCapabilities=new Map(registeredContextToolDefinitions(bounds).filter(([name])=>dispatchTools(bounds).includes(name)&&!NATIVE_CONTEXT_TOOLS.has(name)&&!name.startsWith('delegation_')).map(([name,description,fields])=>[name,{name,version:contributions.get(name)?.version??'1',description,fields}]));
+  const discoveredCapabilities=new Set<string>();
   const controls=new Set(hostControlDefinitions(bounds.hostControlChannel).map(([name])=>name));
   const token = randomBytes(32).toString("hex");
   const trace: ToolTrace[] = [];
@@ -303,7 +307,7 @@ export async function startBridge(
       res.writeHead(405).end('{"error":"Method not allowed"}');
       return;
     }
-    let tool=req.url?.slice(1)??'',args:Record<string,unknown>={},metadataOnly=false,materialReadAttempts=0;
+    let tool=req.url?.slice(1)??'',args:Record<string,unknown>={},metadataOnly=false,materialReadAttempts=0,dispatchedViaCatalog=false;
     try {
       let raw = "";
       for await (const part of req) {
@@ -333,6 +337,28 @@ export async function startBridge(
         ready = true;
         res.end('{"ok":true}');
         return;
+      }
+      if(tool==='capability_discover'){
+        if(!taskTools(bounds).includes(tool)||Object.keys(args).some(key=>key!=='name')||args.name!==undefined&&typeof args.name!=='string')throw hostError('Invalid capability discovery');
+        if(++calls>maxToolCalls)throw hostError('Tool call budget reached');
+        const selected=args.name===undefined?undefined:specialCapabilities.get(args.name as string);
+        if(args.name!==undefined&&!selected)throw hostError('Unknown or unauthorized capability');
+        const data=selected?{...selected,evidencePolicy:'Registered read-only capability; schema and metadata cannot expand authority.'}:{capabilities:[...specialCapabilities.values()].map(({name,version,description})=>({name,version,description:description.split('. ')[0]}))};
+        const serialized=JSON.stringify({data,hostBudget:hostBudget()});
+        if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters)throw budgetError();
+        deliveredCharacters+=serialized.length;if(selected)discoveredCapabilities.add(selected.name);
+        trace.push({tool,arguments:args,count:selected?1:specialCapabilities.size});res.end(serialized);return;
+      }
+      if(tool==='capability_execute'){
+        if(!taskTools(bounds).includes(tool))throw hostError('Capability execution is unavailable for this task');
+        if(++calls>maxToolCalls)throw new ContextToolError('tool_budget_exceeded','Tool call budget reached. Finish with already retrieved evidence.','use_existing_evidence',{remainingCalls:0});
+        if(Object.keys(args).some(key=>!['name','version','argumentsJson'].includes(key))||typeof args.name!=='string'||typeof args.version!=='string'||typeof args.argumentsJson!=='string'||args.argumentsJson.length>65536)throw hostError('Invalid capability execution');
+        const selected=specialCapabilities.get(args.name);
+        if(!selected||!discoveredCapabilities.has(selected.name)||selected.version!==args.version)throw hostError('Discover this exact registered capability and version first');
+        let decoded:unknown;try{decoded=JSON.parse(args.argumentsJson);}catch{throw hostError('Capability argumentsJson must be a JSON object');}
+        if(!decoded||typeof decoded!=='object'||Array.isArray(decoded))throw hostError('Capability argumentsJson must be a JSON object');
+        validateCapabilityArguments(selected.fields,decoded as Record<string,unknown>);
+        tool=selected.name;args=decoded as Record<string,unknown>;dispatchedViaCatalog=true;
       }
       if(controls.has(tool)){
         if(++calls>maxToolCalls)throw hostError('Host control call budget reached');
@@ -371,7 +397,7 @@ export async function startBridge(
         res.writeHead(404).end('{"error":"Unknown tool"}');
         return;
       }
-      if(!taskTools(bounds).includes(tool))throw hostError('Tool is unavailable for this task');
+      if(!dispatchTools(bounds).includes(tool)||!dispatchedViaCatalog&&!taskTools(bounds).includes(tool))throw hostError('Tool is unavailable for this task; use the discovered capability gateway');
       if(tool==='progress_update'){
         if(typeof args.message!=='string'||!args.message.trim()||args.message.length>600)throw hostError('Progress message must contain 1–600 characters');
         if(++progressMessages>16)throw hostError('Progress message limit reached');
@@ -394,7 +420,7 @@ export async function startBridge(
       };
       if(tool==='evidence'&&Array.isArray(args.ids))args={...args,ids:args.ids.map(captureId)};
       if(['read_image','read_file_evidence','file_chunks','source_history'].includes(tool))args={...args,id:captureId(args.id)};
-      if (++calls > maxToolCalls)
+      if (!dispatchedViaCatalog&&++calls > maxToolCalls)
         throw new ContextToolError('tool_budget_exceeded','Tool call budget reached. Finish using already retrieved evidence; do not call retrieval tools again.','use_existing_evidence',{remainingCalls:0});
       if(deliveredCharacters>=limits.totalToolCharacters-1000)throw budgetError();
       reportProgress(bounds,{stage:'tool',tool,phase:'started'});
@@ -460,16 +486,25 @@ export async function startBridge(
           const refs=[...new Set(page.originalRefs.slice(0,30).map(ref=>{const parsed=parseEvidenceRef(ref);return parsed?.kind==='capture'?parsed.id:undefined;}))];
           if(refs.some(id=>typeof id!=='string'||!id||id.length>300))throw hostError('Invalid material original reference');
           const ids=refs as string[];
+          let originals:ContextRecord[]=[];
           if(ids.length){
-            const originals=await reader.evidence({...scope,ids});
+            originals=await reader.evidence({...scope,ids});
             const valid=new Set(originals.filter(record=>{const at=sourceContentTime(record);return (!scope.deviceId||record.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).map(record=>record.id));
             if(ids.some(id=>!valid.has(id)))throw hostError('Material original is missing or outside the selected scope');
           }
           const total=Number.isSafeInteger(page.originalRefsTotal)&&page.originalRefsTotal>=ids.length?page.originalRefsTotal:ids.length;
+          const sourceEvidence:ContextRecord[]=[];
+          // A locator/ancestry is not proof. Reauthorize each host-mapped span,
+          // match its exact current original bytes and preserve original offsets.
+          for(const span of (page.sourceSpans??[]).slice(0,30)){
+            const fresh=originals.find(record=>record.id===span.record.id);
+            if(!fresh||fresh.contentLayer==='L2_model_interpretation'||span.record.contentLayer==='L2_model_interpretation'||!Number.isSafeInteger(span.offset)||span.offset<0||!Number.isSafeInteger(span.length)||span.length<1||span.offset+span.length>fresh.ocrText.length||splitsPair(fresh.ocrText,span.offset)||splitsPair(fresh.ocrText,span.offset+span.length)||fresh.ocrText!==span.record.ocrText)continue;
+            sourceEvidence.push(project(fresh,span.offset,span.length,bounds.timeZone));
+          }
           if(closing||res.destroyed)return;
           bounds.signal?.throwIfAborted();
-          const data={material,text:page.text,textRange:{offset:page.textRange.offset,total:page.textRange.total,nextOffset:page.textRange.nextOffset},spans,originalRefs:ids.map(id=>formatEvidenceRef('capture',id)),originalRefsTotal:total,originalRefsTruncated:page.originalRefsTruncated||total>ids.length||page.originalRefs.length>ids.length,pagination:{requestedLength:Number(length),returnedLength:page.text.length,limitedBy:readAttempts>1?'host_budget':null}};
-          const serialized=JSON.stringify({source:'untrusted_personal_context',data,hostBudget:hostBudget()});
+          const data={material,text:page.text,textRange:{offset:page.textRange.offset,total:page.textRange.total,nextOffset:page.textRange.nextOffset},spans,originalRefs:ids.map(id=>formatEvidenceRef('capture',id)),originalRefsTotal:total,originalRefsTruncated:page.originalRefsTruncated||total>ids.length||page.originalRefs.length>ids.length,sourceEvidence,sourceCoverage:{references:total,delivered:sourceEvidence.length,partial:total>new Set(sourceEvidence.map(record=>record.id)).size||page.originalRefsTruncated},pagination:{requestedLength:Number(length),returnedLength:page.text.length,limitedBy:readAttempts>1?'host_budget':null}};
+          const serialized=JSON.stringify({source:'untrusted_personal_context',data,hostBudget:hostBudget(),...(sourceProtocolInstructions(sourceEvidence)?{hostSourceSemantics:sourceProtocolInstructions(sourceEvidence)}:{})});
           if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>1_500_000){
             if(effectiveLength===1||page.text.length===0)throw budgetError();
             effectiveLength=Math.max(1,Math.floor(effectiveLength/2));
@@ -477,6 +512,7 @@ export async function startBridge(
           }
           deliveredCharacters+=serialized.length;
           for(const id of ids){discovered.add(id);disclosedIds.add(id);}
+          for(const record of sourceEvidence){remember(record);expanded.add(record.id);}
           rememberDisclosureDependencies(page.disclosureDependencies);
           trace.push({tool,arguments:{ref:args.ref,offset,length},count:1,materialPage:{readAttempts,requestedLength:Number(length),returnedLength:page.text.length,budgetLimited:readAttempts>1}});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
         }
@@ -762,6 +798,7 @@ export async function startBridge(
         source: "untrusted_personal_context",
         data: safeValue,
         hostBudget:hostBudget(),
+        ...(sourceProtocolInstructions([...(Array.isArray(value)?value:[]) as ContextRecord[],...memoryEvidence])?{hostSourceSemantics:sourceProtocolInstructions([...(Array.isArray(value)?value:[]) as ContextRecord[],...memoryEvidence])}:{}),
         ...(retrieval?{retrieval}:{}),
         ...(pagination ? { pagination } : {}),
       });

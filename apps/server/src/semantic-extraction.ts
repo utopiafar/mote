@@ -35,9 +35,9 @@ export const semanticProductsSchema=z.object({
 }).strict();
 export type SemanticProducts=z.infer<typeof semanticProductsSchema>;
 /** Every consumer reuses these exact L1 ranges. Products never become original evidence. */
-export function parseSemanticProducts(answer:string,records:CaptureRecord[],citationIds?:string[],authorizedRanges?:{id:string;offset:number;length:number}[]){
+export function parseSemanticProducts(answer:string,records:CaptureRecord[],citationIds?:string[],authorizedRanges?:{id:string;offset:number;length:number}[],candidateLimit=8){
  if(Buffer.byteLength(answer)>64000)throw new StoreError('Semantic output exceeds the 64 KB response budget',502);
- const output=semanticProductsSchema.parse(JSON.parse(answer));
+ const output=semanticProductsSchema.extend({memoryCandidates:semanticProductsSchema.shape.memoryCandidates.max(candidateLimit)}).parse(JSON.parse(answer));
  if(new Set(output.actionCues.flatMap(c=>c.evidence.map(e=>e.id))).size>30)throw new StoreError('At most 30 distinct originals may support the bounded action cues',502);
  const workClaims=(output.workRecords??[]).flatMap(record=>[...record.requirements,...record.constraints,...record.decisions,...record.results,...record.validation,...record.openItems,...record.artifactRefs]);
  const spans:{id:string;quote:string;offset?:number}[]=[...output.evidence,...output.events.flatMap(e=>e.evidence),...workClaims.flatMap(e=>e.evidence),...output.actionCues.flatMap(e=>e.evidence),...output.memoryCandidates.flatMap(e=>e.evidence??[])];

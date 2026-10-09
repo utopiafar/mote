@@ -1,6 +1,6 @@
 # 对话进度、用量和模型目录
 
-问答现在通过 `POST /api/query-runs` 提交 `{id, input}`。客户端生成 UUID；相同 ID 和相同输入只执行一次，相同 ID 配不同输入返回 409。接口立即返回 202。`GET /api/query-runs/:id` 提供持久化进度，网页每秒刷新，连接失败后自动重连。切页、刷新、关闭标签页不会取消已接收的运行；中央节点进程重启则把未完成运行标为 interrupted，不自动再次消费模型。
+问答现在通过 `POST /api/query-runs` 提交 `{id, input}`。客户端生成 UUID；相同 ID 和相同输入只执行一次，相同 ID 配不同输入返回 409。接口立即返回 202。`GET /api/query-runs/:id` 提供持久化进度，网页每秒刷新，连接失败后自动重连。切页、刷新、关闭标签页不会取消已接收的运行；持久查询在中央节点重启后按既有执行规则恢复，成功研究分支不重复执行；非重放的同步未知请求仍需显式恢复。取消保持终止。
 
 `GET /api/query-runs` 用于恢复最近运行。进度包括启动、模型请求步骤、工具开始/结束、返回项数、回答校验，以及 Agent 通过 `progress_update` 主动生成的简短公开状态。内部 reasoning delta 不会流向网页。进度消息只是展示内容，不进入系统指令或后续检索。它们随关联对话删除，资料删除也会清除已保存消息并阻止在途运行重新写入。任务只保存完成回答的 conversationId/turnId，正文仍从对话存储读取。原同步 `POST /api/query` 保留兼容。
 
@@ -34,3 +34,5 @@ Skill 表示入口指定的主流程：个人洞察 `personal-insight`、记忆�
 协议参考：[Codex App Server 官方文档](https://learn.chatgpt.com/docs/app-server#list-models-modellist)。Harness 事件字段对照仓库锁定的 `@deepseek-ai/dsh-sdk-client` / `dsh-session` / `dsh-token-meter` 0.1.5-rc.2 类型和实现。
 
 所有接口沿用 owner 权限和 no-store 响应。计量、目录及任务测试使用合成记录与本地模拟服务；浏览器检查同样使用独立临时资料库。
+
+Normal queries directly verify evidence; the model may choose independent research. A bounded private workspace preserves research state across yield, but saved locators grant no citations: the resumed fragment must receive originals again. Queue settings expose independent background/interactive Agent, Harness and delegated capacity. Background delegated capacity is capped at 32; interactive capacity is additional. Safe snapshots contain numeric counts only; opt-in Inspector traces retain their existing policy. See [ADR](adr-system-refactor.md).

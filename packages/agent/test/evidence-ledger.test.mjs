@@ -1,3 +1,4 @@
+import {catalogRequest} from './catalog-request.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {rememberEvidence,evidenceLayers} from '../dist/evidence-ledger.js';
@@ -16,7 +17,7 @@ test('bridge lineage includes successfully disclosed uncited originals and deriv
  const a={id:'2d21d371-92b5-5657-90ec-ad099bf37d4e',capturedAt:'2026-09-01T00:00:00Z',appName:'Fixture',ocrText:'Read but never cited'},b={...a,id:'bfa2289f-2bbc-5827-b82b-76df5374788c'};
  const reader={search:async()=>[a],timeline:async()=>({items:[b],nextCursor:null}),evidence:async()=>[a],devices:async()=>[],activity:async()=>({}),memories:async()=>({items:[{id:'generated-memory',title:'Derived title'}],references:[{id:b.id,capturedAt:b.capturedAt,characters:20}]})};
  const bridge=await startBridge(reader,{question:'Synthetic disclosure'},8);
- const call=async(tool,args)=>{const response=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify(args)});assert.equal(response.status,200);return response.json();};
+ const call=async(tool,args)=>{const response=await catalogRequest(bridge,tool,args);assert.equal(response.status,200);return response.json();};
  try{await call('search_context',{query:'synthetic'});await call('memories',{id:'generated-memory'});assert.deepEqual(new Set(bridge.evidenceDependencies.ids),new Set([a.id,b.id,'generated-memory']));assert.equal(bridge.evidenceDependencies.complete,true);await call('devices',{});assert.equal(bridge.evidenceDependencies.complete,false);}finally{await bridge.close();}
 });
 test('file evidence preserves owner-confirmed speaker metadata as untrusted data and revisions it independently of speech',async()=>{

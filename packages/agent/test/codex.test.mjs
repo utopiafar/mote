@@ -41,7 +41,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  else if(m.method==='thread/start'){
   if(m.params.ephemeral!==true||m.params.approvalPolicy!=='never')process.exit(2);
   if(mode==='import'){if(m.params.dynamicTools.length||m.params.sandbox!=='workspace-write')process.exit(2);}
-  else if(m.params.environments.length||m.params.dynamicTools.some(t=>!${JSON.stringify(codexContextTools.map(t=>t.name))}.includes(t.name)&&!(mode==='contribution'&&t.name==='fixture_context')))process.exit(2);
+  else if(m.params.environments.length||m.params.dynamicTools.some(t=>!${JSON.stringify(codexContextTools.map(t=>t.name))}.includes(t.name)))process.exit(2);
   const tierResponses={'tier-mismatch':null,'tier-priority':'priority','tier-default':'default','tier-unknown':'ultrafast'};
   send({id:m.id,result:{thread:{id:'thread-fixture'},serviceTier:Object.hasOwn(tierResponses,mode)?tierResponses[mode]:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:mode==='import'?'workspaceWrite':'readOnly'}}});
  }else if(m.method==='turn/start'){
@@ -54,7 +54,15 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(mode==='timeout')return;
   if(mode==='oversize-frame'){send({method:'fixture/opaque',params:{data:'x'.repeat(14*1024*1024)}});return;}
   if(mode==='error'){send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed',error:{message:'synthetic-private-secret'}}}});return;}
-  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:mode==='material-page'?'material_catalog':mode==='contribution'?'fixture_context':mode==='image-echo'?'read_image':'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:{}}});
+  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:mode==='material-page'?'material_catalog':mode==='contribution'?'capability_discover':mode==='image-echo'?'read_image':'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:mode==='contribution'?{name:'fixture_context'}:{}}});
+ }else if(mode==='contribution'&&m.id===999){
+  if(!m.result?.success)process.exit(3);
+  const capability=JSON.parse(m.result.contentItems[0].text).data;
+  if(capability.name!=='fixture_context'||capability.fields.count.type!=='integer')process.exit(4);
+  send({id:1000,method:'item/tool/call',params:{threadId:'thread-fixture',tool:'capability_execute',namespace:null,arguments:{name:capability.name,version:capability.version,argumentsJson:JSON.stringify({count:'1'})}}});
+ }else if(mode==='contribution'&&m.id===1000){
+  if(m.result?.success||JSON.parse(m.result.contentItems[0].text).toolError.code!=='invalid_tool_arguments')process.exit(5);
+  send({id:1001,method:'item/tool/call',params:{threadId:'thread-fixture',tool:'capability_execute',namespace:null,arguments:{name:'fixture_context',version:'generated-1',argumentsJson:JSON.stringify({count:1})}}});
  }else if(mode==='material-page'&&m.id===999){
   if(!m.result?.success)process.exit(3);
   const page=JSON.parse(m.result.contentItems[0].text);
@@ -307,11 +315,11 @@ test('Codex structured quota errors retain safe typed state without exposing pro
 });
 
 
-test('Codex advertises and dispatches a host contribution from the same pinned declaration',async t=>{
+test('Codex discovers a pinned capability, rejects malformed arguments and dispatches valid registered metadata',async t=>{
  const root=await fake(t,'contribution');const {ContextToolRegistry}=await import('../dist/tool-contributions.js');const tools=new ContextToolRegistry();let calls=0;
- tools.register({name:'fixture_context',version:'generated-1',description:'Generated read-only metadata',fields:{},maxCharacters:1000,parse:args=>args,authorize:()=>true,read:()=>{calls++;return {fixture:'generated'};}});
+ tools.register({name:'fixture_context',version:'generated-1',description:'Generated read-only metadata',fields:{count:{type:'integer',required:true}},maxCharacters:1000,parse:args=>args,authorize:()=>true,read:()=>{calls++;return {fixture:'generated'};}});
  const agent=createAgent({reader:{...reader,contextTools:()=>tools.snapshot()},protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});t.after(()=>agent.close());
- const answer=await agent.query({question:'Read generated metadata'});assert.equal(calls,1);assert.equal(answer.trace[0].tool,'fixture_context');assert.deepEqual(answer.citations,[]);
+ const answer=await agent.query({question:'Read generated metadata'});assert.equal(calls,1);assert.deepEqual(answer.trace.map(row=>row.tool),['capability_discover','fixture_context']);assert.deepEqual(answer.citations,[]);
 });
 
 test('Codex receives a nested region schema and metadata, then native region plus budgets and successful repeat',async t=>{

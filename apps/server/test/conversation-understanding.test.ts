@@ -123,3 +123,13 @@ test('the pinned extraction policy governs only memory candidates and retains it
  const outputs=await p.process({...read,config:{...read.config,candidatePolicy:policy}});assert.equal(outputs[0].metadata.candidatePolicyFingerprint,policy.fingerprint);assert.ok(validations);
  await assert.rejects(p.process({...read,config:{...read.config,candidatePolicy:{...policy,unexpected:'captured override'}}}));
 });
+
+test('the version two producer retains more than eight candidates and explicit full target coverage',async t=>{
+ const f=await fixture(t),pages=[f.page(0,user.length),f.page(user.length,assistant.length)],base=input(pages[0]);
+ const members=[{key:'a'.repeat(64),id:f.anchor,offset:0,length:user.length,fingerprint:'c'.repeat(64),contextTime:'2026-10-01T00:00:00Z',state:'pending' as const,memoryIds:[]},{key:'b'.repeat(64),id:f.anchor,offset:user.length,length:assistant.length,fingerprint:'c'.repeat(64),contextTime:'2026-10-01T00:00:00Z',state:'pending' as const,memoryIds:[]}];
+ const work={members,maxCandidates:16,instruction:'Inspect both independent ranges and preserve full coverage'},output=products(f.anchor);
+ output.memoryCandidates=Array.from({length:9},(_,index)=>({...output.memoryCandidates[0],title:'Generated candidate '+index}));
+ const coverage=[{key:members[0].key,state:'checked',candidateIndexes:Array.from({length:9},(_,index)=>index)},{key:members[1].key,state:'no_candidates',candidateIndexes:[]}];
+ const outputs=await processor(f,async request=>{assert.ok(request.taskContext?.memoryWork);return result(f.anchor,{...output,coverage,capacity:{saturated:false}});}).process({...base,materials:pages,config:{...base.config,memoryWork:work,generationContract:'d'.repeat(64)}});
+ const metadata=outputs[0].metadata;assert.equal(metadata.productsVersion,2);assert.equal((metadata.memoryCandidates as unknown[]).length,9);assert.deepEqual(metadata.memoryCoverage,coverage);assert.deepEqual(metadata.memoryCapacity,{saturated:false});assert.equal(metadata.runId,'generated-understanding');assert.equal(metadata.generationContract,'d'.repeat(64));
+});

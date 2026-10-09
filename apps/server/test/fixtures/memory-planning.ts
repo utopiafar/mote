@@ -22,7 +22,8 @@ export async function fixtureMemoryPlan(input:QueryInput):Promise<QueryResult|un
 }
 
 export function fixtureMemoryWorkResult(input:QueryInput,result:QueryResult):QueryResult{
- const output=JSON.parse(result.answer);if(!Array.isArray(output.memories))return result;
+ const output=JSON.parse(result.answer);if(Array.isArray(output.memoryCandidates)&&input.taskContext?.memoryWork){const {memories:_memories,...accounting}=JSON.parse(generatedMemoryOutput(input,output.memoryCandidates));return {...result,answer:JSON.stringify({...output,...accounting})};}
+ if(!Array.isArray(output.memories))return result;
  const members=(input.taskContext?.memoryWork as {members?:MemoryWorkMember[]}|undefined)?.members;if(!members)return result;
  return {...result,answer:JSON.stringify({...output,...JSON.parse(generatedMemoryOutput(input,output.memories))})};
 }

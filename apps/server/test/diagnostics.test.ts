@@ -16,6 +16,16 @@ const marker='SYNTHETIC_PRIVATE_BODY_TOKEN_URL_QUERY';
 const config=(dataDir:string):Config=>({dataDir,token:'synthetic-observability-token-only',tokenPath:join(dataDir,'synthetic-token-file'),host:'127.0.0.1',port:47832,dataKey:undefined,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'synthetic-provider-credential',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsDebug:true});
 const inactive:QueryAgent={configured:false,query:async()=>{throw new Error('fixture must not run');},close:async()=>{}};
 
+test('safe fragment timings preserve measured queue/session units without arbitrary model content',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-safe-fragment-timing-')),d=new ServerDiagnostics({directory,traceEnabled:false});
+ t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
+ d.record('agent.fragment_timing',{lane:'interactive',unit:'agent_fragment',queueWaitMs:12.3456,durationMs:67,status:'yielded',...{prompt:marker,token:marker}} as never);
+ d.record('agent.harness_timing',{lane:marker,unit:marker,status:marker,queueWaitMs:NaN,durationMs:80,body:marker} as never);
+ await d.flush();const rows=d.events().items;assert.equal(rows.length,2);assert.equal(rows[0].queueWaitMs,12.346);assert.equal(rows[0].lane,'interactive');assert.equal(rows[0].status,'yielded');assert.equal(rows[0].unit,'agent_fragment');
+ assert.equal(rows[1].lane,undefined);assert.equal(rows[1].unit,undefined);assert.equal(rows[1].status,undefined);assert.equal(rows[1].queueWaitMs,undefined);
+ const text=await readFile(join(directory,'central.0.ndjson'),'utf8');assert.ok(!text.includes(marker));await d.close();const reopened=new ServerDiagnostics({directory});await reopened.init();assert.equal(reopened.events().items[0].unit,'agent_fragment');await reopened.close();
+});
+
 test('disabled and silent diagnostics neither read nor create files or events',async t=>{
   const root=await mkdtemp(join(tmpdir(),'mote-diagnostics-disabled-'));t.after(()=>rm(root,{recursive:true,force:true}));
   for(const options of [{enabled:false},{level:'silent' as const,debug:true}]) {

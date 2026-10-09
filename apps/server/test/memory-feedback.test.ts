@@ -96,7 +96,7 @@ async function fixture(t:TestContext,mode:FixtureMode='resolved',targets=1){
 
 test('production feedback adapter regroups unfinished targets and reads authorized completed background without repeating coverage',{timeout:20000},async t=>{
  const f=await fixture(t,'resolved',2),done=await f.start();await f.settle();
- assert.equal(done.status,'completed');assert.deepEqual(f.counts(),{planning:1,feedback:1,extraction:4,reviews:4,maxActiveModels:1});
+ assert.equal(done.status,'completed');assert.deepEqual(f.counts(),{planning:0,feedback:1,extraction:4,reviews:4,maxActiveModels:1});
  assert.equal(f.feedback[0].targets.length,2);assert.equal(f.feedback[0].round,1);assert.equal(f.feedback[0].authorized.length,3);
  const background=done.batches.find(batch=>!batch.supersededBy&&batch.coverage?.some(member=>member.id===f.backgroundId));assert.equal(background?.attempts,1);
  const parent=done.batches.find(batch=>batch.supersededBy);assert.equal(parent?.supersededBy?.length,2);
@@ -135,12 +135,12 @@ test('background-only candidates cannot be committed as new target memories',{ti
 test('a restart reuses the durable feedback proposal after an atomic product handoff interruption',{timeout:20000},async t=>{
  const f=await fixture(t);f.interruptNextApply();const interrupted=await f.start();
  assert.equal(interrupted.status,'failed');assert.equal(f.feedback.length,1);assert.equal(f.checkpoints().length,1);assert.equal(interrupted.batches.filter(batch=>batch.replanRound).length,0,'partial child inserts must roll back');
- assert.deepEqual(f.counts(),{planning:1,feedback:1,extraction:2,reviews:2,maxActiveModels:1});
+ assert.deepEqual(f.counts(),{planning:0,feedback:1,extraction:2,reviews:2,maxActiveModels:1});
  const owner=f.runtime.list().find(owner=>owner.profileId==='memory.feedback');assert.ok(owner?.planningComplete);const unitId=owner.units[0].id;
  const checkpoints=f.checkpoints();await f.restart();const done=await f.pipeline.retry(interrupted.id);await f.settle();
- assert.equal(done.status,'completed');assert.equal(f.feedback.length,1,'the saved feedback plan is reused without another planning model');assert.equal(f.counts().planning,1);
+ assert.equal(done.status,'completed');assert.equal(f.feedback.length,1,'the saved feedback plan is reused without another planning model');assert.equal(f.counts().planning,0);
  assert.equal(f.checkpoints().length,2);assert.deepEqual(f.checkpoints().filter(row=>row.evidence_id===f.backgroundId),checkpoints);assert.equal(f.runtime.get(owner.id).units[0].id,unitId);
  assert.equal(done.batches.filter(batch=>batch.replanRound===1).length,1);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_feedback_plans WHERE job_id=?').get(done.id)!.n,1);
  assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE job_id=?').get(done.id)!.n,2);
- assert.deepEqual(f.counts(),{planning:1,feedback:1,extraction:3,reviews:4,maxActiveModels:1},'the private draft is reused but its retry receives a fresh independent review');
+ assert.deepEqual(f.counts(),{planning:0,feedback:1,extraction:3,reviews:4,maxActiveModels:1},'the private draft is reused but its retry receives a fresh independent review');
 });

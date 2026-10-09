@@ -80,7 +80,7 @@ Memory 配方可声明 `requires: ['extracted-text']`，或 `requires: ['source-
 
 同名或不同名依赖若最终选择完全相同的有效证据、提取器和评估语境，仍可共用一次提取。输入门禁不额外增加模型调用；恢复转写不会自动授予历史 Memory 重算权限。缺少 `blockIds` 的组织器和特殊 `material` 依赖仍固定整份资料版本，不承诺局部更新独立性。
 
-手工 `POST /api/memory-jobs` 按范围选择时也遵循显式配方的输入依赖，并返回未就绪或不可用资料的选择状态。一次手工合并的多配方任务要求每份入选资料满足全部所选配方，执行时也保留整个任务的依赖检查；不会忽略某个所选策略后开始处理。需要各自等待与恢复时使用独立任务；自动来源队列已经按配方拆分。手工聚合任务的进一步独立调度仍未完成。
+手工 `POST /api/memory-jobs` 按范围选择时遵循显式配方的输入依赖，并返回未就绪或不可用资料的选择状态。多配方选择保留各配方独立 input plan 及显式命名产物；就绪配方可以处理，等待配方保持自己的依赖和恢复状态。自动依赖不能覆盖手工选中的 OCR、转写等产物。
 
 任务批次固定配方、提取器和审核器的 ID、版本及定义指纹。完成检查点包含组合身份、评估时刻、显示时区和语言；替换审核器或更改评估语境不能误命中另一结果的完成记录。Memory 产物保留完整组合来源，审核回执另存实际审核策略指纹。不同组合的产物分别保留；审核后的显式替代关系按目标版本原子应用并保留历史。可替换的跨策略去重、关联与冲突整合仍是后续工作。
 
@@ -150,3 +150,7 @@ node --import tsx scripts/review-memory-recipe-live.ts
 生成应用回归实际安装插件，并独立更换整合器、审核器，覆盖个人/Coding 共用原件、历史授权、跨重启定义固定、取消与删除、模型配置变化、错误引用/关系版本、两种失败顺序的局部恢复、最大输入长度和采集端鉴权。`scripts/test-memory-integration-live.ts` 在一个已完成自动回放的私有副本上，选择其全部（最多 8 张）个人 Memory，使用本地 Codex App Server `gpt-6-sol / max`，最多两次外层调用和 400 秒、一次实际尝试；复用原件、保存调用/用量/原文、验证旧产物不变及重启不重跑。`MOTE_INTEGRATION_BASELINE` 与新的 `MOTE_INTEGRATION_OUTPUT` 必须在 Git 之外。执行通过和语义价值分别判断，零产出不证明正向整合能力。
 
 调研依据（2026-09-27）：[Graphiti 当前 main 的去重提示代码](https://github.com/getzep/graphiti/blob/main/graphiti_core/prompts/dedupe_edges.py) 区分重复与冲突，并保留日期、数值和限定条件差异；[Mem0 Dream 官方产品说明](https://mem0.ai/blog/dream-background-memory-consolidation-for-ai-agents) 区分合并、替代和综合，使用条件写入并将启用范围限定于之后的新活动。后者是托管产品说明，不是已审计的开源实现。此前借鉴了这些边界且未引入新依赖；2026-09-27 的自动生效契约进一步采用版本绑定的审核后原子替代并保留历史。
+
+## Rolling packages and reviewer-stage recovery (2026-10-10)
+
+Ordinary automatic inputs form bounded structural packages under their exact receipt/generation contracts. Packing does not imply semantic relatedness. Member time, attribution and target ranges remain independent; zero candidates still require review. Reviewer format/coverage failure preserves a valid extraction draft and repairs review only, subject to current evidence, recipe, configuration and deletion policy. An uncommitted saturated/incomplete batch is subdivided in full; checked declarations are not committed results. Coding reuse requires exact complete unsaturated v2 products. Existing cache bounds, retention and full-evidence locks remain. See [ADR](adr-system-refactor.md).

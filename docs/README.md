@@ -15,6 +15,7 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | 数据、权限、协议 | [架构](architecture.md)、[正式资料](material-architecture.md)、[协议](protocol.md)、[内容加密](content-storage.md)、[资产存储](asset-storage.md) |
 | Agent、记忆和行动 | [Agent](agent.md)、[模型配置](model-providers.md)、[生命周期](memory-lifecycle.md)、[记忆更新](memory-updates.md)、[日程](calendar-actions.md)、[行动更新](action-updates.md) |
 | 当前界面、对话和运行状态 | [Slate 导航](ui-slate.md)、[对话](conversations.md)、[Operations](operations.md)、[执行器](execution-engine.md)、[排错](troubleshooting.md) |
+| 2026-10-10 系统改造 | [已确认方案](design/system-refactor-2026-10-10.md)、[当前ADR](adr-system-refactor.md)、[验收结果与边界](validation/system-refactor-2026-10-10.md) |
 
 端侧 Qwen 文档是已删除运行时的历史说明，当前截图不调用 VLM。旧版充电补 OCR、默认加密、签名在线更新及 Memory 的周期 AND 数量门槛不能当作当前默认。现行入口分别见上表。
 
@@ -106,6 +107,9 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 
 | 文档 | 内容 |
 | --- | --- |
+| [系统改造 ADR](adr-system-refactor.md) | 已确认的统一查询、滚动 Memory 合批、审核恢复与前后台隔离决定 |
+| [系统改造方案（2026-10-10，已确认）](design/system-refactor-2026-10-10.md) | 14模块变更、5组选型、旅程、supersession和发布路线；拟议收益不是实测结果 |
+| [系统改造验证方案](design/system-refactor-validation-2026-10-10.md) | 22条真实入口旅程、质量rubric、同模型性能对照与发布门槛；结果见本次验收记录 |
 | [0.0.13-validation](0.0.13-validation.md) | 0.0.13 验证记录 |
 | [0.0.2-validation](0.0.2-validation.md) | 0.0.2 验收记录 |
 | [0.0.3-validation](0.0.3-validation.md) | 0.0.3 验收记录 |

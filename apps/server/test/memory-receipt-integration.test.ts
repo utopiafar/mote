@@ -43,28 +43,28 @@ test('denied receipts survive restart and duplicate ACK while new ordinary and C
     if(node.materials.list().items.length===2)break;
     await new Promise(resolve=>setTimeout(resolve,50));
   }
-  assert.equal(node.sourcePipelines.drainMemory(node.memoryPipeline,true,10),0);assert.equal(calls,0);
+  assert.equal(await node.sourcePipelines.drainMemory(node.memoryPipeline,true,10),0);assert.equal(calls,0);
   const oldMaterials=node.materials.list().items;
   assert.equal(oldMaterials.length,2,JSON.stringify({steps:node.store.db.prepare('SELECT kind,state,error,attempts,available_at FROM execution_steps').all()}));
   for(const material of oldMaterials)assert.equal(node.materialMemoryWork.readyForMemory(material.ref),true);
   assert.equal((await node.sources.upsert('ordinary',diary)).duplicate,true);
   assert.equal((await node.sources.upsert('coding',event)).duplicate,true);
   await node.materialOrganizer.tick();await node.sourcePipelines.tick();
-  assert.equal(node.sourcePipelines.drainMemory(node.memoryPipeline,true,10),0);
+  assert.equal(await node.sourcePipelines.drainMemory(node.memoryPipeline,true,10),0);
   assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE authorized=1').get()!.n,0);
   for(const material of oldMaterials){
     const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+cfg.token},payload:{evidenceIds:node.materials.evidenceIds(material.ref)}});
     assert.equal(response.statusCode,202,response.body);
     const completed=await node.memoryPipeline.run(response.json().id);assert.equal(completed.status,'completed',JSON.stringify(completed.batches.map(batch=>({status:batch.status,error:batch.errorCode}))));
   }
-  assert.equal(calls,2,'only two explicit owner requests invoked extraction');
+  assert.equal(calls,3,'explicit owner requests use generation when legacy interpretation lacks complete candidate coverage');
   // New receipts after enabling may authorize work even when their authored
   // date is old. Source dates do not decide the authorization time.
   await node.sources.upsert('ordinary',original('diary','2'));
   await node.sources.upsert('coding',coding('two'));
   await node.materialOrganizer.tick();await node.sourcePipelines.tick();
-  assert.equal(await node.sourcePipelines.drainMemory(node.memoryPipeline,true,10),2);
-  for(const row of node.store.db.prepare('SELECT job_id FROM material_memory_requests WHERE auto_authorized=1').all())await node.memoryPipeline.run(String(row.job_id));
+  assert.equal(await node.sourcePipelines.drainMemory(node.memoryPipeline,true,10),1);
+  for(const row of node.store.db.prepare('SELECT job_id FROM material_memory_requests WHERE auto_authorized=1').all()){const done=await node.memoryPipeline.run(String(row.job_id));assert.equal(done.status,'completed',JSON.stringify(done.batches.map(batch=>({phase:batch.phase,status:batch.status,error:batch.errorCode,validation:batch.validationFailures}))));}
   assert.equal(calls,7,'automatic zero outputs receive independent review; Coding interpretation is navigation for its full-source worker');
   assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE authorized=1 AND job_id IS NOT NULL').get()!.n,2);
 });

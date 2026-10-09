@@ -798,9 +798,13 @@ export class MaterialStore {
     const selected=rows.slice(0,64),pageEnd=rows.length>64?Math.min(end,selected.at(-1)!.end_offset):end;
     let text='',cursor=offset;const spans:MaterialReadSpan[]=[];
     for(const row of selected){
-      const start=Math.max(offset,row.start_offset),stop=Math.min(pageEnd,row.end_offset);
+      const start=Math.max(offset,row.start_offset);let stop=Math.min(pageEnd,row.end_offset);
       if(stop<=start)continue;
       const rendered=row.payload+(row.format==='markdown-fragment'?'':'\n');
+      const splitsPair=(at:number)=>at>0&&at<rendered.length&&/[\uD800-\uDBFF]/.test(rendered[at-1])&&/[\uDC00-\uDFFF]/.test(rendered[at]);
+      if(splitsPair(start-row.start_offset))throw new StoreError('Material read offset splits a UTF-16 pair; use the returned continuation offset');
+      if(splitsPair(stop-row.start_offset))stop--;
+      if(stop<=start)throw new StoreError('Material read length cannot deliver a complete Unicode character; request at least two UTF-16 units');
       const slice=rendered.slice(start-row.start_offset,stop-row.start_offset);
       const pageStart=text.length;text+=slice;cursor=stop;
       spans.push({attributionContext:material.attributionContext??unknownAttributionContext(),blockId:row.block_id,kind:row.kind,...(row.format?{format:row.format}:{}),

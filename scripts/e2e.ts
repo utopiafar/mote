@@ -14,7 +14,7 @@ import {writeMessagesResponse} from './fixtures/messages-provider.js';
 const dir=await mkdtemp(join(tmpdir(),'mote-e2e-'));const id=randomUUID();const noteId=randomUUID();let rounds=0;
 const fixtureModel=createServer(async(req,res)=>{
   let raw='';for await(const c of req)raw+=c;
-  const body=JSON.parse(raw);assert.deepEqual(body.tools.map((t:any)=>t.name).sort(),['activity','changes','context_index','delegation_cancel','delegation_capabilities','delegation_read','delegation_results','delegation_retry','delegation_submit','delegation_yield','devices','evidence','file_chunks','material_catalog','material_read','media_activity','memories','progress_update','read_file_evidence','read_image','search_context','segments','skill','source_history','source_items','sources','timeline']);
+  const body=JSON.parse(raw);assert.deepEqual(body.tools.map((t:any)=>t.name).sort(),['capability_discover','capability_execute','delegation_cancel','delegation_capabilities','delegation_read','delegation_results','delegation_retry','delegation_submit','delegation_workspace','delegation_yield','evidence','material_catalog','material_read','memories','progress_update','read_image','search_context','skill','timeline']);
   assert.equal(req.url,'/v1/messages');assert.equal(req.headers['x-api-key'],'synthetic-fixture');
   assert.equal(body.dsh_session_log,undefined);
   assert.ok(JSON.stringify(body.messages).includes('\\"language\\":\\"en\\"'), 'The selected language must be explicit in every model request');

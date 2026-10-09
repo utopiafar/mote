@@ -1,3 +1,4 @@
+import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -22,7 +23,7 @@ function event(id:string,role:string,text:string):SourceItem{return {externalId:
  document:{recordedAt,timeBasis:'recorded',contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',projectName:'Generated project',projectIdentity:'workspace',sessionId:'generated-session',eventId:id,role,...(role==='assistant'?{channel:'final'}:{}),attribution:role==='user'?'human':role==='assistant'?'agent':'unknown',part:0,parts:1}}};}
 async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,automatic=false){
  const directory=mkdtempSync(join(tmpdir(),'mote-coding-understanding-e2e-'));
- const node=await buildApp(config(directory),{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:input=>query(input,reader)})});
+ const node=await buildApp(config(directory),{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>fixtureMemoryWorkResult(input,await query(input,reader))})});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const settings=node.lifecycle.settings();node.lifecycle.configure({...settings,consolidation:{...settings.consolidation,enabled:false},insights:{...settings.insights,enabled:false},working:{...settings.working,enabled:false}});
  node.sources.register({id:'coding',kind:'coding-agent',name:'Generated coding',deviceId:'fixture',platform:'macos'});
@@ -51,7 +52,7 @@ async function supplied(input:QueryInput,reader:ContextReader){
  const records=await reader.evidence({ids:input.evidenceIds!});assert.equal(records.length,input.evidenceIds!.length,'material input admission must permit exactly the supplied originals');
  assert.ok(records.every(record=>!record.ocrText.includes(toolSecret)));return records;
 }
-function manualJob(node:Node,ids:string[]){return node.memoryPipeline.create({evidenceIds:ids,recipes:[{id:'mote.personal-memory',version:'2'}],contextTime,timeZone:'Asia/Shanghai',batchCharacters:12000});}
+function manualJob(node:Node,ids:string[]){return node.memoryPipeline.create({evidenceIds:ids,recipes:[{id:'mote.personal-memory',version:'2'}],contextTime,timeZone:'Asia/Shanghai',batchCharacters:12000,workPackage:{id:'generated-explicit-coding',goal:'Inspect every selected Coding range',instruction:'Preserve original attribution and each target context'}});}
 
 test('clean Coding material runs one authorized understanding and reuses its candidates for independent review',{timeout:15000},async t=>{
  let understanding=0,review=0,extraction=0;const calls:QueryInput[]=[];
@@ -74,10 +75,10 @@ test('clean Coding material runs one authorized understanding and reuses its can
  assert.equal(calls.filter(input=>isUnderstanding(input)).length,1);assert.ok(calls.filter(isUnderstanding).every(input=>input.executionLane==='background'));
 });
 
-test('empty Coding candidates still publish work/events and skip extraction and independent review calls',{timeout:15000},async t=>{
- let calls=0;const node=await appFixture(t,async(input,reader)=>{calls++;assert.ok(isUnderstanding(input),'empty candidates require no downstream model query');const originals=await supplied(input,reader);return response(originals[0].id,owner,products(originals[0].id,false));});
+test('empty Coding candidates publish work/events and receive independent review without a second extraction',{timeout:15000},async t=>{
+ let calls=0;const node=await appFixture(t,async(input,reader)=>{calls++;const originals=await supplied(input,reader);if(!isUnderstanding(input)){assert.equal(input.traceContext?.phase,'review');return response(originals[0].id,owner,input.taskContext!.untrustedMemoryDraft);}return response(originals[0].id,owner,products(originals[0].id,false));});
  const fixture=await receive(node),job=await node.memoryPipeline.run(manualJob(node,fixture.ids).id);
- assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,0);assert.equal(calls,1);const artifacts=node.store.archive.page({kind:'semantic'}).items;
+ assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,0);assert.equal(calls,2);const artifacts=node.store.archive.page({kind:'semantic'}).items;
  assert.equal(artifacts.length,1);const artifact=node.store.archive.get(artifacts[0].id)!;assert.deepEqual(artifact.metadata.memoryCandidates,[]);assert.ok((artifact.metadata.workRecords as unknown[]).length);assert.ok((artifact.metadata.events as unknown[]).length);
 });
 
@@ -94,21 +95,21 @@ test('revoking the parent Memory grant during understanding prevents semantic an
 });
 
 test('tool-only append advances private archive without renewing automatic understanding',{timeout:15000},async t=>{
- let calls=0;const node=await appFixture(t,async(input,reader)=>{calls++;assert.ok(isUnderstanding(input));const originals=await supplied(input,reader);return response(originals[0].id,owner,products(originals[0].id,false));},true);
- const fixture=await receive(node);assert.equal(node.materialMemoryWork.drain(node.memoryPipeline,true),1);
+ let calls=0;const node=await appFixture(t,async(input,reader)=>{calls++;const originals=await supplied(input,reader);if(!isUnderstanding(input)){assert.equal(input.traceContext?.phase,'review');return response(originals[0].id,owner,input.taskContext!.untrustedMemoryDraft);}return response(originals[0].id,owner,products(originals[0].id,false));},true);
+ const fixture=await receive(node);assert.equal(await node.sourcePipelines.drainMemory(node.memoryPipeline,true),1);
  await new Promise<void>(resolve=>setImmediate(resolve));const row=node.store.db.prepare('SELECT job_id FROM material_memory_requests WHERE material_id=?').get(fixture.material.id)!;
- assert.ok(row.job_id);const job=await node.memoryPipeline.run(String(row.job_id));assert.equal(job.status,'completed');assert.equal(calls,1);
+ assert.ok(row.job_id);const job=await node.memoryPipeline.run(String(row.job_id));assert.equal(job.status,'completed');assert.equal(calls,2);
  const before=node.materials.codingBase(fixture.material.id)!;
  await node.sources.upsert('coding',event('late-tool','tool_result',toolSecret+'LATE'));await node.sourcePipelines.tick();
  const after=node.materials.codingBase(fixture.material.id)!;assert.equal(after.record.ref,before.record.ref);assert.ok(after.headCount>before.headCount);assert.notEqual(after.archiveCheckpoint,before.archiveCheckpoint);
- assert.equal(node.materialMemoryWork.drain(node.memoryPipeline,true),0);await node.lifecycle.tick();assert.equal(calls,1);assert.equal(node.store.archive.page({kind:'semantic'}).items.length,1);
+ assert.equal(await node.sourcePipelines.drainMemory(node.memoryPipeline,true),0);await node.lifecycle.tick();assert.equal(calls,2);assert.equal(node.store.archive.page({kind:'semantic'}).items.length,1);
 });
 
 test('long Coding conversations cover every original character through bounded interpretations without tail-only truncation',{timeout:30000},async t=>{
  const covered:{id:string;offset:number;length:number}[]=[];let calls=0,overviewCalls=0;
  const node=await appFixture(t,async(input,reader)=>{
   assert.ok(!input.question.startsWith('Build a running overview'),'no full-session prepass');
-  calls++;assert.ok(isUnderstanding(input),'empty per-range candidates must be reused');assert.equal(overviewCalls,0);const originals=await supplied(input,reader),range=input.evidenceRanges![0];
+  calls++;assert.equal(overviewCalls,0);const originals=await supplied(input,reader),range=input.evidenceRanges![0];if(!isUnderstanding(input)){assert.equal(input.traceContext?.phase,'review');return response(range.id,'',input.taskContext!.untrustedMemoryDraft);}
   assert.ok(input.evidenceRanges!.reduce((sum,item)=>sum+item.length,0)<=12000);
   covered.push(...input.evidenceRanges!);const record=originals.find(item=>item.id===range.id)!,quote=record.ocrText.slice(range.offset,range.offset+Math.min(range.length,180));
   return response(range.id,quote,{summary:'Generated bounded conversation range; later outcome unknown',evidence:[{id:range.id,quote,offset:range.offset}],workRecords:[],events:[],memoryCandidates:[],actionCues:[]});
@@ -116,22 +117,22 @@ test('long Coding conversations cover every original character through bounded i
  const long=owner+'\n'+('Generated bounded passage with Unicode 😀.\n').repeat(400)+'\nGenerated final correction: device checks are still unknown.';
  await node.sources.upsertBatch('coding',[...Array.from({length:4},(_,i)=>event('owner-'+i,'user',long.slice(i*5000,(i+1)*5000))).filter(item=>item.text),event('tool','tool_result',toolSecret)]);await node.sourcePipelines.tick();
  const material=node.materials.list({kind:'mote.coding-session'}).items[0],ids=node.materials.evidenceIds(material.ref),originals=node.materials.evidence(ids);
- const job=await node.memoryPipeline.run(manualJob(node,ids).id);assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,0);assert.ok(job.totalBatches>1);assert.equal(calls,job.totalBatches);
+ const job=await node.memoryPipeline.run(manualJob(node,ids).id);assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,0);assert.ok(job.totalBatches>1);assert.equal(calls,job.totalBatches*2);
  for(const original of originals){
   const ranges=covered.filter(range=>range.id===original.id).sort((a,b)=>a.offset-b.offset);let cursor=0;
   for(const range of ranges){assert.equal(range.offset,cursor);cursor+=range.length;}
   assert.equal(cursor,original.ocrText.length,'the beginning, middle and final correction all receive model coverage');
  }
  assert.equal(covered.reduce((sum,range)=>sum+range.length,0),material.textLength);
- assert.equal(node.store.archive.page({kind:'semantic'}).items.length,calls);
+ assert.equal(node.store.archive.page({kind:'semantic'}).items.length,job.totalBatches);
 });
 
 test('600k process text, unknown replies and host summaries never reach any model input or searchable dialogue',{timeout:15000},async t=>{
  let calls=0;const node=await appFixture(t,async(input,reader)=>{
-  calls++;assert.ok(isUnderstanding(input));assert.ok(!input.taskContext?.previousSummary);
+  calls++;assert.ok(!input.taskContext?.previousSummary);
   const records=await supplied(input,reader);assert.ok(records.every(r=>!r.ocrText.includes('PRIVATE_PROCESS')));
   assert.ok(input.evidenceRanges!.reduce((n,r)=>n+r.length,0)<=12000);
-  return response(records[0].id,owner,products(records[0].id,false));
+  return response(records[0].id,owner,isUnderstanding(input)?products(records[0].id,false):input.taskContext!.untrustedMemoryDraft);
  });
  const process=Array.from({length:60},(_,i)=>{const item=event('process-'+i,'assistant','PRIVATE_PROCESS '+('x'.repeat(9980)));return {...item,document:{...item.document,coding:{...item.document!.coding!,channel:'commentary'}}};});
  const host=event('host','user','PRIVATE_HOST_SUMMARY');host.document!.coding!.attribution='host';
@@ -142,13 +143,13 @@ test('600k process text, unknown replies and host summaries never reach any mode
   assert.equal(node.materials.list({query:secret}).items.length,0);
  }
  const job=await node.memoryPipeline.run(manualJob(node,node.materials.evidenceIds(material.ref)).id);
- assert.equal(job.status,'completed');assert.equal(calls,1);
+ assert.equal(job.status,'completed');assert.equal(calls,2);
  assert.equal(node.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='coding_conversation_contexts'").get(),undefined);
 });
 
 test('a child queued behind the semantic pool retains authority after its Memory parent yields',{timeout:15000},async t=>{
  const entered=deferred(),release=deferred();t.after(()=>release.resolve());let calls=0;
- const node=await appFixture(t,async(input,reader)=>{calls++;const originals=await supplied(input,reader);return response(originals[0].id,owner,products(originals[0].id,false));});
+ const node=await appFixture(t,async(input,reader)=>{calls++;const originals=await supplied(input,reader);return response(originals[0].id,owner,isUnderstanding(input)?products(originals[0].id,false):input.taskContext!.untrustedMemoryDraft);});
  const f=await receive(node);
  node.workflows.registry.register({id:'generated.pool-holder',version:'1',lane:'semantic',async process(){entered.resolve();await release.promise;return [{kind:'semantic',text:'Generated holder',metadata:{complete:true}}];}});
  const holder=node.workflows.enqueue([{name:'holder',processor:'generated.pool-holder',materialInputs:[{ref:f.material.ref,offset:0,length:100}]}]);
@@ -161,5 +162,5 @@ test('a child queued behind the semantic pool retains authority after its Memory
  for(let n=0;n<100&&node.executor.get(String(child.id))!.state==='running';n++)await new Promise(r=>setTimeout(r,10));
  assert.equal(node.executor.get(String(child.id))!.state,'succeeded','waiting parent must not cause input_changed');
  node.store.db.prepare("UPDATE execution_steps SET available_at=0 WHERE operation_id=? AND state='waiting'").run('memory:'+created.id);
- assert.equal((await running).status,'completed');assert.equal(calls,1);
+ assert.equal((await running).status,'completed');assert.equal(calls,2);
 });

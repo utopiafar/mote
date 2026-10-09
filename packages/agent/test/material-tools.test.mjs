@@ -4,6 +4,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {startBridge} from '../dist/bridge.js';
 import {taskTools} from '../dist/task-context.js';
+import {parseAnswer} from '../dist/index.js';
 
 const at='2026-09-24T00:00:00Z';
 const ref=`material:mat_${'a'.repeat(64)}@${'b'.repeat(64)}`;
@@ -119,4 +120,31 @@ test('old bare or wrong-kind material originalRefs reject the page without autho
     assert.equal(evidenceReads,0);assert.deepEqual(bridge.evidenceDependencies.ids,[]);
     assert.equal(bridge.trace.some(entry=>entry.tool==='material_read'),false);
   }
+});
+
+test('one material page cites only exact delivered original spans with independent body offsets and private lineage',async t=>{
+ const source={...original,ocrText:'prefix 🙂 exact FIRST; unread middle; exact LAST; unread suffix'},other={...original,id:fixtureCaptureId('material-unread')};
+ const first=source.ocrText.indexOf('exact FIRST'),last=source.ocrText.indexOf('exact LAST'),hidden=fixtureCaptureId('material-lineage-only');
+ const selected={...page,text:'A derived locator describing two ranges',textRange:{offset:0,total:38,nextOffset:null},spans:[{...page.spans[0],pageRange:{start:0,end:38},materialRange:{start:0,end:38}}],originalRefs:[formatEvidenceRef('capture',source.id),formatEvidenceRef('capture',other.id)],originalRefsTotal:2,sourceSpans:[{record:source,offset:first,length:11},{record:source,offset:last,length:10}],disclosureDependencies:{version:1,complete:true,ids:[source.id,other.id,hidden]}};
+ selected.textRange.total=selected.text.length;selected.spans[0].pageRange.end=selected.text.length;
+ const {bridge,call}=await fixture(t,{...baseReader,evidence:async({ids})=>[source,other].filter(r=>ids.includes(r.id)),materialRead:async()=>selected});
+ await call('material_catalog');const read=await call('material_read',{ref});assert.equal(read.status,200);assert.equal(read.body.data.sourceEvidence.length,2);assert.equal(read.body.data.sourceCoverage.partial,true);
+ assert.deepEqual(read.body.data.sourceEvidence.map(r=>r.textRange.start),[first,last]);assert.deepEqual(bridge.records.get(source.id).deliveredRanges.map(r=>r.text),['exact FIRST','exact LAST']);
+ assert.ok(!JSON.stringify(read.body).includes('unread middle'));assert.ok(!JSON.stringify(read.body).includes(hidden));assert.equal(bridge.records.has(other.id),false);assert.equal(bridge.records.has(hidden),false);
+ const answer=parseAnswer(JSON.stringify({answer:`Verified ranges [${source.id}]`,citationIds:[source.id]}),bridge.records);assert.equal(answer.citations.length,1);assert.match(answer.citations[0].excerpt,/exact FIRST.*exact LAST/);assert.throws(()=>parseAnswer(JSON.stringify({answer:'Unread',citationIds:[other.id]}),bridge.records));
+});
+
+test('material sourceEvidence cannot turn semantic layers, stale text or split UTF-16 spans into original grants',async t=>{
+ const source={...original,ocrText:'a🙂z'};
+ for(const span of [{record:{...source,contentLayer:'L2_model_interpretation'},offset:0,length:1},{record:{...source,ocrText:'old'},offset:0,length:1},{record:source,offset:2,length:1}]){
+  const {bridge,call}=await fixture(t,{...baseReader,evidence:async()=>[source],materialRead:async()=>({...page,sourceSpans:[span]})});
+  await call('material_catalog');const read=await call('material_read',{ref});assert.equal(read.status,200);assert.deepEqual(read.body.data.sourceEvidence,[]);assert.equal(bridge.records.has(source.id),false);
+ }
+});
+
+test('sourceEvidence counts against the full result budget and a rejected page grants no citations',async t=>{
+ const source={...original,ocrText:'"'.repeat(11999)};
+ const oversized={...page,text:'x',textRange:{offset:0,total:1,nextOffset:null},spans:[],sourceSpans:[{record:source,offset:0,length:source.ocrText.length}]};
+ const {bridge,call}=await fixture(t,{...baseReader,evidence:async()=>[source],materialRead:async()=>oversized});
+ await call('material_catalog');const result=await call('material_read',{ref,length:1});assert.equal(result.status,400);assert.equal(result.body.toolError.code,'evidence_budget_exceeded');assert.equal(bridge.records.has(source.id),false);assert.equal(bridge.trace.some(row=>row.tool==='material_read'),false);
 });

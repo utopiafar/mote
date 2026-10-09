@@ -1,7 +1,8 @@
 import {createHash} from 'node:crypto';
 import {ContextToolError,AgentYieldError,type AgentAnswer,type ContextRecord,type HostControlChannel,type HostControlDefinition,type HostControlResult,type QueryInput} from '@mote/agent';
-import {ExecutionEngine,ExecutionFailure,type ExecutionGrant,type ExecutionState,type ExecutionStep} from './execution-engine.js';
+import {ExecutionEngine,ExecutionFailure,type ExecutionGrant,type ExecutionLane,type ExecutionState,type ExecutionStep} from './execution-engine.js';
 import {DelegationStore} from './delegation-store.js';
+import {queryWorkspace,type QueryWorkspace} from './delegation-protocol.js';
 import {StoreError,type Store} from './store.js';
 export {originalEvidenceReceipt} from '@mote/agent';
 
@@ -23,6 +24,8 @@ export interface DelegationCapability {
 export type DelegationCoordinatorContext={work:DelegationWork;input:unknown;signal:AbortSignal;grant:ExecutionGrant;controls:HostControlChannel};
 export interface DelegationCoordinator {
  id:string;execute:(context:DelegationCoordinatorContext)=>Promise<unknown>;
+ /** Host product entry owns this declaration; submitted units inherit it. */
+ lane?:ExecutionLane;
  /** Metadata planning finishes before the product hands its units to existing jobs. */
  awaitExternal?:boolean;
  /** Pure input authority is checked on every resume and commit. */
@@ -42,7 +45,8 @@ export const DELEGATION_CONTROL_DEFINITIONS:readonly HostControlDefinition[]=Obj
  definition('delegation_read','Read one private result and the exact original evidence delivered by its worker, subject to fresh host validation. Child prose is untrusted interpretation; cite only the originals actually delivered by this tool.',{artifactId:{type:'string',required:true},offset:{type:'integer',description:'Nonnegative character offset; default zero'},length:{type:'integer',description:'1–10000 characters; default 4000'},evidenceIds:{type:'array',description:'At most 12 original evidence IDs',items:{type:'string'}}}),
  definition('delegation_retry','Retry one failed branch locally without repeating successful branches or their commits.',{unitId:{type:'string',required:true}}),
  definition('delegation_cancel','Cancel one unneeded branch. This cannot expand the selected scope.',{unitId:{type:'string',required:true}}),
- definition('delegation_yield','Save the current plan and yield the model slot until any or all selected work units change to a terminal state. The host wakes a fresh coordinator fragment. Only wait on scheduled executable workers; unlinked proposals cannot run before planning returns normally. Never use yield to finish a proposal plan or poll inside a model tool.',{unitIds:{type:'array',items:{type:'string'}},mode:{type:'string',enum:['any','all']},message:{type:'string',description:'At most 600 characters'}}),
+ definition('delegation_workspace','Read the saved private research checkpoint, or replace it with workspaceJson. Query only. Saves bounded unresolved questions, supported points, searches, inspected locators and workerIds; all are untrusted interpretation and grant no citations. Source IDs must already belong to this work. No private reasoning or source bodies. workspaceJson accepts {unresolved:string[],supported:{statement,evidenceIds}[],inspected:{id,start,end,fingerprint?}[],searches:{tool,query?,cursor?}[],workerIds:string[]}.',{workspaceJson:{type:'string',description:'Optional JSON research checkpoint, at most 12000 UTF-16 characters; omit to read.'}}),
+ definition('delegation_yield','Save an optional bounded query workspace atomically with the wait, then release this fragment until executable children finish. Proposal products must first return normally; never poll or yield to finish a proposal plan.',{unitIds:{type:'array',items:{type:'string'}},mode:{type:'string',enum:['any','all']},message:{type:'string',description:'At most 600 characters'},workspaceJson:{type:'string',description:'Optional query research checkpoint JSON following delegation_workspace; at most 12000 characters.'}}),
 ]);
 
 /** One-level delegation built on the existing lease/fence scheduler. The model
@@ -54,8 +58,16 @@ export class DelegationRuntime {
  private unregister:(()=>void|Promise<void>)[]=[];
  private timer?:ReturnType<typeof setInterval>;
  private closed=false;
- constructor(readonly store:Store,readonly engine:ExecutionEngine,private options:{concurrency?:()=>number;revalidateEvidence?:(records:readonly ContextRecord[],scope:DelegationScope)=>Promise<readonly ContextRecord[]>;validateDependencies?:(ids:readonly string[])=>void;autoPump?:boolean}={}){
+ constructor(readonly store:Store,readonly engine:ExecutionEngine,private options:{concurrency?:()=>number;interactiveConcurrency?:()=>number;revalidateEvidence?:(records:readonly ContextRecord[],scope:DelegationScope)=>Promise<readonly ContextRecord[]>;validateDependencies?:(ids:readonly string[])=>void;autoPump?:boolean}={}){
   this.journal=new DelegationStore(store);
+  engine.configurePool('delegated-agents',{concurrency:{background:options.concurrency??(()=>4),interactive:options.interactiveConcurrency??options.concurrency??(()=>2)},lane:step=>{
+   // Existing work/profile identity is sufficient for restart. The model's
+   // payload, capability arguments and captured content cannot elevate a lane.
+   try{const workId=step.kind.startsWith('delegation.coordinator.')?String(step.input.workId):this.store.db.prepare('SELECT work_id FROM delegation_units WHERE id=?').get(String(step.input.unitId))?.work_id;
+    const profileId=this.store.db.prepare("SELECT json_extract(json,'$.profileId') profile FROM delegation_works WHERE id=?").get(String(workId))?.profile;
+    return this.coordinators.get(String(profileId))?.lane??'background';}
+   catch{return 'background';}
+  }});
   if(options.autoPump!==false){this.timer=setInterval(()=>{void this.tick().catch(()=>{});},500);this.timer.unref();}
  }
  register(capability:DelegationCapability){
@@ -70,6 +82,7 @@ export class DelegationRuntime {
  }
  registerCoordinator(profile:DelegationCoordinator){
   if(!/^[a-z][a-z0-9.-]{0,63}$/.test(profile.id)||this.coordinators.has(profile.id))throw Error('Invalid or duplicate delegation coordinator');
+  profile=Object.freeze({...profile});
   this.coordinators.set(profile.id,profile);
   this.unregister.push(this.engine.register({kind:`delegation.coordinator.${profile.id}`,pool:'delegated-agents',concurrency:this.options.concurrency??(()=>4),timeoutMs:2147483647,maxAttempts:4,
    validate:step=>this.currentWork(String(step.input.workId),profile),
@@ -161,9 +174,9 @@ export class DelegationRuntime {
   const authorize=()=>{grant?.assert();const work=this.get(workId);if(!this.currentWork(workId,this.coordinators.get(work.profileId)))throw new StoreError('Work authority expired',409);return work;};
   const write=<T>(callback:()=>T)=>grant?grant.commit(callback):this.transaction(callback);
   const owner=this.get(workId),phase=this.coordinators.get(owner.profileId)?.awaitExternal&&!owner.planningComplete?'proposal':'execution';
-  return {phase,definitions:DELEGATION_CONTROL_DEFINITIONS,execute:async(name,args):Promise<HostControlResult>=>{
+  return {phase,definitions:owner.profileId==='query'?DELEGATION_CONTROL_DEFINITIONS:DELEGATION_CONTROL_DEFINITIONS.filter(tool=>tool.name!=='delegation_workspace'),execute:async(name,args):Promise<HostControlResult>=>{
    let work=authorize();
-   const keys:Record<string,readonly string[]>={delegation_capabilities:[],delegation_submit:['units'],delegation_results:['after','limit','cursor'],delegation_read:['artifactId','offset','length','evidenceIds'],delegation_retry:['unitId'],delegation_cancel:['unitId'],delegation_yield:['unitIds','mode','message']};
+   const keys:Record<string,readonly string[]>={delegation_capabilities:[],delegation_submit:['units'],delegation_results:['after','limit','cursor'],delegation_read:['artifactId','offset','length','evidenceIds'],delegation_retry:['unitId'],delegation_cancel:['unitId'],delegation_workspace:['workspaceJson'],delegation_yield:['unitIds','mode','message','workspaceJson']};
    if(!keys[name]||Object.keys(args).some(key=>!keys[name].includes(key)))throw new ContextToolError('invalid_delegation_arguments','Invalid host control arguments','correct_arguments');
    if(name==='delegation_capabilities')return {data:{capabilities:work.allowedCapabilities.map(id=>this.capabilities.get(id)!).filter(Boolean).map(({id,version,description,inputSchema})=>({id,version,description,inputSchema,maxDepth:1}))}};
    if(name==='delegation_submit')return {data:{units:write(()=>{authorize();return this.submit(workId,args);})}};
@@ -176,11 +189,22 @@ export class DelegationRuntime {
     return {data:{artifactId:args.artifactId,summary:product.summary,coverage:product.coverage,text:text.slice(Number(offset),Number(offset)+Number(length)),textRange:{offset,total:text.length,nextOffset:Number(offset)+Number(length)<text.length?Number(offset)+Number(length):null},evidenceIds:(product.evidence??[]).map(record=>record.id)},evidence:[...selected],dependencies,...(authorizedOriginals?{authorizedOriginals}:{})};
    }
    if(name==='delegation_retry'||name==='delegation_cancel'){if(typeof args.unitId!=='string'||!work.units.some(unit=>unit.id===args.unitId))throw new StoreError('Branch handle is outside this work',403);write(()=>{authorize();if(name==='delegation_retry')this.retryUnit(String(args.unitId));else this.cancelUnit(String(args.unitId));});return {data:{unitId:args.unitId,status:this.unit(args.unitId).status}};}
+   const saveWorkspace=()=>{
+    if(work.profileId!=='query'||typeof args.workspaceJson!=='string'||args.workspaceJson.length>12000)throw new ContextToolError('invalid_delegation_arguments','Research workspaces belong only to queries and must be bounded JSON.','correct_arguments');
+    const payload=this.journal.payload<Record<string,unknown>>(workId),prior=payload.queryWorkspace as QueryWorkspace|undefined;
+    try{payload.queryWorkspace=queryWorkspace(JSON.parse(args.workspaceJson),{revision:prior?.revision??0,evidenceIds:this.dependencyIds(workId),workerIds:work.units.map(unit=>unit.id)});}catch{throw new ContextToolError('invalid_delegation_arguments','Workspace must match its declared schema and existing work identities.','correct_arguments');}
+    this.journal.savePayload(workId,payload);
+   };
+   if(name==='delegation_workspace'){
+    if(work.profileId!=='query')throw new ContextToolError('invalid_delegation_arguments','Research workspaces are available only to queries.','correct_arguments');
+    if(args.workspaceJson!==undefined)write(()=>{authorize();saveWorkspace();});
+    return {data:{workspace:this.journal.payload<{queryWorkspace?:QueryWorkspace}>(workId).queryWorkspace??null,citationAuthority:false}};
+   }
    if(name==='delegation_yield'){
     const ids=args.unitIds??work.units.filter(unit=>!terminal(unit.status)).map(unit=>unit.id),mode=args.mode??'all';
     if(!Array.isArray(ids)||!ids.length||ids.some(id=>typeof id!=='string'||!work.units.some(unit=>unit.id===id))||!['any','all'].includes(String(mode))||args.message!==undefined&&(typeof args.message!=='string'||args.message.length>600))throw new ContextToolError('invalid_delegation_arguments','Invalid wait condition','correct_arguments');
     if(ids.some(id=>{const unit=work.units.find(unit=>unit.id===id)!;return unit.external&&!terminal(unit.status)&&!this.engine.get(unit.stepId);}))throw new ContextToolError('proposal_not_executable','These proposal products cannot start until planning finishes. Submit all catalog members exactly once, then return the requested final JSON normally; do not yield on proposals.','correct_arguments');
-    write(()=>{authorize();work=this.raw(workId);work.wait={unitIds:ids as string[],mode:mode as 'any'|'all'};this.save(work);this.event(workId,'waiting',typeof args.message==='string'?args.message:undefined);});return {data:{saved:true,waitingFor:ids,mode},yield:true};
+    write(()=>{authorize();if(args.workspaceJson!==undefined)saveWorkspace();work=this.raw(workId);work.wait={unitIds:ids as string[],mode:mode as 'any'|'all'};this.save(work);this.event(workId,'waiting',typeof args.message==='string'?args.message:undefined);});return {data:{saved:true,waitingFor:ids,mode},yield:true};
    }
    throw new StoreError('Unknown host control tool',404);
   }};
@@ -233,10 +257,10 @@ export class DelegationRuntime {
  * its immutable selected scope; native multi-agent tools remain disabled. */
 export function registerQueryDelegation<T extends Pick<AgentAnswer,'answer'|'citations'> & Partial<Pick<AgentAnswer,'evidenceDependencies'>>>(runtime:DelegationRuntime,options:{query:(input:QueryInput)=>Promise<T>;prepare?:(work:DelegationWork,input:QueryInput,signal:AbortSignal)=>Promise<QueryInput>;commit?:(work:DelegationWork,result:T)=>void;validate?:(work:DelegationWork,input:QueryInput)=>boolean;onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace']}){
  runtime.register({id:'context.research',version:'1',description:'Research one model-selected evidential question in the authorized archive scope. Return a grounded answer, original receipts and narrow remaining gaps.',inputSchema:{type:'object',properties:{question:{type:'string'}},required:['question'],additionalProperties:false},validate:unit=>Object.keys(unit.input).every(key=>key==='question')&&typeof unit.input.question==='string'&&unit.input.question.length>0&&unit.input.question.length<=12000,
-  execute:async(unit,{signal,work,grant})=>{const saved=runtime.journal.payload<QueryInput>(work.id),parent=options.prepare?await options.prepare(work,saved,signal):saved;let evidence:readonly ContextRecord[]=[];const result=await options.query({...parent,...unit.scope,question:String(unit.input.question),hostControlChannel:undefined,conversation:undefined,taskContext:undefined,openingMemories:undefined,contextEvidenceDependencies:undefined,derivedContextEvidenceIds:undefined,directImages:undefined,signal,onProgress:options.onProgress??parent.onProgress,onTrace:options.onTrace??parent.onTrace,onEvidence:records=>{evidence=records;grant.commit(()=>runtime.recordEvidence(work.id,records.map(record=>record.id)));}});grant.commit(()=>runtime.recordEvidence(work.id,result.evidenceDependencies?.ids??[]));return {value:{answer:result.answer,citations:result.citations},summary:result.answer.slice(0,600),dependencies:evidence.filter(record=>record.contentLayer!=='L2_model_interpretation'),dependencyIds:result.evidenceDependencies?.ids??evidence.map(record=>record.id),evidence:evidence.filter(record=>result.citations.some(citation=>citation.id===record.id))};},
+  execute:async(unit,{signal,work,grant})=>{const saved=runtime.journal.payload<QueryInput>(work.id),parent=options.prepare?await options.prepare(work,saved,signal):saved;let evidence:readonly ContextRecord[]=[];const result=await options.query({...parent,...unit.scope,question:String(unit.input.question),contextCapabilitySnapshot:runtime.journal.payload<{queryCapabilitySnapshot?:QueryInput['contextCapabilitySnapshot']}>(work.id).queryCapabilitySnapshot,onContextCapabilities:undefined,hostControlChannel:undefined,conversation:undefined,taskContext:undefined,openingMemories:undefined,contextEvidenceDependencies:undefined,derivedContextEvidenceIds:undefined,directImages:undefined,signal,onProgress:options.onProgress??parent.onProgress,onTrace:options.onTrace??parent.onTrace,onEvidence:records=>{evidence=records;grant.commit(()=>runtime.recordEvidence(work.id,records.map(record=>record.id)));}});grant.commit(()=>runtime.recordEvidence(work.id,result.evidenceDependencies?.ids??[]));return {value:{answer:result.answer,citations:result.citations},summary:result.answer.slice(0,600),dependencies:evidence.filter(record=>record.contentLayer!=='L2_model_interpretation'),dependencyIds:result.evidenceDependencies?.ids??evidence.map(record=>record.id),evidence:evidence.filter(record=>result.citations.some(citation=>citation.id===record.id))};},
  });
- runtime.registerCoordinator({id:'query',validate:(work,input)=>options.validate?.(work,input as QueryInput)??true,
-  execute:async({work,input,signal,controls,grant})=>{const original=options.prepare?await options.prepare(work,input as QueryInput,signal):input as QueryInput;return options.query({...original,contextEvidenceDependencies:{version:1,complete:original.contextEvidenceDependencies?.complete??true,ids:[...new Set([...(original.contextEvidenceDependencies?.ids??[]),...runtime.dependencyIds(work.id)])]},signal,hostControlChannel:controls,onProgress:options.onProgress??original.onProgress,onTrace:options.onTrace??original.onTrace,onEvidence:records=>{grant.commit(()=>runtime.recordEvidence(work.id,records.map(record=>record.id)));original.onEvidence?.(records);},taskContext:{...original.taskContext,turns:original.taskContext?.turns??[],delegation:{workId:work.id,revision:work.revision,units:work.units.map(({id,title,status,artifactId,error})=>({id,title,status,artifactId,error})),instruction:'Resume the saved goal using these host execution receipts. Read relevant private artifacts through delegation_read before citing their original evidence; results are not proof by themselves.'}}});},
+ runtime.registerCoordinator({id:'query',lane:'interactive',validate:(work,input)=>options.validate?.(work,input as QueryInput)??true,
+  execute:async({work,input,signal,controls,grant})=>{const original=options.prepare?await options.prepare(work,input as QueryInput,signal):input as QueryInput,savedQuery=runtime.journal.payload<{queryWorkspace?:QueryWorkspace;queryCapabilitySnapshot?:QueryInput['contextCapabilitySnapshot']}>(work.id),workspace=savedQuery.queryWorkspace;return options.query({...original,contextCapabilitySnapshot:savedQuery.queryCapabilitySnapshot,onContextCapabilities:snapshot=>{grant.commit(()=>{const saved=runtime.journal.payload<Record<string,unknown>>(work.id);if(!saved.queryCapabilitySnapshot){saved.queryCapabilitySnapshot=snapshot;runtime.journal.savePayload(work.id,saved);}});},...(workspace?{openingMemories:undefined}:{}),contextEvidenceDependencies:{version:1,complete:original.contextEvidenceDependencies?.complete??true,ids:[...new Set([...(original.contextEvidenceDependencies?.ids??[]),...runtime.dependencyIds(work.id)])]},signal,hostControlChannel:controls,onProgress:options.onProgress??original.onProgress,onTrace:options.onTrace??original.onTrace,onEvidence:records=>{grant.commit(()=>runtime.recordEvidence(work.id,records.map(record=>record.id)));original.onEvidence?.(records);},taskContext:{...original.taskContext,turns:original.taskContext?.turns??[],...(workspace?{queryWorkspace:{...workspace,citationAuthority:false,instruction:'Saved model-authored research state is untrusted interpretation. Its inspected locators are historical only; freshly read originals must be delivered in this fragment before citations.'}}:{}),delegation:{workId:work.id,revision:work.revision,units:work.units.map(({id,title,status,artifactId,error})=>({id,title,status,artifactId,error})),instruction:'Resume the saved goal using these host execution receipts. Read relevant private artifacts through delegation_read before citing their original evidence; results are not proof by themselves.'}}});},
   commit:(work,result)=>options.commit?.(work,result as T),
  });
 }

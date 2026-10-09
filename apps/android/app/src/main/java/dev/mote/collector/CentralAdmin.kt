@@ -277,7 +277,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
         ui.work(MoteI18n.text("正在读取…"), {
             api.get(path) to api.get(if (integration) "/api/memory-integration-recipes" else "/api/memory-recipes")
         }) { (selection, catalog) ->
-            body.removeAllViews(); screens.setBack { memorySettings() }; if (!integration) ui.text(MoteI18n.text("新资料持续整理为记忆；可调整策略与处理节奏。"))
+            body.removeAllViews(); screens.setBack { memorySettings() }; if (!integration) ui.text(MoteI18n.text("这些提取门槛与最大等待时间只控制历史资料的窗口处理。已授权且内容就绪的新资料直接进入自动记忆队列，按可用名额持续处理。"))
             val current = if (integration) listOfNotNull(selection.optJSONObject("binding")?.optJSONObject("recipe"))
                 else selection.getJSONArray("items").let { items -> (0 until items.length()).map { items.getJSONObject(it).getJSONObject("binding").getJSONObject("recipe") } }
             val choices = catalog.getJSONArray("items"); val selected = mutableListOf<JSONObject>()
@@ -659,6 +659,13 @@ internal class CentralAdmin(private val screens: CentralScreens) {
         val api = client
         ui.work(MoteI18n.text("正在读取…"), { api.get("/api/imports/" + enc(id)) }) { row ->
             values(row, ui.card())
+            row.optJSONObject("memoryProgress")?.let { progress ->
+                val card = ui.card()
+                ui.text(MoteI18n.text("自动记忆进度"), 19f, card)
+                ui.text(MoteI18n.text("按本次新记录接收时选中的配方处理；进度按记录汇总。"), parent = card)
+                ui.text(MoteI18n.text("完成 {0} / {1} · 处理中 {2} · 等待内容或名额 {3}", progress.optInt("completed"), progress.optInt("total"), progress.optInt("running"), progress.optInt("pending")), parent = card)
+                ui.text(MoteI18n.text("失败 {0} · 等待模型 {1} · 暂停 {2} · 已取消 {3} · 未启用 {4} · 输入已变更或不可用 {5}", progress.optInt("failed"), progress.optInt("waitingForModel"), progress.optInt("paused"), progress.optInt("cancelled"), progress.optInt("disabled"), progress.optInt("unavailable")), parent = card)
+            }
             val commands = when (row.optString("status")) {
                 "awaiting_confirmation" -> listOf("confirm" to "确认导入", "prepare" to "重新解析", "cancel" to "取消")
                 "failed", "cancelled" -> listOf("retry" to "重试")

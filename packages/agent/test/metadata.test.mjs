@@ -1,3 +1,4 @@
+import {catalogRequest} from './catalog-request.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {startBridge} from '../dist/bridge.js';
@@ -20,7 +21,7 @@ test('trusted attribution survives bounded reads and fences a correction without
   } finally {await bridge.close();}
 });
 const sample={id:'f20b8ba9-f160-558e-8198-5a42e2589160',capturedAt:at,appName:'Generated',appId:'test.generated',sourceType:'activity',ocrText:'',durationMs:15000,privacy:{collection:'activity'},metadata:{version:1,observedAt:at,state:{batteryPercent:0,charging:false}},deviceId:'fixture-device'};
-async function call(bridge,tool,args={}) {const response=await fetch(`${bridge.url}/${tool}`,{method:'POST',headers:{Authorization:`Bearer ${bridge.token}`,'Content-Type':'application/json'},body:JSON.stringify(args)});return {status:response.status,body:await response.json()};}
+async function call(bridge,tool,args={}) {const response=await catalogRequest(bridge,tool,args);return {status:response.status,body:await response.json()};}
 test('agent chooses exact app/source/collection filters and expands content-free measured evidence',async()=>{
   let seen;
   const reader={search:async()=>[],timeline:async args=>{seen=args;return {items:[sample],nextCursor:null,totalCount:1};},evidence:async()=>[sample],activity:async()=>({}),devices:async()=>[]};
@@ -43,7 +44,7 @@ test('agent projection preserves bounded source metadata without passing source 
 
 test('stale health report timestamps stay distinct from later archive evidence and private device fields',async()=>{
   const reportAt='2026-09-14T00:00:00.000Z';
-  const bridge=await startBridge({search:async()=>[],timeline:async()=>({items:([sample]),nextCursor:null}),evidence:async()=>[sample],activity:async()=>({}),devices:async()=>[{deviceId:'fixture-device',deviceName:'Generated',platform:'macos',status:'offline',lastSeenAt:reportAt,lastCaptureAt:reportAt,queueDepth:0,metadata:sample.metadata,token:'never-pass',lastError:'private-server-path'}]},{question:'generated health and later archive',deviceId:'fixture-device'},3);
+  const bridge=await startBridge({search:async()=>[],timeline:async()=>({items:([sample]),nextCursor:null}),evidence:async()=>[sample],activity:async()=>({}),devices:async()=>[{deviceId:'fixture-device',deviceName:'Generated',platform:'macos',status:'offline',lastSeenAt:reportAt,lastCaptureAt:reportAt,queueDepth:0,metadata:sample.metadata,token:'never-pass',lastError:'private-server-path'}]},{question:'generated health and later archive',deviceId:'fixture-device'},4);
   try {
     const device=(await call(bridge,'devices')).body.data[0];
     assert.equal(device.lastCaptureAt,undefined);assert.equal(device.status,undefined);

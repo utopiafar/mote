@@ -23,7 +23,6 @@ import {MemoryStore,MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,MEMORY_
 
 import type {MemoryValidationDetails} from './memory-validation.js';
 import type {ModelConfiguration} from './model-configuration.js';
-import {semanticProductsSchema} from './semantic-extraction.js';
 import {memoryReviewReceipt} from './memory-review.js';
 import type {MemoryReviewReceipt} from './memory-schema.js';
 import {formatMaterialRef} from './materials.js';
@@ -39,7 +38,7 @@ type StoredBatch=MemoryBatch&BatchInputScope&{artifactRefs?:{id:string;revision:
 export type MemoryJob={authorizedChunks?:Chunk[];activationRequired:boolean;inputPlanVersion:1;inputPlans:MemoryPlanSummary;recipeProgress:MemoryRecipeProgress[];materialInputs?:MaterialInputPin[];batchCharacters?:number;automaticGrant?:AutomaticMemoryGrant;automaticGrants?:AutomaticMemoryGrant[];workPackage?:MemoryWorkPackage;contextTime:string;recipes?:MemoryStrategyRef[];configuration?:ModelConfiguration;artifactRefs?:{id:string;revision:string}[];materialRefs?:Record<string,string>;language?:'zh-CN'|'en';id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'waiting_for_input'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];memoryCount:number;availableAt?:number;errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
 export type MemoryJobDetail=MemoryJob&{batches:MemoryBatch[]};
 export type MemoryPipelineQuery={taskContext?:QueryInput['taskContext'];processingMaterialInputs?:QueryInput['processingMaterialInputs'];contextTime?:string;signal?:AbortSignal;language?:'zh-CN'|'en';modelProfileId?:string;modelOverride?:string;question:string;skill:'memory-extraction'|'coding-memory'|'memory-strategy';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
-export type ConversationPreparation={candidatePolicy?:{prompt:string;profile:'personal'|'coding';fingerprint:string};job:MemoryJob;ranges:EvidenceRange[];materialRefs:Record<string,string>;materialInputs:MaterialInputPin[];signal:AbortSignal;parentGrant:{stepId:string;fence:string}};
+export type ConversationPreparation={generationContract:string;memoryWork?:{package:{goal:string;instruction:string};members:MemoryWorkMember[];contextMembers:MemoryWorkMember[];maxCandidates:number;instruction:string};candidatePolicy?:{prompt:string;profile:'personal'|'coding';fingerprint:string};job:MemoryJob;ranges:EvidenceRange[];materialRefs:Record<string,string>;materialInputs:MaterialInputPin[];signal:AbortSignal;parentGrant:{stepId:string;fence:string}};
 export type MemoryPipelineOptions={understand?:(input:ConversationPreparation)=>Promise<{id:string;revision:string}[]|undefined>;materialSourceCurrent?:(pin:MaterialSourcePin,materialId:string)=>boolean;materialPlanAllowed?:(materialId:string,profileId?:string)=>boolean;deletionEvidenceAllowedForMemory?:(id:string,profileId?:string)=>boolean;materialInput?:(ref:string,required:readonly string[])=> (MaterialInputPin&{ready:boolean;dependencies?:MaterialDependencyStatus[]})|undefined;materialRequirements?:(ref:string)=>string[]|undefined;automaticAllowed?:(job:MemoryJob)=>boolean;strategies?:MemoryStrategies;configuration?:(profileId?:string,modelOverride?:string)=>ModelConfiguration;executor?:ExecutionEngine;concurrency?:()=>number;onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;requireAdmission?:boolean;review?:(input:MemoryPipelineQuery,result:QueryResult,strategy?:MemoryReviewStrategy)=>Promise<QueryResult>;materialAllowedForMemory?:(ref:string,profileId?:string,required?:readonly string[])=>boolean;evidenceAllowedForMemory?:(id:string,profileId?:string)=>boolean;store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number|(()=>number)};
 
 type ReadyInputScope={strategy?:MemoryRecipeBinding;ids:string[];inputs:MaterialInputPin[];refs:Record<string,string>;planIds?:string[]};
@@ -350,7 +349,15 @@ export class MemoryPipeline {
       // Coverage names the exact source range, while checkpoints and grants
       // retain their independent review-policy identities. Identical authorized
       // extraction inputs can therefore reuse a private draft across reviewers.
-      return {key:sha256(JSON.stringify(['memory-member@1',chunk.id,chunk.offset,chunk.length,chunk.fingerprint,identity?.contextTime??job.contextTime])),id:chunk.id,offset:chunk.offset,length:chunk.length,fingerprint:chunk.fingerprint,materialRef,inputKey:identity?.inputKey,scope:identity?.scope,contextTime:identity?.contextTime,state:'pending',memoryIds:[]};});
+      const record=this.options.memories.readEvidence([chunk.id])[0];
+      return {key:sha256(JSON.stringify(['memory-member@2',chunk.id,chunk.offset,chunk.length,chunk.fingerprint,identity?.inputKey,identity?.contextTime??job.contextTime,record?.attributionContext])),id:chunk.id,offset:chunk.offset,length:chunk.length,fingerprint:chunk.fingerprint,materialRef,inputKey:identity?.inputKey,scope:identity?.scope,contextTime:identity?.contextTime??job.contextTime,sourceId:identity?.sourceId??record?.provenance?.sourceId,attributionContext:record?.attributionContext,state:'pending',memoryIds:[]};});
+  }
+  private generationContract(job:MemoryJob,batch:StoredBatch,chunks:Chunk[]):string {
+    const selected=chunks[0]?.strategy?this.strategies.resolvePinned(chunks[0].strategy):undefined;
+    const profile=selected?{prompt:selected.extract.prompt+'\n'+MEMORY_CANDIDATE_OUTPUT_CONTRACT,version:selected.binding.extract.fingerprint}:memoryProfile(this.options.memories.readEvidence([chunks[0].id])[0]);
+    const members=this.workMembers(job,batch,chunks).map(({scope:_scope,state:_state,memoryIds:_ids,...member})=>member).sort((a,b)=>a.key.localeCompare(b.key));
+    const context=this.workMembers(job,batch,batch.contextChunks??[]).map(({scope:_scope,state:_state,memoryIds:_ids,...member})=>member).sort((a,b)=>a.key.localeCompare(b.key));
+    return sha256(JSON.stringify(['memory-generation@2',SYSTEM_PROMPT,profile,skillCatalog().find(skill=>skill.id===(selected?'memory-strategy':memoryProfile(this.options.memories.readEvidence([chunks[0].id])[0]).skill))?.version,batch.skillVersion??job.skillVersion,job.configuration?.fingerprint??this.options.configuration?.(job.modelProfileId,job.modelOverride)?.fingerprint,job.modelOverride??this.options.model(job.modelProfileId),job.language,job.timeZone,members,context,batch.workerGoal??job.workPackage?.goal,batch.workerInstruction??job.workPackage?.instruction,this.options.memories.readEvidence([...new Set([...chunks,...(batch.contextChunks??[])].map(chunk=>chunk.id))]).sort((a,b)=>a.id.localeCompare(b.id)),Boolean(this.options.requireAdmission)]));
   }
   private feedbackRequest(job:MemoryJob,batch:StoredBatch,targets:MemoryWorkMember[],coverage:MemoryWorkCoverage):MemoryFeedbackRequest {
     const compatible=(chunk:Chunk)=>JSON.stringify([chunk.strategy??null,chunk.profile,chunk.profileVersion,chunk.reviewFingerprint])===JSON.stringify([batch.chunks[0]?.strategy??null,batch.chunks[0]?.profile,batch.chunks[0]?.profileVersion,batch.chunks[0]?.reviewFingerprint]),all=this.workMembers(job,{...batch,materialRefs:job.materialRefs??{}},(job.authorizedChunks??this.batches(job.id).flatMap(batch=>batch.chunks)).filter(compatible)),wanted=new Set(coverage.flatMap(row=>row.contextRefs??[]));
@@ -628,22 +635,15 @@ export class MemoryPipeline {
     }});
   }
   /** Reuse validated unified candidates only when every touched candidate fits this exact batch. */
-  private reuseCandidates(batch:StoredBatch,ranges:EvidenceRange[]):QueryResult|undefined {
-    if(!batch.artifactRefs?.length)return;
-    const artifacts=batch.artifactRefs.map(ref=>this.store.archive.get(ref.id));
-    if(artifacts.some(a=>!a||a.metadata.productsVersion!==1))return;
-    const candidates=artifacts.flatMap(a=>semanticProductsSchema.shape.memoryCandidates.parse(a!.metadata.memoryCandidates));
-    const selected:typeof candidates=[];
-    for(const candidate of candidates){
-      if(!candidate.evidenceIds.some(id=>ranges.some(r=>r.id===id)))continue;
-      if(!candidate.evidence?.length)return;
-      const covered=candidate.evidence.every(span=>{const text=this.options.memories.readEvidence([span.id])[0]?.ocrText??'',offset=span.offset??text.indexOf(span.quote);return offset>=0&&ranges.some(r=>r.id===span.id&&r.offset<=offset&&offset+span.quote.length<=r.offset+r.length);});
-      if(!covered)return;
-      if(!selected.some(c=>JSON.stringify(c)===JSON.stringify(candidate)))selected.push(candidate);
-    }
-    if(selected.length>8)return;
-    const ids=[...new Set(selected.flatMap(c=>c.evidenceIds))];
-    return {answer:JSON.stringify({memories:selected}),runId:'semantic-reuse:'+batch.id,trace:[],citations:ids.map(id=>{const r=this.options.memories.readEvidence([id])[0];return {id,capturedAt:r.capturedAt,appName:r.appName,excerpt:''};})};
+  private reuseCandidates(batch:StoredBatch,ranges:EvidenceRange[],generationContract:string,members:MemoryWorkMember[]|undefined,maxCandidates:number|undefined):QueryResult|undefined {
+    if(!members||!batch.artifactRefs?.length||batch.artifactRefs.length!==1)return;
+    const artifact=this.store.archive.get(batch.artifactRefs[0].id);
+    if(!artifact||artifact.revision!==batch.artifactRefs[0].revision||artifact.metadata.productsVersion!==2||artifact.metadata.generationContract!==generationContract||artifact.metadata.complete!==true||typeof artifact.metadata.runId!=='string')return;
+    const ordered=(value:EvidenceRange[])=>[...value].sort((a,b)=>a.id.localeCompare(b.id)||a.offset-b.offset);
+    if(!Array.isArray(artifact.metadata.evidenceRanges)||JSON.stringify(ordered(artifact.metadata.evidenceRanges as EvidenceRange[]))!==JSON.stringify(ordered(ranges)))return;
+    const ids=members.map(member=>member.id),result:QueryResult={answer:JSON.stringify({memories:artifact.metadata.memoryCandidates,coverage:artifact.metadata.memoryCoverage,capacity:artifact.metadata.memoryCapacity}),runId:artifact.metadata.runId,trace:[],citations:[...new Set(ids)].map(id=>{const record=this.options.memories.readEvidence([id])[0];return {id,capturedAt:record.capturedAt,appName:record.appName,excerpt:''};})};
+    try{const accounting=readMemoryWorkCoverage(result,members,maxCandidates!,id=>this.options.memories.readEvidence([id])[0]?.ocrText);if(accounting.incomplete||accounting.saturated)return;}catch{return;}
+    return result;
   }
   private valid(chunk:Chunk):boolean {const record=this.options.memories.readEvidence([chunk.id])[0];return Boolean(record&&this.options.memories.isCurrentEvidence(chunk.id)&&memoryEvidenceFingerprint(record)===chunk.fingerprint);}
   private assertAutomatic(job:MemoryJob){if((job.automaticGrant||job.automaticGrants?.length)&&!this.options.automaticAllowed?.(job))throw new ExecutionFailure('permanent','memory_authorization_revoked');}
@@ -668,13 +668,16 @@ export class MemoryPipeline {
         this.admitBatch(job,batch);
         this.assertStrategies(batch);
         if(job.configuration&&!observeCurrent(()=>{batch.configuration=structuredClone(job.configuration);this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(batch.configuration)));this.saveBatch(batch);} ))throw new ExecutionFailure('waiting','interrupted');
+        const generationContract=this.generationContract(job,batch,chunks);
+        const preparationMembers=job.workPackage?this.workMembers(job,batch,chunks):undefined;
+        const preparationLimit=preparationMembers?memoryWorkCandidateLimit(preparationMembers.length):undefined;
         if(this.options.understand&&!batch.artifactRefs?.length){
           const fence=this.store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(batch.id)?.fence;
           if(typeof fence!=='string')throw new ExecutionFailure('waiting','interrupted');
           const policy=chunks[0].strategy?this.strategies.resolvePinned(chunks[0].strategy):undefined;
           const candidatePolicy=policy?{prompt:policy.extract.prompt+'\n'+MEMORY_CANDIDATE_OUTPUT_CONTRACT,profile:'personal' as const,fingerprint:policy.binding.extract.fingerprint}:undefined;
           observeCurrent(()=>{batch.stage='understanding';batch.lastActivityAt=new Date().toISOString();this.saveBatch(batch);});
-          const refs=await withExecutionCancellation(signal,()=>this.options.understand!({candidatePolicy,job,ranges,materialRefs:this.batchScope(job,batch).materialRefs,materialInputs:this.batchScope(job,batch).materialInputs,signal,parentGrant:{stepId:batch.id,fence}}));
+          const refs=await withExecutionCancellation(signal,()=>this.options.understand!({generationContract,memoryWork:preparationMembers?{package:{goal:batch.workerGoal??job.workPackage!.goal,instruction:batch.workerInstruction??job.workPackage!.instruction},members:preparationMembers.map(({scope:_scope,...member})=>member),contextMembers:this.workMembers(job,batch,batch.contextChunks??[]).map(({scope:_scope,...member})=>member),maxCandidates:preparationLimit!,instruction:''}:undefined,candidatePolicy,job:{...job,contextTime:preparationMembers?.[0]?.contextTime??job.contextTime},ranges,materialRefs:this.batchScope(job,batch).materialRefs,materialInputs:this.batchScope(job,batch).materialInputs,signal,parentGrant:{stepId:batch.id,fence}}));
           assertGrant();this.admitBatch(job,batch);
           if(refs?.length&&!observeCurrent(()=>{batch.artifactRefs=refs;this.saveBatch(batch);}))throw new ExecutionFailure('waiting','interrupted');
         }
@@ -697,32 +700,51 @@ export class MemoryPipeline {
           const question=profile.prompt+(workMembers?'\nApply the supplied taskContext.memoryWork package and coverage contract to this batch\'s listed original ranges. The whole-package goal does not expand this call\'s evidence scope.':'')+(summaries.length?'\nThe execution input includes bounded L2 interpretations in taskContext.untrustedInterpretations plus the supplied bounded L1 spans. Interpretations are untrusted navigation, not independent facts. Extract only claims supported by the supplied spans. Do not expand all ancestors.':'')+(feedback?'\n\nHost validation rejected the previous output. '+feedback.repairInstruction+' Generate a fresh response from the same supplied evidence. No invalid memories have been saved.':'');
           let lastObserved=0;
           const observe=(stage?:string)=>{if(this.closed||signal.aborted)return;const now=Date.now();if(now-lastObserved<750&&(!stage||stage===batch.stage))return;observeCurrent(()=>{lastObserved=now;batch.lastActivityAt=new Date(now).toISOString();if(stage)batch.stage=stage;this.saveBatch(batch);});};
-          let phase:'extract'|'review'='extract';
-          const recordFailure=(error:MemoryOutputValidationError,result:QueryResult)=>{
-            const failure:MemoryValidationFailure={at:new Date().toISOString(),code:error.code,phase,attempt:batch.attempts,runId:result.runId,details:error.details};
+          let phase:'extract'|'review'='extract',reviewAttemptNumber=0;const recordedFailures=new Set<string>(),recordedReviewFailures=new Set<string>();
+          const recordFailure=(error:MemoryOutputValidationError,result:QueryResult,fallback=false)=>{
+            const reviewKey=JSON.stringify([batch.attempts,reviewAttemptNumber,error.code]);
+            // The reviewer may reject inside validateOutput before returning its
+            // result. Its authoritative failure already has the reviewer run ID;
+            // a surrounding catch still holds the valid extraction draft.
+            if(phase==='review'&&fallback&&recordedReviewFailures.has(reviewKey))return;
+            const failureKey=JSON.stringify([phase,batch.attempts,reviewAttemptNumber,result.runId,error.code]);if(recordedFailures.has(failureKey))return;recordedFailures.add(failureKey);
+            if(phase==='review')recordedReviewFailures.add(reviewKey);
+            const failure:MemoryValidationFailure={at:new Date().toISOString(),code:error.code,phase,attempt:batch.attempts+Math.max(0,reviewAttemptNumber-1),runId:result.runId,details:error.details};
             if(!observeCurrent(()=>{batch.validationFailures=[...(batch.validationFailures??[]),failure].slice(-20);this.saveBatch(batch);}))return;
             try{this.options.onValidationFailure?.({...failure,jobId:id,batchId:batch.id,batchIndex:batch.index});}catch{}
           };
           const validateArtifacts=()=>{assertGrant();this.assertStrategies(batch);this.assertConfiguration(job);this.admitBatch(job,batch);if((batch.artifactRefs??[]).some(ref=>this.store.archive.revision(ref.id)!==ref.revision))throw new StoreError('Semantic input changed during extraction',409);};
           const validateOutput:QueryInput['validateOutput']=result=>{
             validateArtifacts();
-            try{this.options.memories.extract(result,model,{maxCandidates,profile:profile.id,requireAdmission:this.options.review?true:this.options.requireAdmission,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(processingChunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});}
+            try{if(workMembers){const accounting=readMemoryWorkCoverage(result,workMembers,maxCandidates!,id=>this.options.memories.readEvidence([id])[0]?.ocrText);if(accounting.missing.length)throw new MemoryOutputValidationError('coverage','Every supplied target requires coverage');}this.options.memories.extract(result,model,{maxCandidates,profile:profile.id,requireAdmission:this.options.review?true:this.options.requireAdmission,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(processingChunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});}
             catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;recordFailure(error,result);return {code:error.code,feedback:error.repairInstruction};}
           };
-          const input:MemoryPipelineQuery={...(workMembers||summaries.length?{taskContext:{turns:[],...(summaries.length?{untrustedInterpretations:JSON.stringify(summaries).slice(0,12000)}:{}),...(workMembers?{memoryWork:{package:{goal:batch.workerGoal??job.workPackage!.goal,instruction:batch.workerInstruction??job.workPackage!.instruction},contextMembers:this.workMembers(job,batch,batch.contextChunks??[]).map(({scope:_scope,...member})=>member),members:workMembers.map(({scope:_scope,...member})=>member),maxCandidates,instruction:memoryWorkInstruction(workMembers,maxCandidates!)}}:{})}}:{}),processingMaterialInputs:this.batchScope(job,batch).materialInputs,contextTime:job.contextTime,signal,validateOutput,onProgress:event=>observe(event.stage),onTrace:()=>observe(),language:job.language,modelProfileId:job.configuration?.profileId??job.modelProfileId,modelOverride:model,question,skill:profile.skill,responseMode:'memory-extraction',evidenceIds:[...new Set(processingChunks.map(c=>c.id))],evidenceRanges:ranges.map(range=>({...range})),timeZone:job.timeZone,traceContext:{operationId:'memory:'+id,jobId:id,batchId:batch.id,batchIndex:batch.index,attempt:batch.attempts,phase:'extract'}};
-          const {processingMaterialInputs:_materialInputs,signal:_signal,validateOutput:_validate,onProgress:_progress,onTrace:_trace,traceContext:_context,...semanticInput}=input;
-          const draftKey=sha256(JSON.stringify(['memory-extraction-draft@1',SYSTEM_PROMPT,skillCatalog().find(s=>s.id===profile.skill)?.version,profile.version,batch.skillVersion??job.skillVersion,job.configuration?.fingerprint,semanticInput,chunks.map(({id,offset,length,fingerprint})=>({id,offset,length,fingerprint})),this.options.memories.readEvidence(input.evidenceIds),batch.artifactRefs,Boolean(this.options.requireAdmission)]));
+          const input:MemoryPipelineQuery={...(workMembers||summaries.length?{taskContext:{turns:[],...(summaries.length?{untrustedInterpretations:JSON.stringify(summaries).slice(0,12000)}:{}),...(workMembers?{memoryWork:{package:{goal:batch.workerGoal??job.workPackage!.goal,instruction:batch.workerInstruction??job.workPackage!.instruction},contextMembers:this.workMembers(job,batch,batch.contextChunks??[]).map(({scope:_scope,...member})=>member),members:workMembers.map(({scope:_scope,...member})=>member),maxCandidates,instruction:memoryWorkInstruction(workMembers,maxCandidates!)}}:{})}}:{}),processingMaterialInputs:this.batchScope(job,batch).materialInputs,contextTime:workMembers?.[0]?.contextTime??job.contextTime,signal,validateOutput,onProgress:event=>observe(event.stage),onTrace:()=>observe(),language:job.language,modelProfileId:job.configuration?.profileId??job.modelProfileId,modelOverride:model,question,skill:profile.skill,responseMode:'memory-extraction',evidenceIds:[...new Set(processingChunks.map(c=>c.id))],evidenceRanges:ranges.map(range=>({...range})),timeZone:job.timeZone,traceContext:{operationId:'memory:'+id,jobId:id,batchId:batch.id,batchIndex:batch.index,attempt:batch.attempts,phase:'extract'}};
+          const draftKey=sha256(JSON.stringify(['memory-extraction-draft@2',generationContract,(batch.artifactRefs??[]).map(ref=>({...ref})).sort((a,b)=>a.id.localeCompare(b.id)),summaries.slice().sort((a,b)=>a.id.localeCompare(b.id))]));
           let cached:QueryResult|undefined;
           if(!observeCurrent(()=>{batch.phase='extract';this.saveBatch(batch);if(this.options.review&&generation===0)cached=this.drafts.get(batch.id,draftKey,Boolean(selected));} ))throw new ExecutionFailure('waiting','interrupted');
-          let result=cached??(generation===0&&!job.workPackage?this.reuseCandidates(batch,ranges):undefined)??await withExecutionCancellation(signal,()=>this.options.query(input));
+          let result=cached??(generation===0?this.reuseCandidates(batch,ranges,generationContract,workMembers,maxCandidates):undefined)??await withExecutionCancellation(signal,()=>this.options.query(input));
           signal.throwIfAborted();
           try{
             validateArtifacts();
             if(this.options.review){
-              if(workMembers)readMemoryWorkCoverage(result,workMembers,maxCandidates!,id=>this.options.memories.readEvidence([id])[0]?.ocrText);
+              if(workMembers){const accounting=readMemoryWorkCoverage(result,workMembers,maxCandidates!,id=>this.options.memories.readEvidence([id])[0]?.ocrText);if(accounting.missing.length)throw new MemoryOutputValidationError('coverage','Every supplied target requires coverage');}
               this.options.memories.extract(result,model,{maxCandidates,profile:profile.id,requireAdmission:true,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(processingChunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});
               if(!observeCurrent(()=>{validateArtifacts();this.drafts.put(batch.id,draftKey,result,Boolean(selected));} ))throw new ExecutionFailure('waiting','interrupted');
-              phase='review';batch.phase='review';observe('model');result=await withExecutionCancellation(signal,()=>this.options.review!(input,result,selected?.review));
+              phase='review';batch.phase='review';observe('model');
+              const validDraft=result;
+              for(let reviewAttempt=0;reviewAttempt<2;reviewAttempt++){
+                reviewAttemptNumber=reviewAttempt+1;
+                try{
+                  result=await withExecutionCancellation(signal,()=>this.options.review!(input,validDraft,selected?.review));
+                  const failure=await validateOutput({...result,trace:[]});if(failure)throw new MemoryOutputValidationError(failure.code as import('./memory-validation.js').MemoryOutputValidationCode,'Memory review failed host validation');
+                  break;
+                }catch(error){
+                  if(!(error instanceof MemoryOutputValidationError)||reviewAttempt===1)throw error;
+                  recordFailure(error,result,true);
+                  input.question+='\nReview repair: '+error.repairInstruction+' Re-review the same valid draft and all supplied original target ranges. Preserve the complete member coverage and capacity contract.';
+                }
+              }
               signal.throwIfAborted();
             }
             validateArtifacts();
@@ -741,9 +763,9 @@ export class MemoryPipeline {
             }
             return {coverage:accounting?.coverage,subdivide:accounting?.saturated?'memory_capacity_saturated':accounting?.incomplete?'memory_coverage_incomplete':undefined,strategy:selected?.binding,result,reviewReceipt:memoryReviewReceipt(result),model,profile:profile.id,skillVersion:selected?`${selected.extract.id}@${selected.extract.version}`:profile.id==='coding'?profile.version:batch.skillVersion??job.skillVersion,ranges,chunks};
           }catch(error){if(error instanceof MemoryOutputValidationError){
-              observeCurrent(()=>this.drafts.clear(batch.id));
-              recordFailure(error,result);
-            }if(generation===0&&error instanceof MemoryOutputValidationError){feedback=error;continue;}
+              if(phase==='extract')observeCurrent(()=>this.drafts.clear(batch.id));
+              recordFailure(error,result,true);
+            }if(phase==='extract'&&generation===0&&error instanceof MemoryOutputValidationError){feedback=error;continue;}
             if(workMembers&&error instanceof MemoryOutputValidationError&&error.code==='coverage')return {subdivide:'memory_coverage_incomplete',result,model,profile:profile.id,skillVersion:batch.skillVersion??job.skillVersion,ranges,chunks};
             throw error;}
         }

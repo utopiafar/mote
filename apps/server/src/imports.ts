@@ -24,6 +24,7 @@ import {ImportIntakeRegistry,installImportIntake} from './import-intake.js';
 import {FileStore} from './files.js';
 import {materialId} from './materials.js';
 import {withExecutionCancellation} from './execution-cancellation.js';
+import {importMemoryProgress} from './import-memory-progress.js';
 
 const MAX_INPUT_BYTES=256*1024*1024,MAX_EXPANDED_BYTES=512*1024*1024,MAX_FILES=4000;
 export class ImportInputError extends StoreError {
@@ -107,7 +108,7 @@ export class ImportStore {
     }
   }
   private load(id:string):InternalJob{const row=this.store.db.prepare('SELECT json FROM import_jobs WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Import job not found',404);return JSON.parse(row.json);}
-  private public(job:InternalJob):ImportJob{job.operationId=`import:${job.id}`;const operation=this.store.db.prepare('SELECT state FROM operation_progress WHERE id=? AND total>0').get(job.operationId);if(operation)job.execution=executionEnvelope({status:operation.state==='waiting'?'queued':operation.state,attempts:job.execution?.attempts??0,errorCode:job.status==='awaiting_confirmation'?'awaiting_confirmation':job.execution?.failure?.code});const {containerIds,recordsProcessed,processing,sourcePackRevision,archiveWarnings,createFingerprint,preparationRevision,originalsPending,expansion,parserMode,workspace,inputs,manifestHash,failurePhase,memoryNotified,blockedArchive,...value}=job;if(value.media)value.media=value.media.map(item=>this.mediaProgress(job,item));return value;}
+  private public(job:InternalJob):ImportJob{job.operationId=`import:${job.id}`;const operation=this.store.db.prepare('SELECT state FROM operation_progress WHERE id=? AND total>0').get(job.operationId);if(operation)job.execution=executionEnvelope({status:operation.state==='waiting'?'queued':operation.state,attempts:job.execution?.attempts??0,errorCode:job.status==='awaiting_confirmation'?'awaiting_confirmation':job.execution?.failure?.code});const {containerIds,recordsProcessed,processing,sourcePackRevision,archiveWarnings,createFingerprint,preparationRevision,originalsPending,expansion,parserMode,workspace,inputs,manifestHash,failurePhase,memoryNotified,blockedArchive,...value}=job;if(value.media)value.media=value.media.map(item=>this.mediaProgress(job,item));value.memoryProgress=importMemoryProgress(this.store,value.captureIds);return value;}
   private save(job:InternalJob){job.updatedAt=new Date().toISOString();const json=JSON.stringify(job),old=this.store.db.prepare('SELECT length(CAST(json AS BLOB)) AS bytes FROM import_jobs WHERE id=?').get(job.id) as {bytes:number}|undefined;this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-(old?.bytes??0)));this.store.db.prepare('INSERT INTO import_jobs(id,created_at,updated_at,json) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at,json=excluded.json').run(job.id,job.createdAt,job.updatedAt,json);if(job.createFingerprint)this.store.db.prepare('INSERT OR IGNORE INTO import_create_requests(request_id,fingerprint,job_id) VALUES(?,?,?)').run(job.id,job.createFingerprint,job.id);}
   private mediaProgress(job:InternalJob,item:NonNullable<ImportJob['media']>[number]){
     if(!item.captureId||!this.runtime.fileStore)return item;
