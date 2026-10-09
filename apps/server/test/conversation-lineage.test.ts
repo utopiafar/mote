@@ -12,7 +12,6 @@ import {defaultLifecycleSettings} from '../src/memory-lifecycle.js';
 import {MemoryStore} from '../src/memory.js';
 import {installEvidenceDependencies} from '../src/evidence-dependencies.js';
 import type {EvidenceDependencies,QueryResult} from '@mote/shared';
-import {QueryRuns} from '../src/query-runs.js';
 import {resolveDependencies} from '../src/conversation-lineage.js';
 
 const answer=(ids?:string[]):QueryResult=>({answer:'Generated derived answer',citations:[],trace:[],runId:randomUUID(),...(ids?{evidenceDependencies:{version:1,complete:true,ids} as EvidenceDependencies}:{})});
@@ -51,17 +50,4 @@ test('a disclosed memory resolves all original ancestors before deletion cascade
  const saved=conversations.append(undefined,{question:'Read memory overview without citing the original'},answer([memory.id]));
  assert.ok(conversations.get(saved.conversationId).turns[0].result!.evidenceDependencies!.ids.includes(id));
  store.delete(id);assert.equal(conversations.get(saved.conversationId).turns[0].evidenceDeleted,true);
-});
-
-test('completed query progress uses the saved turn lineage and preserves an unrelated run',async t=>{
- const directory=mkdtempSync(join(tmpdir(),'mote-lineage-progress-')),store=new Store(directory),conversations=new Conversations(store),runs=new QueryRuns(store);
- t.after(async()=>{await runs.close();store.close();rmSync(directory,{recursive:true,force:true});});
- const ids=[randomUUID(),randomUUID()],runIds=[randomUUID(),randomUUID()];
- for(const [index,id] of ids.entries()){
-  await store.ingest({id,deviceId:'generated',deviceName:'Generated',platform:'import',source:'note',appId:'fixture',appName:'Fixture',capturedAt:'2026-09-01T10:00:00Z',durationMs:0,ocrText:'Synthetic '+index,privacy:{excluded:false,redacted:false,mode:'none'}});
-  await runs.perform(runIds[index],{question:'Synthetic'},async observe=>{observe({stage:'model',message:'Generated progress '+index});return ()=>conversations.append(undefined,{question:'Synthetic'},answer([id]));});
- }
- store.delete(ids[0]);
- assert.ok(runs.get(runIds[0]).events.every(event=>event.message===undefined));
- assert.ok(runs.get(runIds[1]).events.some(event=>event.message==='Generated progress 1'));
 });

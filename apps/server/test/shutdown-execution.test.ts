@@ -17,7 +17,7 @@ async function fixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-shutdown-')),store=new Store(directory);
  const config:Config={dataDir:directory,token:'generated-shutdown-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:100_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
  const nodes:Awaited<ReturnType<typeof buildApp>>[]=[];
- const start=async()=>{const node=await buildApp(config,{store});nodes.push(node);await node.app.ready();return node;};
+ const start=async(agent?:import('../src/app.js').QueryAgent)=>{const node=await buildApp(config,{store,agent});nodes.push(node);await node.app.ready();return node;};
  t.after(async()=>{for(const node of nodes)await node.app.close();store.close();rmSync(directory,{recursive:true,force:true});});
  return {store,start};
 }
@@ -82,13 +82,15 @@ test('app.close interrupts a child, keeps completed extraction and unknown reque
  assert.equal(asrCalls,1);assert.equal(diarizeCalls,2);assert.ok(next.files.detail(id).artifacts.some((artifact:any)=>artifact.id===extraction.id));assert.doesNotMatch(JSON.stringify(next.files.chunks(id)),/Late generated/);
 });
 
-test('app.close records interrupted interactive runs while keeping user cancellation terminal',async t=>{
- const f=await fixture(t),node=await f.start(),held=deferred(),ids=Array.from({length:6},()=>randomUUID());
- for(const id of ids)node.featureServices.queryRuns.start(id,{},async()=>{await held.promise;return {conversationId:randomUUID(),turnId:randomUUID()};});
- node.featureServices.queryRuns.cancel(ids[5]);await yieldTurn();assert.equal(node.executor.get('query:'+ids[4])!.state,'waiting');
+test('app.close preserves durable query work while keeping user cancellation terminal',async t=>{
+ const f=await fixture(t),held=deferred(),entered=deferred(),ids=Array.from({length:6},()=>randomUUID());
+ const node=await f.start({configured:true,close:async()=>{},query:async input=>{entered.resolve();await Promise.race([held.promise,new Promise(resolve=>input.signal!.addEventListener('abort',resolve,{once:true}))]);return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};}});
+ for(const id of ids)node.featureServices.queryRuns.start(id,{question:'Generated durable shutdown query'});
+ await entered.promise;
+ node.featureServices.queryRuns.cancel(ids[5]);await yieldTurn();assert.equal(node.featureServices.queryRuns.get(ids[4]).status,'running');
  await node.app.close();held.resolve();await yieldTurn();
- for(const id of ids.slice(0,5)){const step=node.executor.get('query:'+id)!;assert.equal(step.state,'failed');assert.equal(step.error,'interrupted');}
- assert.equal(node.executor.get('query:'+ids[5])!.state,'cancelled');
+ for(const id of ids.slice(0,5))assert.equal(node.featureServices.queryRuns.get(id).status,'running');
+ assert.equal(node.featureServices.queryRuns.get(ids[5]).status,'cancelled');
 });
 
 test('app.close retains import admission blocks instead of cancelling inactive imports',async t=>{

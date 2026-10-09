@@ -91,22 +91,22 @@ test('raw ASR word times outside a sentence retain evidence and use uncertain se
   assert.throws(()=>transcriptSchema.parse({durationMs:3000,segments:[{startMs:1000,endMs:2000,text:'Generated evidence',words}]}));
 });
 
-test('new audio contracts keep retained legacy recipes available and leave image output pins unchanged',()=>{
+test('MVP installs one current transcript contract and rejects retired audio components',()=>{
  const recipes=new FileRecipeRegistry(),outputs=new FileOutputRegistry(),dispose=installFileRecipes(recipes,outputs);
  try{
-  assert.deepEqual(defaultFileOutput({mediaTypes:['image/']}),{id:'mote.transcript',version:'1'});
-  assert.deepEqual(defaultFileOutput({mediaTypes:['text/']}),{id:'mote.transcript',version:'1'});
+  assert.deepEqual(defaultFileOutput({mediaTypes:['image/']}),{id:'mote.transcript',version:'2'});
+  assert.deepEqual(defaultFileOutput({mediaTypes:['text/']}),{id:'mote.transcript',version:'2'});
   const audioOutput=defaultFileOutput({mediaTypes:['audio/']}),audioRecipe=defaultFileRecipe({dialogue:true});
   assert.equal(audioOutput.version,'2');assert.equal(audioRecipe.version,'2');
   assert.equal(recipes.resolve(audioRecipe,{semanticTurns:false}).pins.find(pin=>pin.name==='align')?.version,'2');
   const legacy={id:'mote.audio-dialogue',version:'1'};
-  assert.equal(recipes.resolve(legacy,{semanticTurns:false}).pins.find(pin=>pin.name==='align')?.version,'1');
-  assert.deepEqual(outputs.decode({id:'mote.transcript',version:'1'},raw).transcript,raw);
+  assert.throws(()=>recipes.resolve(legacy,{semanticTurns:false}),/unavailable/);
+  assert.ok(!recipes.list().stages.some(stage=>stage.id==='mote.align'&&stage.version==='1'));
+  assert.throws(()=>outputs.decode({id:'mote.transcript',version:'1'},raw),/unavailable/);
   const boundary={durationMs:3000,segments:[{startMs:1000,endMs:2000,text:'Generated',words:[{startMs:1000,endMs:2056,text:'Generated'}]}]};
   assert.deepEqual(outputs.decode(audioOutput,boundary).transcript,boundary);
   assert.throws(()=>outputs.decode({id:'mote.transcript',version:'1'},boundary));
-  assert.throws(()=>alignDialogue(boundary,diary,1));
-  assert.equal(alignDialogue(boundary,diary,2).segments[0].uncertain,true);
+  assert.equal(alignDialogue(boundary,diary).segments[0].uncertain,true);
  }finally{dispose();}
 });
 

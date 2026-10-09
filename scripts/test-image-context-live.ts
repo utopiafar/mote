@@ -76,7 +76,7 @@ try{
  for(const field of ['model','reasoningEffort'] as const)assert.equal(node.modelSettings.current()[field],manifest[field]);
  assert.equal(node.modelSettings.current().agentTimeoutMs,manifest.queryTimeoutMs);
  assert.equal(node.modelSettings.current().protocol,'codex-app-server');assert.equal(node.modelSettings.current().provider,'codex');
- const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
+ const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
  node.perception.configure({...node.perception.settings(),allowQueryImages:true});
  const processing=node.processing.view();const disabled=await node.app.inject({method:'PUT',url:'/api/file-processing',headers:{authorization:'Bearer '+token},payload:{revision:processing.revision,settings:{...processing.settings,enabled:false,summarize:false}}});assert.equal(disabled.statusCode,200);
  const records=node.store.evidence(composition?[composition.parentId]:seed.job.captureIds);assert.equal(records.length,1);const parent=records[0],attachment=parent.provenance!.document!.attachments!.find(item=>!composition||item.id===composition.attachmentId)!;assert.ok(attachment);

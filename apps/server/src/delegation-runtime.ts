@@ -25,10 +25,6 @@ export interface DelegationCoordinator {
  id:string;execute:(context:DelegationCoordinatorContext)=>Promise<unknown>;
  /** Metadata planning finishes before the product hands its units to existing jobs. */
  awaitExternal?:boolean;
- /** Existing product admission settings also apply to historical recovery. */
- recoveryAllowed?:()=>boolean;
- /** Product-owned complete-plan validation; undefined requires a fresh model fragment. */
- recoverPlan?:(work:DelegationWork)=>{acceptedUnitIds:readonly string[]}|undefined;
  /** Pure input authority is checked on every resume and commit. */
  validate?:(work:DelegationWork,input:unknown)=>boolean;
  commit?:(work:DelegationWork,result:unknown)=>void|{acceptedUnitIds:readonly string[]};
@@ -211,24 +207,6 @@ export class DelegationRuntime {
   }
   this.journal.saveResult(work.id,result??null);work.planningComplete=true;work.status=profile.awaitExternal?this.externalCompletionState(work):'succeeded';delete work.wait;delete work.error;if(work.status==='failed')work.error='delegated_product_failed';this.save(work);this.event(work.id,work.status==='waiting'?'plan.updated':work.status==='succeeded'?'completed':'work.failed');
  }
- /** Repair pre-upgrade waits on proposals that were never handed to a product.
-  * Revalidate authority and accept a product-validated complete persisted plan,
-  * or resume a fresh fragment with saved handles when it needs completion;
-  * never mark an unchecked plan complete or duplicate a product grant. */
- private recoverProposalWait(work:DelegationWork){
-  const profile=this.coordinators.get(work.profileId);
-  if(!profile?.awaitExternal||work.status!=='waiting'||work.planningComplete||!work.wait||!work.wait.unitIds.some(id=>{const unit=work.units.find(unit=>unit.id===id);return unit?.external&&!terminal(unit.status)&&!this.engine.get(unit.stepId);}))return;
-  const coordinator=this.engine.get(`${work.id}:coordinator:${work.revision}`);
-  if(coordinator&&['waiting','running'].includes(coordinator.state))return;
-  this.transaction(()=>{
-   work=this.get(work.id);
-   if(!this.currentWork(work.id,profile)){work.status='stale';work.error='input_changed';delete work.wait;this.save(work);for(const unit of work.units)if(unit.external&&!terminal(unit.status)&&!this.engine.get(unit.stepId)){unit.status='stale';unit.error='input_changed';this.saveUnit(unit);}this.event(work.id,'work.stale');return;}
-   if(profile.recoveryAllowed&&!profile.recoveryAllowed())return;
-   const receipt=work.units.some(unit=>!terminal(unit.status)&&!unit.external)?undefined:profile.recoverPlan?.(work);
-   if(receipt){this.completePlan(work,profile,{recovered:true},receipt);this.event(work.id,'plan.recovered');return;}
-   delete work.wait;this.enqueueCoordinator(work);this.event(work.id,'resumed');
-  });
- }
  private wake(workId:string){const work=this.raw(workId);if(work.status!=='waiting'||!work.wait||!this.currentWork(workId,this.coordinators.get(work.profileId)))return;const states=work.wait.unitIds.map(id=>this.unit(id).status),ready=work.wait.mode==='all'?states.every(terminal):states.some(terminal);if(ready){delete work.wait;this.enqueueCoordinator(work);this.event(workId,'resumed');}}
  cancelUnit(id:string){const unit=this.unit(id);if(unit.status==='succeeded'||unit.status==='cancelled')return;this.capabilities.get(unit.capabilityId)?.cancel?.(unit,this.get(unit.workId));this.engine.cancel(unit.stepId);unit.status='cancelled';this.saveUnit(unit);this.event(unit.workId,'branch_cancelled',undefined,id);}
  retryUnit(id:string){const unit=this.unit(id);if(!['failed','blocked','stale'].includes(unit.status))throw new StoreError('Only a failed branch can be retried',409);this.capabilities.get(unit.capabilityId)?.retry?.(unit,this.get(unit.workId));if(unit.artifactId)this.store.db.prepare('DELETE FROM delegation_artifacts WHERE id=?').run(unit.artifactId);delete unit.artifactId;delete unit.error;unit.status='waiting';this.saveUnit(unit);this.engine.retry(unit.stepId);this.event(unit.workId,'branch_retried',undefined,id);}
@@ -247,7 +225,7 @@ export class DelegationRuntime {
  private activeExecutionIds(operationId:string){return this.store.db.prepare("SELECT e.id FROM execution_steps e WHERE e.operation_id=? AND e.state IN ('waiting','running','blocked')").all(operationId).map(row=>String(row.id));}
  dependencyIds(workId:string){return this.store.db.prepare('SELECT evidence_id FROM delegation_dependencies WHERE work_id=?').all(workId).map(row=>String(row.evidence_id));}
  recordEvidence(workId:string,ids:readonly string[]){for(const id of new Set(ids)){if(this.store.db.prepare('SELECT 1 FROM delegation_dependencies WHERE work_id=? AND evidence_id=?').get(workId,id))continue;this.store.reserveMetadata(Buffer.byteLength(workId)+Buffer.byteLength(id)+128);this.store.db.prepare('INSERT INTO delegation_dependencies VALUES(?,?)').run(workId,id);}}
- async tick(){if(this.closed)return;for(const id of this.activeIds()){const work=this.get(id);if(this.engine.cancellationAliasRevoked(work.id)&&activeWork(this.raw(work.id).status))this.cancel(work.id);if(work.status==='stale'||work.status==='cancelled'){this.engine.cancel(work.id);for(const stepId of this.activeExecutionIds(work.operationId))this.engine.cancel(stepId);for(const unit of work.units)if(this.engine.get(unit.stepId)&&activeWork(this.engine.get(unit.stepId)!.state)){this.capabilities.get(unit.capabilityId)?.cancel?.(unit,work);this.engine.cancel(unit.stepId);}continue;}if(work.status==='failed'||work.status==='blocked')this.failUnfinishedChildren(work);for(const unit of work.units)if(unit.external){const step=this.engine.get(unit.stepId);if(step&&unit.status!==step.state)this.projectUnit({...step,input:{...step.input,unitId:unit.id}});}const current=this.raw(work.id);if(current.status==='waiting'&&current.planningComplete&&!current.wait){const state=this.externalCompletionState(current);if(state!=='waiting'){current.status=state;if(state==='failed')current.error='delegated_product_failed';this.save(current);this.event(current.id,current.status==='succeeded'?'completed':'work.failed');}}else {this.recoverProposalWait(current);this.wake(work.id);}}await this.engine.tick();}
+ async tick(){if(this.closed)return;for(const id of this.activeIds()){const work=this.get(id);if(this.engine.cancellationAliasRevoked(work.id)&&activeWork(this.raw(work.id).status))this.cancel(work.id);if(work.status==='stale'||work.status==='cancelled'){this.engine.cancel(work.id);for(const stepId of this.activeExecutionIds(work.operationId))this.engine.cancel(stepId);for(const unit of work.units)if(this.engine.get(unit.stepId)&&activeWork(this.engine.get(unit.stepId)!.state)){this.capabilities.get(unit.capabilityId)?.cancel?.(unit,work);this.engine.cancel(unit.stepId);}continue;}if(work.status==='failed'||work.status==='blocked')this.failUnfinishedChildren(work);for(const unit of work.units)if(unit.external){const step=this.engine.get(unit.stepId);if(step&&unit.status!==step.state)this.projectUnit({...step,input:{...step.input,unitId:unit.id}});}const current=this.raw(work.id);if(current.status==='waiting'&&current.planningComplete&&!current.wait){const state=this.externalCompletionState(current);if(state!=='waiting'){current.status=state;if(state==='failed')current.error='delegated_product_failed';this.save(current);this.event(current.id,current.status==='succeeded'?'completed':'work.failed');}}else {this.wake(work.id);}}await this.engine.tick();}
  async close(){this.closed=true;clearInterval(this.timer);await Promise.all(this.unregister.map(unregister=>unregister()));}
 }
 

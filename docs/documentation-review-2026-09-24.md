@@ -20,7 +20,7 @@
 | 文件解码 | 称 PDF 插件尚需另装、二进制文件同步仅为规划 | [文件处理器](../apps/server/src/file-processors.ts)、[类型策略](../apps/server/src/file-policy.ts)；已有原件同步与 PDF/DOCX/XLSX 内置解码，扫描件 OCR 不在该解码器内 |
 | 行动 | 称仅支持 calendar.create、尚无行动目录 | [行动更新](action-updates.md)、[Actions](../apps/server/src/actions.ts)；新增修改/取消/完成提议与只读目录，原生日历变更仍限确认后的原目标 |
 | 执行状态 | Slate 文档仍只指向 /api/processing，DAG 沿用旧租约 | [共享执行器](../apps/server/src/execution-engine.ts)、[Operations](operations.md)、[迁移闭环](operation-import-insight-closure.md)；区分中央执行、领域投影与客户端调度 |
-| 导航和更新 | 混用旧四页导航、日常 APK、签名清单在线升级与当前 DEV prerelease | [Web 导航](../apps/web/src/navigation.ts)、[Android 主界面](../apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt)、[Release workflow](../.github/workflows/release.yml)；当前 DEV 手动覆盖安装，中央自行构建升级 |
+| 导航和更新 | 混用旧四页导航、日常 APK、签名清单在线升级与当前 DEV prerelease | [Web 导航](../apps/web/src/navigation.ts)、[Android 主界面](../apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt)、[Central release](../.github/workflows/release-central.yml)、[Desktop release](../.github/workflows/release-desktop.yml)、[Android release](../.github/workflows/release-android.yml)；当前 DEV 手动覆盖安装，中央自行构建升级 |
 | 真机记录 | 同一 Android 恢复文档前面记载后续安装真机验证，末尾却称从未安装 | [采集恢复记录](android-capture-recovery.md)；明确初次只读诊断与后续生成画面真机检查是不同阶段，不扩大验证范围 |
 | 内部链接 | 历史文件移入子目录后 16 处相对路径失效，另有一处 Android 历史章节锚点失效 | 修复相对路径与锚点，保留原始报告内容 |
 

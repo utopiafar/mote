@@ -7,7 +7,7 @@ const catalog=JSON.parse(source.slice(source.indexOf('= ')+2).trim().replace(/;$
 function walk(dir){return readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(join(dir,e.name)):[join(dir,e.name)]);}
 const missing=[];
 function check(key,file){if(/\p{Script=Han}/u.test(key)&&!Object.hasOwn(catalog,key))missing.push({file,key});}
-for(const dir of ['apps/web/src','apps/desktop/src','apps/server/src','packages/shared/src','packages/local-inference/src','packages/diagnostics/src'])for(const file of walk(dir).filter(f=>/\.tsx?$/.test(f))){
+for(const dir of ['apps/web/src','apps/desktop/src','apps/server/src','packages/shared/src','packages/diagnostics/src'])for(const file of walk(dir).filter(f=>/\.tsx?$/.test(f))){
  const ast=ts.createSourceFile(file,readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
  const visit=n=>{if(ts.isCallExpression(n)&&n.expression.getText(ast)==='moteText'&&n.arguments[0]&&ts.isStringLiteralLike(n.arguments[0]))check(n.arguments[0].text,file);
   // This authored protocol-code catalog is translated through a dynamic key.

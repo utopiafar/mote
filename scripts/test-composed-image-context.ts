@@ -86,7 +86,7 @@ async function open(vault:string){assert.equal(node,undefined);currentVault=vaul
  bridgeToolNames.clear();for(const [name] of contextToolDefinitions({question:fixture.question,toolContributions:node.featureServices.archiveReader.contextTools?.()??[]}))bridgeToolNames.add(name);
  await node.processing.runtime.ready;
  node.processing.runtime.registry.get('image.http').process=async()=>{assert.ok(!live&&ocrAllowed&&report.ocrStubCalls===0,'A second OCR invocation or live OCR is forbidden');report.ocrStubCalls++;return {durationMs:0,segments:fixture.ocr.segments};};
- const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
+ const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
  node.perception.configure({...node.perception.settings(),allowQueryImages:true});await node.app.ready();
  if(live){const current=node.modelSettings.current();assert.equal(current.model,'gpt-6-sol');assert.equal(current.reasoningEffort,'max');assert.equal(current.agentTimeoutMs,300000);}
 }

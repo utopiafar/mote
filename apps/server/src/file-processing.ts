@@ -432,7 +432,7 @@ export class FileProcessing {
             }
             if(operation==='align'){
               const extractId=read('extract'),diarizeId=read('diarize'),{complete:_,...diarization}=this.artifact(diarizeId);
-              const aligned=alignDialogue(this.transcript(extractId),diarizationSchema.parse({...diarization,samples:[]}),stage.stage.version==='1'?1:2);
+              const aligned=alignDialogue(this.transcript(extractId),diarizationSchema.parse({...diarization,samples:[]}));
               return this.step(id,stage.name,stage.stage.id,stage.stage.version,[extractId,diarizeId,stage.stage],revision,async()=>aligned,result=>this.saveArtifact(id,'dialogue',{transcript:result,complete:true,uncorrected:true,semanticGrouping:false,inputArtifacts:[extractId,diarizeId],snapshot:file.item.layer==='snapshot'},revision,result));
             }
             const alignId=read('align'),aligned=this.transcript(alignId);
@@ -451,7 +451,7 @@ export class FileProcessing {
         const transcript=this.transcript(outputArtifact),text=transcript.segments.map(segment=>segment.text).join('\n');
         if(text.length>10000000)throw new StoreError('Snapshot text exceeds limit',413);
         // Central processing limits and the configured stages determine coverage.
-        // A legacy client preview cap must never silently discard evidence.
+        // A client preview cap must never silently discard evidence.
         this.files.saveSnapshotText(id,text);
         this.files.publishSnapshotIndex(id,text.length,text.length,processor.id,transcript.coverage==='partial',transcript.warnings);
         this.files.releaseSnapshotInput(id);

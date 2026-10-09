@@ -15,7 +15,7 @@ The projection answers four separate questions:
 - `waiting`: why a run is waiting and which resource/action can unblock it;
 - `allowedActions`: the controls the client may offer.
 
-Central storage epoch 3 creates the current execution schema directly. It does
+Central storage epoch 4 creates the current execution schema directly. It does
 not run ALTER/backfill passes or persist a historical projection sidecar. The old
 execution migration command has been removed. Restart recovery, dependency waits,
 retry deadlines, cancellation fences, and lease ownership remain current runtime

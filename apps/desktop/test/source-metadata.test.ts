@@ -32,7 +32,7 @@ describe('observed file and calendar timestamps', () => {
     const before = await stat(path);
     const scan = await scanSourceFiles(path, DEFAULT_SOURCE_OPTIONS, undefined, markers); const file = scan.items[0];
     expect(file.modifiedAt).toBe(before.mtime.toISOString()); expect(file.metadata?.file).toEqual({ sizeBytes: before.size, ...(Number.isFinite(before.birthtimeMs) && before.birthtimeMs > 0 && before.birthtimeMs !== before.ctimeMs ? { createdAt: new Date(before.birthtimeMs).toISOString() } : {}), accessedAt: new Date(before.atimeMs).toISOString(), metadataChangedAt: new Date(before.ctimeMs).toISOString() });
-    const second = await scanSourceFiles(path, DEFAULT_SOURCE_OPTIONS, undefined, markers); expect(second.items.map(({localProcessing,localOriginal,...item})=>item)).toEqual(scan.items.map(({localProcessing,localOriginal,...item})=>item));
+    const second = await scanSourceFiles(path, DEFAULT_SOURCE_OPTIONS, undefined, markers); expect(second.items.map(({localOriginal,...item})=>item)).toEqual(scan.items.map(({localOriginal,...item})=>item));
     const engine = new SourceSync(join(directory, '.state.json')); await engine.initialize();
     expect(await engine.stage(scan, false)).toBe(1); expect(await engine.stage(second, false)).toBe(0);
     await utimes(path, new Date('2022-03-04T05:06:07Z'), before.mtime);

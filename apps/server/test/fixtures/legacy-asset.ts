@@ -1,12 +1,12 @@
 import {join} from 'node:path';
-import {writeFileSync,rmSync} from 'node:fs';
+import {writeFileSync,rmSync,mkdirSync} from 'node:fs';
 import type {Store} from '../../src/store.js';
 /** Generate authentic previous-format storage without reading any personal content. */
 export function legacyAsset(store:Store,hash:string,format:'image-legacy'|'archive-legacy',unsuffixed=false){
  const bytes=store.assets.read(hash);
  if(format==='image-legacy'){
   const sealed=store.contentEncryption.seal(bytes),raw=Buffer.concat([Buffer.from('MOTE1'),sealed.subarray(0,12),sealed.subarray(-16),sealed.subarray(12,-16)]);
-  writeFileSync(join(store.blobsDir,hash),raw,{mode:0o600});
+  mkdirSync(join(store.directory,'blobs'),{recursive:true});writeFileSync(join(store.directory,'blobs',hash),raw,{mode:0o600});
  }else{
   const path=join(store.directory,'files',hash);
   if(unsuffixed)writeFileSync(path,store.contentEncryption.seal(bytes),{mode:0o600});else store.contentEncryption.write(path,bytes);

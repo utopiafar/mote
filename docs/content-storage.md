@@ -1,6 +1,6 @@
 # 当前内容存储
 
-本次 MVP 断代使用中央 `backend_epoch=3` 与客户端本机格式 3。旧格式、旧密文包装和无格式后缀对象不自动转换；升级操作见 [兼容清理实施记录](audits/compatibility-cleanup-2026-10-04.md)。
+本次 MVP 断代使用中央 `backend_epoch=4` 与客户端本机格式 3。旧格式、旧密文包装和无格式后缀对象不自动转换；升级操作见 [MVP 基线 ADR](adr-mvp-baseline.md)。
 
 ## 客户端
 

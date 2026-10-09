@@ -72,25 +72,6 @@ test('unrelated archive deletion does not fail a query, but deleting used eviden
   });
 });
 
-test('interrupted runs recover as failures, and deleted evidence clears public status messages',async t=>{
-  const {Store}=await import('../src/store.js');const {QueryRuns}=await import('../src/query-runs.js');
-  const dir=mkdtempSync(join(tmpdir(),'mote-query-progress-')),store=new Store(dir),runs=new QueryRuns(store);
-  t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
-  let observe!:Parameters<Parameters<QueryRuns['start']>[2]>[0],finish!:(v:{conversationId:string;turnId:string})=>void;
-  const id=randomUUID();runs.start(id,{question:'fixture'},async progress=>{observe=progress;return new Promise(resolve=>{finish=resolve;});});
-  await new Promise(r=>setImmediate(r));
-  observe({stage:'model',message:'Generated private status'});assert.ok(JSON.stringify(runs.get(id)).includes('Generated private status'));
-  // The same deletion invalidation used for capture retention must clear all derived prose.
-  store.invalidateConversationAnswers();assert.ok(!JSON.stringify(runs.get(id)).includes('Generated private status'));
-  store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'delete',?)").run(randomUUID(),new Date().toISOString());
-  observe({stage:'model',message:'Must not restore removed status'});
-  finish({conversationId:randomUUID(),turnId:randomUUID()});await runs.close();
-  assert.ok(!JSON.stringify(runs.get(id)).includes('Generated private status'));assert.ok(!JSON.stringify(runs.get(id)).includes('Must not restore'));
-  store.db.prepare("UPDATE query_runs SET json=json_set(json,'$.status','running') WHERE id=?").run(id);
-  store.db.prepare("UPDATE execution_steps SET state='running',lease_until=0,fence=NULL,error=NULL WHERE id=?").run(`query:${id}`);
-  const restarted=new QueryRuns(store);assert.equal(restarted.get(id).status,'failed');assert.equal(restarted.get(id).error?.code,'interrupted');
-});
-
 test('execution entrypoints attribute insight, memory and isolated file analysis without inspecting prompt text',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-attribution-entrypoints-'));let failFile=false,closedFiles=0;
   const emit=(input:Parameters<QueryAgent['query']>[0])=>input.onUsage?.({requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0});

@@ -49,7 +49,7 @@ try{
  await save();const catalog=await codexModels(undefined,{executable:config.codexBin,home:config.codexHome});assert.ok(catalog.items.find(m=>m.id===config.model)?.reasoningEfforts?.includes('max'));
  report.runtimeHashes=Object.fromEntries(await Promise.all(['packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','apps/server/src/evidence-reader.ts','apps/server/src/memory-policy.ts','apps/server/src/memory.ts','apps/server/src/memory-review.ts','scripts/diagnose-memory-deadline-live.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
  for(const [path,hash] of Object.entries(prior.runnerHashes.at(-1).agentFiles??{}))assert.equal(report.runtimeHashes[path],hash,'Keep the latest failed replay code unchanged');
- node=await buildApp(config);const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);await node.app.ready();
+ node=await buildApp(config);const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);await node.app.ready();
  assert.equal(node.modelSettings.select('memory').settings.agentTimeoutMs,config.agentTimeoutMs);
  for(const original of originals){
   const response:{statusCode:number;body:string}=await node.app.inject({method:'POST',url:'/api/notes',headers:{authorization:`Bearer ${token}`,'x-mote-ingress-version':'2'},payload:{id:original.id,deviceId:'private-progressive-replay',deviceName:'Private authored replay',platform:'import',capturedAt:original.at,text:original.text}});

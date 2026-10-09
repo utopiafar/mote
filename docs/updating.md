@@ -4,15 +4,15 @@
 
 ## 本轮 MVP 破坏升级
 
-本轮中央使用 `backend_epoch=3`，Desktop/Android 本机与队列格式为 3，模型 registry 为 version 2，HTTP 便携归档为完整 version 2。旧 schema、客户端/模型/文件处理配置、队列、内容包装和精简/旧便携包明确拒绝，不自动迁移或清空目录。先用旧版本导出需保留内容，停止全部写入，备份完整旧目录、凭据与密钥，再使用新空目录或新 profile；明确放弃资料时才执行 reset。中央手动 reset、新目录和客户端清理步骤见 [兼容清理实施记录](audits/compatibility-cleanup-2026-10-04.md#升级操作和风险)。旧二进制与完整旧备份须一起保留，才能跨代回滚。
+本轮中央使用 `backend_epoch=4`，Desktop/Android 本机与队列格式为 3，模型 registry 为 version 2，HTTP 便携归档为完整 version 2。旧 schema、客户端/模型/文件处理配置、队列、内容包装和精简/旧便携包明确拒绝，不自动迁移或清空目录。先用旧版本导出需保留内容，停止全部写入，备份完整旧目录、凭据与密钥，再使用新空目录或新 profile；明确放弃资料时才执行 reset。中央手动 reset、新目录和客户端清理步骤见 [本次清理实施记录](audits/mvp-baseline-cleanup-2026-10-09.md)。旧二进制与完整旧备份须一起保留，才能跨代回滚。
 
 ## Mac App
 
-保存输入，退出使用同一个 App bundle 的全部 Mote 实例，解压下载的 Mac DEV ZIP，用其中的 App 覆盖原 DEV App 后启动。设备身份、配置、凭据、草稿、队列和模型在应用包之外；同代更新不要删除资料目录；本次跨代需先备份旧目录，再选择全新命名 profile 或显式重置。默认 profile 仍使用原 userData 路径，换 App bundle 不会把旧资料变成新格式。当前使用 ad-hoc 签名时，系统可能再次要求运行、Keychain、屏幕或日历授权。
+保存输入，退出使用同一个 App bundle 的全部 Mote 实例，解压下载的 Mac DEV ZIP，用其中的 App 覆盖原 DEV App 后启动。设备身份、配置、凭据、草稿、队列和模型在应用包之外；同代更新不要删除资料目录；客户端本机格式仍为 3；本次只清理已退役的处理字段，当前格式队列和凭据保留。更早的非格式 3 目录仍须先备份再显式重置。默认 profile 仍使用原 userData 路径，换 App bundle 不会把旧资料变成新格式。当前使用 ad-hoc 签名时，系统可能再次要求运行、Keychain、屏幕或日历授权。
 
 ## Android App
 
-下载 Android DEV APK，同包覆盖安装。必须保持包名 `dev.mote.collector.dev`、签名证书一致且 versionCode 不降低；DEV 与日常包不是同一个安装身份。系统可能要求允许安装应用并确认更新。同代更新不要先卸载或清除数据。本次跨代必须先用旧版本导出需保留内容，再显式清除应用存储或选择全新独立安装；清除/卸载会丢失 Keystore，不能保证以旧目录恢复凭据、私有草稿和操作 ledger，需要重新授权。更新可能中断投屏，会话恢复仍由 Android 权限与后台规则控制。
+下载 Android DEV APK，同包覆盖安装。必须保持包名 `dev.mote.collector.dev`、签名证书一致且 versionCode 不降低；DEV 与日常包不是同一个安装身份。系统可能要求允许安装应用并确认更新。同代更新不要先卸载或清除数据。本次 Android 本机格式仍为 3，可保留当前队列和设置；遇到更早的非格式 3 安装时须先用旧版本导出，再显式清除应用存储或选择全新独立安装；清除/卸载会丢失 Keystore，不能保证以旧目录恢复凭据、私有草稿和操作 ledger，需要重新授权。更新可能中断投屏，会话恢复仍由 Android 权限与后台规则控制。
 
 ## 中央节点
 

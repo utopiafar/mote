@@ -132,12 +132,12 @@ test('background-only candidates cannot be committed as new target memories',{ti
  assert.equal(done.status,'failed');assert.ok(f.extraction.some(input=>Boolean(modelWork(input).contextMembers?.length)));assert.equal(f.memories.list().length,0);assert.equal(f.checkpoints().length,1);assert.equal(f.checkpoints()[0].evidence_id,f.backgroundId);
 });
 
-for(const legacyWait of [false,true])test(`a restart reuses the durable feedback proposal after ${legacyWait?'a legacy impossible wait and ':''}an atomic product handoff interruption`,{timeout:20000},async t=>{
+test('a restart reuses the durable feedback proposal after an atomic product handoff interruption',{timeout:20000},async t=>{
  const f=await fixture(t);f.interruptNextApply();const interrupted=await f.start();
  assert.equal(interrupted.status,'failed');assert.equal(f.feedback.length,1);assert.equal(f.checkpoints().length,1);assert.equal(interrupted.batches.filter(batch=>batch.replanRound).length,0,'partial child inserts must roll back');
  assert.deepEqual(f.counts(),{planning:1,feedback:1,extraction:2,reviews:2,maxActiveModels:1});
  const owner=f.runtime.list().find(owner=>owner.profileId==='memory.feedback');assert.ok(owner?.planningComplete);const unitId=owner.units[0].id;
- const checkpoints=f.checkpoints();if(legacyWait)f.store.db.prepare("UPDATE delegation_works SET json=json_set(json_remove(json,'$.planningComplete','$.plannedUnitIds'),'$.wait',json(?)) WHERE id=?").run(JSON.stringify({unitIds:[unitId],mode:'any'}),owner.id);await f.restart();if(legacyWait)await f.runtime.tick();const done=await f.pipeline.retry(interrupted.id);await f.settle();
+ const checkpoints=f.checkpoints();await f.restart();const done=await f.pipeline.retry(interrupted.id);await f.settle();
  assert.equal(done.status,'completed');assert.equal(f.feedback.length,1,'the saved feedback plan is reused without another planning model');assert.equal(f.counts().planning,1);
  assert.equal(f.checkpoints().length,2);assert.deepEqual(f.checkpoints().filter(row=>row.evidence_id===f.backgroundId),checkpoints);assert.equal(f.runtime.get(owner.id).units[0].id,unitId);
  assert.equal(done.batches.filter(batch=>batch.replanRound===1).length,1);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_feedback_plans WHERE job_id=?').get(done.id)!.n,1);

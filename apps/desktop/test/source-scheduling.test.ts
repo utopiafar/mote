@@ -61,7 +61,7 @@ it('keeps scanning/staging files locally with no connection, restores them, and 
   const transport=fileTransport(()=>app.status()[0].source.id,item=>{received.push(item);});
   vi.mocked(fetch).mockImplementation(async (_url,init)=>{const handled=await transport(String(_url),init);if(handled)return handled;const body=JSON.parse(await new Response(init!.body).text());return new Response(JSON.stringify({...body,id:app.status()[0].source.id}));});
   await app.flushPending(new AbortController().signal);
-  expect(app.pendingStats().pendingRecords).toBe(0); expect(received.find(body => body.document?.fileIndex)?.text).toBe(''); expect(app.status()[0].processingPending).toBe(0);
+  expect(app.pendingStats().pendingRecords).toBe(0); expect(received.find(body => body.document?.fileIndex)?.text).toBe('');
    await app.flushPending(new AbortController().signal);
   expect(received.every(body=>body.text==='')).toBe(true);
   expect(vi.mocked(fetch).mock.calls.every(([,init])=>(init?.headers as Record<string,string>)['X-Mote-Ingress-Version']==='2')).toBe(true);
@@ -105,5 +105,5 @@ it('continues local discovery during a blocked upload and commits both versions 
  vi.mocked(fetch).mockImplementation(async(url,init)=>{const handled=await transport(String(url),init);if(handled)return handled;const body=init?.body?JSON.parse(await new Response(init.body).text()):undefined;return new Response(JSON.stringify({...body,id:app.status()[0].source.id}));});
  const upload=app.flushPending(new AbortController().signal);await ready;
  try{await writeFile(file,'second generated version');void app.sync(true);await vi.waitFor(()=>expect(app.pendingStats().pendingRecords).toBe(2),{timeout:5000,interval:25});expect(app.connectionActivity().inFlight).toBe(true);}finally{release();}
- await upload;expect(bodies.map(body=>body.text)).toEqual(['','']);expect(bodies[0].document.fileIndex.contentVersion).not.toBe(bodies[1].document.fileIndex.contentVersion);expect(app.status()[0].processingPending).toBe(0);expect(app.pendingStats().pendingRecords).toBe(0);
+ await upload;expect(bodies.map(body=>body.text)).toEqual(['','']);expect(bodies[0].document.fileIndex.contentVersion).not.toBe(bodies[1].document.fileIndex.contentVersion);expect(app.pendingStats().pendingRecords).toBe(0);
 });

@@ -4,7 +4,7 @@ import {resolve,join,parse} from 'node:path';
 const paths=['mote.sqlite','mote.sqlite-wal','mote.sqlite-shm','mote.sqlite-journal','blobs','files','source-archive','imports','import-uploads','model-settings.json','file-processing.json'];
 
 export function resetMvpVault(directory,{confirm=false}={}){
-  if(!confirm)throw Error('Pass --confirm-clear to erase the MVP evidence vault for storage epoch 3.');
+  if(!confirm)throw Error('Pass --confirm-clear to erase the MVP evidence vault for storage epoch 4.');
   const root=resolve(directory);
   if(root===parse(root).root||!existsSync(root)||!lstatSync(root).isDirectory()||lstatSync(root).isSymbolicLink())throw Error('Expected an existing, non-symlink Mote data directory.');
   const pidFile=join(root,'server.pid');
@@ -21,7 +21,7 @@ export function resetMvpVault(directory,{confirm=false}={}){
   if(existsSync(connectors)&&(!lstatSync(connectors).isDirectory()||lstatSync(connectors).isSymbolicLink()))throw Error('Connector storage must be an ordinary directory.');
   const removed=[];
   for(const name of paths){const target=join(root,name);if(!existsSync(target))continue;rmSync(target,{recursive:true,force:true});removed.push(name);}
-  return {storageEpoch:3,dataDir:root,removed,preserved:['access-token','content-key','connectors (client and external credentials)','logs','media-models']};
+  return {storageEpoch:4,dataDir:root,removed,preserved:['access-token','content-key','connectors (client and external credentials)','logs','media-models']};
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===new URL(import.meta.url).pathname){

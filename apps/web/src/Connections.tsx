@@ -107,7 +107,7 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
       <div className="connection-method" hidden={method!=='device'}><h3><QrCode size={18}/>{moteText("手机、Mac 与其他采集端")}</h3>
         <p>{moteText("每份邀请仅能使用一次，10 分钟后失效。连接后得到独立客户端凭据，拥有与节点令牌相同的完整权限。")}</p>
         <label>{moteText("设备身份")}<select aria-label={moteText("邀请设备身份")} value={deviceId} disabled={!!busy} onChange={event=>setDeviceId(event.target.value)}><option value="">{moteText("首次连接的新设备")}</option>{knownDevices.map(device=><option key={device.deviceId} value={device.deviceId}>{device.deviceName} · {device.deviceId}</option>)}</select></label>
-        <small>{moteText("从旧版手填令牌迁移或重新配对，请选择原设备以保留身份。成功配对后会替换该设备之前的客户端凭据。")}</small>
+        <small>{moteText("重新配对时，请选择原设备以保留身份。成功配对后会替换该设备之前的客户端凭据。")}</small>
         <button className="button primary" disabled={!!busy||!label.trim()} onClick={createInvitation}><QrCode size={16}/>{busy==='invite'?moteText("正在生成…"):invite?moteText("重新生成二维码"):moteText("生成设备二维码")}</button>
       </div>
       <div className="connection-method" hidden={method!=='chatbot'}><h3><ShieldCheck size={18}/>{moteText("连接其他 Chatbot · MCP")}</h3>

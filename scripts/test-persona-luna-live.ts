@@ -28,7 +28,7 @@ try{
   }finally{source.close();}
  }
  node=await buildApp(config);
- const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
+ const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
  assert.equal(node.modelSettings.current().model,'gpt-5.6-luna');assert.equal(node.modelSettings.current().reasoningEffort,'max');
  for(const sourceId of ['persona-journal','persona-observations'])node.sources.register({id:sourceId,name:sourceId==='persona-journal'?'林舟工作日志（合成）':'窗口观察（合成）',kind:'custom',deviceId:'synthetic-persona',platform:'import'});
  const journalIds:string[]=[],journalOriginals:unknown[]=[],anchors:Record<string,string>={},ingestStarted=performance.now();

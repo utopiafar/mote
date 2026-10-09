@@ -1,23 +1,11 @@
-# Combined upgrade and restore fixture
+# Current-format backup and restore fixtures
 
-The focused fixture in `apps/server/test/combined-backup-recovery.test.ts` invokes the production backup script and `restoreProfile`, then opens the resulting SQLite/originals through the actual domain stores. It uses generated content only and does not call a live model.
+`apps/server/test/combined-backup-recovery.test.ts` invokes the production backup script and `restoreProfile`, then opens the resulting SQLite and originals through current domain stores. All content is generated; no live model is called.
 
-The pre-migration snapshot contains encrypted legacy-format originals, two source versions with distinct capture IDs, and a published Memory without the newer version field. The upgraded vault adds chunked originals, a two-part binary file, owner-corrected Memory history, completed and partially committed imports, a partially processed Memory job, completed query/insight receipts, and interrupted durable execution steps.
+Both the early and later snapshots use Central epoch 4 and chunked originals. The later snapshot adds a two-part binary, owner-corrected Memory history, completed and partially committed imports, partially processed Memory, a completed insight and interrupted durable execution.
 
-The fixture verifies:
+The fixture checks original bytes/SHA-256 and identities, source revisions, Memory supersession, successful checkpoints and import step attempts. Restored foreign leases lose their active fence; eligible work resumes while completed outputs remain intact. Unfinished imports require fresh analysis/preview and preserve idempotent already-committed records. Restoring the earlier snapshot uses another empty destination.
 
-- Original SHA-256, bytes, capture IDs, source revisions and Memory correction relationships survive backup and restore.
-- Completed import step IDs, attempts and statuses remain unchanged. Completed query/insight receipts are retained and are never replayed.
-- Foreign host leases/fences and interactive owner leases are invalid in a restored vault. Interrupted interactive work becomes `interrupted` without submitting a model request. Background recovery retains attempts and the absolute recovery deadline.
-- Restoring an unfinished import discards its old executable preview, retires its old runnable phases, and requires a new analysis/confirmation. The already imported record keeps its ID and is deduplicated; only the remaining record is newly admitted. An obsolete phase projection cannot overwrite the new generation.
-- The completed first Memory batch does not run again; only offsets 256 and 512 of the generated 600-character evidence resume, including a simulated interrupted second batch.
-- Restoring the pre-migration snapshot into another empty vault restores the original legacy file format, earlier Memory value and source history. It contains no execution tables and leaves the upgraded vault untouched.
+`mvp-baseline.test.ts` separately drives the real HTTP query entry point, stops the host, backs up, restores and reopens the app. The durable query resumes once; another restart retains the same completed conversation turn. It also verifies that an epoch 3 database is rejected without modifying its bytes. No migration is performed, and older backups must be handled with their matching binary.
 
-Two defects discovered by this combined fixture were fixed:
-
-1. Backup previously removed the manifest hash even from a completed import. Restore then synthesized a different completed commit step. Completed hashes are now retained as metadata; unfinished preview hashes are still removed.
-2. Old runnable import phases survived workspace restoration and could block the new preview with “already processing” or later project stale state into it. Restoration now marks those phases stale, and phase projection checks the current generation.
-
-Backup also clears only the copied execution leases/fences and copied interactive owner rows. It preserves step state, retry attempts, recovery windows, generations, dependencies, results and operation membership; there is no second authoritative recovery manifest.
-
-Validation: `node --import tsx --test apps/server/test/combined-backup-recovery.test.ts apps/server/test/import-backup.test.ts apps/server/test/operation-runs.test.ts` passed 14/14; server typecheck passed. Log: `/tmp/mote-combined-backup-tests.log`. No full suite, actual deployment switch, Docker restore or release rollback was run in this batch. Existing deployment-switch fixtures remain part of the final integration gate.
+Physical-device, live-provider and deployment-volume checks require separate reports.

@@ -334,7 +334,7 @@ export async function verifiedBackup(backup) {
   if ((await stat(manifestPath)).size > 16 * 1024 * 1024) throw Error('Backup manifest exceeds 16 MiB');
   const manifest = await readJson(manifestPath);
   if (manifest.version !== 1 || !manifest.checksums || !Object.hasOwn(manifest.checksums, 'mote.sqlite')) throw Error('Invalid backup manifest');
-  if (manifest.storageEpoch !== 3) throw Error('Unsupported backup storage epoch; restore older backups with their matching older binary');
+  if (manifest.storageEpoch !== 4) throw Error('Unsupported backup storage epoch; restore older backups with their matching older binary');
   for (const [name, hash] of Object.entries(manifest.checksums)) {
     const part=/^files\/objects\/[a-f0-9]{64}\/(0|[1-9][0-9]{0,2})(?:\.plain|\.aes)$/.exec(name);
     const sourceBatch=/^source-archive\/[a-f0-9]{64}\/[a-f0-9]{64}(?:\.plain|\.aes)$/.test(name);
@@ -346,7 +346,7 @@ export async function verifiedBackup(backup) {
   const db = new DatabaseSync(join(directory, 'mote.sqlite'), { readOnly: true });
   try {
     const settings=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'").get();
-    if (!settings || db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value !== '3') throw Error('Unsupported backup database epoch; existing destination data was not changed');
+    if (!settings || db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value !== '4') throw Error('Unsupported backup database epoch; existing destination data was not changed');
   } finally { db.close(); }
   return { directory, names: Object.keys(manifest.checksums), checksums: manifest.checksums };
 }

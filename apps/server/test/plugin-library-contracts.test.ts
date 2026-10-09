@@ -24,7 +24,7 @@ test('a deployed namespaced pack synchronizes, executes its flow, exposes one lo
  const request=async(url:string,method:'GET'|'POST'|'PUT'='GET',payload?:unknown)=>{const result=await node.app.inject({url,method,headers,payload});assert.equal(result.statusCode,200,result.body);return result.json();};
  assert.equal((await node.app.inject('/api/library/catalog')).statusCode,401);
  await request('/api/sources','POST',{id:'fixture-journal',name:'Generated journal',kind:'fixture.journal',deviceId:'fixture-device',platform:'import'});
- await request('/api/source-pipelines/fixture-journal','PUT',{consumers:['fixture.journal-statistics'],memory:false});
+ await request('/api/source-pipelines/fixture-journal','PUT',{consumers:['fixture.journal-statistics']});
  await request('/api/sources/fixture-journal/items/batch','POST',{items:[1,2].map(index=>({externalId:'entry-'+index,revision:'1',observedAt:at,title:'Generated entry',kind:'message',layer:'original',text:'Generated entry '+index}))});
  assert.equal((await request('/api/library/catalog')).items.length,0,'a receipt is not a published material');
  await node.sourcePipelines.tick();await node.featureServices.workflows.tick();await node.featureServices.workflows.tick();
@@ -37,8 +37,8 @@ test('a deployed namespaced pack synchronizes, executes its flow, exposes one lo
  const processor=node.featureServices.workflows.registry.list()[0];assert.ok(processor);
  assert.equal(node.featureServices.workflows.consumers.list().length,1);
  const before=node.store.db.prepare('SELECT generation FROM source_pipeline_work').all();
- await request('/api/source-pipelines/fixture-journal','PUT',{consumers:[],memory:false});
- await request('/api/source-pipelines/fixture-journal','PUT',{consumers:['fixture.journal-statistics'],memory:false});
+ await request('/api/source-pipelines/fixture-journal','PUT',{consumers:[]});
+ await request('/api/source-pipelines/fixture-journal','PUT',{consumers:['fixture.journal-statistics']});
  assert.deepEqual(node.store.db.prepare('SELECT generation FROM source_pipeline_work').all(),before,'consumer configuration alone cannot silently rebuild historical source groups');
 });
 

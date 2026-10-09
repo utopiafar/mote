@@ -5,7 +5,7 @@ import { dirname } from 'node:path';
 import { encodeLocalContent, decodeLocalContent } from './local-content';
 
 export type StatePatch = { section: string; key: string; value?: unknown };
-const maps = new Set(['known', 'delivered', 'predecessors', 'quarantined', 'localProcessing', 'snapshotRecoveries']);
+const maps = new Set(['known', 'delivered', 'predecessors', 'quarantined', 'snapshotRecoveries']);
 const queues = new Set(['pendingRealtime', 'pendingHistory']);
 const queueKey = (value: any) => JSON.stringify([value.externalId, value.revision]);
 export function sourceStatePatch(previous: Record<string, unknown>, next: Record<string, unknown>): StatePatch[] {
@@ -43,7 +43,7 @@ export function sourceState(path: string, patches?: StatePatch[], maximum?: numb
     db.exec('PRAGMA busy_timeout=5000;');
     if(exists&&Number(db.prepare('PRAGMA user_version').get()!.user_version)!==DESKTOP_STORAGE_VERSION)throw Error(RESET_REQUIRED);
     db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS entries(section TEXT NOT NULL,key TEXT NOT NULL,value BLOB NOT NULL,PRIMARY KEY(section,key)); PRAGMA user_version=3;');
-    if(db.prepare("SELECT 1 FROM entries WHERE section='state' AND key IN ('pendingRealtime','pendingHistory') OR section='codingWireFields' LIMIT 1").get())throw Error(RESET_REQUIRED);
+    if(db.prepare("SELECT 1 FROM entries WHERE section='state' AND key IN ('pendingRealtime','pendingHistory','localProcessing') OR section IN ('codingWireFields','localProcessing') LIMIT 1").get())throw Error(RESET_REQUIRED);
     const checkpoint=db.prepare("SELECT value FROM entries WHERE section='state' AND key='checkpoint'").get();
     if(checkpoint&&Object.keys(JSON.parse(decodeLocalContent(Buffer.from(checkpoint.value as Uint8Array)).toString()).catalog??{}).length)throw Error(RESET_REQUIRED);
     if (patches) { apply(patches); return; }

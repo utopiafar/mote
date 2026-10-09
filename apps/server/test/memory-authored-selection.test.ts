@@ -40,7 +40,7 @@ test('current built-in authored Material is admitted once, without a second raw 
   assert.equal(f.reader.materialPlanAllowed(material.id),true);
   assert.equal(f.reader.materialAllowedForMemory(material.ref,undefined,['material']),true);
   f.store.db.prepare("UPDATE material_organizer_groups SET version='2' WHERE material_id=?").run(material.id);
-  assert.equal(f.reader.materialAllowedForMemory(material.ref,undefined,['material']),true,'earlier authored projection keeps the same host-owned original route');
+  assert.equal(f.reader.materialAllowedForMemory(material.ref,undefined,['material']),false,'retired authored organizer versions cannot authorize current Memory input');
   f.store.db.prepare("UPDATE material_organizer_groups SET version='unverified' WHERE material_id=?").run(material.id);
   assert.equal(f.reader.materialAllowedForMemory(material.ref,undefined,['material']),false,'unknown organizers cannot acquire authored original authorization');
   f.store.db.prepare("UPDATE material_organizer_groups SET version='3' WHERE material_id=?").run(material.id);

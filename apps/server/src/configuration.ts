@@ -30,7 +30,7 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
   const secret = { visibility: 'secret-status' as const };
   const nativeStorage = runtime === 'native' ? dataDir : null;
   const storage: ServerConfiguration['storage'] = {
-    dataDir, sqlitePath: join(dataDir, 'mote.sqlite'), blobsDir: join(dataDir, 'blobs'), assetDir: join(dataDir,'files','objects'), logDir,
+    dataDir, sqlitePath: join(dataDir, 'mote.sqlite'), assetDir: join(dataDir,'files','objects'), logDir,
     kind: context?.storageKind ?? 'unknown', source: context?.storageSource ?? nativeStorage,
     mountPath: context?.storageMount ?? null,
     description: runtime === 'docker'

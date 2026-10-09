@@ -7,9 +7,9 @@ import {StoreError,sha256} from './store.js';
 export function createDefaultFilePolicy(_registry:ProcessorRegistry,endpoint:string):FilePolicy{
   const profile=(processorId:string,serviceId?:string):ProcessingProfile=>({id:processorId==='archive'?'archive':`profile.${processorId}`,name:processorId,processorId,parameters:processorId==='audio.local-dialogue'?{speakerCount:null,semanticTurns:false}:{},diarizationProcessor:'audio.diarize',...(serviceId?{serviceId}:{}),summarize:false});
   return {version:1,
-    services:[{id:'asr-api',name:moteText("录音转写接口"),kind:'asr',execution:'local',endpoint,model:''},{id:'asr-local',name:moteText("本地录音服务"),kind:'asr',execution:'local',endpoint,model:''}],
-    profiles:[profile('audio.local-dialogue','asr-local'),profile('audio.http','asr-api'),profile('text.utf8'),profile('document.generic'),profile('archive')],
-    rules:[{type:'audio/*',profileId:'profile.audio.local-dialogue'},{type:'image/*',profileId:'archive'},{type:'text/*',profileId:'profile.text.utf8'},...DOCUMENT_MIME_TYPES.map(type=>({type,profileId:'profile.document.generic'})),{type:'*/*',profileId:'archive'}]};
+    services:[{id:'central-image-ocr',name:'Central OCR',kind:'image',execution:isLoopback(process.env.MOTE_MEDIA_OCR_ENDPOINT??'http://127.0.0.1:9010/ocr')?'local':'remote',endpoint:process.env.MOTE_MEDIA_OCR_ENDPOINT??'http://127.0.0.1:9010/ocr',model:''},{id:'asr-api',name:moteText("录音转写接口"),kind:'asr',execution:'local',endpoint,model:''},{id:'asr-local',name:moteText("本地录音服务"),kind:'asr',execution:'local',endpoint,model:''}],
+    profiles:[{...profile('image.http','central-image-ocr'),id:'central-image',name:'Central images'},profile('audio.local-dialogue','asr-local'),profile('audio.http','asr-api'),profile('text.utf8'),profile('document.generic'),profile('archive')],
+    rules:[{type:'audio/*',profileId:'profile.audio.local-dialogue'},{type:'image/*',profileId:'central-image'},{type:'text/*',profileId:'profile.text.utf8'},...DOCUMENT_MIME_TYPES.map(type=>({type,profileId:'profile.document.generic'})),{type:'*/*',profileId:'archive'}]};
 }
 export function publicFilePolicy(policy:FilePolicy){return {...policy,services:policy.services.map(({apiKey,...s})=>({...s,apiKeyConfigured:!!apiKey}))};}
 export function parseFilePolicy(raw:unknown,previous:FilePolicy,registry:ProcessorRegistry):FilePolicy{

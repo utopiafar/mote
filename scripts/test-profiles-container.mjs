@@ -50,7 +50,7 @@ try {
     assert.equal(fields.get('effectiveEnvFile').source, 'environment');
     assert.equal(configuration.storage.kind, 'docker-volume'); assert.equal(configuration.storage.source, p.meta.volume);
     assert.equal(configuration.storage.mountPath, '/data'); assert.equal(configuration.storage.dataDir, '/data');
-    assert.equal(configuration.storage.sqlitePath, '/data/mote.sqlite'); assert.equal(configuration.storage.blobsDir, '/data/blobs');
+    assert.equal(configuration.storage.sqlitePath, '/data/mote.sqlite'); assert.equal(configuration.storage.assetDir, '/data/files/objects');
     assert.equal(configuration.storage.logDir, '/data/logs'); assert.equal(fields.get('logDirectory').value, '/data/logs');
     assert.equal(fields.get('maxStorageBytes').value, Number(p.env.MOTE_MAX_STORAGE_MB) * 1024 * 1024);
     assert.equal(fields.get('maxStorageBytes').source, 'environment');

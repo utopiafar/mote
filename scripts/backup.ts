@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 
 const args = process.argv.slice(2);
 const usage = 'Stop the central node first. Usage: npm run backup -- --data ./data --out /absolute/new-backup-directory';
-if (args.includes('--help')) { console.info(usage + '\nBacks up storage epoch 3 SQLite, referenced chunked originals, source archive batches, processing layers and checksums. Current .plain and .aes content keeps its stored format. Older vaults require their matching older binary or a stopped full-directory backup. Import scripts/workspaces and tokens/keys are excluded; unfinished imports must be analyzed again after restore. Preserve MOTE_DATA_KEY or the vault content-key file separately when encryption has been used.'); process.exit(0); }
+if (args.includes('--help')) { console.info(usage + '\nBacks up storage epoch 4 SQLite, referenced chunked originals, source archive batches, processing layers and checksums. Current .plain and .aes content keeps its stored format. Older vaults require their matching older binary or a stopped full-directory backup. Import scripts/workspaces and tokens/keys are excluded; unfinished imports must be analyzed again after restore. Preserve MOTE_DATA_KEY or the vault content-key file separately when encryption has been used.'); process.exit(0); }
 function argument(name: string, fallback?: string) {
   const index = args.indexOf(name);
   if (index < 0 && fallback !== undefined) return fallback;
@@ -71,12 +71,12 @@ try {
   const db = new DatabaseSync(join(source, 'mote.sqlite'), { readOnly: true });
   try {
     const hasSettings=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'").get();
-    if(!hasSettings||db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value!=='3')throw new Error('Unsupported Mote vault epoch. Back up older vaults with their matching older binary or a stopped full-directory copy. Existing source data was preserved.');
+    if(!hasSettings||db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value!=='4')throw new Error('Unsupported Mote vault epoch. Back up older vaults with their matching older binary or a stopped full-directory copy. Existing source data was preserved.');
     const assets=db.prepare('SELECT hash,parts,format FROM assets WHERE hash IN (SELECT hash FROM asset_references)').all() as {hash:string;parts:number;format:string}[];
     const paths:string[]=[];
     for(const asset of assets){
       if(!/^[a-f0-9]{64}$/.test(asset.hash)||!Number.isSafeInteger(asset.parts)||asset.parts<0||asset.parts>128)throw new Error('Invalid asset metadata');
-      if(asset.format!=='chunks')throw new Error('Invalid asset format; epoch 3 requires chunked originals');
+      if(asset.format!=='chunks')throw new Error('Invalid asset format; epoch 4 requires chunked originals');
       for(let part=0;part<asset.parts;part++)paths.push(await selectedContentPath(`files/objects/${asset.hash}/${part}`));
     }
     // Restored databases are data, never authority to read arbitrary vault files.
@@ -127,6 +127,6 @@ try {
     }
   } finally { db.close(); }
   checksums['mote.sqlite'] = await sum(join(out, 'mote.sqlite'));
-  await writeFile(join(out, 'backup-manifest.json'), JSON.stringify({ version: 1, storageEpoch:3, createdAt: new Date().toISOString(), checksums, note: 'Storage epoch 3 referenced chunked originals and source archive batches are included in their selected stored formats; checksums retain explicit .plain and .aes filenames. Import workspaces/scripts, tokens and encryption keys are excluded. Unfinished imports require a fresh analysis and preview after restore. Preserve MOTE_DATA_KEY or the vault content-key file separately when encryption has been used, including after disabling new encrypted writes.' }, null, 2), { mode: 0o600, flag: 'wx' });
+  await writeFile(join(out, 'backup-manifest.json'), JSON.stringify({ version: 1, storageEpoch:4, createdAt: new Date().toISOString(), checksums, note: 'Storage epoch 4 referenced chunked originals and source archive batches are included in their selected stored formats; checksums retain explicit .plain and .aes filenames. Import workspaces/scripts, tokens and encryption keys are excluded. Unfinished imports require a fresh analysis and preview after restore. Preserve MOTE_DATA_KEY or the vault content-key file separately when encryption has been used, including after disabling new encrypted writes.' }, null, 2), { mode: 0o600, flag: 'wx' });
   console.info(`Consistent vault backup written to ${out}. Restore into an empty data directory; separately restore the original MOTE_DATA_KEY or content-key when encryption has been used.`);
 } catch (error) { await rm(out, { recursive: true, force: true }); throw error; }

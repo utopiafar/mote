@@ -78,11 +78,6 @@ class Settings(private val context: Context) {
         if (prefs.contains("configurationFormat")) {
             check(prefs.getInt("configurationFormat", 0) == LocalDataFormat.VERSION && configurationKeys.all(prefs::contains)) { MoteI18n.text(LocalDataFormat.RESET_MESSAGE) }
         }
-        // Removing a retired control does not reset active consent, connection or privacy rules.
-        if (retiredModelKeys.any(prefs::contains)) {
-            val cleanup = prefs.edit(); retiredModelKeys.forEach(cleanup::remove)
-            if (!cleanup.commit()) throw SettingsWriteFailure()
-        }
         // SharedPreferences already keeps values in memory. Compare only configuration keys,
         // so status/counter writes never rebuild a snapshot or decrypt credentials.
         val values = prefs.all.filterKeys { it in configurationKeys }
@@ -224,7 +219,6 @@ class Settings(private val context: Context) {
         private var cachedConfig: CollectorConfig? = null
         private var cachedCiphertext: String? = null
         private var cachedToken = ""
-        private val retiredModelKeys = setOf("localReview", "nsfwEnabled", "nsfwSource", "nsfwThreads", "qwenCustomUrl", "qwenMaxSide", "qwenMaxTokens", "qwenPolicy", "qwenTimeout")
         private val configurationKeys = setOf("configurationFormat", "dataOrigin", "authSignedOut", "authExpiresAt", "authProcess", "uiPageMode", "uiPageRules", "packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uploadedRetentionDays", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "jsonlWindowMinutes", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "ocrAppModes", "ocrMode", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
 
     }

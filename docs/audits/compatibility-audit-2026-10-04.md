@@ -152,7 +152,7 @@
 
 ### R01 握手缺协议元数据默认接受 v1
 
-位置：[protocol.ts:19](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/protocol.ts:19) · [README.md:13](/Users/utopiafar/.codex/worktrees/ee23/mote/protocol/README.md:13)。
+位置：[protocol.ts:19](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/protocol.ts#L19) · [README.md:13](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/protocol/README.md#L13)。
 
 兼容对象：尚未发 node.protocol 的中央；旧严格客户端不能接受额外字段。
 
@@ -168,14 +168,14 @@
 
 判断：需要先迁移或更新调用方。
 
-关联测试：[protocol.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/test/protocol.test.mjs) · [connection.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/connection.test.ts) · [ProtocolCompatibilityTest.kt](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/ProtocolCompatibilityTest.kt)。
+关联测试：[protocol.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/test/protocol.test.mjs) · [connection.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/connection.test.ts) · [ProtocolCompatibilityTest.kt](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/ProtocolCompatibilityTest.kt)。
 
 
 <a id="r02"></a>
 
 ### R02 旧任务状态映射与 execution 双表示
 
-位置：[execution.ts:84](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/execution.ts:84) · [execution.ts:133](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/execution.ts:133) · [migrate-execution-state.mjs:3](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/migrate-execution-state.mjs:3)。
+位置：[execution.ts:84](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/execution.ts#L84) · [execution.ts:133](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/execution.ts#L133) · [migrate-execution-state.mjs:3](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/migrate-execution-state.mjs#L3)。
 
 兼容对象：pending/completed/waiting_for_model/state 等领域状态，缺 execution。
 
@@ -191,14 +191,14 @@
 
 判断：当前链路仍依赖，必须重构后删除。
 
-关联测试：[execution.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/test/execution.test.mjs) · [execution-protocol.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/execution-protocol.test.ts) · [test-execution-compat.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/test-execution-compat.mjs)。
+关联测试：[execution.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/test/execution.test.mjs) · [execution-protocol.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/execution-protocol.test.ts) · [test-execution-compat.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/test-execution-compat.mjs)。
 
 
 <a id="r03"></a>
 
 ### R03 统一 v 标签和无 component 发布清单
 
-位置：[release.ts:49](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/release.ts:49) · [release.ts:71](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/release.ts:71) · [release.ts:130](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/release.ts:130) · [update-release.mjs:8](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/update-release.mjs:8) · [update-release.mjs:23](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/update-release.mjs:23)。
+位置：[release.ts:49](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/release.ts#L49) · [release.ts:71](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/release.ts#L71) · [release.ts:130](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/release.ts#L130) · [update-release.mjs:8](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/update-release.mjs#L8) · [update-release.mjs:23](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/update-release.mjs#L23)。
 
 兼容对象：vX.Y.Z 全产品标签；清单无 component；根 package.json 版本；Docker 无 OCI version label。
 
@@ -214,14 +214,14 @@
 
 判断：需要先迁移或更新调用方。
 
-关联测试：[release.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/test/release.test.mjs) · [update-tests.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/update-tests.mjs) · [update-deployment-tests.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/update-deployment-tests.mjs)。
+关联测试：[release.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/test/release.test.mjs) · [update-tests.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/update-tests.mjs) · [update-deployment-tests.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/update-deployment-tests.mjs)。
 
 
 <a id="r04"></a>
 
 ### R04 旧根目录 env 与 legacy profile 直接启动
 
-位置：[environment.ts:10](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/environment.ts:10) · [client.ts:8](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/client.ts:8) · [profile-lib.mjs:15](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/profile-lib.mjs:15) · [Diagnostics.tsx:52](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/Diagnostics.tsx:52)。
+位置：[environment.ts:10](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/environment.ts#L10) · [client.ts:8](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/client.ts#L8) · [profile-lib.mjs:15](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/profile-lib.mjs#L15) · [Diagnostics.tsx:52](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/Diagnostics.tsx#L52)。
 
 兼容对象：无 MOTE_ENV_FILE/MOTE_PROFILE 的根 .env 与默认 data。
 
@@ -237,14 +237,14 @@
 
 判断：仍是受支持入口，删除会改变产品用法。
 
-关联测试：[environment.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/test/environment.test.mjs) · [client.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/client.test.ts)。
+关联测试：[environment.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/test/environment.test.mjs) · [client.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/client.test.ts)。
 
 
 <a id="r05"></a>
 
 ### R05 Agent timeoutMs 旧 SDK 参数
 
-位置：[types.ts:92](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/src/types.ts:92) · [model-runtime.ts:37](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/src/model-runtime.ts:37) · [index.ts:251](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/src/index.ts:251) · [index.ts:324](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/src/index.ts:324) · [codex-session.ts:86](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/src/codex-session.ts:86) · [codex-import.ts:12](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/src/codex-import.ts:12) · [codex-agent.ts:47](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/src/codex-agent.ts:47)。
+位置：[types.ts:92](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/src/types.ts#L92) · [model-runtime.ts:37](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/src/model-runtime.ts#L37) · [index.ts:251](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/src/index.ts#L251) · [index.ts:324](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/src/index.ts#L324) · [codex-session.ts:86](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/src/codex-session.ts#L86) · [codex-import.ts:12](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/src/codex-import.ts#L12) · [codex-agent.ts:47](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/src/codex-agent.ts#L47)。
 
 兼容对象：一个 timeoutMs 同时承担模型请求和完整 agent deadline。
 
@@ -260,14 +260,14 @@
 
 判断：需要先迁移或更新调用方。
 
-关联测试：[timeout.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/test/timeout.test.mjs) · [model-runtime.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/test/model-runtime.test.mjs)。
+关联测试：[timeout.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/test/timeout.test.mjs) · [model-runtime.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/test/model-runtime.test.mjs)。
 
 
 <a id="r06"></a>
 
 ### R06 DeepSeek 旧官方根地址重写
 
-位置：[model-providers.ts:19](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/model-providers.ts:19) · [model-runtime.ts:75](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/src/model-runtime.ts:75)。
+位置：[model-providers.ts:19](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/model-providers.ts#L19) · [model-runtime.ts:75](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/src/model-runtime.ts#L75)。
 
 兼容对象：https://api.deepseek.com 与 /v1 旧根。
 
@@ -283,14 +283,14 @@
 
 判断：需要先迁移或更新调用方。
 
-关联测试：[model-runtime.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/test/model-runtime.test.mjs) · [model-settings.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/model-settings.test.ts)。
+关联测试：[model-runtime.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/test/model-runtime.test.mjs) · [model-settings.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/model-settings.test.ts)。
 
 
 <a id="r07"></a>
 
 ### R07 Codex 旧缺速度值补 Standard 与 off 字段映射
 
-位置：[model-settings-form.ts:31](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/model-settings-form.ts:31) · [model-reasoning.ts:6](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/model-reasoning.ts:6) · [model-providers.ts:44](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/model-providers.ts:44)。
+位置：[model-settings-form.ts:31](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/model-settings-form.ts#L31) · [model-reasoning.ts:6](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/model-reasoning.ts#L6) · [model-providers.ts:44](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/model-providers.ts#L44)。
 
 兼容对象：旧 Codex profile 无 serviceTier；Mote 存 off 而外部协议叫 none。
 
@@ -306,14 +306,14 @@
 
 判断：缺值 default 可迁移后删；off/none 仍是当前契约。
 
-关联测试：[model-settings-form.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/test/model-settings-form.test.ts) · [model-reasoning.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/test/model-reasoning.test.ts) · [codex.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/test/codex.test.mjs)。
+关联测试：[model-settings-form.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/test/model-settings-form.test.ts) · [model-reasoning.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/test/model-reasoning.test.ts) · [codex.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/test/codex.test.mjs)。
 
 
 <a id="r08"></a>
 
 ### R08 网页旧会话 url 校验和缺 viewScope 补身份
 
-位置：[session.ts:85](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/session.ts:85) · [session.ts:112](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/session.ts:112)。
+位置：[session.ts:85](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/session.ts#L85) · [session.ts:112](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/session.ts#L112)。
 
 兼容对象：mote.connection={url,token,...} 或没有 viewScope。
 
@@ -329,14 +329,14 @@
 
 判断：需要先迁移或更新调用方。
 
-关联测试：[session.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/test/session.test.ts)。
+关联测试：[session.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/test/session.test.ts)。
 
 
 <a id="r09"></a>
 
 ### R09 旧资料页导航转 archive collection 与路由别名
 
-位置：[workspace-route.ts:2](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/workspace-route.ts:2) · [navigation.ts:8](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/navigation.ts:8) · [agent-view.tsx:8](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/features/agent-view.tsx:8) · [main.tsx:262](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/main.tsx:262)。
+位置：[workspace-route.ts:2](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/workspace-route.ts#L2) · [navigation.ts:8](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/navigation.ts#L8) · [agent-view.tsx:8](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/features/agent-view.tsx#L8) · [main.tsx:262](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/main.tsx#L262)。
 
 兼容对象：timeline/materials/files/memories 页ID及 system/agent 路由。
 
@@ -352,14 +352,14 @@
 
 判断：兼容和现行路由共用，先更新调用方。
 
-关联测试：[workspace-route.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/test/workspace-route.test.ts) · [feature-host.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/test/feature-host.test.ts)。
+关联测试：[workspace-route.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/test/workspace-route.test.ts) · [feature-host.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/test/feature-host.test.ts)。
 
 
 <a id="r10"></a>
 
 ### R10 旧网页随手记缺 client 身份与当前 prepared 幂等重试共用
 
-位置：[notes-state.ts:47](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/notes-state.ts:47) · [index.ts:105](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/index.ts:105) · [index.ts:105](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/index.ts:105)。
+位置：[notes-state.ts:47](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/notes-state.ts#L47) · [index.ts:105](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/index.ts#L105) · [index.ts:105](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/index.ts#L105)。
 
 兼容对象：旧网页 prepared note 无 client:web，应用归属 dev.mote.notes。
 
@@ -375,14 +375,14 @@
 
 判断：可退役的是旧 web 身份形状；prepared 原样复用必须保留。
 
-关联测试：[notes-state.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/test/notes-state.test.ts)。
+关联测试：[notes-state.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/test/notes-state.test.ts)。
 
 
 <a id="r11"></a>
 
 ### R11 UUID裸证据引用和注入reader不透明旧ID
 
-位置：[evidence-ref.ts:5](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/evidence-ref.ts:5) · [evidence-ref.ts:11](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/evidence-ref.ts:11) · [bridge.ts:333](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/src/bridge.ts:333) · [evidence-route.ts:6](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/evidence-route.ts:6) · [evidence-reader.ts:198](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-reader.ts:198)。
+位置：[evidence-ref.ts:5](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/evidence-ref.ts#L5) · [evidence-ref.ts:11](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/evidence-ref.ts#L11) · [bridge.ts:333](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/src/bridge.ts#L333) · [evidence-route.ts:6](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/evidence-route.ts#L6) · [evidence-reader.ts:198](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-reader.ts#L198)。
 
 兼容对象：裸UUID、第三方reader非UUID opaque ID、bare artifact logical id。
 
@@ -398,14 +398,14 @@
 
 判断：当前API仍使用裸ID，必须整体改契约。
 
-关联测试：[evidence-ref.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/test/evidence-ref.test.mjs) · [citations.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/test/citations.test.mjs) · [scope.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/test/scope.test.mjs)。
+关联测试：[evidence-ref.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/test/evidence-ref.test.mjs) · [citations.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/test/citations.test.mjs) · [scope.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/test/scope.test.mjs)。
 
 
 <a id="r12"></a>
 
 ### R12 注入 ContextReader 同时接受数组和分页对象
 
-位置：[types.ts:28](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/src/types.ts:28) · [types.ts:57](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/src/types.ts:57) · [bridge.ts:658](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/src/bridge.ts:658)。
+位置：[types.ts:28](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/src/types.ts#L28) · [types.ts:57](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/src/types.ts#L57) · [bridge.ts:658](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/src/bridge.ts#L658)。
 
 兼容对象：timeline/sourceItems 返回 ContextRecord[] 而非 ContextPage。
 
@@ -421,14 +421,14 @@
 
 判断：需要先迁移或更新调用方。
 
-关联测试：[agent.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/test/agent.test.mjs) · [layers.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/test/layers.test.mjs) · [scope.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/test/scope.test.mjs)。
+关联测试：[agent.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/test/agent.test.mjs) · [layers.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/test/layers.test.mjs) · [scope.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/test/scope.test.mjs)。
 
 
 <a id="r13"></a>
 
 ### R13 旧洞察 Markdown 读取与现行文字模式共用
 
-位置：[InsightReport.tsx:39](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/InsightReport.tsx:39) · [insights.ts:33](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/insights.ts:33) · [insight-runs.ts:62](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/insight-runs.ts:62)。
+位置：[InsightReport.tsx:39](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/InsightReport.tsx#L39) · [insights.ts:33](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/insights.ts#L33) · [insight-runs.ts:62](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/insight-runs.ts#L62)。
 
 兼容对象：历史 QueryResult 仅有 answer/citations，可能缺 snapshot；artifact 可选的 Markdown 结果当前仍受支持。
 
@@ -444,7 +444,7 @@
 
 判断：历史可读性与现行结果形态共用，不能作为纯旧分支删除。
 
-关联测试：[archive-workflows.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/test/archive-workflows.test.ts)。
+关联测试：[archive-workflows.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/test/archive-workflows.test.ts)。
 
 补充：新 InsightRuns 创建时生成 snapshot；历史 snapshot 缺失只能依据原始保存信息处理，不能从 artifact 是否存在推断。
 
@@ -453,7 +453,7 @@
 
 ### R14 历史费用缺 attribution 与 usage 保守展示
 
-位置：[usage.ts:111](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/usage.ts:111) · [usage.ts:117](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/usage.ts:117) · [Usage.tsx:10](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/Usage.tsx:10)。
+位置：[usage.ts:111](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/usage.ts#L111) · [usage.ts:117](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/usage.ts#L117) · [Usage.tsx:10](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/Usage.tsx#L10)。
 
 兼容对象：用量记录没有attribution，旧回答未记usage。
 
@@ -469,14 +469,14 @@
 
 判断：unknown 仍有现行缺测语义，建议保留。
 
-关联测试：[usage.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/test/usage.test.ts) · [usage.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/usage.test.ts)。
+关联测试：[usage.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/test/usage.test.ts) · [usage.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/usage.test.ts)。
 
 
 <a id="r15"></a>
 
 ### R15 旧截图缺 OCR 字段和 charging pending 读取
 
-位置：[metadata.ts:56](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/metadata.ts:56) · [capture-presentation.ts:34](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/capture-presentation.ts:34) · [index.ts:34](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/index.ts:34)。
+位置：[metadata.ts:56](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/metadata.ts#L56) · [capture-presentation.ts:34](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/capture-presentation.ts#L34) · [index.ts:34](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/index.ts#L34)。
 
 兼容对象：旧screen仅ocrText，无ocr状态；老客户端charging pending。
 
@@ -492,14 +492,14 @@
 
 判断：历史兼容和缺测语义共用，保留unknown。
 
-关联测试：[metadata.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/test/metadata.test.mjs) · [capture-presentation.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/test/capture-presentation.test.ts)。
+关联测试：[metadata.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/test/metadata.test.mjs) · [capture-presentation.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/test/capture-presentation.test.ts)。
 
 
 <a id="r16"></a>
 
 ### R16 无 stateSeries 的单次采样回退
 
-位置：[state-series.ts:15](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/state-series.ts:15)。
+位置：[state-series.ts:15](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/state-series.ts#L15)。
 
 兼容对象：单活动/状态事件没有stateSeries。
 
@@ -515,14 +515,14 @@
 
 判断：现行合法单样本仍依赖，不能直接删。
 
-关联测试：[metadata.test.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/test/metadata.test.mjs) · [StateSeriesTest.kt](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/StateSeriesTest.kt)。
+关联测试：[metadata.test.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/test/metadata.test.mjs) · [StateSeriesTest.kt](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/StateSeriesTest.kt)。
 
 
 <a id="r17"></a>
 
 ### R17 缺 inputPlans 的 Memory 批次进度同时服务当前自动任务
 
-位置：[MemoryProgress.tsx:54](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/MemoryProgress.tsx:54) · [MemoryProgress.tsx:57](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/MemoryProgress.tsx:57) · [Memories.tsx:104](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/src/Memories.tsx:104) · [memory-pipeline.ts:257](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-pipeline.ts:257) · [memory-pipeline.ts:326](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-pipeline.ts:326)。
+位置：[MemoryProgress.tsx:54](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/MemoryProgress.tsx#L54) · [MemoryProgress.tsx:57](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/MemoryProgress.tsx#L57) · [Memories.tsx:104](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/src/Memories.tsx#L104) · [memory-pipeline.ts:257](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-pipeline.ts#L257) · [memory-pipeline.ts:326](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-pipeline.ts#L326)。
 
 兼容对象：旧memory job没有inputPlans/recipeProgress/memoryCount。
 
@@ -538,14 +538,14 @@
 
 判断：属于现行两条任务路径共用，必须先重构自动任务。
 
-关联测试：[archive-workflows.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/test/archive-workflows.test.ts) · [resource-views.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/web/test/resource-views.test.ts)。
+关联测试：[archive-workflows.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/test/archive-workflows.test.ts) · [resource-views.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/web/test/resource-views.test.ts)。
 
 
 <a id="r18"></a>
 
 ### R18 模型下载旧固定 .part 临时文件恢复
 
-位置：[index.ts:77](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/local-inference/src/index.ts:77) · [index.ts:81](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/local-inference/src/index.ts:81) · [index.ts:134](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/local-inference/src/index.ts:134)。
+位置：[index.ts:77](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/local-inference/src/index.ts#L77) · [index.ts:81](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/local-inference/src/index.ts#L81) · [index.ts:134](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/local-inference/src/index.ts#L134)。
 
 兼容对象：model.gguf.part 旧无进程归属临时文件。
 
@@ -561,14 +561,14 @@
 
 判断：可优先移除，先处理旧缓存。
 
-关联测试：[model-store.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/local-inference/test/model-store.test.ts)。
+关联测试：[model-store.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/local-inference/test/model-store.test.ts)。
 
 
 <a id="r19"></a>
 
 ### R19 MCP stdio 支持旧私有 flat connection JSON
 
-位置：[mcp-connection.mjs:6](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/mcp-connection.mjs:6) · [mcp-stdio.mjs:2](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/mcp-stdio.mjs:2)。
+位置：[mcp-connection.mjs:6](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/mcp-connection.mjs#L6) · [mcp-stdio.mjs:2](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/mcp-stdio.mjs#L2)。
 
 兼容对象：{url,token}旧私有文件 vs UI导出的mcpServers.mote HTTP JSON。
 
@@ -584,7 +584,7 @@
 
 判断：可优先移除，需转换私有连接文件。
 
-关联测试：[mcp-connection-tests.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/mcp-connection-tests.mjs) · [test-mcp-stdio.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/test-mcp-stdio.mjs)。
+关联测试：[mcp-connection-tests.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/mcp-connection-tests.mjs) · [test-mcp-stdio.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/test-mcp-stdio.mjs)。
 
 
 ## Central 兼容处理
@@ -593,7 +593,7 @@
 
 ### S01 未显式环境名的 legacy profile / 默认 data 目录
 
-位置：[config.ts:63](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/config.ts:63) · [updates.ts:18](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/updates.ts:18)。
+位置：[config.ts:63](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/config.ts#L63) · [updates.ts:18](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/updates.ts#L18)。
 
 兼容对象：无 MOTE_PROFILE 或独立 env/data 目录的部署。
 
@@ -607,14 +607,14 @@
 
 风险（中）：部署起不来或指向另一个空数据目录。
 
-关联测试：[config.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/config.test.ts) · [configuration.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/configuration.test.ts) · [updates.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/updates.test.ts)。
+关联测试：[config.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/config.test.ts) · [configuration.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/configuration.test.ts) · [updates.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/updates.test.ts)。
 
 
 <a id="s02"></a>
 
 ### S02 模型 timeoutMs / MOTE_MODEL_TIMEOUT_MS 旧别名
 
-位置：[config.ts:74](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/config.ts:74) · [model-settings.ts:62](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/model-settings.ts:62) · [model-settings.ts:72](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/model-settings.ts:72) · [model-settings.ts:81](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/model-settings.ts:81) · [model-agent.ts:48](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/model-agent.ts:48) · [model-agent.ts:59](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/model-agent.ts:59)。
+位置：[config.ts:74](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/config.ts#L74) · [model-settings.ts:62](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/model-settings.ts#L62) · [model-settings.ts:72](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/model-settings.ts#L72) · [model-settings.ts:81](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/model-settings.ts#L81) · [model-agent.ts:48](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/model-agent.ts#L48) · [model-agent.ts:59](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/model-agent.ts#L59)。
 
 兼容对象：旧单 timeout 代替 modelRequestTimeoutMs / agentTimeoutMs。
 
@@ -628,14 +628,14 @@
 
 风险（中）：配置校验失败；默认 deadline 悄然改变。
 
-关联测试：[model-settings.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/model-settings.test.ts) · [config.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/config.test.ts) · [model-settings-api.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/model-settings-api.test.ts)。
+关联测试：[model-settings.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/model-settings.test.ts) · [config.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/config.test.ts) · [model-settings-api.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/model-settings-api.test.ts)。
 
 
 <a id="s03"></a>
 
 ### S03 单模型 default 预设兼容多 profile
 
-位置：[model-settings.ts:51](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/model-settings.ts:51) · [model-settings.ts:209](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/model-settings.ts:209) · [model-settings.ts:223](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/model-settings.ts:223) · [model-settings.ts:227](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/model-settings.ts:227) · [model-settings.ts:399](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/model-settings.ts:399)。
+位置：[model-settings.ts:51](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/model-settings.ts#L51) · [model-settings.ts:209](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/model-settings.ts#L209) · [model-settings.ts:223](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/model-settings.ts#L223) · [model-settings.ts:227](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/model-settings.ts#L227) · [model-settings.ts:399](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/model-settings.ts#L399)。
 
 兼容对象：顶层 settings；没有 profiles/defaults/defaultModels。
 
@@ -649,14 +649,14 @@
 
 风险（高）：默认模型、凭据、任务 profile 失配；defaults 更改可能错误保留模型 ID。
 
-关联测试：[model-profiles.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/model-profiles.test.ts) · [model-settings.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/model-settings.test.ts)。
+关联测试：[model-profiles.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/model-profiles.test.ts) · [model-settings.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/model-settings.test.ts)。
 
 
 <a id="s04"></a>
 
 ### S04 旧 collector 凭据取得 owner 权限
 
-位置：[connections.ts:103](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/connections.ts:103) · [connections.ts:15](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/connections.ts:15) · [app.ts:160](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/app.ts:160)。
+位置：[connections.ts:103](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/connections.ts#L103) · [connections.ts:15](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/connections.ts#L15) · [app.ts:160](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/app.ts#L160)。
 
 兼容对象：历史配对凭据 scope=collector。
 
@@ -670,14 +670,14 @@
 
 风险（高）：历史设备被当成非 owner，管理/读取访问中断；权限映射必须明确。
 
-关联测试：[connections.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/connections.test.ts) · [central-workflow.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/central-workflow.test.ts)。
+关联测试：[connections.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/connections.test.ts) · [central-workflow.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/central-workflow.test.ts)。
 
 
 <a id="s05"></a>
 
 ### S05 无后缀加密文件与 vault-wide encryption 身份
 
-位置：[content-encryption.ts:28](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/content-encryption.ts:28) · [content-encryption.ts:58](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/content-encryption.ts:58) · [content-encryption.ts:76](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/content-encryption.ts:76) · [asset-worker.ts:10](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/asset-worker.ts:10)。
+位置：[content-encryption.ts:28](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/content-encryption.ts#L28) · [content-encryption.ts:58](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/content-encryption.ts#L58) · [content-encryption.ts:76](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/content-encryption.ts#L76) · [asset-worker.ts:10](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/asset-worker.ts#L10)。
 
 兼容对象：settings.encryption key hash；parts/originals 无 .plain/.aes 后缀。
 
@@ -691,14 +691,14 @@
 
 风险（高）：旧密文被读作明文、缺密钥、原件永久不可读取。
 
-关联测试：[content-storage.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/content-storage.test.ts) · [import-backup.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/import-backup.test.ts) · [assets.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/assets.test.ts)。
+关联测试：[content-storage.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/content-storage.test.ts) · [import-backup.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/import-backup.test.ts) · [assets.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/assets.test.ts)。
 
 
 <a id="s06"></a>
 
 ### S06 旧图像/归档资产目录及 MOTE1 包装
 
-位置：[assets.ts:48](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/assets.ts:48) · [assets.ts:133](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/assets.ts:133) · [assets.ts:154](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/assets.ts:154) · [evidence-store.ts:566](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:566)。
+位置：[assets.ts:48](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/assets.ts#L48) · [assets.ts:133](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/assets.ts#L133) · [assets.ts:154](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/assets.ts#L154) · [evidence-store.ts:566](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L566)。
 
 兼容对象：assets.format=image-legacy/archive-legacy；blobs/hash MOTE1、files/hash。
 
@@ -712,14 +712,14 @@
 
 风险（高）：截图、导入原件、range 读取、备份恢复失效。
 
-关联测试：[assets.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/assets.test.ts) · [archived-files.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/archived-files.test.ts) · [import-backup.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/import-backup.test.ts)。
+关联测试：[assets.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/assets.test.ts) · [archived-files.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/archived-files.test.ts) · [import-backup.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/import-backup.test.ts)。
 
 
 <a id="s07"></a>
 
 ### S07 旧 source-archive manifest 到 SQLite index 的惰性迁移
 
-位置：[source-archive.ts:42](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/source-archive.ts:42) · [source-archive.ts:77](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/source-archive.ts:77)。
+位置：[source-archive.ts:42](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/source-archive.ts#L42) · [source-archive.ts:77](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/source-archive.ts#L77)。
 
 兼容对象：source-archive/hash/manifest heads/versions/pendingGroups；缺 append_epoch/head_count。
 
@@ -733,14 +733,14 @@
 
 风险（高）：归档看似空、历史版本找不到、已排队任务 checkpoint 失效或漏处理。
 
-关联测试：[source-archive-index.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/source-archive-index.test.ts) · [source-archive-reader.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/source-archive-reader.test.ts)。
+关联测试：[source-archive-index.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/source-archive-index.test.ts) · [source-archive-reader.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/source-archive-reader.test.ts)。
 
 
 <a id="s08"></a>
 
 ### S08 文件旧 flat settings 转 policy 和旧客户端保护
 
-位置：[file-processing.ts:44](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/file-processing.ts:44) · [file-processing.ts:65](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/file-processing.ts:65) · [file-processing.ts:130](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/file-processing.ts:130) · [file-policy.ts:7](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/file-policy.ts:7) · [file-configuration.ts:20](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/file-configuration.ts:20)。
+位置：[file-processing.ts:44](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/file-processing.ts#L44) · [file-processing.ts:65](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/file-processing.ts#L65) · [file-processing.ts:130](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/file-processing.ts#L130) · [file-policy.ts:7](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/file-policy.ts#L7) · [file-configuration.ts:20](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/file-configuration.ts#L20)。
 
 兼容对象：dailyAudioMinutes、flat sourceProfiles/typeProfiles/audioProcessor 等；无 policy。
 
@@ -754,14 +754,14 @@
 
 风险（高）：当前默认处理也依赖迁移函数；删除直接影响新安装、ASR/image/text/document privacy/service mapping。
 
-关联测试：[file-policy.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/file-policy.test.ts) · [file-config-snapshot.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/file-config-snapshot.test.ts) · [file-processing.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/file-processing.test.ts)。
+关联测试：[file-policy.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/file-policy.test.ts) · [file-config-snapshot.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/file-config-snapshot.test.ts) · [file-processing.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/file-processing.test.ts)。
 
 
 <a id="s09"></a>
 
 ### S09 旧文件任务 UI revision → 新执行 fingerprint aliases
 
-位置：[file-processing.ts:93](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/file-processing.ts:93) · [file-processing.ts:267](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/file-processing.ts:267)。
+位置：[file-processing.ts:93](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/file-processing.ts#L93) · [file-processing.ts:267](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/file-processing.ts#L267)。
 
 兼容对象：files.pipeline/summary step.input.revision 是 saved.revision UUID。
 
@@ -775,14 +775,14 @@
 
 风险（中高）：有效旧 job 被判 stale/cancel；重复提取导致额外模型费用。
 
-关联测试：[file-config-snapshot.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/file-config-snapshot.test.ts)。
+关联测试：[file-config-snapshot.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/file-config-snapshot.test.ts)。
 
 
 <a id="s10"></a>
 
 ### S10 文件/截图旧 running projections 重置为 waiting
 
-位置：[file-processing.ts:51](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/file-processing.ts:51) · [perception.ts:43](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/perception.ts:43) · [memory-pipeline.ts:385](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-pipeline.ts:385)。
+位置：[file-processing.ts:51](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/file-processing.ts#L51) · [perception.ts:43](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/perception.ts#L43) · [memory-pipeline.ts:385](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-pipeline.ts#L385)。
 
 兼容对象：file_jobs/file_steps/perception_jobs running 但没有 execution_steps。
 
@@ -796,14 +796,14 @@
 
 风险（中）：旧任务永久 running；若无 proof 删除会漏处理。
 
-关联测试：[lifecycle-execution.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/lifecycle-execution.test.ts) · [perception.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/perception.test.ts) · [file-processing.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/file-processing.test.ts)。
+关联测试：[lifecycle-execution.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/lifecycle-execution.test.ts) · [perception.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/perception.test.ts) · [file-processing.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/file-processing.test.ts)。
 
 
 <a id="s11"></a>
 
 ### S11 旧 processing DAG authority/依赖迁移到共享 engine
 
-位置：[processing-runtime.ts:117](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/processing-runtime.ts:117)。
+位置：[processing-runtime.ts:117](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/processing-runtime.ts#L117)。
 
 兼容对象：processing_jobs state/attempts/lease 为 authority；processing_dependencies。
 
@@ -817,14 +817,14 @@
 
 风险（中高）：旧工作丢失、依赖未满足而执行、artifact 身份断裂。
 
-关联测试：[architecture-upgrade.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/architecture-upgrade.test.ts) · [execution-engine.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/execution-engine.test.ts)。
+关联测试：[architecture-upgrade.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/architecture-upgrade.test.ts) · [execution-engine.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/execution-engine.test.ts)。
 
 
 <a id="s12"></a>
 
 ### S12 旧 query/insight receipts 安装 canonical execution
 
-位置：[run-execution.ts:41](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/run-execution.ts:41)。
+位置：[run-execution.ts:41](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/run-execution.ts#L41)。
 
 兼容对象：query_runs/insight_runs 没 execution_steps。
 
@@ -838,14 +838,14 @@
 
 风险（中）：历史操作页不完整或重启继续显示 running；误删现行 restore 会破坏多进程 owner recovery。
 
-关联测试：[operation-runs.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/operation-runs.test.ts) · [query-runs.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/query-runs.test.ts) · [insight-runs.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/insight-runs.test.ts)。
+关联测试：[operation-runs.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/operation-runs.test.ts) · [query-runs.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/query-runs.test.ts) · [insight-runs.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/insight-runs.test.ts)。
 
 
 <a id="s13"></a>
 
 ### S13 启动时 reviewed legacy Memory 自动发布、清 proposed checkpoints
 
-位置：[memory.ts:44](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory.ts:44)。
+位置：[memory.ts:44](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory.ts#L44)。
 
 兼容对象：proposed memory + bounded-exact-review@1 receipt；旧 extraction checkpoint。
 
@@ -859,14 +859,14 @@
 
 风险（高）：合格旧记忆不再可查询；未审草稿被 checkpoint 永久跳过。
 
-关联测试：[memory-review.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-review.test.ts) · [memory-revisions.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-revisions.test.ts)。
+关联测试：[memory-review.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-review.test.ts) · [memory-revisions.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-revisions.test.ts)。
 
 
 <a id="s14"></a>
 
 ### S14 旧 Memory 删除意图身份/来源 lineage 补齐
 
-位置：[memory-deletions.ts:20](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-deletions.ts:20) · [memory-deletions.ts:25](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-deletions.ts:25) · [memory-deletions.ts:10](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-deletions.ts:10)。
+位置：[memory-deletions.ts:20](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-deletions.ts#L20) · [memory-deletions.ts:25](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-deletions.ts#L25) · [memory-deletions.ts:10](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-deletions.ts#L10)。
 
 兼容对象：deletion dependencies 无 origin/lineage；json 无 derivationSourceIds/sourceLineageComplete。
 
@@ -880,14 +880,14 @@
 
 风险（高）：用户已删除内容可能被再生成；来源权限判断缺漏。
 
-关联测试：[memory-deletion-permissions.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-deletion-permissions.test.ts) · [memory-automatic-deletion.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-automatic-deletion.test.ts)。
+关联测试：[memory-deletion-permissions.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-deletion-permissions.test.ts) · [memory-automatic-deletion.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-automatic-deletion.test.ts)。
 
 
 <a id="s15"></a>
 
 ### S15 OCR managed settings 和旧连接失败一次性恢复
 
-位置：[perception.ts:34](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/perception.ts:34) · [perception.ts:119](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/perception.ts:119)。
+位置：[perception.ts:34](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/perception.ts#L34) · [perception.ts:119](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/perception.ts#L119)。
 
 兼容对象：旧 perception 配置缺 managed endpoint；旧 failed processor_failed。
 
@@ -901,14 +901,14 @@
 
 风险（中高）：新库没有 OCR endpoint；旧错误保留 failed；不要删除现行 worker ready/model missing retries。
 
-关联测试：[perception.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/perception.test.ts)。
+关联测试：[perception.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/perception.test.ts)。
 
 
 <a id="s16"></a>
 
 ### S16 不支持的旧 vault/Coding 索引启动拒绝
 
-位置：[evidence-store.ts:54](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:54) · [app.ts:112](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/app.ts:112)。
+位置：[evidence-store.ts:54](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L54) · [app.ts:112](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/app.ts#L112)。
 
 兼容对象：无 backend_epoch=2 的 populated vault；captures 中 Coding event。
 
@@ -924,14 +924,14 @@
 
 判断：保留明确拒绝旧格式的边界；可合并实现，不能静默删除校验。
 
-关联测试：[backend-epoch.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/backend-epoch.test.ts) · [architecture-upgrade.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/architecture-upgrade.test.ts)。
+关联测试：[backend-epoch.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/backend-epoch.test.ts) · [architecture-upgrade.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/architecture-upgrade.test.ts)。
 
 
 <a id="s17"></a>
 
 ### S17 旧截图/文件任务没有自动付费处理资格
 
-位置：[file-schema.ts:38](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/file-schema.ts:38) · [evidence-store.ts:119](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:119)。
+位置：[file-schema.ts:38](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/file-schema.ts#L38) · [evidence-store.ts:119](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L119)。
 
 兼容对象：file_jobs/perception_jobs 无 auto_eligible；补列后把所有存量任务置 0，新行默认 1。
 
@@ -945,14 +945,14 @@
 
 风险（高）：直接删 ALTER 新安装SQL报错；给旧任务默认1会静默重新OCR/转写、耗费模型费用或扩大个人数据处理。
 
-关联测试：[perception.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/perception.test.ts) · [file-processing.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/file-processing.test.ts)。
+关联测试：[perception.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/perception.test.ts) · [file-processing.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/file-processing.test.ts)。
 
 
 <a id="s18"></a>
 
 ### S18 截图/文件/Memory 搜索、依赖与浏览读模型的历史回填
 
-位置：[evidence-store.ts:133](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:133) · [evidence-store.ts:142](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:142) · [evidence-store.ts:153](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:153) · [evidence-store.ts:154](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:154) · [evidence-store.ts:162](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:162) · [file-schema.ts:23](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/file-schema.ts:23) · [read-models.ts:5](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/read-models.ts:5) · [read-models.ts:33](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/read-models.ts:33) · [source-catalog.ts:14](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/source-catalog.ts:14) · [memory.ts:52](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory.ts:52) · [memory.ts:76](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory.ts:76) · [evidence-archive.ts:21](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-archive.ts:21) · [evidence-archive.ts:57](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-archive.ts:57) · [evidence-archive.ts:73](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-archive.ts:73) · [read-models.ts:36](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/read-models.ts:36)。
+位置：[evidence-store.ts:133](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L133) · [evidence-store.ts:142](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L142) · [evidence-store.ts:153](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L153) · [evidence-store.ts:154](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L154) · [evidence-store.ts:162](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L162) · [file-schema.ts:23](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/file-schema.ts#L23) · [read-models.ts:5](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/read-models.ts#L5) · [read-models.ts:33](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/read-models.ts#L33) · [source-catalog.ts:14](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/source-catalog.ts#L14) · [memory.ts:52](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory.ts#L52) · [memory.ts:76](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory.ts#L76) · [evidence-archive.ts:21](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-archive.ts#L21) · [evidence-archive.ts:57](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-archive.ts#L57) · [evidence-archive.ts:73](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-archive.ts#L73) · [read-models.ts:36](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/read-models.ts#L36)。
 
 兼容对象：历史captures无context_at/context_end；FTS text/rowid版本旧；旧Memory与file chunk祖先缺memory_dependencies；gallery/count/source目录/Memory scope索引不存在；早期captures未生成context_observations/context_dirty，context_dirty缺error/changed_at，archive FTS缺行。
 
@@ -966,14 +966,14 @@
 
 风险（高）：搜索/相册/数量/Memory筛选漏数据，历史Memory删除级联失效；不能只删整初始化函数。无逐vault完成证明不能判断历史回填可删。
 
-关联测试：[memory-admission.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-admission.test.ts)。
+关联测试：[memory-admission.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-admission.test.ts)。
 
 
 <a id="s19"></a>
 
 ### S19 Material anchors、可见序号及payload删除触发器升级
 
-位置：[materials.ts:169](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/materials.ts:169) · [materials.ts:174](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/materials.ts:174) · [materials.ts:181](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/materials.ts:181)。
+位置：[materials.ts:169](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/materials.ts#L169) · [materials.ts:174](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/materials.ts#L174) · [materials.ts:181](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/materials.ts#L181)。
 
 兼容对象：material_heads无min_visible_sequence；material_evidence无invalidated；material_blocks无anchor_id/identity_hash；material_revisions无draft_hash；旧payload删除trigger只检查material_blocks。
 
@@ -987,14 +987,14 @@
 
 风险（高）：SQL失败、原件锚点缺失/引用错误、旧序号可见性失真或共享payload误删除。不能把material_blocks整体当旧表删。
 
-关联测试：[materials.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/materials.test.ts)。
+关联测试：[materials.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/materials.test.ts)。
 
 
 <a id="s20"></a>
 
 ### S20 Source pipeline 存量工作无storage/checkpoint/generation/recipe pins
 
-位置：[source-pipelines.ts:74](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/source-pipelines.ts:74) · [source-pipelines.ts:114](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/source-pipelines.ts:114) · [source-pipelines.ts:272](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/source-pipelines.ts:272) · [source-pipelines.ts:150](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/source-pipelines.ts:150) · [source-pipelines.ts:246](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/source-pipelines.ts:246)。
+位置：[source-pipelines.ts:74](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/source-pipelines.ts#L74) · [source-pipelines.ts:114](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/source-pipelines.ts#L114) · [source-pipelines.ts:272](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/source-pipelines.ts#L272) · [source-pipelines.ts:150](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/source-pipelines.ts#L150) · [source-pipelines.ts:246](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/source-pipelines.ts#L246)。
 
 兼容对象：bindings无storage；旧work无generation/archive_checkpoint/memory_trigger、recipe版本/定义/config/component pins；旧无checkpoint行从archive补。
 
@@ -1008,14 +1008,14 @@
 
 风险（高）：读取错误原件、重复建物料/模型付费、按新recipe处理旧未授权工作；删fresh ALTER启动失败。
 
-关联测试：[source-pipelines.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/source-pipelines.test.ts) · [source-recipe-integration.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/source-recipe-integration.test.ts) · [material-memory-work.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/material-memory-work.test.ts)。
+关联测试：[source-pipelines.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/source-pipelines.test.ts) · [source-recipe-integration.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/source-recipe-integration.test.ts) · [material-memory-work.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/material-memory-work.test.ts)。
 
 
 <a id="s21"></a>
 
 ### S21 共享Execution步骤/Operation生成关系和optional计数升级
 
-位置：[execution-engine.ts:60](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/execution-engine.ts:60) · [operation-projection.ts:10](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/operation-projection.ts:10) · [operation-projection.ts:35](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/operation-projection.ts:35) · [operation-projection.ts:53](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/operation-projection.ts:53) · [processing-runtime.ts:53](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/processing-runtime.ts:53)。
+位置：[execution-engine.ts:60](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/execution-engine.ts#L60) · [operation-projection.ts:10](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/operation-projection.ts#L10) · [operation-projection.ts:35](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/operation-projection.ts#L35) · [operation-projection.ts:53](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/operation-projection.ts#L53) · [processing-runtime.ts:53](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/processing-runtime.ts#L53)。
 
 兼容对象：execution_steps无recovery_deadline；operation links无slot/generation/active/optional；operation_progress未创建；optional旧投影仅排除blocked；usage无input_characters。
 
@@ -1029,14 +1029,14 @@
 
 风险（中高）：新库缺列，UI错误显示已完成/失败、历史步骤丢失或当前generation失真；recovery_deadline影响租约恢复的正确性。
 
-关联测试：[operations.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/operations.test.ts) · [operation-runs.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/operation-runs.test.ts) · [execution-engine.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/execution-engine.test.ts) · [architecture-upgrade.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/architecture-upgrade.test.ts)。
+关联测试：[operations.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/operations.test.ts) · [operation-runs.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/operation-runs.test.ts) · [execution-engine.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/execution-engine.test.ts) · [architecture-upgrade.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/architecture-upgrade.test.ts)。
 
 
 <a id="s22"></a>
 
 ### S22 授权账本、Memory草稿和资产储存ledger升级
 
-位置：[memory-input-authorization.ts:25](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-input-authorization.ts:25) · [memory-input-authorization.ts:27](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-input-authorization.ts:27) · [memory-extraction-drafts.ts:12](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-extraction-drafts.ts:12) · [storage-ledger.ts:11](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/storage-ledger.ts:11) · [assets.ts:28](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/assets.ts:28) · [material-organizers.ts:494](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/material-organizers.ts:494)。
+位置：[memory-input-authorization.ts:25](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-input-authorization.ts#L25) · [memory-input-authorization.ts:27](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-input-authorization.ts#L27) · [memory-extraction-drafts.ts:12](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-extraction-drafts.ts#L12) · [storage-ledger.ts:11](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/storage-ledger.ts#L11) · [assets.ts:28](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/assets.ts#L28) · [material-organizers.ts:494](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/material-organizers.ts#L494)。
 
 兼容对象：memory_input_authorizations无binding_json/revoked_at；drafts无shared；旧storage账本重复计blobs/file_blobs/file_objects、旧授权row-size triggers；资产ref投影未装；organizer inputs旧schema无material_id；当前CREATE已包含，单独ALTER可在旧库迁移后删除。
 
@@ -1050,14 +1050,14 @@
 
 风险（高）：权限错误或已撤销授权复活，配额重复/漏计；资产引用漏记导致sweep误删；动态schema缺表/缺列容错也覆盖当前初始化顺序，不能整体删除。
 
-关联测试：[memory-input-authorization.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-input-authorization.test.ts) · [assets.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/assets.test.ts) · [material-memory-work.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/material-memory-work.test.ts)。
+关联测试：[memory-input-authorization.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-input-authorization.test.ts) · [assets.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/assets.test.ts) · [material-memory-work.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/material-memory-work.test.ts)。
 
 
 <a id="s23"></a>
 
 ### S23 旧无scope自动Memory工作迁移时保留物料并撤销自动重放
 
-位置：[material-memory-work.ts:29](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/material-memory-work.ts:29) · [material-memory-work.ts:45](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/material-memory-work.ts:45) · [material-memory-work.ts:50](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/material-memory-work.ts:50) · [material-memory-work.ts:65](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/material-memory-work.ts:65) · [material-memory-work.ts:84](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/material-memory-work.ts:84)。
+位置：[material-memory-work.ts:29](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/material-memory-work.ts#L29) · [material-memory-work.ts:45](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/material-memory-work.ts#L45) · [material-memory-work.ts:50](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/material-memory-work.ts#L50) · [material-memory-work.ts:65](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/material-memory-work.ts#L65) · [material-memory-work.ts:84](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/material-memory-work.ts#L84)。
 
 兼容对象：material_memory_work或无scope material_memory_requests：缺recipe binding、context_time、input fingerprint；迁移到memory.default，auto_authorized=0，记录job revocation。
 
@@ -1071,14 +1071,14 @@
 
 风险（高）：重启重复模型付费或无原始授权跑新scope；简单丢表导致准备状态/关联历史丢失；直接去掉ALTER使fresh缺列。
 
-关联测试：[material-memory-work.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/material-memory-work.test.ts) · [memory-input-authorization.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-input-authorization.test.ts)。
+关联测试：[material-memory-work.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/material-memory-work.test.ts) · [memory-input-authorization.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-input-authorization.test.ts)。
 
 
 <a id="s24"></a>
 
 ### S24 对话json.turns拆到conversation_turns历史表
 
-位置：[conversations.ts:18](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/conversations.ts:18) · [conversations.ts:88](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/conversations.ts:88)。
+位置：[conversations.ts:18](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/conversations.ts#L18) · [conversations.ts:88](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/conversations.ts#L88)。
 
 兼容对象：conversations.json内嵌整个turns数组；turn缺status；header无turnCount/bytes/revision。
 
@@ -1092,14 +1092,14 @@
 
 风险（高）：历史对话突然为空；删内嵌数组而没先落表造成不可恢复丢失；错误revision还影响工作记忆缓存。
 
-关联测试：[conversations.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/conversations.test.ts) · [conversation-lineage.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/conversation-lineage.test.ts) · [combined-backup-recovery.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/combined-backup-recovery.test.ts)。
+关联测试：[conversations.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/conversations.test.ts) · [conversation-lineage.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/conversation-lineage.test.ts) · [combined-backup-recovery.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/combined-backup-recovery.test.ts)。
 
 
 <a id="s25"></a>
 
 ### S25 旧 Memory batch 缺独立 pins，以及当前 Coding 无 pins 路径共用恢复
 
-位置：[memory-pipeline.ts:298](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-pipeline.ts:298) · [memory-pipeline.ts:310](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-pipeline.ts:310) · [memory-pipeline.ts:290](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-pipeline.ts:290) · [app.ts:411](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/app.ts:411) · [memory-pipeline.ts:236](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-pipeline.ts:236) · [memory-pipeline.ts:610](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-pipeline.ts:610)。
+位置：[memory-pipeline.ts:298](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-pipeline.ts#L298) · [memory-pipeline.ts:310](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-pipeline.ts#L310) · [memory-pipeline.ts:290](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-pipeline.ts#L290) · [app.ts:411](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/app.ts#L411) · [memory-pipeline.ts:236](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-pipeline.ts#L236) · [memory-pipeline.ts:610](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-pipeline.ts#L610)。
 
 兼容对象：旧 StoredBatch.materialInputs 缺失时沿用 job.materialInputs。app understandConversation 的 legacyPin 分支对 materialInputs 空数组也生效；这同时包含当前非 recipe Coding create 路径，并非只有旧 batch。
 
@@ -1113,14 +1113,14 @@
 
 风险（高）：授权范围改变、旧 job 无法恢复、错误材料进入模型或重复费用；给旧 batch 默认 [] 会丢 pins；删除 app 分支还会损坏当前未携带 recipe 的 Coding create 路径。
 
-关联测试：[memory-artifact-composition.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-artifact-composition.test.ts) · [memory-material-gate.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-material-gate.test.ts) · [memory-manual-selection.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-manual-selection.test.ts) · [memory-authored-selection.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-authored-selection.test.ts)。
+关联测试：[memory-artifact-composition.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-artifact-composition.test.ts) · [memory-material-gate.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-material-gate.test.ts) · [memory-manual-selection.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-manual-selection.test.ts) · [memory-authored-selection.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-authored-selection.test.ts)。
 
 
 <a id="s26"></a>
 
 ### S26 旧人工任务同时选择authored Material和原件的精确一次性复用
 
-位置：[memory-pipeline.ts:419](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-pipeline.ts:419) · [memory-pipeline.ts:447](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-pipeline.ts:447) · [evidence-reader.ts:511](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-reader.ts:511) · [evidence-reader.ts:291](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-reader.ts:291)。
+位置：[memory-pipeline.ts:419](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-pipeline.ts#L419) · [memory-pipeline.ts:447](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-pipeline.ts#L447) · [evidence-reader.ts:511](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-reader.ts#L511) · [evidence-reader.ts:291](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-reader.ts#L291)。
 
 兼容对象：旧manual job重复列Material与对应raw original；旧已完成raw batch无planIds/materialInputs/artifact refs。
 
@@ -1134,14 +1134,14 @@
 
 风险（中）：旧recheck不能复用已付费审阅结果，重复抽取/Memory或仍blocked；安全条件不可削弱为按标题/文本相同复用。
 
-关联测试：[memory-authored-selection.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-authored-selection.test.ts) · [memory-manual-selection.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-manual-selection.test.ts)。
+关联测试：[memory-authored-selection.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-authored-selection.test.ts) · [memory-manual-selection.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-manual-selection.test.ts)。
 
 
 <a id="s27"></a>
 
 ### S27 旧Memory版本、分类和admission元数据读取默认
 
-位置：[memory-schema.ts:37](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-schema.ts:37) · [memory.ts:139](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory.ts:139) · [memory.ts:62](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory.ts:62) · [memory.ts:63](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory.ts:63) · [memory.ts:165](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory.ts:165) · [memory-integration.ts:56](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-integration.ts:56)。
+位置：[memory-schema.ts:37](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-schema.ts#L37) · [memory.ts:139](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory.ts#L139) · [memory.ts:62](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory.ts#L62) · [memory.ts:63](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory.ts#L63) · [memory.ts:165](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory.ts#L165) · [memory-integration.ts:56](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-integration.ts#L56)。
 
 兼容对象：历史Memory无version/domain/tier/kind/admission/evidence的新增字段；get缺version=1，catalog domain personal/tier episode/kind episodic/version1，无admission.layer归legacy。
 
@@ -1155,14 +1155,14 @@
 
 风险（高）：旧Memory不可读或筛选消失；默认升级layer会把未审产物当可信Memory；低层当前调用/fixtures亦破坏。
 
-关联测试：[memory-admission.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-admission.test.ts) · [memory-automatic-deletion.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-automatic-deletion.test.ts) · [memory-integration.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-integration.test.ts) · [memory-pipeline.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-pipeline.test.ts)。
+关联测试：[memory-admission.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-admission.test.ts) · [memory-automatic-deletion.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-automatic-deletion.test.ts) · [memory-integration.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-integration.test.ts) · [memory-pipeline.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-pipeline.test.ts)。
 
 
 <a id="s28"></a>
 
 ### S28 历史缺disclosure依赖时全量保守清理，混有现行不完整依赖保护
 
-位置：[evidence-store.ts:675](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:675) · [conversation-lineage.ts:4](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/conversation-lineage.ts:4) · [conversation-lineage.ts:10](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/conversation-lineage.ts:10) · [query-runs.ts:41](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/query-runs.ts:41)。
+位置：[evidence-store.ts:675](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L675) · [conversation-lineage.ts:4](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/conversation-lineage.ts#L4) · [conversation-lineage.ts:10](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/conversation-lineage.ts#L10) · [query-runs.ts:41](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/query-runs.ts#L41)。
 
 兼容对象：旧QueryResult/working_memory/query_run无evidenceDependencies或version不支持；引用列表不能证明所有模型实际读过的原件和派生产物。
 
@@ -1176,14 +1176,14 @@
 
 风险（高（隐私））：被删原件的内容继续留在历史回答/工作记忆；保守fallback换成空ids会漏清理；此项不是可整体移除的legacy分支。
 
-关联测试：[conversation-lineage.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/conversation-lineage.test.ts) · [evidence-dependencies.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/evidence-dependencies.test.ts) · [evidence-exposure.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/evidence-exposure.test.ts) · [query-runs.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/query-runs.test.ts)。
+关联测试：[conversation-lineage.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/conversation-lineage.test.ts) · [evidence-dependencies.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/evidence-dependencies.test.ts) · [evidence-exposure.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/evidence-exposure.test.ts) · [query-runs.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/query-runs.test.ts)。
 
 
 <a id="s29"></a>
 
 ### S29 旧raw extraction lifecycle任务/cursor与旧Insight时间配置升级
 
-位置：[lifecycle-extensions.ts:29](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/lifecycle-extensions.ts:29) · [memory-lifecycle.ts:60](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-lifecycle.ts:60) · [memory-lifecycle.ts:74](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-lifecycle.ts:74) · [memory-pipeline.ts:182](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-pipeline.ts:182) · [config.ts:107](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/config.ts:107) · [app.ts:432](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/app.ts:432)。
+位置：[lifecycle-extensions.ts:29](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/lifecycle-extensions.ts#L29) · [memory-lifecycle.ts:60](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-lifecycle.ts#L60) · [memory-lifecycle.ts:74](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-lifecycle.ts#L74) · [memory-pipeline.ts:182](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-pipeline.ts#L182) · [config.ts:107](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/config.ts#L107) · [app.ts:432](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/app.ts#L432)。
 
 兼容对象：旧 lifecycle Memory job 直接 raw 证据且无 artifactRefs；旧 extraction stream=evidence cursor 不可用于 artifact。MOTE_INSIGHT_INTERVAL_HOURS 虽命名 legacyInsightHours，但仍是当前新安装初始配置入口。
 
@@ -1197,14 +1197,14 @@
 
 风险（中高）：旧 cursor 导致漏处理、重复抽取或费用；误删当前 env 映射使新安装忽略用户配置；不能按 legacy 命名删除当前 screen/authored artifact 生命周期。
 
-关联测试：[architecture-upgrade.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/architecture-upgrade.test.ts) · [lifecycle-execution.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/lifecycle-execution.test.ts) · [memory-lifecycle.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-lifecycle.test.ts) · [memory-integration.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-integration.test.ts) · [memory-authored-selection.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-authored-selection.test.ts)。
+关联测试：[architecture-upgrade.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/architecture-upgrade.test.ts) · [lifecycle-execution.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/lifecycle-execution.test.ts) · [memory-lifecycle.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-lifecycle.test.ts) · [memory-integration.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-integration.test.ts) · [memory-authored-selection.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-authored-selection.test.ts)。
 
 
 <a id="s30"></a>
 
 ### S30 旧任务没有冻结contextTime时使用持久化创建/开始时间
 
-位置：[memory-integration.ts:63](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-integration.ts:63) · [memory-pipeline.ts:647](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-pipeline.ts:647) · [memory-pipeline.ts:255](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-pipeline.ts:255) · [app.ts:417](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/app.ts:417)。
+位置：[memory-integration.ts:63](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-integration.ts#L63) · [memory-pipeline.ts:647](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-pipeline.ts#L647) · [memory-pipeline.ts:255](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-pipeline.ts#L255) · [app.ts:417](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/app.ts#L417)。
 
 兼容对象：旧active integration window.contextTime缺失→startedAt；MemoryJob.contextTime缺失→createdAt。
 
@@ -1218,14 +1218,14 @@
 
 风险（中高）：跨重启改变模型的“现在”、Memory有效期/未来判断和review缓存结果；盲删会破坏当前非recipe writer。
 
-关联测试：[semantic-context-time.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/semantic-context-time.test.ts) · [memory-integration.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/memory-integration.test.ts) · [conversation-understanding.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/conversation-understanding.test.ts)。
+关联测试：[semantic-context-time.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/semantic-context-time.test.ts) · [memory-integration.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/memory-integration.test.ts) · [conversation-understanding.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/conversation-understanding.test.ts)。
 
 
 <a id="s31"></a>
 
 ### S31 旧Coding Material schema<5含tool正文，被query和Memory读取隔离
 
-位置：[evidence-reader.ts:479](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-reader.ts:479) · [evidence-reader.ts:536](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-reader.ts:536) · [materials.ts:631](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/materials.ts:631) · [conversation-understanding.ts:41](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/conversation-understanding.ts:41) · [source-pipelines.ts:266](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/source-pipelines.ts:266)。
+位置：[evidence-reader.ts:479](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-reader.ts#L479) · [evidence-reader.ts:536](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-reader.ts#L536) · [materials.ts:631](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/materials.ts#L631) · [conversation-understanding.ts:41](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/conversation-understanding.ts#L41) · [source-pipelines.ts:266](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/source-pipelines.ts#L266)。
 
 兼容对象：历史mote.coding-session schemaVersion<5投影包含旧raw/tool output正文，不符合clean conversation边界。
 
@@ -1239,14 +1239,14 @@
 
 风险（高（隐私））：旧tool正文重新进入query/model/Memory；全量删旧raw原件反而丢归档证据，原件保留和clean物料重建必须分开。
 
-关联测试：[conversation-understanding.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/conversation-understanding.test.ts) · [source-pipelines.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/source-pipelines.test.ts) · [source-recipe-integration.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/source-recipe-integration.test.ts) · [evidence-reader.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/evidence-reader.test.ts)。
+关联测试：[conversation-understanding.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/conversation-understanding.test.ts) · [source-pipelines.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/source-pipelines.test.ts) · [source-recipe-integration.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/source-recipe-integration.test.ts) · [evidence-reader.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/evidence-reader.test.ts)。
 
 
 <a id="s32"></a>
 
 ### S32 Source pipeline旧group/organize callback扩展契约与内置重复入口
 
-位置：[source-pipelines.ts:36](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/source-pipelines.ts:36) · [source-pipelines.ts:47](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/source-pipelines.ts:47) · [coding-source-plugin.ts:183](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/coding-source-plugin.ts:183)。
+位置：[source-pipelines.ts:36](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/source-pipelines.ts#L36) · [source-pipelines.ts:47](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/source-pipelines.ts#L47) · [coding-source-plugin.ts:183](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/coding-source-plugin.ts#L183)。
 
 兼容对象：老pipeline仅提供group/organize callback，不具备声明式recipe、component pins/definition fingerprint。
 
@@ -1260,14 +1260,14 @@
 
 风险（低（仅内置重复字段）/中高（契约））：旧插件无法注册，工作队列无法继续；删整个organize会破坏当前recipe。
 
-关联测试：[source-pipelines.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/source-pipelines.test.ts) · [source-recipe-integration.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/source-recipe-integration.test.ts)。
+关联测试：[source-pipelines.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/source-pipelines.test.ts) · [source-recipe-integration.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/source-recipe-integration.test.ts)。
 
 
 <a id="s33"></a>
 
 ### S33 旧无结构化Transcript产物只允许重新提取后review
 
-位置：[file-reviews.ts:17](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/file-reviews.ts:17)。
+位置：[file-reviews.ts:17](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/file-reviews.ts#L17)。
 
 兼容对象：旧file_artifacts text/dialogue等json只有文本，无标准data.transcript。
 
@@ -1281,14 +1281,14 @@
 
 风险（低（改文案）/高（删验证））：旧产物无法校正是既定安全边界，直接读未定义transcript导致异常或错位修正。
 
-关联测试：[file-processing.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/file-processing.test.ts)。
+关联测试：[file-processing.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/file-processing.test.ts)。
 
 
 <a id="s34"></a>
 
 ### S34 旧Import工作缺处理模式/媒体计数/phase fingerprint元数据
 
-位置：[imports.ts:34](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/imports.ts:34) · [imports.ts:39](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/imports.ts:39) · [imports.ts:397](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/imports.ts:397) · [imports.ts:418](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/imports.ts:418) · [imports.ts:423](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/imports.ts:423)。
+位置：[imports.ts:34](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/imports.ts#L34) · [imports.ts:39](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/imports.ts#L39) · [imports.ts:397](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/imports.ts#L397) · [imports.ts:418](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/imports.ts#L418) · [imports.ts:423](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/imports.ts#L423)。
 
 兼容对象：旧job缺processing→preview安全默认；缺recordsProcessed按processed减media；旧phase未保存manifestHash→legacy sentinel；preparationRevision缺省0。
 
@@ -1302,14 +1302,14 @@
 
 风险（中）：升级后历史工作不可恢复、媒体进度错误或重复准备；盲把旧preview改automatic会改变人类确认/自动模型费用边界。
 
-关联测试：[imports.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/imports.test.ts) · [import-media.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/import-media.test.ts) · [import-backup.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/import-backup.test.ts) · [import-manifest-worker.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/import-manifest-worker.test.ts)。
+关联测试：[imports.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/imports.test.ts) · [import-media.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/import-media.test.ts) · [import-backup.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/import-backup.test.ts) · [import-manifest-worker.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/import-manifest-worker.test.ts)。
 
 
 <a id="s35"></a>
 
 ### S35 升级后旧网页lazy bundle404边界
 
-位置：[app.ts:532](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/app.ts:532) · [app.ts:538](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/app.ts:538)。
+位置：[app.ts:532](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/app.ts#L532) · [app.ts:538](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/app.ts#L538)。
 
 兼容对象：升级前已打开网页会继续请求上一build的hashed lazy页面bundle；新dist已移除旧hash。
 
@@ -1328,7 +1328,7 @@
 
 ### S36 Portable archive v1新增字段缺省允许较早或精简归档导入
 
-位置：[evidence-store.ts:309](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:309) · [evidence-store.ts:311](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:311) · [evidence-store.ts:322](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:322) · [evidence-store.ts:337](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:337) · [evidence-store.ts:339](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:339) · [evidence-store.ts:354](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:354) · [evidence-store.ts:644](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:644) · [evidence-store.ts:329](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:329)。
+位置：[evidence-store.ts:309](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L309) · [evidence-store.ts:311](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L311) · [evidence-store.ts:322](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L322) · [evidence-store.ts:337](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L337) · [evidence-store.ts:339](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L339) · [evidence-store.ts:354](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L354) · [evidence-store.ts:644](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L644) · [evidence-store.ts:329](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L329)。
 
 兼容对象：同一version:1早期归档可能只有captures，缺sources/sourceHeads/sourceVersions/memories/files/captureFiles/perceptionResults/todos/memoryDeletions；source createdAt/updatedAt缺省为导入时间。
 
@@ -1342,7 +1342,7 @@
 
 风险（中高）：旧及当前精简v1 archive不能恢复；删除默认但保留version1会无明确错误；凭空补空memoryDeletions可能丢删除意图。也必须区分full DB backup与portable限制，两者不是同一路径。
 
-关联测试：[import-backup.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/import-backup.test.ts) · [archived-files.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/test/archived-files.test.ts)。
+关联测试：[import-backup.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/import-backup.test.ts) · [archived-files.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/test/archived-files.test.ts)。
 
 补充：准备与部分 schema/checksum 校验在 BEGIN 之前，另有 source/OCR/Memory 等关联校验在事务内；并非全部检查在事务内。缺 files 字段的稀疏 v1 跳过 prepared document/attachments 的原件存在性检查。
 
@@ -1353,7 +1353,7 @@
 
 ### D01 Ingress v1 → v2 断代迁移、旧队列本地归档及重新导入
 
-位置：[queue.ts:182](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/queue.ts:182) · [queue.ts:114](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/queue.ts:114) · [queue.ts:590](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/queue.ts:590) · [note-draft.ts:43](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/note-draft.ts:43) · [main.ts:172](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/main.ts:172) · [source-sync.ts:64](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/source-sync.ts:64) · [source-manager.ts:60](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/source-manager.ts:60) · [background-worker.ts:121](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/background-worker.ts:121)。
+位置：[queue.ts:182](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/queue.ts#L182) · [queue.ts:114](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/queue.ts#L114) · [queue.ts:590](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/queue.ts#L590) · [note-draft.ts:43](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/note-draft.ts#L43) · [main.ts:172](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/main.ts#L172) · [source-sync.ts:64](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/source-sync.ts#L64) · [source-manager.ts:60](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/source-manager.ts#L60) · [background-worker.ts:121](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/background-worker.ts#L121)。
 
 触发条件：queue/capture-ingress-v2.json、notes/note-ingress-v2.json、local-sources/ingress-v2.json 缺失或 ingressVersion != 2。
 
@@ -1365,7 +1365,7 @@
 
 风险（高）：直接删 marker/reset 会把旧 v1 IDs、ACK/cursor/outbox 带入已重置的 v2 中央；可能冲突、遗漏或重复。直接删归档 reader 则用户已确认旧截图/备份不可读。
 
-关联测试：[queue.test.ts:16](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/queue.test.ts:16) · [note-draft.test.ts:68](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/note-draft.test.ts:68) · [source-sync.test.ts:25](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/source-sync.test.ts:25) · [ingress-migration.test.ts:11](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/ingress-migration.test.ts:11)。
+关联测试：[queue.test.ts:16](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/queue.test.ts#L16) · [note-draft.test.ts:68](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/note-draft.test.ts#L68) · [source-sync.test.ts:25](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/source-sync.test.ts#L25) · [ingress-migration.test.ts:11](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/ingress-migration.test.ts#L11)。
 
 补充：这些分支不都是无损迁移。特别是 queue 未 ACK v1 事件和旧来源原文 spool 被明确清除；审计未触碰真实用户数据；packaged-metadata-smoke compares old 0.6.1 module data through ConfigStore/Queue/NoteDraft initialize, but does not invoke main.clearPreparedForProtocolUpgrade, so cannot establish full startup upgrade preservation.；Existing fixture contracts inspected or located; not executed during audit.。
 
@@ -1374,7 +1374,7 @@
 
 ### D02 来源状态 JSON → SQLite、整数组 → 单 revision 行、内嵌 catalog → 行存储
 
-位置：[source-state-store.ts:34](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/source-state-store.ts:34) · [source-state-store.ts:46](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/source-state-store.ts:46) · [source-state-store.ts:53](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/source-state-store.ts:53)。
+位置：[source-state-store.ts:34](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/source-state-store.ts#L34) · [source-state-store.ts:46](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/source-state-store.ts#L46) · [source-state-store.ts:53](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/source-state-store.ts#L53)。
 
 触发条件：旧 .json 存在；或 entries(section=state,key=pendingRealtime/pendingHistory)；或 checkpoint.catalog 非空。
 
@@ -1386,7 +1386,7 @@
 
 风险（高）：删除 JSON reader 会隐藏旧 outbox，触发重新扫描、重复或原文丢失；删除数组/catalog 转换会使旧 checkpoint/outbox 混合布局读取不完整、丢目录状态。
 
-关联测试：[source-state-store.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/source-state-store.test.ts)。
+关联测试：[source-state-store.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/source-state-store.test.ts)。
 
 补充：Existing fixture contracts inspected or located; not executed during audit.。
 
@@ -1395,7 +1395,7 @@
 
 ### D03 Coding evidence 字段兼容旧中央并永久固定 revision 的 wire schema
 
-位置：[source-sync.ts:233](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/source-sync.ts:233) · [source-sync.ts:317](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/source-sync.ts:317) · [source-state-store.ts:7](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/source-state-store.ts:7)。
+位置：[source-sync.ts:233](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/source-sync.ts#L233) · [source-sync.ts:317](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/source-sync.ts#L317) · [source-state-store.ts:7](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/source-state-store.ts#L7)。
 
 触发条件：coding-agent 来源，中央 registration capabilities.codingEvidenceFieldsVersion != 1；以及以前尝试过的 revision 已有 fields=0 pin。
 
@@ -1407,7 +1407,7 @@
 
 风险（高）：仅删降级/pin 会让中央已有同 revision body 与新 payload 不同，引发 409、重复重试/阻塞，并可能丢 channel/attribution 历史。
 
-关联测试：[coding-transport-compatibility.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/coding-transport-compatibility.test.ts)。
+关联测试：[coding-transport-compatibility.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/coding-transport-compatibility.test.ts)。
 
 补充：Existing fixture contracts inspected or located; not executed during audit.。
 
@@ -1416,7 +1416,7 @@
 
 ### D04 仅为旧队列存在的本机 OCR 补做链路及旧节点 OCR 404 兼容
 
-位置：[collector.ts:177](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/collector.ts:177) · [collector.ts:70](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/collector.ts:70) · [collector.ts:370](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/collector.ts:370) · [queue.ts:319](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/queue.ts:319) · [queue.ts:65](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/queue.ts:65) · [transport.ts:14](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/transport.ts:14) · [config.ts:102](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/config.ts:102) · [index.html:172](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/index.html:172)。
+位置：[collector.ts:177](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/collector.ts#L177) · [collector.ts:70](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/collector.ts#L70) · [collector.ts:370](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/collector.ts#L370) · [queue.ts:319](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/queue.ts#L319) · [queue.ts:65](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/queue.ts#L65) · [transport.ts:14](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/transport.ts#L14) · [config.ts:102](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/config.ts#L102) · [index.html:172](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/index.html#L172)。
 
 触发条件：旧/导入/已有 v2 queue record event.ocr.status=pending；已上传截图保留本地原图等待 OCR。
 
@@ -1428,7 +1428,7 @@
 
 风险（中高）：否则旧等待OCR数据卡住、原图提前删除、队列容量/统计错误；把 native OCR 一起删会破坏现行隐私 upload review。
 
-关联测试：[collector.test.ts:209](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/collector.test.ts:209) · [collector.test.ts:221](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/collector.test.ts:221) · [collector.test.ts:263](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/collector.test.ts:263) · [queue.test.ts:104](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/queue.test.ts:104)。
+关联测试：[collector.test.ts:209](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/collector.test.ts#L209) · [collector.test.ts:221](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/collector.test.ts#L221) · [collector.test.ts:263](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/collector.test.ts#L263) · [queue.test.ts:104](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/queue.test.ts#L104)。
 
 补充：D01 初次 v1 reset 会删除未 ACK 并隔离已 ACK 记录，不能假设所有 v1 pending OCR 会走到补做；主要需看已经有 v2 marker 或导入的旧 pending；Existing fixture contracts inspected or located; not executed during audit.。
 
@@ -1437,7 +1437,7 @@
 
 ### D05 读取历史本机加密 envelope/key；批量解密入口已无生产调用
 
-位置：[local-content.ts:28](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/local-content.ts:28) · [local-content.ts:53](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/local-content.ts:53) · [local-content.ts:78](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/local-content.ts:78) · [main.ts:169](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/main.ts:169) · [config.ts:97](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/config.ts:97)。
+位置：[local-content.ts:28](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/local-content.ts#L28) · [local-content.ts:53](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/local-content.ts#L53) · [local-content.ts:78](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/local-content.ts#L78) · [main.ts:169](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/main.ts#L169) · [config.ts:97](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/config.ts#L97)。
 
 触发条件：本机内容以 MOTE-CONTENT-AES256GCM-V1 envelope 存储，或旧 content-key.json 已存在。新 writes 不开启本机加密。
 
@@ -1449,7 +1449,7 @@
 
 风险（旧读取高风险，未接入工具低风险）：删 unused bulk API 基本无产品行为变化；删 decoder/key loading 则旧队列/笔记/来源及原文全部可能不可读，并使历史备份无法导入。
 
-关联测试：[local-content.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/local-content.test.ts) · [content-storage-smoke.cjs](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/scripts/content-storage-smoke.cjs)。
+关联测试：[local-content.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/local-content.test.ts) · [content-storage-smoke.cjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/scripts/content-storage-smoke.cjs)。
 
 补充：不能把解密入口无 caller 等同于 decoder 无 caller。 Queue.withContentMaintenance (queue.ts:176) and NoteDraftStore.withContentMaintenance (note-draft.ts:23) also have no current caller; removable with unused bulk entry. setEnabled(true)/encrypted encode only appear in fixture tests; production setEnabled remains false but key load is necessary for old reads.；Existing fixture contracts inspected or located; not executed during audit.。
 
@@ -1458,7 +1458,7 @@
 
 ### D06 旧默认 profile 沿用原 Electron userData 和启动项语义
 
-位置：[profile.ts:17](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/profile.ts:17) · [profile.ts:20](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/profile.ts:20) · [profile.ts:26](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/profile.ts:26) · [main.ts:41](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/main.ts:41)。
+位置：[profile.ts:17](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/profile.ts#L17) · [profile.ts:20](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/profile.ts#L20) · [profile.ts:26](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/profile.ts#L26) · [main.ts:41](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/main.ts#L41)。
 
 触发条件：非 developmentBuild、无 --profile/MOTE_PROFILE 时 name=legacy；旧 ambient MOTE_URL/TOKEN 沿用；legacy 才允许开机登录项。
 
@@ -1470,7 +1470,7 @@
 
 风险（高）：直接删 legacy 分支等同全新用户目录：看不到历史数据、身份改变、旧队列与凭据割裂、开机启动失效。
 
-关联测试：[profile.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/profile.test.ts) · [packaged-metadata-smoke.cjs](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/scripts/packaged-metadata-smoke.cjs)。
+关联测试：[profile.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/profile.test.ts) · [packaged-metadata-smoke.cjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/scripts/packaged-metadata-smoke.cjs)。
 
 补充：Existing fixture contracts inspected or located; not executed during audit.。
 
@@ -1479,7 +1479,7 @@
 
 ### D07 无 binding/owner marker 的旧目录安全认领
 
-位置：[connection-binding.ts:15](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/connection-binding.ts:15) · [queue-storage.ts:80](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/queue-storage.ts:80) · [queue.ts:278](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/queue.ts:278) · [source-manager.ts:85](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/source-manager.ts:85)。
+位置：[connection-binding.ts:15](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/connection-binding.ts#L15) · [queue-storage.ts:80](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/queue-storage.ts#L80) · [queue.ts:278](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/queue.ts#L278) · [source-manager.ts:85](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/source-manager.ts#L85)。
 
 触发条件：旧 queue/source 目录没有 connection-binding.json；旧 default queue 没有 owner marker。
 
@@ -1491,7 +1491,7 @@
 
 风险（高，涉及隐私）：错误删改会将旧个人数据绑定到新中央/账户而泄露，或全部旧 backlog 无法恢复。
 
-关联测试：[connection-binding.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/connection-binding.test.ts) · [queue-storage.test.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/queue-storage.test.ts) · [connection-smoke.cjs](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/scripts/connection-smoke.cjs)。
+关联测试：[connection-binding.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/connection-binding.test.ts) · [queue-storage.test.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/queue-storage.test.ts) · [connection-smoke.cjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/scripts/connection-smoke.cjs)。
 
 补充：Existing fixture contracts inspected or located; not executed during audit.。
 
@@ -1500,7 +1500,7 @@
 
 ### D08 缺新字段的历史配置补齐及排除列表旧新两套共存
 
-位置：[config.ts:137](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/config.ts:137) · [config.ts:97](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/config.ts:97) · [app-collection.ts:22](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/app-collection.ts:22) · [ui.ts:866](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/ui.ts:866)。
+位置：[config.ts:137](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/config.ts#L137) · [config.ts:97](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/config.ts#L97) · [app-collection.ts:22](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/app-collection.ts#L22) · [ui.ts:866](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/ui.ts#L866)。
 
 触发条件：config.json 缺新增 sync/appCollection/auth fields；excludedAppIds 现仍可由完全排除按钮写入且与 appCollectionRules 共存。
 
@@ -1512,7 +1512,7 @@
 
 风险（中高，涉及隐私）：删默认合并会使旧配置崩溃或丢 settings；删 excludedAppIds 读取会开始采集用户曾明确排除的应用。
 
-关联测试：[app-collection.test.ts:5](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/app-collection.test.ts:5) · [app-collection.test.ts:10](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/app-collection.test.ts:10) · [packaged-metadata-smoke.cjs:40](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/scripts/packaged-metadata-smoke.cjs:40)。
+关联测试：[app-collection.test.ts:5](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/app-collection.test.ts#L5) · [app-collection.test.ts:10](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/app-collection.test.ts#L10) · [packaged-metadata-smoke.cjs:40](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/scripts/packaged-metadata-smoke.cjs#L40)。
 
 补充：Existing fixture contracts inspected or located; not executed during audit.。
 
@@ -1521,7 +1521,7 @@
 
 ### D09 旧 snapshot 音频索引补建独立本机处理任务
 
-位置：[source-files.ts:48](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/source-files.ts:48)。
+位置：[source-files.ts:48](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/source-files.ts#L48)。
 
 触发条件：未修改的 snapshot audio：不走普通 unchanged short-circuit，注释明确为了 legacy pending audio index 建 independent processing job。
 
@@ -1533,7 +1533,7 @@
 
 风险（中）：直接删例外将导致旧 hash未变的 pending音频永远不被重访，文本索引无法完成。
 
-关联测试：[local-file-processing.test.ts:27](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/local-file-processing.test.ts:27)。
+关联测试：[local-file-processing.test.ts:27](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/local-file-processing.test.ts#L27)。
 
 补充：Existing fixture contracts inspected or located; not executed during audit.；No explicit saved legacy pending audio-index-to-job migration test located; deletion needs such a fixture.。
 
@@ -1542,7 +1542,7 @@
 
 ### D10 File manifest 未带 state 的旧 ACK 格式容忍
 
-位置：[source-sync.ts:286](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/source-sync.ts:286) · [source-sync.ts:303](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/source-sync.ts:303)。
+位置：[source-sync.ts:286](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/source-sync.ts#L286) · [source-sync.ts:303](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/source-sync.ts#L303)。
 
 触发条件：批量 response result.state===undefined 且 ack存在；manifestBatch能力不足时改逐条发送。
 
@@ -1554,7 +1554,7 @@
 
 风险（中）：旧中央响应会被当无效ACK，outbox保持但无限重试；删全部能力协商会破坏当前有不同batch限制的节点。
 
-关联测试：[source-sync-batch.test.ts:98](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/source-sync-batch.test.ts:98) · [source-sync-batch.test.ts:127](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/source-sync-batch.test.ts:127)。
+关联测试：[source-sync-batch.test.ts:98](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/source-sync-batch.test.ts#L98) · [source-sync-batch.test.ts:127](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/source-sync-batch.test.ts#L127)。
 
 补充：中央writer由server审计确认：apps/server/src/files.ts:65 metadata batch=accepted；:72 missing_original/existing/accepted；:73 rejected，全部显式state。旧响应宽容确实非当前writer输出，具体历史发布版本尚未确定；Existing fixture contracts inspected or located; not executed during audit.；No dedicated missing-state older response shape fixture located.。
 
@@ -1563,7 +1563,7 @@
 
 ### D11 旧 support events.json 作为 NDJSON 不存在时的导出来源
 
-位置：[support.ts:108](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/support.ts:108) · [support.ts:115](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/support.ts:115) · [support.ts:91](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/support.ts:91)。
+位置：[support.ts:108](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/support.ts#L108) · [support.ts:115](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/support.ts#L115) · [support.ts:91](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/support.ts#L91)。
 
 触发条件：查询时间范围从轮转NDJSON没有得到rows时，回读旧events.json。
 
@@ -1575,7 +1575,7 @@
 
 风险（低）：删fallback可能丢旧升级前诊断记录；删JSON当前路径会破坏日志UI。
 
-关联测试：[support.test.ts:46](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/support.test.ts:46)。
+关联测试：[support.test.ts:46](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/support.test.ts#L46)。
 
 补充：Existing fixture contracts inspected or located; not executed during audit.；No dedicated pre-NDJSON exportRange fallback fixture located.。
 
@@ -1584,7 +1584,7 @@
 
 ### D12 CodingCheckpoint 新 catalog/counter 字段对旧持久化游标的补齐
 
-位置：[coding-agents.ts:24](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/coding-agents.ts:24) · [coding-agents.ts:70](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/coding-agents.ts:70)。
+位置：[coding-agents.ts:24](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/coding-agents.ts#L24) · [coding-agents.ts:70](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/coding-agents.ts#L70)。
 
 触发条件：旧checkpoint仅含version/files/initialized；catalog、scanNumber、scanStartedAt、nextFile缺失。
 
@@ -1596,7 +1596,7 @@
 
 风险（中高）：直接删补齐会让旧catalog undefined或counter NaN；清空checkpoint会重读并形成新/重复identity，new_only错误baselining可能遗漏历史。
 
-关联测试：[coding-agents.test.ts:24](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/coding-agents.test.ts:24)。
+关联测试：[coding-agents.test.ts:24](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/coding-agents.test.ts#L24)。
 
 补充：Existing fixtures inspected, not run.；No explicit no-catalog checkpoint upgrade fixture located.。
 
@@ -1605,7 +1605,7 @@
 
 ### D13 来源 adapter 版本升级检查和旧缺版本默认1
 
-位置：[source-sync.ts:108](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/source-sync.ts:108) · [source-manager.ts:216](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/source-manager.ts:216)。
+位置：[source-sync.ts:108](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/source-sync.ts#L108) · [source-manager.ts:216](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/source-manager.ts#L216)。
 
 触发条件：data.adapterVersion缺失则解释为1；registry adapter.version不同则重置扫描checkpoint，保留所有未确认revision。
 
@@ -1617,7 +1617,7 @@
 
 风险（中高）：把不同adapter的旧checkpoint交给新scanner会遗漏、重复或错误删除；粗暴清state会丢offline backlog。
 
-关联测试：[source-sync.test.ts:158](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/source-sync.test.ts:158) · [source-scheduling.test.ts:30](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/test/source-scheduling.test.ts:30)。
+关联测试：[source-sync.test.ts:158](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/source-sync.test.ts#L158) · [source-scheduling.test.ts:30](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/test/source-scheduling.test.ts#L30)。
 
 补充：这是正在使用的版本演进契约，不能当已结束的一次性legacy迁移整体删除；Inspected current upgrade fixture; not run.。
 
@@ -1628,7 +1628,7 @@
 
 ### ANDROID-01 读取旧 AES/GCM 内容封装，以及遗留可选加密写入开关
 
-位置：[LocalContentCipher.kt:3](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/LocalContentCipher.kt:3) · [SecretBox.kt:16](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/SecretBox.kt:16) · [Settings.kt:111](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/Settings.kt:111) · [Settings.kt:132](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/Settings.kt:132) · [MainActivity.kt:838](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt:838)。
+位置：[LocalContentCipher.kt:3](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/LocalContentCipher.kt#L3) · [SecretBox.kt:16](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/SecretBox.kt#L16) · [Settings.kt:111](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/Settings.kt#L111) · [Settings.kt:132](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/Settings.kt#L132) · [MainActivity.kt:838](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt#L838)。
 
 兼容对象：旧本机内容：第一个字节为 IV 长度 12..16，后接 IV 和 AES/GCM 密文；新格式通常原文，歧义二进制使用 MOTE-LOCAL-PLAIN-V1\0 转义；旧 SharedPreferences.contentEncryptionEnabled 可仍为 true。
 
@@ -1642,7 +1642,7 @@
 
 风险（高）：直接删 legacy.open 会让旧图片、记录、草稿、来源和诊断无法读；错误可连带阻止启动恢复/同步；清理 Keystore 别名会同时毁掉当前令牌和旧内容密钥；漏改 raw 旧开关会在删除旧读取后继续产生无法读取的密文。
 
-关联测试：[LocalContentCipherTest.kt:27](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/LocalContentCipherTest.kt:27) · [LocalContentCipherTest.kt:55](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/LocalContentCipherTest.kt:55) · [LocalContentCipherTest.kt:83](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/LocalContentCipherTest.kt:83) · [AnrRegressionInstrumentedTest.kt:252](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/androidTest/java/dev/mote/collector/AnrRegressionInstrumentedTest.kt:252)。
+关联测试：[LocalContentCipherTest.kt:27](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/LocalContentCipherTest.kt#L27) · [LocalContentCipherTest.kt:55](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/LocalContentCipherTest.kt#L55) · [LocalContentCipherTest.kt:83](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/LocalContentCipherTest.kt#L83) · [AnrRegressionInstrumentedTest.kt:252](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/androidTest/java/dev/mote/collector/AnrRegressionInstrumentedTest.kt#L252)。
 
 补充：仅静态审计，未检查任何真实用户数据或设备。
 
@@ -1651,7 +1651,7 @@
 
 ### ANDROID-02 全域旧内容批量解密工具残留，目前只有测试入口
 
-位置：[LocalContentDecryptor.kt:20](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/LocalContentDecryptor.kt:20) · [LocalContentMigration.kt:10](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/LocalContentMigration.kt:10) · [DurableQueue.kt:854](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt:854) · [BulkDedupeWorker.kt:27](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/BulkDedupeWorker.kt:27) · [NoteDraftStore.kt:14](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/NoteDraftStore.kt:14) · [LocalSources.kt:106](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/LocalSources.kt:106) · [FileArchiveQueue.kt:22](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt:22) · [ImageDedupeDiagnosticsStore.kt:90](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/ImageDedupeDiagnosticsStore.kt:90)。
+位置：[LocalContentDecryptor.kt:20](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/LocalContentDecryptor.kt#L20) · [LocalContentMigration.kt:10](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/LocalContentMigration.kt#L10) · [DurableQueue.kt:854](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt#L854) · [BulkDedupeWorker.kt:27](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/BulkDedupeWorker.kt#L27) · [NoteDraftStore.kt:14](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/NoteDraftStore.kt#L14) · [LocalSources.kt:106](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/LocalSources.kt#L106) · [FileArchiveQueue.kt:22](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt#L22) · [ImageDedupeDiagnosticsStore.kt:90](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/ImageDedupeDiagnosticsStore.kt#L90)。
 
 兼容对象：旧 AES/GCM 文件，逐个认证/验证后原子改为 plaintext，支持取消/重跑。
 
@@ -1665,14 +1665,14 @@
 
 风险（保留旧读取能力时为低风险）：单独删当前未调用工具对正常运行影响小，但丢失受测试覆盖的迁移/修复入口；不能以工具入口不可达推论旧数据读取不可达；未迁移库仍依赖读兼容。
 
-关联测试：[LibraryResponsivenessInstrumentedTest.kt:162](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/androidTest/java/dev/mote/collector/LibraryResponsivenessInstrumentedTest.kt:162) · [LocalContentCipherTest.kt:55](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/LocalContentCipherTest.kt:55)。
+关联测试：[LibraryResponsivenessInstrumentedTest.kt:162](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/androidTest/java/dev/mote/collector/LibraryResponsivenessInstrumentedTest.kt#L162) · [LocalContentCipherTest.kt:55](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/LocalContentCipherTest.kt#L55)。
 
 
 <a id="android-03"></a>
 
 ### ANDROID-03 Ingress v2 一次性切换：清除旧 outbox、源检查点、上传状态
 
-位置：[IngressV2Migration.kt:7](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/IngressV2Migration.kt:7) · [QueueStorage.kt:46](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/QueueStorage.kt:46) · [SourceProviders.kt:17](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/SourceProviders.kt:17) · [FileSources.kt:15](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/FileSources.kt:15) · [QuickNotes.kt:12](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/QuickNotes.kt:12) · [DurableQueue.kt:189](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt:189) · [LocalSources.kt:99](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/LocalSources.kt:99) · [FileArchiveQueue.kt:17](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt:17) · [NoteDraftStore.kt:49](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/NoteDraftStore.kt:49) · [SyncSchedule.kt:34](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/SyncSchedule.kt:34)。
+位置：[IngressV2Migration.kt:7](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/IngressV2Migration.kt#L7) · [QueueStorage.kt:46](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/QueueStorage.kt#L46) · [SourceProviders.kt:17](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/SourceProviders.kt#L17) · [FileSources.kt:15](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/FileSources.kt#L15) · [QuickNotes.kt:12](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/QuickNotes.kt#L12) · [DurableQueue.kt:189](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt#L189) · [LocalSources.kt:99](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/LocalSources.kt#L99) · [FileArchiveQueue.kt:17](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt#L17) · [NoteDraftStore.kt:49](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/NoteDraftStore.kt#L49) · [SyncSchedule.kt:34](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/SyncSchedule.kt#L34)。
 
 兼容对象：SharedPreferences ingress-protocol/version < 2（包括不存在）；旧 capture stage inbox/journal/checkpoint，未 ACK event/未完成 OCR/冲突记录，旧来源/文件 spool 和 prepared draft ID。
 
@@ -1686,14 +1686,14 @@
 
 风险（高）：删掉 cutover 后未迁移旧 records 会被直接作为 v2 上传，可能 schema拒绝、永远重试、ID 内容冲突/重复归档；旧 stage replay 会重新制造旧事件；旧凭据/目标/能力缓存可能影响当前 sync；现有迁移本身有意丢弃未 ACK及待 OCR材料；重构必须明确保留/丢弃策略，不能声称无损。
 
-关联测试：[IngressV2ProtocolTest.kt:65](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/IngressV2ProtocolTest.kt:65)。
+关联测试：[IngressV2ProtocolTest.kt:65](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/IngressV2ProtocolTest.kt#L65)。
 
 
 <a id="android-04"></a>
 
 ### ANDROID-04 保留旧用户默认完整内容采集，新安装默认只采应用活动
 
-位置：[Settings.kt:76](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/Settings.kt:76) · [Settings.kt:103](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/Settings.kt:103) · [AppCollectionRules.kt:24](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/AppCollectionRules.kt:24)。
+位置：[Settings.kt:76](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/Settings.kt#L76) · [Settings.kt:103](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/Settings.kt#L103) · [AppCollectionRules.kt:24](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/AppCollectionRules.kt#L24)。
 
 兼容对象：缺 appCollectionRules 但存在 interval 或 enabled 的旧 mote preferences。
 
@@ -1707,14 +1707,14 @@
 
 风险（中）：直接改成统一 activity 会让旧用户升级后停止图片/正文采集，功能变化但通常降低采集量；直接统一 content 会把新用户默认扩展到内容采集，隐私风险高；缺键也可能是设置损坏或手工删除，故仍需清楚的默认策略。
 
-关联测试：[PowerOptimizationInstrumentedTest.kt:111](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/androidTest/java/dev/mote/collector/PowerOptimizationInstrumentedTest.kt:111) · [PowerOptimizationTest.kt:34](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/PowerOptimizationTest.kt:34) · [AppPolicyAndActivityTest.kt:51](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/AppPolicyAndActivityTest.kt:51)。
+关联测试：[PowerOptimizationInstrumentedTest.kt:111](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/androidTest/java/dev/mote/collector/PowerOptimizationInstrumentedTest.kt#L111) · [PowerOptimizationTest.kt:34](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/PowerOptimizationTest.kt#L34) · [AppPolicyAndActivityTest.kt:51](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/AppPolicyAndActivityTest.kt#L51)。
 
 
 <a id="android-05"></a>
 
 ### ANDROID-05 旧独立 central-owner-session.enc 一次性导入统一登录
 
-位置：[CentralClient.kt:93](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CentralClient.kt:93)。
+位置：[CentralClient.kt:93](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CentralClient.kt#L93)。
 
 兼容对象：旧 SecretBox 文件 central-owner-session.enc {server,token,signedOut,expiresAt}；尚未过期、server匹配且当前config.token为空时。
 
@@ -1728,14 +1728,14 @@
 
 风险（中）：尚未迁移用户需要重新登录；如果删除清理分支，旧凭据文件仍可能滞留存储；不要把正常session active fencing与旧迁移一起删除。
 
-关联测试：[NativeCentralInstrumentedTest.kt:247](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/androidTest/java/dev/mote/collector/NativeCentralInstrumentedTest.kt:247)。
+关联测试：[NativeCentralInstrumentedTest.kt:247](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/androidTest/java/dev/mote/collector/NativeCentralInstrumentedTest.kt#L247)。
 
 
 <a id="android-06"></a>
 
 ### ANDROID-06 服务器未返回 node.protocol 时按旧协商前 v1 接受
 
-位置：[ProtocolCompatibility.kt:14](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/ProtocolCompatibility.kt:14) · [ConnectionClient.kt:79](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/ConnectionClient.kt:79)。
+位置：[ProtocolCompatibility.kt:14](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/ProtocolCompatibility.kt#L14) · [ConnectionClient.kt:79](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/ConnectionClient.kt#L79)。
 
 兼容对象：GET /api/connections/self 无 node 或无 protocol；与显式 JSON null 区别，缺字段接受，null拒绝。
 
@@ -1749,7 +1749,7 @@
 
 风险（中）：旧节点无法连接/检查；缺字段故障会从被接受变成硬失败；改动共享 fixtures时要同步TS/Desktop，避免多端协议不同。
 
-关联测试：[ProtocolCompatibilityTest.kt:14](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/ProtocolCompatibilityTest.kt:14) · [ProtocolCompatibilityTest.kt:22](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/ProtocolCompatibilityTest.kt:22)。
+关联测试：[ProtocolCompatibilityTest.kt:14](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/ProtocolCompatibilityTest.kt#L14) · [ProtocolCompatibilityTest.kt:22](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/ProtocolCompatibilityTest.kt#L22)。
 
 补充：父审计已确认owner仍是当前合法主路径，collector旧凭据另由服务端isOwner映射；Android owner/collector宽松scope与无deviceId不可整体删。
 
@@ -1758,7 +1758,7 @@
 
 ### ANDROID-07 上传 bundle -> JSON batch -> individual 老端点回退与24小时能力缓存
 
-位置：[UploadWorker.kt:176](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/UploadWorker.kt:176) · [UploadNegotiation.kt:5](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/UploadNegotiation.kt:5) · [IngressV2Protocol.kt:22](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/IngressV2Protocol.kt:22)。
+位置：[UploadWorker.kt:176](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/UploadWorker.kt#L176) · [UploadNegotiation.kt:5](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/UploadNegotiation.kt#L5) · [IngressV2Protocol.kt:22](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/IngressV2Protocol.kt#L22)。
 
 兼容对象：bundle或batch返回404/405，记录 bundle-capability server/at 24小时；回退/api/captures/batch(max25)，再/api/captures(1)。
 
@@ -1772,14 +1772,14 @@
 
 风险（中）：老端点或反代不支持bundle的部署将无法上传，队列保留并重试；若连单条合法模式一起删除，现有用户配置改变；不可误称本分支支持退休 ingress v1；v1 ACK仍被拒绝。
 
-关联测试：[OfflineSyncInstrumentedTest.kt:211](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/androidTest/java/dev/mote/collector/OfflineSyncInstrumentedTest.kt:211) · [UploadNegotiationTest.kt:1](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/UploadNegotiationTest.kt:1) · [PowerOptimizationTest.kt:31](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/PowerOptimizationTest.kt:31)。
+关联测试：[OfflineSyncInstrumentedTest.kt:211](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/androidTest/java/dev/mote/collector/OfflineSyncInstrumentedTest.kt#L211) · [UploadNegotiationTest.kt:1](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/UploadNegotiationTest.kt#L1) · [PowerOptimizationTest.kt:31](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/PowerOptimizationTest.kt#L31)。
 
 
 <a id="android-08"></a>
 
 ### ANDROID-08 更新器支持旧 v* 统一 release feed 和无 component 的混合清单
 
-位置：[AppUpdateStore.kt:30](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/AppUpdateStore.kt:30) · [AppRelease.kt:63](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/AppRelease.kt:63)。
+位置：[AppUpdateStore.kt:30](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/AppUpdateStore.kt#L30) · [AppRelease.kt:63](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/AppRelease.kt#L63)。
 
 兼容对象：旧tag v<version>，manifest顶层没有component，assets可混合android/desktop/server，images可带server镜像。优先android-v*，只在没有自身release时才回旧列表。
 
@@ -1793,14 +1793,14 @@
 
 风险（中）：自定义仓库只有旧统一release者再也找不到更新；存储的旧候选manifest重新验证可能失败；不能变更包名/签名绕过升级验证，否则成为新安装导致旧应用数据不可见。
 
-关联测试：[AppReleaseTest.kt:44](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/AppReleaseTest.kt:44) · [AppReleaseTest.kt:54](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/AppReleaseTest.kt:54) · [AppUpdateInstrumentedTest.kt:137](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/androidTest/java/dev/mote/collector/AppUpdateInstrumentedTest.kt:137)。
+关联测试：[AppReleaseTest.kt:44](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/AppReleaseTest.kt#L44) · [AppReleaseTest.kt:54](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/AppReleaseTest.kt#L54) · [AppUpdateInstrumentedTest.kt:137](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/androidTest/java/dev/mote/collector/AppUpdateInstrumentedTest.kt#L137)。
 
 
 <a id="android-09"></a>
 
 ### ANDROID-09 文件 transport 索引版本不匹配时重建，兼顾旧版与新来源
 
-位置：[FileArchiveQueue.kt:46](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt:46) · [FileArchiveQueue.kt:184](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt:184)。
+位置：[FileArchiveQueue.kt:46](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt#L46) · [FileArchiveQueue.kt:184](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt#L184)。
 
 兼容对象：旧 state无transportQueueVersion（queueIndexed旧标记），todo-*旧索引将处理等待与transport混用，pending wire manifest必须保持不变。
 
@@ -1814,14 +1814,14 @@
 
 风险（中）：漏掉旧索引升级可让待传文件看不见、错误将解析等待计入上传，或重复处理；整段删除会同时破坏新安装初始化。
 
-关联测试：[FileArchiveQueueTest.kt:43](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/FileArchiveQueueTest.kt:43)。
+关联测试：[FileArchiveQueueTest.kt:43](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/FileArchiveQueueTest.kt#L43)。
 
 
 <a id="android-10"></a>
 
 ### ANDROID-10 旧 exact 截图签名 WxH:hash 的解析
 
-位置：[ScreenshotDedupeHelper.kt:194](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/ScreenshotDedupeHelper.kt:194) · [CapturePipeline.kt:27](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CapturePipeline.kt:27) · [CapturePipeline.kt:126](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CapturePipeline.kt:126) · [CapturePipeline.kt:163](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CapturePipeline.kt:163) · [CapturePipeline.kt:214](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CapturePipeline.kt:214)。
+位置：[ScreenshotDedupeHelper.kt:194](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/ScreenshotDedupeHelper.kt#L194) · [CapturePipeline.kt:27](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CapturePipeline.kt#L27) · [CapturePipeline.kt:126](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CapturePipeline.kt#L126) · [CapturePipeline.kt:163](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CapturePipeline.kt#L163) · [CapturePipeline.kt:214](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CapturePipeline.kt#L214)。
 
 兼容对象：旧字符串 <width>x<height>:<exactHash>；无 v2|前缀 ->parseLegacyExactSignature，补零dHash/thumbnail。
 
@@ -1835,7 +1835,7 @@
 
 风险（低）：如未来/隐藏调用传旧签名，将多保留一帧而非丢数据；仓内当前链路不跨进程保存旧签名，风险低。
 
-关联测试：[ScreenshotDedupeTest.kt:15](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/ScreenshotDedupeTest.kt:15)。
+关联测试：[ScreenshotDedupeTest.kt:15](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/ScreenshotDedupeTest.kt#L15)。
 
 补充：现有测试覆盖无效/v2签名，没有专门旧格式案例。
 
@@ -1844,7 +1844,7 @@
 
 ### ANDROID-11 本机随手记旧 mood 字段隐藏读写
 
-位置：[MainActivity.kt:538](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt:538) · [MainActivity.kt:582](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt:582) · [NoteDraftStore.kt:8](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/NoteDraftStore.kt:8) · [QuickNotes.kt:19](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/QuickNotes.kt:19)。
+位置：[MainActivity.kt:538](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt#L538) · [MainActivity.kt:582](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt#L582) · [NoteDraftStore.kt:8](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/NoteDraftStore.kt#L8) · [QuickNotes.kt:19](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/QuickNotes.kt#L19)。
 
 兼容对象：旧本机note-draft/draft.enc mood (<=80字符)，页面不再显示mood编辑框，但隐藏EditText恢复并保存原值。
 
@@ -1858,14 +1858,14 @@
 
 风险（低至中）：直接移除字段会丢失旧心情元数据；prepared同ID已带mood时改内容可能触发冲突；当前草稿reader getString(mood)仍强制存在，改writer必须同改reader/导入处理。
 
-关联测试：[NoteDraftStoreTest.kt:1](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/NoteDraftStoreTest.kt:1) · [IngressV2ProtocolTest.kt:95](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/IngressV2ProtocolTest.kt:95)。
+关联测试：[NoteDraftStoreTest.kt:1](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/NoteDraftStoreTest.kt#L1) · [IngressV2ProtocolTest.kt:95](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/IngressV2ProtocolTest.kt#L95)。
 
 
 <a id="android-12"></a>
 
 ### ANDROID-12 旧本机延迟OCR及OCR补上传队列
 
-位置：[CaptureOcr.kt:35](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CaptureOcr.kt:35) · [DurableQueue.kt:568](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt:568) · [UploadWorker.kt:142](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/UploadWorker.kt:142) · [Settings.kt:107](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/Settings.kt:107) · [MainActivity.kt:509](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt:509) · [MoteApplication.kt:67](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/MoteApplication.kt:67) · [RuntimeSettings.kt:135](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/RuntimeSettings.kt:135) · [QueueArchive.kt:83](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/QueueArchive.kt:83)。
+位置：[CaptureOcr.kt:35](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CaptureOcr.kt#L35) · [DurableQueue.kt:568](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt#L568) · [UploadWorker.kt:142](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/UploadWorker.kt#L142) · [Settings.kt:107](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/Settings.kt#L107) · [MainActivity.kt:509](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt#L509) · [MoteApplication.kt:67](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/MoteApplication.kt#L67) · [RuntimeSettings.kt:135](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/RuntimeSettings.kt#L135) · [QueueArchive.kt:83](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/QueueArchive.kt#L83)。
 
 兼容对象：旧capture ocr.status=pending/_ocrResult/_ocrAttempts/_ocrUploaded；ocrChargingOnly仅老后台队列使用。
 
@@ -1879,14 +1879,14 @@
 
 风险（旧队列处理方案确定前为高风险）：只删worker会留下永久waiting/reserve占用；只删上传分支会丢已识别文字结果或保留无法清理的记录；把CaptureOcr整个删除会同时破坏当前本机隐私文字审查；现有v2首次迁移已丢弃部分旧pending，并不代表所有backup再导入都干净。
 
-关联测试：[DeferredOcrQueueTest.kt:1](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/DeferredOcrQueueTest.kt:1) · [QueueStatsTest.kt:1](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/QueueStatsTest.kt:1) · [OfflineSyncInstrumentedTest.kt:1](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/androidTest/java/dev/mote/collector/OfflineSyncInstrumentedTest.kt:1)。
+关联测试：[DeferredOcrQueueTest.kt:1](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/DeferredOcrQueueTest.kt#L1) · [QueueStatsTest.kt:1](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/QueueStatsTest.kt#L1) · [OfflineSyncInstrumentedTest.kt:1](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/androidTest/java/dev/mote/collector/OfflineSyncInstrumentedTest.kt#L1)。
 
 
 <a id="android-13"></a>
 
 ### ANDROID-13 旧未记dataOrigin的设置从server推导节点绑定
 
-位置：[Settings.kt:188](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/Settings.kt:188) · [Settings.kt:252](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/Settings.kt:252) · [ConnectionGuard.kt:42](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/ConnectionGuard.kt:42)。
+位置：[Settings.kt:188](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/Settings.kt#L188) · [Settings.kt:252](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/Settings.kt#L252) · [ConnectionGuard.kt:42](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/ConnectionGuard.kt#L42)。
 
 兼容对象：旧mote preferences已有server但无dataOrigin；旧event亦可能无_archiveOrigin，采用原server建立后续sticky绑定。
 
@@ -1900,14 +1900,14 @@
 
 风险（高）：直接把缺键当空会使旧待传材料被绑定到新节点，可能把个人资料发错服务器；改成强制键存在又会阻止新安装/离线采集；需要当前初始化替代。
 
-关联测试：[RetainedOriginTest.kt:1](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/RetainedOriginTest.kt:1) · [ConnectionAndOperationsTest.kt:1](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/ConnectionAndOperationsTest.kt:1)。
+关联测试：[RetainedOriginTest.kt:1](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/RetainedOriginTest.kt#L1) · [ConnectionAndOperationsTest.kt:1](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/ConnectionAndOperationsTest.kt#L1)。
 
 
 <a id="android-14"></a>
 
 ### ANDROID-14 旧本机来源配置缺新增字段时补默认
 
-位置：[LocalSources.kt:34](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/LocalSources.kt:34)。
+位置：[LocalSources.kt:34](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/LocalSources.kt#L34)。
 
 兼容对象：旧config.enc来源对象没有lightweightIndex/allowRead（git 2430706d父版本写方可证明），更早配置可能缺initialSync/maxFileMiB等。
 
@@ -1921,7 +1921,7 @@
 
 风险（中）：改强制字段导致老来源配置无法加载/源同步全部停；错误默认allowRead=true或initialSync=all可能扩大文件读取/历史上传范围。
 
-关联测试：[LocalSourcesTest.kt:1](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/test/java/dev/mote/collector/LocalSourcesTest.kt:1)。
+关联测试：[LocalSourcesTest.kt:1](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/test/java/dev/mote/collector/LocalSourcesTest.kt#L1)。
 
 补充：仅lightweightIndex/allowRead已由本地git旧writer实证，其余opt默认属于宽松旧/缺字段支持，没有逐个历史版本实证。
 
@@ -1930,7 +1930,7 @@
 
 ### ANDROID-15 AskActivity 旧入口class保留但已成为当前导航依赖
 
-位置：[AskActivity.kt:3](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/AskActivity.kt:3) · [MainActivity.kt:1252](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt:1252) · [NativeUi.kt:152](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/NativeUi.kt:152) · [AndroidManifest.xml:26](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/AndroidManifest.xml:26)。
+位置：[AskActivity.kt:3](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/AskActivity.kt#L3) · [MainActivity.kt:1252](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt#L1252) · [NativeUi.kt:152](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/NativeUi.kt#L152) · [AndroidManifest.xml:26](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/AndroidManifest.xml#L26)。
 
 兼容对象：旧AskActivity独立入口；现在继承CentralActivity共用中央UI和session。
 
@@ -1944,7 +1944,7 @@
 
 风险（低）：直接删class/manifest而不改导航会造成问答入口崩溃；使用同class后栈复用/Activity复原可能变化。
 
-关联测试：[NavigationInstrumentedTest.kt:95](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/androidTest/java/dev/mote/collector/NavigationInstrumentedTest.kt:95) · [NativeCentralInstrumentedTest.kt:164](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/androidTest/java/dev/mote/collector/NativeCentralInstrumentedTest.kt:164)。
+关联测试：[NavigationInstrumentedTest.kt:95](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/androidTest/java/dev/mote/collector/NavigationInstrumentedTest.kt#L95) · [NativeCentralInstrumentedTest.kt:164](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/androidTest/java/dev/mote/collector/NativeCentralInstrumentedTest.kt#L164)。
 
 
 ## SQL 结构升级逐文件索引
@@ -1953,78 +1953,78 @@
 
 | 文件 | 结构检查或修改所在行 |
 | --- | --- |
-| [evidence-archive.ts:21](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-archive.ts:21) | 21, 56, 57 |
-| [evidence-store.ts:114](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts:114) | 114, 118, 119 |
-| [execution-engine.ts:60](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/execution-engine.ts:60) | 60 |
-| [file-schema.ts:31](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/file-schema.ts:31) | 31, 32, 33, 34, 35, 36, 37, 38, 39 |
-| [material-memory-work.ts:28](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/material-memory-work.ts:28) | 28, 33, 49, 50, 51 |
-| [material-organizers.ts:494](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/material-organizers.ts:494) | 494 |
-| [materials.ts:169](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/materials.ts:169) | 169, 170, 171, 172, 173, 174, 177, 178, 179 |
-| [memory-deletions.ts:20](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-deletions.ts:20) | 20, 21 |
-| [memory-extraction-drafts.ts:12](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-extraction-drafts.ts:12) | 12 |
-| [memory-input-authorization.ts:24](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-input-authorization.ts:24) | 24, 25, 26 |
-| [operation-projection.ts:9](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/operation-projection.ts:9) | 9, 10 |
-| [processing-runtime.ts:53](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/processing-runtime.ts:53) | 53 |
-| [read-models.ts:5](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/read-models.ts:5) | 5, 7, 8 |
-| [source-archive.ts:42](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/source-archive.ts:42) | 42, 44, 48 |
-| [source-pipelines.ts:74](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/source-pipelines.ts:74) | 74, 75, 76, 77, 78, 79 |
-| [storage-ledger.ts:30](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/storage-ledger.ts:30) | 30 |
+| [evidence-archive.ts:21](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-archive.ts#L21) | 21, 56, 57 |
+| [evidence-store.ts:114](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts#L114) | 114, 118, 119 |
+| [execution-engine.ts:60](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/execution-engine.ts#L60) | 60 |
+| [file-schema.ts:31](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/file-schema.ts#L31) | 31, 32, 33, 34, 35, 36, 37, 38, 39 |
+| [material-memory-work.ts:28](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/material-memory-work.ts#L28) | 28, 33, 49, 50, 51 |
+| [material-organizers.ts:494](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/material-organizers.ts#L494) | 494 |
+| [materials.ts:169](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/materials.ts#L169) | 169, 170, 171, 172, 173, 174, 177, 178, 179 |
+| [memory-deletions.ts:20](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-deletions.ts#L20) | 20, 21 |
+| [memory-extraction-drafts.ts:12](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-extraction-drafts.ts#L12) | 12 |
+| [memory-input-authorization.ts:24](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-input-authorization.ts#L24) | 24, 25, 26 |
+| [operation-projection.ts:9](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/operation-projection.ts#L9) | 9, 10 |
+| [processing-runtime.ts:53](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/processing-runtime.ts#L53) | 53 |
+| [read-models.ts:5](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/read-models.ts#L5) | 5, 7, 8 |
+| [source-archive.ts:42](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/source-archive.ts#L42) | 42, 44, 48 |
+| [source-pipelines.ts:74](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/source-pipelines.ts#L74) | 74, 75, 76, 77, 78, 79 |
+| [storage-ledger.ts:30](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/storage-ledger.ts#L30) | 30 |
 
 ## 容易误判的旧名与当前功能
 
 以下是重点排除和另行清理候选。当前恢复、支持旧 OS 或第三方协议不会因为本次退役 Mote 旧版本而自然失去必要性；功能退休代码需要单独决定产品范围。
 
-- **共享与脚本：packages/diagnostics/src/index.ts**。旧诊断文件不可读的catch是损坏恢复，不是接受旧schema；PID orphan cleanup是现行崩溃恢复 位置：[index.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/diagnostics/src/index.ts)。
+- **共享与脚本：packages/diagnostics/src/index.ts**。旧诊断文件不可读的catch是损坏恢复，不是接受旧schema；PID orphan cleanup是现行崩溃恢复 位置：[index.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/diagnostics/src/index.ts)。
 
-- **共享与脚本：packages/agent/src/usage.ts**。SDK流式/聚合usage两种事件是现行外部SDK契约，不足以证明Mote旧版本迁移 位置：[usage.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/src/usage.ts)。
+- **共享与脚本：packages/agent/src/usage.ts**。SDK流式/聚合usage两种事件是现行外部SDK契约，不足以证明Mote旧版本迁移 位置：[usage.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/src/usage.ts)。
 
-- **共享与脚本：packages/agent/src/codex-protocol.ts**。外部App Server字段与usage分桶，不是Mote旧逻辑 位置：[codex-protocol.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/agent/src/codex-protocol.ts)。
+- **共享与脚本：packages/agent/src/codex-protocol.ts**。外部App Server字段与usage分桶，不是Mote旧逻辑 位置：[codex-protocol.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/agent/src/codex-protocol.ts)。
 
-- **共享与脚本：scripts/test-heldout-memory-replay-sequence.ts**。保留旧实验ledger/wave1可回放，仅影响测试历史；不在生产用户资料兼容链路 位置：[test-heldout-memory-replay-sequence.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/test-heldout-memory-replay-sequence.ts)。
+- **共享与脚本：scripts/test-heldout-memory-replay-sequence.ts**。保留旧实验ledger/wave1可回放，仅影响测试历史；不在生产用户资料兼容链路 位置：[test-heldout-memory-replay-sequence.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/test-heldout-memory-replay-sequence.ts)。
 
-- **共享与脚本：scripts/composed-image-disclosure.ts**。one-original是显式测试实验对照契约，不是生产旧客户端兼容 位置：[composed-image-disclosure.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/composed-image-disclosure.ts)。
+- **共享与脚本：scripts/composed-image-disclosure.ts**。one-original是显式测试实验对照契约，不是生产旧客户端兼容 位置：[composed-image-disclosure.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/composed-image-disclosure.ts)。
 
-- **共享与脚本：scripts/reset-backend-v2.mjs**。显式破坏性MVP重置操作，不是自动兼容迁移；审计未执行 位置：[reset-backend-v2.mjs](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/reset-backend-v2.mjs)。
+- **共享与脚本：scripts/reset-backend-v2.mjs**。显式破坏性MVP重置操作，不是自动兼容迁移；审计未执行 位置：[reset-backend-v2.mjs](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/reset-backend-v2.mjs)。
 
-- **共享与脚本：packages/shared/src/model-providers.ts**。腾讯旧provider预设/OpenAI-compatible是第三方provider支持，与Mote旧版本存储兼容不同 位置：[model-providers.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/packages/shared/src/model-providers.ts)。
+- **共享与脚本：packages/shared/src/model-providers.ts**。腾讯旧provider预设/OpenAI-compatible是第三方provider支持，与Mote旧版本存储兼容不同 位置：[model-providers.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/packages/shared/src/model-providers.ts)。
 
-- **Central：apps/server/src/actions.ts**。当前enqueue129只写action_jobs，execute也给新jobs创建engine step；admit137是现行入口，不能整个作为历史迁移移除。只有ctor历史全扫描可在另存boot checkpoint后考虑。 位置：[actions.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/actions.ts)。
+- **Central：apps/server/src/actions.ts**。当前enqueue129只写action_jobs，execute也给新jobs创建engine step；admit137是现行入口，不能整个作为历史迁移移除。只有ctor历史全扫描可在另存boot checkpoint后考虑。 位置：[actions.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/actions.ts)。
 
-- **Central：apps/server/src/actions.ts**。当前可关联proposed/dismissed/succeeded；original.nativeOperationId仅成功receipt128生成，所以未落外部日历当前proposal也没有该字段。不是保证当前总有operationId的历史兼容。 位置：[actions.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/actions.ts)。
+- **Central：apps/server/src/actions.ts**。当前可关联proposed/dismissed/succeeded；original.nativeOperationId仅成功receipt128生成，所以未落外部日历当前proposal也没有该字段。不是保证当前总有operationId的历史兼容。 位置：[actions.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/actions.ts)。
 
-- **Central：apps/server/src/vector-work.ts**。当前模型/坏数据一致性及索引构建，不是确认的旧Mote schema迁移；无历史vector ALTER/backfill版本分支。 位置：[vector-work.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/vector-work.ts)。
+- **Central：apps/server/src/vector-work.ts**。当前模型/坏数据一致性及索引构建，不是确认的旧Mote schema迁移；无历史vector ALTER/backfill版本分支。 位置：[vector-work.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/vector-work.ts)。
 
-- **Central：apps/server/src/document-decoder.ts**。第三方库兼容构建名称，不能证明Mote旧业务升级。 位置：[document-decoder.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/document-decoder.ts)。
+- **Central：apps/server/src/document-decoder.ts**。第三方库兼容构建名称，不能证明Mote旧业务升级。 位置：[document-decoder.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/document-decoder.ts)。
 
-- **Central：apps/server/src/import-runtime.ts**。第三方当前runtime构建，不是旧Mote import格式。 位置：[import-runtime.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/import-runtime.ts)。
+- **Central：apps/server/src/import-runtime.ts**。第三方当前runtime构建，不是旧Mote import格式。 位置：[import-runtime.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/import-runtime.ts)。
 
-- **Central：apps/server/src/model-catalog.ts**。当前第三方provider协议适配，删掉会失去现行模型服务，不属于仅旧Mote兼容。 位置：[model-catalog.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/model-catalog.ts)。
+- **Central：apps/server/src/model-catalog.ts**。当前第三方provider协议适配，删掉会失去现行模型服务，不属于仅旧Mote兼容。 位置：[model-catalog.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/model-catalog.ts)。
 
-- **Central：apps/server/src/material-organizers.ts**。列ADD属历史schema项，但现行插件首次安装/升级的发现与cursor backfill是当前功能。先把字段写fresh CREATE，不能删整个discover/backfill机制。 位置：[material-organizers.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/material-organizers.ts)。
+- **Central：apps/server/src/material-organizers.ts**。列ADD属历史schema项，但现行插件首次安装/升级的发现与cursor backfill是当前功能。先把字段写fresh CREATE，不能删整个discover/backfill机制。 位置：[material-organizers.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/material-organizers.ts)。
 
-- **Central：apps/server/src/execution.ts**。现行所有store继续以域status写投影；executionEnvelope本身仍当前API统一层，不可只因兼容旧status整段删除。 位置：[execution.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/execution.ts)。
+- **Central：apps/server/src/execution.ts**。现行所有store继续以域status写投影；executionEnvelope本身仍当前API统一层，不可只因兼容旧status整段删除。 位置：[execution.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/execution.ts)。
 
-- **Central：apps/server/src/store.ts**。现行runtime仍从store.ts导入Store；这是源码命名别名，非旧数据格式兼容。可机械重命名但没有升级数据风险/收益。 位置：[store.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/store.ts)。
+- **Central：apps/server/src/store.ts**。现行runtime仍从store.ts导入Store；这是源码命名别名，非旧数据格式兼容。可机械重命名但没有升级数据风险/收益。 位置：[store.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/store.ts)。
 
-- **Central：apps/server/src/evidence-reader.ts**。当前截图与authored原件仍用此路径；“legacy”命名不代表当前停止写。 位置：[evidence-reader.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-reader.ts)。
+- **Central：apps/server/src/evidence-reader.ts**。当前截图与authored原件仍用此路径；“legacy”命名不代表当前停止写。 位置：[evidence-reader.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-reader.ts)。
 
-- **Central：apps/server/src/conversation-lineage.ts**。当前轻量Store/Conversations消费者也不安装完整file processing graph；是当前组合能力，不等同缺旧schema。 位置：[conversation-lineage.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/conversation-lineage.ts)。
+- **Central：apps/server/src/conversation-lineage.ts**。当前轻量Store/Conversations消费者也不安装完整file processing graph；是当前组合能力，不等同缺旧schema。 位置：[conversation-lineage.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/conversation-lineage.ts)。
 
-- **Central：apps/server/src/content-encryption.ts**。当前可切换加密写策略，后缀并存是当前支持；确定历史格式是无后缀对象，见S05。 位置：[content-encryption.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/content-encryption.ts)。
+- **Central：apps/server/src/content-encryption.ts**。当前可切换加密写策略，后缀并存是当前支持；确定历史格式是无后缀对象，见S05。 位置：[content-encryption.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/content-encryption.ts)。
 
-- **Central：apps/server/src/files.ts**。单文件begin/revision API当前仍有效；锁排序防当前批量与单文件竞态，不能按legacy注释删除。 位置：[files.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/files.ts)。
+- **Central：apps/server/src/files.ts**。单文件begin/revision API当前仍有效；锁排序防当前批量与单文件竞态，不能按legacy注释删除。 位置：[files.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/files.ts)。
 
-- **Central：apps/server/src/files.ts**。当前writer始终state，metadata事务accepted，逐项72 accepted/existing/missing_original、73 rejected；兼容逻辑落桌面reader，由root报告。 位置：[files.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/files.ts)。
+- **Central：apps/server/src/files.ts**。当前writer始终state，metadata事务accepted，逐项72 accepted/existing/missing_original、73 rejected；兼容逻辑落桌面reader，由root报告。 位置：[files.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/files.ts)。
 
-- **Central：apps/server/src/source-catalog.ts**。当前外部源可不提供完整index metadata；没有证明仅历史写者触发，先保留为当前可选metadata策略。 位置：[source-catalog.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/source-catalog.ts)。
+- **Central：apps/server/src/source-catalog.ts**。当前外部源可不提供完整index metadata；没有证明仅历史写者触发，先保留为当前可选metadata策略。 位置：[source-catalog.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/source-catalog.ts)。
 
-- **Central：apps/server/src/memory-review.ts**。现行缓存只在冻结时间、exact inputs/ranges、host validation与snapshot吻合时可复用；旧artifact兼容字段或missing refs不是可以删掉复用安全条件的理由。 位置：[memory-review.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/memory-review.ts)。
+- **Central：apps/server/src/memory-review.ts**。现行缓存只在冻结时间、exact inputs/ranges、host validation与snapshot吻合时可复用；旧artifact兼容字段或missing refs不是可以删掉复用安全条件的理由。 位置：[memory-review.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/memory-review.ts)。
 
-- **Central：apps/server/src/evidence-store.ts**。当前export仍产生version1归档；version1不等于旧产品版本。backup restore、缺表bootstrap/恢复容错按现行路径保留。 位置：[evidence-store.ts](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/server/src/evidence-store.ts)。
+- **Central：apps/server/src/evidence-store.ts**。当前export仍产生version1归档；version1不等于旧产品版本。backup restore、缺表bootstrap/恢复容错按现行路径保留。 位置：[evidence-store.ts](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/server/src/evidence-store.ts)。
 
-- **Desktop：DEV manual update / DesktopUpdater**。developmentBuild仍有当前writer(package build metadata)，仅status/check/notes路由手动DEV下载；channel/download/cancel/install仍有生产IPC、所有build启动initialize和startupCompleted。不是无caller旧更新残留。签名校验、事务恢复、原App回滚是当前更新链路保护，不属于老版本格式兼容。 scripts/release/mac-package.mjs:9 当前明确写moteDevelopment；若决定完全退役自动更新，可单独删除功能而非称历史兼容；必须settle未确认helper事务与receipt恢复。 位置：[main.ts:376](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/main.ts:376) · [updater.ts:49](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/updater.ts:49)。
+- **Desktop：DEV manual update / DesktopUpdater**。developmentBuild仍有当前writer(package build metadata)，仅status/check/notes路由手动DEV下载；channel/download/cancel/install仍有生产IPC、所有build启动initialize和startupCompleted。不是无caller旧更新残留。签名校验、事务恢复、原App回滚是当前更新链路保护，不属于老版本格式兼容。 scripts/release/mac-package.mjs:9 当前明确写moteDevelopment；若决定完全退役自动更新，可单独删除功能而非称历史兼容；必须settle未确认helper事务与receipt恢复。 位置：[main.ts:376](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/main.ts#L376) · [updater.ts:49](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/updater.ts#L49)。
 
-- **Desktop：central-window embedded central + central-preload**。main生产打开central-browser外部Chrome。openCentralWindow只有smoke/test-web-login类脚本调用；可作为独立死代码/产品废弃清理，不冒充数据迁移兼容。 位置：[central-window.ts:18](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/central-window.ts:18) · [central-smoke.cjs:23](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/scripts/central-smoke.cjs:23) · [test-web-login.cjs:130](/Users/utopiafar/.codex/worktrees/ee23/mote/scripts/test-web-login.cjs:130)。
+- **Desktop：central-window embedded central + central-preload**。main生产打开central-browser外部Chrome。openCentralWindow只有smoke/test-web-login类脚本调用；可作为独立死代码/产品废弃清理，不冒充数据迁移兼容。 位置：[central-window.ts:18](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/central-window.ts#L18) · [central-smoke.cjs:23](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/scripts/central-smoke.cjs#L23) · [test-web-login.cjs:130](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/scripts/test-web-login.cjs#L130)。
 
 - **Desktop：privacy reviewLocally / shouldExclude old helper**。生产collector用graded app-collection与upload-gate；旧helper目前仅测试；privacy.maskBitmap仍有live worker调用。
 
@@ -2040,37 +2040,37 @@
 
 - **Desktop：plaintext config token rejection、connection authorization/privacy fail-closed**。explicit ignore/reject旧明文不会读取旧token；不应作为需要删除兼容代码。
 
-- **Desktop：Kimi wire.jsonl/context.jsonl 与 Codex session id/input 等别名**。每种日志当前仍可能存在；wire优先避免同会话两个表示双采集。未证实是Mote旧版本本机状态；移除需要声明第三方提供方最小支持日志格式，影响历史导入范围。 位置：[coding-agents.ts:37](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/coding-agents.ts:37) · [coding-agents.ts:80](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/coding-agents.ts:80) · [coding-agents.ts:87](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/desktop/src/coding-agents.ts:87)。
+- **Desktop：Kimi wire.jsonl/context.jsonl 与 Codex session id/input 等别名**。每种日志当前仍可能存在；wire优先避免同会话两个表示双采集。未证实是Mote旧版本本机状态；移除需要声明第三方提供方最小支持日志格式，影响历史导入范围。 位置：[coding-agents.ts:37](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/coding-agents.ts#L37) · [coding-agents.ts:80](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/coding-agents.ts#L80) · [coding-agents.ts:87](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/desktop/src/coding-agents.ts#L87)。
 
-- **Android：Android OS/OEM兼容（不是Mote旧版兼容）**。minSdk=29到targetSdk36的平台截图/Insets/投屏/权限/Parcelable/返回回调与MIUI系统栏兼容；删除需要提高minSdk/改变支持设备范围，不能当历史业务代码删。 位置：[CaptureAccessibilityService.kt:51](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CaptureAccessibilityService.kt:51) · [CaptureAccessibilityService.kt:78](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CaptureAccessibilityService.kt:78) · [CaptureAccessibilityService.kt:161](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CaptureAccessibilityService.kt:161) · [ProjectionService.kt:89](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/ProjectionService.kt:89) · [ProjectionService.kt:114](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/ProjectionService.kt:114) · [NativeInsets.kt:10](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/NativeInsets.kt:10) · [MainActivity.kt:1286](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt:1286) · [AppUpdateInstaller.kt:47](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/AppUpdateInstaller.kt:47) · [AppCollectionRules.kt:61](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/AppCollectionRules.kt:61)。
+- **Android：Android OS/OEM兼容（不是Mote旧版兼容）**。minSdk=29到targetSdk36的平台截图/Insets/投屏/权限/Parcelable/返回回调与MIUI系统栏兼容；删除需要提高minSdk/改变支持设备范围，不能当历史业务代码删。 位置：[CaptureAccessibilityService.kt:51](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CaptureAccessibilityService.kt#L51) · [CaptureAccessibilityService.kt:78](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CaptureAccessibilityService.kt#L78) · [CaptureAccessibilityService.kt:161](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CaptureAccessibilityService.kt#L161) · [ProjectionService.kt:89](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/ProjectionService.kt#L89) · [ProjectionService.kt:114](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/ProjectionService.kt#L114) · [NativeInsets.kt:10](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/NativeInsets.kt#L10) · [MainActivity.kt:1286](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt#L1286) · [AppUpdateInstaller.kt:47](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/AppUpdateInstaller.kt#L47) · [AppCollectionRules.kt:61](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/AppCollectionRules.kt#L61)。
 
-- **Android：MOTE_PROFILE=legacy/Gradle matchingFallbacks**。legacy是当前日常包配置名称，dev/fileFixture是独立安装身份；matchingFallbacks是Gradle依赖变体适配，不是升级运行分支。改包名导致应用数据/权限/KeyStore身份改变。 位置：[build.gradle.kts:23](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/build.gradle.kts:23) · [build.gradle.kts:46](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/build.gradle.kts:46) · [build.gradle.kts:52](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/build.gradle.kts:52)。
+- **Android：MOTE_PROFILE=legacy/Gradle matchingFallbacks**。legacy是当前日常包配置名称，dev/fileFixture是独立安装身份；matchingFallbacks是Gradle依赖变体适配，不是升级运行分支。改包名导致应用数据/权限/KeyStore身份改变。 位置：[build.gradle.kts:23](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/build.gradle.kts#L23) · [build.gradle.kts:46](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/build.gradle.kts#L46) · [build.gradle.kts:52](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/build.gradle.kts#L52)。
 
-- **Android：legacyExcluded参数和旧excluded键仍是当前功能**。MainActivity仍提供包名排除编辑器，当前采集/媒体策略仍依赖；合并到apps=off是一次隐私规则转换，不能直接移除。 位置：[AppCollectionRules.kt:12](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/AppCollectionRules.kt:12) · [MainActivity.kt:623](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt:623) · [MainActivity.kt:831](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt:831) · [MediaObservation.kt:10](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/MediaObservation.kt:10)。
+- **Android：legacyExcluded参数和旧excluded键仍是当前功能**。MainActivity仍提供包名排除编辑器，当前采集/媒体策略仍依赖；合并到apps=off是一次隐私规则转换，不能直接移除。 位置：[AppCollectionRules.kt:12](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/AppCollectionRules.kt#L12) · [MainActivity.kt:623](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt#L623) · [MainActivity.kt:831](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt#L831) · [MediaObservation.kt:10](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/MediaObservation.kt#L10)。
 
-- **Android：privacyFloor检查点键及stage version守护**。注释写兼容旧key，但reviewHeld当前writer/reader都用privacyFloor；保存被审查hold授权跨stage/崩溃仍必需。stage版本变化时拒绝丢held资料是当前扩展契约，不是单纯旧实现。 位置：[DurableQueue.kt:315](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt:315) · [CaptureStages.kt:50](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CaptureStages.kt:50)。
+- **Android：privacyFloor检查点键及stage version守护**。注释写兼容旧key，但reviewHeld当前writer/reader都用privacyFloor；保存被审查hold授权跨stage/崩溃仍必需。stage版本变化时拒绝丢held资料是当前扩展契约，不是单纯旧实现。 位置：[DurableQueue.kt:315](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt#L315) · [CaptureStages.kt:50](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CaptureStages.kt#L50)。
 
-- **Android：QueueLocationStore legacy目录和迁移恢复**。首次缺pointer采取原queue目录确能接旧存储，但新安装也选择同一个当前默认目录；普通用户选择外置卡迁移/日志恢复是当前功能。只能把旧目录adoption独立拆出，不能删load/recover。 位置：[QueueLocationStore.kt:39](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/QueueLocationStore.kt:39) · [QueueLocationStore.kt:100](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/QueueLocationStore.kt:100) · [QueueStorage.kt:31](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/QueueStorage.kt:31)。
+- **Android：QueueLocationStore legacy目录和迁移恢复**。首次缺pointer采取原queue目录确能接旧存储，但新安装也选择同一个当前默认目录；普通用户选择外置卡迁移/日志恢复是当前功能。只能把旧目录adoption独立拆出，不能删load/recover。 位置：[QueueLocationStore.kt:39](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/QueueLocationStore.kt#L39) · [QueueLocationStore.kt:100](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/QueueLocationStore.kt#L100) · [QueueStorage.kt:31](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/QueueStorage.kt#L31)。
 
-- **Android：QueueBrowseIndex metadataVersion!=4重建**。包含老derived projection升级，但同一重建也处理缺失/损坏/mtime变化以及当前统计reservation安全；改cache version可清掉旧shards再重建，不能删可重建和quota守护。 位置：[QueueBrowseIndex.kt:82](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/QueueBrowseIndex.kt:82) · [QueueBrowseIndex.kt:129](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/QueueBrowseIndex.kt:129) · [DurableQueue.kt:629](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt:629)。
+- **Android：QueueBrowseIndex metadataVersion!=4重建**。包含老derived projection升级，但同一重建也处理缺失/损坏/mtime变化以及当前统计reservation安全；改cache version可清掉旧shards再重建，不能删可重建和quota守护。 位置：[QueueBrowseIndex.kt:82](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/QueueBrowseIndex.kt#L82) · [QueueBrowseIndex.kt:129](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/QueueBrowseIndex.kt#L129) · [DurableQueue.kt:629](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/DurableQueue.kt#L629)。
 
-- **Android：FileArchiveQueue processOne缺processor补local-file v1**。虽注释legacy index waits，但当前prepare不会预置processor，当前新processing job也在首次运行时用此分支，不能删而没有新的当前写方。 位置：[FileArchiveQueue.kt:155](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt:155)。
+- **Android：FileArchiveQueue processOne缺processor补local-file v1**。虽注释legacy index waits，但当前prepare不会预置processor，当前新processing job也在首次运行时用此分支，不能删而没有新的当前写方。 位置：[FileArchiveQueue.kt:155](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/FileArchiveQueue.kt#L155)。
 
-- **Android：ConfigurationArchive同version1稀疏字段默认**。允许partial portable settings current.copy是现行接口，不足以证明每一个字段默认都只为旧版本；改必填会破坏现有部分配置导入。 位置：[ConfigurationArchive.kt:58](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/ConfigurationArchive.kt:58)。
+- **Android：ConfigurationArchive同version1稀疏字段默认**。允许partial portable settings current.copy是现行接口，不足以证明每一个字段默认都只为旧版本；改必填会破坏现有部分配置导入。 位置：[ConfigurationArchive.kt:58](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/ConfigurationArchive.kt#L58)。
 
-- **Android：原生中央分页items/entries/jobs与cursor/offset**。这是多个当前端点复用原生render的异构形状容错，是否历史别名需由服务端写方确认；不能仅凭多字段fallback判旧兼容。 位置：[CentralLibrary.kt:324](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CentralLibrary.kt:324) · [CentralAdmin.kt:74](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CentralAdmin.kt:74)。
+- **Android：原生中央分页items/entries/jobs与cursor/offset**。这是多个当前端点复用原生render的异构形状容错，是否历史别名需由服务端写方确认；不能仅凭多字段fallback判旧兼容。 位置：[CentralLibrary.kt:324](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CentralLibrary.kt#L324) · [CentralAdmin.kt:74](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CentralAdmin.kt#L74)。
 
-- **Android：中央memory version=1、defaultModels缺失、Codex serviceTier=default**。确有缺字段宽松处理，Android单边无法证明旧版本专用；发给父审计跨服务端确认。 位置：[CentralLibrary.kt:282](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CentralLibrary.kt:282) · [CentralAdmin.kt:212](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CentralAdmin.kt:212) · [CentralAdmin.kt:218](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CentralAdmin.kt:218)。
+- **Android：中央memory version=1、defaultModels缺失、Codex serviceTier=default**。确有缺字段宽松处理，Android单边无法证明旧版本专用；发给父审计跨服务端确认。 位置：[CentralLibrary.kt:282](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CentralLibrary.kt#L282) · [CentralAdmin.kt:212](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CentralAdmin.kt#L212) · [CentralAdmin.kt:218](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CentralAdmin.kt#L218)。
 
-- **Android：ConnectionClient accepts owner/collector和credential可缺deviceId**。可能旧owner凭据兼容，也可能owner手动登录仍属当前官方主路径；由服务端权限契约确认。applyResponse硬记scope=owner亦需核对，但本审计不改。 位置：[ConnectionClient.kt:75](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/ConnectionClient.kt:75) · [ConnectionClient.kt:65](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/ConnectionClient.kt:65)。
+- **Android：ConnectionClient accepts owner/collector和credential可缺deviceId**。可能旧owner凭据兼容，也可能owner手动登录仍属当前官方主路径；由服务端权限契约确认。applyResponse硬记scope=owner亦需核对，但本审计不改。 位置：[ConnectionClient.kt:75](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/ConnectionClient.kt#L75) · [ConnectionClient.kt:65](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/ConnectionClient.kt#L65)。
 
-- **Android：nsfw.enabled=false及localReview/Qwen设置/代码残留**。当前采集已不走旧VLM/HTTP隐私模型链；这属于退休功能遗留与旧配置归一化，不是旧实现仍被执行来兼容；应作为另一项dead feature清理而不要混入确定老格式兼容。 位置：[Settings.kt:96](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/Settings.kt:96) · [CapturePipeline.kt:24](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CapturePipeline.kt:24) · [CapturePipeline.kt:154](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CapturePipeline.kt:154) · [MainActivity.kt:670](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt:670) · [MainActivity.kt:696](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt:696)。
+- **Android：nsfw.enabled=false及localReview/Qwen设置/代码残留**。当前采集已不走旧VLM/HTTP隐私模型链；这属于退休功能遗留与旧配置归一化，不是旧实现仍被执行来兼容；应作为另一项dead feature清理而不要混入确定老格式兼容。 位置：[Settings.kt:96](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/Settings.kt#L96) · [CapturePipeline.kt:24](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CapturePipeline.kt#L24) · [CapturePipeline.kt:154](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CapturePipeline.kt#L154) · [MainActivity.kt:670](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt#L670) · [MainActivity.kt:696](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt#L696)。
 
-- **Android：404需升级文案、网络/413缩批、文件range续传、JSON可选值**。目前故障提示/负载适配/HTTP协议特性，不等于旧业务实现。 位置：[SyncRecoveryWorker.kt:47](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/SyncRecoveryWorker.kt:47) · [UploadNegotiation.kt:6](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/UploadNegotiation.kt:6) · [AppUpdateStore.kt:57](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/AppUpdateStore.kt:57)。
+- **Android：404需升级文案、网络/413缩批、文件range续传、JSON可选值**。目前故障提示/负载适配/HTTP协议特性，不等于旧业务实现。 位置：[SyncRecoveryWorker.kt:47](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/SyncRecoveryWorker.kt#L47) · [UploadNegotiation.kt:6](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/UploadNegotiation.kt#L6) · [AppUpdateStore.kt:57](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/AppUpdateStore.kt#L57)。
 
-- **Android：SecretBox仍加密当前中央原生draft/import和日历action ledger**。这些现行writer直接SecretBox，不是LocalContentCipher历史封装回读；不在七区域migrateLegacyContent范围。删除SecretBox/Keystore会毁掉现行问答草稿、notes outbox、导入文件和行动防重复账本。 位置：[CentralScreens.kt:34](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CentralScreens.kt:34) · [CalendarActions.kt:88](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CalendarActions.kt:88)。
+- **Android：SecretBox仍加密当前中央原生draft/import和日历action ledger**。这些现行writer直接SecretBox，不是LocalContentCipher历史封装回读；不在七区域migrateLegacyContent范围。删除SecretBox/Keystore会毁掉现行问答草稿、notes outbox、导入文件和行动防重复账本。 位置：[CentralScreens.kt:34](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CentralScreens.kt#L34) · [CalendarActions.kt:88](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CalendarActions.kt#L88)。
 
-- **Android：CalendarActions.related.operationId缺失时预期旧description**。描述允许[Mote:action]单marker或额外[Mote-operation:operation]；需服务端related字段契约确认，已交父审计，不将可选值擅自定为旧版本兼容。 位置：[CalendarActions.kt:111](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CalendarActions.kt:111) · [CalendarActions.kt:31](/Users/utopiafar/.codex/worktrees/ee23/mote/apps/android/app/src/main/java/dev/mote/collector/CalendarActions.kt:31)。
+- **Android：CalendarActions.related.operationId缺失时预期旧description**。描述允许[Mote:action]单marker或额外[Mote-operation:operation]；需服务端related字段契约确认，已交父审计，不将可选值擅自定为旧版本兼容。 位置：[CalendarActions.kt:111](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CalendarActions.kt#L111) · [CalendarActions.kt:31](https://github.com/utopiafar/mote/blob/8d68aef2ddd9f531d88e3337ce97215945222f14/apps/android/app/src/main/java/dev/mote/collector/CalendarActions.kt#L31)。
 
 ## 实施顺序与验收条件
 

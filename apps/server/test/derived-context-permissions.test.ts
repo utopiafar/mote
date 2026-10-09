@@ -21,7 +21,7 @@ async function fixture(t:TestContext){
  const calls:QueryInput[]=[];
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async()=>({configured:true,close:async()=>{},query:async input=>{calls.push(input);return respond(input);}})});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
- const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
+ const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
  await node.modelSettings.updateProfile('local',{revision:node.modelSettings.view().revision,name:'Generated local',settings:{...node.modelSettings.current(),provider:'custom',protocol:'openai-completions',model:'fixture-local',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true}});
  node.sources.register({id:'generated-context-files',name:'Generated files',kind:'local-files',deviceId:'generated',platform:'import',retention:'archive'});
  const bytes=Buffer.from('Generated recording bytes'),upload=node.files.begin({sourceId:'generated-context-files',item:{externalId:'recording',revision:'1',observedAt:'2026-09-27T00:00:00Z',title:'Generated recording',kind:'file',layer:'original',text:'',mimeType:'audio/wav'},sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});

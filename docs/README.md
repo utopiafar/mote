@@ -2,7 +2,7 @@
 
 Central（server + web）、macOS、Android 使用各自产品版本；当前版本分别记录在 app package.json 与 Android version.properties。拆分架构与发版操作见 [独立发布架构](release-architecture.md) 和 [发布流程](releasing.md)。早期版本曾从 0.8.0 重置到 0.0.1，历史验收应结合日期阅读。
 
-使用指南描述当前代码，历史验收只证明当次执行的范围，方案记录保留当时的取舍。文档中的“本轮”“已通过”和构建产物路径均应结合该篇日期阅读，不代表本次重新验收。此次修正与代码依据见 [文档复查](documentation-review-2026-09-24.md)。
+使用指南描述当前代码，历史验收只证明当次执行的范围，方案记录保留当时的取舍。文档中的“本轮”“已通过”和构建产物路径均应结合该篇日期阅读，不代表本次重新验收。当前基线与本轮证据见 [MVP 决策](adr-mvp-baseline.md) 和 [清理审计](audits/mvp-baseline-cleanup-2026-10-09.md)。
 
 ## 常用入口
 
@@ -11,12 +11,12 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | 安装、开发、部署与更新 | [项目首页](../README.md)、[开发](development.md)、[部署](deployment.md)、[当前 DEV 更新](updating.md)、[发布](releasing.md) |
 | 采集、隐私和上传 | [统一行为](collection-and-sync.md)、[macOS](desktop.md)、[Android](android.md)、[文字审查与中央感知](central-perception.md)、[同步恢复](sync-recovery.md) |
 | 本地 OCR / ASR 与文件 | [运行时和模型安装](ocr-asr-implementation-plan.md)、[文件归档](files.md)、[文件处理](file-processing.md)、[类型策略](file-processing-policies.md) |
-| MVP 兼容清理、断代与验证 | [原始逐文件审计](audits/compatibility-audit-2026-10-04.md)、[83 项实施与升级风险](audits/compatibility-cleanup-2026-10-04.md) |
+| MVP 清理、断代与验证 | [当前基线与本轮回归](audits/mvp-baseline-cleanup-2026-10-09.md)、[基线 ADR](adr-mvp-baseline.md)；历史 [原始审计](audits/compatibility-audit-2026-10-04.md) 与 [83 项实施](audits/compatibility-cleanup-2026-10-04.md) |
 | 数据、权限、协议 | [架构](architecture.md)、[正式资料](material-architecture.md)、[协议](protocol.md)、[内容加密](content-storage.md)、[资产存储](asset-storage.md) |
 | Agent、记忆和行动 | [Agent](agent.md)、[模型配置](model-providers.md)、[生命周期](memory-lifecycle.md)、[记忆更新](memory-updates.md)、[日程](calendar-actions.md)、[行动更新](action-updates.md) |
 | 当前界面、对话和运行状态 | [Slate 导航](ui-slate.md)、[对话](conversations.md)、[Operations](operations.md)、[执行器](execution-engine.md)、[排错](troubleshooting.md) |
 
-端侧 Qwen 文档是保留运行时的历史说明，当前截图不调用 VLM。旧版充电补 OCR、默认加密、签名在线更新及 Memory 的周期 AND 数量门槛不能当作当前默认。现行入口分别见上表。
+端侧 Qwen 文档是已删除运行时的历史说明，当前截图不调用 VLM。旧版充电补 OCR、默认加密、签名在线更新及 Memory 的周期 AND 数量门槛不能当作当前默认。现行入口分别见上表。
 
 ## 专题与实现说明
 
@@ -46,7 +46,7 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | [cloudflare-tunnel](cloudflare-tunnel.md) | Cloudflare Tunnel 部署 |
 | [coding-agent-memory](coding-agent-memory.md) | 编码 Agent 对话与经验记忆 |
 | [collection-and-sync](collection-and-sync.md) | 采集、保存与上传 |
-| [combined-backup-recovery](combined-backup-recovery.md) | Combined upgrade and restore fixture |
+| [combined-backup-recovery](combined-backup-recovery.md) | Current-format combined backup and restore fixture |
 | [community-extensions](community-extensions.md) | 社区扩展：接入既有处理链 |
 | [configuration-ownership](configuration-ownership.md) | 配置归属与执行快照 |
 | [connections](connections.md) | 设备配对与独立连接 |
@@ -59,7 +59,7 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | [desktop](desktop.md) | Mote 电脑采集器 |
 | [development](development.md) | 开发与测试环境隔离 |
 | [evidence-reader](evidence-reader.md) | Shared evidence reads |
-| [execution-engine](execution-engine.md) | Common execution engine migration |
+| [execution-engine](execution-engine.md) | Current durable execution engine |
 | [delegation-and-activity](delegation-and-activity.md) | 自主委派、逐输入覆盖与活动界面 |
 | [execution-protocol](execution-protocol.md) | Execution protocol |
 | [file-processing-policies](file-processing-policies.md) | 中央文件类型策略 |

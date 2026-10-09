@@ -62,15 +62,15 @@ try{
  const keys=proposals.flatMap(proposal=>proposal.members);assert.equal(keys.length,64);assert.equal(new Set(keys).size,64);assert.deepEqual([...keys].sort(),catalog.map(candidate=>candidate.key).sort());assert.equal(owner.planningComplete,true);assert.equal(owner.wait,undefined);
  const submissions=traces.filter(event=>event.type==='tool.started'&&event.tool==='delegation_submit');assert.ok(submissions.length>=2);assert.ok(submissions.every(event=>event.payload.arguments.units.length<=8));
  report.scenarios.push({name:'64-member-production-planner',members:64,packages:proposals.length,submissionCalls:submissions.length,longMembers:8,coverageComplete:true});progress('large-plan-completed',{packages:proposals.length});
- const ids=owner.units.map(unit=>unit.id);store.db.prepare("UPDATE delegation_works SET json=json_set(json_remove(json,'$.planningComplete','$.plannedUnitIds'),'$.wait',json(?)) WHERE id=?").run(JSON.stringify({unitIds:ids,mode:'any'}),owner.id);
  // Replace the execution host, preserving only durable generated state.
  await adapter.close();await runtime.close();await engine.close();await agent.close();
+ const ids=owner.units.map(unit=>unit.id);
  const recoveryEngine=new ExecutionEngine(store),recoveryRuntime=new DelegationRuntime(store,recoveryEngine);
  const recoveryAdapter=registerMemoryDelegation({runtime:recoveryRuntime,pipeline,work,sourcePipelines,query:async()=>{throw Error('A complete durable plan must recover without another model call');}});
- try{await recoveryRuntime.tick();const recovered=await recoveryRuntime.waitForPlan(owner.id,AbortSignal.timeout(30000));assert.equal(recovered.revision,1);assert.equal(recovered.wait,undefined);assert.deepEqual(recovered.units.map(unit=>unit.id),ids);assert.deepEqual(recovered.plannedUnitIds,ids);report.scenarios.push({name:'legacy-wait-host-restart',savedPackages:ids.length,reusedHandles:true,planningComplete:true,additionalModelCalls:0});progress('recovery-completed');}
+ try{await recoveryRuntime.tick();const recovered=await recoveryRuntime.waitForPlan(owner.id,AbortSignal.timeout(30000));assert.equal(recovered.revision,1);assert.equal(recovered.wait,undefined);assert.deepEqual(recovered.units.map(unit=>unit.id),ids);assert.deepEqual(recovered.plannedUnitIds,ids);report.scenarios.push({name:'completed-plan-host-restart',savedPackages:ids.length,reusedHandles:true,planningComplete:true,additionalModelCalls:0});progress('recovery-completed');}
  finally{await recoveryRuntime.close();await recoveryEngine.close();await recoveryAdapter.close();}
  await openHttp();await request('POST','/api/sources',{id:'generated-http',name:'Generated acceptance journal',kind:'custom',deviceId:'generated-http',platform:'import',retention:'archive'});
- await request('PUT','/api/source-pipelines/generated-http',{memory:true,settleSeconds:0});
+ await request('PUT','/api/source-pipelines/generated-http',{settleSeconds:0});
  const texts=['For my generated test project I require a signed build receipt before deployment.','For my generated test project I prefer text status updates with an explicit verification result.','A generated reference document lists the fictional widget protocol revision 3.','A generated reference document describes fictional widget colors.'];
  for(const [index,text] of texts.entries())await request('PUT','/api/sources/generated-http/items',{externalId:'generated-'+index,revision:'1',observedAt:'2026-09-01T00:00:00Z',kind:'message',layer:'original',text,document:{contentRole:'authored',recordedAt:'2026-09-01T00:00:00Z',timeBasis:'recorded'}});
  for(let i=0;i<10;i++)if(await node!.materialOrganizer.tick(100)===0)break;

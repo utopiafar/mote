@@ -26,7 +26,7 @@ const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>
 const ids=(page:{items:unknown[]})=>page.items.map(item=>(item as {id:string}).id).sort();
 const catalogIds=(value:unknown)=>(value as {entries:{id:string}[]}).entries.map(item=>item.id).sort();
 const realTime=(value:string|undefined,start:number)=>{assert.ok(value);assert.ok(Date.parse(value)>=start&&Date.parse(value)<=Date.now(),value);};
-function disabled(node:Node){const s=node.lifecycle.settings();node.lifecycle.configure({...s,extraction:{...s.extraction,enabled:false},consolidation:{...s.consolidation,enabled:false},insights:{...s.insights,enabled:false},working:{...s.working,enabled:false}});}
+function disabled(node:Node){const s=node.lifecycle.settings();node.lifecycle.configure({...s,consolidation:{...s.consolidation,enabled:false},insights:{...s.insights,enabled:false},working:{...s.working,enabled:false}});}
 async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,clock?:()=>string){
   const directory=mkdtempSync(join(tmpdir(),'mote-semantic-clock-'));
   const node=await buildApp(config(directory),{backgroundWorker:false,semanticContextTime:clock,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:input=>query(input,reader)})});
@@ -67,7 +67,7 @@ test('five stub calls share frozen generation/review/Ask times and preserve real
   },()=>{samples++;return semantic;});node=f.node;
   record=await note(node,'Generated dial alpha. Generated access expires at '+expiry+'. Generated dial beta replaces alpha.');
   realTime(record.receivedAt,start);
-  const request={evidenceIds:[record.id],recipes:[{id:'mote.personal-memory',version:'1'}],contextTime:early};
+  const request={evidenceIds:[record.id],recipes:[{id:'mote.personal-memory',version:'2'}],contextTime:early};
   const job=await node.memoryPipeline.run(node.memoryPipeline.create(request).id);
   assert.equal(job.status,'completed');assert.equal(job.totalBatches,1);assert.equal(calls.length,2);assert.equal(samples,0);
   const cards=job.memoryIds.map(id=>node.memories.get(id));oldId=cards.find(m=>m.title==='Generated alpha')!.id;timedId=cards.find(m=>m.title==='Generated access')!.id;

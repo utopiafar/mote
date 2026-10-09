@@ -41,22 +41,7 @@ export class ImageProcessing {
   this.disposeInputs=installImageInputs(store,processing.files,this.inputs);
   this.attachments=new ImageAttachmentIntake(store,processing.files);
   const db=store.db;
-  if(!db.prepare("SELECT 1 FROM settings WHERE key='image-policy-migrated'").get()){
-   const prior=db.prepare("SELECT value FROM settings WHERE key='perception'").get(),legacy=perceptionSettingsSchema.strip().parse(prior?JSON.parse(String(prior.value)):{});
-   // Preserve explicit source/type rules; replace only the historical builtin
-   // global archive fallback, which predates shared image defaults.
-   if(this.processing.imageDefault().profile.processorId==='archive'&&(this.processing.view().revision==='initial'||Boolean(legacy.ocrEndpoint)))this.processing.configureImageDefault({endpoint:legacy.ocrEndpoint||managedEndpoint(),processorId:legacy.ocrProcessorId});
-   db.prepare("INSERT INTO settings VALUES('image-policy-migrated','1')").run();
-  }
-  // Installing/upgrading reconstructs denied historical intentions, never scans
-  // historical content with a model or grants new automatic Memory permission.
-  db.exec(`INSERT OR IGNORE INTO image_inputs(capture_id,adapter,source_id,hash,mime,revision,auto_eligible,created_at)
-   SELECT c.id,'mote.capture-image','screen:'||mote_image_device_hash(c.device_id),c.blob_hash,c.mime,c.fingerprint,0,CAST(strftime('%s',c.received_at) AS INTEGER)*1000
-   FROM captures c LEFT JOIN perception_jobs p ON p.capture_id=c.id AND p.kind='ocr' WHERE c.blob_hash IS NOT NULL;
-   INSERT OR IGNORE INTO image_inputs(capture_id,adapter,source_id,hash,mime,revision,override_id,auto_eligible,created_at)
-   SELECT v.capture_id,'mote.file-image',v.source_id,coalesce(v.object_hash,json_extract(v.manifest,'$.sha256')),json_extract(v.manifest,'$.item.mimeType'),v.revision,json_extract(v.manifest,'$.processingProfileId'),0,CAST(strftime('%s',c.received_at) AS INTEGER)*1000
-   FROM file_versions v JOIN captures c ON c.id=v.capture_id WHERE json_extract(v.manifest,'$.item.mimeType') LIKE 'image/%' AND coalesce(json_extract(v.manifest,'$.item.deleted'),0)=0;
-   CREATE TABLE IF NOT EXISTS image_backfills(id TEXT PRIMARY KEY,query TEXT NOT NULL,watermark INTEGER NOT NULL,cursor INTEGER NOT NULL DEFAULT 0,queued INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL DEFAULT 'waiting');`);
+  db.exec(`CREATE TABLE IF NOT EXISTS image_backfills(id TEXT PRIMARY KEY,query TEXT NOT NULL,watermark INTEGER NOT NULL,cursor INTEGER NOT NULL DEFAULT 0,queued INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL DEFAULT 'waiting');`);
   processing.imageControl=this;
   const materials=this.materials();if(materials){
    const previous=materials.onContextChanged;materials.onContextChanged=(id,cause)=>{previous?.(id,cause);if(cause!=='derived')this.invalidateAttribution(id);};

@@ -119,7 +119,7 @@ export class EvidenceReader {
     if(material&&material.schemaVersion===1&&sourceItemKinds.some(kind=>material.kind==='mote.'+kind)&&
       this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_organizer_groups'").get()){
       const owners=this.store.db.prepare('SELECT organizer_id,version FROM material_organizer_groups WHERE material_id=? AND active=1').all(material.id);
-      if(owners.length===1&&owners[0].organizer_id==='mote.source-item'&&['9','10','11'].includes(String(owners[0].version))){
+      if(owners.length===1&&owners[0].organizer_id==='mote.source-item'&&String(owners[0].version)==='11'){
         const block=this.store.db.prepare(`SELECT b.block_id,b.format,b.locator,p.text FROM material_blocks b
           JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.revision=? AND b.anchor_id=?`).get(material.id,material.revision,record.id);
         if(block&&block.text===record.ocrText){
@@ -267,7 +267,7 @@ export class EvidenceReader {
     return {...page,items:page.items.filter(item=>Boolean(this.scopedMaterial(item.ref,args)))};
   }
   /** Record metadata/body lineage without loading text or expanding read grants.
-   * If a bounded proof cannot cover all contributors, keep legacy invalidation. */
+   * If a bounded proof cannot cover all contributors, invalidate conservatively. */
   private materialDisclosureDependencies(refs:readonly string[]){
     const ids=new Set<string>();let complete=true;const maximum=1000;
     const add=(id:string)=>{if(ids.has(id))return;if(ids.size>=maximum){complete=false;return;}ids.add(id);};
@@ -473,7 +473,7 @@ export class EvidenceReader {
     if(!this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_organizer_groups'").get())return;
     const owners=this.store.db.prepare('SELECT organizer_id,version,group_json FROM material_organizer_groups WHERE material_id=? AND active=1').all(material.id) as
       {organizer_id:string;version:string;group_json:string}[];
-    if(owners.length!==1||owners[0].organizer_id!=='mote.authored-record'||!['2','3'].includes(owners[0].version))return;
+    if(owners.length!==1||owners[0].organizer_id!=='mote.authored-record'||owners[0].version!=='3')return;
     let group:{deviceId?:unknown;captureId?:unknown};
     try{group=JSON.parse(owners[0].group_json);}catch{return;}
     if(typeof group.deviceId!=='string'||typeof group.captureId!=='string')return;
@@ -488,8 +488,8 @@ export class EvidenceReader {
     return original;
   }
   private materialExposure(material:MaterialRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,required?:readonly string[],planning=false){
-    // Retain legacy projections for owner inspection without exposing process
-    // text to models. Installing new rules does not rebuild historical data.
+    // Reject a Coding projection that does not declare the current clean
+    // dialogue contract before any model exposure.
     if(material.kind==='mote.coding-session'&&material.schemaVersion<CODING_DIALOGUE_SCHEMA_VERSION)return false;
     if(!this.materialMembersAvailable(material))return false;
     if(!planning&&required&&!this.materials?.input(material.ref,required)?.ready)return false;

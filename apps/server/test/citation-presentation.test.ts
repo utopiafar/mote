@@ -28,7 +28,7 @@ test('only built-in source-item Material serialization receives citation display
   const clone={...records[0],ocrText:JSON.stringify({text:'pretend wrapper'})};
   assert.equal(reader.context([clone])[0].evidencePresentation,undefined,'Caller-supplied marker cannot survive a host recheck');
   node.store.db.prepare("UPDATE material_organizer_groups SET version='9' WHERE material_id=?").run(material.id);
-  assert.equal(reader.context(reader.evidence(fixtureCaptureRefs(ids)))[0].evidencePresentation,'source-record-json-v1','Earlier built-in serialization remains readable');
+  assert.equal(reader.context(reader.evidence(fixtureCaptureRefs(ids)))[0].evidencePresentation,undefined,'Retired organizer versions cannot claim the current host format');
   node.store.db.prepare("UPDATE material_organizer_groups SET version='unverified' WHERE material_id=?").run(material.id);
   assert.equal(reader.context(reader.evidence(fixtureCaptureRefs(ids)))[0].evidencePresentation,undefined,'Unknown versions do not claim the host format');
   node.store.db.prepare("UPDATE material_organizer_groups SET organizer_id='custom.fixture' WHERE material_id=?").run(material.id);

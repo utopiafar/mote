@@ -56,7 +56,7 @@ function config(vault:string):Config{return {dataDir:vault,dataKey:undefined,tok
 async function open(vault:string,stub?:(reader:ContextReader,input:QueryInput)=>Promise<QueryResult>,semanticContextTime?:()=>string){
   check(!node,'node_already_open');
   node=await buildApp(config(vault),{backgroundWorker:false,semanticContextTime,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{if(stub)return stub(reader,input);admissions++;throw new SafeFailure('provider_admission_forbidden');}})});
-  const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
+  const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
   node.memoryRecipeSettings.configure({recipes});await node.app.ready();
 }
 async function close(){if(!node)return;const current=node;node=undefined;await current.app.close();}

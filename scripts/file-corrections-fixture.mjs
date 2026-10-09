@@ -11,7 +11,7 @@ const wave=Buffer.alloc(96044);wave.write('RIFF');wave.writeUInt32LE(wave.length
 const transcript={durationMs:3000,segments:[{startMs:0,endMs:1200,text:'我修好了旧相框，当时很开心。'},{startMs:1500,endMs:2900,text:'下一次讨论安排在周三。'}]};
 const node=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No model in renderer fixture');},close:async()=>{}},transcriptionProvider:{transcribe:async()=>transcript}});
 node.app.addHook('onError',async(_request,_reply,error)=>{if(!error.statusCode||error.statusCode>=500)console.error(error.stack);});
-const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'])settings[key].enabled=false;node.lifecycle.configure(settings);
+const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'])settings[key].enabled=false;node.lifecycle.configure(settings);
 await node.processing.runtime.ready;
 const disposeAudio=node.processing.runtime.registry.register({id:'fixture.ui-audio',name:'Generated transcript',version:'1',stage:'extract',mediaTypes:['audio/'],localOnly:true,dialogue:true,process:async()=>transcript});
 const dispose=node.processing.runtime.registry.register({id:'fixture.ui-diarizer',name:'Generated diarizer',version:'1',stage:'diarize',mediaTypes:['audio/'],localOnly:true,process:async()=>({durationMs:3000,engine:'generated',expectedSpeakers:2,observedSpeakers:2,overlapDetection:'unknown',segments:[{startMs:0,endMs:1300,speaker:'SPEAKER_0'},{startMs:1400,endMs:3000,speaker:'SPEAKER_1'}],samples:[{speaker:'SPEAKER_0',startMs:0,endMs:1000,wavBase64:wave.toString('base64')},{speaker:'SPEAKER_1',startMs:1500,endMs:2500,wavBase64:wave.toString('base64')}]})});

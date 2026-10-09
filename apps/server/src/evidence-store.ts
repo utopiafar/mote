@@ -10,7 +10,7 @@ import {StorageLedger} from './storage-ledger.js';
 import {isStateExtension,samples as stateSamples} from '@mote/shared/state-series';
 import { moteText } from './i18n.js';
 import {textSearch} from './text-search.js';
-import {fileSchema,migrateSnapshotIndexProjection} from './file-schema.js';
+import {fileSchema} from './file-schema.js';
 import {systemEventText,sourceContentTime,resolveFileRule,type FilePolicy} from '@mote/shared';
 import {MemoryDeletions} from './memory-deletions.js';
 import {notificationEvidenceText} from './notification-evidence.js';
@@ -46,12 +46,10 @@ export class EvidenceStore {
   readonly archive:EvidenceArchive;
   readonly assets:AssetStore;
   private ledger!:StorageLedger;
-  blobsDir:string;
   readonly contentEncryption:ContentEncryption;
   get key(){return this.contentEncryption.key;}
   constructor(public directory:string, private options:{dataKey?:string;contentEncryptionEnabled?:boolean;maxStorageBytes?:number;embeddingEnabled?:boolean;maintenance?:boolean}={}) {
     privateDirectory(directory);
-    this.blobsDir=join(directory,'blobs'); privateDirectory(this.blobsDir);
     privateSqliteFile(join(directory,'mote.sqlite'),true);
     for(const suffix of ['-wal','-shm','-journal'])privateSqliteFile(join(directory,`mote.sqlite${suffix}`));
     this.db=new DatabaseSync(join(directory,'mote.sqlite'));
@@ -62,15 +60,15 @@ export class EvidenceStore {
       if(!profile)return null;
       return JSON.stringify({revision:saved.revision,rule,profile,services:saved.policy.services.filter(s=>s.id===profile.serviceId||s.id===profile.modelServiceId)});
     });
-    // Backend epoch 3 is a deliberate vault cutover. Never infer that an old
+    // Backend epoch 4 is a deliberate vault cutover. Never infer that an old
     // populated schema has the new archive and visibility semantics.
     const priorTable=this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1").get();
     if(priorTable){
       const settingsTable=this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'").get();
       const epoch=settingsTable?this.db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value:undefined;
-      if(epoch!=='3'){
+      if(epoch!=='4'){
         this.db.close();
-        throw new StoreError('Unsupported Mote vault epoch. Backend epoch 3 requires a new empty data directory; existing data is retained.',409);
+        throw new StoreError('Unsupported Mote vault epoch. Backend epoch 4 requires a new empty data directory; existing data is retained.',409);
       }
     }
     ensureTodoSchema(this.db);
@@ -121,8 +119,8 @@ export class EvidenceStore {
       CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY,title TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,json TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS conversations_updated ON conversations(updated_at DESC,id DESC);
       CREATE VIRTUAL TABLE IF NOT EXISTS captures_fts USING fts5(id UNINDEXED, text, tokenize='unicode61');
-      PRAGMA user_version=3;`);
-    this.db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('backend_epoch','3')").run();
+      PRAGMA user_version=4;`);
+    this.db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('backend_epoch','4')").run();
     fileSchema(this.db);
     // Materialized browsing projection: album navigation never reads OCR/metadata JSON or blobs.
     this.db.exec(`
@@ -151,7 +149,6 @@ export class EvidenceStore {
     initializeReadModels(this.db);
     initializeSourceCatalog(this.db);
     this.archive=new EvidenceArchive(this);
-    migrateSnapshotIndexProjection(this.db);
     this.ledger=new StorageLedger(this.db);
     this.ledger.bytes();
     // Remove only orphan content-addressed files left by interrupted writes/transactions.
@@ -626,7 +623,7 @@ export class EvidenceStore {
   /** Run only in the maintenance worker, never from an HTTP request. */
   measurePhysicalStorage(){
     let bytes=0;const visit=(path:string)=>{if(!existsSync(path))return;for(const entry of readdirSync(path,{withFileTypes:true})){const child=join(path,entry.name);if(entry.isDirectory())visit(child);else if(entry.isFile())try{bytes+=statSync(child).size;}catch{/* concurrent retention */}}};
-    visit(join(this.directory,'files'));visit(join(this.directory,'source-archive'));visit(this.blobsDir);
+    visit(join(this.directory,'files'));visit(join(this.directory,'source-archive'));
     for(const name of ['mote.sqlite','mote.sqlite-wal'])try{bytes+=statSync(join(this.directory,name)).size;}catch{}
     const snapshot={bytes,asOf:new Date().toISOString()};
     this.db.prepare("INSERT INTO settings VALUES('physical-storage-snapshot',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(snapshot));return snapshot;
@@ -706,8 +703,6 @@ export class EvidenceStore {
   sweep() {
     this.db.exec('DELETE FROM blobs WHERE hash NOT IN (SELECT blob_hash FROM captures WHERE blob_hash IS NOT NULL)');
     this.assets.sweep();
-    const known=new Set((this.db.prepare('SELECT hash FROM blobs').all() as {hash:string}[]).map(r=>r.hash));
-    for(const file of readdirSync(this.blobsDir))if((/^[a-f0-9]{64}$/.test(file)&&!known.has(file)&&!this.db.prepare('SELECT 1 FROM assets WHERE hash=?').get(file))||/^[a-f0-9]{64}\.[a-f0-9]+\.tmp$/.test(file))unlinkSync(join(this.blobsDir,file));
   }
   pending(limit=10) {return (this.db.prepare("SELECT * FROM captures WHERE index_status='pending' AND id NOT IN (SELECT capture_id FROM file_versions) AND json_extract(json,'$.source')!='activity' ORDER BY received_at LIMIT ?").all(limit) as unknown as Row[]).map(r=>this.record(r));}
   indexCounts() {

@@ -24,8 +24,8 @@ let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 const report:Record<string,unknown>={model,personalDataUsed:false,physicalDeviceChecks:false,rubric,startedAt:new Date().toISOString()};
 try{
  node=await buildApp(config,{backgroundWorker:false});await node.app.ready();
- const settings=node.lifecycle.settings();for(const id of ['extraction','consolidation','insights','working'] as const)settings[id].enabled=false;node.lifecycle.configure(settings);
- node.sources.register({id:'generated-coding',kind:'coding-agent',name:'Generated coding regression',deviceId:'generated',platform:'macos'});node.sourcePipelines.configure('generated-coding',{settleSeconds:0,memory:true});
+ const settings=node.lifecycle.settings();for(const id of ['consolidation','insights','working'] as const)settings[id].enabled=false;node.lifecycle.configure(settings);
+ node.sources.register({id:'generated-coding',kind:'coding-agent',name:'Generated coding regression',deviceId:'generated',platform:'macos'});node.sourcePipelines.configure('generated-coding',{settleSeconds:0});
  const padding=Array.from({length:250},(_,i)=>`Generated neutral progress entry ${i}: this diagnostic line adds no decisions, preferences, outcomes or personal events.`).join('\n');
  await node.sources.upsertBatch('generated-coding',[event('early','user',early,0),{...event('padding','assistant',padding,1),document:{...event('padding','assistant',padding,1).document,coding:{...event('padding','assistant',padding,1).document!.coding!,channel:'commentary'}}},event('report','assistant',reported,2),event('late','user',late,3),event('tool','tool_result','GENERATED_TOOL_BODY_MUST_NOT_ENTER_UNDERSTANDING',4)]);
  await node.sourcePipelines.tick();const material=node.materials.list({kind:'mote.coding-session'}).items[0],ids=node.materials.evidenceIds(material.ref);

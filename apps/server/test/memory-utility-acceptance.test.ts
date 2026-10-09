@@ -21,7 +21,7 @@ test('owner integration creates a reviewed actionable replacement, applies its r
   return {answer:JSON.stringify({memories:[claim]}),citations:originals.map(original=>({id:original.id,capturedAt:original.capturedAt,appName:original.appName,excerpt:original.ocrText})),trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:seed.ids}};
  }}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});await node.app.ready();
- const settings=node.lifecycle.settings();for(const id of ['extraction','consolidation','insights','working'] as const)settings[id].enabled=false;node.lifecycle.configure(settings);
+ const settings=node.lifecycle.settings();for(const id of ['consolidation','insights','working'] as const)settings[id].enabled=false;node.lifecycle.configure(settings);
  seed=await seedUtilityOracle(node,token);const prior=seed.cards[0];
  const requested=await node.app.inject({method:'POST',url:'/api/memory-integrations',headers,payload:{recipe:{id:'mote.memory-integration',version:'2'},inputs:seed.cards.map(card=>{const current=node.memories.get(card.id);return {id:current.id,version:current.version,fingerprint:current.fingerprint};})}});assert.equal(requested.statusCode,202,requested.body);await node.lifecycle.tick();
  const state=node.lifecycle.view().extensions.find(extension=>extension.id==='consolidation')!;assert.equal(state.error,undefined);assert.equal(state.active,undefined);assert.deepEqual(calls.map(call=>call.traceContext?.phase),['extract','review']);

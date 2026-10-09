@@ -19,7 +19,7 @@ async function vault(directory, hash = createHash('sha256').update('generated bl
   await mkdir(join(source, 'blobs'), { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(join(source, 'mote.sqlite'));
   try {
-    db.exec("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT); INSERT INTO settings VALUES('backend_epoch','3'); CREATE TABLE assets(hash TEXT PRIMARY KEY,parts,format TEXT); CREATE TABLE asset_references(owner TEXT PRIMARY KEY,hash TEXT)");
+    db.exec("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT); INSERT INTO settings VALUES('backend_epoch','4'); CREATE TABLE assets(hash TEXT PRIMARY KEY,parts,format TEXT); CREATE TABLE asset_references(owner TEXT PRIMARY KEY,hash TEXT)");
     db.prepare("INSERT INTO assets VALUES(?,1,'chunks')").run(hash);db.prepare('INSERT INTO asset_references VALUES(?,?)').run('generated-original',hash);
   } finally { db.close(); }
   const partPath=join(source,'files','objects',hash,'0.plain');

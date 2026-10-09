@@ -59,7 +59,7 @@ try{
  const catalog=await codexModels(undefined,{executable:config.codexBin,home:config.codexHome});
  assert.ok(catalog.items.find(item=>item.id===config.model)?.reasoningEfforts?.includes('max'));
  node=await buildApp(config);
- const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;
+ const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;
  node.lifecycle.configure(settings);await node.app.ready();
  assert.equal(node.modelSettings.current().model,config.model);assert.equal(node.modelSettings.current().reasoningEffort,'max');
  assert.equal(node.store.db.prepare('PRAGMA quick_check').get()!.quick_check,'ok');

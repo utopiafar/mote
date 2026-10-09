@@ -7,7 +7,7 @@ import {Store,StoreError} from './store.js';
 
 const policy=z.object({maxWaitHours:z.number().min(1/60).max(8760).optional(),enabled:z.boolean(),intervalHours:z.number().min(1/60).max(8760),minChanges:z.number().int().min(1).max(100000),maxItems:z.number().int().min(1).max(2000)}).strict();
 export const lifecycleSettingsSchema=z.object({
-  extraction:policy,consolidation:policy.extend({maxItems:z.number().int().min(1).max(50)}),insights:policy,working:policy,
+  extraction:policy.extend({enabled:z.literal(true)}),consolidation:policy.extend({maxItems:z.number().int().min(1).max(50)}),insights:policy,working:policy,
   drainWindows:z.number().int().min(1).max(1000).default(100),
   batchCharacters:z.number().int().min(256).max(12000),recentTurns:z.number().int().min(2).max(20),
   contextCharacters:z.number().int().min(4000).max(60000),summaryCharacters:z.number().int().min(1000).max(12000),
@@ -28,34 +28,6 @@ export function storedMemoryLifecycleSettings(store:Store):LifecycleSettings {
   const row=store.db.prepare('SELECT json FROM memory_lifecycle_settings WHERE id=1').get() as {json:string}|undefined;
   return row?lifecycleSettingsSchema.parse(JSON.parse(row.json)):structuredClone(defaultLifecycleSettings);
 }
-export const automaticMemoryExtractionEnabled=(_store:Store)=>true;
-/** Retiring the old off setting cannot authorize its historical journal. This
- * cutover happens before connector intake, and never changes raw receipts. */
-export function migrateAutomaticMemorySettings(store:Store,executor?:ExecutionEngine){
-  if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_lifecycle_settings'").get())return;
-  const row=store.db.prepare('SELECT json FROM memory_lifecycle_settings WHERE id=1').get();if(!row)return;
-  const settings=lifecycleSettingsSchema.parse(JSON.parse(String(row.json)));if(settings.extraction.enabled)return;
-  const db=store.db;db.exec('BEGIN IMMEDIATE');
-  try{
-    const hasState=db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_lifecycle_state'").get(),saved=hasState?db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='extraction'").get():undefined;
-    const state:State=saved?JSON.parse(String(saved.json)):{stream:'artifact',cursor:0,lastSuccess:Date.now(),failures:0};
-    const retainedWindow=state.active&&(state.active.manual||state.active.settings?.extraction.enabled);
-    const retainedCheckpoint=retainedWindow?state.active!.checkpoint:undefined;
-    if(db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_jobs'").get())for(const job of db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.importJobId') LIKE 'lifecycle:%' AND json_extract(json,'$.status') IN ('queued','running','waiting_for_input','waiting_for_model','paused','pausing')").all()){
-      if(job.id===retainedCheckpoint)continue;
-      if(executor)for(const step of db.prepare("SELECT id FROM execution_steps WHERE operation_id=? AND state NOT IN ('succeeded','cancelled','stale')").all('memory:'+job.id))executor.cancel(String(step.id));
-      db.prepare("UPDATE memory_jobs SET json=json_set(json,'$.status','cancelled') WHERE id=?").run(job.id);
-    }
-    if(!hasState)db.exec('CREATE TABLE memory_lifecycle_state(id TEXT PRIMARY KEY,json TEXT NOT NULL)');
-    {
-      const table=state.stream==='evidence'?'changes':'artifact_events';
-      state.cursor=Number(db.prepare(`SELECT max(seq) n FROM ${table}`).get()?.n??0);
-      if(!retainedWindow){if(state.active)executor?.cancel('lifecycle:'+state.active.id);delete state.active;delete state.cancelled;delete state.manualRetryRequired;delete state.retryAt;delete state.error;delete state.drainThrough;state.failures=0;}
-      db.prepare("INSERT INTO memory_lifecycle_state VALUES('extraction',?) ON CONFLICT(id) DO UPDATE SET json=excluded.json").run(JSON.stringify(state));
-    }
-    settings.extraction.enabled=true;db.prepare('UPDATE memory_lifecycle_settings SET json=? WHERE id=1').run(JSON.stringify(settings));db.exec('COMMIT');
-  }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
-}
 /** Host-only semantic time. Execution, authorization and retention keep their real clocks. */
 export function freezeSemanticContextTime(clock:()=>string=()=>new Date().toISOString()):string {
   return z.string().max(64).datetime({offset:true}).refine(value=>Number.isFinite(Date.parse(value)),'Invalid semantic context time').parse(clock());
@@ -74,7 +46,6 @@ export class MemoryLifecycle {
   private running=new Map<string,Promise<void>>();
   private closed=false;private abort=new AbortController();
   constructor(private store:Store,private configured:()=>boolean,private now:()=>number=Date.now,private executor?:ExecutionEngine,private semanticContextTime?:()=>string){
-    migrateAutomaticMemorySettings(store,executor);
     store.db.exec(`
       CREATE TABLE IF NOT EXISTS memory_lifecycle_settings(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memory_lifecycle_state(id TEXT PRIMARY KEY,json TEXT NOT NULL);
@@ -142,7 +113,7 @@ export class MemoryLifecycle {
     if(state.active)this.executor?.cancel('lifecycle:'+state.active.id);
     state.cursor=through;delete state.active;delete state.cancelled;delete state.manualRetryRequired;delete state.retryAt;delete state.error;delete state.drainThrough;state.failures=0;this.save(id,state);
   }
-  configure(input:unknown){const parsed=lifecycleSettingsSchema.parse(input);parsed.extraction.enabled=true;this.store.db.prepare('UPDATE memory_lifecycle_settings SET json=? WHERE id=1').run(JSON.stringify(parsed));return this.view();}
+  configure(input:unknown){const parsed=lifecycleSettingsSchema.parse(input);this.store.db.prepare('UPDATE memory_lifecycle_settings SET json=? WHERE id=1').run(JSON.stringify(parsed));return this.view();}
   private state(id:string):State{const state=JSON.parse(String(this.store.db.prepare('SELECT json FROM memory_lifecycle_state WHERE id=?').get(id)!.json)) as State;if(state.active&&(!Array.isArray(state.active.ids)||typeof state.active.contextTime!=='string'||!Number.isFinite(Date.parse(state.active.contextTime))))throw new StoreError('Unsupported lifecycle window structure',409);return state;}
   private save(id:string,state:State){this.store.db.prepare('INSERT INTO memory_lifecycle_state VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(id,JSON.stringify(state));}
   private events(extension:LifecycleExtension,cursor:number,limit:number){

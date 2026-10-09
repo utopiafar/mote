@@ -1,5 +1,7 @@
 # Fixed-data mixed-load stability
 
+> 历史设计或验收记录。2026-10-09 的 [MVP 基线](adr-mvp-baseline.md) 已替代旧迁移、预算、推理工具及旧提案等待修复；本文的原始测试结果不代表本次执行。当前结构见 [架构](architecture.md)。
+
 The earlier [mixed-load report](validation/0.0.61/mixed-load.json) verified fault recovery and concurrent progress while importing 100,000 directory records and 400 generated daily observations. Its roughly 152-second duration and rising final RSS/heap did not establish a stable memory window.
 
 The follow-up uses `scripts/benchmark-mixed-load.ts` with `MOTE_MIXED_FILES=100000`, `MOTE_MIXED_CAPTURES=400`, `MOTE_MIXED_MS=120000`, and `MOTE_MIXED_STEADY_MS=720000`. After ingestion, pagination and recovery checks finish, the source dataset is fixed for another 12 minutes. The deliberate late-deletion fixture leaves 399 original notes alongside the 100,000 directory references. No personal content or real screenshots are used.

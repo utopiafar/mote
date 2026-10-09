@@ -6,7 +6,6 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {Store} from '../src/store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
-import {QueryRuns} from '../src/query-runs.js';
 import {InsightRuns} from '../src/insight-runs.js';
 import {Operations} from '../src/operations.js';
 import {ImportStore} from '../src/imports.js';
@@ -16,41 +15,6 @@ import {linkOperationParent} from '../src/operation-projection.js';
 import {safeError} from '../src/diagnostics.js';
 const turn=()=>new Promise<void>(resolve=>setImmediate(resolve));
 function fixture(t:any){const directory=mkdtempSync(join(tmpdir(),'mote-operation-runs-')),store=new Store(directory),executor=new ExecutionEngine(store);t.after(async()=>{await executor.close();store.close();rmSync(directory,{recursive:true,force:true});});return {store,executor,operations:new Operations(store)};}
-
-test('queries share engine state, expire while queued, and reject late completion after cancellation',async t=>{
- const {store,executor,operations}=fixture(t),runs=new QueryRuns(store,{executor,concurrency:()=>1});
- let release!:()=>void,started=false,secondCalls=0;
- const first=randomUUID(),second=randomUUID();
- runs.start(first,{question:'generated private question'},async()=>{started=true;await new Promise<void>(resolve=>release=resolve);return {conversationId:'late-private-result',turnId:randomUUID()};});
- await turn();assert.equal(started,true);assert.equal(operations.detail(`query:${first}`).operation.state,'running');
- runs.start(second,{question:'queued fixture'},async()=>{secondCalls++;return {conversationId:randomUUID(),turnId:randomUUID()};},{timeoutMs:10});
- assert.equal(runs.get(second).execution?.status,'queued');await new Promise(resolve=>setTimeout(resolve,25));
- assert.equal(runs.get(second).status,'failed');assert.equal(runs.get(second).error?.code,'timeout');assert.equal(operations.detail(`query:${second}`).operation.state,'failed');assert.equal(secondCalls,0);
- runs.cancel(first);release();await runs.close();assert.equal(runs.get(first).status,'cancelled');assert.equal(runs.get(first).conversationId,undefined);
- assert.equal(operations.detail(`query:${first}`).operation.state,'cancelled');assert.doesNotMatch(JSON.stringify(operations.page())+JSON.stringify(operations.detail(`query:${first}`)),/private/);
- assert.deepEqual(store.db.prepare('SELECT input FROM execution_steps WHERE kind LIKE ?').all('query.run.%').map(row=>JSON.parse(String(row.input)).runId).sort(),[first,second].sort());
-});
-
-test('a host deadline preserves the public timeout reason before an uncooperative provider settles',async t=>{
- const {store,executor}=fixture(t),runs=new QueryRuns(store,{executor}),id=randomUUID();let release!:()=>void,committed=false;
- try{
- const pending=runs.perform(id,{question:'Generated deadline'},async()=>{await new Promise<void>(resolve=>release=resolve);return ()=>{committed=true;return {conversationId:randomUUID(),turnId:randomUUID()};};},{timeoutMs:20});
- const rejected=assert.rejects(pending,error=>{const publicError=safeError(error);assert.equal(publicError.status,504);assert.equal(publicError.category,'timeout');return true;});
- await Promise.all([rejected,new Promise(resolve=>setTimeout(resolve,40))]);
- assert.equal(runs.get(id).status,'failed');assert.equal(runs.get(id).error?.code,'timeout');
- release();await turn();assert.equal(committed,false);assert.equal(runs.get(id).conversationId,undefined);
- }finally{release?.();await runs.close();}
-});
-
-test('receipts without canonical execution steps are refused without replay or mutation',async t=>{
- const {store,executor}=fixture(t),at='2025-08-18T00:00:00.000Z';
- store.db.exec('CREATE TABLE query_runs(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,json TEXT NOT NULL); CREATE TABLE insight_runs(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,json TEXT NOT NULL)');
- const json=JSON.stringify({id:'old',status:'completed',createdAt:at,updatedAt:at,events:[],scope:{}});
- for(const table of ['query_runs','insight_runs'])store.db.prepare(`INSERT INTO ${table} VALUES(?,?,?)`).run('old','generated-hash',json);
- assert.throws(()=>new QueryRuns(store,{executor}),/no canonical execution step/);assert.throws(()=>new InsightRuns(store,{executor}),/no canonical execution step/);
- assert.equal(store.db.prepare('SELECT count(*) n FROM execution_steps').get()!.n,0);
- for(const table of ['query_runs','insight_runs'])assert.equal(store.db.prepare(`SELECT json FROM ${table}`).get()!.json,json);
-});
 
 test('one import links originals to later engine work and generation changes atomically',async t=>{
  const {store,executor,operations}=fixture(t),sources=new SourceStore(store),files=new ArchivedFileStore(store),imports=new ImportStore(store,files,sources,{executor});
@@ -71,15 +35,4 @@ test('insight cancellation fences results and close after engine shutdown does n
  const {store,executor,operations}=fixture(t),runs=new InsightRuns(store,{executor});let release!:()=>void,signal!:AbortSignal;
  const id=randomUUID();runs.start(id,{},async(_observe,current)=>{signal=current;await new Promise<void>(resolve=>release=resolve);return {answer:'Generated late report',citations:[],trace:[],runId:randomUUID()};});await turn();
  await executor.close();await runs.close();assert.equal(signal.aborted,true);assert.equal(runs.get(id).error?.code,'interrupted');assert.equal(operations.detail(`insight:${id}`).operation.state,'failed');release();await turn();assert.equal(runs.get(id).resultRunId,undefined);
-});
-
-
-test('a second connection cannot interrupt or claim live owner interactive work',async t=>{
- const {store,executor,operations}=fixture(t),first=new QueryRuns(store,{executor,concurrency:()=>1});
- let release!:()=>void,calls=0;const running=randomUUID(),queued=randomUUID();
- first.start(running,{},async()=>{await new Promise<void>(resolve=>release=resolve);return {conversationId:randomUUID(),turnId:randomUUID()};});
- first.start(queued,{},async()=>{calls++;return {conversationId:randomUUID(),turnId:randomUUID()};});await turn();
- const otherStore=new Store(store.directory),otherEngine=new ExecutionEngine(otherStore),other=new QueryRuns(otherStore,{executor:otherEngine});
- await otherEngine.tick();assert.equal(other.get(running).status,'running');assert.equal(other.get(queued).execution?.status,'queued');assert.equal(calls,0);assert.equal(operations.detail(`query:${running}`).operation.state,'running');
- release();await first.close();assert.equal(calls,1);assert.equal(other.get(queued).status,'completed');await other.close();await otherEngine.close();otherStore.close();
 });

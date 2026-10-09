@@ -9,7 +9,6 @@ import {parseMaterialRef,type MaterialReadPage,type MaterialStore} from './mater
 import {StoreError,type Store} from './store.js';
 import {BackendPluginScope} from './backend-plugin-scope.js';
 import {InstallationEpochs} from './installation-epochs.js';
-import {removeRetiredBudgetState} from './retired-budget-migration.js';
 
 const fingerprint=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)??'null').digest('hex');
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])):value;
@@ -57,7 +56,6 @@ export class ProcessingRuntime {
   readonly ready:Promise<void>;readonly engine:ExecutionEngine;private owned:boolean;private stopping=false;
   private unregister:Array<()=>Promise<void>>=[];
   constructor(readonly store:Store,plugins:Plugin[]=[],private limits:Partial<Record<ProcessingLane,{concurrency:number;enabled?:boolean}>>={},private now=Date.now,engine?:ExecutionEngine,private materials?:MaterialStore,root?:Context){
-    removeRetiredBudgetState(store);
     this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
     this.pluginScope.provide('moteContextProcessors',this.registry);this.pluginScope.provide('moteMaterialConsumers',this.consumers);
     store.db.exec(`CREATE TABLE IF NOT EXISTS processing_jobs(id TEXT PRIMARY KEY,lane TEXT NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,available_at INTEGER NOT NULL DEFAULT 0,lease_until INTEGER NOT NULL DEFAULT 0,fence TEXT,error TEXT,json TEXT NOT NULL);

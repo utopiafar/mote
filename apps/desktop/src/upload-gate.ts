@@ -6,8 +6,6 @@ export interface UploadGateConfig {
 }
 export type GateDecision = 'allow' | 'drop' | 'hold';
 export const defaultUploadGate: UploadGateConfig = { enabled: true, blockedText: [], failureAction: 'hold' };
-/** Reserved integration boundary. No VLM implementation is activated in this release. */
-export interface VisualReviewProvider { review(image: Uint8Array, signal: AbortSignal): Promise<'allow' | 'deny' | 'uncertain'> }
 export function uploadGateConfig(value: unknown): UploadGateConfig {
   if (value === undefined) return structuredClone(defaultUploadGate);
   const v = value as UploadGateConfig;

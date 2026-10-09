@@ -224,7 +224,7 @@ async function open(vault:string){
     node.memoryStrategies.registerIntegrationRecipe({id:defaultMemoryIntegrationRecipe.id,version:'1',integrate:{id:defaultMemoryIntegrationStrategy.id,version:'1'},review:{id:defaultMemoryIntegrationReview.id,version:defaultMemoryIntegrationReview.version}});
     node.memoryIntegrationSettings.configure({recipe:{id:defaultMemoryIntegrationRecipe.id,version:'1'}});
   }
-  const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
+  const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
   const query=node.agent.query.bind(node.agent);
   node.agent.query=async input=>{
     assert.ok(!recoveryValidateOnly,'Recovery source validation forbids agent admission');
@@ -290,7 +290,7 @@ async function recoveryPrecheck(){
   const source=JSON.parse(await readFile(sourceReport,'utf8'),(key,value)=>key==='result'||key==='input'?undefined:value);
   assert.equal(source.schema,'mote-memory-scenario-run@1');assert.equal(source.mode,mode);assert.equal(source.status,'failed');assert.equal(source.fixtureSha256,frozenWaveHash);assert.equal(source.personalDataUsed,false);assert.equal(source.heldOut,false);assert.deepEqual(source.intendedModel,fixture.model);
   assert.equal(source.outerCalls,recovery.sourceOuterCalls);assert.equal(source.calls.length,8);assert.equal(source.realModelCalls,preflight?0:8);assert.equal(source.stubCalls,preflight?8:0);assert.equal(source.arms.length,0);
-  assert.deepEqual(source.calls.map((call:any)=>[call.stage,call.phase,call.status]),[['extraction','extract','completed'],['extraction','review','completed'],['extraction','extract','completed'],['extraction','review','completed'],['extraction','extract','completed'],['extraction','review','completed'],['integration','extract','completed'],['integration','review','failed']]);
+  assert.deepEqual(source.calls.map((call:any)=>[call.stage,call.phase,call.status]),[['extract','completed'],['review','completed'],['extract','completed'],['review','completed'],['extract','completed'],['review','completed'],['integration','extract','completed'],['integration','review','failed']]);
   if(preflight){assert.equal(source.preflightVariant,'failed-integration-review');assert.equal(source.calls[7].failure,'Frozen offline integration review failure');}
   assert.equal(source.records.length,fixture.records.length);assert.deepEqual(source.records.map((record:any)=>record.id),fixture.extractionOrder);
   for(const record of source.records)assert.deepEqual(recordSchema.parse(Object.fromEntries(Object.keys(recordSchema.shape).map(key=>[key,record[key]]))),fixture.records.find(r=>r.id===record.id));
