@@ -75,6 +75,42 @@ adb reverse tcp:47842 tcp:47842
 
 ## 验证命令
 
+<a id="pr-check-scope"></a>
+
+### PR 检查范围
+
+PR 前使用本地与 CI 共用的依赖图和构建输入规则选择检查范围：
+
+```sh
+npm run check:affected -- --dry-run
+npm run check:affected
+# 指定 PR 基线；默认 origin/main，先获取最新基线
+npm run check:affected -- --base origin/main
+# 只核对已提交范围，适用于 CI 或明确提交的验证
+npm run check:affected -- --base origin/main --head HEAD --dry-run
+```
+
+默认范围包含与基线共同祖先相比的已提交改动，以及当前暂存、未暂存和未被忽略的未跟踪文件。移动文件同时检查原位置与新位置，避免把移入文档目录的运行代码误判为纯文档。基线无法解析时命令失败，不会当作无改动跳过检查。`--dry-run` 只展示检查计划，不代表检查通过。
+
+| 改动场景 | 自动检查 | 按实际行为补充 |
+| --- | --- | --- |
+| 纯文档、根 AGENTS.md、各语言 README、历史发布说明 | 不构建或测试应用；人工检查格式、语法、链接和必要的渲染 | 运行时 prompt、配置及 workspace 内资源按代码输入处理 |
+| Central / Web / Agent / 中央插件 | `check:i18n`、`check:central` | 对应浏览器交互、API、导入/查询/Memory 等流程 |
+| macOS / diagnostics | `check:i18n`、`check:desktop` | Desktop 构建、受影响 UI；原生助手/依赖/打包变更在 macOS 编译；权限与系统生命周期单独验收 |
+| Android | `check:i18n`、发布工具回归、Gradle debug 单测（包含测试依赖的代码编译） | 对应 variant 构建、lint、instrumentation；后台与权限变化单独真机验收 |
+| 共享包或协议 | 检查所有受影响消费者；目前 shared / protocol 选择三端 | 跨端契约与连接/同步生成 fixture；不要把检查范围当作发布范围 |
+| 单端发布 workflow | 对应端检查及发布工具回归 | 对应 workflow 的构建、签名和产物身份检查；无关端不构建 |
+| 检查范围选择器及本地检查入口 | 发布工具回归，包含本地 CLI 的隔离 Git fixture | 无需应用构建 |
+| 通用发布工具、公共 workflow、根配置/lockfile、未知构建输入 | 保守检查全部消费者 | 相关部署、容器、依赖安装或发布链路 |
+
+三端均受影响时，本地入口运行 `check:local` 和 Android 单测；只选择部分组件时运行对应组件命令。组件命令已含发布工具回归，不重复执行。`check:local` 是全量 TypeScript 集成检查，不包含 Android 测试、Desktop 原生编译、浏览器 E2E、真机或真实模型验收。新增文案需检查翻译和 Android catalog 同步；当前 shared 目录采用保守的整包消费者范围，因此修改共享翻译目录仍会选择三端。
+
+选择器不能从路径证明运行时兼容性。例如 Central 即使没有改客户端文件，若改变了客户端使用的 API、授权或同步契约，仍应补测受影响客户端。反之，内部实现、网页样式或普通服务端修复不默认要求 macOS 编译和单测。仅变更文案通常只需翻译与显示检查；新增翻译目录之外的变化按实际输入范围处理。
+
+追加修改后重跑受影响检查。仅修改 PR 标题/描述或补充验证说明可以复用相同代码和依赖状态的结果；代码、依赖、基线合并或环境变化使相关结果失效。全量 TypeScript 集成检查保留用于跨模块重构最终验收或影响范围不明的情况，不再作为每次单端 PR 更新的固定门槛。发布前始终验证发布组件的版本、构建与产物，以及相关安装/升级流程。
+
+这次规则调整保留（KEEP）生成 fixture、回归场景、如实报告验证和协议消费者检查；改变（CHANGE）PR 本地检查按影响范围选择；移除（REMOVE）所有非文档 PR/更新强制全量 TS 检查；例外（EXCEPTION）根配置与未知输入继续保守扩大，跨端运行时行为需要额外验证；未知（UNKNOWN）CI 是否启用及设备/模型环境能力需实际核实，不能由选择器推断。历史验证报告保留当时执行记录，不改写成新的验证结果。
+
 ```sh
 npm run typecheck
 npm test

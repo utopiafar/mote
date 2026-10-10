@@ -10,7 +10,7 @@
 - Keep tokens and personal data out of source control. Defaults bind to loopback; remote deployments require TLS and a strong access token.
 - Use npm workspaces for TypeScript. Android uses Kotlin for platform capture APIs.
 - Report physical device and live-model checks separately from fixture tests; never claim unperformed validation.
-- For clearly documentation-only PRs, check formatting, grammar, links, and rendering; a full test run is not required. Before opening or updating a PR that changes code, configuration, dependencies, or runtime behavior, run `npm run check:local`.
+- Before opening or updating a PR, run checks for the affected components and their consumers using `npm run check:affected` (scope and additional journey checks: [development guide](docs/development.md#pr-check-scope)). For documentation-only changes, review formatting, grammar, links, and rendering without application builds or tests. After further changes, rerun affected checks; editing only PR metadata does not invalidate results. Keep `npm run check:local` for broad TypeScript integration validation; native builds, UI, physical-device and live-model checks depend on the changed behavior and are reported separately.
 - Add English translations for new `moteText` keys and keep the Android English catalog synchronized.
 
 ## Development protocol

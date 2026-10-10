@@ -77,7 +77,7 @@ Mac 默认 adhoc 只提供本期可构建的分发方式，不代表 Apple 认�
 
 1. 运行 `npm run release:version -- android patch`（或 `central`、`desktop`，也可给出更高的完整版本）。脚本只修改该发布单元；Central 同步 server/web 和对应 lockfile 条目，Android 单独递增 versionCode。
 2. 编写 `release/notes/<组件>/<版本>.md`，记录这个端的变化与实际验证范围。
-3. 涉及代码、配置、依赖或运行行为的提交/PR 前运行 `npm run check:local`；纯文档 PR 只检查格式、语法、链接和渲染，无需完整测试。发布前运行 `npm run release:verify -- android`。MVP 阶段平台测试由维护者按需手动运行：Central 可运行 `npm run check:central`，macOS 可运行 `npm run check:desktop`；Android 用 Gradle 单元测试、构建与 lint。GitHub 的默认暂停策略见上面的检查开关。
+3. 涉及代码、配置、依赖或运行行为的提交/PR 前运行 `npm run check:affected`，并按[开发指南](development.md#pr-check-scope)补充受影响流程的检查；纯文档 PR 只检查格式、语法、链接和渲染，无需完整测试。发布前运行 `npm run release:verify -- android`。MVP 阶段平台测试由维护者按需手动运行：Central 可运行 `npm run check:central`，macOS 可运行 `npm run check:desktop`；Android 用 Gradle 单元测试、构建与 lint。GitHub 的默认暂停策略见上面的检查开关。
 4. 合并后在对应提交推送不可变组件标签，例如 `android-v0.0.78`。手动启动 workflow 也必须选择准确的组件标签，普通分支无法发版。
 5. 对应工作流构建、验证并上传唯一组件产物。Mac 使用 `MOTE_MAC_DEVELOPMENT=1`；Android 使用原证书并核验包名、版本码和 16 KiB 对齐；Central 构建 server/web 后从标签归档所需源码，并验证结构与版本。`.asset.json` 等 CI 校验数据不作为公开附件。
 
@@ -86,14 +86,14 @@ Mac 默认 adhoc 只提供本期可构建的分发方式，不代表 Apple 认�
 ```sh
 npm run release:version -- android patch
 # 按脚本输出的 notes 路径写发布说明
-npm run check:local
+npm run check:affected
 npm run release:verify -- android
 # 合并后，在已验证提交创建并推送脚本输出的 tag
 git tag android-v0.0.78
 git push origin android-v0.0.78
 ```
 
-[Component checks](../.github/workflows/component-checks.yml) 恢复启用后按代码输入和 npm 依赖选择平台检查；协议或共享契约变更检查所有消费者，普通端侧改动只检查该端。完整手动检查仍保留在 [Checks](../.github/workflows/checks.yml)，本地 PR 检查按 [项目工作规则](../AGENTS.md)区分纯文档与代码等修改。检查所有端不会创建其他端的发布。
+[Component checks](../.github/workflows/component-checks.yml) 恢复启用后按代码输入和 npm 依赖选择平台检查；协议或共享契约变更检查所有消费者，普通端侧改动只检查该端。完整手动检查仍保留在 [Checks](../.github/workflows/checks.yml)，本地 PR 检查与 CI 共用影响范围判断，按[开发指南](development.md#pr-check-scope)检查受影响组件；`check:local` 保留为全量 TypeScript 集成检查。检查所有端不会创建其他端的发布。
 
 已发布 Release 不可覆盖，失败草稿可以重试。各端版本不能相互比较，也不必同时递增。文档修改本身不要求发布安装包；共享库变化需要判断实际受影响产品并分别发版。中央源码包保留 npm lockfile 和跨工作区依赖，以便在目标机器独立构建。升级步骤见 [更新指南](updating.md)。
 
