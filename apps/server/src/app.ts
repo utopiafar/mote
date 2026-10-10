@@ -59,6 +59,7 @@ import { registerMemoryExtensions } from './lifecycle-extensions.js';
 import {MemoryIntegrationSettings} from './memory-integration-settings.js';
 import { MaintenanceWorker } from './maintenance.js';
 import { MaterialMemoryWork } from './material-memory-work.js';
+import {installCaptureMemoryIntake} from './capture-memory-intake.js';
 import { MaterialOrganizerRuntime } from './material-organizers.js';
 import { MaterialStore } from './materials.js';
 import { MediaAssets } from './media-assets.js';
@@ -283,7 +284,8 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
   const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:[...new Set([...(config.backendPluginModules??[]),...(config.fileProcessorModules??[])])],analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,pluginContext:backendContext,mediaAssets});
   try{await processing.runtime.ready;}catch(error){await executor.close();await processing.close();await workflows.close();await sourcePipelines.close();await backendContext.fiber.dispose();await modelSettings.close();await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
 
-  const perception=new ImageProcessing(store,processing,executor,{materials,mediaAssets,memoryWork:materialMemoryWork,understanding:imageUnderstanding({factory,usage:usageLedger,selection:service=>{
+  const disposeCaptureMemoryIntake=installCaptureMemoryIntake(store,materialMemoryWork);
+  const perception=new ImageProcessing(store,processing,executor,{materials,mediaAssets,understanding:imageUnderstanding({factory,usage:usageLedger,selection:service=>{
     const selected=modelSettings.select('file'),settings=resolveFileModel({...processing.currentSettings(),analysisModel:service}),configuration=modelConfiguration(service?.id??selected.id,settings,modelSettings.view().revision);
     return {fingerprint:configuration.fingerprint,configured:service?Boolean(service.apiKey||service.execution==='local'):agent.configuredFor(selected.id),settings,receipt:{profileId:service?.id??selected.id,provider:settings.provider,model:settings.model,revision:modelSettings.view().revision}};
   }})});
@@ -621,6 +623,7 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
     agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();
   });
   app.addHook('onClose',async()=>{
+    disposeCaptureMemoryIntake();
     await featureHost.close();await delegation.close();
     await backendContext.fiber.dispose();
     await Promise.allSettled([...importAgents].map(runtime=>runtime.close()));

@@ -29,23 +29,28 @@ await node.app.listen({host:'127.0.0.1',port:0});writeFileSync(${JSON.stringify(
   const checkbox=label=>js(`(()=>{const l=[...document.querySelectorAll('.memory-recipe-selection label')].find(l=>l.textContent.includes(${JSON.stringify(label)}));const e=l?.querySelector('input');if(!e||e.disabled)throw Error('Unavailable checkbox');e.click();})()`);
   const selected=label=>js(`(()=>{const l=[...document.querySelectorAll('.memory-recipe-selection label')].find(l=>l.textContent.includes(${JSON.stringify(label)}));return l?.querySelector('input')?.checked;})()`);
   const source=value=>js(`(()=>{const e=document.querySelector('.memory-recipe-selection select');if(!e||e.disabled)throw Error('Unavailable source selector');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-  const open=async()=>{await click('系统管理');await click('模型与服务');await until(()=>js(`!![...document.querySelectorAll('.preference-menu-row')].find(b=>b.querySelector('strong')?.textContent==='模块与模型')`),'modules entry');await js(`[...document.querySelectorAll('.preference-menu-row')].find(b=>b.querySelector('strong')?.textContent==='模块与模型').click()`);await until(()=>js(`!!document.querySelector('.memory-recipe-selection form')`),'recipe editor');};
+  const open=async()=>{await js(`location.hash='#/system/models'`);await until(()=>js(`!![...document.querySelectorAll('.preference-menu-row')].find(b=>b.querySelector('strong')?.textContent==='模块与模型')`),'modules entry');await js(`[...document.querySelectorAll('.preference-menu-row')].find(b=>b.querySelector('strong')?.textContent==='模块与模型').click()`);await until(()=>js(`!!document.querySelector('.memory-recipe-selection form')`),'recipe editor');};
   const screenshot=async name=>{await js(`document.querySelector('.memory-recipe-selection').scrollIntoView({block:'start',behavior:'instant'})`);await delay(150);assert.equal(await js('document.documentElement.scrollWidth<=innerWidth'),true,'horizontal overflow');writeFileSync(join(out,name+'.png'),(await wc.capturePage()).toPNG());};
-  await window.loadURL(url);await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({token}))});location.reload()`);await open();
+  await window.loadURL(url);await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({token,viewScope:require('node:crypto').randomUUID()}))});location.reload()`);await open();
   assert.equal(await selected('个人记忆 · 版本 2'),true);assert.equal(await selected('编码经验'),false);
   await checkbox('编码经验');assert.equal(await js(`document.querySelector('.memory-recipe-selection select').disabled`),true,'dirty selection prevents losing edits');
   await click('保存组合');await until(async()=> (await view()).items.length===2,'saved default');await until(()=>js(`!document.querySelector('.memory-recipe-selection select').disabled`),'save settled');
-  await source('coding');await until(()=>selected('跟随默认组合'),'inherited selection');await checkbox('跟随默认组合');await checkbox('个人记忆 · 版本 2');await click('保存组合');
+  await source('source:coding');await until(()=>selected('跟随默认组合'),'inherited selection');await checkbox('跟随默认组合');await checkbox('个人记忆 · 版本 2');await click('保存组合');
   await until(async()=>{const v=await view('coding');return !v.inherited&&v.items.length===1&&v.items[0].binding.recipe.id==='mote.coding-memory';},'source override');
   assert.equal((await view()).items.length,2,'source override preserves default');await screenshot('source-override-desktop');window.setSize(430,1000);await screenshot('source-override-mobile');window.setSize(1280,1000);
-  await window.loadURL(url);await open();await source('coding');await until(()=>js(`!![...document.querySelectorAll('.memory-recipe-selection label')].find(l=>l.textContent.includes('跟随默认组合'))&&!document.querySelector('.memory-recipe-selection input').checked`),'persisted override');
+  await window.loadURL(url);await open();await source('source:coding');await until(()=>js(`!![...document.querySelectorAll('.memory-recipe-selection label')].find(l=>l.textContent.includes('跟随默认组合'))&&!document.querySelector('.memory-recipe-selection input').checked`),'persisted override');
   assert.equal(await selected('个人记忆 · 版本 2'),false);assert.equal(await selected('编码经验'),true);
   await checkbox('跟随默认组合');await click('保存组合');await until(async()=> (await view('coding')).inherited,'restored inheritance');await until(()=>js(`!document.querySelector('.memory-recipe-selection select').disabled`),'inheritance settled');
   await source('');await until(()=>js(`![...document.querySelectorAll('.memory-recipe-selection label')].some(l=>l.textContent.includes('跟随默认组合'))`),'default editor');
-  await checkbox('个人记忆 · 版本 2');await checkbox('编码经验');await click('保存组合');await until(async()=> (await view()).items.length===0,'disabled automatic recipes');
+  await checkbox('个人记忆 · 版本 2');assert.equal(await js(`(()=>{const l=[...document.querySelectorAll('.memory-recipe-selection label')].find(l=>l.textContent.includes('编码经验'));return l.querySelector('input').disabled;})()`),true,'final recipe cannot be removed');await click('保存组合');await until(async()=> (await view()).items.length===1,'nonempty default');
   assert.equal((await request('/api/memory-jobs')).items.length,0,'settings changes never create historical work');
-  assert.equal((await view('diary')).items.length,0,'untouched source inherits default');
-  const result={passed:true,checks:['default multi-selection','unsaved edits protected','source override','reload persistence','restore inheritance','empty selection','no history jobs','desktop and mobile layout'],personalDataUsed:false,liveModel:false,screenshots:out};
+  assert.equal((await view('diary')).items.length,1,'untouched source inherits default');
+  await source('capture');await until(()=>selected('日常事件'),'capture daily default');
+  assert.equal(await selected('个人记忆 · 版本 2'),true);await checkbox('个人记忆 · 版本 2');await click('保存组合');
+  await until(async()=> (await request('/api/memory-recipe-settings?scope=capture')).items.length===1,'saved capture default');
+  assert.equal((await view()).items[0].binding.recipe.id,'mote.coding-memory','capture selection preserves ordinary defaults');
+  await screenshot('daily-capture-desktop');window.setSize(430,1000);await screenshot('daily-capture-mobile');
+  const result={passed:true,checks:['default multi-selection','unsaved edits protected','source override','reload persistence','restore inheritance','nonempty selection enforced','capture daily defaults','no history jobs','desktop and mobile layout'],personalDataUsed:false,liveModel:false,screenshots:out};
   writeFileSync(join(out,'report.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
 }
 run().catch(async error=>{console.error(error);if(window){writeFileSync(join(out,'failure.png'),(await window.webContents.capturePage()).toPNG());console.error((await window.webContents.executeJavaScript('document.body.innerText')).slice(-4500));}process.exitCode=1;}).finally(async()=>{

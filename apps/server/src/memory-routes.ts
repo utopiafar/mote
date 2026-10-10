@@ -1,6 +1,6 @@
 import type {MemoryIntegrationSettings} from './memory-integration-settings.js';
 import {MemoryIntegrationSelectionError,requestMemoryIntegration} from './memory-integration.js';
-import type {MemoryRecipeSettings} from './memory-recipe-settings.js';
+import {memoryRecipeSettingsQuery,type MemoryRecipeSettings} from './memory-recipe-settings.js';
 import type {FastifyInstance} from 'fastify';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
@@ -42,7 +42,7 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
     });
     void lifecycle.tick().catch(()=>{});return reply.code(202).send(result);
   });
-  app.get('/api/memory-recipe-settings',async req=>memoryRecipeSettings.view(z.object({sourceId:z.string().min(1).max(256).optional()}).strict().parse(req.query).sourceId));
+  app.get('/api/memory-recipe-settings',async req=>{const query=memoryRecipeSettingsQuery.parse(req.query);return memoryRecipeSettings.view(query.sourceId,query.scope);});
   app.put('/api/memory-recipe-settings',{bodyLimit:8192},async req=>memoryRecipeSettings.configure(req.body));
   app.get('/api/memory-integration-recipes',async()=>({items:memoryPipeline.strategies.listIntegrations()}));
   app.get('/api/memory-integration-settings',async()=>memoryIntegrationSettings.view());
@@ -60,7 +60,7 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
   }).strict().parse(req.query)));
   app.get('/api/memory-jobs/:id',async req=>memoryPipeline.get(jobId(req.params)));
   app.post('/api/memory-jobs',async(req,reply)=>{
-    const scope=z.object({...scopeFields,contextTime:z.string().datetime({offset:true}).optional(),recipes:z.array(memoryStrategyRefSchema).min(1).max(8).optional(),modelProfileId:modelProfileIdSchema.optional(),evidenceIds:z.array(z.string().uuid()).min(1).max(20000).optional()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body??{});
+    const scope=z.object({...scopeFields,contextTime:z.string().datetime({offset:true}).optional(),recipes:z.array(memoryStrategyRefSchema).min(1).max(9).optional(),modelProfileId:modelProfileIdSchema.optional(),evidenceIds:z.array(z.string().uuid()).min(1).max(20000).optional()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body??{});
     const profile=modelSettings.select('memory',scope.modelProfileId);
     const policy=new EvidenceExposurePolicy();
     const bindings=scope.recipes?.map(ref=>{try{return memoryPipeline.strategies.resolve(ref).binding;}catch{throw new StoreError('Memory recipe is unavailable',409);}});

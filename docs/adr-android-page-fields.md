@@ -50,9 +50,11 @@ observation/adapter history. Only exact contiguous containment or suffix/prefix
 overlap is collapsed. These objects bypass the compressed screen-segment organizer.
 Materials remain partial (`visible_window`); deeper interpretation is central model
 work under the existing authorization/read-only evidence contracts.
-This release adds deterministic organization and indexing, not a new automatic
-Memory grant. Existing image/source receipts keep their authorization boundaries;
-page reads and explicit downstream requests use the existing evidence policies.
+The subsequent [automatic Memory decision](adr-ui-page-automatic-memory.md)
+supersedes this release's initial automatic-Memory exclusion: newly accepted v2
+fields enter the existing receipt/recipe pipeline over ready captured text.
+Existing image/source receipts, page reads and explicit downstream requests keep
+their authorization boundaries; historical rebuilds do not grant new model work.
 The scoped reader uses the existing 2,000-member / four-million-character Material
 budget while reading recent observations incrementally. Limited materials declare
 partial coverage; all accepted original captures remain independently pageable.

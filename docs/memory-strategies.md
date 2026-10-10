@@ -40,17 +40,19 @@ const stopRecipe = ctx.memoryStrategies.registerRecipe({
 }
 ```
 
-两个内置组合共用上下文提取器，审核器分别判断个人和 Coding 产物；它们都能处理日记或 Coding 会话等来源。一方的审核拒绝不会否决另一方。手工任务未传 `recipes` 时仍沿用原有默认流程；正式来源资料的自动接收队列使用下面的独立组合选择。
+个人和 Coding 两个内置组合共用上下文提取器，审核器分别判断个人和 Coding 产物；它们都能处理日记或 Coding 会话等来源。一方的审核拒绝不会否决另一方。手工任务未传 `recipes` 时仍沿用原有默认流程；正式来源资料的自动接收队列使用下面的独立组合选择。
 
-`mote.personal-memory@2` 使用同一提取器和独立的 `mote.personal-review@2`。新版个人审核区分普通任务线索与有依据的个人意义或后续用途：单次感受、重要经历、有意义的愿望、明确约束及限定用途的资源关联仍可收录；不能仅以“未来可能追踪”为由，将待办、普通开发进度和一次性安排升为选中 Memory。这是可替换的产品政策，不是公共层的关键词规则，也不限制 Coding 或其他策略。当前 MVP 只安装内置 v2 配方与审核；自定义已选版本仍固定定义，安装不授权历史重算。
+`mote.personal-memory@2` 使用同一提取器和独立的 `mote.personal-review@2`。新版个人审核区分普通任务线索与有依据的个人意义或后续用途：单次感受、重要经历、有意义的愿望、明确约束及限定用途的资源关联仍可收录；不能仅以“未来可能追踪”为由，将待办、普通开发进度和一次性安排升为选中 Memory。这是可替换的产品政策，不是公共层的关键词规则，也不限制 Coding 或其他策略。当前 MVP 安装个人/Coding v2 和日常事件 v1；自定义已选版本仍固定定义，安装不授权历史重算。
 
 `mote.coding-memory@2` 只替换独立的 `mote.coding-review@2`，继续共享原提取器。审核保留有依据的工程决定、失败机制与适用经验中的具体接口、前提、实施顺序和验证边界，可从原文补回草稿遗漏的必要细节；相关进展可以作为这条经验的上下文，但不能仅凭报错、修补、PR 或成功自述构成长效经验。尚未实施的有理由设计也可收录，须区分他人建议、用户采纳、已完成与未知。具体测试及结果才支持相应范围内的 `tested`，不能把未测试部分一并升级。内置 Coding v1 与个人 v1 已移除；当前配方仍固定自身定义，不因安装自动重算历史。
+
+`mote.daily-event-memory@1` 使用独立的日常事件提取器和审核器，要求 `daily-events` 输入。普通浏览、计划、订单状态和完成记录可以成为 `observation`，不要求长效个人意义；文章观点属于作者，页面状态不能凭空升级为用户行为或完成。不同采集时点保留独立事件，回顾时再归纳，避免 UTC 自动处理合并后丢失其他时区的日界范围。每条采样对应独立 `capture-event` 资料，其他组合仍消费既有截图与页面对象资料；原文及精确证据保留，详见 [日常事件 ADR](adr-daily-event-memory.md)。
 
 ## 自动接收的组合选择
 
 所有者在「系统管理 → 模型与服务 → 模块与模型 → 自动 Memory 组合」选择非空默认组合，或为某个来源保存非空覆盖组合，也可让来源跟随默认。来源覆盖是所有者的明确选择，不根据来源名称或正文推断语义类别。已授权来源的新资料持续处理，普通用户无需另行开启 Memory；来源暂停接收、模型及隐私授权仍是独立边界。
 
-`GET /api/memory-recipe-settings` 返回默认选择，加 `?sourceId=...` 返回来源的有效选择及是否继承。每个条目包括固定的组件版本/指纹和当前是否可用。通过 `PUT /api/memory-recipe-settings` 保存：
+`GET /api/memory-recipe-settings` 返回普通默认选择，加 `?scope=capture` 返回截图和 v2 页面字段的独立默认选择，加 `?sourceId=...` 返回来源的有效选择及是否继承。`scope` 与 `sourceId` 互斥。每个条目包括固定的组件版本/指纹和当前是否可用。通过 `PUT /api/memory-recipe-settings` 保存：
 
 ```json
 {
@@ -62,7 +64,7 @@ const stopRecipe = ctx.memoryStrategies.registerRecipe({
 }
 ```
 
-省略 `sourceId` 修改默认；新的 `recipes: []` 被拒绝；指定来源并传 `recipes: null` 恢复继承。持久化空选择也被拒绝；继承由缺少来源覆盖记录表示。配置接口只接受所有者凭据，采集端不能修改。首次建立这份配置时只选择 `mote.personal-memory@2`；Coding 和其他已安装配方不自动开启。已有非空配置固定确切定义，不跟随安装版本漂移。缺失的已选组件会显示为不可用，不偷偷替换为另一策略。
+省略 `sourceId` 和 `scope` 修改普通默认；传 `scope: "capture"` 修改采集默认；最多选择 9 个组合，保留既有 8 个组合及新增日常事件的容量。新的 `recipes: []` 被拒绝；指定来源并传 `recipes: null` 恢复继承。持久化空选择也被拒绝；继承由缺少来源覆盖记录表示。配置接口只接受所有者凭据，采集端不能修改。首次建立普通默认只选择 `mote.personal-memory@2`；首次建立采集默认复制当时普通组合并追加日常事件 v1，之后两个默认独立持久化。已保存来源覆盖仍优先；用户移除日常事件后，重启不会重新追加。普通来源不自动启用 Coding 或日常事件。已有非空配置固定确切定义，不跟随安装版本漂移。缺失的已选组件会显示为不可用，不偷偷替换为另一策略。
 
 原件接收事务为当时选中的每个配方分别保存授权或拒绝，并固定同一接收时刻作为评估语境。公共队列按资料和配方范围保存状态，首次发布只延续自己的未用授权；重复接收、后来选择、改版本、重启和确定性重建都不补发历史授权。当前 API 拒绝 extraction.enabled:false 及来源 memory 字段；未授权输入和拒绝收据不能因重启、改配方而获得授权。收费历史处理继续通过所有者显式创建的 Memory job 发起。
 
@@ -72,7 +74,7 @@ const stopRecipe = ctx.memoryStrategies.registerRecipe({
 
 ### 配方自己的输入依赖
 
-Memory 配方可声明 `requires: ['extracted-text']`，或 `requires: ['source-body']`。这些名称是处理契约，不是正文语义类别。省略时使用来源的默认依赖；已有内置配方因此继续适用于多种来源。改变依赖也要更换配方版本，不能改写已固定的定义。
+Memory 配方可声明 `requires: ['extracted-text']`，`requires: ['source-body']`，或 `requires: ['daily-events']`。这些名称是处理契约，不是正文语义类别。省略时使用来源的默认依赖；已有内置配方因此继续适用于多种来源。改变依赖也要更换配方版本，不能改写已固定的定义。
 
 组织器在 `MaterialDraft.artifacts` 中用 `blockIds` 声明产物对应的证据块，例如 `{key: 'extracted-text', state: 'ready', blockIds: ['chunk-1']}`。发布时拒绝重复产物名、重复或不存在的块。当前 source-item 组织器分别映射来源记录、原文、原件和提取正文；文件协议的原始 `text` 为空，所以 `source-record` 可以是元数据线索，不能冒充转写正文。是否沉淀为长期 Memory 仍由所选提取与审核策略判断。
 
@@ -106,7 +108,7 @@ Memory 配方可声明 `requires: ['extracted-text']`，或 `requires: ['source-
 
 命名输入回归使用生成 WAV、脚本 ASR/模型及实际 UTF-8 文件处理器，验证转写失败时来源记录索引仍可完成、重启后恢复转写、两个转写消费者共享提取、单审核失败只重试审核，以及更正只使相关产物过时。另一普通文本来源用相同锚点同时生成个人 Memory 与观察线索，提取一次、审核两次。还验证了手工范围入口、21 个转写块跨两个批次时的模型实际读取范围、提交时隐私撤权和 Coding 追加块映射。真实音频/图文解析质量及组合复用、更多实际保留集、跨域整合/去重和大数据量 UI 仍待完成；生成夹具不替代这些验收。
 
-`scripts/test-memory-recipes-ui.cjs` 在隔离库启动实际服务与 Electron 渲染器，只创建生成来源，不调用模型；验证默认组合、来源覆盖、刷新恢复、继承、空选择和桌面/窄屏布局。先运行 `npm run build -w @mote/server` 与 `npm run build -w @mote/web`，再用 `MOTE_RECIPE_UI_OUTPUT=/private/output node_modules/.bin/electron scripts/test-memory-recipes-ui.cjs` 运行。输出目录保存截图和结果；这不是 Android 真机或真实资料负载验证。
+`scripts/test-memory-recipes-ui.cjs` 在隔离库启动实际服务与 Electron 渲染器，只创建生成来源，不调用模型；验证默认组合、来源覆盖、刷新恢复、继承、非空选择约束、采集默认和桌面/窄屏布局。先运行 `npm run build -w @mote/server` 与 `npm run build -w @mote/web`，再用 `MOTE_RECIPE_UI_OUTPUT=/private/output node_modules/.bin/electron scripts/test-memory-recipes-ui.cjs` 运行。输出目录保存截图和结果；这不是 Android 真机或真实资料负载验证。
 
 `scripts/test-automatic-memory-live.ts` 接收 `MOTE_AUTO_MANIFEST` 中最多三条完整 authored 原文和全新的 `MOTE_AUTO_OUTPUT` 目录，固定本地 `gpt-6-sol / max`，通过 source 接收与公共队列运行个人/Coding 自动组合。每份原文最多一次提取和两次审核，整轮最多 20 分钟，不自动重试失败。记录确切代码哈希、来源角色、授权、实际调用、用量和前台读取，再验证重启/重复接收/切换设置不追加历史工作。输出必须在 Git 之外；`passed` 只证明该运行检查的公共契约，不自动代表语义质量或保留集通过。
 

@@ -17,7 +17,7 @@ export type MaterialMemoryRunner={
 export type MemoryWorkCandidate={key:string;materialId:string;ref:string;title:string;sourceId:string;inputKey:string;scope:string;contextTime:string;fingerprint:string;characters:number;evidenceCount:number;evidenceIds:string[];recipe?:MemoryStrategyRef};
 export type MemoryWorkProposal={id?:string;members:string[];goal:string;instruction:string};
 export type MaterialMemoryPlanner=(catalog:MemoryWorkCandidate[])=>Promise<MemoryWorkProposal[]>;
-export type MaterialMemoryObservation={inputKey:string;change:'source'|'rebuild';automatic?:boolean};
+export type MaterialMemoryObservation={inputKey:string;change:'source'|'rebuild';automatic?:boolean;recipeIds?:readonly string[];excludeRecipeIds?:readonly string[]};
 
 /** One common durable queue, independently scoped by selected product recipe.
  * Readiness is separate from the raw receipt's permission to run paid work. */
@@ -61,7 +61,10 @@ export class MaterialMemoryWork {
     const material=this.materials.get(materialId);if(!material){this.withdraw(materialId);return;}
     const sourceRequiredJson=JSON.stringify(keys),readyAt=this.now()+settleMs;
     this.transaction(()=>{
-      const previous=this.rows(materialId),grants=this.inputs.list(material.origin.sourceId,inputKey);
+      const previous=this.rows(materialId),grants=this.inputs.list(material.origin.sourceId,inputKey).filter(grant=>
+        (!observation.recipeIds||Boolean(grant.binding&&observation.recipeIds.includes(grant.binding.recipe.id)))&&
+        (!grant.binding||!observation.excludeRecipeIds?.includes(grant.binding.recipe.id)));
+      if(!grants.length&&observation.recipeIds){this.withdraw(materialId);return;}
       if(!grants.length)grants.push({scope:DEFAULT_MEMORY_INPUT_SCOPE,authorized:false,contextTime:new Date(this.now()).toISOString()});
       for(const row of previous)if(!grants.some(g=>g.scope===row.scope)){this.revoke(row);this.store.db.prepare('DELETE FROM material_memory_requests WHERE material_id=? AND scope=?').run(materialId,row.scope);}
       for(const grant of grants){
