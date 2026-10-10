@@ -32,6 +32,15 @@ The first failing condition is reported; a candidate may have more than one issu
 The host accepts a unique exact match without a model-supplied offset. Prompts and
 repair feedback now consistently recommend omitting offset and length by default.
 
+For work packages, validate the coverage envelope and candidate declarations first,
+then candidate schema and exact quotes, then quote-backed coverage ownership.
+An inexact quote must produce its specific quote code and candidate/span location,
+rather than a generic coverage rejection. Missing coverage and incorrect ownership
+still receive coverage feedback. Extraction and independent review use the same
+ordering, within the existing one-correction provider session; retry counts, grants,
+deadlines and exact matching do not change. Generated package regressions cover
+both phases, rejected-output non-publication, successful repair, and missing coverage.
+
 ## Correlation and privacy
 
 Ordinary events carry job ID, batch ID/index, attempt, query result run ID,
@@ -80,8 +89,10 @@ Host output validation now runs before the provider session closes. The host sup
 only a fixed error code, trusted repair instructions and numeric candidate/span
 positions. HTTP Harness reuses the same session ID and Codex App Server starts a new
 turn on the same thread. Previously retrieved evidence, tool-call budget, scope and
-run deadline remain in force. Exactly one correction is allowed across output JSON,
-citations and host validation combined. A rejected correction terminates the run;
+run deadline remain in force. At most three corrections are allowed across output JSON,
+citations and host validation combined (four candidate outputs including the initial
+response). Each correction receives the latest concrete validation error; a valid
+response stops immediately. Exhaustion terminates the run;
 production adapters do not restart the whole extraction. The pipeline retains its
 legacy two-generation fallback for third-party query adapters without the hook.
 
@@ -95,6 +106,11 @@ Industry precedents: [Pydantic AI output validators](https://pydantic.dev/docs/a
 raise `ModelRetry` with feedback and consume a bounded output retry budget;
 [LangChain structured output](https://docs.langchain.com/oss/python/langchain/structured-output)
 returns schema failures as tool feedback and lets the model correct its output.
+[Instructor validation reasking](https://python.useinstructor.com/concepts/reask_validation/)
+appends the rejected response and validation error to the conversation; its
+[retry policy](https://python.useinstructor.com/concepts/retrying/) distinguishes
+validation retries from transport retries and supports bounded retry cost. These
+are design precedents, not evidence that three corrections are optimal for Mote.
 
 ## Scheduling and operations
 

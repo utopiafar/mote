@@ -2,6 +2,7 @@ import {moteText} from '@mote/shared/i18n';
 /** Display follows protocol codes, never provider text or semantic matching. The
  * server's allowedActions remains the authority for recovery controls. */
 const messages:Record<string,string>={
+ appledouble_metadata:'这是 AppleDouble 文件系统元数据，原件已保留，已跳过内容处理。',
  processing_disabled:'处理队列已停用，请启用后继续。',
  snapshot_input_expired:'快照的临时输入已清理，请重新同步来源文件后重试。',
  context_lineage_incomplete:'这段历史的证据范围不完整，无法安全发送给远程模型。请新建对话，或改用本地模型并重新提供证据。',

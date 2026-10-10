@@ -36,6 +36,10 @@ MOTE_AGENT_TIMEOUT_MS=600000
 
 Codex App Server 可能在工具完成事件中回显图片。适配器允许最多 13 MiB 的单条 RPC 消息，整个会话的接收总量仍限 32 MiB（含 stderr），超限保留明确诊断并终止。因此 4 次图片请求是次数上限，不保证 4 张最大尺寸图片都能装入一次会话。详细 Agent 日志只保存图片标识、格式与编码长度，模型仍收到原始图片数据。宿主时间预算先于模型结束时，普通问答保留明确的超时类别；测试用量必须在取消清理完成后结算。
 
+## 输出校验修正
+
+Codex 与 HTTP Harness 对最终输出最多允许 3 次修正，即首次输出加最多 3 次修正；JSON、引用、宿主校验共用这一上限。每次反馈最新具体错误并保留同一 thread/session、已读取证据、工具预算和原始总期限，校验通过立即结束。网络、鉴权、来源变化等非输出错误不进入此循环。Memory 的独立审核仍使用新会话，外层恢复与重试策略保持不变。专用导入 Agent 的最终预览格式修正也沿用此上限，不重跑解析或重写暂存文件。
+
 ## 检索与证据
 
 常驻原生核心为 `material_catalog`、`material_read`、`search_context`、`timeline`、`evidence`、`memories`、`read_image` 和 `progress_update`。下表中的统计与来源能力通过 `capability_discover` 返回固定版本与schema，再由 `capability_execute` 调用；每次都复核权限与预算，不能执行任意URL/RPC。`skill` 和受宿主约束的委派控制通道保留。普通问答默认直接查证，模型按需选择研究；目录发现状态不跨片段继承，workspace也不恢复引用授权。

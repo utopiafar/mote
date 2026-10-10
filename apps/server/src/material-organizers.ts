@@ -11,6 +11,7 @@ import type {MaterialMemoryWork} from './material-memory-work.js';
 import {readFileSpeakerAttributions} from './file-speaker-attribution.js';
 import {fileAttachmentAvailable,fileAttachmentChildren,fileAttachmentParent} from './file-attachments.js';
 import {imageMaterialProjection,type ImageMaterialProjection} from './image-materials.js';
+import {linkOperation} from './operation-projection.js';
 
 /** Organizers select declared source shapes, never infer a topic or user intent. */
 export interface MaterialOrganizerFile {
@@ -677,6 +678,22 @@ export class MaterialOrganizerRuntime {
     });
     for(const organizer of [sourceItem,codingSession,uiPageObject,screenGroup,stateSeries,authored])this.registry.register(organizer);
     for(const organizer of additionalOrganizers)this.registry.register(organizer);
+    this.reconcileOperationGenerations();
+  }
+  private reconcileOperationGenerations(){
+    // Older organizers linked every generation as current. Repair only the
+    // read model from the saved current groups; never retry historical work.
+    const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+    try{
+      for(const row of db.prepare('SELECT group_key,generation FROM material_organizer_groups').all()){
+        const key=String(row.group_key),generation=Number(row.generation),id=digest([ORGANIZER_STEP,key,generation]);
+        if(!this.executor.get(id))continue;
+        const operationId=`material-organizer:${key}`;
+        db.prepare("UPDATE execution_operation_steps SET active=0 WHERE operation_id=? AND slot='' AND active=1").run(operationId);
+        linkOperation(this.store,operationId,id,{generation:{slot:'organize',version:String(generation)}});
+      }
+      if(own)db.exec('COMMIT');
+    }catch(error){if(own)db.exec('ROLLBACK');throw error;}
   }
   private cursor(){return Number(this.store.db.prepare("SELECT value FROM settings WHERE key='material-organizer-cursor'").get()?.value??0);}
   private selectedFor(captureId:string){
@@ -820,10 +837,10 @@ export class MaterialOrganizerRuntime {
         prepared.push({key,input,id:digest([ORGANIZER_STEP,key,generation])});
       }
       const ids=new Map(prepared.map(item=>[item.key,item.id]));
-      for(const item of prepared.filter(item=>item.input.active))stepIds.push(this.executor.enqueue(`material-organizer:${item.key}`,ORGANIZER_STEP,item.input,{id:item.id}));
+      for(const item of prepared.filter(item=>item.input.active))stepIds.push(this.executor.enqueue(`material-organizer:${item.key}`,ORGANIZER_STEP,item.input,{id:item.id,generation:{slot:'organize',version:String(item.input.generation)}}));
       for(const item of prepared.filter(item=>!item.input.active)){
         const dependencies=[...(replacements.get(item.key)??[])].flatMap(key=>ids.has(key)?[ids.get(key)!]:[]);
-        stepIds.push(this.executor.enqueue(`material-organizer:${item.key}`,ORGANIZER_STEP,item.input,{id:item.id,dependencies}));
+        stepIds.push(this.executor.enqueue(`material-organizer:${item.key}`,ORGANIZER_STEP,item.input,{id:item.id,dependencies,generation:{slot:'organize',version:String(item.input.generation)}}));
       }
       if(rows.length)db.prepare("INSERT INTO settings(key,value) VALUES('material-organizer-cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(rows.at(-1)!.seq));
       if(backfill)db.prepare('UPDATE material_organizer_backfills SET cursor_rowid=?,complete=? WHERE organizer_id=? AND version=?').run(

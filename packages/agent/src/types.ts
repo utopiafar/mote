@@ -292,3 +292,6 @@ export async function validateHostOutput(input:QueryInput, answer:AgentAnswer):P
   const issue=await input.validateOutput?.(answer);
   if(issue){reportTrace(input,{type:'validation.host_rejected',runId:answer.runId,stage:'validating',status:'rejected',payload:{code:issue.code,feedback:issue.feedback}});throw new AgentResponseError(`${issue.code}: ${issue.feedback}`,'host_validation');}
 }
+
+/** Shared output-repair budget: initial result plus at most three corrections. */
+export const MAX_OUTPUT_REPAIRS=3;

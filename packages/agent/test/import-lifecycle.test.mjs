@@ -37,7 +37,7 @@ test('import close drains preparation that has not created its Harness yet',asyn
   await preparation;
 });
 
-test('import repairs final formatting once in the same session and isolates observer failures',async t=>{
+test('import repairs final formatting with a bounded budget in the same session and isolates observer failures',async t=>{
   const calls=[],events=[];let alwaysInvalid=false;
   t.mock.method(DeepSeekHarness.prototype,'run',async function(prompt,runOptions){
     calls.push({prompt:JSON.parse(prompt),sessionId:runOptions.sessionId});
@@ -49,7 +49,7 @@ test('import repairs final formatting once in the same session and isolates obse
   const result=await agent.prepare(input,notification=>{events.push(notification);throw Error('Synthetic observer failed');});
   assert.equal(result.recordsPath,'records.jsonl');assert.equal(calls.length,2);assert.equal(calls[0].sessionId,calls[1].sessionId);assert.equal(events.length,2);
   assert.equal(calls[0].prompt.requiredSkill,'document-import');assert.match(calls[1].prompt.instruction,/Do not repeat analysis/);assert.ok(!('observer'in calls[0].prompt));
-  alwaysInvalid=true;await assert.rejects(agent.prepare(input),error=>error instanceof AgentResponseError);assert.equal(calls.length,4,'Only one formatting correction is allowed per preparation');
+  alwaysInvalid=true;await assert.rejects(agent.prepare(input),error=>error instanceof AgentResponseError);assert.equal(calls.length,6,'Initial output plus at most three formatting corrections per preparation');
 });
 
 test('import formatting correction shares the initial total deadline without restarting it',async t=>{

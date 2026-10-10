@@ -4,6 +4,14 @@ The shared executor records memberships in `execution_operation_steps`. A step m
 
 File configuration revisions and independent OCR/semantic revisions identify current memberships. Switching configurations preserves historical links while removing obsolete steps from current progress. Explicitly unscheduled optional summaries are counted separately from required blocked work. The initial migration reconstructs host configuration metadata from legacy steps and preserves their identifiers; child association follows its first preceding file parent, and a later cache replay records the current association explicitly. It does not invent historic associations that were never stored.
 
+Material organizers also use a generation slot per saved group. A changed input
+fences the old step, while discovery creates a replacement for the current input.
+Only the current generation contributes to task progress and attention; superseded
+steps remain visible in operation history. Startup reconciles older organizer
+memberships against the saved current group and its existing step without creating
+or retrying execution, publishing materials, or changing the historical receipts.
+Current failures and stale steps remain visible until a replacement actually exists.
+
 `operation_changes` is a bounded committed-change journal. Clients consume its cursor, deduplicate IDs and reset their reads when a cursor has expired. Rollback emits no visible changes. Web resources are scoped to one authenticated API instance, deduplicate observers and fence late responses. A single Operations subscription refreshes matching visible details and filtered lists, pauses requests on hidden documents and stops when no observer remains. Temporary disconnects retain the last result and retry.
 
 The Processing page displays operation summaries and paged step details, including prior configurations. Source pages still own their domain controls; the existing context workflow controls remain available. Import phases, query runs and insight runs now use the shared executor, with parent membership propagation and persistent result references. Domain lifecycle windows link their child work to the same Operation. Collector credentials do not gain owner-only task reads: native clients show central processing as unknown and offer the authorized central task page. See [execution and snapshot integration](operation-import-insight-closure.md) and [native status contract](client-scheduling-and-status.md).

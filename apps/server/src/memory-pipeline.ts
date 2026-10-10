@@ -716,7 +716,13 @@ export class MemoryPipeline {
           const validateArtifacts=()=>{assertGrant();this.assertStrategies(batch);this.assertConfiguration(job);this.admitBatch(job,batch);if((batch.artifactRefs??[]).some(ref=>this.store.archive.revision(ref.id)!==ref.revision))throw new StoreError('Semantic input changed during extraction',409);};
           const validateOutput:QueryInput['validateOutput']=result=>{
             validateArtifacts();
-            try{if(workMembers){const accounting=readMemoryWorkCoverage(result,workMembers,maxCandidates!,id=>this.options.memories.readEvidence([id])[0]?.ocrText);if(accounting.missing.length)throw new MemoryOutputValidationError('coverage','Every supplied target requires coverage');}this.options.memories.extract(result,model,{maxCandidates,profile:profile.id,requireAdmission:this.options.review?true:this.options.requireAdmission,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(processingChunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});}
+            try{
+              if(workMembers)readMemoryWorkCoverage(result,workMembers,maxCandidates!);
+              // Quote validation must precede coverage ownership checks: an
+              // invented quote is actionable quote feedback, not missing coverage.
+              this.options.memories.extract(result,model,{maxCandidates,profile:profile.id,requireAdmission:this.options.review?true:this.options.requireAdmission,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(processingChunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});
+              if(workMembers){const accounting=readMemoryWorkCoverage(result,workMembers,maxCandidates!,id=>this.options.memories.readEvidence([id])[0]?.ocrText);if(accounting.missing.length)throw new MemoryOutputValidationError('coverage','Every supplied target requires coverage');}
+            }
             catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;recordFailure(error,result);return {code:error.code,feedback:error.repairInstruction};}
           };
           const input:MemoryPipelineQuery={...(workMembers||summaries.length?{taskContext:{turns:[],...(summaries.length?{untrustedInterpretations:JSON.stringify(summaries).slice(0,12000)}:{}),...(workMembers?{memoryWork:{package:{goal:batch.workerGoal??job.workPackage!.goal,instruction:batch.workerInstruction??job.workPackage!.instruction},contextMembers:this.workMembers(job,batch,batch.contextChunks??[]).map(({scope:_scope,...member})=>member),members:workMembers.map(({scope:_scope,...member})=>member),maxCandidates,instruction:memoryWorkInstruction(workMembers,maxCandidates!)}}:{})}}:{}),processingMaterialInputs:this.batchScope(job,batch).materialInputs,contextTime:workMembers?.[0]?.contextTime??job.contextTime,signal,validateOutput,onProgress:event=>observe(event.stage),onTrace:()=>observe(),language:job.language,modelProfileId:job.configuration?.profileId??job.modelProfileId,modelOverride:model,question,skill:profile.skill,responseMode:'memory-extraction',evidenceIds:[...new Set(processingChunks.map(c=>c.id))],evidenceRanges:ranges.map(range=>({...range})),timeZone:job.timeZone,traceContext:{operationId:'memory:'+id,jobId:id,batchId:batch.id,batchIndex:batch.index,attempt:batch.attempts,phase:'extract'}};
@@ -728,8 +734,9 @@ export class MemoryPipeline {
           try{
             validateArtifacts();
             if(this.options.review){
-              if(workMembers){const accounting=readMemoryWorkCoverage(result,workMembers,maxCandidates!,id=>this.options.memories.readEvidence([id])[0]?.ocrText);if(accounting.missing.length)throw new MemoryOutputValidationError('coverage','Every supplied target requires coverage');}
+              if(workMembers)readMemoryWorkCoverage(result,workMembers,maxCandidates!);
               this.options.memories.extract(result,model,{maxCandidates,profile:profile.id,requireAdmission:true,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(processingChunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});
+              if(workMembers){const accounting=readMemoryWorkCoverage(result,workMembers,maxCandidates!,id=>this.options.memories.readEvidence([id])[0]?.ocrText);if(accounting.missing.length)throw new MemoryOutputValidationError('coverage','Every supplied target requires coverage');}
               if(!observeCurrent(()=>{validateArtifacts();this.drafts.put(batch.id,draftKey,result,Boolean(selected));} ))throw new ExecutionFailure('waiting','interrupted');
               phase='review';batch.phase='review';observe('model');
               const validDraft=result;

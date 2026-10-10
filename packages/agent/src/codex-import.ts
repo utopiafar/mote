@@ -1,8 +1,12 @@
 import type {TokenUsage} from '@mote/shared';
 import {CodexSession} from './codex-session.js';
 import {skillContent} from './skills.js';
-import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,type AgentOptions} from './types.js';
+import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,MAX_OUTPUT_REPAIRS,type AgentOptions} from './types.js';
 import type {ImportAgentInput,ImportAgentResult,ImportAgentObserver} from './import-agent.js';
+
+const importAnswerSchema={
+ type:'object',properties:{summary:{type:'string'},recordsPath:{type:['string','null']},warnings:{type:'array',items:{type:'string'}},reviewDecision:{type:['object','null'],properties:{confidence:{type:'string',enum:['high','low','unknown']},ambiguous:{type:'boolean'},reason:{type:'string'}},required:['confidence','ambiguous','reason'],additionalProperties:false}},required:['summary','recordsPath','warnings','reviewDecision'],additionalProperties:false,
+};
 
 /** Import has a dedicated writable staging workspace. It never receives archive tools. */
 export function createCodexImportAgent(options:Omit<AgentOptions,'reader'>){
@@ -13,13 +17,18 @@ export function createCodexImportAgent(options:Omit<AgentOptions,'reader'>){
     const session=new CodexSession({...options,agentTimeoutMs},async()=>{throw new AgentProviderError();},undefined,onUsage);sessions.add(session);
     try{
       await session.start(skillContent('document-import'),[],input.workspace);
-      const text=await session.run(JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries and warnings; preserve original quotes and schema keys.',requiredSkill:'document-import',importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),{
-        type:'object',properties:{summary:{type:'string'},recordsPath:{type:['string','null']},warnings:{type:'array',items:{type:'string'}},reviewDecision:{type:['object','null'],properties:{confidence:{type:'string',enum:['high','low','unknown']},ambiguous:{type:'boolean'},reason:{type:'string'}},required:['confidence','ambiguous','reason'],additionalProperties:false}},required:['summary','recordsPath','warnings','reviewDecision'],additionalProperties:false,
-      });
-      if(text.length>64000)throw new AgentResponseError('Import response exceeds its limit');
-      let result:ImportAgentResult;try{result=JSON.parse(text);}catch{throw new AgentResponseError('Import response is not valid JSON');}
-      if(!result||typeof result.summary!=='string'||(result.recordsPath!=null&&typeof result.recordsPath!=='string')||(result.warnings!==undefined&&(!Array.isArray(result.warnings)||result.warnings.some(w=>typeof w!=='string'))))throw new AgentResponseError('Import response has an invalid shape');
-      return {...result,recordsPath:result.recordsPath??undefined,reviewDecision:result.reviewDecision??undefined};
+      let text=await session.run(JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries and warnings; preserve original quotes and schema keys.',requiredSkill:'document-import',importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),importAnswerSchema);
+      for(let repair=0;;repair++){
+        try{
+         if(text.length>64000)throw new AgentResponseError('Import response exceeds its limit');
+         let result:ImportAgentResult;try{result=JSON.parse(text);}catch{throw new AgentResponseError('Import response is not valid JSON');}
+         if(!result||typeof result.summary!=='string'||(result.recordsPath!=null&&typeof result.recordsPath!=='string')||(result.warnings!==undefined&&(!Array.isArray(result.warnings)||result.warnings.some(w=>typeof w!=='string'))))throw new AgentResponseError('Import response has an invalid shape');
+         return {...result,recordsPath:result.recordsPath??undefined,reviewDecision:result.reviewDecision??undefined};
+        }catch(error){
+         if(!(error instanceof AgentResponseError)||repair>=MAX_OUTPUT_REPAIRS)throw error;
+         text=await session.run(JSON.stringify({instruction:'Using only the analysis already completed in this session, return a complete JSON import preview with summary, recordsPath, warnings and reviewDecision. Correct the validation error. Do not repeat analysis, run tools, rewrite files, or invent artifacts. Preserve uncertainty and reported limitations.',validationError:error.message}),importAnswerSchema);
+        }
+      }
     }finally{await session.close();sessions.delete(session);}
   }
   return {prepare(input:ImportAgentInput,_observer?:ImportAgentObserver,onUsage?:(usage:TokenUsage)=>void){const task=execute(input,onUsage);pending.add(task);void task.finally(()=>pending.delete(task)).catch(()=>{});return task;},async close(){closed=true;await Promise.allSettled([...sessions].map(s=>s.close()));await Promise.allSettled([...pending]);}};

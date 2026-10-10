@@ -19,6 +19,7 @@ import {materialId} from '../src/materials.js';
 import {ImportIntakeRegistry,installImportIntake} from '../src/import-intake.js';
 import {FileRecipeRegistry,FileOutputRegistry,installFileRecipes} from '../src/file-recipes.js';
 import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-planning.js';
+import {generatedAppleDouble} from './fixtures/appledouble.js';
 
 async function fixture(t:import('node:test').TestContext,modules:string[]=[],seed?:(directory:string)=>Promise<void>){
   // Advance durable workers explicitly, so wall-clock load cannot race assertions.
@@ -51,6 +52,25 @@ async function fixture(t:import('node:test').TestContext,modules:string[]=[],see
   return {get node(){return node;},calls,modelCalls,failed,create,organize,headers,async restart(){await node.app.close();await start();}};
 }
 const entry=(name:string,bytes:Buffer|string)=>({name,dataBase64:Buffer.from(bytes).toString('base64')});
+
+test('ZIP AppleDouble members are retained and explicitly excluded by bytes while ._ named images still process',async t=>{
+ const f=await fixture(t),metadata=generatedAppleDouble(),png=await sharp({create:{width:8,height:8,channels:3,background:'#abc'}}).png().toBuffer();let ocr=0;
+ f.node.processing.runtime.registry.get('image.http').process=async()=>{ocr++;return {durationMs:0,segments:[]};};
+ f.node.processing.update({revision:f.node.processing.view().revision,settings:{...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'},policy:fixtureFilePolicy({...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'},f.node.processing.runtime.registry)});
+ const job=await f.create([entry('generated.zip',Buffer.from(zipSync({'__MACOSX/._photo.jpg':metadata,'._actual.png':png})))],'preview');
+ assert.equal(job.status,'awaiting_confirmation',JSON.stringify(job));assert.equal(job.dispositions?.counts.excluded,1);assert.equal(job.dispositions?.counts.processing,1);
+ const excluded=job.dispositions!.items.find(i=>i.status==='excluded')!;assert.match(excluded.reason,/AppleDouble/);
+ assert.deepEqual(f.node.archivedFiles.read(excluded.fileId),metadata);assert.equal(job.media?.length,1);assert.equal(job.media![0].format.mimeType,'image/png');
+ await f.node.imports.confirm(job.id);await f.node.processing.tick();assert.equal(ocr,1);assert.equal(f.calls.length,0);assert.equal(f.modelCalls.length,0);
+ await f.restart();assert.deepEqual(f.node.archivedFiles.read(excluded.fileId),metadata);await f.node.processing.tick();assert.equal(f.calls.length,0);
+});
+
+test('a metadata-only original produces an accounted preview without a model or image job',async t=>{
+ const f=await fixture(t),metadata=generatedAppleDouble(),job=await f.create([entry('looks-like-a-photo.jpg',metadata)]);
+ assert.equal(job.status,'awaiting_confirmation',JSON.stringify(job));assert.equal(job.dispositions?.counts.excluded,1);assert.equal(job.media?.length,0);assert.equal(job.preview?.count,0);
+ const confirmed=await f.node.imports.confirm(job.id);assert.equal(confirmed.status,'completed');assert.equal(confirmed.captureIds.length,0);
+ assert.deepEqual(f.node.archivedFiles.read(job.files[0].id),metadata);assert.equal(f.calls.length,0);assert.equal(f.modelCalls.length,0);
+});
 
 test('61 generated MP3 container members use the Android file pipeline without model import or invented dates',async t=>{
   const f=await fixture(t),zip=Buffer.from(zipSync(Object.fromEntries(Array.from({length:61},(_,i)=>[`2020-01-01-call-${i}.mp3`,Buffer.from('ID3-generated-'+i)]))));
