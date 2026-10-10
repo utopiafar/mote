@@ -157,10 +157,9 @@ test('failed durable writes neither consume invitations nor revoke the previous 
   fail=false;const second=await redeem(code);assert.ok(connections.authenticate(`Bearer ${second.token}`));assert.equal(connections.authenticate(`Bearer ${first.token}`),undefined);
 });
 
-test('redemption has a bounded per-address rate limit without exhausting the owner bucket',async t=>{
+test('redemption bursts retain expired invitation errors and owner access',async t=>{
   const {app}=await fixture(t),code='a'.repeat(43);
-  for(let i=0;i<12;i++)assert.equal((await redeem(app,code)).statusCode,410);
-  assert.equal((await redeem(app,code)).statusCode,429);
+  for(let i=0;i<30;i++)assert.equal((await redeem(app,code)).statusCode,410);
   assert.equal((await app.inject({url:'/api/connections',headers:headers()})).statusCode,200);
 });
 

@@ -11,7 +11,7 @@ import type {ServerFeatureScope} from '../feature-host.js';
 /** insights: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{agent,isClosing,diagnostics,insight,insightRequestSchema,insightRuns,modelSettings,store}:Pick<FeatureServices,"agent"|"isClosing"|"diagnostics"|"insight"|"insightRequestSchema"|"insightRuns"|"modelSettings"|"store">,scope?:ServerFeatureScope){
 scope?.defer(()=>insightRuns.stop());
-app.post('/api/insight-runs',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
+app.post('/api/insight-runs',async(req,reply)=>{
     const body=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional(),prompt:z.string().trim().max(8000).optional(),requestId:z.string().uuid()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body);
     const {requestId,...input}=body;
     if(!agent.configuredFor(modelSettings.select('insight',input.modelProfileId).id))throw new AgentNotConfiguredError();
@@ -22,6 +22,6 @@ app.post('/api/insight-runs',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},
 app.post('/api/insight-runs/:id/cancel',async req=>{const id=z.string().uuid().parse((req.params as {id:string}).id);insightRuns.cancel(id);return insightRuns.detail(id);});
 app.get('/api/insight-runs',async()=>({items:insightRuns.list()}));
 app.get('/api/insight-runs/:id',async req=>insightRuns.detail(z.string().uuid().parse((req.params as {id:string}).id)));
-app.post('/api/insights',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{const id=randomUUID(),input=insightRequestSchema.parse(req.body??{});return insightRuns.perform(id,input,(observe,signal,snapshot)=>insight(input,observe,signal,'insight:'+id,snapshot),{timeoutMs:modelSettings.select('insight',input.modelProfileId).settings.agentTimeoutMs});});
+app.post('/api/insights',async req=>{const id=randomUUID(),input=insightRequestSchema.parse(req.body??{});return insightRuns.perform(id,input,(observe,signal,snapshot)=>insight(input,observe,signal,'insight:'+id,snapshot),{timeoutMs:modelSettings.select('insight',input.modelProfileId).settings.agentTimeoutMs});});
 app.get('/api/insights',async()=>({items:store.insights()}));
 }

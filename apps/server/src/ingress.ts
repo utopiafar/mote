@@ -14,26 +14,6 @@ export function collectorIngressWrite(method:string,route:string):boolean {
   return false;
 }
 
-/** Fixed transport routes share a bounded budget, separate from interactive reads
- * and owner notes. Only authenticated identities may select this lane. */
-export function collectorTransportRequest(method:string,route:string):boolean {
-  if(route==='/api/notes')return false;
-  if(collectorIngressWrite(method,route))return true;
-  const routes:Record<string,readonly string[]>={
-    '/api/sources':['POST'],
-    '/api/sources/:id/read-requests':['GET','HEAD'],
-    '/api/sources/:id/read-requests/:requestId':['PUT'],
-    '/api/sources/:id/item':['GET','HEAD'],
-    '/api/file-sync/v1/capabilities':['GET','HEAD'],
-    '/api/file-sync/v1/head':['GET','HEAD'],
-    '/api/file-sync/v1/recovery':['GET','HEAD'],
-    '/api/file-sync/v1/recovery/:id/uploads':['POST'],
-    '/api/file-sync/v1/uploads/:id':['GET','HEAD'],
-    '/api/devices/heartbeat':['POST'],
-  };
-  return routes[route]?.includes(method)??false;
-}
-
 /** A receipt attests that input can be recovered. It says nothing about
  * transformation, publication, indexing, or availability to an agent. */
 export type IngressReceipt={

@@ -18,15 +18,15 @@ async function fixture(t:TestContext,agent:QueryAgent){
 test('review launch acknowledges immediately, survives reconnect, reports real tools, and is idempotent',async t=>{
   let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);let calls=0;
   const result={answer:JSON.stringify({title:'Generated report',markdown:'Generated report',html:'<p>Generated report</p>'}),citations:[],trace:[],runId:randomUUID()};
-  const {app,insightRuns,store}=await fixture(t,{configured:true,query:async(input:QueryInput)=>{calls++;input.onProgress?.({stage:'tool',tool:'timeline',count:4,...{arguments:{secret:'never-store'},reasoning:'never-store'}});await gate;return result;},close:async()=>release()});
+  const {app,insightRuns,store}=await fixture(t,{configured:true,query:async(input:QueryInput)=>{calls++;input.onProgress?.({stage:'tool',tool:'timeline',count:4,...{arguments:{secret:'never-store'},reasoning:'never-store'}});await gate;return {...result,runId:randomUUID()};},close:async()=>release()});
   const payload={requestId:randomUUID(),prompt:'Synthetic report request',timeZone:'Asia/Shanghai'};
   const response=await app.inject({method:'POST',url:'/api/insight-runs',headers,payload});assert.equal(response.statusCode,202,response.body);assert.equal(response.json().status,'running');
   const detail=await app.inject({url:'/api/insight-runs/'+payload.requestId,headers});assert.equal(detail.json().events.at(-1).tool,'timeline');assert.equal(detail.json().events.at(-1).count,4);assert.ok(!detail.body.includes('never-store'));
   assert.equal((await app.inject({method:'POST',url:'/api/insight-runs',headers,payload})).statusCode,202);assert.equal(calls,1);
   assert.equal((await app.inject({method:'POST',url:'/api/insight-runs',headers,payload:{...payload,prompt:'changed'}})).statusCode,409);
-  assert.equal((await app.inject({method:'POST',url:'/api/insight-runs',headers,payload:{...payload,requestId:randomUUID()}})).statusCode,429);
-  assert.equal((await app.inject({url:'/api/insight-runs',headers})).json().items[0].id,payload.requestId);
-  release();await insightRuns.close();
+  const secondId=randomUUID();assert.equal((await app.inject({method:'POST',url:'/api/insight-runs',headers,payload:{...payload,requestId:secondId}})).statusCode,202);
+  assert.deepEqual(new Set((await app.inject({url:'/api/insight-runs',headers})).json().items.map((run:{id:string})=>run.id)),new Set([payload.requestId,secondId]));
+  release();await insightRuns.close();assert.equal(insightRuns.get(secondId).status,'completed');
   const completed=(await app.inject({url:'/api/insight-runs/'+payload.requestId,headers})).json();assert.equal(completed.status,'completed');assert.equal(completed.result.answer,'Generated report');assert.equal(completed.result.artifact.title,'Generated report');
   const lateCancel=await app.inject({method:'POST',url:`/api/insight-runs/${payload.requestId}/cancel`,headers});assert.equal(lateCancel.json().status,'completed');assert.equal(lateCancel.json().result.answer,'Generated report');
   store.db.exec('DELETE FROM insights');assert.equal(insightRuns.detail(payload.requestId).result,undefined,'deleted reports are never revived by job polling');

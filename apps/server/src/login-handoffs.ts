@@ -13,9 +13,8 @@ export class LoginHandoffs {
   private requests = new Map<string,Request>();
   constructor(private connections:Connections,private clock=Date.now) {}
   private prune(){for(const [k,v] of this.tickets)if(v.deadline<=this.clock())this.tickets.delete(k);for(const [k,v] of this.requests)if(v.deadline<=this.clock())this.requests.delete(k);}
-  private capacity(){this.prune();if(this.tickets.size+this.requests.size>=100)throw new ConnectionError('login_limit',429,'Too many pending logins');}
   ticket(token:string,authorize:()=>void,expiresAt?:number){
-    authorize();this.capacity();const code=randomBytes(32).toString('base64url');
+    authorize();this.prune();const code=randomBytes(32).toString('base64url');
     this.tickets.set(hash(code),{token,authorize,deadline:this.clock()+60000,expiresAt});return {code};
   }
   exchange(raw:unknown){
@@ -23,7 +22,7 @@ export class LoginHandoffs {
     if(!ticket)throw new ConnectionError('login_expired',410,'Login link expired');
     this.tickets.delete(key);if(ticket.expiresAt&&ticket.expiresAt<=this.clock())throw new ConnectionError('login_expired',410,'Login link expired');ticket.authorize();return {token:ticket.token,...(ticket.expiresAt?{expiresAt:ticket.expiresAt}:{})};
   }
-  create(raw:unknown){this.capacity();const input=loginDeviceSchema.parse(raw),id=randomBytes(32).toString('base64url');this.requests.set(hash(id),{input,deadline:this.clock()+10*60000});return {id};}
+  create(raw:unknown){this.prune();const input=loginDeviceSchema.parse(raw),id=randomBytes(32).toString('base64url');this.requests.set(hash(id),{input,deadline:this.clock()+10*60000});return {id};}
   private request(id:string){secret.parse(id);this.prune();const request=this.requests.get(hash(id));if(!request)throw new ConnectionError('login_expired',410,'Login request expired');return request;}
   detail(id:string){const r=this.request(id);return {deviceName:r.input.deviceName,platform:r.input.platform,serverUrl:r.input.serverUrl,expiresAt:r.deadline};}
   async approve(id:string,authorize:()=>void){

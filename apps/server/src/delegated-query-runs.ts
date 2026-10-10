@@ -159,7 +159,6 @@ export class DelegatedQueryRuns {
     if(typeof (input as {question?:unknown})?.question!=='string')throw new StoreError('Query requires a question',400);
     const requestHash=createHash('sha256').update(JSON.stringify(input)).digest('hex'),existing=this.store.db.prepare('SELECT request_hash FROM query_runs WHERE id=?').get(id);
     if(existing){if(existing.request_hash!==requestHash)throw new StoreError('Run ID belongs to a different request',409);return this.get(id);}
-    if(Number(this.store.db.prepare("SELECT count(*) n FROM query_runs WHERE json_extract(json,'$.status')='running'").get()?.n??0)>=1000)throw new StoreError('Conversation queue is full',429);
     const request=input as {question:string;conversationId?:string;after?:string;before?:string;deviceId?:string;timeZone?:string;modelProfileId?:string;modelOverride?:string};
     if(request.conversationId&&this.store.db.prepare("SELECT 1 FROM query_runs WHERE json_extract(json,'$.conversationId')=? AND json_extract(json,'$.status')='running'").get(request.conversationId))throw new StoreError('An answer is already running in this conversation',409);
     const at=new Date().toISOString(),contextTime=this.callbacks.contextTime?.()??at,run:QueryRun={id,operationId:'query:'+id,status:'running',createdAt:at,updatedAt:at,events:[],evidenceRevision:this.store.deletionRevision(),...(request.conversationId?{conversationId:request.conversationId}:{})};

@@ -30,7 +30,6 @@ export class FileEvidenceRequests {
   if(index.mode==='catalog')return {status:'unavailable',reason:'catalog_only'};
   const request:FileReadRequest={id:randomUUID(),sourceId:p.sourceId,externalId:p.externalId,revision:p.revision,contentVersion:index.contentVersion,offset,length};
   const existing=this.rows().find(r=>r.captureId===id&&r.request.offset===offset&&r.request.length===length&&r.request.contentVersion===index.contentVersion);
-  if(!existing&&this.rows().length>=100)throw new StoreError('Too many evidence requests',429);
   const selected=existing?.request??request;
   if(!existing)this.sources.store.db.prepare('INSERT INTO file_read_requests VALUES(?,?,?,?,?,NULL)').run(request.id,p.sourceId,id,Date.now()+300000,JSON.stringify(request));
   // Snapshot text was interpreted centrally, after transient upload. Range reads

@@ -37,15 +37,10 @@ async function start(){
   const processing=(await request('GET','/api/file-processing')).json();await request('PUT','/api/file-processing',{revision:processing.revision,settings:{...processing.settings,enabled:false}});
 }
 async function request(method:'GET'|'POST'|'PUT',url:string,payload?:Record<string,unknown>){
-  for(let attempt=0;;attempt++){
-    const response=await node!.app.inject({method,url,headers:{authorization:'Bearer '+token},...(payload?{payload}:{})});
-    if(response.statusCode===429&&method==='GET'&&attempt<2){
-      const seconds=Number(response.headers['retry-after']);assert.ok(Number.isFinite(seconds)&&seconds>0&&seconds<=60,'Invalid rate-limit retry interval');
-      report.rateLimitWaits=Number(report.rateLimitWaits??0)+1;await save();console.log(JSON.stringify({stage:'respect-read-rate-limit',seconds}));await new Promise(done=>setTimeout(done,seconds*1000));continue;
-    }
-    assert.ok(response.statusCode>=200&&response.statusCode<300,`${method} ${url}: ${response.statusCode} ${response.body.slice(0,1000)}`);return response;
-  }
+  const response=await node!.app.inject({method,url,headers:{authorization:'Bearer '+token},...(payload?{payload}:{})});
+  assert.ok(response.statusCode>=200&&response.statusCode<300,`${method} ${url}: ${response.statusCode} ${response.body.slice(0,1000)}`);return response;
 }
+
 async function settled(id:string):Promise<ImportJob>{
   const deadline=Date.now()+180000;for(;;){const job=(await request('GET',`/api/imports/${id}`)).json<ImportJob>();
     if(!['queued','preparing','importing'].includes(job.status)){report.job=job;await save();return job;}

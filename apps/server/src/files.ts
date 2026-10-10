@@ -84,14 +84,12 @@ export class FileStore {
     const old=this.store.db.prepare('SELECT * FROM file_uploads WHERE fingerprint=?').get(fingerprint) as Upload|undefined;
     if(old){
       if(old.ack&&committed&&this.needsSnapshotInput(committed)){
-        if(Number(this.store.db.prepare('SELECT COUNT(*) AS n FROM file_uploads WHERE ack IS NULL').get()!.n)>=64)throw new StoreError('Too many unfinished file uploads',429);
         this.store.db.prepare('DELETE FROM file_parts WHERE upload_id=?').run(old.id);
         this.store.db.prepare('UPDATE file_uploads SET ack=NULL,created_at=? WHERE id=?').run(timestamp(),old.id);
         rmSync(join(this.uploads,old.id),{recursive:true,force:true});privateDirectory(join(this.uploads,old.id));
       }
       return this.upload(old.id,authorize);
     }
-    if(Number(this.store.db.prepare('SELECT COUNT(*) AS n FROM file_uploads WHERE ack IS NULL').get()!.n)>=64)throw new StoreError('Too many unfinished file uploads',429);
     this.store.reserveMetadata(Buffer.byteLength(manifest)+4096);
     const id=randomUUID();privateDirectory(join(this.uploads,id));
     this.store.db.prepare('INSERT INTO file_uploads(id,source_id,manifest,fingerprint,created_at) VALUES(?,?,?,?,?)').run(id,input.sourceId,manifest,fingerprint,timestamp());

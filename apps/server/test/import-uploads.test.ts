@@ -51,3 +51,13 @@ test('large browser commit cancellation keeps resumable parts and duplicate repl
  assert.equal(uploads.begin({id:start.id,name:'generated-large.bin',sizeBytes:body.length}).parts.length,2);assert.equal(store.db.prepare('SELECT count(*) n FROM archived_files').get()!.n,0);assert.equal(store.db.prepare('SELECT count(*) n FROM asset_pins').get()!.n,0);
  const [first,second]=await Promise.all([uploads.commit(start.id),uploads.commit(start.id)]);assert.equal(first.id,second.id);assert.deepEqual(files.read(first.id),body);
 });
+
+test('retained import jobs do not impose a lifetime admission quota',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-import-admission-')),store=new Store(directory),files=new ArchivedFileStore(store),imports=new ImportStore(store,files,new SourceStore(store));
+ t.after(async()=>{store.close();await rm(directory,{recursive:true,force:true});});
+ const original=files.put({name:'generated.txt',bytes:Buffer.from('Generated reusable original')});
+ let latest:string|undefined;
+ for(let i=0;i<1001;i++)latest=(await imports.create({name:`Generated import ${i}`,archivedFileIds:[original.id],processing:'automatic'})).id;
+ assert.equal(store.db.prepare('SELECT count(*) n FROM import_jobs').get()!.n,1001);
+ assert.equal(imports.get(latest!).status,'queued');assert.deepEqual(files.read(original.id),Buffer.from('Generated reusable original'));
+});

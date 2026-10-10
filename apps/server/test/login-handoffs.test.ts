@@ -46,14 +46,16 @@ test('browser approval issues one full client grant and only the generating clie
  assert.deepEqual(f.handoffs.poll({id,verifier},true),{acknowledged:true});assert.throws(()=>f.handoffs.poll({id,verifier}));
  f.advance(30*86400000);assert.equal(f.connections.authenticate('Bearer '+grant.token),undefined);
 });
-test('failed or revoked approvals cannot publish a usable grant; pending requests are bounded and restart local',async t=>{
+test('failed or revoked approvals cannot publish a usable grant; pending requests expire and remain restart local',async t=>{
  const f=await fixture(t),{id}=f.handoffs.create(input);let checks=0;
  await assert.rejects(f.handoffs.approve(id,()=>{if(++checks===2)throw Error('Generated revoked parent');}));
  assert.equal(f.connections.inventory().items[0].revokedAt!==undefined,true);assert.deepEqual(f.handoffs.poll({id,verifier}),{ready:false});
  await f.handoffs.approve(id,()=>{});const grant=f.handoffs.poll({id,verifier}) as any;
  await f.connections.revoke(grant.credentialId);assert.throws(()=>f.handoffs.poll({id,verifier}));
  f.advance(10*60000);assert.throws(()=>f.handoffs.detail(id));
- for(let i=0;i<100;i++)f.handoffs.create(input);assert.throws(()=>f.handoffs.create(input));
+ for(let i=0;i<120;i++)f.handoffs.create(input);
+ const pending=f.handoffs.create(input);assert.equal(f.handoffs.detail(pending.id).deviceName,input.deviceName);
+ f.advance(10*60000);assert.throws(()=>f.handoffs.detail(pending.id));
  assert.throws(()=>new LoginHandoffs(f.connections).poll({id,verifier}));
 });
 test('retired collector credentials are refused without rewriting their saved hashes',async t=>{

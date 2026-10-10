@@ -25,7 +25,7 @@ const messages:Record<string,string>={
 
  actions_disabled:'日程分析未开启，请检查发现设置。',actions_closed:'日程分析服务已停止，请检查节点状态。',action_settings_changed:'日程分析设置已变化，请重新分析。',action_analysis_failed:'日程分析未完成，请查看批次状态后重试。',invalid_action_output:'模型返回的日程建议未通过校验，请重试分析。',
  provider_failed:'模型服务未完成请求，请查看任务状态。',model_failed:'模型服务未完成请求，请查看任务状态。',agent_response:'模型返回的结果未通过校验。',
- timeout:'请求等待超时，请查看任务状态。',provider_timeout:'请求等待超时，请查看任务状态。',network:'连接暂时中断，请检查网络。',provider_network:'连接暂时中断，请检查网络。',api_rate_limited:'请求过于频繁，请稍后重试。',rate_limited:'模型服务暂时限流，请等待任务更新。',
+ timeout:'请求等待超时，请查看任务状态。',provider_timeout:'请求等待超时，请查看任务状态。',network:'连接暂时中断，请检查网络。',provider_network:'连接暂时中断，请检查网络。',rate_limited:'模型服务暂时限流，请等待任务更新。',
  provider_unavailable:'模型服务暂时不可用，请检查服务配置。',provider_quota:'模型服务额度不足，请补充额度后继续。',
  configuration_changed:'模型配置已变化，请在任务中心确认后继续；已完成的步骤会保留。',model_unconfigured:'请先完成模型配置。',
  provider_authentication:'模型服务认证失败，请检查凭据。',provider_endpoint:'模型服务地址不正确，请检查配置。',provider_redirect:'模型服务重定向未获允许，请检查地址配置。',

@@ -158,11 +158,11 @@ test('disabled central diagnostics keeps the authenticated numeric status availa
   const headers={authorization:`Bearer ${cfg.token}`};await app.inject({url:'/api/status',headers});const bundle=(await app.inject({url:'/api/support-bundle',headers})).json();assert.equal(bundle.snapshot.enabled,false);assert.equal(bundle.snapshot.retainedEvents,0);assert.deepEqual(bundle.events,[]);await assert.rejects(stat(join(directory,'logs')),{code:'ENOENT'});
 });
 
-test('rate limits keep their HTTP status and return a correlated safe error',async t=>{
+test('request bursts keep model configuration errors correlated and safe',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-rate-'));const cfg=config(directory);const {app}=await buildApp(cfg,{agent:inactive});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
   const headers={authorization:`Bearer ${cfg.token}`};let last;
   for(let i=0;i<11;i++)last=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});
-  assert.equal(last!.statusCode,429);assert.equal(last!.json().error,'api_rate_limited');assert.equal(last!.json().requestId,last!.headers['x-request-id']);assert.ok(!last!.body.includes(marker));
+  assert.equal(last!.statusCode,503);assert.equal(last!.json().error,'model_not_configured');assert.equal(last!.json().requestId,last!.headers['x-request-id']);assert.ok(!last!.body.includes(marker));
 });
 
 test('request correlation survives the per-query local HTTP tool bridge boundary',async t=>{

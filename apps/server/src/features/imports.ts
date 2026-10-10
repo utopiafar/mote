@@ -15,7 +15,7 @@ const uploads=registerImportUploads(app,store,archivedFiles);scope?.defer(()=>up
 app.get('/api/import-capabilities',async()=>imports.intake.list());
 app.get('/api/imports',async()=>({items:imports.list()}));
 app.get('/api/import-source-packs',async()=>({items:(config.importPythonPacks??[]).map(({id,version,description})=>({id,version,...(description?{description}:{})}))}));
-app.post('/api/imports',{bodyLimit:360*1024*1024,config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{
+app.post('/api/imports',{bodyLimit:360*1024*1024},async(req,reply)=>{
   try{const job=await imports.create(req.body);if(job.status==='queued')launchImport(job.id,()=>imports.prepare(job.id));return reply.code(202).send(imports.get(job.id));}
   catch(error){if(error instanceof ImportInputError)return reply.code(error.statusCode).send({error:error.code,message:error.message,requestId:req.id});throw error;}
 });

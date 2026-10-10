@@ -72,7 +72,7 @@ export class GmailConnector {
   private oauth(){if(!this.configured)throw new ConnectorError('google_not_configured',503);const c=this.ctx.config.connectors!;return this.dependencies.oauthFactory?.()??new OAuth2Client({clientId:c.googleClientId,clientSecret:c.googleClientSecret,redirectUri:c.googleRedirectUri,transporterOptions:{timeout:20000}});}
   async init(){const saved=await this.file.read();if(saved){if(saved.version!==1||!saved.tokens)throw new ConnectorError('gmail_credentials_invalid',503);this.saved=saved;}
     if(this.configured){this.timer=setInterval(()=>{if(this.saved.account)void this.sync().catch(()=>{});},Math.max(60000,this.ctx.config.connectors?.syncIntervalMs??300000));this.timer.unref();}}
-  async start(){this.check();for(const [key,value]of this.pending)if(value.expires<this.clock())this.pending.delete(key);if(this.pending.size>=10)throw new ConnectorError('gmail_authorization_busy',429);
+  async start(){this.check();for(const [key,value]of this.pending)if(value.expires<this.clock())this.pending.delete(key);
     const oauth=this.oauth(),codes=await oauth.generateCodeVerifierAsync(),state=`gmail.${randomBytes(32).toString('base64url')}`;this.check();this.pending.set(state,{verifier:codes.codeVerifier,expires:this.clock()+600000});
     return {authorizationUrl:oauth.generateAuthUrl({access_type:'offline',scope:[gmailScope],prompt:'consent',state,code_challenge:codes.codeChallenge,code_challenge_method:'S256' as never}),expiresIn:600};}
   callback(state:string,code:string){const request=this.pending.get(state);this.pending.delete(state);if(!request||request.expires<this.clock())return Promise.reject(new ConnectorError('gmail_state_invalid',400));

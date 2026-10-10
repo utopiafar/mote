@@ -16,7 +16,7 @@ let active=0;const queue:(()=>void)[]=[];
 /** CPU work runs outside the HTTP process. Limits include the admission wait. */
 export async function formatWork<K extends FormatTask['kind']>(task:Extract<FormatTask,{kind:K}>,signal?:AbortSignal):Promise<Results[K]>{
  const temporary=task.kind==='manifest'?join((task as ManifestTask).workspace,'validated-'+randomUUID()+'.tmp'):undefined;
- const deadline=AbortSignal.any([AbortSignal.timeout(120000),...(signal?[signal]:[])]);deadline.throwIfAborted();if(queue.length>=32)throw new StoreError('Format queue is full',429);
+ const deadline=AbortSignal.any([AbortSignal.timeout(120000),...(signal?[signal]:[])]);deadline.throwIfAborted();
  await new Promise<void>((resolve,reject)=>{const enter=()=>{deadline.removeEventListener('abort',abort);active++;resolve();};const abort=()=>{const index=queue.indexOf(enter);if(index>=0)queue.splice(index,1);reject(deadline.reason);};deadline.addEventListener('abort',abort,{once:true});if(active<2)enter();else queue.push(enter);});
  try{return await new Promise<Results[K]>((resolve,reject)=>{
   const extension=import.meta.url.endsWith('.ts')?'ts':'js',execArgv=extension==='ts'?['--import',createRequire(import.meta.url).resolve('tsx')]:[];
