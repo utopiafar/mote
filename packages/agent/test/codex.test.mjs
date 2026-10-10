@@ -40,16 +40,16 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
  else if(m.method==='thread/start'){
   if(m.params.ephemeral!==true||m.params.approvalPolicy!=='never')process.exit(2);
-  if(mode==='import'){if(m.params.dynamicTools.length||m.params.sandbox!=='workspace-write')process.exit(2);}
+  if(mode.startsWith('import')){if(m.params.dynamicTools.length||m.params.sandbox!=='workspace-write')process.exit(2);}
   else if(m.params.environments.length||m.params.dynamicTools.some(t=>!${JSON.stringify(codexContextTools.map(t=>t.name))}.includes(t.name)))process.exit(2);
   const tierResponses={'tier-mismatch':null,'tier-priority':'priority','tier-default':'default','tier-unknown':'ultrafast'};
-  send({id:m.id,result:{thread:{id:'thread-fixture'},serviceTier:Object.hasOwn(tierResponses,mode)?tierResponses[mode]:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:mode==='import'?'workspaceWrite':'readOnly'}}});
+  send({id:m.id,result:{thread:{id:'thread-fixture'},serviceTier:Object.hasOwn(tierResponses,mode)?tierResponses[mode]:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:mode.startsWith('import')?'workspaceWrite':'readOnly'}}});
  }else if(m.method==='turn/start'){
   turns++;
   if(['max','medium'].includes(mode)&&m.params.effort!==mode)process.exit(4);
   send({id:m.id,result:{turn:{id:'turn-fixture'}}});
   if(['usage-timeout','usage-exit','usage-late-exit'].includes(mode)){usage(100);if(mode==='usage-exit')setTimeout(()=>process.exit(23),20);return;}
-  if(mode==='import'){send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'import-fixture',type:'agentMessage',text:JSON.stringify({summary:'Generated import preview',recordsPath:null,warnings:[]})}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});return;}
+  if(mode.startsWith('import')){const count=turns;send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'import-fixture',type:'agentMessage',text:mode==='import-invalid'||mode==='import-repairs'&&count<4?'Generated invalid preview':JSON.stringify({summary:'Generated import preview',recordsPath:null,warnings:[]})}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});return;}
   if(mode==='structured-error'){send({method:'error',params:{threadId:'thread-fixture',willRetry:false,error:{codexErrorInfo:'usageLimitExceeded',message:'synthetic-private-secret'}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed'}}});return;}
   if(mode==='timeout')return;
   if(mode==='oversize-frame'){send({method:'fixture/opaque',params:{data:'x'.repeat(14*1024*1024)}});return;}
@@ -259,7 +259,7 @@ test('host output validation repairs within the same Codex thread and remains bo
  const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(line=>JSON.parse(line));assert.equal(rpc.filter(m=>m.method==='thread/start').length,1);assert.equal(rpc.filter(m=>m.method==='turn/start').length,2);
  const repair=events.find(e=>e.type==='model.started'&&e.payload?.repair);assert.match(repair.payload.prompt,/quote_offset_mismatch/);
  assert.equal(new Set(events.filter(e=>e.runId).map(e=>e.runId)).size,1);
- checked=0;await assert.rejects(agent.query({question:'Generated rejected quote',validateOutput:()=>{checked++;return {code:'quote_not_found',feedback:'Use exact supplied evidence.'};}}),e=>e.reason==='host_validation');assert.equal(checked,2);
+ checked=0;await assert.rejects(agent.query({question:'Generated rejected quote',validateOutput:()=>{checked++;return {code:'quote_not_found',feedback:'Use exact supplied evidence.'};}}),e=>e.reason==='host_validation');assert.equal(checked,4);
 });
 
 test('Codex deadline removes a waiting model admission before a turn starts',async t=>{
@@ -335,4 +335,34 @@ test('Codex receives a nested region schema and metadata, then native region plu
  assert.equal(first.contentItems[1].type,'inputImage');assert.deepEqual(repeat.contentItems.map(x=>x.type),['inputText']);assert.equal(JSON.parse(repeat.contentItems[0].text).imageDisclosure.status,'already_disclosed');
  const imageData=first.contentItems[1].imageUrl.split(',')[1];assert.ok(!JSON.stringify(events).includes(imageData));
  assert.deepEqual(answer.trace.filter(t=>t.tool==='read_image').map(t=>t.imageView.delivery),['metadata','prepared','already_disclosed']);
+});
+
+
+test('Codex three correction turns carry fresh host feedback on one thread and stop immediately on acceptance',async t=>{
+ const root=await fake(t),events=[];let checks=0;const codes=['quote_not_found','quote_offset_mismatch','coverage'];
+ const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});t.after(()=>agent.close());
+ await agent.query({question:'Generated progressive repairs',onTrace:e=>events.push(e),validateOutput:()=>++checks<=3?{code:codes[checks-1],feedback:'Generated correction '+checks}:undefined});
+ assert.equal(checks,4);const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+ assert.equal(rpc.filter(m=>m.method==='thread/start').length,1);assert.equal(rpc.filter(m=>m.method==='turn/start').length,4);
+ const repairs=events.filter(e=>e.type==='model.started'&&e.payload?.repair);assert.deepEqual(repairs.map(e=>e.payload.repairAttempt),[1,2,3]);
+ for(let i=0;i<3;i++)assert.match(repairs[i].payload.prompt,new RegExp(codes[i]));
+});
+
+test('Codex cancellation during correction starts no additional turn',async t=>{
+ const root=await fake(t),controller=new AbortController();let checks=0;
+ const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});t.after(()=>agent.close());
+ await assert.rejects(agent.query({question:'Generated cancelled correction',signal:controller.signal,validateOutput:()=>{if(++checks===2)controller.abort();return {code:'quote_not_found',feedback:'Generated rejected quote'};}}));
+ const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);assert.equal(rpc.filter(m=>m.method==='turn/start').length,2);
+});
+
+
+test('Codex import preview corrections keep the staging thread and are bounded at three',async t=>{
+ for(const mode of ['import-repairs','import-invalid']){
+  const root=await fake(t,mode),workspace=join(root,'workspace');await mkdir(workspace);
+  const agent=createImportAgent({protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});
+  try{const input={workspace,inputPaths:[],instruction:'Generated preview',helperPath:'fixture',manifestSchema:{}};
+   if(mode==='import-invalid')await assert.rejects(agent.prepare(input));else assert.equal((await agent.prepare(input)).summary,'Generated import preview');
+   const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);assert.equal(rpc.filter(m=>m.method==='thread/start').length,1);assert.equal(rpc.filter(m=>m.method==='turn/start').length,4);
+  }finally{await agent.close();}
+ }
 });

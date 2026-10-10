@@ -74,6 +74,70 @@ test('a work package independently reviews every zero-candidate input and checkp
  await f.pipeline.run(job.id);assert.equal(f.reviews.length,1,'completed work never repeats reviewer or commit');
 });
 
+for(const phase of ['extract','review'] as const)test(`${phase} reports an inexact quote before coverage ownership and repairs only that phase`,async t=>{
+ const f=await fixture(t,1);
+ const generate=async(input:MemoryPipelineQuery)=>{
+  const result=output(input,'generated-'+phase,true),invalid=JSON.parse(result.answer);
+  invalid.memories[0].evidence[0].quote='I prefer the blue bowl.';
+  const issue=await input.validateOutput!({...result,answer:JSON.stringify(invalid)});
+  assert.equal(issue?.code,'quote_not_found');assert.match(issue!.feedback,/exact substring/);
+  assert.match(issue!.feedback,/Candidate index: 0/);
+  assert.equal(f.memories.list().length,0,'the rejected generation never publishes a memory');
+  return result;
+ };
+ if(phase==='extract')f.setGenerate(generate);
+ else {f.setGenerate(input=>output(input,'extract',true));f.setReview(async input=>generate(input));}
+ const done=await f.pipeline.run(f.create().id);
+ assert.equal(done.status,'completed');assert.equal(f.seen.length,1);assert.equal(f.reviews.length,1);
+ assert.deepEqual(done.batches[0].validationFailures?.map(failure=>({code:failure.code,phase:failure.phase})),[{code:'quote_not_found',phase}]);
+ assert.equal(f.memories.list().length,1);
+});
+
+test('a missing package coverage envelope still receives coverage repair feedback',async t=>{
+ const f=await fixture(t,1);
+ f.setGenerate(async input=>{
+  const result=output(input,'generated-coverage'),invalid=JSON.parse(result.answer);delete invalid.coverage;
+  const issue=await input.validateOutput!({...result,answer:JSON.stringify(invalid)});
+  assert.equal(issue?.code,'coverage');assert.match(issue!.feedback,/every host member key/);
+  return result;
+ });
+ const done=await f.pipeline.run(f.create().id);
+ assert.equal(done.status,'completed');assert.equal(done.batches[0].validationFailures![0].code,'coverage');
+});
+
+test('the real Codex package path repairs quote feedback on its existing thread before independent review',async t=>{
+ const f=await fixture(t,1),executable=join(f.directory,'generated-quote-codex.mjs'),delivered=join(f.directory,'quote-turns.ndjson');
+ writeFileSync(join(f.directory,'auth.json'),JSON.stringify({OPENAI_API_KEY:'synthetic-unused-key'}),{mode:0o600});
+ writeFileSync(executable,`#!${process.execPath}
+import readline from 'node:readline';import {appendFileSync} from 'node:fs';
+const threadId='generated-'+process.pid,send=value=>process.stdout.write(JSON.stringify(value)+'\\n');let original;
+readline.createInterface({input:process.stdin}).on('line',line=>{
+ const m=JSON.parse(line);
+ if(m.method==='initialize')send({id:m.id,result:{}});
+ else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
+ else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:threadId},approvalPolicy:'never',sandbox:{type:'readOnly'}}});
+ else if(m.method==='turn/start'){
+  const context=JSON.parse(m.params.input[0].text),repair=Boolean(context.validationError);original??=context;
+  const work=original.untrustedTaskContext.memoryWork,member=work.members[0],review=Boolean(original.untrustedTaskContext.untrustedMemoryDraft);
+  appendFileSync(${JSON.stringify(delivered)},JSON.stringify({threadId,repair,review,feedback:context.validationError})+'\\n');
+  const value={memories:[{title:'Generated preference',statement:'The owner prefers a blue bowl ['+member.id+']',uncertainty:'One synthetic statement',admission:{layer:'memory',reason:'Explicit generated preference',scope:'Fixture only',attribution:'user'},evidenceIds:[member.id],evidence:[{id:member.id,quote:review||repair?'I prefer a blue bowl.':'I prefer the blue bowl.'}]}],coverage:[{key:member.key,state:'checked',candidateIndexes:[0]}],capacity:{saturated:false}};
+  send({id:m.id,result:{turn:{id:'generated-turn'}}});
+  send({method:'item/completed',params:{threadId,item:{id:'generated-answer',type:'agentMessage',text:JSON.stringify({answer:JSON.stringify(value),citationIds:[member.id]})}}});
+  send({method:'turn/completed',params:{threadId,turn:{status:'completed'}}});
+ }
+});
+`,{mode:0o700});
+ const agent=createAgent({reader:{search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async({ids})=>f.memories.readEvidence(ids),devices:async()=>[],activity:async()=>({})},protocol:'codex-app-server',model:'generated-only',codex:{executable,home:f.directory},agentTimeoutMs:10000});t.after(()=>agent.close());
+ f.setGenerate(input=>agent.query(input));f.setReview(async input=>agent.query(input));
+ const done=await f.pipeline.run(f.create().id);assert.equal(done.status,'completed');
+ const calls=readFileSync(delivered,'utf8').trim().split('\n').map(line=>JSON.parse(line));
+ assert.equal(calls.length,3);assert.equal(calls[0].threadId,calls[1].threadId);assert.notEqual(calls[1].threadId,calls[2].threadId);
+ assert.deepEqual(calls.map(call=>[call.repair,call.review]),[[false,false],[true,false],[false,true]]);
+ assert.match(calls[1].feedback,/quote_not_found/);assert.match(calls[1].feedback,/Candidate index: 0/);
+ assert.equal(f.seen.length,1);assert.equal(f.reviews.length,1);assert.equal(f.memories.list().length,1);
+ assert.deepEqual(done.batches[0].validationFailures?.map(failure=>failure.code),['quote_not_found']);
+});
+
 test('checked member links only its independently reviewed memories while other members have explicit zero results',async t=>{
  const f=await fixture(t);f.setGenerate(input=>output(input,'extract-candidate',true));const done=await f.pipeline.run(f.create().id);
  assert.equal(done.status,'completed');assert.equal(f.memories.list().length,1);assert.equal(f.memories.get(done.memoryIds[0]).reviewReceipt?.decision,'independent');

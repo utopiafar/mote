@@ -1,5 +1,7 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "已跳过": "Skipped",
+  "这是 AppleDouble 文件系统元数据，原件已保留，已跳过内容处理。": "This is AppleDouble filesystem metadata. The original is retained; content processing was skipped.",
   "归档内容不存在或已按保留策略清理；同步凭据仍可查看。": "Archived content is missing or has expired; the sync receipt remains available.",
   "本机副本已变化；尚无可读取的中央接收凭据。": "The local copy has changed; no readable central receipt is available yet.",
   "记录不属于当前设备": "This record does not belong to the current device",

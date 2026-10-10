@@ -10,6 +10,7 @@ import {FileAttachments} from '../src/file-attachments.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
+import {Operations} from '../src/operations.js';
 
 function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-organizer-backlog-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources),materials=new MaterialStore(store),organizers=new MaterialOrganizerRuntime(store,materials),archived=new ArchivedFileStore(store);
@@ -51,4 +52,50 @@ for(const change of ['revision','delete','attachment'] as const)test(`a source-i
  if(change==='revision')assert.match(materials.read(id).text,/Generated current revision/);
  else if(change==='attachment')assert.equal(materials.get(id)!.memberCount,2);
  else assert.equal(materials.get(id),undefined);
+ const operations=new Operations(store),operation=operations.page({kind:'material-organizer'}).items[0]!;
+ assert.equal(operation.state,'succeeded','the current replacement, not its stale predecessor, defines task status');
+ const detail=operations.detail(operation.id);
+ assert.equal(detail.steps.filter(step=>step.current).length,1);
+ assert.ok(detail.steps.some(step=>!step.current&&step.state==='stale'),'obsolete work remains in history');
+});
+
+test('restart repairs legacy organizer membership without rerunning successful or stale steps',async t=>{
+ const {sources,organizers,store,materials}=fixture(t);
+ await sources.upsert('generated',item('legacy'));
+ await organizers.tick();
+ await sources.upsert('generated',item('legacy','2','Generated replacement'));
+ await organizers.tick();
+ const operation=new Operations(store).page({kind:'material-organizer'}).items[0]!;
+ await organizers.close();await organizers.executor.close();
+ // Reproduce the old read model: every generation was counted as current.
+ const old=store.db.prepare('SELECT id FROM execution_steps WHERE operation_id=? ORDER BY created_at,id LIMIT 1').get(operation.id)!;
+ store.db.prepare("UPDATE execution_steps SET state='stale',error='input_changed' WHERE id=?").run(old.id);
+ store.db.prepare("UPDATE execution_operation_steps SET slot='',generation='',active=1 WHERE operation_id=?").run(operation.id);
+ store.db.prepare('DELETE FROM operation_generations WHERE operation_id=?').run(operation.id);
+ assert.equal(new Operations(store).detail(operation.id).operation.state,'stale');
+ const receipts=store.db.prepare('SELECT id,state,attempts,input FROM execution_steps ORDER BY id').all(),revision=materials.get(materialId('generated','legacy'))!.revision;
+ const reopened=new Store(store.directory),currentMaterials=new MaterialStore(reopened),restarted=new MaterialOrganizerRuntime(reopened,currentMaterials);
+ try{
+  const detail=new Operations(reopened).detail(operation.id);
+  assert.equal(detail.operation.state,'succeeded');assert.equal(detail.steps.filter(step=>step.current).length,1);
+  assert.equal(detail.steps.find(step=>step.id===old.id)!.current,false);
+  await restarted.tick();
+  assert.deepEqual(reopened.db.prepare('SELECT id,state,attempts,input FROM execution_steps ORDER BY id').all(),receipts);
+  assert.equal(currentMaterials.get(materialId('generated','legacy'))!.revision,revision);
+ }finally{await restarted.close();await restarted.executor.close();reopened.close();}
+});
+
+test('a failed current organizer generation remains visible after its predecessor is superseded',async t=>{
+ const {sources,organizers,store}=fixture(t);
+ await sources.upsert('generated',item('failed-current'));await organizers.tick();
+ const organizer=organizers.registry.get('mote.source-item')!,build=organizer.build;
+ organizer.build=()=>{throw Error('Generated current publication failure');};
+ try{
+  await sources.upsert('generated',item('failed-current','2'));
+  await assert.rejects(organizers.tick(),/Generated current publication failure/);
+  const operations=new Operations(store),operation=operations.page({kind:'material-organizer'}).items[0]!,detail=operations.detail(operation.id);
+  assert.equal(operation.state,'failed');assert.equal(detail.steps.filter(step=>step.current).length,1);
+  assert.equal(detail.steps.find(step=>step.current)!.state,'failed');
+  assert.ok(detail.steps.some(step=>!step.current&&step.state==='succeeded'));
+ }finally{organizer.build=build;}
 });

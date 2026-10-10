@@ -19,6 +19,7 @@ flowchart LR
 
 ## 接收与处理
 
+- AppleDouble 文件系统元数据按二进制格式识别，原件保留在归档中，以 `dispositions.excluded` 明确展示原因；不进入图片或解析 Agent。`._` 文件名本身不排除正常图片。仅含元数据的导入仍可确认归档，已有排除项确认规则保持不变。
 - `ImportStore` 保留容器与每个原件，按格式声明确定 MIME。扩展名、签名和声明的 MIME 只用于格式识别，不判断内容语义、作者、主题或日期。
 - `FileStore.archivedRevision` 引用已有归档资产，通过文件接收事务建立 `source_versions`、`file_versions`、`file_heads`、`file_jobs`，同时提交原件关联和导入进度。无需上传第二份媒体。
 - 文件配方沿用 `ExecutionEngine`、`file_steps` 和产物检查点。取消、重试、配置变更和重启沿用现有提交栅栏与处理器排他机制，没有增加另一套任务引擎。

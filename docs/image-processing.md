@@ -6,6 +6,21 @@ ExecutionEngine. Import staging, thumbnail/region responses and references witho
 readable bytes are not successful original-image processing. PDF/Office embedded
 images require a declared decoder and are outside this intake.
 
+## AppleDouble original admission
+
+AppleDouble filesystem sidecars are recognized by the binary magic, supported
+version and bounded entry descriptors, never by a `._` name alone. Central import
+retains the archived original and reports an `excluded` disposition before content
+analysis. Synchronized files and accepted attachments use the same check before
+OCR or visual calls. The existing declared MIME is retained in historical receipts.
+
+Legacy failed image attempts remain historical; their current image and parent
+file operations receive an optional blocked exclusion receipt, projected as
+`skipped` with reason `appledouble_metadata`. File/image details show the reason
+and retained original. Explicit retry and historical backfill do not send this
+metadata to processors. This does not change normal image recipes, retry budgets,
+original retention policies, or attribution invalidation behavior.
+
 ## Policy and execution
 
 The selected image plan references the existing file-policy profiles, processors

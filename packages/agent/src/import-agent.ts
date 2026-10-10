@@ -11,7 +11,7 @@ import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {bundledSkills,skillContent} from './skills.js';
 import {modelConnection,modelRuntimeEntries,harnessPrivacyEntries,validateModelOptions} from './model-runtime.js';
-import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,type AgentOptions} from './types.js';
+import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,MAX_OUTPUT_REPAIRS,type AgentOptions} from './types.js';
 
 export type ImportAgentInput={language?:"zh-CN"|"en";workspace:string;inputPaths:string[];instruction:string;helperPath:string;manifestSchema:unknown;schemaPath?:string;previous?:{summary:string;error?:string}};
 export type ImportAgentResult={summary:string;recordsPath?:string;warnings?:string[];reviewDecision?:ImportReviewDecision};
@@ -87,11 +87,13 @@ export function apply(ctx){
       const readAnswer=async()=>{
         let result=await (options.runModel??(async (task,_signal?:AbortSignal)=>task()))(()=>harness!.run(JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries, warnings and generated prose; preserve original quotes and field keys.',requiredSkill:'document-import',importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),runOptions),modelAdmission.signal);
         checkResult(result);
-        try{return parseResult(result.finalResponse);}catch(error){
-          if(!(error instanceof AgentResponseError))throw error;
-          // One correction in the same session, inside the original total deadline.
-          result=await (options.runModel??(async (task,_signal?:AbortSignal)=>task()))(()=>harness!.run(JSON.stringify({instruction:'Your final import response could not be accepted. Using only the analysis already completed in this session, return ONLY one JSON object with summary (a string in the selected language), optional recordsPath (a string), optional warnings (an array of strings), and optional reviewDecision ({confidence:"high"|"low"|"unknown",ambiguous:boolean,reason:string}). Report high only when the mapping has no unresolved ambiguity. Do not include Markdown fences or any text outside JSON. Do not repeat analysis, run tools, rewrite files, or claim an artifact exists unless it was actually produced. Preserve any reported limitations. The host independently validates the manifest and decides whether review is required.',validationError:error.message}),runOptions),modelAdmission.signal);
-          checkResult(result);return parseResult(result.finalResponse);
+        for(let repair=0;;repair++){
+          try{return parseResult(result.finalResponse);}catch(error){
+            if(!(error instanceof AgentResponseError)||repair>=MAX_OUTPUT_REPAIRS)throw error;
+            // Bounded corrections in the same session, inside the original total deadline.
+            result=await (options.runModel??(async (task,_signal?:AbortSignal)=>task()))(()=>harness!.run(JSON.stringify({instruction:'Your final import response could not be accepted. Using only the analysis already completed in this session, return ONLY one JSON object with summary (a string in the selected language), optional recordsPath (a string), optional warnings (an array of strings), and optional reviewDecision ({confidence:"high"|"low"|"unknown",ambiguous:boolean,reason:string}). Report high only when the mapping has no unresolved ambiguity. Do not include Markdown fences or any text outside JSON. Do not repeat analysis, run tools, rewrite files, or claim an artifact exists unless it was actually produced. Preserve any reported limitations. The host independently validates the manifest and decides whether review is required.',validationError:error.message}),runOptions),modelAdmission.signal);
+            checkResult(result);
+          }
         }
       };
       const deadline = agentTimeoutMs === null ? [] : [new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(new AgentTimeoutError()),agentTimeoutMs);})];

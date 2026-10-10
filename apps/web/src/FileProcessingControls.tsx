@@ -48,6 +48,7 @@ export function FileProcessingControls({api,id,mode='detail',disabled=false,onCh
   finally{if(request.current===controller){request.current=null;setBusy(false);}}
  }
  if(!file)return <>{readError&&<p className="error-banner" role="alert">{errorMessage(readError)}<button className="button" onClick={refresh}>{moteText('重新读取')}</button></p>}</>;
+ if(file.job?.state==='skipped')return null;
  const locked=disabled||busy||loading||!!readError,waiting=file.cancellation?.wait==='running';
  const summaryDisabled=file.processingPolicy?.capabilities?.summary===false||(file.processingPolicy?.applied??file.processingPolicy?.current)?.profile?.summarize===false;
  const canRetry=mode==='detail'||['failed','blocked','cancelled'].includes(file.job?.state??'')||file.cancellation?.wait==='unknown';

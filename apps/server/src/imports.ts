@@ -33,7 +33,7 @@ export class ImportInputError extends StoreError {
 export type ImportPreparation={operationId?:string;signal?:AbortSignal;workspace:string;inputPaths:string[];instruction:string;previous?:{summary:string;error?:string}};
 export type ImportPreparationResult={summary:string;recordsPath?:string;warnings?:string[];reviewDecision?:ImportReviewDecision};
 export type ImportRuntime={executor?:ExecutionEngine;intake?:ImportIntakeRegistry;fileStore?:FileStore;prepare?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;sourcePacks?:ReadonlyMap<string,{revision:string;prepare:(input:ImportPreparation)=>Promise<ImportPreparationResult>}>;onImported?:(captureIds:string[],importJobId:string)=>Promise<{memoryJobId?:string}>};
-type InternalJob=ImportJob&{containerIds?:string[];recordsProcessed:number;processing:'automatic'|'preview';sourcePackRevision?:string;archiveWarnings?:string[];createFingerprint?:string;preparationRevision:number;originalsPending?:boolean;expansion?:{originalIds:string[];completedIds:string[];pins?:Record<string,{id:string;version:string}>};parserMode?:'plain';workspace:string;inputs:{path:string;fileId:string}[];manifestHash?:string;failurePhase?:'prepare'|'import';memoryNotified?:boolean;blockedArchive?:boolean};
+type InternalJob=ImportJob&{excludedFiles?:{fileId:string;reason:string}[];containerIds?:string[];recordsProcessed:number;processing:'automatic'|'preview';sourcePackRevision?:string;archiveWarnings?:string[];createFingerprint?:string;preparationRevision:number;originalsPending?:boolean;expansion?:{originalIds:string[];completedIds:string[];pins?:Record<string,{id:string;version:string}>};parserMode?:'plain';workspace:string;inputs:{path:string;fileId:string}[];manifestHash?:string;failurePhase?:'prepare'|'import';memoryNotified?:boolean;blockedArchive?:boolean};
 const responseSchema=z.object({summary:z.string().max(20000),recordsPath:z.string().max(4000).optional(),warnings:z.array(z.string().max(2000)).max(200).optional(),reviewDecision:importReviewDecisionSchema.optional()}).strict();
 const message=(error:unknown)=>error instanceof Error?error.message.slice(0,2000):'Import failed';
 const inside=(root:string,path:string)=>{const rel=relative(root,path);return rel===''||(!rel.startsWith(`..${sep}`)&&rel!=='..'&&!isAbsolute(rel));};
@@ -108,7 +108,7 @@ export class ImportStore {
     }
   }
   private load(id:string):InternalJob{const row=this.store.db.prepare('SELECT json FROM import_jobs WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Import job not found',404);return JSON.parse(row.json);}
-  private public(job:InternalJob):ImportJob{job.operationId=`import:${job.id}`;const operation=this.store.db.prepare('SELECT state FROM operation_progress WHERE id=? AND total>0').get(job.operationId);if(operation)job.execution=executionEnvelope({status:operation.state==='waiting'?'queued':operation.state,attempts:job.execution?.attempts??0,errorCode:job.status==='awaiting_confirmation'?'awaiting_confirmation':job.execution?.failure?.code});const {containerIds,recordsProcessed,processing,sourcePackRevision,archiveWarnings,createFingerprint,preparationRevision,originalsPending,expansion,parserMode,workspace,inputs,manifestHash,failurePhase,memoryNotified,blockedArchive,...value}=job;if(value.media)value.media=value.media.map(item=>this.mediaProgress(job,item));value.memoryProgress=importMemoryProgress(this.store,value.captureIds);return value;}
+  private public(job:InternalJob):ImportJob{job.operationId=`import:${job.id}`;const operation=this.store.db.prepare('SELECT state FROM operation_progress WHERE id=? AND total>0').get(job.operationId);if(operation)job.execution=executionEnvelope({status:operation.state==='waiting'?'queued':operation.state,attempts:job.execution?.attempts??0,errorCode:job.status==='awaiting_confirmation'?'awaiting_confirmation':job.execution?.failure?.code});const {excludedFiles,containerIds,recordsProcessed,processing,sourcePackRevision,archiveWarnings,createFingerprint,preparationRevision,originalsPending,expansion,parserMode,workspace,inputs,manifestHash,failurePhase,memoryNotified,blockedArchive,...value}=job;if(value.media)value.media=value.media.map(item=>this.mediaProgress(job,item));value.memoryProgress=importMemoryProgress(this.store,value.captureIds);return value;}
   private save(job:InternalJob){job.updatedAt=new Date().toISOString();const json=JSON.stringify(job),old=this.store.db.prepare('SELECT length(CAST(json AS BLOB)) AS bytes FROM import_jobs WHERE id=?').get(job.id) as {bytes:number}|undefined;this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-(old?.bytes??0)));this.store.db.prepare('INSERT INTO import_jobs(id,created_at,updated_at,json) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at,json=excluded.json').run(job.id,job.createdAt,job.updatedAt,json);if(job.createFingerprint)this.store.db.prepare('INSERT OR IGNORE INTO import_create_requests(request_id,fingerprint,job_id) VALUES(?,?,?)').run(job.id,job.createFingerprint,job.id);}
   private mediaProgress(job:InternalJob,item:NonNullable<ImportJob['media']>[number]){
     if(!item.captureId||!this.runtime.fileStore)return item;
@@ -126,11 +126,11 @@ export class ImportStore {
     return {...item,processing:{state:String(row.state),stage:String(row.stage),...(row.error?{error:String(row.error)}:{})},searchable,memory};
   }
   private prefix(fileId:string){for(const part of this.files.bytes(fileId))return part.subarray(0,4096);return Buffer.alloc(0);}
-  private analysisInputs(job:InternalJob){const skipped=new Set([...(job.containerIds??[]),...(job.media??[]).map(item=>item.fileId)]);return job.inputs.filter(input=>!skipped.has(input.fileId));}
+  private analysisInputs(job:InternalJob){const skipped=new Set([...(job.excludedFiles??[]).map(item=>item.fileId),...(job.containerIds??[]),...(job.media??[]).map(item=>item.fileId)]);return job.inputs.filter(input=>!skipped.has(input.fileId));}
   private dispositions(job:InternalJob,parsed?:ImportDispositions):ImportDispositions|undefined{
-    if(!job.media?.length&&!job.containerIds?.length)return parsed;
-    if(!parsed&&!job.media?.length)return;
-    const items=[...(parsed?.items??[]),...(job.media??[]).map(item=>({fileId:item.fileId,path:this.files.get(item.fileId).relativePath,status:'processing' as const,reason:item.format.reason})),...(job.containerIds??[]).map(fileId=>({fileId,path:this.files.get(fileId).relativePath,status:'container' as const,reason:'Container originals retained; members are accounted separately'}))];
+    if(!job.media?.length&&!job.containerIds?.length&&!job.excludedFiles?.length)return parsed;
+    if(!parsed&&!job.media?.length&&!job.excludedFiles?.length)return;
+    const items=[...(parsed?.items??[]),...(job.excludedFiles??[]).map(item=>({fileId:item.fileId,path:this.files.get(item.fileId).relativePath,status:'excluded' as const,reason:item.reason})),...(job.media??[]).map(item=>({fileId:item.fileId,path:this.files.get(item.fileId).relativePath,status:'processing' as const,reason:item.format.reason})),...(job.containerIds??[]).map(fileId=>({fileId,path:this.files.get(fileId).relativePath,status:'container' as const,reason:'Container originals retained; members are accounted separately'}))];
     const counts:ImportDispositions['counts']={parsed:0,attachment:0,container:0,excluded:0,unsupported:0,processing:0};
     for(const item of items)counts[item.status]=(counts[item.status]??0)+1;
     return {items,counts};
@@ -332,7 +332,7 @@ export class ImportStore {
       for(const input of attempt.inputs)await this.materialize(input);
       const decoded=await formatWork({kind:'plain',inputs:attempt.inputs.map(input=>({path:input.path,file:this.files.get(input.fileId)})),createdAt:job.createdAt,manifest:join(attempt.workspace,'prepared.jsonl')},signal);
       signal?.throwIfAborted();grant.assert();
-      if(!decoded.count&&!job.media?.length)return grant.commit(()=>{job.status='unsupported';job.processingStatus='blocked';job.error='Original files are archived; no searchable text or media work was produced.';this.save(job);return this.public(job);});
+      if(!decoded.count&&!job.media?.length&&!job.excludedFiles?.length)return grant.commit(()=>{job.status='unsupported';job.processingStatus='blocked';job.error='Original files are archived; no searchable text or media work was produced.';this.save(job);return this.public(job);});
       const prepared=await this.stagePrepared(job,attempt,join(attempt.workspace,'prepared.jsonl'),signal);
       job.manifestHash=prepared.hash;job.summary='Source document text archived directly; author and original dates remain unspecified.';job.warnings=decoded.warnings;
       job.preview={count:decoded.count+(job.media?.length??0),samples:decoded.samples};job.progress.total=job.preview.count;job.status='awaiting_confirmation';job.processingStatus='preview_ready';
@@ -355,9 +355,9 @@ export class ImportStore {
     if(job.blockedArchive)return this.public(job);
     if(job.progress.processed>0||job.status==='completed')throw new StoreError('Saved records cannot be reanalyzed in the same job',409);
     if(this.runtime.fileStore&&!job.sourcePackId){
-      grant.commit(()=>{job.media=[];job.containerIds=[];for(const file of job.files){const input={file,prefix:this.prefix(file.id)};if(this.intake.container(input))job.containerIds.push(file.id);else{const format=this.intake.format(input);if(format)job.media.push({fileId:file.id,format});}}this.save(job);});
+      grant.commit(()=>{job.media=[];job.containerIds=[];job.excludedFiles=[];for(const file of job.files){const input={file,prefix:this.prefix(file.id)};if(this.intake.container(input))job.containerIds.push(file.id);else{const format=this.intake.format(input);if(format?.excluded)job.excludedFiles.push({fileId:file.id,reason:format.reason});else if(format)job.media.push({fileId:file.id,format});}}this.save(job);});
       const inputs=this.analysisInputs(job);
-      if((!inputs.length&&job.media?.length)||(job.processing==='automatic'&&!job.instruction.trim()&&inputs.every(input=>/\.(txt|md|markdown|csv|tsv|json|jsonl|ndjson|yaml|yml|log|ics|pdf|docx|xlsx)$/i.test(this.files.get(input.fileId).name))))job.parserMode='plain';
+      if((!inputs.length&&(job.media?.length||job.excludedFiles?.length))||(job.processing==='automatic'&&!job.instruction.trim()&&inputs.every(input=>/\.(txt|md|markdown|csv|tsv|json|jsonl|ndjson|yaml|yml|log|ics|pdf|docx|xlsx)$/i.test(this.files.get(input.fileId).name))))job.parserMode='plain';
     }
     if(job.parserMode==='plain')return this.preparePlain(job,grant,signal);
     const pack=job.sourcePackId?this.runtime.sourcePacks?.get(job.sourcePackId):undefined;

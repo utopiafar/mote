@@ -24,6 +24,9 @@ import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-plann
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {processorContract,processorSettingsFingerprint} from '../src/file-configuration.js';
 import {DEFAULT_IMAGE_RECIPE} from '../src/image-recipes.js';
+import {generatedAppleDouble} from './fixtures/appledouble.js';
+import {isAppleDouble} from '../src/appledouble.js';
+import {Operations} from '../src/operations.js';
 import {MEDIA_CATALOG} from '../src/media-assets.js';
 
 async function fixture(t:import('node:test').TestContext){
@@ -36,8 +39,8 @@ async function fixture(t:import('node:test').TestContext){
  const bytes=await sharp({create:{width:16,height:16,channels:3,background:'#aabbcc'}}).png().toBuffer();
  for(const id of ['generated-import','generated-sync','generated-parent'])sources.register({id,name:id,kind:'upload',deviceId:'generated-device',platform:'import',retention:'archive'});
  const screen=async()=>{const id=randomUUID();await store.ingest({id,deviceId:'generated-android',deviceName:'Fixture Android',platform:'android',source:'screen',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,appId:'fixture',appName:'Fixture',ocrText:'',ocr:{status:'disabled'},privacy:{excluded:false,redacted:false,mode:'local'},imageMime:'image/png',imageBase64:bytes.toString('base64')});return id;};
- const upload=async(sourceId='generated-import',override?:string,mimeType='image/png')=>{
-  const begun=files.begin({sourceId,processingProfileId:override,item:{externalId:randomUUID(),revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'original',title:'Generated image',mimeType,text:''},sha256:sha256(bytes),sizeBytes:bytes.length},()=>{});files.part(begun.uploadId,0,bytes,()=>{});return String((await files.commit(begun.uploadId,()=>{})).id);
+ const upload=async(sourceId='generated-import',override?:string,mimeType='image/png',originalBytes=bytes)=>{
+  const begun=files.begin({sourceId,processingProfileId:override,item:{externalId:randomUUID(),revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'original',title:'Generated image',mimeType,text:''},sha256:sha256(originalBytes),sizeBytes:originalBytes.length},()=>{});files.part(begun.uploadId,0,originalBytes,()=>{});return String((await files.commit(begun.uploadId,()=>{})).id);
  };
  const organize=async()=>{for(let i=0;i<20;i++)if(await organizer.tick(200)===0)return;throw Error('Organizer did not settle');};
  t.after(async()=>{await engine.close();await images.close();await organizer.close();await processing.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
@@ -356,4 +359,29 @@ test('shared image interpretation retires from every Material without withdrawin
  assert.deepEqual(f.store.db.prepare("SELECT * FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(shared),ocr);
  assert.equal(f.store.db.prepare('SELECT semantic_withdrawn FROM image_inputs WHERE capture_id=?').get(unrelated)!.semantic_withdrawn,0);
  await f.images.tick();await f.organize();assert.equal(calls,2);
+});
+
+
+test('AppleDouble admission skips new and legacy failed images, preserves history and originals across restart and explicit retry',async t=>{
+ const f=await fixture(t),metadata=generatedAppleDouble(),legacy=await f.upload('generated-import',undefined,'image/jpeg',metadata);
+ const old=f.engine.enqueue('image:'+legacy,'images.ocr',{captureId:legacy,generation:0,name:'ocr',hash:sha256(metadata),fingerprint:'generated-legacy'},{generation:{slot:'ocr',version:'legacy'},initial:{state:'failed',attempts:1,availableAt:0,error:'provider_request_invalid'}});
+ f.store.db.prepare("INSERT INTO perception_jobs(capture_id,kind,state,created_at,error,attempts) VALUES(?,'ocr','failed',?,'provider_request_invalid',1)").run(legacy,Date.now());
+ const fresh=await f.upload('generated-sync',undefined,'image/jpeg',metadata);await f.images.tick();
+ assert.deepEqual(f.calls(),{ocr:0,visual:0});const operations=new Operations(f.store);
+ for(const id of [legacy,fresh]){
+  assert.equal(f.files.detail(id).job!.state,'skipped');assert.equal(f.files.detail(id).job!.execution.status,'skipped');
+  assert.equal(f.images.detail(id).exclusion,'appledouble_metadata');assert.deepEqual(Buffer.concat([...f.files.bytes(id)]),metadata);
+  for(const prefix of ['image:','file:'])assert.equal(operations.detail(prefix+id).operation.state,'skipped');
+  assert.deepEqual(f.images.retry(id),{queued:false});assert.deepEqual(f.images.cancel(id),{state:'skipped'});
+ }
+ assert.equal(f.engine.get(old)!.state,'failed');assert.equal(f.engine.get(old)!.attempts,1);assert.equal(operations.detail('image:'+legacy).steps.find(s=>s.id===old)!.current,false);
+ await f.organize();for(const id of [legacy,fresh])assert.equal(f.store.db.prepare('SELECT understanding_enabled FROM image_inputs WHERE capture_id=?').get(id)!.understanding_enabled,0);
+ const total=f.store.db.prepare('SELECT count(*) n FROM execution_steps').get()!.n;await f.images.tick();assert.equal(f.store.db.prepare('SELECT count(*) n FROM execution_steps').get()!.n,total);
+ await f.images.close();const restarted=new ImageProcessing(f.store,f.processing,f.engine);try{await restarted.tick();assert.deepEqual(restarted.retry(legacy),{queued:false});assert.equal(operations.detail('file:'+legacy).operation.state,'skipped');assert.deepEqual(f.calls(),{ocr:0,visual:0});}finally{await restarted.close();}
+});
+
+test('AppleDouble detection requires the binary signature, version and bounded entry table',()=>{
+ const good=generatedAppleDouble();assert.equal(isAppleDouble(good,good.length),true);
+ for(const [offset,value] of [[0,0x00051600],[4,0x00030000],[30,20],[34,999]]){const bad=Buffer.from(good);bad.writeUInt32BE(value,offset);assert.equal(isAppleDouble(bad,bad.length),false);}
+ assert.equal(isAppleDouble(good.subarray(0,25),good.length),false);assert.equal(isAppleDouble(good.subarray(0,40),good.length),false);assert.equal(isAppleDouble(Buffer.from('Generated JPEG-like file'),163),false);
 });

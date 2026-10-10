@@ -2,9 +2,10 @@ import {extname} from 'node:path';
 import type {ArchivedFile} from '@mote/shared';
 import {formatWork} from './format-work.js';
 import {StoreError} from './store.js';
+import {isAppleDouble} from './appledouble.js';
 
 export type FormatInput={file:ArchivedFile;prefix:Buffer};
-export type FormatMatch={mimeType:string;reason:string};
+export type FormatMatch={mimeType:string;reason:string;excluded?:boolean};
 export interface ImportFormat {
   id:string;version:string;priority?:number;
   /** Byte/container/declared-format detection only; never semantic routing. */
@@ -15,7 +16,7 @@ export interface ImportContainer {
   probe(input:FormatInput):boolean;
   expand(input:{path:string;output:string;maxFiles:number;maxBytes:number;signal?:AbortSignal}):Promise<{files:{name:string;path:string;bytes:number;mimeType?:string}[]}>;
 }
-export type ImportFormatPin={id:string;version:string;mimeType:string;reason:string};
+export type ImportFormatPin={id:string;version:string;mimeType:string;reason:string;excluded?:boolean};
 
 /** Cordis registrations describe capabilities. The import host retains originals
  * and commits versioned work; installing a capability never scans the vault. */
@@ -47,7 +48,7 @@ export class ImportIntakeRegistry {
 export function installImportIntake(registry:ImportIntakeRegistry){
   const audio:Record<string,string>={'.mp3':'audio/mpeg','.wav':'audio/wav','.m4a':'audio/mp4','.aac':'audio/aac','.amr':'audio/amr','.ogg':'audio/ogg','.flac':'audio/flac','.opus':'audio/opus'};
   const images:Record<string,string>={'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.gif':'image/gif'};
-  const dispose=[registry.registerFormat({id:'mote.media-format',version:'1',probe:({file,prefix})=>{
+  const dispose=[registry.registerFormat({id:'mote.appledouble-format',version:'1',priority:100,probe:({file,prefix})=>isAppleDouble(prefix,file.sizeBytes)?{mimeType:'application/applefile',excluded:true,reason:'AppleDouble filesystem metadata; original retained, excluded from content processing'}:undefined}),registry.registerFormat({id:'mote.media-format',version:'1',probe:({file,prefix})=>{
     const extension=extname(file.relativePath).toLowerCase();
     let mime=audio[extension]??images[extension];
     let basis='extension';
