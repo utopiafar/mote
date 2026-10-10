@@ -145,7 +145,7 @@ export interface QueryInput {
   onUsage?: (usage: import('@mote/shared').TokenUsage) => void;
   question: string;
   /** Bounded host-owned input for background tasks, separate from the user question. */
-  taskContext?: {queryWorkspace?:unknown;delegation?:unknown;memoryWork?:unknown;untrustedMemoryDraft?:unknown;untrustedInterpretations?:string;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
+  taskContext?: {queryWorkspace?:unknown;delegation?:unknown;memoryWork?:unknown;ownerClarificationReply?:unknown;untrustedMemoryDraft?:unknown;untrustedInterpretations?:string;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
   responseMode?: 'answer'|'personal-insight'|'memory-extraction'|'calendar-extraction';
   /** Host-selected procedure, never selected from captured text. */
   skill?: Exclude<MoteSkillId,'document-import'>;

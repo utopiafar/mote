@@ -12,6 +12,7 @@ import {ErrorNotice,Spinner} from '../shell-components';
 import {errorMessage} from '../api';
 import { MemoryRecordPanel } from './memory-record';
 import {sourceMaterialViews} from './source-material';
+import {ownerQuestionPanels} from './owner-questions';
 import type { PageProps,ViewProps } from './types';
 export const featuresReady=(async()=>{
   for(const id of new Set([...builtinPages,...builtinCollections,...homeEntries].map(page=>page.featureId)))await webFeatures.install({id,version:'1',components:[]},[...builtinPages.filter(page=>page.featureId===id).map(entry=>({surface:'page' as const,entry})),...builtinCollections.filter(page=>page.featureId===id).map(entry=>({surface:'collection' as const,entry})),...homeEntries.filter(entry=>entry.featureId===id).map(entry=>({surface:'home' as const,entry}))]);
@@ -20,6 +21,7 @@ export const featuresReady=(async()=>{
     {surface:'panel',entry:{id:'operation.saved',kind:'mote.operation',schemaVersion:1,representation:'saved-record',render:({value})=><details><summary>{moteText('保存记录（只读）')}</summary><pre className="feature-json">{value.text}</pre></details>}},
   ]);
   await webFeatures.install({id:'mote.source-material-views',version:'1',components:[]},sourceMaterialViews.map(entry=>({surface:'renderer' as const,entry})));
+  await webFeatures.install({id:'mote.owner-questions',version:'1',components:[]},ownerQuestionPanels.map(entry=>({surface:'panel' as const,entry})));
 })();
 class ViewBoundary extends React.Component<{fallback:React.ReactNode;children:React.ReactNode},{failed:boolean}>{
   state={failed:false};static getDerivedStateFromError(){return {failed:true};}
@@ -29,7 +31,9 @@ function PageContent({entry,props}:{entry:import('./types').PageEntry;props:Page
 function ViewContent({entry,props}:{entry:import('./types').ViewEntry;props:ViewProps}){
   const remote=entry.requires?.filter(dep=>typeof dep==='string'||dep.host==='server')??[];
   const capabilities=useResource<FeatureInventory>(props.api,remote.length?'/api/features':null,5000);
-  if(remote.length&&!featureRequirementsAvailable(remote,capabilities.data))return <>{props.fallback}</>;
+  if(remote.length&&capabilities.error!==undefined)return <ErrorNotice text={errorMessage(capabilities.error)} retry={capabilities.refresh}/>;
+  if(remote.length&&!capabilities.data)return <Spinner/>;
+  if(remote.length&&(!Array.isArray(capabilities.data?.capabilities)||!featureRequirementsAvailable(remote,capabilities.data)))return <>{props.fallback}</>;
   return entry.render(props);
 }
 export function FeaturePage({page,props}:{page:string;props:PageProps}){
@@ -50,9 +54,10 @@ export function FeatureView(props:ViewProps){
   // Ambiguous providers never win by installation order. Keep the safe default.
   return <><ViewBoundary key={props.value.ref+props.value.revision} fallback={fallback}>{renderers.length===1?<ViewContent entry={renderers[0]} props={{...props,fallback}}/>:fallback}</ViewBoundary><FeaturePanels {...props}/></>;
 }
-export function FeaturePanels(props:ViewProps){
+export function FeaturePanels({unavailable,...props}:ViewProps&{unavailable?:React.ReactNode}){
   useSyncExternalStore(webFeatures.registry.subscribe,webFeatures.registry.getRevision,webFeatures.registry.getRevision);
-  return <>{webFeatures.views('panel',props.value).filter(entry=>!props.catalog?.panels||props.catalog.panels.includes(entry.id)).map(panel=><ViewBoundary key={panel.id+props.value.ref+props.value.revision} fallback={null}><ViewContent entry={panel} props={{...props,fallback:null}}/></ViewBoundary>)}</>;
+  const panels=webFeatures.views('panel',props.value).filter(entry=>!props.catalog?.panels||props.catalog.panels.includes(entry.id)),fallback=unavailable??null;
+  return <>{panels.length?panels.map(panel=><ViewBoundary key={panel.id+props.value.ref+props.value.revision} fallback={fallback}><ViewContent entry={panel} props={{...props,fallback}}/></ViewBoundary>):fallback}</>;
 }
 
 export function CollectionContent({entry,props}:{entry:import('./types').CollectionEntry;props:import('./types').CollectionProps}){

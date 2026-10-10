@@ -9,6 +9,7 @@ import {materialId} from '../src/materials.js';
 import type {Config} from '../src/config.js';
 import type {ModelSettings,ModelSettingsView} from '@mote/shared/models';
 import type {QueryInput} from '@mote/agent';
+import {generatedMemoryOutput} from './fixtures/memory-planning.js';
 
 const settings:ModelSettings={provider:'custom',protocol:'openai-completions',model:'first-model',baseUrl:'https://fixture.invalid/v1',apiKey:'fixture-original-secret',headers:{},extraBody:{},reasoningEffort:'auto',maxTokens:8192,modelRequestTimeoutMs:120000,agentTimeoutMs:120000,allowUnauthenticatedLocal:false};
 const headers={authorization:'Bearer synthetic-profile-owner'};
@@ -16,7 +17,7 @@ test('profiles route each request and feature independently; credentials, restar
   const directory=await mkdtemp(join(tmpdir(),'mote-profiles-'));
   const cfg:Config={dataDir:directory,token:'synthetic-profile-owner',tokenPath:'fixture',host:'127.0.0.1',port:47832,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:settings.model,modelProvider:settings.provider,modelProtocol:settings.protocol,modelBaseUrl:settings.baseUrl,apiKey:settings.apiKey,allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const seen:ModelSettings[]=[],calls:{model:string;skill?:string}[]=[];
-  const factory=async (s:ModelSettings)=>{seen.push(s);return {configured:!!s.model,query:async(input:QueryInput)=>{calls.push({model:s.model,skill:input.skill});return {answer:input.skill==='memory-extraction'?'{"memories":[]}':input.skill==='personal-insight'?JSON.stringify({title:'Generated model profile report',markdown:s.model,html:`<p>${s.model}</p>`}):s.model,citations:[],trace:[],runId:'fixture'};},close:async()=>{}};};
+  const factory=async (s:ModelSettings)=>{seen.push(s);return {configured:!!s.model,query:async(input:QueryInput)=>{calls.push({model:s.model,skill:input.skill});return {answer:input.skill==='memory-extraction'?generatedMemoryOutput(input):input.skill==='personal-insight'?JSON.stringify({title:'Generated model profile report',markdown:s.model,html:`<p>${s.model}</p>`}):s.model,citations:[],trace:[],runId:'fixture'};},close:async()=>{}};};
   let node=await buildApp(cfg,{createModelAgent:factory});
   t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
   let view=(await node.app.inject({url:'/api/model-settings',headers})).json<ModelSettingsView>();
@@ -126,7 +127,7 @@ test('module model overrides reach chat, insights, immediate memory and persiste
   const directory=await mkdtemp(join(tmpdir(),'mote-module-models-'));
   const cfg:Config={dataDir:directory,token:'synthetic-profile-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:settings.model,modelProvider:settings.provider,modelProtocol:settings.protocol,modelBaseUrl:settings.baseUrl,apiKey:settings.apiKey,allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   const called:string[]=[];
-  const node=await buildApp(cfg,{createModelAgent:async s=>({configured:true,query:async input=>{called.push(s.model);return {answer:input.skill==='memory-extraction'?'{"memories":[]}':input.skill==='personal-insight'?JSON.stringify({title:'Generated module model report',markdown:s.model,html:`<p>${s.model}</p>`}):s.model,citations:[],trace:[],runId:'generated'};},close:async()=>{}})});
+  const node=await buildApp(cfg,{createModelAgent:async s=>({configured:true,query:async input=>{called.push(s.model);return {answer:input.skill==='memory-extraction'?generatedMemoryOutput(input):input.skill==='personal-insight'?JSON.stringify({title:'Generated module model report',markdown:s.model,html:`<p>${s.model}</p>`}):s.model,citations:[],trace:[],runId:'generated'};},close:async()=>{}})});
   t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
   let view=node.modelSettings.view();
   view=await node.modelSettings.copyProfile('env:deployment',{revision:view.revision,id:'shared-provider',name:'Shared Provider'});

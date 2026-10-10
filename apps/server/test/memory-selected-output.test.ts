@@ -1,3 +1,4 @@
+import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -13,7 +14,7 @@ test('owner-selected OCR and composed originals reach manual Memory without adop
  const directory=mkdtempSync(join(tmpdir(),'mote-selected-output-')),token='generated-selection-token';
  const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'https://generated.invalid',apiKey:'generated',embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',allowUnauthenticatedLocal:false};
  const calls:QueryInput[]=[];
- const node=await buildApp(config,{createModelAgent:async()=>({configured:true,close:async()=>{},query:async input=>{calls.push(input);return {answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()};}})});
+ const node=await buildApp(config,{createModelAgent:async()=>({configured:true,close:async()=>{},query:async input=>{calls.push(input);return fixtureMemoryWorkResult(input,{answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()});}})});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  node.sources.register({id:'generated-selection',name:'Generated source',kind:'custom',deviceId:'generated-device',platform:'import'});
  const raw=(await node.sources.upsert('generated-selection',{externalId:'parent',revision:'1',observedAt:'2026-01-01T00:00:00Z',kind:'message',layer:'original',text:'Generated parent.'})).id;

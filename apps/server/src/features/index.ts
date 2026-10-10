@@ -1,3 +1,4 @@
+import {register as ownerQuestionsEntry} from './owner-questions.js';
 import {register as filesEntry} from './files.js';
 import type { ServerFeatureHost } from '../feature-host.js';
 import { featureInventory } from '../feature-inventory.js';
@@ -41,6 +42,7 @@ export async function installServerFeatures(host:ServerFeatureHost,services:Feat
   await host.install({id:'mote.notes',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.notes'));notesEntry(app,services);});
   await host.install({id:'mote.devices',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.devices'));devicesEntry(app,services);});
   await host.install({id:'mote.media',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.media'));mediaEntry(app,services);});
+  await host.install({id:'mote.owner-questions',version:'1',components:[]},app=>ownerQuestionsEntry(app,services));
   await host.install({id:'mote.memory',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.memory'));memoryEntry(app,services,scope);});
   await host.install({id:'mote.imports',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.imports'));importsEntry(app,services,scope);});
   await host.install({id:'mote.ask',version:'1',components:[]},(app,scope)=>{scope.defer(()=>services.agentFeatures.dispose('mote.ask'));askEntry(app,services,scope);});

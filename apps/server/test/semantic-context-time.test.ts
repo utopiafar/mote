@@ -1,4 +1,5 @@
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
+import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -29,7 +30,7 @@ const realTime=(value:string|undefined,start:number)=>{assert.ok(value);assert.o
 function disabled(node:Node){const s=node.lifecycle.settings();node.lifecycle.configure({...s,consolidation:{...s.consolidation,enabled:false},insights:{...s.insights,enabled:false},working:{...s.working,enabled:false}});}
 async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,clock?:()=>string){
   const directory=mkdtempSync(join(tmpdir(),'mote-semantic-clock-'));
-  const node=await buildApp(config(directory),{backgroundWorker:false,semanticContextTime:clock,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:input=>query(input,reader)})});
+  const node=await buildApp(config(directory),{backgroundWorker:false,semanticContextTime:clock,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{const result=await query(input,reader);return input.responseMode==='memory-extraction'?fixtureMemoryWorkResult(input,result):result;}})});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   disabled(node);await node.app.ready();return {node,directory};
 }

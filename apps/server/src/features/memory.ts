@@ -1,3 +1,4 @@
+import {installMemoryOwnerQuestions} from '../memory-owner-questions.js';
 import {recoverableMemoryJobs} from '../lifecycle-extensions.js';
 import type {ServerFeatureScope} from '../feature-host.js';
 import type { FastifyInstance } from 'fastify';
@@ -5,7 +6,8 @@ import type { FeatureServices } from '../feature-services.js';
 import { registerMemoryRoutes } from '../memory-routes.js';
 
 /** memory: owns its transport, data and command contributions. */
-export function register(app:FastifyInstance,{automaticMemoryScheduling,memoryDelegation,memoryIntegrationSettings,memoryRecipeSettings,sourcePipelines,agent,evidenceReader,files,lifecycle,memories,memoryPipeline,modelSettings,queryAgent,reviewExtraction,store}:Pick<FeatureServices,"automaticMemoryScheduling"|"memoryDelegation"|"memoryIntegrationSettings"|"memoryRecipeSettings"|"sourcePipelines"|"agent"|"evidenceReader"|"files"|"lifecycle"|"memories"|"memoryPipeline"|"modelSettings"|"queryAgent"|"reviewExtraction"|"store">,scope?:ServerFeatureScope){
+export function register(app:FastifyInstance,{ownerQuestions,materials,automaticMemoryScheduling,memoryDelegation,memoryIntegrationSettings,memoryRecipeSettings,sourcePipelines,agent,evidenceReader,files,lifecycle,memories,memoryPipeline,modelSettings,queryAgent,reviewExtraction,store}:Pick<FeatureServices,"ownerQuestions"|"materials"|"automaticMemoryScheduling"|"memoryDelegation"|"memoryIntegrationSettings"|"memoryRecipeSettings"|"sourcePipelines"|"agent"|"evidenceReader"|"files"|"lifecycle"|"memories"|"memoryPipeline"|"modelSettings"|"queryAgent"|"reviewExtraction"|"store">,scope?:ServerFeatureScope){
+ const disposeQuestions=installMemoryOwnerQuestions({questions:ownerQuestions,pipeline:memoryPipeline,materials,store,query:input=>queryAgent(input,'query','memories')});scope?.defer(disposeQuestions);
  if(automaticMemoryScheduling)scope?.every(5000,async()=>{await sourcePipelines.drainMemory(memoryPipeline,agent.configured);
    await memoryPipeline.tickInputs();
    for(const id of recoverableMemoryJobs(store,lifecycle))void scope.run(()=>memoryPipeline.run(id));

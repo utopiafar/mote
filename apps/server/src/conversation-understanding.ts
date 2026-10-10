@@ -1,3 +1,4 @@
+import type {ConversationPreparation} from './memory-pipeline.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {CODING_DIALOGUE_SCHEMA_VERSION,type CaptureRecord,type QueryResult} from '@mote/shared';
@@ -17,6 +18,7 @@ export type ConversationEvidenceScope={records:CaptureRecord[];ranges:EvidenceRa
 export type ConversationUnderstandingOptions={
  query:(input:QueryInput)=>Promise<QueryResult>;
  selection:(config?:Record<string,unknown>)=>ModelConfiguration&{configured:boolean};
+ resolveMemoryPreparation?:(generationContract:string)=>Pick<ConversationPreparation,'memoryWork'|'candidatePolicy'>;
  usage:UsageLedger;
  memories:Pick<MemoryStore,'extract'>;
  /** Host-owned anchor lookup. It has no raw archive or derived-product read surface. */
@@ -109,9 +111,11 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
   const materialInputs=materialInputsSchema.parse(input.config.processingMaterialInputs);
   if(materialInputs.some(pin=>pin.materialId!==material.id)||scope.records.some(record=>!materialInputs.some(pin=>pin.evidenceIds.includes(record.id))))throw new StoreError('Conversation understanding needs the parent Memory material authorization',409);
   const profile=memoryProfile(scope.records[0]);
-  const candidatePolicy=candidatePolicySchema.optional().parse(input.config.candidatePolicy),candidateProfile=candidatePolicy?.profile??profile.id;
-  const work=input.config.memoryWork as {members:MemoryWorkMember[];maxCandidates:number;instruction:string}|undefined;
   const generationContract=typeof input.config.generationContract==='string'?input.config.generationContract:undefined;
+  const preparation=input.config.memoryPreparation===true?options.resolveMemoryPreparation?.(generationContract??''):undefined;
+  if(input.config.memoryPreparation===true&&!preparation)throw new StoreError('Conversation preparation provider unavailable',409);
+  const candidatePolicy=candidatePolicySchema.optional().parse(preparation?.candidatePolicy??input.config.candidatePolicy),candidateProfile=candidatePolicy?.profile??profile.id;
+  const work=(preparation?.memoryWork??input.config.memoryWork) as {members:MemoryWorkMember[];maxCandidates:number;instruction:string}|undefined;
   if(work&&!generationContract)throw new StoreError('Conversation candidate reuse requires the complete generation contract',409);
   const parse=(result:QueryResult)=>{
    const value=JSON.parse(result.answer),{coverage,capacity,...products}=value;
@@ -128,7 +132,7 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
     contextTime:typeof input.config.contextTime==='string'?input.config.contextTime:undefined,
     timeZone:typeof input.config.timeZone==='string'?input.config.timeZone:undefined,
     language:input.config.language==='en'?'en':input.config.language==='zh-CN'?'zh-CN':undefined,
-    taskContext:work?{turns:[],memoryWork:input.config.memoryWork}:undefined,
+    taskContext:work?{turns:[],memoryWork:work}:undefined,
     evidenceIds:scope.records.map(record=>record.id),evidenceRanges:scope.ranges,
     question:'The following guidance applies only to memoryCandidates. Its sample memories envelope is subordinate to the final unified contract.\n'+(candidatePolicy?.prompt??profile.prompt)+'\nFINAL UNIFIED RESPONSE CONTRACT:\n'+CONVERSATION_UNDERSTANDING_PROMPT+(work?'\nThe host memoryWork contract supersedes the legacy eight-candidate ceiling. Additionally return coverage and capacity for all supplied members. memoryCandidates is the memories array for this coverage contract. '+memoryWorkInstruction(work.members,work.maxCandidates):''),
     validateOutput:result=>{try{parse(result);}catch(error){const detail=error instanceof MemoryOutputValidationError?error.repairInstruction:error instanceof z.ZodError?error.issues.slice(0,3).map(issue=>issue.path.join('.')+': '+issue.message).join('; '):error instanceof StoreError?error.message:'Invalid JSON object';return {code:'conversation_products',feedback:detail+' Return summary, evidence, workRecords, events, memoryCandidates and actionCues. Absent products use empty arrays; actionCues must be empty. Every claim must preserve attribution, status, basis, sourceTime and uncertainty, with exact cited original quotes inside the supplied ranges.'};}},

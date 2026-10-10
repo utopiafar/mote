@@ -52,6 +52,14 @@ export class ActivityProjection {
    const identity=(ref:string,inputKey?:string)=>{
     const pin=pinByEvidence.get(ref),input=job.workPackage?.inputs?.find(input=>input.materialId===pin?.materialId||input.ref===job.materialRefs?.[ref]);
     if(input)return receiptKey(input.sourceId,input.inputKey);
+    if(job.continuationOf&&pin){
+     const seen=new Set<string>();let parent=jobs.find(value=>value.id===job.continuationOf);
+     while(parent&&!seen.has(parent.id)){
+      seen.add(parent.id);const original=parent.workPackage?.inputs?.find(value=>value.materialId===pin.materialId);if(original)return receiptKey(original.sourceId,original.inputKey);
+      const selected=parent.materialInputs?.find(value=>value.materialId===pin.materialId);if(selected)return selected.materialId+':'+selected.fingerprint;
+      parent=jobs.find(value=>value.id===parent!.continuationOf);
+     }
+    }
     const request=requests.find(row=>row.job_id===job.id&&row.material_id===pin?.materialId);
     if(request)return receiptKey(String(request.source_id),String(request.input_key));
     const raw=grantCaptures.get(ref);if(raw)return raw;
@@ -61,10 +69,11 @@ export class ActivityProjection {
    };
    for(const ref of job.evidenceIds)if(!items.has(identity(ref)))items.set(identity(ref),[]);
    for(const batch of batches){
-    const coverage=batch.coverage?.length?batch.coverage.map(entry=>({ref:entry.id,inputKey:entry.inputKey,state:batch.status==='invalidated'?'stale' as WorkState:entry.state==='checked'||entry.state==='no_candidates'?'completed' as WorkState:entry.state==='needs_context'?'needs_input' as WorkState:state(entry.state)})):batch.evidenceRanges.map(range=>({ref:range.id,inputKey:undefined,state:state(batch.status)}));
+    batch.memoryIds.forEach(id=>memories.add(id));
+    const coverage=batch.coverage?.length?batch.coverage.map(entry=>({ref:entry.id,inputKey:entry.inputKey,state:batch.status==='invalidated'?'stale' as WorkState:entry.state==='checked'||entry.state==='no_candidates'?'completed' as WorkState:entry.state==='needs_context'||entry.state==='needs_owner_input'?'needs_input' as WorkState:state(entry.state)})):batch.evidenceRanges.map(range=>({ref:range.id,inputKey:undefined,state:state(batch.status)}));
     for(const entry of coverage){const key=identity(entry.ref,entry.inputKey),values=items.get(key)??[];values.push(entry.state);items.set(key,values);}
     const unique=[...new Set(coverage.map(entry=>identity(entry.ref,entry.inputKey)))],resolved=unique.map(key=>aggregate(coverage.filter(entry=>identity(entry.ref,entry.inputKey)===key).map(entry=>entry.state)));
-    branches.push({id:batch.id,title:batch.workerGoal??job.workPackage?.goal??moteText('整理第 {0} 组资料',batch.index+1),state:state(batch.status),progress:{mode:'determinate',unit:'records',total:unique.length,completed:resolved.filter(value=>value==='completed').length,failed:resolved.filter(value=>value==='failed'||value==='stale').length,needsInput:resolved.filter(value=>value==='needs_input').length,excluded:resolved.filter(value=>value==='excluded').length},artifactIds:batch.memoryIds.filter(memoryId=>Boolean(this.store.db.prepare('SELECT 1 FROM memories WHERE id=?').get(memoryId))),operationId:'memory:'+job.id});
+    branches.push({id:batch.id,title:batch.workerGoal??job.workPackage?.goal??moteText('整理第 {0} 组资料',batch.index+1),state:state(batch.status)==='completed'&&resolved.includes('needs_input')?'needs_input':state(batch.status),progress:{mode:'determinate',unit:'records',total:unique.length,completed:resolved.filter(value=>value==='completed').length,failed:resolved.filter(value=>value==='failed'||value==='stale').length,needsInput:resolved.filter(value=>value==='needs_input').length,excluded:resolved.filter(value=>value==='excluded').length},artifactIds:batch.memoryIds.filter(memoryId=>Boolean(this.store.db.prepare('SELECT 1 FROM memories WHERE id=?').get(memoryId))),operationId:'memory:'+job.id});
    }
    // A queued input plan or an input without ranges must not count as completed.
    if(!batches.length)for(const ref of job.evidenceIds)items.get(identity(ref))!.push(state(job.status)==='completed'?'waiting':state(job.status));

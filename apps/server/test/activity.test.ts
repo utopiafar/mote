@@ -16,6 +16,17 @@ function fixture(t:import('node:test').TestContext){const directory=mkdtempSync(
 const at='2026-09-20T10:00:00.000Z';
 function insertJob(store:Store,job:Partial<MemoryJob>&Pick<MemoryJob,'id'|'evidenceIds'>){const value={createdAt:at,updatedAt:at,status:'running',memoryIds:[],materialInputs:[],materialRefs:{},...job};store.db.prepare('INSERT INTO memory_jobs VALUES(?,?,?)').run(value.id,at,JSON.stringify(value));return value;}
 function insertBatch(store:Store,jobId:string,batch:Partial<MemoryBatch>&Pick<MemoryBatch,'id'|'evidenceRanges'>){const value={index:0,status:'pending',memoryIds:[],attempts:0,...batch};store.db.prepare('INSERT INTO memory_batches VALUES(?,?,?,?)').run(value.id,jobId,value.index,JSON.stringify(value));return value;}
+test('owner clarification counts as needs input in cards, branches and persisted legacy projections',t=>{
+ const {store,activity}=fixture(t),ref='00000000-0000-4000-8000-000000000031';
+ const job=insertJob(store,{id:'generated-owner-wait',status:'completed',evidenceIds:[ref]});
+ const batch=insertBatch(store,job.id,{id:'generated-owner-leaf',status:'completed',evidenceRanges:[{id:ref,offset:0,length:10}],coverage:[{id:ref,key:'generated-owner-key',offset:0,length:10,fingerprint:'a'.repeat(64),state:'needs_owner_input',memoryIds:[]}]});
+ const assertQuestion=(projection:ActivityProjection)=>{const card=projection.page({state:'attention'}).items.find(item=>item.id==='memory:'+job.id)!;assert.ok(card);assert.equal(card.state,'needs_input');assert.equal(card.progress.mode==='determinate'&&card.progress.needsInput,1);assert.equal(card.progress.mode==='determinate'&&card.progress.completed,0);const detail=projection.detail(card.id);assert.equal(detail.progress.mode==='determinate'&&detail.progress.needsInput,1);assert.equal(detail.branches[0].state,'needs_input');assert.equal(detail.branches[0].progress?.mode==='determinate'&&detail.branches[0].progress.needsInput,1);};
+ assertQuestion(activity);
+ store.db.prepare("UPDATE activity_memory_coverage SET state='needs_owner_input' WHERE batch_id=?").run(batch.id);store.db.prepare('UPDATE activity_memory_batches SET rank=0 WHERE id=?').run(batch.id);
+ store.db.exec("DROP TRIGGER activity_memory_batch_update;CREATE TRIGGER activity_memory_batch_update AFTER UPDATE OF json ON memory_batches BEGIN UPDATE activity_memory_coverage SET state='needs_owner_input' WHERE batch_id=new.id; END;");
+ const reopened=new ActivityProjection(store,new Operations(store));assertQuestion(reopened);
+ store.db.prepare("UPDATE memory_batches SET json=json_set(json,'$.coverage[0].state','no_candidates') WHERE id=?").run(batch.id);assert.equal(reopened.page({state:'completed'}).items.find(item=>item.id==='memory:'+job.id)?.progress.mode,'determinate');assert.equal(reopened.page({state:'attention'}).items.some(item=>item.id==='memory:'+job.id),false);
+});
 test('formal material receipts count one record across synthetic evidence, partial ranges, scopes and replanning',t=>{
  const {store,activity}=fixture(t),materials=new MaterialStore(store),work=new MaterialMemoryWork(store,materials);
  new SourceStore(store).register({id:'generated-source',name:'Generated diaries',kind:'custom',deviceId:'fixture',platform:'import'});

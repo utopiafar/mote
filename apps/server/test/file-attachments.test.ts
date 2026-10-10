@@ -1,3 +1,4 @@
+import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {readAgentCredential} from './login-fixture.js';
 import test from 'node:test';
@@ -28,7 +29,7 @@ async function fixture(t:import('node:test').TestContext){
    const evidence=visible.map(r=>({id:r.id,quote:r.ocrText.trim()})),common={uncertainty:'Generated fixture; speaker identity and owner implementation are unknown.',admission:{layer:'memory',reason:'Generated supported record',scope:'Generated discussion',attribution:'user'},evidenceIds:visible.map(r=>r.id),evidence};
    let memories=[{...common,domain:'personal',title:'Generated saved discussion',statement:'Saved a discussion to revisit it.'},{...common,domain:'coding',title:'Generated engineering reference',statement:'Retained a referenced idempotency design.',coding:{kind:'principle',scope:'session',applicability:'Generated discussion',validation:'unverified'}}];
    if(input.traceContext?.phase==='review'){const batch=node.memoryPipeline.get(input.traceContext.jobId!).batches.find(b=>b.id===input.traceContext!.batchId)!;memories=[memories[batch.strategy!.recipe.id.endsWith('coding')?1:0]];}
-   return {answer:JSON.stringify({memories}),citations:visible.map(r=>({id:r.id,capturedAt:r.capturedAt,appName:r.appName,excerpt:''})),trace:[],runId:randomUUID()};
+   return fixtureMemoryWorkResult(input,{answer:JSON.stringify({memories}),citations:visible.map(r=>({id:r.id,capturedAt:r.capturedAt,appName:r.appName,excerpt:''})),trace:[],runId:randomUUID()});
   }})});
   await node.processing.runtime.ready;node.processing.runtime.registry.get('image.http').process=async input=>{ocrCalls++;if(failed.has(input.file.id))throw Error('Generated processing failure');return {durationMs:0,segments:[{startMs:0,endMs:0,text:words,imageLocation:location}]};};
   const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);

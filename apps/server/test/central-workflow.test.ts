@@ -1,3 +1,4 @@
+import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
@@ -22,8 +23,8 @@ async function until<T>(read:()=>Promise<T>,done:(value:T)=>boolean):Promise<T>{
 test('legacy denied source history stays searchable and supports an explicit HTTP job',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-explicit-material-memory-')),cfg=config(directory);
   let calls=0;
-  const node=await buildApp(cfg,{agent:{configured:true,close:async()=>{},query:async()=>{
-    calls++;return {answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()};
+  const node=await buildApp(cfg,{agent:{configured:true,close:async()=>{},query:async input=>{
+    calls++;return fixtureMemoryWorkResult(input,{answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()});
   }}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const settings=node.lifecycle.settings();node.lifecycle.configure({...settings});
@@ -39,7 +40,7 @@ test('legacy denied source history stays searchable and supports an explicit HTT
   const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+cfg.token},payload:{evidenceIds:node.materials.evidenceIds(material.ref)}});
   assert.equal(response.statusCode,202,response.body);
   const finished=await until(async()=>node.memoryPipeline.get(response.json().id),job=>job.status==='completed');
-  assert.equal(finished.failedBatches,0);assert.equal(calls,1);
+  assert.equal(finished.failedBatches,0);assert.equal(calls,2,'empty ranges still receive independent coverage review');
 });
 
 test('central UI APIs complete original import → exact Memory → cited static insight with recoverable jobs',async t=>{
@@ -55,7 +56,7 @@ test('central UI APIs complete original import → exact Memory → cited static
       if(failMemory){failMemory=false;throw Error('Synthetic transient failure');}
       evidenceId=input.evidenceIds![0];const materialText=node.memories.readEvidence([evidenceId])[0].ocrText,offset=materialText.indexOf(original);
       assert.ok(offset>=0);assert.deepEqual(input.evidenceRanges,[{id:evidenceId,offset:0,length:materialText.length}]);
-      return {answer:JSON.stringify({memories:[{admission:{layer:'memory',reason:'Explicit future observation plan',scope:'This observation project',attribution:'user'},title:'计划验证观测方案',statement:`作者计划下周验证观测方案。[${evidenceId}]`,uncertainty:'是否完成未知。',evidenceIds:[evidenceId],evidence:[{id:evidenceId,offset,quote:original}]}]}),citations:[{id:evidenceId,capturedAt:'2026-09-16T00:00:00Z',appName:'合成导入',excerpt:original}],trace:[],runId:randomUUID()};
+      return fixtureMemoryWorkResult(input,{answer:JSON.stringify({memories:[{admission:{layer:'memory',reason:'Explicit future observation plan',scope:'This observation project',attribution:'user'},title:'计划验证观测方案',statement:`作者计划下周验证观测方案。[${evidenceId}]`,uncertainty:'是否完成未知。',evidenceIds:[evidenceId],evidence:[{id:evidenceId,offset,quote:original}]}]}),citations:[{id:evidenceId,capturedAt:'2026-09-16T00:00:00Z',appName:'合成导入',excerpt:original}],trace:[],runId:randomUUID()});
     }
     assert.equal(input.skill,'personal-insight');assert.equal(input.question,'回顾我的观测计划');
     return {answer:JSON.stringify({title:'观测计划回顾',markdown:`有一条计划记录，完成情况未知。[${evidenceId}]`,html:`<!doctype html><html><head><style>body{color:#234;font-family:system-ui}.card{padding:24px}</style></head><body><section class="card"><h1>观测计划</h1><p>完成情况未知。[${evidenceId}]</p></section><script>top.fixtureUnsafe=true</script><img src="https://untrusted.invalid/tracker"><a href="https://untrusted.invalid">bad link</a><meta http-equiv="refresh" content="0;url=https://untrusted.invalid"></body></html>`}),citations:[{id:evidenceId,capturedAt:'2026-09-16T00:00:00Z',appName:'合成导入',excerpt:original}],trace:[],runId:randomUUID()};

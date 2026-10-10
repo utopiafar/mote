@@ -5,21 +5,28 @@ const rank=(value:string)=>`CASE ${value} ${Object.entries(ranks).map(([name,val
 const jobValues=(ref:string)=>`${ref}.id,coalesce(json_extract(${ref}.json,'$.createdAt'),${ref}.created_at),coalesce(json_extract(${ref}.json,'$.updatedAt'),${ref}.created_at),coalesce(json_extract(${ref}.json,'$.status'),'queued'),json_extract(${ref}.json,'$.importJobId')`;
 const grantArray=(ref:string)=>`CASE WHEN json_type(${ref}.json,'$.automaticGrants')='array' THEN json_extract(${ref}.json,'$.automaticGrants') WHEN json_type(${ref}.json,'$.automaticGrant')='object' THEN json_array(json_extract(${ref}.json,'$.automaticGrant')) ELSE json('[]') END`;
 const batchValues=(ref:string)=>`${ref}.id,${ref}.job_id,CASE WHEN coalesce(json_array_length(${ref}.json,'$.supersededBy'),0)>0 THEN 0 ELSE 1 END,
- max(${rank(`json_extract(${ref}.json,'$.status')`)},CASE WHEN json_extract(${ref}.json,'$.status')='invalidated' THEN 4 WHEN EXISTS(SELECT 1 FROM json_each(${ref}.json,'$.coverage') c WHERE json_extract(c.value,'$.state')='needs_context') THEN 5 WHEN EXISTS(SELECT 1 FROM json_each(${ref}.json,'$.coverage') c WHERE json_extract(c.value,'$.state')='stale') THEN 4 WHEN EXISTS(SELECT 1 FROM json_each(${ref}.json,'$.coverage') c WHERE json_extract(c.value,'$.state')='failed') THEN 3 ELSE -1 END)`;
+ max(${rank(`json_extract(${ref}.json,'$.status')`)},CASE WHEN json_extract(${ref}.json,'$.status')='invalidated' THEN 4 WHEN EXISTS(SELECT 1 FROM json_each(${ref}.json,'$.coverage') c WHERE json_extract(c.value,'$.state') IN ('needs_context','needs_owner_input')) THEN 5 WHEN EXISTS(SELECT 1 FROM json_each(${ref}.json,'$.coverage') c WHERE json_extract(c.value,'$.state')='stale') THEN 4 WHEN EXISTS(SELECT 1 FROM json_each(${ref}.json,'$.coverage') c WHERE json_extract(c.value,'$.state')='failed') THEN 3 ELSE -1 END)`;
 const itemsSql=(ref:string,from='')=>`SELECT ${ref}.id,CAST(e.value AS TEXT),coalesce(
  (SELECT json_array(json_extract(w.value,'$.sourceId'),json_extract(w.value,'$.inputKey')) FROM json_each(${ref}.json,'$.workPackage.inputs') w WHERE json_extract(w.value,'$.materialId') IN (SELECT json_extract(p.value,'$.materialId') FROM json_each(${ref}.json,'$.materialInputs') p WHERE e.value IN (SELECT value FROM json_each(p.value,'$.evidenceIds'))) OR json_extract(w.value,'$.ref')=json_extract(${ref}.json,'$.materialRefs."'||e.value||'"') LIMIT 1),
  CASE WHEN json_array_length(${grantArray(ref)})=1 THEN (SELECT json_array(json_extract(g.value,'$.sourceId'),json_extract(g.value,'$.inputKey')) FROM json_each(${grantArray(ref)}) g LIMIT 1) END,
  (SELECT json_extract(p.value,'$.materialId')||':'||json_extract(p.value,'$.fingerprint') FROM json_each(${ref}.json,'$.materialInputs') p WHERE e.value IN (SELECT value FROM json_each(p.value,'$.evidenceIds')) LIMIT 1),CAST(e.value AS TEXT)) FROM ${from}json_each(${ref}.json,'$.evidenceIds') e`;
-const coverageSql=(ref:string,from='')=>`SELECT ${ref}.id,${ref}.job_id,CAST(c.key AS INTEGER),json_extract(c.value,'$.id'),CASE WHEN json_extract(${ref}.json,'$.status')='invalidated' THEN 'stale' WHEN coalesce(json_array_length(${ref}.json,'$.coverage'),0)>0 THEN CASE json_extract(c.value,'$.state') WHEN 'checked' THEN 'completed' WHEN 'no_candidates' THEN 'completed' WHEN 'needs_context' THEN 'needs_input' WHEN 'pending' THEN 'waiting' ELSE coalesce(json_extract(c.value,'$.state'),'waiting') END ELSE CASE json_extract(${ref}.json,'$.status') WHEN 'completed' THEN 'completed' WHEN 'failed' THEN 'failed' WHEN 'running' THEN 'running' WHEN 'cancelled' THEN 'cancelled' ELSE 'waiting' END END
+const coverageSql=(ref:string,from='')=>`SELECT ${ref}.id,${ref}.job_id,CAST(c.key AS INTEGER),json_extract(c.value,'$.id'),CASE WHEN json_extract(${ref}.json,'$.status')='invalidated' THEN 'stale' WHEN coalesce(json_array_length(${ref}.json,'$.coverage'),0)>0 THEN CASE json_extract(c.value,'$.state') WHEN 'checked' THEN 'completed' WHEN 'no_candidates' THEN 'completed' WHEN 'needs_context' THEN 'needs_input' WHEN 'needs_owner_input' THEN 'needs_input' WHEN 'pending' THEN 'waiting' ELSE coalesce(json_extract(c.value,'$.state'),'waiting') END ELSE CASE json_extract(${ref}.json,'$.status') WHEN 'completed' THEN 'completed' WHEN 'failed' THEN 'failed' WHEN 'running' THEN 'running' WHEN 'cancelled' THEN 'cancelled' ELSE 'waiting' END END
  FROM ${from}json_each(CASE WHEN coalesce(json_array_length(${ref}.json,'$.coverage'),0)>0 THEN json_extract(${ref}.json,'$.coverage') ELSE coalesce(json_extract(${ref}.json,'$.evidenceRanges'),json('[]')) END) c WHERE coalesce(json_array_length(${ref}.json,'$.supersededBy'),0)=0`;
 const publicRank=(value:string)=>`CASE ${value} WHEN 'running' THEN 6 WHEN 'needs_input' THEN 5 WHEN 'stale' THEN 4 WHEN 'failed' THEN 3 WHEN 'waiting' THEN 2 WHEN 'completed' THEN 0 WHEN 'cancelled' THEN -1 WHEN 'excluded' THEN -2 ELSE CASE WHEN ${value} IS NULL THEN NULL ELSE 2 END END`;
+const refreshOutputs=(jobId:string)=>`DELETE FROM activity_memory_outputs WHERE job_id=${jobId};
+ INSERT OR IGNORE INTO activity_memory_outputs SELECT ${jobId},value FROM memory_jobs j,json_each(j.json,'$.memoryIds') WHERE j.id=${jobId};
+ INSERT OR IGNORE INTO activity_memory_outputs SELECT b.job_id,value FROM memory_batches b,json_each(b.json,'$.memoryIds') WHERE b.job_id=${jobId} AND EXISTS(SELECT 1 FROM activity_memory_jobs current WHERE current.id=b.job_id);`;
 
 /** Small relational metadata is maintained when products change. Activity pages
  * never parse complete historic job or batch payloads to find the newest goals. */
 export class ActivityMemoryIndex {
  constructor(private store:Store){
   const db=store.db;
+  // Refresh coverage triggers when the public state contract changes.
+  db.exec('DROP TRIGGER IF EXISTS activity_memory_batch_insert; DROP TRIGGER IF EXISTS activity_memory_batch_update; DROP TRIGGER IF EXISTS activity_memory_batch_delete; DROP TRIGGER IF EXISTS activity_memory_outputs_update; DROP TRIGGER IF EXISTS activity_memory_job_update;');
   db.exec(`CREATE TABLE IF NOT EXISTS activity_memory_jobs(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,status TEXT NOT NULL,import_id TEXT);
+   CREATE TABLE IF NOT EXISTS activity_memory_continuations(job_id TEXT PRIMARY KEY REFERENCES activity_memory_jobs(id) ON DELETE CASCADE,parent_id TEXT NOT NULL,root_id TEXT NOT NULL);
+   CREATE INDEX IF NOT EXISTS activity_memory_continuation_roots ON activity_memory_continuations(root_id,job_id);
    CREATE INDEX IF NOT EXISTS activity_memory_jobs_recent ON activity_memory_jobs(updated_at DESC,id);
    CREATE INDEX IF NOT EXISTS activity_memory_jobs_import ON activity_memory_jobs(import_id,id);
    CREATE TABLE IF NOT EXISTS activity_memory_sources(job_id TEXT NOT NULL REFERENCES activity_memory_jobs(id) ON DELETE CASCADE,source_id TEXT NOT NULL,PRIMARY KEY(job_id,source_id));
@@ -51,23 +58,33 @@ export class ActivityMemoryIndex {
     INSERT OR IGNORE INTO activity_memory_outputs SELECT new.id,value FROM json_each(new.json,'$.memoryIds');
    END;
    CREATE TRIGGER IF NOT EXISTS activity_memory_job_update AFTER UPDATE OF json ON memory_jobs BEGIN
-    UPDATE activity_memory_jobs SET updated_at=coalesce(json_extract(new.json,'$.updatedAt'),new.created_at),status=coalesce(json_extract(new.json,'$.status'),'queued'),import_id=json_extract(new.json,'$.importJobId') WHERE id=new.id;
+    UPDATE activity_memory_jobs SET updated_at=coalesce(json_extract(new.json,'$.updatedAt'),new.created_at),status=coalesce(json_extract(new.json,'$.status'),'queued'),import_id=coalesce(json_extract(new.json,'$.importJobId'),(SELECT import_id FROM activity_memory_jobs WHERE id=json_extract(new.json,'$.continuationOf'))) WHERE id=new.id;
    END;
    CREATE TRIGGER IF NOT EXISTS activity_memory_items_update AFTER UPDATE OF json ON memory_jobs WHEN coalesce(json_extract(new.json,'$.evidenceIds'),'')!=coalesce(json_extract(old.json,'$.evidenceIds'),'') OR coalesce(json_extract(new.json,'$.materialInputs'),'')!=coalesce(json_extract(old.json,'$.materialInputs'),'') OR coalesce(json_extract(new.json,'$.workPackage.inputs'),'')!=coalesce(json_extract(old.json,'$.workPackage.inputs'),'') OR coalesce(json_extract(new.json,'$.automaticGrants'),'')!=coalesce(json_extract(old.json,'$.automaticGrants'),'') OR coalesce(json_extract(new.json,'$.automaticGrant'),'')!=coalesce(json_extract(old.json,'$.automaticGrant'),'') BEGIN
     DELETE FROM activity_memory_items WHERE job_id=new.id;INSERT OR IGNORE INTO activity_memory_items ${itemsSql('new')};
    END;
    CREATE TRIGGER IF NOT EXISTS activity_memory_outputs_update AFTER UPDATE OF json ON memory_jobs WHEN coalesce(json_extract(new.json,'$.memoryIds'),'')!=coalesce(json_extract(old.json,'$.memoryIds'),'') BEGIN
-    DELETE FROM activity_memory_outputs WHERE job_id=new.id;INSERT OR IGNORE INTO activity_memory_outputs SELECT new.id,value FROM json_each(new.json,'$.memoryIds');
+    ${refreshOutputs('new.id')}
    END;
    CREATE TRIGGER IF NOT EXISTS activity_memory_job_sources_update AFTER UPDATE OF json ON memory_jobs WHEN coalesce(json_extract(new.json,'$.automaticGrants'),'')!=coalesce(json_extract(old.json,'$.automaticGrants'),'') OR coalesce(json_extract(new.json,'$.automaticGrant'),'')!=coalesce(json_extract(old.json,'$.automaticGrant'),'') BEGIN
     DELETE FROM activity_memory_sources WHERE job_id=new.id;
     INSERT OR IGNORE INTO activity_memory_sources SELECT new.id,json_extract(value,'$.sourceId') FROM json_each(${grantArray('new')}) WHERE json_extract(value,'$.sourceId') IS NOT NULL;
    END;
    CREATE TRIGGER IF NOT EXISTS activity_memory_job_delete AFTER DELETE ON memory_jobs BEGIN DELETE FROM activity_memory_jobs WHERE id=old.id; END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_batch_insert AFTER INSERT ON memory_batches BEGIN INSERT INTO activity_memory_batches VALUES(${batchValues('new')});INSERT INTO activity_memory_coverage ${coverageSql('new')}; END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_batch_update AFTER UPDATE OF json ON memory_batches BEGIN INSERT OR REPLACE INTO activity_memory_batches VALUES(${batchValues('new')});INSERT INTO activity_memory_coverage ${coverageSql('new')}; END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_batch_delete AFTER DELETE ON memory_batches BEGIN DELETE FROM activity_memory_batches WHERE id=old.id; END;`);
-
+   CREATE TRIGGER IF NOT EXISTS activity_memory_continuation_update AFTER UPDATE OF json ON memory_jobs WHEN json_extract(new.json,'$.continuationOf') IS NOT NULL BEGIN
+    INSERT OR REPLACE INTO activity_memory_continuations SELECT new.id,json_extract(new.json,'$.continuationOf'),coalesce((SELECT root_id FROM activity_memory_continuations WHERE job_id=json_extract(new.json,'$.continuationOf')),json_extract(new.json,'$.continuationOf'));
+    UPDATE activity_memory_jobs SET import_id=coalesce(import_id,(SELECT import_id FROM activity_memory_jobs WHERE id=json_extract(new.json,'$.continuationOf'))) WHERE id=new.id;
+    INSERT OR IGNORE INTO activity_memory_sources SELECT new.id,source_id FROM activity_memory_sources WHERE job_id=json_extract(new.json,'$.continuationOf');
+    UPDATE activity_memory_items AS i SET item_key=coalesce((SELECT prior.item_key FROM activity_memory_items prior JOIN memory_jobs p ON p.id=prior.job_id,json_each(p.json,'$.materialInputs') pin WHERE prior.job_id=json_extract(new.json,'$.continuationOf') AND prior.ref IN (SELECT value FROM json_each(pin.value,'$.evidenceIds')) AND json_extract(pin.value,'$.materialId') IN (SELECT json_extract(child.value,'$.materialId') FROM json_each(new.json,'$.materialInputs') child WHERE i.ref IN (SELECT value FROM json_each(child.value,'$.evidenceIds'))) LIMIT 1),item_key) WHERE job_id=new.id;
+   END;
+   CREATE TRIGGER IF NOT EXISTS activity_memory_batch_insert AFTER INSERT ON memory_batches BEGIN INSERT INTO activity_memory_batches VALUES(${batchValues('new')});INSERT INTO activity_memory_coverage ${coverageSql('new')};${refreshOutputs('new.job_id')} END;
+   CREATE TRIGGER IF NOT EXISTS activity_memory_batch_update AFTER UPDATE OF json ON memory_batches BEGIN INSERT OR REPLACE INTO activity_memory_batches VALUES(${batchValues('new')});INSERT INTO activity_memory_coverage ${coverageSql('new')};${refreshOutputs('new.job_id')} END;
+   CREATE TRIGGER IF NOT EXISTS activity_memory_batch_delete AFTER DELETE ON memory_batches BEGIN DELETE FROM activity_memory_batches WHERE id=old.id;${refreshOutputs('old.job_id')} END;`);
+  // Repair persisted projections made by the previous coverage contract.
+  db.exec(`UPDATE activity_memory_coverage SET state='needs_input' WHERE state='needs_owner_input';
+   UPDATE activity_memory_batches SET rank=5 WHERE rank<5 AND leaf=1 AND id IN (SELECT batch_id FROM activity_memory_coverage WHERE state='needs_input') AND EXISTS(SELECT 1 FROM memory_batches b,json_each(b.json,'$.coverage') c WHERE b.id=activity_memory_batches.id AND json_extract(b.json,'$.status')!='invalidated' AND json_extract(c.value,'$.state')='needs_owner_input');`);
+  for(const row of db.prepare("SELECT id,json FROM memory_jobs WHERE json_extract(json,'$.continuationOf') IS NOT NULL ORDER BY created_at,id").all())db.prepare('UPDATE memory_jobs SET json=? WHERE id=?').run(row.json,row.id);
+  db.exec("INSERT OR IGNORE INTO activity_memory_outputs SELECT b.job_id,value FROM memory_batches b,json_each(b.json,'$.memoryIds') WHERE EXISTS(SELECT 1 FROM activity_memory_jobs j WHERE j.id=b.job_id)");
  }
  groups(){
   const parent=new Map<string,string>(),root=(source:string):string=>{const next=parent.get(source);if(!next){parent.set(source,source);return source;}return next===source?source:root(next);};
@@ -83,7 +100,7 @@ export class ActivityMemoryIndex {
   const requests=Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_memory_requests'").get()),authorizations=Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_input_authorizations'").get());
   const pending=authorizations?`SELECT DISTINCT m.group_id FROM memory_input_authorizations a JOIN mapping m ON m.source_id=a.source_id WHERE a.authorized=1 AND a.revoked_at IS NULL AND a.job_id IS NULL ${requests?`AND NOT EXISTS(SELECT 1 FROM material_memory_requests r JOIN material_heads h ON h.id=r.material_id WHERE h.source_id=a.source_id AND r.input_key=a.input_key AND r.scope=a.scope AND r.job_id IS NOT NULL)`:''}`:"SELECT NULL group_id WHERE 0";
   const sql=`WITH mapping AS (SELECT json_extract(value,'$.sourceId') source_id,json_extract(value,'$.groupId') group_id FROM json_each(?)), job_groups AS (
-    SELECT j.id,CASE WHEN j.import_id IS NOT NULL THEN 'memory-import:'||j.import_id WHEN min(m.group_id) IS NOT NULL THEN min(m.group_id) ELSE 'memory:'||j.id END group_id,j.created_at,j.updated_at,${rank('j.status')} rank
+    SELECT j.id,CASE WHEN j.import_id IS NOT NULL THEN 'memory-import:'||j.import_id WHEN min(m.group_id) IS NOT NULL THEN min(m.group_id) ELSE 'memory:'||coalesce((SELECT root_id FROM activity_memory_continuations WHERE job_id=j.id),j.id) END group_id,j.created_at,j.updated_at,${rank('j.status')} rank
     FROM activity_memory_jobs j LEFT JOIN activity_memory_sources s ON s.job_id=j.id LEFT JOIN mapping m ON m.source_id=s.source_id GROUP BY j.id), pending AS (${pending}), summaries AS (
    SELECT j.group_id id,min(j.created_at) created_at,max(j.updated_at) updated_at,max(max(j.rank,coalesce(b.rank,-2),CASE WHEN EXISTS(SELECT 1 FROM activity_memory_items i WHERE i.job_id=j.id AND NOT EXISTS(SELECT 1 FROM activity_memory_coverage c WHERE c.job_id=i.job_id AND c.ref=i.ref)) THEN 2 ELSE -2 END)) rank
    FROM job_groups j LEFT JOIN activity_memory_batches b ON b.job_id=j.id AND b.leaf=1 GROUP BY j.group_id)
@@ -94,7 +111,7 @@ export class ActivityMemoryIndex {
  }
  cardStats(id:string,sources:string[],captureIds:string[]=[]){
   const db=this.store.db,has=(table:string)=>Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE name=?").get(table));
-  const predicate=id.startsWith('memory-import:')?'j.import_id=?':sources.length?'j.import_id IS NULL AND EXISTS(SELECT 1 FROM activity_memory_sources s WHERE s.job_id=j.id AND s.source_id IN (SELECT value FROM json_each(?)))':'j.id=?';
+  const predicate=id.startsWith('memory-import:')?'j.import_id=?':sources.length?'j.import_id IS NULL AND EXISTS(SELECT 1 FROM activity_memory_sources s WHERE s.job_id=j.id AND s.source_id IN (SELECT value FROM json_each(?)))':'coalesce((SELECT root_id FROM activity_memory_continuations WHERE job_id=j.id),j.id)=?';
   const parameter=id.startsWith('memory-import:')?id.slice('memory-import:'.length):sources.length?JSON.stringify(sources):id.slice('memory:'.length);
   const requests=has('material_memory_requests')&&has('material_heads'),authorizations=has('memory_input_authorizations');
   const assigned=requests?`OR EXISTS(SELECT 1 FROM material_memory_requests r JOIN material_heads h ON h.id=r.material_id WHERE h.source_id=a.source_id AND r.input_key=a.input_key AND r.scope=a.scope AND r.job_id IS NOT NULL)`:'';
@@ -122,6 +139,6 @@ export class ActivityMemoryIndex {
  jobIds(id:string,sources:string[]):string[]{
   if(id.startsWith('memory-import:'))return this.store.db.prepare('SELECT id FROM activity_memory_jobs WHERE import_id=? ORDER BY created_at,id').all(id.slice('memory-import:'.length)).map(row=>String(row.id));
   if(sources.length)return this.store.db.prepare('SELECT DISTINCT j.id,j.created_at FROM activity_memory_jobs j JOIN activity_memory_sources s ON s.job_id=j.id WHERE j.import_id IS NULL AND s.source_id IN (SELECT value FROM json_each(?)) ORDER BY j.created_at,j.id').all(JSON.stringify(sources)).map(row=>String(row.id));
-  return this.store.db.prepare('SELECT id FROM activity_memory_jobs WHERE id=?').all(id.slice('memory:'.length)).map(row=>String(row.id));
+  return this.store.db.prepare('SELECT j.id FROM activity_memory_jobs j WHERE coalesce((SELECT root_id FROM activity_memory_continuations WHERE job_id=j.id),j.id)=? ORDER BY j.created_at,j.id').all(id.slice('memory:'.length)).map(row=>String(row.id));
  }
 }

@@ -9,6 +9,9 @@ import {uploadChatImage} from './note-attachments';
 import React,{useEffect, useLayoutEffect, useRef, useState, type ReactNode} from 'react';
 import {AlertCircle, ArrowRight, ArrowUp, ImagePlus, LoaderCircle, MessageSquare, Monitor, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Trash2, X} from 'lucide-react';
 import {ApiError,dateTime, errorMessage, type Answer, type Api, type Device, type Range} from './api';
+import {ConversationHeading,ConversationComposer} from './ConversationShell';
+import {FeaturePanels} from './features/runtime';
+import {readOwnerQuestion} from './owner-question-route';
 
 interface ConversationSummary {
   id: string;
@@ -33,15 +36,17 @@ interface Conversation extends ConversationSummary {turns: ConversationTurn[];re
 interface OlderTurns {api:Api;id:string;revision?:number;turns:ConversationTurn[];nextCursor:string|null}
 interface HistoryPage {items: ConversationSummary[]; nextCursor?: string | null}
 
-export function Conversations({api, configured, devices, renderAnswer}: {
+export function Conversations({api, configured, devices, renderAnswer,onOpen=()=>{}}: {
   api: Api;
   configured: boolean;
   devices: Device[];
   renderAnswer: (answer: Answer) => ReactNode;
+  onOpen?: (ref:string)=>void;
 }) {
   const [modelProfileId,setModelProfileId]=useState(''),[modelOverride,setModelOverride]=useState('');
   const [items, setItems] = useState<ConversationSummary[]>([]), [cursor, setCursor] = useState<string | null>(null);
   const [selectedId,setSelectedId]=useState<string|null>(null),[older,setOlder]=useState<OlderTurns|null>(null),[pageRevoked,setPageRevoked]=useState(false);
+  const [selectedOwnerQuestion,setSelectedOwnerQuestion]=useState<string|null>(()=>readOwnerQuestion(window.location.hash));
   const detail=useResource<Conversation>(api,selectedId?`/api/conversations/${encodeURIComponent(selectedId)}`:null);
   const currentOlder=older?.api===api&&older.id===detail.data?.id&&older.revision===detail.data?.revision?older:null;
   // A newer revision can withdraw prior evidence. Never merge copied pages from
@@ -80,7 +85,7 @@ export function Conversations({api, configured, devices, renderAnswer}: {
   }
   useEffect(()=>{selectionMade.current=false;setSelectedId(null);setOlder(null);setItems([]);setCursor(null);setRun(null);setBusy(false);setQuestion('');setAttachments([]);setUploading(false);setPendingQuestion('');setError('');setHistoryError('');setLoadingOlder(false);setLoadingPage(false);
     return()=>{operation.current?.abort();attachmentRequest.current?.abort();historyRequest.current?.abort();olderRequest.current?.abort();};},[api]);
-  useEffect(()=>{const explicit=new URLSearchParams(window.location.hash.split('?')[1]).get('conversation');if(explicit){selectionMade.current=true;setSelectedId(explicit);setRun(null);}const changed=()=>{const next=new URLSearchParams(window.location.hash.split('?')[1]).get('conversation');if(next){selectionMade.current=true;setSelectedId(next);setRun(null);}};window.addEventListener('hashchange',changed);return()=>window.removeEventListener('hashchange',changed);},[api]);
+  useEffect(()=>{const changed=()=>{const questionId=readOwnerQuestion(window.location.hash);setSelectedOwnerQuestion(questionId);if(questionId)selectionMade.current=true;const next=new URLSearchParams(window.location.hash.split('?')[1]).get('conversation');if(next){selectionMade.current=true;setSelectedId(next);setRun(null);}};changed();window.addEventListener('hashchange',changed);return()=>window.removeEventListener('hashchange',changed);},[api]);
   const detailRevoked=detail.error instanceof ApiError&&[401,403,404,410].includes(detail.error.status);
   useLayoutEffect(()=>{
     olderRequest.current?.abort();olderRequest.current=null;setLoadingOlder(false);setOlder(null);setPageRevoked(false);
@@ -124,7 +129,8 @@ export function Conversations({api, configured, devices, renderAnswer}: {
     if (busy) return;
     selectionMade.current=true;operation.current?.abort();operation.current=null;olderRequest.current?.abort();setLoadingOlder(false);
     setRun(null);setPollError('');setError('');setConfirmDelete(false);setQuestion('');setAttachments([]);setPendingQuestion('');
-    setOlder(null);setSelectedId(id);
+    setOlder(null);setSelectedId(id);setSelectedOwnerQuestion(null);
+    if(readOwnerQuestion(window.location.hash))window.location.hash='#/ask?'+new URLSearchParams({conversation:id});
   }
   async function loadOlderTurns(){
     if(!conversation?.nextCursor||opening)return;
@@ -140,7 +146,8 @@ export function Conversations({api, configured, devices, renderAnswer}: {
   function startNew() {
     if (busy) return;
     selectionMade.current=true;operation.current?.abort();operation.current=null;olderRequest.current?.abort();setLoadingOlder(false);
-    setRun(null);setPollError('');setSelectedId(null);setOlder(null);setQuestion('');setAttachments([]);setPendingQuestion('');setError('');setConfirmDelete(false);
+    setRun(null);setPollError('');setSelectedId(null);setOlder(null);setQuestion('');setAttachments([]);setPendingQuestion('');setError('');setConfirmDelete(false);setSelectedOwnerQuestion(null);
+    if(readOwnerQuestion(window.location.hash))window.location.hash='#/ask';
   }
   function retry(question: string) {
     if (busy || opening) return;
@@ -205,16 +212,17 @@ export function Conversations({api, configured, devices, renderAnswer}: {
     <aside className="conversation-history panel" aria-label={moteText("对话历史")}>
       <div className="conversation-history-heading"><div className="chat-section-title"><div className="chat-section-icon"><MessageSquare size={15}/></div><div><span className="eyebrow">MOTE CHAT</span><h2>{moteText("对话历史")}</h2></div></div><button className="icon-button" aria-label={moteText("刷新对话历史")} disabled={loading} onClick={() => void loadHistory()}><RefreshCw size={16} className={loading ? 'spin' : ''}/></button></div>
       <button className="button subtle full new-conversation-button" disabled={busy} onClick={startNew}><Plus size={16}/>{moteText("新对话")}</button>
+      <FeaturePanels api={api} onOpen={onOpen} value={{kind:'mote.ask.history',schemaVersion:1,representation:'workspace',ref:selectedOwnerQuestion??'',revision:'1',title:'',text:''}}/>
       {Boolean(historyError||history.error)&&<p className="notice error" role="alert">{historyError||errorMessage(history.error)}</p>}
       {!loading && !historyError && !history.error && !items.length && <p className="fine-print">{moteText("回答会自动保存在中央节点，随时回来继续。")}</p>}
-      <div className="conversation-list">{items.map(item => <button key={item.id} className={`conversation-item ${conversation?.id === item.id ? 'active' : ''} ${item.status === 'failed' ? 'failed' : ''}`} aria-current={conversation?.id === item.id ? 'true' : undefined} disabled={busy} onClick={() => void open(item.id)}>
+      <div className="conversation-list">{items.map(item => <button key={item.id} className={`conversation-item ${!selectedOwnerQuestion&&conversation?.id === item.id ? 'active' : ''} ${item.status === 'failed' ? 'failed' : ''}`} aria-current={!selectedOwnerQuestion&&conversation?.id === item.id ? 'true' : undefined} disabled={busy} onClick={() => void open(item.id)}>
         <strong>{item.title}</strong><span>{item.status === 'failed' ? <><AlertCircle size={12}/>{moteText("未完成")}{' · '}</> : null}{dateTime(item.updatedAt)} · {item.turnCount}{' '}{moteText("轮")}</span>
       </button>)}</div>
       {loading && <p className="loading" role="status"><LoaderCircle size={15} className="spin"/>{moteText("正在读取历史…")}</p>}
       {cursor && <button className="text-button" disabled={loading} onClick={() => void loadHistory(cursor)}>{moteText("加载更早的对话")}</button>}
     </aside>
-    <section className="conversation-content" aria-label={moteText("当前对话")} aria-busy={busy || opening}>
-      <div className="conversation-heading"><div className="chat-heading-main"><div className="chat-avatar"><Sparkles size={17}/></div><div><span className="eyebrow">MOTE</span><h2>{conversation?.title ?? moteText("开始一段新对话")}</h2><p>{moteText("你的个人上下文助手")}</p></div></div>{conversation && <button className="icon-button" aria-label={moteText("删除此对话")} disabled={busy} onClick={() => setConfirmDelete(value => !value)}><Trash2 size={17}/></button>}</div>
+    {selectedOwnerQuestion?<FeaturePanels api={api} onOpen={onOpen} unavailable={<section className="conversation-content"><p role="status">{moteText('此补充对话暂不可用，请刷新或查看相关资料。')}</p></section>} value={{kind:'mote.ask.question',schemaVersion:1,representation:'workspace',ref:selectedOwnerQuestion,revision:'1',title:'',text:''}}/>:<section className="conversation-content" aria-label={moteText("当前对话")} aria-busy={busy || opening}>
+      <ConversationHeading title={conversation?.title??moteText('开始一段新对话')} action={conversation&&<button className="icon-button" aria-label={moteText("删除此对话")} disabled={busy} onClick={()=>setConfirmDelete(value=>!value)}><Trash2 size={17}/></button>}/>
       {confirmDelete && <div className="notice"><span>{moteText("删除此对话及全部问答记录？")}</span><button className="text-button" disabled={busy} onClick={() => void remove()}>{moteText("确认删除对话")}</button><button className="text-button" disabled={busy} onClick={() => setConfirmDelete(false)}>{moteText("取消")}</button></div>}
       {opening && <p className="loading" role="status"><LoaderCircle size={16} className="spin"/>{moteText("正在打开对话…")}</p>}
       <div className="conversation-messages">
@@ -230,12 +238,11 @@ export function Conversations({api, configured, devices, renderAnswer}: {
       </div>
       {Boolean(error||detail.error||recentRuns.error||feedError)&&<p className="notice error" role="alert">{error||errorMessage(detail.error||recentRuns.error||feedError)}</p>}
       <div className="filter-bar"><ModelSelector api={api} feature="chat" value={modelProfileId} onChange={setModelProfileId} model={modelOverride} onModelChange={setModelOverride} disabled={busy||opening}/></div>
-      <form className="ask-form" onSubmit={event => void submit(event)}>
-        <textarea aria-label={moteText("向 Mote 提问")} aria-describedby="composer-hint" placeholder={conversation ? moteText("接着问，Mote 会结合前面的对话。") : moteText("比如，我最近都在忙什么？")} value={question} onChange={event => setQuestion(event.target.value)} onKeyDown={event => {if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {event.preventDefault();void submit(event);}}} disabled={busy || opening} maxLength={8000} rows={3}/>
+      <ConversationComposer label={moteText('向 Mote 提问')} placeholder={conversation?moteText('接着问，Mote 会结合前面的对话。'):moteText('比如，我最近都在忙什么？')} value={question} onChange={setQuestion} onSubmit={()=>void submit()} disabled={busy||opening} hintId="composer-hint">
         {Boolean(attachments.length)&&<div className="chat-attachment-list">{attachments.map(attachment=><span key={attachment.id} className="chat-attachment"><ImagePlus size={14}/><span>{attachment.name}</span><button type="button" disabled={busy||uploading} aria-label={moteText("移除图片 {0}",attachment.name)} onClick={()=>setAttachments(current=>current.filter(item=>item.id!==attachment.id))}><X size={13}/></button></span>)}</div>}
         <div><span><ShieldCheck size={14}/>{moteText("只读查询 · 回答附带原始证据")}</span><input ref={attachmentInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={event=>void addImages(event.target.files)}/><button className="chat-image-button" type="button" aria-label={moteText("添加图片")} title={moteText("聊天图片最多 4 张，每张不超过 8 MiB，支持 PNG、JPEG、WebP。") } disabled={busy||uploading||opening||attachments.length>=4} onClick={()=>attachmentInput.current?.click()}>{uploading?<LoaderCircle className="spin" size={17}/>:<ImagePlus size={17}/>}</button><span id="composer-hint" className="composer-hint">{moteText("Enter 发送 · Shift+Enter 换行")}</span><button className="send-button" type="submit" disabled={busy || uploading || opening || !question.trim() || !configured} aria-label={moteText("发送问题")}>{busy ? <LoaderCircle className="spin" size={19}/> : <ArrowUp size={19}/>}</button></div>
-      </form>
+      </ConversationComposer>
       {!conversation && !busy && !opening && <div className="suggestions"><span>{moteText("从一个小问题开始")}</span>{[moteText("我最近都做了些什么？"), moteText("这周的时间主要花在了哪里？"), moteText("最近有哪些值得接着做的事情？")].map(sample => <button key={sample} disabled={!configured} onClick={() => void submit(undefined, sample)}>{sample}<ArrowRight size={14}/></button>)}</div>}
-    </section>
+    </section>}
   </div>;
 }
