@@ -35,5 +35,28 @@ index retry, and three same-conversation output corrections.
 | Owner opens image/file processing detail | Reason and retained original visible; no ineffective retry controls | Web `image-exclusion.test.ts` |
 
 No physical device, personal screenshot or live model is used in these fixtures.
-The authorized live index retry reached `indexed` without a model call. Runtime
-deployment and current-operation reconciliation must be verified separately.
+
+## Verification on 2026-10-10
+
+- `npm run check:local` passed on the complete implementation. Server, web and
+  Agent suites passed; the existing installed-Codex fixture remains skipped.
+- An independently exported release of commit `546fbb7b8423e88437d8fba62ea324a5a1872ac6`
+  passed `npm run build:central` and was selected by the running native central
+  profile. Its health endpoint returned 200. Upgrade retained a consistent
+  pre-upgrade vault backup.
+- Read-only runtime checks found 14 AppleDouble exclusions: both the image and
+  parent file operations were skipped, all original hashes were unchanged, and
+  authenticated image detail reported every original ready with its exclusion
+  reason. All 28 old failed image receipts retained their state and attempt count.
+  The other 14 images remained successfully processed.
+- All 63 stale organizer steps present immediately before upgrade remained
+  historical and had no active operation membership afterward. All 1,218 current
+  organizer operations were successful at verification time. These are snapshot
+  counts, not a guarantee that later source revisions cannot create new work.
+- The explicitly retried material remained indexed with no error. Index retry
+  and metadata exclusion do not invoke a model. Interrupted Memory batches
+  retained their pending work; the restarted scheduler was running three batches.
+
+No physical device validation or controlled live-model comparison of one versus
+three corrections was performed. Ordinary pre-existing live Memory work continued
+after the upgrade; it is not a quality experiment for the new correction ceiling.
