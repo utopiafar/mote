@@ -119,4 +119,4 @@ flowchart LR
 
 发现问题可使用 [GitHub Issues](https://github.com/utopiafar/mote/issues) 或 App 的 **设置 → 反馈**，提供组件版本、平台和复现步骤。Issue 会公开，请检查附件中的个人内容，勿附访问令牌或私人归档。
 
-参与开发请先阅读[开发指南](docs/development.md)与[项目工作规则](AGENTS.md)。纯文档修改检查格式、语法、链接和渲染；涉及代码、配置、依赖或运行行为的修改运行 `npm run check:local`，采集测试使用生成 fixture。依赖与模型许可见[第三方组件说明](THIRD_PARTY_NOTICES.md)。
+参与开发请先阅读[开发指南](docs/development.md)与[项目工作规则](AGENTS.md)。纯文档修改检查格式、语法、链接和渲染；涉及代码、配置、依赖或运行行为的修改运行 `npm run check:affected`，并按开发指南补充受影响用户流程的验证；采集测试使用生成 fixture。依赖与模型许可见[第三方组件说明](THIRD_PARTY_NOTICES.md)。

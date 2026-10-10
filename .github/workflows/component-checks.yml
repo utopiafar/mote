@@ -36,7 +36,7 @@ jobs:
           fi
   contracts-and-release-tools:
     needs: affected
-    if: needs.affected.outputs.central == 'true' || needs.affected.outputs.desktop == 'true' || needs.affected.outputs.android == 'true'
+    if: needs.affected.outputs.tooling == 'true' || needs.affected.outputs.central == 'true' || needs.affected.outputs.desktop == 'true' || needs.affected.outputs.android == 'true'
     runs-on: ubuntu-24.04
     env: { ELECTRON_SKIP_BINARY_DOWNLOAD: '1' }
     steps:
@@ -44,7 +44,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with: { node-version: '24', cache: npm }
       - run: npm ci --ignore-scripts
-      - run: npm run check:i18n && npm run build -w @mote/shared && npm run test -w @mote/shared
+      - if: needs.affected.outputs.central == 'true' || needs.affected.outputs.desktop == 'true' || needs.affected.outputs.android == 'true'
+        run: npm run check:i18n && npm run build -w @mote/shared && npm run test -w @mote/shared
       - run: node --test scripts/release/*.test.mjs
   central:
     needs: affected

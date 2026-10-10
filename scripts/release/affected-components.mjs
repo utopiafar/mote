@@ -29,8 +29,14 @@ export function affectedComponents(paths, graph = workspaceGraph()) {
     return (byName.get(name)?.dependencies ?? []).some(child => uses(child, dependency, seen));
   }
   for (const path of paths) {
-    if (path.startsWith('docs/') || path.startsWith('release/notes/') || /^(?:README|THIRD_PARTY_NOTICES)\.md$/.test(path)) continue;
+    if (path.startsWith('docs/') || path.startsWith('release/notes/') || /^(?:README(?:\.[\w-]+)?|AGENTS|THIRD_PARTY_NOTICES)\.md$/.test(path)
+      || ['protocol/README.md', 'adapters/ui/README.md', 'plugins/source-packs/memex-markdown/README.md'].includes(path)) continue;
     if (path.startsWith('protocol/')) { mark(groups); result.protocol = true; continue; }
+    const workflow = /^\.github\/workflows\/release-(central|desktop|android)\.yml$/.exec(path);
+    if (workflow) { mark([workflow[1]]); result.tooling = true; continue; }
+    if (/^scripts\/release\/(?:affected-components|check-affected)(?:\.test)?\.mjs$/.test(path)) {
+      result.tooling = true; continue;
+    }
     if (path.startsWith('scripts/release/') || path.startsWith('.github/workflows/')) {
       mark(groups); result.tooling = true; continue;
     }
@@ -52,6 +58,21 @@ export function affectedComponents(paths, graph = workspaceGraph()) {
   return result;
 }
 
+/** Local checks include all working changes; CI's explicit head checks only committed inputs. */
+export function changedPaths({ base = 'origin/main', head, directory = '.', workingTree = head === undefined } = {}) {
+  const git = args => execFileSync('git', args, { cwd: directory, encoding: 'utf8' });
+  const revision = ref => git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]).trim();
+  const target = revision(head ?? 'HEAD');
+  const ancestor = git(['merge-base', revision(base), target]).trim();
+  const paths = git(['diff', '--no-renames', '--name-only', '-z', ancestor, target, '--']).split('\0');
+  if (workingTree) {
+    paths.push(...git(['diff', '--cached', '--no-renames', '--name-only', '-z', 'HEAD', '--']).split('\0'));
+    paths.push(...git(['diff', '--no-renames', '--name-only', '-z', '--']).split('\0'));
+    paths.push(...git(['ls-files', '--others', '--exclude-standard', '-z']).split('\0'));
+  }
+  return [...new Set(paths.filter(Boolean))];
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const option = name => args[args.indexOf(name) + 1];
@@ -59,10 +80,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const base = args.includes('--base') ? option('--base') : 'origin/main';
   if (args.includes('--all') || /^0{40}$/.test(base)) result = Object.fromEntries(Object.keys(affectedComponents([])).map(key => [key, true]));
   else {
-    const revision = ref => execFileSync('git', ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], { encoding: 'utf8' }).trim();
-    const head = revision(args.includes('--head') ? option('--head') : 'HEAD');
-    const ancestor = execFileSync('git', ['merge-base', revision(base), head], { encoding: 'utf8' }).trim();
-    const paths = execFileSync('git', ['diff', '--name-only', '-z', ancestor, head, '--'], { encoding: 'utf8' }).split('\0').filter(Boolean);
+    const paths = changedPaths({ base, head: args.includes('--head') ? option('--head') : undefined });
     result = affectedComponents(paths);
   }
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(result).map(([key, value]) => `${key}=${value}\n`).join(''));

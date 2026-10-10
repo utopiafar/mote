@@ -130,7 +130,7 @@ Memory比较：M0当前模型规划package；M1直接单份完整package；M2严
 
 1. Wave0：确认决策、冻结接口/版本身份/质量rubric，建立真实入口基线与数据隔离。
 2. 每模块：有意义的定向回归、真实bridge/HTTP、阶段故障和文档一致性；不写只镜像实现的测试。
-3. 合并前：`npm run check:local`；Central构建与相关E2E、浏览器、CLI启动/关闭/重启、备份/恢复、安全与i18n检查。
+3. 合并前：按[开发指南](../development.md#pr-check-scope)运行 `npm run check:affected`，仅补充受影响流程的E2E、浏览器、CLI启动/关闭/重启、备份/恢复、安全与i18n检查；本轮跨模块重构的最终集成验收保留 `npm run check:local`。
 4. 涉及Android原生消费：Gradle单元测试、lint、打包/身份校验与生成资料UI；涉及macOS则desktop构建/fixture/UI。物理权限/后台/安装另外真机验收，不能由编译或模拟器推断。
 5. 固定最终候选提交：运行真实模型配对质量及性能、受影响平台实体设备、混合负载与回退演练。修复确认失败后只补必要相关回归及新候选全量门槛，保留前次失败证据。
 6. 发布：按真实受影响组件执行version/notes/release:verify；PR与合并提交均可追踪；准确tag和不可变产物；当前DEV无签名manifest，核对源码包/DEV asset metadata、身份、散列和安装版本。workflow可能跳过MOTE_PRE_RELEASE_CHECKS，核查实际执行的门槛，不用CI绿代替本地全量。

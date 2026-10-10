@@ -368,7 +368,7 @@ macOS 中央窗口加载 Central Web，后端/Web 变更不当然要求重新发
 
 回退必须包含升级前完整备份、配置、原件对象和匹配二进制/源码。旧程序不能安全读取新产物时，采用停机后恢复匹配备份；不能只 git checkout 后覆盖运行，也不能承诺回退期间新增输入自动合并。
 
-发布前执行`npm run check:local`、必要的Central/Web/Android/macOS平台检查和`release:verify`，生成准确release notes。当前DEV产物没有签名mote-release.json，验证其源码包/DEV asset metadata、身份与散列，不把历史签名清单流程套用成本轮产物要求。workflow可能通过MOTE_PRE_RELEASE_CHECKS跳过检查，CI绿不能替代完整本地门槛。确认目标合并提交、tag、产物散列与运行版本一致，安装后验证从接收、查询、Memory恢复到删除的闭环。实际发布状态以验收记录和对应 Release 为准。
+PR 前按[开发指南](../development.md#pr-check-scope)执行`npm run check:affected`；本轮跨模块重构最终验收执行`npm run check:local`，发布前补充受影响平台检查和`release:verify`，生成准确release notes。当前DEV产物没有签名mote-release.json，验证其源码包/DEV asset metadata、身份与散列，不把历史签名清单流程套用成本轮产物要求。workflow可能通过MOTE_PRE_RELEASE_CHECKS跳过检查，CI绿不能替代完整本地门槛。确认目标合并提交、tag、产物散列与运行版本一致，安装后验证从接收、查询、Memory恢复到删除的闭环。实际发布状态以验收记录和对应 Release 为准。
 
 ## 10. 确认结果与完成边界
 
