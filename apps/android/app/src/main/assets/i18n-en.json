@@ -6444,5 +6444,8 @@
   "返回本机查看采集状态": "Return to Device to view capture status",
   "本周期累计页面 {0} · 截图 {1} · 应用活动 {2} · 媒体 {3} · 笔记 {4} · 已确认 {5}\n拦截 {6} · 失败 {7} · 重试结果 {8}": "This period: pages {0} · Screenshots {1} · Activity {2} · Media {3} · Notes {4} · Acknowledged {5}\nBlocked {6} · Failed {7} · Retry outcomes {8}",
   "本周期累计页面 {0}    截图 {1}    活动 {2}    媒体 {3}    随手记 {4}\n本周期已同步 {5} 条": "This period: pages {0}    Screenshots {1}    Activity {2}    Media {3}    Notes {4}\nSynced {5} records this period",
-  "媒体采集可单独开启，在前台、后台和锁屏时观察播放器公开的状态、应用及曲目/章节信息；不录音、不控制播放。普通通知由单独的通知采集开关控制。使用本机页的开始/暂停控制采集。媒体沿用应用隐私规则、电量限制和同步策略；关闭元数据会同时暂停媒体。": "Independently observes public player state, app, and track/chapter details in foreground, background, and lock screen. No audio recording or playback control. Ordinary notifications have a separate switch. Use Start/Pause on Device. App privacy, battery, and sync policies apply; disabling metadata also pauses media."
+  "媒体采集可单独开启，在前台、后台和锁屏时观察播放器公开的状态、应用及曲目/章节信息；不录音、不控制播放。普通通知由单独的通知采集开关控制。使用本机页的开始/暂停控制采集。媒体沿用应用隐私规则、电量限制和同步策略；关闭元数据会同时暂停媒体。": "Independently observes public player state, app, and track/chapter details in foreground, background, and lock screen. No audio recording or playback control. Ordinary notifications have a separate switch. Use Start/Pause on Device. App privacy, battery, and sync policies apply; disabling metadata also pauses media.",
+  "日常事件": "Daily events",
+  "截图和页面采集默认组合": "Screenshot and page capture defaults",
+  "截图和页面采集使用独立默认组合；来源覆盖优先。日常事件保留浏览和行动线索，区分计划与完成，并可在对话中按天回顾。": "Screenshots and page captures use separate defaults; source overrides take priority. Daily events preserve browsing and action history, distinguish plans from completion, and can be recalled by day in chat."
 }

@@ -3,6 +3,7 @@ import {freezeRecipe,recipeFingerprint} from './recipe-contract.js';
 import {MEMORY_EXTRACTION_PROMPT,MEMORY_SKILL_VERSION} from './memory.js';
 import {personalMemoryReviewStrategyV2} from './personal-memory-review-policy.js';
 import {codingMemoryReviewStrategyV2} from './coding-memory-review-policy.js';
+import {DAILY_EVENT_RECIPE,dailyEventExtractionStrategy,dailyEventReviewStrategy} from './daily-event-memory-policy.js';
 import {memoryIntegrationStrategySchema,memoryIntegrationRecipeSchema,type MemoryIntegrationStrategy,type MemoryIntegrationBinding} from './memory-strategy-contract.js';
 import {defaultMemoryIntegrationStrategy,defaultMemoryIntegrationRecipe,defaultMemoryIntegrationReview} from './memory-integration-policy.js';
 
@@ -18,6 +19,9 @@ export class MemoryStrategies {
   private integrationRecipes=new Map<string,ReturnType<typeof memoryIntegrationRecipeSchema.parse>>();
   private identities=new Map<string,string>();
   constructor(){
+    this.registerExtraction(dailyEventExtractionStrategy);
+    this.registerReview(dailyEventReviewStrategy);
+    this.registerRecipe({...DAILY_EVENT_RECIPE,requires:['daily-events'],extract:{id:dailyEventExtractionStrategy.id,version:dailyEventExtractionStrategy.version},review:{id:dailyEventReviewStrategy.id,version:dailyEventReviewStrategy.version}});
     this.registerExtraction({id:'mote.context-extraction',version:MEMORY_SKILL_VERSION.split('@')[1],input:'memory-evidence@1',output:'memory-candidates@1',permissions:['evidence.read'],prompt:MEMORY_EXTRACTION_PROMPT});
     this.registerReview(personalMemoryReviewStrategyV2);
     this.registerRecipe({id:'mote.personal-memory',version:'2',extract:{id:'mote.context-extraction',version:MEMORY_SKILL_VERSION.split('@')[1]},review:{id:'mote.personal-review',version:'2'}});

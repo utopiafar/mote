@@ -14,6 +14,8 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | MVP 清理、断代与验证 | [当前基线与本轮回归](audits/mvp-baseline-cleanup-2026-10-09.md)、[基线 ADR](adr-mvp-baseline.md)；历史 [原始审计](audits/compatibility-audit-2026-10-04.md) 与 [83 项实施](audits/compatibility-cleanup-2026-10-04.md) |
 | 数据、权限、协议 | [架构](architecture.md)、[正式资料](material-architecture.md)、[协议](protocol.md)、[内容加密](content-storage.md)、[资产存储](asset-storage.md) |
 | Agent、记忆和行动 | [Agent](agent.md)、[模型配置](model-providers.md)、[生命周期](memory-lifecycle.md)、[记忆更新](memory-updates.md)、[日程](calendar-actions.md)、[行动更新](action-updates.md) |
+| 结构化页面与自动 Memory | [采集范围和字段](ui-page-capture.md)、[接入 ADR](adr-ui-page-automatic-memory.md)、[验证边界](validation/ui-page-automatic-memory-2026-10-10.md) |
+| 每天看了什么、做了什么 | [日常事件 Memory](adr-daily-event-memory.md)、[日常回顾验证](validation/daily-event-memory-2026-10-10.md) |
 | 当前界面、对话和运行状态 | [Slate 导航](ui-slate.md)、[对话](conversations.md)、[Operations](operations.md)、[执行器](execution-engine.md)、[排错](troubleshooting.md) |
 | 2026-10-10 系统改造 | [已确认方案](design/system-refactor-2026-10-10.md)、[当前ADR](adr-system-refactor.md)、[验收结果与边界](validation/system-refactor-2026-10-10.md) |
 

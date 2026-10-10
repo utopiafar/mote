@@ -42,7 +42,7 @@ function searchText(record:Pick<CaptureInput,'appId'|'appName'|'windowTitle'|'oc
 }
 export class EvidenceStore {
   /** Trusted intake observers run in the receive transaction, never on replay. */
-  imageReceived?: (input:CaptureInput)=>void;
+  captureInputReceived?: (input:CaptureInput)=>void;
   db:DatabaseSync;
   readonly archive:EvidenceArchive;
   readonly assets:AssetStore;
@@ -258,7 +258,7 @@ export class EvidenceStore {
     const receivedAt=p.receivedAt??new Date().toISOString();
     this.db.prepare('INSERT INTO captures(id,device_id,captured_at,received_at,json,fingerprint,blob_hash,mime,index_status) VALUES(?,?,?,?,?,?,?,?,?)')
       .run(p.input.id,p.input.deviceId,p.input.capturedAt,receivedAt,json,p.fingerprint,p.hash,imageMime??null,status);
-    if(p.hash&&automatic)this.imageReceived?.(p.input);
+    if(automatic)this.captureInputReceived?.(p.input);
     this.db.prepare('INSERT INTO captures_fts(rowid,id,text) VALUES((SELECT rowid FROM captures WHERE id=?),?,?)').run(p.input.id,p.input.id,searchText(p.input));
     this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(p.input.id,'upsert',new Date().toISOString());
     this.reserveMetadata(0);

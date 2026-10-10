@@ -1,12 +1,12 @@
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {fileProcessingSchema,transcriptSchema,unknownAttributionContext,type CaptureInput,type CaptureRecord,type Transcript,type ProcessingService} from '@mote/shared';
+import {fileProcessingSchema,transcriptSchema,unknownAttributionContext,type CaptureRecord,type Transcript,type ProcessingService} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {FileProcessing} from './file-processing.js';
 import {processorSettingsFingerprint,processorContract} from './file-configuration.js';
 import type {AppliedFilePolicy} from './file-policy.js';
-import {ImageInputRegistry,ImageAttachmentIntake,installImageInputs,installImageSchema,screenImageSource,type ImageInputRow,type ImageOriginal} from './image-inputs.js';
+import {ImageInputRegistry,ImageAttachmentIntake,installImageInputs,installImageSchema,type ImageInputRow,type ImageOriginal} from './image-inputs.js';
 import {DEFAULT_IMAGE_RECIPE,imageInterpretationSchema,type ImageInterpretation} from './image-recipes.js';
 import {linkOperationParent} from './operation-projection.js';
 import {imageOutput} from './evidence-image.js';
@@ -15,7 +15,6 @@ import {invalidateRetiredFileEvidence} from './evidence-dependencies.js';
 import {perceptionSettingsSchema} from './perception.js';
 import {MEDIA_CATALOG,type MediaAssets} from './media-assets.js';
 import {requestLocalJson} from './local-http.js';
-import type {MaterialMemoryWork} from './material-memory-work.js';
 import type {MaterialStore} from './materials.js';
 import {APPLEDOUBLE_REASON,isAppleDouble} from './appledouble.js';
 
@@ -37,7 +36,7 @@ export class ImageProcessing {
  private attachments:ImageAttachmentIntake;private closed=false;private workerReady=false;private checkedAt=0;private probe?:Promise<void>;
  private prepareCursor=0;
  private previews=new Map<string,{expires:number;watermark:number;query:z.infer<typeof historicalSchema>}>();
- constructor(private store:Store,private processing:FileProcessing,engine:ExecutionEngine,private options:{understanding?:ImageUnderstanding;mediaAssets?:MediaAssets;memoryWork?:MaterialMemoryWork;materials?:MaterialStore;probeOcr?:()=>Promise<boolean>}={}){
+ constructor(private store:Store,private processing:FileProcessing,engine:ExecutionEngine,private options:{understanding?:ImageUnderstanding;mediaAssets?:MediaAssets;materials?:MaterialStore;probeOcr?:()=>Promise<boolean>}={}){
   this.engine=engine;this.inputs=processing.runtime.imageInputs;installImageSchema(store);
   this.disposeInputs=installImageInputs(store,processing.files,this.inputs);
   this.attachments=new ImageAttachmentIntake(store,processing.files);
@@ -53,21 +52,11 @@ export class ImageProcessing {
    const previous=materials.onContextChanged;materials.onContextChanged=(id,cause)=>{previous?.(id,cause);if(cause!=='derived')this.invalidateAttribution(id);};
    const priorSource=materials.onSourceContextChanged;materials.onSourceContextChanged=id=>{priorSource?.(id);for(const row of db.prepare('SELECT capture_id FROM image_inputs WHERE source_id=?').all(id))this.invalidateImageAttribution(String(row.capture_id));};
   }
-  store.imageReceived=input=>this.receive(input);
   for(const kind of ['ocr','understanding','derived'])this.unregister.push(engine.register({kind:'images.'+kind,pool:'images.'+kind,concurrency:()=>this.settings().concurrency,timeoutMs:()=>this.processing.currentSettings().timeoutMs,
    resourceKeys:step=>['image-product:'+String(step.input.fingerprint)],validate:step=>this.valid(step),
    admit:step=>this.admit(step),execute:(step,signal)=>this.execute(step,signal),commit:(step,result)=>this.commit(step,result),project:step=>this.project(step),
    classify:error=>error instanceof StoreError&&error.statusCode===507?new ExecutionFailure('blocked','storage_full'):error instanceof z.ZodError?new ExecutionFailure('permanent','invalid_image_product'):error instanceof StoreError&&[400,413,415,422].includes(error.statusCode)?new ExecutionFailure('permanent','unsupported_image'):new ExecutionFailure('transient','image_processing_failed',30000),
   }));
- }
- private receive(input:CaptureInput){
-  if(!this.options.memoryWork)return;
-  const sourceId=screenImageSource(input.deviceId,sha256),db=this.store.db,now=new Date().toISOString();
-  if(!db.prepare('SELECT 1 FROM source_connections WHERE id=?').get(sourceId)){
-   const source={id:sourceId,name:input.deviceName||input.deviceId,kind:'custom',deviceId:input.deviceId,platform:input.platform,retention:'archive',enabled:true,createdAt:now,updatedAt:now};
-   this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(source))+256);db.prepare('INSERT INTO source_connections VALUES(?,?)').run(sourceId,JSON.stringify(source));
-  }
-  this.options.memoryWork.inputs.receive({sourceId,inputKey:input.id,captureId:input.id});
  }
  owns(id:string){return Boolean(this.store.db.prepare('SELECT 1 FROM image_inputs WHERE capture_id=?').get(id));}
  private row(id:string){return this.store.db.prepare('SELECT * FROM image_inputs WHERE capture_id=?').get(id) as ImageInputRow|undefined;}
@@ -330,5 +319,5 @@ export class ImageProcessing {
    db.exec('BEGIN IMMEDIATE');try{let queued=0;for(const item of rows){if(!this.store.isCurrentEvidence(String(item.capture_id)))continue;try{if(this.retry(String(item.capture_id),query.mode==='recompute').queued)queued++;}catch(error){if(!(error instanceof StoreError&&error.statusCode===409))throw error;db.prepare('UPDATE image_inputs SET auto_eligible=1 WHERE capture_id=?').run(item.capture_id);}}db.prepare('UPDATE image_backfills SET cursor=?,queued=queued+?,state=? WHERE id=?').run(rows.at(-1)?.position??batch.watermark,queued,rows.length<200?'succeeded':'waiting',batch.id);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
   }
  }
- async close(){if(this.closed)return;this.closed=true;this.store.imageReceived=undefined;this.processing.imageControl=undefined;await this.attachments.close();await Promise.all(this.unregister.splice(0).map(dispose=>dispose()));this.disposeInputs();await this.probe;}
+ async close(){if(this.closed)return;this.closed=true;this.processing.imageControl=undefined;await this.attachments.close();await Promise.all(this.unregister.splice(0).map(dispose=>dispose()));this.disposeInputs();await this.probe;}
 }

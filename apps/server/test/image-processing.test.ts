@@ -20,6 +20,7 @@ import {ImageProcessing} from '../src/image-processing.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialMemoryWork} from '../src/material-memory-work.js';
+import {installCaptureMemoryIntake} from '../src/capture-memory-intake.js';
 import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-planning.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {processorContract,processorSettingsFingerprint} from '../src/file-configuration.js';
@@ -34,7 +35,8 @@ async function fixture(t:import('node:test').TestContext){
  const sources=new SourceStore(store,undefined,memoryWork.inputs),files=new FileStore(store,sources),archived=new ArchivedFileStore(store),engine=new ExecutionEngine(store),processing=new FileProcessing(files,undefined,undefined,{executor:engine});await processing.runtime.ready;
  let ocrCalls=0,visualCalls=0,empty=false,failVisual=false;
  processing.runtime.registry.get('image.http').process=async()=>{ocrCalls++;return {durationMs:0,segments:empty?[]:[{startMs:0,endMs:0,text:'Generated third-party article: I resigned.'}]};};
- const images=new ImageProcessing(store,processing,engine,{materials,memoryWork,understanding:{selection:()=>({fingerprint:'fixture-model-1',configured:true,receipt:{model:'fixture'}}),run:async input=>{visualCalls++;if(failVisual)throw Error('Generated visual failure');const image=await input.readImage({id:input.record.id});assert.equal(image.imageView!.original.sha256,input.original.hash);return {text:'A third-party article says its author resigned. The owner is not identified as that author.',regions:[]};}}});
+ const disposeCaptureMemoryIntake=installCaptureMemoryIntake(store,memoryWork);
+ const images=new ImageProcessing(store,processing,engine,{materials,understanding:{selection:()=>({fingerprint:'fixture-model-1',configured:true,receipt:{model:'fixture'}}),run:async input=>{visualCalls++;if(failVisual)throw Error('Generated visual failure');const image=await input.readImage({id:input.record.id});assert.equal(image.imageView!.original.sha256,input.original.hash);return {text:'A third-party article says its author resigned. The owner is not identified as that author.',regions:[]};}}});
  const organizer=new MaterialOrganizerRuntime(store,materials,[],engine,memoryWork);
  const bytes=await sharp({create:{width:16,height:16,channels:3,background:'#aabbcc'}}).png().toBuffer();
  for(const id of ['generated-import','generated-sync','generated-parent'])sources.register({id,name:id,kind:'upload',deviceId:'generated-device',platform:'import',retention:'archive'});
@@ -43,7 +45,7 @@ async function fixture(t:import('node:test').TestContext){
   const begun=files.begin({sourceId,processingProfileId:override,item:{externalId:randomUUID(),revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'original',title:'Generated image',mimeType,text:''},sha256:sha256(originalBytes),sizeBytes:originalBytes.length},()=>{});files.part(begun.uploadId,0,originalBytes,()=>{});return String((await files.commit(begun.uploadId,()=>{})).id);
  };
  const organize=async()=>{for(let i=0;i<20;i++)if(await organizer.tick(200)===0)return;throw Error('Organizer did not settle');};
- t.after(async()=>{await engine.close();await images.close();await organizer.close();await processing.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ t.after(async()=>{disposeCaptureMemoryIntake();await engine.close();await images.close();await organizer.close();await processing.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
  return {store,sources,files,archived,processing,images,engine,bytes,materials,organizer,memoryWork,advance:(ms:number)=>{clock+=ms;},screen,upload,organize,calls:()=>({ocr:ocrCalls,visual:visualCalls}),empty:()=>{empty=true;},failVisual:(failed=true)=>{failVisual=failed;}};
 }
 
@@ -193,6 +195,9 @@ test('production image intake enters the existing automatic Memory pipeline once
   if(input.traceContext?.phase!=='review')extractions++;return {answer:generatedMemoryOutput(input),citations:[],trace:[],runId:randomUUID()};
  }})});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ // This regression isolates the existing zero-outcome personal strategy. Daily
+ // event behavior has a separate screenshot+field intake journey.
+ node.memoryRecipeSettings.configure({scope:'capture',recipes:[{id:'mote.personal-memory',version:'2'}]});
  node.processing.configureImageDefault({endpoint:'http://127.0.0.1:9011/ocr'});node.processing.runtime.registry.get('image.http').process=async()=>({durationMs:0,segments:[]});
  const settings=node.lifecycle.settings();settings.extraction.enabled=true;node.lifecycle.configure(settings);
  const bytes=await sharp({create:{width:16,height:16,channels:3,background:'#ddeeff'}}).png().toBuffer(),id=randomUUID();

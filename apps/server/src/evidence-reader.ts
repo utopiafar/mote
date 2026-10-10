@@ -507,7 +507,13 @@ export class EvidenceReader {
         }catch{return false;}
       }
     }
-    const phase=planning?'complete':required&&material.coverage.state==='pending'?'partial':material.coverage.state;
+    // A ready field body is the entire authorized visible-window input, while
+    // the source document remains partial. Do not grant whole-material reads
+    // or change query coverage merely to admit this bounded Memory input.
+    const readyPageBody=operation==='memory'&&['mote.ui-page-object','mote.capture-event'].includes(material.kind)&&
+      material.coverage.state==='partial'&&material.coverage.reason==='visible_window'&&
+      required?.length===1&&['source-body','daily-events'].includes(required[0]);
+    const phase=planning||readyPageBody?'complete':required&&material.coverage.state==='pending'?'partial':material.coverage.state;
     return this.exposureAllows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation,phase},policy);
   }
   /** Memory runners can inspect a material only after its declared route admits the current phase. */
@@ -760,7 +766,18 @@ export class EvidenceReader {
         const memory=page.items[index];
         const ids=this.store.db.prepare('SELECT evidence_id FROM memory_dependencies WHERE memory_id=?').all(memory.id).map(row=>String(row.evidence_id));
         const records=ids.length?this.evidenceById(ids,args):[];
-        if(!ids.length||records.length!==ids.length||!records.every(record=>this.captureExposure(record,operation,policy)))continue;
+        // Only current formal material proof can lead to a screenshot-derived
+        // card. Raw screenshot memories remain outside the discovery catalog;
+        // ordinary metadata discovery stays independent of proof expansion.
+        let materialProof:boolean|undefined;
+        const hasMaterialProof=()=>{
+          if(materialProof!==undefined)return materialProof;
+          const evidenceIds=this.memories.get(memory.id).evidenceIds,anchors=this.memories.readEvidence(evidenceIds);
+          return materialProof=anchors.length===evidenceIds.length&&anchors.length>0&&anchors.every(anchor=>
+            anchor.provenance?.uri?.startsWith('material:')&&this.captureExposure(anchor,operation,policy));
+        };
+        if(!ids.length||records.length!==ids.length||!records.every(record=>this.captureExposure(record,operation,policy)||
+          (record.source==='screen'||record.source==='ui_page')&&hasMaterialProof()&&this.captureExposure(record,operation==='discover'?'expand':operation,policy,'capture',true)))continue;
         items.push(memory);
         if(items.length===limit){
           const more=index<page.items.length-1||page.nextCursor!==null;

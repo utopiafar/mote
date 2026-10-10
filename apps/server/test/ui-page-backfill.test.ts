@@ -44,7 +44,9 @@ test('durable screen version upgrade and field-page backfill preserve rebuild st
     assert.equal(response.statusCode,201,response.body);
   }
   await application.materialOrganizer.tick(100);
-  assert.deepEqual(initial.map(item=>item.change).sort(),['source','source']);
+  assert.deepEqual(initial.map(item=>item.change).sort(),['source','source','source']);
+  const receipts=application.store.db.prepare('SELECT * FROM memory_input_authorizations ORDER BY source_id,input_key,scope').all();
+  const authorized=application.store.db.prepare('SELECT material_id,scope,input_key,auto_authorized FROM material_memory_requests ORDER BY material_id,scope').all();
   await application.app.close();application=undefined;
 
   // Persist prior organizer versions, then reopen through the product startup path.
@@ -60,10 +62,10 @@ test('durable screen version upgrade and field-page backfill preserve rebuild st
   const rebuilt=observe(application);
   for(let pass=0;pass<10&&application.materialOrganizer.status().backfills.some(item=>!item.complete);pass++)await application.materialOrganizer.tick(100);
   assert.ok(application.materialOrganizer.status().backfills.every(item=>item.complete));
-  assert.deepEqual([...new Set(rebuilt.map(item=>item.kind))].sort(),['mote.screen-segment','mote.ui-page-object']);
+  assert.deepEqual([...new Set(rebuilt.map(item=>item.kind))].sort(),['mote.capture-event','mote.screen-segment','mote.ui-page-object']);
   assert.ok(rebuilt.every(item=>item.change==='rebuild'),'every repeated backfill publication remains deterministic rebuilding');
-  assert.equal(application.store.db.prepare('SELECT count(*) AS n FROM memory_input_authorizations').get()?.n,0,'backfill cannot mint automatic raw receipts');
-  assert.equal(application.store.db.prepare('SELECT count(*) AS n FROM material_memory_requests WHERE auto_authorized=1').get()?.n,0);
+  assert.deepEqual(application.store.db.prepare('SELECT * FROM memory_input_authorizations ORDER BY source_id,input_key,scope').all(),receipts,'backfill cannot mint or renew automatic raw receipts');
+  assert.deepEqual(application.store.db.prepare('SELECT material_id,scope,input_key,auto_authorized FROM material_memory_requests ORDER BY material_id,scope').all(),authorized,'backfill only retains existing unused authority');
 
   rebuilt.length=0;
   for(const source of ['screen','ui_page'] as const){
@@ -71,7 +73,7 @@ test('durable screen version upgrade and field-page backfill preserve rebuild st
     assert.equal(response.statusCode,201,response.body);
   }
   await application.materialOrganizer.tick(100);
-  assert.deepEqual(rebuilt.map(item=>item.change).sort(),['source','source']);
+  assert.deepEqual(rebuilt.map(item=>item.change).sort(),['source','source','source']);
 });
 
 test('legacy queued pages and field pages share the mechanical window group but retain separate materials',async t=>{

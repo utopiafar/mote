@@ -48,7 +48,8 @@ test('real field-page ingress retains original paragraphs, merges exact overlap 
   assert.equal(store.db.prepare('SELECT count(*) AS n FROM perception_jobs WHERE capture_id IN (?,?)').get(first.id,second.id)?.n,0);
   const archive=new EvidenceArchive(store);archive.aggregate(100);
   assert.equal(store.db.prepare('SELECT count(*) AS n FROM context_artifacts').get()?.n,0,'legacy compressed segments do not duplicate field materials');
-  assert.equal(materials.list({query:'Generated last paragraph'}).items[0]?.id,material.id);
+  assert.equal(materials.list({kind:'mote.ui-page-object',query:'Generated last paragraph'}).items[0]?.id,material.id);
+  assert.equal(materials.list({kind:'mote.capture-event'}).items.length,2,'per-observation evidence complements the merged article');
   const revision=material.revision;await app.close();
   const restarted=await buildApp(settings,{agent,backgroundWorker:false});
   try{
