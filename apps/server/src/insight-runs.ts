@@ -51,7 +51,6 @@ export class InsightRuns {
   start(id:string,input:Scope&{prompt?:string},work:(observe:(event:AgentProgress)=>void,signal:AbortSignal,snapshot:InsightSnapshot)=>Promise<QueryResult>,deadline:RunDeadline={}):InsightRun{
     const hash=createHash('sha256').update(JSON.stringify(input)).digest('hex'),existing=this.store.db.prepare('SELECT request_hash FROM insight_runs WHERE id=?').get(id);
     if(existing){if(existing.request_hash!==hash)throw new StoreError('Run ID already belongs to another request',409);return this.get(id);}
-    if(this.store.db.prepare("SELECT 1 FROM insight_runs WHERE json_extract(json,'$.status')='running' LIMIT 1").get())throw new StoreError('A personal review is already running',429);
     const {prompt:_,...scope}=input,at=new Date().toISOString(),run:InsightRun={id,operationId:`insight:${id}`,status:'running',createdAt:at,updatedAt:at,scope,events:[{stage:'starting',at}]};
     const observe=(event:AgentProgress)=>{
       this.execution.sync(id);const current=this.raw(id);if(current.status!=='running'||current.events.length>=80||!['starting','model','tool','validating'].includes(event.stage))return;

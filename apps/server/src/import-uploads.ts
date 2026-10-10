@@ -27,7 +27,7 @@ export class ImportUploads {
   }
   const prior=this.store.db.prepare('SELECT json FROM import_uploads WHERE id=?').get(id);
   if(prior){const {fileId:_,...manifest}=JSON.parse(String(prior.json));if(manifest.name!==input.name||manifest.sizeBytes!==input.sizeBytes||manifest.mimeType!==input.mimeType)throw new StoreError('Upload identity conflict',409);}
-  else{if(Number(this.store.db.prepare("SELECT count(*) n FROM import_uploads WHERE json_extract(json,'$.fileId') IS NULL").get()!.n)>=64)throw new StoreError('Too many unfinished imports',429);this.store.reserveMetadata(2048);this.store.db.prepare('INSERT INTO import_uploads VALUES(?,?,?)').run(id,Date.now()+86400000,JSON.stringify({...input,id}));}
+  else{this.store.reserveMetadata(2048);this.store.db.prepare('INSERT INTO import_uploads VALUES(?,?,?)').run(id,Date.now()+86400000,JSON.stringify({...input,id}));}
   const value=this.load(id);return {id,partBytes:PART,fileId:value.fileId,parts:this.store.db.prepare('SELECT part,bytes,hash FROM import_upload_parts WHERE upload_id=? ORDER BY part').all(id)};
  }
  part(id:string,part:number,bytes:Buffer){if(this.closing.signal.aborted)throw new StoreError('Import uploads are closed',503);const manifest=this.load(id),expected=Math.min(PART,manifest.sizeBytes-part*PART);if(!Buffer.isBuffer(bytes)||!Number.isSafeInteger(part)||part<0||part>=Math.ceil(manifest.sizeBytes/PART)||bytes.length!==expected)throw new StoreError('Invalid import part');
@@ -52,9 +52,9 @@ export function registerImportUploads(app:FastifyInstance,store:Store,files:Arch
  app.addContentTypeParser('application/octet-stream',{parseAs:'buffer',bodyLimit:PART},(_req,body,done)=>done(null,body));
  const uploads=new ImportUploads(store,files);
  app.addHook('preClose',async()=>uploads.close());
- app.post('/api/import-uploads',{bodyLimit:4096,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>uploads.begin(req.body));
- app.put('/api/import-uploads/:id/parts/:part',{bodyLimit:PART,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>{const {id,part}=z.object({id:z.string().uuid(),part:z.coerce.number().int().nonnegative()}).parse(req.params);return uploads.part(id,part,req.body as Buffer);});
- app.post('/api/import-uploads/:id/commit',{config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async(req,reply)=>{
+ app.post('/api/import-uploads',{bodyLimit:4096},async req=>uploads.begin(req.body));
+ app.put('/api/import-uploads/:id/parts/:part',{bodyLimit:PART},async req=>{const {id,part}=z.object({id:z.string().uuid(),part:z.coerce.number().int().nonnegative()}).parse(req.params);return uploads.part(id,part,req.body as Buffer);});
+ app.post('/api/import-uploads/:id/commit',async(req,reply)=>{
   const controller=new AbortController(),abort=()=>{if(!reply.raw.writableEnded)controller.abort();};req.raw.once('aborted',abort);reply.raw.once('close',abort);
   try{return await uploads.commit(z.object({id:z.string().uuid()}).parse(req.params).id,controller.signal);}finally{req.raw.off('aborted',abort);reply.raw.off('close',abort);}
  });

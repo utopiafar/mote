@@ -10,7 +10,6 @@ export type OwnerRoute={
   path:`/api/connectors/${string}`;
   handler:(request:FastifyRequest,reply:FastifyReply)=>unknown;
   bodyLimit?:number;
-  rateLimit?:{max:number;timeWindow:string};
 };
 export type OAuthCallback={
   path:`/oauth/${string}/callback`;
@@ -141,7 +140,7 @@ export class ConnectorRegistry {
       }
     };
     this.app.get('/api/connectors/status',{onRequest:owner},()=>Object.fromEntries(this.instances.flatMap(({manifest,instance})=>manifest.statusKey&&instance.status?[[manifest.statusKey,instance.status()]]:[])));
-    for(const route of this.routes)this.app.route({method:route.method,url:route.path,onRequest:owner,...(route.bodyLimit?{bodyLimit:route.bodyLimit}:{}),...(route.rateLimit?{config:{rateLimit:route.rateLimit}}:{}),handler:action(route.handler)});
+    for(const route of this.routes)this.app.route({method:route.method,url:route.path,onRequest:owner,...(route.bodyLimit?{bodyLimit:route.bodyLimit}:{}),handler:action(route.handler)});
     for(const path of new Set(this.callbacks.map(callback=>callback.path))){
       const candidates=this.callbacks.filter(callback=>callback.path===path);
       if(candidates.filter(callback=>!callback.statePrefix).length>1)throw Error(`Connector OAuth callback ${path} has multiple defaults`);

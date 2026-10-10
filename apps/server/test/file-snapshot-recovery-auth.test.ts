@@ -96,10 +96,11 @@ test('snapshot restoration verifies exact manifest, bounded bytes and content ha
  const wrong=Buffer.alloc(bytes.length,7);await f.sendParts(session.uploadId,wrong);const rejected=await f.commit(session.uploadId);assert.equal(rejected.statusCode,409,rejected.body);assert.equal(f.node.store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_inputs').get()!.n,0);assert.equal(f.node.store.db.prepare('SELECT COUNT(*) n FROM file_versions').get()!.n,1);
 });
 
-test('resupplying an acknowledged snapshot remains subject to the unfinished upload session bound',async t=>{
+test('snapshot recovery is admitted beyond 64 unfinished uploads and still verifies exact bytes',async t=>{
  const f=await fixture(t),bytes=Buffer.from('Generated upload bound fixture'),input=manifest(bytes),{ack}=await f.upload(input,bytes);f.expire(ack.id);
  for(let n=0;n<64;n++)assert.equal(f.node.files.begin(manifest(bytes,'pending-'+n),()=>{}).ack,null);
- const rejected=await f.begin(input);assert.equal(rejected.statusCode,429,rejected.body);assert.equal(f.node.store.db.prepare('SELECT COUNT(*) n FROM file_uploads WHERE ack IS NULL').get()!.n,64);assert.equal(f.node.store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_inputs').get()!.n,0);
+ const admitted=await f.begin(input);assert.equal(admitted.statusCode,200,admitted.body);assert.equal(f.node.store.db.prepare('SELECT COUNT(*) n FROM file_uploads WHERE ack IS NULL').get()!.n,65);
+ const recovery=admitted.json();await f.sendParts(recovery.uploadId,bytes);const restored=await f.commit(recovery.uploadId);assert.equal(restored.statusCode,200,restored.body);assert.equal(restored.json().id,ack.id);assert.equal(f.node.store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_inputs WHERE capture_id=?').get(ack.id)!.n,1);
 });
 
 test('valid pending inputs do not hide later missing snapshot inputs behind the recovery bound',async t=>{

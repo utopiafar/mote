@@ -53,7 +53,7 @@ export class Connections {
   invite(raw:unknown){
     if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央节点正在关闭，请稍后重试。"));
     const input=z.object({serverUrl:z.string().max(2048),label,deviceId:deviceId.optional()}).strict().parse(raw),url=serverUrl(input.serverUrl);
-    this.pruneInvitations();if(this.invitations.size>=50)throw new ConnectionError('invitation_limit',429,moteText("有效邀请过多，请取消已有邀请或等待过期。"));
+    this.pruneInvitations();
     const code=randomBytes(32).toString('base64url'),expiresAt=this.clock()+10*60000;
     const invitation:ConnectionInvitation={format:'mote.connection',version:1,serverUrl:url,code,expiresAt:new Date(expiresAt).toISOString()};
     this.invitations.set(digest(code),{serverUrl:url,label:input.label,expiresAt,authorizedDeviceId:input.deviceId});

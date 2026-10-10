@@ -105,7 +105,7 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
   app.post('/api/memory-jobs/:id/resume',async req=>{const id=jobId(req.params);memoryPipeline.resume(id);return memoryPipeline.get(id);});
   app.post('/api/memory-jobs/:id/cancel',async req=>memoryPipeline.cancel(jobId(req.params)));
   app.post('/api/memory-jobs/:id/retry',async(req,reply)=>{const id=jobId(req.params);memoryPipeline.get(id);void memoryPipeline.retry(id).catch(()=>{});return reply.code(202).send(memoryPipeline.get(id));});
-  app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{
+  app.post('/api/memories/extract',async req=>{
     const {modelProfileId,...scope}=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional()}).strict().refine(validRange).parse(req.body??{}),profile=modelSettings.select('memory',modelProfileId);
     const selected=evidenceReader.memorySelection(scope,100,new EvidenceExposurePolicy());
     if(!selected.evidenceIds.length)throw new StoreError('No processed evidence in this range',409);

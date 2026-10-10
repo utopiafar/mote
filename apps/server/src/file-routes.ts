@@ -30,10 +30,10 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   };
   app.addContentTypeParser('application/octet-stream',{parseAs:'buffer',bodyLimit:FILE_PART_BYTES},(_req,body,done)=>done(null,body));
   app.get('/api/file-sync/v1/capabilities',async()=>files.capabilities());
-  app.get('/api/file-sync/v1/head',{config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>{const q=z.object({sourceId:z.string().min(1).max(128),externalId:z.string().min(1).max(1000)}).strict().parse(req.query);authorize(req,q.sourceId);return {revision:files.sources.getItem(q.sourceId,q.externalId)?.revision??null,forgotten:!!files.store.db.prepare('SELECT 1 FROM file_forgotten WHERE source_id=? AND external_id=?').get(q.sourceId,q.externalId)};});
-  app.get('/api/file-sync/v1/recovery',{config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>{const q=z.object({sourceId:z.string().min(1).max(128)}).strict().parse(req.query);authorize(req,q.sourceId);return files.snapshotRecovery(q.sourceId);});
-  app.post('/api/file-sync/v1/recovery/:id/uploads',{bodyLimit:1024,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>{z.object({}).strict().parse(req.body??{});return ingress.fileRecovery(fileId(req),check(req));});
-  app.post('/api/file-sync/v1/manifests',{bodyLimit:8*1024*1024,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>measure('file_revision',()=>ingress.fileManifests(req.body,check(req))));
+  app.get('/api/file-sync/v1/head',async req=>{const q=z.object({sourceId:z.string().min(1).max(128),externalId:z.string().min(1).max(1000)}).strict().parse(req.query);authorize(req,q.sourceId);return {revision:files.sources.getItem(q.sourceId,q.externalId)?.revision??null,forgotten:!!files.store.db.prepare('SELECT 1 FROM file_forgotten WHERE source_id=? AND external_id=?').get(q.sourceId,q.externalId)};});
+  app.get('/api/file-sync/v1/recovery',async req=>{const q=z.object({sourceId:z.string().min(1).max(128)}).strict().parse(req.query);authorize(req,q.sourceId);return files.snapshotRecovery(q.sourceId);});
+  app.post('/api/file-sync/v1/recovery/:id/uploads',{bodyLimit:1024},async req=>{z.object({}).strict().parse(req.body??{});return ingress.fileRecovery(fileId(req),check(req));});
+  app.post('/api/file-sync/v1/manifests',{bodyLimit:8*1024*1024},async req=>measure('file_revision',()=>ingress.fileManifests(req.body,check(req))));
   app.post('/api/file-sync/v1/uploads',{bodyLimit:32768},async req=>measure('file_upload',()=>ingress.fileBegin(req.body,check(req))));
   app.get('/api/file-sync/v1/uploads/:id',async req=>ingress.fileUpload(id(req),check(req)));
   app.put('/api/file-sync/v1/uploads/:id/parts/:part',{bodyLimit:FILE_PART_BYTES},async req=>{if(!Buffer.isBuffer(req.body))throw new StoreError('Binary part required');return measure('file_part',()=>files.part(id(req),Number((req.params as {part:string}).part),req.body as Buffer,check(req)));});
@@ -43,13 +43,12 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
     try{return await measure('file_commit',()=>ingress.fileCommit(id(req),check(req),controller.signal));}
     finally{req.raw.off('aborted',abort);reply.raw.off('close',abort);}
   });
-  app.put('/api/file-sync/v1/revisions',{bodyLimit:1024*1024,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>measure('file_revision',()=>ingress.fileRevision(req.body,check(req))));
+  app.put('/api/file-sync/v1/revisions',{bodyLimit:1024*1024},async req=>measure('file_revision',()=>ingress.fileRevision(req.body,check(req))));
   app.get('/api/files',async req=>{const q=z.object({sourceId:z.string().max(128).optional(),mimePrefix:z.enum(['audio/','text/','image/']).optional(),query:z.string().max(2000).optional(),cursor:z.string().max(20).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);if(q.sourceId)authorize(req,q.sourceId);return files.list({...q,deviceId:device(req)});});
   app.get('/api/files/:id',async req=>({...file(req),processingPolicy:processing.explain(fileId(req)),cancellation:processing.cancellation(fileId(req))}));
   app.get('/api/files/:id/chunks',async req=>{file(req);const q=z.object({...navigationScopeSchema.shape,offset:z.coerce.number().int().min(0).default(0)}).strict().parse(req.query);const items=files.chunks(fileId(req),q.offset);return {items,nextOffset:items.length===100?q.offset+100:null};});
   app.post('/api/files/:id/playback',async(req,reply)=>{
     file(req);const token=randomBytes(32).toString('hex');for(const [key,value] of grants)if(value.until<Date.now())grants.delete(key);
-    if(grants.size>=200)throw new StoreError('Too many playback sessions',429);
     const sourceId=files.version(fileId(req)).source_id;grants.set(token,{id:fileId(req),until:Date.now()+300000,check:()=>authorize(req,sourceId)});
     reply.header('Set-Cookie',`${cookieName(fileId(req))}=${token}; HttpOnly; SameSite=Strict; Max-Age=300; Path=/api/files/${fileId(req)}/content${req.protocol==='https'?'; Secure':''}`);
     return {url:'/api/files/'+fileId(req)+'/content'};
@@ -70,7 +69,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.get('/api/files/:id/export',async(req,reply)=>{file(req);return reply.header('Content-Disposition',`attachment; filename="mote-recording-${fileId(req)}.tar.gz"`).type('application/gzip').send(exportTar(fileExportEntries(files,fileId(req))));});
   app.get('/api/files/:id/assets',async(req,reply)=>{file(req);const q=z.object({artifactId:z.string().uuid(),name:z.string().max(100)}).strict().parse(req.query);const asset=files.asset(fileId(req),q.artifactId,q.name);return reply.header('Cache-Control','no-store').type(asset.mime).send(asset.bytes);});
   app.get('/api/files/:id/reviews',async req=>{file(req);return reviews.list(fileId(req));});
-  app.post('/api/files/:id/reviews',{bodyLimit:16384,config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{file(req);return reviews.propose(fileId(req),req.body);});
+  app.post('/api/files/:id/reviews',{bodyLimit:16384},async req=>{file(req);return reviews.propose(fileId(req),req.body);});
   app.post('/api/files/:id/reviews/:reviewId',{bodyLimit:65536},async req=>{file(req);return reviews.confirm(fileId(req),(req.params as {reviewId:string}).reviewId,req.body);});
   app.post('/api/files/:id/corrections',{bodyLimit:131072},async req=>{if(device(req))throw new StoreError('Owner access required',403);file(req);return reviews.correct(fileId(req),req.body);});
   app.post('/api/files/:id/speakers',{bodyLimit:16384},async req=>{file(req);return reviews.nameSpeakers(fileId(req),req.body);});

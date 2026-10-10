@@ -121,20 +121,18 @@ test('provider reason outranks generic HTTP category and local configuration gui
  const {failureMessage}=await import('../src/failure-message.js');assert.match(failureMessage('model_settings_credential_reuse'),/确认复用已有凭据/);assert.match(failureMessage('validation'),/必填项和取值范围/);
 });
 
-test('API request throttling and provider throttling retain distinct localized messages for HTTP 429',async t=>{
+test('provider throttling retains localized messages, request identity and authentication',async t=>{
  const previousLocale=getLocale();t.after(()=>configureLocale(()=>previousLocale));
  let unauthorized=0;
  const requestId='c919bc95-272d-4094-92a1-7f9c0ae944ca';
  for(const locale of ['zh-CN','en'] as Locale[]){
   configureLocale(()=>locale);
-  for(const code of ['api_rate_limited','rate_limited']){
-   const payload=code==='api_rate_limited'?{error:code}:{error:'provider_failed',reason:code};
+  for(const code of ['rate_limited']){
+   const payload={error:'provider_failed',reason:code};
    const mock=t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({...payload,message:'RAW EXTERNAL LIMIT DETAIL',requestId}),{status:429}));
    await assert.rejects(createApi({token:'synthetic'},()=>unauthorized++).request('/api/files'),error=>{
     assert.ok(error instanceof ApiError);assert.equal(error.status,429);assert.equal(error.code,code);
-    const message=errorMessage(error),expected=code==='api_rate_limited'
-     ?locale==='en'?'Too many requests. Retry later.':'请求过于频繁，请稍后重试。'
-     :locale==='en'?'The model service is rate limiting requests. Wait for the task to update.':'模型服务暂时限流，请等待任务更新。';
+    const message=errorMessage(error),expected=locale==='en'?'The model service is rate limiting requests. Wait for the task to update.':'模型服务暂时限流，请等待任务更新。';
     assert.ok(message.startsWith(expected),message);assert.ok(message.includes(requestId));
     assert.doesNotMatch(message,/RAW EXTERNAL LIMIT DETAIL/);return true;
    });
@@ -146,7 +144,7 @@ test('API request throttling and provider throttling retain distinct localized m
 
 test('API exposes bounded retry delay from transport headers or structured errors',async t=>{
  for(const [header,body,expected] of [['2',{},2000],[null,{retryAfterMs:250},250],['invalid',{retryAfterMs:-1},undefined]] as const){
-  const mocked=t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({error:'api_rate_limited',...body}),{status:429,headers:header?{'Retry-After':header}:{}}));
+  const mocked=t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({error:'upstream_rate_limited',...body}),{status:429,headers:header?{'Retry-After':header}:{}}));
   await assert.rejects(createApi({token:'fixture'}).request('/api/imports'),error=>{assert.ok(error instanceof ApiError);assert.equal(error.retryAfterMs,expected);return true;});mocked.mock.restore();
  }
 });

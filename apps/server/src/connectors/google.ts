@@ -84,7 +84,6 @@ export class GoogleCalendarConnector {
   async start(){
     if(this.closed)throw new ConnectorError('connector_closed',503);
     for(const [key,value] of this.pending)if(value.expires<this.clock())this.pending.delete(key);
-    if(this.pending.size>=10)throw new ConnectorError('google_authorization_busy',429);
     const oauth=this.oauth(),codes=await oauth.generateCodeVerifierAsync(),state=randomBytes(32).toString('base64url');
     if(this.closed)throw new ConnectorError('connector_closed',503);
     this.pending.set(state,{verifier:codes.codeVerifier,expires:this.clock()+600000});

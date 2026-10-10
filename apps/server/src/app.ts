@@ -7,7 +7,6 @@ import {CAPTURE_BATCH_MAX_RECORDS,CAPTURE_BATCH_MAX_BYTES} from './capture-limit
 import {memoryEvidenceFingerprint} from './memory.js';
 import { Context } from '@deepseek-ai/cordis';
 import cors from '@fastify/cors';
-import rateLimit from '@fastify/rate-limit';
 import staticFiles from '@fastify/static';
 import { AgentNotConfiguredError,AgentYieldError,originalEvidenceReceipt,createImportAgent,skillCatalog,type AgentTraceEvent,type ContextReader,type QueryInput } from '@mote/agent';
 import { ProviderFailure,captureSchema,type CaptureInput,type CaptureRecord,type QueryResult } from '@mote/shared';
@@ -53,7 +52,7 @@ import { moteText,requestLocale } from './i18n.js';
 import { prepareImportInput } from './import-runtime.js';
 import { ImportStore,type ImportPreparation,type ImportPreparationResult } from './imports.js';
 import { Indexer } from './indexer.js';
-import { INGRESS_PROTOCOL_VERSION,IngressService,collectorIngressWrite,collectorTransportRequest } from './ingress.js';
+import { INGRESS_PROTOCOL_VERSION,IngressService,collectorIngressWrite } from './ingress.js';
 import { InsightRuns } from './insight-runs.js';
 import { insightResult,validateInsightOutput } from './insights.js';
 import { registerMemoryExtensions } from './lifecycle-extensions.js';
@@ -350,7 +349,6 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
   await app.register(cors,{origin:config.allowedOrigins,credentials:false});
   const expectedBearer=Buffer.from(`Bearer ${config.token}`);
   const validBearer=(req:{headers:{authorization?:string}})=>{if(typeof req.headers.authorization!=='string')return false;const supplied=Buffer.from(req.headers.authorization);return supplied.length===expectedBearer.length&&timingSafeEqual(supplied,expectedBearer);};
-  await app.register(rateLimit,{max:180,timeWindow:'1 minute',keyGenerator:req=>{const identity=validBearer(req)?'authenticated-owner':connections.authenticate(req.headers.authorization)?.id;return identity?`${identity}:${collectorTransportRequest(req.method,req.routeOptions.url??'')?'transport':'foreground'}`:`unauthenticated:${req.ip}`;},errorResponseBuilder:(req,context)=>({statusCode:context.statusCode,error:'api_rate_limited',message:moteText("请求过于频繁，请稍后重试。"),requestId:req.id})});
   let playbackAuthorization:(req:FastifyRequest)=>boolean=()=>false;
   app.addHook('onRequest',async(req,reply)=>{
     const isApi=req.routeOptions.url?.startsWith('/api/')||req.url.startsWith('/api/');
@@ -376,7 +374,6 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
   const actions=new Actions(store,files,input=>queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),()=>agent.configured,{semanticArtifacts,executor});
 
   const connectors=await registerConnectors(app,{memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,ownerAuthorization:header=>{if(validBearer({headers:{authorization:header}}))return true;const c=connections.authenticate(header);return !!c&&connections.isOwner(c);},mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)},dependencies?.connectorTesting);
-  const connectionRate={rateLimit:{max:20,timeWindow:'1 minute'}};
 
   const softwareUpdate=createUpdateService({currentVersion:serverVersion,profile:config.profile,runtime:config.configuration?.runtime,profileHome:config.configuration?.hostConfigFile?dirname(dirname(config.configuration.hostConfigFile)):undefined,repository:config.updateRepository,channel:config.updateChannel});
 
@@ -398,7 +395,6 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
   function queryAgent(input:QueryInput,operation:'query'|'insight'='query',moduleId='conversations',usageOwner:'query'|'caller'='query') {
     if(closing)throw new StoreError('Central node is shutting down',503);
     if(input.skill==='personal-insight'&&!input.validateOutput)input={...input,validateOutput:validateInsightOutput};
-    if(activeQueries.size>=1000)throw new StoreError('Agent queue is full; retry shortly',429);
     const profile=modelSettings.select(input.responseMode==='memory-extraction'||input.skill==='memory-extraction'||input.skill==='coding-memory'||moduleId==='memories'?'memory':input.skill==='personal-insight'?'insight':'chat',input.modelProfileId);
     input={...input,language:input.language??requestLocale.getStore()??'zh-CN',modelProfileId:profile.id,modelOverride:input.modelOverride??profile.settings.model};
     if(input.contextEvidenceDependencies)input={...input,contextEvidenceDependencies:resolveDependencies(store,input.contextEvidenceDependencies)};
@@ -611,7 +607,7 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
   } else app.setNotFoundHandler((req,reply)=>reply.code(404).send({error:'not_found',message:moteText("未找到所请求的资料。"),requestId:req.id}));
   const maintenanceWorker=dependencies?.backgroundWorker?new MaintenanceWorker(config):undefined;
   const activity=new ActivityProjection(store,new Operations(store),{delegation});
-  const featureServices={ownerQuestions,automaticMemoryScheduling:dependencies?.backgroundWorker!==false,activity,delegation,memoryDelegation,connectionIdentity,assertRequestActive,memoryIntegrationSettings,memoryRecipeSettings,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connectionRate,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaRange,memories,memoryPipeline,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows};
+  const featureServices={ownerQuestions,automaticMemoryScheduling:dependencies?.backgroundWorker!==false,activity,delegation,memoryDelegation,connectionIdentity,assertRequestActive,memoryIntegrationSettings,memoryRecipeSettings,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaRange,memories,memoryPipeline,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows};
   const featureHost=new ServerFeatureHost(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));
   await installServerFeatures(featureHost,featureServices);
   diagnostics.record('server.started');

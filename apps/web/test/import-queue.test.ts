@@ -102,12 +102,12 @@ test('request deadlines fail one admission and release its slot without changing
  assert.deepEqual(writes,['next']);assert.equal(queue.getSnapshot().entries[0].state,'failed');assert.match(queue.getSnapshot().entries[0].failure!.message,/超时/);
 });
 
-test('server rate limiting waits automatically, preserves create identity and backpressures later admissions',async t=>{
+test('upstream rate limiting waits automatically, preserves create identity and backpressures later admissions',async t=>{
  const writes:any[]=[],begins:string[]=[];let limited=true;
  const api={request:async(path:string,init:RequestInit)=>{
   const input=JSON.parse(String(init.body));
   if(path==='/api/import-uploads'){begins.push(input.name);return {id:input.id,fileId:'archive:'+input.id,partBytes:4,parts:[]};}
-  writes.push(input);if(limited){limited=false;throw new ApiError('Generated rate limit',429,undefined,'api_rate_limited',100);}
+  writes.push(input);if(limited){limited=false;throw new ApiError('Generated rate limit',429,undefined,'upstream_rate_limited',100);}
   return {id:input.requestId,name:input.name,status:'completed'};
  }} as Api;
  const queue=new ImportQueue(api,1);t.after(()=>queue.close());const first=queue.enqueue(draft('first'));queue.enqueue(draft('second'));
@@ -127,7 +127,7 @@ test('repeated transport limit windows advance past archived prefixes and eventu
  const api={request:async(path:string,init:RequestInit)=>{
   const input=JSON.parse(String(init.body));
   if(path==='/api/import-uploads'){
-   if(!remaining--){remaining=2;throw new ApiError('Generated transport limit',429,undefined,'api_rate_limited',20);}
+   if(!remaining--){remaining=2;throw new ApiError('Generated transport limit',429,undefined,'upstream_rate_limited',20);}
    begins.push(input.name);return {id:input.id,fileId:'archive:'+input.id,partBytes:4,parts:[]};
   }
   writes.push(input);return {id:input.requestId,name:input.name,status:'completed'};

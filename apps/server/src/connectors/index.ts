@@ -19,7 +19,6 @@ export {recordingManifest,RecordingConnector} from './recordings.js';
 export type {RecordingProvider,RecordingAccount,RecordingMetadata} from './recordings.js';
 
 export type ConnectorTestDependencies={recordings?:RecordingProvider[];google?:GoogleDependencies;gmail?:GoogleDependencies;lark?:LarkRunner};
-const larkRate={max:60,timeWindow:'1 minute'};
 
 function builtins(testing?:ConnectorTestDependencies):ConnectorManifest[]{return [
   recordingManifest('feishu',ctx=>testing?.recordings?.find(p=>p.id==='feishu')??createFeishuRecordings(ctx.config.connectors!.directory)),
@@ -56,9 +55,9 @@ function builtins(testing?:ConnectorTestDependencies):ConnectorManifest[]{return
     return {
       init:()=>gmail.init(),status:()=>gmail.status(),
       configure:host=>{
-        host.ownerRoute({method:'POST',path:'/api/connectors/gmail/start',rateLimit:larkRate,bodyLimit:16384,handler:()=>gmail.start()});
-        host.ownerRoute({method:'POST',path:'/api/connectors/gmail/sync',rateLimit:larkRate,bodyLimit:16384,handler:()=>gmail.sync()});
-        host.ownerRoute({method:'DELETE',path:'/api/connectors/gmail',rateLimit:larkRate,bodyLimit:16384,handler:()=>gmail.disconnect()});
+        host.ownerRoute({method:'POST',path:'/api/connectors/gmail/start',bodyLimit:16384,handler:()=>gmail.start()});
+        host.ownerRoute({method:'POST',path:'/api/connectors/gmail/sync',bodyLimit:16384,handler:()=>gmail.sync()});
+        host.ownerRoute({method:'DELETE',path:'/api/connectors/gmail',bodyLimit:16384,handler:()=>gmail.disconnect()});
         host.oauthCallback({path:'/oauth/google/callback',statePrefix:'gmail.',complete:(state,code)=>gmail.callback(state,code),successMessage:moteText('Gmail 已连接。请返回 Mote 同步邮件。'),failureMessage:moteText('授权未完成或已过期。请返回 Mote 重新连接 Google 日历。')});
       },
       close:()=>gmail.close(),
@@ -69,7 +68,7 @@ function builtins(testing?:ConnectorTestDependencies):ConnectorManifest[]{return
     return {
       init:()=>lark.init(),
       configure:host=>{
-        const route=(method:'GET'|'POST'|'PUT'|'DELETE',path:`/api/connectors/${string}`,handler:OwnerRoute['handler'])=>host.ownerRoute({method,path,rateLimit:larkRate,bodyLimit:16384,handler});
+        const route=(method:'GET'|'POST'|'PUT'|'DELETE',path:`/api/connectors/${string}`,handler:OwnerRoute['handler'])=>host.ownerRoute({method,path,bodyLimit:16384,handler});
         route('GET','/api/connectors/lark',()=>lark.status());
         route('POST','/api/connectors/lark/check',()=>lark.refresh());
         route('POST','/api/connectors/lark/install',()=>lark.startInstall());

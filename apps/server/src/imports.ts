@@ -160,7 +160,6 @@ export class ImportStore {
     const configuredPack=request.sourcePackId?this.runtime.sourcePacks?.get(request.sourcePackId):undefined;
     if(request.sourcePackId&&!configuredPack)throw new StoreError('Requested Python Source Pack is not installed on this node',409);
     if(request.sourcePackId&&request.instruction.trim())throw new StoreError('Python Source Packs use fixed parser code; use model analysis for freeform import instructions',409);
-    if(Number((this.store.db.prepare('SELECT COUNT(*) AS n FROM import_jobs').get() as {n:number}).n)>=1000)throw new StoreError('Import job limit reached',413);
     const entries:{name:string;mimeType?:string;bytes?:Buffer;fileId?:string;path?:string;sizeBytes?:number;identity?:string}[]=[];let total=0;
     const add=(name:string,bytes:Buffer,mimeType?:string)=>{archiveRelativePath(name);total+=bytes.length;if(bytes.length>MAX_FILE_BYTES||total>MAX_INPUT_BYTES||entries.length>=MAX_FILES)throw new StoreError('Import exceeds file count or size limits (64 MiB per file, 256 MiB total)',413);entries.push({name,bytes,mimeType});};
     if(request.archivedFileIds){

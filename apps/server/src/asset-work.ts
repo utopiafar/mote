@@ -12,7 +12,6 @@ export async function prepareAsset(task:AssetPreparation,signal?:AbortSignal):Pr
  const timeout=setTimeout(()=>controller.abort(new DOMException('Asset preparation timed out','TimeoutError')),120000);timeout.unref();
  signal?.addEventListener('abort',abortParent,{once:true});let admitted=false;
  try{
- if(queue.length>=32)throw new StoreError('Asset preparation queue is full',429);
  await new Promise<void>((resolve,reject)=>{const enter=()=>{deadline.removeEventListener('abort',abort);active++;admitted=true;resolve();};const abort=()=>{const index=queue.indexOf(enter);if(index>=0)queue.splice(index,1);reject(deadline.reason);};deadline.addEventListener('abort',abort,{once:true});if(active<2)enter();else queue.push(enter);});
  return await new Promise<PreparedAsset>((resolve,reject)=>{
   const extension=import.meta.url.endsWith('.ts')?'ts':'js';

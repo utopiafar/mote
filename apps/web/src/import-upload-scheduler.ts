@@ -6,8 +6,8 @@ export async function uploadImportFiles(api:Api,files:readonly File[],identities
  const request=async<T>(path:string,init:RequestInit)=>{signal?.throwIfAborted();const deadline=AbortSignal.timeout(180000);const result=await api.request<T>(path,{...init,signal:signal?AbortSignal.any([signal,deadline]):deadline});signal?.throwIfAborted();return result;};
  const pending:{file:File;index:number;id:string;offset:number;upload?:Upload}[]=[],result:string[]=[];
  let accepted=0;
- // A retry skips committed originals locally. Re-negotiating every completed
- // prefix could exhaust the next rate-limit window before reaching a new file.
+ // A retry skips committed originals locally so later files can make progress
+ // after a transport interruption without repeating already acknowledged work.
  for(const [index,file] of files.entries()){
   const saved=completed.get(file);if(saved){result[index]=saved;accepted+=file.size;continue;}
   let id=identities.get(file);if(!id){id=crypto.randomUUID();identities.set(file,id);}pending.push({file,index,id,offset:0});

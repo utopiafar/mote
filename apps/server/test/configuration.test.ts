@@ -96,20 +96,19 @@ test('owner configuration is authenticated and read-only; changes on disk await 
   }
 });
 
-test('unauthenticated requests sharing a tunnel IP cannot consume the authenticated owner rate bucket', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'mote-configuration-rate-')), config = fixture(directory);
-  const { app } = await buildApp(config, { agent: inactive });
+test('request bursts preserve authentication and configuration access without a request quota', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'mote-configuration-burst-')), config = fixture(directory);
+  const { app } = await buildApp(config, { agent: inactive, backgroundWorker: false });
   t.after(async () => { await app.close(); await rm(directory, { recursive: true, force: true }); });
-  let unauthenticated;
-  for (let i = 0; i < 182; i++) unauthenticated = await app.inject({ url: '/api/configuration', remoteAddress: '127.0.0.1', headers: { 'x-forwarded-for': '203.0.113.18' } });
-  assert.ok([401, 429].includes(unauthenticated!.statusCode));
-  // Fastify may reject unauthenticated private routes before its limiter hook. Public health still
-  // reaches the limiter and must not let proxy-shared traffic consume the owner's independent quota.
-  for (let i = 0; i < 182; i++) unauthenticated = await app.inject({ url: '/api/health', remoteAddress: '127.0.0.1', headers: { 'x-forwarded-for': '203.0.113.18' } });
-  assert.equal(unauthenticated!.statusCode, 429);
-  const headers = { authorization: `Bearer ${config.token}`, 'x-forwarded-for': '203.0.113.18' };
-  assert.equal((await app.inject({ url: '/api/configuration', remoteAddress: '127.0.0.1', headers })).statusCode, 200);
-  let query;
-  for (let i = 0; i < 11; i++) query = await app.inject({ method: 'POST', url: '/api/query', headers, payload: { question: 'Synthetic rate-limit request; no model is configured.' } });
-  assert.equal(query!.statusCode, 429, 'The normal owner query limit remains in effect');
+  const headers = { authorization: `Bearer ${config.token}` };
+  for (let i = 0; i < 200; i++) {
+    assert.equal((await app.inject('/api/configuration')).statusCode, 401);
+    assert.equal((await app.inject('/api/health')).statusCode, 200);
+  }
+  assert.equal((await app.inject({ url: '/api/configuration', headers })).statusCode, 200);
+  for (let i = 0; i < 12; i++) {
+    const response = await app.inject({ method: 'POST', url: '/api/query', headers, payload: { question: 'Generated unconfigured model request.' } });
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.json().error, 'model_not_configured');
+  }
 });
