@@ -9,6 +9,7 @@ import {Store} from '../src/store.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {SourceStore} from '../src/sources.js';
 import {ImportStore,type ImportRuntime} from '../src/imports.js';
+import {ExecutionEngine} from '../src/execution-engine.js';
 
 const entry=(name:string,text:string)=>({name,dataBase64:Buffer.from(text).toString('base64')});
 const item=(externalId='fixture-1')=>({externalId,revision:'v1',observedAt:'2026-09-15T12:00:00Z',kind:'file',layer:'original',title:'合成日记',text:'2020年的合成原文\n保留换行和引用。',document:{recordedAt:'2020-01-01T10:00:00Z',timeBasis:'recorded',contentRole:'authored'}});
@@ -41,6 +42,18 @@ test('originals archive before model configuration without manufacturing parsed 
  assert.equal(job.status,'queued');assert.equal(files.read(job.files[0].id).toString(),'synthetic bytes');assert.equal(store.list().items.length,0);
  const result=await imports.prepare(job.id);assert.equal(result.status,'needs_configuration');assert.equal(result.preview,undefined);assert.equal(existsSync(join(directory,'imports',job.id,'inputs')),false);
  await assert.rejects(imports.confirm(job.id),{statusCode:409});
+});
+test('a failed scheduler and failed failure write reject preparation without a detached rejection or leaked waiter',async t=>{
+ const {imports,store}=fixture(t),job=await imports.create({files:[entry('generated.custom','Generated scheduler error')]});
+ const internal=imports as unknown as {executor:ExecutionEngine;phaseWaiters:Map<string,Set<()=>void>>};
+ const tick=internal.executor.tick,fail=internal.executor.fail;
+ internal.executor.tick=async()=>{throw Error('Generated scheduler failure');};
+ internal.executor.fail=()=>{throw Error('Generated failure persistence error');};
+ try{
+  await assert.rejects(imports.prepare(job.id),/Generated failure persistence error/);
+  assert.equal(internal.phaseWaiters.size,0);
+  assert.equal(store.db.isTransaction,false);
+ }finally{internal.executor.tick=tick;internal.executor.fail=fail;}
 });
 test('large inline originals and portable backups validate without a regex stack overflow',async t=>{
  const {imports,files}=fixture(t),bytes=Buffer.alloc(11_000_000,83),encoded=bytes.toString('base64');

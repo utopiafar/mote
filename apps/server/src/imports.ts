@@ -469,8 +469,14 @@ export class ImportStore {
     const job=this.load(id),stepId=this.admitPhase(job,phase),step=this.executor.get(stepId)!;
     if(step.state==='succeeded')return this.public(this.load(id));
     if(step.state!=='running')this.executor.retry(stepId,false);
-    const done=new Promise<void>(resolve=>{let waiters=this.phaseWaiters.get(stepId);if(!waiters){waiters=new Set();this.phaseWaiters.set(stepId,waiters);}waiters.add(resolve);});
-    void this.executor.tick().catch(()=>this.executor.fail(stepId,'import_failed'));await done;await this.executor.drain([stepId]);return this.public(this.load(id));
+    let resolveDone!:()=>void;
+    const done=new Promise<void>(resolve=>{resolveDone=resolve;let waiters=this.phaseWaiters.get(stepId);if(!waiters){waiters=new Set();this.phaseWaiters.set(stepId,waiters);}waiters.add(resolve);});
+    try{
+      // Observe failure persistence too: a second error must reject this caller,
+      // not become an unhandled rejection while its phase waiter hangs forever.
+      const scheduled=this.executor.tick().then(()=>done,()=>{this.executor.fail(stepId,'import_failed');return done;});
+      await Promise.race([done,scheduled]);await this.executor.drain([stepId]);return this.public(this.load(id));
+    }finally{const waiters=this.phaseWaiters.get(stepId);waiters?.delete(resolveDone);if(!waiters?.size)this.phaseWaiters.delete(stepId);}
   }
   async prepare(id:string,resumeCancelled=false):Promise<ImportJob>{
     if(this.closed)throw new StoreError('Import feature is closed',503);
