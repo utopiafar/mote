@@ -1,7 +1,7 @@
 import {readFileSync,writeFileSync} from 'node:fs';
 const root=new URL('../',import.meta.url),rules=JSON.parse(readFileSync(new URL('adapters/ui/builtin.json',root))),existing=JSON.parse(readFileSync(new URL('adapters/ui/fixtures/conformance.json',root)));
 const cases=[];
-for(const rule of rules){
+for(const rule of rules.filter(rule=>rule.formatVersion!==2)){
  const seed=existing.find(f=>f.name===rule.id);if(!seed)throw Error(`Missing authored generated snapshot for ${rule.id}`);
  const add=(suffix,mutate,expected)=>{const snapshot=structuredClone(seed.snapshot);mutate(snapshot);cases.push({name:`builtin-${rule.id}-${suffix}`,platform:rule.platform,rules:[rule],snapshot,expected});};
  add('visible',()=>{},seed.expected);

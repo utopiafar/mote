@@ -46,9 +46,11 @@ class LibraryResponsivenessInstrumentedTest {
         waitFor("startup") { !QueueStorage.recovering && !QueueStorage.maintaining }
         WorkManager.getInstance(context).cancelAllWork().result.get(20, TimeUnit.SECONDS)
         val settings = Settings(context); val original = settings.read(); val state = settings.state(); val message = settings.message()
+        val language = MoteI18n.preference()
         require(context.queue().depth() == 0)
         val ids = mutableListOf<String>()
         try {
+            MoteI18n.select(context, "zh-CN")
             settings.save(original.copy(server = "", token = "", syncMode = "manual", mode = "accessibility", screenCollectionEnabled = true,
                 diagnosticsEnabled = false, notificationCollectionEnabled = false, deviceEventCollectionEnabled = false, mediaCollectionEnabled = false,
                 appCollectionRules = AppCollectionRules.CONTENT_DEFAULT))
@@ -60,6 +62,7 @@ class LibraryResponsivenessInstrumentedTest {
             val queue = DurableQueue(File(QueueStorage(context).current().path), context.localContentCipher(), createMissing = false)
             queue.withDeferredIndexWrites { ids.forEach { queue.acknowledge(it) } }
             settings.save(original); settings.status(state, message); LocalStateChanges.changed(records = true, immediate = true)
+            MoteI18n.select(context, language)
         }
     }
 
@@ -80,6 +83,10 @@ class LibraryResponsivenessInstrumentedTest {
                     views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == "本机" }.performClick()
                     val button = views(activity.window.decorView).filterIsInstance<Button>().single { it.isShown && it.text == "开始采集" }
                     assertTrue(button.isEnabled); assertTrue(button.performClick())
+                }
+                instrumentation.runOnMainSync {
+                    android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap { views(it) }
+                        .filterIsInstance<Button>().firstOrNull { it.isShown && it.text == "按此范围开始" }?.performClick()
                 }
                 waitFor("capture authorization without inventory", 3000) { settings.enabled }
                 waitFor("Pause button without inventory", 3000) {

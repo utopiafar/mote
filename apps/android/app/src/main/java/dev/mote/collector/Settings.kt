@@ -6,7 +6,7 @@ import android.util.Base64
 import java.util.UUID
 
 data class CollectorConfig(
-    val uiPageMode: String = "screen_only", val uiPageRules: String = "[]",
+    val uiPageMode: String = "ui_preferred", val uiPageRules: String = "[]",
     val uploadGate: UploadGateConfig = UploadGateConfig(),
     val authSignedOut: Boolean = false, val authExpiresAt: Long = 0, val authProcess: String = "",
     val server: String = "", val token: String = "", val deviceName: String = Build.MODEL,
@@ -83,7 +83,7 @@ class Settings(private val context: Context) {
         val values = prefs.all.filterKeys { it in configurationKeys }
         if (cachedPrefs === prefs && cachedValues == values) return@synchronized requireNotNull(cachedConfig)
         val config = CollectorConfig(
-        uiPageMode = prefs.getString("uiPageMode", "screen_only")!!, uiPageRules = prefs.getString("uiPageRules", "[]")!!,
+        uiPageMode = prefs.getString("uiPageMode", "ui_preferred")!!, uiPageRules = prefs.getString("uiPageRules", "[]")!!,
         uploadGate = UploadGateConfig(prefs.getBoolean("uploadGateEnabled", true), prefs.getString("uploadGateText", "")!!, prefs.getString("uploadGateFailure", "hold")!!),
         authSignedOut = prefs.getBoolean("authSignedOut", false), authExpiresAt = prefs.getLong("authExpiresAt", 0), authProcess = prefs.getString("authProcess", "")!!,
         server = prefs.getString("server", BuildConfig.DEFAULT_SERVER)!!,
@@ -233,6 +233,8 @@ class Settings(private val context: Context) {
     fun statusAt(): Long = prefs.getLong("statusAt", 0)
     fun captured(at: String) { prefs.edit().putString("lastCapture", at).apply() }
     fun lastCapture(): String? = prefs.getString("lastCapture", null)
+    fun capturePreviewSeen(): Boolean = prefs.getBoolean("capturePreviewSeen", false)
+    fun capturePreviewAccepted() { if (!prefs.edit().putBoolean("capturePreviewSeen", true).commit()) throw SettingsWriteFailure() }
     fun screenStatus(message: String) { if (prefs.getString("screenMessage", null) != message) prefs.edit().putString("screenMessage", message).apply() }
     fun screenStatus(): String = prefs.getString("screenMessage", MoteI18n.text("尚未开始采集"))!!
     fun uploadStatus(message: String) { prefs.edit().putString("uploadStatus", message).apply() }

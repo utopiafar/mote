@@ -17,6 +17,19 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class AppPolicyInstrumentedTest {
+    /** Accept only the local generated format preview, before exercising system consent. */
+    private fun acceptGeneratedStartPreview() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        require(instrumentation.targetContext.packageName == "dev.mote.collector.dev" && android.os.Build.FINGERPRINT.contains("emu64a"))
+        fun views(root: android.view.View): List<android.view.View> = buildList {
+            add(root); if (root is android.view.ViewGroup) repeat(root.childCount) { addAll(views(root.getChildAt(it))) }
+        }
+        instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync {
+            android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap(::views).filterIsInstance<android.widget.TextView>()
+                .firstOrNull { it.isShown && it.isClickable && it.text.toString() == MoteI18n.text("按此范围开始") }?.performClick()
+        }
+    }
     @Test fun generatedProviderReportsActualSizeAndModificationWithoutInventingDates() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val authority = context.packageName + ".source-fixtures"
@@ -40,7 +53,7 @@ class AppPolicyInstrumentedTest {
         var pipeline: CapturePipeline? = null
         try {
             val baseline = Operations.ledger(context).read().getJSONObject("counts")
-            val config = settings.read().copy(server = "https://127.0.0.1:1", token = "generated-policy-test-token-only-123456789", mode = "projection",
+            val config = settings.read().copy(server = "https://127.0.0.1:1", token = "generated-policy-test-token-only-123456789", mode = "projection", uiPageMode = "screen_only",
                 appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
             settings.save(config); settings.enabled = true; assertEquals("accessibility", config.effectiveMode())
             val windows = WindowSnapshot(setOf("com.example.generated"), "com.example.generated", true)
@@ -91,11 +104,12 @@ class AppPolicyInstrumentedTest {
             waitUntil { CaptureAccessibilityService.connected }
             openFixture()
             val config = settings.read().copy(server = server, token = token, deviceName = "合成 Android 分级采集", intervalSeconds = 5, wifiOnly = false, debugHttp = true, syncMode = "realtime", uploadedRetentionDays = 0,
-                mode = "projection", appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
+                mode = "projection", uiPageMode = "screen_only", appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
             settings.save(config)
             assertEquals("accessibility", config.effectiveMode())
             androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.onActivity { activity -> MainActivity::class.java.getDeclaredMethod("startCapture").apply { isAccessible = true }.invoke(activity) }
+                acceptGeneratedStartPreview()
                 waitUntil { settings.enabled }; assertFalse(ProjectionService.running)
                 openFixture()
                 waitUntil { count("ACTIVITY_ACK") >= 2 }; stop()
@@ -186,7 +200,7 @@ class AppPolicyInstrumentedTest {
             shell("settings put secure enabled_accessibility_services ${context.packageName}/dev.mote.collector.CaptureAccessibilityService")
             shell("settings put secure accessibility_enabled 1"); waitUntil { CaptureAccessibilityService.connected }
             val base = settings.read().copy(server = fixture.getString("serverUrl"), token = fixture.getString("token"), deviceName = "合成 Android 投屏分级", intervalSeconds = 5,
-                wifiOnly = false, debugHttp = true, syncMode = "realtime", uploadedRetentionDays = 0, mode = "projection", excludedPackages = "")
+                wifiOnly = false, debugHttp = true, syncMode = "realtime", uploadedRetentionDays = 0, mode = "projection", uiPageMode = "screen_only", excludedPackages = "")
             var activityRequests = -1L; var contentRequests = -1L
             for (mode in listOf(AppCollectionMode.ACTIVITY, AppCollectionMode.CONTENT)) {
                 val c = base.copy(appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.OFF, "${context.packageName}.test=${mode.wire}\ncom.android.systemui=content").json())
@@ -195,6 +209,7 @@ class AppPolicyInstrumentedTest {
                 fun delta(key: String) = Operations.ledger(context).read().getJSONObject("counts").getLong(key) - before.getLong(key)
                 androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                     scenario.onActivity { activity -> MainActivity::class.java.getDeclaredMethod("startCapture").apply { isAccessible = true }.invoke(activity) }
+                acceptGeneratedStartPreview()
                     // Only a generated-only task AVD may accept the real Android consent dialog.
                     waitUntil {
                         val root = automation.rootInActiveWindow

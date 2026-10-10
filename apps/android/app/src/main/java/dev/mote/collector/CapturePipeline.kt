@@ -68,16 +68,16 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
         runCatching { diagnostics.sample(config) }
         if (context.queue().bytes() >= config.maxQueueMiB * 1024L * 1024L) throw QueueFull()
     }
-    fun submitActivity(windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString(), observedAtMs: Long = SystemClock.elapsedRealtime()) =
-        submitObservedActivity(windows, config, capturedAt, observedAtMs, AppCollectionMode.ACTIVITY)
-    fun submitPageActivity(windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString(), observedAtMs: Long = SystemClock.elapsedRealtime()) =
-        submitObservedActivity(windows, config, capturedAt, observedAtMs, AppCollectionMode.CONTENT)
-    private fun submitObservedActivity(windows: WindowSnapshot, config: CollectorConfig, capturedAt: String, observedAtMs: Long, selected: AppCollectionMode) {
+    fun submitActivity(windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString(), observedAtMs: Long = SystemClock.elapsedRealtime(), isCurrent: () -> Boolean = { true }) =
+        submitObservedActivity(windows, config, capturedAt, observedAtMs, AppCollectionMode.ACTIVITY, isCurrent)
+    fun submitPageActivity(windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString(), observedAtMs: Long = SystemClock.elapsedRealtime(), isCurrent: () -> Boolean = { true }) =
+        submitObservedActivity(windows, config, capturedAt, observedAtMs, AppCollectionMode.CONTENT, isCurrent)
+    private fun submitObservedActivity(windows: WindowSnapshot, config: CollectorConfig, capturedAt: String, observedAtMs: Long, selected: AppCollectionMode, isCurrent: () -> Boolean = { true }) {
         if (closed || !busy.compareAndSet(false, true)) return
         ConnectionGuard.processing.incrementAndGet()
         try { executor.execute {
             try {
-                if (!settings.enabled || closed || ConnectionGuard.changing() || !unlocked(context) || settings.read() != config || policy(config, windows) != selected) return@execute
+                if (!isCurrent() || !settings.enabled || closed || ConnectionGuard.changing() || !unlocked(context) || settings.read() != config || policy(config, windows) != selected) return@execute
                 checkStorage(config)
                 val now = observedAtMs
                 val appId = requireNotNull(windows.foreground)
@@ -88,7 +88,8 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none").put("collection", "activity"))
                     .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L, activityOnly = true)) }
                 SupportEvents.record(context, EventStage.QUEUE, EventCode.STARTED)
-                        context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+                if (!isCurrent()) return@execute
+                context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
                 SupportEvents.record(context, EventStage.QUEUE, EventCode.OK)
                 dedupeSignature = null; dedupeReference = null
                 observationClock.accept(now, appId, selected); lastPause = null
@@ -101,7 +102,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     }
     private fun duration(now: Long, appId: String?, mode: AppCollectionMode, intervalSeconds: Int): Long =
         observationClock.interval(now, appId, mode, intervalSeconds * 1000L)
-    fun submit(bitmap: Bitmap, windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString(), observedAtMs: Long = SystemClock.elapsedRealtime()) {
+    fun submit(bitmap: Bitmap, windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString(), observedAtMs: Long = SystemClock.elapsedRealtime(), isCurrent: () -> Boolean = { true }) {
         if (closed || !busy.compareAndSet(false, true)) { bitmap.recycle(); Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return }
         ConnectionGuard.processing.incrementAndGet()
         try { executor.execute {
@@ -111,7 +112,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
             try {
                 Operations.record(context, OperationKind.FRAME_RECEIVED)
                 diagnostics.add("receivedFrames")
-                if (!settings.enabled || !unlocked(context) || closed || settings.read() != config || policy(config, windows) != AppCollectionMode.CONTENT) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
+                if (!isCurrent() || !settings.enabled || !unlocked(context) || closed || settings.read() != config || policy(config, windows) != AppCollectionMode.CONTENT) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
                 val reason = PrivacyRules.excludedReason(PrivacyRules.exclusions(config.excludedPackages), windows.packages, windows.trustworthy)
                 if (reason != null) { Operations.record(context, OperationKind.FRAME_BLOCKED, if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); pause(reason); return@execute }
                 if (CapturedFrame.isBlank(bitmap)) { pause("系统返回空白屏幕帧，已跳过；下一周期重试", OperationReason.SYSTEM); return@execute }
@@ -123,7 +124,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 val earlyFeatures = if (config.imageDedupeMode != "off" && !config.imageDedupeDiagnosticsEnabled && windows.trustworthy && windows.foreground != null)
                     features(bitmap, ScreenshotDedupeHelper.Mode.fromRaw(config.imageDedupeMode)) else null
                 if (earlyFeatures != null && ScreenshotDedupeHelper.shouldSkip(earlySignature, earlyFeatures, ScreenshotDedupeHelper.Mode.fromRaw(config.imageDedupeMode)).duplicate) {
-                    if (!settings.enabled || closed || ConnectionGuard.changing() || settings.read() != config || !unlocked(context)) return@execute
+                    if (!isCurrent() || !settings.enabled || closed || ConnectionGuard.changing() || settings.read() != config || !unlocked(context)) return@execute
                     val appId = requireNotNull(windows.foreground)
                     val event = JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", settings.deviceId)
                         .put("deviceName", config.deviceName).put("platform", "android").put("capturedAt", capturedAt)
@@ -132,7 +133,8 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                         .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none").put("collection", "activity"))
                         .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context,
                             if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L, activityOnly = true)) }
-                                context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+                    if (!isCurrent()) return@execute
+                    context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
                     diagnostics.add("earlySkippedFrames")
                     observationClock.accept(observedAtMs, appId, AppCollectionMode.CONTENT)
                     settings.captured(capturedAt); settings.status("capturing", MoteI18n.text("重复画面已丢弃，仅保存应用活动；未执行审查与 OCR")); settings.screenStatus(settings.message())
@@ -152,7 +154,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 val text = "" // Gate OCR stays in memory and never leaves the device.
                 val reviewed = config.uploadGate.enabled
                 val appliedMaskCount = masks.size
-                if (!settings.enabled || closed || ConnectionGuard.changing() || settings.read() != config || !unlocked(context)) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
+                if (!isCurrent() || !settings.enabled || closed || ConnectionGuard.changing() || settings.read() != config || !unlocked(context)) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
                 if (dedupeConfig != config || dedupeApp != windows.foreground || dedupeSize != (output.width to output.height)) { dedupeSignature = null; dedupeReference = null }
                 val dedupeMode = ScreenshotDedupeHelper.Mode.fromRaw(config.imageDedupeMode)
                 val features = if (config.imageDedupeMode != "off") features(output, dedupeMode) else null
@@ -189,6 +191,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 val encoded = if (!duplicate) jpeg(output, config.jpegQuality) else null
                 if (!duplicate) diagnostics.timing("encodeMs", SystemClock.elapsedRealtime() - encodeStart)
                 val queueStart = SystemClock.elapsedRealtime()
+                if (!isCurrent()) return@execute
                 val committedId = context.queue().enqueue(event, encoded, config.maxQueueMiB * 1024L * 1024L, gate == "hold")
                 diagnostics.timing("queueMs", SystemClock.elapsedRealtime() - queueStart)
                 if (!duplicate) runCatching {

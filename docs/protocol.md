@@ -28,7 +28,19 @@ All `/api/*` routes require authentication except public `/api/health`, the one-
 }
 ```
 
-`platform`: `macos|windows|linux|android|import`. `source`: `screen|activity|media|file|note|calendar|event|message|metric|memory`. `imageBase64` and `imageMime` optional together for text/file imports. `durationMs` integer 0..300000, measures observed sampling exposure, NOT guaranteed attention. Response: `{id, duplicate, blobHash, indexingStatus}`. Same id with different content returns 409. Excluded events must never be queued; server rejects `privacy.excluded=true`.
+`platform`: `macos|windows|linux|android|import`. `source`: `screen|ui_page|activity|media|file|note|calendar|event|message|metric|memory`. `imageBase64` and `imageMime` optional together for text/file imports. `durationMs` integer 0..300000, measures observed sampling exposure, NOT guaranteed attention. Response: `{id, duplicate, blobHash, indexingStatus}`. Same id with different content returns 409. Excluded events must never be queued; server rejects `privacy.excluded=true`.
+
+Android field pages use the existing capture/batch transport and `metadata.uiPage.version=2`.
+Each immutable event contains one article/product object, exact source text and observation times;
+it must not contain an image, raw UI nodes or coordinates. `capturedAt` and `metadata.observedAt`
+equal `observations.lastAt`, duration is zero, and `ocrText` is the exact field-text projection.
+Articles require title/body; products require title; author and actually observed URL/item ID are
+optional. Reliable identity must equal that URL or ID. Central preserves originals and organizes
+these fields independently of lossy screenshot segments. See [field rules and full shape](ui-page-capture.md).
+Legacy v1 pages remain accepted. Upgrade Central before Android; rejected v2 events remain queued
+with their original IDs for retry, rather than being downgraded or acknowledged. Wire protocol v1,
+Ingress 2, ACK validation and storage epochs are unchanged. A sample may emit multiple product
+events and a separate measured activity event.
 
 Deleted event IDs have tombstones: later upload/import of that ID into the same vault returns 410 instead of resurrecting deleted private evidence. Restore a full backup into a fresh vault when intentional recovery is needed. Export limits account for repeated base64 image references, not only unique blob bytes.
 

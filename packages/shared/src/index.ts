@@ -41,6 +41,8 @@ export const captureSchema = z.object({
   if (v.source === 'ui_page') {
     const p=v.metadata?.uiPage;
     if (!p || !['android','macos'].includes(v.platform) || !v.appId || v.durationMs!==0 || v.imageBase64 || v.imageMime || v.windowTitle || v.provenance || v.mood || v.privacy.collection!=='content' || v.metadata?.collector?.method!=='accessibility' || v.metadata?.capture || v.metadata?.media || v.metadata?.notification || v.metadata?.deviceEvent || p && v.ocrText!==uiPageText(p)) ctx.addIssue({code:'custom',message:'Invalid UI page observation'});
+    if (p?.version === 2 && (v.capturedAt !== p.observations.lastAt || v.metadata?.observedAt !== p.observations.lastAt))
+      ctx.addIssue({code:'custom',message:'Structured page capture and metadata times must match the last observation'});
   }
   if (v.appId && !v.appName.trim()) ctx.addIssue({code:'custom',path:['appName'],message:'An application identifier requires a nonblank application name'});
   if(v.stateSeries){const series=v.stateSeries.samples;const first=series[0];if(!first){ctx.addIssue({code:'custom',message:'Empty state series'});return;}if(!stateOnly(v)||first.at!==v.capturedAt||first.durationMs!==v.durationMs||series.some((s,i)=>i>0&&(Date.parse(s.at)<=Date.parse(series[i-1].at)||Date.parse(s.at)-Date.parse(series[i-1].at)>300000))||Date.parse(series.at(-1)!.at)-Date.parse(first.at)>21600000)ctx.addIssue({code:'custom',message:'Invalid state observation series'});}

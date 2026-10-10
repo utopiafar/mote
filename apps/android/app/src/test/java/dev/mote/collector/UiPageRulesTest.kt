@@ -6,6 +6,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class UiPageRulesTest {
+    private fun canonical(value: Any?): String = when (value) {
+        is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(",", "{", "}") { JSONObject.quote(it) + ":" + canonical(value.get(it)) }
+        is JSONArray -> (0 until value.length()).joinToString(",", "[", "]") { canonical(value.get(it)) }
+        is String -> JSONObject.quote(value)
+        else -> value.toString()
+    }
+    @Test fun structuredSharedConformance() {
+        val cases = JSONArray(javaClass.getResource("/structured-conformance.json")!!.readText())
+        for (i in 0 until cases.length()) {
+            val fixture = cases.getJSONObject(i)
+            if (fixture.getString("platform") != "android") continue
+            val pages = UiPageRules.extractAll(fixture.getJSONObject("snapshot"), UiPageRules.parse(fixture.getJSONArray("rules").toString()))
+            assertEquals(fixture.getString("name"), canonical(fixture.getJSONArray("expected")), canonical(JSONArray(pages)))
+        }
+    }
     @Test fun sharedConformance() {
         val cases=JSONArray();for(path in listOf("/conformance.json","/builtin-coverage.json")){val batch=JSONArray(javaClass.getResource(path)!!.readText());for(i in 0 until batch.length())cases.put(batch.getJSONObject(i))}
         for(i in 0 until cases.length()) {

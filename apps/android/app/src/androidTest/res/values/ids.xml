@@ -1,0 +1,12 @@
+<resources>
+    <item type="id" name="mote_fixture_article" />
+    <item type="id" name="mote_fixture_title" />
+    <item type="id" name="mote_fixture_author" />
+    <item type="id" name="mote_fixture_body" />
+    <item type="id" name="mote_fixture_url" />
+    <item type="id" name="mote_fixture_products" />
+    <item type="id" name="mote_fixture_card" />
+    <item type="id" name="mote_fixture_product_title" />
+    <item type="id" name="mote_fixture_product_url" />
+    <item type="id" name="mote_fixture_product_id" />
+</resources>
