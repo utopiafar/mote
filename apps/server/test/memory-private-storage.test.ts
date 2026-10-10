@@ -10,7 +10,7 @@ import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {ContentStorageService} from '../src/content-storage.js';
 import {FileStore} from '../src/files.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
-import {decodeMemoryBatch,decodeMemoryJob} from '../src/memory-private-storage.js';
+import {decodeMemoryBatch,decodeMemoryJob,encodeMemoryBatch} from '../src/memory-private-storage.js';
 
 const marker='GENERATED_PRIVATE_WORK_PROSE';
 test('private work prose, coverage feedback and drafts obey encryption, owner reads and key retirement',async t=>{
@@ -35,4 +35,17 @@ test('deleting an original removes private and legacy work descriptions and cann
  store.delete(id);
  const saved=String(store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id)!.json);assert.doesNotMatch(saved,/aes:|GENERATED_PRIVATE_WORK_PROSE/);assert.equal(JSON.parse(saved).privateRetired,true);
  const done=await pipeline.retry(job.id);assert.equal(done.status,'failed');assert.ok(done.batches.every(batch=>batch.status==='invalidated'));assert.notEqual(done.workPackage?.goal,marker);assert.doesNotMatch(JSON.stringify(store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id)),/GENERATED_PRIVATE_WORK_PROSE|aes:/);
+});
+
+test('startup seals legacy coverage questions and owner declarations, and retirement prevents restored prose',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'mote-private-question-migration-')),store=new Store(dir),sources=new SourceStore(store),memories=new MemoryStore(store);sources.register({id:'generated',name:'Generated fixture',kind:'custom',deviceId:'fixture',platform:'import'});
+ const id=(await sources.upsert('generated',{externalId:'one',revision:'1',observedAt:'2026-09-01T00:00:00Z',text:'Generated original.',kind:'file',layer:'original'})).id;
+ const options={store,memories,configured:()=>true,model:()=> 'fixture',query:async()=>{throw Error('Migration must not call a model');}};
+ let pipeline=new MemoryPipeline(options);t.after(async()=>{await pipeline.close();store.close();rmSync(dir,{recursive:true,force:true});});
+ const job=pipeline.create({evidenceIds:[id]}),batch=job.batches[0],row=store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(batch.id)!,legacy=JSON.parse(String(row.json));
+ legacy.coverage=[{key:'a'.repeat(64),id,offset:0,length:19,fingerprint:'b'.repeat(64),state:'needs_owner_input',memoryIds:[],reason:marker+' reason',question:{prompt:marker+' question',choices:[{id:'first',label:marker+' label',answer:marker+' answer'}],evidence:[{id,quote:marker+' quote'}]},attributionContext:{version:1,ownerRelation:'unknown',basis:'default',ownerStatements:[{id:'generated',question:marker+' owner question',answer:marker+' owner reply'}]}}];
+ store.db.prepare('UPDATE memory_batches SET json=? WHERE id=?').run(JSON.stringify(legacy),batch.id);await pipeline.close();store.contentEncryption.setEnabled(true);pipeline=new MemoryPipeline(options);
+ const sealed=String(store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(batch.id)!.json);assert.match(sealed,/aes:/);assert.doesNotMatch(sealed,new RegExp(marker));const opened=decodeMemoryBatch(store,sealed);assert.equal(opened.coverage![0].question!.prompt,marker+' question');assert.equal(opened.coverage![0].attributionContext!.ownerStatements![0].answer,marker+' owner reply');
+ store.db.prepare("UPDATE memory_batches SET json=json_set(json,'$.status','invalidated') WHERE id=?").run(batch.id);const retired=String(store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(batch.id)!.json);assert.doesNotMatch(retired,/aes:|GENERATED_PRIVATE_WORK_PROSE|ownerStatements|\"question\":/);assert.equal(JSON.parse(retired).privateRetired,true);
+ const late=encodeMemoryBatch(store,opened,true);assert.doesNotMatch(late,/aes:|GENERATED_PRIVATE_WORK_PROSE|ownerStatements|\"question\":/);assert.equal(decodeMemoryBatch(store,retired).coverage![0].question,undefined);
 });

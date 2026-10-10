@@ -9,6 +9,8 @@ import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryResult,SourceItem,TokenUsage,UsageReceipt} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
+import type {MemoryWorkPackage} from '../src/memory-work-contract.js';
+import {StoreError} from '../src/store.js';
 
 // All conversation content and model results below are generated local fixtures.
 type Node=Awaited<ReturnType<typeof buildApp>>;
@@ -54,7 +56,23 @@ async function supplied(input:QueryInput,reader:ContextReader){
  const records=await reader.evidence({ids:input.evidenceIds!});assert.equal(records.length,input.evidenceIds!.length,'material input admission must permit exactly the supplied originals');
  assert.ok(records.every(record=>!record.ocrText.includes(toolSecret)));return records;
 }
-function manualJob(node:Node,ids:string[]){return node.memoryPipeline.create({evidenceIds:ids,recipes:[{id:'mote.personal-memory',version:'2'}],contextTime,timeZone:'Asia/Shanghai',batchCharacters:12000,workPackage:{id:'generated-explicit-coding',goal:'Inspect every selected Coding range',instruction:'Preserve original attribution and each target context'}});}
+function manualJob(node:Node,ids:string[],workPackage:MemoryWorkPackage={id:'generated-explicit-coding',goal:'Inspect every selected Coding range',instruction:'Preserve original attribution and each target context'}){return node.memoryPipeline.create({evidenceIds:ids,recipes:[{id:'mote.personal-memory',version:'2'}],contextTime,timeZone:'Asia/Shanghai',batchCharacters:12000,workPackage});}
+function preparationConfig(node:Node){const rows=node.store.db.prepare("SELECT json FROM processing_jobs WHERE json_extract(json,'$.processor')='mote.coding-conversation-understanding'").all();assert.ok(rows.length);return rows.map(row=>{const config=JSON.parse(String(row.json)).config;assert.ok(JSON.stringify(config).length<=16000,'host transport keeps its existing bound');assert.equal(config.memoryWork,undefined,'private work metadata resolves through the host');assert.equal(config.candidatePolicy,undefined,'model policy is not copied into transport config');assert.equal(config.memoryPreparation,true);assert.match(config.generationContract,/^[a-f0-9]{64}$/);return config;});}
+
+test('large Coding work metadata resolves from a generation handle while transport retains its existing bound',{timeout:15000},async t=>{
+ const workPackage={id:'generated-large-coding-package',goal:'Generated goal '+'.'.repeat(1900),instruction:'Generated instruction '+'.'.repeat(3900)};let understanding=0,resolvedSize=0;
+ let node!:Node;node=await appFixture(t,async(input,reader)=>{const originals=await supplied(input,reader);if(isUnderstanding(input)){understanding++;const work=input.taskContext?.memoryWork as any;assert.equal(work.package.goal,workPackage.goal);assert.equal(work.package.instruction,workPackage.instruction);assert.ok(work.members.length);assert.ok(work.authorizedMembers.length);assert.ok(Array.isArray(work.history));const [config]=preparationConfig(node),preparation=node.memoryPipeline.conversationPreparation(config.generationContract);assert.deepEqual(preparation.memoryWork,work);resolvedSize=JSON.stringify(preparation).length;return response(originals[0].id,owner,products(originals[0].id,false));}return response(originals[0].id,owner,input.taskContext!.untrustedMemoryDraft);});
+ const source=await receive(node),job=await node.memoryPipeline.run(manualJob(node,source.ids,workPackage).id);assert.equal(job.status,'completed');assert.equal(understanding,1);assert.ok(resolvedSize>16000,'large policy/work payload exceeds the transport bound without enlarging it');preparationConfig(node);
+ assert.throws(()=>node.memoryPipeline.conversationPreparation('f'.repeat(64)),error=>error instanceof StoreError&&error.statusCode===409);
+});
+
+for(const change of ['cancel','source-revision'] as const)test(`Coding preparation handle refuses ${change} authority while model output is still in flight`,{timeout:15000},async t=>{
+ const started=deferred(),release=deferred();t.after(()=>release.resolve());
+ const node=await appFixture(t,async(input,reader)=>{assert.ok(isUnderstanding(input));const originals=await supplied(input,reader);started.resolve();await release.promise;return response(originals[0].id,owner,products(originals[0].id,false));});
+ const source=await receive(node),created=manualJob(node,source.ids),running=node.memoryPipeline.run(created.id);await started.promise;const [config]=preparationConfig(node);assert.ok(node.memoryPipeline.conversationPreparation(config.generationContract).memoryWork);
+ if(change==='cancel')node.memoryPipeline.cancel(created.id);else {await node.sources.upsert('coding',{...event('owner','user','Generated corrected owner expression.'),revision:'2'});await node.sourcePipelines.tick();}
+ assert.throws(()=>node.memoryPipeline.conversationPreparation(config.generationContract),error=>error instanceof StoreError&&error.statusCode===409);release.resolve();const stopped=await running;assert.notEqual(stopped.status,'completed');assert.equal(node.store.archive.page({kind:'semantic'}).items.length,0);assert.equal(node.memories.list().length,0);
+});
 
 test('clean Coding material runs one authorized understanding and reuses its candidates for independent review',{timeout:15000},async t=>{
  let understanding=0,review=0,extraction=0;const calls:QueryInput[]=[];

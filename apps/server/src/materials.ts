@@ -1,5 +1,6 @@
 import {MaterialCatalog} from './material-catalog.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION,documentSchema,attributionContextSchema,ownerRelationSchema,unknownAttributionContext,type AttributionContext,type OwnerRelation,type CaptureRecord} from '@mote/shared';
+import {encodeMemoryPrivate,decodeMemoryPrivate} from './memory-private-storage.js';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {StoreError,type Store} from './store.js';
@@ -139,6 +140,7 @@ export class MaterialStore {
         sequence INTEGER NOT NULL,manifest TEXT NOT NULL,created_at TEXT NOT NULL,
         text_length INTEGER NOT NULL,block_count INTEGER NOT NULL,member_count INTEGER NOT NULL,asset_count INTEGER NOT NULL,
         draft_hash TEXT,PRIMARY KEY(material_id,revision),UNIQUE(material_id,sequence));
+      CREATE TABLE IF NOT EXISTS material_owner_declarations(material_id TEXT NOT NULL REFERENCES material_heads(id) ON DELETE CASCADE,id TEXT NOT NULL,version INTEGER NOT NULL,json TEXT NOT NULL,PRIMARY KEY(material_id,id,version));
       CREATE TABLE IF NOT EXISTS material_coding_snapshots(material_id TEXT NOT NULL,revision TEXT NOT NULL,
         archive_checkpoint TEXT,append_epoch INTEGER,head_count INTEGER,
         PRIMARY KEY(material_id,revision),FOREIGN KEY(material_id,revision) REFERENCES material_revisions(material_id,revision) ON DELETE CASCADE);
@@ -202,6 +204,17 @@ export class MaterialStore {
       INSERT OR IGNORE INTO material_index_requests SELECT h.id,h.revision,1,1,'indexed',NULL
         FROM material_heads h JOIN material_searchable s ON s.material_id=h.id;`);
     installEvidenceDependencies(store);
+    if(store.contentEncryption.enabled){
+      const db=store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+      try{
+        for(const row of db.prepare("SELECT material_id,id,version,json FROM material_owner_declarations WHERE json_extract(json,'$.private') LIKE 'json:%'").all()){
+          const value=JSON.parse(String(row.json));value.private=encodeMemoryPrivate(store,decodeMemoryPrivate(store,value.private));const json=JSON.stringify(value);
+          store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(String(row.json))));
+          db.prepare('UPDATE material_owner_declarations SET json=? WHERE material_id=? AND id=? AND version=?').run(json,row.material_id,row.id,row.version);
+        }
+        if(own)db.exec('COMMIT');
+      }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
+    }
   }
 
   /** The current manifest owns overrides; source prose never enters this resolver. */
@@ -210,14 +223,22 @@ export class MaterialStore {
     const source=row?JSON.parse(String(row.json)):undefined;
     const declaration=source&&(source.ownerRelation!==undefined||source.ownerRelationVersion)?{sourceId,version:source.ownerRelationVersion??1,ownerRelation:source.ownerRelation===undefined?null:ownerRelationSchema.parse(source.ownerRelation)}:undefined;
     const previous=this.head(id),manifest=previous&&this.version(id,previous.revision);
-    const saved=manifest?JSON.parse(manifest.manifest).attributionContext?.correction:undefined;
+    const savedContext=manifest?JSON.parse(manifest.manifest).attributionContext:undefined;
+    const saved=savedContext?.correction;
     const effectiveCorrection=correction??(this.pendingCorrection?.id===id?this.pendingCorrection.correction:undefined)??saved;
     return attributionContextSchema.parse({version:1,ownerRelation:effectiveCorrection?.ownerRelation??declaration?.ownerRelation??'unknown',
       basis:effectiveCorrection?.ownerRelation!=null?'owner_material':declaration?.ownerRelation!=null?'owner_source':'default',
-      ...(declaration?{sourceDeclaration:declaration}:{}),...(effectiveCorrection?{correction:effectiveCorrection}:{})});
+      ...(declaration?{sourceDeclaration:declaration}:{}),...(effectiveCorrection?{correction:effectiveCorrection}:{}),
+      ...((this.pendingDeclarations?.id===id?this.pendingDeclarations.values:savedContext?.declarations)?.length?{declarations:this.pendingDeclarations?.id===id?this.pendingDeclarations.values:savedContext.declarations}:{})});
   }
   private withContext<T extends MaterialDraft|MaterialAppendDraft>(draft:T):T {
     const attributionContext=this.resolveContext(draft.id,draft.origin.sourceId);
+    // A reply to an old dialogue is not an identity grant for replacement text.
+    if(attributionContext.declarations?.length&&this.pendingDeclarations?.id!==draft.id){
+      const prior=this.get(draft.id);
+      const basis=(value:MaterialDraft|MaterialAppendDraft)=>JSON.stringify(value.blocks.map(block=>block.kind==='text'?[block.id,block.text]:[block.id,block.hash]));
+      if(!prior||basis(this.contextDraft(prior))!==basis(draft))delete attributionContext.declarations;
+    }
     return {...draft,attributionContext,blocks:draft.blocks.map(block=>block.kind==='text'&&block.evidenceContext?{...block,
       evidenceContext:{...block.evidenceContext,attributionContext}}:block)};
   }
@@ -239,7 +260,7 @@ export class MaterialStore {
     let first:AttributionContext|undefined,firstJson:string|undefined,conflict=false,total=0;
     const digest=createHash('sha256'),items:NonNullable<AttributionContext['materialDeclarations']>['items']=[];
     for(const parent of parents){
-      const context=attributionContextSchema.parse(JSON.parse(String(parent.manifest)).attributionContext??unknownAttributionContext());
+      const context=this.openContext(String(parent.id),attributionContextSchema.parse(JSON.parse(String(parent.manifest)).attributionContext??unknownAttributionContext()));
       const contextJson=JSON.stringify(canonicalContext(context));
       if(firstJson===undefined){first=context;firstJson=contextJson;}else if(firstJson!==contextJson)conflict=true;
       total++;digest.update(JSON.stringify([parent.id,parent.revision,contextJson])+'\n');
@@ -306,6 +327,27 @@ export class MaterialStore {
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}finally{this.pendingCorrection=undefined;}
   }
   private pendingCorrection?:{id:string;correction:NonNullable<AttributionContext['correction']>};
+  private pendingDeclarations?:{id:string;values:NonNullable<AttributionContext['declarations']>};
+  /** Owner-only exact replies, scoped to one material. No historic model grant is issued here. */
+  declareContext(id:string,expectedRevision:string,input:{id:string;question:string;answer:string}):MaterialRecord {
+    const declaration=z.object({id:z.string().uuid(),question:z.string().trim().min(1).max(2000),answer:z.string().min(1).max(8000).refine(value=>Boolean(value.trim()))}).strict().parse(input);
+    const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+    try{
+      const material=this.get(id);if(!material)throw new StoreError('Material not found',404);
+      if(material.revision!==expectedRevision)throw new StoreError('Material revision changed; refresh and retry',409);
+      const values=material.attributionContext?.declarations??[],prior=values.find(value=>value.id===declaration.id),fingerprint=hash(JSON.stringify(declaration));
+      if(prior?.fingerprint===fingerprint){if(own)db.exec('COMMIT');return material;}
+      const version=(prior?.version??0)+1,json=JSON.stringify({private:encodeMemoryPrivate(this.store,{question:declaration.question,answer:declaration.answer})});
+      this.store.reserveMetadata(Buffer.byteLength(json)+256);
+      db.prepare('INSERT INTO material_owner_declarations VALUES(?,?,?,?)').run(id,declaration.id,version,json);
+      this.pendingDeclarations={id,values:[...values.filter(value=>value.id!==declaration.id),{id:declaration.id,version,fingerprint}]};
+      const result=this.republishContext(material);if(own)db.exec('COMMIT');return result;
+    }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}finally{this.pendingDeclarations=undefined;}
+  }
+  private openContext(id:string,context:AttributionContext):AttributionContext {
+    const ownerStatements=(context.declarations??[]).flatMap(value=>{const row=this.store.db.prepare('SELECT json FROM material_owner_declarations WHERE material_id=? AND id=? AND version=?').get(id,value.id,value.version);if(!row)return [];const body=decodeMemoryPrivate<{question:string;answer:string}>(this.store,JSON.parse(String(row.json)).private);return [{id:value.id,...body}];});
+    return ownerStatements.length?{...context,ownerStatements}:context;
+  }
   /** Semantic dependencies follow original and excerpt lineage without revoking either original. */
   private invalidateCaptureSemantics(captureId:string){
     const pending=[captureId],visited=new Set<string>();
@@ -470,7 +512,7 @@ export class MaterialStore {
     const invalidBlocks=rebuilding?new Set(this.store.db.prepare(`SELECT b.block_id FROM material_blocks b JOIN material_evidence e ON e.id=b.anchor_id
       WHERE b.material_id=? AND b.revision=? AND e.invalidated=1 UNION SELECT b.block_id FROM material_block_versions b JOIN material_evidence e ON e.id=b.anchor_id
       WHERE b.material_id=? AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?) AND e.invalidated=1`).all(head.id,row.revision,head.id,row.sequence,row.sequence).map(b=>String(b.block_id))):undefined;
-    return {...manifest,attributionContext:manifest.attributionContext??unknownAttributionContext(),...(rebuilding?{coverage:{state:'pending' as const,reason:'source_evidence_changed'},
+    return {...manifest,attributionContext:this.openContext(head.id,manifest.attributionContext??unknownAttributionContext()),...(rebuilding?{coverage:{state:'pending' as const,reason:'source_evidence_changed'},
       artifacts:manifest.artifacts?.map(artifact=>artifact.blockIds&&!artifact.blockIds.some(id=>invalidBlocks!.has(id))?artifact:{...artifact,state:'pending' as const,reason:'source_evidence_changed'})}:{}),
       ref:formatMaterialRef(head.id,row.revision),revision:row.revision,sequence:row.sequence,
       createdAt:head.created_at,updatedAt:row.version_created_at,blockCount:row.block_count,memberCount:row.member_count,

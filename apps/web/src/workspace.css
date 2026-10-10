@@ -118,3 +118,17 @@
 .workspace-range:empty { display:none; }
 .workspace-range { display:flex; justify-content:flex-end; margin-bottom:18px; }
 @media(max-width:760px) { .breadcrumb-workspace { display:none; }.topbar { padding-block:8px; }.workspace-range { justify-content:flex-start; } }
+.owner-question-history{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:12px}
+.owner-question-history h3,.owner-question-links h3{font-size:14px;font-weight:600;margin:12px 0 8px}
+.owner-question-history .conversation-item{text-decoration:none}
+.owner-question-links{margin:16px 0}
+.owner-question-links .button{flex-wrap:wrap;text-decoration:none;max-width:100%}
+.owner-question-links .button strong{overflow-wrap:anywhere}
+.owner-question-links .button span{font-size:12px;color:var(--muted)}
+.owner-question-evidence{border-bottom:1px solid var(--line);padding:8px 0 16px;margin-bottom:12px}
+.owner-question-evidence blockquote{margin:12px 0;padding-left:12px;border-left:2px solid var(--line);overflow-wrap:anywhere}
+.owner-question-conversation .answer-copy{overflow-wrap:anywhere}
+.owner-question-choices{flex-wrap:wrap}
+.owner-question-choices button[aria-pressed=true]{border-color:var(--green);color:var(--green)}
+.owner-question-actions{flex-wrap:wrap}
+@media(max-width:860px){.owner-question-conversation .ask-form{position:static}}

@@ -76,7 +76,7 @@ export class ContentStorageService {
     }
     // Durable private model products use the same encryption policy as managed
     // objects. Convert these before releasing an environment-only key identity.
-    for(const [table,column,nested] of [['delegation_payloads','json',false],['delegation_results','json',false],['delegation_artifacts','json',false],['delegation_artifacts','metadata',false],['delegation_works','json',true],['delegation_units','json',true],['delegation_events','message',false],['memory_jobs','json',true],['memory_batches','json',true],['memory_extraction_drafts','json',true]] as const){
+    for(const [table,column,nested] of [['delegation_payloads','json',false],['delegation_results','json',false],['delegation_artifacts','json',false],['delegation_artifacts','metadata',false],['delegation_works','json',true],['delegation_units','json',true],['delegation_events','message',false],['memory_jobs','json',true],['memory_batches','json',true],['memory_extraction_drafts','json',true],['owner_questions','json',true],['material_owner_declarations','json',true]] as const){
       if(!this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table))continue;
       for(const row of this.store.db.prepare(`SELECT rowid row_id,${column} value FROM ${table}`).all()){
         const saved=typeof row.value==='string'?row.value:'',encoded=nested?JSON.parse(saved).private:saved;

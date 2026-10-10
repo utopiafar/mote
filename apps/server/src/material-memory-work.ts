@@ -12,7 +12,7 @@ type WorkRow={material_id:string;scope:string;revision:string;required_json:stri
 const TERMINAL_AT=Number.MAX_SAFE_INTEGER,RESUME_DELAY_MS=5000,RETRY_DELAY_MS=60000;
 export type MaterialMemoryRunner={
   create:(input:{evidenceIds:string[];originKey:string;contextTime?:string;recipes?:MemoryStrategyRef[];automaticGrant?:AutomaticMemoryGrant;automaticGrants?:AutomaticMemoryGrant[];workPackage?:MemoryWorkPackage})=>{id:string};
-  get:(id:string)=>{status:string};run:(id:string)=>Promise<unknown>;cancel:(id:string)=>unknown;
+  get:(id:string)=>{status:string};run:(id:string)=>Promise<unknown>;cancel:(id:string,options?:{cause:'authority'})=>unknown;
 };
 export type MemoryWorkCandidate={key:string;materialId:string;ref:string;title:string;sourceId:string;inputKey:string;scope:string;contextTime:string;fingerprint:string;characters:number;evidenceCount:number;evidenceIds:string[];recipe?:MemoryStrategyRef};
 export type MemoryWorkProposal={id?:string;members:string[];goal:string;instruction:string};
@@ -134,7 +134,7 @@ export class MaterialMemoryWork {
     this.cancelRevocations(runner,Number.MAX_SAFE_INTEGER);
   }
   private cancelRevocations(runner:MaterialMemoryRunner,limit:number){for(const row of this.store.db.prepare('SELECT job_id FROM material_memory_revocations ORDER BY rowid LIMIT ?').all(limit)){
-    try{runner.cancel(String(row.job_id));}catch(error){if(!(error instanceof StoreError&&error.statusCode===404))return false;}
+    try{runner.cancel(String(row.job_id),{cause:'authority'});}catch(error){if(!(error instanceof StoreError&&error.statusCode===404))return false;}
     this.store.db.prepare('DELETE FROM material_memory_revocations WHERE job_id=?').run(row.job_id);
   }return true;}
   private launch(runner:MaterialMemoryRunner,row:WorkRow,allowed:(id:string)=>boolean){

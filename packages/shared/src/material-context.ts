@@ -10,6 +10,9 @@ export const attributionContextSchema=z.object({
   /** Conflicting current Material declarations; bounded display, complete lineage digest. */
   materialDeclarations:z.object({items:z.array(z.object({materialId:z.string().regex(/^mat_[a-f0-9]{64}$/),revision:z.string().regex(/^[a-f0-9]{64}$/),ownerRelation:ownerRelationSchema}).strict()).max(32),total:z.number().int().nonnegative(),digest:z.string().regex(/^[a-f0-9]{64}$/)}).strict().optional(),
   correction:z.object({version:z.number().int().positive(),ownerRelation:ownerRelationSchema.nullable()}).strict().optional(),
+  /** Host-owned declaration identities are persisted; prose is opened only for authorized reads. */
+  declarations:z.array(z.object({id:z.string().uuid(),version:z.number().int().positive(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).optional(),
+  ownerStatements:z.array(z.object({id:z.string().uuid(),question:z.string().max(2000),answer:z.string().max(8000)}).strict()).optional(),
 }).strict();
 export type AttributionContext=z.infer<typeof attributionContextSchema>;
 export const unknownAttributionContext=():AttributionContext=>({version:1,ownerRelation:'unknown',basis:'default'});

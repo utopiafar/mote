@@ -18,6 +18,10 @@ export class StorageLedger {
   private refresh(){
     const jsonTables=['import_uploads','todos','perception_results','captures','memories','memory_deletions','memory_input_plans','source_connections','conversations','conversation_turns','memory_jobs','memory_batches','memory_extraction_drafts','archived_files','import_jobs','file_artifacts','file_reviews','insight_runs','query_runs','model_usage','model_prices','memory_lifecycle_settings','memory_recipe_settings','memory_lifecycle_state','working_memories','action_meta','action_proposals','action_targets','context_contents','context_artifacts','processing_jobs','coding_conversation_contexts','delegation_works','delegation_units','delegation_payloads','delegation_results'];
     const expressions:Record<string,string>=Object.fromEntries(jsonTables.map(t=>[t,'length(CAST(json AS BLOB))']));
+    expressions.owner_questions='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(identity AS BLOB))+256';
+    expressions.owner_question_dependencies='length(CAST(question_id AS BLOB))+length(CAST(evidence_id AS BLOB))+64';
+    expressions.owner_question_replies='length(CAST(question_id AS BLOB))+length(CAST(request_id AS BLOB))+length(CAST(request_hash AS BLOB))+128';
+    expressions.material_owner_declarations='length(CAST(json AS BLOB))+length(CAST(material_id AS BLOB))+length(CAST(id AS BLOB))+128';
     expressions.image_products='length(CAST(json AS BLOB))+length(CAST(fingerprint AS BLOB))+256';
     expressions.image_inputs='coalesce(length(CAST(policy_json AS BLOB)),0)+512';
     expressions.image_attachment_intents='256';expressions.image_intake_overrides='192';expressions.image_backfills='length(CAST(query AS BLOB))+256';
@@ -32,6 +36,7 @@ export class StorageLedger {
     expressions.delegation_dependencies='length(CAST(work_id AS BLOB))+length(CAST(evidence_id AS BLOB))+128';
     expressions.execution_cancellation_aliases='length(CAST(alias_id AS BLOB))+length(CAST(step_id AS BLOB))+128';
     expressions.activity_memory_jobs='length(CAST(id AS BLOB))+coalesce(length(CAST(import_id AS BLOB)),0)+192';
+    expressions.activity_memory_continuations='length(CAST(job_id AS BLOB))+length(CAST(parent_id AS BLOB))+length(CAST(root_id AS BLOB))+96';
     expressions.activity_memory_sources='length(CAST(job_id AS BLOB))+length(CAST(source_id AS BLOB))+64';
     expressions.activity_memory_source_nodes='length(CAST(source_id AS BLOB))+64';
     expressions.activity_memory_source_links='length(CAST(first_source AS BLOB))+length(CAST(second_source AS BLOB))+64';

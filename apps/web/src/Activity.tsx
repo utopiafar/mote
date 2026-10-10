@@ -8,6 +8,7 @@ import {operationFeed} from './operation-feed';
 import {ListPagination,useCursorPages} from './ListPagination';
 import {WorkProgress,WorkStateBadge} from './WorkProgress';
 import type {Page} from './navigation';
+import {FeaturePanels} from './features/runtime';
 const tabs=[['overview','概览'],['work','工作分支'],['results','成果'],['evidence','证据'],['technical','技术详情']] as const;
 function WorkDetail({api,id,onBack,onNavigate,onOpen}:{api:Api;id:string;onBack:()=>void;onNavigate:(page:Page)=>void;onOpen:(ref:string)=>void}){
  const [tab,setTab]=useState<string>('overview'),paging=useCursorPages();
@@ -19,6 +20,7 @@ function WorkDetail({api,id,onBack,onNavigate,onOpen}:{api:Api;id:string;onBack:
   {work&&<><div className="page-heading"><div className="eyebrow">MOTE / <ActivityIcon size={14}/></div><h1 tabIndex={-1}>{work.goal}</h1><WorkStateBadge state={work.state}/><WorkProgress progress={work.progress}/></div>
    <nav className="section-tabs" aria-label={moteText('工作详情')}>{tabs.map(([key,label])=><button key={key} aria-current={tab===key?'page':undefined} onClick={()=>setTab(key)}>{moteText(label)}</button>)}</nav>
    {tab==='overview'&&<section className="panel panel-pad work-overview"><div className="work-overview-grid"><button className="work-overview-link" onClick={()=>setTab('work')}><GitBranch size={22}/><span><strong>{moteText('工作分支')}</strong><small>{moteText('{0} 个分支正在进行',work.branchCounts?.running??0)}</small></span><ArrowRight size={17}/></button><button className="work-overview-link" onClick={()=>setTab('results')}><FileCheck2 size={22}/><span><strong>{moteText('成果')}</strong><small>{moteText('{0} 项已保存成果',work.artifacts.length)}</small></span><ArrowRight size={17}/></button><button className="work-overview-link" onClick={()=>setTab('evidence')}><Eye size={22}/><span><strong>{moteText('证据')}</strong><small>{moteText('{0} 条来源资料',work.evidence.count)}</small></span><ArrowRight size={17}/></button></div>
+    <FeaturePanels api={api} onOpen={onOpen} value={{kind:'mote.work.activity',schemaVersion:1,representation:'overview',ref:work.id,revision:work.updatedAt,title:work.goal,text:'',operationIds:work.technical.operationIds}}/>
     {work.events.length>0&&<><h2>{moteText('最近进展')}</h2><ol className="work-events">{work.events.map(event=><li key={event.id}><time dateTime={event.at}>{new Date(event.at).toLocaleTimeString()}</time><span>{event.summary??moteText({'work.started':'工作已开始','plan.updated':'工作计划已更新','branch.started':'工作分支已开始','branch.completed':'工作分支已完成','branch.replanned':'已调整工作分支','artifact.created':'已保存工作成果','work.needs_input':'工作需要补充','work.completed':'工作已完成','work.failed':'工作未能完成','work.cancelled':'工作已停止'}[event.type])}</span></li>)}</ol></>}
     <button className="button subtle" onClick={()=>onNavigate(work.destination)}>{moteText('打开相关资料与操作')}<ArrowRight size={16}/></button>
    </section>}

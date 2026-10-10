@@ -1,3 +1,4 @@
+import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -67,7 +68,7 @@ test('one committed subrange never completes an original whose remaining range f
 
 test('legacy jobs keep whole-job import progress without package coverage metadata',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-import-memory-legacy-'));
-  const node=await buildApp(config(directory),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async()=>({runId:'generated-empty',trace:[],citations:[],answer:'{"memories":[]}'})}});
+  const node=await buildApp(config(directory),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>fixtureMemoryWorkResult(input,{runId:'generated-empty',trace:[],citations:[],answer:'{"memories":[]}'})}});
   await node.app.ready();t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   node.sources.register({id:'generated',name:'Generated original',kind:'custom',deviceId:'generated',platform:'import'});
   const {id}=await node.sources.upsert('generated',{externalId:'legacy',revision:'1',text:'Generated legacy original',observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original'});
@@ -76,6 +77,9 @@ test('legacy jobs keep whole-job import progress without package coverage metada
   const job=node.memoryPipeline.create({evidenceIds:node.materials.evidenceIds(material.ref)});
   const scope=String(node.store.db.prepare('SELECT scope FROM memory_input_authorizations WHERE capture_id=?').get(id)!.scope);
   node.store.db.exec('BEGIN IMMEDIATE');assert.ok(node.materialMemoryWork.inputs.claim('generated',id,job.id,scope));node.store.db.exec('COMMIT');
-  assert.equal((await node.memoryPipeline.run(job.id)).status,'completed');assert.equal(importMemoryProgress(node.store,[id])!.completed,1);
+  assert.equal((await node.memoryPipeline.run(job.id)).status,'completed');
+  // A persisted pre-coverage job uses its full committed receipt, not a new model call.
+  node.store.db.prepare("UPDATE memory_batches SET json=json_remove(json,'$.coverage') WHERE job_id=?").run(job.id);
+  assert.equal(importMemoryProgress(node.store,[id])!.completed,1);
   assert.equal(importMemoryProgress(node.store,[id,id])!.total,1);assert.equal(importMemoryProgress(node.store,[id,id])!.receipts,1);
 });
