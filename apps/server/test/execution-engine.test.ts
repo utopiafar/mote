@@ -45,6 +45,23 @@ test('admission waits do not spend attempts; retry is bounded and persisted',asy
  advance(100000);await engine.drain([id]);assert.equal(calls,4);
 });
 
+test('FTS deletion receipts cannot break failure, retry, cancellation or commit fences',async t=>{
+ const {engine,store}=await fixture(t),db=store.db;
+ db.exec("CREATE VIRTUAL TABLE fixture_fts USING fts5(text,content='',contentless_delete=1,tokenize='trigram')");
+ const insert=db.prepare('INSERT INTO fixture_fts(rowid,text) VALUES(?,?)');
+ for(let i=1;i<=3000;i++)insert.run(i,'Generated execution index '+i);
+ let entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);
+ engine.register({...base,execute:async step=>{if(step.input.hold){entered();await new Promise(()=>{});}return null;},
+  commit:()=>{db.prepare('DELETE FROM fixture_fts WHERE rowid=3').run();}});
+ const failed=engine.enqueue('fts-failed','fixture',{});
+ const cancelled=engine.enqueue('fts-cancelled','fixture',{hold:true});
+ db.prepare('DELETE FROM fixture_fts WHERE rowid=1').run();db.prepare('DELETE FROM fixture_fts WHERE rowid=2').run();
+ engine.fail(failed,'import_failed');assert.equal(engine.get(failed)?.state,'failed');
+ engine.retry(failed);await engine.drain([failed]);assert.equal(engine.get(failed)?.state,'succeeded');
+ await started;engine.cancel(cancelled);await engine.drain([cancelled]);assert.equal(engine.get(cancelled)?.state,'cancelled');
+ assert.equal(db.isTransaction,false);
+});
+
 test('two database connections respect pool capacity, durable leases and fenced recovery',async t=>{
  const {dir,store,engine,advance}=await fixture(t),other=new Store(dir),second=new ExecutionEngine(other);
  let release!:()=>void,enter!:()=>void;const held=new Promise<void>(r=>release=r),entered=new Promise<void>(r=>enter=r);let calls=0;

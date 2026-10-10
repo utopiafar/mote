@@ -16,7 +16,8 @@ import {MemoryDeletions} from './memory-deletions.js';
 import {notificationEvidenceText} from './notification-evidence.js';
 import {exportPortableMaterials,preparePortableMaterials,restorePortableMaterials,portableMaterialEstimate} from './material-portable.js';
 import {memorySchema} from './memory-schema.js';
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
+import {StoreDatabase} from './sqlite-database.js';
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, unlinkSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -52,7 +53,7 @@ export class EvidenceStore {
     privateDirectory(directory);
     privateSqliteFile(join(directory,'mote.sqlite'),true);
     for(const suffix of ['-wal','-shm','-journal'])privateSqliteFile(join(directory,`mote.sqlite${suffix}`));
-    this.db=new DatabaseSync(join(directory,'mote.sqlite'));
+    this.db=new StoreDatabase(join(directory,'mote.sqlite'));
     this.db.function('mote_image_device_hash',{deterministic:true},value=>sha256(JSON.stringify(String(value))));
     this.db.function('mote_image_policy',{deterministic:true},(raw,sourceId,mime,override)=>{
       if(raw===null)return null;
