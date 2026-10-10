@@ -382,7 +382,7 @@ test('organizer plugins build from a bounded group reader without a Store handle
     identity:g=>materialId(g.sourceId,g.externalId),
     build(reader,g){
       builds++;
-      assert.deepEqual(Object.keys(reader).sort(),['capture','codingSession','file','screenGroup','sourceHead'].sort());
+      assert.deepEqual(Object.keys(reader).sort(),['capture','codingSession','file','screenGroup','uiPageGroup','sourceHead'].sort());
       assert.equal(Object.isFrozen(reader),true);
       assert.equal('db' in reader,false);
       assert.equal('store' in reader,false);
@@ -390,6 +390,7 @@ test('organizer plugins build from a bounded group reader without a Store handle
       assert.equal(reader.capture(),undefined);
       assert.deepEqual(reader.codingSession(),{records:[],truncated:false});
       assert.deepEqual(reader.screenGroup(),{records:[],truncated:false});
+      assert.deepEqual(reader.uiPageGroup(),{records:[],truncated:false});
       assert.equal(reader.file(other.id),undefined);
       const record=reader.sourceHead();assert.equal(record?.id,first.id);
       assert.equal(reader.file(other.id),undefined);

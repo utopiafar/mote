@@ -1,82 +1,59 @@
 # 页面内容采集与规则贡献
 
-页面观察是独立的 `source: ui_page`，与截图 `screen`、状态 `activity` 并列。无图记录使用已有持久队列、批量压缩传输、重试确认、中央存储、文本检索、只读证据工具和导出；不触发 OCR。`ocrText` 是兼容现有索引的正文承载字段，页面详情明确显示其来源不是 OCR。
+`source: ui_page` 表示无图页面观察，使用既有持久队列、批量传输、幂等确认、中央存储、检索与导出，不触发 OCR。`ocrText` 是兼容索引的文字承载字段，内容实际来自无障碍字段。2026-10-10 的 Android 改造见 [ADR](adr-android-page-fields.md)。
 
-## 启用
+## Android 用户流程
 
-先升级中央节点，再升级采集器。旧中央不认识此来源，会拒收；客户端保留队列，不会误报上传成功。
+先升级中央节点，再升级 Android。旧节点拒收 v2 字段时，记录留在队列，不报告成功。底部导航保留“今天 / 资料 / 问一问 / 本机”。
 
-Android：使用无障碍采集模式并启用屏幕 / 前台采集，在隐私设置中的“页面内容采集”选择模式、填写 JSON 或“载入实验规则”，保存。目标 App 的隐私级别还必须是 `content`；Android 新安装默认仅活动，载入规则不会改变这个默认。投屏模式不支持页面读取，保存时明确拒绝不兼容组合。
+1. 从“本机 → 按应用配置”选择应用，决定“截图与内容 / 仅应用和时长 / 不记录”。默认范围仍为仅活动；加载规则不扩大范围。
+2. 应用详情显示已安装版本、此版本已配置的文章/商品字段，可载入匹配版本的内置规则、配置字段或导入规则 JSON；已配置不代表经过真机验证。高级区域保留规则 JSON，页面模式只显示“只截图”和“页面优先，未取得内容时截图”两个选项。页面模式对所有允许记录内容的应用生效；在应用详情中载入、配置或导入字段也会切换这一全局模式，字段规则仍按应用和版本匹配。
+3. 点击“保存并预览”保存配置并查看生成格式预览；保存和普通预览不会开启已暂停的采集。预览不读取个人屏幕，不意味着真实页面已适配。首次在本机点击“开始采集”，审阅保存的 App 范围和同步目标，点击“按此范围开始”才进入权限检查/启动流程；取消继续暂停。权限页提供“返回原配置页面”和“返回本机开始采集”，授权后回本机继续。
+4. 在已授权的内容 App 中正常浏览。采样时先提取字段，成功只保存字段；空结果、版本不匹配、必要字段缺失、读取失败才使用现有截图路径。App 页面切换、配置改变、锁屏或暂停会使旧回调失效。
+5. 内容先持久保存；是否上传及何时上传由原同步策略决定。节点不是开始本机采集的前置条件。中央资料保留原文与观察时间，支持后续追溯。
 
-macOS：隐私设置中同名区域配置。需要系统辅助功能授权；仅页面模式无需屏幕录制权限。宿主不代为开启目标应用辅助功能、不点击或滚动页面。当前仅支持主屏内完整显示的前台窗口。
+新安装的页面模式为 `ui_preferred`，已有显式 `screen_only` 保持只截图。Android 的 `hybrid`、`page_only` 旧值继续可读取，执行同样的字段优先与截图回退，界面显示页面优先，保存此配置页时统一为 `ui_preferred`。选择投屏并保存时同时改为只截图，每次新投屏会话仍需系统授权。隐私拒绝或状态失效不截图回退；页面成功保存后独立记录实测活动时长，字段记录的时长为 0，不重复计时。
 
-| 策略 | 行为 |
-|---|---|
-| `screen_only` | 默认，继续现有截图，不读取页面正文 |
-| `hybrid` | 匹配的页面额外保存文字，继续现有截图策略 |
-| `ui_preferred` | 只有规则声明完整且读取未截断时才跳过截图；未支持或部分读取继续截图 |
-| `page_only` | 只保存匹配页面正文，不回退截图；有效前台观察仍记录无正文的应用活动 |
+## v2 字段规则与上传
 
-隐私规则拒绝不会转成截图绕过。停止采集、锁屏、切换应用、配置变更会使未完成的页面观察失效。掩码相对于主屏，任何相交节点的文字被丢弃；输入框/密码（Android 包括敏感标记节点）整棵子树被跳过，遮挡窗口也过滤。节点无法确认可见范围时不保存文字。
-
-## 规则格式
-
-两端共用 JSON 数组；手机配置导入文件的 `settings.uiPageRules` 是这个数组的 JSON **字符串**，`settings.uiPageMode` 是策略字符串。Mac `config.json` 中 `config.uiPageRules` 则为数组、`config.uiPageMode` 为字符串。通过界面保存会安全应用；手工改配置应先退出应用。规则文件不能含脚本、动作、URL 下载或未知字段。
+规则数组最多 32 条、8 个必要节点条件、64 KiB。App/平台/版本精确匹配，Activity 可进一步限定。`region` 定位内容区域；`repeat` 生成独立商品对象；`repeatParent` 只选择指定父容器的直接卡片。选择器的资源 ID、role、textEquals 为精确 AND 条件；文本只用于明确页面定位，不识别用户意图。`ancestor` 限定字段祖先，`childPath` 使用原平台子索引，隐私过滤不会重新编号。数组第一个有结果的规则生效。
 
 ```json
-[
-  {
-    "id": "my-reader.article",
-    "version": "1",
-    "platform": "android",
-    "appId": "dev.example.reader",
-    "activity": "dev.example.reader.ArticleActivity",
-    "appVersion": "1.2.3",
-    "required": [{"resourceId": "dev.example.reader:id/article"}],
-    "select": {"role": "android.widget.TextView"},
-    "ancestor": {"resourceId": "dev.example.reader:id/article"},
-    "complete": false
-  }
-]
+[{"formatVersion":2,"id":"generated.article","version":"1","platform":"android",
+  "appId":"dev.example.reader","appVersion":"1.2.3","activity":"dev.example.reader.ArticleActivity",
+  "region":{"resourceId":"dev.example.reader:id/article"},
+  "fields":{
+    "title":{"select":{"resourceId":"dev.example.reader:id/title"},"required":true},
+    "author":{"select":{"resourceId":"dev.example.reader:id/author"}},
+    "url":{"select":{"resourceId":"dev.example.reader:id/link"}},
+    "body":{"select":{"role":"android.widget.TextView"},"ancestor":{"resourceId":"dev.example.reader:id/body"},"required":true}
+  },"kind":"article"}]
 ```
 
-应用和平台必须精确匹配；可选 Activity / 应用版本进一步限制。`required` 全部存在才运行，`select` 属性为 AND，`ancestor` 限定祖先容器。支持 `resourceId`、`role`、`textEquals` 精确值，文本匹配只能用于用户指定的结构 / 页面定位，不作为语义分类。数组按顺序，第一个产生结果的规则生效。相同文字的不同节点保留，不推断作者、消息 ID、阅读状态或任务。
+文章必须取得标题和正文，作者/实际链接可选；商品必须取得标题，实际链接/商品 ID 有则保留。多个标量候选无法确定归属时失败，不拼接成伪标题。没有 URL/ID 不凭标题推断身份；不拉取网页、不生成链接、不生成摘要或“未取得结果”句子。
 
-最多 32 条规则、8 个必要节点条件。单次读取最多 256 个节点、24 层、每节点 2000 字符、总文本 32000 字符；超限返回 `partial`，不会把截断结果标记为完整。Mac helper 总进程超时 5 秒，内部遍历预算 1 秒 / AX 消息超时 50ms；Android 遍历预算 750ms（系统单次 IPC 仍可能超过这个软预算），单 worker 防止堆积。不在主线程遍历正文树。沿用原采样间隔；本版不做每个滚动事件触发读取。
+单次读取最多 256 节点、深度上限 32（根节点为 0）、总文字 32000 字符、750ms 软遍历预算；单次 Android IPC 仍可能超过预算。历史微信文章正文节点位于深度 25–27，原 24 深度上限会在正文之前停止，故本轮提高遍历深度；节点、文字、耗时及隐私门槛保持相同。可见长节点保留并分块，不因超过 2000 字符整段丢弃。只读取确认可见且不受遮罩/遮挡的文字；输入、密码、敏感子树不读取。节点树仅供本机映射，不上传。单对象字段传输最多 64 个正文块、每块 32000 字符、全部字段 64000 字符。
 
-`complete:true` 是适配作者的完整性契约，不是模型评分：只有目标字段和负例经过验证才应开启。内置所有规则为 false；因此首次推荐使用 hybrid 验证，再按你的实际页面收紧选择器。规则删除/恢复旧版本即为回退，不自动下载或升级。
+新上传的 `metadata.uiPage.version=2` 包含 scope、adapterId/version、App 版本、Activity、status/truncated、observations `{firstAt,lastAt,count}` 和单元素 `objects`。对象字段是 `{kind,title,author?,url?,itemId?,body:[{text}],identity?}`。identity 只能等于实际 URL 或 itemId。`capturedAt` 与 metadata.observedAt 必须等于 observations.lastAt；ocrText 必须等于字段原文拼接。不允许图像、UI 节点、控件坐标或未知字段。多个卡片生成多个不可变记录。
 
-## 样本回放与扩展
+每条观察立即入持久队列。端侧有限缓存只按真实身份、相同标量和确切重叠轻合并，不延迟持久化；失败不消耗缓存。中央按设备/App/类型/身份组织可追溯资料，保留原观察、变化字段和不相连片段。无身份独立保存，正文不做语义改写。中央不将 v2 塞入有损截图摘要。成功只说明可见片段取得字段，资料覆盖仍为 `visible_window`，不宣称全文或用户读完。
 
-[内置包](../adapters/ui/builtin.json) 是唯一源文件，Android 构建复制到 assets，TypeScript 的内置副本由脚本生成。当前有微信 WebView、知乎内容页、小红书详情页，以及 Mac 微信/飞书静态文字实验规则。来源、局限和许可判断见[调研](ui-page-research.md)。没有通过实机验证的 App 版本表；不要把这些实验规则宣传为完整聊天/文章解析器。
+中央单份组织复用现有 2000 成员/400 万字符预算，读取最近观察直到预算；达到上限标明部分覆盖，全部采集原件仍保留并可独立分页。正文块的细粒度证明最多 32 个引用，其余原始成员仍可追溯；不把有限资料窗口说成完整历史。
+
+## 样本与适配边界
+
+[内置包](../adapters/ui/builtin.json) 是唯一规则源文件；Android 构建复制到 assets，TS 副本由脚本生成。新增微信 8.0.78 文章和淘宝 10.66.22 推荐卡片规则来自历史实验结构，本轮只验证生成 fixture。微信保留可见标题/作者/正文；历史树不暴露文章链接。淘宝规则保留卡片标题，历史树无商品链接/ID；详情页无可见字段时截图。不能将历史规则宣传为当前真机兼容。版本变化需显式适配；没有自动下载和动态脚本运行。
 
 ```sh
 npm run build -w @mote/shared
 node scripts/ui-adapters.mjs generate
-node scripts/ui-adapters.mjs replay /absolute/path/sanitized-snapshot.json adapters/ui/builtin.json android
-node --test packages/shared/test/ui-page.test.mjs
+node scripts/generate-ui-rule-fixtures.mjs --check
+node scripts/generate-ui-structured-fixtures.mjs --check
+node scripts/ui-adapters.mjs replay-all /absolute/path/generated-snapshot.json adapters/ui/builtin.json android
 ```
 
-快照结构见 `packages/shared/src/ui-page.ts`；回放输入是普通 JSON，没有系统对象。`adapters/ui/fixtures/conformance.json` 是完全生成的数据，TS 与 Kotlin 使用同一文件。规则选择后的证据保存在 `metadata.uiPage.nodes`，带节点 ID、位置、角色、资源 ID 和原文字。此版只保存选中节点，不保存未选中的整棵树；不能事后从归档恢复未采集的字段或像素。
+`structured-conformance.json` 的 45 个生成案例由 TS/Kotlin 共同回放，包含卡片、长正文、深层正文、必要字段、错版本、隐私删节点和原子索引。旧 `conformance.json`/`builtin-coverage.json` 验证 v1 兼容。贡献规则需附版本、结构来源和正常/负例/截断/多对象回放；不提交个人正文、截图或令牌。真实 App 与物理设备验收另行记录，见 [验证矩阵](validation/android-page-fields-2026-10-10.md)。
 
-贡献规则时提交清单、来源/版本说明、生成或独立脱敏的快照及期望结果，覆盖正常/空/错页/版本变更/截断。Agent 可以根据脱敏样本生成这些文件；运行时仍没有写权限或动作 API。用户可以用任意本地脚本生成规则 JSON。任意 JS 解析函数和在线订阅执行属于后续运行时工作。
+## Desktop 与旧记录
 
-## 查看与边界
-
-Mac 和 Android 的采集记录都可选择“页面内容采集”，中央时间线可按同名来源筛选；展开元数据可查看规则与节点证据。只读 Agent 能直接检索正文，必须把它当作不可信材料。页面正文记录的观察时长固定为 0，不表示用户阅读过全文。`page_only` 与成功替代截图的 `ui_preferred` 同时保存无正文的前台应用活动，连续同应用观察按实测间隔计时；`hybrid` 由截图记录时长。两端页面和截图共用同一采样时钟，切换应用、采集级别、暂停、锁屏或休眠后重置，避免重复或跨边界计时。
-
-本版每次有效采样独立保存，没有跨观察内容对象去重或差分树。旧队列、图片和笔记不迁移、不重写。不要预期精确的存储节省比例；只有成功跳过图片才会减少图像存储与中央 OCR。Canvas、没有公开节点的页面以及系统隐藏的敏感内容不会被恢复。
-
-## 内置规则的可重复覆盖矩阵
-
-`node scripts/generate-ui-rule-fixtures.mjs` 从每条规则的人工编写生成快照扩展负例；`--check` 检查矩阵与当前内置包一致。`adapters/ui/fixtures/builtin-coverage.json` 由 TypeScript 和 Kotlin 共同回放，覆盖可见正文、错误应用、空正文、缺少结构、无关导航和截断；Android Activity 规则还覆盖错页，祖先容器规则还覆盖移出容器。
-
-| 规则 | 生成矩阵案例 | 页面完整性 | 真机/App 版本 |
-|---|---:|---|---|
-| Android 微信 WebView | 8 | 部分可见节点 | 未验证 |
-| Android 知乎内容页 | 8 | 部分可见节点 | 未验证 |
-| Android 小红书详情页 | 7 | 部分可见节点 | 未验证 |
-| Mac 微信静态文字 | 6 | 部分可见节点 | 未验证 |
-| Mac 飞书静态文字 | 6 | 部分可见节点 | 未验证 |
-
-这些 35 个独立快照没有个人内容，也不证明应用真实页面能完整读取。所有内置规则继续 `complete:false`，所以 `ui_preferred` 仍保留截图；只有以后针对具体应用版本完成完整性验收，才可改变这一声明。
+Desktop 保留原 v1 selected-node 读取与 screen_only/hybrid/ui_preferred/page_only 行为；默认 screen_only，ui_preferred 仍按旧 complete 契约。这次不改变 macOS 权限与采集体验。中央继续读取旧队列的 v1 节点记录，新 Android 只产生 v2 字段记录。原有队列/图片/笔记不重写；输入不公开、Canvas、屏幕外内容不会被恢复。所有原文都是不可信证据，查询 Agent 只有只读工具。

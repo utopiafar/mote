@@ -1,0 +1,38 @@
+[
+  {
+    "formatVersion": 2,
+    "id": "generated-reader.article",
+    "version": "1",
+    "platform": "android",
+    "appId": "dev.mote.generated.reader",
+    "appVersion": "1.0.0",
+    "activity": "dev.mote.generated.reader.ArticleActivity",
+    "required": [{"resourceId": "dev.mote.generated.reader:id/article"}],
+    "region": {"resourceId": "dev.mote.generated.reader:id/article"},
+    "kind": "article",
+    "fields": {
+      "title": {"select": {"resourceId": "dev.mote.generated.reader:id/title"}, "required": true},
+      "author": {"select": {"resourceId": "dev.mote.generated.reader:id/author"}},
+      "url": {"select": {"resourceId": "dev.mote.generated.reader:id/url"}},
+      "body": {"select": {"resourceId": "dev.mote.generated.reader:id/paragraph"}, "required": true}
+    }
+  },
+  {
+    "formatVersion": 2,
+    "id": "generated-shop.products",
+    "version": "1",
+    "platform": "android",
+    "appId": "dev.mote.generated.shop",
+    "appVersion": "1.0.0",
+    "activity": "dev.mote.generated.shop.CatalogActivity",
+    "required": [{"resourceId": "dev.mote.generated.shop:id/catalog"}],
+    "region": {"resourceId": "dev.mote.generated.shop:id/catalog"},
+    "repeat": {"resourceId": "dev.mote.generated.shop:id/product_card"},
+    "kind": "product",
+    "fields": {
+      "title": {"select": {"resourceId": "dev.mote.generated.shop:id/title"}, "required": true},
+      "url": {"select": {"resourceId": "dev.mote.generated.shop:id/url"}},
+      "itemId": {"select": {"resourceId": "dev.mote.generated.shop:id/item_id"}}
+    }
+  }
+]

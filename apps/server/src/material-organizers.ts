@@ -1,6 +1,6 @@
 import {codingProjectContext} from './coding-project.js';
 import {createHash} from 'node:crypto';
-import {sourceContentTime,imageLocationSchema,type CaptureRecord,type Transcript} from '@mote/shared';
+import {sourceContentTime,imageLocationSchema,type CaptureRecord,type Transcript,type UiContentObject} from '@mote/shared';
 import {materialId,MaterialStore,type MaterialDraft,type MaterialEvidenceContext} from './materials.js';
 import {ArchivedFileStore} from './archived-files.js';
 import type {Store} from './store.js';
@@ -34,6 +34,7 @@ export interface MaterialOrganizerReader {
   sourceHead():CaptureRecord|undefined;
   codingSession():{records:CaptureRecord[];truncated:boolean};
   screenGroup():{records:CaptureRecord[];truncated:boolean};
+  uiPageGroup():{records:CaptureRecord[];truncated:boolean};
   file(captureId:string):MaterialOrganizerFile|undefined;
 }
 
@@ -55,6 +56,11 @@ const capture=(store:Store,id:string)=>store.evidence([id])[0];
 const current=(store:Store,id:string)=>store.isCurrentEvidence(id);
 const member=(record:CaptureRecord)=>({id:record.id,kind:'capture' as const,ref:`capture:${record.id}`,revision:record.provenance?.revision});
 const iso=(value:string)=>new Date(value).toISOString();
+const uiPageObservation=(r:CaptureRecord)=>{
+  const page=r.metadata?.uiPage;if(page?.version!==2)throw Error('Expected structured page evidence');
+  return {captureId:r.id,appVersion:page.appVersion,adapterId:page.adapterId,adapterVersion:page.adapterVersion,
+    activity:page.activity,status:page.status,truncated:page.truncated,...page.observations};
+};
 const sourceKey=(prefix:string,deviceId:string)=>`${prefix}:${digest(deviceId)}`;
 const canonicalGroup=(group:Record<string,string>):Record<string,string>=>Object.fromEntries(Object.entries(group).sort(([a],[b])=>a.localeCompare(b)));
 /** Source declarations and processor contracts, never fields parsed from prose. */
@@ -127,8 +133,33 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
   const screenGroup=()=>{
     if(!group.groupKey||!group.deviceId)return {records:[],truncated:false};
     const rows=store.db.prepare(`SELECT o.id FROM context_observations o JOIN captures c ON c.id=o.id
-      WHERE o.group_key=? AND c.device_id=? ORDER BY c.captured_at,o.id LIMIT 1001`).all(group.groupKey,group.deviceId) as {id:string}[];
+      WHERE o.group_key=? AND c.device_id=?
+      AND (json_extract(c.json,'$.source')='screen' OR (json_extract(c.json,'$.source')='ui_page' AND json_extract(c.json,'$.metadata.uiPage.version')=1))
+      ORDER BY c.captured_at,o.id LIMIT 1001`).all(group.groupKey,group.deviceId) as {id:string}[];
     return {records:rows.slice(0,1000).map(row=>permit(capture(store,row.id))).filter((r):r is CaptureRecord=>Boolean(r)),truncated:rows.length>1000};
+  };
+  const uiPageGroup=()=>{
+    if(group.captureId)return {records:[permit(capture(store,group.captureId))].filter((r):r is CaptureRecord=>Boolean(r)),truncated:false};
+    if(!group.deviceId||!group.appId||!group.kind||!group.identityType||!group.identityValue)return {records:[],truncated:false};
+    const rows=store.db.prepare(`SELECT id FROM captures WHERE device_id=?
+      AND json_extract(json,'$.source')='ui_page' AND json_extract(json,'$.metadata.uiPage.version')=2
+      AND json_extract(json,'$.appId')=? AND json_extract(json,'$.metadata.uiPage.objects[0].kind')=?
+      AND json_extract(json,'$.metadata.uiPage.objects[0].identity.type')=?
+      AND json_extract(json,'$.metadata.uiPage.objects[0].identity.value')=?
+      ORDER BY captured_at DESC,id DESC LIMIT 2001`).all(group.deviceId,group.appId,group.kind,group.identityType,group.identityValue) as {id:string}[];
+    const records:CaptureRecord[]=[];
+    let characters=2,truncated=rows.length>MAX_MEMBERS;
+    // Parse newest originals one at a time. The existing Material text budget
+    // bounds retained field text and observation metadata before grouping copies.
+    for(const row of rows.slice(0,MAX_MEMBERS)){
+      const record=capture(store,row.id);if(!record||!current(store,record.id))continue;
+      const page=record.metadata?.uiPage;if(page?.version!==2)continue;
+      const {body:paragraphs,identity:_,...fields}=page.objects[0]!;
+      const cost=JSON.stringify(fields).length+paragraphs.reduce((sum,p)=>sum+p.text.length,0)+JSON.stringify(uiPageObservation(record)).length+1;
+      if(characters+cost>MAX_TEXT){truncated=true;break;}
+      characters+=cost;records.push(permit(record)!);
+    }
+    return {records,truncated};
   };
   const file=(captureId:string,includeAttached=true):MaterialOrganizerFile|undefined=>{
     if(!allowed.has(captureId))return;
@@ -172,10 +203,10 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
       }),job,
       attachmentsTruncated:attachmentRows.length>2000};
   };
-  return Object.freeze({capture:()=>group.captureId?permit(capture(store,group.captureId)):undefined,sourceHead,codingSession,screenGroup,file});
+  return Object.freeze({capture:()=>group.captureId?permit(capture(store,group.captureId)):undefined,sourceHead,codingSession,screenGroup,uiPageGroup,file});
 }
 
-type ReaderCall={method:'capture'|'sourceHead'|'codingSession'|'screenGroup'|'file';captureId?:string;fingerprint:string};
+type ReaderCall={method:'capture'|'sourceHead'|'codingSession'|'screenGroup'|'uiPageGroup'|'file';captureId?:string;fingerprint:string};
 function recordingReader(store:Store,group:Record<string,string>,pinnedSourceHead?:CaptureRecord){
   const base=organizerReader(store,group,pinnedSourceHead),calls:ReaderCall[]=[];
   const record=<T>(method:ReaderCall['method'],value:T,captureId?:string)=>{
@@ -184,6 +215,7 @@ function recordingReader(store:Store,group:Record<string,string>,pinnedSourceHea
   const reader:MaterialOrganizerReader=Object.freeze({
     capture:()=>record('capture',base.capture()),sourceHead:()=>record('sourceHead',base.sourceHead()),
     codingSession:()=>record('codingSession',base.codingSession()),screenGroup:()=>record('screenGroup',base.screenGroup()),
+    uiPageGroup:()=>record('uiPageGroup',base.uiPageGroup()),
     file:(id:string)=>record('file',base.file(id),id),
   });
   return {reader,calls};
@@ -366,9 +398,69 @@ const codingSession:MaterialOrganizer={
   },
 };
 
+/** Identity is declared by a versioned field adapter. Titles never identify an object. */
+const uiPageExternalId=(g:Record<string,string>)=>digest([g.appId,g.kind,g.identityType,g.identityValue,g.captureId]);
+const uiPageObject:MaterialOrganizer={
+  id:'mote.ui-page-object',version:'1',slot:'ui-page-object',priority:10,exclusive:true,
+  select(r){
+    const page=r.metadata?.uiPage;if(r.source!=='ui_page'||page?.version!==2||!r.appId)return;
+    const object=page.objects[0]!;
+    return {deviceId:r.deviceId,appId:r.appId,kind:object.kind,...(object.identity?
+      {identityType:object.identity.type,identityValue:object.identity.value}:{captureId:r.id})};
+  },
+  identity:g=>materialId(sourceKey('ui-page',g.deviceId),uiPageExternalId(g)),
+  build(reader,g){
+    const {records:input,truncated}=reader.uiPageGroup();
+    const records=input.sort((a,b)=>Date.parse(a.capturedAt)-Date.parse(b.capturedAt)||a.id.localeCompare(b.id));
+    if(!records.length)return;
+    const byId=new Map(records.map(record=>[record.id,record]));
+    const body=new MaterialBody();
+    type Segment={fields:Omit<UiContentObject,'body'|'identity'>;key:string;headerMembers:string[];paragraphs:{text:string;members:string[]}[]};
+    const segments:Segment[]=[],observations:unknown[]=[];
+    const addProof=(ids:string[],id:string)=>{if(!ids.includes(id)){if(ids.length<32)ids.push(id);else body.limitations.add('block_evidence_limit');}};
+    for(const r of records){
+      const page=r.metadata?.uiPage;if(page?.version!==2)continue;
+      body.addMember(r);const object=page.objects[0]!,{body:paragraphs,identity:_,...fields}=object,key=digest(fields);
+      observations.push(uiPageObservation(r));
+      const previous=segments.at(-1),texts=paragraphs.map(p=>p.text);
+      let offset=-1;
+      if(previous?.key===key){
+        // Exact contiguous containment or suffix/prefix overlap only. Disjoint fragments remain separate.
+        const existing=previous.paragraphs.map(p=>p.text);
+        if(texts.length===0)offset=existing.length;
+        else for(let start=0;start<=existing.length-texts.length;start++){
+          if(texts.every((text,i)=>text===existing[start+i])){offset=start;break;}
+        }
+        if(offset<0)for(let size=Math.min(existing.length,texts.length);size>0;size--){
+          if(texts.slice(0,size).every((text,i)=>text===existing[existing.length-size+i])){offset=existing.length-size;break;}
+        }
+      }
+      if(previous&&offset>=0){
+        addProof(previous.headerMembers,r.id);
+        texts.forEach((text,i)=>{const found=previous.paragraphs[offset+i];if(found)addProof(found.members,r.id);else previous.paragraphs.push({text,members:[r.id]});});
+      }else segments.push({fields,key,headerMembers:[r.id],paragraphs:texts.map(text=>({text,members:[r.id]}))});
+    }
+    if(!body.members.length)return;
+    if(truncated)body.limitations.add('ui_page_group_limit');
+    for(const [index,segment] of segments.entries()){
+      body.text(`page:${index}:fields`,JSON.stringify(segment.fields),segment.headerMembers,'json',{appId:g.appId,kind:g.kind},undefined,evidenceContext(byId.get(segment.headerMembers[0]!)!));
+      segment.paragraphs.forEach((paragraph,i)=>body.text(`page:${index}:body:${i}`,paragraph.text,paragraph.members,'plain',
+        {segment:index,paragraph:i},undefined,evidenceContext(byId.get(paragraph.members[0]!)!)));
+    }
+    body.text('observations',JSON.stringify(observations),records[0]!.id,'json',undefined,undefined,evidenceContext(records[0]!));
+    const pages=records.map(r=>r.metadata!.uiPage!).filter(p=>p.version===2);
+    const sourceId=sourceKey('ui-page',g.deviceId),externalId=uiPageExternalId(g);
+    return {id:materialId(sourceId,externalId),kind:'mote.ui-page-object',schemaVersion:1,title:segments.at(-1)!.fields.title.slice(0,500),
+      origin:origin(sourceId,externalId,records,{firstAt:pages.map(p=>iso(p.observations.firstAt)).sort()[0],lastAt:pages.map(p=>iso(p.observations.lastAt)).sort().at(-1)}),
+      blocks:body.blocks,members:body.members,coverage:body.coverage('partial','visible_window'),
+      fidelity:body.fidelity('derived',['selected_page_fields','exact_overlap_only']),retention:{original:'retained',policy:'keep'},
+      artifacts:[{key:'source-body',state:'ready',blockIds:body.blocks.map(b=>b.id)}]};
+  },
+};
+
 const screenGroup:MaterialOrganizer={
-  id:'mote.screen-segment',version:'3',slot:'screen-segment',
-  select:r=>{if(r.source!=='screen'&&r.source!=='ui_page')return;const row=(r as CaptureRecord&{groupKey?:string}).groupKey;return {deviceId:r.deviceId,groupKey:row??''};},
+  id:'mote.screen-segment',version:'4',slot:'screen-segment',
+  select:r=>{if(r.source!=='screen'&&r.source!=='ui_page'||r.metadata?.uiPage?.version===2)return;const row=(r as CaptureRecord&{groupKey?:string}).groupKey;return {deviceId:r.deviceId,groupKey:row??''};},
   identity:g=>g.groupKey?materialId(sourceKey('screen',g.deviceId),g.groupKey):undefined,
   build(reader,g){
     if(!g.groupKey)return;
@@ -561,9 +653,12 @@ export class MaterialOrganizerRuntime {
             if(prepared.pinnedSourceHead)this.memoryWork?.observe(input.materialId,[required,...attachments],{
               inputKey:prepared.pinnedSourceHead,change:input.sourceChanged?'source':'rebuild',
             });
+          }else if(input.organizerId===uiPageObject.id){
+            const last=prepared.draft.members.at(-1)?.id;
+            if(last)this.memoryWork?.observe(input.materialId,['source-body'],{inputKey:last,change:input.sourceChanged?'source':'rebuild'},15000);
           }else if(input.organizerId===screenGroup.id){
             const last=prepared.draft.members.at(-1)?.id;
-            if(last)this.memoryWork?.observe(input.materialId,prepared.draft.artifacts?.some(item=>item.key==='image-understanding')?['image-understanding']:['ocr'],{inputKey:last,change:'source'},15000);
+            if(last)this.memoryWork?.observe(input.materialId,prepared.draft.artifacts?.some(item=>item.key==='image-understanding')?['image-understanding']:['ocr'],{inputKey:last,change:input.sourceChanged?'source':'rebuild'},15000);
           }
         }else if(!other){
           const prior=materials.get(input.materialId);if(prior)materials.retire(input.materialId,{expectedRevision:prior.revision});
@@ -580,7 +675,7 @@ export class MaterialOrganizerRuntime {
           complete=CASE WHEN version=excluded.version THEN complete ELSE excluded.complete END`).run(organizer.id,organizer.version,fresh?1:0);
       this.retryFailed(organizer.id);
     });
-    for(const organizer of [sourceItem,codingSession,screenGroup,stateSeries,authored])this.registry.register(organizer);
+    for(const organizer of [sourceItem,codingSession,uiPageObject,screenGroup,stateSeries,authored])this.registry.register(organizer);
     for(const organizer of additionalOrganizers)this.registry.register(organizer);
   }
   private cursor(){return Number(this.store.db.prepare("SELECT value FROM settings WHERE key='material-organizer-cursor'").get()?.value??0);}

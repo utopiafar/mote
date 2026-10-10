@@ -92,6 +92,10 @@ export class EvidenceStore {
       CREATE INDEX IF NOT EXISTS captures_app ON captures(json_extract(json,'$.appId'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_source ON captures(json_extract(json,'$.source'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_collection ON captures(COALESCE(json_extract(json,'$.privacy.collection'),'content'),captured_at DESC);
+      CREATE INDEX IF NOT EXISTS captures_ui_page_identity ON captures(device_id,json_extract(json,'$.appId'),
+        json_extract(json,'$.metadata.uiPage.objects[0].kind'),json_extract(json,'$.metadata.uiPage.objects[0].identity.type'),
+        json_extract(json,'$.metadata.uiPage.objects[0].identity.value'),captured_at DESC,id DESC)
+        WHERE json_extract(json,'$.source')='ui_page' AND json_extract(json,'$.metadata.uiPage.version')=2;
       CREATE INDEX IF NOT EXISTS captures_coding_repository ON captures(json_extract(json,'$.provenance.document.coding.repositoryKey'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_coding_project ON captures(json_extract(json,'$.provenance.document.coding.projectKey'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_coding_session ON captures(json_extract(json,'$.provenance.document.coding.sessionId'),captured_at DESC);
@@ -192,6 +196,11 @@ export class EvidenceStore {
   }
   async prepare(raw:unknown):Promise<Prepared> {
     const input=captureSchema.parse(raw); input.capturedAt=new Date(input.capturedAt).toISOString();
+    if(input.metadata?.uiPage?.version===2){
+      input.metadata.observedAt=new Date(input.metadata.observedAt).toISOString();
+      input.metadata.uiPage.observations.firstAt=new Date(input.metadata.uiPage.observations.firstAt).toISOString();
+      input.metadata.uiPage.observations.lastAt=input.capturedAt;
+    }
     if(input.stateSeries)for(const sample of input.stateSeries.samples)sample.at=new Date(sample.at).toISOString();
     if(Date.parse(input.stateSeries?.samples.at(-1)?.at??input.capturedAt)>Date.now()+86_400_000)throw new StoreError('Capture timestamp is more than one day in the future');
     let bytes:Buffer|undefined; let hash:string|null=null;

@@ -21,7 +21,9 @@ class CaptureAccessibilityService : AccessibilityService() {
     @Volatile private var destroyed = false
     @Volatile private var pageActivity = ""
     @Volatile private var pagePackage = ""
+    private val activityClasses = linkedMapOf<Pair<String,String>, Boolean>()
     private val pageWorker = java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, java.util.concurrent.ArrayBlockingQueue<Runnable>(1))
+    private val pageMerge = UiPageMerge()
     private val screenReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context, intent: android.content.Intent) { refreshSchedule() }
     }
@@ -51,14 +53,30 @@ class CaptureAccessibilityService : AccessibilityService() {
         handler.post {
             if (destroyed) return@post
             configurationGeneration++; inFlight = false; nextCapture = 0
+            pageMerge.reset()
             handler.removeCallbacks(tick)
             handler.post(tick)
         }
     }
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         ProjectionService.instance?.onWindowChanged()
-        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && event.className?.toString()?.contains(".") == true) {
-            pageActivity=event.className.toString(); pagePackage=event.packageName?.toString().orEmpty()
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val app = event.packageName?.toString().orEmpty()
+            val className = event.className?.toString().orEmpty()
+            // Only a manifest-declared Activity can replace the page identity; dialogs and custom Views cannot.
+            val candidate = app to className
+            val declared = if (app.isBlank() || !className.contains('.') || className.startsWith("android.widget.") || className.startsWith("android.view.") || className.startsWith("android.webkit.")) false
+                else activityClasses.getOrPut(candidate) { runCatching { packageManager.getActivityInfo(android.content.ComponentName(app,className),0);true }.getOrDefault(false) }
+            while(activityClasses.size>256)activityClasses.remove(activityClasses.keys.first())
+            val activity = className.takeIf { declared }
+            val changed = app != pagePackage || activity != null && activity != pageActivity
+            if (app != pagePackage) pageActivity = ""
+            pagePackage = app
+            if (activity != null) pageActivity = activity
+            if (changed) {
+                configurationGeneration++; inFlight = false; nextCapture = 0; pageMerge.reset()
+                handler.removeCallbacks(tick); handler.post(tick)
+            }
         }
     }
     override fun onInterrupt() {
@@ -170,14 +188,14 @@ class CaptureAccessibilityService : AccessibilityService() {
         if (mode == AppCollectionMode.ACTIVITY) {
             if (pipeline!!.canCollect(config, snapshot, mode)) {
                 nextCapture = android.os.SystemClock.elapsedRealtime() + config.intervalSeconds * 1000L
-                pipeline!!.submitActivity(snapshot, config)
+                val generation = configurationGeneration
+                pipeline!!.submitActivity(snapshot, config, isCurrent = { captureCurrent(snapshot,config,generation,AppCollectionMode.ACTIVITY) })
             }; return
         }
         if (!pipeline!!.canCapture(config, snapshot)) return
-        if (config.uiPageMode != "screen_only" && config.pageRules.any { it.getString("platform") == "android" && it.getString("appId") == snapshot.foreground }) {
+        if (config.uiPageMode != "screen_only" && config.pageRules.any { it.optInt("formatVersion", 1) == 2 && it.getString("platform") == "android" && it.getString("appId") == snapshot.foreground }) {
             collectPage(snapshot,config); return
         }
-        if (config.uiPageMode == "page_only") { pipeline!!.submitPageActivity(snapshot, config); return }
         captureScreen(snapshot,config)
     }
     private fun captureScreen(snapshot: WindowSnapshot, config: CollectorConfig) {
@@ -224,7 +242,7 @@ class CaptureAccessibilityService : AccessibilityService() {
                             if (generation == configurationGeneration) inFlight = false
                             if (bitmap != null) {
                                 if (!destroyed && generation == configurationGeneration && !ConnectionGuard.changing() && settings.enabled && windowSnapshot() == snapshot && CapturePipeline.unlocked(this@CaptureAccessibilityService))
-                                    capturePipeline.submit(bitmap, snapshot, config, at, observedAtMs)
+                                    capturePipeline.submit(bitmap, snapshot, config, at, observedAtMs) { captureCurrent(snapshot, config, generation) }
                                 else { bitmap.recycle(); Operations.record(this@CaptureAccessibilityService, OperationKind.FRAME_BLOCKED, OperationReason.WINDOW_CHANGED) }
                             } else if (settingsValid) Operations.record(this@CaptureAccessibilityService, OperationKind.CAPTURE_FAILED, OperationReason.PIXEL_COPY)
                             else Operations.record(this@CaptureAccessibilityService, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED)
@@ -244,6 +262,9 @@ class CaptureAccessibilityService : AccessibilityService() {
             }
         })
     }
+    private fun captureCurrent(snapshot: WindowSnapshot, config: CollectorConfig, generation: Long, collection: AppCollectionMode = AppCollectionMode.CONTENT): Boolean =
+        runCatching { !destroyed && generation == configurationGeneration && !ConnectionGuard.changing() && settings.enabled && settings.read() == config &&
+            CapturePipeline.unlocked(this) && windowSnapshot() == snapshot && CapturePipeline.policy(config, snapshot) == collection }.getOrDefault(false)
     private fun collectPage(snapshot: WindowSnapshot, config: CollectorConfig) {
         inFlight=true
         val generation=configurationGeneration
@@ -252,14 +273,15 @@ class CaptureAccessibilityService : AccessibilityService() {
         val activity=if(pagePackage==snapshot.foreground) pageActivity else ""
         ConnectionGuard.processing.incrementAndGet()
         try { pageWorker.execute {
-            var suppressScreen=false
-            var privacyRejected=false
+            var outcome = UiPageOutcome.STATE_CHANGED
+            var queued = 0
             try {
                 val appId=snapshot.foreground ?: return@execute
-                fun valid() = !destroyed && generation==configurationGeneration && !ConnectionGuard.changing() && settings.enabled && settings.read()==config && CapturePipeline.unlocked(this) && windowSnapshot()==snapshot && (pagePackage!=appId || pageActivity==activity)
+                fun valid() = captureCurrent(snapshot, config, generation) && (pagePackage != appId || pageActivity == activity)
                 if(!valid())return@execute
+                outcome = UiPageOutcome.EMPTY
                 val version=runCatching { packageManager.getPackageInfo(appId,0).versionName.orEmpty() }.getOrDefault("")
-                val rules=config.pageRules.filter { it.getString("platform")=="android" && it.getString("appId")==appId && (!it.has("activity")||it.getString("activity")==activity) && (!it.has("appVersion")||it.getString("appVersion")==version) }
+                val rules=config.pageRules.filter { it.optInt("formatVersion", 1) == 2 && it.getString("platform")=="android" && it.getString("appId")==appId && (!it.has("activity")||it.getString("activity")==activity) && it.getString("appVersion")==version }
                 if(rules.isEmpty())return@execute
                 val root=rootInActiveWindow ?: return@execute
                 val windowId=root.windowId
@@ -273,35 +295,56 @@ class CaptureAccessibilityService : AccessibilityService() {
                     (getSystemService(WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.getRealMetrics(size)
                     if(!viewport.intersect(0,0,size.widthPixels,size.heightPixels))return@execute
                     val masks=Mask.parse(config.masks).map { android.graphics.Rect((it.left*size.widthPixels).toInt(),(it.top*size.heightPixels).toInt(),kotlin.math.ceil(it.right*size.widthPixels.toDouble()).toInt(),kotlin.math.ceil(it.bottom*size.heightPixels.toDouble()).toInt()) }
-                    UiPageReader.read(root,appId,version,activity,viewport,masks,occlusions)
+                    UiPageReader.read(root,appId,version,activity,viewport,masks,occlusions).put("observedAt", sampledAt)
                 } finally { @Suppress("DEPRECATION") root.recycle() }
                 if(!valid())return@execute
                 val current=rootInActiveWindow
                 val sameWindow=current?.windowId==windowId
                 @Suppress("DEPRECATION") current?.recycle()
                 if(!sameWindow)return@execute
-                val page=UiPageRules.extract(pageSnapshot,rules) ?: return@execute
                 val allText=UiPageRules.text(pageSnapshot)
-                if(UploadGate.review(config.uploadGate){allText}!="allow"){suppressScreen=true;privacyRejected=true;pipeline?.pause(MoteI18n.text("页面隐私审查未通过，已跳过"));return@execute}
-                val at=sampledAt
-                val event=org.json.JSONObject().put("id",java.util.UUID.randomUUID().toString()).put("deviceId",settings.deviceId)
-                    .put("deviceName",config.deviceName).put("platform","android").put("capturedAt",at).put("durationMs",0)
-                    .put("appId",appId).put("appName",CollectorMetadata.appName(this,appId)).put("source","ui_page").put("ocrText",UiPageRules.text(page))
-                    .put("privacy",org.json.JSONObject().put("excluded",false).put("redacted",true).put("mode","local").put("collection","content"))
-                    .put("metadata",org.json.JSONObject().put("version",1).put("observedAt",at).put("collector",org.json.JSONObject().put("method","accessibility")).put("uiPage",page))
-                if(!valid())return@execute
-                queue().enqueue(event,null,config.maxQueueMiB*1024L*1024L)
-                settings.captured(at);settings.status("capturing",MoteI18n.text("页面内容已保存"));UploadWorker.schedule(this,config)
-                suppressScreen=config.uiPageMode=="ui_preferred" && page.getString("status")=="ok"
-            } catch (_: Exception) { settings.status("paused",MoteI18n.text("页面读取失败，等待下一次采样")) }
+                if(UploadGate.review(config.uploadGate){allText}!="allow"){outcome=UiPageOutcome.PRIVACY_REJECTED;pipeline?.pause(MoteI18n.text("页面隐私审查未通过，已跳过"));return@execute}
+                val pages=UiPageRules.extractAll(pageSnapshot,rules,sampledAt)
+                if (pages.isEmpty()) return@execute
+                // Structured success excludes the screenshot even for partial visible content.
+                // A queue failure retries next sample instead of switching representation or losing a fragment.
+                outcome=UiPageOutcome.EXTRACTED
+                val context = "$generation:$appId"
+                for (extracted in pages) {
+                    val page=pageMerge.merge(extracted, context)
+                    val event=org.json.JSONObject().put("id",java.util.UUID.randomUUID().toString()).put("deviceId",settings.deviceId)
+                        .put("deviceName",config.deviceName).put("platform","android").put("capturedAt",sampledAt).put("durationMs",0)
+                        .put("appId",appId).put("appName",CollectorMetadata.appName(this,appId)).put("source","ui_page").put("ocrText",UiPageRules.text(page))
+                        .put("privacy",org.json.JSONObject().put("excluded",false).put("redacted",true).put("mode","local").put("collection","content"))
+                        .put("metadata",org.json.JSONObject().put("version",1).put("observedAt",sampledAt).put("collector",org.json.JSONObject().put("method","accessibility")).put("uiPage",page))
+                    UiPageRules.validateEvent(event)
+                    if(!valid()) { outcome=UiPageOutcome.STATE_CHANGED; return@execute }
+                    queue().enqueue(event,null,config.maxQueueMiB*1024L*1024L)
+                    queued++
+                    if(valid())pageMerge.accepted(page,context)
+                }
+                outcome=UiPageOutcome.CAPTURED
+                if(valid()){settings.captured(sampledAt);settings.status("capturing",MoteI18n.text("页面内容已保存"))}
+            } catch (_: Exception) {
+                if (outcome in setOf(UiPageOutcome.EXTRACTED,UiPageOutcome.CAPTURED)) outcome=UiPageOutcome.SAVE_FAILED
+                else if (outcome != UiPageOutcome.PRIVACY_REJECTED) outcome=UiPageOutcome.FAILED
+                if(captureCurrent(snapshot,config,generation))settings.status("paused",MoteI18n.text("页面读取失败，等待下一次采样"))
+            }
             finally {
+                // Durable records belong to the queue after collection ends; stopping or changing
+                // windows must not postpone their existing upload policy. Bind scheduling to the
+                // current transport configuration while holding the reconfiguration guard.
+                if(queued>0)runCatching { ConnectionGuard.sync {
+                    val current=settings.read()
+                    if(SyncSchedule.stamp(current)==SyncSchedule.stamp(config))UploadWorker.schedule(this,current)
+                } }
                 ConnectionGuard.processing.decrementAndGet()
                 handler.post { if(generation==configurationGeneration){
                     inFlight=false
-                    if (!privacyRejected && (suppressScreen || config.uiPageMode=="page_only") &&
-                        windowSnapshot()==snapshot && pipeline?.canCapture(config,snapshot)==true)
-                        pipeline!!.submitPageActivity(snapshot,config,sampledAt,observedAtMs)
-                    else if(!suppressScreen && config.uiPageMode!="page_only") captureScreen(snapshot,config)
+                    if (!captureCurrent(snapshot,config,generation)) return@post
+                    if (outcome==UiPageOutcome.CAPTURED && pipeline?.canCapture(config,snapshot)==true)
+                        pipeline!!.submitPageActivity(snapshot,config,sampledAt,observedAtMs) { captureCurrent(snapshot,config,generation) }
+                    else if(UiPageCaptureChoice.screenshot(config.uiPageMode,outcome)) captureScreen(snapshot,config)
                 } }
             }
         } } catch (_: java.util.concurrent.RejectedExecutionException) { inFlight=false; ConnectionGuard.processing.decrementAndGet() }
@@ -309,6 +352,7 @@ class CaptureAccessibilityService : AccessibilityService() {
     fun stopCapture() {
         handler.removeCallbacks(tick)
         configurationGeneration++; nextCapture = 0; inFlight = false
+        pageMerge.reset()
         pipeline?.close(); pipeline = null
         if (!ProjectionService.running) Notifications.clear(this)
     }
