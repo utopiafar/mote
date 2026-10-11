@@ -12,7 +12,7 @@ import {generatedMemoryOutput} from './fixtures/memory-planning.js';
 
 // Real startup, HTTP preparation/confirmation, receipt ingestion and periodic
 // publication/Memory workers. All source content and model responses are generated.
-test('HTTP import of a thousand generated originals rolls through bounded background packages without planning',{timeout:260000},async t=>{
+test('HTTP import of a thousand generated originals rolls through bounded background packages without planning',{timeout:390000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-background-import-'));
  const config:Config={dataDir:directory,token:'generated-background-import-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:100_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let extracts=0,reviews=0,planning=0,importId='',reviewBeforeImportComplete=false,releasePrefix!:()=>void,releaseTail!:()=>void;
@@ -40,14 +40,25 @@ test('HTTP import of a thousand generated originals rolls through bounded backgr
  for(let attempt=0;attempt<100;attempt++){if(node.imports.get(id).status==='awaiting_confirmation')break;await setTimeout(20);}
  assert.equal(node.imports.get(id).status,'awaiting_confirmation');
  const confirmed=await node.app.inject({method:'POST',url:`/api/imports/${id}/confirm`,headers});assert.equal(confirmed.statusCode,202,confirmed.body);
- const deadline=Date.now()+240000;
- while(Date.now()<deadline){
-
-  const imported=node.imports.get(id),completed=Number(node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n);
-  if(completed===999)releaseTail();
-  if(imported.status==='completed'&&completed===1000)break;
-  await setTimeout(250);
- }
+ // Each phase waits for ordinary background scheduling. The tail cannot
+ // consume a deadline that nearly expired while its receipt was still gated.
+ // Fixture-only budgets accommodate CI scheduling; completeness has no wall-clock SLO.
+ const waitForPhase=async(phase:string,timeoutMs:number,ready:(imported:ReturnType<typeof node.imports.get>,checkpoints:number)=>boolean)=>{
+  const started=Date.now(),deadline=started+timeoutMs;
+  const snapshot=()=>{const imported=node.imports.get(id),checkpoints=Number(node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n);return {imported,checkpoints};};
+  const fail=()=>{const {imported,checkpoints}=snapshot();assert.fail(JSON.stringify({phase,elapsedMs:Date.now()-started,importStatus:imported.status,progress:imported.progress,error:imported.error,checkpoints,extracts,reviews,
+   materials:node.store.db.prepare('SELECT count(*) n FROM material_heads').get(),
+   requests:node.store.db.prepare('SELECT auto_authorized,error,count(*) n FROM material_memory_requests GROUP BY auto_authorized,error').all(),
+   jobs:node.store.db.prepare("SELECT json_extract(json,'$.status') status,json_extract(json,'$.errorCode') error,count(*) n FROM memory_jobs GROUP BY status,error").all()}));};
+  while(Date.now()<deadline){const {imported,checkpoints}=snapshot();if(ready(imported,checkpoints))return;if(imported.status==='failed')fail();await setTimeout(250);}
+  fail();
+ };
+ const prefixStarted=Date.now();
+ await waitForPhase('prior 999 receipts committed',300000,(_imported,checkpoints)=>checkpoints===999);
+ assert.equal(node.imports.get(id).progress.imported,999,'the final receipt remains gated until earlier checkpoints commit');
+ const tailStarted=Date.now();releaseTail();
+ await waitForPhase('released tail imported and committed',60000,(imported,checkpoints)=>imported.status==='completed'&&checkpoints===1000);
+ t.diagnostic(JSON.stringify({prefixMs:tailStarted-prefixStarted,tailMs:Date.now()-tailStarted}));
  assert.equal(node.imports.get(id).progress.imported,1000);
  const receipts=node.store.db.prepare('SELECT input_key,scope,job_id FROM memory_input_authorizations WHERE authorized=1').all();assert.equal(receipts.length,1000);assert.ok(receipts.every(receipt=>receipt.job_id),JSON.stringify({claimed:receipts.filter(receipt=>receipt.job_id).length,materials:node.store.db.prepare('SELECT count(*) n FROM material_heads').get(),requests:node.store.db.prepare('SELECT auto_authorized,error,count(*) n FROM material_memory_requests GROUP BY auto_authorized,error').all(),jobs:node.store.db.prepare("SELECT json_extract(json,'$.status') status,count(*) n FROM memory_jobs GROUP BY status").all(),checkpoints:node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get(),extracts,reviews}));
  const rows=node.store.db.prepare('SELECT id FROM memory_jobs').all(),jobs=rows.map(row=>node.memoryPipeline.get(String(row.id)));

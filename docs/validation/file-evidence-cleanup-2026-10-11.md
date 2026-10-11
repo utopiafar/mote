@@ -32,6 +32,36 @@ The corrected fixture follows the app path and checks the exact queued revision
 through restart and same-node reauthorization. No platform skip or weakened
 assertion was added.
 
+## Background import fixture timing
+
+The first #96 CI passed Desktop, Android and contract/tooling checks, but its
+Central run failed the existing thousand-original background import fixture:
+imported=999 after 247.128 seconds, against its shared 240-second wait. The same
+unchanged fixture passed the preceding CI in 205.821 seconds and locally. The
+final receipt is deliberately gated until 999 earlier Memory checkpoints finish;
+imported=999 alone does not distinguish prefix work from a released pending tail.
+
+A generated measured replay observed imported=999 while checkpoints were still
+87 at 20 seconds, 343 at 40 seconds and 599 at 60 seconds. The prefix reached 999
+checkpoints at 93.269 seconds; the released tail completed in another 4.619
+seconds. No evidence of a lost production receipt was established.
+
+The fixture now explicitly waits for the prefix, verifies its withheld receipt,
+releases the tail and waits for complete import plus 1000 checkpoints. Independent
+300-second prefix and 60-second tail test waits, with a 390-second hard test
+timeout, account for measured CI variation and teardown. Phase-specific failures
+include progress, checkpoints and work status. These are fixture wait budgets;
+production scheduling is unchanged. Every 1000-original, seven-member prefix,
+one-member tail, exact-once coverage and no-planner assertion remains. A focused
+phase replay passed; final Central consumer checks cover the saved version.
+
+The final incremental `npm run check:affected -- --base c8ed45e` passed Central
+and its consumers: 1397 Central tests, 268 Web, 243 Agent, 177 shared, translation
+checks, generated Central runner and release tools. The saved background fixture
+passed in 107.338 seconds, with prefix=101.779 seconds and tail=4.270 seconds.
+The two existing optional skips remain; other previously verified components
+were unchanged by this test-only follow-up.
+
 ## Validation boundary
 
 Central text expansion, stale versions, deletion, source authorization and
