@@ -5,7 +5,7 @@ import {StoreError} from './store.js';
 const groups:Record<string,(keyof ContextReader)[]>={
   context:['catalog','search','timeline','evidence'],materials:['materialCatalog','materialRead'],
   capture:['readImage','segments','activity'],files:['readFileEvidence','fileChunks'],media:['mediaActivity'],
-  sources:['sourceHistory','sources','sourceItems'],memory:['memories'],devices:['devices'],
+  sources:['sourceHistory','sources','sourceContext','sourceItems'],memory:['memories'],devices:['devices'],
 };
 /** Query agents and the owner-only inspector dispatch through the same read-only registrations. */
 export async function installAgentFeatures(root:Context,implementation:ContextReader){

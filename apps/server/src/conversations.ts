@@ -3,6 +3,8 @@ import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {Store,StoreError} from './store.js';
 import {combineDependencies,resolveDependencies} from './conversation-lineage.js';
+import {SourceContextStore} from './source-context.js';
+import {assertSourceContextDependencies,combineSourceContextDependencies,sourceContextDependenciesCurrent} from './source-context-lineage.js';
 
 export type ConversationScope = Pick<QueryInput,'after'|'before'|'deviceId'|'timeZone'>;
 export type ConversationTurn = {id:string;question:string;scope:ConversationScope;result?:QueryResult;status:'completed'|'failed';error?:{code:string;message:string};createdAt:string;evidenceDeleted?:boolean;attachments?:{id:string;name:string;mimeType:string}[]};
@@ -13,7 +15,9 @@ type Failure = {code:string;message:string};
 
 /** Owner-only conversations share the vault's private SQLite backup and quota. */
 export class Conversations {
+  private readonly sourceContexts:SourceContextStore;
   constructor(private readonly store:Store) {
+    this.sourceContexts=new SourceContextStore(store);
     store.db.exec(`CREATE TABLE IF NOT EXISTS conversation_turns(conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,idx INTEGER NOT NULL,id TEXT NOT NULL UNIQUE,json TEXT NOT NULL,PRIMARY KEY(conversation_id,idx));`);
 
   }
@@ -50,6 +54,7 @@ export class Conversations {
   }
 
   append(previous:Conversation|undefined,input:ConversationScope&{question:string;attachments?:{id:string;name:string;mimeType:string}[]},result:QueryResult) {
+    assertSourceContextDependencies(this.sourceContexts,result.sourceContextDependencies);
     const {question,attachments,...scope}=input,now=new Date().toISOString();
     const evidenceDependencies=resolveDependencies(this.store,result.evidenceDependencies);
     const turn:ConversationTurn={id:randomUUID(),question,scope,result:{...result,...(evidenceDependencies?{evidenceDependencies}:{})},status:'completed',createdAt:now,...(attachments?.length?{attachments}:{})};
@@ -92,19 +97,23 @@ export class Conversations {
   context(conversation:Conversation,maxTurns=20,maxCharacters=60000):NonNullable<QueryInput['conversation']> {
     const turns:NonNullable<QueryInput['conversation']>['turns']=[];
     const dependencies:QueryResult['evidenceDependencies'][]=[];
+    const sourcePins:QueryResult['sourceContextDependencies'][]=[];
     let length=0;
     const completedTurns=conversation.turns.filter(turn=>turn.status!=='failed'&&turn.result).length;
     for(const turn of [...conversation.turns].reverse()) {
       if(turn.status==='failed'||!turn.result)continue;
 
-      const answer=turn.result.answer.slice(0,20000);
-      const value={question:turn.question,answer,scope:turn.scope,createdAt:turn.createdAt,...(answer.length<turn.result.answer.length?{answerTruncated:true}:{}),...(turn.evidenceDeleted?{evidenceDeleted:true}:{}),...(turn.attachments?.length?{attachments:turn.attachments}:{})};
+      const contextStale=!sourceContextDependenciesCurrent(this.sourceContexts,turn.result.sourceContextDependencies);
+      const answer=contextStale?'':turn.result.answer.slice(0,20000);
+      const value={question:turn.question,answer,scope:turn.scope,createdAt:turn.createdAt,...(!contextStale&&answer.length<turn.result.answer.length?{answerTruncated:true}:{}),...(contextStale?{contextStale:true}:{}),...(turn.evidenceDeleted?{evidenceDeleted:true}:{}),...(turn.attachments?.length?{attachments:turn.attachments}:{})};
       const size=JSON.stringify(value).length;
       if(turns.length===maxTurns||length+size>maxCharacters)break;
       turns.unshift(value);length+=size;
-      dependencies.push(turn.evidenceDeleted?{version:1,complete:true,ids:[]}:turn.result.evidenceDependencies);
+      dependencies.push(turn.evidenceDeleted||contextStale?{version:1,complete:true,ids:[]}:turn.result.evidenceDependencies);
+      if(!turn.evidenceDeleted&&!contextStale)sourcePins.push(turn.result.sourceContextDependencies);
     }
     const evidenceDependencies=combineDependencies(dependencies);
-    return {turns,omittedTurns:completedTurns-turns.length,...(evidenceDependencies?{evidenceDependencies}:{})};
+    const sourceContextDependencies=combineSourceContextDependencies(sourcePins);
+    return {turns,omittedTurns:completedTurns-turns.length,...(evidenceDependencies?{evidenceDependencies}:{}),...(sourceContextDependencies.length?{sourceContextDependencies}:{})};
   }
 }

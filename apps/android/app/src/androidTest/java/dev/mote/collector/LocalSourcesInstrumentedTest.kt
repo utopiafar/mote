@@ -50,7 +50,7 @@ class LocalSourcesInstrumentedTest {
         ActivityScenario.launch(SourcesActivity::class.java).use { scenario -> scenario.onActivity { activity ->
             val strings = mutableListOf<String>()
             fun walk(view: android.view.View) { if (view is android.widget.TextView) strings += view.text.toString(); if (view is android.view.ViewGroup) repeat(view.childCount) { walk(view.getChildAt(it)) } }
-            walk(activity.window.decorView); assertTrue(strings.toString(), strings.contains(MoteI18n.text("连接本机日历"))); assertTrue(strings.toString(), strings.contains(MoteI18n.text("同步文件夹")))
+            walk(activity.window.decorView); assertTrue(strings.toString(), strings.contains(MoteI18n.text("连接本机日历"))); assertFalse(strings.toString(), strings.contains(MoteI18n.text("选择音频目录"))); assertFalse(strings.toString(), strings.contains(MoteI18n.text("导入文件")))
         } }
         assertEquals(permission, context.checkSelfPermission(Manifest.permission.READ_CALENDAR))
     }

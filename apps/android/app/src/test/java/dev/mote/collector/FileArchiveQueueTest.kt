@@ -9,6 +9,22 @@ import java.io.ByteArrayInputStream
 import java.util.UUID
 
 class FileArchiveQueueTest {
+    @Test fun contextEditsDoNotResetCapturedImportOrReuploadItsOriginalBytes() {
+        val store = LocalSourceStore(folder.newFolder(), cipher); val queue = FileArchiveQueue(folder.newFolder(), cipher)
+        val original = source("snapshot").copy(tree = false, syncContinuously = false, centralProcessingConsent = true)
+        val bytes = "Generated original audio".toByteArray(); store.save(original)
+        queue.observe(original, item(layer = "snapshot", size = bytes.size.toLong()), queue.configure(original).getString("generation"), 0)
+        val pending = queue.prepare(original, { ByteArrayInputStream(bytes) }, { true }, captureImmediately = true)!!
+        val captured = queue.state(original.id).getBoolean("importCaptured")
+        val edited = original.copy(description = "This is my synthetic call recording", contextDirty = true)
+        store.save(edited); queue.configure(edited)
+        assertTrue(captured); assertTrue(queue.state(original.id).getBoolean("importCaptured")); assertEquals(pending.toString(), queue.next(original.id).toString())
+        assertArrayEquals(bytes, queue.part(original.id, 0))
+        queue.acknowledge(original.id, pending, ack(pending))
+        val afterAck = edited.copy(description = "Corrected background", contextVersion = 1, contextDirty = true, contextTarget = "fixture-target")
+        store.save(afterAck); queue.configure(afterAck)
+        assertTrue(queue.state(original.id).getBoolean("importCaptured")); assertEquals(0, queue.pendingCount(original.id)); assertNull(queue.next(original.id))
+    }
     @Test fun snapshotsUploadTransientBytesWithoutLocalInterpretationAndSurviveLostAck() {
         val dir=folder.newFolder();val queue=FileArchiveQueue(dir,cipher);val source=source("snapshot");val bytes="Generated audio transport".toByteArray()
         queue.observe(source,item(layer="snapshot",size=bytes.size.toLong()),queue.configure(source).getString("generation"),0)

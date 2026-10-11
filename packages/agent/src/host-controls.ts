@@ -9,6 +9,8 @@ export interface HostControlDefinition {
 }
 export interface HostControlResult {
   data:unknown;
+  /** Source metadata actually disclosed by this control result; no original grants. */
+  sourceContextDependencies?:readonly import('@mote/shared').SourceContextDeclaration[];
   /** Exact originals delivered by the child, revalidated again by the bridge. */
   evidence?:ContextRecord[];
   /** Private lineage receipts: revalidated before derived prose, never citations. */

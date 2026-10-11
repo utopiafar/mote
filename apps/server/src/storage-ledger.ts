@@ -25,12 +25,14 @@ export class StorageLedger {
     expressions.image_products='length(CAST(json AS BLOB))+length(CAST(fingerprint AS BLOB))+256';
     expressions.image_inputs='coalesce(length(CAST(policy_json AS BLOB)),0)+512';
     expressions.image_attachment_intents='256';expressions.image_intake_overrides='192';expressions.image_backfills='length(CAST(query AS BLOB))+256';
+    expressions.file_semantic_withdrawals='128';expressions.file_semantic_calls='128';
     expressions.file_snapshot_inputs='256';expressions.file_snapshot_text='192';
     expressions.mcp_import_manifests='length(CAST(source_id AS BLOB))+length(CAST(identity AS BLOB))+length(CAST(members AS BLOB))+128';
     expressions.material_index_requests='length(CAST(material_id AS BLOB))+length(CAST(revision AS BLOB))+length(CAST(state AS BLOB))+coalesce(length(CAST(error AS BLOB)),0)+128';
     expressions.file_snapshot_index='length(CAST(json AS BLOB))+128';
     expressions.material_index_garbage='64';
     expressions.import_owner_declarations='length(CAST(json AS BLOB))+256';
+    expressions.source_context_declarations='length(CAST(json AS BLOB))+length(CAST(source_id AS BLOB))+256';
     expressions.capture_import_declarations='256';
     expressions.memory_recipe_default_upgrades='length(CAST(id AS BLOB))+128';
     expressions.memory_recipe_legacy_scopes='length(CAST(setting_id AS BLOB))+length(CAST(scope AS BLOB))+128';
@@ -39,6 +41,7 @@ export class StorageLedger {
     expressions.delegation_artifacts='length(CAST(json AS BLOB))+length(CAST(metadata AS BLOB))+256';
     expressions.delegation_events='coalesce(length(CAST(message AS BLOB)),0)+length(CAST(work_id AS BLOB))+coalesce(length(CAST(unit_id AS BLOB)),0)+128';
     expressions.delegation_dependencies='length(CAST(work_id AS BLOB))+length(CAST(evidence_id AS BLOB))+128';
+    expressions.delegation_source_context_dependencies='length(CAST(work_id AS BLOB))+length(CAST(unit_id AS BLOB))+length(CAST(source_id AS BLOB))+256';
     expressions.execution_cancellation_aliases='length(CAST(alias_id AS BLOB))+length(CAST(step_id AS BLOB))+128';
     expressions.activity_memory_jobs='length(CAST(id AS BLOB))+coalesce(length(CAST(import_id AS BLOB)),0)+192';
     expressions.activity_memory_continuations='length(CAST(job_id AS BLOB))+length(CAST(parent_id AS BLOB))+length(CAST(root_id AS BLOB))+96';

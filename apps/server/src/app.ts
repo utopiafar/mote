@@ -36,6 +36,8 @@ import { registerConnectors } from './connectors/index.js';
 import { ContentStorageService } from './content-storage.js';
 import { Conversations } from './conversations.js';
 import { combineDependencies,resolveDependencies } from './conversation-lineage.js';
+import {SourceContextStore} from './source-context.js';
+import {assertSourceContextDependencies,combineSourceContextDependencies} from './source-context-lineage.js';
 import { ServerDiagnostics,safeError,type AgentTraceContext } from './diagnostics.js';
 import { EvidenceReader } from './evidence-reader.js';
 import { EvidenceExposurePolicy } from './evidence-exposure.js';
@@ -160,6 +162,7 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
     ref=>materialMemoryWork.readyForMemory(ref));
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,conversations=new Conversations(store);
+  const sourceContexts=new SourceContextStore(store);
   const ownerQuestions=new OwnerQuestions(store);
   backendContext.provide('moteOwnerQuestions',ownerQuestions);
   const archivedFiles=new ArchivedFileStore(store);
@@ -178,7 +181,9 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
     ...(input?.derivedContextEvidenceIds?[{version:1 as const,complete:true,ids:[...input.derivedContextEvidenceIds]}]:[]),
   ]));
   const contextFailure=(code:'context_lineage_incomplete'|'context_evidence_restricted')=>Object.assign(new StoreError(code,409),{code});
+  const sourceContextDependencies=(input:QueryInput|undefined)=>combineSourceContextDependencies([input?.conversation?.sourceContextDependencies,input?.contextSourceContextDependencies]);
   const assertModelEvidence=(input:QueryInput|undefined)=>{
+    assertSourceContextDependencies(sourceContexts,sourceContextDependencies(input));
     if(input?.derivedContextEvidenceIds?.some(id=>!evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy())))throw new StoreError('Derived context evidence is no longer permitted for this model',409);
     const conversationText=Boolean(input?.conversation?.workingMemory?.text||input?.conversation?.turns.some(turn=>!turn.evidenceDeleted&&turn.answer));
     const taskText=Boolean(input?.taskContext?.previousSummary||input?.taskContext?.turns?.length);
@@ -271,11 +276,25 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
     return structuredClone(selected);
   };
   const analyzeFile:FileAnalysis=async(records,prompt,settings,signal,host)=>{
-    const scoped:ContextReader={search:async()=>records,timeline:async()=>({items:records,nextCursor:null}),evidence:async args=>records.filter(r=>args.ids.includes(r.id)),activity:async()=>({}),devices:async()=>[]};
+    const currentRecords=()=>records.map(record=>({...record,...(record.provenance?{attributionContext:materials.contextForEvidence(record as CaptureRecord)}:{})}));
+    const scoped:ContextReader={search:async()=>currentRecords(),timeline:async args=>{
+      const offset=args.cursor===undefined?0:Number(args.cursor);if(!Number.isSafeInteger(offset)||offset<0||offset>records.length)throw new StoreError('Invalid file analysis cursor');
+      const limit=Math.min(100,Math.max(1,args.limit??8)),items=currentRecords().slice(offset,offset+limit);
+      return {items,nextCursor:offset+items.length<records.length?String(offset+items.length):null};
+    },evidence:async args=>currentRecords().filter(r=>args.ids.includes(r.id)),activity:async()=>({}),devices:async()=>[]};
     const selected=settings.modelSnapshot??resolveFileModel(settings);
     const meter=usageLedger.start(selected.provider,selected.model,'file-analysis',{agentId:'file-analysis',moduleId:'files',skillId:null,...host});
     let model:QueryAgent|undefined;
-    try{model=await factory(selected,scoped);const result=await model.query({question:prompt,language:requestLocale.getStore()??'zh-CN',signal,traceContext:host,onUsage:meter.update});return {...result,usage:meter.finish('completed')};}
+    const request:QueryInput={question:prompt,language:requestLocale.getStore()??'zh-CN',signal,traceContext:host,onUsage:meter.update,
+      onSourceContextDependencies:pins=>{
+        const current=combineSourceContextDependencies([request.contextSourceContextDependencies,pins]);
+        assertSourceContextDependencies(sourceContexts,current);request.contextSourceContextDependencies=current;
+      },
+    };
+    try{model=await factory(selected,scoped);const result=await model.query(request);
+      const pins=combineSourceContextDependencies([request.contextSourceContextDependencies,result.sourceContextDependencies]);
+      assertSourceContextDependencies(sourceContexts,pins);
+      return {...result,...(pins.length?{sourceContextDependencies:pins}:{}),usage:meter.finish('completed')};}
     catch(error){meter.finish('failed');throw error;}finally{await model?.close();}
   };
   let queryRuns:DelegatedQueryRuns;
@@ -283,7 +302,9 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
   const workflows=new ProcessingRuntime(store,[],{},Date.now,executor,materials,backendContext);
   sourcePipelines.setProductConsumer(workflows);workflows.consumerAllowed=(sourceId,bindingId)=>sourcePipelines.options(sourceId).consumers.includes(bindingId);
   const memoryConfiguration=(id?:string,model?:string)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);};
-  const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:[...new Set([...(config.backendPluginModules??[]),...(config.fileProcessorModules??[])])],analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,pluginContext:backendContext,mediaAssets});
+  const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:[...new Set([...(config.backendPluginModules??[]),...(config.fileProcessorModules??[])])],analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,pluginContext:backendContext,mediaAssets,contextForEvidence:record=>materials.contextForEvidence(record)});
+  const previousSourceContextChanged=materials.onSourceContextChanged;
+  materials.onSourceContextChanged=id=>{previousSourceContextChanged?.(id);processing.invalidateSourceContext(id);};
   try{await processing.runtime.ready;}catch(error){await executor.close();await processing.close();await workflows.close();await sourcePipelines.close();await backendContext.fiber.dispose();await modelSettings.close();await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
 
   const disposeCaptureMemoryIntake=installCaptureMemoryIntake(store,materialMemoryWork);
@@ -417,12 +438,22 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
     const revision=store.deletionRevision();
     const meter=usageOwner==='query'?usageLedger.start(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,{agentId:'context-query',moduleId,skillId:input.skill??null,operationId:input.traceContext?.operationId,jobId:input.traceContext?.jobId,requestId:diagnostics.requestId()}):undefined;
     const deadline=agentDeadline(input.signal,profile.settings.agentTimeoutMs),taskSignal=deadline.signal;
-    const observed={...input,signal:taskSignal,traceContext,onProgress:(event:import('@mote/agent').AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:trace,onUsage:(tokens:import('@mote/shared').TokenUsage)=>{meter?.update(tokens);input.onUsage?.(tokens);}};
+    let disclosedSourcePins=sourceContextDependencies(input);
+    const observed:QueryInput={...input,contextSourceContextDependencies:disclosedSourcePins,signal:taskSignal,traceContext,
+      onSourceContextDependencies:pins=>{
+        const next=combineSourceContextDependencies([disclosedSourcePins,pins]);
+        assertSourceContextDependencies(sourceContexts,next);
+        disclosedSourcePins=next;observed.contextSourceContextDependencies=next;
+        input.onSourceContextDependencies?.(pins);
+      },
+      onProgress:(event:import('@mote/agent').AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:trace,onUsage:(tokens:import('@mote/shared').TokenUsage)=>{meter?.update(tokens);input.onUsage?.(tokens);}};
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed).then(result=>{
       taskSignal?.throwIfAborted();
       assertModelEvidence(input);
       const evidenceDependencies=resolveDependencies(store,combineDependencies([contextDependencies(input),result.evidenceDependencies]));
+      const sourcePins=combineSourceContextDependencies([disclosedSourcePins,result.sourceContextDependencies]);
+      assertSourceContextDependencies(sourceContexts,sourcePins);
       // A long-running review may overlap routine imports and derived-layer updates.
       // Only an original actually disclosed to this run being deleted can make
       // its answer unsafe to publish; other archive changes belong to later runs.
@@ -433,7 +464,7 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
         }
       }
       trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
-      return {...result,...(evidenceDependencies?{evidenceDependencies}:{}),configuration,...(meter?{usage:meter.finish('completed')}:{})};
+      return {...result,...(evidenceDependencies?{evidenceDependencies}:{}),...(sourcePins.length?{sourceContextDependencies:sourcePins}:{}),configuration,...(meter?{usage:meter.finish('completed')}:{})};
     }).catch(error=>{if(error instanceof AgentYieldError){meter?.finish('completed');trace({type:'query.yielded',status:'waiting'});throw error;}meter?.finish('failed');trace({type:'query.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:typeof (error as {reason?:unknown})?.reason==='string'?(error as {reason:string}).reason:undefined}});throw error;}),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
     activeQueries.add(promise);void promise.finally(()=>{deadline.dispose();clearInterval(heartbeat);activeQueries.delete(promise);}).catch(()=>{});return promise;
   }
@@ -509,6 +540,7 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
 
   const delegation=new DelegationRuntime(store,executor,{concurrency:()=>runtimeSettings.execution().agentConcurrency,interactiveConcurrency:()=>runtimeSettings.execution().interactiveConcurrency,
     validateDependencies:ids=>assertModelEvidence({question:'',contextEvidenceDependencies:{version:1,complete:true,ids:[...ids]}}),
+    validateSourceContextDependencies:pins=>assertSourceContextDependencies(sourceContexts,pins),
     revalidateEvidence:async receipts=>{
       const ids=[...new Set(receipts.map(receipt=>receipt.id))],policy=new EvidenceExposurePolicy();
       if(ids.some(id=>!evidenceReader.deletionContextAllowed(id,policy)))throw contextFailure('context_evidence_restricted');
@@ -557,6 +589,7 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
     commit:(body,result,work)=>{
       const {conversationId,question,attachmentIds=[]}=queryWithAttachmentsSchema.parse(body),saved=delegation.journal.payload<SavedQuery>(work.id),prepared=saved.prepared!;
       assertModelEvidence(prepared);
+      assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies);
       delegation.recordEvidence(work.id,[...(result.evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
       const previous=conversationId?conversations.get(conversationId):undefined,scope:QueryScope={};for(const key of ['after','before','deviceId','timeZone'] as const)if(prepared[key]!==undefined)scope[key]=prepared[key];
       return conversations.append(previous,{question,...scope,attachments:prepared.directImages?.filter(image=>attachmentIds.includes(image.id)).map(({id,name,mimeType})=>({id,name,mimeType}))},result);

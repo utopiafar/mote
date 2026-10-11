@@ -16,7 +16,8 @@ data class LocalSource(
     val calendarId: Long? = null, val uri: String? = null, val tree: Boolean = false,
     val extensions: String = "md,txt,json,csv,ics", val excluded: String = "",
     val daysBefore: Int = 30, val daysAfter: Int = 90, val intervalMinutes: Int = 60, val initialSync: String = "all", val maxFileMiB: Int = 512, val allowRead: Boolean = false,
-    val centralProcessingConsent: Boolean = false, val syncContinuously: Boolean = true
+    val centralProcessingConsent: Boolean = false, val syncContinuously: Boolean = true,
+    val description: String = "", val contextVersion: Int = 0, val contextDirty: Boolean = false, val contextTarget: String = ""
 ) {
     fun validate() {
         require(id.matches(Regex("[A-Za-z0-9_.:-]{1,128}")) && name.isNotBlank() && name.length <= 200) { MoteI18n.text("检查来源名称") }
@@ -26,18 +27,30 @@ data class LocalSource(
         require(!tree || syncContinuously) { "Folder sources must sync continuously" }
         require(syncContinuously || initialSync == "all") { "One-time file imports require the selected file" }
         require(maxFileMiB in 1..512)
+        require(description.length <= 12000 && contextVersion >= 0) { MoteI18n.text("资料说明最多 12000 字符") }
         SourceRules.extensions(extensions); SourceRules.patterns(excluded)
     }
     fun json() = JSONObject().put("syncContinuously", syncContinuously).put("centralProcessingConsent", centralProcessingConsent).put("allowRead", allowRead).put("id", id).put("name", name).put("kind", kind).put("retention", retention).put("enabled", enabled)
         .put("calendarId", calendarId).put("uri", uri).put("tree", tree).put("extensions", extensions).put("excluded", excluded)
         .put("maxFileMiB", maxFileMiB).put("initialSync", initialSync).put("daysBefore", daysBefore).put("daysAfter", daysAfter).put("intervalMinutes", intervalMinutes)
+        .put("description", description).put("contextVersion", contextVersion).put("contextDirty", contextDirty).put("contextTarget", contextTarget)
     fun registration(deviceId: String) = JSONObject().put("id", id).put("name", name).put("kind", kind).put("deviceId", deviceId)
         .put("platform", "android").put("initialSync", initialSync).put("retention", retention).put("enabled", true)
     companion object {
+        private fun contextVersion(value: JSONObject): Int {
+            if (!value.has("contextVersion")) return 0
+            val version = value.get("contextVersion") as? Number ?: error("contextVersion must be numeric")
+            require(version.toDouble() in 0.0..Int.MAX_VALUE.toDouble() && version.toDouble() == version.toInt().toDouble()) { "Invalid source context version" }
+            return version.toInt()
+        }
         fun from(v: JSONObject) = LocalSource(v.getString("id"), v.getString("name"), v.getString("kind"), v.getString("retention"), v.getBoolean("enabled"),
             if (v.has("calendarId")) v.getLong("calendarId") else null, if (v.has("uri")) v.getString("uri") else null,
             v.getBoolean("tree"), v.getString("extensions"), v.getString("excluded"),
-            v.getInt("daysBefore"), v.getInt("daysAfter"), v.getInt("intervalMinutes"), v.getString("initialSync"), v.getInt("maxFileMiB"), v.getBoolean("allowRead"), if (!v.has("centralProcessingConsent")) false else v.get("centralProcessingConsent") as? Boolean ?: error(MoteI18n.text("来源上传确认必须为布尔值")), if (v.has("syncContinuously")) v.get("syncContinuously") as? Boolean ?: error("syncContinuously must be boolean") else true).also { it.validate() }
+            v.getInt("daysBefore"), v.getInt("daysAfter"), v.getInt("intervalMinutes"), v.getString("initialSync"), v.getInt("maxFileMiB"), v.getBoolean("allowRead"), if (!v.has("centralProcessingConsent")) false else v.get("centralProcessingConsent") as? Boolean ?: error(MoteI18n.text("来源上传确认必须为布尔值")), if (v.has("syncContinuously")) v.get("syncContinuously") as? Boolean ?: error("syncContinuously must be boolean") else true,
+            if (v.has("description")) v.get("description") as? String ?: error("description must be text") else "",
+            contextVersion(v),
+            if (v.has("contextDirty")) v.get("contextDirty") as? Boolean ?: error("contextDirty must be boolean") else false,
+            if (v.has("contextTarget")) v.get("contextTarget") as? String ?: error("contextTarget must be text") else "").also { it.validate() }
     }
 }
 
@@ -107,7 +120,8 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
     fun save(source: LocalSource) = synchronized(lock) {
         source.validate(); val all = sources().toMutableList(); val old = all.find { it.id == source.id }
         // Explicit selection/filter/retention edits discard old unsent material before the new scan.
-        if (old != null && old.copy(enabled = source.enabled, intervalMinutes = source.intervalMinutes, name = source.name, initialSync = source.initialSync, syncContinuously = source.syncContinuously).json().toString() != source.json().toString()) file(source.id).delete()
+        if (old != null && old.copy(enabled = source.enabled, intervalMinutes = source.intervalMinutes, name = source.name, initialSync = source.initialSync, syncContinuously = source.syncContinuously,
+                description = source.description, contextVersion = source.contextVersion, contextDirty = source.contextDirty, contextTarget = source.contextTarget).json().toString() != source.json().toString()) file(source.id).delete()
         if (old == null || old.name != source.name || old.initialSync != source.initialSync) {
             val state = state(source.id); state.put("registered", false)
             if (!state.has("pendingSince")) state.put("pendingSince", System.currentTimeMillis())
@@ -116,6 +130,17 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
         all.removeAll { it.id == source.id }; all.add(source)
         write(File(directory, "config.enc"), JSONObject().put("sources", JSONArray(all.map { it.json() })))
     }
+    /** Context ACKs only update metadata. A concurrent edit remains pending and never loses its draft. */
+    fun confirmContext(expected: LocalSource, target: String, snapshot: SourceContextSnapshot): LocalSource? = synchronized(lock) {
+        if (sources().find { it.id == expected.id } != expected) return@synchronized null
+        val next = expected.copy(description = snapshot.description, contextVersion = snapshot.version, contextDirty = false, contextTarget = target)
+        save(next)
+        val state = state(next.id); state.remove("contextConflict"); write(file(next.id), state)
+        next
+    }
+    fun contextConflict(id: String, snapshot: SourceContextSnapshot) = synchronized(lock) {
+        val state = state(id); state.put("contextConflict", snapshot.json()).put("status", "context-conflict"); write(file(id), state)
+    }
     fun remove(id: String) = synchronized(lock) {
         write(File(directory, "config.enc"), JSONObject().put("sources", JSONArray(sources().filterNot { it.id == id }.map { it.json() })))
         file(id).delete()
@@ -123,7 +148,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
     fun state(id: String): JSONObject = synchronized(lock) { read(file(id)) }
     fun status(id: String, code: String, at: String = Instant.now().toString()) = synchronized(lock) {
         if (sources().none { it.id == id }) return@synchronized
-        require(code in setOf("ready", "scanned", "partial", "synced", "offline", "permission", "paused", "configuration", "storage", "provider", "http", "ack"))
+        require(code in setOf("ready", "scanned", "partial", "synced", "offline", "permission", "paused", "configuration", "storage", "provider", "http", "ack", "consent", "context-conflict", "context-http"))
         val state = state(id); state.put("status", code).put("statusAt", at); write(file(id), state)
     }
     fun pendingSync(): PendingSync = synchronized(lock) {
@@ -131,7 +156,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
         sources().forEach { source ->
             val state = state(source.id)
             val size = state.optJSONArray("pending")?.length() ?: 0
-            val metadata = source.enabled && !state.optBoolean("registered")
+            val metadata = source.enabled && (!state.optBoolean("registered") || source.contextDirty)
             if (size > 0 || metadata) { count += size; if (metadata) updates++; val at = state.optLong("pendingSince", file(source.id).lastModified().takeIf { it > 0 } ?: File(directory, "config.enc").lastModified()); oldest = oldest?.let { minOf(it, at) } ?: at }
         }; PendingSync(count, oldest, updates)
     }

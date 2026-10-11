@@ -2,6 +2,7 @@ import {z} from 'zod';
 import {MaterialStore,materialId,materialManifestSchema,materialEvidenceContextSchema} from './materials.js';
 import {StoreError,sha256,type Store} from './store.js';
 import {ImportAttributionStore,portableImportAttributionSchema,type PortableImportAttribution} from './import-attribution.js';
+import {SourceContextStore,portableSourceContextSchema,type PortableSourceContext} from './source-context.js';
 
 const hash=z.string().regex(/^[a-f0-9]{64}$/),id=z.string().regex(/^mat_[a-f0-9]{64}$/),uuid=z.string().uuid();
 const text=z.string(),integer=z.number().int().nonnegative(),flag=z.number().int().min(0).max(1),at=z.string().datetime({offset:true});
@@ -29,9 +30,9 @@ const keys={heads:['id'],revisions:['material_id','revision'],blocks:['material_
   members:['material_id','revision','idx'],payloads:['hash'],evidence:['id'],contexts:['anchor_id'],dependencies:['anchor_id','evidence_id'],
   codingSnapshots:['material_id','revision'],indexing:['material_id']} as const;
 const sectionSchema=z.object({version:z.literal(1),...Object.fromEntries(Object.entries(schemas).map(([key,schema])=>[key,z.array(schema).max(400000)])),
-  assets:z.array(z.object({hash,bytes:integer,dataBase64:z.string()}).strict()).max(20000),importAttribution:portableImportAttributionSchema.optional(),checksum:hash}).strict();
+  assets:z.array(z.object({hash,bytes:integer,dataBase64:z.string()}).strict()).max(20000),importAttribution:portableImportAttributionSchema.optional(),sourceContext:portableSourceContextSchema.optional(),checksum:hash}).strict();
 type Name=keyof typeof schemas;
-type Portable=Record<Name,Record<string,string|number|null>[]> & {version:1;assets:{hash:string;bytes:number;dataBase64:string}[];importAttribution?:PortableImportAttribution;checksum:string};
+type Portable=Record<Name,Record<string,string|number|null>[]> & {version:1;assets:{hash:string;bytes:number;dataBase64:string}[];importAttribution?:PortableImportAttribution;sourceContext?:PortableSourceContext;checksum:string};
 const names=Object.keys(schemas) as Name[];
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)])):value;
 const digest=(value:unknown)=>sha256(JSON.stringify(canonical(value)));
@@ -42,15 +43,18 @@ function groupRows(rows:Portable[Name],key:(row:Portable[Name][number])=>string)
 
 export function portableMaterialEstimate(store:Store){
   const imports=store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='import_owner_declarations'").get()?Number(store.db.prepare('SELECT coalesce(sum(length(CAST(json AS BLOB))),0) n FROM import_owner_declarations').get()!.n):0;
-  if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_heads'").get())return imports;
+  const contexts=store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='source_context_declarations'").get()?Number(store.db.prepare('SELECT coalesce(sum(length(CAST(json AS BLOB))),0) n FROM source_context_declarations').get()!.n):0;
+  if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_heads'").get())return imports+contexts;
   const payload=Number(store.db.prepare('SELECT coalesce(sum(length(CAST(text AS BLOB))),0) n FROM material_block_payloads').get()!.n);
   const assets=Number(store.db.prepare(`SELECT coalesce(sum(a.bytes),0) n FROM assets a WHERE a.hash IN
     (SELECT asset_hash FROM material_blocks UNION SELECT asset_hash FROM material_block_versions)`).get()!.n);
-  return payload+Math.ceil(assets*4/3)+imports;
+  return payload+Math.ceil(assets*4/3)+imports+contexts;
 }
 export function exportPortableMaterials(store:Store):Portable|undefined{
   if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_heads'").get()){
-    if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='capture_import_declarations'").get()||!store.db.prepare('SELECT 1 FROM capture_import_declarations LIMIT 1').get())return undefined;
+    const imports=store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='capture_import_declarations'").get()&&store.db.prepare('SELECT 1 FROM capture_import_declarations LIMIT 1').get();
+    const contexts=store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='source_context_declarations'").get()&&store.db.prepare('SELECT 1 FROM source_context_declarations LIMIT 1').get();
+    if(!imports&&!contexts)return undefined;
     new MaterialStore(store);
   }
   const body={version:1} as Omit<Portable,'checksum'>;
@@ -59,6 +63,9 @@ export function exportPortableMaterials(store:Store):Portable|undefined{
   body.assets=assets.map(row=>{const bytes=store.assets.read(String(row.hash));return {hash:String(row.hash),bytes:bytes.length,dataBase64:bytes.toString('base64')};});
   if(store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='capture_import_declarations'").get()){
     const importAttribution=new ImportAttributionStore(store).export();if(importAttribution.captures.length)body.importAttribution=importAttribution;
+  }
+  if(store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='source_context_declarations'").get()){
+    const sourceContext=new SourceContextStore(store).export();if(sourceContext.declarations.length)body.sourceContext=sourceContext;
   }
   return {...body,checksum:digest(body)};
 }
@@ -79,6 +86,8 @@ export function preparePortableMaterials(raw:unknown):Portable|undefined{
 /** Restores immutable proof before Memory and rebuilds only the search
  * projection. Runs inside EvidenceStore's all-or-nothing import transaction. */
 export function restorePortableMaterials(store:Store,portable:Portable|undefined){
+  const sourceContexts=new SourceContextStore(store);
+  sourceContexts.restore(portable?.sourceContext??{declarations:[]});
   if(!portable)return undefined;
   const materials=new MaterialStore(store),db=store.db;
   const importAttribution=new ImportAttributionStore(store);
@@ -101,6 +110,10 @@ export function restorePortableMaterials(store:Store,portable:Portable|undefined
     const manifest=JSON.parse(String(revision.manifest));
     if(manifest.retired===true){if(manifest.id!==head.id||revision.block_count!==0||revision.member_count!==0)throw new StoreError('Invalid retired material revision');continue;}
     const normalized=materialManifestSchema.parse(manifest);
+    if(normalized.attributionContext?.sourceContextStatements!==undefined)throw new StoreError('Material archive contains private source context prose outside its declaration store');
+    for(const pin of normalized.attributionContext?.sourceContextDeclarations??[]){
+      if(pin.sourceId!==normalized.origin.sourceId||!sourceContexts.getAtVersion(pin.sourceId,pin.version,pin.fingerprint))throw new StoreError('Material source context declaration has unrelated or missing source scope');
+    }
     if(normalized.id!==head.id||normalized.origin.sourceId!==head.source_id||normalized.origin.externalId!==head.external_id)throw new StoreError('Material revision source identity mismatch');
     const members=(membersByRevision.get(revisionKey(revision))??[]).sort((a,b)=>Number(a.idx)-Number(b.idx));
     if(members.length!==revision.member_count||members.some((row,i)=>row.idx!==i))throw new StoreError('Material member layout mismatch');
@@ -145,7 +158,7 @@ export function restorePortableMaterials(store:Store,portable:Portable|undefined
     if(blocks.some(row=>proof(row)!==proof(original)))throw new StoreError('Material evidence anchor refers to divergent block proof');
   }
   for(const row of portable.dependencies)if(!anchors.has(row.anchor_id))throw new StoreError('Material dependency has no anchor');
-  for(const row of portable.contexts){if(!anchors.has(row.anchor_id))throw new StoreError('Material context has no anchor');materialEvidenceContextSchema.parse(JSON.parse(String(row.json)));}
+  for(const row of portable.contexts){if(!anchors.has(row.anchor_id))throw new StoreError('Material context has no anchor');const context=materialEvidenceContextSchema.parse(JSON.parse(String(row.json)));if(context.attributionContext?.sourceContextStatements!==undefined)throw new StoreError('Material evidence archive contains private source context prose outside its declaration store');for(const pin of context.attributionContext?.sourceContextDeclarations??[]){const anchor=anchors.get(row.anchor_id)!,head=heads.get(anchor.material_id)!;if(pin.sourceId!==head.source_id||!sourceContexts.getAtVersion(pin.sourceId,pin.version,pin.fingerprint))throw new StoreError('Material evidence source context declaration has unrelated or missing source scope');}}
   for(const row of portable.codingSnapshots)if(!revisions.has(revisionKey(row)))throw new StoreError('Coding material snapshot has no revision');
   for(const row of portable.indexing)if(!heads.has(row.material_id))throw new StoreError('Material search projection has no head');
 

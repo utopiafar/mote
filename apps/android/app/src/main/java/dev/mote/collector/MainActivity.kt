@@ -283,7 +283,7 @@ class MainActivity : MoteActivity() {
 
     internal fun addContent(action: MoteAddAction) {
         when (action) {
-            MoteAddAction.FOLDER, MoteAddAction.FILE -> startActivity(Intent(this, SourcesActivity::class.java).putExtra("addAction", action.name))
+            MoteAddAction.FOLDER, MoteAddAction.FILE -> startActivity(Intent(this, FileTaskActivity::class.java).putExtra("addAction", action.name))
             MoteAddAction.SCREEN -> showPage(Page.PRIVACY)
             MoteAddAction.NOTE -> showPage(Page.NOTES)
         }

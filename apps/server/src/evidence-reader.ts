@@ -12,6 +12,8 @@ import type {FileEvidence} from './file-evidence.js';
 import type {ServerDiagnostics} from './diagnostics.js';
 import {materialId,type MaterialStore,type MaterialMember,type MaterialRecord} from './materials.js';
 import {contextIndex} from './context-index.js';
+import {browseSourceContexts,parseSourceContextRef} from './source-context-catalog.js';
+import {SourceContextStore} from './source-context.js';
 import {browseSourceCatalog} from './source-catalog.js';
 import {defaultEvidenceExposurePolicy,type EvidenceExposurePolicy,type EvidenceExposureContext,type EvidenceOperation,type EvidencePhase,type EvidenceRepresentation,type RecipeExposureRoute} from './evidence-exposure.js';
 import type {SourcePipelineRuntime} from './source-pipelines.js';
@@ -883,7 +885,14 @@ export class EvidenceReader {
       fileChunks:async args=>{const parsed=z.string().uuid().safeParse(args.id);if(!parsed.success||!this.files)return [];const id=parsed.data,parent=this.evidenceById([this.files.version(id).capture_id],args)[0];if(!parent||!this.captureExposure(parent,operation('expand'),policy))return [];return this.chunks({...args,id:formatEvidenceRef('capture',id)}).filter(record=>this.captureExposure(record,operation('expand'),policy));},
       mediaActivity:async args=>diagnostics.measure('source','activity',()=>store.mediaActivity(args),result=>({count:result.observations})),
       sourceHistory:async args=>this.sourceHistory({...args,id:formatEvidenceRef('capture',z.string().uuid().parse(args.id))}).filter(record=>this.captureExposure(record,operation('expand'),policy)),
-      sources:async args=>sources.listSources().filter(s=>!args.deviceId||s.deviceId===args.deviceId).map(s=>({id:s.id,name:s.name,kind:s.kind,retention:s.retention,enabled:s.enabled,status:s.status})),
+      sources:async args=>browseSourceContexts(store,sources,args),
+      sourceContext:async args=>{
+        const pin=parseSourceContextRef(args.sourceContextRef);if(!pin)throw new StoreError('Invalid source context reference');
+        const source=sources.getSource(pin.sourceId);if(args.deviceId&&source.deviceId!==args.deviceId)throw new StoreError('Source context is outside the selected scope',404);
+        const contexts=new SourceContextStore(store),current=contexts.identity(pin.sourceId);
+        if(!current||current.version!==pin.version||current.fingerprint!==pin.fingerprint)throw new ContextToolError('attribution_context_changed','The source description changed. Discover its current sourceContextRef and restart; do not combine versions.','correct_arguments');
+        return {attributionContext:{version:1,ownerRelation:'unknown',basis:'default',sourceContextDeclarations:[pin],sourceContextStatements:contexts.open([pin])}};
+      },
       // listItems applies calendar overlap / authored-time semantics; do not replace planned time with capture time.
       sourceItems:async args=>{const page=sources.listItems(args),scope={deviceId:args.deviceId,sourceId:args.sourceId};
         const visible=this.evidenceById(page.items.map(i=>i.captureId),{deviceId:args.deviceId}).flatMap(record=>{

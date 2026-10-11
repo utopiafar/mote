@@ -67,7 +67,8 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
             val rotation = applicationContext.getSharedPreferences("source-upload-turns", Context.MODE_PRIVATE)
             val after = if (rotation.getString("target", null) == target) rotation.getString("after", null) else null
             val dispatch = UploadSlice(maxBytes = 8L * 1024 * 1024, maxRequests = 128)
-            for (source in rotateUploadSources(store.sources().filter { it.enabled }, after) { it.id }) {
+            for (selectedSource in rotateUploadSources(store.sources().filter { it.enabled }, after) { it.id }) {
+                var source = selectedSource
                 if (dispatch.exhausted) { more = true; readyMore = true; break }
                 val slice = UploadSlice(); var submitted = 0
                 rotation.edit().putString("target", target).putString("after", source.id).apply()
@@ -94,6 +95,12 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         if (patchCode !in 200..299 || updated?.optString("id") != source.id) { Operations.record(applicationContext, OperationKind.SOURCE_FAILED, Operations.httpReason(patchCode), httpStatus = patchCode); store.status(source.id, "http"); failed = true; continue }
                         store.registered(source.id, target)
                     }
+                    val confirmed = SourceContextSync.sync(applicationContext, store, source, config, target, slice, ::stillSelected)
+                    if (confirmed == null) {
+                        if (store.state(source.id).optString("status") == "context-conflict") blocked = true else failed = true
+                        continue
+                    }
+                    source = confirmed
                     if (SourceAdapters.default.forKind(source.kind).queueKind == SourceQueueKind.FILE_ARCHIVE) {
                         if (explicit && source.retention == "snapshot" && source.syncContinuously) {
                             SyncSchedule.requireConditions(applicationContext, config)

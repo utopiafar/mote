@@ -12,14 +12,17 @@ import type {FeatureServices} from '../src/feature-services.js';
 
 test('root catalog avoids corpus scans; source and layer cursors allow complete bounded browsing',()=>{
  const store={archive:{stats(){throw Error('First screen must not count the corpus');}}} as unknown as Store;
- const sources={listSources:()=>Array.from({length:29},(_,i)=>({id:String(i).padStart(2,'0'),name:'Generated '+i,kind:'file',deviceId:i===28?'other':'fixture'}))} as unknown as SourceStore;
+ let sourceListings=0,contextReads=0;
+ const sources={listSources:()=>{sourceListings++;return Array.from({length:29},(_,i)=>({id:String(i).padStart(2,'0'),name:'Generated '+i,kind:'file',deviceId:i===28?'other':'fixture'}));},
+  contexts:{current:(sourceId:string)=>{contextReads++;return {sourceId,version:0,description:''};},identity:()=>undefined}} as unknown as SourceStore;
  const memory={page:()=>({items:[],nextCursor:'next-memory'})};
- const root=contextIndex(store,memory,sources);assert.equal(root.entries.length,3);assert.equal(root.nextCursor,null);
+ const root=contextIndex(store,memory,sources);assert.equal(root.entries.length,3);assert.equal(root.nextCursor,null);assert.equal(sourceListings,0);assert.equal(contextReads,0);
  const ids:string[]=[];let cursor:string|undefined;
  do{const page=contextIndex(store,memory,sources,{path:'/context/sources',deviceId:'fixture',limit:6,cursor});ids.push(...page.entries.map(e=>(e as {id:string}).id));cursor=page.nextCursor??undefined;}while(cursor);
  assert.equal(ids.length,28);assert.equal(new Set(ids).size,28);
  assert.equal(contextIndex(store,memory,sources,{path:'/context/memory'}).nextCursor,'next-memory');
- assert.throws(()=>contextIndex(store,memory,sources,{path:'/context/sources',deviceId:'other',cursor:Buffer.from(JSON.stringify({path:'/context/sources',deviceId:'fixture',after:'06'})).toString('base64url')}),/Invalid directory cursor/);
+ const first=contextIndex(store,memory,sources,{path:'/context/sources',deviceId:'fixture',limit:6});assert.ok(first.nextCursor);
+ assert.throws(()=>contextIndex(store,memory,sources,{path:'/context/sources',deviceId:'other',cursor:first.nextCursor!}),/Source directory changed or cursor does not match/);
 });
 
 test('Cordis Agent view preview shares the envelope, keeps scope, pages originals and revokes on disposal',async()=>{

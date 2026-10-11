@@ -59,7 +59,7 @@ export class DelegatedQueryRuns {
         const id=work.id.slice('query:'.length),saved=runtime.journal.payload<SavedInput>(work.id),run=this.raw(id),result=answer as QueryResult;
         if(saved.deadlineAt!==undefined&&Date.now()>=saved.deadlineAt)throw new AgentTimeoutError();
         const receipt=callbacks.commit(saved.hostRequest,result,work);
-        Object.assign(run,receipt,{status:'completed',updatedAt:new Date().toISOString(),evidenceDependencies:result.evidenceDependencies});delete run.error;
+        Object.assign(run,receipt,{status:'completed',updatedAt:new Date().toISOString(),evidenceDependencies:result.evidenceDependencies,sourceContextDependencies:result.sourceContextDependencies});delete run.error;
         this.save(run);if(this.foreground.has(id))this.results.set(id,{...result,...receipt});this.notify(id);
         }catch(error){throw this.executionFailure(error);}
       },
@@ -74,7 +74,7 @@ export class DelegatedQueryRuns {
     // A synchronous query keeps the previous single-attempt HTTP contract;
     // durable background admission can recover structured transient failures.
     if(error instanceof ProviderFailure&&error.details.category==='transient'&&id&&this.foreground.has(id))return new ExecutionFailure('permanent',error.details.code,error.details.retryAfterMs);
-    return error instanceof ProviderFailure||error instanceof ExecutionFailure||error instanceof AgentYieldError?error:new ExecutionFailure('permanent',error instanceof AgentTimeoutError?'timeout':'query_failed');
+    return error instanceof ProviderFailure||error instanceof ExecutionFailure||error instanceof AgentYieldError?error:new ExecutionFailure('permanent',error instanceof AgentTimeoutError?'timeout':error&&typeof error==='object'&&(error as {code?:unknown}).code==='source_context_changed'?'source_context_changed':'query_failed');
   }
   /** Save only a sanitized attempt receipt. A retry has not failed the conversation. */
   private rememberFailure(id:string,error:unknown){
@@ -100,12 +100,12 @@ export class DelegatedQueryRuns {
   /** The conversation failure and its receipt share one host transaction. */
   private finishFailure(run:QueryRun,work:DelegationWork){
     const foreground=this.foregroundRequests.get(run.id);
-    if(!['failed','blocked'].includes(work.status)&&!(work.status==='stale'&&work.error==='evidence_deleted'&&foreground))return;
+    if(!['failed','blocked'].includes(work.status)&&!(work.status==='stale'&&(work.error==='source_context_changed'||work.error==='evidence_deleted'&&foreground)))return;
     const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
     try{
       const current=this.runtime.get(work.id),receipt=this.raw(run.id);
       const erasedForeground=current.status==='stale'&&current.error==='evidence_deleted'&&foreground&&!foreground.cancelled&&receipt.status!=='cancelled'&&!this.store.db.prepare('SELECT 1 FROM delegation_payloads WHERE work_id=?').get(work.id);
-      if((['failed','blocked'].includes(current.status)||erasedForeground)&&!receipt.turnId){
+      if((['failed','blocked'].includes(current.status)||current.status==='stale'&&current.error==='source_context_changed'||erasedForeground)&&!receipt.turnId){
         // Source deletion deliberately erases the replay payload. The live user
         // request can still retain its question, without resurrecting derived
         // context or trusting a late provider callback after the grant expired.
@@ -114,7 +114,7 @@ export class DelegatedQueryRuns {
         const timedOut=failure.category==='timeout'||saved.deadlineAt!==undefined&&Date.now()>=saved.deadlineAt;
         // The host deadline revokes publication, including a failure turn, even
         // when the model's own timeout wins the scheduler race by a few ms.
-        const conversation=timedOut?undefined:this.callbacks.failure?.(saved.hostRequest,error),finished={...run,...conversation,error:{code:timedOut?'timeout':failure.reason??failure.category,message:failure.message}};
+        const conversation=timedOut?undefined:this.callbacks.failure?.(saved.hostRequest,error),finished={...run,...conversation,error:{code:timedOut?'timeout':current.error==='source_context_changed'?'source_context_changed':failure.reason??failure.category,message:failure.message}};
         this.save(finished);
         if(own)this.store.db.exec('COMMIT');
         Object.assign(run,finished);if(conversation&&error&&typeof error==='object')Object.assign(error,{conversation});
@@ -144,8 +144,9 @@ export class DelegatedQueryRuns {
       if(saved.deadlineAt!==undefined&&Date.now()>=saved.deadlineAt){this.runtime.cancel(work.id);work=this.runtime.get(work.id);expired=true;}
     }
     run.status=expired||run.error?.code==='timeout'?'failed':work.status==='succeeded'?'completed':work.status==='cancelled'?'cancelled':['running','waiting'].includes(work.status)?'running':'failed';
+    run.sourceContextDependencies=this.runtime.sourceContextDependencies(work.id);
     if(expired)run.error={code:'timeout',message:moteText('模型执行超时，请重试。')};
-    else if(run.status==='failed'){this.finishFailure(run,work);if(!run.error){const failure=safeError(this.restoredFailure(undefined,work));run.error={code:work.error==='evidence_deleted'?'deleted':failure.category,message:failure.message};}}
+    else if(run.status==='failed'){this.finishFailure(run,work);if(!run.error){const failure=safeError(this.restoredFailure(undefined,work));run.error={code:work.error==='evidence_deleted'?'deleted':work.error==='source_context_changed'?'source_context_changed':failure.category,message:failure.message};}}
     if(run.status!=='running'&&!this.foreground.has(id))this.errors.delete(id);
     run.updatedAt=work.updatedAt;
     const executionStatus=run.status==='running'&&work.status==='waiting'?(work.wait?'waiting':step?.error?'retry_wait':'queued'):run.status;

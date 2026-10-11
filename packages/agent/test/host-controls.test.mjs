@@ -63,3 +63,12 @@ else if(message.method)send({id:message.id,result:{}});
  const agent=createAgent({reader:base,protocol:'codex-app-server',model:'generated',codex:{executable,home:root},agentTimeoutMs:20000,runModel:async task=>{active++;try{return await task();}finally{active--;}}});
  try{await assert.rejects(agent.query({question:'Generated coordination',hostRetrieval:'none',hostControlChannel:channel(async name=>{submissions++;return {data:{saved:true},...(name==='delegation_yield'?{yield:true}:{})};})}),AgentYieldError);assert.equal(active,0);assert.equal(submissions,2);}finally{await agent.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('source-only delegated prose is fenced and its successful disclosure reaches the host before yield without granting citations',async t=>{
+ const pin={sourceId:'generated:delegate',version:1,fingerprint:'a'.repeat(64)},privateText='Generated source-only interpretation';let available=false;const receipts=[];
+ const reader={...base,sourceContext:async()=>{if(!available)throw Error('Generated source context changed');return {attributionContext:{version:1,ownerRelation:'unknown',basis:'default',sourceContextDeclarations:[pin],sourceContextStatements:[{sourceId:pin.sourceId,version:1,description:'Generated owner scope'}]}};}};
+ const bridge=await startBridge(reader,{question:'Generated question',onSourceContextDependencies:pins=>receipts.push(pins),hostControlChannel:channel(async name=>({data:{text:privateText},sourceContextDependencies:[pin],...(name==='delegation_yield'?{yield:true}:{})}))},10);t.after(()=>bridge.close());
+ const denied=await call(bridge,'delegation_read');assert.equal(denied.status,400);assert.equal(JSON.stringify(denied.body).includes(privateText),false);assert.equal(receipts.length,0);
+ available=true;const failed=assert.rejects(bridge.failure,AgentYieldError);assert.equal((await call(bridge,'delegation_yield')).status,200);await failed;
+ assert.deepEqual(receipts,[[pin]]);assert.deepEqual(bridge.sourceContextDependencies,[pin]);assert.equal(bridge.records.size,0);assert.deepEqual(bridge.evidenceDependencies.ids,[]);
+});

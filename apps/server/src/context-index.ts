@@ -3,6 +3,7 @@ import type {Store,Range} from './store.js';
 import type {MemoryStore} from './memory.js';
 import type {SourceStore} from './sources.js';
 import {StoreError} from './store.js';
+import {browseSourceContexts} from './source-context-catalog.js';
 
 export const CONTEXT_DIRECTORIES=[
  {path:'/context/memory',layer:'L3/L4',description:'Selected candidate and long-term memories',expand:'memories'},
@@ -27,11 +28,11 @@ export function contextIndex(store:Store,memories:Pick<MemoryStore,'page'>,sourc
   const page=segments({...args,limit,maxCharacters:6000});if(path==='/context/episodes')nextCursor=page.nextCursor;
   for(const item of page.items)if(item)entries.push({layer:item.kind,ref:formatArtifactRef(item.id,item.revision),id:item.id,revision:item.revision,preview:item.text,firstAt:item.firstAt,lastAt:item.lastAt,deviceId:item.deviceId,coverage:item.metadata.complete===true?'bounded_complete':'partial',estimatedCharacters:item.metadata.characters??12000,expand:'segments'});
  }
- if(path==='/context/sources'){
-  let after='';if(args.cursor){try{const value=JSON.parse(Buffer.from(args.cursor,'base64url').toString());if(value.path!==path||value.deviceId!==(args.deviceId??'')||typeof value.after!=='string')throw Error();after=value.after;}catch{throw new StoreError('Invalid directory cursor');}}
-  const candidates=sources.listSources().filter(s=>(!args.deviceId||args.deviceId===s.deviceId)&&s.id>after).sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0),page=candidates.slice(0,limit);
-  for(const source of page)entries.push({layer:'source',id:source.id,title:source.name,kind:source.kind,expand:'source_items'});
-  if(candidates.length>limit)nextCursor=Buffer.from(JSON.stringify({path,deviceId:args.deviceId??'',after:page.at(-1)!.id})).toString('base64url');
+ if(path==='/context/sources'||path==='/context'&&args.query){
+  const page=browseSourceContexts(store,sources,{...args,cursor:path==='/context/sources'?args.cursor:undefined,limit});
+  if(path==='/context/sources')nextCursor=page.nextCursor;
+  for(const source of page.items)entries.push({layer:'source',...source,title:source.name,expand:'source_items'});
  }
+
  return {path,entries,nextCursor,coverage:{scope:'bounded_candidates',originals:'Not searched by this overview. Use search_context for exact or fresh facts; missing candidates do not establish absence.'}};
 }

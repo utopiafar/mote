@@ -65,7 +65,8 @@ export interface ContextReader {
   readFileEvidence?(args:ContextRange & {id:string;offset:number;length:number}):Promise<{status:string;record?:ContextRecord;reason?:string}>;
   fileChunks?(args:ContextRange & {id:string;offset?:number}):Promise<ContextRecord[]>;
   sourceHistory?(args:ContextRange & {id:string}): Promise<ContextRecord[]>;
-  sources?(args:ContextRange): Promise<unknown>;
+  sources?(args:ContextRange & {query?:string}): Promise<unknown>;
+  sourceContext?(args:ContextRange & {sourceContextRef:string}):Promise<{attributionContext:import('@mote/shared').AttributionContext}>;
   sourceItems?(args:ContextRange & {sourceId?:string;kind?:string;includeDeleted?:boolean}): Promise<ContextPage>;
   memories?(args:ContextRange & {includeEvidence?:boolean;includeHistory?:boolean;asOf?:string;id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory';kind?:'episodic'|'semantic'|'procedural';status?:'published'|'proposed'|'stale'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[];references?:{id:string;capturedAt:string;characters:number}[];sourceSpans?:MemorySourceSpan[];sourceCoverage?:{references:number;delivered:number;partial:boolean}}>;
 }
@@ -112,6 +113,8 @@ export interface QueryInput {
   hostRetrieval?:'none';
   /** Host-local receipts of exactly delivered original ranges; never model output. */
   onEvidence?: (records:readonly ContextRecord[])=>void;
+  /** Host receipt of source metadata actually disclosed, including fragments that yield. */
+  onSourceContextDependencies?:(pins:readonly import('@mote/shared').SourceContextDeclaration[])=>void;
   /** Host-only pinned tool contributions; never accepted from query HTTP input. */
   toolContributions?:readonly import('./tool-contributions.js').ContextToolContribution[];
   /** Host-verified originals deliberately attached to this dialogue. Bytes remain in the vault. */
@@ -121,6 +124,7 @@ export interface QueryInput {
   derivedContextEvidenceIds?:readonly string[];
   /** Host-only original lineage for opening cards or derived task context. Never
    * grants original reads or appears in the model context envelope. */
+  contextSourceContextDependencies?:{sourceId:string;version:number;fingerprint:string}[];
   contextEvidenceDependencies?:import('@mote/shared').EvidenceDependencies;
   /** Host-only bounded observation and coverage snapshot for one insight version. */
   insightSnapshot?: import('@mote/shared').InsightSnapshot;
@@ -169,7 +173,8 @@ export interface QueryInput {
   /** Server-owned dialogue context. Earlier model prose is not original evidence. */
   conversation?: {
     evidenceDependencies?:import('@mote/shared').EvidenceDependencies;
-    turns: {question:string;answer:string;scope:{after?:string;before?:string;deviceId?:string;timeZone?:string};createdAt:string;answerTruncated?:boolean;evidenceDeleted?:boolean;attachments?:{id:string;name:string;mimeType:string}[]}[];
+    sourceContextDependencies?:{sourceId:string;version:number;fingerprint:string}[];
+    turns: {question:string;answer:string;scope:{after?:string;before?:string;deviceId?:string;timeZone?:string};createdAt:string;answerTruncated?:boolean;evidenceDeleted?:boolean;contextStale?:boolean;attachments?:{id:string;name:string;mimeType:string}[]}[];
     omittedTurns:number;
     workingMemory?:{text:string;coveredTurns:number;generatedAt:string};
   };
@@ -238,6 +243,8 @@ export interface ToolTrace {
   count: number;
 }
 export interface AgentAnswer {
+  /** Fixed owner metadata versions disclosed by this run; never original citation grants. */
+  sourceContextDependencies?:{sourceId:string;version:number;fingerprint:string}[];
   evidenceDependencies?:import('@mote/shared').EvidenceDependencies;
   contextUsage?:{unit:'utf16_characters';system:number;tools:number;question:number;conversation:number;task:number;evidence:number;prompt:number;outputTokenReserve:number;toolResults:number};
   answer: string;

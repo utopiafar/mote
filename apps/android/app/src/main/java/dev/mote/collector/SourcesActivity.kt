@@ -1,16 +1,13 @@
 package dev.mote.collector
 
 import android.Manifest
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.provider.OpenableColumns
 import android.text.InputType
 import android.view.WindowManager
 import android.widget.*
@@ -20,11 +17,9 @@ import java.util.concurrent.Executors
 class SourcesActivity : MoteActivity() {
     private lateinit var list: LinearLayout
     private val worker = Executors.newSingleThreadExecutor()
-    private val selectedUris = mutableSetOf<String>()
     private val task by lazy { UiTask(this, worker, ownsExecutor = false) }
     private lateinit var operationStatus: TextView
     private var rendering = false
-    private var reauthorizingId: String? = null
     private var editingSource: LocalSource? = null
     private val draftControls = linkedMapOf<String, android.view.View>()
     private data class Draft(val source: LocalSource, val values: Map<String, String>)
@@ -33,7 +28,6 @@ class SourcesActivity : MoteActivity() {
     private val refresh = object : Runnable { override fun run() { render(); handler.postDelayed(this, 2500) } }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        reauthorizingId = savedInstanceState?.getString("reauthorizingId")
         restoringDraft = lastNonConfigurationInstance as? Draft
         val content = moteDetailPage()
         content.addView(TextView(this).apply { text = MoteI18n.text("来源管理"); textSize = 28f })
@@ -44,31 +38,26 @@ class SourcesActivity : MoteActivity() {
             if (checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) chooseCalendars()
             else requestPermissions(arrayOf(Manifest.permission.READ_CALENDAR), 301)
         }
-        action(MoteI18n.text("导入文件")) { pick(false) }
-        action(MoteI18n.text("同步文件夹")) { pick(true) }
-        action(MoteI18n.text("选择音频目录")) { pick(true, true) }
         action(MoteI18n.text("立即扫描并同步")) { work(MoteI18n.text("正在调度扫描与同步…")) { SourceWork.schedule(applicationContext, true, syncExplicit = true) } }
         action(MoteI18n.text("来源限制与同步说明")) { MoteDialogBuilder(this).setTitle(MoteI18n.text("来源说明")).setMessage(MoteI18n.text("文件快照和原件归档都会上传完整文件，由中央解析或转写。快照处理后删除中央临时原件，保留提取正文；原件归档长期保留文件。每文件最多 512 MiB，支持断网续传。仅文件目录不读取正文。超限或扫描不完整不会推断文件已删除。\n系统后台任务约每 15 分钟检查一次。")).setPositiveButton(MoteI18n.text("知道了"), null).show() }
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; content.addView(list)
         MoteUi.styleTree(content)
         if (restoringDraft != null) edit(restoringDraft!!.source)
         else if (savedInstanceState == null) {
-            when (intent.getStringExtra("addAction")) { "FOLDER" -> pick(true); "FILE" -> pick(false) }
+            intent.getStringExtra("addAction")?.takeIf { it in setOf("FILE", "FOLDER") }?.let { action ->
+                startActivity(Intent(this, FileTaskActivity::class.java).putExtra("addAction", action)); finish()
+            }
             intent.getStringExtra("sourceId")?.let { id ->
                 task.start(MoteI18n.text("正在读取来源…"), { operationStatus.text = it }, { localSources().sources().firstOrNull { it.id == id } }) { result -> result.getOrNull()?.let(::edit) }
             }
         }
     }
-    override fun onSaveInstanceState(state: Bundle) { state.putString("reauthorizingId", reauthorizingId); super.onSaveInstanceState(state) }
     @Deprecated("Native in-memory configuration retention") override fun onRetainNonConfigurationInstance(): Any? = editingSource?.let { source ->
         Draft(source, draftControls.mapValues { (_, view) -> when (view) { is CheckBox -> view.isChecked.toString(); is Spinner -> view.selectedItemPosition.toString(); is EditText -> view.text.toString(); else -> "" } })
     }
     override fun onResume() { super.onResume(); handler.post(refresh) }
     override fun onPause() { handler.removeCallbacks(refresh); super.onPause() }
     override fun onDestroy() {
-        // FIFO cleanup runs after any accepted provider read/save, even if its UI result was discarded.
-        val uris = selectedUris.toList()
-        worker.execute { uris.forEach { uri -> runCatching { releaseUnused(uri) } } }
         worker.shutdown(); super.onDestroy()
     }
     private fun render() {
@@ -81,9 +70,10 @@ class SourcesActivity : MoteActivity() {
                     val state = if (source.binaryFiles()) fileArchives().state(source.id).put("status", store.state(source.id).optString("status")) else store.state(source.id); val pending = if (source.binaryFiles()) fileArchives().pendingCount(source.id) else state.optJSONArray("pending")?.length() ?: 0
                     val status = when (state.optString("status")) {
                         "permission" -> MoteI18n.text("权限丢失，请重新授权"); "paused" -> MoteI18n.text("中央已暂停；请在中央恢复后重试"); "provider" -> MoteI18n.text("提供者不可用或缓存已满；保留旧快照，稍后重试")
+                        "context-conflict" -> MoteI18n.text("资料说明与中央版本冲突；请打开设置处理，文件保留待发。"); "context-http" -> MoteI18n.text("资料说明尚未获中央确认；请检查连接或升级中央，文件保留待发。");
                         "consent" -> MoteI18n.text("请编辑来源并确认完整文件上传到中央处理，处理后不保留中央原件。"); "offline" -> MoteI18n.text("等待网络/节点恢复"); "http", "ack" -> MoteI18n.text("节点未确认，原版本保留待发"); "synced" -> if (source.kind == "local-files" && source.retention != "archive") MoteI18n.text("文件已接收；中央处理与可搜索状态请在资料库查看") else MoteI18n.text("已同步"); "partial" -> MoteI18n.text("扫描不完整"); "scanned" -> MoteI18n.text("已扫描，等待发送"); else -> MoteI18n.text("等待首次扫描")
                     }
-                    val syncState = when { !source.enabled -> "paused"; !Settings(this).read().hasSyncConnection() -> "unconfigured"; state.optString("status") in setOf("permission", "consent") -> "blocked"; state.optString("status") == "paused" -> "paused"; state.optString("status") in setOf("offline", "http", "ack", "provider") -> "error"; pending > 0 -> "waiting"; else -> "idle" }
+                    val syncState = when { !source.enabled -> "paused"; !Settings(this).read().hasSyncConnection() -> "unconfigured"; state.optString("status") in setOf("permission", "consent", "context-conflict") -> "blocked"; state.optString("status") == "paused" -> "paused"; state.optString("status") in setOf("offline", "http", "ack", "provider", "context-http") -> "error"; pending > 0 || source.contextDirty -> "waiting"; else -> "idle" }
                     val facts = NativeStatus.project(org.json.JSONObject().put("pending", pending).put("lastAcknowledgedAt", state.opt("lastAcknowledgedAt") ?: org.json.JSONObject.NULL).put("syncState", syncState)
                         .put("errorCode", if (state.optString("status") == "permission") "permission_required" else if (state.optString("status") == "provider") "source_unavailable" else org.json.JSONObject.NULL)
                         .put("scanComplete", state.opt("scanComplete") ?: org.json.JSONObject.NULL).put("skipped", state.opt("skipped") ?: org.json.JSONObject.NULL))
@@ -103,7 +93,7 @@ class SourcesActivity : MoteActivity() {
                         list.addView(Button(this).apply { text = MoteI18n.text(if (source.enabled) "暂停这个来源" else "恢复这个来源"); setOnClickListener {
                             work(MoteI18n.text("正在保存来源设置…")) { localSources().save(source.copy(enabled = !source.enabled)); SourceWork.schedule(applicationContext, true) }
                         } })
-                        if (source.kind == "local-files") list.addView(Button(this).apply { text = MoteI18n.text("重新授权或选择范围"); setOnClickListener { reauthorizingId = source.id; pick(source.tree) } })
+                        if (source.kind == "local-files") list.addView(Button(this).apply { text = MoteI18n.text("重新授权或选择范围"); setOnClickListener { edit(source) } })
                         list.addView(Button(this).apply { text = MoteI18n.text("设置 · {0}", source.name); setOnClickListener { edit(source) } })
                     }
                 }
@@ -133,40 +123,19 @@ class SourcesActivity : MoteActivity() {
             }.onFailure { operationStatus.text = MoteI18n.text("无法读取日历列表，请检查权限与日历应用") }
         }
     }
-    private fun pick(tree: Boolean, archive: Boolean = false) {
-        val intent = if (tree) Intent(Intent.ACTION_OPEN_DOCUMENT_TREE) else Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-        @Suppress("DEPRECATION") startActivityForResult(intent, if (archive) 405 else if (tree) 403 else 402)
-    }
     @Deprecated("Platform permission callback")
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 301 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) chooseCalendars()
         else if (requestCode == 301) toast(MoteI18n.text("未授权，不读取日历；可在系统应用权限中重新允许"))
     }
-    @Deprecated("Platform document callback")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode != RESULT_OK || requestCode !in setOf(402, 403, 405)) return
-        val uri = data?.data ?: return
-        if (task.busy) { toast(MoteI18n.text("正在处理上一项操作，请稍后重新选择文件")); return }
-        selectedUris.add(uri.toString())
-        task.start(MoteI18n.text("正在读取所选文件…"), { operationStatus.text = it }, {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            try {
-                val name = runCatching { contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null } }.getOrNull()
-                reauthorizingId?.let { id -> localSources().sources().find { it.id == id }?.copy(uri = uri.toString()) } ?: localSources().sources().find { it.uri == uri.toString() }
-                    ?: LocalSource(name = (name ?: if (requestCode != 402) MoteI18n.text("选择的文件目录") else MoteI18n.text("选择的文件")).take(200), kind = "local-files", uri = uri.toString(), tree = requestCode != 402, syncContinuously = requestCode != 402, retention = if (requestCode == 405) "archive" else "snapshot", extensions = if (requestCode == 405) "m4a,mp3,wav,aac,amr,ogg,flac,opus" else "md,txt,json,csv,ics,m4a,mp3,wav,aac,amr,ogg,flac,opus,jpg,png,pdf,docx")
-            } catch (error: Exception) { releaseUnused(uri.toString()); throw error }
-        }) { result ->
-            result.onSuccess { reauthorizingId = null; operationStatus.text = MoteI18n.text("文件已读取，请确认来源设置"); edit(it) }
-                .onFailure { operationStatus.text = MoteI18n.text("无法读取文件或持久授权，请重新选择") }
-        }
-    }
     private fun releaseUnused(uri: String) {
         if (localSources().sources().none { it.uri == uri }) runCatching { contentResolver.releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
     }
     private fun edit(source: LocalSource) {
+        if (source.kind == "local-files") {
+            startActivity(Intent(this, FileTaskActivity::class.java).putExtra("sourceId", source.id)); return
+        }
         editingSource = source; draftControls.clear()
         val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 12, 28, 12) }
         fun field(label: String, value: String, numeric: Boolean = false): EditText {

@@ -4,24 +4,28 @@ import {Conversations,type Conversation} from './conversations.js';
 import {Store,StoreError,sha256} from './store.js';
 import type {LifecycleExecution,LifecycleSettings} from './memory-lifecycle.js';
 import {combineDependencies} from './conversation-lineage.js';
+import {SourceContextStore} from './source-context.js';
+import {assertSourceContextDependencies,combineSourceContextDependencies,sourceContextDependenciesCurrent} from './source-context-lineage.js';
 
-type Summary={text:string;coveredTurns:number;generatedAt:string;fingerprint:string;evidenceDependencies?:QueryResult['evidenceDependencies']};
+type Summary={text:string;coveredTurns:number;generatedAt:string;fingerprint:string;evidenceDependencies?:QueryResult['evidenceDependencies'];sourceContextDependencies?:QueryResult['sourceContextDependencies']};
 export class WorkingMemory {
   private active=new Map<string,Promise<void>>();
-  constructor(private store:Store,private conversations:Conversations){store.db.exec('CREATE TABLE IF NOT EXISTS working_memories(id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,json TEXT NOT NULL)');}
+  private readonly sourceContexts:SourceContextStore;
+  constructor(private store:Store,private conversations:Conversations){this.sourceContexts=new SourceContextStore(store);store.db.exec('CREATE TABLE IF NOT EXISTS working_memories(id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,json TEXT NOT NULL)');}
   private fingerprint(conversation:Conversation,count:number){return sha256(JSON.stringify(conversation.turns.slice(0,count)));}
   get(conversation:Conversation):Summary|undefined {
     const row=this.store.db.prepare('SELECT json FROM working_memories WHERE id=?').get(conversation.id);if(!row)return;
     const summary=JSON.parse(String(row.json)) as Summary;
-    if(summary.fingerprint!==this.fingerprint(conversation,summary.coveredTurns)){this.store.db.prepare('DELETE FROM working_memories WHERE id=?').run(conversation.id);return;}
+    if(summary.fingerprint!==this.fingerprint(conversation,summary.coveredTurns)||!sourceContextDependenciesCurrent(this.sourceContexts,summary.sourceContextDependencies)){this.store.db.prepare('DELETE FROM working_memories WHERE id=?').run(conversation.id);return;}
     return summary;
   }
   context(conversation:Conversation,settings:LifecycleSettings):NonNullable<QueryInput['conversation']>{
     const summary=this.get(conversation),tail={...conversation,turns:conversation.turns.slice(summary?.coveredTurns??0)};
     const result=this.conversations.context(tail,20,settings.contextCharacters-(summary?.text.length??0));
     const evidenceDependencies=combineDependencies([result.evidenceDependencies,...(summary?[summary.evidenceDependencies]:[])]);
-    const {evidenceDependencies:_previous,...context}=result;
-    return {...context,...(evidenceDependencies?{evidenceDependencies}:{}),omittedTurns:tail.turns.filter(t=>t.status!=='failed'&&t.result).length-result.turns.length,...(summary?{workingMemory:{text:summary.text,coveredTurns:summary.coveredTurns,generatedAt:summary.generatedAt}}:{})};
+    const sourceContextDependencies=combineSourceContextDependencies([result.sourceContextDependencies,summary?.sourceContextDependencies]);
+    const {evidenceDependencies:_previous,sourceContextDependencies:_sourcePrevious,...context}=result;
+    return {...context,...(evidenceDependencies?{evidenceDependencies}:{}),...(sourceContextDependencies.length?{sourceContextDependencies}:{}),omittedTurns:tail.turns.filter(t=>t.status!=='failed'&&t.result).length-result.turns.length,...(summary?{workingMemory:{text:summary.text,coveredTurns:summary.coveredTurns,generatedAt:summary.generatedAt}}:{})};
   }
   async prepare(conversation:Conversation,settings:LifecycleSettings,question:string,query:(input:QueryInput)=>Promise<QueryResult>,execution?:Pick<LifecycleExecution,'signal'|'commit'>){
     // Current input consumes the same host dialogue budget. Never silently drop
@@ -51,7 +55,8 @@ export class WorkingMemory {
     const batches:NonNullable<QueryInput['taskContext']>['turns'][]=[];
     for(const turn of conversation.turns.slice(start,end)){
       if(turn.status==='failed'||!turn.result){count++;continue;}
-      const entry={turnId:turn.id,question:turn.question,answer:turn.result.answer,scope:turn.scope,createdAt:turn.createdAt,evidenceDeleted:turn.evidenceDeleted};
+      const contextStale=!sourceContextDependenciesCurrent(this.sourceContexts,turn.result.sourceContextDependencies);
+      const entry={turnId:turn.id,question:turn.question,answer:contextStale?'':turn.result.answer,scope:turn.scope,createdAt:turn.createdAt,evidenceDeleted:turn.evidenceDeleted,...(contextStale?{contextStale:true}:{})};
       const text=JSON.stringify(entry);if(characters+text.length>60000){
         if(prefix.length)break;
         // One very long answer still needs complete coverage. Summarize its
@@ -72,16 +77,19 @@ export class WorkingMemory {
     const fingerprint=this.fingerprint(conversation,count);
     if(prefix.length)batches.push(prefix);
     let summaryText=previous?.text??'';
-    const evidenceDependencies=combineDependencies(conversation.turns.slice(0,count).filter(turn=>turn.result).map(turn=>turn.evidenceDeleted?{version:1,complete:true,ids:[]}:turn.result!.evidenceDependencies));
+    const activeTurns=conversation.turns.slice(0,count).filter(turn=>turn.result&&!turn.evidenceDeleted&&sourceContextDependenciesCurrent(this.sourceContexts,turn.result.sourceContextDependencies));
+    const evidenceDependencies=combineDependencies(activeTurns.map(turn=>turn.result!.evidenceDependencies))??{version:1 as const,complete:true,ids:[]};
+    let sourceContextDependencies=combineSourceContextDependencies([previous?.sourceContextDependencies,...activeTurns.map(turn=>turn.result!.sourceContextDependencies)]);
     for(const turns of batches){
-      const result=await query({contextEvidenceDependencies:evidenceDependencies??{version:1,complete:false,ids:[]},validateOutput:result=>!result.answer.trim()||result.answer.length>settings.summaryCharacters?{code:'summary_length',feedback:`Return a nonempty complete summary within ${settings.summaryCharacters} characters. Shorten the summary without losing user constraints.`}:undefined,skill:'working-memory',responseMode:'answer',question:`Compact only this conversation prefix into at most ${settings.summaryCharacters} characters. Use sections: Goals, Explicit constraints and rejected proposals, Decisions, Open questions, Evidence references to reverify. Attribute entries to source turn IDs without bracketed citations. Prior assistant output is not evidence. When a turn arrives in spans, preserve earlier span constraints in the updated summary.`,taskContext:{previousSummary:summaryText,turns}});
+      const result=await query({contextEvidenceDependencies:evidenceDependencies,contextSourceContextDependencies:sourceContextDependencies,validateOutput:result=>!result.answer.trim()||result.answer.length>settings.summaryCharacters?{code:'summary_length',feedback:`Return a nonempty complete summary within ${settings.summaryCharacters} characters. Shorten the summary without losing user constraints.`}:undefined,skill:'working-memory',responseMode:'answer',question:`Compact only this conversation prefix into at most ${settings.summaryCharacters} characters. Use sections: Goals, Explicit constraints and rejected proposals, Decisions, Open questions, Evidence references to reverify. Attribute entries to source turn IDs without bracketed citations. Prior assistant output is not evidence. A contextStale turn preserves the user question but has withdrawn assistant prose; reverify current source context when needed. When a turn arrives in spans, preserve earlier span constraints in the updated summary.`,taskContext:{previousSummary:summaryText,turns}});
       if(!result.answer.trim()||result.answer.length>settings.summaryCharacters)throw new StoreError('Working summary exceeds its budget',502);
       summaryText=result.answer;
+      sourceContextDependencies=combineSourceContextDependencies([sourceContextDependencies,result.sourceContextDependencies]);
     }
     const commit=()=>{
     if(!this.store.db.prepare('SELECT id FROM conversations WHERE id=?').get(id)||this.fingerprint(this.conversations.get(id),count)!==fingerprint)throw new StoreError('Conversation changed while compacting',409);
-    const evidenceDependencies=combineDependencies(conversation.turns.slice(0,count).filter(turn=>turn.result).map(turn=>turn.evidenceDeleted?{version:1,complete:true,ids:[]}:turn.result!.evidenceDependencies));
-    const json=JSON.stringify({text:summaryText,coveredTurns:count,generatedAt:new Date().toISOString(),fingerprint,...(evidenceDependencies?{evidenceDependencies}:{})});
+    assertSourceContextDependencies(this.sourceContexts,sourceContextDependencies);
+    const json=JSON.stringify({text:summaryText,coveredTurns:count,generatedAt:new Date().toISOString(),fingerprint,evidenceDependencies,...(sourceContextDependencies.length?{sourceContextDependencies}:{})});
     this.store.reserveMetadata(Buffer.byteLength(json));
     this.store.db.prepare('INSERT INTO working_memories VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(id,json);
     };if(execution)execution.commit(commit);else commit();

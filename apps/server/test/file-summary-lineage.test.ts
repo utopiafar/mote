@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
+import {createHash} from 'node:crypto';
 import {join} from 'node:path';
 import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
@@ -66,4 +67,14 @@ test('restart retires legacy summaries without pinned input lineage before expos
   const f=await fixture(t);await f.processing.tick();f.store.db.prepare("UPDATE file_artifacts SET json=json_remove(json,'$.inputFingerprint') WHERE kind='summary'").run();
   await f.processing.close();const restarted=new FileProcessing(f.files,undefined,async records=>({answer:'Generated replacement after restart',citations:records.map(record=>({id:record.id}))}));
   try{restarted.prepare();assert.equal(f.files.detail(f.id).artifacts.some((a:any)=>a.kind==='summary'),false);await restarted.tick();const current=f.files.detail(f.id).artifacts.find((a:any)=>a.kind==='summary') as any;assert.equal(current.inputFingerprint,fileSummaryInputFingerprint(f.files,f.id));}finally{await restarted.close();}
+});
+
+
+test('an upgrade preserves the exact legacy summary input hash when no source description has been declared',async t=>{
+ const f=await fixture(t);await f.processing.tick();const hash=createHash('sha256');
+ for(const record of f.files.chunks(f.id))hash.update(JSON.stringify([record.id,record.ocrText,record.fileEvidence]));
+ const legacyHash=hash.digest('hex');assert.equal(fileSummaryInputFingerprint(f.files,f.id),legacyHash);
+ const summary=f.files.detail(f.id).artifacts.find((item:any)=>item.kind==='summary')!;await f.processing.close();let newCalls=0;
+ const restarted=new FileProcessing(f.files,undefined,async records=>{newCalls++;return {answer:'Unexpected historical model call',citations:records.map(record=>({id:record.id}))};});
+ try{await restarted.tick();assert.equal(newCalls,0);assert.equal(f.files.detail(f.id).artifacts.find((item:any)=>item.kind==='summary')?.id,summary.id);}finally{await restarted.close();}
 });

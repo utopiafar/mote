@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {startBridge} from '../dist/bridge.js';
 import {parseAnswer} from '../dist/index.js';
 import {taskTools} from '../dist/task-context.js';
@@ -115,4 +116,44 @@ test('UTF-16 boundaries, selected scope and declaration-only locators never expa
  f.fixture.reader.evidence=async()=>[{...f.fixture.originals[0],capturedAt:'2026-08-01T00:00:00Z',attributionContext:f.context}];
  assert.equal((await f.call('attribution_context',{id})).status,400,'expired selected time scope cannot disclose its context');
  assert.equal(f.bridge.records.size,0);
+});
+
+test('source descriptions require discovery, read losslessly, strip prose from metadata and preserve every disclosed version pin',async t=>{
+ const sourceId='generated:audio-source',description=('Generated calls belong to me; anonymous speakers remain unknown. 😀\\\n').repeat(200).slice(0,12000);
+ let pin={sourceId,version:1,fingerprint:'c'.repeat(64)},available=true;
+ const ref=()=>`source-context:${Buffer.from(sourceId).toString('base64url')}@${pin.version}#${pin.fingerprint}`;
+ const context=()=>({version:1,ownerRelation:'unknown',basis:'default',sourceContextDeclarations:[pin],sourceContextStatements:[{sourceId,version:pin.version,description}]});
+ const reader={search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],devices:async()=>[],activity:async()=>({}),
+  sources:async args=>({items:[{id:sourceId,name:'Generated recordings',sourceContextRef:ref(),descriptionPreview:description.slice(0,300)}],nextCursor:null}),
+  sourceContext:async args=>{if(!available||args.sourceContextRef!==ref())throw Error('Source description changed');return {attributionContext:context()};}};
+ const bridge=await startBridge(reader,{question:'Generated context fixture'},40);t.after(()=>bridge.close());
+ const call=async(tool,args={})=>{const response=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify(args)});return {status:response.status,body:await response.json()};};
+ assert.equal((await call('attribution_context',{sourceContextRef:ref()})).status,400);
+ const capability=await call('capability_discover',{name:'sources'});assert.equal(capability.status,200);
+ const discover=()=>call('capability_execute',{name:'sources',version:capability.body.data.version,argumentsJson:JSON.stringify({query:'calls'})});
+ assert.equal((await discover()).status,200);const oldRef=ref();
+ const read=await pages(call,{sourceContextRef:oldRef});assert.equal(JSON.parse(read.text).sourceContextStatements[0].description,description);
+ assert.equal(bridge.records.size,0,'source metadata grants no original citation');assert.deepEqual(bridge.sourceContextDependencies,[pin]);
+ pin={...pin,version:2,fingerprint:'d'.repeat(64)};assert.equal((await call('attribution_context',{sourceContextRef:oldRef})).status,400);
+ assert.equal((await discover()).status,200);assert.equal(bridge.sourceContextDependencies.length,2,'a new discovery cannot erase the old disclosed dependency');
+ available=false;assert.equal((await call('attribution_context',{sourceContextRef:ref()})).status,400);
+});
+
+test('default source context pins fence projected originals across edits and clearing while undeclared evidence keeps its legacy fingerprint',async t=>{
+ const fixture=generatedMaterialPages({text:'Generated original transcript remains unchanged.'}),record=fixture.originals[0],sourceId='generated-source';
+ const legacy=createHash('sha256').update(JSON.stringify([record.ocrText,record.provenance,record.fileEvidence])).digest('hex');
+ const fingerprints=[];
+ const contexts=[{version:1,ownerRelation:'unknown',basis:'default'},
+  {version:1,ownerRelation:'unknown',basis:'default',sourceContextDeclarations:[],sourceContextStatements:[]},
+  ...[{version:1,description:'Generated narrator background'},{version:2,description:'Generated narrator background'},{version:3,description:''}].map(({version,description})=>({
+   version:1,ownerRelation:'unknown',basis:'default',sourceContextDeclarations:[{sourceId,version,fingerprint:String(version).repeat(64)}],sourceContextStatements:[{sourceId,version,description}]}))];
+ for(const attributionContext of contexts){
+  const reader={...fixture.reader,evidence:async()=>[{...record,attributionContext}]};
+  const bridge=await startBridge(reader,{question:'Generated default source lineage',evidenceIds:[record.id],evidenceRanges:[{id:record.id,offset:0,length:record.ocrText.length}]},10);
+  t.after(()=>bridge.close());
+  fingerprints.push(bridge.seedEvidence[0].evidenceFingerprint);
+ }
+ assert.equal(fingerprints[0],legacy);assert.equal(fingerprints[1],legacy);
+ assert.equal(new Set(fingerprints.slice(2)).size,3,'an unchanged body or cleared description cannot retain an earlier source version identity');
+ assert.ok(fingerprints.slice(2).every(fingerprint=>fingerprint!==legacy));
 });

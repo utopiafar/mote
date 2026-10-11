@@ -27,8 +27,8 @@ internal object SyncHealth {
     internal fun sourceRequiresAttention(source: LocalSource, metadata: org.json.JSONObject, pendingVersions: Int): Boolean {
         if (!source.enabled) return false
         if (source.kind == "local-files" && source.retention == "snapshot" && !source.centralProcessingConsent) return true
-        return (pendingVersions > 0 || !metadata.optBoolean("registered")) && metadata.optString("status") in
-            setOf("offline", "permission", "configuration", "storage", "provider", "http", "ack", "paused", "consent")
+        return (pendingVersions > 0 || source.contextDirty || !metadata.optBoolean("registered")) && metadata.optString("status") in
+            setOf("offline", "permission", "configuration", "storage", "provider", "http", "ack", "paused", "consent", "context-conflict", "context-http")
     }
 
 }

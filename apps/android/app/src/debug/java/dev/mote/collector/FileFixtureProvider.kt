@@ -19,7 +19,10 @@ class FileFixtureProvider : DocumentsProvider() {
     }
     override fun isChildDocument(parentDocumentId: String, documentId: String) = file(documentId).path.startsWith(file(parentDocumentId).path + "/")
     override fun onCreate() = true
-    override fun queryRoots(projection: Array<out String>?): Cursor = MatrixCursor(projection ?: arrayOf("root_id", "document_id", "title")).also { c -> c.addRow(c.columnNames.map { when (it) { "root_id", "document_id" -> "root"; "title" -> "Generated file fixtures"; else -> null } }.toTypedArray()) }
+    override fun queryRoots(projection: Array<out String>?): Cursor = MatrixCursor(projection ?: arrayOf("root_id", "document_id", "title", "flags", "mime_types")).also { c ->
+        if (context!!.getSharedPreferences("file-fixture", 0).getBoolean("discovery", false))
+            c.addRow(c.columnNames.map { when (it) { "root_id", "document_id" -> "root"; "title" -> "Generated file fixtures"; "flags" -> DocumentsContract.Root.FLAG_SUPPORTS_IS_CHILD; "mime_types" -> "*/*"; else -> null } }.toTypedArray())
+    }
     override fun queryDocument(documentId: String, projection: Array<out String>?): Cursor = MatrixCursor(projection ?: columns).also { c -> file(documentId).takeIf { it.exists() }?.let { add(c, it) } }
     override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor {
         check(!context!!.getSharedPreferences("file-fixture", 0).getBoolean("failure", false))

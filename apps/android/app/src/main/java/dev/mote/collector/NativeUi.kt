@@ -215,14 +215,14 @@ class MoteDialogBuilder(context: Context) : android.app.AlertDialog.Builder(cont
 /** Every Add entry uses this same action set and real native flows. */
 enum class MoteAddAction(val titleKey: String, val subtitleKey: String, val icon: String) {
     FOLDER("同步文件夹", "持续收集文件夹里的新内容与修改", "folder"),
-    FILE("导入文件", "保存一次，也可选择以后自动同步", "note"),
+    FILE("导入文件", "导入一次，不跟踪后续修改。", "note"),
     SCREEN("记录屏幕", "先选择应用范围，再按需授权", "capture"),
     NOTE("随手记", "离线也能留下想法与片段", "notes")
 }
 fun Activity.openMoteAdd(action: MoteAddAction) {
     if (this is MainActivity) { addContent(action); return }
     when (action) {
-        MoteAddAction.FOLDER, MoteAddAction.FILE -> startActivity(Intent(this, SourcesActivity::class.java).putExtra("addAction", action.name))
+        MoteAddAction.FOLDER, MoteAddAction.FILE -> startActivity(Intent(this, FileTaskActivity::class.java).putExtra("addAction", action.name))
         MoteAddAction.SCREEN -> openMoteLocalPage("PRIVACY")
         MoteAddAction.NOTE -> openMoteLocalPage("NOTES")
     }

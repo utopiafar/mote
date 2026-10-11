@@ -13,7 +13,7 @@ import { createServer, type Server } from "node:http";
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { displayTime } from './time.js';
-import {stateSeriesSchema,fileEvidenceSchema,recordMetadataSchema, sourceMetadataSchema, sourceSchema,documentSchema,sourceContentTime,attributionContextSchema} from '@mote/shared';
+import {stateSeriesSchema,fileEvidenceSchema,recordMetadataSchema, sourceMetadataSchema, sourceSchema,documentSchema,sourceContentTime,attributionContextSchema,sourceContextDeclarationSchema} from '@mote/shared';
 import type {
   ContextReader,
   ContextRecord,
@@ -93,7 +93,7 @@ function project(record: ContextRecord, offset = 0, length = 600, timeZone = 'UT
   const projected:ContextRecord = {
     ...(fileEvidenceSchema.safeParse(record.fileEvidence).success?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
     ...(stateSeriesSchema.safeParse(record.stateSeries).success?{stateSeries:stateSeriesSchema.parse(record.stateSeries)}:{}),
-    evidenceFingerprint:createHash('sha256').update(JSON.stringify([text,record.provenance,record.fileEvidence,...(attribution.success&&(attribution.data.basis!=='default'||attribution.data.correction||attribution.data.sourceDeclaration||attribution.data.materialDeclarations||attribution.data.declarations||attribution.data.ownerStatements||attribution.data.importDeclarations||attribution.data.importStatements)?[attribution.data]:[])])).digest('hex'),
+    evidenceFingerprint:createHash('sha256').update(JSON.stringify([text,record.provenance,record.fileEvidence,...(attribution.success&&(attribution.data.basis!=='default'||attribution.data.correction||attribution.data.sourceDeclaration||attribution.data.materialDeclarations||attribution.data.declarations||attribution.data.ownerStatements||attribution.data.importDeclarations||attribution.data.importStatements||attribution.data.sourceContextDeclarations?.length||attribution.data.sourceContextStatements?.length)?[attribution.data]:[])])).digest('hex'),
     ...(attribution.success?{attributionContext:attribution.data}:{}),
     ...(record.retrieval?{retrieval:record.retrieval}:{}),
     estimatedReadCharacters:text.length,
@@ -173,12 +173,13 @@ function projectDevice(value: unknown, timeZone = 'UTC'): Record<string, unknown
   return result;
 }
 
+const pinnedSourceContextRef=/^source-context:([A-Za-z0-9_-]+)@([1-9][0-9]*)#([a-f0-9]{64})$/;
 const pinnedMaterialRef=/^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$/;
 /** Keep statement identities/scopes in ordinary responses; prose has its own
  * authorized, lossless disclosure path and never affects original grants. */
 function attributionMetadata(value:unknown){
   const parsed=attributionContextSchema.safeParse(value);if(!parsed.success)return undefined;
-  const {ownerStatements:_owner,importStatements:_import,...metadata}=parsed.data;
+  const {ownerStatements:_owner,importStatements:_import,sourceContextStatements:_source,...metadata}=parsed.data;
   return metadata;
 }
 function attributionMetadataResponse(value:unknown,parentLocator?:{id:string}|{ref:string}):unknown {
@@ -241,6 +242,26 @@ export async function startBridge(
   const trace: ToolTrace[] = [];
   const records = new Map<string, ContextRecord>();
   const remember=(record:ContextRecord)=>{rememberEvidence(records,record);try{bounds.onEvidence?.([record]);}catch{/* Receipt observation cannot grant new reads. */}};
+  const sourceContextDependencies=new Map<string,{sourceId:string;version:number;fingerprint:string}>();
+  const rememberSourcePin=(pin:{sourceId:string;version:number;fingerprint:string})=>{
+    const key=JSON.stringify(pin);if(sourceContextDependencies.has(key))return;
+    sourceContextDependencies.set(key,{...pin});bounds.onSourceContextDependencies?.([...sourceContextDependencies.values()].map(value=>Object.freeze({...value})));
+  };
+  for(const pin of [...(bounds.contextSourceContextDependencies??[]),...(bounds.conversation?.sourceContextDependencies??[])])rememberSourcePin(pin);
+  const discoveredSourceContexts=new Set<string>();
+  const rememberSourceContexts=(value:unknown)=>{
+    if(Array.isArray(value)){for(const item of value)rememberSourceContexts(item);return;}
+    if(!value||typeof value!=='object')return;
+    const row=value as Record<string,unknown>,ref=row.sourceContextRef;
+    if(typeof ref==='string'){
+      const match=pinnedSourceContextRef.exec(ref);
+      if(match){const sourceId=Buffer.from(match[1],'base64url').toString('utf8'),version=Number(match[2]);
+        if(sourceId.length>0&&sourceId.length<=128&&Number.isSafeInteger(version)){discoveredSourceContexts.add(ref);rememberSourcePin({sourceId,version,fingerprint:match[3]});}}
+    }
+    const attribution=attributionContextSchema.safeParse(row.attributionContext);
+    if(attribution.success)for(const pin of attribution.data.sourceContextDeclarations??[])rememberSourcePin(pin);
+    for(const [key,item] of Object.entries(row))if(key!=='attributionContext')rememberSourceContexts(item);
+  };
   const disclosedIds=new Set([...(bounds.conversation?.evidenceDependencies?.ids??[]),...(bounds.contextEvidenceDependencies?.ids??[]),...(bounds.derivedContextEvidenceIds??[])]);
   let completeLineage=(!bounds.conversation||bounds.conversation.evidenceDependencies?.complete===true)&&
     (!bounds.contextEvidenceDependencies||bounds.contextEvidenceDependencies.complete)&&
@@ -278,6 +299,7 @@ export async function startBridge(
   const seedEvidence=ranges.flatMap(r=>{const record=permitted.get(r.id);return record?[project(record,r.offset,r.length,bounds.timeZone)]:[];});
   if(Buffer.byteLength(JSON.stringify(seedEvidence))>1_500_000)throw hostError('Extraction evidence exceeds the byte budget');
   for(const record of seedEvidence){remember(record);disclosedIds.add(record.id);}
+  rememberSourceContexts(seedEvidence);
   const directImages=bounds.directImages??[];
   if(directImages.length>8||new Set(directImages.map(image=>image.id)).size!==directImages.length||directImages.some(image=>
     !/^[0-9a-f-]{36}$/i.test(image.id)||!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||
@@ -408,10 +430,17 @@ export async function startBridge(
           }
           dependencyIds.add(receipt.id);
         }
+        const sourcePins=(result.sourceContextDependencies??[]).map(pin=>sourceContextDeclarationSchema.parse(pin));
+        if(sourcePins.length&&!reader.sourceContext)throw hostError('Delegated source description validation is unavailable');
+        for(const pin of sourcePins){const ref=`source-context:${Buffer.from(pin.sourceId).toString('base64url')}@${pin.version}#${pin.fingerprint}`;
+          const opened=await reader.sourceContext!({...range({},bounds),sourceContextRef:ref});
+          if(!opened.attributionContext.sourceContextDeclarations?.some(current=>JSON.stringify(current)===JSON.stringify(pin)))throw hostError('Delegated source description is no longer current');
+        }
         const serialized=JSON.stringify(attributionMetadataResponse({source:'untrusted_delegated_result',data:result.data,evidence:delivered,hostBudget:hostBudget()}));
         if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters)throw budgetError();
         for(const record of delivered){remember(record);discovered.add(record.id);disclosedIds.add(record.id);expanded.add(record.id);}
         for(const id of dependencyIds)disclosedIds.add(id);
+        for(const pin of sourcePins)rememberSourcePin(pin);
         deliveredCharacters+=serialized.length;trace.push({tool,arguments:args,count:delivered.length});
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:delivered.length});
         res.end(serialized,()=>{if(result.yield)rejectFailure(new AgentYieldError());});return;
@@ -478,6 +507,7 @@ export async function startBridge(
         const serialized=JSON.stringify({source:'untrusted_personal_context',data:{items,nextCursor:page.nextCursor},hostBudget:hostBudget()});
         if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>1_500_000)throw budgetError();
         deliveredCharacters+=serialized.length;
+        rememberSourceContexts(items);
         for(const item of items)pinnedMaterials.add(item.ref as string);
         rememberDisclosureDependencies(page.disclosureDependencies);
         trace.push({tool,arguments:effective,count:items.length});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:items.length});res.end(serialized);return;
@@ -534,6 +564,7 @@ export async function startBridge(
             continue;
           }
           deliveredCharacters+=serialized.length;
+          rememberSourceContexts(data);
           for(const id of ids){discovered.add(id);disclosedIds.add(id);}
           for(const record of sourceEvidence){remember(record);expanded.add(record.id);}
           rememberDisclosureDependencies(page.disclosureDependencies);
@@ -542,15 +573,15 @@ export async function startBridge(
         throw budgetError();
       }
       if(tool==='attribution_context'){
-        if(Object.keys(args).some(key=>!['id','ref','offset','length','expectedFingerprint'].includes(key))||
-          (args.id===undefined)===(args.ref===undefined))throw hostError('Choose exactly one discovered original id or pinned Material ref');
+        if(Object.keys(args).some(key=>!['id','ref','sourceContextRef','offset','length','expectedFingerprint'].includes(key))||
+          [args.id,args.ref,args.sourceContextRef].filter(value=>value!==undefined).length!==1)throw hostError('Choose exactly one discovered original id, pinned Material ref or sourceContextRef');
         const offset=args.offset??0,length=args.length??8000;
         if(!Number.isSafeInteger(offset)||Number(offset)<0||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>12000)
           throw hostError('Attribution offset must be nonnegative and length must be 1–12000 UTF-16 units');
         if(args.expectedFingerprint!==undefined&&(typeof args.expectedFingerprint!=='string'||!/^[a-f0-9]{64}$/.test(args.expectedFingerprint)))throw hostError('Invalid attribution context fingerprint');
         if(Number(offset)>0&&args.expectedFingerprint===undefined)throw hostError('Copy contextFingerprint as expectedFingerprint when continuing an attribution page');
         const scope=range({},bounds);let context:unknown,dependencies:unknown;
-        let locator:{id:string}|{ref:string};
+        let locator:{id:string}|{ref:string}|{sourceContextRef:string};
         if(args.id!==undefined){
           if(typeof args.id!=='string'||!discovered.has(args.id))throw hostError('Discover the original before reading its attribution context');
           locator={id:args.id};
@@ -559,6 +590,10 @@ export async function startBridge(
           const at=sourceContentTime(record);
           if(!Number.isFinite(Date.parse(at))||scope.deviceId&&record.deviceId!==scope.deviceId||scope.after&&Date.parse(at)<Date.parse(scope.after)||scope.before&&Date.parse(at)>=Date.parse(scope.before))throw hostError('Original attribution context is outside the selected scope');
           context=record.attributionContext;
+        }else if(args.sourceContextRef!==undefined){
+          if(typeof args.sourceContextRef!=='string'||!discoveredSourceContexts.has(args.sourceContextRef)||!reader.sourceContext)throw hostError('Discover the source context before reading its statement');
+          locator={sourceContextRef:args.sourceContextRef};
+          context=(await reader.sourceContext({...scope,sourceContextRef:args.sourceContextRef})).attributionContext;
         }else{
           if(typeof args.ref!=='string'||!pinnedMaterialRef.test(args.ref)||!pinnedMaterials.has(args.ref))throw hostError('Use an exact pinned Material ref returned in this run');
           if(!reader.materialRead)throw hostError('Material context reading is unavailable');
@@ -593,7 +628,8 @@ export async function startBridge(
         deliveredCharacters+=serialized.length;
         // Context disclosure participates in deletion/correction lineage only;
         // it never populates records, discovered or expanded original grants.
-        if('id' in locator)disclosedIds.add(locator.id);else rememberDisclosureDependencies(dependencies);
+        rememberSourceContexts({attributionContext:parsed.data});
+        if('id' in locator)disclosedIds.add(locator.id);else if('ref' in locator)rememberDisclosureDependencies(dependencies);
         trace.push({tool,arguments:{...locator,offset:start,length:requestedLength,...(args.expectedFingerprint?{expectedFingerprint:args.expectedFingerprint}:{})},count:1,
           attributionPage:{contextFingerprint,offset:start,total:text.length,requestedLength,returnedLength:end-start,budgetLimited:end<Math.min(text.length,start+requestedLength)}});
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
@@ -728,7 +764,7 @@ export async function startBridge(
         if(typeof args.id!=='string'||!records.has(args.id))throw hostError('Discover a source record before requesting history');
         const scope=range({},bounds);effective={...scope,id:args.id};value=await reader.sourceHistory?.({...scope,id:args.id})??[];
       }
-      else if(tool==='sources')value=await reader.sources?.(range(args,bounds))??[];
+      else if(tool==='sources'){if(args.query!==undefined&&(typeof args.query!=='string'||args.query.length>500))throw hostError('Invalid source query');effective={...range(args,bounds),query:args.query};value=await reader.sources?.(effective as ContextRange&{query?:string})??{items:[],nextCursor:null};metadataOnly=true;}
       else if(tool==='segments'){
         const scope=range(args,bounds);
         if(args.id!==undefined&&(typeof args.id!=='string'||args.id.length>1600))throw hostError('Invalid segment id');
@@ -885,6 +921,7 @@ export async function startBridge(
       if (serialized.length > limits.toolResultCharacters || deliveredCharacters+serialized.length>limits.totalToolCharacters || Buffer.byteLength(serialized) > 1_500_000)
         throw budgetError();
       deliveredCharacters+=serialized.length;
+      rememberSourceContexts(safeValue);
       for(const id of [...discoveredMemoryIds,...derivedIds])disclosedIds.add(id);
       // Aggregate tools do not yet expose exact contributing IDs. Keep their
       // runs conservative instead of falsely claiming complete provenance.
@@ -938,6 +975,7 @@ export async function startBridge(
     trace,
     records,
     seedEvidence,
+    get sourceContextDependencies(){return [...sourceContextDependencies.values()];},
     get evidenceDependencies(){return {version:1 as const,complete:completeLineage&&[...metadataImageIds].every(id=>disclosedIds.has(id)),ids:[...disclosedIds]};},
     get deliveredCharacters(){return deliveredCharacters;},
     get ready() {
