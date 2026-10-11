@@ -108,7 +108,7 @@ internal class SystemEventCollector(private val context: Context, private val wo
         worker.post {
             try {
                 ConnectionGuard.sync {
-                    if (!allowed(c) || settings.read() != c || MediaCollection.epoch.get() != epoch) return@sync
+                    if (!allowed(c) || !settings.read().sameCaptureConfiguration(c) || MediaCollection.epoch.get() != epoch) return@sync
                     val before = LinkedHashMap(seen); val previousState = lastState
                     if (!accept()) return@sync
                     try {

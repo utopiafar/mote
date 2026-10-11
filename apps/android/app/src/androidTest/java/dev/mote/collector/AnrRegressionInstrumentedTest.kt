@@ -64,10 +64,10 @@ class AnrRegressionInstrumentedTest {
         fun click(text: String) = views(activity.window.decorView).filterIsInstance<TextView>()
             .single { it.isShown && it.isClickable && it.text.toString() == text }.also { assertTrue(it.performClick()) }
         when (label) {
-            "来源" -> { click("本机"); views(activity.window.decorView).single { it.isShown && it.tag == "menu:本机来源" }.performClick() }
-            "随手记" -> click("记录")
-            "设置" -> assertTrue(click("本机").isSelected)
-            "概览" -> assertTrue(click("今天").isSelected)
+            "来源" -> activity.openMoteLocalPage("SOURCES")
+            "随手记" -> activity.addContent(MoteAddAction.NOTE)
+            "设置" -> click("设置")
+            "概览" -> assertTrue(click("首页").isSelected)
             else -> click(label)
         }
     }
@@ -214,7 +214,8 @@ class AnrRegressionInstrumentedTest {
             val interval = if (Settings(context).read().intervalSeconds == 60) 61 else 60
             scenario.onActivity { activity ->
                 navigate(activity, "设置")
-                views(activity.window.decorView).single { it.tag == "menu:采集与存储" }.performClick()
+                views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == "高级与维护" }.performClick()
+                views(activity.window.decorView).single { it.isShown && it.tag == "menu:采集与存储" }.performClick()
                 views(activity.window.decorView).filterIsInstance<android.widget.EditText>()
                     .single { it.hint?.toString() == "30" }.setText(interval.toString())
             }

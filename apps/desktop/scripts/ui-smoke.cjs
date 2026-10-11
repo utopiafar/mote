@@ -57,7 +57,12 @@ app.on('browser-window-created', (_event, window) => {
         await js(`(async () => {
           const visible = () => Array.from(document.querySelectorAll('[data-nav="${page}"]')).find(button => button.getClientRects().length);
           if (!visible()) {
-            const parent = '${page}' === 'sources' ? 'overview' : 'settings';
+            if ('${page}' === 'notes' || '${page}' === 'screen') {
+              document.querySelector('#note-action').click();
+              document.querySelector('#add-dialog [data-add-choice="' + ('${page}' === 'notes' ? 'note' : 'screen') + '"]').click();
+              await new Promise(resolve => setTimeout(resolve, 180)); return;
+            }
+            const parent = '${page}' === 'sources' || '${page}' === 'uploads' ? 'overview' : 'settings';
             document.querySelector('aside [data-nav="' + parent + '"]').click();
             await new Promise(resolve => requestAnimationFrame(resolve));
           }
@@ -80,27 +85,35 @@ app.on('browser-window-created', (_event, window) => {
       ipcMain.removeHandler('mote:start');
       ipcMain.handle('mote:start', () => { startRequested = true; return status; });
       assert.equal(status.sync.state, 'unconfigured');
-      assert(await js(`!document.querySelector('#setup-prompt').hidden && document.querySelector('#collection-workbench').hidden`), 'Fresh local-only device has a simple setup screen');
-      assert(await js(`!document.querySelector('#note-action').hidden && document.querySelector('#note-action').classList.contains('secondary') && document.querySelector('#setup-primary').classList.contains('primary')`), 'Setup has one primary action while notes remain available');
+      assert.deepEqual(await js(`Array.from(document.querySelectorAll('.main-nav [data-nav]')).map(b => b.textContent.trim())`), ['首页','内容','问一问']);
+      assert.equal(await js(`document.querySelectorAll('.home-add-grid [data-add-choice]').length`), 4, 'All four local actions are equal home entries');
+      assert(await js(`document.querySelector('#start').getClientRects().length === 0`), 'Home starts with content actions');
+      await js(`document.querySelector('#note-action').click()`);
+      assert.equal(await js(`document.querySelectorAll('#add-dialog [data-add-choice]').length`),4,'Every Add entry offers the shared four choices');
+      await js(`document.querySelector('#add-close').click()`);
+      for(let i=0;i<100&&!await js(`document.querySelector('#home-recent').children.length>0`);i++)await new Promise(resolve=>setTimeout(resolve,25));
       writeFileSync(join(outputDirectory, 'first-run-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
       window.setSize(820, 620);
       await js(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
       assert(await js(`document.documentElement.scrollWidth <= window.innerWidth`), 'Newcomer setup fits the minimum window width');
       writeFileSync(join(outputDirectory, 'first-run-compact-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
       window.setSize(1140, 840);
-      await js(`document.querySelector('#note-action').click(); new Promise(resolve => setTimeout(resolve, 100))`);
+      await js(`document.querySelector('#note-action').click(); document.querySelector('#add-dialog [data-add-choice=note]').click(); new Promise(resolve => setTimeout(resolve, 100))`);
       assert(await js(`!document.querySelector('[data-page="notes"]').hidden`), 'A newcomer can write a note before configuring capture');
       await js(`document.querySelector('#workspace-back').click(); new Promise(resolve => setTimeout(resolve, 100))`);
-      assert(await js(`!document.querySelector('#setup-prompt').hidden`), 'Writing a note does not mark capture setup complete or start collection');
+      assert(await js(`!document.querySelector('[data-page=overview]').hidden`), 'An offline note returns to home without starting capture');
+      await navigate('screen');
+      assert(await js(`!document.querySelector('#setup-prompt').hidden`), 'Screen recording has its own first-use scope setup');
       await js(`document.querySelector('#setup-primary').click(); new Promise(resolve => setTimeout(resolve, 100))`);
       assert(await js(`!document.querySelector('[data-page="privacy"]').hidden && document.querySelector('aside [data-nav="overview"]').getAttribute('aria-current') === 'page'`), 'Initial setup opens the real privacy scope within collection');
       await js(`document.querySelector('#workspace-back').click(); new Promise(resolve => setTimeout(resolve, 100))`);
-      assert(await js(`!document.querySelector('[data-page="overview"]').hidden && !document.querySelector('#collection-workbench').hidden && !document.querySelector('#note-action').hidden`), 'Returning from setup reveals local capture without requiring a node');
+      assert(await js(`!document.querySelector('[data-page="screen"]').hidden && !document.querySelector('#collection-workbench').hidden`), 'Scope setup returns to screen controls without requiring a node');
       await navigate('sources');
       assert(await js(`document.querySelector('aside [data-nav="overview"]').getAttribute('aria-current') === 'page'`));
       await js(`document.querySelector('#workspace-back').click(); new Promise(resolve => setTimeout(resolve, 100))`);
       assert(await js(`!document.querySelector('[data-page="overview"]').hidden`), 'Contextual source controls return to collection');
-      await js(`document.querySelector('#start').click(); new Promise(resolve => setTimeout(resolve, 100))`);
+      await navigate('screen');
+      await js(`document.querySelector('#start').click(); document.querySelector('#capture-confirm-start').click(); new Promise(resolve => setTimeout(resolve, 100))`);
       assert(startRequested, 'No node URL or token needed to request local capture (IPC stub, no screen read)');
 
       // Permission prompts are fixtures: no actual system permissions or screenshots are requested.
@@ -108,7 +121,8 @@ app.on('browser-window-created', (_event, window) => {
       ipcMain.removeHandler('mote:permission-status');
       ipcMain.handle('mote:permission-status', () => ({screen: 'denied', accessibility: 'denied', calendar: 'denied'}));
       startRequested = false;
-      await js(`document.querySelector('#start').click(); new Promise(resolve => setTimeout(resolve, 100))`);
+      await navigate('screen');
+      await js(`document.querySelector('#start').click(); document.querySelector('#capture-confirm-start').click(); new Promise(resolve => setTimeout(resolve, 100))`);
       assert(!startRequested, 'Missing screen permission blocks the start action');
       assert(await js(`!document.querySelector('[data-page="permissions"]').hidden && window.fixturePermissionAlert.includes('屏幕录制')`));
       assert.equal(await js(`document.querySelector('#permission-screen').textContent`), '! 未授权');
@@ -153,7 +167,7 @@ app.on('browser-window-created', (_event, window) => {
       await navigate('settings'); await navigate('notes');
       assert.equal(await js(`document.querySelector('#note-text').value`), '跨页面保留的合成草稿');
       await navigate('records');
-      await js(`document.querySelector('#note-action').click(); new Promise(resolve => setTimeout(resolve, 100))`);
+      await js(`document.querySelector('#note-action').click(); document.querySelector('#add-dialog [data-add-choice=note]').click(); new Promise(resolve => setTimeout(resolve, 100))`);
       assert(await js(`!document.querySelector('[data-page="notes"]').hidden && document.querySelector('aside [data-nav="records"]').getAttribute('aria-current') === 'page'`), 'Unified note action keeps its record-library context');
       assert.equal(await js(`document.querySelector('#note-text').value`), '跨页面保留的合成草稿');
       await js(`document.querySelector('#workspace-back').click(); new Promise(resolve => setTimeout(resolve, 100))`);
@@ -185,7 +199,7 @@ app.on('browser-window-created', (_event, window) => {
       await navigate('connection');
       await js(`document.querySelector('#device-name').value = '未保存的设备名称'; document.querySelector('#device-name').dispatchEvent(new Event('input', {bubbles: true}));`);
       assert(await js(`!document.querySelector('#settings-pending').hidden`));
-      await js(`window.confirm = () => false; document.querySelector('#note-action').click();`);
+      await js(`window.confirm = () => false; document.querySelector('#note-action').click(); document.querySelector('#add-dialog [data-add-choice=note]').click();`);
       assert(await js(`!document.querySelector('[data-page="connection"]').hidden && !document.querySelector('#settings-pending').hidden && document.querySelector('#device-name').value === '未保存的设备名称'`), 'Cancelling toolbar navigation preserves the settings draft and current route');
       await js(`window.confirm = () => true; document.querySelector('#workspace-back').click()`);
       assert(await js(`!document.querySelector('[data-page="settings"]').hidden`));
@@ -269,11 +283,21 @@ app.on('browser-window-created', (_event, window) => {
       let selectedCodingAgent;
       ipcMain.removeHandler('mote:source-coding');
       ipcMain.handle('mote:source-coding', (_event, provider) => { selectedCodingAgent = provider; });
-      await js(`document.querySelector('#source-agent-discover').click(); new Promise(resolve => setTimeout(resolve, 150))`);
+      await js(`document.querySelector('#source-agent-discover').closest('details').open=true; document.querySelector('#source-agent-discover').click(); new Promise(resolve => setTimeout(resolve, 150))`);
       assert.equal(await js(`document.querySelector('#source-agent-choice').options.length`), 1);
       await js(`document.querySelector('#source-agent-add').click(); new Promise(resolve => setTimeout(resolve, 150))`);
       assert.equal(selectedCodingAgent, 'codex', 'Explicit coding source selection reaches IPC without reading personal sessions');
-      await window.webContents.executeJavaScript(`document.querySelector('#source-files').click()`);
+      await js(`document.querySelector('#source-files').click()`);
+      for(let i=0;i<100&&await js(`document.querySelector('#source-confirmation').hidden`);i++)await new Promise(resolve=>setTimeout(resolve,25));
+      assert.equal((await js('window.mote.sources()')).length,0,'Native selection alone does not start collection');
+      assert.equal(await js(`document.querySelector('#source-continuous').checked`),false,'File import defaults to one-time');
+      assert(await js(`document.querySelector('#source-initial-sync').disabled && document.querySelector('#source-initial-sync').value==='all'`),'One-shot confirmation cannot promise future-only history');
+      await js(`document.querySelector('#source-continuous').checked=true;document.querySelector('#source-continuous').dispatchEvent(new Event('change'))`);
+      assert.equal(await js(`document.querySelector('#source-initial-sync').disabled`),false,'Future autosync opt-in makes history scope configurable');
+      await js(`document.querySelector('#source-continuous').checked=false;document.querySelector('#source-continuous').dispatchEvent(new Event('change'))`);
+      assert(await js(`document.querySelector('#source-retention').getClientRects().length>0 && document.querySelector('#source-selected-names').textContent.includes('synthetic-source.md')`),'Scope and retention visible before consent');
+      writeFileSync(join(outputDirectory,'import-confirmation-ui-fixture.png'),(await window.webContents.capturePage()).toPNG());
+      await js(`document.querySelector('#source-confirm').click()`);
       let sources;
       for (let i = 0; i < 100; i++) { sources = await window.webContents.executeJavaScript('window.mote.sources()'); if (sources[0]?.pending === 1) break; await new Promise(resolve => setTimeout(resolve, 50)); }
       assert.equal(sources.length, 1); assert.equal(sources[0].pending, 1); assert.equal(sources[0].source.kind, 'local-files');
@@ -292,6 +316,7 @@ app.on('browser-window-created', (_event, window) => {
       assert.equal(await js(`document.querySelectorAll('.source-failures script').length`),0,'Untrusted filenames remain text');
       assert(!errors.some(message => !message.includes('Electron Security Warning')), errors.join('\n'));
       await navigate('overview');
+      for(let i=0;i<100&&!await js(`document.querySelector('#home-recent .content-row')`);i++)await new Promise(resolve=>setTimeout(resolve,25));
       writeFileSync(output, (await window.webContents.capturePage()).toPNG());
       await navigate('settings');
       writeFileSync(join(require('node:path').dirname(output), 'settings-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
@@ -341,6 +366,7 @@ app.on('browser-window-created', (_event, window) => {
       captureBrowser.captureImage = async (...args) => { if (args[4]) await thumbnailsReady; return originalCaptureImage(...args); };
       try {
         await navigate('records');
+        await js(`document.querySelector('#capture-library-tools').open=true`);
         await recordsIdle('sessions metadata only');
         assert.equal(await js(`document.querySelectorAll('.record-session').length`),1);
         assert.equal(await js(`document.querySelectorAll('.record-card').length`),0);
@@ -427,12 +453,12 @@ app.on('browser-window-created', (_event, window) => {
           assert(await js(`window.mote.retry().then(()=>false,error=>error.message.includes('需要恢复'))`));
           assert(await js(`window.mote.importQueue().then(()=>false,error=>error.message.includes('需要恢复'))`));
           assert(await js(`window.mote.saveNote({}).then(()=>false,error=>error.message.includes('需要恢复'))`));
-          await navigate('overview'); assert(await js(`!document.querySelector('#storage-restart').hidden`));
+          await navigate('screen'); assert(await js(`!document.querySelector('#storage-restart').hidden`));
         } finally { ConfigStore.prototype.save = originalSave; }
       } finally { QueueStorage.prototype.migrate = originalMigration; await rm(external, { recursive: true, force: true }); }
-      process.stdout.write(JSON.stringify({ slowMigrationWaitsForSettingsCompletion: true, failedSettingsRolledBack: true, ambiguousCommitPreservesBothAndBlocksWrites: true, captureStorageNativePickerAndMigration: true, arbitraryStoragePathRejected: true, captureBrowserPagingAndOcrDetails: true, chargingOcrSettingSaved: true, feedbackLink: true, localOnlyStartIpcStub: true, uploadModeControls: true, installedAppPickerFixture: true, maskPresetsAndSlider: true, friendlyPresetsSaved: true, localBacklogConsent: true, navigationAndKeyboardFocus: true, libraryFirstNavigation: true, contextualReturnPaths: true, unifiedNoteContext: true, settingsDraftProtectedOnToolbarCancel: true, nativeSettingsMenu: true, settingsEditableWhileCapturing: true, noteDraftRetainedAcrossPages: true, settingsDiscardedOnBackSidebarAndEscape: true, settingsMenuHasNoSaveBar: true, invalidSettingsRevealed: true, discardSettings: true, sourceEditorRevealed: true, minimumWindowLayout: true, gradedCollectionUiAndIpc: true, metadataDisabled: true, updatesUiAndChannelIpc: true, noUpdateNetworkRequest: true, ok: true, fixtureOnly: true, rendererLoaded: true, preloadIpc: true, savedSettings: true, offlineNotePersisted: true, captureStayedStopped: true, nativeFilePickerAndOfflineSource: true, calendarPermissionNotRequested: true, screenshot: output }) + '\n');
+      process.stdout.write(JSON.stringify({ slowMigrationWaitsForSettingsCompletion: true, failedSettingsRolledBack: true, ambiguousCommitPreservesBothAndBlocksWrites: true, captureStorageNativePickerAndMigration: true, arbitraryStoragePathRejected: true, captureBrowserPagingAndOcrDetails: true, chargingOcrSettingSaved: true, feedbackLink: true, localOnlyStartIpcStub: true, uploadModeControls: true, installedAppPickerFixture: true, maskPresetsAndSlider: true, friendlyPresetsSaved: true, localBacklogConsent: true, navigationAndKeyboardFocus: true, actionFirstNavigation: true, sharedAddChooser: true, oneTimeFileConfirmation: true, screenScopeConfirmation: true, contextualReturnPaths: true, unifiedNoteContext: true, settingsDraftProtectedOnToolbarCancel: true, nativeSettingsMenu: true, settingsEditableWhileCapturing: true, noteDraftRetainedAcrossPages: true, settingsDiscardedOnBackSidebarAndEscape: true, settingsMenuHasNoSaveBar: true, invalidSettingsRevealed: true, discardSettings: true, sourceEditorRevealed: true, minimumWindowLayout: true, gradedCollectionUiAndIpc: true, metadataDisabled: true, updatesUiAndChannelIpc: true, noUpdateNetworkRequest: true, ok: true, fixtureOnly: true, rendererLoaded: true, preloadIpc: true, savedSettings: true, offlineNotePersisted: true, captureStayedStopped: true, nativeFilePickerAndOfflineSource: true, calendarPermissionNotRequested: true, screenshot: output }) + '\n');
       finished = true; clearTimeout(timeout); app.quit();
-    })().catch(error => { process.stderr.write(`UI smoke failed: ${error.message}\n`); app.exit(1); });
+    })().catch(error => { process.stderr.write(`UI smoke failed in ${currentPhase}: ${error.message}\n${errors.join('\n')}\n`); app.exit(1); });
   });
 });
 app.on('quit', () => { if (finished) void rm(profile, { recursive: true, force: true }); });

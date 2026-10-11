@@ -80,7 +80,7 @@ class LibraryResponsivenessInstrumentedTest {
             val started = SystemClock.elapsedRealtime()
             ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.onActivity { activity ->
-                    views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == "本机" }.performClick()
+                    views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == "设置" }.performClick()
                     val button = views(activity.window.decorView).filterIsInstance<Button>().single { it.isShown && it.text == "开始采集" }
                     assertTrue(button.isEnabled); assertTrue(button.performClick())
                 }

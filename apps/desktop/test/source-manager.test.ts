@@ -165,3 +165,51 @@ it('an existing snapshot source with no central upload consent stays held across
  await app.update(app.status()[0].source.id,{...app.status()[0].source,centralProcessingConsent:true});await app.sync();
  expect(server.items.length).toBeGreaterThan(before);expect(app.status()[0].source.centralProcessingConsent).toBe(true);
 });
+
+for (const retention of ['snapshot','archive','reference'] as const) it(`freezes a one-time ${retention} import through changed or deleted path, lost ACK and restart`, async()=>{
+  const server=await endpoint(true),file=join(directory,`once-${retention}.md`);
+  await writeFile(file,'Immutable generated one-time content');
+  const config={serverUrl:server.url,token:'synthetic-source-token',deviceId:'synthetic-device',syncMode:'manual' as const};
+  let value=new LocalSourceManager(join(directory,'once-state'),config,'/must-not-be-invoked-helper',true);managers.push(value);await value.initialize();
+  await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,retention,syncContinuously:false});await value.sync(true);
+  const original=value.pendingContent()[0];expect(original).toBeDefined();expect(value.status()[0].source.importCompletedAt).toBeDefined();
+  await writeFile(file,'Changed generated content that must not be imported');await value.sync(true);
+  expect(value.pendingContent()[0].item.revision).toBe(original.item.revision);
+  await rm(file);await value.close();
+  value=new LocalSourceManager(join(directory,'once-state'),config,'/must-not-be-invoked-helper',true);managers.push(value);await value.initialize();await value.sync(true);
+  expect(value.pendingContent()[0].item).toEqual(original.item);
+  await expect(value.flushPending(new AbortController().signal)).rejects.toThrow();
+  await value.sync(true);await value.flushPending(new AbortController().signal);
+  expect(value.status()[0].pending).toBe(0);expect(server.items.length).toBeGreaterThanOrEqual(2);
+  expect(server.items[0]).toEqual(server.items.at(-1));
+  await value.sync(true);expect(value.status()[0].pending).toBe(0);
+});
+
+it('explicit continuation opt-in resumes change discovery after a one-time import',async()=>{
+  const server=await endpoint(),file=join(directory,'opt-in.md');await writeFile(file,'Generated first body');
+  const value=new LocalSourceManager(join(directory,'opt-in-state'),{serverUrl:server.url,token:'synthetic-source-token',deviceId:'synthetic-device'},'/must-not-be-invoked-helper',true);managers.push(value);await value.initialize();
+  await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});await value.sync(true);const original=value.pendingContent()[0].item;
+  await writeFile(file,'Generated subsequent body');const source=value.status()[0].source;
+  await value.update(source.id,{...source,syncContinuously:true,enabled:true});await value.sync(true);
+  expect(value.status()[0].source.importCompletedAt).toBeUndefined();expect(value.pendingContent().some(row=>row.item.revision!==original.revision)).toBe(true);
+});
+
+it('pauses every source send while local scans stage changes, then resumes the same policy',async()=>{
+  const server=await endpoint(),file=join(directory,'paused-send.md');await writeFile(file,'Generated first body');
+  const value=new LocalSourceManager(join(directory,'paused-state'),{serverUrl:server.url,token:'synthetic-source-token',deviceId:'synthetic-device',syncMode:'batch',syncIntervalMinutes:5,syncBatchSize:20,syncPaused:true},'/must-not-be-invoked-helper',true);managers.push(value);await value.initialize();
+  await value.addFiles(file,DEFAULT_SOURCE_OPTIONS);await value.sync(true);expect(value.status()[0].pending).toBe(1);
+  await value.flushPending(new AbortController().signal);expect(server.items).toHaveLength(0);expect(server.registered).toHaveLength(0);
+  await writeFile(file,'Generated second body');await value.sync(true);expect(value.status()[0].pending).toBeGreaterThanOrEqual(2);
+  await value.setSyncPaused(false);await value.flushPending(new AbortController().signal);expect(server.items.length).toBeGreaterThanOrEqual(2);expect(value.status()[0].pending).toBe(0);
+});
+
+it('recovers one-time completion atomically from the outbox when source configuration persistence was interrupted',async()=>{
+ const server=await endpoint(),file=join(directory,'atomic-once.md');await writeFile(file,'Generated selected version');
+ const state=join(directory,'atomic-once'),config={serverUrl:server.url,token:'synthetic-source-token',deviceId:'synthetic-device'};
+ let value=new LocalSourceManager(state,config,'/must-not-be-invoked-helper',true);managers.push(value);await value.initialize();await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});await value.sync(true);const staged=value.pendingContent()[0];await value.close();
+ // Simulate exit after the outbox transaction, before the separate UI/config projection was saved.
+ const sourcePath=join(state,'sources.json'),saved=JSON.parse(await readFile(sourcePath,'utf8'));delete saved.sources[0].importCompletedAt;await writeFile(sourcePath,JSON.stringify(saved));
+ await writeFile(file,'Generated later change that must not be imported');value=new LocalSourceManager(state,config,'/must-not-be-invoked-helper',true);managers.push(value);await value.initialize();await value.sync(true);
+ expect(value.status()[0].source.importCompletedAt).toBeDefined();expect(value.pendingContent()).toHaveLength(1);expect(value.pendingContent()[0].item).toEqual(staged.item);
+ await rm(file);await value.sync(true);expect(value.pendingContent()[0].item).toEqual(staged.item);await value.flushPending(new AbortController().signal);expect(server.items).toHaveLength(1);expect(server.items[0].revision).toBe(staged.item.revision);
+});

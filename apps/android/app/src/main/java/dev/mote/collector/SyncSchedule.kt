@@ -31,9 +31,9 @@ object SyncSchedule {
         return PendingSync(captures.count + sources.count + files.count, listOfNotNull(captures.oldestAt, sources.oldestAt, files.oldestAt).minOrNull(), sources.pendingUpdates)
     }
     // Scheduling identity binds current ingress, connection and dispatch policy.
-    fun stamp(config: CollectorConfig) = SourceRules.hash(listOf(IngressV2Protocol.VERSION, config.server, config.connectionToken(), config.syncMode, config.syncIntervalMinutes, config.syncBatchSize, config.wifiOnly, config.syncChargingOnly, config.syncBatteryNotLow).joinToString("\u0000"))
+    fun stamp(config: CollectorConfig) = SourceRules.hash(listOf(IngressV2Protocol.VERSION, config.server, config.connectionToken(), config.syncPaused, config.syncMode, config.syncIntervalMinutes, config.syncBatchSize, config.wifiOnly, config.syncChargingOnly, config.syncBatteryNotLow).joinToString("\u0000"))
     fun delay(context: Context, config: CollectorConfig, explicit: Boolean = false): Long? {
-        if (!config.hasSyncConnection()) return null
+        if (!config.hasSyncConnection() || config.syncPaused) return null
         val pending = pending(context)
         return config.syncPolicy().delayMillis(System.currentTimeMillis(), pending.count, pending.oldestAt, Settings(context).lastSyncDispatch(), explicit, pending.pendingUpdates)
     }
@@ -41,6 +41,7 @@ object SyncSchedule {
         .setRequiredNetworkType(SyncNetworkPolicy.requiredNetworkType(config.server, config.wifiOnly, explicit))
         .setRequiresCharging(config.syncChargingOnly).setRequiresBatteryNotLow(config.syncBatteryNotLow).build()
     fun waitingReason(context: Context, config: CollectorConfig): String? {
+        if (config.syncPaused || Settings(context).read().syncPaused) return MoteI18n.text("已暂停全部发送 · 本机继续保存")
         val battery = context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
         val status = battery?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1)
         val charging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING || status == android.os.BatteryManager.BATTERY_STATUS_FULL
@@ -89,6 +90,13 @@ object SyncSchedule {
     private var registeredStamp: String? = null
     @Synchronized private fun scheduleNow(context: Context, config: CollectorConfig, explicit: Boolean) {
         val manager = WorkManager.getInstance(context); val settings = Settings(context)
+        if (config.syncPaused) {
+            HeartbeatWorker.configure(context, config)
+            listOf("mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload").forEach(manager::cancelUniqueWork)
+            registeredStamp = stamp(config)
+            settings.syncStatus("paused", MoteI18n.text("已暂停全部发送 · 本机继续保存"))
+            return
+        }
         if (!config.hasSyncConnection()) {
             HeartbeatWorker.configure(context, config)
             if (registeredStamp != stamp(config)) {

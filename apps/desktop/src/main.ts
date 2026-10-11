@@ -1,6 +1,9 @@
 import { connectionToken, loginRequest, loginVerifier } from './login-session';
 import { SyncHistory, type SyncHistoryQuery, type SyncHistoryContentQuery } from './sync-history';
-import { syncContent } from './sync-content';
+import { localContentPage, localContentDetail, centralContentPage } from './content-library';
+import { randomUUID } from 'node:crypto';
+import { basename } from 'node:path';
+import { syncContent, readCentralContent } from './sync-content';
 import { AskClient } from './ask';
 import {storageStatistics} from '@mote/shared/storage-statistics';
 import { moteText, statusMessage, configureLocale, getLocale, negotiateLocale, languagePreference, type LanguagePreference } from '@mote/shared/i18n';
@@ -353,6 +356,21 @@ else {
       catch (error) { if (settings === requested) connectionState = { state: 'error', message: error instanceof ConnectionError ? error.message : moteText("连接检查失败；已保存配置未改变"), checkedAt: new Date().toISOString() }; }
       return connectionState;
     });
+    handle('mote:sync-paused', paused => serialize(async () => {
+      if(typeof paused!=='boolean')throw new Error('Invalid paused sync setting');
+      const previous=settings,updated=updateConfig(settings,{...settings,syncPaused:paused});
+      if(paused){await collector.setSyncPaused(true);await localSources!.setSyncPaused(true);}
+      try {
+        await store.save(updated);settings=updated;
+        // A resume takes effect only after it is durable; scans and sampling never stop.
+        await localSources!.setSyncPaused(paused);await collector.setSyncPaused(paused);
+      }catch(error){
+        const persisted=await store.load().catch(()=>undefined);
+        if(!persisted||JSON.stringify(persisted)===JSON.stringify(updated)){requireRecovery(moteText("设置提交需要恢复；已停止采集与上传并保留数据，请重新打开 Mote。"));throw error;}
+        await collector.setSyncPaused(Boolean(previous.syncPaused));await localSources!.setSyncPaused(Boolean(previous.syncPaused));throw error;
+      }
+      return clientStatus();
+    }));
     handle('mote:get-status', () => clientStatus());
     const browseWithConnection = async <T>(operation: (config: Config) => Promise<T>): Promise<T> => {
       const requested = settings; const result = await operation(requested);
@@ -360,7 +378,7 @@ else {
     };
     handle('mote:sync-history', input => syncHistory.page(settings,input as SyncHistoryQuery));
     handle('mote:sync-history-contents', input => syncHistory.contents(settings,input as SyncHistoryContentQuery));
-    handle('mote:sync-history-content', (runId,key,offset) => browseWithConnection(config => { if(typeof runId!=='string'||typeof key!=='string')throw Error('Invalid sync content reference'); return syncContent(syncHistory,queue,localSources!,config,runId,key,offset as number|undefined); }));
+    handle('mote:sync-history-content', (runId,key,offset,includeImage) => browseWithConnection(config => { if(typeof runId!=='string'||typeof key!=='string')throw Error('Invalid sync content reference'); return syncContent(syncHistory,queue,localSources!,config,runId,key,offset as number|undefined,includeImage===undefined?true:includeImage===true); }));
     handle('mote:sync-history-pending', () => {
       const pending=queue.historyPending();
       const rows=localSources!.status();
@@ -392,6 +410,31 @@ else {
     handle('mote:calendar-authorize', () => serialize(() => localSources!.authorizeCalendar()));
     handle('mote:source-calendar', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error(moteText("日历选择无效")); await localSources!.addCalendar(id, options); }));
     handle('mote:source-update', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error(moteText("来源选择无效")); await localSources!.update(id, options); }));
+    const sourceSelections = new Map<string,string[]>();
+    handle('mote:source-select', mode => serialize(async () => {
+      if (mode !== 'files' && mode !== 'directory') throw new Error(moteText("文件选择方式无效"));
+      const result = await dialog.showOpenDialog(window!, {title:mode==='directory'?moteText("同步文件夹"):moteText("导入文件"),properties:mode==='directory'?['openDirectory']:['openFile','multiSelections']});
+      if (result.canceled || !result.filePaths.length) return {canceled:true};
+      // Paths remain in the privileged process; the renderer can confirm only this native selection.
+      sourceSelections.clear(); const selectionId=randomUUID(); sourceSelections.set(selectionId,result.filePaths);
+      return {canceled:false,selectionId,names:result.filePaths.map(path=>basename(path))};
+    }));
+    handle('mote:source-cancel', id => { if (typeof id === 'string') sourceSelections.delete(id); });
+    handle('mote:source-confirm', (id,input) => serialize(async () => {
+      const paths=typeof id==='string'?sourceSelections.get(id):undefined;
+      if (!paths) throw new Error(moteText("文件选择已失效，请重新选择"));
+      const options=normalizeSourceOptions(input);
+      // Remove successful members individually: a retry after a partial failure never duplicates them.
+      while(paths.length) { await localSources!.addFiles(paths[0],options); paths.shift(); }
+      sourceSelections.delete(id as string);
+    }));
+    handle('mote:content-central', cursor => browseWithConnection(config=>centralContentPage(config,cursor as string|undefined)));
+    handle('mote:content-central-detail',(id,offset,image)=>browseWithConnection(config=>{if(typeof id!=='string'||!/^[a-f0-9-]{36}$/i.test(id)||offset!==undefined&&(!Number.isSafeInteger(offset)||Number(offset)<0))throw Error('Invalid content reference');return readCentralContent(config,{key:id,captureId:id,source:'file',title:'',observedAt:'',outcome:'received',firstReceipt:false},Number(offset??0),image===true);}));
+    handle('mote:content-local', offset => localContentPage(queue,localSources!,offset as number|undefined));
+    handle('mote:content-local-detail', (key,image) => browseWithConnection(() => localContentDetail(queue,localSources!,key as string,image as boolean|undefined).catch(async error=>{
+      if(typeof key!=='string')throw error;const parts=key.split(':');const receiptKey=parts[0]==='queue'?parts[1]:parts[0]==='source'?require('node:crypto').createHash('sha256').update(`${parts[1]}\0${parts[2]}`).digest('hex'):undefined;
+      const id=receiptKey?syncHistory.receivedCapture(settings,receiptKey):undefined;if(!id)throw error;return readCentralContent(settings,{key:receiptKey!,captureId:id,source:'file',title:'',observedAt:'',outcome:'received',firstReceipt:false,...(parts[0]==='source'?{sourceId:parts[1]}:{})},0,image===true);
+    })));
     handle('mote:source-files', (mode, input) => serialize(async () => {
       const options = normalizeSourceOptions(input);
       if (mode !== 'files' && mode !== 'directory') throw new Error(moteText("文件选择方式无效"));

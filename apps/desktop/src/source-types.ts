@@ -43,6 +43,8 @@ export interface SourceScan {
   scope?: { start: string; end: string };
 }
 export interface SourceOptions {
+  /** Collector-only policy: false captures one immutable import; undefined preserves legacy watching. */
+  syncContinuously?: boolean;
   /** Explicit owner confirmation that snapshot file bytes are sent for central processing. */
   centralProcessingConsent?: boolean;
   indexMode?: 'full'|'lightweight'; allowRead?:boolean;
@@ -51,6 +53,7 @@ export interface SourceOptions {
   extensions: string[]; excludedPaths: string[]; redactLiterals: string[];
 }
 export interface LocalSource extends SourceDefinition, SourceOptions {
+  importCompletedAt?: string;
   path?: string; calendarId?: string; agent?: 'claude' | 'codex' | 'kimi';
 }
 export interface SourceStatus {
@@ -71,6 +74,7 @@ export const DEFAULT_SOURCE_OPTIONS: SourceOptions = {
 export function normalizeSourceOptions(input: unknown): SourceOptions {
   if (!input || typeof input !== 'object') throw new Error(moteText("来源配置无效"));
   const v = input as SourceOptions;
+  if(v.syncContinuously!==undefined&&typeof v.syncContinuously!=='boolean')throw new Error('Invalid source continuation policy');
   if(v.centralProcessingConsent!==undefined&&typeof v.centralProcessingConsent!=='boolean')throw new Error('Invalid central processing consent');
   if(v.initialSync!==undefined&&!['all','new_only'].includes(v.initialSync))throw new Error(moteText("首次同步范围无效"));
   if (!['snapshot', 'reference', 'archive'].includes(v.retention) || !Number.isInteger(v.intervalSeconds) || v.intervalSeconds < 30 || v.intervalSeconds > 3600 || typeof v.trackDeletions !== 'boolean') throw new Error(moteText("来源同步间隔为 30–3600 秒，保留方式为快照或引用"));
@@ -85,7 +89,7 @@ export function normalizeSourceOptions(input: unknown): SourceOptions {
   if(v.retention==='archive'&&Array.isArray(v.redactLiterals)&&v.redactLiterals.length)throw new Error(moteText("原件归档不能应用文字遮盖，请选择内容索引。"));
   if(v.indexMode!==undefined&&!['full','lightweight'].includes(v.indexMode)||v.allowRead!==undefined&&typeof v.allowRead!=='boolean')throw new Error('Invalid file index policy');
   // Accept an older preference when reading configuration, but central owns indexing.
-  return {centralProcessingConsent:v.centralProcessingConsent??false,indexMode:'full',allowRead:v.retention==='snapshot'&&(v.allowRead??false), initialSync:v.initialSync??'all', retention: v.retention, intervalSeconds: v.intervalSeconds, trackDeletions: v.trackDeletions, extensions, excludedPaths, redactLiterals: list(v.redactLiterals, 1000) };
+  return {syncContinuously:v.syncContinuously??true,centralProcessingConsent:v.centralProcessingConsent??false,indexMode:'full',allowRead:v.retention==='snapshot'&&(v.allowRead??false), initialSync:v.initialSync??'all', retention: v.retention, intervalSeconds: v.intervalSeconds, trackDeletions: v.trackDeletions, extensions, excludedPaths, redactLiterals: list(v.redactLiterals, 1000) };
 }
 export function redactSourceText(text: string, literals: string[]): string {
   for (const literal of [...literals].sort((a, b) => b.length - a.length)) text = text.split(literal).join(moteText("[已遮盖]"));

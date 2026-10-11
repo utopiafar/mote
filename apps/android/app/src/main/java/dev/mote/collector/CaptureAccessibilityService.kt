@@ -166,7 +166,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         stateWorker.execute { if (!destroyed) UploadWorker.heartbeat(this, config) }
         if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
             stopCapture()
-            stateWorker.execute { if (!destroyed && settings.read() == config) {
+            stateWorker.execute { if (!destroyed && settings.read().sameCaptureConfiguration(config)) {
                 settings.enabled = false
                 settings.status("permission_required", MoteI18n.text("通知权限已关闭，为保持采集可见已停止，请授权通知后重新开始"))
             } }
@@ -205,7 +205,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         }
         val generation = configurationGeneration
         stateWorker.execute {
-            val current = runCatching { settings.read() == config && settings.enabled && !ConnectionGuard.changing() }.getOrDefault(false)
+            val current = runCatching { settings.read().sameCaptureConfiguration(config) && settings.enabled && !ConnectionGuard.changing() }.getOrDefault(false)
             handler.post {
                 if (!destroyed && generation == configurationGeneration && current && !ConnectionGuard.changing() && settings.enabled && windowSnapshot() == snapshot && CapturePipeline.unlocked(this))
                     requestScreen(snapshot, config)
@@ -233,7 +233,7 @@ class CaptureAccessibilityService : AccessibilityService() {
                     }
                     // Transfer ownership to a worker; no full-size pixel copy on the main looper.
                     pixels.execute {
-                        val settingsValid = runCatching { !destroyed && generation == configurationGeneration && !ConnectionGuard.changing() && settings.enabled && settings.read() == config }.getOrDefault(false)
+                        val settingsValid = runCatching { !destroyed && generation == configurationGeneration && !ConnectionGuard.changing() && settings.enabled && settings.read().sameCaptureConfiguration(config) }.getOrDefault(false)
                         val bitmap = try {
                             val hardware = if (settingsValid) Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace) else null
                             try { hardware?.copy(Bitmap.Config.ARGB_8888, false) } finally { hardware?.recycle() }
@@ -263,7 +263,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         })
     }
     private fun captureCurrent(snapshot: WindowSnapshot, config: CollectorConfig, generation: Long, collection: AppCollectionMode = AppCollectionMode.CONTENT): Boolean =
-        runCatching { !destroyed && generation == configurationGeneration && !ConnectionGuard.changing() && settings.enabled && settings.read() == config &&
+        runCatching { !destroyed && generation == configurationGeneration && !ConnectionGuard.changing() && settings.enabled && settings.read().sameCaptureConfiguration(config) &&
             CapturePipeline.unlocked(this) && windowSnapshot() == snapshot && CapturePipeline.policy(config, snapshot) == collection }.getOrDefault(false)
     private fun collectPage(snapshot: WindowSnapshot, config: CollectorConfig) {
         inFlight=true

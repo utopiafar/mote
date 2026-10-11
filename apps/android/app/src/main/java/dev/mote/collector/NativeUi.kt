@@ -154,9 +154,9 @@ fun Activity.openMotePrimary(tab: MotePrimaryTab) {
 
 private fun Activity.detailTab(): MotePrimaryTab? = when (this) {
     is MainActivity, is CentralActivity -> null
-    is CaptureRecordsActivity -> MotePrimaryTab.LIBRARY
+    is CaptureRecordsActivity, is FileContentActivity -> MotePrimaryTab.LIBRARY
     is CalendarActionsActivity -> MotePrimaryTab.TODAY
-    else -> MotePrimaryTab.DEVICE
+    else -> MotePrimaryTab.TODAY
 }
 
 fun Activity.moteDetailPage(primary: MotePrimaryTab? = detailTab(), onBack: () -> Unit = { finish() }): LinearLayout {
@@ -173,8 +173,8 @@ fun Activity.moteDetailPage(primary: MotePrimaryTab? = detailTab(), onBack: () -
         contentDescription = MoteI18n.text("返回上一页"); isFocusable = true; setOnClickListener { onBack() }
     }, LinearLayout.LayoutParams(0, -2, 1f))
     if (primary != null) header.addView(MoteUi.button(Button(this).apply {
-        text = MoteI18n.text("记录"); contentDescription = MoteI18n.text("写一条随手记")
-        setOnClickListener { openMoteLocalPage("NOTES") }
+        text = MoteI18n.text("添加"); contentDescription = MoteI18n.text("添加内容")
+        setOnClickListener { showMoteAddActions() }
     }), LinearLayout.LayoutParams(-2, -2).apply { marginEnd = moteDp(14) })
     root.addView(header)
     root.addView(ScrollView(this).apply { isFillViewport = true; addView(body) }, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -210,4 +210,25 @@ class MoteDialogBuilder(context: Context) : android.app.AlertDialog.Builder(cont
         }
         })
     }
+}
+
+/** Every Add entry uses this same action set and real native flows. */
+enum class MoteAddAction(val titleKey: String, val subtitleKey: String, val icon: String) {
+    FOLDER("同步文件夹", "持续收集文件夹里的新内容与修改", "folder"),
+    FILE("导入文件", "保存一次，也可选择以后自动同步", "note"),
+    SCREEN("记录屏幕", "先选择应用范围，再按需授权", "capture"),
+    NOTE("随手记", "离线也能留下想法与片段", "notes")
+}
+fun Activity.openMoteAdd(action: MoteAddAction) {
+    if (this is MainActivity) { addContent(action); return }
+    when (action) {
+        MoteAddAction.FOLDER, MoteAddAction.FILE -> startActivity(Intent(this, SourcesActivity::class.java).putExtra("addAction", action.name))
+        MoteAddAction.SCREEN -> openMoteLocalPage("PRIVACY")
+        MoteAddAction.NOTE -> openMoteLocalPage("NOTES")
+    }
+}
+fun Activity.showMoteAddActions() {
+    MoteDialogBuilder(this).setTitle(MoteI18n.text("添加内容"))
+        .setItems(MoteAddAction.entries.map { MoteI18n.text(it.titleKey) }.toTypedArray()) { _, index -> openMoteAdd(MoteAddAction.entries[index]) }
+        .setNegativeButton(MoteI18n.text("取消"), null).show()
 }

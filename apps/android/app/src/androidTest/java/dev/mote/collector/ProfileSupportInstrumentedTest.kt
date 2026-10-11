@@ -2,6 +2,7 @@ package dev.mote.collector
 
 import androidx.test.core.app.ActivityScenario
 import android.app.UiAutomation
+import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONObject
@@ -10,14 +11,19 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
+/** Fresh dedicated API 35/37 Dev emulator only; all support data is generated. */
 @RunWith(AndroidJUnit4::class)
 class ProfileSupportInstrumentedTest {
     @Test fun developmentProfileIsIndependentAndSupportExportContainsNoSecretsOrDraft() {
         val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
         val automation = instrumentation.getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
         val avd = automation.executeShellCommand("getprop ro.boot.qemu.avd_name").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).bufferedReader().use { reader -> reader.readText().trim() } }
-        assumeTrue(avd == "mote_fixture_api35" && BuildConfig.MOTE_PROFILE == "dev")
+        assumeTrue(BuildConfig.MOTE_PROFILE == "dev" &&
+            ((avd == "mote_fixture_api35" && Build.VERSION.SDK_INT == 35) ||
+                (avd == "mote_fixture_api37" && Build.VERSION.SDK_INT == 37)))
         assertEquals("dev.mote.collector.dev", context.packageName)
+        assertTrue(Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
+        assertFalse(CaptureAccessibilityService.connected || ProjectionService.running)
         assertTrue(context.noBackupFilesDir.absolutePath.contains(context.packageName))
         val settings = Settings(context); assertFalse(settings.enabled)
         val original = settings.read(); assertEquals("http://127.0.0.1:47842", original.server)
@@ -30,12 +36,13 @@ class ProfileSupportInstrumentedTest {
                     if (view is android.view.ViewGroup) repeat(view.childCount) { visit(view.getChildAt(it)) }
                 }
                 fun views(v: android.view.View): List<android.view.View> = listOf(v) + if (v is android.view.ViewGroup) (0 until v.childCount).flatMap { views(v.getChildAt(it)) } else emptyList()
-                views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString()=="本机" }.performClick()
+                views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString()=="设置" }.performClick()
                 views(activity.window.decorView).filterIsInstance<android.widget.Button>().single { it.isShown && it.text.toString()=="高级与维护" }.performClick()
                 views(activity.window.decorView).single { it.isShown && it.tag=="menu:开发者选项" }.performClick()
                 visit(activity.window.decorView)
                 assertTrue(texts.any { it.contains("环境：dev") && it.contains(context.noBackupFilesDir.absolutePath) })
-                views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString()=="本机" }.performClick()
+                views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString()=="设置" }.performClick()
+                views(activity.window.decorView).filterIsInstance<android.widget.Button>().single { it.isShown && it.text.toString()=="高级与维护" }.performClick()
                 views(activity.window.decorView).single { it.isShown && it.tag=="menu:开发者选项" }.performClick()
                 views(activity.window.decorView).single { it.isShown && it.tag=="menu:诊断与支持" }.performClick()
                 texts.clear(); visit(activity.window.decorView); assertTrue(texts.contains("导出安全支持包 JSON"))

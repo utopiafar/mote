@@ -7,6 +7,7 @@ export interface Config {
   uploadGate?: import('./upload-gate').UploadGateConfig;
   serverUrl: string;
   syncMode: SyncMode;
+  syncPaused?: boolean;
   syncIntervalMinutes: number;
   syncBatchSize: number;
   deviceId: string;
@@ -61,6 +62,8 @@ export interface CaptureEvent {
   privacy: { excluded: false; redacted: boolean; mode: 'local' | 'none'; collection?: 'content' | 'activity'; reason?: string };
 }
 export interface Status {
+  /** Non-secret runtime epoch; changing credentials invalidates in-flight private readers. */
+  authorizationGeneration?: number;
   facts?: import('@mote/shared/native-status').NativeStatusView;
   operations?: import('./background-jobs').BackgroundJob[];
   storage?: { directory: string; defaultDirectory: string; custom: boolean; cleanupPending: boolean; recoveryRequired?: string };
@@ -84,7 +87,7 @@ export interface Status {
 export interface DesktopApi {
   syncHistory(input: import('./sync-history').SyncHistoryQuery): Promise<import('./sync-history').SyncHistoryPage>;
   syncHistoryContents(input: import('./sync-history').SyncHistoryContentQuery): Promise<ReturnType<import('./sync-history').SyncHistory['contents']>>;
-  syncHistoryContent(runId: string, key: string, chunkOffset?: number): Promise<import('./sync-content').SyncContent>;
+  syncHistoryContent(runId: string, key: string, chunkOffset?: number, includeImage?:boolean): Promise<import('./sync-content').SyncContent>;
   syncHistoryPending(): Promise<{source:import('./sync-history').SyncSource;pending:number;review:number;blocked:number;retrying:number}[]>;
   ask(command: import('./ask').AskCommand, input?: {id?: string; question?: string; conversationId?: string; token?: string; cursor?: string; durationMs?: number}): Promise<unknown>;
   permissionStatus(): Promise<{screen: string; accessibility: string; calendar: string; appPath?: string; bundleId?: string}>;
@@ -119,12 +122,20 @@ export interface DesktopApi {
   codingAgents(): Promise<Awaited<ReturnType<typeof import('./coding-agents').discoverCodingAgents>>>;
   addCodingAgent(provider: import('./coding-agents').CodingProvider, options: import('./source-types').SourceOptions): Promise<void>;
   sources(): Promise<import('./source-types').SourceStatus[]>;
+  selectSourceFiles(mode: 'files' | 'directory'): Promise<{canceled:boolean;selectionId?:string;names?:string[]}>;
+  confirmSourceFiles(selectionId:string, options: import('./source-types').SourceOptions): Promise<void>;
+  cancelSourceFiles(selectionId:string): Promise<void>;
+  centralContent(cursor?:string): Promise<import('./content-library').CentralContentPage>;
+  centralContentDetail(id:string,offset?:number,image?:boolean): Promise<import('./sync-content').SyncContent>;
+  localContent(offset?:number): Promise<import('./content-library').LocalContentPage>;
+  localContentDetail(key:string, image?:boolean): Promise<import('./content-library').ContentDetail|import('./sync-content').SyncContent>;
   chooseSourceFiles(mode: 'files' | 'directory', options: import('./source-types').SourceOptions): Promise<{ canceled: boolean }>;
   authorizeCalendar(): Promise<import('./source-types').CalendarChoice[]>;
   addCalendarSource(id: string, options: import('./source-types').SourceOptions): Promise<void>;
   updateSource(id: string, options: import('./source-types').SourceOptions & { enabled: boolean }): Promise<void>;
   syncSources(): Promise<void>;
   openCalendarPermissions(): Promise<void>;
+  setSyncPaused(paused:boolean): Promise<Status>;
   status(): Promise<Status>;
   noteDraft(): Promise<import('./note-draft').NoteDraft>;
   updateNoteDraft(input: import('./note-draft').NoteDraft): Promise<import('./note-draft').NoteDraft>;

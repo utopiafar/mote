@@ -27,6 +27,7 @@ import { EventJournal, failureCode, TransportFailure, type EventStage } from './
 export const currentPlatform: Platform = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux';
 export class Collector {
   private notificationSeen=new Set<string>();
+  private authorizationGeneration = 0;
   private notificationSession=randomUUID();
   private running = false;
   private locked = false;
@@ -67,6 +68,7 @@ export class Collector {
   status(): Status {
     const queue = this.queue.stats(), sync = this.syncStatus();
     return {
+      authorizationGeneration: this.authorizationGeneration,
       facts: collectorStatusView({...sync,lastUploadAt:this.archiveAcknowledgment?.origin===this.config.serverUrl?this.archiveAcknowledgment.at:undefined}, queue.blocked),
       running: this.running, state: this.state, message: statusMessage(this.message), sync,
       queueDepth: queue.depth, queueBytes: queue.bytes, nextRetryAt: queue.nextRetryAt,
@@ -87,7 +89,7 @@ export class Collector {
     const localBacklogUnbound = decision.pendingRecords > 0 && this.queue.binding.unbound() && (!this.sources || this.sources.nodeBinding.unbound());
     if (decision.state !== 'unconfigured' && !pending.eligibleRecords && !pending.pendingUpdates && (pending.heldRecords || pending.heldUpdates)) return { ...decision, state: 'waiting', message: pending.heldReason ?? moteText("来源待传版本等待恢复"), localBacklogUnbound };
     if (this.uploading) return { ...decision, state: 'uploading', uploadBytesPerSecond: uploadMeter.rate(), message: moteText("正在同步本地记录"), localBacklogUnbound };
-    if (decision.state !== 'unconfigured' && this.lastUploadError) return { ...decision, state: 'error', message: this.lastUploadError, localBacklogUnbound };
+    if (!this.config.syncPaused && decision.state !== 'unconfigured' && this.lastUploadError) return { ...decision, state: 'error', message: this.lastUploadError, localBacklogUnbound };
     return { ...decision, localBacklogUnbound };
   }
   private publish(): void { this.onChange(this.status()); }
@@ -125,11 +127,17 @@ export class Collector {
       void this.upload();
     };
   }
+  async setSyncPaused(paused:boolean):Promise<void> {
+    this.config={...this.config,syncPaused:paused};
+    if(paused){this.uploadAbort?.abort();this.heartbeatAbort?.abort();while(this.uploading||this.heartbeatInFlight)await new Promise(resolve=>setTimeout(resolve,25));}
+    this.publish();if(!paused)void this.upload();
+  }
   updateConfig(config: Config): void {
     // Config edits cannot change a privacy policy in the middle of capture.
     if (this.running || this.capturing) throw new Error(moteText("请先停止采集，再修改配置"));
     this.uploadAbort?.abort();
 
+    if (config.token !== this.config.token || config.serverUrl !== this.config.serverUrl || config.deviceId !== this.config.deviceId || config.authSignedOut !== this.config.authSignedOut) this.authorizationGeneration++;
     this.config = config;
     this.queue.setLimits(config);
     this.publish();
@@ -443,7 +451,7 @@ export class Collector {
     finally { try { if (historyRun) this.history!.finish(historyRun, abort.signal.aborted); } finally { this.uploading = false; this.publish(); } }
   }
   private async sendHeartbeat(explicit = false): Promise<void> {
-    if (this.closed || this.connectionHeld || this.heartbeatInFlight || !this.config.serverUrl || !connectionToken(this.config) || (this.config.syncMode === 'manual' && !explicit) || !this.queue.binding.matches(this.config)) return;
+    if (this.config.syncPaused || this.closed || this.connectionHeld || this.heartbeatInFlight || !this.config.serverUrl || !connectionToken(this.config) || (this.config.syncMode === 'manual' && !explicit) || !this.queue.binding.matches(this.config)) return;
     this.heartbeatInFlight = true;
     const abort=this.heartbeatAbort=new AbortController();
     const state = this.state === 'stopped' ? 'paused' : this.state;

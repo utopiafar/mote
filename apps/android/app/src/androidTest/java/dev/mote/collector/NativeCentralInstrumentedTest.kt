@@ -73,7 +73,7 @@ class NativeCentralInstrumentedTest {
                 }
                 scenario.onActivity { activity ->
                     val tabs = all(activity).filterIsInstance<TextView>().filter { it.tag?.toString()?.startsWith("primary:") == true }
-                    assertEquals(listOf("今天", "资料库", "问一问", "本机"), tabs.map { it.text.toString() })
+                    assertEquals(listOf("首页", "内容", "问一问"), tabs.map { it.text.toString() })
                     assertTrue("$page keeps its primary destination", tabs.single { it.tag == "primary:${MoteNavigation.centralTab(page).name}" }.isSelected)
                     assertFalse("$page embeds a WebView", all(activity).any { it is WebView })
                     assertFalse("$page requested another token", contains(activity, "登录并继续"))
@@ -219,13 +219,13 @@ class NativeCentralInstrumentedTest {
                 await("New conversation ready") { visible(it).any { view -> view.contentDescription == "你的问题" && view.isEnabled } }
                 scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("Generated primary navigation question") }
                 click("发送")
-                click("本机"); click("今天"); click("问一问")
+                click("设置"); click("首页"); click("问一问")
                 await("Accepted answer survives primary navigation") { visible(it).filterIsInstance<TextView>().any { view -> view.text.contains("Generated native answer") } }
                 scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("Generated unsent draft") }
-                click("资料库"); click("问一问")
+                click("内容"); click("问一问")
                 Thread.sleep(2000) // Allow the return-to-tab poll timer to run before checking the next draft.
                 scenario.onActivity { activity -> assertEquals("Generated unsent draft", visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.text.toString()) }
-                click("记录")
+                scenario.onActivity { it.openGeneratedAdd(MoteAddAction.NOTE) }
                 scenario.onActivity { activity -> assertTrue(visible(activity).filterIsInstance<EditText>().any { it.hint.toString() == "记下此刻的想法…" }) }
                 click("问一问")
                 scenario.recreate(); scenario.awaitMainUi()

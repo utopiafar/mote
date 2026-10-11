@@ -99,7 +99,7 @@ class ProjectionService : Service() {
         val ticket = generation; val request = ++checkSequence; checking = request
         val mode = CapturePipeline.policy(c, windows)
         state.execute {
-            val allowed = runCatching { !closed && ticket == generation && settings.read() == c && selected.canCollect(c, windows, mode) }.getOrDefault(false)
+            val allowed = runCatching { !closed && ticket == generation && settings.read().sameCaptureConfiguration(c) && selected.canCollect(c, windows, mode) }.getOrDefault(false)
             handler.post {
                 if (checking != request) return@post
                 checking = null
@@ -132,9 +132,9 @@ class ProjectionService : Service() {
                 val prepared = runCatching {
                     val opened = Settings(this)
                     val current = opened.read().also { it.validate() }
-                    check(opened.enabled && expectedStamp == SourceRules.hash(current.toString()) && current.screenCollectionEnabled && current.effectiveMode() == "projection")
+                    check(opened.enabled && expectedStamp == current.captureStamp() && current.screenCollectionEnabled && current.effectiveMode() == "projection")
                     val ready = CapturePipeline(this)
-                    try { check(opened.enabled && opened.read() == current); Triple(opened, current, ready) }
+                    try { check(opened.enabled && opened.read().sameCaptureConfiguration(current)); Triple(opened, current, ready) }
                     catch (error: Exception) { ready.close(); throw error }
                 }
                 handler.post {
@@ -196,11 +196,11 @@ class ProjectionService : Service() {
                 var cropped: android.graphics.Bitmap? = null
                 try {
                     // Validate before materializing even a pixel from the detached reader.
-                    if (!closed && !ending && captureGeneration == generation && !ConnectionGuard.changing() && settings.enabled && settings.read() == c &&
+                    if (!closed && !ending && captureGeneration == generation && !ConnectionGuard.changing() && settings.enabled && settings.read().sameCaptureConfiguration(c) &&
                         CapturePipeline.unlocked(this@ProjectionService) && SystemClock.elapsedRealtime() - ticket.requestedAt <= 5000) {
                         val image = available.acquireLatestImage()
                         if (image != null) try { cropped = CapturedFrame.copy(image) } finally { image.close() }
-                        if (closed || captureGeneration != generation || ConnectionGuard.changing() || !settings.enabled || settings.read() != c) { cropped?.recycle(); cropped = null }
+                        if (closed || captureGeneration != generation || ConnectionGuard.changing() || !settings.enabled || !settings.read().sameCaptureConfiguration(c)) { cropped?.recycle(); cropped = null }
                     }
                 } catch (_: Exception) { cropped?.recycle(); cropped = null }
                 finally { available.close() }
@@ -260,7 +260,7 @@ class ProjectionService : Service() {
                 val current = settings.read()
                 check(settings.enabled && current == next && current.screenCollectionEnabled && current.effectiveMode() == "projection")
                 val ready = CapturePipeline(this)
-                try { check(settings.enabled && settings.read() == next); ready }
+                try { check(settings.enabled && settings.read().sameCaptureConfiguration(next)); ready }
                 catch (error: Exception) { ready.close(); throw error }
             }
             handler.post {

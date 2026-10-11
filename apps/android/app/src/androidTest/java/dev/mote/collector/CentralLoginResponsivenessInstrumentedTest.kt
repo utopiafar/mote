@@ -19,7 +19,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
-/** Opt-in API 35 Dev emulator and generated native-central server only. */
+/** Opt-in dedicated API 35/37 Dev emulator and generated native-central server only. */
 @RunWith(AndroidJUnit4::class)
 class CentralLoginResponsivenessInstrumentedTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
@@ -29,8 +29,13 @@ class CentralLoginResponsivenessInstrumentedTest {
 
     @Before fun generatedEnvironmentOnly() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("nativeCentralFixture") == "true")
-        require(context.packageName == "dev.mote.collector.dev" && Build.VERSION.SDK_INT == 35 &&
+        require(context.packageName == "dev.mote.collector.dev" && BuildConfig.MOTE_PROFILE == "dev" &&
             Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
+        val avd = instrumentation.uiAutomation.executeShellCommand("getprop ro.boot.qemu.avd_name").use {
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(it).bufferedReader().use { reader -> reader.readText().trim() }
+        }
+        require((avd == "mote_fixture_api35" && Build.VERSION.SDK_INT == 35) ||
+            (avd == "mote_fixture_api37" && Build.VERSION.SDK_INT == 37))
         require(!CaptureAccessibilityService.connected && !ProjectionService.running && !Settings(context).enabled)
         val deadline = SystemClock.elapsedRealtime() + 20_000
         while (QueueStorage.recovering && SystemClock.elapsedRealtime() < deadline) Thread.sleep(20)

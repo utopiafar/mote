@@ -73,7 +73,7 @@ class ConnectionInstrumentedTest {
                 scenario.resumeGeneratedTask()
                 scenario.onActivity { activity ->
                     fun views(v: android.view.View): List<android.view.View> = listOf(v) + if (v is android.view.ViewGroup) (0 until v.childCount).flatMap { views(v.getChildAt(it)) } else emptyList()
-                    views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString() == MoteI18n.text("本机") }.performClick()
+                    views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString() == MoteI18n.text("设置") }.performClick()
                     views(activity.window.decorView).single { it.isShown && it.tag == "menu:${MoteI18n.text("连接与同步")}" }.performClick()
                 }
                 scenario.awaitUiText("https://generated-new.invalid")

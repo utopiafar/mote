@@ -59,3 +59,9 @@ it('offers a first collection setup without requiring a central connection, and 
     expect(needsCollectionSetup({ ...fresh, ...changed })).toBe(false);
   }
 });
+
+it('keeps delivery details subordinate to the originating home or content and screen recording under home',()=>{
+ const navigation=new DesktopNavigation();navigation.navigate('uploads');expect(navigation.section).toBe('overview');expect(navigation.backTarget).toBe('overview');
+ navigation.navigate('records');navigation.navigate('uploads');expect(navigation.section).toBe('records');expect(navigation.backTarget).toBe('records');
+ navigation.navigate('overview');navigation.navigate('screen');expect(navigation.section).toBe('overview');expect(navigation.backTarget).toBe('overview');
+});

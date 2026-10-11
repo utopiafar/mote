@@ -49,7 +49,7 @@ const server = createServer(async (req, res) => {
 const other = createServer((_req, res) => { otherRequests++; res.writeHead(500); res.end('{}'); });
 const until = async fn => { for (let i = 0; i < 200; i++) { if (await fn()) return; await new Promise(resolve => setTimeout(resolve, 25)); } throw new Error('Offline sync fixture phase timeout'); };
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-const contentRequests = () => requests.filter(request => request.path !== '/api/connections/self');
+const contentRequests = () => requests.filter(request => request.method !== 'GET');
 const queueBodies = () => readdirSync(join(profile, 'queue/events')).filter(name => name.endsWith('.json')).map(name => JSON.parse(readFileSync(join(profile, 'queue/events', name), 'utf8')).event).sort((a, b) => a.id.localeCompare(b.id));
 const sourcePending = (url, credential, id) => {
   const state = require('../dist/source-state-store').sourceState(join(profile, 'local-sources/nodes', createHash('sha256').update(url + ':' + credential).digest('hex'), id + '.json'));
@@ -66,8 +66,8 @@ app.on('browser-window-created', (_event, window) => {
     void (async () => {
       const initial = await invoke('status'); assert.equal(initial.running, false); assert.equal(initial.config.serverUrl, ''); assert.equal(initial.sync.state, 'unconfigured');
       const draft = await invoke('noteDraft'); const note = await invoke('saveNote', { ...draft, text: 'Generated offline note before any URL. 🧑🏽‍💻', revision: draft.revision + 1 });
-      const options = { retention: 'snapshot', centralProcessingConsent: true, intervalSeconds: 30, trackDeletions: false, extensions: ['.md'], excludedPaths: [], redactLiterals: [] };
-      await invoke('chooseSourceFiles', 'files', options);
+      const options = { syncContinuously: true, retention: 'snapshot', centralProcessingConsent: true, intervalSeconds: 30, trackDeletions: false, extensions: ['.md'], excludedPaths: [], redactLiterals: [] };
+      const selected = await invoke('selectSourceFiles', 'files');assert.equal(selected.canceled,false);assert.equal((await invoke('sources')).length,0,'Selection alone cannot collect or send');await invoke('confirmSourceFiles',selected.selectionId,options);
       await until(async () => (await invoke('sources'))[0]?.pending === 1);
       const source = (await invoke('sources'))[0].source;
       const originalNote = queueBodies()[0], originalSource = structuredClone(sourcePending('', '', source.id)[0]);
@@ -90,10 +90,15 @@ app.on('browser-window-created', (_event, window) => {
         {path:'/api/connections/self',method:'GET',credential:'owner',status:200},
         {path:'/api/login/session',method:'POST',credential:'owner',status:200},
       ], 'First binding performs only its necessary identity check and session handshake');
-      assert.ok(requests.slice(2).every(request => request.path === '/api/connections/self' && request.method === 'GET' && request.credential === 'session' && request.status === 200), 'Automatic connection health checks use the issued session and send no content or heartbeat');
+      assert.ok(requests.slice(2).every(request => request.method === 'GET' && (request.path === '/api/connections/self' || request.path.startsWith('/api/capture-browser?')) && request.credential === 'session' && request.status === 200), 'Home archive reads and connection health checks use the issued session without sending content or heartbeat');
       assert.equal(captureBodies.length, 0); assert.equal(sourceBodies.length, 0);
       assert.equal(requests.filter(request => request.path.includes('heartbeat')).length, 0, 'First binding in manual mode does not send a heartbeat');
       assert.deepEqual(sourcePending(origin, sessionToken, source.id), [originalSource]);
+      const beforePausedSending=contentRequests().length;await invoke('setSyncPaused',true);await invoke('retry');await pause(1100);
+      const paused=await invoke('status');assert.equal(paused.config.syncPaused,true);assert.equal(paused.config.syncMode,'manual');assert.equal(paused.sync.pendingRecords,2);assert.equal(contentRequests().length,beforePausedSending,'Global send pause blocks explicit retries, source metadata writes and heartbeat');
+      assert.equal(JSON.parse(readFileSync(join(profile,'config.json'),'utf8')).config.syncPaused,true,'Pause is durable through the real main-process entry point');
+      assert.deepEqual(queueBodies(),[originalNote]);assert.deepEqual(sourcePending(origin,sessionToken,source.id),[originalSource]);
+      await invoke('setSyncPaused',false);assert.equal((await invoke('status')).config.syncMode,'manual');assert.equal((await invoke('status')).sync.pendingRecords,2,'Resume keeps manual cadence');
       await invoke('retry');
       const synced = await invoke('status');
       const syncedSources = await invoke('sources');
@@ -122,7 +127,7 @@ app.on('browser-window-created', (_event, window) => {
       await invoke('retry'); assert.deepEqual(captureBodies.at(-1), boundNotes[0]); assert.deepEqual(sourceBodies.at(-1), wireSource(boundSources[0]));
       assert.equal((await invoke('status')).sync.pendingRecords, 0); assert.equal((await invoke('status')).running, false);
       const stored = readFileSync(join(profile, 'config.json'), 'utf8'); assert(!stored.includes(token)); assert(!stored.includes(sessionToken));
-      process.stdout.write(JSON.stringify({ ok: true, fixtureOnly: true, realMainAndPreloadIpc: true, noUrlLocalNoteAndSource: true, firstBindingRequiresConfirmation: true, necessaryConnectionHandshakeOnly: true, issuedSessionAuthorizedByRealCentral: true, manualBindingHasNoAutomaticUploadsOrHeartbeat: true, settingsResumeLocalScanWithoutUpload: true, realCentralSqliteAcksDrainBothQueues: true, finalManualHeartbeatVisibleInDevicesApi: true, firstBindingPreservesOriginalPayloads: true, otherNodeRejectedWithoutPayloadMutation: true, captureStayedStopped: true, realKeychainUntouched: true }) + '\n');
+      process.stdout.write(JSON.stringify({ ok: true, fixtureOnly: true, realMainAndPreloadIpc: true, stagedNativeSelectionBeforeExplicitConfirmation:true, persistedSendPauseBlocksExplicitRetriesAndMetadata:true, resumePreservesManualCadenceAndPayloads:true, noUrlLocalNoteAndSource: true, firstBindingRequiresConfirmation: true, necessaryHandshakeAndReadOnlyHomeArchiveRequests:true, issuedSessionAuthorizedByRealCentral: true, manualBindingHasNoAutomaticUploadsOrHeartbeat: true, settingsResumeLocalScanWithoutUpload: true, realCentralSqliteAcksDrainBothQueues: true, finalManualHeartbeatVisibleInDevicesApi: true, firstBindingPreservesOriginalPayloads: true, otherNodeRejectedWithoutPayloadMutation: true, captureStayedStopped: true, realKeychainUntouched: true }) + '\n');
       finished = true; clearTimeout(timeout); app.quit();
     })().catch(error => { process.stderr.write('Offline sync fixture failed: ' + error.stack + '\n'); app.exit(1); });
   });

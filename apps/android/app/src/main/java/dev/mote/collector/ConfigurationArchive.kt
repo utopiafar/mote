@@ -24,7 +24,7 @@ object ConfigurationArchive {
             .put("diagnosticsIntervalSeconds", c.diagnosticsIntervalSeconds)
             .put("appCollectionRules", c.appCollectionRules)
             .put("metadataEnabled", c.metadataEnabled)
-            .put("syncMode", c.syncMode)
+            .put("syncPaused", c.syncPaused).put("syncMode", c.syncMode)
             .put("syncIntervalMinutes", c.syncIntervalMinutes)
             .put("syncBatchSize", c.syncBatchSize)
             .put("packedUpload", c.packedUpload)
@@ -75,7 +75,7 @@ object ConfigurationArchive {
             diagnosticsIntervalSeconds = int(values, "diagnosticsIntervalSeconds", current.diagnosticsIntervalSeconds),
             appCollectionRules = string(values, "appCollectionRules", current.appCollectionRules),
             metadataEnabled = boolean(values, "metadataEnabled", current.metadataEnabled),
-            syncMode = string(values, "syncMode", current.syncMode),
+            syncPaused = boolean(values, "syncPaused", current.syncPaused), syncMode = string(values, "syncMode", current.syncMode),
             syncIntervalMinutes = int(values, "syncIntervalMinutes", current.syncIntervalMinutes),
             syncBatchSize = int(values, "syncBatchSize", current.syncBatchSize),
             packedUpload = boolean(values, "packedUpload", current.packedUpload),
@@ -110,5 +110,5 @@ object ConfigurationArchive {
     private fun int(j: JSONObject, key: String, fallback: Int): Int {
         val n = long(j, key, fallback.toLong()); require(n in Int.MIN_VALUE..Int.MAX_VALUE); return n.toInt()
     }
-    private val keys = setOf("packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uiPageMode", "uiPageRules", "server", "token", "deviceName", "intervalSeconds", "maxQueueMiB", "wifiOnly", "excludedPackages", "masks", "debugHttp", "mode", "jpegQuality", "captureMaxSide", "chargingOnly", "batteryPauseBelowPct", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "appCollectionRules", "metadataEnabled", "syncMode", "syncIntervalMinutes", "syncBatchSize", "jsonlWindowMinutes", "mediaCollectionEnabled", "screenCollectionEnabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "syncChargingOnly", "syncBatteryNotLow", "imageDedupeMode", "ocrMode", "ocrAppModes", "imageDedupeDiagnosticsEnabled", "uploadedRetentionDays")
+    private val keys = setOf("syncPaused", "packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uiPageMode", "uiPageRules", "server", "token", "deviceName", "intervalSeconds", "maxQueueMiB", "wifiOnly", "excludedPackages", "masks", "debugHttp", "mode", "jpegQuality", "captureMaxSide", "chargingOnly", "batteryPauseBelowPct", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "appCollectionRules", "metadataEnabled", "syncMode", "syncIntervalMinutes", "syncBatchSize", "jsonlWindowMinutes", "mediaCollectionEnabled", "screenCollectionEnabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "syncChargingOnly", "syncBatteryNotLow", "imageDedupeMode", "ocrMode", "ocrAppModes", "imageDedupeDiagnosticsEnabled", "uploadedRetentionDays")
 }

@@ -19,7 +19,7 @@ class PrimaryNavigationTest {
         val grouped = MoteNavigation.groups.flatMap { it.pages }
         assertEquals("Only the conversation has its own primary destination", registered - "ask", grouped.toSet())
         assertEquals("A capability has one canonical utility menu location", grouped.size, grouped.toSet().size)
-        assertEquals(listOf("今天", "资料库", "问一问", "本机"), MotePrimaryTab.entries.map { it.titleKey })
+        assertEquals(listOf("首页", "内容", "问一问"), MotePrimaryTab.entries.map { it.titleKey })
     }
 
     @Test fun deepLinksHaveBackPathsInsideTheirExistingPrimaryDestination() {

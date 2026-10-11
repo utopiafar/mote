@@ -21,8 +21,8 @@ export function createSyncHistoryUi(api: DesktopApi, navigate: (page: DesktopPag
   const el = (id: string) => document.getElementById(id)!;
   const contentDialog = el('upload-content-dialog') as HTMLDialogElement;
   const receiptDialog = el('upload-receipt-dialog') as HTMLDialogElement;
-  const closeReceipt = () => { runGeneration++; receiptDialog.close(); };
-  const closeContent = () => { contentGeneration++; contentDialog.close(); };
+  const closeReceipt = () => { runGeneration++; receiptDialog.close(); el('upload-receipt-body').replaceChildren(); };
+  const closeContent = () => { contentGeneration++; contentDialog.close(); el('upload-content-list').replaceChildren(); el('upload-content-preview').replaceChildren(); };
   let current: Status | undefined, active = false, days: 1 | 7 = 1, offset = 0, source: SyncSource | undefined, outcome: 'received' | 'unconfirmed' | undefined;
   let refreshGeneration = 0, contentGeneration = 0, runGeneration = 0, timer: ReturnType<typeof setInterval> | undefined, refreshing = false;
   let runId = '', contentOffset = 0, contentSource: SyncSource | undefined, contentOutcome: 'received' | 'unconfirmed' | undefined, selected: SyncHistoryItem | undefined, chunkOffset = 0;
@@ -116,11 +116,11 @@ export function createSyncHistoryUi(api: DesktopApi, navigate: (page: DesktopPag
   for (const id of ['upload-content-source', 'upload-content-outcome']) el(id).addEventListener('change', () => { contentSource = (el('upload-content-source') as HTMLSelectElement).value as SyncSource || undefined; contentOutcome = (el('upload-content-outcome') as HTMLSelectElement).value as typeof contentOutcome || undefined; contentOffset = 0; void loadContents(); });
   receiptDialog.querySelector('[data-upload-close]')!.addEventListener('click', closeReceipt);
   contentDialog.querySelector('[data-upload-close]')!.addEventListener('click', closeContent);
-  receiptDialog.addEventListener('cancel', () => { runGeneration++; });
-  contentDialog.addEventListener('cancel', () => { contentGeneration++; });
+  receiptDialog.addEventListener('cancel', () => { runGeneration++; el('upload-receipt-body').replaceChildren(); });
+  contentDialog.addEventListener('cancel', () => { contentGeneration++; el('upload-content-list').replaceChildren(); el('upload-content-preview').replaceChildren(); });
   return {
     show() { active = true; void refresh(); if (!timer) timer = setInterval(() => void refresh(), 5000); },
     hide() { active = false; refreshGeneration++; refreshing = false; if (timer) clearInterval(timer); timer = undefined; closeReceipt(); closeContent(); },
-    update(status: Status) { const changed = current && (current.config.serverUrl !== status.config.serverUrl || current.config.deviceId !== status.config.deviceId || current.config.tokenConfigured !== status.config.tokenConfigured); current = status; if (changed) { closeReceipt(); closeContent(); resetFilters(); } },
+    update(status: Status) { const changed = current && (current.authorizationGeneration !== status.authorizationGeneration || current.config.authSignedOut !== status.config.authSignedOut || current.config.authExpiresAt !== status.config.authExpiresAt || current.config.serverUrl !== status.config.serverUrl || current.config.deviceId !== status.config.deviceId || current.config.tokenConfigured !== status.config.tokenConfigured); current = status; if (changed) { closeReceipt(); closeContent(); resetFilters(); } },
   };
 }

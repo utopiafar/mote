@@ -48,8 +48,7 @@ class ComplexNotesInstrumentedTest {
                 yield(v)
                 if (v is android.view.ViewGroup) for (i in 0 until v.childCount) yieldAll(views(v.getChildAt(i)))
             }
-            views(activity.window.decorView).filterIsInstance<android.widget.TextView>()
-                .single { it.isShown && it.isClickable && it.text.toString() == MoteI18n.text("记录") }.performClick()
+            activity.openGeneratedAdd(MoteAddAction.NOTE)
         }
         val deadline = SystemClock.elapsedRealtime() + 10_000
         var ready = false

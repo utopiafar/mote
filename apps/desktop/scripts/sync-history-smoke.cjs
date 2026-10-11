@@ -15,7 +15,7 @@ const profile = mkdtempSync(join(tmpdir(), 'mote-sync-ui-fixture-'));
 app.setPath('userData', profile);
 process.env.MOTE_PROFILE = 'default';
 for (const name of ['MOTE_URL', 'MOTE_TOKEN', 'MOTE_ENV_FILE']) delete process.env[name];
-const archive = new Map(), requests = [], errors = [];
+const archive = new Map(), requests = [], errors = [];let materialReady=true,materialAuthorized=true;
 const pixels = Buffer.alloc(64, 200);
 const generatedImage = nativeImage.createFromBitmap(pixels, { width: 4, height: 4 }).toJPEG(70);
 const server = createServer((req, res) => {
@@ -23,6 +23,8 @@ const server = createServer((req, res) => {
   const path = req.url.split('?')[0], id = path.split('/')[3], record = archive.get(id);
   if (path.endsWith('/image') && record) { res.setHeader('Content-Type', 'image/jpeg'); res.end(generatedImage); return; }
   res.setHeader('Content-Type', 'application/json');
+  if (path === '/api/capture-browser') {const offset=Number(new URL(req.url,'http://fixture').searchParams.get('cursor')||0),rows=[...archive.values()].sort((a,b)=>b.capturedAt.localeCompare(a.capturedAt));res.end(JSON.stringify({items:rows.slice(offset,offset+30),totalCount:rows.length,nextCursor:offset+30<rows.length?String(offset+30):null}));return;}
+  if (path === '/api/materials/generated') {if(!materialAuthorized){res.statusCode=403;res.end('{}');return;}res.end(JSON.stringify({ref:'material:generated@r1',revision:'r1',coverage:{state:materialReady?'complete':'partial'},indexing:{state:'indexed',revision:'r1'}}));return;}
   if (path.startsWith('/api/capture-browser/') && record) { res.end(JSON.stringify(record)); return; }
   res.statusCode = 410; res.end('{}');
 });
@@ -34,7 +36,7 @@ app.on('browser-window-created', (_event, window) => {
   window.webContents.once('did-finish-load', () => void (async () => {
     const js = code => window.webContents.executeJavaScript(code);
     const wait = async (code, label) => { for (let i = 0; i < 200; i++) { if (await js(code)) return; await new Promise(resolve => setTimeout(resolve, 25)); } throw Error(label); };
-    await wait('Boolean(window.mote && document.querySelector("aside [data-nav=uploads]"))', 'Renderer startup');
+    await wait('Boolean(window.mote && document.querySelector("#home-sync-details [data-nav=uploads]"))', 'Renderer startup');
     const status = await js('window.mote.status()'); assert.equal(status.running, false);
     ipcMain.removeHandler('mote:permission-status');
     ipcMain.handle('mote:permission-status', () => ({ screen: 'denied', accessibility: 'denied', calendar: 'denied' }));
@@ -51,7 +53,39 @@ app.on('browser-window-created', (_event, window) => {
       history.attempt(run, [item]); history.settle(run, item.key, true, id, 201); archive.set(id, e); items.push(item);
     }
     history.addBytes(run, 20480); history.finish(run); history.close();
-    await js('document.querySelector("aside [data-nav=uploads]").click()');
+    const out = resolve(process.env.MOTE_SYNC_SCREENSHOTS || join(__dirname, '../release/sync-fixtures')); mkdirSync(out, { recursive: true });
+    archive.get(items[22].captureId).memoryMaterialRef='material:generated@r1';
+    await js('document.querySelector(".main-nav [data-nav=records]").click()');
+    await wait('document.querySelectorAll("#content-feed .content-row").length===30','Shared content first page');
+    await js('document.querySelector("#content-more").click()');await wait('document.querySelectorAll("#content-feed .content-row").length===44','Shared content pagination');
+    await js('document.querySelector("#content-scope").value="local";document.querySelector("#content-scope").dispatchEvent(new Event("change"))');
+    await wait('document.querySelector("#content-more").hidden && !document.querySelector("#content-feed .content-row")','Scope resets pagination');
+    await js('document.querySelector("#content-scope").value="received";document.querySelector("#content-scope").dispatchEvent(new Event("change"))');
+    await wait('document.querySelectorAll("#content-feed .content-row").length===30','Received content scope');
+    const imagesBefore=requests.filter(p=>p.endsWith('/image')).length;
+    await js(`document.querySelector('[data-content-key="capture:${items[22].captureId}"]').click()`);
+    await wait('document.querySelector("#content-detail-status").textContent.includes("完整整理并建立索引")','Authoritative current indexed material');
+    assert.equal(requests.filter(p=>p.endsWith('/image')).length,imagesBefore,'Reading starts with text; original requires an explicit action');
+    assert.equal(await js('document.querySelector("#content-detail-stages li:last-child").className'),'completed');
+    assert.equal(await js('Boolean(window.fixtureExecuted)'),false);
+    writeFileSync(join(out,'shared-reader.png'),(await window.webContents.capturePage()).toPNG());
+    materialReady=false;await js('document.querySelector("#content-detail-refresh").click()');
+    await wait('document.querySelector("#content-detail-status").textContent.includes("正在整理")','Partial material remains processing');
+    assert.equal(await js('document.querySelector("#content-detail-stages li:last-child").className'),'waiting');
+    await js('document.querySelector("#content-original").open=true');await wait('document.querySelector("#content-detail-image").src.startsWith("data:image/jpeg")','Explicit original preview');
+    materialAuthorized=false;await js('document.querySelector("#content-detail-refresh").click()');await wait('document.querySelector("#content-detail-status").textContent.includes("权限")','Revoked authorization clears private evidence');
+    assert.equal(await js('document.querySelector("#content-detail-body").textContent'),'');assert.equal(await js('document.querySelector("#content-detail-metadata").textContent'),'');assert.equal(await js('document.querySelector("#content-detail-image").getAttribute("src")'),null);
+    assert.equal(await js('document.querySelectorAll("#content-feed .content-row").length'),0);materialAuthorized=true;
+    await js('document.querySelector("#content-detail-close").click()');
+    assert.equal(await js('document.querySelector("#content-detail-body").textContent'),'','Close clears private evidence');
+    assert.equal(await js('document.querySelector("#content-detail-image").getAttribute("src")'),null);
+    await js('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+    assert.equal(await js('document.querySelector("#content-detail-dialog").open'),false);
+    await js('document.querySelector("#content-refresh").click()');await wait('document.querySelectorAll("#content-feed .content-row").length===30','Content reload after authorization fixture');
+    await js('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+    writeFileSync(join(out,'shared-library.png'),(await window.webContents.capturePage()).toPNG());
+    await js('document.querySelector(".main-nav [data-nav=overview]").click()');
+    await js('document.querySelector("#home-sync-details").open=true;document.querySelector("#home-sync-details [data-nav=uploads]").click()');
     await wait('document.querySelectorAll("[data-upload-run]").length === 20', 'Run pagination');
     assert.equal(await js('document.querySelector("#upload-received").textContent'), '44');
     assert.equal(await js('document.querySelector("#upload-next").disabled'), false);
@@ -71,7 +105,6 @@ app.on('browser-window-created', (_event, window) => {
     await js('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
     assert.equal(await js('Boolean(window.fixtureExecuted)'), false, 'Evidence is text, never executable HTML');
     assert((await js('document.querySelector("#upload-content-preview").textContent')).includes('<script>'));
-    const out = resolve(process.env.MOTE_SYNC_SCREENSHOTS || join(__dirname, '../release/sync-fixtures')); mkdirSync(out, { recursive: true });
     writeFileSync(join(out, 'content.png'), (await window.webContents.capturePage()).toPNG());
     await js('document.querySelector("#upload-content-next").click()');
     await wait('document.querySelectorAll(".upload-record-pick").length === 3', 'Content pagination');
@@ -94,7 +127,7 @@ app.on('browser-window-created', (_event, window) => {
     window.setSize(1140, 840); await js('new Promise(resolve => requestAnimationFrame(resolve))');
     writeFileSync(join(out, 'overview.png'), (await window.webContents.capturePage()).toPNG());
     assert.equal((await js('window.mote.status()')).running, false); assert.deepEqual(errors, []);
-    process.stdout.write(JSON.stringify({ ok: true, generatedFixturesOnly: true, captureStayedStopped: true, realPreloadIpc: true, receiptAndContentPagination: true, sourceFiltering: true, generatedScreenshotPreview: true, escapedUntrustedEvidence: true, archiveExpirationKeepsReceipt: true, nativeDialogTransitions: true, minimumWindowLayout: true, requests: requests.length, screenshots: out }) + '\n');
+    process.stdout.write(JSON.stringify({ ok: true, generatedFixturesOnly: true, captureStayedStopped: true, realPreloadIpc: true, sharedHomeContentReader:true, currentMaterialOnlyReadiness:true, explicitOriginalPreview:true, contentScopeResetsPagination:true, closedReaderClearsEvidence:true, revokedMaterialReadClearsEvidence:true, receiptAndContentPagination: true, sourceFiltering: true, generatedScreenshotPreview: true, escapedUntrustedEvidence: true, archiveExpirationKeepsReceipt: true, nativeDialogTransitions: true, minimumWindowLayout: true, requests: requests.length, screenshots: out }) + '\n');
     finished = true; clearTimeout(timeout); await new Promise(resolve => server.close(resolve)); app.quit();
   })().catch(error => { process.stderr.write(error.stack + '\n'); app.exit(1); }));
 });

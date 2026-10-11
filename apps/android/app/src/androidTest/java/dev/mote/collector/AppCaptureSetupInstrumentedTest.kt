@@ -51,7 +51,7 @@ class AppCaptureSetupInstrumentedTest {
     }
     @Test fun firstStartShowsGeneratedScopePreviewAndCancelPreservesPausedState() = fixture { settings ->
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-            scenario.onActivity { activity -> button("本机").performClick(); button("开始采集").performClick() }
+            scenario.onActivity { activity -> button("设置").performClick(); button("开始采集").performClick() }
             instrumentation.waitForIdleSync()
             instrumentation.runOnMainSync {
                 assertTrue(dialogViews().filterIsInstance<TextView>().any { it.isShown && it.text.contains("这里是生成的格式示例") })
@@ -60,7 +60,7 @@ class AppCaptureSetupInstrumentedTest {
                 button("暂不开始").performClick()
             }
             scenario.recreate(); scenario.awaitMainUi()
-            scenario.onActivity { assertTrue(views(it.window.decorView).single { row -> row.tag == "primary:DEVICE" }.isSelected); assertFalse(settings.enabled) }
+            scenario.onActivity { assertTrue(views(it.window.decorView).single { row -> row.tag == "primary:TODAY" }.isSelected); assertFalse(settings.enabled) }
         }
     }
     @Test fun saveAndPreviewUsesTwoModesAndNormalizesLegacyOnlyAfterSaving() = fixture { settings ->
@@ -68,7 +68,7 @@ class AppCaptureSetupInstrumentedTest {
             settings.save(settings.read().copy(uiPageMode = storedMode))
             ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.onActivity { activity ->
-                    button("本机").performClick(); menu(activity, "按应用配置")
+                    activity.openGeneratedAdd(MoteAddAction.SCREEN)
                     val mode = views(activity.window.decorView).filterIsInstance<Spinner>().single { it.tag == "uiPageMode" }
                     assertEquals(2, mode.count)
                     assertEquals("只截图", mode.getItemAtPosition(0).toString())
@@ -97,7 +97,7 @@ class AppCaptureSetupInstrumentedTest {
         settings.save(settings.read().copy(uiPageRules = rule, appCollectionRules = AppCollectionRules(AppCollectionMode.ACTIVITY, mapOf(context.packageName to AppCollectionMode.CONTENT)).json()))
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             scenario.onActivity { activity ->
-                button("本机").performClick(); menu(activity, "按应用配置")
+                activity.openGeneratedAdd(MoteAddAction.SCREEN)
                 views(activity.window.decorView).filterIsInstance<Button>().single { it.isShown && it.contentDescription?.toString()?.contains(context.packageName) == true }.performClick()
             }
             instrumentation.waitForIdleSync()
@@ -120,7 +120,7 @@ class AppCaptureSetupInstrumentedTest {
         settings.save(settings.read().copy(uiPageMode = "screen_only", appCollectionRules = AppCollectionRules(AppCollectionMode.ACTIVITY, mapOf(context.packageName to AppCollectionMode.ACTIVITY)).json()))
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             scenario.onActivity { activity ->
-                button("本机").performClick(); menu(activity, "按应用配置")
+                activity.openGeneratedAdd(MoteAddAction.SCREEN)
                 views(activity.window.decorView).filterIsInstance<Button>().single { it.isShown && it.contentDescription?.toString()?.contains(context.packageName) == true }.performClick()
             }
             instrumentation.waitForIdleSync()
@@ -156,15 +156,15 @@ class AppCaptureSetupInstrumentedTest {
     @Test fun permissionPageReturnsToDeviceAndOriginalConfiguration() = fixture {
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             scenario.onActivity { activity ->
-                button("本机").performClick(); menu(activity, "按应用配置"); menu(activity, "权限与后台运行")
+                activity.openGeneratedAdd(MoteAddAction.SCREEN); menu(activity, "权限与后台运行")
             }
             scenario.recreate(); scenario.awaitMainUi()
             scenario.onActivity { activity ->
                 button("返回原配置页面").performClick()
-                assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString() == "按应用配置" })
-                menu(activity, "权限与后台运行"); button("返回本机开始采集").performClick()
-                assertTrue(views(activity.window.decorView).filterIsInstance<Button>().any { it.isShown && it.text.toString() == "开始采集" })
-                assertTrue(views(activity.window.decorView).single { row -> row.tag == "primary:DEVICE" }.isSelected)
+                assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString() == "记录屏幕" })
+                menu(activity, "权限与后台运行"); button("返回首页继续记录").performClick()
+                assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString() == "记录屏幕" })
+                assertTrue(views(activity.window.decorView).single { row -> row.tag == "primary:TODAY" }.isSelected)
             }
         }
     }

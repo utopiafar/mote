@@ -76,10 +76,16 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
             }
             state.remove("activeKey")
             File(root(source.id), "spool").deleteRecursively()
-            state.put("policy", policy).remove("stack"); state.put("generation", UUID.randomUUID().toString())
+            state.remove("importCaptured"); state.put("policy", policy).remove("stack"); state.put("generation", UUID.randomUUID().toString())
         }
         if (source.initialSync == "all" && state.optString("initialSync") == "new_only") rows(source.id).filter { it.optBoolean("baseline") }.forEach { it.put("baseline", false); saveRow(source.id, it) }
         if (!state.has("generation")) state.put("generation", UUID.randomUUID().toString())
+        // A process can stop after committing the immutable manifest but before its
+        // completion marker. Restore that marker before any provider is consulted.
+        if (!source.tree && !source.syncContinuously && !state.optBoolean("importCaptured") && rows(source.id).any { row ->
+                val manifest = row.optJSONObject("pending")?.optJSONObject("manifest")
+                row.optString("contentPolicy") == policy && manifest?.optString("sourceId") == source.id && manifest.optJSONObject("item")?.optString("revision")?.isNotBlank() == true
+            }) state.put("importCaptured", true)
         state.put("initialSync", source.initialSync); saveState(source.id, state); state
     }
     /** Remote IDs only invalidate an already-authorized current local version; no remote path is opened. */
@@ -99,7 +105,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
             }
         }
     }
-    fun signature(item: JSONObject) = SourceRules.hash(SourceRules.canonical(JSONObject(item.toString()).apply { remove("observedAt"); remove("revision") }))
+    fun signature(item: JSONObject) = SourceRules.fileSignature(item)
     fun observe(source: LocalSource, item: JSONObject, generation: String, now: Long = System.currentTimeMillis()) = synchronized(lock) {
         require(allowed(source, item)) { "File excluded by current source policy" }
         SourcePrivacyGate.validate(source, item)
@@ -160,7 +166,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
         if (row.has("pending")) row else { state.remove("activeKey"); saveState(id, state); null }
     }
     /** Open is called for archive or transient snapshot bytes, after stability and baseline checks. */
-    fun prepare(source: LocalSource, open: (JSONObject) -> InputStream, unchanged: (JSONObject) -> Boolean, now: Long = System.currentTimeMillis(), anchor: ((String) -> String?)? = null): JSONObject? {
+    fun prepare(source: LocalSource, open: (JSONObject) -> InputStream, unchanged: (JSONObject) -> Boolean, now: Long = System.currentTimeMillis(), anchor: ((String) -> String?)? = null, captureImmediately: Boolean = false): JSONObject? {
         val selected = synchronized(lock) {
         configure(source)
         next(source.id)?.let { assertCurrent(source, it); return it }
@@ -170,7 +176,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
                 if (!allowed(source, row.getJSONObject("candidate"))) { discard(source.id, row); null }
                 else row.also { if (!dirty(it)) marker.delete() }
             }
-        }.firstOrNull { dirty(it) && now >= it.optLong("nextPrepareAt") && (source.retention == "reference" || it.getJSONObject("candidate").optBoolean("deleted") || now - it.optLong("stableSince", now) >= 60000) } ?: return null
+        }.firstOrNull { dirty(it) && now >= it.optLong("nextPrepareAt") && (source.retention == "reference" || it.getJSONObject("candidate").optBoolean("deleted") || (captureImmediately && !source.tree && !source.syncContinuously) || now - it.optLong("stableSince", now) >= 60000) } ?: return null
         val state = state(source.id)
         Triple(row.toString(), state.getString("policy"), state.getString("generation"))
         }
@@ -224,7 +230,9 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
             if (matchesRecovery) item.put("observedAt", recovery!!.getString("observedAt"))
             row.put("pending", JSONObject().put("manifest", manifest).put("signature", signature(candidate)).apply { if (matchesRecovery) put("recoveryCaptureId", recovery!!.getString("captureId")); row.optJSONObject("indexResult")?.let { put("indexResult", it.toString()) } })
             row.remove("nextPrepareAt"); row.remove("snapshotRecovery"); row.put("contentPolicy", state(source.id).getString("policy"))
-            saveRow(source.id, row); row
+            saveRow(source.id, row)
+            if (!source.syncContinuously && !source.tree) saveState(source.id, state(source.id).put("importCaptured", true))
+            row
         } catch (error: Exception) { spool.deleteRecursively(); row.put("nextPrepareAt", now + 60000); saveRow(source.id, row); throw error }
         }
     }
@@ -238,8 +246,34 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
         if (pending.optString("indexResult").isNotEmpty() && pending.optString("indexResult") == current.optJSONObject("indexResult")?.toString()) current.remove("indexResult")
         if (pending.getString("signature") == signature(current.getJSONObject("candidate")))
             current.put("indexPending", false)
-        current.put("signature", pending.getString("signature")).put("revision", item.getString("revision")).remove("pending")
+        current.put("captureId", ack.optString("captureId", ack.getString("id"))).put("acknowledgedAt", Instant.now().toString()).put("signature", pending.getString("signature")).put("revision", item.getString("revision")).remove("pending")
         saveRow(id, current); saveState(id, state(id).put("lastAcknowledgedAt", Instant.now().toString())); File(root(id), "spool").deleteRecursively()
+    }
+    /** Preview/export only the immutable saved version, never the provider's current URI. */
+    fun pendingPreview(id: String, external: String, revision: String): Pair<String, Boolean>? = synchronized(lock) {
+        val row = read(itemFile(id, external)); val manifest = row.optJSONObject("pending")?.optJSONObject("manifest") ?: return@synchronized null
+        check(manifest.getJSONObject("item").getString("revision") == revision)
+        if (!manifest.has("sha256")) return@synchronized null
+        val mime = manifest.getJSONObject("item").optString("mimeType")
+        if (!mime.startsWith("text/") && mime !in setOf("application/json", "application/xml")) return@synchronized null
+        val bytes = if (manifest.getLong("sizeBytes") == 0L) byteArrayOf() else cipher.open(File(File(root(id), "spool"), "0").readBytes())
+        val decoder = Charsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT).onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+        val input = java.nio.ByteBuffer.wrap(bytes); val output = java.nio.CharBuffer.allocate(100000)
+        val completeBytes = bytes.size.toLong() == manifest.getLong("sizeBytes")
+        val decoded = decoder.decode(input, output, completeBytes)
+        if (decoded.isError) return@synchronized null
+        output.flip(); output.toString() to (completeBytes && decoded.isUnderflow)
+    }
+    fun exportPending(id: String, external: String, revision: String, output: java.io.OutputStream) = synchronized(lock) {
+        val row = read(itemFile(id, external)); val manifest = row.getJSONObject("pending").getJSONObject("manifest")
+        check(manifest.getJSONObject("item").getString("revision") == revision && manifest.has("sha256"))
+        val total = manifest.getLong("sizeBytes"); val hash = MessageDigest.getInstance("SHA-256"); var written = 0L; var index = 0
+        while (written < total) {
+            val bytes = cipher.open(File(File(root(id), "spool"), (index++).toString()).readBytes())
+            check(written + bytes.size <= total); output.write(bytes); hash.update(bytes); written += bytes.size
+        }
+        check(hash.digest().joinToString("") { "%02x".format(it) } == manifest.getString("sha256"))
+        output.flush()
     }
     fun resetSynced() = synchronized(lock) { check(pendingSync().count == 0); directory.listFiles()?.filter { it.isDirectory }?.forEach { it.deleteRecursively() }; Unit }
     fun remove(id: String) = synchronized(lock) { root(id).deleteRecursively() }

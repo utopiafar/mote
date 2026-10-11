@@ -77,7 +77,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
         ConnectionGuard.processing.incrementAndGet()
         try { executor.execute {
             try {
-                if (!isCurrent() || !settings.enabled || closed || ConnectionGuard.changing() || !unlocked(context) || settings.read() != config || policy(config, windows) != selected) return@execute
+                if (!isCurrent() || !settings.enabled || closed || ConnectionGuard.changing() || !unlocked(context) || !settings.read().sameCaptureConfiguration(config) || policy(config, windows) != selected) return@execute
                 checkStorage(config)
                 val now = observedAtMs
                 val appId = requireNotNull(windows.foreground)
@@ -112,7 +112,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
             try {
                 Operations.record(context, OperationKind.FRAME_RECEIVED)
                 diagnostics.add("receivedFrames")
-                if (!isCurrent() || !settings.enabled || !unlocked(context) || closed || settings.read() != config || policy(config, windows) != AppCollectionMode.CONTENT) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
+                if (!isCurrent() || !settings.enabled || !unlocked(context) || closed || !settings.read().sameCaptureConfiguration(config) || policy(config, windows) != AppCollectionMode.CONTENT) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
                 val reason = PrivacyRules.excludedReason(PrivacyRules.exclusions(config.excludedPackages), windows.packages, windows.trustworthy)
                 if (reason != null) { Operations.record(context, OperationKind.FRAME_BLOCKED, if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); pause(reason); return@execute }
                 if (CapturedFrame.isBlank(bitmap)) { pause("系统返回空白屏幕帧，已跳过；下一周期重试", OperationReason.SYSTEM); return@execute }
@@ -124,7 +124,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 val earlyFeatures = if (config.imageDedupeMode != "off" && !config.imageDedupeDiagnosticsEnabled && windows.trustworthy && windows.foreground != null)
                     features(bitmap, ScreenshotDedupeHelper.Mode.fromRaw(config.imageDedupeMode)) else null
                 if (earlyFeatures != null && ScreenshotDedupeHelper.shouldSkip(earlySignature, earlyFeatures, ScreenshotDedupeHelper.Mode.fromRaw(config.imageDedupeMode)).duplicate) {
-                    if (!isCurrent() || !settings.enabled || closed || ConnectionGuard.changing() || settings.read() != config || !unlocked(context)) return@execute
+                    if (!isCurrent() || !settings.enabled || closed || ConnectionGuard.changing() || !settings.read().sameCaptureConfiguration(config) || !unlocked(context)) return@execute
                     val appId = requireNotNull(windows.foreground)
                     val event = JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", settings.deviceId)
                         .put("deviceName", config.deviceName).put("platform", "android").put("capturedAt", capturedAt)
@@ -154,7 +154,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 val text = "" // Gate OCR stays in memory and never leaves the device.
                 val reviewed = config.uploadGate.enabled
                 val appliedMaskCount = masks.size
-                if (!isCurrent() || !settings.enabled || closed || ConnectionGuard.changing() || settings.read() != config || !unlocked(context)) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
+                if (!isCurrent() || !settings.enabled || closed || ConnectionGuard.changing() || !settings.read().sameCaptureConfiguration(config) || !unlocked(context)) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
                 if (dedupeConfig != config || dedupeApp != windows.foreground || dedupeSize != (output.width to output.height)) { dedupeSignature = null; dedupeReference = null }
                 val dedupeMode = ScreenshotDedupeHelper.Mode.fromRaw(config.imageDedupeMode)
                 val features = if (config.imageDedupeMode != "off") features(output, dedupeMode) else null

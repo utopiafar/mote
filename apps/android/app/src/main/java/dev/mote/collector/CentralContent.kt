@@ -109,7 +109,8 @@ internal class CentralContent(
                 setOnClickListener { action() }
             }, LinearLayout.LayoutParams(moteDp(56), -2).apply { marginStart = moteDp(4) })
         }
-        headerAction("记录", "写一条随手记") { localPage("NOTES") }
+        headerAction("添加", "添加内容") { activity.showMoteAddActions() }
+        headerAction("设置") { localPage("SETTINGS") }
         headerAction("更多") { more() }
         root.addView(header)
         status = TextView(this).apply {
@@ -150,7 +151,7 @@ internal class CentralContent(
         if (endpoint.isBlank()) {
             server = ""; client = null; revision++; pending.clear(); screens?.close(); screens?.clearPrivateState(); body.removeAllViews(); collectionBar.visibility = View.GONE
             title.text = MoteI18n.text("中央节点")
-            text(MoteI18n.text("先在连接设置选择中央节点，再登录中央管理页面。"))
+            text(MoteI18n.text("中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和随手记仍可在本机保存。"))
             connectionButton()
             return
         }

@@ -16,7 +16,7 @@ export function defaultConfig(): Config {
     uiPageMode:'screen_only', uiPageRules:[],
     uploadGate: uploadGateConfig(undefined),
     serverUrl: 'http://127.0.0.1:47832', deviceId: randomUUID(), deviceName: hostname(),
-    syncMode: 'batch', syncIntervalMinutes: 1, syncBatchSize: 100, packedUpload:true,
+    syncPaused:false, syncMode: 'batch', syncIntervalMinutes: 1, syncBatchSize: 100, packedUpload:true,
     intervalMs: 15000, maxQueueBytes: 512 * 1024 * 1024, maxQueueEvents: 10000, captureStorageDirectory: '', notificationCollectionEnabled: false,
     defaultCollection: 'content', appCollectionRules: {}, masks: [], idlePauseSeconds: 300,
     openAtLogin: false,
@@ -70,6 +70,7 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
   if (typeof input.openAtLogin !== 'boolean') throw new Error(moteText("开关值不正确"));
   if (typeof input.diagnosticsEnabled !== 'boolean' || typeof input.pauseOnBattery !== 'boolean') throw new Error(moteText("诊断或电量策略开关值无效"));
   if (input.token !== undefined && (typeof input.token !== 'string' || input.token.length > 4096 || /[\r\n]/.test(input.token))) throw new Error(moteText("令牌格式不正确"));
+  if(input.syncPaused!==undefined&&typeof input.syncPaused!=='boolean')throw new Error('Invalid paused sync setting');
   const syncMode = input.syncMode ?? current.syncMode;
   if (!['realtime', 'interval', 'batch', 'manual'].includes(syncMode)) throw new Error(moteText("同步方式无效"));
   const serverUrl = input.serverUrl === '' ? '' : validateServerUrl(input.serverUrl);
@@ -80,7 +81,7 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
     uiPageRules:uiRulesSchema.parse(input.uiPageRules??current.uiPageRules),
     uploadGate: uploadGateConfig(input.uploadGate ?? current.uploadGate),
     serverUrl,
-    syncMode, syncIntervalMinutes: integer(input.syncIntervalMinutes ?? current.syncIntervalMinutes, 1, 1440, moteText("同步间隔（分钟）")), syncBatchSize: integer(input.syncBatchSize ?? current.syncBatchSize, 1, 500, moteText("批量同步条数")), deviceId: current.deviceId, deviceName: input.deviceName.trim(),
+    syncPaused: input.syncPaused ?? current.syncPaused ?? false, syncMode, syncIntervalMinutes: integer(input.syncIntervalMinutes ?? current.syncIntervalMinutes, 1, 1440, moteText("同步间隔（分钟）")), syncBatchSize: integer(input.syncBatchSize ?? current.syncBatchSize, 1, 500, moteText("批量同步条数")), deviceId: current.deviceId, deviceName: input.deviceName.trim(),
     intervalMs: integer(input.intervalMs, 5000, 300000, moteText("采样间隔（毫秒）")),
     maxQueueBytes: integer(input.maxQueueBytes, 1024 * 1024, 20 * 1024 * 1024 * 1024, moteText("本地队列容量")),
     maxQueueEvents: integer(input.maxQueueEvents, 1, 1000000, moteText("本地队列事件数")),
@@ -126,7 +127,7 @@ export class ConfigStore {
       if(stored.version!==DESKTOP_STORAGE_VERSION)throw Error(RESET_REQUIRED);
       if (!stored.config || typeof stored.config.deviceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(stored.config.deviceId)) throw new Error(moteText("设备标识无效"));
       // Never accept a plaintext token from a tampered or legacy configuration.
-      const required=Object.keys(defaultConfig());
+      const required=Object.keys(defaultConfig()).filter(key=>key!=='syncPaused');
       if(required.some(key=>!Object.hasOwn(stored.config,key))||['excludedAppIds','localContentEncryption','ocrEnabled','ocrOnlyWhileCharging'].some(key=>Object.hasOwn(stored.config,key)))throw Error(RESET_REQUIRED);
       const current: Config = { ...Object.fromEntries(Object.entries(stored.config).filter(([key]) => !retiredModelKeys.includes(key))), token: undefined } as Config;
       if (stored.encryptedToken) {

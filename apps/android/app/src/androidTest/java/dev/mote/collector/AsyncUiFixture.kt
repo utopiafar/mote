@@ -36,7 +36,7 @@ fun ActivityScenario<MainActivity>.awaitMainUi(): ActivityScenario<MainActivity>
     while (!ready && SystemClock.elapsedRealtime() < deadline) {
         onActivity { activity ->
             val rows = views(activity.window.decorView).toList()
-            ready = rows.filterIsInstance<TextView>().any { it.isShown && it.isClickable && it.text.toString() == MoteI18n.text("记录") }
+            ready = rows.any { it is MotePrimaryNavigation && it.isShown }
         }
         if (!ready) Thread.sleep(25)
     }
@@ -61,4 +61,18 @@ fun <T : Activity> ActivityScenario<T>.resumeGeneratedTask(): ActivityScenario<T
     assertEquals("The OS must actually resume the existing task", androidx.lifecycle.Lifecycle.State.RESUMED, state)
     onActivity { assertSame("Returning must preserve the existing Activity", original, it); assertEquals(taskId, it.taskId) }
     return this
+}
+
+/** Follow the product's shared Add menu; direct private-page construction is not an entry-point check. */
+fun Activity.openGeneratedAdd(action: MoteAddAction) {
+    fun views(root: View): List<View> = buildList { add(root); if (root is ViewGroup) repeat(root.childCount) { addAll(views(root.getChildAt(it))) } }
+    if (views(window.decorView).filterIsInstance<TextView>().none { it.isShown && it.isClickable && it.text.toString() == MoteI18n.text("添加") }) {
+        views(window.decorView).single { it.isShown && it.tag == "primary:TODAY" }.performClick()
+    }
+    views(window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == MoteI18n.text("添加") }.performClick()
+    val list = android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap(::views)
+        .filterIsInstance<android.widget.ListView>().single { it.isShown && it.adapter != null }
+    val index = (0 until list.adapter.count).single { list.adapter.getItem(it).toString() == MoteI18n.text(action.titleKey) }
+    val row = list.getChildAt(index - list.firstVisiblePosition) ?: list.adapter.getView(index, null, list)
+    assertTrue("Native Add list must activate the chosen action", list.performItemClick(row, index, list.adapter.getItemId(index)))
 }

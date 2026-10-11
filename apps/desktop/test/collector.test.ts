@@ -457,3 +457,25 @@ describe.skipIf(process.platform!=='darwin')('capture user journeys',()=>{
   }finally{clock.mockRestore();}
  });
 });
+
+it('a global send pause blocks explicit retries and heartbeat without changing the configured cadence',async()=>{
+  const {event,image}=await import('./fixtures');const {collector,queue}=await makeCollector({syncMode:'manual'});await queue.enqueue(event(),image);
+  await collector.setSyncPaused(true);await collector.retry();await (collector as any).sendHeartbeat(true);
+  expect(fetch).not.toHaveBeenCalled();expect(queue.stats().depth).toBe(1);expect(collector.status().config).toMatchObject({syncMode:'manual',syncPaused:true});
+  vi.mocked(fetch).mockImplementation(async (_url,init)=>new Response(JSON.stringify(captureAck(JSON.parse(await new Response(init!.body).text()).id)),{status:201}));
+  await collector.setSyncPaused(false);expect(queue.stats().depth).toBe(1);await collector.retry();expect(queue.stats().depth).toBe(0);expect(collector.status().config.syncMode).toBe('manual');
+});
+
+it.skipIf(process.platform!=='darwin')('pausing sends preserves an active local recording and its measured sampling continuity',async()=>{
+  const {collector,queue}=await makeCollector({syncMode:'manual',metadataEnabled:false,defaultCollection:'activity',intervalMs:300000});
+  await collector.start();await collector.settleCapture();const sample=(collector as any).lastSample,timer=(collector as any).timer;
+  await collector.setSyncPaused(true);expect(collector.status().running).toBe(true);expect((collector as any).lastSample).toBe(sample);expect((collector as any).timer).toBe(timer);
+  mocks.foreground.mockResolvedValue({appId:'dev.mote.generated.second',appName:'Generated second app',pid:2});
+  await (collector as any).capture();await collector.settleCapture();expect(queue.stats().depth).toBeGreaterThanOrEqual(2);await collector.retry();await (collector as any).sendHeartbeat(true);expect(fetch).not.toHaveBeenCalled();expect(collector.status().running).toBe(true);
+});
+
+it('changes the non-secret authorization epoch when credentials change, including same node renewal',async()=>{
+  const {collector}=await makeCollector();const generation=collector.status().authorizationGeneration;
+  collector.updateConfig({...fixtureConfig(),token:'new-generated-token'});expect(collector.status().authorizationGeneration).toBe((generation??0)+1);
+  expect(JSON.stringify(collector.status())).not.toContain('new-generated-token');
+});

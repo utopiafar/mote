@@ -102,3 +102,29 @@ it('previews only the retained source version, never reading the source path', a
   expect(fetch).not.toHaveBeenCalled();
   await expect(read(run, key)).rejects.toThrow('本机副本');
 });
+
+it('separates ACK and extracted text from a current, fully covered indexed Material', async()=>{
+  const {run,item}=receipt();
+  const record={id:item.captureId,deviceId:config.deviceId,source:'note',ocrText:'Generated complete evidence',ocr:{status:'completed'},memoryMaterialRef:'material:generated@revision-2'};
+  for(const [material,readiness] of [
+    [{ref:'material:generated@revision-2',revision:'revision-2',coverage:{state:'complete'},indexing:{state:'indexed',revision:'revision-2'}},'ready'],
+    [{ref:'material:generated@revision-2',revision:'revision-2',coverage:{state:'partial'},indexing:{state:'indexed',revision:'revision-2'}},'pending'],
+    [{ref:'material:generated@revision-2',revision:'revision-2',coverage:{state:'complete'},indexing:{state:'indexed',revision:'revision-1'}},'unknown'],
+    [{ref:'material:generated@revision-1',revision:'revision-1',coverage:{state:'complete'},indexing:{state:'indexed',revision:'revision-1'}},'unknown'],
+  ] as const){vi.mocked(fetch).mockImplementation(async url=>new Response(JSON.stringify(String(url).includes('/materials/')?material:record)));expect((await read(run,item.key)).readiness).toBe(readiness);}
+  vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({...record,memoryMaterialRef:undefined})));expect((await read(run,item.key)).readiness).toBe('unknown');
+});
+
+it('drops readable evidence when Material authorization is revoked, rather than swallowing the denial',async()=>{
+  const {run,item}=receipt();
+  vi.mocked(fetch).mockImplementation(async url=>String(url).includes('/materials/')?new Response('{}',{status:403}):new Response(JSON.stringify({id:item.captureId,deviceId:config.deviceId,ocrText:'Generated private evidence',memoryMaterialRef:'material:generated@revision'})));
+  await expect(read(run,item.key)).rejects.toThrow('权限');
+});
+
+it('uses the stored file manifest for reference and current original availability, and reports text preview truncation',async()=>{
+  const {run,key}=fileReceipt();
+  vi.mocked(fetch).mockImplementation(async url=>new Response(JSON.stringify(String(url).includes('/chunks')?{items:[{ocrText:'x'.repeat(100001)}]}:String(url).includes('/api/files/')?{item:{layer:'snapshot'},hasOriginal:false}:{id:event().id,deviceId:config.deviceId,source:'file',fileArchive:{},provenance:{sourceId:source.id,layer:'snapshot'}})));
+  expect(await read(run,key)).toMatchObject({retainsOriginal:false,truncated:true,text:'x'.repeat(100000)});
+  vi.mocked(fetch).mockImplementation(async url=>new Response(JSON.stringify(String(url).includes('/api/files/')?{item:{layer:'reference'},hasOriginal:false}:{id:event().id,deviceId:config.deviceId,source:'file',fileArchive:{},provenance:{sourceId:source.id,layer:'reference'}})));
+  expect(await read(run,key)).toMatchObject({metadataOnly:true,readiness:'metadata',retainsOriginal:false});
+});

@@ -1,3 +1,4 @@
+import {createContentLibraryUi} from './content-library-ui';
 import {createSyncHistoryUi} from './sync-history-ui';
 import {nativeStatusSummary} from './native-status';
 import { renderAskAnswer, renderAskCitation } from './ask-presentation';
@@ -24,6 +25,8 @@ let wasRunningBeforeSave = false;
 let pageRevision = 0;
 const pageScroll = new Map<Page, number>();
 const settingsPages = new Set<Page>(['connection', 'sync', 'capture', 'privacy', 'developer']);
+const libraryUi=createContentLibraryUi(desktopApi);
+function refreshContent():Promise<void>{return libraryUi.refresh();}
 const syncHistoryUi = createSyncHistoryUi(desktopApi, page => showPage(page));
 let setupReviewed = false;
 try { setupReviewed = localStorage.getItem('mote-desktop-collection-reviewed') === '1'; } catch { /* Collection remains usable without local storage. */ }
@@ -66,7 +69,9 @@ function showPage(page: Page, focus = true, preserveSettingsDraft = false): bool
   if (page === 'ask') void refreshAsk();
   if (page === 'permissions') void refreshPermissions();
   if (page === 'statistics') void loadStorageStatistics();
-  if (page === 'records') void loadRecords();
+  if (page === 'records') { void loadRecords(); void refreshContent(); }
+  if (page === 'overview' && initialized) { void refreshContent(); void refreshSources(); }
+  if (page === 'sources') void refreshSources();
   if (page === 'overview' && initialized) void desktopApi.status().then(render).catch(() => feedback(moteText("状态读取失败，请重试。")));
   return true;
 }
@@ -75,11 +80,17 @@ for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-na
   if (pageNames.includes(page)) showPage(page);
 });
 byId('workspace-back').addEventListener('click', () => showPage(navigation.backTarget));
-function updateNoteAction(): void {
-  const secondary = currentPage === 'overview' && !byId('setup-prompt').hidden;
-  byId('note-action').classList.toggle('primary', !secondary);
-  byId('note-action').classList.toggle('secondary', secondary);
-}
+function updateNoteAction(): void { byId('note-action').classList.add('primary'); }
+const addDialog=byId<HTMLDialogElement>('add-dialog');
+let addOrigin:HTMLElement|undefined;
+for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-add]'))) button.addEventListener('click',()=>{addOrigin=button;addDialog.showModal();});
+byId('add-close').addEventListener('click',()=>{addDialog.close();addOrigin?.focus();});
+for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-add-choice]'))) button.addEventListener('click',()=>{
+  addDialog.close(); const action=button.dataset.addChoice;
+  if(action==='note')showPage('notes');
+  else if(action==='screen')showPage('screen');
+  else if(action==='folder'||action==='file')void beginSourceSelection(action==='folder'?'directory':'files');
+});
 function reviewCollectionSetup(): void {
   setupReviewed = true;
   try { localStorage.setItem('mote-desktop-collection-reviewed', '1'); } catch { /* This preference is not required for capture. */ }
@@ -87,6 +98,7 @@ function reviewCollectionSetup(): void {
 }
 byId('setup-primary').addEventListener('click', () => { if (showPage('privacy')) reviewCollectionSetup(); });
 byId('setup-current').addEventListener('click', () => { reviewCollectionSetup(); byId('start').focus(); });
+byId('pause-sending').addEventListener('click',()=>void perform(async()=>{ const updated=await desktopApi.setSyncPaused(!currentStatus.config.syncPaused); render(updated); }));
 function updateSettingsHint(): void {
   byId('settings-save-bar').hidden = !settingsPages.has(currentPage);
   byId('settings-pending').hidden = !settingsDirty;
@@ -293,8 +305,9 @@ byId('capture-directory-default').addEventListener('click', () => { captureStora
 byId('capture-directory-open').addEventListener('click', () => void perform(() => desktopApi.openCaptureDirectory()));
 let connectionPreview: import('./connection').ConnectionPreview | undefined;
 function render(status: import('./contracts').Status): void {
-  syncHistoryUi.update(status);
-  if(currentStatus&&(currentStatus.config.serverUrl!==status.config.serverUrl||currentStatus.config.tokenConfigured!==status.config.tokenConfigured||currentStatus.config.authSignedOut!==status.config.authSignedOut||currentStatus.config.authExpiresAt!==status.config.authExpiresAt)){
+  syncHistoryUi.update(status);libraryUi.update(status);
+  if(currentStatus&&(currentStatus.authorizationGeneration!==status.authorizationGeneration||currentStatus.config.serverUrl!==status.config.serverUrl||currentStatus.config.tokenConfigured!==status.config.tokenConfigured||currentStatus.config.authSignedOut!==status.config.authSignedOut||currentStatus.config.authExpiresAt!==status.config.authExpiresAt)){
+    recordsRevision++;closeRecordDetail();byId('records-grid').replaceChildren();byId('record-detail-title').textContent='';byId('record-detail-meta').textContent='';byId('record-detail-text').textContent='';
     askGeneration++;clearTimeout(askTimer);askRun=undefined;askConversation=undefined;askPendingInput=undefined;byId('ask-history').replaceChildren();renderAsk();setText('ask-login-status','');
   }
   currentStatus = status; renderStorage();
@@ -328,6 +341,9 @@ function render(status: import('./contracts').Status): void {
   const firstCollection = needsCollectionSetup({ reviewed: setupReviewed, running: status.running, hasCapture: Boolean(status.lastCaptureAt), queuedRecords: status.queueDepth, recoveryRequired: status.state === 'error' || Boolean(status.storage?.recoveryRequired) });
   byId('setup-prompt').hidden = !firstCollection;
   byId('collection-workbench').hidden = firstCollection;
+  setText('home-sync-line', status.config.syncPaused ? moteText('全部发送已暂停；本机记录与来源检查继续') : !hasCentralConnection ? moteText('内容先保存在本机，连接中央后可搜索与提问') : status.sync.message);
+  setText('pause-sending',status.config.syncPaused?moteText('恢复全部发送'):moteText('暂停全部发送'));
+  byId<HTMLButtonElement>('retry').disabled=busy||Boolean(status.config.syncPaused);
   updateNoteAction();
   byId('central-status').className = `central-status ${centralState}`;
   byId('central-status-icon').className = `central-status-icon ${centralState}`;
@@ -393,7 +409,7 @@ function render(status: import('./contracts').Status): void {
   if (status.diagnostics?.enabled) { const c = status.diagnostics.counters; statistics.push(moteText("诊断累计：保存 {0} · 过滤 {1} · 失败 {2} · 截图文字隐私审查 {3} s", c.saved, c.blocked, c.failed, (c.ocrMs / 1000).toFixed(1)), moteText("累计上传请求体约 {0} MiB；不代表远端存储量。", (c.uploadedBytes / 1048576).toFixed(2))); }
   else statistics.push(moteText("数值诊断未开启；如需持续处理计数、资源与耗时，请在开发者设置中启用。"));
   byId('collection-statistics').replaceChildren(...statistics.map(text => { const p = document.createElement('p'); p.textContent = text; return p; }));
-  if (!initialized) { fillConfig(status.config); initialized = true; }
+  if (!initialized) { fillConfig(status.config); initialized = true;void refreshContent(); }
 }
 async function perform(action: () => Promise<unknown>): Promise<void> {
   if (busy) return;
@@ -422,7 +438,7 @@ byId('settings').addEventListener('submit', event => {
     settingsApplying = true; wasRunningBeforeSave = currentStatus.running; render(currentStatus);
     let updated: import('./contracts').Status;
     try { updated = await desktopApi.configure({
-      captureStorageDirectory,
+      syncPaused:currentStatus.config.syncPaused, captureStorageDirectory,
       uiPageMode:readInput('ui-page-mode') as import('@mote/shared').UiMode, uiPageRules:JSON.parse(readInput('ui-page-rules')||'[]'),
       notificationCollectionEnabled: byId<HTMLInputElement>('notification-collection').checked,
       metadataEnabled: byId<HTMLInputElement>('metadata-enabled').checked,
@@ -443,8 +459,22 @@ byId('settings').addEventListener('submit', event => {
     render(updated); fillConfig(updated.config); feedback(updated.running ? moteText("设置已保存并立即生效，采集已恢复。") : moteText("设置已保存并立即生效，采集保持停止。"), true);
   });
 });
+const captureConfirmation=byId<HTMLDialogElement>('capture-confirm-dialog');
+let captureConfirmedConfig='';
+function showCaptureConfirmation():void {
+  const config=currentStatus.config;captureConfirmedConfig=JSON.stringify(config);
+  const levels={content:moteText('完整内容'),activity:moteText('仅应用活动'),off:moteText('不记录')};
+  byId('capture-confirm-range').textContent=[moteText('未单独配置的应用：{0}',levels[config.defaultCollection]),...Object.entries(config.appCollectionRules).map(([id,mode])=>`${id} · ${levels[mode]}`),moteText('固定遮挡：{0} 个区域',config.masks.length)].join('\n');
+  byId('capture-confirm-destination').textContent=config.serverUrl?moteText('先保存本机，再按发送策略发送到：{0}',config.serverUrl):moteText('尚未连接中央，先保存在本机');
+  captureConfirmation.showModal();
+}
 byId('start').addEventListener('click', () => {
   if (settingsDirty) { showPage('settings'); feedback(moteText("请先保存或还原修改，再开始采集。")); return; }
+  showCaptureConfirmation();
+});
+byId('capture-confirm-cancel').addEventListener('click',()=>{captureConfirmation.close();byId('start').focus();});
+byId('capture-confirm-start').addEventListener('click',()=>{
+  captureConfirmation.close();if(captureConfirmedConfig!==JSON.stringify(currentStatus.config)){showCaptureConfirmation();return;}
   void perform(async () => {
     const permissions = await desktopApi.permissionStatus();
     if ((currentStatus.config.defaultCollection === 'content' || Object.values(currentStatus.config.appCollectionRules).includes('content')) && permissions.screen !== 'granted') { window.alert(moteText("屏幕录制尚未授权，请在权限管理中开启。")); showPage('permissions'); return; }
@@ -497,7 +527,7 @@ byId('note-form').addEventListener('submit', event => {
   noteSaving = true; lockNote(true);
   void perform(async () => {
     try {
-      const result = await desktopApi.saveNote(input); renderDraft(result.draft);
+      const result = await desktopApi.saveNote(input); renderDraft(result.draft);void refreshContent();
       byId('note-feedback').textContent = currentStatus.sync.state === 'unconfigured' ? moteText("已保存到本机。连接节点并确认后，再按你的策略同步。") : moteText("已保存到本机 · {0}上传。中央确认后清理待传记录。", syncModeLabels[currentStatus.config.syncMode]);
     } catch (error) {
       const message = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : moteText("保存未完成，请重试");
@@ -557,13 +587,43 @@ byId('support-export').addEventListener('click', () => void perform(async () => 
 let localSourceRows: import('./source-types').SourceStatus[] = [];
 let sourceEditingId: string | undefined;
 let sourceBusy = false;
+let sourceSelection:{id:string;mode:'files'|'directory';names:string[]}|undefined;
+const sourceRules=byId<HTMLDetailsElement>('source-rules');
+const sourceRulesHome=sourceRules.parentElement!;
+function restoreSourceRules():void {sourceRulesHome.append(sourceRules);sourceRules.open=false;byId<HTMLSelectElement>('source-initial-sync').disabled=false;}
+function updateSourceHistoryChoice():void {const field=byId<HTMLSelectElement>('source-initial-sync'),once=sourceSelection?.mode==='files'&&!byId<HTMLInputElement>('source-continuous').checked;field.disabled=Boolean(once);if(once)field.value='all';}
+byId('source-continuous').addEventListener('change',updateSourceHistoryChoice);
+async function beginSourceSelection(mode:'files'|'directory'):Promise<void>{
+  if(sourceBusy||!showPage('sources'))return;
+  await sourceAction(async()=>{
+    const result=await desktopApi.selectSourceFiles(mode);if(result.canceled||!result.selectionId)return;
+    if(sourceSelection)await desktopApi.cancelSourceFiles(sourceSelection.id);
+    sourceSelection={id:result.selectionId,mode,names:result.names??[]};sourceEditingId=undefined;
+    byId('source-confirmation').hidden=false;byId('source-selected-names').textContent=sourceSelection.names.join('\n');
+    byId('source-confirm-title').textContent=mode==='directory'?moteText('确认同步文件夹'):moteText('确认导入文件');
+    byId<HTMLInputElement>('source-continuous').checked=mode==='directory';byId<HTMLInputElement>('source-continuous').disabled=mode==='directory';
+    byId('source-destination').textContent=currentStatus?.config.serverUrl?moteText('发送到：{0}',currentStatus.config.serverUrl):moteText('尚未连接中央，先保存在本机');
+    byId<HTMLSelectElement>('source-initial-sync').value='all';byId<HTMLSelectElement>('source-retention').value='snapshot';
+    updateSourceHistoryChoice();
+    byId('source-edit-continuous-row').hidden=true;byId('source-save-edit').hidden=true;byId('source-cancel-edit').hidden=true;
+    byId('source-confirm-rules').append(sourceRules);sourceRules.open=true;refreshSourceTextOptions();
+    byId('source-confirm-title').scrollIntoView({block:'start'});
+  });
+}
+byId('source-selection-cancel').addEventListener('click',()=>{if(sourceSelection)void desktopApi.cancelSourceFiles(sourceSelection.id);sourceSelection=undefined;byId('source-confirmation').hidden=true;restoreSourceRules();});
+byId('source-confirm').addEventListener('click',()=>void sourceAction(async()=>{
+  if(!sourceSelection)return;const selected=sourceSelection;await desktopApi.confirmSourceFiles(selected.id,{...sourceOptions(),initialSync:selected.mode==='files'&&!byId<HTMLInputElement>('source-continuous').checked?'all':sourceOptions().initialSync,syncContinuously:byId<HTMLInputElement>('source-continuous').checked});
+  sourceSelection=undefined;byId('source-confirmation').hidden=true;restoreSourceRules();await refreshContent();
+}));
 function sourceOptions(): import('./source-types').SourceOptions {
-  return { centralProcessingConsent:true, initialSync: readInput('source-initial-sync') as 'all' | 'new_only', indexMode:'full',allowRead:readInput('source-retention')==='snapshot'&&byId<HTMLInputElement>('source-allow-read').checked,retention: readInput('source-retention') as 'snapshot' | 'reference' | 'archive', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) };
+  return { syncContinuously:sourceEditingId?byId<HTMLInputElement>('source-edit-continuous').checked:sourceSelection?byId<HTMLInputElement>('source-continuous').checked:true,centralProcessingConsent:true, initialSync: readInput('source-initial-sync') as 'all' | 'new_only', indexMode:'full',allowRead:readInput('source-retention')==='snapshot'&&byId<HTMLInputElement>('source-allow-read').checked,retention: readInput('source-retention') as 'snapshot' | 'reference' | 'archive', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) };
 }
 function editSource(id?: string): void {
+  if(sourceSelection){void desktopApi.cancelSourceFiles(sourceSelection.id);sourceSelection=undefined;byId('source-confirmation').hidden=true;}restoreSourceRules();
   sourceEditingId = id;
   const source = localSourceRows.find(s => s.source.id === id)?.source;
   byId('source-editor-title').textContent = source ? moteText("编辑：") + source.name : moteText("新来源的保留与过滤规则");
+  byId('source-edit-continuous-row').hidden=!source||source.kind!=='local-files';byId<HTMLInputElement>('source-edit-continuous').checked=source?.syncContinuously!==false;
   byId('source-save-edit').hidden = !source; byId('source-cancel-edit').hidden = !source;
   if (!source) { refreshSourceTextOptions(); return; }
   const editor = byId('source-editor-title').closest('details');
@@ -589,6 +649,9 @@ async function refreshSources(): Promise<void> {
   try {
   const rows = await desktopApi.sources(); localSourceRows = rows;
   const list = byId('source-list'); list.replaceChildren();
+  const home=byId('home-sources');home.replaceChildren();
+  if(!rows.length){const empty=document.createElement('p');empty.className='helper';empty.textContent=moteText('同步文件夹后，它会出现在这里。也可以连接日历与编码对话。');home.append(empty);}
+  for(const row of rows){const button=document.createElement('button');button.type='button';button.className='home-source';const title=document.createElement('strong');title.textContent=row.source.name;const state=document.createElement('span');state.textContent=row.source.syncContinuously===false?moteText('单次导入'):row.source.enabled?row.message:moteText('本机已暂停');button.append(title,state);button.addEventListener('click',()=>{if(showPage('sources'))editSource(row.source.id);});home.append(button);}
   if (!rows.length) { const p = document.createElement('p'); p.className = 'helper'; p.textContent = moteText("尚未连接本地来源。选择只包含你希望归档资料的目录。"); list.append(p); }
   for (const row of rows) {
     const card = document.createElement('article'); card.className = 'source-card';
@@ -597,7 +660,7 @@ async function refreshSources(): Promise<void> {
     const status = document.createElement('p'); status.className = 'helper'; status.textContent = moteText("{0} · {1} 项 · 待传 {2} · 跳过 {3}{4}", row.source.enabled ? row.message : moteText("本机已暂停"), row.items, row.pending, row.skipped, row.lastSyncAt ? moteText(" · 最近同步 ") + new Date(row.lastSyncAt).toLocaleString(getLocale()) : '') + (row.facts ? `\n${nativeStatusSummary(row.facts)}` : '');
     const actions = document.createElement('div'); actions.className = 'actions';
     const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'secondary'; edit.textContent = moteText("编辑规则"); edit.addEventListener('click', () => editSource(row.source.id));
-    const pause = document.createElement('button'); pause.type = 'button'; pause.className = 'secondary'; pause.textContent = row.source.enabled ? moteText("暂停本机同步") : moteText("恢复本机同步"); pause.disabled = sourceBusy;
+    const pause = document.createElement('button'); pause.type = 'button'; pause.className = 'secondary'; pause.textContent = row.source.enabled ? moteText("暂停这个来源") : moteText("恢复这个来源"); pause.disabled = sourceBusy;
     pause.addEventListener('click', () => void sourceAction(async () => { await desktopApi.updateSource(row.source.id, { ...row.source, enabled: !row.source.enabled }); }));
     actions.append(edit, pause); card.append(title, detail, status);
     if(row.blocked){
@@ -612,12 +675,12 @@ async function refreshSources(): Promise<void> {
 }
 async function sourceAction(action: () => Promise<void>): Promise<void> {
   if (sourceBusy) return; sourceBusy = true; byId('source-feedback').textContent = moteText("正在处理，请稍候…");
-  for (const id of ['source-agent-discover', 'source-agent-add', 'source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-save-edit', 'source-sync']) byId<HTMLButtonElement>(id).disabled = true;
+  for (const id of ['source-agent-discover', 'source-agent-add', 'source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-save-edit', 'source-sync', 'source-confirm']) byId<HTMLButtonElement>(id).disabled = true;
   try { await action(); byId('source-feedback').textContent = moteText("已处理，下面显示各来源的当前同步状态。"); }
   catch (error) { byId('source-feedback').textContent = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : moteText("操作未完成，请检查权限与配置后重试"); }
-  finally { sourceBusy = false; for (const id of ['source-agent-discover', 'source-agent-add', 'source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-save-edit', 'source-sync']) byId<HTMLButtonElement>(id).disabled = false; await refreshSources().catch(() => {}); }
+  finally { sourceBusy = false; for (const id of ['source-agent-discover', 'source-agent-add', 'source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-save-edit', 'source-sync', 'source-confirm']) byId<HTMLButtonElement>(id).disabled = false; await refreshSources().catch(() => {}); }
 }
-for (const mode of ['files', 'directory'] as const) byId('source-' + mode).addEventListener('click', () => void sourceAction(async () => { await desktopApi.chooseSourceFiles(mode, sourceOptions()); }));
+for (const mode of ['files','directory'] as const)byId('source-'+mode).addEventListener('click',()=>void beginSourceSelection(mode));
 byId('source-calendar-connect').addEventListener('click', () => void sourceAction(async () => {
   const permissions = await desktopApi.permissionStatus();
   if (permissions.calendar === 'denied') { window.alert(moteText("日历访问尚未授权，请在权限管理中开启。")); showPage('permissions'); return; }

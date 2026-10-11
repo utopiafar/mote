@@ -178,8 +178,7 @@ class PowerOptimizationInstrumentedTest {
             settings.save(original.copy(ocrMode = "dual"))
             ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.onActivity { activity ->
-                    views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == "本机" }.performClick()
-                    views(activity.window.decorView).single { it.isShown && it.tag == "menu:按应用配置" }.performClick()
+                    activity.openGeneratedAdd(MoteAddAction.SCREEN)
                     views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.text.toString() == "高级：截图文字隐私审查" }.performClick()
                     val selectors = views(activity.window.decorView).filterIsInstance<Spinner>()
                     val ocr = selectors.single { it.adapter.count == 3 && it.adapter.getItem(0).toString() == "中文与拉丁文（单引擎）" }

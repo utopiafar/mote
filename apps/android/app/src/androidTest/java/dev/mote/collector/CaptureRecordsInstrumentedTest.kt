@@ -34,7 +34,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
-/** Generated bitmaps only. Never requests screen capture, personal files, or a vision model. */
+/** Dedicated API 35/37 Dev fixtures with generated bitmaps only. Never requests personal capture or a model. */
 @RunWith(AndroidJUnit4::class)
 class CaptureRecordsInstrumentedTest {
     private var previousLanguage = "system"
@@ -52,7 +52,9 @@ class CaptureRecordsInstrumentedTest {
     private fun fixture(test: (Context, Settings, MutableList<String>) -> Unit) {
         val context = instrumentation.targetContext; val settings = Settings(context)
         require(context.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
-        require(shell("getprop ro.boot.qemu.avd_name").trim() == "mote_fixture_api35")
+        val avd = shell("getprop ro.boot.qemu.avd_name").trim()
+        require((avd == "mote_fixture_api35" && Build.VERSION.SDK_INT == 35) ||
+            (avd == "mote_fixture_api37" && Build.VERSION.SDK_INT == 37))
         require(!settings.enabled && context.queue().depth() == 0)
         val prefs = context.getSharedPreferences("mote", 0); val original = prefs.all.toMap(); val ids = mutableListOf<String>()
         fun cancel() { listOf("mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload", "mote-capture-ocr", "mote-capture-ocr-recovery").forEach {

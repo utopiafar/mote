@@ -9,6 +9,14 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class NotesDiagnosticsInstrumentedTest {
+    private var previousLanguage = "system"
+    @org.junit.Before fun fixtureLanguage() {
+        previousLanguage = MoteI18n.preference()
+        MoteI18n.select(InstrumentationRegistry.getInstrumentation().targetContext, "zh-CN")
+    }
+    @org.junit.After fun restoreLanguage() {
+        MoteI18n.select(InstrumentationRegistry.getInstrumentation().targetContext, previousLanguage)
+    }
     @Test fun readableDraftRestoresNativeEditorAfterActivityRecreation() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val drafts = QuickNotes.draft(context); drafts.clear()
@@ -22,7 +30,7 @@ class NotesDiagnosticsInstrumentedTest {
             try {
                 activity.onActivity { a ->
                     fun views(v: android.view.View): List<android.view.View> = listOf(v) + if (v is android.view.ViewGroup) (0 until v.childCount).flatMap { views(v.getChildAt(it)) } else emptyList()
-                    views(a.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString() == "记录" }.performClick()
+                    a.openGeneratedAdd(MoteAddAction.NOTE)
                 }
                 val deadline=System.currentTimeMillis()+10000; var ready=false
                 while(!ready && System.currentTimeMillis()<deadline){activity.onActivity { ready=editor(it.window.decorView)?.isEnabled==true };if(!ready)Thread.sleep(25)}

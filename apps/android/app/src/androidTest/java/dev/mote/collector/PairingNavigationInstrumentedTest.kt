@@ -42,8 +42,13 @@ class PairingNavigationInstrumentedTest {
     }
     private fun editor(activity: Activity, hint: String) = views(activity.window.decorView).filterIsInstance<EditText>().single { it.hint?.toString() == hint }
     private fun click(activity: Activity, text: String) = views(activity.window.decorView).filterIsInstance<TextView>()
-        .single { it.isShown && it.isClickable && it.text.toString() == (if (text == "设置") "本机" else if (text == "概览") "今天" else text) }.performClick()
-    private fun menu(activity: Activity, label: String) = views(activity.window.decorView).single { it.isShown && it.tag == "menu:$label" }.performClick()
+        .single { it.isShown && it.isClickable && it.text.toString() == (if (text == "设置") "设置" else if (text == "概览") "首页" else text) }.performClick()
+    private fun menu(activity: Activity, label: String) {
+        if (views(activity.window.decorView).none { it.isShown && it.tag == "menu:$label" }) {
+            views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == "高级与维护" }.performClick()
+        }
+        views(activity.window.decorView).single { it.isShown && it.tag == "menu:$label" }.performClick()
+    }
     private fun saveVisible(activity: Activity) = views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString() == "保存设置" }
 
     @Test fun confirmedScannedInvitationSurvivesReturnReentryAndAnotherSettingsSave() {

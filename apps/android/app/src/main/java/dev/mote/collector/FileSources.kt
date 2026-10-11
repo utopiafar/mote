@@ -31,7 +31,9 @@ class FileSources(private val context: Context, private val cancel: Cancellation
         if (!c.isNull(4) && c.getLong(4) > 0) item.put("modifiedAt", Instant.ofEpochMilli(c.getLong(4)).toString())
         item
     }
-    fun scan(source: LocalSource): Boolean = measured(EventStage.FILE_SCAN) { scanSlice(source) }
+    fun scan(source: LocalSource): Boolean = measured(EventStage.FILE_SCAN) {
+        if (!source.syncContinuously && context.fileArchives().configure(source).optBoolean("importCaptured")) true else scanSlice(source)
+    }
     private fun <T> measured(stage: EventStage, work: () -> T): T {
         val started = android.os.SystemClock.elapsedRealtime()
         SupportEvents.record(context, stage, EventCode.STARTED)
@@ -42,8 +44,11 @@ class FileSources(private val context: Context, private val cancel: Cancellation
         val queue = context.fileArchives(); val state = queue.configure(source); val generation = state.getString("generation"); val root = Uri.parse(source.uri)
         if (!source.tree) {
             val item = metadata(root, source) ?: throw IllegalStateException(MoteI18n.text("所选文件不可用"))
-            if (SourceRules.include(item.getString("title"), source)) queue.observe(source, item, generation)
-            queue.finish(source, generation) { false }; return true
+            val selected = SourceRules.include(item.getString("title"), source)
+            if (selected) queue.observe(source, item, generation)
+            queue.finish(source, generation) { false }
+            if (!source.syncContinuously && queue.pendingCount(source.id) == 0) queue.saveState(source.id, queue.state(source.id).put("importCaptured", true))
+            return true
         }
         val stack = state.optJSONArray("stack") ?: JSONArray().put(JSONObject().put("id", DocumentsContract.getTreeDocumentId(root)).put("offset", 0).put("path", ""))
         var examined = 0
@@ -82,7 +87,7 @@ class FileSources(private val context: Context, private val cancel: Cancellation
         }
         return false
     }
-    fun prepare(source: LocalSource, anchor: ((String) -> String?)? = null) = measured(EventStage.FILE_PREPARE) { context.fileArchives().prepare(source, anchor = anchor,
+    fun prepare(source: LocalSource, anchor: ((String) -> String?)? = null) = measured(EventStage.FILE_PREPARE) { context.fileArchives().prepare(source, captureImmediately = !source.syncContinuously && !source.tree, anchor = anchor,
         open = { resolver.openInputStream(Uri.parse(it.getString("uri"))) ?: throw IllegalStateException(MoteI18n.text("文件无法打开")) },
         unchanged = { old -> metadata(Uri.parse(old.getString("uri")), source)?.let { context.fileArchives().signature(it) == context.fileArchives().signature(JSONObject(old.toString()).apply { remove("_relativePath") }) } ?: false }) }
 }
@@ -118,7 +123,9 @@ object FileUpload {
         SupportEvents.record(context, stage, EventCode.STARTED)
         val connection = URL(config.server.trimEnd('/') + path).openConnection() as HttpURLConnection
         var status: Int? = null
+        HttpJson.track(connection, collectorSending = true)
         try {
+            SyncSchedule.requireConditions(context, config)
             connection.instanceFollowRedirects = false; connection.requestMethod = method; connection.connectTimeout = 15000; connection.readTimeout = 30000
             connection.setRequestProperty("Accept-Language", MoteI18n.language())
             connection.setRequestProperty("Authorization", "Bearer ${config.connectionToken()}")
@@ -128,7 +135,7 @@ object FileUpload {
             requireAccepted(status)
             val bytes = connection.inputStream.use { readResponse(it) }
             return JSONObject(String(bytes, Charsets.UTF_8)).also { SupportEvents.record(context, stage, EventCode.OK, android.os.SystemClock.elapsedRealtime() - started, status) }
-        } catch (error: Exception) { SupportEvents.record(context, stage, status?.takeIf { it !in 200..299 }?.let { EventJournal.httpFailure(it) } ?: EventJournal.failure(error, stage), android.os.SystemClock.elapsedRealtime() - started, status); throw error } finally { connection.disconnect() }
+        } catch (error: Exception) { SupportEvents.record(context, stage, status?.takeIf { it !in 200..299 }?.let { EventJournal.httpFailure(it) } ?: EventJournal.failure(error, stage), android.os.SystemClock.elapsedRealtime() - started, status); throw error } finally { HttpJson.untrack(connection); connection.disconnect() }
     }
     /** Originals yield between acknowledged parts; a yield never spends a failure attempt. */
     fun sync(context: Context, source: LocalSource, config: CollectorConfig, stillSelected: () -> Boolean): Boolean = sync(context, source, config, UploadSlice(), stillSelected)

@@ -16,7 +16,7 @@ async function until(fn){for(let i=0;i<200;i++){if(await fn())return;await sleep
 app.on('browser-window-created',(_event,window)=>window.webContents.once('did-finish-load',()=>{
  const js=s=>window.webContents.executeJavaScript(s);
  (async()=>{
-  await js(`document.querySelector('[data-nav="notes"]').click()`);
+  await js(`document.querySelector('#note-action').click();document.querySelector('#add-dialog [data-add-choice=note]').click()`);
   await until(()=>js('!document.querySelector("#note-text").disabled'));
   const text='合成输入法：组合阶段不应误保存。👩🏽‍💻 cafe\u0301\n第二行 <script>window.__fixtureExecuted=true</script>';
   await js(`document.querySelector('#note-text').dispatchEvent(new CompositionEvent('compositionstart'));document.querySelector('#note-text').value=${JSON.stringify(text)};document.querySelector('#note-text').dispatchEvent(new InputEvent('input',{bubbles:true,isComposing:true}));document.querySelector('#note-form').requestSubmit();`);

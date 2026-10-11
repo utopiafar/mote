@@ -9,7 +9,7 @@ class HeartbeatWorker(context: Context, params: WorkerParameters) : Worker(conte
     override fun doWork(): Result = ConnectionGuard.sync {
         val settings = Settings(applicationContext)
         val config = settings.read()
-        if (!config.hasSyncConnection() || config.syncMode == "manual") return@sync Result.success()
+        if (!config.hasSyncConnection() || config.syncPaused || config.syncMode == "manual") return@sync Result.success()
         if (inputData.getString("syncStamp") != SyncSchedule.stamp(config)) return@sync Result.success()
         try {
             config.validateConnection()
@@ -28,7 +28,7 @@ class HeartbeatWorker(context: Context, params: WorkerParameters) : Worker(conte
             val stamp = SyncSchedule.stamp(config)
             if (configured == stamp) return
             val work = WorkManager.getInstance(context)
-            if (!config.hasSyncConnection() || config.syncMode == "manual") {
+            if (!config.hasSyncConnection() || config.syncPaused || config.syncMode == "manual") {
                 work.cancelUniqueWork("mote-heartbeat"); work.cancelUniqueWork("mote-heartbeat-now")
             } else {
                 val request = PeriodicWorkRequestBuilder<HeartbeatWorker>(15, TimeUnit.MINUTES)
@@ -41,7 +41,7 @@ class HeartbeatWorker(context: Context, params: WorkerParameters) : Worker(conte
         fun stateChanged(context: Context, config: CollectorConfig) {
             // A Settings writer can request a heartbeat while still holding Settings.class.
             // Never wait for that lock while owning the heartbeat scheduling monitor.
-            val state = if (!config.hasSyncConnection() || config.syncMode == "manual") null else {
+            val state = if (!config.hasSyncConnection() || config.syncPaused || config.syncMode == "manual") null else {
                 val settings = Settings(context)
                 "${settings.enabled}:${settings.state()}:${SyncSchedule.stamp(config)}"
             }

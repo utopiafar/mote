@@ -37,6 +37,7 @@ interface State {
   collectedItems?: number;
   checkpoint?: SourceCheckpoint;
   initialized?: boolean;
+  oneTimeCompletedAt?: string;
   baseline?: string[];
   policy?: string;
   adapterVersion: number;
@@ -74,6 +75,7 @@ export class SourceSync {
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
   }
 
+  pendingContent(): SourceItem[] { return structuredClone([...this.pendingItems(), ...Object.values(this.data.quarantined ?? {}).map(value => value.item)]); }
   pendingForHistory(versionKey: string): SourceItem | undefined { const item = [...this.pendingItems(), ...Object.values(this.data.quarantined ?? {}).map(value => value.item)].find(item => sourceHash(`${item.externalId}\0${item.revision}`) === versionKey); return item ? structuredClone(item) : undefined; }
   checkpoint(): SourceCheckpoint | undefined { return structuredClone(this.data.checkpoint); }
   /** Scanner borrows immutable catalog rows and records changes in its own draft. */
@@ -82,6 +84,8 @@ export class SourceSync {
     return isFileCheckpoint(checkpoint)?{...structuredClone({...checkpoint,catalog:undefined}),catalog:checkpoint.catalog}:undefined;
   }
   initialized() { return Boolean(this.data.initialized); }
+  oneTimeCompletedAt(policy:string):string|undefined { return this.data.policy===policy?this.data.oneTimeCompletedAt:undefined; }
+  async resetOneTimeCompletion():Promise<void>{await this.mutate(async()=>{if(this.data.oneTimeCompletedAt)await this.commit({...this.data,oneTimeCompletedAt:undefined});});}
   private pendingItems(): SourceItem[] { return [...this.data.pendingRealtime, ...this.data.pendingHistory]; }
   status(): { blocked: number; failures: {externalId:string;title:string;status:number}[]; pending: number; realtimePending: number; historyPending: number; items: number; lastSyncAt?: string; lastAcknowledgedAt?: string; oldestPendingAt?: string } {
     const pending = this.pendingItems();
@@ -93,7 +97,7 @@ export class SourceSync {
   async ensurePolicy(policy:string):Promise<void>{return this.mutate(()=>this.ensurePolicyInternal(policy));}
   private async ensurePolicyInternal(policy: string): Promise<void> {
     if (this.data.policy === policy) return;
-    const next = { ...this.data, checkpoint: undefined, delivered: undefined, predecessors: undefined, quarantined: undefined, snapshotRecoveries:undefined, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '', discoveryHash: undefined }])), pendingRealtime: [], pendingHistory: [] } as State;
+    const next = { ...this.data, oneTimeCompletedAt:undefined, checkpoint: undefined, delivered: undefined, predecessors: undefined, quarantined: undefined, snapshotRecoveries:undefined, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '', discoveryHash: undefined }])), pendingRealtime: [], pendingHistory: [] } as State;
     const retired = [...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)];
     await this.commit(next);
     await this.discardUnqueuedOriginals(retired);
@@ -120,8 +124,8 @@ export class SourceSync {
     });
   }
 
-  async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString(), initialSync: 'all' | 'new_only' = 'all', defaultQueue: QueueName = scan.queue ?? 'realtime'): Promise<number> {
-    try { return await this.mutate(()=>this.stageInternal(scan, trackDeletions, observedAt, initialSync, defaultQueue)); }
+  async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString(), initialSync: 'all' | 'new_only' = 'all', defaultQueue: QueueName = scan.queue ?? 'realtime',oneTime=false): Promise<number> {
+    try { return await this.mutate(()=>this.stageInternal(scan, trackDeletions, observedAt, initialSync, defaultQueue,oneTime)); }
     finally { await this.discardUnqueuedOriginals(scan.items); }
   }
 
@@ -131,9 +135,10 @@ export class SourceSync {
     for (const directory of items.flatMap(directories)) if (!retained.has(directory)) await rm(directory, {force:true, recursive:true}).catch(() => {});
   }
 
-  private async stageInternal(scan: SourceScan, trackDeletions: boolean, observedAt: string, initialSync: 'all' | 'new_only', defaultQueue: QueueName): Promise<number> {
+  private async stageInternal(scan: SourceScan, trackDeletions: boolean, observedAt: string, initialSync: 'all' | 'new_only', defaultQueue: QueueName,oneTime:boolean): Promise<number> {
     const knownChanges=new Map<string,Known>();
     const next: State = { ...this.data, pendingRealtime: [...this.data.pendingRealtime], pendingHistory: [...this.data.pendingHistory] };
+    if(oneTime&&scan.complete)next.oneTimeCompletedAt=observedAt;
     let changes = 0;
     if (!scan.checkpoint && initialSync === 'new_only' && !next.initialized && Object.keys(next.known).length === 0) {
       next.baseline = [...new Set([...(next.baseline ?? []), ...scan.seen])]; next.initialized = scan.complete; await this.commit(next, this.limits.maxBytes); return 0;

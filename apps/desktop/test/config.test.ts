@@ -74,3 +74,11 @@ it('retires model settings from an installed client while rejecting explicit obs
  for(const key of ['nsfwEnabled','reviewPolicy','privacyModelUrl']){expect(loaded).not.toHaveProperty(key);expect(JSON.parse(await readFile(join(directory,'config.json'),'utf8')).config).not.toHaveProperty(key);}
  expect(()=>updateConfig(config,{...config,nsfwEnabled:true} as any)).toThrow('已停用');
 });
+
+it('adds a persisted send pause without rejecting existing format-3 configuration or overwriting cadence',async()=>{
+ const store=new ConfigStore(directory,{available:()=>true,encrypt:Buffer.from,decrypt:value=>value.toString()}),config=defaultConfig();
+ const {syncPaused:_,...old}=config;await writeFile(join(directory,'config.json'),JSON.stringify({version:3,config:old}));
+ const loaded=await store.load();expect(loaded.syncPaused).toBe(false);
+ const paused=updateConfig(loaded,{...loaded,syncPaused:true});await store.save(paused);expect(await store.load()).toMatchObject({syncPaused:true,syncMode:loaded.syncMode});
+ expect(()=>updateConfig(loaded,{...loaded,syncPaused:'true'} as any)).toThrow();
+});

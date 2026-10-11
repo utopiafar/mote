@@ -16,7 +16,7 @@ object ConnectionGuard {
     fun ownsConfiguration() = lock.isWriteLockedByCurrentThread
     fun beginReconfiguration() = updating.compareAndSet(false, true)
     fun endReconfiguration() { updating.set(false) }
-    fun configurationStamp(context: Context) = SourceRules.hash(Settings(context).read().toString())
+    fun configurationStamp(context: Context) = Settings(context).read().captureStamp()
     fun startCapture(context: Context, expectedStamp: String, start: () -> Unit): Boolean = sync {
         val settings = Settings(context)
         if (settings.enabled || expectedStamp != configurationStamp(context)) return@sync false

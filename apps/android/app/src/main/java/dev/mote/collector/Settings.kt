@@ -16,13 +16,16 @@ data class CollectorConfig(
     val jpegQuality: Int = 75, val captureMaxSide: Int = 1280, val chargingOnly: Boolean = false, val batteryPauseBelowPct: Int = 0,
     val diagnosticsEnabled: Boolean = false, val diagnosticsIntervalSeconds: Int = 60,
     val appCollectionRules: String = AppCollectionRules.DEFAULT, val metadataEnabled: Boolean = true,
-    val packedUpload: Boolean = true, val syncMode: String = "batch", val syncIntervalMinutes: Int = 1, val syncBatchSize: Int = 100, val jsonlWindowMinutes: Int = 10,
+    val syncPaused: Boolean = false, val packedUpload: Boolean = true, val syncMode: String = "batch", val syncIntervalMinutes: Int = 1, val syncBatchSize: Int = 100, val jsonlWindowMinutes: Int = 10,
     val mediaCollectionEnabled: Boolean = false, val screenCollectionEnabled: Boolean = true,
     val notificationCollectionEnabled: Boolean = false, val deviceEventCollectionEnabled: Boolean = false,
     val syncChargingOnly: Boolean = false, val syncBatteryNotLow: Boolean = false, val imageDedupeMode: String = "off",
     val ocrMode: String = "chinese", val ocrAppModes: String = "{}",
     val imageDedupeDiagnosticsEnabled: Boolean = false, val uploadedRetentionDays: Int = 7
 ) {
+    /** Sending pause never changes screen/media/privacy authorization or an in-flight capture. */
+    fun captureStamp() = SourceRules.hash(copy(syncPaused = false).toString())
+    fun sameCaptureConfiguration(other: CollectorConfig?) = other != null && copy(syncPaused = false) == other.copy(syncPaused = false)
     fun observesSystem() = (mediaCollectionEnabled && metadataEnabled) || notificationCollectionEnabled || deviceEventCollectionEnabled
     val pageRules by lazy { UiPageRules.parse(uiPageRules) }
     val collectionRules by lazy { AppCollectionRules.parse(appCollectionRules) }
@@ -80,7 +83,7 @@ class Settings(private val context: Context) {
         }
         // SharedPreferences already keeps values in memory. Compare only configuration keys,
         // so status/counter writes never rebuild a snapshot or decrypt credentials.
-        val values = prefs.all.filterKeys { it in configurationKeys }
+        val values = prefs.all.filterKeys { it in configurationKeys || it == "syncPaused" }
         if (cachedPrefs === prefs && cachedValues == values) return@synchronized requireNotNull(cachedConfig)
         val config = CollectorConfig(
         uiPageMode = prefs.getString("uiPageMode", "ui_preferred")!!, uiPageRules = prefs.getString("uiPageRules", "[]")!!,
@@ -98,7 +101,7 @@ class Settings(private val context: Context) {
         diagnosticsEnabled = prefs.getBoolean("diagnosticsEnabled", false), diagnosticsIntervalSeconds = prefs.getInt("diagnosticsIntervalSeconds", 60),
         appCollectionRules = prefs.getString("appCollectionRules", AppCollectionRules.DEFAULT)!!,
         metadataEnabled = prefs.getBoolean("metadataEnabled", true),
-        syncMode = prefs.getString("syncMode", "batch")!!,
+        syncPaused = prefs.getBoolean("syncPaused", false), syncMode = prefs.getString("syncMode", "batch")!!,
         packedUpload = prefs.getBoolean("packedUpload", true), syncIntervalMinutes = prefs.getInt("syncIntervalMinutes", 1), syncBatchSize = prefs.getInt("syncBatchSize", 100), jsonlWindowMinutes = prefs.getInt("jsonlWindowMinutes", 10),
         mediaCollectionEnabled = prefs.getBoolean("mediaCollectionEnabled", false), screenCollectionEnabled = prefs.getBoolean("screenCollectionEnabled", true),
         notificationCollectionEnabled = prefs.getBoolean("notificationCollectionEnabled", false), deviceEventCollectionEnabled = prefs.getBoolean("deviceEventCollectionEnabled", false),
@@ -133,7 +136,7 @@ class Settings(private val context: Context) {
             "uploadGateEnabled" to c.uploadGate.enabled, "uploadGateText" to c.uploadGate.blockedText, "uploadGateFailure" to c.uploadGate.failureAction,
             "uploadedRetentionDays" to c.uploadedRetentionDays,
             "ocrMode" to c.ocrMode, "ocrAppModes" to c.ocrAppModes, "imageDedupeMode" to c.imageDedupeMode, "imageDedupeDiagnosticsEnabled" to c.imageDedupeDiagnosticsEnabled,
-            "dataOrigin" to origin, "syncMode" to c.syncMode, "syncIntervalMinutes" to c.syncIntervalMinutes,
+            "syncPaused" to c.syncPaused, "dataOrigin" to origin, "syncMode" to c.syncMode, "syncIntervalMinutes" to c.syncIntervalMinutes,
             "syncChargingOnly" to c.syncChargingOnly, "syncBatteryNotLow" to c.syncBatteryNotLow,
             "packedUpload" to c.packedUpload, "syncBatchSize" to c.syncBatchSize, "jsonlWindowMinutes" to c.jsonlWindowMinutes, "server" to c.server.trim().trimEnd('/'),
             "token" to (prefs.getString("token", null)?.takeIf { credentials(it) == c.token }

@@ -117,7 +117,7 @@ class MediaCollectionService : NotificationListenerService() {
         try {
             val c = settings.read()
             events.refresh()
-            if (previousConfig != c) { timeline.reset(); lastStatus = null; previousConfig = c; detach() }
+            if (previousConfig?.sameCaptureConfiguration(c) != true) { timeline.reset(); lastStatus = null; previousConfig = c; detach() }
             if (!settings.enabled || !c.mediaCollectionEnabled || !c.metadataEnabled) {
                 detach(); timeline.reset(); lastStatus = null
                 MediaCollection.update(c, MediaPrivacy.snapshot("disabled", emptyList()))
@@ -237,7 +237,7 @@ class MediaCollectionService : NotificationListenerService() {
         return result
     }
     private fun enqueue(c: CollectorConfig, status: String, sessions: List<JSONObject>, duration: Long, wall: Long, epoch: Long = MediaCollection.epoch.get()) {
-        if (epoch != MediaCollection.epoch.get() || !settings.enabled || settings.read() != c || ConnectionGuard.changing() ||
+        if (epoch != MediaCollection.epoch.get() || !settings.enabled || !settings.read().sameCaptureConfiguration(c) || ConnectionGuard.changing() ||
             status == "available" && !MediaCollection.permissionAllowed(this)) { timeline.reset(); MediaCollection.clear(); return }
         val one = sessions.singleOrNull()
         val activityOnly = sessions.all { MediaPrivacy.mode(it.getString("appId"), c) == AppCollectionMode.ACTIVITY }
@@ -312,7 +312,7 @@ object MediaCollection {
         if (!permissionAllowed(context)) return MediaPrivacy.snapshot("permission_required", emptyList())
         val current = cached
         if (!MediaCollectionService.connected || ConnectionGuard.changing() || !MediaPrivacy.powerAllowed(c, Diagnostics.battery(context)) || current == null ||
-            current.epoch != epoch.get() || current.config != c || SystemClock.elapsedRealtime() - current.elapsed !in 0..60_000) return MediaPrivacy.snapshot("unavailable", emptyList())
+            current.epoch != epoch.get() || !current.config.sameCaptureConfiguration(c) || SystemClock.elapsedRealtime() - current.elapsed !in 0..60_000) return MediaPrivacy.snapshot("unavailable", emptyList())
         val value = JSONObject(current.json); val sessions = value.getJSONArray("sessions")
         return MediaPrivacy.snapshot(value.getString("status"), (0 until sessions.length()).mapNotNull { MediaPrivacy.session(sessions.getJSONObject(it), c, activityOnly) }, value.getString("observedAt"))
     }

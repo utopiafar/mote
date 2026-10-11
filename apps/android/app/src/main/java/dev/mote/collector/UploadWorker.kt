@@ -12,7 +12,11 @@ import java.util.concurrent.locks.ReentrantLock
 
 object HttpJson {
     private val active = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
+    private val sending = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
     fun cancelActive() { active.toList().forEach { runCatching { it.disconnect() } } }
+    internal fun track(connection: HttpURLConnection, collectorSending: Boolean = false) { active.add(connection); if (collectorSending) sending.add(connection) }
+    internal fun cancelSending() { sending.toList().forEach { runCatching { it.disconnect() } } }
+    internal fun untrack(connection: HttpURLConnection) { sending.remove(connection); active.remove(connection) }
     @Volatile var onRequest: (() -> Unit)? = null
     @Volatile var onUnauthorized: ((String, String) -> Unit)? = null
     @Volatile var onComplete: ((Long) -> Unit)? = null
@@ -26,12 +30,13 @@ object HttpJson {
     fun get(url: String, token: String? = null, headers: Map<String, String> = emptyMap()): Pair<Int, JSONObject?> = request("GET", url, null, token, headers = headers)
     fun request(method: String, url: String, body: JSONObject?, token: String? = null, maxResponseBytes: Int = 256 * 1024, headers: Map<String, String> = emptyMap()): Pair<Int, JSONObject?> =
         requestBytes(method, url, body?.toString()?.toByteArray(Charsets.UTF_8), token, "application/json", maxResponseBytes, headers)
-    fun requestBytes(method: String, url: String, body: ByteArray?, token: String? = null, contentType: String = "application/json", maxResponseBytes: Int = 256 * 1024, headers: Map<String, String> = emptyMap()): Pair<Int, JSONObject?> {
+    fun requestBytes(method: String, url: String, body: ByteArray?, token: String? = null, contentType: String = "application/json", maxResponseBytes: Int = 256 * 1024, headers: Map<String, String> = emptyMap(), sendingContext: Context? = null): Pair<Int, JSONObject?> {
         val started = android.os.SystemClock.elapsedRealtime()
         runCatching { onRequest?.invoke() }
         val connection = URL(url).openConnection() as HttpURLConnection
-        active.add(connection)
+        track(connection, collectorSending = sendingContext != null)
         try {
+            sendingContext?.let { SyncSchedule.requireConditions(it, Settings(it).read()) }
             if (ConnectionGuard.reconfiguring() && !ConnectionGuard.ownsConfiguration()) throw java.io.InterruptedIOException("Configuration changed")
             connection.requestMethod = method
             connection.connectTimeout = 15_000
@@ -71,7 +76,7 @@ object HttpJson {
             // External connector authorization failures do not invalidate the node login.
             rejectUnauthorized(code, url, token, value?.optString("error"))
             return code to value
-        } finally { active.remove(connection); connection.disconnect(); runCatching { onComplete?.invoke(android.os.SystemClock.elapsedRealtime() - started) } }
+        } finally { untrack(connection); connection.disconnect(); runCatching { onComplete?.invoke(android.os.SystemClock.elapsedRealtime() - started) } }
     }
 }
 
@@ -104,6 +109,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
         return try {
             val config = settings.read()
             val explicit = inputData.getBoolean("manual", false)
+            if (config.syncPaused) { settings.syncStatus("paused", MoteI18n.text("已暂停全部发送 · 本机继续保存")); return Result.success() }
             if (!config.hasSyncConnection()) { settings.syncStatus("unconfigured", MoteI18n.text("仅保存在本机 · 尚未配置完整连接")); return Result.success() }
             if (config.syncMode == "manual" && !explicit) { settings.syncStatus("manual", MoteI18n.text("手动同步 · 记录持续保存在本机")); return Result.success() }
             val requestedStamp = inputData.getString("syncStamp")
@@ -153,12 +159,12 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 val response: Pair<Int, JSONObject?> = if (individual) {
                     wireBytes = sent.first().toString().toByteArray(Charsets.UTF_8).size.toLong()
                     SyncSchedule.requireConditions(applicationContext, config)
-                    HttpJson.post("${config.server}/api/captures", sent.first(), config.connectionToken())
+                    CollectorHttp(applicationContext).post("${config.server}/api/captures", sent.first(), config.connectionToken())
                 } else {
                     val result = UploadNegotiation.sendShrinking(sent) { batch ->
                         val bundle = CaptureBundle.encode(batch); wireBytes += bundle.size
                         SyncSchedule.requireConditions(applicationContext, config)
-                        HttpJson.postBytes("${config.server}/api/captures/bundle", bundle, config.connectionToken(), CaptureBundle.CONTENT_TYPE)
+                        CollectorHttp(applicationContext).postBytes("${config.server}/api/captures/bundle", bundle, config.connectionToken(), CaptureBundle.CONTENT_TYPE)
                     }
                     sent = result.first; result.second
                 }
@@ -218,7 +224,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
     private fun finishStatus() = SyncHealth.finish(applicationContext)
     companion object {
         private val captureUploadGate = ReentrantLock()
-        fun heartbeat(context: Context, config: CollectorConfig) = HeartbeatWorker.stateChanged(context, config)
+        fun heartbeat(context: Context, config: CollectorConfig) = HeartbeatWorker.stateChanged(context, Settings(context).read())
         fun schedule(context: Context, config: CollectorConfig, manual: Boolean = false) = SyncSchedule.schedule(context, config, manual)
         fun isWifi(context: Context): Boolean {
             val manager = context.getSystemService(ConnectivityManager::class.java)
@@ -254,7 +260,7 @@ internal object SyncHeartbeat {
         else if (status == "error") body.put("error", settings.message())
         SyncSchedule.requireConditions(context, config)
         Diagnostics(context).add("heartbeatRequests")
-        val (code, response) = HttpJson.post("${config.server}/api/devices/heartbeat", body, config.connectionToken())
+        val (code, response) = CollectorHttp(context).post("${config.server}/api/devices/heartbeat", body, config.connectionToken())
         if (code !in 200..299 || response?.optBoolean("ok") != true) SupportEvents.record(context, EventStage.HEARTBEAT, EventJournal.httpFailure(code), httpStatus = code)
         if (code !in 200..299 || response?.optBoolean("ok") != true) {
             Operations.record(context, OperationKind.HEARTBEAT_FAILED, Operations.httpReason(code), httpStatus = code)
