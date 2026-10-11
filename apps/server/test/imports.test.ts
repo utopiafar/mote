@@ -106,7 +106,8 @@ test('automatic import publishes only a validated, unambiguous high-confidence r
 });
 test('imports select only a configured pinned Python pack and do not fall back to model analysis',async t=>{
  let packCalls=0,modelCalls=0;
- const sourcePacks=new Map([['fixture.pack',{revision:'pinned-v1',prepare:async({workspace,inputPaths}:import('../src/imports.js').ImportPreparation)=>{
+ const sourcePacks=new Map([['fixture.pack',{revision:'pinned-v1',prepare:async({workspace,inputPaths,instruction}:import('../src/imports.js').ImportPreparation)=>{
+   assert.equal(instruction,'','Owner context does not override a fixed pack parser');
    packCalls++;writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:item(),evidencePaths:[inputPaths[0]],attachments:[]})+'\n');
    writeFileSync(join(workspace,'dispositions.json'),JSON.stringify({items:[{path:inputPaths[0],status:'parsed',reason:'Generated fixed parser'}]}));
    return {summary:'Generated fixed pack',reviewDecision:{confidence:'high' as const,ambiguous:false,reason:'One exact mapping'}};
@@ -114,9 +115,14 @@ test('imports select only a configured pinned Python pack and do not fall back t
  const {imports,store}=fixture(t,{sourcePacks,prepare:async()=>{modelCalls++;throw Error('Model must not receive pack input');}});
  await assert.rejects(imports.create({sourcePackId:'missing.pack',files:[entry('input.custom','Generated')]}),{statusCode:409});
  assert.equal(imports.list().length,0);
- await assert.rejects(imports.create({sourcePackId:'fixture.pack',instruction:'reinterpret freely',files:[entry('input.custom','Generated')]}),{statusCode:409});
- const job=await imports.create({sourcePackId:'fixture.pack',processing:'automatic',files:[entry('input.custom','Generated')]});
+ const instruction='  Generated owner context\nPreserve quotes as third-party speech.  ';
+ const job=await imports.create({sourcePackId:'fixture.pack',instruction:'Initial generated context',processing:'automatic',files:[entry('input.custom','Generated')]});
+ imports.updateInstruction(job.id,instruction);
  const done=await imports.prepare(job.id);assert.equal(done.status,'completed');assert.equal(done.sourcePackId,'fixture.pack');assert.equal(packCalls,1);assert.equal(modelCalls,0);assert.equal(store.list().items.length,1);
+ const {MaterialStore}=await import('../src/materials.js');
+ const context=new MaterialStore(store).contextForEvidence(store.evidence(done.captureIds)[0]);
+ assert.equal(context.importStatements?.[0].instruction,instruction);assert.equal(context.importStatements?.[0].version,2);
+ assert.deepEqual(context.importStatements?.[0].captureIds,done.captureIds);assert.equal(context.ownerRelation,'unknown');
  const pending=await imports.create({sourcePackId:'fixture.pack',files:[entry('other.custom','Generated other')]});
  sourcePacks.set('fixture.pack',{revision:'changed-v2',prepare:sourcePacks.get('fixture.pack')!.prepare});
  const blocked=await imports.prepare(pending.id);assert.equal(blocked.status,'needs_configuration');assert.match(blocked.error??'',/pinned Python Source Pack/);assert.equal(packCalls,1);assert.equal(modelCalls,0);
@@ -209,7 +215,8 @@ test('revoked commit worker cannot insert or advance a record after a new lease 
    writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:item('fenced-record'),evidencePaths:[inputPaths[0]]})+'\n');
    return {summary:'Generated fenced preview'};
  }});
- const job=await imports.create({files:[entry('generated.custom','Generated original')]});
+ const instruction='Generated owner context for this original only';
+ const job=await imports.create({instruction,files:[entry('generated.custom','Generated original')]});
  await imports.prepare(job.id);
  const successor=new ImportStore(store,files,sources);
  const ingest=store.ingestBatch.bind(store);let paused=false;
@@ -220,12 +227,16 @@ test('revoked commit worker cannot insert or advance a record after a new lease 
  const stale=imports.confirm(job.id);await entered.promise;
  assert.equal(imports.cancel(job.id).status,'cancelled');await stale;
  assert.equal(store.list().items.length,0);
+ assert.equal(store.db.prepare('SELECT count(*) n FROM capture_import_declarations').get()!.n,0,'revoked worker cannot attach a statement before its capture commit');
  const current=successor.retry(job.id);release.resolve();
  const saved=await current;
  assert.equal(saved.status,'completed');assert.equal(saved.progress.processed,1);
  assert.equal(saved.progress.imported,1);assert.equal(saved.captureIds.length,1);
  assert.equal(store.list().items.length,1);
  assert.equal(files.listForCapture(saved.captureIds[0]!).length,1);
+ const {MaterialStore}=await import('../src/materials.js');
+ assert.equal(new MaterialStore(store).contextForEvidence(store.evidence(saved.captureIds)[0]).importStatements?.[0].instruction,instruction);
+ assert.equal(store.db.prepare('SELECT count(*) n FROM capture_import_declarations').get()!.n,1);
 });
 test('missing model runtime reports configuration state by error type and retains originals',async t=>{
  const {imports}=fixture(t,{prepare:async()=>{const error=new Error('Choose a model first');error.name='AgentNotConfiguredError';throw error;}});

@@ -123,7 +123,7 @@ export class ImageProcessing {
   const model=step.kind==='ocr'?null:this.options.understanding?.selection(binding.settings.analysisModel).fingerprint??'unconfigured';
   const record=this.store.evidence([row.capture_id])[0];
   const attribution=step.kind==='ocr'?undefined:this.materials()?.contextForEvidence(record);
-  const meaningful=attribution&&(attribution.basis!=='default'||attribution.correction||attribution.sourceDeclaration||attribution.materialDeclarations);
+  const meaningful=attribution&&(attribution.basis!=='default'||attribution.correction||attribution.sourceDeclaration||attribution.materialDeclarations||attribution.declarations||attribution.ownerStatements||attribution.importDeclarations||attribution.importStatements);
   // Truly unknown/default context retains the pre-attribution cache identity.
   // Declaration and correction versions (including cleared values) fence ABA.
   const context=step.kind==='ocr'&&processor.reuseByContent===true&&this.processing.runtime.imageRecipes.get(step.stage).reuseByContent===true?null:{...this.context(record),...(meaningful?{attributionContext:attribution}:{})};

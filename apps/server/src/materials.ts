@@ -8,6 +8,7 @@ import {installEvidenceDependencies} from './evidence-dependencies.js';
 import {materialDependencyStatus,materialRequirementsSchema,type MaterialInputPin} from './material-readiness.js';
 import {materialIndexRuntime,type MaterialIndexRuntime,type MaterialIndexStatus} from './material-index.js';
 import type {ExecutionEngine} from './execution-engine.js';
+import {ImportAttributionStore} from './import-attribution.js';
 
 const MATERIAL_PREFIX='mat_';
 const materialIdSchema=z.string().regex(/^mat_[a-f0-9]{64}$/);
@@ -78,6 +79,8 @@ type HeadRow={id:string;source_id:string;external_id:string;kind:string;revision
 type RevisionRow={manifest:string;revision:string;sequence:number;version_created_at:string;text_length:number;block_count:number;member_count:number;asset_count:number;draft_hash:string|null};
 type BlockRow={block_id:string;anchor_id?:string|null;kind:'text'|'asset';format:string|null;payload:string;asset_hash:string|null;mime_type:string|null;member_ids:string;locator:string|null;start_offset:number;end_offset:number};
 const canonicalContext=(value:unknown):unknown=>Array.isArray(value)?value.map(canonicalContext):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonicalContext(item)])):value;
+/** Catalogs and range descriptors carry authority identities, never declaration prose. */
+const contextMetadata=(context:AttributionContext):AttributionContext=>{const {ownerStatements:_,importStatements:__,...metadata}=context;return metadata;};
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 const parseId=(id:string)=>materialIdSchema.parse(id);
 const parseRevision=(revision:string)=>revisionSchema.parse(revision);
@@ -110,7 +113,9 @@ export class MaterialStore {
   onContextChanged?:(materialId:string,cause?:'attribution'|'derived')=>void;
   onSourceContextChanged?:(sourceId:string)=>void;
   readonly catalog=new MaterialCatalog(this);
+  private readonly importAttribution:ImportAttributionStore;
   constructor(readonly store:Store){
+    this.importAttribution=new ImportAttributionStore(store);
     store.db.exec(`
       CREATE TABLE IF NOT EXISTS material_searchable(material_id TEXT PRIMARY KEY REFERENCES material_heads(id) ON DELETE CASCADE);
       CREATE TABLE IF NOT EXISTS material_evidence(id TEXT PRIMARY KEY,material_id TEXT NOT NULL,revision TEXT NOT NULL,block_id TEXT NOT NULL,invalidated INTEGER NOT NULL DEFAULT 0,FOREIGN KEY(material_id,revision) REFERENCES material_revisions(material_id,revision) ON DELETE CASCADE);
@@ -232,7 +237,7 @@ export class MaterialStore {
       ...((this.pendingDeclarations?.id===id?this.pendingDeclarations.values:savedContext?.declarations)?.length?{declarations:this.pendingDeclarations?.id===id?this.pendingDeclarations.values:savedContext.declarations}:{})});
   }
   private withContext<T extends MaterialDraft|MaterialAppendDraft>(draft:T):T {
-    const attributionContext=this.resolveContext(draft.id,draft.origin.sourceId);
+    const attributionContext=this.withImportContext(this.resolveContext(draft.id,draft.origin.sourceId),draft.members.filter(member=>member.kind==='capture'&&member.ref.startsWith('capture:')).map(member=>member.ref.slice('capture:'.length)));
     // A reply to an old dialogue is not an identity grant for replacement text.
     if(attributionContext.declarations?.length&&this.pendingDeclarations?.id!==draft.id){
       const prior=this.get(draft.id);
@@ -245,7 +250,11 @@ export class MaterialStore {
   /** Host-owned projection for originals as well as formal evidence. */
   contextForEvidence(record:CaptureRecord):AttributionContext {
     const anchor=this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?').get(record.id);
-    if(anchor)return this.get(String(anchor.material_id))?.attributionContext??unknownAttributionContext();
+    if(anchor){
+      const context=this.get(String(anchor.material_id))?.attributionContext??unknownAttributionContext();
+      const inputs=this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(record.id).map(row=>String(row.evidence_id));
+      return this.withImportContext(context,inputs,true);
+    }
     const file=this.store.db.prepare('SELECT capture_id FROM file_chunks WHERE id=?').get(record.id);
     const captureId=String(file?.capture_id??record.id);
     // Keep the selected ancestor set outside the member join. Without CROSS
@@ -260,16 +269,27 @@ export class MaterialStore {
     let first:AttributionContext|undefined,firstJson:string|undefined,conflict=false,total=0;
     const digest=createHash('sha256'),items:NonNullable<AttributionContext['materialDeclarations']>['items']=[];
     for(const parent of parents){
-      const context=this.openContext(String(parent.id),attributionContextSchema.parse(JSON.parse(String(parent.manifest)).attributionContext??unknownAttributionContext()));
+      const context=this.withImportContext(this.openContext(String(parent.id),attributionContextSchema.parse(JSON.parse(String(parent.manifest)).attributionContext??unknownAttributionContext())),[captureId],true);
       const contextJson=JSON.stringify(canonicalContext(context));
       if(firstJson===undefined){first=context;firstJson=contextJson;}else if(firstJson!==contextJson)conflict=true;
       total++;digest.update(JSON.stringify([parent.id,parent.revision,contextJson])+'\n');
       if(items.length<32)items.push({materialId:String(parent.id),revision:String(parent.revision),ownerRelation:context.ownerRelation});
     }
-    if(first)return conflict?{...unknownAttributionContext(),materialDeclarations:{items,total,digest:digest.digest('hex')}}:first;
+    if(first)return conflict?this.withImportContext({...unknownAttributionContext(),materialDeclarations:{items,total,digest:digest.digest('hex')}},[captureId],true):first;
     const imageSource=this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='image_inputs'").get()?this.store.db.prepare('SELECT source_id FROM image_inputs WHERE capture_id=?').get(captureId):undefined;
     const sourceId=record.provenance?.sourceId??(imageSource?String(imageSource.source_id):undefined);
-    return sourceId?this.resolveContext('',sourceId):unknownAttributionContext();
+    return this.withImportContext(sourceId?this.resolveContext('',sourceId):unknownAttributionContext(),[captureId],true);
+  }
+  private withImportContext(context:AttributionContext,captureIds:string[],open=false):AttributionContext {
+    const {importDeclarations:_,importStatements:__,...base}=context,importDeclarations=this.importAttribution.identities(captureIds);
+    const importStatements=open?this.importAttribution.open(importDeclarations):[];
+    return {...base,...(importDeclarations.length?{importDeclarations}:{}),...(importStatements.length?{importStatements}:{})};
+  }
+  private rangeContext(material:MaterialRecord,memberIds:string[]):AttributionContext {
+    const context=contextMetadata(material.attributionContext??unknownAttributionContext());if(!context.importDeclarations?.length)return context;
+    const captureIds=this.store.db.prepare(`SELECT ref FROM material_members WHERE material_id=? AND revision=? AND kind='capture'
+      AND id IN (SELECT value FROM json_each(?))`).all(material.id,material.revision,JSON.stringify(memberIds)).map(row=>String(row.ref).slice('capture:'.length));
+    return this.withImportContext(context,captureIds);
   }
   private contextDraft(material:MaterialRecord):MaterialDraft {
     const {ref:_,revision:__,sequence:___,createdAt:____,updatedAt:_____,blockCount:______,memberCount:_______,textLength:________,assetCount:_________,indexing:__________,...manifest}=material;
@@ -346,7 +366,8 @@ export class MaterialStore {
   }
   private openContext(id:string,context:AttributionContext):AttributionContext {
     const ownerStatements=(context.declarations??[]).flatMap(value=>{const row=this.store.db.prepare('SELECT json FROM material_owner_declarations WHERE material_id=? AND id=? AND version=?').get(id,value.id,value.version);if(!row)return [];const body=decodeMemoryPrivate<{question:string;answer:string}>(this.store,JSON.parse(String(row.json)).private);return [{id:value.id,...body}];});
-    return ownerStatements.length?{...context,ownerStatements}:context;
+    const {importStatements:_,...base}=context,importStatements=this.importAttribution.open(context.importDeclarations??[]);
+    return {...base,...(ownerStatements.length?{ownerStatements}:{}),...(importStatements.length?{importStatements}:{})};
   }
   /** Semantic dependencies follow original and excerpt lineage without revoking either original. */
   private invalidateCaptureSemantics(captureId:string){
@@ -506,13 +527,14 @@ export class MaterialStore {
   }
   private head(id:string):HeadRow|undefined{return this.store.db.prepare('SELECT * FROM material_heads WHERE id=?').get(id) as HeadRow|undefined;}
   private version(id:string,revision:string):RevisionRow|undefined{return this.store.db.prepare('SELECT revision,sequence,manifest,created_at AS version_created_at,text_length,block_count,member_count,asset_count,draft_hash FROM material_revisions WHERE material_id=? AND revision=?').get(id,revision) as RevisionRow|undefined;}
-  private record(head:HeadRow,row:RevisionRow):MaterialRecord {
+  private record(head:HeadRow,row:RevisionRow,open=true):MaterialRecord {
     const manifest=JSON.parse(row.manifest) as Omit<MaterialDraft,'blocks'|'members'>;
     const rebuilding=head.revision===row.revision&&this.needsRebuild(head.id,row.revision,row.sequence);
     const invalidBlocks=rebuilding?new Set(this.store.db.prepare(`SELECT b.block_id FROM material_blocks b JOIN material_evidence e ON e.id=b.anchor_id
       WHERE b.material_id=? AND b.revision=? AND e.invalidated=1 UNION SELECT b.block_id FROM material_block_versions b JOIN material_evidence e ON e.id=b.anchor_id
       WHERE b.material_id=? AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?) AND e.invalidated=1`).all(head.id,row.revision,head.id,row.sequence,row.sequence).map(b=>String(b.block_id))):undefined;
-    return {...manifest,attributionContext:this.openContext(head.id,manifest.attributionContext??unknownAttributionContext()),...(rebuilding?{coverage:{state:'pending' as const,reason:'source_evidence_changed'},
+    const context=manifest.attributionContext??unknownAttributionContext();
+    return {...manifest,attributionContext:open?this.openContext(head.id,context):contextMetadata(context),...(rebuilding?{coverage:{state:'pending' as const,reason:'source_evidence_changed'},
       artifacts:manifest.artifacts?.map(artifact=>artifact.blockIds&&!artifact.blockIds.some(id=>invalidBlocks!.has(id))?artifact:{...artifact,state:'pending' as const,reason:'source_evidence_changed'})}:{}),
       ref:formatMaterialRef(head.id,row.revision),revision:row.revision,sequence:row.sequence,
       createdAt:head.created_at,updatedAt:row.version_created_at,blockCount:row.block_count,memberCount:row.member_count,
@@ -817,7 +839,7 @@ export class MaterialStore {
       clauses.push(`(${sort}<? OR (${sort}=? AND h.id<?))`);values.push(cursor.u,cursor.u,cursor.id);
     }
     const rows=this.store.db.prepare(`SELECT h.*,${sort} AS sort_at,r.manifest,r.text_length,r.block_count,r.member_count,r.asset_count,r.created_at AS version_created_at FROM material_heads h JOIN material_revisions r ON r.material_id=h.id AND r.revision=h.revision WHERE ${clauses.join(' AND ')} ORDER BY ${sort} DESC,h.id DESC LIMIT ?`).all(...values,limit+1) as (HeadRow&RevisionRow&{sort_at:string})[];
-    const page=rows.slice(0,limit).map(row=>this.record(row,row));
+    const page=rows.slice(0,limit).map(row=>this.record(row,row,false));
     const last=rows.length>limit?rows[limit-1]:undefined;
     return {items:page,nextCursor:last?Buffer.from(JSON.stringify({u:last.sort_at,id:last.id})).toString('base64url'):null};
   }
@@ -849,10 +871,11 @@ export class MaterialStore {
       if(stop<=start)throw new StoreError('Material read length cannot deliver a complete Unicode character; request at least two UTF-16 units');
       const slice=rendered.slice(start-row.start_offset,stop-row.start_offset);
       const pageStart=text.length;text+=slice;cursor=stop;
-      spans.push({attributionContext:material.attributionContext??unknownAttributionContext(),blockId:row.block_id,kind:row.kind,...(row.format?{format:row.format}:{}),
+      const memberIds=JSON.parse(row.member_ids) as string[];
+      spans.push({attributionContext:this.rangeContext(material,memberIds),blockId:row.block_id,kind:row.kind,...(row.format?{format:row.format}:{}),
         ...(row.anchor_id?{evidenceId:row.anchor_id,evidenceOffset:start-row.start_offset}:{}),
         pageRange:{start:pageStart,end:text.length},materialRange:{start, end:stop},
-        memberIds:JSON.parse(row.member_ids) as string[],...(row.locator?{locator:JSON.parse(row.locator) as Record<string,unknown>}:{}) ,
+        memberIds,...(row.locator?{locator:JSON.parse(row.locator) as Record<string,unknown>}:{}) ,
         ...(row.asset_hash?{asset:{hash:row.asset_hash,mimeType:row.mime_type!}}:{})});
     }
     const nextOffset=cursor<total?cursor:null;
@@ -904,7 +927,8 @@ export class MaterialStore {
     const columns='b.block_id,b.kind,b.format,p.text payload,b.asset_hash,b.mime_type,b.member_ids,b.locator';
     const row=(this.codingLayout(material.id,material.revision)?this.store.db.prepare(`SELECT ${columns} FROM material_block_versions b JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.idx=? AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?)`).get(material.id,index,material.sequence,material.sequence):this.store.db.prepare(`SELECT ${columns} FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.revision=? AND b.idx=?`).get(material.id,material.revision,index)) as BlockRow|undefined;
     if(!row)throw new StoreError('Material block is unavailable',404);
-    return {material,block:{attributionContext:material.attributionContext??unknownAttributionContext(),id:row.block_id,kind:row.kind,text:row.payload,...(row.format?{format:row.format}:{}),memberIds:JSON.parse(row.member_ids),...(row.locator?{locator:JSON.parse(row.locator)}:{}),...(row.asset_hash?{asset:{hash:row.asset_hash,mimeType:row.mime_type!}}:{})}};
+    const memberIds=JSON.parse(row.member_ids) as string[];
+    return {material,block:{attributionContext:this.rangeContext(material,memberIds),id:row.block_id,kind:row.kind,text:row.payload,...(row.format?{format:row.format}:{}),memberIds,...(row.locator?{locator:JSON.parse(row.locator)}:{}),...(row.asset_hash?{asset:{hash:row.asset_hash,mimeType:row.mime_type!}}:{})}};
   }
 
   members(ref:string,args:{offset?:number;limit?:number}={}):MaterialMemberPage {

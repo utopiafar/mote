@@ -32,7 +32,7 @@ test('connection probe uses the real Harness for generated search, evidence and 
     });
     assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.code,'ok');
     assert.ok(Number.isFinite(result.durationMs)&&result.durationMs>=0);assert.equal(requests.length,3);
-    const tools=['capability_discover','capability_execute','evidence','material_catalog','material_read','memories','progress_update','read_image','search_context','skill','timeline'];
+    const tools=['attribution_context','capability_discover','capability_execute','evidence','material_catalog','material_read','memories','progress_update','read_image','search_context','skill','timeline'];
     for (const request of requests) {
       assert.equal(request.url,'/v1/chat/completions');assert.equal(request.authorization,'Bearer synthetic-probe-key');
       assert.equal(request.body.model,'synthetic-probe-model');assert.equal(request.body.stream,true);

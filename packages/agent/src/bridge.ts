@@ -93,7 +93,7 @@ function project(record: ContextRecord, offset = 0, length = 600, timeZone = 'UT
   const projected:ContextRecord = {
     ...(fileEvidenceSchema.safeParse(record.fileEvidence).success?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
     ...(stateSeriesSchema.safeParse(record.stateSeries).success?{stateSeries:stateSeriesSchema.parse(record.stateSeries)}:{}),
-    evidenceFingerprint:createHash('sha256').update(JSON.stringify([text,record.provenance,record.fileEvidence,...(attribution.success&&(attribution.data.basis!=='default'||attribution.data.correction||attribution.data.sourceDeclaration||attribution.data.materialDeclarations)?[attribution.data]:[])])).digest('hex'),
+    evidenceFingerprint:createHash('sha256').update(JSON.stringify([text,record.provenance,record.fileEvidence,...(attribution.success&&(attribution.data.basis!=='default'||attribution.data.correction||attribution.data.sourceDeclaration||attribution.data.materialDeclarations||attribution.data.declarations||attribution.data.ownerStatements||attribution.data.importDeclarations||attribution.data.importStatements)?[attribution.data]:[])])).digest('hex'),
     ...(attribution.success?{attributionContext:attribution.data}:{}),
     ...(record.retrieval?{retrieval:record.retrieval}:{}),
     estimatedReadCharacters:text.length,
@@ -174,6 +174,29 @@ function projectDevice(value: unknown, timeZone = 'UTC'): Record<string, unknown
 }
 
 const pinnedMaterialRef=/^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$/;
+/** Keep statement identities/scopes in ordinary responses; prose has its own
+ * authorized, lossless disclosure path and never affects original grants. */
+function attributionMetadata(value:unknown){
+  const parsed=attributionContextSchema.safeParse(value);if(!parsed.success)return undefined;
+  const {ownerStatements:_owner,importStatements:_import,...metadata}=parsed.data;
+  return metadata;
+}
+function attributionMetadataResponse(value:unknown,parentLocator?:{id:string}|{ref:string}):unknown {
+  if(Array.isArray(value))return value.map(item=>attributionMetadataResponse(item,parentLocator));
+  if(!value||typeof value!=='object')return value;
+  const object=value as Record<string,unknown>;
+  const locator=typeof object.ref==='string'&&pinnedMaterialRef.test(object.ref)?{ref:object.ref}:
+    typeof object.id==='string'&&parseEvidenceId(object.id)?{id:parseEvidenceId(object.id)!}:parentLocator;
+  const result:Record<string,unknown>={};
+  for(const [key,item] of Object.entries(object)){
+    if(key==='attributionContext'){
+      const metadata=attributionMetadata(item);if(metadata){result[key]=metadata;if(locator)result.attributionContextLocator=locator;}
+    }else if(key==='attributionContexts'&&item&&typeof item==='object'&&!Array.isArray(item)){
+      result[key]=Object.fromEntries(Object.entries(item).flatMap(([id,context])=>{const metadata=attributionMetadata(context);return metadata?[[id,metadata]]:[];}));
+    }else result[key]=attributionMetadataResponse(item,locator);
+  }
+  return result;
+}
 /** Reader data is untrusted too: explicitly select catalog metadata, never body/member fields. */
 function materialMetadata(value: unknown, scope: ContextRange): Record<string, unknown> | undefined {
   if(!value||typeof value!=='object'||Array.isArray(value))throw hostError('Invalid material catalog row');
@@ -183,9 +206,9 @@ function materialMetadata(value: unknown, scope: ContextRange): Record<string, u
   const firstAt=typeof origin.firstAt==='string'&&Number.isFinite(Date.parse(origin.firstAt))?new Date(origin.firstAt).toISOString():undefined;
   const lastAt=typeof origin.lastAt==='string'&&Number.isFinite(Date.parse(origin.lastAt))?new Date(origin.lastAt).toISOString():undefined;
   if(scope.deviceId&&origin.deviceId!==scope.deviceId||scope.after&&(!firstAt||firstAt<scope.after)||scope.before&&(!lastAt||lastAt>=scope.before))return;
-  const attribution=attributionContextSchema.safeParse(row.attributionContext);
+  const attribution=attributionMetadata(row.attributionContext);
   return {id:row.id,ref:row.ref,kind:row.kind,title:row.title.slice(0,500),
-    ...(attribution.success?{attributionContext:attribution.data}:{}),
+    ...(attribution?{attributionContext:attribution,attributionContextLocator:{ref:row.ref}}:{}),
     ...(Number.isSafeInteger(row.schemaVersion)?{schemaVersion:row.schemaVersion}:{}),
     origin:{sourceId:origin.sourceId,...(typeof origin.deviceId==='string'?{deviceId:origin.deviceId}:{}),...(firstAt?{firstAt}:{}),...(lastAt?{lastAt}:{})},
     revision:row.revision,
@@ -385,7 +408,7 @@ export async function startBridge(
           }
           dependencyIds.add(receipt.id);
         }
-        const serialized=JSON.stringify({source:'untrusted_delegated_result',data:result.data,evidence:delivered,hostBudget:hostBudget()});
+        const serialized=JSON.stringify(attributionMetadataResponse({source:'untrusted_delegated_result',data:result.data,evidence:delivered,hostBudget:hostBudget()}));
         if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters)throw budgetError();
         for(const record of delivered){remember(record);discovered.add(record.id);disclosedIds.add(record.id);expanded.add(record.id);}
         for(const id of dependencyIds)disclosedIds.add(id);
@@ -419,7 +442,7 @@ export async function startBridge(
         return id;
       };
       if(tool==='evidence'&&Array.isArray(args.ids))args={...args,ids:args.ids.map(captureId)};
-      if(['read_image','read_file_evidence','file_chunks','source_history'].includes(tool))args={...args,id:captureId(args.id)};
+      if(['read_image','read_file_evidence','file_chunks','source_history'].includes(tool)||tool==='attribution_context'&&args.id!==undefined)args={...args,id:captureId(args.id)};
       if (!dispatchedViaCatalog&&++calls > maxToolCalls)
         throw new ContextToolError('tool_budget_exceeded','Tool call budget reached. Finish using already retrieved evidence; do not call retrieval tools again.','use_existing_evidence',{remainingCalls:0});
       if(deliveredCharacters>=limits.totalToolCharacters-1000)throw budgetError();
@@ -504,7 +527,7 @@ export async function startBridge(
           if(closing||res.destroyed)return;
           bounds.signal?.throwIfAborted();
           const data={material,text:page.text,textRange:{offset:page.textRange.offset,total:page.textRange.total,nextOffset:page.textRange.nextOffset},spans,originalRefs:ids.map(id=>formatEvidenceRef('capture',id)),originalRefsTotal:total,originalRefsTruncated:page.originalRefsTruncated||total>ids.length||page.originalRefs.length>ids.length,sourceEvidence,sourceCoverage:{references:total,delivered:sourceEvidence.length,partial:total>new Set(sourceEvidence.map(record=>record.id)).size||page.originalRefsTruncated},pagination:{requestedLength:Number(length),returnedLength:page.text.length,limitedBy:readAttempts>1?'host_budget':null}};
-          const serialized=JSON.stringify({source:'untrusted_personal_context',data,hostBudget:hostBudget(),...(sourceProtocolInstructions(sourceEvidence)?{hostSourceSemantics:sourceProtocolInstructions(sourceEvidence)}:{})});
+          const serialized=JSON.stringify(attributionMetadataResponse({source:'untrusted_personal_context',data,hostBudget:hostBudget(),...(sourceProtocolInstructions(sourceEvidence)?{hostSourceSemantics:sourceProtocolInstructions(sourceEvidence)}:{})}));
           if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>1_500_000){
             if(effectiveLength===1||page.text.length===0)throw budgetError();
             effectiveLength=Math.max(1,Math.floor(effectiveLength/2));
@@ -517,6 +540,63 @@ export async function startBridge(
           trace.push({tool,arguments:{ref:args.ref,offset,length},count:1,materialPage:{readAttempts,requestedLength:Number(length),returnedLength:page.text.length,budgetLimited:readAttempts>1}});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
         }
         throw budgetError();
+      }
+      if(tool==='attribution_context'){
+        if(Object.keys(args).some(key=>!['id','ref','offset','length','expectedFingerprint'].includes(key))||
+          (args.id===undefined)===(args.ref===undefined))throw hostError('Choose exactly one discovered original id or pinned Material ref');
+        const offset=args.offset??0,length=args.length??8000;
+        if(!Number.isSafeInteger(offset)||Number(offset)<0||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>12000)
+          throw hostError('Attribution offset must be nonnegative and length must be 1–12000 UTF-16 units');
+        if(args.expectedFingerprint!==undefined&&(typeof args.expectedFingerprint!=='string'||!/^[a-f0-9]{64}$/.test(args.expectedFingerprint)))throw hostError('Invalid attribution context fingerprint');
+        if(Number(offset)>0&&args.expectedFingerprint===undefined)throw hostError('Copy contextFingerprint as expectedFingerprint when continuing an attribution page');
+        const scope=range({},bounds);let context:unknown,dependencies:unknown;
+        let locator:{id:string}|{ref:string};
+        if(args.id!==undefined){
+          if(typeof args.id!=='string'||!discovered.has(args.id))throw hostError('Discover the original before reading its attribution context');
+          locator={id:args.id};
+          const record=(await reader.evidence({...scope,ids:[args.id]})).find(record=>record.id===args.id);
+          if(!record)throw hostError('Original attribution context is unavailable in the current scope');
+          const at=sourceContentTime(record);
+          if(!Number.isFinite(Date.parse(at))||scope.deviceId&&record.deviceId!==scope.deviceId||scope.after&&Date.parse(at)<Date.parse(scope.after)||scope.before&&Date.parse(at)>=Date.parse(scope.before))throw hostError('Original attribution context is outside the selected scope');
+          context=record.attributionContext;
+        }else{
+          if(typeof args.ref!=='string'||!pinnedMaterialRef.test(args.ref)||!pinnedMaterials.has(args.ref))throw hostError('Use an exact pinned Material ref returned in this run');
+          if(!reader.materialRead)throw hostError('Material context reading is unavailable');
+          locator={ref:args.ref};
+          // This host read reuses current privacy/revision checks. Its source
+          // bodies and internal grants are never delivered or remembered here.
+          const page=await reader.materialRead({...scope,ref:args.ref,offset:0,length:2});
+          const material=materialMetadata(page.material,scope);
+          if(!material||material.ref!==args.ref)throw hostError('Material attribution context changed or left the selected scope');
+          context=page.material.attributionContext;dependencies=page.disclosureDependencies;
+        }
+        if(closing||res.destroyed)return;bounds.signal?.throwIfAborted();
+        const parsed=attributionContextSchema.safeParse(context??{version:1,ownerRelation:'unknown',basis:'default'});
+        if(!parsed.success)throw hostError('Invalid host attribution context');
+        const text=JSON.stringify(parsed.data),contextFingerprint=createHash('sha256').update(text).digest('hex');
+        if(args.expectedFingerprint!==undefined&&args.expectedFingerprint!==contextFingerprint)throw new ContextToolError('attribution_context_changed','The current attribution context changed. Restart at offset 0; do not combine pages from different versions.','correct_arguments');
+        const start=Number(offset),requestedLength=Number(length);
+        if(start>text.length||splitsPair(text,start))throw hostError('Attribution offset exceeds its context or splits a UTF-16 pair');
+        let end=Math.min(text.length,start+requestedLength);if(splitsPair(text,end))end--;
+        const serialize=(stop:number)=>JSON.stringify({source:'untrusted_personal_context',data:{...locator,contextFingerprint,offset:start,total:text.length,nextOffset:stop<text.length?stop:null,text:text.slice(start,stop),citationAuthority:false},hostBudget:hostBudget()});
+        const fits=(serialized:string)=>serialized.length<=limits.toolResultCharacters&&deliveredCharacters+serialized.length<=limits.totalToolCharacters&&Buffer.byteLength(serialized)<=1_500_000;
+        let serialized=serialize(end);
+        if(!fits(serialized)){
+          let low=start+1,high=end-1,fittedEnd=-1;
+          while(low<=high){const probe=Math.floor((low+high)/2),stop=splitsPair(text,probe)?probe-1:probe;
+            if(stop<=start){low=probe+1;continue;}
+            const candidate=serialize(stop);if(fits(candidate)){fittedEnd=stop;serialized=candidate;low=probe+1;}else high=probe-1;
+          }
+          if(fittedEnd<0)throw budgetError();end=fittedEnd;
+        }
+        if(end===start&&start<text.length)throw hostError('Attribution length must deliver a complete UTF-16 character');
+        deliveredCharacters+=serialized.length;
+        // Context disclosure participates in deletion/correction lineage only;
+        // it never populates records, discovered or expanded original grants.
+        if('id' in locator)disclosedIds.add(locator.id);else rememberDisclosureDependencies(dependencies);
+        trace.push({tool,arguments:{...locator,offset:start,length:requestedLength,...(args.expectedFingerprint?{expectedFingerprint:args.expectedFingerprint}:{})},count:1,
+          attributionPage:{contextFingerprint,offset:start,total:text.length,requestedLength,returnedLength:end-start,budgetLimited:end<Math.min(text.length,start+requestedLength)}});
+        reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
       }
       if(restricted){
         if(tool!=='evidence')throw hostError('This extraction session uses only the supplied evidence ranges');
@@ -794,14 +874,14 @@ export async function startBridge(
           });
       }
       const safeValue = JSON.parse(JSON.stringify(value ?? null));
-      const serialized = JSON.stringify({
+      const serialized = JSON.stringify(attributionMetadataResponse({
         source: "untrusted_personal_context",
         data: safeValue,
         hostBudget:hostBudget(),
         ...(sourceProtocolInstructions([...(Array.isArray(value)?value:[]) as ContextRecord[],...memoryEvidence])?{hostSourceSemantics:sourceProtocolInstructions([...(Array.isArray(value)?value:[]) as ContextRecord[],...memoryEvidence])}:{}),
         ...(retrieval?{retrieval}:{}),
         ...(pagination ? { pagination } : {}),
-      });
+      }));
       if (serialized.length > limits.toolResultCharacters || deliveredCharacters+serialized.length>limits.totalToolCharacters || Buffer.byteLength(serialized) > 1_500_000)
         throw budgetError();
       deliveredCharacters+=serialized.length;

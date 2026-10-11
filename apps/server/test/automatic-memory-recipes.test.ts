@@ -10,7 +10,7 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
-import {memoryRecipeScope} from '../src/memory-recipe-settings.js';
+import {memoryRecipeScope,MemoryRecipeSettings} from '../src/memory-recipe-settings.js';
 
 const personal={id:'mote.personal-memory',version:'2'},coding={id:'mote.coding-memory',version:'2'};
 const body='I felt proud of finishing the prototype. For the prototype retry path I prevented duplicate writes with an idempotency key and verified the retry.';
@@ -69,6 +69,52 @@ test('owner-selected automatic recipes share one generation, support source over
   f.node.materialMemoryWork.observe(material.id,['source-body'],{inputKey,change:'rebuild'});await f.run();assert.equal(f.calls.length,5,'changing selection or rebuilding does not backfill');
 });
 
+test('built-in default upgrade finishes a preexisting v2 receipt and uses v3 only for future intake without backfill',async t=>{
+  const f=await fixture(t);await f.configure([personal]);f.source('diary');
+  await f.add('diary','old-receipt');await f.publish();await f.queue();
+  const before=f.jobs();assert.equal(before.length,1);assert.equal(before[0].recipes![0].version,'2');
+  // Reproduce an installation predating this named migration, retaining actual
+  // production intake receipts and queued jobs rather than synthesizing grants.
+  f.node.store.db.prepare("DELETE FROM memory_recipe_default_upgrades WHERE id='bounded-personal@3'").run();
+  await f.restart();assert.equal(f.node.memoryRecipeSettings.selection()[0].recipe.version,'3');
+  await f.run();assert.equal(f.node.memoryPipeline.get(before[0].id).status,'completed');
+  assert.equal(f.count('extract'),1);assert.equal(f.count('review'),1);
+  await f.add('diary','fresh-receipt');await f.publish();await f.run();
+  assert.deepEqual(f.jobs().map(j=>j.recipes![0].version).sort(),['2','3']);
+  assert.equal(f.count('extract'),2);assert.equal(f.count('review'),2,'v3 has its own fixed extractor');
+  const ids=f.jobs().map(j=>j.id);await f.restart();await f.publish();await f.run();
+  assert.deepEqual(f.jobs().map(j=>j.id),ids);assert.equal(f.calls.length,4,'restart does not replay either version');
+});
+
+test('explicit source inheritance after default upgrade revokes its old receipt without cancelling other sources',async t=>{
+  const f=await fixture(t);await f.configure([personal]);f.source('ordinary');f.source('override');await f.configure([personal],'override');
+  let entered!:()=>void,release!:()=>void;const reached=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
+  f.control.duringReview=async input=>{if(f.node.memoryPipeline.get(input.traceContext!.jobId!).automaticGrants?.some(grant=>grant.sourceId==='override')){entered();await held;}};
+  t.after(()=>release());
+  await f.add('ordinary','default-receipt');await f.publish();await f.queue();
+  await f.add('override','override-receipt');await f.publish();await f.queue();
+  const jobs=f.jobs();assert.equal(jobs.length,2);
+  f.node.store.db.prepare("DELETE FROM memory_recipe_default_upgrades WHERE id='bounded-personal@3'").run();
+  new MemoryRecipeSettings(f.node.store,f.node.memoryStrategies);
+  assert.equal(f.node.memoryRecipeSettings.selection('ordinary')[0].recipe.version,'3');
+  assert.equal(f.node.memoryRecipeSettings.selection('override')[0].recipe.version,'2');
+  const running=f.run();await reached;
+  try{
+    await f.configure(null,'override');
+    const ordinary=f.node.store.db.prepare('SELECT revoked_at FROM memory_input_authorizations WHERE source_id=?').all('ordinary');
+    const overridden=f.node.store.db.prepare('SELECT revoked_at FROM memory_input_authorizations WHERE source_id=?').all('override');
+    assert.ok(ordinary.length&&ordinary.every(row=>row.revoked_at===null));
+    assert.ok(overridden.length&&overridden.every(row=>row.revoked_at!==null),'explicit inheritance withdraws prior source receipts');
+  }finally{release();await running;}
+  await f.restart();await f.run();
+  const surviving=jobs.find(job=>job.automaticGrants?.some(grant=>grant.sourceId==='ordinary'))!;
+  const withdrawn=jobs.find(job=>job.automaticGrants?.some(grant=>grant.sourceId==='override'))!;
+  assert.equal(f.node.memoryPipeline.get(surviving.id).status,'completed');
+  assert.equal(f.node.memoryPipeline.get(withdrawn.id).status,'cancelled');
+  assert.equal(f.node.memoryPipeline.get(withdrawn.id).memoryIds.length,0,'late old-source review cannot commit');
+  assert.equal(f.calls.length,4,'restart never replays the withdrawn or completed work');
+});
+
 test('receipt pins scopes before publication; later enablement, version replacement and duplicate delivery do not backfill',async t=>{
   const f=await fixture(t);f.source('diary');
   const denied=await f.add('diary','disabled');
@@ -79,8 +125,8 @@ test('receipt pins scopes before publication; later enablement, version replacem
   assert.ok(f.node.materials.list({sourceId:'diary'}).items.some(m=>f.node.materialMemoryWork.readyForMemory(m.ref)));
   await f.add('diary','pinned');
   const current=f.node.memoryStrategies.resolve(personal).binding;
-  f.node.memoryStrategies.registerRecipe({id:personal.id,version:'3',extract:{id:current.extract.id,version:current.extract.version},review:{id:current.review.id,version:current.review.version}});
-  await f.configure([{id:personal.id,version:'3'},coding]);await f.publish();await f.run();
+  f.node.memoryStrategies.registerRecipe({id:personal.id,version:'generated-replacement',extract:{id:current.extract.id,version:current.extract.version},review:{id:current.review.id,version:current.review.version}});
+  await f.configure([{id:personal.id,version:'generated-replacement'},coding]);await f.publish();await f.run();
   assert.equal(f.count('extract'),1);assert.equal(f.count('review'),1);assert.equal(f.jobs()[0].recipes![0].id,coding.id);
   const grants=f.node.store.db.prepare('SELECT binding_json,revoked_at FROM memory_input_authorizations WHERE capture_id!=? AND authorized=1').all(denied.id);
   assert.equal(grants.length,2);assert.equal(grants.filter(g=>g.revoked_at!==null).length,1);
@@ -201,7 +247,7 @@ test('enablement and revocation commit atomically and query agent credentials ca
 
 test('current defaults and source inheritance preserve denied receipts across restart; empty persisted selections are rejected',async t=>{
   const f=await fixture(t);f.source('diary');f.source('inherited');
-  const pinned=f.node.memoryRecipeSettings.selection()[0];assert.equal(pinned.recipe.version,'2');
+  const pinned=f.node.memoryRecipeSettings.selection()[0];assert.equal(pinned.recipe.version,'3');
   await f.add('diary','denied');f.node.store.db.prepare("UPDATE memory_input_authorizations SET authorized=0 WHERE source_id='diary'").run();
   f.node.store.db.prepare("UPDATE memory_recipe_settings SET json='[]' WHERE id='default'").run();
   f.node.store.db.prepare("INSERT INTO memory_recipe_settings VALUES('source:inherited','inherited','[]')").run();
@@ -211,7 +257,7 @@ test('current defaults and source inheritance preserve denied receipts across re
   f.node.store.db.prepare("DELETE FROM memory_recipe_settings WHERE id='source:inherited'").run();
   await f.restart();
   assert.deepEqual(f.node.memoryRecipeSettings.selection(),[pinned]);
-  assert.equal(f.node.memoryRecipeSettings.view().items[0].available,true,'host attribution upgrades preserve immutable personal@2 component definitions');
+  assert.equal(f.node.memoryRecipeSettings.view().items[0].available,true,'restart preserves the current pinned personal component definitions');
   assert.equal(f.node.memoryRecipeSettings.view('inherited').inherited,true);
   assert.deepEqual(f.node.memoryRecipeSettings.selection('inherited'),[pinned]);
   await f.publish();await f.run();assert.equal(f.calls.length,0,'restart cannot upgrade a durable denial');

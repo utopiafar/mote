@@ -57,6 +57,14 @@ test('lost create response retries the identical request and creates one receipt
   f.queue.enqueue(draft('second'));await until(()=>f.writes.length===3);assert.notEqual(f.writes[1].requestId,f.writes[2].requestId);
 });
 
+test('a pinned Source Pack preserves scoped guidance in the frozen automatic request and its retry',async t=>{
+  const f=fixture(t),guidance='  Generated fixture: my entries include third-party quotes.\nInterpret those quotes in their original roles.  ',input={...draft('pack'),sourcePackId:'fixture.pack',instruction:guidance};
+  f.loseCreate();const id=f.queue.enqueue(input);input.instruction='Different next-draft guidance';input.sourcePackId='different.pack';
+  await until(()=>f.queue.getSnapshot().entries[0].state==='failed');
+  assert.equal(f.queue.draft(id)!.instruction,guidance);assert.equal(f.writes[0].instruction,guidance);assert.equal(f.writes[0].sourcePackId,'fixture.pack');assert.equal(f.writes[0].processing,'automatic');
+  f.queue.retry(id);await until(()=>f.queue.getSnapshot().entries[0].state==='submitted');assert.deepEqual(f.writes[1],f.writes[0]);assert.equal(f.receipts.size,1);
+});
+
 test('connection close aborts admissions and fences late responses even after restarting',async t=>{
   const f=fixture(t),hold=gate();f.gates.set('old.txt',hold);const old=f.queue.enqueue(draft('old'));f.queue.close();
   assert.deepEqual(f.queue.getSnapshot().entries,[]);assert.throws(()=>f.queue.enqueue(draft('blocked')),/登录连接已结束/);

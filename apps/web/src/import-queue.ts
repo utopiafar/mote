@@ -54,7 +54,7 @@ export class ImportQueue {
     const source:ImportSource=input.source.kind==='files'?{kind:'files',files:[...input.source.files]}:{kind:'directory',path:input.source.path.trim()};
     if(source.kind==='files'){const error=validateImportFiles(source.files);if(error)throw Error(error);if(!source.files.length)throw Error(moteText('请选择导入文件。'));}
     else if(!source.path)throw Error(moteText('请填写中央服务器上的目录。'));
-    const draft={...input,name:input.name.trim(),instruction:input.sourcePackId?'':input.instruction,source};
+    const draft={...input,name:input.name.trim(),source};
     const name=draft.name||(source.kind==='files'?(source.files.length===1?source.files[0].name:moteText('导入 {0} 个文件',source.files.length)):source.path);
     const entry:ImportQueueEntry={id:crypto.randomUUID(),name,createdAt:new Date().toISOString(),state:'queued',uploadedBytes:0,totalBytes:source.kind==='files'?source.files.reduce((n,file)=>n+file.size,0):0,source:source.kind==='files'?{kind:'files',files:source.files.map(file=>({name:file.webkitRelativePath||file.name,size:file.size}))}:{...source}};
     this.tasks.push({entry,draft,uploadIds:new WeakMap(),archived:new WeakMap()});this.publish();this.pump();return entry.id;

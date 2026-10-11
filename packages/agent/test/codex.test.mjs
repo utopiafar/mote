@@ -54,7 +54,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(mode==='timeout')return;
   if(mode==='oversize-frame'){send({method:'fixture/opaque',params:{data:'x'.repeat(14*1024*1024)}});return;}
   if(mode==='error'){send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed',error:{message:'synthetic-private-secret'}}}});return;}
-  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:mode==='material-page'?'material_catalog':mode==='contribution'?'capability_discover':mode==='image-echo'?'read_image':'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:mode==='contribution'?{name:'fixture_context'}:{}}});
+  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:['material-page','attribution-context'].includes(mode)?'material_catalog':mode==='contribution'?'capability_discover':mode==='image-echo'?'read_image':'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:mode==='contribution'?{name:'fixture_context'}:{}}});
  }else if(mode==='contribution'&&m.id===999){
   if(!m.result?.success)process.exit(3);
   const capability=JSON.parse(m.result.contentItems[0].text).data;
@@ -67,6 +67,10 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(!m.result?.success)process.exit(3);
   const page=JSON.parse(m.result.contentItems[0].text);
   send({id:1000,method:'item/tool/call',params:{threadId:'thread-fixture',tool:'material_read',namespace:null,arguments:{ref:page.data.items[0].ref,length:10000}}});
+ }else if(mode==='attribution-context'&&m.id===999){
+  if(!m.result?.success)process.exit(3);
+  const page=JSON.parse(m.result.contentItems[0].text);
+  send({id:1000,method:'item/tool/call',params:{threadId:'thread-fixture',tool:'attribution_context',namespace:null,arguments:{ref:page.data.items[0].ref,length:128}}});
  }else if((mode==='image-flow'||mode==='image-repeat')&&(m.id===999||m.id===1000||mode==='image-repeat'&&m.id===1001)){
   if(!m.result?.success)process.exit(3);
   send({id:m.id+1,method:'item/tool/call',params:{threadId:'thread-fixture',tool:m.id===999?'evidence':'read_image',namespace:null,arguments:m.id===999?{ids:['274f8026-73c2-5566-9528-b7aa5fb14de6']}:{id:'274f8026-73c2-5566-9528-b7aa5fb14de6',attachmentId:'generated-image'}}});
@@ -83,7 +87,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(!m.result?.success)process.exit(3);
   if(mode==='image-echo'||mode==='image-flow')send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'image-echo',type:'dynamicToolCall',contentItems:m.result.contentItems}}});
   if(mode==='usage')for(const sample of [turns*100,turns*100])send({method:'thread/tokenUsage/updated',params:{threadId:'thread-fixture',turnId:'turn-fixture',tokenUsage:{total:{inputTokens:sample,outputTokens:sample/2,totalTokens:sample*1.5,cachedInputTokens:sample/5,cacheWriteInputTokens:0,reasoningOutputTokens:sample/10}}}});
-  send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'message-fixture',type:'agentMessage',text:JSON.stringify({answer:['contribution','material-page'].includes(mode)?'Generated metadata':'Generated evidence [274f8026-73c2-5566-9528-b7aa5fb14de6]',citationIds:['contribution','material-page'].includes(mode)?[]:['274f8026-73c2-5566-9528-b7aa5fb14de6']})}}});
+  send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'message-fixture',type:'agentMessage',text:JSON.stringify({answer:['contribution','material-page','attribution-context'].includes(mode)?'Generated metadata':'Generated evidence [274f8026-73c2-5566-9528-b7aa5fb14de6]',citationIds:['contribution','material-page','attribution-context'].includes(mode)?[]:['274f8026-73c2-5566-9528-b7aa5fb14de6']})}}});
   send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});
  }
 });
@@ -130,6 +134,17 @@ test('Codex App Server exchanges scoped tools, validates citations and leaves no
   assert.equal((await readFile(join(root,'auth.json'),'utf8')).includes('synthetic-unused-key'),true);
   await assert.rejects(access(await readFile(join(root,'runtime-home'),'utf8')),{code:'ENOENT'});
 });
+test('Codex native attribution tool transports a bounded current context page without citing its hidden originals',async t=>{
+  const root=await fake(t,'attribution-context'),fixture=generatedMaterialPages();
+  const ctx={version:1,ownerRelation:'unknown',basis:'default',importDeclarations:[{id:record.id,version:1,fingerprint:'a'.repeat(64),captureIds:[fixture.originals[0].id]}],importStatements:[{id:record.id,version:1,captureIds:[fixture.originals[0].id],instruction:'Generated original narrator scope. '.repeat(500).slice(0,12000)}]};fixture.material.attributionContext=ctx;
+  const agent=createAgent({reader:fixture.reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});t.after(()=>agent.close());
+  const answer=await agent.query({question:'Read generated host attribution'}),rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+  assert.ok(rpc.find(m=>m.method==='thread/start').params.dynamicTools.some(tool=>tool.name==='attribution_context'));
+  const result=rpc.find(m=>m.id===1000).result;assert.equal(result.success,true);assert.equal(result.contentItems.length,1);
+  const page=JSON.parse(result.contentItems[0].text);assert.equal(page.data.text,JSON.stringify(ctx).slice(0,128));assert.equal(page.data.nextOffset,128);assert.equal(page.data.total,JSON.stringify(ctx).length);assert.equal(page.data.citationAuthority,false);
+  assert.deepEqual(answer.citations,[]);assert.equal(answer.trace.at(-1).tool,'attribution_context');assert.equal(answer.trace.at(-1).attributionPage.returnedLength,128);
+});
+
 test('Codex tool completion carries one fitted material page and preserves its original requested range',async t=>{
   const root=await fake(t,'material-page'),fixture=generatedMaterialPages();
   const agent=createAgent({reader:fixture.reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});t.after(()=>agent.close());

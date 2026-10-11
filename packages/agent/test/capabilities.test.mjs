@@ -8,7 +8,7 @@ const base={search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),ev
 async function fixture(t,reader=base,input={question:'Generated'}){const b=await startBridge(reader,input,12);t.after(()=>b.close());const call=async(tool,args={})=>{const r=await fetch(b.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+b.token},body:JSON.stringify(args)});return {status:r.status,body:await r.json()};};return {b,call};}
 test('both runtime converters receive a small typed native core and strict catalog controls, retaining native image modality',()=>{
  const definitions=contextToolDefinitions({question:'Generated'}),names=definitions.map(([name])=>name);
- assert.equal(names.length,10);assert.ok(names.includes('read_image'));assert.ok(!names.includes('media_activity'));assert.ok(!names.includes('source_history'));
+ assert.equal(names.length,11);assert.ok(names.includes('read_image'));assert.ok(names.includes('attribution_context'));assert.ok(!names.includes('media_activity'));assert.ok(!names.includes('source_history'));
  for(const [name,,fields] of definitions){const harness=parameterSchemaSpecToJsonSchema(fields),codex=codexContextTools.find(tool=>tool.name===name).inputSchema;assert.deepEqual({...harness,additionalProperties:false},codex);}
  assert.deepEqual(codexContextTools.find(tool=>tool.name==='capability_execute').inputSchema.required,['name','version','argumentsJson']);
 });

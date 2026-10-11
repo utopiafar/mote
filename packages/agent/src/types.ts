@@ -159,8 +159,8 @@ export interface QueryInput {
   incrementalEvidenceIds?:string[];
   /** Host-reported archive-wide coverage, not a guarantee for the selected window. */
   memoryCoverage?:{scope:'archive';pendingBatches:number;failedBatches:number;lastSavedAt:string|null};
-  /** Small host-selected memory leads for an interactive answer; never citation evidence. */
-  openingMemories?:{id:string;title:string;statement:string;uncertainty:string;status:'published'|'proposed';tier:'episode'|'consolidated';createdAt:string}[];
+  /** Small host-selected derived leads, never citation evidence or an owner-identity grant. */
+  openingMemories?:{id:string;title:string;statement:string;uncertainty:string;status:'published'|'proposed';tier:'episode'|'consolidated';createdAt:string;admission?:{scope:string;attribution:'user'|'third_party'|'observed'|'inferred'};validFrom?:string;validUntil?:string}[];
   evidenceRanges?: {id:string;offset:number;length:number}[];
   after?: string;
   before?: string;
@@ -231,6 +231,8 @@ export interface ToolTrace {
   imageView?:import('@mote/shared').ImageViewTrace;
   /** Host-local page fitting, not extra model/provider calls. */
   materialPage?:{readAttempts:number;requestedLength:number;returnedLength:number;budgetLimited:boolean};
+  /** A host context disclosure page never grants original citation authority. */
+  attributionPage?:{contextFingerprint:string;offset:number;total:number;requestedLength:number;returnedLength:number;budgetLimited:boolean};
   tool: string;
   arguments: Record<string, unknown>;
   count: number;

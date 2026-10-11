@@ -1,6 +1,6 @@
 # 中央导入、记忆与洞察
 
-> 用户自身表达、代办任务和项目归属的新政策见[个人记忆归属](personal-memory-attribution.md)。用户的日常、重复主观表达可以成为个人记忆；第三方任务材料保留为资料，必要时只生成任务线索。
+> 用户自身表达、代办任务和项目归属见[个人记忆归属](personal-memory-attribution.md)。用户的日常、重复主观表达可以成为个人记忆；第三方或身份未知的有用内容可成为来源限定观察。导入背景、个人 v3 和默认升级见[有限个人 Memory ADR](adr-bounded-personal-memory.md)。
 
 > 当前 Central epoch 4：新产物须经过 admission 分层与独立审核；已授权且就绪的新输入采用有界滚动package，保留artifact/history的固定窗口。当前规则见 [系统改造ADR](adr-system-refactor.md)、[记忆准入设计](memory-admission.md)，存储边界见 [MVP 基线 ADR](adr-mvp-baseline.md)。
 
@@ -13,7 +13,7 @@ Mote 的中央节点保存可追溯的资料，并让模型按需使用这些资
 
 ## 从一份资料开始
 
-1. **提交资料**：选择多个文件、本地文件夹、ZIP，或中央服务器可以读取的目录。拖放文件夹或使用“选择文件夹”时，浏览器递归读取文件并保留相对路径；文件夹本身不会作为文件上传。用自然语言说明资料的来历、人物、时区和保留要求，例如“这是聊天导出，张三是我，时间为北京时间”。
+1. **提交资料**：选择多个文件、本地文件夹、ZIP，或中央服务器可以读取的目录。拖放文件夹或使用“选择文件夹”时，浏览器递归读取文件并保留相对路径；文件夹本身不会作为文件上传。可一次用自然语言说明资料的来历、人物和时区，例如“这是聊天导出，张三是我，时间为北京时间；引用内容属于原作者”。说明按此次新增原件及明确的文字范围提供背景，不自动把整批人物算作本人；不填也可归档检索。
 2. **先保存原件**：中央节点保存文件字节、散列和相对路径。ZIP 展开或模型解析失败时，已经成功归档的原件仍可下载。此时尚未写入可检索记录。
 3. **解析**：已知文本/PDF/DOCX/XLSX 可走内置直接解码，不需要模型选择作者或时间；其他需要映射的输入由 `document-import` Skill 检查样例，调用通用解析辅助程序，必要时编写转换脚本。页面展示解析说明、记录数量、正文样例、附件数量、歧义和文件处置清单。
 4. **确认模型映射**：需要预览的输入先核对预览；有问题时修改说明并重新分析。确认后，服务校验预览清单未被改动，再逐条写入带版本的原始记录。已经开始保存记录的任务不能直接重新解释，失败后继续原任务，或另建一次导入。
@@ -147,7 +147,7 @@ HTML 布局由模型生成，展示失败时仍可查看文字和引用。引用
 
 | 接口 | 用途 |
 |---|---|
-| `POST /api/imports` | `{name?, processing?: "automatic"|"preview", sourcePackId?, instruction?, files:[{name,mimeType?,dataBase64}]}` 或目录导入；返回 202 和任务。指定 Source Pack 时不能同时传自由文本指令 |
+| `POST /api/imports` | `{name?, processing?: "automatic"|"preview", sourcePackId?, instruction?, files:[{name,mimeType?,dataBase64}]}` 或目录导入；返回 202 和任务。Source Pack 固定格式解析，可同时提供 `instruction` 作为资料背景和归属范围 |
 | `GET /api/import-source-packs` | 列出部署节点已安装的受信 Python Source Pack 的 `id`、`version`、`description`；不返回本机脚本路径或哈希 |
 | `GET /api/imports`、`GET /api/imports/:id` | 导入历史、预览、文件处置、`reviewDecision` 与宿主 `reviewGate`、进度、错误及关联 `memoryJobId` |
 | `POST /api/imports/:id/prepare` | 可带 `{instruction}`；确认前重新理解资料 |

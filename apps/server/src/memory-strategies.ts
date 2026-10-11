@@ -2,6 +2,7 @@ import {memoryExtractionStrategySchema,memoryReviewStrategySchema,memoryRecipeSc
 import {freezeRecipe,recipeFingerprint} from './recipe-contract.js';
 import {MEMORY_EXTRACTION_PROMPT,MEMORY_SKILL_VERSION} from './memory.js';
 import {personalMemoryReviewStrategyV2} from './personal-memory-review-policy.js';
+import {PERSONAL_MEMORY_RECIPE,boundedPersonalExtractionStrategy,boundedPersonalReviewStrategy} from './bounded-personal-memory-policy.js';
 import {codingMemoryReviewStrategyV2} from './coding-memory-review-policy.js';
 import {DAILY_EVENT_RECIPE,dailyEventExtractionStrategy,dailyEventReviewStrategy} from './daily-event-memory-policy.js';
 import {memoryIntegrationStrategySchema,memoryIntegrationRecipeSchema,type MemoryIntegrationStrategy,type MemoryIntegrationBinding} from './memory-strategy-contract.js';
@@ -25,6 +26,9 @@ export class MemoryStrategies {
     this.registerExtraction({id:'mote.context-extraction',version:MEMORY_SKILL_VERSION.split('@')[1],input:'memory-evidence@1',output:'memory-candidates@1',permissions:['evidence.read'],prompt:MEMORY_EXTRACTION_PROMPT});
     this.registerReview(personalMemoryReviewStrategyV2);
     this.registerRecipe({id:'mote.personal-memory',version:'2',extract:{id:'mote.context-extraction',version:MEMORY_SKILL_VERSION.split('@')[1]},review:{id:'mote.personal-review',version:'2'}});
+    this.registerExtraction(boundedPersonalExtractionStrategy);
+    this.registerReview(boundedPersonalReviewStrategy);
+    this.registerRecipe({...PERSONAL_MEMORY_RECIPE,extract:{id:boundedPersonalExtractionStrategy.id,version:boundedPersonalExtractionStrategy.version},review:{id:boundedPersonalReviewStrategy.id,version:boundedPersonalReviewStrategy.version}});
     this.registerReview(codingMemoryReviewStrategyV2);
     this.registerRecipe({id:'mote.coding-memory',version:'2',extract:{id:'mote.context-extraction',version:MEMORY_SKILL_VERSION.split('@')[1]},review:{id:'mote.coding-review',version:'2'}});
     this.registerReview(defaultMemoryIntegrationReview);

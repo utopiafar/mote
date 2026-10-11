@@ -46,17 +46,22 @@ test('new answers receive bounded visible memory leads and respect explicit arch
   const {app,sources,memories,store}=await buildApp(config(dir),{agent:agent(async input=>{seen.push(input);return answer();})});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
   sources.register({id:'generated',name:'Generated',kind:'custom',deviceId:'fixture',platform:'import'});
-  async function card(key:string,quote:string){
+  async function card(key:string,quote:string,validity:{validFrom?:string;validUntil?:string}={}){
     const original=await sources.upsert('generated',{externalId:key,text:quote,revision:'1',observedAt:'2026-09-18T00:00:00Z',title:'Generated',kind:'file',layer:'original'});
-    const result={answer:JSON.stringify({memories:[{title:`Generated ${key}`,statement:`${quote} [${original.id}]`,uncertainty:'Only in this fixture',admission:{layer:'memory',reason:'Generated project choice for future reference',scope:'Generated project',attribution:'user'},evidenceIds:[original.id],evidence:[{id:original.id,quote}]}]}),citations:[{id:original.id,capturedAt:'2026-09-18T00:00:00Z',appName:'Generated',excerpt:quote}],trace:[],runId:randomUUID()};
+    const result={answer:JSON.stringify({memories:[{title:`Generated ${key}`,statement:`${quote} [${original.id}]`,uncertainty:'Only in this fixture',admission:{layer:'memory',reason:'Generated project choice for future reference',scope:'Generated project',attribution:'user'},...validity,evidenceIds:[original.id],evidence:[{id:original.id,quote}]}]}),citations:[{id:original.id,capturedAt:'2026-09-18T00:00:00Z',appName:'Generated',excerpt:quote}],trace:[],runId:randomUUID()};
     return {original,memory:memories.extract(fixtureMemoryResult(memories,result),'fixture',{requireAdmission:true}).items[0]};
   }
-  const published=await card('published','Generated published project choice');
+  const validity={validFrom:'2026-09-18T00:00:00Z',validUntil:'2099-09-19T00:00:00Z'};
+  const published=await card('published','Generated published project choice applies from 2026-09-18 until 2099-09-19.',validity);
   const proposed=await card('proposed','Generated proposed project choice');
   memories.publish(published.memory.id);
   assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Tell me about this generated project'}})).statusCode,200);
   assert.deepEqual(seen[0].openingMemories?.map(item=>[item.id,item.status]),[[published.memory.id,'published'],[proposed.memory.id,'proposed']]);
   assert.ok(seen[0].openingMemories!.every(item=>!('evidence' in item)));
+  assert.deepEqual(seen[0].openingMemories?.map(item=>item.admission),[{scope:'Generated project',attribution:'user'},{scope:'Generated project',attribution:'user'}]);
+  assert.equal(seen[0].openingMemories![0].validFrom,validity.validFrom);assert.equal(seen[0].openingMemories![0].validUntil,validity.validUntil);
+  assert.equal(seen[0].openingMemories![1].validFrom,undefined);
+  assert.ok(seen[0].openingMemories!.every(item=>!('evidenceIds' in item)&&!('attributionContext' in item)&&!('ownerStatements' in item)));
   assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Only later records',after:'2026-09-19T00:00:00Z'}})).statusCode,200);
   assert.deepEqual(seen[1].openingMemories,[]);
   store.delete(published.original.id);

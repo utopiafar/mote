@@ -30,6 +30,11 @@ export class StorageLedger {
     expressions.material_index_requests='length(CAST(material_id AS BLOB))+length(CAST(revision AS BLOB))+length(CAST(state AS BLOB))+coalesce(length(CAST(error AS BLOB)),0)+128';
     expressions.file_snapshot_index='length(CAST(json AS BLOB))+128';
     expressions.material_index_garbage='64';
+    expressions.import_owner_declarations='length(CAST(json AS BLOB))+256';
+    expressions.capture_import_declarations='256';
+    expressions.memory_recipe_default_upgrades='length(CAST(id AS BLOB))+128';
+    expressions.memory_recipe_legacy_scopes='length(CAST(setting_id AS BLOB))+length(CAST(scope AS BLOB))+128';
+    expressions.memory_recipe_legacy_exclusions='length(CAST(source_id AS BLOB))+128';
     expressions.memory_deletion_dependencies='length(CAST(deletion_id AS BLOB))+length(CAST(evidence_id AS BLOB))+length(CAST(origin_keys AS BLOB))+length(CAST(lineage_keys AS BLOB))+128';
     expressions.delegation_artifacts='length(CAST(json AS BLOB))+length(CAST(metadata AS BLOB))+256';
     expressions.delegation_events='coalesce(length(CAST(message AS BLOB)),0)+length(CAST(work_id AS BLOB))+coalesce(length(CAST(unit_id AS BLOB)),0)+128';

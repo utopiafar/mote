@@ -25,6 +25,7 @@ function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{const api={r
 function view(api:Api,extra:Record<string,unknown>={}){return React.createElement(Imports,{api,onOpen:()=>{},onMemories:()=>{},onSettings:()=>{},onChanged:()=>{},...extra});}
 async function select(d:Document,files:File[]){const input=d.querySelector<HTMLInputElement>('input[type=file]')!;Object.defineProperty(input,'files',{value:files,configurable:true});await act(async()=>input.dispatchEvent(new window.Event('change',{bubbles:true})));}
 async function submit(d:Document){await act(async()=>d.querySelector('form')!.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));}
+async function instruction(d:Document,value:string){await act(async()=>{const input=d.querySelector('textarea')!;Object.getOwnPropertyDescriptor(d.defaultView!.HTMLTextAreaElement.prototype,'value')!.set!.call(input,value);input.dispatchEvent(new window.Event('input',{bubbles:true}));});}
 async function until(check:()=>boolean){for(let i=0;i<100;i++){if(check())return;await act(async()=>new Promise(resolve=>setTimeout(resolve,10)));}assert.ok(check(),'Generated UI operation did not settle');}
 
 test('media admission distinguishes extraction, search and Memory and retries the existing file',async t=>{
@@ -118,16 +119,47 @@ test('page navigation keeps uploads alive and returning shows the same batch',as
 
 test('lost import-create response retries its frozen request while another batch remains independent',async t=>{
  const {root,d}=await fixture(t),writes:any[]=[];
+ const guidance='  Generated fixture: these are my notes; quoted AI replies retain their speakers.\nKeep original dates.  ';
  const api=apiWith((path,init)=>{
   if(path==='/api/imports'&&init?.method==='POST'){writes.push(JSON.parse(String(init.body)));throw Error('Generated lost response');}
   if(path==='/api/imports'||path==='/api/import-source-packs')return {items:[]};
   if(path==='/api/import-uploads'){const data=JSON.parse(String(init?.body));return {id:data.id,fileId:'archive:'+data.id,partBytes:4,parts:[]};}
   throw Error('Unexpected '+path);
  });
- await act(async()=>root.render(view(api)));await select(d,[new File(['one'],'one.txt')]);await submit(d);
- await until(()=>writes.length===1);await act(async()=>button(d,'重试提交').click());await until(()=>writes.length===2);assert.equal(writes[0].requestId,writes[1].requestId);
- await select(d,[new File(['two'],'two.txt')]);await submit(d);await until(()=>writes.length===3);assert.notEqual(writes[1].requestId,writes[2].requestId);
+ await act(async()=>root.render(view(api)));await select(d,[new File(['one'],'one.txt')]);await instruction(d,guidance);await submit(d);
+ await until(()=>writes.length===1);assert.equal(writes[0].instruction,guidance);assert.equal(writes[0].processing,'preview');assert.equal(d.querySelector('textarea')!.value,'');
+ await instruction(d,'Generated different guidance for the next batch');await act(async()=>button(d,'重试提交').click());await until(()=>writes.length===2);assert.deepEqual(writes[0],writes[1]);
+ await select(d,[new File(['two'],'two.txt')]);await submit(d);await until(()=>writes.length===3);assert.notEqual(writes[1].requestId,writes[2].requestId);assert.equal(writes[2].instruction,'Generated different guidance for the next batch');
  assert.equal(d.querySelectorAll('.import-queue-item').length,2);assert.equal(d.querySelector('.imports-page > [role=alert]'),null);
+});
+
+test('import guidance is optional and completed detail preserves the exact text as evidence',async t=>{
+ const {root,d}=await fixture(t),guidance='Generated scoped authorship guidance.\nQuotes remain third-party: <img src="fixture.invalid">',job=importJob({instruction:guidance});
+ const api=apiWith(path=>path==='/api/imports'?{items:[job]}:{items:[]});
+ await act(async()=>root.render(view(api)));const input=d.querySelector('textarea')!;
+ assert.equal(input.required,false);assert.equal(input.value,'');assert.match(d.querySelector('.import-form')!.textContent!,/格式、作者与归属说明/);assert.match(d.querySelector('.import-form')!.textContent!,/未填写也会保留原件/);assert.match(d.querySelector('.import-form')!.textContent!,/来源限定观察/);
+ await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ const details=Array.from(d.querySelectorAll('details')).find(item=>item.querySelector('summary')?.textContent==='本次导入说明')!;
+ assert.equal(details.querySelector('.file-text')!.textContent,guidance);assert.equal(details.querySelector('img'),null);assert.equal(details.querySelector('textarea'),null);assert.match(details.textContent!,/不会把第三方和 AI 引用整批变成你的表达/);
+});
+
+test('choosing a Source Pack keeps the single editable guidance field and submits automatic parsing',async t=>{
+ const {root,d}=await fixture(t),writes:any[]=[],guidance='Generated fixture: these are my notes, with AI quotations kept in their original roles.';
+ const api=apiWith((path,init)=>{
+  if(path==='/api/import-source-packs')return {items:[{id:'fixture.pack',version:'1',description:'Generated fixed parser'}]};
+  if(path==='/api/imports'&&init?.method==='POST'){const input=JSON.parse(String(init.body));writes.push(input);return importJob({instruction:input.instruction});}
+  if(path==='/api/imports')return {items:[]};
+  if(path==='/api/import-uploads'){const input=JSON.parse(String(init?.body));return {id:input.id,fileId:'generated-pack-original',partBytes:4,parts:[]};}
+  throw Error('Unexpected generated path '+path);
+ });
+ await act(async()=>root.render(view(api)));await instruction(d,guidance);
+ const parsing=Array.from(d.querySelectorAll('label')).find(label=>label.textContent?.startsWith('解析方式'))!.querySelector('select')!;
+ await act(async()=>{parsing.value='fixture.pack';parsing.dispatchEvent(new window.Event('change',{bubbles:true}));});
+ assert.equal(d.querySelectorAll('textarea').length,1);assert.equal(d.querySelector('textarea')!.disabled,false);assert.equal(d.querySelector('textarea')!.value,guidance);assert.match(d.querySelector('.import-form')!.textContent!,/格式按所选 Source Pack 解析/);
+ await act(async()=>{parsing.value='';parsing.dispatchEvent(new window.Event('change',{bubbles:true}));});assert.equal(d.querySelector('textarea')!.value,guidance);
+ await act(async()=>{parsing.value='fixture.pack';parsing.dispatchEvent(new window.Event('change',{bubbles:true}));});
+ await select(d,[new File(['Generated fixed-parser original'],'generated-pack.custom')]);await submit(d);await until(()=>writes.length===1);
+ assert.equal(writes[0].sourcePackId,'fixture.pack');assert.equal(writes[0].instruction,guidance);assert.equal(writes[0].processing,'automatic');assert.equal(d.querySelector('textarea')!.value,'');
 });
 
 test('import detail exposes memory pause, resume and cancel and keeps original evidence navigation',async t=>{

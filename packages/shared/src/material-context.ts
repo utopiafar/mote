@@ -13,6 +13,10 @@ export const attributionContextSchema=z.object({
   /** Host-owned declaration identities are persisted; prose is opened only for authorized reads. */
   declarations:z.array(z.object({id:z.string().uuid(),version:z.number().int().positive(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).optional(),
   ownerStatements:z.array(z.object({id:z.string().uuid(),question:z.string().max(2000),answer:z.string().max(8000)}).strict()).optional(),
+  /** Exact owner-entered import context, limited to these original captures.
+   * It is separate from a reply to a Material question and does not set ownerRelation. */
+  importDeclarations:z.array(z.object({id:z.string().uuid(),version:z.number().int().positive(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),captureIds:z.array(z.string().uuid()).min(1)}).strict()).optional(),
+  importStatements:z.array(z.object({id:z.string().uuid(),version:z.number().int().positive(),instruction:z.string().max(12000),captureIds:z.array(z.string().uuid()).min(1)}).strict()).optional(),
 }).strict();
 export type AttributionContext=z.infer<typeof attributionContextSchema>;
 export const unknownAttributionContext=():AttributionContext=>({version:1,ownerRelation:'unknown',basis:'default'});

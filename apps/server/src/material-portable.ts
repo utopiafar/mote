@@ -1,6 +1,7 @@
 import {z} from 'zod';
 import {MaterialStore,materialId,materialManifestSchema,materialEvidenceContextSchema} from './materials.js';
 import {StoreError,sha256,type Store} from './store.js';
+import {ImportAttributionStore,portableImportAttributionSchema,type PortableImportAttribution} from './import-attribution.js';
 
 const hash=z.string().regex(/^[a-f0-9]{64}$/),id=z.string().regex(/^mat_[a-f0-9]{64}$/),uuid=z.string().uuid();
 const text=z.string(),integer=z.number().int().nonnegative(),flag=z.number().int().min(0).max(1),at=z.string().datetime({offset:true});
@@ -28,9 +29,9 @@ const keys={heads:['id'],revisions:['material_id','revision'],blocks:['material_
   members:['material_id','revision','idx'],payloads:['hash'],evidence:['id'],contexts:['anchor_id'],dependencies:['anchor_id','evidence_id'],
   codingSnapshots:['material_id','revision'],indexing:['material_id']} as const;
 const sectionSchema=z.object({version:z.literal(1),...Object.fromEntries(Object.entries(schemas).map(([key,schema])=>[key,z.array(schema).max(400000)])),
-  assets:z.array(z.object({hash,bytes:integer,dataBase64:z.string()}).strict()).max(20000),checksum:hash}).strict();
+  assets:z.array(z.object({hash,bytes:integer,dataBase64:z.string()}).strict()).max(20000),importAttribution:portableImportAttributionSchema.optional(),checksum:hash}).strict();
 type Name=keyof typeof schemas;
-type Portable=Record<Name,Record<string,string|number|null>[]> & {version:1;assets:{hash:string;bytes:number;dataBase64:string}[];checksum:string};
+type Portable=Record<Name,Record<string,string|number|null>[]> & {version:1;assets:{hash:string;bytes:number;dataBase64:string}[];importAttribution?:PortableImportAttribution;checksum:string};
 const names=Object.keys(schemas) as Name[];
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)])):value;
 const digest=(value:unknown)=>sha256(JSON.stringify(canonical(value)));
@@ -40,18 +41,25 @@ function groupRows(rows:Portable[Name],key:(row:Portable[Name][number])=>string)
 }
 
 export function portableMaterialEstimate(store:Store){
-  if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_heads'").get())return 0;
+  const imports=store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='import_owner_declarations'").get()?Number(store.db.prepare('SELECT coalesce(sum(length(CAST(json AS BLOB))),0) n FROM import_owner_declarations').get()!.n):0;
+  if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_heads'").get())return imports;
   const payload=Number(store.db.prepare('SELECT coalesce(sum(length(CAST(text AS BLOB))),0) n FROM material_block_payloads').get()!.n);
   const assets=Number(store.db.prepare(`SELECT coalesce(sum(a.bytes),0) n FROM assets a WHERE a.hash IN
     (SELECT asset_hash FROM material_blocks UNION SELECT asset_hash FROM material_block_versions)`).get()!.n);
-  return payload+Math.ceil(assets*4/3);
+  return payload+Math.ceil(assets*4/3)+imports;
 }
 export function exportPortableMaterials(store:Store):Portable|undefined{
-  if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_heads'").get())return undefined;
+  if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_heads'").get()){
+    if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='capture_import_declarations'").get()||!store.db.prepare('SELECT 1 FROM capture_import_declarations LIMIT 1').get())return undefined;
+    new MaterialStore(store);
+  }
   const body={version:1} as Omit<Portable,'checksum'>;
   for(const name of names){const columns=Object.keys(schemas[name].shape);body[name]=store.db.prepare(`SELECT ${columns.join(',')} FROM ${tables[name]} ORDER BY ${keys[name].join(',')}`).all() as Portable[Name];}
   const assets=store.db.prepare('SELECT DISTINCT asset_hash hash FROM material_blocks WHERE asset_hash IS NOT NULL UNION SELECT DISTINCT asset_hash hash FROM material_block_versions WHERE asset_hash IS NOT NULL').all();
   body.assets=assets.map(row=>{const bytes=store.assets.read(String(row.hash));return {hash:String(row.hash),bytes:bytes.length,dataBase64:bytes.toString('base64')};});
+  if(store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='capture_import_declarations'").get()){
+    const importAttribution=new ImportAttributionStore(store).export();if(importAttribution.captures.length)body.importAttribution=importAttribution;
+  }
   return {...body,checksum:digest(body)};
 }
 
@@ -73,6 +81,8 @@ export function preparePortableMaterials(raw:unknown):Portable|undefined{
 export function restorePortableMaterials(store:Store,portable:Portable|undefined){
   if(!portable)return undefined;
   const materials=new MaterialStore(store),db=store.db;
+  const importAttribution=new ImportAttributionStore(store);
+  if(portable.importAttribution)importAttribution.restore(portable.importAttribution);
   const heads=new Map(portable.heads.map(row=>[row.id,row])),revisions=new Map(portable.revisions.map(row=>[revisionKey(row),row]));
   const revisionSequences=new Set(portable.revisions.map(row=>JSON.stringify([row.material_id,row.sequence])));
   if(revisionSequences.size!==portable.revisions.length)throw new StoreError('Material archive contains duplicate history sequences');
@@ -95,6 +105,10 @@ export function restorePortableMaterials(store:Store,portable:Portable|undefined
     const members=(membersByRevision.get(revisionKey(revision))??[]).sort((a,b)=>Number(a.idx)-Number(b.idx));
     if(members.length!==revision.member_count||members.some((row,i)=>row.idx!==i))throw new StoreError('Material member layout mismatch');
     for(const member of members){if(member.kind==='capture'&&(member.ref!=='capture:'+member.id||!store.evidence([String(member.id)]).length))throw new StoreError('Material archive is missing its original capture');}
+    if(normalized.attributionContext?.importDeclarations?.length){
+      const expected=importAttribution.identities(members.filter(member=>member.kind==='capture').map(member=>String(member.id)));
+      if(digest(normalized.attributionContext.importDeclarations)!==digest(expected))throw new StoreError('Material import declaration has unrelated original scope');
+    }
     const coding=codingRevisions.has(revisionKey(revision));
     const blocks=(coding?(versionsByMaterial.get(String(revision.material_id))??[]).filter(row=>Number(row.from_sequence)<=Number(revision.sequence)&&(row.until_sequence===null||Number(row.until_sequence)>Number(revision.sequence))):(blocksByRevision.get(revisionKey(revision))??[])).sort((a,b)=>Number(a.idx)-Number(b.idx));
     let offset=0,assetCount=0;

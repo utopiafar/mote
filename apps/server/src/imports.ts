@@ -25,6 +25,7 @@ import {FileStore} from './files.js';
 import {materialId} from './materials.js';
 import {withExecutionCancellation} from './execution-cancellation.js';
 import {importMemoryProgress} from './import-memory-progress.js';
+import {ImportAttributionStore} from './import-attribution.js';
 
 const MAX_INPUT_BYTES=256*1024*1024,MAX_EXPANDED_BYTES=512*1024*1024,MAX_FILES=4000;
 export class ImportInputError extends StoreError {
@@ -65,7 +66,9 @@ export class ImportStore {
   private phaseWaiters=new Map<string,Set<()=>void>>();
   private isScheduled(id:string){return Boolean(this.store.db.prepare("SELECT 1 FROM execution_steps WHERE kind IN ('imports.prepare','imports.commit') AND json_extract(input,'$.jobId')=? AND state IN ('waiting','running') LIMIT 1").get(id));}
   readonly directory:string;
+  private readonly attribution:ImportAttributionStore;
   constructor(public store:Store,public files:ArchivedFileStore,public sources:SourceStore,private runtime:ImportRuntime={}) {
+    this.attribution=new ImportAttributionStore(store);
     this.intake=runtime.intake??new ImportIntakeRegistry();if(!runtime.intake)installImportIntake(this.intake);
     const directory=join(store.directory,'imports');privateDirectory(directory);this.directory=realpathSync(directory);
     store.db.exec('CREATE TABLE IF NOT EXISTS image_intake_overrides(capture_id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE,profile_id TEXT NOT NULL)');
@@ -159,7 +162,6 @@ export class ImportStore {
   private async createRequest(request:ImportRequest,createFingerprint?:string):Promise<ImportJob> {
     const configuredPack=request.sourcePackId?this.runtime.sourcePacks?.get(request.sourcePackId):undefined;
     if(request.sourcePackId&&!configuredPack)throw new StoreError('Requested Python Source Pack is not installed on this node',409);
-    if(request.sourcePackId&&request.instruction.trim())throw new StoreError('Python Source Packs use fixed parser code; use model analysis for freeform import instructions',409);
     const entries:{name:string;mimeType?:string;bytes?:Buffer;fileId?:string;path?:string;sizeBytes?:number;identity?:string}[]=[];let total=0;
     const add=(name:string,bytes:Buffer,mimeType?:string)=>{archiveRelativePath(name);total+=bytes.length;if(bytes.length>MAX_FILE_BYTES||total>MAX_INPUT_BYTES||entries.length>=MAX_FILES)throw new StoreError('Import exceeds file count or size limits (64 MiB per file, 256 MiB total)',413);entries.push({name,bytes,mimeType});};
     if(request.archivedFileIds){
@@ -268,7 +270,6 @@ export class ImportStore {
   }
   updateInstruction(id:string,instruction:string):ImportJob {
     z.string().max(12000).parse(instruction);const job=this.load(id);
-    if(job.sourcePackId&&instruction.trim())throw new StoreError('Python Source Packs use fixed parser code; use model analysis for freeform import instructions',409);
     if(this.running.has(id)||this.isScheduled(id)||job.progress.processed>0||job.status==='completed')throw new StoreError('This import can no longer be reanalyzed',409);
     job.preparationRevision=job.preparationRevision+1;job.instruction=instruction;if(instruction.trim())delete job.parserMode;job.status='queued';job.processingStatus='archived';job.failurePhase='prepare';job.preview=undefined;job.dispositions=undefined;job.reviewDecision=undefined;job.reviewGate=undefined;job.manifestHash=undefined;job.progress.total=0;job.error=undefined;this.save(job);return this.public(job);
   }
@@ -374,7 +375,9 @@ export class ImportStore {
       attempt=this.attempt(job);
       // Restore model-readable copies so retries start from authoritative archived bytes.
       for(const input of attempt.inputs)await this.materialize(input);
-      const result=responseSchema.parse(await prepare({operationId:`import:${id}`,signal,workspace:attempt.workspace,inputPaths:attempt.inputs.map(i=>i.path),instruction:job.instruction,previous}));
+      // Fixed packs keep their parser contract. The owner's freeform note is
+      // retained separately as capture-scoped context, not a parser override.
+      const result=responseSchema.parse(await prepare({operationId:`import:${id}`,signal,workspace:attempt.workspace,inputPaths:attempt.inputs.map(i=>i.path),instruction:pack?'':job.instruction,previous}));
       signal?.throwIfAborted();grant.assert();job.summary=result.summary;job.warnings=[...job.warnings,...(result.warnings??[])].slice(-200);
       const path=result.recordsPath??join(attempt.workspace,'records.jsonl');
       if(!existsSync(resolve(attempt.workspace,path)))return grant.commit(()=>{job.status='unsupported';job.processingStatus='blocked';job.error='Original files are archived. No validated records were produced; revise the instructions or retry with a suitable parser.';this.save(job);return this.public(job);});
@@ -397,7 +400,10 @@ export class ImportStore {
       grant.commit(()=>{job.status='importing';job.processingStatus='saving';job.failurePhase='import';job.error=undefined;this.save(job);});
       const path=join(job.workspace,'prepared.jsonl');if(!job.manifestHash)throw new StoreError('The preview changed; analyze the files again before importing',409);
       await this.validateManifest(job,path,validated,signal,job.manifestHash);signal?.throwIfAborted();grant.assert();
-      grant.commit(()=>this.sources.register({id:job.sourceId,name:job.name,kind:'upload',deviceId:'mote-import',platform:'import',retention:'archive',enabled:true}));
+      const declaration=grant.commit(()=>{
+        this.sources.register({id:job.sourceId,name:job.name,kind:'upload',deviceId:'mote-import',platform:'import',retention:'archive',enabled:true});
+        return this.attribution.freeze({id:job.id,version:job.preparationRevision+1,sourceId:job.sourceId,instruction:job.instruction});
+      });
       for(const media of job.media??[]){
         if(media.captureId)continue;
         signal?.throwIfAborted();grant.assert();
@@ -406,7 +412,7 @@ export class ImportStore {
         const record=(captureId:string,duplicate:boolean)=>{
           grant.assert();this.files.attach(captureId,[file.id]);media.captureId=captureId;
           linkOperationParent(this.store,`import:${id}`,`file:${captureId}`);
-          if(duplicate)job.progress.duplicates++;else{job.progress.imported++;job.captureIds.push(captureId);}
+          if(duplicate)job.progress.duplicates++;else{this.attribution.bind(captureId,declaration);job.progress.imported++;job.captureIds.push(captureId);}
           job.progress.processed++;this.save(job);
         };
         const ack=await this.runtime.fileStore.archivedRevision(file,job.sourceId,media.format.mimeType,job.createdAt,()=>grant.assert(),captureId=>record(captureId,false),media.format.mimeType.startsWith('image/')?job.imageProfileId:undefined);
@@ -417,7 +423,7 @@ export class ImportStore {
         await this.sources.upsert(job.sourceId,record.item,()=>grant.assert(),result=>{
           grant.assert();if(!result.duplicate&&job.imageProfileId)this.store.db.prepare('INSERT OR IGNORE INTO image_intake_overrides VALUES(?,?)').run(result.id,job.imageProfileId);this.files.attach(result.id,fileIds);
           linkOperationParent(this.store,`import:${id}`,`capture:${result.id}`);linkOperationParent(this.store,`import:${id}`,`file:${result.id}`);
-          if(result.duplicate)job.progress.duplicates++;else{job.progress.imported++;job.captureIds.push(result.id);}
+          if(result.duplicate)job.progress.duplicates++;else{this.attribution.bind(result.id,declaration);job.progress.imported++;job.captureIds.push(result.id);}
           job.recordsProcessed=index+1;job.progress.processed=job.recordsProcessed+(job.media?.filter(item=>item.captureId).length??0);this.save(job);
         });
       }
@@ -517,7 +523,7 @@ export class ImportStore {
       this.store.db.prepare('DELETE FROM source_connections WHERE id=?').run(job.sourceId);
     }
     this.store.db.prepare('DELETE FROM execution_operation_steps WHERE operation_id=?').run(`import:${id}`);this.store.db.prepare('DELETE FROM operation_parents WHERE parent_id=?').run(`import:${id}`);
-    this.store.db.prepare('DELETE FROM import_jobs WHERE id=?').run(id);rmSync(job.workspace,{recursive:true,force:true});
+    this.store.db.prepare('DELETE FROM import_jobs WHERE id=?').run(id);this.attribution.pruneUnbound(id);rmSync(job.workspace,{recursive:true,force:true});
     const retained=new Set(otherJobs.flatMap(other=>other.files.map(file=>file.id))),removed=this.files.removeUnreferenced(job.files.map(file=>file.id),retained);
     return {deleted:true,captures,files:removed.files,bytes:removed.bytes,retainedSharedSource};
   }

@@ -77,6 +77,20 @@ async function withProvider(protocol, run, options = {}, actions, final = answer
 }
 
 for (const protocol of ['deepseek','openai-completions','openai-responses','anthropic-messages','google-generative-ai']) {
+  test(`real Harness ${protocol} transports native attribution pages without original citation authority`,{timeout:60000},async()=>{
+    const fixture=generatedMaterialPages(),ctx={version:1,ownerRelation:'unknown',basis:'default',importDeclarations:[{id:record.id,version:1,fingerprint:'a'.repeat(64),captureIds:[fixture.originals[0].id]}],importStatements:[{id:record.id,version:1,captureIds:[fixture.originals[0].id],instruction:'Generated narrator-only scope. '.repeat(500).slice(0,12000)}]};
+    fixture.material.attributionContext=ctx;
+    const actions=[{name:'material_catalog',args:{limit:2}},{name:'attribution_context',args:{ref:materialRef,length:128}}];
+    await withProvider(protocol,async(agent,requests)=>{
+      const result=await agent.query({question:'Inspect generated attribution'});assert.equal(requests.length,3);assert.deepEqual(result.citations,[]);
+      const body=requests[0].body,tools=protocol==='google-generative-ai'?body.tools.flatMap(t=>t.functionDeclarations):body.tools.map(t=>t.function??t);
+      assert.ok(tools.some(t=>t.name==='attribution_context'),'native tool is registered in the actual adapter');
+      const pages=[];const walk=value=>{if(typeof value==='string'){try{const parsed=JSON.parse(value.split('\n')[0]);if(parsed.data?.contextFingerprint)pages.push(parsed);}catch{}}else if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')Object.values(value).forEach(walk);};walk(requests[2].body);
+      assert.equal(pages.length,1);assert.equal(pages[0].data.text,JSON.stringify(ctx).slice(0,128));assert.equal(pages[0].data.nextOffset,128);assert.equal(pages[0].data.total,JSON.stringify(ctx).length);assert.equal(pages[0].data.citationAuthority,false);
+      assert.ok(!JSON.stringify(requests).includes(ctx.importStatements[0].instruction),'ordinary metadata and a partial context page do not transmit the unread statement tail');
+      assert.equal(result.trace.at(-1).tool,'attribution_context');assert.equal(result.trace.at(-1).attributionPage.returnedLength,128);
+    },{reader:fixture.reader},actions,JSON.stringify({answer:'Generated scoped context remains partially inspected.',citationIds:[]}));
+  });
   test(`real Harness ${protocol} receives one budget-fitted material result with its continuation`,{timeout:60000},async()=>{
     const fixture=generatedMaterialPages();
     const actions=[{name:'material_catalog',args:{}},{name:'material_read',args:{ref:materialRef,length:10000}}];

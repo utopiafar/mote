@@ -29,7 +29,8 @@ async function run(){
   wc.session.webRequest.onBeforeRequest({urls:[url+'/*']},(details,callback)=>{if(new URL(details.url).pathname.endsWith('/image'))imageRequests.push(details.url);callback({});});
   const js=code=>wc.executeJavaScript(code);
   const click=label=>js(`(()=>{const b=Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()===${JSON.stringify(label)});if(!b||b.disabled)return false;b.click();return true;})()`);
-  await window.loadURL(url);await js(`localStorage.setItem('mote.record-layout','grid');sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token}))});location.reload()`);
+  const browserSession=await request('/api/login/session',{serverUrl:url,deviceId:randomUUID(),deviceName:'Generated import browser',platform:'other',durationMs:0});
+  await window.loadURL(url);await js(`localStorage.setItem('mote.record-layout','grid');sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({token:browserSession.token,viewScope:randomUUID()}))});location.reload()`);
   await until(()=>js(`document.body.innerText.includes('已登录 ·')`),'connected UI');
   await js(`location.hash='/actions'`);
   await until(()=>js(`!!document.querySelector('[aria-label="待办"] form')`),'tasks');
@@ -101,8 +102,27 @@ async function run(){
   await until(()=>gmailClick('断开账户'),'disconnect Gmail');
   await until(()=>js(`!document.body.innerText.includes('generated@example.invalid')`),'disconnected Gmail');
   assert.deepEqual(await js('window.gmailFixture'),{starts:1,syncs:2,disconnects:1});
+  // The optional owner background travels through the actual browser upload
+  // and import admission routes. This fixture has no model, so parsing waits
+  // for configuration; it must not invent records or completed Memory.
+  await js(`location.hash='/library/import'`);
+  await until(()=>js(`!!document.querySelector('input[type="file"]')`),'return to imports');
+  assert.ok(await click('新建导入'));
+  const ownerInstruction='These generated diary entries are mine. Quoted visitors and AI remain separate actors. <em>literal context</em>';
+  await js(`(()=>{const files=new DataTransfer();files.items.add(new File(['Generated scoped diary fixture'], 'owner-context-generated.txt',{type:'text/plain'}));const input=document.querySelector('input[type="file"]');input.files=files.files;input.dispatchEvent(new Event('change',{bubbles:true}));const note=document.querySelector('textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(note,${JSON.stringify(ownerInstruction)});note.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  assert.ok(await click('加入导入队列'));
+  let ownerJob;
+  await until(async()=>{ownerJob=(await request('/api/imports')).items.find(item=>item.instruction===ownerInstruction);return ownerJob?.status==='needs_configuration';},'owner instruction retained before configured parsing');
+  assert.equal(ownerJob.progress.imported,0);assert.equal(ownerJob.memoryJobId,undefined);
+  await js(`(()=>{const note=document.querySelector('textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(note,'Generated independent next draft');note.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  assert.equal((await request('/api/imports/'+ownerJob.id)).instruction,ownerInstruction,'next draft cannot rewrite the admitted batch');
+  await js(`Array.from(document.querySelectorAll('.workspace-select')).find(item=>item.querySelector('strong')?.textContent==='owner-context-generated.txt').click()`);
+  await until(()=>js(`!!document.querySelector('.import-detail .import-instructions')`),'owner instruction detail');
+  await js(`document.querySelector('.import-instructions').open=true`);
+  await until(()=>js(`document.querySelector('.import-detail')?.innerText.includes(${JSON.stringify(ownerInstruction)})`),'literal owner context detail');
+  assert.equal(await js(`!!document.querySelector('.import-detail em')`),false,'owner context is plain text');
   assert.deepEqual(errors,[]);assert.deepEqual(imageRequests,[]);
-  console.info('PASS: real browser creates/completes a task with no deadline or calendar side effect; batch imports eight generated originals, concurrently admits another batch, preserves uploads across navigation, pauses/resumes without a phantom job, recovers missing directories, and fits desktop/mobile layouts; unscheduled memory stays separate; Gmail fixture covers read-only authorization, continuation and disconnect.');
+  console.info('PASS: real browser creates/completes a task with no deadline or calendar side effect; batch imports eight generated originals, concurrently admits another batch, preserves uploads across navigation, pauses/resumes without a phantom job, recovers missing directories, and fits desktop/mobile layouts; optional owner context reaches HTTP admission byte-for-byte, remains isolated from the next draft and displays as literal text; unscheduled memory stays separate; Gmail fixture covers read-only authorization, continuation and disconnect.');
 }
 async function finish(code){if(window&&!window.isDestroyed())window.destroy();if(server&&server.exitCode===null){server.kill('SIGTERM');await Promise.race([new Promise(resolve=>server.once('close',resolve)),delay(5000)]);}rmSync(root,{recursive:true,force:true});app.exit(code);}
 run().then(()=>finish(0),error=>{console.error(error.message);void finish(1);});

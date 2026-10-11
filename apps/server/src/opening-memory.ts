@@ -1,8 +1,10 @@
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {EvidenceDependencies} from '@mote/shared';
+import {z} from 'zod';
 
 type Lead=NonNullable<QueryInput['openingMemories']>[number];
 type Scope=Pick<QueryInput,'after'|'before'|'deviceId'|'contextTime'>;
+const validityTime=z.string().max(64).datetime({offset:true});
 
 /** Use the same privacy-aware reader as model tools; never place original records in the opening prompt. */
 export async function openingMemoryContext(reader:ContextReader,question:string,scope:Scope):Promise<{leads:Lead[];evidenceDependencies:EvidenceDependencies}> {
@@ -33,7 +35,16 @@ export async function openingMemoryContext(reader:ContextReader,question:string,
     const ids=memory.evidenceIds;
     if(!Array.isArray(ids)||!ids.length||ids.some(id=>typeof id!=='string'))evidenceDependencies.complete=false;
     else evidenceDependencies.ids.push(...ids as string[]);
-    selected.push({id,title:memory.title.slice(0,160),statement:memory.statement.slice(0,700),uncertainty:typeof memory.uncertainty==='string'?memory.uncertainty.slice(0,300):'',status:memory.status,tier:memory.tier==='consolidated'?'consolidated':'episode',createdAt:memory.createdAt});
+    const admission=memory.admission&&typeof memory.admission==='object'&&!Array.isArray(memory.admission)?memory.admission as Record<string,unknown>:undefined;
+    const attribution=admission?.attribution;
+    const scopedAdmission=typeof admission?.scope==='string'&&admission.scope.trim()&&typeof attribution==='string'&&['user','third_party','observed','inferred'].includes(attribution)?
+      {scope:admission.scope.slice(0,600),attribution:attribution as NonNullable<Lead['admission']>['attribution']}:undefined;
+    // These limits belong to the derived claim. Do not add structured original
+    // references, quotes or declaration prose, or turn admission into identity.
+    const validity=(field:'validFrom'|'validUntil')=>{const parsed=validityTime.safeParse(memory[field]);return parsed.success?parsed.data:undefined;};
+    const validFrom=validity('validFrom'),validUntil=validity('validUntil');
+    selected.push({id,title:memory.title.slice(0,160),statement:memory.statement.slice(0,700),uncertainty:typeof memory.uncertainty==='string'?memory.uncertainty.slice(0,300):'',status:memory.status,tier:memory.tier==='consolidated'?'consolidated':'episode',createdAt:memory.createdAt,
+      ...(scopedAdmission?{admission:scopedAdmission}:{}),...(validFrom?{validFrom}:{}),...(validUntil?{validUntil}:{})});
   }
   evidenceDependencies.ids=[...new Set(evidenceDependencies.ids)];
   return {leads:selected,evidenceDependencies};
