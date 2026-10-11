@@ -19,7 +19,7 @@ import type {FileStore} from './files.js';
 import {StoreError,type Store} from './store.js';
 import {EvidenceExposurePolicy} from './evidence-exposure.js';
 import type {ManualMemoryInputPlanRequest} from './memory-input-plans.js';
-export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSettings,memoryRecipeSettings,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{memoryIntegrationSettings:MemoryIntegrationSettings;memoryRecipeSettings:MemoryRecipeSettings;store:Store;files:FileStore;evidenceReader:EvidenceReader;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult)=>Promise<QueryResult>}){
+export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSettings,memoryRecipeSettings,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{memoryIntegrationSettings:MemoryIntegrationSettings;memoryRecipeSettings:MemoryRecipeSettings;store:Store;files:FileStore;evidenceReader:EvidenceReader;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult,strategy?:import('./memory-strategy-contract.js').MemoryReviewStrategy,draftOrigin?:import('./memory-review.js').MemoryDraftOrigin)=>Promise<QueryResult>}){
  const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
   app.post('/api/memories/:id/publish',async req=>{const body=z.object({version:z.number().int().positive().optional()}).strict().parse(req.body??{});return memoryPipeline.publication?memoryPipeline.publication.withOwnerWork(()=>memoryPipeline.publication!.publish((req.params as {id:string}).id,body.version)):memories.publish((req.params as {id:string}).id,body.version);});
   app.post('/api/memories/:id/correct',async req=>memoryPipeline.publication?memoryPipeline.publication.withOwnerWork(()=>memoryPipeline.publication!.correct((req.params as {id:string}).id,req.body)):memories.correct((req.params as {id:string}).id,req.body));
@@ -119,18 +119,20 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
     const input:QueryInput={...scope,evidenceRanges,evidenceIds:selected.evidenceIds,modelProfileId:profile.id,modelOverride:profile.settings.model,skill:'memory-extraction',responseMode:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT};
     input.validateOutput=result=>{try{memoryPipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id),profile.id);memories.extract(result,profile.settings.model,{requireAdmission:true,validateOnly:true,expectedFingerprints});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
     const context={phase:'extract' as const,opId:operationId,evidenceIds:selected.evidenceIds,assertAuthority:()=>memoryPipeline.assertAdmissibleEvidence(selected.evidenceIds,profile.id)};
+    try{
     const native=await memoryPipeline.engineDraft(input,context),draft=native??await query(input);
     memoryPipeline.assertAdmissibleEvidence(draft.citations.map(c=>c.id),profile.id);
     if(!native)memories.extract(draft,profile.settings.model,{requireAdmission:true,validateOnly:true,expectedFingerprints});
-    const result=await reviewExtraction(input,draft);
+    const result=await reviewExtraction(input,draft,undefined,native?'native-engine':'mote');
     const options={requireAdmission:true,expectedFingerprints,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result)};
     const assert=()=>memoryPipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id),profile.id);
-    assert();memoryPipeline.publication?.retainOutput(operationId,{result,reviewReceipt:memoryReviewReceipt(result)});
+    assert();memoryPipeline.publication?.retainOutput(operationId,{result,reviewReceipt:memoryReviewReceipt(result)},{evidenceIds:selected.evidenceIds});
     if(native&&memoryPipeline.publication?.retainedOutput(operationId))await memoryPipeline.settleEngineDraft(context);
     const publication=await memoryPipeline.publication?.stageExtract(operationId,result,profile.settings.model,options,assert);
     return memoryPipeline.withAdmissibleEvidence(result.citations.map(c=>c.id),()=>{
       memoryPipeline.publication?.assert(publication,result);const saved=memories.extract(result,profile.settings.model,{...options,prepared:publication?.prepared});memoryPipeline.publication?.committed(publication);return saved;
     },profile.id);
+    }catch(error){memoryPipeline.abandonEngineDraft(context);throw error;}
     };return memoryPipeline.publication?memoryPipeline.publication.withOwnerWork(execute):execute();
   });
 }

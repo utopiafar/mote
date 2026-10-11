@@ -33,9 +33,10 @@ export function freezeSemanticContextTime(clock:()=>string=()=>new Date().toISOS
   return z.string().max(64).datetime({offset:true}).refine(value=>Number.isFinite(Date.parse(value)),'Invalid semantic context time').parse(clock());
 }
 export type LifecycleWindow={manual?:boolean;id:string;version:string;from:number;through:number;ids:string[];startedAt:number;contextTime:string;settings:LifecycleSettings;checkpoint?:string};
-type State={cancelled?:boolean;manualRetryRequired?:boolean;stream?:LifecycleExtension['stream'];drainThrough?:number;cursor:number;lastSuccess:number;retryAt?:number;failures:number;active?:LifecycleWindow;lastRun?:{id:string;through:number;completedAt:number};error?:string};
+type State={cancelled?:boolean;cancellationCause?:'owner'|'authority';manualRetryRequired?:boolean;stream?:LifecycleExtension['stream'];drainThrough?:number;cursor:number;lastSuccess:number;retryAt?:number;failures:number;active?:LifecycleWindow;lastRun?:{id:string;through:number;completedAt:number};error?:string};
 export type LifecycleExecution={operationId:string;jobId:string;signal:AbortSignal;interrupted:()=>boolean;commit:<T>(write:()=>T)=>T};
 export type LifecycleExtension={id:keyof Pick<LifecycleSettings,'extraction'|'consolidation'|'insights'|'working'>;version:string;stream:'evidence'|'artifact'|'memory'|'conversation';maxAttempts?:number;
+  cancel?:(window:LifecycleWindow,cause:'owner'|'authority')=>void;
   run:(window:LifecycleWindow,checkpoint:(id:string)=>void,execution?:LifecycleExecution)=>Promise<void>};
 
 /** The host owns persistence/admission; replaceable extensions own model procedures.
@@ -73,6 +74,10 @@ export class MemoryLifecycle {
     if(exists&&this.state(extension.id).stream!==extension.stream)throw new StoreError('Unsupported lifecycle stream structure',409);
     this.extensions.set(extension.id,extension);
     if(!exists)this.save(extension.id,{stream:extension.stream,cursor:0,lastSuccess:this.now(),failures:0});
+    const state=this.state(extension.id);
+    // Cancellation can outlive its running listener. Replay the exact durable
+    // checkpoint; automatic authority withdrawal preserves independent replies.
+    if(state.cancelled&&state.active)extension.cancel?.(structuredClone(state.active),state.cancellationCause??(state.active.manual?'owner':'authority'));
   }
   replace(extension:LifecycleExtension){
     if(!this.extensions.has(extension.id))return this.register(extension);
@@ -88,12 +93,14 @@ export class MemoryLifecycle {
     if(this.running.has(id)||state.active&&!state.cancelled&&this.executor?.get('lifecycle:'+state.active.id)?.state!=='cancelled')throw new StoreError('Finish or cancel the active lifecycle task first',409);
     if(!ids.length||ids.length>settings[id].maxItems||new Set(ids).size!==ids.length||checkpoint.length>32000)throw new StoreError('Choose a smaller unique set of inputs',413);
     state.active={manual:true,id:randomUUID(),version:extension.version,from:state.cursor,through:state.cursor,ids,startedAt:this.now(),contextTime:freezeSemanticContextTime(this.semanticContextTime),settings,checkpoint};
-    delete state.cancelled;delete state.manualRetryRequired;delete state.retryAt;delete state.error;state.failures=0;this.save(id,state);if(own)db.exec('COMMIT');return state.active.id;
+    delete state.cancelled;delete state.cancellationCause;delete state.manualRetryRequired;delete state.retryAt;delete state.error;state.failures=0;this.save(id,state);if(own)db.exec('COMMIT');return state.active.id;
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
-  cancel(id:LifecycleExtension['id'],windowId:string){
+  cancel(id:LifecycleExtension['id'],windowId:string,options?:{cause:'authority'}){
     const state=this.state(id);if(state.active?.id!==windowId)throw new StoreError('Active lifecycle task not found',404);
-    state.cancelled=true;delete state.retryAt;this.save(id,state);this.executor?.cancel('lifecycle:'+windowId);return this.view();
+    const cause=options?.cause??'owner';state.cancelled=true;state.cancellationCause=cause;delete state.retryAt;this.save(id,state);
+    this.extensions.get(id)?.cancel?.(structuredClone(state.active),cause);
+    this.executor?.cancel('lifecycle:'+windowId);return this.view();
   }
   retry(id:LifecycleExtension['id'],windowId:string,prepare?:(window:LifecycleWindow)=>void){
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
@@ -102,7 +109,7 @@ export class MemoryLifecycle {
       if(this.running.has(id)||this.executor?.get('lifecycle:'+windowId)?.state==='running')throw new StoreError('Wait for the current task to stop before retrying',409);
       prepare?.(structuredClone(state.active));
       if(this.executor?.get('lifecycle:'+windowId))this.executor.retry('lifecycle:'+windowId);
-      delete state.cancelled;delete state.manualRetryRequired;delete state.retryAt;delete state.error;state.failures=0;this.save(id,state);
+      delete state.cancelled;delete state.cancellationCause;delete state.manualRetryRequired;delete state.retryAt;delete state.error;state.failures=0;this.save(id,state);
       if(own)db.exec('COMMIT');return this.view();
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
@@ -112,7 +119,7 @@ export class MemoryLifecycle {
     const state=this.state(id);if(state.cursor>=through||state.active&&state.active.through>through)return;
     if(state.active?.manual)return;
     if(state.active)this.executor?.cancel('lifecycle:'+state.active.id);
-    state.cursor=through;delete state.active;delete state.cancelled;delete state.manualRetryRequired;delete state.retryAt;delete state.error;delete state.drainThrough;state.failures=0;this.save(id,state);
+    state.cursor=through;delete state.active;delete state.cancelled;delete state.cancellationCause;delete state.manualRetryRequired;delete state.retryAt;delete state.error;delete state.drainThrough;state.failures=0;this.save(id,state);
   }
   configure(input:unknown){const parsed=lifecycleSettingsSchema.parse(input);this.store.db.prepare('UPDATE memory_lifecycle_settings SET json=? WHERE id=1').run(JSON.stringify(parsed));return this.view();}
   /** Resume does not authorize the paused gap. Preserve an already admitted
@@ -121,7 +128,7 @@ export class MemoryLifecycle {
     for(const id of ['extraction','consolidation'] as const){const extension=this.extensions.get(id);if(!extension)continue;const state=this.state(id);
       const row=extension.stream==='artifact'?this.store.db.prepare('SELECT max(seq) n FROM artifact_events').get():extension.stream==='evidence'?this.store.db.prepare('SELECT max(seq) n FROM changes').get():this.store.db.prepare('SELECT max(seq) n FROM memory_events WHERE stream=?').get(extension.stream);
       state.cursor=Math.max(state.cursor,Number(row?.n??0));delete state.drainThrough;
-      if(state.cancelled&&!state.active?.manual){delete state.active;delete state.cancelled;delete state.manualRetryRequired;delete state.error;delete state.retryAt;state.failures=0;}
+      if(state.cancelled&&!state.active?.manual){delete state.active;delete state.cancelled;delete state.cancellationCause;delete state.manualRetryRequired;delete state.error;delete state.retryAt;state.failures=0;}
       this.save(id,state);
     }
   }
@@ -186,7 +193,7 @@ export class MemoryLifecycle {
         if(this.closed||this.state(extension.id).active?.id!==state.active.id)return;
         // An explicitly retired historical prefix can be ahead of a retained
         // authorized window. Completing that window never undoes the cutoff.
-        state.cursor=Math.max(state.cursor,this.state(extension.id).cursor,state.active.through);if(!state.drainThrough||state.cursor>=state.drainThrough){delete state.drainThrough;if(!state.active.manual)state.lastSuccess=this.now();}state.lastRun={id:state.active.id,through:state.cursor,completedAt:this.now()};delete state.active;delete state.cancelled;delete state.manualRetryRequired;delete state.error;delete state.retryAt;state.failures=0;
+        state.cursor=Math.max(state.cursor,this.state(extension.id).cursor,state.active.through);if(!state.drainThrough||state.cursor>=state.drainThrough){delete state.drainThrough;if(!state.active.manual)state.lastSuccess=this.now();}state.lastRun={id:state.active.id,through:state.cursor,completedAt:this.now()};delete state.active;delete state.cancelled;delete state.cancellationCause;delete state.manualRetryRequired;delete state.error;delete state.retryAt;state.failures=0;
       }catch(error){
         if(this.closed)return;
         if(state.active){

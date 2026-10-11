@@ -67,6 +67,7 @@ export function registerMemoryIntegration({lifecycle,memories,pipeline,settings,
       if(state.completed.includes(profile))continue;
       const candidates=all.filter(m=>m.domain===profile);if(!candidates.length)continue;
       const selected=assertInputs(),evidence=[...new Set(candidates.flatMap(m=>m.evidenceIds))];
+      let nativeContext:MemoryEngineDraftContext|undefined;
       try{
       pipeline.assertAdmissibleEvidence(evidence);
       const expected=Object.fromEntries(candidates.flatMap(m=>(m.evidence??[]).map(e=>[e.id,e.contentHash])));
@@ -82,9 +83,9 @@ export function registerMemoryIntegration({lifecycle,memories,pipeline,settings,
         result=retained.result;receipt=retained.reviewReceipt;
         assertInputs();pipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id));memories.extract(result,generationModel,{...validation,validateOnly:true});
       }else{
-        const context:MemoryEngineDraftContext={phase:'integrate',opId:operationId,evidenceIds:evidence,relatedMemories:candidates,assertAuthority:()=>{const check=()=>{assertInputs();pipeline.assertAdmissibleEvidence(evidence);};if(execution)execution.commit(check);else check();}};
+        const context:MemoryEngineDraftContext=nativeContext={phase:'integrate',opId:operationId,evidenceIds:evidence,relatedMemories:candidates,assertAuthority:()=>{const check=()=>{assertInputs();pipeline.assertAdmissibleEvidence(evidence);};if(execution)execution.commit(check);else check();}};
         const native=await pipeline.engineDraft(input,context),draft=native??await query(input);if(native)nativePin=memoryEngineDraftPin(context);assertInputs();pipeline.assertAdmissibleEvidence(draft.citations.map(c=>c.id));if(!native)memories.extract(draft,generationModel,{...validation,validateOnly:true});
-        result=await reviewMemory(input,draft,query,{strategy:selected.review,taskInstructions:contract,deletions:memories.deletions,authorizeDeletionEvidence:ids=>pipeline.assertDeletionEvidenceAllowed(ids,state.model.configuration?.profileId)});
+        result=await reviewMemory(input,draft,query,{draftOrigin:native?'native-engine':'mote',strategy:selected.review,taskInstructions:contract,deletions:memories.deletions,authorizeDeletionEvidence:ids=>pipeline.assertDeletionEvidenceAllowed(ids,state.model.configuration?.profileId)});
         receipt=memoryReviewReceipt(result);
       }
       const completed=[...state.completed,profile];let refreshedInputs=state.inputs;
@@ -99,7 +100,7 @@ export function registerMemoryIntegration({lifecycle,memories,pipeline,settings,
         if(execution)execution.commit(assert);else assert();
       };
       assertAuthority();
-      pipeline.publication?.retainOutput(operationId,{result,reviewReceipt:receipt,engineDraft:nativePin});
+      pipeline.publication?.retainOutput(operationId,{result,reviewReceipt:receipt,engineDraft:nativePin},{evidenceIds:evidence,memoryIds:candidates.map(memory=>memory.id)});
       if(nativePin&&pipeline.publication?.retainedOutput(operationId))await pipeline.settleEngineDraft(nativePin);
       const publication=await pipeline.publication?.stageExtract(operationId,result,generationModel,extractOptions,assertAuthority,!window.manual);
       const commit=()=>{
@@ -114,7 +115,7 @@ export function registerMemoryIntegration({lifecycle,memories,pipeline,settings,
         });
       };if(execution)execution.commit(commit);else commit();
       state.inputs=refreshedInputs;state.completed=completed;
-      }catch(error){failures.push(error);}
+      }catch(error){if(nativeContext)pipeline.abandonEngineDraft(nativeContext);failures.push(error);}
     }
     if(failures.length)throw failures[0];
     checkpoint('completed');

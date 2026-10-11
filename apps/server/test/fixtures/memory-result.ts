@@ -13,5 +13,5 @@ export function fixtureMemoryResult(memories:MemoryStore,result:QueryResult,rang
  return changed?{...result,answer:JSON.stringify(output)}:result;
 }
 export function fixtureMemoryPipeline(options:MemoryPipelineOptions){
- return new MemoryPipeline({...options,query:async input=>fixtureMemoryResult(options.memories,await options.query(input),input.evidenceRanges),...(options.review?{review:async(input:any,draft:QueryResult,strategy:any)=>fixtureMemoryResult(options.memories,await options.review!(input,draft,strategy),input.evidenceRanges)}:{})});
+ return new MemoryPipeline({...options,query:async input=>fixtureMemoryResult(options.memories,await options.query(input),input.evidenceRanges),...(options.review?{review:async(input:any,draft:QueryResult,strategy:any,origin)=>fixtureMemoryResult(options.memories,await options.review!(input,draft,strategy,origin),input.evidenceRanges)}:{})});
 }

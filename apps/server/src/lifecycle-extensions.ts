@@ -23,7 +23,14 @@ export function registerMemoryExtensions({integrationSettings,lifecycle,store,fi
   lifecycle:MemoryLifecycle;store:Store;files:FileStore;memories:MemoryStore;pipeline:MemoryPipeline;working:WorkingMemory;
   query:(input:QueryInput,module:'memories'|'insights'|'conversations')=>Promise<QueryResult>;model:()=>string;
 }){
-  lifecycle.register({id:'extraction',version:'3.3.0',stream:'artifact',maxAttempts:3,async run(window,checkpoint,execution){
+  lifecycle.register({id:'extraction',version:'3.3.0',stream:'artifact',maxAttempts:3,cancel(window,cause){
+    if(!window.checkpoint)return;
+    let child;try{child=pipeline.get(window.checkpoint);}catch(error){if(error instanceof StoreError&&error.statusCode===404)return;throw error;}
+    // The checkpoint and exact persisted backlink are host identities. A raw
+    // import label or similar source text never identifies an automatic child.
+    if(child.importJobId!=='lifecycle:'+window.id)return;
+    pipeline.cancel(child.id,cause==='authority'?{cause:'authority'}:undefined);
+  },async run(window,checkpoint,execution){
     let job=window.checkpoint?pipeline.get(window.checkpoint):undefined;
     if(!job){
       if(!semanticArtifacts)return;
@@ -34,7 +41,7 @@ export function registerMemoryExtensions({integrationSettings,lifecycle,store,fi
     // A provider cooldown is admission, not another extraction attempt.
     if(job.status==='failed'&&job.availableAt&&job.availableAt>Date.now())throw new ExecutionFailure('waiting',job.errorCode??'provider_cooldown',job.availableAt-Date.now());
     if(job.status!=='completed'&&providerCooldownCheck)try{providerCooldownCheck();}catch(error){if(error instanceof ProviderFailure)throw new ExecutionFailure('waiting',error.details.code,error.details.retryAfterMs);throw error;}
-    const abort=()=>{if(!execution?.interrupted())pipeline.cancel(job!.id);};execution?.signal.addEventListener('abort',abort,{once:true});let result;try{execution?.signal.throwIfAborted();result=await (job.status==='failed'?pipeline.retry(job.id):pipeline.run(job.id));}finally{execution?.signal.removeEventListener('abort',abort);}
+    const abort=()=>{if(!execution?.interrupted()&&pipeline.get(job!.id).status!=='cancelled')pipeline.cancel(job!.id);};execution?.signal.addEventListener('abort',abort,{once:true});let result;try{execution?.signal.throwIfAborted();result=await (job.status==='failed'?pipeline.retry(job.id):pipeline.run(job.id));}finally{execution?.signal.removeEventListener('abort',abort);}
     if(result.status==='waiting_for_model'||result.status==='waiting_for_input'||result.status==='paused'||result.status==='pausing')throw new ExecutionFailure('waiting',result.errorCode??'extraction_input_pending',result.availableAt?Math.max(0,result.availableAt-Date.now()):undefined);
     // Deleted/superseded inputs are intentionally retired; their new revisions
     // are later journal entries. Other failures retain this window for retry.

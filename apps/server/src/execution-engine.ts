@@ -149,6 +149,8 @@ export class ExecutionEngine {
   * it. A temporary execution lease is not the authorization for derived work. */
  isCurrentInputAuthority(id:string){const step=this.get(id),handler=step&&this.handlers.get(step.kind);return Boolean(step&&handler&&['running','waiting'].includes(step.state)&&handler.validate(step)&&(handler.validateGrant?.(step)??true));}
  hasActive(kind:string){return [...this.active.keys()].some(id=>this.get(id)?.kind===kind);}
+ /** Cancellation revokes the durable grant before local transport cleanup ends. */
+ isActiveStep(id:string){return this.active.has(id);}
  /** Several completions in one turn need only one admission pass. */
  private scheduleTick(){
   if(this.stopping||this.scheduled)return;

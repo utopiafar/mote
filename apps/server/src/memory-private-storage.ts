@@ -2,6 +2,52 @@ import {moteText} from './i18n.js';
 import type {Store} from './store.js';
 import type {MemoryJob,MemoryBatch} from './memory-pipeline.js';
 
+export type MemoryPublicationDependencies={evidenceIds?:readonly string[];memoryIds?:readonly string[]};
+/** Dependency routing is explicit host metadata, never an interpretation of
+ * model prose. Persisted triggers also run in maintenance-only Store processes. */
+export function installMemoryPublicationRetirement(store:Store){
+ const db=store.db;
+ db.exec(`CREATE TABLE IF NOT EXISTS memory_publication_dependencies(operation_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('evidence','memory')),dependency_id TEXT NOT NULL,PRIMARY KEY(operation_id,kind,dependency_id));
+ CREATE INDEX IF NOT EXISTS memory_publication_original_dependencies ON memory_publication_dependencies(kind,dependency_id,operation_id);
+ CREATE TABLE IF NOT EXISTS memory_publication_retirements(operation_id TEXT PRIMARY KEY);
+ DROP TRIGGER IF EXISTS memory_publication_original_retired_insert;
+ CREATE TRIGGER memory_publication_original_retired_insert AFTER INSERT ON memory_provider_evidence_revocations BEGIN
+  INSERT INTO memory_publication_retirements SELECT operation_id FROM memory_publication_dependencies d WHERE kind='evidence' AND dependency_id=json_extract(new.json,'$.evidenceId') AND NOT EXISTS(SELECT 1 FROM memory_publication_retirements r WHERE r.operation_id=d.operation_id);
+ END;
+ DROP TRIGGER IF EXISTS memory_publication_original_retired_update;
+ CREATE TRIGGER memory_publication_original_retired_update AFTER UPDATE OF generation,json ON memory_provider_evidence_revocations WHEN new.generation!=old.generation OR new.json!=old.json BEGIN
+  INSERT INTO memory_publication_retirements SELECT operation_id FROM memory_publication_dependencies d WHERE kind='evidence' AND dependency_id=json_extract(new.json,'$.evidenceId') AND NOT EXISTS(SELECT 1 FROM memory_publication_retirements r WHERE r.operation_id=d.operation_id);
+ END;
+ DROP TRIGGER IF EXISTS memory_publication_memory_retired;
+ CREATE TRIGGER memory_publication_memory_retired BEFORE DELETE ON memories BEGIN
+  INSERT INTO memory_publication_retirements SELECT operation_id FROM memory_publication_dependencies d WHERE kind='memory' AND dependency_id=old.id AND NOT EXISTS(SELECT 1 FROM memory_publication_retirements r WHERE r.operation_id=d.operation_id);
+ END;
+ DROP TRIGGER IF EXISTS memory_publication_operation_retired;
+ CREATE TRIGGER memory_publication_operation_retired AFTER INSERT ON memory_publication_retirements BEGIN
+  UPDATE memory_provider_writes SET json=json_set(json_remove(json,'$.memory'),'$.privateRetired',json('true'),'$.hostPublished',json(CASE WHEN coalesce(json_extract(json,'$.hostPublished'),0)=1 OR EXISTS(SELECT 1 FROM memory_publications p WHERE p.id=new.operation_id AND p.state='committed') OR EXISTS(SELECT 1 FROM memory_owner_mutations m WHERE m.id=new.operation_id AND m.state='committed') OR (EXISTS(SELECT 1 FROM memory_plan_binding b WHERE json_extract(b.json,'$.namespace')=json_extract(memory_provider_writes.json,'$.namespace')) AND EXISTS(SELECT 1 FROM memories m WHERE m.id=json_extract(memory_provider_writes.json,'$.key.memoryId') AND json_extract(m.json,'$.version')=json_extract(memory_provider_writes.json,'$.key.version') AND json_extract(m.json,'$.fingerprint')=json_extract(memory_provider_writes.json,'$.key.fingerprint'))) THEN 'true' ELSE 'false' END)) WHERE parent_id=new.operation_id;
+  UPDATE memory_publications SET json=json_set(json_remove(json,'$.prepared'),'$.privateRetired',json('true')),state='retired' WHERE id=new.operation_id;
+  UPDATE memory_publication_outputs SET json='{"privateRetired":true}' WHERE id=new.operation_id;
+  UPDATE memory_owner_mutations SET json=json_set(json_remove(json,'$.before','$.result','$.changed'),'$.privateRetired',json('true')),state='retired' WHERE id=new.operation_id;
+ END;`);
+ // A held worker/transport can finish after the retirement transaction. Never
+ // let a later INSERT or saved in-memory JSON restore those exact operations.
+ for(const [table,id,body,state] of [
+  ['memory_provider_writes','new.parent_id',"json_set(json_remove(new.json,'$.memory'),'$.privateRetired',json('true'))",''],
+  ['memory_publications','new.id',"json_set(json_remove(new.json,'$.prepared'),'$.privateRetired',json('true'))",",state='retired'"],
+  ['memory_publication_outputs','new.id',"'{\"privateRetired\":true}'",''],
+  ['memory_owner_mutations','new.id',"json_set(json_remove(new.json,'$.before','$.result','$.changed'),'$.privateRetired',json('true'))",",state='retired'"],
+ ] as const)for(const event of ['INSERT','UPDATE OF json'] as const)db.exec(`CREATE TRIGGER IF NOT EXISTS ${table}_private_retired_${event==='INSERT'?'insert':'update'} AFTER ${event} ON ${table}
+  WHEN coalesce(json_extract(new.json,'$.privateRetired'),0)!=1 AND EXISTS(SELECT 1 FROM memory_publication_retirements WHERE operation_id=${id}) BEGIN
+   UPDATE ${table} SET json=${body}${state} WHERE id=new.id;
+  END;`);
+}
+export function registerMemoryPublicationDependencies(store:Store,operationId:string,dependencies:MemoryPublicationDependencies){
+ const insert=store.db.prepare('INSERT OR IGNORE INTO memory_publication_dependencies VALUES(?,?,?)');
+ const exists=store.db.prepare('SELECT 1 FROM memory_publication_dependencies WHERE operation_id=? AND kind=? AND dependency_id=?');
+ for(const [kind,ids] of [['evidence',dependencies.evidenceIds],['memory',dependencies.memoryIds]] as const)for(const id of new Set(ids??[])){if(exists.get(operationId,kind,id))continue;store.reserveMetadata(Buffer.byteLength(operationId)+Buffer.byteLength(kind)+Buffer.byteLength(id)+64);insert.run(operationId,kind,id);}
+}
+export function memoryPublicationRetired(store:Store,operationId:string){return Boolean(store.db.prepare('SELECT 1 FROM memory_publication_retirements WHERE operation_id=?').get(operationId));}
+
 export function encodeMemoryPrivate(store:Store,value:unknown):string {const body=JSON.stringify(value);return store.contentEncryption.enabled?'aes:'+store.contentEncryption.seal(Buffer.from(body)).toString('base64'):'json:'+body;}
 export function decodeMemoryPrivate<T>(store:Store,value:string):T {
  if(value.startsWith('aes:'))return JSON.parse(store.contentEncryption.open(Buffer.from(value.slice(4),'base64')).toString('utf8')) as T;

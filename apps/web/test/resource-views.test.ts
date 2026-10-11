@@ -82,7 +82,7 @@ test('a concurrent correction between the selected-card GET and POST cannot sile
  const {root,document:d}=await fixture(t),db=new DatabaseSync(':memory:');t.after(()=>db.close());
  const selected={...memory(ids[0]),version:2,fingerprint:'a'.repeat(64),admission:{layer:'memory'}},changed={...selected,title:'Generated owner correction',version:3,fingerprint:'b'.repeat(64)};
  let current=selected,queued=0,race=true;const writes:any[]=[];
- const lifecycle={request:()=>{assert.equal(db.isTransaction,true);queued++;return ids[1];}},memories={store:{db},get:()=>current},pipeline={strategies:{resolveIntegration:()=>({binding:{}})},assertAdmissibleEvidence:()=>{},modelSnapshot:()=>({model:'generated-model'})};
+ const lifecycle={request:()=>{assert.equal(db.isTransaction,true);queued++;return ids[1];}},memories={store:{db},get:()=>current},pipeline={strategies:{resolveIntegration:()=>({binding:{}})},assertNewManualWork:()=>{},assertAdmissibleEvidence:()=>{},modelSnapshot:()=>({model:'generated-model'})};
  const api=apiWith((path,init)=>{
   if(path==='/api/memory-settings')return {settings:{consolidation:{enabled:false,maxItems:3}},extensions:[{id:'consolidation',status:'pending',failures:0}]};
   if(path==='/api/memory-integration-recipes')return {items:[{id:'mote.memory-integration',version:'2',available:true}]};

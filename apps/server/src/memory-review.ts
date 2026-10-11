@@ -11,7 +11,9 @@ import {validationFeedback,type MemoryOutputValidationCode} from './memory-valid
 
 const receipts=new WeakMap<QueryResult,MemoryReviewReceipt>();
 export function memoryReviewReceipt(result:QueryResult){return receipts.get(result);}
-type ReviewOptions={deletions?:MemoryDeletions;authorizeDeletionEvidence?:(ids:string[])=>void;cache?:MemoryReviewCache;snapshot?:()=>string;strategy?:MemoryReviewStrategy;taskInstructions?:string};
+/** Set only by the host that invoked the native engine, never by captured content. */
+export type MemoryDraftOrigin='mote'|'native-engine';
+type ReviewOptions={draftOrigin?:MemoryDraftOrigin;deletions?:MemoryDeletions;authorizeDeletionEvidence?:(ids:string[])=>void;cache?:MemoryReviewCache;snapshot?:()=>string;strategy?:MemoryReviewStrategy;taskInstructions?:string};
 
 /** A separate read-only model pass. The host still validates exact evidence after review. */
 export async function reviewMemory(input:QueryInput,draft:QueryResult,query:(input:QueryInput)=>Promise<QueryResult>,options?:ReviewOptions):Promise<QueryResult> {
@@ -25,13 +27,14 @@ export async function reviewMemory(input:QueryInput,draft:QueryResult,query:(inp
     receipts.set(result,{deletionSnapshot,resultHash:sha256(result.answer),strategy:memoryStrategyPin(strategy??defaultMemoryReviewStrategy),policy:'bounded-exact-review@1',decision,draftRunId:draft.runId,reviewRunId:decision==='empty'?undefined:result.runId,checkedAt:new Date().toISOString(),contextTime:input.contextTime,inputHash,model});return result;
   };
   const workPackage=Boolean(input.taskContext?.memoryWork);
-  if(!value.memories.length&&!workPackage)return receipt(await finish({...draft}),'empty');
+  const native=options?.draftOrigin==='native-engine';
+  if(!value.memories.length&&!workPackage&&!native)return receipt(await finish({...draft}),'empty');
   // Only fixed, bounded extraction tools may reuse a verdict. Consolidation and
   // open retrieval can see changing context outside the supplied originals.
   const bounded=options?.cache&&options.snapshot&&input.validateOutput&&input.contextTime&&input.evidenceIds?.length&&input.evidenceRanges?.length&&['memory-extraction','coding-memory','memory-strategy'].includes(input.skill??'');
   const snapshot=bounded?options!.snapshot!():undefined;
   const {signal,validateOutput,onProgress,onTrace,onUsage,traceContext,...semanticInput}=input;
-  const key=bounded?sha256(JSON.stringify(['bounded-exact-review@1',strategy??defaultMemoryReviewStrategy,options?.taskInstructions,semanticInput,value,draft.citations,snapshot,deletionSnapshot])):undefined;
+  const key=bounded?sha256(JSON.stringify(['bounded-exact-review@1',native?'native-engine':'mote',strategy??defaultMemoryReviewStrategy,options?.taskInstructions,semanticInput,value,draft.citations,snapshot,deletionSnapshot])):undefined;
   const validate=async(result:QueryResult)=>{
     signal?.throwIfAborted();
     if(snapshot!==undefined&&options!.snapshot!()!==snapshot)throw new StoreError('Memory review inputs changed',409);
@@ -41,9 +44,10 @@ export async function reviewMemory(input:QueryInput,draft:QueryResult,query:(inp
     if(snapshot!==undefined&&options!.snapshot!()!==snapshot)throw new StoreError('Memory review inputs changed',409);
   };
   {
-    // Revalidate the draft as well as the cached output; exact citations alone
-    // do not prove semantic support and never authorize a first-time bypass.
-    await validate(draft);
+    // Native facts are unreviewed proposals with an upstream schema. The
+    // independent model must inspect originals and produce Mote's contract;
+    // every reviewed output (including reuse) receives full host validation.
+    if(!native)await validate(draft);
     const cached=key?options!.cache!.get(key):undefined;
     if(cached){await validate(cached.result);return receipt(await finish(cached.result),'reused',key,cached.model);}
   }

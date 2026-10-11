@@ -3,14 +3,14 @@ import {createRequire} from 'node:module';
 import {join} from 'node:path';
 import {MemoryProviderError,type MemoryProvider,type MemoryProviderWrite,type MemoryProviderRead,type MemoryProviderRemove,type MemoryProviderSearch,type MemoryProviderNamespace,type MemoryProviderReceipt,type MemoryProviderHit,type MemoryProviderRecord,type MemoryProviderHealth} from './memory-provider-contract.js';
 import type {Memory} from './memory-schema.js';
-import {mem0RuntimeConfigSchema,type Mem0RuntimeConfig} from './mem0-memory-runtime.js';
+import {MEM0_OSS_RELEASE,mem0RuntimeConfigSchema,type Mem0RuntimeConfig} from './mem0-memory-runtime.js';
 type Pending={resolve:(value:any)=>void;reject:(error:Error)=>void};
 
 /** Controlled service boundary, not a permission sandbox. Only the host can
  * create this facade or pass its write methods to migration/admission code. */
 export class Mem0MemoryProvider implements MemoryProvider {
   private child?:ChildProcess;private starting?:Promise<void>;private next=0;private pending=new Map<number,Pending>();private closed=false;private closing?:Promise<void>;
-  constructor(private readonly config:Mem0RuntimeConfig){mem0RuntimeConfigSchema.parse(config);}
+  constructor(private readonly config:Mem0RuntimeConfig,private readonly options:{embeddingUnavailable?:Error;assertEmbeddingAuthority?:()=>void}={}){mem0RuntimeConfigSchema.parse(config);}
   private fail(){for(const request of this.pending.values())request.reject(new MemoryProviderError('unknown_result','Memory worker exited; an external operation may require recovery'));this.pending.clear();this.child=undefined;this.starting=undefined;}
   private send<T>(method:string,input:unknown):Promise<T>{return new Promise<T>((resolve,reject)=>{const child=this.child;if(!child?.connected){reject(new MemoryProviderError('unavailable','Memory worker is unavailable'));return;}const id=++this.next;this.pending.set(id,{resolve,reject});child.send({id,method,input},error=>{if(error){this.pending.delete(id);reject(new MemoryProviderError('unknown_result','Memory worker transport failed'));}});});}
   private async start(){
@@ -25,13 +25,14 @@ export class Mem0MemoryProvider implements MemoryProvider {
       await this.send('initialize',this.config);
     })();return this.starting;
   }
-  private async request<T>(method:string,input:unknown):Promise<T>{await this.start();if(this.closed)throw new MemoryProviderError('closed','Memory provider is closed');return this.send<T>(method,input);}
+  private assertEmbedding(method:string){if(['put','search','recover'].includes(method)){this.options.assertEmbeddingAuthority?.();if(this.options.embeddingUnavailable)throw this.options.embeddingUnavailable;}}
+  private async request<T>(method:string,input:unknown):Promise<T>{if(this.closed)throw new MemoryProviderError('closed','Memory provider is closed');this.assertEmbedding(method);await this.start();if(this.closed)throw new MemoryProviderError('closed','Memory provider is closed');this.assertEmbedding(method);return this.send<T>(method,input);}
   put(input:MemoryProviderWrite){return this.request<MemoryProviderReceipt>('put',input);}
   read(input:MemoryProviderRead){return this.request<Memory|null>('read',input);}
   remove(input:MemoryProviderRemove){return this.request<MemoryProviderReceipt>('remove',input);}
   search(input:MemoryProviderSearch){return this.request<MemoryProviderHit[]>('search',input);}
   export(input:{namespace:MemoryProviderNamespace}){return this.request<MemoryProviderRecord[]>('export',input);}
-  health(input:{namespace:MemoryProviderNamespace}){return this.request<MemoryProviderHealth>('health',input);}
+  async health(input:{namespace:MemoryProviderNamespace}):Promise<MemoryProviderHealth>{if(this.closed)throw new MemoryProviderError('closed','Memory provider is closed');try{this.assertEmbedding('recover');}catch{return {providerId:'mem0-oss',version:MEM0_OSS_RELEASE.version,ready:false,verified:{persistentCrud:false,scopedRetrieval:false,immutableRecords:false,idempotentReplay:false,history:false,physicalErase:false},problems:['Embedding credentials are unavailable; retained literal history remains readable']};}return this.request<MemoryProviderHealth>('health',input);}
   recover(input:{namespace:MemoryProviderNamespace}){return this.request<MemoryProviderHealth>('recover',input);}
   close():Promise<void>{
     if(this.closing)return this.closing;this.closed=true;const child=this.child;

@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {buildApp} from '../src/app.js';
+import type {Config} from '../src/config.js';
+
+test('owner stop remains stopping and retains the cutover tail until the cancelled automatic transport actually exits',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-memory-stop-generated-')),owner='generated-owner-'+randomUUID();
+  let release!:()=>void,entered!:()=>void;
+  const ready=new Promise<void>(resolve=>entered=resolve),transport=new Promise<void>(resolve=>release=resolve);
+  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxStorageBytes:30*1024*1024,maxExportBytes:1024*1024,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://generated.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpWriteEnabled:false}};
+  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,async query(){throw Error('No model belongs in this generated transport fixture');},async close(){}},memoryExtensions:[{id:'extraction',version:'generated-slow-transport',stream:'evidence',async run(_window,_checkpoint,execution){assert.ok(execution);entered();await transport;execution.signal.throwIfAborted();}}]});
+  let running:Promise<void>|undefined;
+  t.after(async()=>{release();await running?.catch(()=>{});await node.app.close();await rm(directory,{recursive:true,force:true});});
+  const headers={authorization:'Bearer '+owner},settings=node.lifecycle.settings();
+  node.lifecycle.configure({...settings,extraction:{...settings.extraction,minChanges:1}});
+  const received=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id:randomUUID(),deviceId:'generated-device',deviceName:'Generated',platform:'import',capturedAt:new Date().toISOString(),text:'Generated observatory transport lifecycle.'}});
+  assert.equal(received.statusCode,201,received.body);
+  running=node.lifecycle.tick();await ready;
+  const initial=(await node.app.inject({method:'GET',url:'/api/memory-spaces/default/binding',headers})).json();
+  assert.equal(initial.admission.running,1);
+  const stop=await node.app.inject({method:'POST',url:'/api/memory-spaces/default/binding/stop',headers,payload:{operationId:randomUUID(),expectedRevision:initial.revision}});
+  assert.equal(stop.statusCode,200);assert.equal(stop.json().admission.state,'stopping');assert.equal(stop.json().admission.running,1);
+  assert.ok(node.memoryBindings.pendingTail()>0,'a revoked grant is not proof that its native transport stopped');
+  release();await running;
+  const settled=(await node.app.inject({method:'GET',url:'/api/memory-spaces/default/binding',headers})).json();
+  assert.equal(settled.admission.state,'paused');assert.equal(settled.admission.running,0);assert.equal(node.memoryBindings.pendingTail(),0);
+});

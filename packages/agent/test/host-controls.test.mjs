@@ -55,7 +55,7 @@ const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 readline.createInterface({input:process.stdin}).on('line',line=>{const message=JSON.parse(line);
 if(message.method==='initialize')send({id:message.id,result:{}});
 else if(message.method==='account/read')send({id:message.id,result:{account:{type:'apiKey'}}});
-else if(message.method==='thread/start'){if(!message.params.dynamicTools.some(tool=>tool.name==='delegation_read')||message.params.sandbox!=='read-only')process.exit(2);send({id:message.id,result:{thread:{id:'generated-thread'},serviceTier:message.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});}
+else if(message.method==='thread/start'){if(!message.params.dynamicTools.some(tool=>tool.name==='delegation_read')||message.params.sandbox!=='read-only')process.exit(2);send({id:message.id,result:{thread:{id:'generated-thread',model:null},model:message.params.model,serviceTier:message.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});}
 else if(message.method==='turn/start'){send({id:message.id,result:{turn:{id:'generated-turn'}}});send({id:999,method:'item/tool/call',params:{threadId:'generated-thread',tool:'delegation_read',arguments:{}}});}
 else if(message.id===999){send({id:1000,method:'item/tool/call',params:{threadId:'generated-thread',tool:'delegation_yield',arguments:{}}});}
 else if(message.method)send({id:message.id,result:{}});

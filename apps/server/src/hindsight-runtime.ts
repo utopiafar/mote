@@ -1,6 +1,6 @@
 import {execFile,spawn,type ChildProcess} from 'node:child_process';
 import {promisify} from 'node:util';
-import {mkdir,readFile,writeFile,rename} from 'node:fs/promises';
+import {mkdir,readFile,writeFile,rename,unlink,lstat} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash,randomUUID} from 'node:crypto';
@@ -23,6 +23,23 @@ export type HindsightModelRequest={requestId:string;opId?:string;purpose:Hindsig
 export type HindsightModelCallbacks={runModel?:AgentOptions['runModel'];assertModelAuthority?:(request:HindsightModelRequest)=>void|Promise<void>;onUsage?:(usage:TokenUsage,request:HindsightModelRequest)=>void;onRequestStarted?:(request:HindsightModelRequest)=>void;onRequestFinished?:(request:HindsightModelRequest&{status:'completed'|'failed'})=>void};
 const run=promisify(execFile);
 async function docker(args:string[]){try{return (await run('docker',args,{maxBuffer:2*1024*1024})).stdout.trim();}catch{throw new MemoryProviderError('unavailable','The controlled Hindsight Docker runtime is unavailable');}}
+const leaseSchema=z.object({pid:z.number().int().positive(),started:z.string().min(1),token:z.string().min(32)}).strict();
+async function processStarted(pid:number){try{return (await run('ps',['-p',String(pid),'-o','lstart='],{maxBuffer:1024})).stdout.trim();}catch(error){try{process.kill(pid,0);}catch(probe){if((probe as NodeJS.ErrnoException).code==='ESRCH')return;}throw new MemoryProviderError('unavailable','Native runtime ownership could not be verified');}}
+/** Central already holds the vault's exclusive process lock. This additional
+ * configuration lease also rejects a second factory in the same live process;
+ * a crashed owner can be reclaimed without losing its immutable native volume. */
+export class HindsightRuntimeLease {
+  private holder?:z.infer<typeof leaseSchema>;
+  constructor(private path:string){}
+  async claim(){
+    const holder={pid:process.pid,started:(await processStarted(process.pid))!,token:randomUUID()+randomUUID()};
+    for(let attempt=0;attempt<3;attempt++)try{await writeFile(this.path,JSON.stringify(holder),{mode:0o600,flag:'wx'});this.holder=holder;return;}
+    catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;const stat=await lstat(this.path);if(!stat.isFile())throw new MemoryProviderError('conflict','Native runtime lease is not an ordinary file');const prior=leaseSchema.parse(JSON.parse(await readFile(this.path,'utf8'))),started=await processStarted(prior.pid);if(started&&started===prior.started)throw new MemoryProviderError('conflict','Another live host owns this Hindsight configuration');const current=leaseSchema.parse(JSON.parse(await readFile(this.path,'utf8')));if(current.token===prior.token)await unlink(this.path).catch(error=>{if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;});}
+    throw new MemoryProviderError('conflict','Native runtime ownership changed while recovering');
+  }
+  async owns(){if(!this.holder)return false;try{return leaseSchema.parse(JSON.parse(await readFile(this.path,'utf8'))).token===this.holder.token;}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return false;throw error;}}
+  async release(){if(await this.owns())await unlink(this.path);this.holder=undefined;}
+}
 const delay=(ms:number,signal?:AbortSignal)=>new Promise<void>((resolve,reject)=>{signal?.throwIfAborted();const timer=setTimeout(()=>{signal?.removeEventListener('abort',abort);resolve();},ms);const abort=()=>{clearTimeout(timer);reject(signal!.reason);};signal?.addEventListener('abort',abort,{once:true});});
 
 /** Only a narrow HTTP client is exposed to the adapter, never to query agents. */
@@ -84,6 +101,8 @@ export class ManagedHindsightRuntime implements HindsightRuntime {
   private workerFailure?:Promise<never>;
   private stoppingWorker=false;
   private closed=false;
+  private lease?:HindsightRuntimeLease;
+  private containerClaimed=false;
   private closing=new AbortController();
   private operationId?:string;
   private operationPurpose:HindsightModelPurpose='operation';
@@ -99,7 +118,9 @@ export class ManagedHindsightRuntime implements HindsightRuntime {
     this.identity=hindsightDigest([options.instanceId,options.configurationIdentity??randomUUID(),hindsightModelFingerprint(options.settings),HINDSIGHT_IMAGE]).slice(0,24);
     this.container='mote-hindsight-'+this.identity;this.volume=this.container+'-data';
   }
-  service(){if(this.closed)return Promise.reject(new MemoryProviderError('closed','Hindsight runtime is closed'));return this.ready??=this.initialize().catch(error=>{this.ready=undefined;throw error;});}
+  // Initialization failure stays attached to this runtime until its explicit
+  // close/restart. Repeated reads cannot overwrite a still-open relay or lease.
+  service(){if(this.closed)return Promise.reject(new MemoryProviderError('closed','Hindsight runtime is closed'));return this.ready??=this.initialize();}
   existingService(){return this.ready;}
   private async initialize(){
     this.closing.signal.throwIfAborted();this.initializingService=true;await mkdir(this.options.directory,{recursive:true,mode:0o700});
@@ -108,6 +129,7 @@ export class ManagedHindsightRuntime implements HindsightRuntime {
     const expected={version:1 as const,identity:this.identity,image:HINDSIGHT_IMAGE,modelFingerprint:hindsightModelFingerprint(this.options.settings),instanceFingerprint:hindsightDigest(this.options.instanceId)};
     try{const descriptor=descriptorSchema.parse(JSON.parse(await readFile(descriptorPath,'utf8')));if(descriptor.modelFingerprint!==expected.modelFingerprint||descriptor.instanceFingerprint!==expected.instanceFingerprint)throw new MemoryProviderError('conflict','Restore the exact approved model configuration before opening Hindsight history');this.identity=descriptor.identity;this.container='mote-hindsight-'+this.identity;this.volume=this.container+'-data';}
     catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;await writeFile(descriptorPath,JSON.stringify(expected),{mode:0o600,flag:'wx'});}
+    if(!this.lease){const lease=new HindsightRuntimeLease(join(this.options.directory,'runtime-host.json'));await lease.claim();this.lease=lease;}
     const credentialsPath=join(this.options.directory,'runtime-credentials.json');
     let credentials:{token:string;port:number;apiToken:string}|undefined;
     try{credentials=z.object({token:z.string().min(32),port:z.number().int().positive(),apiToken:z.string().min(32)}).strict().parse(JSON.parse(await readFile(credentialsPath,'utf8')));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw new MemoryProviderError('unavailable','Hindsight private runtime credentials require recovery');}
@@ -123,13 +145,13 @@ export class ManagedHindsightRuntime implements HindsightRuntime {
     if(Object.values(settings).some(value=>/[\r\n\u0000]/.test(value)))throw new MemoryProviderError('unavailable','Invalid runtime model configuration');
     await writeFile(envPath,Object.entries(settings).map(([key,value])=>key+'='+value).join('\n'),{mode:0o600});
     await docker(['version','--format','{{.Server.Version}}']);
-    let existing=false;try{const label=await docker(['inspect','--format','{{index .Config.Labels "mote.runtime.identity"}}',this.container]);if(label!==this.identity)throw new MemoryProviderError('conflict','Hindsight container ownership differs');existing=true;}catch(error){if(error instanceof MemoryProviderError&&error.code==='conflict')throw error;}
-    if(!existing){await docker(['pull',HINDSIGHT_IMAGE]);await docker(['create','--name',this.container,'--label','mote.runtime.identity='+this.identity,'--publish','127.0.0.1::8888','--add-host','host.docker.internal:host-gateway','--env-file',envPath,'--volume',this.volume+':/home/hindsight/.pg0',HINDSIGHT_IMAGE]);}
+    let existing=false;try{const label=await docker(['inspect','--format','{{index .Config.Labels "mote.runtime.identity"}}',this.container]);if(label!==this.identity)throw new MemoryProviderError('conflict','Hindsight container ownership differs');existing=true;this.containerClaimed=true;}catch(error){if(error instanceof MemoryProviderError&&error.code==='conflict')throw error;}
+    if(!existing){await docker(['pull',HINDSIGHT_IMAGE]);await docker(['create','--name',this.container,'--label','mote.runtime.identity='+this.identity,'--publish','127.0.0.1::8888','--add-host','host.docker.internal:host-gateway','--env-file',envPath,'--volume',this.volume+':/home/hindsight/.pg0',HINDSIGHT_IMAGE]);this.containerClaimed=true;}
     else{
       // Existing owned stopped containers retain their creation-time env.
       // Recreate only the transport shell with the same immutable data volume
       // so a deployed adapter update/credential rotation uses current settings.
-      const running=await docker(['inspect','--format','{{.State.Running}}',this.container]);if(running==='true')throw new MemoryProviderError('conflict','Another host still owns the running Hindsight service');
+      const running=await docker(['inspect','--format','{{.State.Running}}',this.container]);if(running==='true')await docker(['stop',this.container]);
       await docker(['rm',this.container]);await docker(['create','--name',this.container,'--label','mote.runtime.identity='+this.identity,'--publish','127.0.0.1::8888','--add-host','host.docker.internal:host-gateway','--env-file',envPath,'--volume',this.volume+':/home/hindsight/.pg0',HINDSIGHT_IMAGE]);
     }
     this.closing.signal.throwIfAborted();await docker(['start',this.container]);
@@ -152,8 +174,8 @@ export class ManagedHindsightRuntime implements HindsightRuntime {
     // The fixed script contains only a host-generated hex identity. The PID is
     // recorded inside the owned container so terminating docker exec cannot
     // leave an unobserved worker running.
-    // The API and the explicit capability probe already verify this immutable
-    // model profile. Restarting a worker does not authorize another model ping.
+    // Explicit capability probes/native operations verify this immutable model
+    // profile. Restarting a worker does not authorize another model ping.
     this.worker=spawn('docker',['exec','-e','HINDSIGHT_API_SKIP_LLM_VERIFICATION=true','-e','MOTE_HINDSIGHT_ADMITTED_BANKS='+JSON.stringify(banks),'-e','MOTE_HINDSIGHT_RUNTIME_ID='+this.identity,this.container,'python3','/tmp/mote-hindsight-worker.py'],{stdio:'ignore'});
     this.stoppingWorker=false;
     this.workerFailure=new Promise<never>((_resolve,reject)=>{const fail=()=>{if(!this.stoppingWorker)reject(new MemoryProviderError('unknown_result','The controlled native worker exited; reconcile its staged operation before retrying'));};this.worker!.once('error',fail);this.worker!.once('close',fail);});void this.workerFailure.catch(()=>{});
@@ -170,5 +192,5 @@ export class ManagedHindsightRuntime implements HindsightRuntime {
     if(this.worker.exitCode===null){await docker(['exec',this.container,'python3','-c',`import os,signal,pathlib;pid=int(pathlib.Path('/tmp/mote-worker-${this.identity}.pid').read_text());c=pathlib.Path('/proc/'+str(pid)+'/cmdline');os.kill(pid,signal.SIGKILL) if c.exists() and b'hindsight-worker' in c.read_bytes() else None`]).catch(()=>{});this.worker.kill('SIGTERM');}
     await exit;this.worker=undefined;this.workerExit=undefined;this.workerFailure=undefined;
   }
-  async close(){if(this.closed)return;this.closed=true;this.closing.abort(new Error('Hindsight runtime closed'));await this.stopWorker(true);await this.relay?.close();await this.ready?.catch(()=>{});await this.relay?.close();await docker(['stop',this.container]).catch(()=>{});}
+  async close(){if(this.closed)return;this.closed=true;this.closing.abort(new Error('Hindsight runtime closed'));await this.stopWorker(true);await this.relay?.close();await this.ready?.catch(()=>{});await this.relay?.close();if(await this.lease?.owns()){if(this.containerClaimed)await docker(['stop',this.container]).catch(()=>{});await this.lease!.release();}}
 }

@@ -1,4 +1,4 @@
-import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
+import {fixtureMemoryPipeline,fixtureMemoryResult} from './fixtures/memory-result.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -6,6 +6,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {QueryInput} from '@mote/agent';
+import type {QueryResult} from '@mote/shared';
 import {reviewMemory,memoryReviewReceipt} from '../src/memory-review.js';
 import {MemoryReviewCache} from '../src/memory-review-cache.js';
 import {Store,sha256} from '../src/store.js';
@@ -116,4 +117,46 @@ test('changed host integration instructions invalidate a bounded review cache en
  await reviewMemory(input(),d,query,{...options,taskInstructions:'Generated host scope A'});
  await reviewMemory(input(),d,query,{...options,taskInstructions:'Generated host scope B'});
  await reviewMemory(input(),d,query,{...options,taskInstructions:'Generated host scope B'});assert.equal(calls,2);
+});
+
+test('native eighteen-fact proposals reach independent review before canonical admission; only reviewed output passes the real store contract', async t => {
+ const directory=mkdtempSync(join(tmpdir(),'mote-native-review-')),store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
+ t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+ sources.register({id:'generated-native',name:'Generated native original',kind:'custom',deviceId:'generated',platform:'import'});
+ const original=await sources.upsert('generated-native',{externalId:'one',revision:'1',text:'The generated owner uses a silver telescope.',observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'original'});
+ const proposal:QueryResult={answer:JSON.stringify({memories:Array.from({length:18},(_,index)=>({title:'Unreviewed native fact '+index,statement:`Native proposal ${index} [${original.id}]`,uncertainty:'Unreviewed generated native fact',admission:{layer:'observation',reason:'Generated native staging proposal',scope:'Only the frozen generated original',attribution:'observed'},evidenceIds:[original.id],evidence:[{id:original.id,quote:'The generated owner uses a silver telescope.'}]}))}),citations:[{id:original.id,capturedAt:'2026-10-01T00:00:00Z',appName:'Generated',excerpt:original.id}],trace:[],runId:'generated-native-eighteen'};
+ let reviews=0,draftValidations=0,reviewedValidations=0;
+ const request:QueryInput={contextTime:'2026-10-01T00:00:00Z',question:'Review only the supplied generated original.',skill:'memory-extraction',responseMode:'memory-extraction',evidenceIds:[original.id],evidenceRanges:[{id:original.id,offset:0,length:memories.readEvidence([original.id])[0].ocrText.length}],validateOutput:value=>{
+  if(value.runId===proposal.runId)draftValidations++;else reviewedValidations++;
+  try{memories.extract(value,'generated',{requireAdmission:true,validateOnly:true});return undefined;}
+  catch{return {code:'schema',feedback:'Generated host requires an independently admitted exact original quote and bounded canonical candidates.'};}
+ }};
+ const approved=()=>fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'Generated reviewed fact',statement:`The owner uses a silver telescope [${original.id}]`,uncertainty:'Generated fixture only',evidenceIds:[original.id]}]}),citations:proposal.citations,trace:[],runId:'generated-independent-review'});
+ const reviewed=await reviewMemory(request,proposal,async input=>{reviews++;assert.equal(input.traceContext?.phase,'review');assert.equal((input.taskContext?.untrustedMemoryDraft as {memories:unknown[]}).memories.length,18);return approved();},{draftOrigin:'native-engine'});
+ assert.equal(reviews,1);assert.equal(draftValidations,0);assert.equal(reviewedValidations,1);assert.equal(memoryReviewReceipt(reviewed)?.decision,'independent');assert.equal(memoryReviewReceipt(reviewed)?.draftRunId,proposal.runId);
+ assert.equal(memories.list().length,0,'review is read-only; publication remains a separate fenced host step');
+ await assert.rejects(reviewMemory(request,proposal,async()=>({...approved(),answer:proposal.answer,runId:'generated-invalid-review'}),{draftOrigin:'native-engine'}),/host validation/);
+ assert.equal(reviewedValidations,2);assert.equal(memories.list().length,0,'native origin never grants reviewed-output bypass');
+ await assert.rejects(reviewMemory(request,proposal,async()=>{throw Error('Mote proposal must fail before reviewer');},{draftOrigin:'mote'}),/host validation/);
+ assert.equal(draftValidations,1,'ordinary Mote draft admission remains required');
+});
+
+test('an empty native proposal still requires independent review and validated output; ordinary empty Mote behavior is preserved',async()=>{
+ const native={answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-empty-native'};let calls=0,validations=0;
+ const request={...input(),validateOutput:()=>{validations++;return undefined;}};
+ const reviewed=await reviewMemory(request,native,async value=>{calls++;assert.equal(value.traceContext?.phase,'review');return {...native,runId:'generated-empty-native-review'};},{draftOrigin:'native-engine'});
+ assert.equal(calls,1);assert.equal(validations,1);assert.equal(memoryReviewReceipt(reviewed)?.decision,'independent');assert.equal(memoryReviewReceipt(reviewed)?.reviewRunId,'generated-empty-native-review');
+ const ordinary=await reviewMemory(request,native,async()=>{throw Error('Existing empty Mote path should not invoke another model');},{draftOrigin:'mote'});
+ assert.equal(memoryReviewReceipt(ordinary)?.decision,'empty');assert.equal(calls,1);
+});
+
+test('native and Mote review cache identities are isolated and cached native output cannot bypass validation',async()=>{
+ const cache=new MemoryReviewCache(),d=draft();let calls=0,rejectReviewed=false;
+ const request={...input(),validateOutput:(value:QueryResult)=>rejectReviewed&&value.runId==='generated-origin-review'?{code:'scope',feedback:'Generated current authority rejects cached result'}:undefined};
+ const query=async()=>{calls++;return {...d,answer:'{"memories":[]}',runId:'generated-origin-review'};};
+ const options={cache,snapshot:()=> 'generated-fixed-snapshot'};
+ const first=await reviewMemory(request,d,query,{...options,draftOrigin:'native-engine'});assert.equal(memoryReviewReceipt(first)?.decision,'independent');
+ const reused=await reviewMemory(request,d,query,{...options,draftOrigin:'native-engine'});assert.equal(memoryReviewReceipt(reused)?.decision,'reused');assert.equal(calls,1);
+ const different=await reviewMemory(request,d,query,{...options,draftOrigin:'mote'});assert.equal(memoryReviewReceipt(different)?.decision,'independent');assert.equal(calls,2,'same draft/original/model may not reuse a verdict across different host origins');
+ rejectReviewed=true;await assert.rejects(reviewMemory(request,d,query,{...options,draftOrigin:'native-engine'}),/host validation/);assert.equal(calls,2,'revoked cached output is rejected before another model call');
 });

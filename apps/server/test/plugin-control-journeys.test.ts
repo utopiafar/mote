@@ -52,7 +52,9 @@ export async function createMemoryProvider(configuration){
    if(prior){if(prior.fingerprint!==fingerprint)throw Error('Generated intent conflict');return prior.value;}
    const existing=state.records.find(record=>matches(record,input));if(existing&&!same(existing.memory,input.memory))throw Error('Generated immutable conflict');
    if(!existing)state.records.push({namespace:input.namespace,key:input.key,memory:input.memory});
-   const value=receipt(input,'applied');state.receipts[input.opId]={fingerprint,value};await save();return value;
+   const value=receipt(input,'applied');state.receipts[input.opId]={fingerprint,value};await save();
+   if(control.losePutAck){control.losePutAck--;await writeFile(configuration.controlFile,JSON.stringify(control));throw Error('Generated committed write lost acknowledgement');}
+   return value;
   },
   async read(input){return state.records.find(record=>matches(record,input))?.memory??null;},
   async remove(input){let control;try{control=JSON.parse(await readFile(configuration.controlFile,'utf8'));}catch{control={};}if(control.failRemove){control.failRemove--;await writeFile(configuration.controlFile,JSON.stringify(control));throw Error('Generated erase transport failure');}state.records=state.records.filter(record=>!matches(record,input));const value=receipt(input,'removed');await save();return value;},
@@ -95,16 +97,17 @@ async function waitFor(check: () => boolean, description: string) {
   while (!check()) {assert.ok(Date.now() < until, description); await delay(5);}
 }
 
-function fixture(t: TestContext, release = generatedRelease()) {
+function fixture(t: TestContext, release = generatedRelease(), durablePublication = false) {
   const directory = mkdtempSync(join(tmpdir(), 'mote-plugin-control-generated-'));
-  let clock = Date.now(), store: Store, executor: ExecutionEngine, plugins: PluginCenter, automation: MemoryAutomation, memories: MemoryStore, bindings: MemoryBindings;
+  let clock = Date.now(), store: Store, executor: ExecutionEngine, plugins: PluginCenter, automation: MemoryAutomation, memories: MemoryStore, bindings: MemoryBindings, publication: MemoryPublication | undefined;
   let tail = 0;
   function open() {
     store = new Store(directory); executor = new ExecutionEngine(store, () => clock);
     plugins = new PluginCenter(store, executor, new GitHubPluginReleases(join(directory, 'packages'), release.transport));
     automation = new MemoryAutomation(store, () => clock); memories = new MemoryStore(store);
     bindings = new MemoryBindings(store, memories, automation, plugins, executor);
-    bindings.pendingTail = () => tail;
+    publication = durablePublication ? new MemoryPublication(store, memories, bindings) : undefined;
+    bindings.pendingTail = () => tail + (publication?.pending() ?? 0);
     // The generated provider's actual worker health is projected into the
     // control view just as a host compatibility adapter projects its probe.
     plugins.probe = async (id, signal) => {
@@ -113,17 +116,17 @@ function fixture(t: TestContext, release = generatedRelease()) {
       return {capabilities: plugins.packageForInstance(id).manifest.capabilities.map(capability => ({id: capability, state: health.ready && (capability === 'repository' ? health.verified.persistentCrud && health.verified.immutableRecords && health.verified.idempotentReplay : capability === 'retrieval' && health.verified.scopedRetrieval) ? 'verified' as const : 'unknown' as const})), issues: health.problems};
     };
   }
-  async function close() {await executor.close(); await bindings.close(); await plugins.close(); store.close();}
+  async function close() {await executor.close(); await publication?.close(); await bindings.close(); await plugins.close(); store.close();}
   open(); t.after(async () => {await close(); rmSync(directory, {recursive: true, force: true});});
   return {
-    directory, release, get store() {return store;}, get executor() {return executor;}, get plugins() {return plugins;}, get automation() {return automation;}, get memories() {return memories;}, get bindings() {return bindings;},
+    directory, release, get store() {return store;}, get executor() {return executor;}, get plugins() {return plugins;}, get automation() {return automation;}, get memories() {return memories;}, get bindings() {return bindings;}, get publication() {return publication;},
     setTail(value: number) {tail = value;}, async advance() {clock += 1001; await executor.tick();}, async restart() {await close(); open();},
     configuration(label = 'one') {return {recordFile: join(directory, 'generated-records.json'), controlFile: join(directory, 'generated-control.json'), label};},
     failNextWrite() {writeFileSync(join(directory, 'generated-control.json'), JSON.stringify({failPut: 1}));},
     failNextRemoval() {writeFileSync(join(directory, 'generated-control.json'), JSON.stringify({failRemove: 1}));},
     holdWrites() {writeFileSync(join(directory, 'generated-control.json'), JSON.stringify({holdPut: true}));},
     writeEntered() {try {return JSON.parse(readFileSync(join(directory, 'generated-control.json'), 'utf8')).putEntered === true;} catch {return false;}},
-    releaseWrites() {writeFileSync(join(directory, 'generated-control.json'), JSON.stringify({holdPut: false}));},
+    releaseWrites(losePutAck = false) {writeFileSync(join(directory, 'generated-control.json'), JSON.stringify({holdPut: false, losePutAck: Number(losePutAck)}));},
   };
 }
 type Fixture = ReturnType<typeof fixture>;
@@ -271,6 +274,55 @@ test('verified preparation cannot apply after metadata changes; cancel releases 
   assert.throws(() => f.bindings.action('activate', {...bindingCommand(f), preparationId}), /changed after verification/);
   assert.equal(f.bindings.binding().planId, 'mote.builtin'); assert.equal(f.bindings.accepting(), false);
   f.bindings.action('cancel', {...bindingCommand(f), preparationId}); assert.equal(f.bindings.accepting(), true); assert.equal(f.bindings.binding().planId, 'mote.builtin');
+});
+
+for (const lostAcknowledgement of [false, true]) test(`real worker migration cancelled after submission ${lostAcknowledgement ? 'with a lost acknowledgement' : 'with an acknowledgement'} preserves the old binding and reconciles later source deletion after restart`, async t => {
+  const f = fixture(t, generatedRelease(), true), instance = await enabled(f), memory = await generatedMemory(f, 'cancelled-migration');
+  const sourceBinding = f.bindings.binding(), targetNamespace = {ownerId: 'mote-owner', instanceId: instance.id, bindingRevision: sourceBinding.generation + 1};
+  f.holdWrites();
+  const preparationId = randomUUID();
+  f.bindings.prepare({...bindingCommand(f), operationId: preparationId, targetPlanId: 'instance:' + instance.id, scope: 'default', feeAcknowledged: true});
+  await waitFor(() => f.writeEntered(), 'the actual generated release worker entered the submitted migration put');
+  const intent = f.store.db.prepare("SELECT id,json,state FROM memory_provider_writes WHERE json_extract(json,'$.namespace.bindingRevision')=? AND json_extract(json,'$.key.memoryId')=?").get(targetNamespace.bindingRevision, memory.id)!;
+  assert.ok(intent, 'the host journals the target write before the real worker acknowledges it');
+  assert.equal(intent.state, 'submitted');
+  assert.deepEqual(JSON.parse(String(intent.json)).namespace, targetNamespace);
+  f.bindings.action('cancel', {...bindingCommand(f), preparationId});
+  f.releaseWrites(lostAcknowledgement);
+  await waitFor(() => !f.executor.isActiveStep('memory-prepare:' + preparationId), 'cancelled migration transport settles without activating');
+  // A cancelled host step may settle before a submitted worker RPC. Observe
+  // the actual native commit rather than equating its local state with rollback.
+  await waitFor(() => {
+    try {return JSON.parse(readFileSync(f.configuration().recordFile, 'utf8')).records.some((record: {namespace: unknown;key: unknown}) => JSON.stringify(record.namespace) === JSON.stringify(targetNamespace) && JSON.stringify(record.key) === JSON.stringify(memoryProviderKey(memory)));} catch {return false;}
+  }, 'the cancelled worker put commits its exact late body');
+  if (!lostAcknowledgement) await waitFor(() => f.store.db.prepare('SELECT state FROM memory_provider_writes WHERE id=?').get(intent.id)!.state === 'acknowledged', 'the exact late worker acknowledgement reaches its durable host journal');
+  assert.equal(f.store.db.prepare('SELECT state FROM memory_provider_writes WHERE id=?').get(intent.id)!.state, lostAcknowledgement ? 'submitted' : 'acknowledged');
+  assert.deepEqual(f.bindings.binding(), sourceBinding);
+  assert.equal(f.bindings.view().preparation?.state, 'cancelled');
+  assert.deepEqual(await f.bindings.provider(instance.id).read({namespace: targetNamespace, key: memoryProviderKey(memory)}), memory, 'cancellation does not silently add an external retention policy');
+  if (lostAcknowledgement) {
+    f.plugins.action(instance.id, 'disable', instanceCommand(f, instance.id));
+    assert.throws(() => f.plugins.uninstall(instance.packageId, pluginCommand(f)), /migrate|unresolved|retained/i, 'an unknown target write retains the release needed for reconciliation');
+  }
+  await f.restart();
+  assert.deepEqual(f.bindings.binding(), sourceBinding);
+  assert.deepEqual(await f.bindings.read(memory.id), memory, 'owner reads retain the old authority after host restart');
+  const snapshot = f.bindings.retainSnapshot();
+  assert.equal(snapshot.binding.namespace, undefined, 'read snapshots never expose the unactivated target namespace');
+  assert.deepEqual(snapshot.records?.[memory.id], memory);
+  snapshot.release();
+  await f.publication!.reconcile();
+  assert.equal(f.publication!.pending(), 0);
+  assert.equal(f.store.db.prepare('SELECT state FROM memory_provider_writes WHERE id=?').get(intent.id)!.state, 'acknowledged', 'recovery observes the exact committed body without another migration put');
+  assert.deepEqual(await f.bindings.provider(instance.id).read({namespace: targetNamespace, key: memoryProviderKey(memory)}), memory, 'reconciliation preserves the cancelled canonical stage until an actual revocation');
+  f.store.delete(memory.evidenceIds[0]!);
+  await f.publication!.reconcile();
+  assert.equal(f.publication!.pending(), 0);
+  assert.equal(await f.bindings.provider(instance.id).read({namespace: targetNamespace, key: memoryProviderKey(memory)}), null, 'explicit source deletion erases the retained target through its durable namespace journal');
+  const retired = JSON.parse(String(f.store.db.prepare('SELECT json FROM memory_provider_writes WHERE id=?').get(intent.id)!.json));
+  assert.equal(retired.privateRetired, true);
+  assert.equal(retired.memory, undefined);
+  assert.deepEqual(f.bindings.binding(), sourceBinding);
 });
 
 test('a query snapshot retains the former provider through reverse migration and prevents uninstall until released', async t => {

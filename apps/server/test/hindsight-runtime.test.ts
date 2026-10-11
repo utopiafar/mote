@@ -1,14 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,rm,readFile} from 'node:fs/promises';
+import {spawn} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {ModelSettings} from '@mote/shared/models';
 import {HindsightModelRelay} from '../src/hindsight-model-relay.js';
-import {HindsightService,ManagedHindsightRuntime,hindsightModelFingerprint} from '../src/hindsight-runtime.js';
-import {HindsightEngine} from '../src/hindsight-engine.js';
+import {HindsightService,ManagedHindsightRuntime,HindsightRuntimeLease,hindsightModelFingerprint} from '../src/hindsight-runtime.js';
+import {HindsightEngine,hindsightEvidenceRanges} from '../src/hindsight-engine.js';
 const profile:ModelSettings={provider:'openai',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1/v1',model:'generated-transport-model',reasoningEffort:'medium',serviceTier:'default',maxTokens:1000,modelRequestTimeoutMs:null,agentTimeoutMs:1000,allowUnauthenticatedLocal:true,apiKey:'generated-fixture',headers:{},extraBody:{}};
+
+test('one live process cannot claim its configuration twice, and an unclaimed close cannot release its owner',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-hindsight-lease-')),path=join(directory,'runtime-host.json'),owner=new HindsightRuntimeLease(path),other=new HindsightRuntimeLease(path);
+ try{await owner.claim();assert.equal(await owner.owns(),true);await assert.rejects(other.claim(),/Another live host/);await other.release();assert.equal(await owner.owns(),true);await owner.release();await other.claim();assert.equal(await other.owns(),true);}finally{await owner.release();await other.release();await rm(directory,{recursive:true,force:true});}
+});
+
+test('a crashed native host lease is reclaimed with a new token',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-hindsight-crash-')),path=join(directory,'runtime-host.json');
+ const child=spawn(process.execPath,['--input-type=module','-e',`import{writeFileSync}from'node:fs';import{execFileSync}from'node:child_process';writeFileSync(process.argv[1],JSON.stringify({pid:process.pid,started:execFileSync('ps',['-p',String(process.pid),'-o','lstart='],{encoding:'utf8'}).trim(),token:'generated-crashed-token-'.repeat(3)}));setInterval(()=>{},1000)`,path],{stdio:'ignore'});
+ try{for(let attempt=0;;attempt++){try{await readFile(path);break;}catch{assert.ok(attempt<100);await new Promise(resolve=>setTimeout(resolve,10));}}const prior=JSON.parse(await readFile(path,'utf8'));const exited=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGKILL');await exited;const replacement=new HindsightRuntimeLease(path);await replacement.claim();assert.notEqual(JSON.parse(await readFile(path,'utf8')).token,prior.token);await replacement.release();}finally{child.kill('SIGKILL');await rm(directory,{recursive:true,force:true});}
+});
+
+test('legal long originals retain every exact UTF-16 range across native transport partitions',()=>{
+ const text='outside|'+'x'.repeat(11999)+'🌱'+'y'.repeat(20000)+'|outside',record={id:'generated',ocrText:text} as any,offset=8,length=text.length-16;
+ const {originals,transport}=hindsightEvidenceRanges([{record,offset,length}]);assert.equal(originals[0].text,text.slice(offset,offset+length));assert.equal(transport.map(range=>range.text).join(''),originals[0].text);let next=offset;
+ for(const range of transport){assert.equal(range.offset,next);assert.ok(range.length<=12000);assert.equal(range.text,text.slice(range.offset,range.offset+range.length));assert.ok(!/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/.test(range.text));next+=range.length;}assert.equal(next,offset+length);
+ assert.throws(()=>hindsightEvidenceRanges([{record,offset:0,length:text.length+1}]),/bounded exact/);
+});
 
 test('configuration generations own distinct native runtime identities while credential rotation keeps semantics',()=>{
  assert.equal(hindsightModelFingerprint(profile),hindsightModelFingerprint({...profile,apiKey:'rotated',headers:{Authorization:'rotated'}}));

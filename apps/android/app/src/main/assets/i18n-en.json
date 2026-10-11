@@ -6831,5 +6831,7 @@
   "记忆已禁止使用；外部清除仍待确认。": "This Memory is no longer used; external clearing is still awaiting confirmation.",
   "记忆已禁止使用；外部已确认移除当前记录，物理擦除尚未核验。": "This Memory is no longer used; the provider confirmed removal of the current record, but physical erasure has not been verified.",
   "记忆已禁止使用。": "This Memory is no longer used.",
-  "迁移全部 Mote 保留记忆正文及更正/替代状态。外部原生审计历史和引擎图保留在旧实例及运行备份中，不承诺跨引擎迁移。": "Migration includes all Memory bodies retained by Mote and their correction/supersession states. Native provider audit history and engine graphs remain in the old instance and runtime backup; cross-engine migration of them is not guaranteed."
+  "迁移全部 Mote 保留记忆正文及更正/替代状态。外部原生审计历史和引擎图保留在旧实例及运行备份中，不承诺跨引擎迁移。": "Migration includes all Memory bodies retained by Mote and their correction/supersession states. Native provider audit history and engine graphs remain in the old instance and runtime backup; cross-engine migration of them is not guaranteed.",
+  "需要正式资料确认归属": "Published material is required to confirm attribution",
+  "这项旧任务需要正式资料才能确认归属，不能自动继续。已审核结果保留，可以取消未完成任务。": "This older task needs published material to confirm attribution and cannot continue automatically. Reviewed results are retained. You can cancel the unfinished task."
 }

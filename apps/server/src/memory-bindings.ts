@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import type {MemoryBindingView,MemoryModuleBinding,MemoryPlanView,MemoryPreparationView} from '@mote/shared';
 import {memorySchema,type Memory} from './memory-schema.js';
-import {memoryProviderKey,memoryBodyDigest,withMemoryHostState,type MemoryProvider,type MemoryProviderKey,type MemoryProviderNamespace,type MemoryProviderRecord} from './memory-provider-contract.js';
+import {memoryProviderKey,memoryBodyDigest,withMemoryHostState,type MemoryProvider,type MemoryProviderKey,type MemoryProviderNamespace,type MemoryProviderRecord,type MemoryProviderReceipt} from './memory-provider-contract.js';
 import {WorkerMemoryProvider} from './worker-memory-provider.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionGrant,type ExecutionStep} from './execution-engine.js';
 import {MemoryAutomation,memoryControlCommandSchema} from './memory-automation.js';
@@ -22,6 +22,8 @@ export class MemoryBindings {
   private dispose:()=>Promise<void>;
   private readers=new Map<string,number>();
   providerFactory?:(instanceId:string,namespace?:MemoryProviderNamespace)=>MemoryProvider;
+  stageMigrationRecord?:(namespace:MemoryProviderNamespace,memory:Memory,opId:string,assertAuthority:()=>void)=>Promise<MemoryProviderReceipt>;
+  migrationActivated?:(namespace:MemoryProviderNamespace)=>void;
   pendingTail:()=>number=()=>0;
   onReleased?:()=>void;
   constructor(readonly store:Store,readonly memories:MemoryStore,readonly automation:MemoryAutomation,readonly plugins:PluginCenter,readonly executor:ExecutionEngine){
@@ -31,7 +33,7 @@ export class MemoryBindings {
       CREATE TABLE IF NOT EXISTS memory_provider_receipts(id TEXT PRIMARY KEY,json TEXT NOT NULL);`);
     store.db.prepare('INSERT OR IGNORE INTO memory_plan_binding VALUES(1,?)').run(JSON.stringify({planId:builtin.id,generation:1} satisfies Binding));
     plugins.references=id=>{const current=this.binding(),preparation=this.preparation();return [...(current.namespace?.instanceId===id?['Current Memory binding retains this instance for reads']:[]),...(preparation&&!['applied','cancelled'].includes(preparation.view.state)&&(preparation.target.namespace?.instanceId===id||preparation.source.namespace?.instanceId===id)?['A Memory preparation retains this instance']:[]),...((this.readers.get(id)??0)>0?['Existing queries retain a read snapshot']:[])];};
-    this.dispose=executor.register({kind:'memory.prepare',pool:'plugin-control',concurrency:()=>1,
+    this.dispose=executor.register({kind:'memory.prepare',pool:'plugin-control',concurrency:()=>1,timeoutMs:3600000,
       validate:step=>this.preparation()?.stepId===step.id&&!['cancelled','applied'].includes(this.preparation()!.view.state),
       execute:(step,signal,grant)=>this.prepareBodies(step,signal,grant),
       commit:(_step,result)=>{const preparation=this.preparation()!;preparation.snapshot=String(result);preparation.view.state='verified';preparation.view.phase='verified';preparation.view.checks=['scope','bodies','corrections','deletions','index','tail','binding'].map(id=>({id,state:'verified'}));preparation.view.tail=0;preparation.view.allowedActions=['activate','cancel'];this.savePreparation(preparation);this.automation.touch();},
@@ -73,7 +75,12 @@ export class MemoryBindings {
   private async copy(preparation:Preparation,signal:AbortSignal){const memories=await this.records(preparation.source);signal.throwIfAborted();if(!preparation.target.namespace)return;
     const namespace=preparation.target.namespace,provider=this.provider(namespace.instanceId,namespace),existing=await provider.export({namespace}),selected=new Set(memories.map(memory=>JSON.stringify(memoryProviderKey(memory))));
     for(const record of existing)if(!selected.has(JSON.stringify(record.key))){signal.throwIfAborted();await provider.remove({namespace,key:record.key,opId:preparation.view.operationId+':remove:'+sha256(JSON.stringify(record.key))});}
-    for(const memory of memories){signal.throwIfAborted();const key=memoryProviderKey(memory),opId=preparation.view.operationId+':put:'+sha256(JSON.stringify({key,memory}));const prior=await provider.read({namespace,key}),receipt=prior&&memoryBodyDigest(prior)===memoryBodyDigest(memory)?{opId,namespace,key,payloadDigest:sha256(JSON.stringify({namespace,key,memory:prior})),state:'applied' as const,eraseVerified:false,recordedAt:new Date().toISOString()}:await provider.put({namespace,key,memory,opId});this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(receipt)));this.store.db.prepare('INSERT OR REPLACE INTO memory_provider_receipts VALUES(?,?)').run(opId,JSON.stringify(receipt));}
+    for(const memory of memories){signal.throwIfAborted();const key=memoryProviderKey(memory),opId=preparation.view.operationId+':put:'+sha256(JSON.stringify({key,memory}));
+      const assertAuthority=()=>{signal.throwIfAborted();const current=this.preparation();if(current?.stepId!==preparation.stepId||['cancelled','applied'].includes(current.view.state)||JSON.stringify(this.binding())!==JSON.stringify(preparation.source)||memoryBodyDigest(this.memories.get(memory.id))!==memoryBodyDigest(memory))throw new StoreError('Memory migration input or authority changed',409);};
+      assertAuthority();const prior=await provider.read({namespace,key});assertAuthority();
+      const receipt=prior&&memoryBodyDigest(prior)===memoryBodyDigest(memory)?{opId,namespace,key,payloadDigest:sha256(JSON.stringify({namespace,key,memory:prior})),state:'applied' as const,eraseVerified:false,recordedAt:new Date().toISOString()}:this.stageMigrationRecord?await this.stageMigrationRecord(namespace,memory,opId,assertAuthority):await provider.put({namespace,key,memory,opId});
+      assertAuthority();this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(receipt)));this.store.db.prepare('INSERT OR REPLACE INTO memory_provider_receipts VALUES(?,?)').run(opId,JSON.stringify(receipt));
+    }
     const exported=await provider.export({namespace}),actual=new Map(exported.map(record=>[JSON.stringify(record.key),memoryBodyDigest(record.memory)]));
     if(actual.size!==memories.length||exported.length!==memories.length||memories.some(memory=>actual.get(JSON.stringify(memoryProviderKey(memory)))!==memoryBodyDigest(memory)))throw new StoreError('The target provider did not preserve the complete Memory history',502);
     // Read every exact body through the target read API as well as its exporter.
@@ -92,7 +99,7 @@ export class MemoryBindings {
     return snapshot;
   }
   action(kind:'activate'|'retry'|'cancel',raw:unknown){const input=memoryControlCommandSchema.extend({preparationId:z.string().uuid()}).strict().parse(raw);this.command(kind,input,()=>{const preparation=this.preparation();if(!preparation||preparation.view.operationId!==input.preparationId||!preparation.view.allowedActions.includes(kind))throw new StoreError('The Memory preparation action is unavailable',409);
-    if(kind==='activate'){if(preparation.view.state!=='verified'||this.pendingTail()||preparation.snapshot!==this.snapshot())throw new StoreError('Memory changed after verification; prepare it again',409);const target=this.plans().find(plan=>plan.id===preparation.target.planId);if(!target?.available)throw new StoreError('The target instance is unavailable',409);this.saveBinding(preparation.target);preparation.view.state='applied';preparation.view.phase='applied';preparation.view.allowedActions=[];this.automation.release(preparation.view.operationId);this.onReleased?.();}
+    if(kind==='activate'){if(preparation.view.state!=='verified'||this.pendingTail()||preparation.snapshot!==this.snapshot())throw new StoreError('Memory changed after verification; prepare it again',409);const target=this.plans().find(plan=>plan.id===preparation.target.planId);if(!target?.available)throw new StoreError('The target instance is unavailable',409);this.saveBinding(preparation.target);if(preparation.target.namespace)this.migrationActivated?.(preparation.target.namespace);preparation.view.state='applied';preparation.view.phase='applied';preparation.view.allowedActions=[];this.automation.release(preparation.view.operationId);this.onReleased?.();}
     else if(kind==='retry'){preparation.view.state='waiting';preparation.view.error=undefined;preparation.view.allowedActions=['cancel'];this.executor.retry(preparation.stepId);}
     else{this.executor.cancel(preparation.stepId);preparation.view.state='cancelled';preparation.view.allowedActions=[];if(preparation.view.oldAdmissionFrozen){this.automation.release(preparation.view.operationId);this.onReleased?.();}}
     this.savePreparation(preparation);

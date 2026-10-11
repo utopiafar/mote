@@ -41,7 +41,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);
  if(m.method==='initialize')send({id:m.id,result:{}});
  else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
- else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'generated-thread'},approvalPolicy:'never',sandbox:{type:'readOnly'}}});
+ else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'generated-thread',model:null},model:m.params.model,serviceTier:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});
  else if(m.method==='turn/start'){
   const context=JSON.parse(m.params.input[0].text),work=context.untrustedTaskContext.memoryWork;
   appendFileSync(${JSON.stringify(delivered)},JSON.stringify({request:context.request,work,interpretations:context.untrustedTaskContext.untrustedInterpretations,evidenceIds:context.untrustedEvidence.map(r=>r.id),review:Boolean(context.untrustedTaskContext.untrustedMemoryDraft)})+'\\n');
@@ -115,7 +115,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);
  if(m.method==='initialize')send({id:m.id,result:{}});
  else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
- else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:threadId},approvalPolicy:'never',sandbox:{type:'readOnly'}}});
+ else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:threadId,model:null},model:m.params.model,serviceTier:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});
  else if(m.method==='turn/start'){
   const context=JSON.parse(m.params.input[0].text),repair=Boolean(context.validationError);original??=context;
   const work=original.untrustedTaskContext.memoryWork,member=work.members[0],review=Boolean(original.untrustedTaskContext.untrustedMemoryDraft);

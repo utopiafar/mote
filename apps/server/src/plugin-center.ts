@@ -17,6 +17,8 @@ const healthSchema=z.object({capabilities:z.array(z.object({id:z.string(),state:
 /** Installation, configuration and runtime admission are independent durable
  * records. All work uses the host ExecutionEngine and survives a host restart. */
 export class PluginCenter {
+  private closed=false;
+  private closing?:Promise<void>;
   private runtimes=new Map<string,PluginRuntime>();
   private disposeHandlers:(()=>Promise<void>)[]=[];
   references:(instanceId:string)=>string[]=()=>[];
@@ -123,9 +125,9 @@ export class PluginCenter {
     for(const instance of instances){this.store.db.prepare('INSERT OR REPLACE INTO plugin_retired_instances SELECT id,json FROM plugin_instances WHERE id=?').run(instance.id);this.store.db.prepare('DELETE FROM plugin_instances WHERE id=?').run(instance.id);}this.store.db.prepare('INSERT OR REPLACE INTO plugin_retired_packages SELECT id,json FROM plugin_packages WHERE id=?').run(id);this.store.db.prepare('DELETE FROM plugin_packages WHERE id=?').run(id);retired=instances.map(instance=>instance.id);
     // Immutable code remains cached; uninstall never destroys retained Memory.
   });if(applied)for(const id of retired){const runtime=this.runtimes.get(id);this.runtimes.delete(id);void runtime?.close().catch(()=>{});this.retired?.(id);}return this.view();}
-  runtime(id:string){const existing=this.runtimes.get(id);if(existing)return existing;const instance=this.instance(id).view,pkg=this.packageForInstance(id);if(!pkg.directory||pkg.view.state!=='installed')throw new StoreError('The plugin artifact is unavailable',409);
+  runtime(id:string){if(this.closed)throw new StoreError('Plugin center is closing',503);const existing=this.runtimes.get(id);if(existing)return existing;const instance=this.instance(id).view,pkg=this.packageForInstance(id);if(!pkg.directory||pkg.view.state!=='installed')throw new StoreError('The plugin artifact is unavailable',409);
     this.releases.verifyInstalled(pkg.directory,pkg.view.source.digest,pkg.manifest,Boolean(pkg.hostAdapter));
     const runtime=this.runtimeFactory?.(pkg,instance)??new WorkerPluginRuntime(join(pkg.directory,pkg.manifest.entry),instance.configuration,pkg.directory);this.runtimes.set(id,runtime);return runtime;
   }
-  async close(){for(const dispose of this.disposeHandlers)await dispose();await Promise.allSettled([...this.runtimes.values()].map(runtime=>runtime.close()));this.runtimes.clear();}
+  close(){if(this.closing)return this.closing;this.closed=true;return this.closing=(async()=>{await Promise.allSettled([...this.runtimes.values()].map(runtime=>runtime.close()));this.runtimes.clear();for(const dispose of this.disposeHandlers)await dispose();})();}
 }

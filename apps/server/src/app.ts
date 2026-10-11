@@ -493,8 +493,8 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
     activeQueries.add(promise);void promise.finally(()=>{deadline.dispose();clearInterval(heartbeat);activeQueries.delete(promise);}).catch(()=>{});return promise;
   }
   const memoryReviews=new MemoryReviewCache();
-  const reviewExtraction=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories'),{
-    strategy,deletions:memories.deletions,authorizeDeletionEvidence:ids=>memoryPipeline.assertDeletionEvidenceAllowed(ids,input.modelProfileId),cache:memoryReviews,snapshot:()=>{
+  const reviewExtraction=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy,draftOrigin?:import('./memory-review.js').MemoryDraftOrigin)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories'),{
+    draftOrigin,strategy,deletions:memories.deletions,authorizeDeletionEvidence:ids=>memoryPipeline.assertDeletionEvidenceAllowed(ids,input.modelProfileId),cache:memoryReviews,snapshot:()=>{
       const ids=input.evidenceIds??[];
       if(ids.some(id=>!memories.isCurrentEvidence(id)))throw new StoreError('Memory evidence changed during review',409);
       // Include full original metadata (speaker, source, device, dates, version),
@@ -537,15 +537,24 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
   lifecycle.automaticAdmission=id=>!['extraction','consolidation'].includes(id)||memoryBindings!.accepting();
   memoryBindings.onReleased=()=>lifecycle.skipAutomaticBacklog();
   pluginCenter.admissionChanged=(id,enabled)=>{if(memoryBindings!.binding().namespace?.instanceId===id){if(enabled)lifecycle.skipAutomaticBacklog();memoryAutomation.touch();}};
+  const cancelledMemoryWork=(automaticOnly=false)=>{
+    let active=0;
+    const automaticParents=new Set(lifecycle.view().extensions.filter(extension=>['extraction','consolidation'].includes(extension.id)&&extension.active&&!extension.active.manual).map(extension=>'lifecycle:'+extension.active!.id));
+    for(const row of store.db.prepare("SELECT b.id,j.json FROM memory_batches b JOIN memory_jobs j ON j.id=b.job_id WHERE json_extract(j.json,'$.status')='cancelled'").all()){
+      const job=JSON.parse(String(row.json));if(executor.isActiveStep(String(row.id))&&(!automaticOnly||job.automaticGrant||job.automaticGrants?.length||automaticParents.has(job.importJobId)))active++;
+    }
+    for(const extension of lifecycle.view().extensions)if(['extraction','consolidation'].includes(extension.id)&&extension.active&&extension.status==='cancelled'&&(!automaticOnly||!extension.active.manual)&&executor.isActiveStep('lifecycle:'+extension.active.id))active++;
+    return active;
+  };
   memoryBindings.pendingTail=()=>{
     const jobs=Number(store.db.prepare("SELECT count(*) n FROM memory_jobs WHERE json_extract(json,'$.status') NOT IN ('completed','cancelled')").get()!.n);
-    const windows=lifecycle.view().extensions.filter(extension=>['extraction','consolidation'].includes(extension.id)&&extension.active&&extension.status!=='cancelled').length;return jobs+windows+memoryPublication.pending();
+    const windows=lifecycle.view().extensions.filter(extension=>['extraction','consolidation'].includes(extension.id)&&extension.active&&extension.status!=='cancelled').length;return jobs+windows+memoryPublication.pending()+cancelledMemoryWork();
   };
   memoryAutomation.onResume=()=>lifecycle.skipAutomaticBacklog();
   memoryAutomation.onStop=()=>{
     store.db.prepare('UPDATE memory_input_authorizations SET revoked_at=? WHERE authorized=1 AND revoked_at IS NULL').run(Date.now());
     for(const row of store.db.prepare("SELECT id FROM memory_jobs WHERE (json_extract(json,'$.automaticGrant') IS NOT NULL OR json_array_length(json_extract(json,'$.automaticGrants'))>0) AND json_extract(json,'$.status') NOT IN ('completed','cancelled')").all())memoryPipeline.cancel(String(row.id),{cause:'authority'});
-    for(const extension of lifecycle.view().extensions)if(['extraction','consolidation'].includes(extension.id)&&extension.active&&!extension.active.manual)lifecycle.cancel(extension.id,extension.active.id);
+    for(const extension of lifecycle.view().extensions)if(['extraction','consolidation'].includes(extension.id)&&extension.active&&!extension.active.manual)lifecycle.cancel(extension.id,extension.active.id,{cause:'authority'});
   };
   memoryAutomation.counts=()=>{
     const counts={queued:0,running:0,checkpointed:0,resultUnknown:0};
@@ -559,7 +568,7 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
     for(const extension of lifecycle.view().extensions)if(['extraction','consolidation'].includes(extension.id)&&extension.active&&!extension.active.manual&&extension.status!=='cancelled'){
       if(extension.status==='running')counts.running++;else if(extension.active.checkpoint)counts.checkpointed++;else counts.queued++;
     }
-    counts.resultUnknown=memoryPublication.pending(true);return counts;
+    counts.running+=cancelledMemoryWork(true);counts.resultUnknown=memoryPublication.pending(true);return counts;
   };
   const memoryIntegrationSettings=new MemoryIntegrationSettings(store,memoryStrategies);
   registerMemoryExtensions({integrationSettings:memoryIntegrationSettings,semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
@@ -710,7 +719,9 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
     featureHost.stop();
     // Interrupt execution while its handlers, checkpoints and storage remain
     // available. Fastify then drains HTTP requests before resource disposal.
-    await executor.close();
+    // Provider transports must be interrupted while the executor drains. A
+    // blocked SDK request cannot wait for onClose to reach its own close method.
+    await Promise.allSettled([executor.close(),memoryAdapters.close(),pluginCenter.close()]);
     agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();
   });
   app.addHook('onClose',async()=>{
