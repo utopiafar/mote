@@ -107,6 +107,7 @@ class NativeCentralInstrumentedTest {
             click(scenario, "查看原文")
             waitFor(scenario, "Literal generated evidence") { !it.isWorking && contains(it, "<script>untrusted evidence</script>") }
             scenario.onActivity { it.navigate("archive") }; waitFor(scenario, "Archive ready") { !it.isWorking }
+            click(scenario, "原始采集记录"); waitFor(scenario, "Raw records ready") { !it.isWorking && contains(it, "搜索原文") }
             click(scenario, "应用活动与媒体"); waitFor(scenario, "Activity ready") { !it.isWorking && contains(it, "媒体统计") }
             scenario.onActivity { activity ->
                 assertEquals("", all(activity).filterIsInstance<TextView>().first { it.tag == "central-status" }.text.toString())
@@ -179,7 +180,7 @@ class NativeCentralInstrumentedTest {
             click(scenario, "发送")
             Thread.sleep(200)
             scenario.onActivity { it.navigate("archive") }; scenario.recreate()
-            waitFor(scenario, "Archive restored") { it.client != null && contains(it, "搜索原文") }
+            waitFor(scenario, "Archive restored") { it.client != null && contains(it, "全部资料") }
             scenario.onActivity { it.navigate("ask") }
             waitFor(scenario, "Answer persisted") { contains(it, "Generated native answer") }
             scenario.onActivity { it.navigate("notes") }
