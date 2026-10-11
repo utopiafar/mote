@@ -4,7 +4,7 @@ import org.json.JSONObject
 import java.security.MessageDigest
 
 /** Mechanical input metadata only. Central owns decoding, transcription and indexing. */
-object LocalFileIndex {
+object FileSnapshotMetadata {
     const val VERSION = 1
     fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
     fun pending(item: JSONObject, inputVersion: String, source: LocalSource) {

@@ -306,7 +306,6 @@ export class EvidenceStore {
     if(archive?.version!==2||!Array.isArray(archive.captures)||archive.captures.length>20000)throw new StoreError('Expected Mote archive version 2 (maximum 20,000 records per import)');
     for(const key of ['sources','sourceHeads','sourceVersions','memories','memoryDeletions','files','captureFiles','perceptionResults','todos'] as const)if(!Array.isArray(archive[key]))throw new StoreError('Archive v2 requires all canonical sections');
     const connections=(archive.sources??[]).map(v=>{const {createdAt,updatedAt,status,...fields}=v as Record<string,unknown>;const value=sourceConnectionSchema.parse(fields);return {...value,createdAt:z.string().datetime({offset:true}).parse(createdAt),updatedAt:z.string().datetime({offset:true}).parse(updatedAt)};});
-    if(connections.length>500)throw new StoreError('Too many source connections');
     const prepared:Prepared[]=[];
     for(const entry of archive.captures) {
       if(!entry||typeof entry!=='object'||Array.isArray(entry))throw new StoreError('Archive entries must be capture objects');
@@ -317,7 +316,7 @@ export class EvidenceStore {
       prepared.push(p);
     }
     const todoEntries=z.array(archivedTodoSchema).max(100000).parse(archive.todos??[]);
-    const memoryEntries=z.array(memorySchema).max(100000).parse(archive.memories??[]);
+    const memoryEntries=z.array(memorySchema).parse(archive.memories??[]);
     const portableMaterials=preparePortableMaterials(archive.materials);
     const archivedFiles=new ArchivedFileStore(this),portableFiles=archivedFiles.preparePortable(archive.files??[]);
     const fileLinks=z.array(z.object({captureId:z.string().uuid(),fileId:z.string().uuid()}).strict()).max(100000).parse(archive.captureFiles??[]);
@@ -362,14 +361,11 @@ export class EvidenceStore {
         for(const id of m.evidenceIds)this.db.prepare('INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(m.id,id);
       }
       if(archive.memoryDeletions!==undefined)new MemoryDeletions(this,readEvidence).restore(archive.memoryDeletions);
-      // Merging individually valid archives must still respect the destination's total limits.
-      if(Number(this.db.prepare('SELECT COUNT(*) AS n FROM source_connections').get()!.n)>500)throw new StoreError('Maximum 500 sources',413);
       for(const {requestHash,...task} of todoEntries){
         const prior=this.db.prepare('SELECT json,request_hash FROM todos WHERE id=?').get(task.id);
         if(prior){if(prior.request_hash!==requestHash||!Object.entries(task).every(([key,value])=>JSON.stringify(JSON.parse(String(prior.json))[key])===JSON.stringify(value)))throw new StoreError('Archived task conflicts with an existing task',409);continue;}
         const json=JSON.stringify(task);this.reserveMetadata(Buffer.byteLength(json)+1024);this.db.prepare('INSERT INTO todos VALUES(?,?,?,?,?,?)').run(task.id,task.createdAt,task.status,task.version,requestHash,json);
       }
-      if(Number(this.db.prepare('SELECT COUNT(*) AS n FROM memories').get()!.n)>100000)throw new StoreError('Memory limit reached',507);
       this.reserveMetadata(0);
       this.db.exec('COMMIT');return {imported,duplicates};
     }catch(e){this.db.exec('ROLLBACK');this.sweep();archivedFiles.sweepOrphans();throw e;}

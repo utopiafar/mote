@@ -13,7 +13,7 @@ const label=z.string().trim().min(1).max(120);
 const platform=z.enum(['android','macos','windows','linux','other']);
 const timestamp=z.string().datetime();
 const credentialSchema=z.object({id:z.string().uuid(),label,scope:z.enum(['owner','mcp-read','mcp-write']),createdAt:timestamp,revokedAt:timestamp.optional(),expiresAt:timestamp.optional(),serverUrl:z.string().max(2048),hash:z.string().regex(/^[a-f0-9]{64}$/),deviceId:deviceId.optional(),deviceName:z.string().min(1).max(200).optional(),platform:platform.optional(),writeSourceIds:z.array(z.string().min(1).max(128)).max(500).optional()}).strict();
-const savedSchema=z.object({version:z.literal(1),credentials:z.array(credentialSchema).max(500)}).strict();
+const savedSchema=z.object({version:z.literal(1),credentials:z.array(credentialSchema)}).strict();
 export type ConnectionCredential=z.infer<typeof credentialSchema>;
 type Saved=z.infer<typeof savedSchema>;
 type InvitationRecord={serverUrl:string;label:string;expiresAt:number;authorizedDeviceId?:string};
@@ -38,14 +38,14 @@ export class Connections {
     this.file=options?.file??new PrivateFile<Saved>(join(store.directory,'connectors'),'client-connections.json');this.clock=options?.clock??Date.now;
   }
   async init(){
-    try{const raw=await this.file.read();if(raw!==undefined){const saved=savedSchema.parse(raw);const ids=new Set(),hashes=new Set(),activeDevices=new Set();for(const c of saved.credentials){serverUrl(c.serverUrl);if(ids.has(c.id)||hashes.has(c.hash)||(c.scope==='mcp-write'&&!c.writeSourceIds?.length))throw Error();ids.add(c.id);hashes.add(c.hash);}this.credentials=saved.credentials;}}
+    try{const raw=await this.file.read();if(raw!==undefined){const saved=savedSchema.parse(raw);const ids=new Set(),hashes=new Set();for(const c of saved.credentials){serverUrl(c.serverUrl);if(ids.has(c.id)||hashes.has(c.hash)||(c.scope==='mcp-write'&&!c.writeSourceIds?.length))throw Error();ids.add(c.id);hashes.add(c.hash);}this.credentials=saved.credentials;}}
     catch{throw new ConnectionError('connection_storage_invalid',503,moteText("连接凭据文件无法读取，请保留数据并检查中央节点文件权限。"));}
   }
   private serialize<T>(run:()=>Promise<T>):Promise<T>{const work=this.sequence.catch(()=>{}).then(()=>{if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央节点正在关闭，请稍后重试。"));return run();});this.sequence=work;return work;}
   private async persist(credentials:ConnectionCredential[]){
     // Reserve each record's revocation timestamp before issuing it, so a full store remains revocable.
     const reserved=credentials.map(c=>c.revokedAt?c:{...c,revokedAt:'2000-01-01T00:00:00.000Z'});
-    if(credentials.length>500||Buffer.byteLength(JSON.stringify({version:1,credentials:reserved}))>2*1024*1024)throw new ConnectionError('connection_limit',409,moteText("连接记录已达到数量或存储上限，请联系节点管理员。"));
+    if(Buffer.byteLength(JSON.stringify({version:1,credentials:reserved}))>2*1024*1024)throw new ConnectionError('connection_limit',409,moteText("连接记录已达到存储上限，请联系节点管理员。"));
     try{await this.file.write({version:1,credentials});}catch{throw new ConnectionError('connection_storage_failed',503,moteText("连接凭据未保存，操作未生效；请检查中央节点存储后重试。"));}
     this.credentials=credentials;
   }

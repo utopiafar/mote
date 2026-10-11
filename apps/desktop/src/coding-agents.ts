@@ -19,7 +19,7 @@ export async function discoverCodingAgents(home=homedir()) {
   return Promise.all((Object.keys(codingProviders) as CodingProvider[]).map(async provider=>({provider,name:codingProviders[provider],path:codingRoot(provider,home),available:await lstat(codingRoot(provider,home)).then(s=>s.isDirectory()&&!s.isSymbolicLink(),()=>false)})));
 }
 type Context={sessionId:string;cwd?:string;repositoryKey?:string;branch?:string;parentSessionId?:string;callId?:string;hostSession?:boolean;turnId?:string;finalEmitted?:boolean;kimiText?:string;kimiOverflow?:boolean;kimiAt?:string};
-type Cursor={offset:number;anchor:string;ino:number;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;generation:number;context:Context};
+type Cursor={offset:number;anchor:string;ino:number;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;generation:number;context:Context;pendingEvent?:{hash:string;nextItem:number}};
 export type CodingCatalogEntry={relativePath:string;fileId:string;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;contentHash?:string;lastSeenScan:number;syncState:'pending'|'synced'|'error'};
 export type CodingCheckpoint={version:3;files:Record<string,Cursor>;initialized:boolean;catalog:Record<string,CodingCatalogEntry>;scanNumber:number;scanStartedAt:string;nextFile?:string};
 type Event={role:'user'|'assistant'|'tool_call'|'tool_result'|'assistant_delta'|'tool_call_delta';text:string;callId?:string;at?:string;channel?:string;nativeId?:string;attribution?:CodingEvidence['attribution']};
@@ -96,12 +96,13 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
   return events;
 }
 
-/** Bounded incremental tailer. Its cursor is committed atomically with SourceSync's durable outbox. */
-export async function scanCodingAgent(rootPath:string,provider:CodingProvider,options:SourceOptions,previous?:CodingCheckpoint,signal?:AbortSignal,limits={items:200,bytes:4*1024*1024}):Promise<SourceScan> {
+/** Incremental complete-event reader with bounded, durable output-piece turns.
+ * Event-piece continuation and the cursor commit atomically with SourceSync's outbox. */
+export async function scanCodingAgent(rootPath:string,provider:CodingProvider,options:SourceOptions,previous?:CodingCheckpoint,signal?:Pick<AbortSignal,'aborted'|'throwIfAborted'>,limits={items:200,bytes:4*1024*1024}):Promise<SourceScan> {
   const selected=await lstat(rootPath);if(!selected.isDirectory()||selected.isSymbolicLink())throw Error(moteText("Agent 来源必须是普通目录"));
   const root=await realpath(rootPath),priorScanStartedAt=previous?.scanStartedAt,checkpoint:CodingCheckpoint=structuredClone(previous??{version:3,files:{},initialized:false,catalog:{},scanNumber:0,scanStartedAt:new Date().toISOString()});
   if(checkpoint.version!==3||!checkpoint.catalog||!Number.isSafeInteger(checkpoint.scanNumber)||!Number.isFinite(Date.parse(checkpoint.scanStartedAt)))throw Error('Unsupported Coding checkpoint format; reset the source state before scanning');
-  for(const cursor of Object.values(checkpoint.files))if(![cursor.size,cursor.mtimeMs,cursor.ctimeMs].every(Number.isFinite)||typeof cursor.quickHash!=='string')throw Error('Unsupported Coding cursor format; reset the source state before scanning');
+  for(const cursor of Object.values(checkpoint.files))if(![cursor.size,cursor.mtimeMs,cursor.ctimeMs].every(Number.isFinite)||typeof cursor.quickHash!=='string'||cursor.pendingEvent&&(!/^[a-f0-9]{64}$/.test(cursor.pendingEvent.hash)||!Number.isSafeInteger(cursor.pendingEvent.nextItem)||cursor.pendingEvent.nextItem<0))throw Error('Unsupported Coding cursor format; reset the source state before scanning');
   checkpoint.scanNumber++;checkpoint.scanStartedAt=new Date().toISOString();
   const result:SourceScan={items:[],seen:[],complete:true,skipped:0,checkpoint,queue:previous?.initialized?'realtime':options.initialSync==='new_only'?'realtime':'history'};
   const files:{path:string;relativePath:string;size:number;mtimeMs:number;ctimeMs:number;ino:number;fileId:string;quickHash:string}[]=[];let visited=0,bytes=0;
@@ -139,27 +140,55 @@ export async function scanCodingAgent(rootPath:string,provider:CodingProvider,op
       if(!checkpoint.initialized&&!old&&options.initialSync==='new_only'){
         // Baseline only complete lines so a currently partial message is picked up later.
         const header=await read(0,Math.min(info.size,65536));for(const line of header.toString('utf8').split('\n').slice(0,-1)){try{decodeCodingEvent(provider,JSON.parse(line),cursor.context,basename(path)==='wire.jsonl');}catch{break;}}
-        const tail=await read(Math.max(0,info.size-4*1024*1024),Math.min(info.size,4*1024*1024));
-        const end=tail.lastIndexOf(10);cursor.offset=end<0?0:Math.max(0,info.size-tail.length)+end+1;
+        let end=info.size;cursor.offset=0;
+        while(end>0){signal?.throwIfAborted();const start=Math.max(0,end-65536),tail=await read(start,end-start),newline=tail.lastIndexOf(10);if(newline>=0){cursor.offset=start+newline+1;break;}end=start;}
       }else if(cursor.offset<info.size){
-        // One event may be large; never truncate it or advance over a partial line.
-        const buffer=await read(cursor.offset,Math.min(info.size-cursor.offset,4*1024*1024));let start=0;
-        while(start<buffer.length){
-          signal?.throwIfAborted();const end=buffer.indexOf(10,start);if(end<0){result.complete=false;if(buffer.length===4*1024*1024)result.skipped++;break;}
-          const raw=buffer.subarray(start,end),context=structuredClone(cursor.context);
+        // Read complete JSONL events in chunks, then emit a bounded prefix of
+        // their pieces. No raw partial content enters the persisted checkpoint.
+        let buffer=Buffer.alloc(0),position=cursor.offset;
+        const nextLine=async():Promise<Buffer|undefined>=>{
+          const chunks:Buffer[]=[];let length=0;
+          while(true){
+            signal?.throwIfAborted();
+            const newline=buffer.indexOf(10);
+            if(newline>=0){const tail=buffer.subarray(0,newline);chunks.push(tail);length+=tail.length;buffer=buffer.subarray(newline+1);return Buffer.concat(chunks,length);}
+            if(buffer.length){chunks.push(buffer);length+=buffer.length;buffer=Buffer.alloc(0);}
+            if(position>=info.size)return undefined;
+            buffer=await read(position,Math.min(info.size-position,65536));position+=buffer.length;
+            if(!buffer.length)return undefined;
+          }
+        };
+        while(cursor.offset<info.size){
+          const raw=await nextLine();if(raw===undefined){result.complete=false;break;}
+          const context=structuredClone(cursor.context);
           let events:Event[];
           try{const row=raw.length?JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(raw)):{};events=decodeCodingEvent(provider,row,context,basename(path)==='wire.jsonl');}
           catch{result.complete=false;result.skipped++;break;}
+          const eventHash=hash(raw);
+          if(cursor.pendingEvent&&cursor.pendingEvent.hash!==eventHash){cursor.generation++;delete cursor.pendingEvent;}
+          const bodies=events.map(event=>{
+            const body=redactSourceText(event.text,options.redactLiterals),pieces:string[]=[];
+            for(let offset=0;offset<body.length;){signal?.throwIfAborted();let end=Math.min(offset+8000,body.length);if(end<body.length&&/[\uD800-\uDBFF]/.test(body[end-1]))end--;pieces.push(body.slice(offset,end));offset=end;}
+            return {event,pieces};
+          });
+          // Native identity plus immutable raw-event version is independent
+          // of scheduling. Changed input cannot complete earlier event pieces.
           const items:ScannedItem[]=[];
-          for(const [eventIndex,event] of events.entries()){
-            const eventId=event.nativeId?hash(`${provider}:${context.sessionId}:${event.nativeId}:${eventIndex}`):hash(`${key}:${cursor.generation}:${cursor.offset}:${eventIndex}`),body=redactSourceText(event.text,options.redactLiterals);
-            const pieces:string[]=[];for(let offset=0;offset<body.length;){let end=Math.min(offset+8000,body.length);if(end<body.length&&/[\uD800-\uDBFF]/.test(body[end-1]))end--;pieces.push(body.slice(offset,end));offset=end;}
+          for(const [eventIndex,{event,pieces}] of bodies.entries()){
+            const identity=event.nativeId?`${provider}:${context.sessionId}:${event.nativeId}:${eventIndex}`:`${key}:${cursor.generation}:${cursor.offset}:${eventIndex}`;
+            const eventId=hash(`${identity}:${eventHash}`);
             const cwd=context.cwd?redactSourceText(context.cwd,options.redactLiterals):undefined;
             for(const [part,text] of pieces.entries())items.push({externalId:`coding:${provider}:${eventId}:${part}`,kind:'message',layer:options.retention==='reference'?'reference':'snapshot',title:`${codingProviders[provider]} · ${redactSourceText(context.sessionId,options.redactLiterals).slice(0,80)} · ${event.role}`,text:options.retention==='reference'?'':text,mimeType:'text/plain',syncQueue:itemQueue,document:{contentRole:'transcript',timeBasis:event.at?'recorded':'unknown',recordedAt:event.at,coding:{version:1,provider,sessionId:redactSourceText(context.sessionId,options.redactLiterals).slice(0,500),projectIdentity:context.cwd?'workspace':'session',projectKey:hash(context.cwd??`${provider}:${context.sessionId}`),cwd,projectName:cwd?basename(cwd).slice(0,400):undefined,repositoryKey:context.repositoryKey,branch:context.branch?redactSourceText(context.branch,options.redactLiterals).slice(0,500):undefined,eventId,role:event.role,...(event.channel?{channel:event.channel}:{}),...(event.attribution?{attribution:event.attribution}:{}),callId:event.callId?redactSourceText(event.callId,options.redactLiterals).slice(0,500):undefined,parentSessionId:context.parentSessionId?redactSourceText(context.parentSessionId,options.redactLiterals).slice(0,500):undefined,part,parts:pieces.length}}});
           }
-          if(result.items.length+items.length>Math.max(limits.items,500)||bytes+raw.length>Math.max(limits.bytes,4*1024*1024)){result.complete=false;break;}
-          result.items.push(...items);result.seen.push(...items.map(i=>i.externalId));bytes+=raw.length;
-          cursor.context=context;cursor.offset+=end-start+1;start=end+1;
+          let nextItem=cursor.pendingEvent?.nextItem??0;
+          if(nextItem>items.length)throw Error('Invalid Coding event continuation');
+          const bytesBefore=bytes;
+          while(nextItem<items.length){
+            signal?.throwIfAborted();if(result.items.length>=limits.items||bytes>bytesBefore&&bytes>=limits.bytes)break;
+            const item=items[nextItem++]!;result.items.push(item);result.seen.push(item.externalId);bytes+=Buffer.byteLength(item.text,'utf8');
+          }
+          if(nextItem<items.length){cursor.pendingEvent={hash:eventHash,nextItem};result.complete=false;break;}
+          delete cursor.pendingEvent;cursor.context=context;cursor.offset+=raw.length+1;bytes=Math.max(bytes,bytesBefore+raw.length);
           if(result.items.length>=limits.items||bytes>=limits.bytes){result.complete=false;break;}
         }
       }

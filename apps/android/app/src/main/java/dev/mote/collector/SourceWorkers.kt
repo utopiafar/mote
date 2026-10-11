@@ -42,7 +42,6 @@ class SourceScanWorker(context: Context, params: WorkerParameters) : Worker(cont
                 catch (_: Exception) { store.status(source.id, "provider"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.STORAGE); SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.STORAGE) }
             }
             SourceWork.upload(applicationContext, inputData.getBoolean("syncExplicit", false))
-            SourceWork.processFiles(applicationContext)
             Result.success()
         } catch (_: Exception) { SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.STORAGE); Result.retry() }
     }
@@ -157,7 +156,6 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                 } catch (_: Exception) { store.status(source.id, "offline"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.NETWORK); SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.NETWORK); failed = true }
                 finally { dispatch.record(slice.bytes, slice.requests) }
             }
-            SourceWork.processFiles(applicationContext)
             if (blocked) {
                 settings.syncStatus("error", MoteI18n.text("部分来源尚未同步，记录保留在本机；{0}", MoteI18n.text("请再次点击立即同步")))
                 Result.failure()
@@ -174,11 +172,6 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
             Result.retry()
         } catch (_: Exception) { SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.CONFIG_INVALID); failure() }
     }
-}
-
-/** Older schedules may still fire after upgrade; all file interpretation is central. */
-class LocalFileIndexWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
-    override fun doWork(): Result = Result.success()
 }
 
 object SourceWork {
@@ -207,7 +200,6 @@ object SourceWork {
         manager.enqueueUniqueWork("mote-source-scan", if (manual) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP, request)
         val periodic = PeriodicWorkRequestBuilder<SourceScanWorker>(15, TimeUnit.MINUTES).setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
         manager.enqueueUniquePeriodicWork("mote-source-periodic", ExistingPeriodicWorkPolicy.UPDATE, periodic)
-        processFiles(context)
         if (!syncExplicit) upload(context)
     }
     internal fun continueScan(context: Context, id: String, explicit: Boolean) {
@@ -216,11 +208,6 @@ object SourceWork {
         WorkManager.getInstance(context).enqueueUniqueWork("mote-source-scan", ExistingWorkPolicy.APPEND_OR_REPLACE, request)
     }
     fun upload(context: Context, explicit: Boolean = false) = UploadWorker.schedule(context, Settings(context).read(), explicit)
-    fun processFiles(context: Context, continuation: Boolean = false) {
-        val manager = WorkManager.getInstance(context)
-        manager.cancelUniqueWork("mote-file-processing")
-        manager.cancelUniqueWork("mote-file-processing-periodic")
-    }
     internal fun enqueueUpload(context: Context, config: CollectorConfig, explicit: Boolean, continuation: Boolean = false, delaySeconds: Long = 0) {
         if (context.localSources().sources().none { it.enabled }) return
         val request = OneTimeWorkRequestBuilder<SourceUploadWorker>().setInitialDelay(delaySeconds, TimeUnit.SECONDS).setConstraints(SyncSchedule.constraints(config, explicit))

@@ -1,9 +1,9 @@
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,readFile,rm,lstat} from 'node:fs/promises';
+import {mkdtemp,readFile,writeFile,rm,lstat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -285,4 +285,26 @@ test('attribution controls require owner authority and paired owner clients can 
   assert.equal((await app.inject({method:'PATCH',url:`/api/materials/${material.id}/context`,payload})).statusCode,401);
   const corrected=await app.inject({method:'PATCH',url:`/api/materials/${material.id}/context`,headers:headers(client.token),payload});assert.equal(corrected.statusCode,200);assert.equal(corrected.json().attributionContext.basis,'owner_material');
   assert.equal((await app.inject({method:'PATCH',url:`/api/materials/${material.id}/context`,headers:headers(),payload})).statusCode,409);
+});
+
+test('500 revoked credentials do not block HTTP re-pairing and current credential remains valid after a full restart',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-connections-history-')),cfg=config(directory);
+ let node=await buildApp(cfg,{backgroundWorker:false,agent:inactive});
+ t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
+ const first=await paired(node.app,'generated-history-device');
+ const path=join(directory,'connectors/client-connections.json'),saved=JSON.parse(await readFile(path,'utf8')),original=saved.credentials[0];
+ await node.app.close();
+ const revoked=Array.from({length:500},(_,i)=>({...original,id:randomUUID(),hash:createHash('sha256').update('generated-revoked-token-'+i).digest('hex'),revokedAt:new Date().toISOString()}));
+ await writeFile(path,JSON.stringify({...saved,credentials:[...revoked,original]}),{mode:0o600});
+ node=await buildApp(cfg,{backgroundWorker:false,agent:inactive});
+ const code=(await invite(node.app,'generated-history-device')).json().invitation.code,replacement=await redeem(node.app,code,'generated-history-device');
+ assert.equal(replacement.statusCode,200,replacement.body);const current=replacement.json();
+ assert.equal(node.connections.inventory().items.length,502);
+ assert.equal((await node.app.inject({url:'/api/connections/self',headers:headers(first.token)})).statusCode,401);
+ assert.equal((await node.app.inject({url:'/api/connections/self',headers:headers(current.token)})).statusCode,200);
+ await node.app.close();node=await buildApp(cfg,{backgroundWorker:false,agent:inactive});
+ assert.equal((await node.app.inject({url:'/api/connections/self',headers:headers(first.token)})).statusCode,401);
+ assert.equal((await node.app.inject({url:'/api/connections/self',headers:headers(current.token)})).statusCode,200);
+ assert.equal((await node.app.inject({url:'/api/connections/self',headers:headers('generated-revoked-token-0')})).statusCode,401);
+ assert.equal(node.connections.inventory().items.length,502);
 });

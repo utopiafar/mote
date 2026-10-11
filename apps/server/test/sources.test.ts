@@ -80,3 +80,16 @@ test('registered source capabilities distinguish one-time imports without changi
  assert.equal(android.capabilities?.readOriginal,'none');assert.equal(android.capabilities?.listening,'polling');
  assert.throws(()=>sources.register({id:'pretend-write',name:'Generated',kind:'custom',deviceId:'cap-device',platform:'import',capabilities:{externalWrite:true}}));
 });
+
+test('source registration and portable archive merge cross former cumulative limits without weakening identity checks',async t=>{
+ const {store,sources}=fixture(t);
+ for(let i=0;i<500;i++)sources.register({id:'generated-history-'+i,name:'Generated historical source',kind:'custom',deviceId:'synthetic',platform:'import',enabled:false});
+ const archive=store.exportArchive(10_000_000);
+ const dir=mkdtempSync(join(tmpdir(),'mote-source-many-restore-')),restored=new Store(dir);t.after(()=>{restored.close();rmSync(dir,{recursive:true,force:true});});
+ new SourceStore(restored).register({id:'destination',name:'Generated destination source',kind:'custom',deviceId:'synthetic',platform:'import'});
+ await restored.importArchive(archive);assert.equal(new SourceStore(restored).listSources().length,502);
+ sources.listSources=()=>{throw Error('Registration must use indexed identity lookup, not deserialize the archive catalogue');};
+ assert.equal(sources.register({id:'generated-current',name:'Generated current source',kind:'custom',deviceId:'synthetic',platform:'import'}).enabled,true);
+ assert.equal(sources.register({id:'fixture',name:'Repeat',kind:'custom',deviceId:'synthetic',platform:'import'}).id,'fixture');
+ assert.throws(()=>sources.register({id:'fixture',name:'Conflicting identity',kind:'custom',deviceId:'other',platform:'import'}),{statusCode:409});
+});

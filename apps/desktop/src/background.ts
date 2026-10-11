@@ -24,8 +24,9 @@ export type BackgroundRequest =
 export class BackgroundLane {
   private worker?: Worker;
   private nextId = 0;
-  private pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; progress?: (value: WorkProgress) => void }>();
-  run<T>(request: BackgroundRequest, progress?: (value: WorkProgress) => void): Promise<T> {
+  private pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; progress?: (value: WorkProgress) => void; signal?:AbortSignal; cleanup:()=>void }>();
+  run<T>(request: BackgroundRequest, progress?: (value: WorkProgress) => void, signal?:AbortSignal): Promise<T> {
+    if(signal?.aborted)return Promise.reject(signal.reason);
     if (this.pending.size >= 32) return Promise.reject(new Error(moteText("后台任务繁忙，请稍后重试")));
     if (!this.worker) {
       // Source tests use tsx; packaged production loads only compiled CommonJS.
@@ -36,14 +37,15 @@ export class BackgroundLane {
       worker.on('message', (message: { id: number; progress?: WorkProgress; error?: string; value?: unknown }) => {
         const job = this.pending.get(message.id); if (!job) return;
         if (message.progress) { job.progress?.(message.progress); return; }
-        this.pending.delete(message.id);
-        if (message.error) job.reject(new Error(message.error)); else job.resolve(message.value);
+        this.pending.delete(message.id);job.cleanup();
+        if(job.signal?.aborted){job.reject(job.signal.reason);}
+        else if (message.error) job.reject(new Error(message.error)); else job.resolve(message.value);
         if (!this.pending.size) worker.unref();
       });
       const failed = () => {
         if (this.worker !== worker) return;
         this.worker = undefined;
-        for (const job of this.pending.values()) job.reject(new Error(moteText("后台处理进程已退出，请重试；原数据保留")));
+        for (const job of this.pending.values()){job.cleanup();job.reject(job.signal?.aborted?job.signal.reason:new Error(moteText("后台处理进程已退出，请重试；原数据保留")));}
         this.pending.clear();
       };
       worker.on('error', failed); worker.on('exit', failed);
@@ -51,9 +53,13 @@ export class BackgroundLane {
     const id = ++this.nextId;
     this.worker.ref();
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: value => resolve(value as T), reject, progress });
-      try { this.worker!.postMessage({ id, request, locale: getLocale() }); }
-      catch (error) { this.pending.delete(id); if (!this.pending.size) this.worker!.unref(); reject(error); }
+      const cancellation=signal?new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)):undefined;
+      const abort=()=>{if(cancellation)Atomics.store(cancellation,0,1);};
+      signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
+      const cleanup=()=>signal?.removeEventListener('abort',abort);
+      this.pending.set(id, { resolve: value => resolve(value as T), reject, progress,signal,cleanup });
+      try { this.worker!.postMessage({ id, request, locale: getLocale(),cancellation:cancellation?.buffer }); }
+      catch (error) { this.pending.delete(id);cleanup(); if (!this.pending.size) this.worker!.unref(); reject(error); }
     });
   }
   async close(): Promise<void> { await this.worker?.terminate(); }

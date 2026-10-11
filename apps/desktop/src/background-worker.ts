@@ -14,12 +14,12 @@ import { validateRecord, validateImage, type QueueArchive, type QueueRecord } fr
 import type { BackgroundRequest, WorkProgress } from './background';
 import { encodeLocalContent, readLocalContent } from './local-content';
 
-async function execute(request: BackgroundRequest, progress: (value: WorkProgress) => void): Promise<unknown> {
+async function execute(request: BackgroundRequest, progress: (value: WorkProgress) => void,signal?:Pick<AbortSignal,'aborted'|'throwIfAborted'>): Promise<unknown> {
   switch (request.kind) {
     case 'spool-original': return spoolOriginal(request.path,request.directory,request.expected);
     case 'original-part': return originalPart(request.spool,request.part);
     case 'source-state': return sourceState(request.path,request.patches,request.maximum);
-    case 'coding-scan': return scanCodingAgent(request.root,request.provider,request.options,request.checkpoint);
+    case 'coding-scan': return scanCodingAgent(request.root,request.provider,request.options,request.checkpoint,signal);
     case 'compression-preview': return compressionPreview(request.quality,request.maxSide);
     case 'browse': {
       const rows = request.records.filter(record => record.at >= request.after && record.at < request.before)
@@ -122,15 +122,17 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
   }
 }
 let chain = Promise.resolve();
-parentPort!.on('message', ({ id, request, locale }: { locale?: Locale; id: number; request: BackgroundRequest }) => {
+parentPort!.on('message', ({ id, request, locale,cancellation }: { locale?: Locale; id: number; request: BackgroundRequest;cancellation?:SharedArrayBuffer }) => {
   chain = chain.then(async () => {
     let lastProgress = 0;
     try {
       configureLocale(() => locale ?? 'zh-CN');
+      const flag=cancellation?new Int32Array(cancellation):undefined;
+      const signal=flag?{get aborted(){return Atomics.load(flag,0)!==0;},throwIfAborted(){if(Atomics.load(flag,0)!==0)throw new DOMException('Coding scan cancelled','AbortError');}}:undefined;
       const value = await execute(request, progress => {
         const now = Date.now(); if (now - lastProgress < 100 && progress.completed !== progress.total) return;
         lastProgress = now; parentPort!.postMessage({ id, progress });
-      });
+      },signal);
       parentPort!.postMessage({ id, value });
     } catch (error) { parentPort!.postMessage({ id, error: error instanceof Error ? error.message : moteText("后台处理失败") }); }
   });

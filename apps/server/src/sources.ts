@@ -16,10 +16,9 @@ export class SourceStore {
   listSources():SourceConnection[]{return (this.store.db.prepare('SELECT json FROM source_connections ORDER BY id').all() as {json:string}[]).map(r=>this.present(JSON.parse(r.json)));}
   getSource(id:string):SourceConnection {const row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Source not found',404);return this.present(JSON.parse(row.json));}
   register(raw:unknown):SourceConnection {
-    const input=sourceConnectionSchema.parse(raw),existing=this.listSources().find(s=>s.id===input.id);
+    const input=sourceConnectionSchema.parse(raw),row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(input.id) as {json:string}|undefined,existing=row?this.present(JSON.parse(row.json)):undefined;
     if(!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     if(existing){if(existing.kind!==input.kind||existing.deviceId!==input.deviceId||existing.platform!==input.platform)throw new StoreError('Source identity cannot be changed',409);return existing;}
-    if(this.listSources().length>=500)throw new StoreError('Maximum 500 sources',413);
     const now=new Date().toISOString(),value={...input,ownerRelationVersion:input.ownerRelation?1:undefined,createdAt:now,updatedAt:now};this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.save(value);return this.present(value);
   }
   update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention'];initialSync?:'all'|'new_only';ownerRelation?:OwnerRelation|null}):SourceConnection {

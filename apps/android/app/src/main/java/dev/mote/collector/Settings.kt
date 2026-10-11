@@ -192,7 +192,7 @@ class Settings(private val context: Context) {
     }
     /** Sticky while records or prepared submissions exist, including after disconnecting. */
     fun dataOrigin(): String = requireNotNull(prefs.getString("dataOrigin", null)) { MoteI18n.text(LocalDataFormat.RESET_MESSAGE) }
-    fun hasPendingData(): Boolean = context.fileArchives().pendingSync().count > 0 || context.localSources().sources().any { it.binaryFiles() && context.fileArchives().processingCount(it.id) > 0 } || context.queue().hasPendingConnectionWork() || BulkDedupeStore(context).quarantine().hasUnboundRecords() || QuickNotes.draft(context).read().prepared != null ||
+    fun hasPendingData(): Boolean = context.fileArchives().pendingSync().count > 0 || context.queue().hasPendingConnectionWork() || BulkDedupeStore(context).quarantine().hasUnboundRecords() || QuickNotes.draft(context).read().prepared != null ||
         context.localSources().sources().any { (context.localSources().state(it.id).optJSONArray("pending")?.length() ?: 0) > 0 }
     private fun originAfterChange(next: CollectorConfig): String {
         val previous = dataOrigin()

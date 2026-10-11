@@ -56,7 +56,7 @@ class FileSnapshotRecoveryTest {
         assertEquals(initialRevision, m.getJSONObject("item").getString("revision"))
         assertEquals(manifest(first).getJSONObject("item").getString("observedAt"), m.getJSONObject("item").getString("observedAt"))
         assertEquals(captureId, recovered.getJSONObject("pending").getString("recoveryCaptureId"))
-        assertEquals(LocalFileIndex.hash(bytes), m.getString("sha256")); assertArrayEquals(bytes, queue.part(source.id, 0))
+        assertEquals(FileSnapshotMetadata.hash(bytes), m.getString("sha256")); assertArrayEquals(bytes, queue.part(source.id, 0))
         assertEquals("central-pending", m.getJSONObject("item").getJSONObject("document").getJSONObject("fileIndex").getString("parser"))
         assertThrows(IllegalStateException::class.java) { queue.acknowledge(source.id, recovered, ack(recovered).put("sha256", "wrong")) }
         assertNotNull(queue.next(source.id)); queue.acknowledge(source.id, recovered, ack(recovered))

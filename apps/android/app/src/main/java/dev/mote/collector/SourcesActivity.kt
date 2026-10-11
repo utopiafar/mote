@@ -225,7 +225,7 @@ class SourcesActivity : MoteActivity() {
         }
         dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             try {
-                val next = source.copy(syncContinuously = if (source.kind == "local-files" && !source.tree) continuous.isChecked else true, centralProcessingConsent = true, lightweightIndex = false, allowRead = source.kind == "local-files" && modes[retention.selectedItemPosition] == "snapshot" && allowRead.isChecked, name = name.text.toString(), enabled = enabled.isChecked, retention = modes[retention.selectedItemPosition], initialSync = if (!source.tree && source.kind == "local-files") "all" else if (initial.selectedItemPosition == 1) "new_only" else "all",
+                val next = source.copy(syncContinuously = if (source.kind == "local-files" && !source.tree) continuous.isChecked else true, centralProcessingConsent = true, allowRead = source.kind == "local-files" && modes[retention.selectedItemPosition] == "snapshot" && allowRead.isChecked, name = name.text.toString(), enabled = enabled.isChecked, retention = modes[retention.selectedItemPosition], initialSync = if (!source.tree && source.kind == "local-files") "all" else if (initial.selectedItemPosition == 1) "new_only" else "all",
                     intervalMinutes = interval.text.toString().toInt(), daysBefore = before?.text?.toString()?.toInt() ?: source.daysBefore,
                     daysAfter = after?.text?.toString()?.toInt() ?: source.daysAfter, maxFileMiB = maxFileMiB?.text?.toString()?.toInt() ?: source.maxFileMiB, extensions = extensions?.text?.toString() ?: source.extensions, excluded = excludes?.text?.toString() ?: source.excluded)
                 if (task.busy) return@setOnClickListener

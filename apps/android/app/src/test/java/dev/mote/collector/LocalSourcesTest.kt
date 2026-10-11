@@ -24,11 +24,10 @@ class LocalSourcesTest {
             assertThrows(org.json.JSONException::class.java) { LocalSource.from(JSONObject(current.toString()).apply { remove(key) }) }
         }
     }
-    @Test fun oldSnapshotPreferencesRequireExplicitCentralProcessingConfirmation() {
-        val legacy = source().json().apply { remove("centralProcessingConsent"); put("lightweightIndex", true) }
+    @Test fun unconfirmedSnapshotPreferencesRequireExplicitCentralProcessingConfirmation() {
+        val legacy = source().json().apply { remove("centralProcessingConsent") }
         val restored = LocalSource.from(legacy)
         assertFalse(restored.centralProcessingConsent)
-        assertFalse(restored.lightweightIndex)
         assertTrue(LocalSource.from(restored.copy(centralProcessingConsent = true).json()).centralProcessingConsent)
     }
     @Test fun centralUploadConsentNeverAcceptsCoercedStringsOrNumbers() {

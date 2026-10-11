@@ -25,7 +25,7 @@ export function sourceDefinition(source: LocalSource): SourceDefinition {
   const { id, name, kind, deviceId, platform, retention, enabled, initialSync } = source;
   return { id, name: redactSourceText(name, source.redactLiterals).slice(0, 200) || moteText("本地来源"), kind, deviceId, platform, retention, enabled, initialSync };
 }
-export function sourcePolicy(options: SourceOptions): string { return sourceHash(JSON.stringify({ indexMode:options.indexMode,allowRead:options.allowRead,retention: options.retention, trackDeletions: options.trackDeletions, extensions: options.extensions, excludedPaths: options.excludedPaths, redactLiterals: options.redactLiterals })); }
+export function sourcePolicy(options: SourceOptions): string { return sourceHash(JSON.stringify({ allowRead:options.allowRead,retention: options.retention, trackDeletions: options.trackDeletions, extensions: options.extensions, excludedPaths: options.excludedPaths, redactLiterals: options.redactLiterals })); }
 export class LocalSourceManager {
   private fileLocations=new Map<string,Map<string,string>>();
   private sources: LocalSource[] = [];
@@ -60,7 +60,7 @@ export class LocalSourceManager {
     await ensureStorageFormat(this.directory,['sources.json','nodes','access-markers','ingress-v2.json']);
     try {
       const saved = JSON.parse((await readLocalContent(join(this.directory, 'sources.json'))).toString('utf8')) as { version: number; sources: LocalSource[]; metadataDirty: string[]; metadataDirtyAt?: string };
-      if (saved.version !== DESKTOP_STORAGE_VERSION || !Array.isArray(saved.sources) || saved.sources.length > 40) throw new Error(moteText("本地来源配置无效"));
+      if (saved.version !== DESKTOP_STORAGE_VERSION || !Array.isArray(saved.sources)) throw new Error(moteText("本地来源配置无效"));
       this.sources = saved.sources.map(s => {
         if (!/^local-[a-f0-9-]{36}$/.test(s.id) || typeof s.name !== 'string' || s.name.length > 200 || typeof s.enabled !== 'boolean' || typeof s.kind !== 'string') throw new Error(moteText("本地来源配置无效"));
         const normalized = { ...s, ...normalizeSourceOptions(s), deviceId: this.connection.deviceId };
@@ -133,7 +133,6 @@ export class LocalSourceManager {
   private async add(fields: Pick<LocalSource, 'name' | 'kind'> & Partial<LocalSource>, input: unknown): Promise<string> {
     const options = normalizeSourceOptions(input);
     if(!this.adapters.get(fields.kind).allowsArchive&&options.retention==='archive')options.retention='snapshot';
-    if (this.sources.length >= 40) throw new Error(moteText("本机最多连接 40 个本地来源"));
     // Existing built-ins have a concrete platform identity. An adapter with
     // neither field may represent several separately configured accounts.
     if (this.sources.some(s => s.kind === fields.kind && (

@@ -14,10 +14,39 @@ class FileArchiveQueueTest {
         queue.observe(source,item(layer="snapshot",size=bytes.size.toLong()),queue.configure(source).getString("generation"),0)
         val pending=queue.prepare(source,{ByteArrayInputStream(bytes)},{true},61000)!!
         val m=pending.getJSONObject("pending").getJSONObject("manifest");val index=m.getJSONObject("item").getJSONObject("document").getJSONObject("fileIndex")
-        assertEquals("",m.getJSONObject("item").getString("text"));assertEquals("snapshot",m.getJSONObject("item").getString("layer"));assertEquals("central-pending",index.getString("parser"));assertEquals(LocalFileIndex.hash(bytes),index.getString("contentVersion"));assertEquals(LocalFileIndex.hash(bytes),m.getString("sha256"))
+        assertEquals("",m.getJSONObject("item").getString("text"));assertEquals("snapshot",m.getJSONObject("item").getString("layer"));assertEquals("central-pending",index.getString("parser"));assertEquals(FileSnapshotMetadata.hash(bytes),index.getString("contentVersion"));assertEquals(FileSnapshotMetadata.hash(bytes),m.getString("sha256"))
         val restarted=FileArchiveQueue(dir,cipher);assertEquals(pending.toString(),restarted.next(source.id).toString());assertArrayEquals(bytes,restarted.part(source.id,0))
-        restarted.acknowledge(source.id,pending,ack(pending));assertEquals(0,restarted.pendingCount(source.id));assertEquals(0,restarted.processingCount(source.id));assertFalse(restarted.processOne(source,{error("No local reads")},{true},index={_,_,_->error("No local interpretation")}))
+        restarted.acknowledge(source.id,pending,ack(pending));assertEquals(0,restarted.pendingCount(source.id))
         assertFalse(java.io.File(dir,source.id+"/spool").exists())
+    }
+    @Test fun completedImportsDoNotLimitNewSelectionsOrChangeAnOfflinePendingManifest() {
+        val configDir = folder.newFolder(); val archiveDir = folder.newFolder()
+        var store = LocalSourceStore(configDir, cipher); var queue = FileArchiveQueue(archiveDir, cipher)
+        val bytes = "Generated one-time snapshot".toByteArray()
+        repeat(21) { index ->
+            val selected = source("snapshot").copy(id = "completed-$index", tree = false, syncContinuously = false, centralProcessingConsent = true, uri = "content://fixture/document/$index")
+            store.save(selected)
+            val generation = queue.configure(selected).getString("generation")
+            queue.observe(selected, item("$index", "snapshot", bytes.size.toLong()), generation, 0)
+            val pending = queue.prepare(selected, { ByteArrayInputStream(bytes) }, { true }, captureImmediately = true)!!
+            queue.acknowledge(selected.id, pending, ack(pending))
+            assertTrue(queue.state(selected.id).getBoolean("importCaptured"))
+            assertEquals(0, queue.pendingCount(selected.id))
+            store = LocalSourceStore(configDir, cipher); queue = FileArchiveQueue(archiveDir, cipher)
+        }
+        val offline = source("snapshot").copy(id = "offline-new", tree = false, syncContinuously = false, centralProcessingConsent = true, allowRead = true)
+        store.save(offline)
+        queue.observe(offline, item("offline", "snapshot", bytes.size.toLong()), queue.configure(offline).getString("generation"), 0)
+        val pending = queue.prepare(offline, { ByteArrayInputStream(bytes) }, { true }, captureImmediately = true)!!
+        store.save(offline.copy(name = "Renamed pending fixture"))
+        store = LocalSourceStore(configDir, cipher); queue = FileArchiveQueue(archiveDir, cipher)
+        assertEquals(22, store.sources().size)
+        queue.configure(store.sources().single { it.id == offline.id })
+        assertEquals(pending.toString(), queue.next(offline.id).toString())
+        assertArrayEquals(bytes, queue.part(offline.id, 0))
+        assertEquals(1, queue.pendingSync().count)
+        queue.acknowledge(offline.id, pending, ack(pending))
+        assertEquals(0, queue.pendingSync().count)
     }
     @Test fun seventeenMiBSnapshotUsesDurableChunksAndRespectsExplicitSourceLimit() {
         val plain = object : ByteCipher { override fun seal(bytes: ByteArray) = bytes; override fun open(bytes: ByteArray) = bytes }
@@ -27,7 +56,7 @@ class FileArchiveQueueTest {
         queue.observe(source, item(layer = "snapshot", size = bytes.size.toLong()), queue.configure(source).getString("generation"), 0)
         val pending = queue.prepare(source, { ByteArrayInputStream(bytes) }, { true }, 61000)!!
         val manifest = pending.getJSONObject("pending").getJSONObject("manifest")
-        assertEquals(bytes.size.toLong(), manifest.getLong("sizeBytes")); assertEquals(LocalFileIndex.hash(bytes), manifest.getString("sha256"))
+        assertEquals(bytes.size.toLong(), manifest.getLong("sizeBytes")); assertEquals(FileSnapshotMetadata.hash(bytes), manifest.getString("sha256"))
         val restarted = FileArchiveQueue(dir, plain)
         assertEquals(FileArchiveQueue.PART_BYTES, restarted.part(source.id, 0).size)
         assertArrayEquals(bytes.copyOfRange(4 * FileArchiveQueue.PART_BYTES, bytes.size), restarted.part(source.id, 4))
@@ -60,8 +89,8 @@ class FileArchiveQueueTest {
         }))
         assertNull(q.next(s.id)); assertEquals(0, q.pendingCount(s.id))
     }
-    @Test fun snapshotReadPermissionTravelsButRetiredClientLimitIsIgnored() {
-        val queue=FileArchiveQueue(folder.newFolder(),cipher);val source=source("snapshot").copy(lightweightIndex=true,allowRead=true);val bytes="Generated".toByteArray()
+    @Test fun snapshotReadPermissionTravelsWithCentralPendingMetadata() {
+        val queue=FileArchiveQueue(folder.newFolder(),cipher);val source=source("snapshot").copy(allowRead=true);val bytes="Generated".toByteArray()
         queue.observe(source,item(layer="snapshot",size=bytes.size.toLong()),queue.configure(source).getString("generation"),0)
         val pending=queue.prepare(source,{ByteArrayInputStream(bytes)},{true},61000)!!;val index=pending.getJSONObject("pending").getJSONObject("manifest").getJSONObject("item").getJSONObject("document").getJSONObject("fileIndex")
         assertTrue(index.getBoolean("allowRead"));assertEquals(100000,index.getInt("maxIndexCharacters"))

@@ -29,7 +29,7 @@ export class MemoryDeletions {
   }
   export(){return this.store.db.prepare('SELECT json FROM memory_deletions ORDER BY id').all().map(row=>memoryDeletionSchema.parse(JSON.parse(String(row.json))));}
   restore(raw:unknown){
-    const values=z.array(memoryDeletionSchema).max(100000).parse(raw);
+    const values=z.array(memoryDeletionSchema).parse(raw);
     for(const value of values){
       if(value.dependencies.some(id=>!this.read([id]).length))throw new StoreError('Memory deletion archive is missing its original dependencies');
       const actualKeys=[...new Set(value.dependencies.flatMap(id=>this.keys(id)))].sort(),actualLineage=[...new Set(value.dependencies.flatMap(id=>this.lineage(id)))].sort();

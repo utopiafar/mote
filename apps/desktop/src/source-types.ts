@@ -1,4 +1,5 @@
 import { moteText } from '@mote/shared/i18n';
+import {RESET_REQUIRED} from './storage-format';
 export type SourceRetention = 'snapshot' | 'reference' | 'archive';
 export interface SourceDefinition {
   initialSync?: 'all' | 'new_only';
@@ -29,7 +30,6 @@ export interface LocalFileCheckpoint {
 /** A registered adapter owns its versioned checkpoint shape; SourceSync persists it atomically with the outbox. */
 export type SourceCheckpoint = LocalFileCheckpoint | import('./coding-agents').CodingCheckpoint | { version: number; [key: string]: unknown };
 export type ScannedItem = Omit<SourceItem, 'revision' | 'observedAt'> & {
-  /** Read only to retire obsolete processing inputs during an adapter upgrade. */
   /** Client-only routing hint; SourceSync strips it before persistence and upload. */
   syncQueue?: 'realtime' | 'history';
 };
@@ -47,7 +47,7 @@ export interface SourceOptions {
   syncContinuously?: boolean;
   /** Explicit owner confirmation that snapshot file bytes are sent for central processing. */
   centralProcessingConsent?: boolean;
-  indexMode?: 'full'|'lightweight'; allowRead?:boolean;
+  allowRead?:boolean;
   initialSync?: 'all' | 'new_only';
   retention: SourceRetention; intervalSeconds: number; trackDeletions: boolean;
   extensions: string[]; excludedPaths: string[]; redactLiterals: string[];
@@ -73,6 +73,7 @@ export const DEFAULT_SOURCE_OPTIONS: SourceOptions = {
 };
 export function normalizeSourceOptions(input: unknown): SourceOptions {
   if (!input || typeof input !== 'object') throw new Error(moteText("来源配置无效"));
+  if(Object.hasOwn(input,'indexMode'))throw new Error(RESET_REQUIRED);
   const v = input as SourceOptions;
   if(v.syncContinuously!==undefined&&typeof v.syncContinuously!=='boolean')throw new Error('Invalid source continuation policy');
   if(v.centralProcessingConsent!==undefined&&typeof v.centralProcessingConsent!=='boolean')throw new Error('Invalid central processing consent');
@@ -87,9 +88,8 @@ export function normalizeSourceOptions(input: unknown): SourceOptions {
   const excludedPaths = list(v.excludedPaths, 1000).map(s => s.replace(/\\/g, '/').replace(/\/$/, ''));
   if (excludedPaths.some(p => p.startsWith('/') || p.split('/').some(x => !x || x === '.' || x === '..'))) throw new Error(moteText("排除路径必须是所选目录内的相对路径"));
   if(v.retention==='archive'&&Array.isArray(v.redactLiterals)&&v.redactLiterals.length)throw new Error(moteText("原件归档不能应用文字遮盖，请选择内容索引。"));
-  if(v.indexMode!==undefined&&!['full','lightweight'].includes(v.indexMode)||v.allowRead!==undefined&&typeof v.allowRead!=='boolean')throw new Error('Invalid file index policy');
-  // Accept an older preference when reading configuration, but central owns indexing.
-  return {syncContinuously:v.syncContinuously??true,centralProcessingConsent:v.centralProcessingConsent??false,indexMode:'full',allowRead:v.retention==='snapshot'&&(v.allowRead??false), initialSync:v.initialSync??'all', retention: v.retention, intervalSeconds: v.intervalSeconds, trackDeletions: v.trackDeletions, extensions, excludedPaths, redactLiterals: list(v.redactLiterals, 1000) };
+  if(v.allowRead!==undefined&&typeof v.allowRead!=='boolean')throw new Error('Invalid original read authorization');
+  return {syncContinuously:v.syncContinuously??true,centralProcessingConsent:v.centralProcessingConsent??false,allowRead:v.retention==='snapshot'&&(v.allowRead??false), initialSync:v.initialSync??'all', retention: v.retention, intervalSeconds: v.intervalSeconds, trackDeletions: v.trackDeletions, extensions, excludedPaths, redactLiterals: list(v.redactLiterals, 1000) };
 }
 export function redactSourceText(text: string, literals: string[]): string {
   for (const literal of [...literals].sort((a, b) => b.length - a.length)) text = text.split(literal).join(moteText("[已遮盖]"));

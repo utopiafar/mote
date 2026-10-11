@@ -23,3 +23,18 @@ test('an in-flight success cannot erase another request cooldown, and input erro
  await assert.rejects(admission.run(settings,async()=>{throw new ProviderFailure({category:'transient',code:'provider_unavailable',retryAfterMs:60000});}),ProviderFailure);release();assert.equal(await success,42);assert.throws(()=>admission.check(settings),ProviderFailure);
  const other={...settings,apiKey:'other'};await assert.rejects(admission.run(other,async()=>{throw new ProviderFailure({category:'permanent',code:'provider_request_invalid'});}),ProviderFailure);assert.doesNotThrow(()=>admission.check(other));
 });
+
+for(const code of ['provider_timeout','provider_network','provider_unavailable'])test(`${code} without upstream Retry-After does not block another model or survive as a shared cooldown`,async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'mote-provider-task-local-')),store=new Store(dir);t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
+ const admission=new ProviderAdmission(store);let calls=0;
+ const background={...settings,model:'generated-background'},interactive={...settings,model:'generated-interactive'};
+ await assert.rejects(admission.run(background,async()=>{calls++;throw new ProviderFailure({category:'transient',code});}),ProviderFailure);
+ assert.equal(await new ProviderAdmission(store).run(interactive,async()=>{calls++;return 'generated answer';}),'generated answer');
+ assert.equal(calls,2);assert.equal(admission.snapshot().coolingDown,0);assert.equal(store.db.prepare('SELECT COUNT(*) n FROM provider_cooldowns').get()!.n,0);
+});
+test('upstream 429 without Retry-After still defers shared admission',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'mote-provider-429-')),store=new Store(dir);t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
+ const admission=new ProviderAdmission(store,()=>10000);
+ await assert.rejects(admission.run(settings,async()=>{throw new ProviderFailure({category:'transient',code:'rate_limited'});}),ProviderFailure);
+ assert.throws(()=>admission.check(settings),error=>error instanceof ProviderFailure&&error.details.retryAfterMs===30000);
+});

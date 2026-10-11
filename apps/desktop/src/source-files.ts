@@ -59,10 +59,10 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
         const stable = await handle.stat();
         if (stable.mtimeMs !== before.mtimeMs || stable.ctimeMs !== before.ctimeMs || stable.size !== before.size) throw new Error('file is still changing');
       }
-      let text = ''; let original: Buffer | undefined; let parsed: {text:string;parser:string;status:'ready'|'pending'|'unsupported'|'blocked';coverage?:'full'|'partial'|'none';warnings?:string[]} = { text: '', parser: 'none', status: 'ready' };
+      let original: Buffer | undefined; let inputState: {parser:string;status:'ready'|'pending'|'blocked';warnings?:string[]} = { parser: 'none', status: 'ready' };
       const mime=fileMime(candidate.path);
       if(options.retention==='snapshot'&&options.redactLiterals.length&&!mime.startsWith('text/')){
-        parsed={text:'',parser:'privacy-blocked',status:'blocked',warnings:['Source literal masks cannot be safely applied to this format; input was not uploaded.']};
+        inputState={parser:'privacy-blocked',status:'blocked',warnings:['Source literal masks cannot be safely applied to this format; input was not uploaded.']};
       }else if(options.retention!=='reference'){
         if(options.retention==='snapshot'&&options.redactLiterals.length){
           const buffer=Buffer.alloc(before.size+1),read=await handle.read(buffer,0,buffer.length,0);if(read.bytesRead!==before.size)throw Error('changed file');
@@ -71,14 +71,14 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
         }else if(accessMarkerPath){
           spooled=await sourceWork.run<OriginalSpool>({kind:'spool-original',path:candidate.path,directory:accessMarkerPath+(options.retention==='snapshot'?'.index-inputs':'.originals'),expected:{dev:before.dev,ino:before.ino,size:before.size,mtimeMs:before.mtimeMs,ctimeMs:before.ctimeMs}});signal?.throwIfAborted();
         }else{const buffer=Buffer.alloc(before.size+1),read=await handle.read(buffer,0,buffer.length,0);if(read.bytesRead!==before.size)throw Error('changed file');original=buffer.subarray(0,read.bytesRead);}
-        parsed={text:'',parser:'central-pending',status:'pending'};
+        inputState={parser:'central-pending',status:'pending'};
       }
       const after = await handle.stat();
       if (before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs || before.size !== after.size || await realpath(candidate.path) !== candidate.path) throw new Error('changed file');
       totalBytes += before.size;
       const accessedAtMs = accessMarkers.record(externalId, before, after), fileMetadata = observedFileMetadata(before, accessedAtMs);
       const contentHash = spooled?.sha256??(original ? fileDigest(original) : candidate.quickHash);
-      result.items.push({ externalId, title: redactSourceText(basename(candidate.path), options.redactLiterals), text, uri: options.redactLiterals.length ? undefined : pathToFileURL(candidate.path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention === 'archive' ? 'original' : options.retention, document: { fileIndex: { version: 1, fileId: externalId, contentVersion: contentHash, mode: options.retention === 'archive' ? 'archive' : options.retention === 'reference' ? 'catalog' : 'index', coverage: !text ? 'none' : text.length === parsed.text.length && parsed.coverage !== 'partial' ? 'full' : 'lightweight', parser: parsed.parser, ...(parsed.warnings?.length?{warnings:parsed.warnings.map(warning=>redactSourceText(warning,options.redactLiterals))}:{}), status: options.retention === 'archive' ? 'pending' : parsed.status, totalCharacters: parsed.text.length, offset: 0, length: text.length, ...(options.retention==='snapshot'?{maxIndexCharacters:100000}:{}), allowRead: options.retention === 'snapshot' && Boolean(options.allowRead) } }, ...(spooled && options.retention !== 'reference'?{localOriginal:spooled}:{}), ...(options.retention !== 'reference' && original ? { localOriginalBase64: original.toString('base64') } : {}), metadata: { version: 1, file: fileMetadata }, mimeType: fileMime(candidate.path), deleted: false });
+      result.items.push({ externalId, title: redactSourceText(basename(candidate.path), options.redactLiterals), text: '', uri: options.redactLiterals.length ? undefined : pathToFileURL(candidate.path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention === 'archive' ? 'original' : options.retention, document: { fileIndex: { version: 1, fileId: externalId, contentVersion: contentHash, mode: options.retention === 'archive' ? 'archive' : options.retention === 'reference' ? 'catalog' : 'index', coverage: 'none', parser: inputState.parser, ...(inputState.warnings?.length?{warnings:inputState.warnings.map(warning=>redactSourceText(warning,options.redactLiterals))}:{}), status: options.retention === 'archive' ? 'pending' : inputState.status, totalCharacters: 0, offset: 0, length: 0, ...(options.retention==='snapshot'?{maxIndexCharacters:100000}:{}), allowRead: options.retention === 'snapshot' && Boolean(options.allowRead) } }, ...(spooled && options.retention !== 'reference'?{localOriginal:spooled}:{}), ...(options.retention !== 'reference' && original ? { localOriginalBase64: original.toString('base64') } : {}), metadata: { version: 1, file: fileMetadata }, mimeType: fileMime(candidate.path), deleted: false });
       catalog?.markContent(candidate.relativePath, contentHash, 'synced');
       return 'ok';
     } catch { if(spooled)await rm(spooled.directory,{force:true,recursive:true});result.skipped++; result.complete = false; catalog?.markContent(candidate.relativePath, undefined, 'error'); return 'ok'; }

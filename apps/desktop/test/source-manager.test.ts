@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, realpath, rm, writeFile, readFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile, readFile, mkdir, readdir } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -152,16 +152,16 @@ it('flushes durable pending source versions while watcher scans are still runnin
 
 
 it('does not serve a device-decoded file range after restart',async()=>{
- const server=await endpoint(),folder=join(directory,'catalog');await mkdir(folder);await writeFile(join(folder,'first.txt'),'Generated long evidence '.repeat(700));let value=await manager(server.url);await value.addFiles(folder,{...DEFAULT_SOURCE_OPTIONS,indexMode:'lightweight',allowRead:true});await value.sync();await value.close();value=await manager(server.url);await value.sync();expect(server.readReplies).toEqual([]);
+ const server=await endpoint(),folder=join(directory,'catalog');await mkdir(folder);await writeFile(join(folder,'first.txt'),'Generated long evidence '.repeat(700));let value=await manager(server.url);await value.addFiles(folder,{...DEFAULT_SOURCE_OPTIONS,allowRead:true});await value.sync();await value.close();value=await manager(server.url);await value.sync();expect(server.readReplies).toEqual([]);
 });
 
 it('an existing snapshot source with no central upload consent stays held across restart and ordinary sync',async()=>{
  const server=await endpoint(true),path=join(directory,'generated-consent.txt');await writeFile(path,'Generated private input');
  let app=await manager(server.url);await app.addFiles(path,DEFAULT_SOURCE_OPTIONS);await app.sync();await app.close();
  const configPath=join(directory,'private-state','sources.json'),config=JSON.parse(await readFile(configPath,'utf8'));
- delete config.sources[0].centralProcessingConsent;config.sources[0].indexMode='lightweight';await writeFile(configPath,JSON.stringify(config));
+ delete config.sources[0].centralProcessingConsent;await writeFile(configPath,JSON.stringify(config));
  const before=server.items.length;app=await manager(server.url);await app.sync();await app.flushPending(new AbortController().signal);
- expect(server.items).toHaveLength(before);expect(app.status()[0]).toMatchObject({state:'paused',source:{indexMode:'full',centralProcessingConsent:false}});
+ expect(server.items).toHaveLength(before);expect(app.status()[0]).toMatchObject({state:'paused',source:{centralProcessingConsent:false}});
  await app.update(app.status()[0].source.id,{...app.status()[0].source,centralProcessingConsent:true});await app.sync();
  expect(server.items.length).toBeGreaterThan(before);expect(app.status()[0].source.centralProcessingConsent).toBe(true);
 });
@@ -212,4 +212,36 @@ it('recovers one-time completion atomically from the outbox when source configur
  await writeFile(file,'Generated later change that must not be imported');value=new LocalSourceManager(state,config,'/must-not-be-invoked-helper',true);managers.push(value);await value.initialize();await value.sync(true);
  expect(value.status()[0].source.importCompletedAt).toBeDefined();expect(value.pendingContent()).toHaveLength(1);expect(value.pendingContent()[0].item).toEqual(staged.item);
  await rm(file);await value.sync(true);expect(value.pendingContent()[0].item).toEqual(staged.item);await value.flushPending(new AbortController().signal);expect(server.items).toHaveLength(1);expect(server.items[0].revision).toBe(staged.item.revision);
+});
+
+it('more than forty completed one-time imports can be added and restored without replaying their bodies',async()=>{
+ const server=await endpoint();let app=await manager(server.url);
+ for(let index=0;index<41;index++){
+  const file=join(directory,`generated-import-${index}.txt`);await writeFile(file,`Generated import ${index}`);
+  await app.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});await app.sync(true);
+ }
+ expect(app.status()).toHaveLength(41);expect(app.status().every(row=>row.pending===0&&Boolean(row.source.importCompletedAt))).toBe(true);
+ const received=server.items.length;expect(received).toBe(41);await app.close();
+ app=await manager(server.url);await app.sync(true);
+ expect(app.status()).toHaveLength(41);expect(server.items).toHaveLength(received);
+ expect(app.status().every(row=>row.pending===0&&Boolean(row.source.importCompletedAt))).toBe(true);
+});
+
+for(const mode of ['full','lightweight'])it(`rejects retired ${mode} index configuration before opening its pending queue and preserves originals`,async()=>{
+ const state=join(directory,'strict-state'),file=join(directory,'generated-private.txt'),config={serverUrl:'http://127.0.0.1:1',token:'generated-token',deviceId:'generated-device'};
+ await writeFile(file,'Generated durable original fixture');
+ const value=new LocalSourceManager(state,config,'/must-not-be-invoked-helper',true);managers.push(value);await value.initialize();
+ await value.addFiles(file,{...DEFAULT_SOURCE_OPTIONS,syncContinuously:false});await value.sync(true);
+ const pending=value.pendingContent();expect(pending).toHaveLength(1);await value.close();
+ const source=pending[0].source,configPath=join(state,'sources.json'),saved=JSON.parse(await readFile(configPath,'utf8'));
+ saved.sources[0].indexMode=mode;await writeFile(configPath,JSON.stringify(saved));
+ const spool=pending[0].item.localOriginal!;expect(spool).toBeDefined();
+ const paths=[configPath,join(state,'storage-format.json')];
+ const nodes=join(state,'nodes');for(const binding of await readdir(nodes))for(const name of await readdir(join(nodes,binding)))paths.push(join(nodes,binding,name));
+ for(const name of await readdir(spool.directory))paths.push(join(spool.directory,name));
+ const before=await Promise.all(paths.map(path=>readFile(path)));
+ const reopened=new LocalSourceManager(state,config,'/must-not-be-invoked-helper',true);managers.push(reopened);
+ await expect(reopened.initialize()).rejects.toThrow('Existing files were preserved');
+ expect(await Promise.all(paths.map(path=>readFile(path)))).toEqual(before);
+ expect(reopened.status()).toEqual([]);expect(source.centralProcessingConsent).toBe(true);
 });

@@ -15,7 +15,7 @@ data class LocalSource(
     val retention: String = "snapshot", val enabled: Boolean = true,
     val calendarId: Long? = null, val uri: String? = null, val tree: Boolean = false,
     val extensions: String = "md,txt,json,csv,ics", val excluded: String = "",
-    val daysBefore: Int = 30, val daysAfter: Int = 90, val intervalMinutes: Int = 60, val initialSync: String = "all", val maxFileMiB: Int = 512, val lightweightIndex: Boolean = false, val allowRead: Boolean = false,
+    val daysBefore: Int = 30, val daysAfter: Int = 90, val intervalMinutes: Int = 60, val initialSync: String = "all", val maxFileMiB: Int = 512, val allowRead: Boolean = false,
     val centralProcessingConsent: Boolean = false, val syncContinuously: Boolean = true
 ) {
     fun validate() {
@@ -28,7 +28,7 @@ data class LocalSource(
         require(maxFileMiB in 1..512)
         SourceRules.extensions(extensions); SourceRules.patterns(excluded)
     }
-    fun json() = JSONObject().put("syncContinuously", syncContinuously).put("centralProcessingConsent", centralProcessingConsent).put("lightweightIndex", false).put("allowRead", allowRead).put("id", id).put("name", name).put("kind", kind).put("retention", retention).put("enabled", enabled)
+    fun json() = JSONObject().put("syncContinuously", syncContinuously).put("centralProcessingConsent", centralProcessingConsent).put("allowRead", allowRead).put("id", id).put("name", name).put("kind", kind).put("retention", retention).put("enabled", enabled)
         .put("calendarId", calendarId).put("uri", uri).put("tree", tree).put("extensions", extensions).put("excluded", excluded)
         .put("maxFileMiB", maxFileMiB).put("initialSync", initialSync).put("daysBefore", daysBefore).put("daysAfter", daysAfter).put("intervalMinutes", intervalMinutes)
     fun registration(deviceId: String) = JSONObject().put("id", id).put("name", name).put("kind", kind).put("deviceId", deviceId)
@@ -37,7 +37,7 @@ data class LocalSource(
         fun from(v: JSONObject) = LocalSource(v.getString("id"), v.getString("name"), v.getString("kind"), v.getString("retention"), v.getBoolean("enabled"),
             if (v.has("calendarId")) v.getLong("calendarId") else null, if (v.has("uri")) v.getString("uri") else null,
             v.getBoolean("tree"), v.getString("extensions"), v.getString("excluded"),
-            v.getInt("daysBefore"), v.getInt("daysAfter"), v.getInt("intervalMinutes"), v.getString("initialSync"), v.getInt("maxFileMiB"), false, v.getBoolean("allowRead"), if (!v.has("centralProcessingConsent")) false else v.get("centralProcessingConsent") as? Boolean ?: error(MoteI18n.text("来源上传确认必须为布尔值")), if (v.has("syncContinuously")) v.get("syncContinuously") as? Boolean ?: error("syncContinuously must be boolean") else true).also { it.validate() }
+            v.getInt("daysBefore"), v.getInt("daysAfter"), v.getInt("intervalMinutes"), v.getString("initialSync"), v.getInt("maxFileMiB"), v.getBoolean("allowRead"), if (!v.has("centralProcessingConsent")) false else v.get("centralProcessingConsent") as? Boolean ?: error(MoteI18n.text("来源上传确认必须为布尔值")), if (v.has("syncContinuously")) v.get("syncContinuously") as? Boolean ?: error("syncContinuously must be boolean") else true).also { it.validate() }
     }
 }
 
@@ -100,14 +100,12 @@ data class SourceScan(val items: List<JSONObject>, val complete: Boolean, val ob
 class LocalSourceStore(private val directory: File, private val cipher: ByteCipher) {
     internal var onMutation: (() -> Unit)? = null
     init { directory.mkdirs() }
-    /** Keep source definitions, but force every source to start with a new v2 scan. */
     fun sources(): List<LocalSource> = synchronized(lock) {
         val array = read(File(directory, "config.enc")).optJSONArray("sources") ?: JSONArray()
         (0 until array.length()).map { LocalSource.from(array.getJSONObject(it)) }
     }
     fun save(source: LocalSource) = synchronized(lock) {
         source.validate(); val all = sources().toMutableList(); val old = all.find { it.id == source.id }
-        require(old != null || all.size < 20) { MoteI18n.text("最多连接 20 个来源") }
         // Explicit selection/filter/retention edits discard old unsent material before the new scan.
         if (old != null && old.copy(enabled = source.enabled, intervalMinutes = source.intervalMinutes, name = source.name, initialSync = source.initialSync, syncContinuously = source.syncContinuously).json().toString() != source.json().toString()) file(source.id).delete()
         if (old == null || old.name != source.name || old.initialSync != source.initialSync) {
