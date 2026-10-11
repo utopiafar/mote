@@ -104,6 +104,9 @@ export class ImportAttributionStore {
     (SELECT 1 FROM capture_import_declarations c WHERE c.id=import_owner_declarations.id AND c.version=import_owner_declarations.version)`).run(id);}
   restore(raw:PortableImportAttribution){
     const value=portableImportAttributionSchema.parse(raw),pins=new Map<string,Omit<ImportDeclaration,'captureIds'>>();
+    const referenced=new Set(value.captures.map(capture=>JSON.stringify([capture.id,capture.version])));
+    if(value.declarations.some(declaration=>!referenced.has(JSON.stringify([declaration.id,declaration.version]))))
+      throw new StoreError('Portable import declaration is missing its original capture scope');
     const captures=new Set<string>();
     for(const declaration of value.declarations){const {fingerprint:expected,...input}=declaration,key=JSON.stringify([input.id,input.version]);if(pins.has(key)||fingerprint(input)!==expected)throw new StoreError('Invalid portable import declaration');const pin=this.freeze(input);if(!pin)throw new StoreError('Empty portable import declaration');pins.set(key,pin);}
     for(const capture of value.captures){const pin=pins.get(JSON.stringify([capture.id,capture.version]));if(captures.has(capture.captureId)||!pin)throw new StoreError('Invalid portable import declaration scope');captures.add(capture.captureId);this.bind(capture.captureId,pin);}

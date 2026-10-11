@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {setTimeout,setImmediate} from 'node:timers/promises';
-import {Store} from '../src/store.js';
+import {Store,sha256} from '../src/store.js';
 import {ImportAttributionStore} from '../src/import-attribution.js';
 import {ImportStore} from '../src/imports.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
@@ -99,6 +99,27 @@ test('portable restore preserves exact note scope without intake grants and reje
   await assert.rejects(target.importArchive(altered),/checksum mismatch/);
   assert.deepEqual(restored.get(material.id)?.attributionContext,material.attributionContext);
   store.delete(receipt.id);assert.equal(store.db.prepare('SELECT count(*) n FROM capture_import_declarations').get()!.n,0);assert.equal(store.db.prepare('SELECT count(*) n FROM import_owner_declarations').get()!.n,0);
+});
+
+test('portable import rejects unbound private declarations and rolls back original and context restoration',async t=>{
+  const {store,sources,materials,attribution,sourceId}=fixture(t),pin=attribution.freeze({id:randomUUID(),version:1,sourceId,instruction:note})!;
+  const receipt=await sources.upsert(sourceId,original,undefined,result=>attribution.bind(result.id,pin)),material=materials.publish(draft(sourceId,receipt.id));
+  const archive=store.exportArchive(2_000_000),altered=structuredClone(archive);
+  const unbound={id:randomUUID(),version:1,sourceId,instruction:'Generated private note without any original capture'};
+  altered.materials!.importAttribution!.declarations.push({...unbound,fingerprint:sha256(JSON.stringify(unbound))});
+  const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)])):value;
+  const {checksum:_,...body}=altered.materials!;altered.materials!.checksum=sha256(JSON.stringify(canonical(body)));
+  const directory=mkdtempSync(join(tmpdir(),'mote-import-context-unbound-restore-')),target=new Store(directory);t.after(()=>{target.close();rmSync(directory,{recursive:true,force:true});});
+  const restored=new MaterialStore(target);
+  await assert.rejects(target.importArchive(altered),/missing its original capture scope/);
+  assert.equal(target.db.isTransaction,false);
+  for(const table of ['captures','source_connections','source_versions','source_heads','material_heads','import_owner_declarations','capture_import_declarations'])
+    assert.equal(target.db.prepare(`SELECT count(*) n FROM ${table}`).get()!.n,0,`${table} must roll back`);
+  await target.importArchive(archive);
+  assert.equal(target.evidence([receipt.id])[0].ocrText,original.text);
+  assert.deepEqual(restored.get(material.id)?.attributionContext,material.attributionContext);
+  assert.equal(target.db.prepare('SELECT count(*) n FROM import_owner_declarations').get()!.n,1);
+  assert.equal(target.db.prepare('SELECT count(*) n FROM capture_import_declarations').get()!.n,1);
 });
 
 test('encrypted note conversion and restart follow managed private storage policy',async t=>{
