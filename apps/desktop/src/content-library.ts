@@ -31,13 +31,13 @@ export async function localContentDetail(queue:DurableQueue,sources:LocalSourceM
   }
   return {truncated:text.length>100000,text:text.slice(0,100000),sourceName:source.name,metadataOnly:item.layer==='reference',retainsOriginal:item.kind==='file'?Boolean(item.localOriginal||item.localOriginalBase64):undefined,metadata:JSON.stringify({title:item.title,uri:item.uri,modifiedAt:item.modifiedAt,mimeType:item.mimeType,calendar:item.calendar,document:item.document},null,2)};
 }
-export interface CentralContentPage {items:ContentItem[];total:number;nextCursor?:string;}
+export interface CentralContentPage {items:ContentItem[];total:number;nextCursor?:string;authorizationDenied?:true;}
 export async function centralContentPage(config:import('./contracts').Config,cursor?:string):Promise<CentralContentPage>{
   const {requireConnectionToken}=await import('./login-session.js');const {validateServerUrl}=await import('./config.js');const {readResponseText}=await import('./response-body.js');
   if(cursor!==undefined&&(typeof cursor!=='string'||cursor.length>512))throw Error(moteText('分页参数无效'));
   const query=new URLSearchParams({deviceId:config.deviceId,limit:'30',...(cursor?{cursor}:{})});
   const response=await fetch(`${validateServerUrl(config.serverUrl)}/api/capture-browser?${query}`,{headers:{Authorization:`Bearer ${requireConnectionToken(config)}`},redirect:'error',signal:AbortSignal.timeout(20000)});
-  if(!response.ok){await response.body?.cancel();throw Error(moteText('无法访问采集记录，请检查中央连接权限'));}
+  if(!response.ok){await response.body?.cancel();if(response.status===401||response.status===403)return {items:[],total:0,authorizationDenied:true};throw Error(moteText('无法访问采集记录，请检查中央连接权限'));}
   const page=JSON.parse(await readResponseText(response,1024*1024)) as {items:Record<string,unknown>[];totalCount:number;nextCursor?:string};
   if(!Array.isArray(page.items)||page.items.length>30||page.items.some(row=>typeof row.id!=='string'||!/^[a-f0-9-]{36}$/i.test(row.id)||row.deviceId!==config.deviceId))throw Error(moteText('记录不属于当前设备'));
   return {items:page.items.map(row=>({key:`capture:${row.id}`,source:row.source==='message'?'coding':row.source as SyncSource,title:String(row.windowTitle??row.appName??'').slice(0,200),observedAt:String(row.capturedAt),preview:String(row.textPreview??row.ocrText??'').slice(0,160),sourceName:String(row.deviceName??config.deviceName)})),total:page.totalCount,nextCursor:page.nextCursor??undefined};

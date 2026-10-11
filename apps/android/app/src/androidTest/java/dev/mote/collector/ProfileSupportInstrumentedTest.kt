@@ -14,6 +14,14 @@ import org.junit.runner.RunWith
 /** Fresh dedicated API 35/37 Dev emulator only; all support data is generated. */
 @RunWith(AndroidJUnit4::class)
 class ProfileSupportInstrumentedTest {
+    private var previousLanguage = "system"
+    @org.junit.Before fun fixtureLanguage() {
+        previousLanguage = MoteI18n.preference()
+        MoteI18n.select(InstrumentationRegistry.getInstrumentation().targetContext, "zh-CN")
+    }
+    @org.junit.After fun restoreLanguage() {
+        MoteI18n.select(InstrumentationRegistry.getInstrumentation().targetContext, previousLanguage)
+    }
     @Test fun developmentProfileIsIndependentAndSupportExportContainsNoSecretsOrDraft() {
         val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
         val automation = instrumentation.getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
@@ -42,7 +50,7 @@ class ProfileSupportInstrumentedTest {
                 visit(activity.window.decorView)
                 assertTrue(texts.any { it.contains("环境：dev") && it.contains(context.noBackupFilesDir.absolutePath) })
                 views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString()=="设置" }.performClick()
-                views(activity.window.decorView).filterIsInstance<android.widget.Button>().single { it.isShown && it.text.toString()=="高级与维护" }.performClick()
+                // Returning to the cached Settings page keeps its advanced section expanded.
                 views(activity.window.decorView).single { it.isShown && it.tag=="menu:开发者选项" }.performClick()
                 views(activity.window.decorView).single { it.isShown && it.tag=="menu:诊断与支持" }.performClick()
                 texts.clear(); visit(activity.window.decorView); assertTrue(texts.contains("导出安全支持包 JSON"))

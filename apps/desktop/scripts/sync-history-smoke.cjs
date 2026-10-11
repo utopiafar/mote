@@ -15,7 +15,8 @@ const profile = mkdtempSync(join(tmpdir(), 'mote-sync-ui-fixture-'));
 app.setPath('userData', profile);
 process.env.MOTE_PROFILE = 'default';
 for (const name of ['MOTE_URL', 'MOTE_TOKEN', 'MOTE_ENV_FILE']) delete process.env[name];
-const archive = new Map(), requests = [], errors = [];let materialReady=true,materialAuthorized=true;
+const archive = new Map(), requests = [], errors = [];let materialReady=true,materialAuthorized=true,feedStatus=200,blockDetail=false;
+const blockedDetails=[];
 const pixels = Buffer.alloc(64, 200);
 const generatedImage = nativeImage.createFromBitmap(pixels, { width: 4, height: 4 }).toJPEG(70);
 const server = createServer((req, res) => {
@@ -23,9 +24,9 @@ const server = createServer((req, res) => {
   const path = req.url.split('?')[0], id = path.split('/')[3], record = archive.get(id);
   if (path.endsWith('/image') && record) { res.setHeader('Content-Type', 'image/jpeg'); res.end(generatedImage); return; }
   res.setHeader('Content-Type', 'application/json');
-  if (path === '/api/capture-browser') {const offset=Number(new URL(req.url,'http://fixture').searchParams.get('cursor')||0),rows=[...archive.values()].sort((a,b)=>b.capturedAt.localeCompare(a.capturedAt));res.end(JSON.stringify({items:rows.slice(offset,offset+30),totalCount:rows.length,nextCursor:offset+30<rows.length?String(offset+30):null}));return;}
+  if (path === '/api/capture-browser') {if(feedStatus!==200){res.statusCode=feedStatus;res.end('{}');return;}const offset=Number(new URL(req.url,'http://fixture').searchParams.get('cursor')||0),rows=[...archive.values()].sort((a,b)=>b.capturedAt.localeCompare(a.capturedAt));res.end(JSON.stringify({items:rows.slice(offset,offset+30),totalCount:rows.length,nextCursor:offset+30<rows.length?String(offset+30):null}));return;}
   if (path === '/api/materials/generated') {if(!materialAuthorized){res.statusCode=403;res.end('{}');return;}res.end(JSON.stringify({ref:'material:generated@r1',revision:'r1',coverage:{state:materialReady?'complete':'partial'},indexing:{state:'indexed',revision:'r1'}}));return;}
-  if (path.startsWith('/api/capture-browser/') && record) { res.end(JSON.stringify(record)); return; }
+  if (path.startsWith('/api/capture-browser/') && record) {if(blockDetail){blockedDetails.push(()=>res.end(JSON.stringify(record)));return;}res.end(JSON.stringify(record)); return; }
   res.statusCode = 410; res.end('{}');
 });
 const timeout = setTimeout(() => { process.stderr.write('Sync history smoke timed out\n'); app.exit(1); }, 60000);
@@ -82,6 +83,24 @@ app.on('browser-window-created', (_event, window) => {
     await js('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
     assert.equal(await js('document.querySelector("#content-detail-dialog").open'),false);
     await js('document.querySelector("#content-refresh").click()');await wait('document.querySelectorAll("#content-feed .content-row").length===30','Content reload after authorization fixture');
+    for(const code of [401,403]){
+      await js(`document.querySelector('[data-content-key="capture:${items[22].captureId}"]').click()`);
+      await wait('document.querySelector("#content-detail-body").textContent.includes("Generated evidence")','Reader opened before feed revocation');
+      await js('document.querySelector("#content-original").open=true');await wait('document.querySelector("#content-detail-image").src.startsWith("data:image/jpeg")','Original visible before feed revocation');
+      blockDetail=true;await js('document.querySelector("#content-detail-refresh").click()');
+      for(let i=0;!blockedDetails.length&&i<200;i++)await new Promise(resolve=>setTimeout(resolve,25));
+      assert(blockedDetails.length,'A real archive detail request is in flight');
+      feedStatus=code;await js('document.querySelector("#content-refresh").click()');
+      await wait('!document.querySelector("#content-detail-dialog").open && document.querySelector("#content-status").textContent.includes("权限")',`Feed HTTP ${code} closes the reader`);
+      for(const id of ['content-detail-body','content-detail-metadata','content-detail-title','content-detail-source'])assert.equal(await js(`document.getElementById(${JSON.stringify(id)}).textContent`),'');
+      assert.equal(await js('document.querySelector("#content-detail-image").getAttribute("src")'),null);
+      assert.equal(await js('document.querySelectorAll("#content-feed .content-row").length'),0);
+      blockDetail=false;blockedDetails.splice(0).forEach(finish=>finish());
+      await new Promise(resolve=>setTimeout(resolve,100));
+      assert.equal(await js('document.querySelector("#content-detail-dialog").open'),false,'A late authorized detail cannot reopen a denied reader');
+      assert.equal(await js('document.querySelector("#content-detail-body").textContent'),'');
+      feedStatus=200;await js('document.querySelector("#content-refresh").click()');await wait('document.querySelectorAll("#content-feed .content-row").length===30','Feed restored for the next generated journey');
+    }
     await js('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
     writeFileSync(join(out,'shared-library.png'),(await window.webContents.capturePage()).toPNG());
     await js('document.querySelector(".main-nav [data-nav=overview]").click()');
@@ -127,7 +146,7 @@ app.on('browser-window-created', (_event, window) => {
     window.setSize(1140, 840); await js('new Promise(resolve => requestAnimationFrame(resolve))');
     writeFileSync(join(out, 'overview.png'), (await window.webContents.capturePage()).toPNG());
     assert.equal((await js('window.mote.status()')).running, false); assert.deepEqual(errors, []);
-    process.stdout.write(JSON.stringify({ ok: true, generatedFixturesOnly: true, captureStayedStopped: true, realPreloadIpc: true, sharedHomeContentReader:true, currentMaterialOnlyReadiness:true, explicitOriginalPreview:true, contentScopeResetsPagination:true, closedReaderClearsEvidence:true, revokedMaterialReadClearsEvidence:true, receiptAndContentPagination: true, sourceFiltering: true, generatedScreenshotPreview: true, escapedUntrustedEvidence: true, archiveExpirationKeepsReceipt: true, nativeDialogTransitions: true, minimumWindowLayout: true, requests: requests.length, screenshots: out }) + '\n');
+    process.stdout.write(JSON.stringify({ ok: true, generatedFixturesOnly: true, captureStayedStopped: true, realPreloadIpc: true, sharedHomeContentReader:true, currentMaterialOnlyReadiness:true, explicitOriginalPreview:true, contentScopeResetsPagination:true, closedReaderClearsEvidence:true, revokedMaterialReadClearsEvidence:true, revokedFeed401And403ClearsReaderAndInvalidatesLateDetail:true, receiptAndContentPagination: true, sourceFiltering: true, generatedScreenshotPreview: true, escapedUntrustedEvidence: true, archiveExpirationKeepsReceipt: true, nativeDialogTransitions: true, minimumWindowLayout: true, requests: requests.length, screenshots: out }) + '\n');
     finished = true; clearTimeout(timeout); await new Promise(resolve => server.close(resolve)); app.quit();
   })().catch(error => { process.stderr.write(error.stack + '\n'); app.exit(1); }));
 });

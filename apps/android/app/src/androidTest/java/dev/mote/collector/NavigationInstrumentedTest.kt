@@ -36,14 +36,31 @@ class NavigationInstrumentedTest {
     private fun editor(activity: MainActivity, hint: String) = views(activity.window.decorView)
         .filterIsInstance<EditText>().single { it.hint?.toString() == hint }
     private fun tab(activity: MainActivity, label: String) {
-        val current = when(label) { "设置" -> "本机"; "概览" -> "今天"; "随手记" -> "记录"; else -> label }
-        views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == current }.performClick()
+        if (label in listOf("随手记", "记录", "记录屏幕")) {
+            activity.openGeneratedAdd(if (label == "记录屏幕") MoteAddAction.SCREEN else MoteAddAction.NOTE)
+        } else {
+            val current = when(label) { "概览" -> "首页"; else -> label }
+            val rows = views(activity.window.decorView)
+            // Embedded Ask owns its header; use the visible Home tab to reach local Settings.
+            if (rows.filterIsInstance<TextView>().none { it.isShown && it.isClickable && it.text.toString() == current }) {
+                rows.single { it.isShown && it.tag == "primary:TODAY" }.performClick()
+            }
+            views(activity.window.decorView).filterIsInstance<TextView>()
+                .single { it.isShown && it.isClickable && it.text.toString() == current }.performClick()
+        }
         // The product explicitly confirms discarding a settings draft.
         android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap { views(it) }
             .filterIsInstance<TextView>().firstOrNull { it.isShown && it.text.toString() == "丢弃修改" }?.performClick()
     }
-    private fun menu(activity: MainActivity, label: String) = views(activity.window.decorView)
-        .single { it.isShown && it.tag == "menu:$label" }.performClick()
+    private fun menu(activity: MainActivity, label: String) {
+        if (label in listOf("按应用配置", "记录屏幕")) { tab(activity, "记录屏幕"); return }
+        var found = views(activity.window.decorView).firstOrNull { it.isShown && it.tag == "menu:$label" }
+        if (found == null) {
+            views(activity.window.decorView).filterIsInstance<TextView>().firstOrNull { it.isShown && it.text.toString() == "高级与维护" }?.performClick()
+            found = views(activity.window.decorView).firstOrNull { it.isShown && it.tag == "menu:$label" }
+        }
+        requireNotNull(found) { "Menu unavailable: $label" }.performClick()
+    }
 
     @Test fun tappingOutsideTheNoteDismissesEditorFocus() {
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
@@ -69,7 +86,7 @@ class NavigationInstrumentedTest {
             scenario.onActivity { originalNavigation[0] = views(it.window.decorView).single { view -> view is MotePrimaryNavigation } }
             val askMonitor = instrumentation.addMonitor("dev.mote.collector.AskActivity", null, true)
             val centralMonitor = instrumentation.addMonitor(CentralActivity::class.java.name, null, true)
-            try { for (label in listOf("资料库", "问一问", "本机", "今天", "问一问", "资料库", "今天")) {
+            try { for (label in listOf("内容", "问一问", "首页", "问一问", "内容", "首页")) {
                 instrumentation.waitForIdleSync()
                 var x = 0f; var y = 0f
                 scenario.onActivity { activity ->
@@ -105,7 +122,7 @@ class NavigationInstrumentedTest {
             scenario.onActivity { tab(it, "问一问") }
             scenario.onActivity { activity ->
                 val tabs = views(activity.window.decorView).filterIsInstance<TextView>().filter { it.tag?.toString()?.startsWith("primary:") == true }
-                assertEquals(listOf("今天", "资料库", "问一问", "本机"), tabs.map { it.text.toString() })
+                assertEquals(listOf("首页", "内容", "问一问"), tabs.map { it.text.toString() })
                 assertTrue(tabs.single { it.text == "问一问" }.isSelected)
                 assertFalse(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text == "打开对话" })
                 assertFalse(views(activity.window.decorView).any { it.isShown && it.contentDescription == "返回上一页" })
@@ -196,10 +213,10 @@ class NavigationInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             scenario.onActivity { activity ->
-                tab(activity, "本机"); menu(activity, "采集与存储")
+                tab(activity, "设置"); menu(activity, "采集与存储")
                 editor(activity, "30").setText("47")
                 views(activity.window.decorView).single { it.tag == "primary:ASK" }.performClick()
-                assertTrue(views(activity.window.decorView).single { it.tag == "primary:DEVICE" }.isSelected)
+                assertTrue(views(activity.window.decorView).single { it.tag == "primary:TODAY" }.isSelected)
             }
             instrumentation.waitForIdleSync()
             instrumentation.runOnMainSync {
@@ -209,7 +226,7 @@ class NavigationInstrumentedTest {
             scenario.onActivity { activity -> assertEquals("47", editor(activity, "30").text.toString()) }
             navigate(scenario, "问一问")
             scenario.onActivity { activity -> assertTrue(views(activity.window.decorView).single { it.tag == "primary:ASK" }.isSelected) }
-            navigate(scenario, "本机")
+            navigate(scenario, "设置")
             scenario.onActivity { activity -> menu(activity, "采集与存储"); assertEquals(Settings(activity).read().intervalSeconds.toString(), editor(activity, "30").text.toString()) }
         }
     }
@@ -323,7 +340,7 @@ class NavigationInstrumentedTest {
                 val ime = root.rootWindowInsets.getInsets(android.view.WindowInsets.Type.ime())
                 val availableBottom = root.height - ime.bottom
                 val items = views(root).filterIsInstance<TextView>().filter { it.tag?.toString()?.startsWith("primary:") == true }
-                assertEquals(4, items.size)
+                assertEquals(3, items.size)
                 for (item in items) {
                     val bounds = android.graphics.Rect(); assertTrue(item.getGlobalVisibleRect(bounds))
                     assertTrue("${item.text} must remain above the keyboard", bounds.bottom <= availableBottom + 2)
@@ -346,13 +363,20 @@ class NavigationInstrumentedTest {
         require(!Settings(context).enabled && context.queue().depth() == 0)
         require(QuickNotes.draft(context).read().text.isEmpty())
         val directory = File(context.filesDir, "generated-ui").apply { mkdirs() }
+        fun stableFrames(scenario: ActivityScenario<out android.app.Activity>) {
+            val ready = java.util.concurrent.CountDownLatch(1)
+            scenario.onActivity { activity -> activity.window.decorView.postOnAnimation {
+                activity.window.decorView.postOnAnimation { ready.countDown() }
+            } }
+            assertTrue("Generated draw must follow the visibility/layout traversal", ready.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            instrumentation.waitForIdleSync()
+        }
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             // Every primary destination is rendered inside the same generated MainActivity.
-            listOf("今天" to "overview", "问一问" to "ask", "记录" to "notes", "资料库" to "library", "本机来源" to "sources", "本机" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "按应用配置" to "privacy-settings", "本机存储" to "storage-settings", "图像质量与去重" to "processing-settings").forEach { (label, file) ->
+            listOf("首页" to "overview", "问一问" to "ask", "记录" to "notes", "内容" to "library", "设置" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "按应用配置" to "privacy-settings", "本机存储" to "storage-settings", "图像质量与去重" to "processing-settings").forEach { (label, file) ->
                 scenario.onActivity {
                     when {
-                        file == "sources" -> { tab(it, "本机"); menu(it, label) }
-                        file.endsWith("-settings") -> { tab(it, "本机"); if (file == "processing-settings") menu(it, "采集与存储"); menu(it, label) }
+                        file.endsWith("-settings") -> { tab(it, "设置"); if (file == "processing-settings") menu(it, "采集与存储"); menu(it, label) }
                         else -> tab(it, label)
                     }
                 }
@@ -365,9 +389,19 @@ class NavigationInstrumentedTest {
                     }
                     assertTrue("Embedded Ask must finish loading for the generated rendering", ready)
                 }
+                stableFrames(scenario)
                 scenario.onActivity { activity ->
                     assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
                     val view = activity.window.decorView
+                    if (file != "ask") {
+                        val add = views(view).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == "添加" }
+                        val bounds = android.graphics.Rect()
+                        assertTrue("$file keeps a measured, visible Add header", add.height > 0 && add.getGlobalVisibleRect(bounds) && bounds.height() == add.height)
+                    } else {
+                        val header = views(view).single { it.isShown && it.tag == "central-header" }
+                        val bounds = android.graphics.Rect()
+                        assertTrue("Ask keeps its native central header", header.height > 0 && header.getGlobalVisibleRect(bounds) && bounds.height() == header.height)
+                    }
                     val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
                     // Draw only this generated-fixture application's own view tree, never the device screen.
                     view.draw(Canvas(bitmap))
@@ -376,8 +410,19 @@ class NavigationInstrumentedTest {
                 }
             }
         }
+        ActivityScenario.launch(SourcesActivity::class.java).use { scenario ->
+            stableFrames(scenario)
+            scenario.onActivity { activity ->
+                assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
+                val root = activity.window.decorView
+                val bitmap = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+                root.draw(Canvas(bitmap))
+                File(directory, "sources.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+            }
+        }
         ActivityScenario.launch(CentralActivity::class.java).use { scenario ->
-            instrumentation.waitForIdleSync()
+            stableFrames(scenario)
             scenario.onActivity { activity ->
                 assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
                 val root = activity.window.decorView
