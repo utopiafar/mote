@@ -29,11 +29,13 @@
 
 Mem0 使用持久存储与不可变完整版本，显式 opId journal 对账；它不把原生 add/update 当成宿主幂等。原生删除可能保留 history 字节，物理擦除保持未确认。远程 Embedding 连接需 TLS 和已有凭据引用，loopback HTTP 可用于本机服务；真实费用来自服务用量，未知不记零。
 
+已固定配置的 Mem0 本地历史不依赖继续持有 Embedding 凭据：删除模型预设或清空凭据后，原配置的 literal read/export/remove 仍可使用已有 SQLite 历史，不发送 Embedding 请求。新的 put/search/recover 必须重新检查准确预设，缺失或空凭据时失败，health 不再 ready；没有原生历史的新实例不能通过此路径启动，也不会改用默认预设。
+
 Hindsight 安装来源是同一固定 release 的 `hindsight_api_slim-0.10.2-py3-none-any.whl`，核验实际 ZIP 字节摘要；不下载包含大体积文档/构建工具的整个仓库源码，也不执行 wheel。通用 ZIP 下载、展开和路径边界保持不变。
 
 Hindsight 固定运行镜像为 `ghcr.io/vectorize-io/hindsight@sha256:d1840062a5b79940ab7a9f4809ceb90fc776d4ad737cd9329e9b5836cc64ab70`。Central 为配置实例创建私有 volume、认证和 loopback API；禁用内嵌 worker，由宿主只对准确获准的 banks 启动受控 worker。首次能力检查会启动实际服务、加载本地 embedding/reranker，并可调用已选择模型，因此检查耗时与模型用量不等于零。
 
-Hindsight 原生 retain/显式整合只生成隔离提案，经 Mote 独立审核后才发布；正文迁移使用 literal import，不能重提取历史。完整 reflect 只读取宿主固定可见的精确版本和原件摘录构成的独立 read bank，不能凭 tag 过滤访问 staging、退休版本或越权 facts。原生 cancelled 状态不证明停止写入；宿主控制 owned worker，并将迟到输出隔离在发布边界之外。更换模型语义配置需重新配置、核验与准备，旧历史不能被静默换模型解释。
+Hindsight 原生 retain/显式整合只生成隔离提案，经 Mote 独立审核后才发布；正文迁移使用 literal import，不能重提取历史。完整 reflect 只读取宿主固定可见的精确版本和原件摘录构成的独立 read bank，不能凭 tag 过滤访问 staging、退休版本或越权 facts。原生 cancelled 状态不证明停止写入；宿主控制 owned worker，并将迟到输出隔离在发布边界之外。更换模型语义配置需重新配置、核验与准备，旧历史不能被静默换模型解释。 原生 Reflect 属于已核验的适配器能力；当前 Ask 仍通过 scoped recall 与 Mote 只读 QueryAgent，尚无原生 Reflect UI。
 
 ## 通用兼容 release 与 worker ABI
 
@@ -61,9 +63,19 @@ worker 和声明不是恶意代码沙箱：可信代码拥有中央宿主权限�
 
 全暂停关闭自动提取/整合的新准入，已登记 queued/running/checkpointed 工作按原授权、原 generation 排空。原件归档、可读资料、已有 Memory 和只读查询继续。独立洞察与工作摘要保留自己的设置。立即停止另行撤销未完成自动发布权并请求取消；外部结果未知与清除待确认保持可见。恢复产生新准入 generation，不补授暂停期间的输入；显式历史工作另行选择范围。完整规则见 [Memory lifecycle](memory-lifecycle.md#pause-drain-stop-and-resume)。
 
-repository 更换迁移全部 Mote 保留记忆正文及更正/替代状态、规范修订和删除意图，并核验索引。外部原生审计历史、额外旧版本和引擎图保留在旧实例及运行备份中，不承诺跨引擎迁移。准备保留旧 binding；切换屏障冻结旧写入准入并排空/对账尾部，核验成功仍未生效，另用 CAS 应用新绑定。取消准备释放临时屏障，保留所有者的暂停选择。失败保旧，没有自动 fallback。既有查询固定旧 binding 与不可变版本，返回前仍检查当前授权和隐私。
+repository 更换迁移全部 Mote 保留记忆正文及更正/替代状态、规范修订和删除意图，并核验索引。外部原生审计历史、额外旧版本和引擎图保留在旧实例及运行备份中，不承诺跨引擎迁移。准备保留旧 binding；切换屏障冻结旧写入准入并排空/对账尾部，核验成功仍未生效，另用 CAS 应用新绑定。取消准备释放临时屏障，保留所有者的暂停选择，并保留已按迁移授权复制的合法规范正文；这不会发布目标绑定，也不会把“取消迁移”当作删除数据。来源精确删除或撤权仍沿依赖清除相应副本与操作正文，未知外部写继续对账清除。失败保旧，没有自动 fallback。既有查询固定旧 binding 与不可变版本，返回前仍检查当前授权和隐私。
 
 绑定、准备、排空、已有查询或外部未知写/清除引用的安装包不能卸载。解除读写引用后可卸载包，数据删除是另一步；外部正文需先迁移或保留可用 reader。缺失外部正文明确报错，不能用 SQL 旧副本伪装成功。卸载保留只供历史清除使用的私有 retired 元数据；不在插件列表复活实例或恢复启用。逻辑删除立即 fence，本地 tombstone 与外部 pending erase 分开，不能把 endpoint accepted 当成物理擦除。
+
+来源删除或撤权会在同一宿主事务中沿操作依赖登记退役，并清理 publication、reviewed output、write intent 与 owner mutation journal 的完整正文。结果仍未知的外部写保留 namespace、精确键、opId 和 body digest，只允许观察与清除，不重新 put。已提交的 owner publish/correct 回放也重新检查当前宿主与实际供应方正文、原件及返回前授权，不直接返回旧回执中的正文。这里的逻辑退役不承诺 SDK 原生历史或数据库/WAL 已物理擦除。
+
+原生引擎输出首先是未审查提案，可以超出规范 Memory 卡片数量或尚未具备正式 admission 字段。共享 reviewer 仅在显式 native-engine origin 下跳过草稿的规范卡片校验；空原生提案仍必须独立审查。审查结果及缓存结果继续完整校验，缓存身份区分原生和 Mote 草稿；不能把这个边界扩展为跳过正式发布校验。
+
+原生 staging 清理使用独立持久任务：合法的独立审查结果先保存宿主 checkpoint，再清理产生它的原生临时空间。清理暂时失败不撤回已合法审查的正文，但未确认清理会阻止迁移和卸载；重启后只重试同一供应方配置与操作身份的清理，不重新 native prepare 或再次审查。来源撤权、取消和终止的未采用 proposal 同样登记清理，并立即失去发布权。
+
+旧提取任务若需要所有者确认归属，却没有正式 Material 引用，会保留已审核结果并显示 `memory_owner_material_required` / 等待输入。该任务不能自动继续，也不显示资料处理中；所有者仍可手工重新检查既有结果或取消任务。立即停止会沿真实生命周期 checkpoint 撤销未完成的自动 child，独立手工任务及所有者后续明确授权的回复不随之撤销。
+
+受控 Hindsight 的正文 literal read/export 启动不发起语言模型请求；能力「核验」仍显式调用实际模型，原生提取、整合与 Reflect 也属于模型操作。不能把启动成功当成语义能力已核验，或把当前 API 不可见当成 PostgreSQL volume/WAL 已物理擦除。
 
 ## 控制 API 与验证
 

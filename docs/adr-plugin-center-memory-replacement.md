@@ -147,6 +147,11 @@ preparation; the cutover barrier fences old writing, drains/reconciles its tail,
 then atomically publishes a checked new binding generation. Existing queries pin
 their read binding. Old late writers cannot commit after retirement.
 
+Cancelling preparation retains already authorized canonical copies and the old
+active binding; it releases only the temporary barrier. This keeps the existing
+data-retention contract. Exact source deletion or privacy revocation still clears
+dependent copies and operation bodies, including late or unknown writes.
+
 Replacing the repository with Mem0 CRUD, or returning to the built-in repository,
 requires the same text/version/correction/deletion migration. Only replacing
 RetrievalProvider while keeping the text authority unchanged is index-only.
@@ -172,6 +177,10 @@ status and supported actions, not arbitrary remote executable HTML/React.
 Trusted compiled Web contributions keep their existing contracts. Web,
 Electron and Android need real consumers and fallbacks; schema-only additions
 do not complete the UI. Native capture still requires a native build.
+The current advanced view inspects actual modules and bindings; independent
+retrieval-only switching and arbitrary stage-composition editing are not exposed.
+Current Ask uses scoped Recall plus Mote's read-only QueryAgent. Native Reflect is
+verified at the adapter boundary and has no dedicated product UI.
 
 ## Supersession audit
 
@@ -179,6 +188,7 @@ do not complete the UI. Native capture still requires a native build.
 | --- | --- |
 | KEEP | AI-native semantic interpretation; untrusted captured content; read-only queries; originals/Material, exact citations, scopes, independent review, one ExecutionEngine, cancellation, deletion, retention and measured usage. |
 | KEEP | Same-source parallel policies, exact version/fingerprint and draft reuse; installation does not authorize history; readable originals do not wait for Memory. |
+| KEEP | Cancelling migration is not data deletion: retain authorized canonical copies without activating the target; exact source deletion/revocation still clears dependent copies and operation bodies. |
 | CHANGE | Owner-controlled pause replaces the mandatory continuous-new-input rule and extraction.enabled:true-only behavior in attribution/MVP baseline, lifecycle/settings/intake APIs, UI and tests. |
 | CHANGE | Admission state/generation is explicit and separate from saved nonempty composition; ordinary pause drains old authorized queued/running/checkpointed work and necessary authorized children, immediate revocation fences it, resume does not backfill. |
 | CHANGE | Trusted local path/env loading evolves into pinned GitHub release, instance and binding lifecycle; current inventory stays an observed capability projection. |

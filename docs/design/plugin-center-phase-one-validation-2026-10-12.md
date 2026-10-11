@@ -78,7 +78,7 @@
 | ID | 用户旅程或故障点 | 必须验证的结果 |
 | --- | --- | --- |
 | M01 | 功能方案 → 更换单模块；选择仅索引已有记忆 | 范围、输入 revision、embedding/费用方式和预计/未知费用展示正确；不读取额外原件，不重提取或修改记忆正文。安装/启用本身不创建准备任务。 |
-| M02 | 更换整体引擎 → 选择显式历史内容范围并授权 | 区分正文/引擎迁移、索引准备与重新理解内容；迁移保持 ID、正文、证据、修订、纠正和删除意图，不隐式重新提取/整合。确需历史模型转换时另有冻结范围、模型、审核和费用授权；不能以只处理新增作为静默 fallback。取消确认无模型调用。 |
+| M02 | 更换整体引擎 → 选择显式历史内容范围并授权 | 区分正文/引擎迁移、索引准备与重新理解内容；迁移保持 ID、正文、证据、修订、纠正和删除意图，不隐式重新提取/整合。确需历史模型转换时另有冻结范围、模型、审核和费用授权；不能以只处理新增作为静默 fallback。取消不隐式授权模型调用；保留已授权规范副本和旧绑定，目标不生效，精确来源删除/撤权仍清理。 |
 | M03 | 迁移准备失败、费用授权不足、模型不支持、上游语义缺失 | 旧方案继续服务；明确失败阶段与未覆盖范围。不减少独立审核、吞输入、改模型或把全文重理解伪装成无费用索引准备以通过。 |
 | M04 | staging 写入并建立索引；普通用户同时查询 | 未校验/未发布的新结果不可被普通检索、完整 reflect、详情或统计提前读取。旧方案可用。只在 Mote 侧过滤最终回答不足以证明外部 reflect 未见 staging。 |
 | M05 | 大迁移运行中，新输入到达、来源修改/删除/撤权 | 快照范围与 delta 分开；通过同一授权/版本规则补齐合法变化。变更不能悄悄扩展历史收费范围；删除/撤权使 staging 与派生结果及时失效。 |
@@ -159,9 +159,9 @@
 | 生成 fixture/契约 | 真实 HTTP、持久 Store、ExecutionEngine、子进程与故障顺序；不证明供应方语义 | 已执行安装/控制/迁移/删除/恢复回归，见第 12–13 节；全矩阵未整体执行 |
 | 实际外部服务部署 | 固定版本、原生 SDK/service、真实 embeddings、进程/原生备份；不能由 fake service 代替 | Mem0 与 Hindsight 固定部署实测已执行，范围见账本；未测试任意第三方引擎 |
 | 真实模型集成 | 实际模型调用和独立审核路径；调用成功/卡片数不等于语义质量基准 | 实际本地 GPT 6.1 Medium 生成语料试验已执行；完整对照/多语种/费用矩阵 NOT RUN |
-| Web/Electron 产品 UI | 实际 renderer 对持久后端的安装/控制/切换；不等于原生设备 | 实际 Chrome Web 的 Mem0 完整链路 PASS，1360/320 与两种系统色彩偏好下布局/焦点通过；当前 Slate 保持既有浅色样式；Electron 新插件屏幕现场操作 NOT RUN |
-| 原生消费者与物理设备 | 编译、单测、lint 可证明原生协议/UI代码可构建；不能证明现场权限/后台行为 | Android assemble/unit/lint PASS；原生新页面现场交互与物理设备 NOT RUN |
-| 最终受影响本地验收 | 当前目标 commit 的 `check:affected` 与所需旅程；旧 commit 结果不代替新修改 | 由主实施任务在最终代码上运行和记录；不能把运行中命令写成已完成 |
+| Web/Electron 产品 UI | 实际 renderer 对持久后端的安装/控制/切换；不等于原生设备 | 实际 Chrome Web 的 Mem0/Hindsight 安装、迁移、反向切换 PASS，1360/320 与两种系统色彩偏好下布局/焦点通过；当前 Slate 保持既有浅色样式；最终完整 Electron featurepacks/navigation PASS，见第13节；未把生成 renderer 当成真实供应方/设备链路 |
+| 原生消费者与物理设备 | 编译、单测、lint 可证明原生协议/UI代码可构建；不能证明现场权限/后台行为 | 最新 Android assemble/lint 与最终受影响 testDebugUnitTest 均 PASS；原生新页面现场交互与物理设备 NOT RUN |
+| 最终受影响本地验收 | 当前目标 commit 的 `check:affected` 与所需旅程；旧 commit 结果不代替新修改 | 源码 `2383a8d` 上完整 `check:affected` PASS；完整 Docker 构建、认证 HTTP 与重启/替换容器持久化 PASS；范围见第13节 |
 
 所有者已授权实际实现、验收后的 PR 和合并。最终报告区分实现、fixture、真实服务/模型、UI、物理设备和未完成项；私有凭据/模型输入/原生数据不进入提交。反向方案切换须重新迁移和核验，不承诺未实现的指针式回滚。
 
@@ -215,22 +215,63 @@ Mem0 产品安装/控制/正文迁移结果见第 13 节。固定 Hindsight 原�
 
 2026-10-12，当前工作树的真实实现已接入 owner 控制面、固定适配器、公共正文读取/发布、暂停准入、正文迁移屏障、声明式 Web 与原生 Android UI。实际产品检查使用独立 loopback Central、正常 `buildApp`/background worker、私有 token、生成原件和本地 `gpt-6.1-sol` / `medium`；没有注入 fixture agent、供应方 factory 或合成计时状态。临时运行日志、截图、数据库和凭据仅保留在本地验收目录。
 
+最终受检源码身份为`2383a8d7efb33bfe3859775a687df49473a94f06`，本验证文档随后单独记录结果；实际交付目标与合并状态由最终报告确认。
+
 | 层次/入口 | 结果与已证明范围 | 明确限制 |
 | --- | --- | --- |
-| `plugin-control-journeys.test.ts` | PASS，23 项；生成固定 GitHub release + 真 Store/ExecutionEngine/worker：固定安装与丢 ACK 回放、配置/核验/启用≠绑定、owner/MCP/作用域/revision、暂停排空与恢复缺口、失败迁移/重试/尾部冻结/CAS、固定 reader、版本发布/更正及重启同ID、外部清除未知/晚到写入、卸载后旧 namespace 清除 | 生成 transport 不是真 GitHub；生成 provider 不代表 Mem0/Hindsight 能力或语义效果 |
+| `plugin-control-journeys.test.ts` | PASS，25 项；生成固定 GitHub release + 真 Store/ExecutionEngine/worker：固定安装与丢 ACK 回放、配置/核验/启用≠绑定、owner/MCP/作用域/revision、暂停排空与恢复缺口、失败迁移/重试/尾部冻结/CAS、固定 reader、版本发布/更正及重启同ID、外部清除未知/晚到写入、卸载后旧 namespace 清除；另覆盖迁移取消与丢 ACK 后重启保留授权规范副本、精确来源删除仍清理 | 生成 transport 不是真 GitHub；生成 provider 不代表 Mem0/Hindsight 能力或语义效果 |
+| `hindsight-checkpoint.test.ts` | PASS，8项；真 Store/ExecutionEngine/MemoryPipeline/MemoryPublication：native proposal 独立审查后发布失败、清理 pending 与重启，固定 provider/config/opId 只重试传输；清理 pending 可发布已合法审查正文但保留迁移/卸载引用；native cache 的 review retry 不跑 builtin pre-review admission；取消 native 等待 grant 后不审查/发布且清理授权持久；failed/stale/cancelled/blocked终态未清理草稿重启恢复 | 绑定/provider/model transport 均为生成 fixture，不证明真实 Hindsight 原生效果 |
+| 正文退役与真实关闭回归 | PASS；`memory-publication-retirement`6项：来源同事务退役四类host journal、unknownwrite digest-only read/erase、lostACK重启、合法历史不误退役、迁移lateput与实际Mem0维护子进程清除/rollback/停机CLI备份；实际正常buildApp hung原生SDK关闭1项约5.7秒；StorageLedger private/control表quota/rollback/reopen1项 | 验证逻辑SQL/export退役与宿主生命周期；SDKhistory、WAL与物理擦除未证明，语义/UI按独立层记录 |
 | `memory-integration.test.ts` | PASS，19 项；真实集成流程、独立审核与既有生命周期回归；新外部发布重试另由上述 journey 覆盖 | 使用生成模型结果，不证明真实模型质量 |
-| Web `plugin-center.test.ts` + `manual-memory.test.ts` | PASS，12 项；真实组件/DTO消费、幂等重试、暂停/更换、owner冲突、焦点、配置首表单、解绑卸载、凭据切换隔离；删除后保留 pending 清除说明、节点变化清除旧提示 | JSDOM 状态 fixture 不代替实际浏览器/服务 |
-| Android `assembleDebug` / `testDebugUnitTest` / `lintDebug` | PASS；原生设置入口、配置/动作/方案消费、删除清除回执；编译、单测与 lint | 未执行新原生页面现场交互、模拟器或物理设备 |
+| `memory-review.test.ts` | PASS，12项；既有共享独立审查合同与3个新native回归：18fact原生proposal先审查再canonical校验、empty native强制独立、origin cache隔离与严格审查输出拒绝；checkpoint fixture也消费真实shared reviewer | 生成模型结果证明宿主审查边界，不是live-model质量/用量验收 |
+| 停止传播与正式资料前置回归 | PASS；真实 Store/Pipeline/ExecutionEngine 的停止、原生 checkpoint 与消费者相关组合共69项通过，含旧生命周期 failed child 立即停止/重启传播、独立手工与owner后续授权保留、取消后transport未退出仍占尾部；缺正式Material的独立审核结果在新任务及旧verified envelope两种状态下等待输入，重启/手工复核不重做native或review | 语义/native/model transport为生成fixture；未重跑先前付费失败批次，不能宣称实际模型已重新产生同一归属问题 |
+| Web `plugin-center.test.ts` + `manual-memory.test.ts` | PASS，13 项；真实组件/DTO消费、幂等重试、暂停/更换、owner冲突、焦点、配置首表单、解绑卸载、凭据切换隔离；删除后保留 pending 清除说明、节点变化清除旧提示；无正式Material的旧归属任务显示原因、保留审核结果/手工复核/取消，普通正式资料等待提示不变 | JSDOM 状态 fixture 不代替实际浏览器/服务 |
+| Web消费者与双语补充检查 | PASS，manual-memory 4 + API 12 + resource-views 50，共66项；新增归属原因与状态2个中英文本并同步Android；`check-i18n`核对6835条双语消息，Web typecheck通过 | 这些定向结果不能替代最终全受影响检查 |
+| Electron `test-web-feature-packs.cjs` + 完整 `test-web-navigation.cjs` | PASS；最终server/Web构建后独立生成Central/真实renderer：featurepacks、Coding上传、模型目录、已注册浏览器页；当前Provider实例、草稿放弃、profile API保存/探测/冲突、模块恢复部署、unused profile删除、诊断/活动、设置→插件；desktop/320布局无横向溢出 | 生成模型探测响应，不是实际供应方能力或 live-model 证明；Android现场未测 |
+| 最新Android `assembleDebug` / `testDebugUnitTest` / `lintDebug` | PASS；新增2条资源同步后重新构建与lint，0 errors / 211 warnings；最终受影响检查重新执行testDebugUnitTest通过；原生设置入口、配置/动作/方案消费、删除清除回执可构建 | 未执行新原生页面现场交互、模拟器或物理设备 |
+| Mem0历史凭据删除/清空 | PASS，`mem0-retained-reader`2项，相关组合11项；真实固定SDK/SQLite子进程、正常安装/配置与ModelSettings变更：cached及冷重启literal read/export/remove保留原历史，后续Embedding请求0；put/search/recover拒绝缺失/空准确预设，health不再ready，未初始化实例不能借历史回退启动 | release与embedding transport为生成fixture；证明SDK历史/授权边界，不证明语义质量、live-model或物理擦除 |
 | 实际 GitHub → Mem0 Web 安装链路 | PASS；官方 `mem0ai/mem0` 的 `ts-v3.3.1`，commit `94c3fe9f238f3dbf29c9ce98643bd71eb13077cd`，源码制品 SHA-256 `38c22657708629753d4f7c0f639f20bae2069b7b50eb485065687ea0e24d48e3`；真实下载/固定安装、声明式配置引用、实际 SDK+384维 MiniLM 核验、启用不自动绑定 | 安装固定上游源码用于 provenance，执行适配器/SDK来自当前锁定宿主构建；没有运行任意上游 install script |
 | 实际 Central → Mem0 正文切换与控制 | PASS；两条生成 owner 笔记通过真实 GPT6.1 Medium 与独立审核产生 Memory；正文迁移/索引核验、旧绑定保留、tail=0屏障、显式生效；暂停/新准入代次恢复/立即停止、绑定实例停用后读者保留、反向 builtin 正文迁移 | 前两条显式“虚构、非个人”输入被实际模型判为空是有效决定；卡片数量不构成质量基准。全部迁移是 Mote 保留规范正文/状态，外部原生审计历史/引擎图不保证可移植 |
 | 实际 Web 渲染 | PASS；1360 与320宽度、系统浅/深色偏好（当前 Slate 保持既有浅色样式），安装预览Escape焦点返回、各阶段无横向溢出，无 pageerror | Chrome Web；未将其报告为 Electron/原生 Android 现场验证 |
 | 固定 Hindsight 原生 factory | PASS；固定 v0.10.2 镜像、实际 embeddings/reranker、GPT6.1 Medium；不可变 literal CRUD/replay、固定召回、native提取/整合与谱系、私有授权 read-bank Reflect 无语义写回；自动 owned worker 与独立手工任务隔离 | Ask 当前使用 scoped recall+Mote只读 query agent，未提供原生 Reflect UI；取消协作式上游可能仍写晚到事实，由宿主 fence/owned worker处理 |
 | Hindsight native volume snapshot/restore | PASS；独立原生 helper/factory验证3份精确正文/provenance、新volume、恢复不启动服务/模型、显式启动旋转凭据、worker=false | 不代替 CLI 模型/API恢复或用户完整设备链路 |
+| Hindsight 历史配置的模型预设删除 | PASS；4个profile/error-class fixture；实际新native clone经真实 MemoryAdapters + 生成host registry facade 精确read/export原3份canonical正文，逻辑删除1份保留2份，语言模型请求0。只在已有冻结snapshot且确切model_profile_missing时允许literal历史读/删，语义引擎继续拒绝 | 这项实际provider入口不代替Central用户删除预设的UI旅程；非物理擦除证明 |
 | 完整运行 CLI 备份恢复 | PASS，Mem0 native备份→fresh restore及退休包/配置/收据；Hindsight actual five-file snapshot、3份canonical正文通过CLI backup→restoreProfile到fresh volume，保留image/model/instance身份；恢复不启动服务/worker/model、不复制运行凭据 | Hindsight这项CLI入口验证复用独立原生archive，没有调用模型；显式启动后API/model能力由独立factory验证，不将这两层混作同一调用 |
-| 实际 Hindsight Central GitHub/UI链路 | 官方 v0.10.2 GitHub API source wheel实际预览/安装/配置 PASS；commit `5fc4ce20917b916240cef27c212c387a177f115b`、ZIP2084435B、SHA-256 `5f05c1017813000e8c46da941ad5cdd7b3d288d864bd985690f8c4f9555f7f64`。完整native核验第一次被执行器120s总deadline中断，已修复后重试；正文切换/提取/整合待结果 | 不把安装成功或独立native factory成功写成完整Central产品引擎链路PASS |
+| 实际 Hindsight Central GitHub/UI链路 | PASS；官方 v0.10.2 API source wheel实际预览/安装/配置，commit `5fc4ce20917b916240cef27c212c387a177f115b`、ZIP2084435B、SHA-256 `5f05c1017813000e8c46da941ad5cdd7b3d288d864bd985690f8c4f9555f7f64`；真实完整native核验/启用，Mem0→Hindsight 全部 Mote 保留正文迁移、冻结 tail=0、显式接管。最新源码重启后4张正文可读；正常API取消失败旧child并立即停止后，浏览器反向迁移核验/显式接管通过，4张完整正文与版本digest一致 | 首次能力check受120s总deadline中断，修复后重验通过。反向排空的旧child故障使用正常取消恢复；后续生产修复以生成持久回归验证，未重跑此前付费批次 |
+| 实际 Hindsight Central原生提取/整合 | PASS；明确 native draft origin 修复后，实际原生提取产生2张独立审核卡，draft/review run身份不同、publication committed、cleanup acknowledged；原生整合读取2个正式Memory父项，独立审核合法保留现有卡片（0新卡），workflow/publication succeeded/committed、cleanup acknowledged。实际GPT6.1 Medium调用有用量记录 | 使用真实所有者API/正常background lifecycle，未将同步extract API写成Web按钮。长同步请求客户端应答未观察到，结果通过持久journal与正式正文读取核实；0新卡不是整合质量基准 |
+| 最新Central重启与正常控制API | PASS；从冻结后的最新源码重启同一隔离生成vault：固定安装库存及4张不可变正文digest保留；pause关闭准入、resume产生新admission generation、stop关闭自动工作且保留读者/当前方案；随后4张正文digest仍一致。该控制验收的model_usage增量为0 | 未重新check/prepare/extract，不是供应方语义或模型质量复测；现生效方案为builtin，已安装外部实例保留 |
+| 最终 `npm run check:affected` | PASS，exit0；源码 `2383a8d`，受影响范围为Central/desktop/Android/protocol/tooling：check:local包含6835条双语检查、共享库构建、全部workspace与scripts typecheck、workspace及tooling测试；另执行Android testDebugUnitTest | fixture与本地集成通过不证明物理设备、任意外部服务或完整语义质量矩阵 |
+| 最终 `npm run test:container` | PASS，exit0；冻结生产源码真实Docker构建，runtime SQLite及bundled worker/skills可用；health、Web、401认证、生成note创建/读取和duplicate ACK、同容器重启、替换容器named-volume恢复全部通过 | 本次容器基础入口与持久化验证未重跑容器内Hindsight模型/多平台服务；独立供应方证据另记 |
+
+最终宽检查计数：Desktop 54文件、433 PASS；Server 1524项中1523 PASS、1 SKIP、0 FAIL；Web 282 PASS；Agent 268项中267 PASS、1 SKIP、0 FAIL；Shared 177 PASS；根scripts 63 PASS、CLI 4 PASS。跳过项不计为通过。双语检查6835条，Android最终单测20秒完成、BUILD SUCCESSFUL。
+
+最终 renderer 验收从仓库根目录运行完整脚本，前置条件是当前 server/Web 构建完成：
+
+```sh
+node_modules/.bin/electron scripts/test-web-feature-packs.cjs
+node_modules/.bin/electron scripts/test-web-navigation.cjs
+```
+
+这两项使用隔离生成 Central 与真实 Electron renderer，截图/结果写入已忽略的 `.mote/feature-packs` 和 `.mote/web-navigation`；完整 navigation 不使用 `--library-only` 缩小范围。该检查不调用真实模型或外部账户，也不能替代实际供应方与物理设备验收。
+
+最新 Android 构建使用 Java 17、已有 Android SDK 和离线依赖，从仓库根目录执行：
+
+```sh
+apps/android/gradlew -p apps/android :app:assembleDebug :app:lintDebug --offline --no-daemon
+```
+
+本轮APK为58518893字节，SHA-256为`f97cbdb72313d57bae18f3f1df30b0227214e1ee3ca9f3cda192ba6dfb470836`；构建/lint不替代原生页面现场操作或设备验证。
 
 Hindsight官方仓库zipball实测186037135B、展开240254917B、5512entries，超过通用64MiB压缩预算。受控固定配方改选同一release的官方API source wheel（实际展开7307878B、346entries），不扩大通用下载/展开/单文件预算；下载验证选定release内的asset origin，再通过官方asset API固定实际字节，缓存重用继续核验digest和展开文件。对应回归拒绝跨origin asset、禁止下载大仓zipball和缓存篡改。
 
+实际原生提取曾返回 502：共享 reviewer 在独立审查前误将未审查原生提案按规范 Memory 合同校验。明确 native-engine 草稿 origin 后，真实重验和共享 review 回归均通过；正式输出及缓存输出仍完整校验。另有自动生命周期 child 产生合法 `needs_owner_input`，但缺少 published Material 引用，owner-question 提交失败回滚，publication 保留 verified、旧方案继续读；反向迁移正确等待该尾部。实际验收通过正常取消该具体 child 和立即停止完成迁移，未修改数据库或重跑模型。随后生产guard将此结构性缺口变为`memory_owner_material_required` / `waiting_for_input`，保留审核结果并阻止自动继续；立即停止与重启沿生命周期checkpoint撤销旧自动child。相关真实Store/Pipeline/ExecutionEngine生成回归及UI说明已通过，未重新执行此前付费批次。手工重新检查既有缓存和取消仍保留，不新增所有者操作限制。
+
 新发现的实际 Web 全局 `allowedActions` 缺少 verified preparation 的 activate，已修复并形成持久回归；真实浏览器从持久已核验准备继续生效通过。晚到外部写入/清除竞态及卸载后旧历史清除均在生成真实子进程和重启下回归，不将“当前记录移除”描述为物理擦除。
 
-剩余门槛：Hindsight 完整产品链路、最终目标代码的受影响集成检查，以及未执行的设备/平台/质量矩阵。最终 target commit 与 PR状态由交付报告记录；这里不预先宣称发布或合并完成。
+固定 Hindsight 镜像digest是OCI multiarch index，含linux/amd64与linux/arm64 manifest；实际服务/volume恢复在Mac Docker的Linux ARM64执行，AMD64实际运行NOT RUN。失败初始化的cached promise、稳定relay port、有界close释放lease/relay、不触碰外来container及显式新实例零语言模型请求的启动均有实际证明。
+
+受控 Hindsight 最新 literal read/export 启动与实际 crash recovery 均为零语言模型请求：旧 host 进程终止后，同3份规范正文恢复、dead-PID lease 回收、竞争者拒绝，未持有 lease 的关闭不会停止当前 owner。此前付费启动 ping 试验属于历史路径，已被跳过 startup LLM verification 的行为取代；显式 native 能力 probe 仍有真实 GPT6.1 Medium 正向调用证据。原生 Reflect 在独立 factory 实测，当前 Ask 产品入口仍是 scoped Recall + Mote 只读 QueryAgent。
+
+最终源码`2383a8d`的`check:affected`及完整Docker构建/HTTP/持久化验收均已PASS。独立实际Node24缓存镜像层的runtimeSQLite构建也通过；完整容器验收另行证明基础用户入口和两种重启的持久化。此前并行中间源码容器构建的参数不匹配失败保留为历史故障，不计为最终冻结源码结果。
+
+剩余未验证范围：原生插件页面现场交互、物理设备、AMD64实际Hindsight运行、完整多语种/费用/质量矩阵，以及SDKhistory/PostgreSQL volume/WAL的物理擦除。独立retrieval-only切换、任意阶段组合编辑和原生Reflect UI尚未提供。最终target commit与PR状态由交付报告记录；这里不预先宣称发布或合并完成。
