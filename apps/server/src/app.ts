@@ -43,7 +43,7 @@ import { ExecutionEngine,ExecutionFailure } from './execution-engine.js';
 import { ExecutionSettings } from './execution-settings.js';
 import { ServerFeatureHost } from './feature-host.js';
 import { installServerFeatures } from './features/index.js';
-import { FileEvidenceRequests } from './file-evidence.js';
+import { FileEvidence } from './file-evidence.js';
 import { FileProcessing,type FileAnalysis,type TranscriptionProvider } from './file-processing.js';
 import { FileRawReader,fileOriginalRawRef } from './file-raw-reader.js';
 import { registerFileRoutes } from './file-routes.js';
@@ -146,7 +146,7 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
   backendContext.provide('moteMemoryStrategies',memoryStrategies);
   const materialMemoryWork=new MaterialMemoryWork(store,materials,Date.now,()=>true,memoryRecipeSettings);
   const sourcePipelines=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],backendContext,executor,materialMemoryWork);await sourcePipelines.ready;
-  const sources=new SourceStore(store,sourcePipelines),files=new FileStore(store,sources),ingress=new IngressService(store,sources,files);const fileEvidence=new FileEvidenceRequests(sources);
+  const sources=new SourceStore(store,sourcePipelines),files=new FileStore(store,sources),ingress=new IngressService(store,sources,files);const fileEvidence=new FileEvidence(sources);
   const mediaAssets=new MediaAssets(process.env.MOTE_MEDIA_MODEL_DIR||join(store.directory,'media-models'));
   const usageLedger=new UsageLedger(store);
   const indexer=new Indexer(store,config,diagnostics,files,input=>{

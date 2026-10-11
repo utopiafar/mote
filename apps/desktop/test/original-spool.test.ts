@@ -71,7 +71,7 @@ it('rejects a stale file identity and removes rejected queue snapshots',async()=
 it('commits large directory files individually without rolling back a completed snapshot when the next file exceeds the scan budget',async()=>{
  const dir=await fixture(),root=join(dir,'input');await mkdir(root);await writeFile(join(root,'a.txt'),Buffer.alloc(17*1024*1024,65));await writeFile(join(root,'b.txt'),'second');
  const opts={...DEFAULT_SOURCE_OPTIONS,retention:'archive' as const},markers=join(dir,'markers.json');let checkpoint:LocalFileCheckpoint|undefined;const names:string[]=[];
- for(let n=0;n<4;n++){const scan=await scanSourceFiles(root,opts,undefined,markers,undefined,checkpoint);names.push(...scan.items.map(item=>item.title));checkpoint=scan.checkpoint as LocalFileCheckpoint;for(const item of scan.items)if(item.localOriginal)await rm(item.localOriginal.directory,{force:true,recursive:true});if(scan.complete)break;}
+ for(let n=0;n<4;n++){const scan=await scanSourceFiles(root,opts,undefined,markers,checkpoint);names.push(...scan.items.map(item=>item.title));checkpoint=scan.checkpoint as LocalFileCheckpoint;for(const item of scan.items)if(item.localOriginal)await rm(item.localOriginal.directory,{force:true,recursive:true});if(scan.complete)break;}
  expect(names.sort()).toEqual(['a.txt','b.txt']);
 });
 it('rejects mismatched part and archive receipts without clearing the journal or its private original',async()=>{

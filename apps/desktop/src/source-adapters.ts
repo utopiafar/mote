@@ -13,7 +13,6 @@ export interface SourceScanContext {
   checkpoint?: SourceCheckpoint;
   fileCheckpoint?: LocalFileCheckpoint;
   priorityPaths: string[];
-  fileLocations: Map<string, string>;
   stateDirectory: string;
   helperPath: string;
   scope: { start: string; end: string };
@@ -26,7 +25,6 @@ export interface SourceAdapter {
   readonly allowsArchive: boolean;
   validateConfiguration(source: LocalSource): void;
   scan(context: SourceScanContext): Promise<SourceEmission>;
-  readEvidence?(source: LocalSource, request: import('@mote/shared').FileReadRequest, locations: Map<string, string>, signal: AbortSignal): Promise<unknown>;
 }
 
 export class SourceAdapterRegistry {
@@ -65,8 +63,8 @@ export function builtInSourceAdapters(): SourceAdapterRegistry {
       } })
     .register({ kind: 'local-files', version: 2, watchesPath: true, tracksDeletions: true, allowsArchive: true,
       validateConfiguration(source) { if (typeof source.path !== 'string') throw new Error('Invalid file source'); },
-      async scan({ source, signal, stateDirectory, fileLocations, fileCheckpoint, priorityPaths }) {
-        const scan = await scanSourceFiles(source.path!, source, signal, join(stateDirectory, 'access-markers', source.id + '.json'), fileLocations, fileCheckpoint, priorityPaths, true);
+      async scan({ source, signal, stateDirectory, fileCheckpoint, priorityPaths }) {
+        const scan = await scanSourceFiles(source.path!, source, signal, join(stateDirectory, 'access-markers', source.id + '.json'), fileCheckpoint, priorityPaths, true);
         return { version: 1, scan };
       } })
     .register({ kind: 'local-calendar', version: 1, watchesPath: false, tracksDeletions: true, allowsArchive: false,

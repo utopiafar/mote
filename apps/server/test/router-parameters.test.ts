@@ -43,7 +43,7 @@ test('production routing accepts generated composite work IDs and maximum source
   assert.equal(response.statusCode,200,response.body);
   assert.equal(route==='work-activity'?response.json().id:response.json().operation.id,id);
  }
- for(const url of [`/api/sources/${encodeURIComponent(sourceId)}/items`,`/api/sources/${encodeURIComponent(sourceId)}/catalog`,`/api/sources/${encodeURIComponent(sourceId)}/read-requests`,`/api/source-pipelines/${encodeURIComponent(sourceId)}`]){
+ for(const url of [`/api/sources/${encodeURIComponent(sourceId)}/items`,`/api/sources/${encodeURIComponent(sourceId)}/catalog`,`/api/source-pipelines/${encodeURIComponent(sourceId)}`]){
   assert.equal((await node.app.inject({url,headers})).statusCode,200,url);
  }
  const {invitation}=node.connections.invite({label:'Generated paired owner',serverUrl:'http://127.0.0.1',deviceId:'generated'});

@@ -6,7 +6,7 @@ import { event } from './fixtures';
 
 function context(retention: 'reference' | 'snapshot' = 'snapshot'): SourceScanContext {
   const source: LocalSource = { ...DEFAULT_SOURCE_OPTIONS, id: 'local-00000000-0000-4000-8000-000000000001', kind: 'coding-agent', name: 'Synthetic', platform: 'macos', deviceId: 'synthetic', enabled: true, path: '/synthetic', agent: 'codex', retention };
-  return { source, signal: new AbortController().signal, priorityPaths: [], fileLocations: new Map(), stateDirectory: '/synthetic', helperPath: '/synthetic', scope: { start: '2026-09-01T00:00:00Z', end: '2026-10-01T00:00:00Z' } };
+  return { source, signal: new AbortController().signal, priorityPaths: [], stateDirectory: '/synthetic', helperPath: '/synthetic', scope: { start: '2026-09-01T00:00:00Z', end: '2026-10-01T00:00:00Z' } };
 }
 function adapter(scan: SourceScan): SourceAdapter {
   return { kind: 'coding-agent', version: 1, watchesPath: true, tracksDeletions: false, allowsArchive: false, validateConfiguration() {}, async scan() { return { version: 1, scan }; } };

@@ -275,17 +275,17 @@
     {
       "id": "SYNC-06",
       "priority": "P1",
-      "title": "Shadow 回源",
-      "change": "持久 read request，保存期望版本、授权、范围和 deadline；先返回已有定位",
-      "acceptance": "中央重启不丢请求；离线不白等普通查询；新版本正文不能冒充旧版本证据",
+      "title": "中央文件正文范围读取",
+      "change": "读取中央保留的指定版本文本；无正文立即返回已知定位及不可用原因",
+      "acceptance": "设备离线不影响已保留正文；引用模式不读取正文；新版本不能冒充旧证据；撤销授权后不得返回片段",
       "status": "verified",
       "evidence": [
         "apps/server/src/file-evidence.ts",
-        "apps/server/test/files.test.ts",
-        "apps/desktop/scripts/file-evidence-smoke.cjs"
+        "apps/server/test/file-snapshots.test.ts",
+        "apps/server/test/issue-3.test.ts"
       ],
       "remaining": "",
-      "assessment": "Shadow持久回源请求保存期望版本、scope、授权和deadline；离线先返回已有定位，重启不丢请求，不用新正文冒充旧版本。"
+      "assessment": "当前正文解释和范围读取属于中央；设备回读接口、持久请求和端侧无调用解析链已移除。中央保留版本、scope、allowRead、来源状态与摘录依赖检查。验证记录见 docs/validation/file-evidence-cleanup-2026-10-11.md。"
     },
     {
       "id": "ING-01",

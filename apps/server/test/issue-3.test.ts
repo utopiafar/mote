@@ -5,12 +5,17 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {extendState,captureSchema} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
-import {FileEvidenceRequests} from '../src/file-evidence.js';
+import {FileEvidence} from '../src/file-evidence.js';
+import {FileProcessing} from '../src/file-processing.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
 function setup(t:any){const dir=mkdtempSync(join(tmpdir(),'mote-issue3-'));const store=new Store(dir);t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});return store;}
+async function snapshot(files:FileStore,text:string,previousRevision:string|null=null){
+ const bytes=Buffer.from(text),hash=sha256(bytes),manifest={sourceId:files.sources.listSources()[0].id,previousRevision,sizeBytes:bytes.length,sha256:hash,relativePath:'generated.txt',item:{externalId:'generated-file',revision:hash,observedAt:'2026-09-17T00:00:00Z',kind:'file',title:'Generated.txt',layer:'snapshot',text:'',mimeType:'text/plain',document:{fileIndex:{version:1,fileId:'generated-file',contentVersion:hash,mode:'index',coverage:'none',parser:'central-pending',status:'pending',totalCharacters:0,offset:0,length:0,allowRead:true}}}};
+ const session=files.begin(manifest,()=>{});files.part(session.uploadId,0,bytes,()=>{});return files.commit(session.uploadId,()=>{});
+}
 const event=(at:string,durationMs=5000)=>captureSchema.parse({id:randomUUID(),deviceId:'generated-device',deviceName:'Generated',platform:'macos',source:'activity',appId:'fixture.app',appName:'Fixture',capturedAt:at,durationMs,privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}});
 test('same state has one row, precise disjoint durations, monotonic retry and conflict protection',async t=>{
  const store=setup(t);const first=extendState(undefined,event('2026-09-17T00:00:00.000Z',0));const next=extendState(first,event('2026-09-17T00:00:05.000Z'));const third=extendState(next,event('2026-09-17T00:00:20.000Z'));
@@ -23,17 +28,16 @@ test('same state has one row, precise disjoint durations, monotonic retry and co
  await assert.rejects(store.ingest({...third,stateSeries:{version:1,samples:[...third.stateSeries!.samples].reverse()}}));
  store.delete(first.id);await assert.rejects(store.ingest(third),{statusCode:410});
 });
-test('indexed files require no original and on-demand reads are source-, version-, and range-bound',async t=>{
- const store=setup(t),sources=new SourceStore(store),files=new FileStore(store,sources),reads=new FileEvidenceRequests(sources);
- const source=sources.register({id:'generated-source',deviceId:'generated-device',name:'Generated files',kind:'local-files',platform:'macos',retention:'snapshot'});
- const item={externalId:'stable-file-id',revision:'version-one',observedAt:'2026-09-17T00:00:00.000Z',kind:'file',title:'Generated.txt',layer:'snapshot',text:'preview',document:{fileIndex:{version:1,fileId:'stable-file-id',contentVersion:'a'.repeat(64),mode:'index',coverage:'lightweight',parser:'utf8',status:'ready',totalCharacters:50,offset:0,length:7,allowRead:true}}};
- const ack=await files.revision({sourceId:source.id,item,sizeBytes:50},()=>{});assert.equal(files.detail(ack.id).hasOriginal,false);
- const pending=reads.read(ack.id,10,12);const request=reads.pending(source.id).items[0];assert.ok(request);assert.equal(reads.pending('generated-source').items.length,1);
- await assert.rejects(reads.complete('another-source',request.id,{status:'ready',text:'secret',contentVersion:'a'.repeat(64)}),{statusCode:404});
- await assert.rejects(reads.complete(source.id,request.id,{status:'ready',text:'wrong version',contentVersion:'b'.repeat(64)}),{statusCode:409});
- await reads.complete(source.id,request.id,{status:'ready',text:'exact text',contentVersion:'a'.repeat(64)});const result=await pending;assert.equal(result.status,'ready');assert.equal(result.record.ocrText,'exact text');assert.equal(result.record.provenance.document.fileIndex.offset,10);
- const excerpt=result.record.id;assert.ok(store.isCurrentEvidence(excerpt));
- await files.revision({sourceId:source.id,previousRevision:'version-one',item:{...item,revision:'version-two',observedAt:'2026-09-17T00:00:01.000Z'},sizeBytes:50},()=>{});
+test('central text ranges require no original and remain source-, version-, and range-bound',async t=>{
+ const store=setup(t),sources=new SourceStore(store),files=new FileStore(store,sources),reads=new FileEvidence(sources),processing=new FileProcessing(files);t.after(()=>processing.close());
+ sources.register({id:'generated-source',deviceId:'generated-device',name:'Generated files',kind:'local-files',platform:'macos',retention:'snapshot'});
+ const text='Generated exact text and range evidence',ack=await snapshot(files,text);await processing.tick();assert.equal(files.detail(ack.id).hasOriginal,false);
+ const result=await reads.read(ack.id,10,10);assert.equal(result.status,'ready');assert.equal(result.record!.ocrText,text.slice(10,20));assert.equal(result.record!.provenance!.document!.fileIndex!.offset,10);
+ assert.equal((await reads.read(ack.id,10,10)).record!.id,result.record!.id,'repeated ranges reuse the immutable excerpt');
+ await assert.rejects(reads.read(ack.id,0,16001));await assert.rejects(reads.read(ack.id,-1,5));
+ const excerpt=result.record!.id;assert.ok(store.isCurrentEvidence(excerpt));assert.deepEqual(store.db.prepare('SELECT parent_id,capture_id FROM file_evidence_links').all().map(row=>({...row})),[{parent_id:ack.id,capture_id:excerpt}]);
+ sources.update('generated-source',{retention:'reference'});await assert.rejects(reads.read(ack.id,0,5),{statusCode:409});sources.update('generated-source',{retention:'snapshot'});
+ await snapshot(files,'Generated successor text',sha256(Buffer.from(text)));
  assert.equal(store.isCurrentEvidence(excerpt),false);await assert.rejects(reads.read(ack.id,0,5),{statusCode:409});
 });
 test('time-range diagnostic export reads all disk events beyond the memory display cap',async t=>{
@@ -49,16 +53,28 @@ test('state compaction retains changing telemetry and normalizes all sample time
  await store.ingest(merged);const stored=store.evidence([a.id])[0];const {receivedAt,blobHash,imageMime,indexingStatus,...raw}=stored;captureSchema.parse(raw);
 });
 
-test('device read requests survive central restart, reuse IDs and reject permission changes',async t=>{
- const directory=mkdtempSync(join(tmpdir(),'mote-read-restart-'));let store=new Store(directory),sources=new SourceStore(store),reads=new FileEvidenceRequests(sources);
+test('central retained text and immutable excerpts survive restart and reject permission changes',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-read-restart-'));let store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources),reads=new FileEvidence(sources);
  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
  sources.register({id:'restart-source',deviceId:'synthetic',name:'Generated',kind:'local-files',platform:'macos',retention:'snapshot'});
- const ack=await sources.upsert('restart-source',{externalId:'file',revision:'1',observedAt:'2026-09-17T00:00:00Z',kind:'file',layer:'snapshot',text:'preview',document:{fileIndex:{version:1,fileId:'file',contentVersion:'a'.repeat(64),mode:'index',coverage:'lightweight',parser:'utf8',status:'ready',totalCharacters:50,offset:0,length:7,allowRead:true}}});
- const response=await reads.read(ack.id,10,12);assert.equal(response.reason,'device_pending');const requestId=response.requestId;
- store.close();store=new Store(directory);sources=new SourceStore(store);reads=new FileEvidenceRequests(sources);
- assert.equal(reads.pending('restart-source').items[0].id,requestId);
- await reads.complete('restart-source',requestId,{status:'ready',text:'fixture text',contentVersion:'a'.repeat(64)});
- assert.equal((await reads.read(ack.id,10,12)).record.ocrText,'fixture text');
- sources.update('restart-source',{enabled:false});assert.deepEqual(reads.pending('restart-source').items,[]);
- await assert.rejects(reads.complete('restart-source',requestId,{status:'ready',text:'fixture text',contentVersion:'a'.repeat(64)}),{statusCode:409});
+ const text='Generated restart text range',ack=await snapshot(files,text),processing=new FileProcessing(files);try{await processing.tick();}finally{await processing.close();}
+ const first=await reads.read(ack.id,10,12);assert.equal(first.record!.ocrText,text.slice(10,22));
+ store.close();store=new Store(directory);sources=new SourceStore(store);files=new FileStore(store,sources);reads=new FileEvidence(sources);
+ const restored=await reads.read(ack.id,10,12);assert.equal(restored.record!.id,first.record!.id);assert.equal(restored.record!.ocrText,text.slice(10,22));
+ assert.equal(store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='file_read_requests'").get(),undefined);
+ sources.update('restart-source',{enabled:false});await assert.rejects(reads.read(ack.id,10,12),{statusCode:409});
+});
+
+
+test('revocation or deletion during an asynchronous range write cannot publish late evidence',async t=>{
+ for(const revoke of ['pause','delete'] as const)await t.test(revoke,async t=>{
+  const store=setup(t),sources=new SourceStore(store),files=new FileStore(store,sources),reads=new FileEvidence(sources),processing=new FileProcessing(files);t.after(()=>processing.close());
+  sources.register({id:'range-race',deviceId:'generated',name:'Generated',kind:'local-files',platform:'macos',retention:'snapshot'});
+  const ack=await snapshot(files,'Generated asynchronous range evidence');await processing.tick();
+  const pending=reads.read(ack.id,0,9);
+  if(revoke==='pause')sources.update('range-race',{enabled:false});else store.delete(ack.id);
+  await assert.rejects(pending,{statusCode:revoke==='pause'?409:404});
+  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM file_evidence_links').get()!.n,0);
+  assert.equal(sources.listItems({sourceId:'range-race'}).items.filter(item=>item.externalId.includes(':excerpt:')).length,0);
+ });
 });

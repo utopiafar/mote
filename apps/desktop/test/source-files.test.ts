@@ -36,17 +36,17 @@ describe('explicit local text sources', () => {
   it('persists a directory catalog, skips unchanged content, and notices a new file on the next reconciliation', async () => {
     await writeFile(join(root, 'a.md'), 'a'); await writeFile(join(root, 'b.md'), 'b');
     const first = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS);
-    const second = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS, undefined, undefined, undefined, first.checkpoint as any);
+    const second = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS, undefined, undefined, first.checkpoint as any);
     expect(second.complete).toBe(true); expect(second.items).toEqual([]); expect(second.seen).toHaveLength(2);
     await writeFile(join(root, 'c.md'), 'c');
-    const third = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS, undefined, undefined, undefined, second.checkpoint as any);
+    const third = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS, undefined, undefined, second.checkpoint as any);
     expect(third.items.map(item => item.title)).toEqual(['c.md']);
   });
   it('pauses a large reconciliation and resumes from its durable directory cursor', async () => {
     await Promise.all(Array.from({ length: 2005 }, (_, index) => writeFile(join(root, `part-${String(index).padStart(4, '0')}.md`), 'fixture')));
     const first = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS);
     expect(first.complete).toBe(false); expect(first.items).toHaveLength(2000);
-    const second = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS, undefined, undefined, undefined, first.checkpoint as any);
+    const second = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS, undefined, undefined, first.checkpoint as any);
     expect(second.complete).toBe(true); expect(second.items).toHaveLength(5); expect(second.seen).toHaveLength(2005);
   });
   it('new-only baselines existing files without uploading them, then captures a later modification', async () => {
@@ -54,10 +54,10 @@ describe('explicit local text sources', () => {
     const options = { ...DEFAULT_SOURCE_OPTIONS, initialSync: 'new_only' as const };
     const first = await scanSourceFiles(root, options);
     expect(first.items).toEqual([]); expect(first.complete).toBe(true);
-    const second = await scanSourceFiles(root, options, undefined, undefined, undefined, first.checkpoint as any);
+    const second = await scanSourceFiles(root, options, undefined, undefined, first.checkpoint as any);
     expect(second.items).toEqual([]);
     await writeFile(join(root, 'old.md'), 'new');
-    const third = await scanSourceFiles(root, options, undefined, undefined, undefined, second.checkpoint as any);
+    const third = await scanSourceFiles(root, options, undefined, undefined, second.checkpoint as any);
     expect(inputText(third.items[0])).toBe('new');
   });
   it('validates explicit rule boundaries instead of silently weakening them', () => {
@@ -108,7 +108,7 @@ it('incremental catalog drafts preserve prior state until durable commit and rol
  const {SourceSync}=await import('../src/source-sync');
  const sync=new SourceSync(join(root,'state.json'));await sync.initialize();
  const selected=join(root,'selected');await mkdir(selected);await writeFile(join(selected,'a.txt'),'Generated first');
- const first=await scanSourceFiles(selected,DEFAULT_SOURCE_OPTIONS,undefined,undefined,undefined,undefined,[],true);
+ const first=await scanSourceFiles(selected,DEFAULT_SOURCE_OPTIONS,undefined,undefined,undefined,[],true);
  expect(first.checkpoint&&'root' in first.checkpoint?first.checkpoint.catalog:undefined).toEqual({});expect(first.catalogChanges).toHaveLength(1);
  await sync.stage(first,false);const old=sync.fileCheckpoint()!;expect(Object.keys(old.catalog)).toEqual(['a.txt']);
  const draft=new DirectoryCatalog(selected,old,undefined,true);draft.savepoint();
@@ -116,7 +116,7 @@ it('incremental catalog drafts preserve prior state until durable commit and rol
  expect(old.catalog['a.txt'].size).not.toBe(123);expect(draft.catalogChanges()).toHaveLength(1);
  draft.rollbackSavepoint();expect(draft.catalogChanges()).toEqual([]);expect(old.catalog['a.txt'].size).toBe(entry.size);
  await writeFile(join(selected,'a.txt'),'Generated changed');
- const changed=await scanSourceFiles(selected,DEFAULT_SOURCE_OPTIONS,undefined,undefined,undefined,sync.fileCheckpoint(),[],true);
+ const changed=await scanSourceFiles(selected,DEFAULT_SOURCE_OPTIONS,undefined,undefined,sync.fileCheckpoint(),[],true);
  expect(sync.fileCheckpoint()!.catalog['a.txt'].size).toBe(entry.size);await sync.stage(changed,false);
  const reopened=new SourceSync(join(root,'state.json'));await reopened.initialize();
  expect(reopened.fileCheckpoint()!.catalog['a.txt'].size).toBe(Buffer.byteLength('Generated changed'));
@@ -130,7 +130,7 @@ it('retries changed content after an interrupted read without advancing the succ
   const catalog = new DirectoryCatalog(root, first.checkpoint as any);
   const page = await catalog.next(10, []);
   catalog.markContent(page.candidates[0].relativePath, undefined, 'error');
-  const retry = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS, undefined, undefined, undefined, catalog.checkpoint());
+  const retry = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS, undefined, undefined, catalog.checkpoint());
   expect(retry.items.map(inputText)).toEqual(['new content']);
 });
 
@@ -140,7 +140,7 @@ it('single-file new-only establishes a durable baseline and collects later chang
   const first = await scanSourceFiles(path, options);
   expect(first.items).toEqual([]); expect(first.checkpoint?.initialized).toBe(true);
   await writeFile(path, 'changed');
-  const next = await scanSourceFiles(path, options, undefined, undefined, undefined, first.checkpoint as any);
+  const next = await scanSourceFiles(path, options, undefined, undefined, first.checkpoint as any);
   expect(next.items.map(inputText)).toEqual(['changed']);
 });
 
@@ -149,7 +149,7 @@ it('skips unchanged audio after spooling its transient central input',async()=>{
  const options={...DEFAULT_SOURCE_OPTIONS,extensions:['.wav']};
  const first=await scanSourceFiles(path,options,undefined,marker);expect(first.items).toHaveLength(1);expect(first.items[0].localOriginal).toBeDefined();
  const spool=first.items[0].localOriginal!;
- const second=await scanSourceFiles(path,options,undefined,marker,undefined,first.checkpoint as any);expect(second.items).toEqual([]);
+ const second=await scanSourceFiles(path,options,undefined,marker,first.checkpoint as any);expect(second.items).toEqual([]);
  expect(await readFile(join(spool.directory,'0'))).toEqual(Buffer.from('Generated audio fixture'));
 });
 

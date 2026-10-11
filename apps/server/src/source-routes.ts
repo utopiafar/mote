@@ -5,13 +5,10 @@ import {moteText} from './i18n.js';
 import {ConnectionError,type Connections,type ConnectionCredential} from './connections.js';
 import type {Store} from './store.js';
 import type {SourceStore} from './sources.js';
-import type {FileEvidenceRequests} from './file-evidence.js';
 import type {EvidenceReader} from './evidence-reader.js';
 import type {IngressService} from './ingress.js';
 /** Collector authorization is checked again inside transactional source writes. */
-export function registerSourceRoutes(app:FastifyInstance,{store,sources,fileEvidence,evidenceReader,ingress,connections,credential,sourceOwner}:{store:Store;sources:SourceStore;fileEvidence:FileEvidenceRequests;evidenceReader:EvidenceReader;ingress:IngressService;connections:Connections;credential:(request:FastifyRequest)=>ConnectionCredential|undefined;sourceOwner:(request:FastifyRequest,id:string)=>void}){
-  app.get('/api/sources/:id/read-requests',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);return fileEvidence.pending(id);});
-  app.put('/api/sources/:id/read-requests/:requestId',async req=>{const {id,requestId}=req.params as {id:string;requestId:string};sourceOwner(req,id);return fileEvidence.complete(id,requestId,req.body);});
+export function registerSourceRoutes(app:FastifyInstance,{store,sources,evidenceReader,ingress,connections,credential,sourceOwner}:{store:Store;sources:SourceStore;evidenceReader:EvidenceReader;ingress:IngressService;connections:Connections;credential:(request:FastifyRequest)=>ConnectionCredential|undefined;sourceOwner:(request:FastifyRequest,id:string)=>void}){
   app.get('/api/sources',async req=>{const c=credential(req);if(c)connections.assertActive(c);return {items:sources.listSources().filter(s=>!c||s.deviceId===c.deviceId)};});
   app.post('/api/sources',async req=>{const c=credential(req);if(c&&req.body&&typeof req.body==='object'&&('ownerRelation' in req.body||'ownerRelationVersion' in req.body))throw new ConnectionError('connection_scope_denied',403,'Only the owner may declare material attribution.');if(c){connections.assertOwnDevice(c,req.body);const id=(req.body as {id?:unknown}).id;if(typeof id==='string'&&sources.listSources().some(s=>s.id===id))connections.assertOwnSource(c,id);}return sources.register(req.body);});
   app.patch('/api/sources/:id',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);if(credential(req)&&req.body&&typeof req.body==='object'&&'ownerRelation' in req.body)throw new ConnectionError('connection_scope_denied',403,'Only the owner may declare material attribution.');return sources.update(id,z.object({ownerRelation:ownerRelationSchema.nullable().optional(),name:z.string().min(1).max(200).optional(),enabled:z.boolean().optional(),initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).optional()}).strict().parse(req.body));});

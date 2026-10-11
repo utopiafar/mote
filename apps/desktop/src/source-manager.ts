@@ -27,7 +27,6 @@ export function sourceDefinition(source: LocalSource): SourceDefinition {
 }
 export function sourcePolicy(options: SourceOptions): string { return sourceHash(JSON.stringify({ allowRead:options.allowRead,retention: options.retention, trackDeletions: options.trackDeletions, extensions: options.extensions, excludedPaths: options.excludedPaths, redactLiterals: options.redactLiterals })); }
 export class LocalSourceManager {
-  private fileLocations=new Map<string,Map<string,string>>();
   private sources: LocalSource[] = [];
   private metadataDirty = new Set<string>();
   private metadataDirtyAt?: string;
@@ -224,9 +223,8 @@ export class LocalSourceManager {
         await engine.ensureAdapterVersion(adapter.version);
         // Stage locally even when offline; this same revision is retried after process restarts.
         const now = Date.now(); const scope = { start: new Date(now - 30 * 86400000).toISOString(), end: new Date(now + 90 * 86400000).toISOString() };
-        if(adapter.readEvidence&&!this.fileLocations.has(source.id))this.fileLocations.set(source.id,new Map());
         const priorityVersions = new Map(this.dirtyPathVersions.get(source.id) ?? []);
-        const scan = await this.adapters.scan({ source, signal, checkpoint: engine.checkpoint(), fileCheckpoint: engine.fileCheckpoint(), priorityPaths: [...priorityVersions.keys()], fileLocations: this.fileLocations.get(source.id) ?? new Map(), stateDirectory: this.directory, helperPath: this.helperPath, scope });
+        const scan = await this.adapters.scan({ source, signal, checkpoint: engine.checkpoint(), fileCheckpoint: engine.fileCheckpoint(), priorityPaths: [...priorityVersions.keys()], stateDirectory: this.directory, helperPath: this.helperPath, scope });
         unqueuedScan = scan; accessValidated = true;
         if (!scan.queue) scan.queue = source.initialSync === 'all' && !engine.initialized() ? 'history' : 'realtime';
         signal.throwIfAborted(); status.skipped = scan.skipped; status.scanComplete = scan.complete;
@@ -282,7 +280,7 @@ export class LocalSourceManager {
       if(Array.isArray(response.items)&&response.items.length<=200&&response.items.every(item=>typeof item.externalId==='string'&&typeof item.revision==='string'))count=await engine.requestSnapshotRecovery(response.items);
     }catch(error){if(signal.aborted)throw error;return;/* Older nodes can still receive ordinary revisions. */}
     if(!count)return;
-    const now=Date.now(),adapter=this.adapters.get(source.kind),scan=await this.adapters.scan({source,signal,checkpoint:engine.checkpoint(),fileCheckpoint:engine.fileCheckpoint(),priorityPaths:[],fileLocations:this.fileLocations.get(source.id)??new Map(),stateDirectory:this.directory,helperPath:this.helperPath,scope:{start:new Date(now-30*86400000).toISOString(),end:new Date(now+90*86400000).toISOString()}});
+    const now=Date.now(),adapter=this.adapters.get(source.kind),scan=await this.adapters.scan({source,signal,checkpoint:engine.checkpoint(),fileCheckpoint:engine.fileCheckpoint(),priorityPaths:[],stateDirectory:this.directory,helperPath:this.helperPath,scope:{start:new Date(now-30*86400000).toISOString(),end:new Date(now+90*86400000).toISOString()}});
     try{signal.throwIfAborted();await engine.stage(scan,adapter.tracksDeletions&&source.trackDeletions,undefined,source.initialSync);}finally{await engine.discardUnqueuedOriginals(scan.items);}
   }
   private async prepareSource(source: LocalSource, request: SourceRequest, signal: AbortSignal): Promise<void> {

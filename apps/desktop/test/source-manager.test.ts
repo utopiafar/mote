@@ -12,27 +12,25 @@ let servers: Server[] = [];
 beforeEach(async () => { directory = await realpath(await mkdtemp(join(tmpdir(), 'mote-source-manager-'))); });
 afterEach(async () => { for (const manager of managers) await manager.close(); for (const server of servers) await new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }); managers = []; servers = []; await rm(directory, { recursive: true, force: true }); });
 async function endpoint(dropFirstAck = false) {
-  const reads: unknown[] = [],readReplies:any[]=[];
   const items: SourceItem[] = []; const registered: unknown[] = []; let id = ''; let dropNext = dropFirstAck;
   const sessions=new Map<string,any>();
   const server = createServer(async (req, res) => {
     expect(req.headers['x-mote-ingress-version']).toBe('2');
     const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(chunk);
-    if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url?.endsWith('/read-requests')?{items:reads}:{revision:null}));return;}
+    if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({revision:null}));return;}
     res.setHeader('Content-Type','application/json');
     if(req.url?.includes('/uploads/')&&req.url.includes('/parts/')){const bytes=Buffer.concat(chunks),part=Number(req.url.split('/').at(-1));res.end(JSON.stringify({part,hash:(await import('../src/source-sync')).sourceHash(bytes),bytes:bytes.length}));return;}
     const manifest = JSON.parse(Buffer.concat(chunks).toString()); const body = manifest.item ?? manifest;
     if(req.url==='/api/file-sync/v1/uploads'){const uploadId=body.revision;sessions.set(uploadId,manifest);res.end(JSON.stringify({uploadId,partBytes:4194304,parts:[]}));return;}
     if(req.url?.endsWith('/commit')){const m=sessions.get(req.url.split('/').at(-2)!);items.push(m.item);if(dropNext){dropNext=false;res.destroy();return;}res.end(JSON.stringify({...sourceAck(id,m.item,'file-revision',items.length>1),sha256:m.sha256,sizeBytes:m.sizeBytes}));return;}
     res.setHeader('Content-Type', 'application/json');
-    if(req.url?.includes('/read-requests/')){readReplies.push(body);reads.length=0;res.end('{}');}
-    else if (req.url?.endsWith('/items/batch')) { res.statusCode = 404; res.end('{}'); }
+    if (req.url?.endsWith('/items/batch')) { res.statusCode = 404; res.end('{}'); }
     else if (req.method === 'POST') { id = body.id; registered.push(body); res.end(JSON.stringify(body)); }
     else if (req.method === 'PATCH') res.end(JSON.stringify({ ...body, id }));
     else { items.push(body); if (dropNext) { dropNext = false; res.destroy(); return; } res.end(JSON.stringify(sourceAck(id,body,body.kind==='file'?'file-revision':'source-item',items.length>1))); }
   });
   servers.push(server); await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-  return { url: 'http://127.0.0.1:' + (server.address() as { port: number }).port, items, registered, reads, readReplies, loseNextAck: () => { dropNext = true; } };
+  return { url: 'http://127.0.0.1:' + (server.address() as { port: number }).port, items, registered, loseNextAck: () => { dropNext = true; } };
 }
 async function manager(url: string, token = 'synthetic-source-token') {
   const value = new LocalSourceManager(join(directory, 'private-state'), { serverUrl: url, token, deviceId: 'synthetic-device' }, '/must-not-be-invoked-calendar-helper');
@@ -150,10 +148,6 @@ it('flushes durable pending source versions while watcher scans are still runnin
   expect(server.items).toHaveLength(2);
 });
 
-
-it('does not serve a device-decoded file range after restart',async()=>{
- const server=await endpoint(),folder=join(directory,'catalog');await mkdir(folder);await writeFile(join(folder,'first.txt'),'Generated long evidence '.repeat(700));let value=await manager(server.url);await value.addFiles(folder,{...DEFAULT_SOURCE_OPTIONS,allowRead:true});await value.sync();await value.close();value=await manager(server.url);await value.sync();expect(server.readReplies).toEqual([]);
-});
 
 it('an existing snapshot source with no central upload consent stays held across restart and ordinary sync',async()=>{
  const server=await endpoint(true),path=join(directory,'generated-consent.txt');await writeFile(path,'Generated private input');

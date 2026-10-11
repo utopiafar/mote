@@ -3,17 +3,13 @@ import {mkdtemp,writeFile,rename,rm,realpath} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {scanSourceFiles} from '../src/source-files';
-import {DEFAULT_SOURCE_OPTIONS,type LocalSource} from '../src/source-types';
-import {readSourceEvidence} from '../src/file-evidence';
-import {randomUUID} from 'node:crypto';
-it('stable identity survives rename and device reads stay unavailable',async()=>{
+import {DEFAULT_SOURCE_OPTIONS} from '../src/source-types';
+it('stable identity survives rename and snapshots retain central read permission',async()=>{
  const root=await realpath(await mkdtemp(join(tmpdir(),'mote-index-')));try{
- const path=join(root,'one.txt'),text='Generated evidence '.repeat(1000);await writeFile(path,text);const locations=new Map<string,string>();const options={...DEFAULT_SOURCE_OPTIONS,allowRead:true};
- const first=(await scanSourceFiles(root,options,undefined,undefined,locations)).items[0];expect(first.document?.fileIndex?.status).toBe('pending');expect(first.text.length).toBe(0);expect(first.document?.fileIndex?.maxIndexCharacters).toBe(100000);
- await rename(path,join(root,'two.txt'));const second=(await scanSourceFiles(root,options,undefined,undefined,locations)).items[0];expect(second.externalId).toBe(first.externalId);
- const source:LocalSource={...options,id:'generated-source',deviceId:'fixture',name:'Generated',kind:'local-files',platform:'macos',enabled:true,path:root};const request={id:randomUUID(),sourceId:source.id,externalId:second.externalId,revision:'r1',contentVersion:second.document!.fileIndex!.contentVersion,offset:9000,length:100};
- expect(await readSourceEvidence(source,request,locations)).toMatchObject({status:'unavailable',text:''});
- expect((await readSourceEvidence({...source,allowRead:false},request,locations)).status).toBe('denied');await writeFile(join(root,'two.txt'),'changed');expect((await readSourceEvidence(source,request,locations)).status).toBe('version_changed');
+ const path=join(root,'one.txt'),text='Generated evidence '.repeat(1000);await writeFile(path,text);const options={...DEFAULT_SOURCE_OPTIONS,allowRead:true};
+ const first=(await scanSourceFiles(root,options)).items[0];expect(first.document?.fileIndex).toMatchObject({status:'pending',allowRead:true,maxIndexCharacters:100000});expect(first.text).toBe('');
+ await rename(path,join(root,'two.txt'));const second=(await scanSourceFiles(root,options)).items[0];expect(second.externalId).toBe(first.externalId);expect(second.document?.fileIndex?.contentVersion).toBe(first.document?.fileIndex?.contentVersion);
+ const readDisabled=(await scanSourceFiles(root,{...options,allowRead:false})).items[0];expect(readDisabled.document?.fileIndex?.allowRead).toBe(false);expect(readDisabled.localOriginalBase64).toBe(Buffer.from(text).toString('base64'));
  }finally{await rm(root,{recursive:true,force:true});}
 });
 
@@ -39,7 +35,7 @@ it('a large snapshot in a directory advances its checkpoint and never loses the 
   const options={...DEFAULT_SOURCE_OPTIONS,extensions:['.pdf'],retention:'snapshot' as const,centralProcessingConsent:true};
   const first=await scanSourceFiles(root,options,undefined,join(state,'source.atime.json'));expect(first.items).toHaveLength(1);expect(first.complete).toBe(false);
   expect(first.items[0].localOriginal?.sizeBytes).toBe(17*1024*1024);
-  const second=await scanSourceFiles(root,options,undefined,join(state,'source.atime.json'),undefined,first.checkpoint);
+  const second=await scanSourceFiles(root,options,undefined,join(state,'source.atime.json'),first.checkpoint);
   expect(second.items).toHaveLength(1);expect(second.items[0].title).not.toBe(first.items[0].title);expect(second.complete).toBe(true);
  }finally{await rm(root,{recursive:true,force:true});await rm(state,{recursive:true,force:true});}
 });

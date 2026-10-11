@@ -31,6 +31,10 @@ completes the endpoint-processing removal. Already scheduled workers from the
 retired local parser are not an upgrade exception. Current source upload workers,
 pending manifests and byte/ACK recovery remain supported.
 
+The [Central file evidence decision](adr-central-file-evidence.md) removes the
+remaining device read-request queue and unused Desktop local read chain. Current
+Central retained-text expansion and excerpt dependency links remain supported.
+
 Question requests use DelegatedQueryRuns and the durable delegation journal. No callback closure can substitute for a missing journal. Completed plans and model children resume through their existing identities; an invalid proposal wait is not synthesized or repaired. A current product-owned proposal must be handed to its product before execution can be awaited.
 
 Automatic Memory receipt authorization remains continuous. `extraction.enabled` accepts only `true`; source configuration has no `memory` boolean. Separate processing lanes and integration/insight/working controls retain their current meanings. Privacy withdrawal and missing authorization still prevent model work.

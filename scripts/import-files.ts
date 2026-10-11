@@ -66,7 +66,7 @@ try {
     await engine.ensurePolicy(policy);await engine.ensureAdapterVersion(2);
   }
   async function scan(): Promise<void> {
-    const result = await scanSourceFiles(root, options, controller.signal, request ? statePath + '.atime.json' : undefined, undefined, engine?.fileCheckpoint());
+    const result = await scanSourceFiles(root, options, controller.signal, request ? statePath + '.atime.json' : undefined, engine?.fileCheckpoint());
     let count = result.items.length;
     if (request && engine) {
       const prepare = async () => {

@@ -255,7 +255,7 @@ it('the production adapter streams a greater-than-cache event through durable tu
  const state=join(root,'product-state.json');let engine=new SourceSync(state);await engine.initialize();let turns=0;
  try{
   while(true){
-   const scan=await adapters.scan({source,signal:new AbortController().signal,checkpoint:engine.checkpoint(),priorityPaths:[],fileLocations:new Map(),stateDirectory:root,helperPath:'/never-run-helper',scope:{start:'2026-01-01',end:'2026-12-31'}});
+   const scan=await adapters.scan({source,signal:new AbortController().signal,checkpoint:engine.checkpoint(),priorityPaths:[],stateDirectory:root,helperPath:'/never-run-helper',scope:{start:'2026-01-01',end:'2026-12-31'}});
    expect(scan.items.length).toBeLessThanOrEqual(200);expect(scan.skipped).toBe(0);await engine.stage(scan,false);expect(engine.status().pending).toBeLessThanOrEqual(200);
    if(turns++===0){await expect(engine.flush(source,request)).rejects.toThrow();const pending=JSON.stringify(engine.pendingContent());expect(engine.status().pending).toBeGreaterThan(0);engine=new SourceSync(state);await engine.initialize();expect(JSON.stringify(engine.pendingContent())).toBe(pending);await engine.flush(source,request);engine=new SourceSync(state);await engine.initialize();}
    else await engine.flush(source,request);
@@ -269,7 +269,7 @@ it('the production adapter streams a greater-than-cache event through durable tu
 it('production worker cancellation preserves the durable cursor and leaves the same lane available',async()=>{
  const path=join(root,'cancel-product.jsonl');await writeFile(path,line(codex('Committed dialogue')));
  const adapter=builtInSourceAdapters(),source={...DEFAULT_SOURCE_OPTIONS,id:'generated-cancel',name:'Generated',kind:'coding-agent',agent:'codex' as const,path:root,deviceId:'generated-device',platform:'macos' as const,enabled:true};
- const context={source,signal:new AbortController().signal,priorityPaths:[],fileLocations:new Map<string,string>(),stateDirectory:root,helperPath:'/never-run-helper',scope:{start:'2026-01-01',end:'2026-12-31'}};
+ const context={source,signal:new AbortController().signal,priorityPaths:[],stateDirectory:root,helperPath:'/never-run-helper',scope:{start:'2026-01-01',end:'2026-12-31'}};
  const engine=new SourceSync(join(root,'cancel-product-state.json'));await engine.initialize();await engine.stage(await adapter.scan(context),false);const before=engine.checkpoint();
  await appendFile(path,line({type:'response_item',payload:{type:'function_call_output',output:'Generated '.repeat(7000000)}}));
  const controller=new AbortController(),pending=adapter.scan({...context,signal:controller.signal,checkpoint:before}),timer=setTimeout(()=>controller.abort(),10);

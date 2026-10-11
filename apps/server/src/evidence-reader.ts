@@ -8,7 +8,7 @@ import {MemoryStore,memoryEvidenceFingerprint} from './memory.js';
 import type {SourceStore} from './sources.js';
 import type {FileStore} from './files.js';
 import type {Indexer} from './indexer.js';
-import type {FileEvidenceRequests} from './file-evidence.js';
+import type {FileEvidence} from './file-evidence.js';
 import type {ServerDiagnostics} from './diagnostics.js';
 import {materialId,type MaterialStore,type MaterialMember,type MaterialRecord} from './materials.js';
 import {contextIndex} from './context-index.js';
@@ -42,7 +42,7 @@ export function withinEvidenceScope(record:CaptureRecord,scope:Range={}) {
 export class EvidenceReader {
   readonly memories:MemoryStore;
   private readonly archivedFiles:ArchivedFileStore;
-  constructor(readonly store:Store,readonly sources:SourceStore,readonly files?:FileStore,private readonly indexer?:Indexer,private readonly fileEvidence?:FileEvidenceRequests,private readonly materials?:MaterialStore,private readonly sourcePipelines?:SourcePipelineRuntime,private readonly sourceItemRecipes?:SourceItemRecipeCatalog,private readonly materialMemoryReady?:(ref:string)=>boolean){
+  constructor(readonly store:Store,readonly sources:SourceStore,readonly files?:FileStore,private readonly indexer?:Indexer,private readonly fileEvidence?:FileEvidence,private readonly materials?:MaterialStore,private readonly sourcePipelines?:SourcePipelineRuntime,private readonly sourceItemRecipes?:SourceItemRecipeCatalog,private readonly materialMemoryReady?:(ref:string)=>boolean){
     this.archivedFiles=new ArchivedFileStore(store);
     // Memory dependencies must use the canonical Material anchor. The query
     // projection below decorates it with source metadata for display and must
@@ -222,7 +222,7 @@ export class EvidenceReader {
     const id=evidenceRefId(args.id,'capture');
     if(!id||!this.fileEvidence||!this.evidenceById([id],args).length)return {status:'unavailable'};
     const result=await this.fileEvidence.read(id,args.offset,args.length);
-    // Recheck after asynchronous Shadow reads; removal must not disclose a late response.
+    // Recheck after the asynchronous excerpt write; removal must not disclose a late response.
     if(!this.evidenceById([id],args).length)return {status:'unavailable'};
     return result.record?{status:'ready',record:this.context([result.record])[0]}:result;
   }

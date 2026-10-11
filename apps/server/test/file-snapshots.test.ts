@@ -8,7 +8,7 @@ import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {FileProcessing} from '../src/file-processing.js';
-import {FileEvidenceRequests} from '../src/file-evidence.js';
+import {FileEvidence} from '../src/file-evidence.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {TRANSCRIPT_OUTPUT} from '../src/file-recipes.js';
 import {MaterialStore,materialId} from '../src/materials.js';
@@ -25,7 +25,7 @@ test('central snapshot extraction ignores legacy client caps, removes raw bytes,
  await processing.tick();assert.equal(files.detail(ack.id).job.state,'succeeded');assert.equal(files.chunks(ack.id).map(c=>c.ocrText).join(''),bytes.toString());assert.equal(files.detail(ack.id).item.document?.fileIndex?.coverage,'full');assert.equal(store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_inputs').get()!.n,0);assert.equal(store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_text').get()!.n,0);assert.throws(()=>[...files.processingBytes(ack.id)],{statusCode:410});assert.throws(()=>store.assets.get(sha256(bytes)),{statusCode:404});
 });
 test('explicit allowRead permits central text ranges and revision/source fences revoke the grant',async t=>{
- const {files,store,sources}=fixture(t),text='Generated '+'x'.repeat(9000)+'TAIL EVIDENCE',ack=await upload(files,Buffer.from(text),true),processing=new FileProcessing(files);t.after(()=>processing.close());await processing.tick();const requests=new FileEvidenceRequests(sources);
+ const {files,store,sources}=fixture(t),text='Generated '+'x'.repeat(9000)+'TAIL EVIDENCE',ack=await upload(files,Buffer.from(text),true),processing=new FileProcessing(files);t.after(()=>processing.close());await processing.tick();const requests=new FileEvidence(sources);
  assert.equal(files.search({query:'TAIL'}).length,1);const full=store.assets.read(String(store.db.prepare('SELECT object_hash FROM file_snapshot_text WHERE capture_id=?').get(ack.id)!.object_hash)).toString();const result:any=await requests.read(ack.id,full.indexOf('TAIL'),13);assert.equal(result.status,'ready');assert.equal(result.record.ocrText,'TAIL EVIDENCE');assert.throws(()=>[...files.bytes(ack.id)],{statusCode:404});sources.update('fixture',{enabled:false});await assert.rejects(requests.read(ack.id,0,10),{statusCode:409});files.sweep();assert.equal(store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_text').get()!.n,0);
 });
 test('generated audio is interpreted by the central provider, and cancellation destroys transient input',async t=>{

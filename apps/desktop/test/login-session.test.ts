@@ -42,13 +42,21 @@ it('keeps exact pending source revisions after an app-only login restart and sam
  const root=await mkdtemp(join(tmpdir(),'mote-login-source-')),config={...defaultConfig(),token:'generated-session-token'.repeat(3),authSessionOnly:true,syncMode:'manual' as const};
  const store=new ConfigStore(root,{available:()=>true,encrypt:v=>Buffer.from(v),decrypt:v=>v.toString()});
  let first:InstanceType<typeof LocalSourceManager>|undefined,second:InstanceType<typeof LocalSourceManager>|undefined;
- vi.stubGlobal('fetch',vi.fn(async()=>{throw Error('Generated offline node');}));
+ const fetcher=vi.fn(async()=>{throw Error('Generated offline node');});vi.stubGlobal('fetch',fetcher);
  try{
-  const path=join(root,'generated.md');await writeFile(path,'Generated pending evidence; no personal data.');
-  first=new LocalSourceManager(join(root,'sources'),config,'/unused');await first.initialize();await first.addFiles(path,DEFAULT_SOURCE_OPTIONS);await first.sync();
-  expect(first.connectionActivity().pending).toBe(1);const revision=first.status()[0].source.id;await first.close();first=undefined;
+  const path=join(root,'generated.md'),bytes=Buffer.from('Generated pending evidence; no personal data.');await writeFile(path,bytes);
+  // The app's UploadManager owns network work; local source scans freeze revisions first.
+  first=new LocalSourceManager(join(root,'sources'),config,'/unused',true);await first.initialize();await first.addFiles(path,DEFAULT_SOURCE_OPTIONS);await first.sync();
+  expect(first.connectionActivity().pending).toBe(1);
+  const pending=JSON.parse(JSON.stringify(first.pendingContent()[0])) as ReturnType<typeof first.pendingContent>[number];
+  expect(pending.item.revision).toMatch(/^[a-f0-9]{64}$/);expect(pending.item.localOriginal).toBeDefined();
+  expect(await readFile(join(pending.item.localOriginal!.directory,'0'))).toEqual(bytes);
+  await first.close();first=undefined;
   await store.save(config);const restarted=await store.load();expect(connectionToken(restarted)).toBeUndefined();
-  second=new LocalSourceManager(join(root,'sources'),restarted,'/unused');await second.initialize();expect(second.connectionActivity().pending).toBe(1);expect(second.status()[0].source.id).toBe(revision);
-  const next={...restarted,token:'generated-replacement'.repeat(3),authSignedOut:false};const release=await second.holdConnection();await second.prepareReauthorization(next);await second.changeConnection(next);release();expect(second.connectionActivity().pending).toBe(1);
+  second=new LocalSourceManager(join(root,'sources'),restarted,'/unused',true);await second.initialize();expect(second.connectionActivity().pending).toBe(1);expect(second.status()[0].source.id).toBe(pending.source.id);
+  expect(JSON.parse(JSON.stringify(second.pendingContent()[0]))).toEqual(pending);
+  const next={...restarted,token:'generated-replacement'.repeat(3),authSignedOut:false};const release=await second.holdConnection();await second.prepareReauthorization(next);await store.save(next);await second.changeConnection(next);release();await second.sync();
+  expect(second.connectionActivity().pending).toBe(1);expect(JSON.parse(JSON.stringify(second.pendingContent()[0]))).toEqual(pending);
+  expect(await readFile(join(pending.item.localOriginal!.directory,'0'))).toEqual(bytes);expect(fetcher).not.toHaveBeenCalled();
  }finally{await first?.close();await second?.close();vi.unstubAllGlobals();await rm(root,{recursive:true,force:true});}
 },30000);

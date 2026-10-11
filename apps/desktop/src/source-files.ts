@@ -12,7 +12,7 @@ import type { FileCatalogEntry, LocalFileCheckpoint, SourceOptions, SourceScan }
 import { redactSourceText } from './source-types';
 import { FileAccessMarkers } from './source-atime';
 import { sourceHash } from './source-sync';
-export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string, locations?: Map<string,string>, previous?: LocalFileCheckpoint, priorityPaths: readonly string[] = [], incrementalCheckpoint=false): Promise<SourceScan> {
+export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string, previous?: LocalFileCheckpoint, priorityPaths: readonly string[] = [], incrementalCheckpoint=false): Promise<SourceScan> {
   const accessMarkers = new FileAccessMarkers(accessMarkerPath); await accessMarkers.initialize();
   const selected = await lstat(selectedPath);
   if (selected.isSymbolicLink() || (!selected.isFile() && !selected.isDirectory())) throw new Error(moteText("所选来源必须是普通文件或目录，不能是符号链接"));
@@ -38,7 +38,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
     const extension = extname(candidate.path).toLowerCase();
     if (!options.extensions.includes(extension)) { result.skipped++; return 'ok'; }
     const externalId = 'file:' + sourceHash([candidate.fileId, candidate.birthtimeMs].join(':'));
-    result.seen.push(externalId); locations?.set(externalId, candidate.path);
+    result.seen.push(externalId);
     const maximumFile=accessMarkerPath?512*1024*1024:16*1024*1024;
     if (options.retention !== 'reference' && candidate.size > maximumFile) { result.skipped++; return 'ok'; }
     if (result.items.length >= 2000 || options.retention !== 'reference' && result.items.length>0 && totalBytes + candidate.size > 16 * 1024 * 1024) return 'stop';
