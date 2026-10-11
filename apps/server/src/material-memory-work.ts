@@ -26,10 +26,10 @@ export class MaterialMemoryWork {
   private planning=false;
   private dormantCursor:[string,string]=['',''];
   readonly inputs:MemoryInputAuthorization;
-  constructor(private readonly store:Store,private readonly materials:MaterialStore,private readonly now=Date.now,private readonly automaticEnabled=()=>true,private readonly recipes?:MemoryRecipeSettings){
+  constructor(private readonly store:Store,private readonly materials:MaterialStore,private readonly now=Date.now,private readonly automaticEnabled=()=>true,private readonly recipes?:MemoryRecipeSettings,private readonly newInputAdmission=automaticEnabled){
     const priorContextChanged=materials.onContextChanged;
     materials.onContextChanged=(id,cause)=>{priorContextChanged?.(id,cause);this.withdraw(id);};
-    this.inputs=new MemoryInputAuthorization(store,automaticEnabled,now,recipes);
+    this.inputs=new MemoryInputAuthorization(store,newInputAdmission,now,recipes);
     const db=store.db;
     this.transaction(()=>{
     db.exec('CREATE TABLE IF NOT EXISTS material_memory_revocations(job_id TEXT PRIMARY KEY,material_id TEXT NOT NULL,revision TEXT NOT NULL)');

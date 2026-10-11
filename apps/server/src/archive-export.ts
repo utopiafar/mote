@@ -4,11 +4,14 @@ import {Store,StoreError} from './store.js';
 import {ArchivedFileStore} from './archived-files.js';
 import {FileStore} from './files.js';
 import {exportTar} from './file-export.js';
+import type {MemoryBindings} from './memory-bindings.js';
+import {exportBoundMemories} from './memory-provider-backup.js';
 
 /** Portable data export, deliberately excluding credentials, private settings and raw database pages. */
-export function registerArchiveExport(app:FastifyInstance,store:Store,files:FileStore,archivedFiles:ArchivedFileStore,maxBytes:number){
+export function registerArchiveExport(app:FastifyInstance,store:Store,files:FileStore,archivedFiles:ArchivedFileStore,maxBytes:number,memoryBindings?:MemoryBindings){
   app.get('/api/export-bundle',async(req,reply)=>{
     const {mode}=z.object({mode:z.enum(['metadata','data']).default('metadata')}).strict().parse(req.query);
+    const memories=memoryBindings?await exportBoundMemories(memoryBindings):undefined;
     const jsonTables=['captures','devices','memories','insights','conversations','archived_files','source_connections','todos'] as const;
     const estimate=jsonTables.reduce((total,table)=>total+Number(store.db.prepare(`SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM ${table}`).get()!.n),0);
     if(estimate>maxBytes)throw new StoreError('Metadata exceeds HTTP export limit; use offline backup',413);
@@ -20,6 +23,7 @@ export function registerArchiveExport(app:FastifyInstance,store:Store,files:File
     const imported=(store.db.prepare('SELECT json FROM archived_files ORDER BY id').all() as {json:string}[]).map(r=>JSON.parse(r.json));
     const attachments=store.db.prepare('SELECT capture_id,file_id FROM capture_files ORDER BY capture_id,file_id').all();
     const derived=Object.fromEntries(['devices','memories','insights','conversations','todos'].map(table=>[table,(store.db.prepare(`SELECT json FROM ${table} ORDER BY id`).all() as {json:string}[]).map(r=>JSON.parse(r.json))]));
+    if(memories)derived.memories=memories;
     add('metadata.json',Buffer.from(JSON.stringify({format:'mote-data-export',version:1,mode,exportedAt:new Date().toISOString(),captures,sources,...derived,importedFiles:imported,attachments,files:versions.map(r=>({captureId:r.capture_id,...JSON.parse(r.manifest)}))})));
     if(mode==='data'){
       const seen=new Set<string>();

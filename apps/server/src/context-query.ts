@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {sourceContentTime,formatEvidenceRef,parseArtifactRef,type CaptureRecord,type SourceConnection} from '@mote/shared';
 import type {FileStore} from './files.js';
 import {type MemoryStore,type Memory} from './memory.js';
-import {EvidenceReader,parseEvidenceRef} from './evidence-reader.js';
+import {EvidenceReader,parseEvidenceRef,type MemoryReadSnapshot} from './evidence-reader.js';
 import type {SourceStore} from './sources.js';
 import type {Store} from './store.js';
 import {StoreError,type Range} from './store.js';
@@ -249,6 +249,20 @@ export class ContextQuery {
   }
 
   read(refs:string[],offset=0,length=4000,scope:Range={}):ContextReadPage {
+    return this.readResolved(refs,offset,length,scope);
+  }
+
+  /** One request pins the same provider and immutable catalog for every ref. */
+  async readAsync(refs:string[],offset=0,length=4000,scope:Range={},snapshot?:MemoryReadSnapshot):Promise<ContextReadPage>{
+    const owned=snapshot?undefined:this.reader.memoryBindings?.retainSnapshot(),pin=snapshot??owned;
+    try{
+      const bodies=new Map<string,Memory|undefined>();
+      for(const ref of refs.slice(0,5))if(parseEvidenceRef(ref)?.kind==='memory')bodies.set(ref,await this.reader.memoryAsync(ref,scope,false,pin));
+      return this.readResolved(refs,offset,length,scope,bodies);
+    }finally{owned?.release();}
+  }
+
+  private readResolved(refs:string[],offset:number,length:number,scope:Range,memories?:Map<string,Memory|undefined>):ContextReadPage {
     const result:ContextReadItem[]=[];const missing:string[]=[];
     let remaining=12000;
     offset=Math.max(0,Math.floor(offset));length=Math.max(1,Math.min(4000,Math.floor(length)));
@@ -269,7 +283,7 @@ export class ContextQuery {
       }
       const parsed=parseEvidenceRef(ref);if(!parsed){missing.push(ref);continue;}const raw=parsed.id;
       if(parsed.kind==='memory'){
-        try {const memory=this.reader.memory(ref,scope);if(!memory){missing.push(ref);continue;}const text=`${memory.title}\n\n${memory.statement}\n\nUncertainty: ${memory.uncertainty}`;const bounded=text.slice(offset,offset+take);remaining-=bounded.length;result.push({ref:formatEvidenceRef('memory',memory.id),id:memory.id,kind:'memory',text:bounded,textRange:{offset,total:text.length,nextOffset:offset+bounded.length<text.length?offset+bounded.length:null},title:memory.title,evidenceRefs:(memory.evidenceIds as string[]).map(id=>formatEvidenceRef('capture',id)),status:memory.status,applicability:memory.coding?.applicability??memory.admission?.scope});} catch {missing.push(ref);}continue;
+        const memory=memories?memories.get(ref):this.reader.memory(ref,scope);if(!memory){missing.push(ref);continue;}const text=`${memory.title}\n\n${memory.statement}\n\nUncertainty: ${memory.uncertainty}`;const bounded=text.slice(offset,offset+take);remaining-=bounded.length;result.push({ref:formatEvidenceRef('memory',memory.id),id:memory.id,kind:'memory',text:bounded,textRange:{offset,total:text.length,nextOffset:offset+bounded.length<text.length?offset+bounded.length:null},title:memory.title,evidenceRefs:(memory.evidenceIds as string[]).map(id=>formatEvidenceRef('capture',id)),status:memory.status,applicability:memory.coding?.applicability??memory.admission?.scope});continue;
       }
       const record=this.reader.evidence([ref],scope)[0];if(!record){missing.push(ref);continue;}
       const text=record.ocrText||record.windowTitle||'';const bounded=text.slice(offset,offset+take);remaining-=bounded.length;result.push({ref:formatEvidenceRef('capture',record.id),id:record.id,kind:kind(record),text:bounded,textRange:{offset,total:text.length,nextOffset:offset+bounded.length<text.length?offset+bounded.length:null},title:record.windowTitle||record.appName,origin:recordOrigin(record),evidenceRefs:[formatEvidenceRef('capture',record.id)]});
@@ -314,6 +328,41 @@ export class ContextQuery {
     if(raw.includeRecentSessions!==false)for(const session of this.sessionCards(base.recentRecords,raw)){base.recentSessions.push(session);if(JSON.stringify(base).length>max){base.recentSessions.pop();break;}}
     if(!total&&budgetStopped)throw new StoreError('Context response budget too small for one item',413);
     return base;
+  }
+
+
+  async contextAsync(raw:ContextQueryInput):Promise<ContextBundle> {
+    const snapshot=this.reader.memoryBindings?.retainSnapshot();try{
+    const {cursor:_,limit:_limit,maxCharacters:_max,...scope}=raw,hash=hashQuery(scope),max=Math.max(1000,Math.min(raw.maxCharacters??MAX_RESPONSE_CHARACTERS,MAX_RESPONSE_CHARACTERS));
+    const binding=snapshot?hashQuery({binding:snapshot.binding,catalog:snapshot.catalog,recordDigests:snapshot.recordDigests}):undefined;
+    type Position={kind:'context';hash:string;binding?:string;records?:string|null;memories?:string|null};
+    let position:Position={kind:'context',hash,...(binding?{binding}:{})};
+    if(raw.cursor){try{position=JSON.parse(Buffer.from(raw.cursor,'base64url').toString());if(position.kind!=='context'||position.hash!==hash)throw Error();if(position.binding!==binding)throw new StoreError('Memory binding or catalog changed; restart this context bundle',409);}catch(error){if(error instanceof StoreError)throw error;throw new StoreError('Invalid context cursor');}}
+    const base:ContextBundle={stableMemories:[],recentSessions:[],recentRecords:[],coverage:pageCoverage(0,0,0,[],this.store.stats() as {lastCaptureAt?:string|null},null,false),nextCursor:null,truncated:false};
+    const next:Position={...position};let total=0,budgetStopped=false;
+    // Each item advances only its own channel. No hidden item can be skipped by a presentation trim.
+    for(const channel of ['memories','records'] as const){
+      if(next[channel]===null||channel==='memories'&&raw.includeMemories===false){next[channel]=null;continue;}
+      for(let n=0;n<boundLimit(raw.limit)&&total<boundLimit(raw.limit);n++){
+        let item:ContextCard|undefined,cursor:string|null;
+        if(channel==='records'){
+          const page=this.search({...raw,cursor:next.records??undefined,limit:1,maxCharacters:max});item=page.items[0];cursor=page.nextCursor;base.coverage.recordsScanned+=page.coverage.recordsScanned;
+        }else{
+          const page=await this.reader.memoryPageAsync({...raw,cursor:next.memories??undefined,status:'published',layer:'memory',includeStale:false,level:'detail',limit:1},false,snapshot);item=page.items[0]?cardFromMemory(page.items[0]):undefined;cursor=page.nextCursor;base.coverage.memoriesScanned+=page.items.length;
+        }
+        if(!item){next[channel]=cursor;if(!cursor)break;continue;}
+        const items=channel==='records'?base.recentRecords:base.stableMemories;items.push(item);
+        const candidate={...next,[channel]:cursor};base.nextCursor=Buffer.from(JSON.stringify(candidate)).toString('base64url');
+        if(JSON.stringify(base).length>max-32){items.pop();budgetStopped=true;break;}
+        next[channel]=cursor;total++;if(!cursor)break;
+      }
+    }
+    base.nextCursor=next.records!==null||next.memories!==null?Buffer.from(JSON.stringify(next)).toString('base64url'):null;
+    base.truncated=Boolean(base.nextCursor);base.coverage.recordsReturned=base.recentRecords.length;base.coverage.memoriesReturned=base.stableMemories.length;base.coverage.truncated=base.truncated;
+    if(raw.includeRecentSessions!==false)for(const session of this.sessionCards(base.recentRecords,raw)){base.recentSessions.push(session);if(JSON.stringify(base).length>max){base.recentSessions.pop();break;}}
+    if(!total&&budgetStopped)throw new StoreError('Context response budget too small for one item',413);
+    return base;
+    }finally{snapshot?.release();}
   }
 
   private sessionCards(records:ContextCard[],scope:ContextQueryInput):ContextCard[] {

@@ -141,6 +141,7 @@ internal class CentralContent(
             applyAccess(selected)
             if (client == null && browserLoginId != null && server.isNotBlank()) pollBrowserLogin()
             deliverPendingResult()
+            if (client != null) screens?.resume()
         }
     }
     private fun applyAccess(selected: CentralAccess.Selection) {
@@ -193,7 +194,7 @@ internal class CentralContent(
         if (remember && next != page) pageHistory.add(page)
         page = next; revision++; pending.clear(); handler.removeCallbacks(refreshRun); screens?.close(); body.removeAllViews()
         navigation?.select(MoteNavigation.centralTab(next)); updateCollectionBar(); updateBackButton()
-        title.text = CentralScreens.pages.firstOrNull { it.first == next }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("中央资料库")
+        title.text = CentralScreens.pages.firstOrNull { it.first == if (next == "extensions") "plugins" else next }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("中央资料库")
         if (client == null) { login(); return }
         screens?.show(next)
     }
@@ -369,7 +370,7 @@ internal class CentralContent(
         val authenticated = client != null
         val inputs = mutableListOf<View>()
         fun lock(view: View) {
-            if (view is EditText || view is Spinner || view is CheckBox) { if (view.isEnabled) { inputs.add(view); view.isEnabled = false } }
+            if (view is EditText || view is Spinner || view is CompoundButton) { if (view.isEnabled) { inputs.add(view); view.isEnabled = false } }
             if (view is android.view.ViewGroup) for (i in 0 until view.childCount) lock(view.getChildAt(i))
         }; lock(body)
         task.start(label, { if (foreground == foregroundRevision && resumed) status.text = it }, { progress ->

@@ -43,7 +43,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(mode.startsWith('import')){if(m.params.dynamicTools.length||m.params.sandbox!=='workspace-write')process.exit(2);}
   else if(m.params.environments.length||m.params.dynamicTools.some(t=>!${JSON.stringify(codexContextTools.map(t=>t.name))}.includes(t.name)))process.exit(2);
   const tierResponses={'tier-mismatch':null,'tier-priority':'priority','tier-default':'default','tier-unknown':'ultrafast'};
-  send({id:m.id,result:{thread:{id:'thread-fixture'},serviceTier:Object.hasOwn(tierResponses,mode)?tierResponses[mode]:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:mode.startsWith('import')?'workspaceWrite':'readOnly'}}});
+  send({id:m.id,result:{thread:{id:'thread-fixture',model:mode==='thread-model-mismatch'?'substituted':null},...(mode==='model-missing'?{}:{model:mode==='model-mismatch'?'substituted':m.params.model}),serviceTier:Object.hasOwn(tierResponses,mode)?tierResponses[mode]:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:mode.startsWith('import')?'workspaceWrite':'readOnly'}}});
  }else if(m.method==='turn/start'){
   turns++;
   if(['max','medium'].includes(mode)&&m.params.effort!==mode)process.exit(4);
@@ -93,6 +93,14 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
 });
 `,{mode:0o700});env(t,'MOTE_CODEX_BIN',bin);return root;
 }
+test('Codex rejects a substituted or unacknowledged configured model before inference',async t=>{
+ for(const mode of ['model-mismatch','model-missing','thread-model-mismatch'])await t.test(mode,async t=>{
+  const root=await fake(t,mode),agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',agentTimeoutMs:5000});t.after(()=>agent.close());
+  await assert.rejects(agent.query({question:'Generated exact-model fixture'}),AgentProviderError);
+  const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(rpc.filter(message=>message.method==='turn/start').length,0);
+ });
+});
 test('Codex speed selection reaches the isolated runtime without changing reasoning or tools',async t=>{
   for(const serviceTier of [undefined,'default','fast'])await t.test(String(serviceTier),async t=>{
     const root=await fake(t),agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',reasoningEffort:'max',serviceTier,agentTimeoutMs:5000});t.after(()=>agent.close());

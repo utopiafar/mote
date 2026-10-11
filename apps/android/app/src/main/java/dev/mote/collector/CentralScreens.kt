@@ -41,7 +41,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     var importInstruction = ""
     private var player: android.media.MediaPlayer? = null
     @Volatile private var audioFile: File? = null
-    fun close() { player?.release(); player = null; audioFile?.delete(); audioFile = null }
+    fun close() { player?.release(); player = null; audioFile?.delete(); audioFile = null; admin.close() }
     private var askState = JSONObject()
     private val askWriter = LatestWriter<JSONObject>(CentralDraftWrites.executor) {
         runCatching { askStore.write(it) }.onSuccess { draftFailure.set(null) }.onFailure(draftFailure::set)
@@ -79,7 +79,9 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     }
     fun back(): Boolean = detailBack?.let { detailBack = null; it(); true } ?: false
     fun setBack(action: () -> Unit) { ui.enterDetail(); detailBack = action; question = null; messages = null; close() }
-    fun clearPrivateState() { askState = JSONObject(); question = null; messages = null; noteText = null; noteMood = null; body.removeAllViews() }
+    fun clearBack() { detailBack = null }
+    fun resume() { if (currentPage in setOf("plugins", "extensions")) admin.resume() }
+    fun clearPrivateState() { askState = JSONObject(); question = null; messages = null; noteText = null; noteMood = null; admin.clearPrivateState(); body.removeAllViews() }
     fun refresh() { ui.navigate(currentPage) }
     fun insightRequest(prompt: String): JSONObject = CentralDraftWrites.barrier {
         val saved = insightStore.read()
@@ -504,7 +506,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             "materials" to "正式资料", "coding" to "Coding Agent 上传", "timeline" to "片段", "files" to "文件与录音",
             "memories" to "记忆", "insights" to "洞察", "actions" to "行动", "agentView" to "Agent 视角",
             "sources" to "来源", "devices" to "设备", "connections" to "对外授权", "lark" to "飞书",
-            "statistics" to "运行状态", "processing" to "处理任务", "extensions" to "扩展能力", "settings" to "模型与服务",
+            "statistics" to "运行状态", "processing" to "处理任务", "plugins" to "插件", "settings" to "模型与服务",
             "usage" to "用量与费用", "vault" to "存储与索引", "developer" to "诊断与更新", "about" to "设置", "imports" to "导入", "help" to "帮助与反馈"
         )
     }

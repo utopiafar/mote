@@ -15,7 +15,7 @@ object MoteNavigation {
         MoteNavigationGroup("内容", libraryPages),
         MoteNavigationGroup("首页", listOf("overview", "actions")),
         MoteNavigationGroup("连接与授权", listOf("devices", "connections", "lark")),
-        MoteNavigationGroup("管理与维护", listOf("statistics", "processing", "extensions", "settings", "usage", "vault", "developer", "about", "help"))
+        MoteNavigationGroup("管理与维护", listOf("statistics", "processing", "plugins", "settings", "usage", "vault", "developer", "about", "help"))
     )
     fun centralTab(page: String): MotePrimaryTab = when (page) {
         "ask" -> MotePrimaryTab.ASK
@@ -32,6 +32,7 @@ object MoteNavigation {
     fun centralParent(page: String): String? = when {
         page in libraryPages -> "archive".takeUnless { page == it }
         page == "actions" -> "overview"
+        page == "extensions" -> "about"
         page in groups.drop(2).flatMap { it.pages } -> "about".takeUnless { page == it }
         else -> null
     }

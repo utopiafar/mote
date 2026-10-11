@@ -52,3 +52,31 @@ test('waiting recipes retain result access, processing links and pause/cancel co
   await render({...blocked,status:'paused'});assert.doesNotMatch(d.body.textContent!,/重新检查未完成方案/);await click('继续整理');assert.equal(actions.at(-1),'resume');
   await render({...job,status:'cancelled'});assert.doesNotMatch(d.body.textContent!,/重新检查未完成方案|取消未完成方案|继续整理/);await click('查看记忆');assert.equal(viewed,2);
 });
+
+test('Memory deletion retains accurate external clearing status after the card disappears and clears it on node change',async t=>{
+ const {root,d}=await fixture(t);
+ const memory={id:'generated-deletion',title:'Generated retained body',statement:'Generated fixture statement',uncertainty:'Fixture only',status:'published',createdAt:'2026-10-12T00:00:00Z',evidenceIds:[],evidence:[]};
+ let deleted=false,receipt={deleted:1,externalErase:'pending',physicalEraseVerified:false};
+ const api={request:async(path:string,init?:RequestInit)=>{
+  if(init?.method==='DELETE'){assert.equal(path,'/api/memories/'+memory.id);deleted=true;return receipt;}
+  if(path==='/api/model-settings')return modelView();
+  if(path==='/api/memory-recipes')return {items:[]};
+  if(path.startsWith('/api/memories?'))return {items:deleted?[]:[memory],nextCursor:null};
+  if(path.startsWith('/api/memories/'+memory.id))return memory;
+  if(path==='/api/memory-jobs')return {items:[]};
+  if(path==='/api/memory-settings')return {settings:{consolidation:{maxItems:30}},extensions:[]};
+  if(path==='/api/execution-settings')return {queues:{agents:{active:0,waiting:0,limit:1},llm:{active:0,waiting:0,limit:1}}};
+  if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};
+  assert.fail('Unexpected request '+path);
+ },setAgentTimeout:()=>{}} as Api;
+ const render=(owner=api)=>act(async()=>root.render(React.createElement(Memories,{api:owner,range:{},onOpen:()=>{}})));
+ const click=(text:string)=>act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent===text||button.querySelector('strong')?.textContent===text)!.click());
+ await render();await click(memory.title);await click('删除记忆');await click('确认删除');
+ assert.match(d.querySelector('.notice[role=status]')!.textContent!,/外部清除仍待确认/);
+ assert.equal(d.querySelectorAll('.workspace-select').length,0);
+ assert.doesNotMatch(d.querySelector('.notice[role=status]')!.textContent!,/已物理擦除/);
+ const other={...api,request:api.request.bind(api)} as Api;await render(other);
+ assert.equal(d.querySelector('.notice[role=status]'),null,'a previous node receipt does not appear under a new connection');
+ deleted=false;receipt={deleted:1,externalErase:'acknowledged',physicalEraseVerified:false};await render(api);await click(memory.title);await click('删除记忆');await click('确认删除');
+ assert.match(d.querySelector('.notice[role=status]')!.textContent!,/已确认移除当前记录，物理擦除尚未核验/);
+});

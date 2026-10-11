@@ -36,3 +36,12 @@ export function contextIndex(store:Store,memories:Pick<MemoryStore,'page'>,sourc
 
  return {path,entries,nextCursor,coverage:{scope:'bounded_candidates',originals:'Not searched by this overview. Use search_context for exact or fresh facts; missing candidates do not establish absence.'}};
 }
+
+/** Resolves replaceable retrieval before rendering the same directory UI. */
+export async function contextIndexAsync(store:Store,memories:{page:(args:Parameters<MemoryStore['page']>[0]&Range)=>Promise<ReturnType<MemoryStore['page']>>},sources:SourceStore,args:Range&{path?:string;query?:string}={},segments:Store['archive']['page']=scope=>store.archive.page(scope)){
+ const path=args.path??'/context';
+ if(!['/context','/context/memory','/context/episodes','/context/sources'].includes(path))throw new StoreError('Unknown context directory');
+ if((path!=='/context'&&path!=='/context/memory')||path==='/context'&&!args.query)return contextIndex(store,{page:()=>({items:[],nextCursor:null})},sources,args,segments);
+ const page=await memories.page({...args,layer:'memory',limit:Math.min(args.limit??6,12)});
+ return contextIndex(store,{page:()=>page},sources,args,segments);
+}

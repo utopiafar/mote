@@ -21,9 +21,9 @@ import {EvidenceExposurePolicy} from './evidence-exposure.js';
 import type {ManualMemoryInputPlanRequest} from './memory-input-plans.js';
 export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSettings,memoryRecipeSettings,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{memoryIntegrationSettings:MemoryIntegrationSettings;memoryRecipeSettings:MemoryRecipeSettings;store:Store;files:FileStore;evidenceReader:EvidenceReader;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult)=>Promise<QueryResult>}){
  const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
-  app.post('/api/memories/:id/publish',async req=>{const body=z.object({version:z.number().int().positive().optional()}).strict().parse(req.body??{});return memories.publish((req.params as {id:string}).id,body.version);});
-  app.post('/api/memories/:id/correct',async req=>memories.correct((req.params as {id:string}).id,req.body));
-  app.delete('/api/memories/:id',async req=>memories.delete((req.params as {id:string}).id));
+  app.post('/api/memories/:id/publish',async req=>{const body=z.object({version:z.number().int().positive().optional()}).strict().parse(req.body??{});return memoryPipeline.publication?memoryPipeline.publication.withOwnerWork(()=>memoryPipeline.publication!.publish((req.params as {id:string}).id,body.version)):memories.publish((req.params as {id:string}).id,body.version);});
+  app.post('/api/memories/:id/correct',async req=>memoryPipeline.publication?memoryPipeline.publication.withOwnerWork(()=>memoryPipeline.publication!.correct((req.params as {id:string}).id,req.body)):memories.correct((req.params as {id:string}).id,req.body));
+  app.delete('/api/memories/:id',async req=>memoryPipeline.publication?memoryPipeline.publication.delete((req.params as {id:string}).id):memories.delete((req.params as {id:string}).id));
   app.get('/api/memory-settings',async()=>lifecycle.view());
   app.put('/api/memory-settings',{bodyLimit:8192},async req=>lifecycle.configure(req.body));
   app.post('/api/memory-settings/extraction/:id/retry',async(req,reply)=>{
@@ -60,6 +60,7 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
   }).strict().parse(req.query)));
   app.get('/api/memory-jobs/:id',async req=>memoryPipeline.get(jobId(req.params)));
   app.post('/api/memory-jobs',async(req,reply)=>{
+    memoryPipeline.assertNewManualWork();
     const scope=z.object({...scopeFields,contextTime:z.string().datetime({offset:true}).optional(),recipes:z.array(memoryStrategyRefSchema).min(1).max(9).optional(),modelProfileId:modelProfileIdSchema.optional(),evidenceIds:z.array(z.string().uuid()).min(1).max(20000).optional()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body??{});
     const profile=modelSettings.select('memory',scope.modelProfileId);
     const policy=new EvidenceExposurePolicy();
@@ -106,6 +107,9 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
   app.post('/api/memory-jobs/:id/cancel',async req=>memoryPipeline.cancel(jobId(req.params)));
   app.post('/api/memory-jobs/:id/retry',async(req,reply)=>{const id=jobId(req.params);memoryPipeline.get(id);void memoryPipeline.retry(id).catch(()=>{});return reply.code(202).send(memoryPipeline.get(id));});
   app.post('/api/memories/extract',async req=>{
+    const execute=async()=>{
+    memoryPipeline.assertNewManualWork();
+    const operationId='owner-extract:'+randomUUID();
     const {modelProfileId,...scope}=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional()}).strict().refine(validRange).parse(req.body??{}),profile=modelSettings.select('memory',modelProfileId);
     const selected=evidenceReader.memorySelection(scope,100,new EvidenceExposurePolicy());
     if(!selected.evidenceIds.length)throw new StoreError('No processed evidence in this range',409);
@@ -114,11 +118,19 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
     if(evidenceRanges.reduce((sum,range)=>sum+range.length,0)>100000)throw new StoreError('Use a Memory job for this larger range',413);
     const input:QueryInput={...scope,evidenceRanges,evidenceIds:selected.evidenceIds,modelProfileId:profile.id,modelOverride:profile.settings.model,skill:'memory-extraction',responseMode:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT};
     input.validateOutput=result=>{try{memoryPipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id),profile.id);memories.extract(result,profile.settings.model,{requireAdmission:true,validateOnly:true,expectedFingerprints});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
-    const draft=await query(input);
+    const context={phase:'extract' as const,opId:operationId,evidenceIds:selected.evidenceIds,assertAuthority:()=>memoryPipeline.assertAdmissibleEvidence(selected.evidenceIds,profile.id)};
+    const native=await memoryPipeline.engineDraft(input,context),draft=native??await query(input);
     memoryPipeline.assertAdmissibleEvidence(draft.citations.map(c=>c.id),profile.id);
-    memories.extract(draft,profile.settings.model,{requireAdmission:true,validateOnly:true,expectedFingerprints});
+    if(!native)memories.extract(draft,profile.settings.model,{requireAdmission:true,validateOnly:true,expectedFingerprints});
     const result=await reviewExtraction(input,draft);
-    return memoryPipeline.withAdmissibleEvidence(result.citations.map(c=>c.id),()=>
-      memories.extract(result,profile.settings.model,{requireAdmission:true,expectedFingerprints,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result)}),profile.id);
+    const options={requireAdmission:true,expectedFingerprints,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result)};
+    const assert=()=>memoryPipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id),profile.id);
+    assert();memoryPipeline.publication?.retainOutput(operationId,{result,reviewReceipt:memoryReviewReceipt(result)});
+    if(native&&memoryPipeline.publication?.retainedOutput(operationId))await memoryPipeline.settleEngineDraft(context);
+    const publication=await memoryPipeline.publication?.stageExtract(operationId,result,profile.settings.model,options,assert);
+    return memoryPipeline.withAdmissibleEvidence(result.citations.map(c=>c.id),()=>{
+      memoryPipeline.publication?.assert(publication,result);const saved=memories.extract(result,profile.settings.model,{...options,prepared:publication?.prepared});memoryPipeline.publication?.committed(publication);return saved;
+    },profile.id);
+    };return memoryPipeline.publication?memoryPipeline.publication.withOwnerWork(execute):execute();
   });
 }

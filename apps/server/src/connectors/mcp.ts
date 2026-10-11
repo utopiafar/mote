@@ -2,6 +2,7 @@ import {contextBundle} from '../context-bundle.js';
 import {MAX_CONTEXT_REF_LENGTH} from '../context-navigation.js';
 import {EvidenceReader} from '../evidence-reader.js';
 import {createHash,timingSafeEqual} from 'node:crypto';
+import {AsyncLocalStorage} from 'node:async_hooks';
 import {readFileSync} from 'node:fs';
 import {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
 import {StreamableHTTPServerTransport} from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -35,8 +36,12 @@ const contextPageShape={items:z.array(z.object(contextCardShape)),coverage:z.rec
 const readPageShape={items:z.array(z.record(z.unknown())),missingRefs:z.array(z.string()),truncated:z.boolean()};
 
 export function createMoteMcp(ctx:ConnectorContext,write=false,track?:<T>(work:Promise<T>)=>Promise<T>,authorize?:()=>void) {
+  const memoryContexts=new AsyncLocalStorage<object>();
+  const memoryRead=async(operation:()=>unknown)=>{
+    const context={};return memoryContexts.run(context,async()=>{ctx.evidenceReader?.retainMemorySnapshot(context);try{return await operation();}finally{ctx.evidenceReader?.releaseMemorySnapshot(context);}});
+  };
   const safe=(operation:()=>unknown)=>{const work=safeResult(()=>{authorize?.();return operation();});return track?track(work):work;};
-  const structuredSafe=(operation:()=>unknown,compatibility?:(value:any)=>unknown)=>{const work=structuredResult(()=>{authorize?.();return operation();},compatibility);return track?track(work):work;};
+  const structuredSafe=(operation:()=>unknown,compatibility?:(value:any)=>unknown)=>{const work=structuredResult(()=>{authorize?.();return memoryRead(operation);},compatibility);return track?track(work):work;};
   const server=new McpServer({name:'mote',version:serverVersion});
   if(write){
     server.registerTool('mote_put_item',{description:'Archive a new immutable source revision only within this credential’s configured source IDs. Does not modify external services or create sources.',inputSchema:{sourceId:z.string().max(128),item:sourceItemSchema},annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false}},async args=>safe(()=>{
@@ -50,7 +55,7 @@ export function createMoteMcp(ctx:ConnectorContext,write=false,track?:<T>(work:P
   const context=ctx.contextQuery??new ContextQuery(ctx.store,ctx.sources,ctx.files,reader);
   // MCP is an external model query surface. It has no trusted cross-request
   // grant context, so a known screenshot UUID never authorizes its original.
-  const query=reader.agent({diagnostics:new ServerDiagnostics({directory:ctx.config.dataDir,enabled:false})});
+  const query=reader.agent({diagnostics:new ServerDiagnostics({directory:ctx.config.dataDir,enabled:false}),currentGrantContext:()=>memoryContexts.getStore()});
   const queryPage=async(args:ContextQueryInput,mode:'browse'|'search'|'retrieve'='search')=>{
     let limit=Math.min(100,Math.max(1,args.limit??30));
     for(;;){
@@ -89,7 +94,7 @@ export function createMoteMcp(ctx:ConnectorContext,write=false,track?:<T>(work:P
   server.registerTool('mote_retrieve',{description:'Page query-visible evidence with a stable lexical cursor. Formal materials replace assembled ordinary source records.',inputSchema:contextFilter,annotations:readonly},async args=>structuredSafe(()=>queryPage(args,'retrieve')));
   server.registerTool('mote_read',{description:'Read bounded query-visible capture, Memory or derived artifact text. Known screenshot and Coding raw UUIDs are not disclosure grants.',inputSchema:{...contextScope,refs:z.array(z.string().min(1).max(MAX_CONTEXT_REF_LENGTH)).min(1).max(50),offset:z.number().int().min(0).max(100000).default(0),length:z.number().int().min(1).max(12000).default(4000)},outputSchema:readPageShape,annotations:readonly},async args=>structuredSafe(async()=>{
     const {refs,offset,length,query:_,limit:__,...scope}=args;
-    const page=context.read(refs,offset,length,scope),items:typeof page.items=[],missingRefs=[...page.missingRefs];
+    const page=await context.readAsync(refs,offset,length,scope,reader.memorySnapshot(memoryContexts.getStore())),items:typeof page.items=[],missingRefs=[...page.missingRefs];
     for(const item of page.items){
       let allowed=false;
       if(item.expansion)allowed=(await query.evidence({ids:item.expansion.refs.map(ref=>evidenceRefId(ref,'capture')).filter((id):id is string=>Boolean(id)),...scope})).length>0;

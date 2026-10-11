@@ -17,6 +17,10 @@ internal class CentralAdmin(private val screens: CentralScreens) {
     private val client get() = screens.client
     private fun enc(value: String) = CentralScreens.encode(value)
     private val library = CentralLibrary(screens)
+    private val plugins = CentralPlugins(screens) { extensions() }
+    fun close() = plugins.close()
+    fun clearPrivateState() = plugins.clearPrivateState()
+    fun resume() = plugins.resume()
 
     fun show(page: String) {
         ui.button(MoteI18n.text("刷新")) { screens.refresh() }
@@ -27,7 +31,7 @@ internal class CentralAdmin(private val screens: CentralScreens) {
             "settings" -> settings()
             "statistics" -> read("/api/storage-statistics")
             "processing" -> processing()
-            "extensions" -> extensions()
+            "plugins", "extensions" -> plugins.show()
             "usage" -> usage()
             "vault" -> vault()
             "developer" -> diagnostics()

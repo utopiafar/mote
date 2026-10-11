@@ -3,12 +3,13 @@ import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import type {MemoryLifecycle} from './memory-lifecycle.js';
-import type {MemoryPipeline} from './memory-pipeline.js';
+import {memoryEngineDraftPin,type MemoryPipeline,type MemoryEngineDraftContext,type MemoryEngineDraftPin} from './memory-pipeline.js';
 import {MemoryStore,MemoryOutputValidationError} from './memory.js';
 import {StoreError,sha256} from './store.js';
 import {MemoryIntegrationSettings,memoryIntegrationSelectionSchema} from './memory-integration-settings.js';
 import {MEMORY_CANDIDATE_OUTPUT_CONTRACT,memoryStrategyRefSchema} from './memory-strategy-contract.js';
 import {reviewMemory,memoryReviewReceipt} from './memory-review.js';
+import type {MemoryReviewReceipt} from './memory-schema.js';
 import {moteText} from '@mote/shared/i18n';
 
 const modelSchema=z.object({model:z.string(),configuration:z.object({owner:z.literal('models'),fingerprint:z.string(),revision:z.number(),profileId:z.string(),provider:z.string(),model:z.string()}).strict().optional()}).strict();
@@ -20,6 +21,7 @@ export class MemoryIntegrationSelectionError extends StoreError {
 
 export function requestMemoryIntegration(raw:unknown,{lifecycle,memories,pipeline}:{lifecycle:MemoryLifecycle;memories:MemoryStore;pipeline:MemoryPipeline}){
   const input=z.object({recipe:memoryStrategyRefSchema,inputs:z.array(z.object({id:z.string().uuid(),version:z.number().int().positive(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).min(1).max(50).refine(inputs=>new Set(inputs.map(item=>item.id)).size===inputs.length,'Duplicate Memory input')}).strict().parse(raw);
+  pipeline.assertNewManualWork();
   // The owner's selection and the executor's frozen input must describe the
   // same cards. Lock before reading, and hold the lock through journal admission.
   const db=memories.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
@@ -72,15 +74,44 @@ export function registerMemoryIntegration({lifecycle,memories,pipeline,settings,
       const validation={integration:binding,profile,tier:'consolidated' as const,relatedMemoryIds:candidates.map(m=>m.id),requireAdmission:true,expectedFingerprints:expected};
       const input:QueryInput={...(execution?{signal:execution.signal,traceContext:{operationId:execution.operationId,jobId:execution.jobId,phase:'extract'}}:{}),contextTime:window.contextTime,modelProfileId:state.model.configuration?.profileId,modelOverride:generationModel,skill:'memory-integration',responseMode:'memory-extraction',question:selected.integrate.prompt+'\n'+MEMORY_CANDIDATE_OUTPUT_CONTRACT+'\n'+contract};
       input.validateOutput=result=>{try{assertInputs();pipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id));memories.extract(result,generationModel,{...validation,validateOnly:true});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
-      const draft=await query(input);assertInputs();pipeline.assertAdmissibleEvidence(draft.citations.map(c=>c.id));memories.extract(draft,generationModel,{...validation,validateOnly:true});
-      const result=await reviewMemory(input,draft,query,{strategy:selected.review,taskInstructions:contract,deletions:memories.deletions,authorizeDeletionEvidence:ids=>pipeline.assertDeletionEvidenceAllowed(ids,state.model.configuration?.profileId)});
+      const operationId=`${execution?.operationId??window.id}:integration:${profile}`;
+      const retained=pipeline.publication?.retainedOutput<{result:QueryResult;reviewReceipt?:MemoryReviewReceipt;engineDraft?:MemoryEngineDraftPin}>(operationId);
+      let result:QueryResult,receipt:MemoryReviewReceipt|undefined;
+      let nativePin=retained?.engineDraft;
+      if(retained){
+        result=retained.result;receipt=retained.reviewReceipt;
+        assertInputs();pipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id));memories.extract(result,generationModel,{...validation,validateOnly:true});
+      }else{
+        const context:MemoryEngineDraftContext={phase:'integrate',opId:operationId,evidenceIds:evidence,relatedMemories:candidates,assertAuthority:()=>{const check=()=>{assertInputs();pipeline.assertAdmissibleEvidence(evidence);};if(execution)execution.commit(check);else check();}};
+        const native=await pipeline.engineDraft(input,context),draft=native??await query(input);if(native)nativePin=memoryEngineDraftPin(context);assertInputs();pipeline.assertAdmissibleEvidence(draft.citations.map(c=>c.id));if(!native)memories.extract(draft,generationModel,{...validation,validateOnly:true});
+        result=await reviewMemory(input,draft,query,{strategy:selected.review,taskInstructions:contract,deletions:memories.deletions,authorizeDeletionEvidence:ids=>pipeline.assertDeletionEvidenceAllowed(ids,state.model.configuration?.profileId)});
+        receipt=memoryReviewReceipt(result);
+      }
       const completed=[...state.completed,profile];let refreshedInputs=state.inputs;
+      const extractOptions={
+        ...validation,reviewRunId:receipt?.reviewRunId,reviewReceipt:receipt,skillVersion:selected.integrate.id+'@'+selected.integrate.version,
+      };
+      const evidenceIds=[...new Set([...evidence,...result.citations.map(c=>c.id)])];
+      // Staging may write to the provider, but never grants publication. Each
+      // boundary retains the same lifecycle lease, exact input and privacy proof.
+      const assertAuthority=()=>{
+        const assert=()=>{assertInputs();pipeline.assertAdmissibleEvidence(evidenceIds);};
+        if(execution)execution.commit(assert);else assert();
+      };
+      assertAuthority();
+      pipeline.publication?.retainOutput(operationId,{result,reviewReceipt:receipt,engineDraft:nativePin});
+      if(nativePin&&pipeline.publication?.retainedOutput(operationId))await pipeline.settleEngineDraft(nativePin);
+      const publication=await pipeline.publication?.stageExtract(operationId,result,generationModel,extractOptions,assertAuthority,!window.manual);
       const commit=()=>{
         assertInputs();
-        pipeline.withAdmissibleEvidence([...new Set([...evidence,...result.citations.map(c=>c.id)])],()=>memories.extract(result,generationModel,{
-          ...validation,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result),skillVersion:selected.integrate.id+'@'+selected.integrate.version,
-          onSaved:()=>{refreshedInputs=state.inputs.map(input=>({id:input.id,hash:sha256(JSON.stringify(memories.get(input.id)))}));checkpoint(JSON.stringify({...state,inputs:refreshedInputs,completed}));},
-        }));
+        pipeline.withAdmissibleEvidence(evidenceIds,()=>{
+          pipeline.publication?.assert(publication,result);
+          memories.extract(result,generationModel,{
+            ...extractOptions,prepared:publication?.prepared,
+            onSaved:()=>{refreshedInputs=state.inputs.map(input=>({id:input.id,hash:sha256(JSON.stringify(memories.get(input.id)))}));checkpoint(JSON.stringify({...state,inputs:refreshedInputs,completed}));},
+          });
+          pipeline.publication?.committed(publication);
+        });
       };if(execution)execution.commit(commit);else commit();
       state.inputs=refreshedInputs;state.completed=completed;
       }catch(error){failures.push(error);}

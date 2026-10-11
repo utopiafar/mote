@@ -114,6 +114,7 @@ export class EvidenceStore {
       CREATE TABLE IF NOT EXISTS source_heads (source_id TEXT NOT NULL,external_id TEXT NOT NULL,capture_id TEXT NOT NULL,observed_at TEXT NOT NULL,deleted INTEGER NOT NULL,PRIMARY KEY(source_id,external_id));
       CREATE INDEX IF NOT EXISTS source_head_capture ON source_heads(capture_id);
       CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS memory_provider_evidence_revocations(id TEXT PRIMARY KEY,generation INTEGER NOT NULL,json TEXT NOT NULL,state TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memory_dependencies (memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,evidence_id TEXT NOT NULL,PRIMARY KEY(memory_id,evidence_id));
       CREATE INDEX IF NOT EXISTS memory_dependencies_evidence ON memory_dependencies(evidence_id);
       CREATE TABLE IF NOT EXISTS memory_jobs (id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL);
@@ -405,6 +406,12 @@ export class EvidenceStore {
   /** Changes interpretation without retiring original bytes, text, quote anchors, or linked excerpts. */
   invalidateSemanticEvidence(id:string,deleted=false) {
     this.invalidateConversationAnswers([id]);
+    // The same evidence transaction revokes host visibility and records native
+    // cleanup. A separate process may perform retention; no process-local
+    // callback or remote request can stand in for this durable outbox.
+    const prior=this.db.prepare('SELECT generation,json,state FROM memory_provider_evidence_revocations WHERE id=?').get(id),retained=prior?.state==='submitted'?JSON.parse(String(prior.json)):undefined;
+    const memoryIds=[...new Set([...(retained?.memoryIds??[]),...(deleted?this.db.prepare('SELECT memory_id FROM memory_dependencies WHERE evidence_id=?').all(id).map(row=>String(row.memory_id)):[])])];
+    this.db.prepare("INSERT INTO memory_provider_evidence_revocations VALUES(?,?,?,'submitted') ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,json=excluded.json,state='submitted'").run(id,Number(prior?.generation??0)+1,JSON.stringify({evidenceId:id,deleted:deleted||Boolean(retained?.deleted),memoryIds}));
     if(deleted)this.db.prepare('DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)').run(id);
     else this.db.prepare("UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed','$.updatedAt',?) WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)").run(new Date().toISOString(),id);
     this.db.prepare('DELETE FROM memory_checkpoints WHERE evidence_id=? OR evidence_id IN (SELECT evidence_id FROM memory_batch_dependencies WHERE batch_id IN (SELECT batch_id FROM memory_batch_dependencies WHERE evidence_id=?))').run(id,id);

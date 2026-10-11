@@ -69,6 +69,13 @@ import { MemoryLifecycle,storedMemoryLifecycleSettings,freezeSemanticContextTime
 import {MemoryStrategies} from './memory-strategies.js';
 import type {MemoryReviewStrategy} from './memory-strategy-contract.js';
 import { MemoryPipeline } from './memory-pipeline.js';
+import { MemoryAutomation } from './memory-automation.js';
+import {PluginCenter} from './plugin-center.js';
+import {GitHubPluginReleases} from './plugin-release.js';
+import {MemoryBindings} from './memory-bindings.js';
+import {MemoryPublication} from './memory-publication.js';
+import {MemoryAdapters} from './memory-adapters.js';
+import {registerPluginRoutes} from './plugin-routes.js';
 import { MemoryReviewCache } from './memory-review-cache.js';
 import { reviewMemory } from './memory-review.js';
 import { ReloadableAgent,applyModelSettings,createModelAgent,createModelRegistry,modelSettingsFromConfig,testModelConnection,type ModelAgentFactory } from './model-agent.js';
@@ -145,8 +152,10 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
   const executor=new ExecutionEngine(store);
   backendContext.provide('moteExecution',executor);
   const memoryStrategies=new MemoryStrategies(),memoryRecipeSettings=new MemoryRecipeSettings(store,memoryStrategies);
+  const memoryAutomation=new MemoryAutomation(store);
+  let memoryBindings:MemoryBindings|undefined;
   backendContext.provide('moteMemoryStrategies',memoryStrategies);
-  const materialMemoryWork=new MaterialMemoryWork(store,materials,Date.now,()=>true,memoryRecipeSettings);
+  const materialMemoryWork=new MaterialMemoryWork(store,materials,Date.now,()=>true,memoryRecipeSettings,()=>memoryBindings?.accepting()??memoryAutomation.accepting());
   const sourcePipelines=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],backendContext,executor,materialMemoryWork);await sourcePipelines.ready;
   const sources=new SourceStore(store,sourcePipelines),files=new FileStore(store,sources),ingress=new IngressService(store,sources,files);const fileEvidence=new FileEvidence(sources);
   const mediaAssets=new MediaAssets(process.env.MOTE_MEDIA_MODEL_DIR||join(store.directory,'media-models'));
@@ -163,6 +172,9 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,conversations=new Conversations(store);
   const sourceContexts=new SourceContextStore(store);
+  const pluginCenter=new PluginCenter(store,executor,new GitHubPluginReleases(join(config.dataDir,'plugins','packages')));
+  memoryBindings=new MemoryBindings(store,memories,memoryAutomation,pluginCenter,executor);
+  evidenceReader.memoryBindings=memoryBindings;
   const ownerQuestions=new OwnerQuestions(store);
   backendContext.provide('moteOwnerQuestions',ownerQuestions);
   const archivedFiles=new ArchivedFileStore(store);
@@ -249,9 +261,9 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
     return (lane==='interactive'?interactiveGate:agentGate).run(async()=>{
       const operationId=input.traceContext?.operationId??(input.traceContext?.jobId?'job:'+input.traceContext.jobId:'query:'+randomUUID());
       const admittedAt=performance.now(),queueWaitMs=admittedAt-queuedAt;let status:'completed'|'failed'|'yielded'='failed';
-      try{const result=await modelOperation.run(operationId,()=>providerAdmission.run(settings,()=>{assertModelEvidence(input);return modelContext.run(input,()=>inner.query(input));}));status='completed';return result;}
+      try{evidenceReader.retainMemorySnapshot(input);const result=await modelOperation.run(operationId,()=>providerAdmission.run(settings,()=>{assertModelEvidence(input);return modelContext.run(input,()=>inner.query(input));}));status='completed';return result;}
       catch(error){if(error instanceof AgentYieldError)status='yielded';throw error;}
-      finally{diagnostics.record('agent.fragment_timing',{jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId,lane,unit:'agent_fragment',queueWaitMs,durationMs:performance.now()-admittedAt,status},'info');}
+      finally{evidenceReader.releaseMemorySnapshot(input);diagnostics.record('agent.fragment_timing',{jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId,lane,unit:'agent_fragment',queueWaitMs,durationMs:performance.now()-admittedAt,status},'info');}
     },input.signal,input.traceContext?.operationId);
   }});
   const factory:ModelAgentFactory=async(settings,reader)=>wrapAgent(await (dependencies?.createModelAgent?dependencies.createModelAgent(settings,reader):createModelAgent(settings,reader,codex,runModelFor(settings),authorizeModelRequest)),settings);
@@ -265,6 +277,18 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
     probe:settings=>testModelConnection(settings,factory),
   });
   try{await modelSettings.initialize();}catch(error){await executor.close();await agent.close();await connections.close();await indexer.close();await sourcePipelines.close();await backendContext.fiber.dispose();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
+  const hindsightMeters=new Map<string,ReturnType<UsageLedger['start']>>();
+  const hindsightAuthorities=new Map<string,()=>void>();
+  const memoryAdapters=new MemoryAdapters(join(config.dataDir,'plugins','instances'),pluginCenter,modelSettings,{codex,runModelFor,
+    assertModelAuthority:(_settings,request)=>{if(request.purpose==='startup'||request.purpose==='capability_probe')return;const assert=request.opId&&hindsightAuthorities.get(request.opId);if(!assert)throw new StoreError('Native Memory operation authority expired',409);assert();},
+    onRequestStarted:(settings,request)=>hindsightMeters.set(request.requestId,usageLedger.start(settings.provider,settings.model,'hindsight-engine',{agentId:'hindsight-engine',moduleId:'memories',skillId:null,operationId:request.opId,requestId:request.requestId})),
+    onUsage:(_settings,usage,request)=>hindsightMeters.get(request.requestId)?.update(usage),
+    onRequestFinished:request=>{hindsightMeters.get(request.requestId)?.finish(request.status);hindsightMeters.delete(request.requestId);},
+  });
+  memoryBindings.providerFactory=(id,namespace)=>memoryAdapters.provider(id,namespace);
+  pluginCenter.probe=(id,signal)=>memoryAdapters.probe(id,signal);
+  pluginCenter.configurationAllowed=(field,value)=>memoryAdapters.configurationAllowed(field.type,value);
+  pluginCenter.retired=id=>{void memoryAdapters.retire(id);};
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
   const resolveFileModel=(settings:Parameters<FileAnalysis>[2])=>{
@@ -499,11 +523,44 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
     const row=store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(jobs.conversation)!;
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
   };
-  const memoryPipeline=new MemoryPipeline({understand:understandConversation,materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:id=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy()),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&[...(job.automaticGrants??[]),...(job.automaticGrant?[job.automaticGrant]:[])].every(grant=>sourcePipelines.memoryAllowed(grant.sourceId)),strategies:memoryStrategies,executor,store,memories,deletionEvidenceAllowedForMemory:id=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy()),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy(),required),configuration:memoryConfiguration,concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
+  const memoryPublication=new MemoryPublication(store,memories,memoryBindings,executor);
+  memoryPublication.revokeEvidence=ids=>memoryAdapters.erasePreparedEvidence(ids);
+  const memoryPipeline=new MemoryPipeline({publication:memoryPublication,settleEngineDraft:async context=>{if(!context.provider)throw new StoreError('Native Memory cleanup has no pinned provider configuration',503);await memoryAdapters.discardPrepared({...context.provider,opId:context.opId,phase:context.phase});},assertNewManualWork:()=>memoryBindings.assertNewManualWork(),engineDraft:async(input,context)=>{const binding=memoryBindings.binding();if(memoryBindings.view().mode!=='engine')return;const namespace=binding.namespace!;context.provider={instanceId:namespace.instanceId,namespace,configurationIdentity:memoryAdapters.configurationIdentity(namespace.instanceId,namespace)};input.signal?.throwIfAborted();const originals=memories.readEvidence(context.evidenceIds);if(originals.length!==new Set(context.evidenceIds).size)throw new StoreError('Engine originals are unavailable',409);const evidence=input.evidenceRanges?.map(range=>{const record=originals.find(record=>record.id===range.id);if(!record)throw new StoreError('Engine original range is unavailable',409);return {record,offset:range.offset,length:range.length};})??originals;
+    const bindingIdentity=JSON.stringify(binding),pins=new Map(originals.map(record=>[record.id,memoryEvidenceFingerprint(record)]));
+    const assert=()=>{input.signal?.throwIfAborted();context.assertAuthority?.();assertModelEvidence(input);if(JSON.stringify(memoryBindings.binding())!==bindingIdentity)throw new StoreError('Native Memory binding changed',409);for(const [id,fingerprint] of pins){const current=memories.readEvidence([id])[0];if(!current||!memories.isCurrentEvidence(id)||memoryEvidenceFingerprint(current)!==fingerprint||!evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy()))throw new StoreError('Native Memory originals were changed or revoked',409);}};
+    assert();hindsightAuthorities.set(context.opId,assert);
+    try{const result=await memoryAdapters.engine(namespace.instanceId,namespace).prepare({namespace,opId:context.opId,phase:context.phase,evidence,relatedMemories:context.relatedMemories,signal:input.signal});assert();return result;}finally{if(hindsightAuthorities.get(context.opId)===assert)hindsightAuthorities.delete(context.opId);}},understand:understandConversation,materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:id=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy()),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&[...(job.automaticGrants??[]),...(job.automaticGrant?[job.automaticGrant]:[])].every(grant=>sourcePipelines.memoryAllowed(grant.sourceId)),strategies:memoryStrategies,executor,store,memories,deletionEvidenceAllowedForMemory:id=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy()),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy(),required),configuration:memoryConfiguration,concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
   memoryRecipeSettings.onChange=()=>materialMemoryWork.inputs.revokeDisabled();
   memoryRecipeSettings.onApplied=()=>materialMemoryWork.reconcile(memoryPipeline);
   materialMemoryWork.reconcile(memoryPipeline);
   const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,executor,dependencies?.semanticContextTime),working=new WorkingMemory(store,conversations);
+  lifecycle.automaticAdmission=id=>!['extraction','consolidation'].includes(id)||memoryBindings!.accepting();
+  memoryBindings.onReleased=()=>lifecycle.skipAutomaticBacklog();
+  pluginCenter.admissionChanged=(id,enabled)=>{if(memoryBindings!.binding().namespace?.instanceId===id){if(enabled)lifecycle.skipAutomaticBacklog();memoryAutomation.touch();}};
+  memoryBindings.pendingTail=()=>{
+    const jobs=Number(store.db.prepare("SELECT count(*) n FROM memory_jobs WHERE json_extract(json,'$.status') NOT IN ('completed','cancelled')").get()!.n);
+    const windows=lifecycle.view().extensions.filter(extension=>['extraction','consolidation'].includes(extension.id)&&extension.active&&extension.status!=='cancelled').length;return jobs+windows+memoryPublication.pending();
+  };
+  memoryAutomation.onResume=()=>lifecycle.skipAutomaticBacklog();
+  memoryAutomation.onStop=()=>{
+    store.db.prepare('UPDATE memory_input_authorizations SET revoked_at=? WHERE authorized=1 AND revoked_at IS NULL').run(Date.now());
+    for(const row of store.db.prepare("SELECT id FROM memory_jobs WHERE (json_extract(json,'$.automaticGrant') IS NOT NULL OR json_array_length(json_extract(json,'$.automaticGrants'))>0) AND json_extract(json,'$.status') NOT IN ('completed','cancelled')").all())memoryPipeline.cancel(String(row.id),{cause:'authority'});
+    for(const extension of lifecycle.view().extensions)if(['extraction','consolidation'].includes(extension.id)&&extension.active&&!extension.active.manual)lifecycle.cancel(extension.id,extension.active.id);
+  };
+  memoryAutomation.counts=()=>{
+    const counts={queued:0,running:0,checkpointed:0,resultUnknown:0};
+    const jobs=new Set<string>();
+    for(const row of store.db.prepare('SELECT job_id FROM memory_input_authorizations WHERE authorized=1 AND revoked_at IS NULL').all()){
+      if(!row.job_id){counts.queued++;continue;}jobs.add(String(row.job_id));
+    }
+    for(const id of jobs){const job=memoryPipeline.get(id);if(['completed','cancelled'].includes(job.status))continue;
+      if(job.status==='running')counts.running++;else if(job.batches.some(batch=>batch.status==='completed'))counts.checkpointed++;else counts.queued++;
+    }
+    for(const extension of lifecycle.view().extensions)if(['extraction','consolidation'].includes(extension.id)&&extension.active&&!extension.active.manual&&extension.status!=='cancelled'){
+      if(extension.status==='running')counts.running++;else if(extension.active.checkpoint)counts.checkpointed++;else counts.queued++;
+    }
+    counts.resultUnknown=memoryPublication.pending(true);return counts;
+  };
   const memoryIntegrationSettings=new MemoryIntegrationSettings(store,memoryStrategies);
   registerMemoryExtensions({integrationSettings:memoryIntegrationSettings,semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
@@ -640,8 +697,9 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
   } else app.setNotFoundHandler((req,reply)=>reply.code(404).send({error:'not_found',message:moteText("未找到所请求的资料。"),requestId:req.id}));
   const maintenanceWorker=dependencies?.backgroundWorker?new MaintenanceWorker(config):undefined;
   const activity=new ActivityProjection(store,new Operations(store),{delegation});
-  const featureServices={ownerQuestions,automaticMemoryScheduling:dependencies?.backgroundWorker!==false,activity,delegation,memoryDelegation,connectionIdentity,assertRequestActive,memoryIntegrationSettings,memoryRecipeSettings,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaRange,memories,memoryPipeline,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows};
+  const featureServices={memoryBindings,memoryPublication,ownerQuestions,automaticMemoryScheduling:dependencies?.backgroundWorker!==false,activity,delegation,memoryDelegation,connectionIdentity,assertRequestActive,memoryIntegrationSettings,memoryRecipeSettings,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaRange,memories,memoryPipeline,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows};
   const featureHost=new ServerFeatureHost(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));
+  registerPluginRoutes(app,{plugins:pluginCenter,bindings:memoryBindings,automation:memoryAutomation,owner:request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);}});
   await installServerFeatures(featureHost,featureServices);
   diagnostics.record('server.started');
   app.addHook('onReady',async()=>{
@@ -664,8 +722,9 @@ export async function buildApp(config:Config,dependencies?:{webRoot?:string;conn
     await contentStorage.close();
     try{await agent.close();}catch(error){diagnostics.record('agent.failed',{category:safeError(error).category},'error');}
     await Promise.allSettled([...activeQueries,...importTasks.values()]);await insightRuns.close();await queryRuns.close();await connectors.close();await softwareUpdate.close();await connections.close();
+    await memoryPublication.close();await memoryBindings!.close();await pluginCenter.close();await memoryAdapters.close();
     memoryReviews.clear();
     try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}
   });
-  return {app,featureServices,featureHost,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,featureServices,featureHost,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
 }

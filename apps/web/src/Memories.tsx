@@ -34,6 +34,12 @@ interface Memory {
   id:string;title:string;statement?:string;uncertainty?:string;evidenceIds?:string[];evidenceCount?:number;evidence?:MemoryEvidence[];
   tier?:string;kind?:string;status:string;createdAt:string;updatedAt?:string;model?:string;skillVersion?:string;staleReason?:string;
 }
+interface MemoryDeleteReceipt {externalErase?:'pending'|'acknowledged';physicalEraseVerified?:boolean}
+function deletionNotice(receipt:MemoryDeleteReceipt){
+  if(receipt.externalErase==='pending')return moteText('记忆已禁止使用；外部清除仍待确认。');
+  if(receipt.externalErase==='acknowledged'&&!receipt.physicalEraseVerified)return moteText('记忆已禁止使用；外部已确认移除当前记录，物理擦除尚未核验。');
+  return moteText('记忆已禁止使用。');
+}
 const codingLabels:Record<string,string>={pitfall:moteText("踩坑经验"),decision:moteText("设计决策"),principle:moteText("可复用原则"),preference:moteText("编码偏好"),session:moteText("本次会话"),project:moteText("项目内适用"),shared:moteText("可跨项目参考"),observed:moteText("已观察"),user_confirmed:moteText("用户已确认"),tested:moteText("有测试证据"),unverified:moteText("尚未验证")};
 function sourceProjects(item:Memory){return [...new Set((item.scopeRefs??[]).map(ref=>ref.projectIdentity==='workspace'?(ref.projectName??moteText("已关联项目（名称未知）")):moteText("项目未知（仅关联会话）")))].join(' · ');}
 const labels:Record<string,string>={proposed:moteText("待重新处理"),published:moteText("已生效"),stale:moteText("需要重验")};
@@ -55,7 +61,7 @@ export function Memories({api,range,rangeSelectionKey,onOpen,refreshVersion=0,em
   const selectionScope=JSON.stringify([rangeSelectionKey??[range.after,range.before],range.deviceId]);
   const [modelProfileId,setModelProfileId]=useState('');
   const [recipes,setRecipes]=useState<MemoryRecipeRef[]>([]);
-  const [selectedId,setSelectedId]=useState<string|null>(null),[selectedReadScope,setSelectedReadScope]=useState(''),[mutationError,setError]=useState(''),[busy,setBusy]=useState(false),[filter,setFilter]=useState('all'),[confirmDelete,setConfirmDelete]=useState(false);
+  const [selectedId,setSelectedId]=useState<string|null>(null),[selectedReadScope,setSelectedReadScope]=useState(''),[mutationError,setError]=useState(''),[mutationNotice,setMutationNotice]=useState(''),[busy,setBusy]=useState(false),[filter,setFilter]=useState('all'),[confirmDelete,setConfirmDelete]=useState(false);
   const [search,setSearch]=useState(''),[query,setQuery]=useState(''),[tier,setTier]=useState(''),[layer,setLayer]=useState('memory'),[cursor,setCursor]=useState<string>();
   const [jobId,setJobId]=useState<string>();
   const [history,setHistory]=useState(false),[asOf,setAsOf]=useState(''),[correcting,setCorrecting]=useState(false),[correction,setCorrection]=useState({title:'',statement:'',uncertainty:'',validFrom:'',validUntil:''});
@@ -72,6 +78,7 @@ export function Memories({api,range,rangeSelectionKey,onOpen,refreshVersion=0,em
   useEffect(()=>{if(refreshVersion)refresh();},[api,refreshVersion]);
   useEffect(()=>{setJobId(current=>current??jobs.find(item=>['queued','running','pausing','paused','failed','waiting_for_model','waiting_for_input'].includes(item.status))?.id);},[jobList.data]);
   useEffect(()=>{const sameSession=selectionApi.current===api;selectionApi.current=api;setCursor(undefined);if(!(sameSession&&preserveSelection.current)){setSelectedId(null);setSelectedReadScope('');setCreatedMemoryId(undefined);}preserveSelection.current=false;},[api,selectionScope,query,tier,layer,filter,history,asOf]);
+  useEffect(()=>setMutationNotice(''),[api]);
   useEffect(()=>{if(job?.status==='completed'||job?.status==='failed')refresh();},[job?.id,job?.status]);
   async function extract(){
     if(explicitSource&&!selectionReady)return;
@@ -86,7 +93,7 @@ export function Memories({api,range,rangeSelectionKey,onOpen,refreshVersion=0,em
     if(job?.memoryIds[0])open(job.memoryIds[0],range.deviceId?{deviceId:range.deviceId}:{});
   }
   async function saveCorrection(){if(!detail)return;setBusy(true);setError('');try{const result=await api.request<Memory>('/api/memories/'+encodeURIComponent(detail.id)+'/correct',{method:'POST',body:JSON.stringify({...correction,version:detail.version??1,validFrom:correction.validFrom?new Date(correction.validFrom).toISOString():undefined,validUntil:correction.validUntil?new Date(correction.validUntil).toISOString():undefined})});setCorrecting(false);setCreatedMemoryId(result.id);setSelectedId(result.id);if(onChanged){preserveSelection.current=rangeSelectionKey===undefined;onChanged();}refresh();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
-  async function remove(){if(!detail)return;setBusy(true);setError('');try{await api.request('/api/memories/'+encodeURIComponent(detail.id),{method:'DELETE'});setSelectedId(current=>current===detail.id?null:current);setConfirmDelete(false);refresh();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
+  async function remove(){if(!detail)return;const owner=api;setBusy(true);setError('');setMutationNotice('');try{const receipt=await owner.request<MemoryDeleteReceipt>('/api/memories/'+encodeURIComponent(detail.id),{method:'DELETE'});if(selectionApi.current!==owner)return;setMutationNotice(deletionNotice(receipt));setSelectedId(current=>current===detail.id?null:current);setConfirmDelete(false);refresh();}catch(e){if(selectionApi.current===owner)setError(errorMessage(e));}finally{if(selectionApi.current===owner)setBusy(false);}}
   async function download(){if(!detail)return;try{const blob=new Blob([moteText("# {0}\n\n{1}\n\n## 判断边界\n\n{2}\n\n## 原始证据\n\n{3}\n", detail.title, detail.statement??'', detail.uncertainty??'', JSON.stringify(detail.evidence??[],null,2))],{type:'text/markdown'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='memory.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){setError(errorMessage(e));}}
   async function control(action:'pause'|'resume'|'cancel'){if(!job)return;setBusy(true);setError('');try{await api.request('/api/memory-jobs/'+job.id+'/'+action,{method:'POST'});reloadJob();refresh();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   async function retry(){if(!job)return;setBusy(true);setError('');try{await api.request('/api/memory-jobs/'+encodeURIComponent(job.id)+'/retry',{method:'POST'});reloadJob();refresh();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
@@ -98,7 +105,7 @@ export function Memories({api,range,rangeSelectionKey,onOpen,refreshVersion=0,em
     <ModelSelector api={api} feature="memory" value={modelProfileId} onChange={setModelProfileId} disabled={busy||job?.status==='running'||job?.status==='queued'}/>
     <ManualMemoryRecipes api={api} value={recipes} onChange={setRecipes} disabled={busy}/>
     <div className="memory-actions"><button className="button primary" disabled={busy||(explicitSource&&!selectionReady)||job?.status==='running'||job?.status==='queued'} onClick={()=>void extract()}>{busy?<LoaderCircle size={16} className="spin"/>:<Sparkles size={16}/>}{explicitSource?moteText("提取所选资料的记忆"):moteText("提取当前范围的记忆")}</button></div>
-    {error&&<div className="error-banner" role="alert">{error}</div>}{jobError&&<div className="error-banner" role="alert">{moteText("记忆进度暂时无法更新：")}{jobError}</div>}
+    {error&&<div className="error-banner" role="alert">{error}</div>}{mutationNotice&&<p className="notice" role="status">{mutationNotice}</p>}{jobError&&<div className="error-banner" role="alert">{moteText("记忆进度暂时无法更新：")}{jobError}</div>}
     <ExecutionQueueOverview api={api}/>
     {job&&<MemoryProgress job={job} onAction={action=>void control(action)} onRetry={()=>void retry()} onView={openJobResult} onOpen={onOpen} busy={busy}/>}
     <MemoryIntegration api={api} candidate={selectedId===detail?.id&&!selected.error?detail:undefined} verificationPending={selected.loading}/>

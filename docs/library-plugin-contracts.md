@@ -19,6 +19,8 @@
 | 目录 | moteMaterialCatalog | 类型标签、card/detail/panels/actions 注册 ID；不携带可执行代码或 URL |
 | Web 展示 | WebFeatureHost | 精确 kind/schemaVersion/representation；卡片、详情、面板、操作、collection/navigation；精确依赖版本 |
 | Android | CentralCatalogDescriptor | 无代码类型描述与原生通用正文回退 |
+| Memory 包与实例 | PluginCenter + MemoryAdapters | GitHub 固定制品、声明式配置、实际能力核验；安装、启用与空间绑定分开 |
+| Memory 正文与检索 | MemoryBindings + MemoryPublication + MemoryProvider | 精确不可变版本、受控作用域、审核后发布、固定查询 binding 与删除失效 |
 
 FeatureManifest 拒绝未声明或不一致的注册。可信 Fastify v1 拓扑适配器可补齐原有空 manifest；Web 在安装时从实际贡献生成完整声明。server 依赖在当前认证连接的 inventory 中核验；本地依赖由 registry 核验。无匹配、依赖缺失、歧义、卸载或展示异常时保留通用正文。操作仅在所有者展示边界内注册，查询 Agent 不获得写工具。
 
@@ -53,7 +55,17 @@ MOTE_BACKEND_PLUGINS=["/absolute/mote/examples/plugins/journal-pack.mjs"]
 
 该示例不默认采集数据或扫描历史；创建来源并通过所有者 API 配置 consumers 后，使用既有 batch intake 推送生成资料。示例 card/detail ID 是可选锚点，未部署 Web 贡献时使用通用回退。`apps/web/test/library-browser.test.ts` 展示完整 card/detail/panel/action 安装与撤销，不修改公共资料库。
 
-新来源和中央流程只新增部署模块及组合配置。新 Web 代码加入可信 bundle 组合；原生采集能力仍需要原生构建。当前不支持远程下载任意代码、不承诺所有宿主无重启安装。停用/卸载保留历史，删除和历史重算是独立操作。
+新来源和中央流程只新增部署模块及组合配置。新 Web 代码加入可信 bundle 组合；原生采集能力仍需要原生构建。Memory 插件中心现支持固定 GitHub 兼容 release 的受信制品和随 Mote 分发的固定上游适配配方；它不下载任意网页脚本、执行安装脚本或把任意仓库自动变成适配器。worker/服务拥有中央宿主权限，不是恶意代码沙箱。不承诺所有宿主无重启安装。停用/卸载保留历史，删除和历史重算是独立操作。配置与实际运行规则见 [插件中心](plugin-center.md)。
+
+## Memory 正文权威与发布
+
+包安装记录、配置实例、期望启用、实际能力与 Memory binding 分别持久化。安装或实例启用不授权扫描历史，也不直接切换正文权威。更换 repository 必须迁移完整正文、修订、纠正与删除意图，核验后显式应用；失败保持旧 binding。当前默认空间为 `default`，控制操作只对 owner 开放，MCP/查询工具不得调用安装、配置、准入或切换 API。
+
+供应方读写使用宿主发出的 `ownerId / instanceId / bindingRevision` namespace 和 `memoryId / version / fingerprint` 精确键。Mote 继续拥有原件、Material、依赖、当前授权、可见性、独立审核和发布协调；绑定的 repository 拥有正式读取所用的记忆正文。provider 不可用时，正式详情、问答、Markdown 和导出明确失败，不静默用旧 SQL 正文。宿主失效状态可以覆盖不可变正文的可见状态，不能由晚到 provider 响应复活撤权内容。
+
+自动提取、整合与 owner 发布/更正先保存持久意图和经过独立审核的精确输出，完成外部 staging 后才在同步宿主提交边界发布。外部写失败或结果未知不改变当前合法正文；重试和重启核对同一意图/回执，不重新生成已经审核的输出。查询固定可读 binding 和正文 revision；切换后的旧查询仍可读取保留的精确版本，返回前仍核验当前隐私与删除。
+
+删除立即保存宿主 tombstone 并停止可见与再生产。外部清除失败保留持久待确认意图；accepted、current removed 和物理清除确认分别报告。受信供应方原生 history 仍可能保留字节，不能把逻辑不可读写成已物理擦除。绑定、准备、排空或已有查询仍引用的实例/包不能卸载；必须先完成其工作或迁移读取权威。完整暂停与恢复合同见 [Memory lifecycle](memory-lifecycle.md#pause-drain-stop-and-resume)。
 
 ## 历史约束与退出项
 

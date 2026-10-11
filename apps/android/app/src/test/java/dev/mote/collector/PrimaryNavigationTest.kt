@@ -14,7 +14,7 @@ class PrimaryNavigationTest {
 
     @Test fun groupedNavigationKeepsEveryExistingCentralCapabilityReachable() {
         val registered = setOf("overview", "archive", "ask", "notes", "materials", "coding", "timeline", "files", "memories", "insights",
-            "actions", "agentView", "sources", "devices", "connections", "lark", "statistics", "processing", "extensions", "settings",
+            "actions", "agentView", "sources", "devices", "connections", "lark", "statistics", "processing", "plugins", "settings",
             "usage", "vault", "developer", "about", "imports", "help")
         val grouped = MoteNavigation.groups.flatMap { it.pages }
         assertEquals("Only the conversation has its own primary destination", registered - "ask", grouped.toSet())
@@ -29,6 +29,8 @@ class PrimaryNavigationTest {
         }
         assertEquals("overview", MoteNavigation.centralParent("actions"))
         assertEquals("about", MoteNavigation.centralParent("settings"))
+        assertEquals("about", MoteNavigation.centralParent("plugins"))
+        assertEquals("about", MoteNavigation.centralParent("extensions"))
         listOf("overview", "archive", "ask", "about").forEach { assertNull(MoteNavigation.centralParent(it)) }
     }
 

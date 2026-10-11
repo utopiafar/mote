@@ -8,6 +8,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createServer } from 'node:net';
 import { DatabaseSync } from 'node:sqlite';
+import {safePluginBackupPath} from './plugin-memory-backup.mjs';
+import {restoreHindsight} from './hindsight-backup.mjs';
 import { validateTunnel, tunnelTokenPath, dockerTunnelUser, removeTunnelSidecars, assertTunnelToken } from './tunnel-lib.mjs';
 
 export const repository = resolve(fileURLToPath(new URL('../', import.meta.url)));
@@ -338,7 +340,7 @@ export async function verifiedBackup(backup) {
   for (const [name, hash] of Object.entries(manifest.checksums)) {
     const part=/^files\/objects\/[a-f0-9]{64}\/(0|[1-9][0-9]{0,2})(?:\.plain|\.aes)$/.exec(name);
     const sourceBatch=/^source-archive\/[a-f0-9]{64}\/[a-f0-9]{64}(?:\.plain|\.aes)$/.test(name);
-    if (!(name === 'mote.sqlite' || sourceBatch || (part && Number(part[1]) < 128)) || !/^[a-f0-9]{64}$/.test(hash)) throw Error('Unsafe backup manifest entry');
+    if (!(name === 'mote.sqlite' || sourceBatch || (part && Number(part[1]) < 128) || safePluginBackupPath(name)) || !/^[a-f0-9]{64}$/.test(hash)) throw Error('Unsafe backup manifest entry');
     const info = await lstat(join(directory, name));
     if (!info.isFile() || info.nlink !== 1 || (await realpath(join(directory, name))) !== join(directory, name)) throw Error('Backup links are not allowed');
     if (await sha(join(directory, name)) !== hash) throw Error('Backup checksum mismatch; active data was not changed');
@@ -353,12 +355,22 @@ export async function verifiedBackup(backup) {
 export async function restoreProfile(p, backup) {
   const checked = await verifiedBackup(backup);
   const stage = join(p.meta.runtime === 'native' ? dirname(p.dataDir) : p.directory, `.mote-restore-${randomUUID()}`); await mkdir(join(stage, 'blobs'), { recursive: true, mode: 0o700 });
+  const createdNativeVolumes=[];let restored=false;
   try {
     for (const name of checked.names) {
       await mkdir(dirname(join(stage,name)),{recursive:true,mode:0o700});
       await copyFile(join(checked.directory, name), join(stage, name));
       await chmod(join(stage,name),0o600);
       if (await sha(join(stage, name)) !== checked.checksums[name]) throw Error('Backup changed while copying; active data was not changed');
+    }
+    for(const name of checked.names.filter(value=>value.endsWith('/hindsight-backup/manifest.json'))){
+      const archiveDirectory=dirname(join(stage,name)),configurationDirectory=dirname(archiveDirectory);
+      const result=await restoreHindsight({archiveDirectory,runtimeDirectory:join(configurationDirectory,'runtime'),providerDirectory:join(configurationDirectory,'provider')});
+      createdNativeVolumes.push(result.volume);
+      // This restores only storage. It starts no Central, API, model or worker.
+      // A later explicit Central start retains the host's restored desired state
+      // and prior task authorizations, subject to normal credential validation.
+      await rm(archiveDirectory,{recursive:true});
     }
     if (p.meta.runtime === 'docker') {
       const existing = (await compose(p, ['ps', '--all', '--quiet', 'mote'], { capture: true })).trim();
@@ -375,8 +387,11 @@ export async function restoreProfile(p, backup) {
       if ((await readdir(p.dataDir)).length) throw Error('Restore requires an empty data directory; existing data is never overwritten');
       await rmdir(p.dataDir); await rename(stage, p.dataDir);
     }
-    return { restored: true, source: checked.directory };
-  } finally { await rm(stage, { recursive: true, force: true }); }
+    restored=true;return { restored: true, source: checked.directory };
+  } finally {
+    if(!restored)for(const volume of createdNativeVolumes)await execute('docker',['volume','rm',volume],{capture:true}).catch(()=>{});
+    await rm(stage, { recursive: true, force: true });
+  }
 }
 export function launchdXml(p, nodePath = process.execPath) {
   const escape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');

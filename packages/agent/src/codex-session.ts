@@ -96,6 +96,11 @@ export class CodexSession {
         dynamicTools:tools,...(!workspace?{environments:[]}:{}),
       });
       if(typeof thread.thread?.id!=='string'||thread.approvalPolicy!=='never'||thread.sandbox?.type!==(workspace?'workspaceWrite':'readOnly'))throw new AgentProviderError();
+      // App Server v2 returns the resolved model at the response root; the
+      // persisted thread's model may be null. A configured model must never be
+      // silently substituted, including for an external engine's inference.
+      this.emit({type:'codex.model.selected',stage:'model',payload:{model:thread.model,threadModel:thread.thread?.model}});
+      if(this.options.model&&(thread.model!==this.options.model||typeof thread.thread?.model==='string'&&thread.thread.model!==this.options.model))throw new AgentProviderError();
       if(this.options.serviceTier&&(typeof thread.serviceTier!=='string'||normalizeCodexServiceTier(thread.serviceTier)!==this.options.serviceTier))throw new AgentProviderError();
       this.threadId=thread.thread.id;
     }catch(error){throw error instanceof AgentNotConfiguredError||error instanceof AgentTimeoutError||error instanceof AgentProviderError?error:new AgentProviderError();}

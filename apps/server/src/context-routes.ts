@@ -11,6 +11,6 @@ export function registerContextRoutes(app:FastifyInstance,context:ContextQuery){
   app.get('/api/context/browse',async req=>context.browse(query.parse(req.query)));
   app.get('/api/context/retrieve',async req=>context.retrieve(query.parse(req.query)));
   app.get('/api/context/search',async req=>context.search(query.parse(req.query)));
-  app.get('/api/context/bundle',async req=>context.context(query.parse(req.query)));
-  app.post('/api/context/read',{bodyLimit:32768},async req=>{const {refs,offset,length,...scope}=read.parse(req.body);return context.read(refs,offset,length,scope);});
+  app.get('/api/context/bundle',async req=>context.contextAsync(query.parse(req.query)));
+  app.post('/api/context/read',{bodyLimit:32768},async req=>{const {refs,offset,length,...scope}=read.parse(req.body);return context.readAsync(refs,offset,length,scope);});
 }

@@ -16,6 +16,8 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Build the pinned Mem0 SQLite runtime
+        run: npm rebuild better-sqlite3
       - run: npm run build:libs
       - run: npm run check:i18n
       - run: node --test scripts/release/dev-assets.test.mjs

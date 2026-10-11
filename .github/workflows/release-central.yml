@@ -32,6 +32,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with: { node-version: '24', cache: npm }
       - run: npm ci --ignore-scripts
+      - name: Build the pinned Mem0 SQLite runtime
+        run: npm rebuild better-sqlite3
       - name: Build central workspaces
         run: npm run build:central
       - name: Verify central workspaces and generated fixtures

@@ -18,6 +18,7 @@ Central（server + web）、macOS、Android 使用各自产品版本；当前版
 | 每天看了什么、做了什么 | [日常事件 Memory](adr-daily-event-memory.md)、[日常回顾验证](validation/daily-event-memory-2026-10-10.md) |
 | 当前界面、对话和运行状态 | [Slate 导航](ui-slate.md)、[对话](conversations.md)、[Operations](operations.md)、[执行器](execution-engine.md)、[排错](troubleshooting.md) |
 | 2026-10-10 系统改造 | [已确认方案](design/system-refactor-2026-10-10.md)、[当前ADR](adr-system-refactor.md)、[验收结果与边界](validation/system-refactor-2026-10-10.md) |
+| 插件中心与可替换记忆一期 | [已确认实施方案](design/plugin-center-phase-one-2026-10-12.md)、[架构决定](adr-plugin-center-memory-replacement.md)、[验证计划](design/plugin-center-phase-one-validation-2026-10-12.md)；产品实现尚未完成 |
 
 端侧 Qwen 文档是已删除运行时的历史说明，当前截图不调用 VLM。旧版充电补 OCR、默认加密、签名在线更新及 Memory 的周期 AND 数量门槛不能当作当前默认。现行入口分别见上表。
 

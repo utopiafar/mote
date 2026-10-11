@@ -464,6 +464,7 @@ class MainActivity : MoteActivity() {
 
 
         section(MoteI18n.text("应用"))
+        menu(MoteI18n.text("插件"), MoteI18n.text("安装、运行与记忆方案"), "settings") { openCentral("plugins") }
         menu(MoteI18n.text("权限与后台运行"), MoteI18n.text("系统授权、电池优化与自启动"), "settings") { showPage(Page.PERMISSIONS) }
         menu(MoteI18n.text("关于与更新"), MoteI18n.text("版本信息、应用更新与开发者选项"), "info") { showPage(Page.ABOUT) }
         menu(MoteI18n.text("反馈"), MoteI18n.text("前往 GitHub，可附图片或诊断包"), "note") { openFeedback() }

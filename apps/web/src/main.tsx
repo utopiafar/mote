@@ -55,6 +55,7 @@ import "./styles.css";
 import './workspace.css';
 import './library.css';
 import './settings-ui.css';
+import './plugin-center.css';
 import { confirmNavigation } from './unsaved';
 
 

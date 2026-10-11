@@ -7,7 +7,7 @@
     "predev": "node ../../scripts/check-dependencies.mjs && npm run build -w @mote/shared && npm run build -w @mote/agent",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "build": "tsc -p tsconfig.json && cp src/import-parser.mjs dist/import-parser.mjs",
+    "build": "tsc -p tsconfig.json && cp src/import-parser.mjs dist/import-parser.mjs && cp src/plugin-worker.mjs dist/plugin-worker.mjs && cp src/hindsight-worker.py dist/hindsight-worker.py",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test --test-concurrency=4 --test-timeout=120000 test/*.test.ts"
   },
@@ -18,11 +18,13 @@
     "@modelcontextprotocol/sdk": "1.30.0",
     "@mote/agent": "0.1.0",
     "@mote/shared": "0.1.0",
+    "better-sqlite3": "12.10.0",
     "exceljs": "^4.4.0",
     "fastify": "^5.6.0",
     "fflate": "^0.8.2",
     "google-auth-library": "11.0.2",
     "mammoth": "^1.10.0",
+    "mem0ai": "3.3.1",
     "pdfjs-dist": "^5.4.149",
     "sanitize-html": "^2.17.0",
     "sharp": "^0.35.4",
@@ -31,6 +33,7 @@
     "zod-to-json-schema": "^3.25.1"
   },
   "devDependencies": {
+    "@types/node": "^24.0.0",
     "@types/sanitize-html": "^2.16.0"
   }
 }

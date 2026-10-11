@@ -18,6 +18,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
     private var source = ""
     private var query = ""
     private var rawSource = ""
+    private var memoryDeletionNotice: Pair<CentralClient, String>? = null
 
     fun show(page: String) {
         when (page) {
@@ -342,6 +343,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         }
     }
     private fun memories() {
+        memoryDeletionNotice?.takeIf { it.first === client }?.let { ui.text(it.second) }
         ui.button(MoteI18n.text("提取记忆")) { CentralAdmin(screens).memoryJobs() }
         ui.button(MoteI18n.text("记忆设置")) { CentralAdmin(screens).memorySettings() }
         paged("/api/memories?limit=30", ui.card()) { row, card ->
@@ -363,7 +365,14 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 ui.work(MoteI18n.text("正在保存…"), { api.post("/api/memories/" + enc(id) + "/correct", corrected) }) { memory(id) }
             }
             ui.button(MoteI18n.text("删除记忆")) { screens.confirm(MoteI18n.text("删除记忆"), MoteI18n.text("删除后无法恢复。")) {
-                ui.work(MoteI18n.text("正在删除…"), { api.delete("/api/memories/" + enc(id)) }) { screens.refresh() }
+                ui.work(MoteI18n.text("正在删除…"), { api.delete("/api/memories/" + enc(id)) }) { receipt ->
+                    val message = when {
+                        receipt.optString("externalErase") == "pending" -> MoteI18n.text("记忆已禁止使用；外部清除仍待确认。")
+                        receipt.optString("externalErase") == "acknowledged" && !receipt.optBoolean("physicalEraseVerified") -> MoteI18n.text("记忆已禁止使用；外部已确认移除当前记录，物理擦除尚未核验。")
+                        else -> MoteI18n.text("记忆已禁止使用。")
+                    }
+                    memoryDeletionNotice = api to message; screens.refresh()
+                }
             } }
         }
     }

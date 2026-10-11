@@ -11,7 +11,7 @@ import type {Indexer} from './indexer.js';
 import type {FileEvidence} from './file-evidence.js';
 import type {ServerDiagnostics} from './diagnostics.js';
 import {materialId,type MaterialStore,type MaterialMember,type MaterialRecord} from './materials.js';
-import {contextIndex} from './context-index.js';
+import {contextIndex,contextIndexAsync} from './context-index.js';
 import {browseSourceContexts,parseSourceContextRef} from './source-context-catalog.js';
 import {SourceContextStore} from './source-context.js';
 import {browseSourceCatalog} from './source-catalog.js';
@@ -26,6 +26,11 @@ import {materialSourcePin,materialSourceCurrent,type MaterialSourcePin} from './
 import {authoredRecordProjection} from './material-organizers.js';
 import type {MemoryRecipeBinding} from './memory-strategy-contract.js';
 import type {ManualMemoryInputPlanRequest} from './memory-input-plans.js';
+import type {MemoryBindings} from './memory-bindings.js';
+import {MemoryProviderError,memoryProviderKey,memoryProviderRecordSchema,memoryProviderNamespaceSchema,memoryBodyDigest,withMemoryHostState} from './memory-provider-contract.js';
+import {memorySchema,type Memory} from './memory-schema.js';
+export type MemoryReadSnapshot=ReturnType<MemoryBindings['retainSnapshot']>;
+type MemoryExposure={policy:EvidenceExposurePolicy;operation:EvidenceOperation};
 
 export {parseEvidenceRef} from '@mote/shared';
 type ScreenOriginalGrant={kind:'material'|'segment';ref:string;scope:Range};
@@ -43,6 +48,8 @@ export function withinEvidenceScope(record:CaptureRecord,scope:Range={}) {
 /** Long-lived read-only service. Never stores credentials or a previous request's scope. */
 export class EvidenceReader {
   readonly memories:MemoryStore;
+  memoryBindings?:MemoryBindings;
+  private readonly memorySnapshots=new WeakMap<object,MemoryReadSnapshot>();
   private readonly archivedFiles:ArchivedFileStore;
   constructor(readonly store:Store,readonly sources:SourceStore,readonly files?:FileStore,private readonly indexer?:Indexer,private readonly fileEvidence?:FileEvidence,private readonly materials?:MaterialStore,private readonly sourcePipelines?:SourcePipelineRuntime,private readonly sourceItemRecipes?:SourceItemRecipeCatalog,private readonly materialMemoryReady?:(ref:string)=>boolean){
     this.archivedFiles=new ArchivedFileStore(store);
@@ -95,10 +102,12 @@ export class EvidenceReader {
         uri:`${current.ref}#${active?.block_id??record.provenance.uri.slice(oldRef.length+1)}`}};
   }
   memory(ref:string,scope:Range={},ownerArchive=false){
+    if(this.memoryBindings?.binding().namespace)throw new StoreError('External Memory bodies require an asynchronous provider read',503);
     const parsed=parseEvidenceRef(ref);if(parsed?.kind!=='memory')return;
     return this.memoryPage({...scope,id:ref,includeStale:true,includeHistory:true,level:'detail',limit:1},ownerArchive).items[0];
   }
   memoryPage(args:Parameters<MemoryStore['page']>[0]&Range={},ownerArchive=false){
+    if((args.level==='detail'||args.query)&&this.memoryBindings?.binding().namespace)throw new StoreError('External Memory bodies and retrieval require an asynchronous provider read',503);
     const id=args.id===undefined?undefined:evidenceRefId(args.id,'memory');
     if(args.id!==undefined&&!id)return {items:[],nextCursor:null};
     const page=this.memories.page({...args,id});
@@ -109,6 +118,74 @@ export class EvidenceReader {
       const records=ownerArchive?this.archivedEvidence(ids.map(id=>formatEvidenceRef('capture',id)),args):this.evidenceById(ids,args);
       return records.length>0&&records.length===ids.length;
     }):page.items};
+  }
+  retainMemorySnapshot(context:object){let value=this.memorySnapshots.get(context);if(!value&&this.memoryBindings){value=this.memoryBindings.retainSnapshot();this.memorySnapshots.set(context,value);}return value;}
+  memorySnapshot(context?:object){return context?this.memorySnapshots.get(context):undefined;}
+  releaseMemorySnapshot(context:object){const value=this.memorySnapshots.get(context);if(value){this.memorySnapshots.delete(context);value.release();}}
+  private memoryToolSnapshot(context?:object){const retained=context&&this.memorySnapshots.get(context),owned=retained?undefined:this.memoryBindings?.retainSnapshot();return {snapshot:retained??owned,release:()=>owned?.release()};}
+  private memoryLineageVisible(lineage:NonNullable<MemoryReadSnapshot['lineage'][string]>,scope:Range,ownerArchive:boolean,exposure:MemoryExposure){
+    const ids=[...new Set(lineage.dependencyIds)];if(!ids.length)return false;
+    for(const key of ['projectKey','repositoryKey','provider','sessionId'] as const)if(scope[key]&&(!lineage.scopeRefs?.length||lineage.scopeRefs.some(ref=>ref[key]!==scope[key])))return false;
+    const records=ownerArchive?this.archivedEvidence(ids.map(id=>formatEvidenceRef('capture',id)),scope):this.evidenceById(ids,scope);
+    if(records.length!==ids.length)return false;if(ownerArchive)return true;
+    // A newer Memory revision may cite entirely different originals. Its live
+    // dependency table cannot authorize the old query's frozen body or title.
+    const anchors=this.memories.readEvidence(lineage.evidenceIds);
+    if(anchors.length!==lineage.evidenceIds.length||!anchors.length||anchors.some(anchor=>anchor.privacy.excluded||!this.memories.isCurrentEvidence(anchor.id)))return false;
+    if(lineage.evidence.some(proof=>{const anchor=anchors.find(value=>value.id===proof.id);return !anchor||memoryEvidenceFingerprint(anchor)!==proof.contentHash;}))return false;
+    let materialProof:boolean|undefined;const hasMaterialProof=()=>materialProof??=(anchors.every(anchor=>anchor.provenance?.uri?.startsWith('material:')&&this.captureExposure(anchor,exposure.operation,exposure.policy)));
+    return records.every(record=>!record.privacy.excluded&&(this.captureExposure(record,exposure.operation,exposure.policy)||
+      (record.source==='screen'||record.source==='ui_page')&&hasMaterialProof()&&this.captureExposure(record,exposure.operation==='discover'?'expand':exposure.operation,exposure.policy,'capture',true)));
+  }
+  async memoryAsync(ref:string,scope:Range={},ownerArchive=false,snapshot?:MemoryReadSnapshot,exposure:MemoryExposure={policy:defaultEvidenceExposurePolicy,operation:'expand'}):Promise<Memory|undefined>{
+    const parsed=parseEvidenceRef(ref);if(parsed?.kind!=='memory')return;
+    const owned=!snapshot&&this.memoryBindings?this.memoryBindings.retainSnapshot():undefined,pin=snapshot??owned;
+    try{
+      const args={...scope,query:undefined,cursor:undefined,id:ref,includeStale:true,includeHistory:true,level:'overview' as const,limit:1};
+      const visible=()=>{const current=ownerArchive?this.memoryPage(args,true).items[0]:this.agentMemoryPage(args,exposure.policy,exposure.operation).items[0];return current&&(!pin?.lineage[parsed.id]||this.memoryLineageVisible(pin.lineage[parsed.id],scope,ownerArchive,exposure))?current:undefined;};
+      if(!visible())return;const key=pin?.catalog[parsed.id];if(pin&&!key)return;
+      const body=pin?.records?.[parsed.id]??(pin?.binding.namespace?await this.memoryBindings!.read(parsed.id,pin.binding,key):this.memories.get(parsed.id));
+      const memory=memorySchema.parse(body);
+      if(key&&JSON.stringify(memoryProviderKey(memory))!==JSON.stringify(key)||pin&&memoryBodyDigest(memory)!==pin.recordDigests[parsed.id])throw new StoreError('The bound Memory body does not match its pinned revision',502);
+      // An in-flight read retains its old version, but never an old permission.
+      if(!visible())return;return pin?.metadata[parsed.id]?withMemoryHostState(memory,pin.metadata[parsed.id] as Pick<Memory,'status'|'staleReason'|'updatedAt'>):memory;
+    }catch(error){if(error instanceof MemoryProviderError)throw new StoreError(error.message,error.code==='invalid_record'||error.code==='conflict'?502:503);throw error;}finally{owned?.release();}
+  }
+  async memoryPageAsync(args:Parameters<MemoryStore['page']>[0]&Range={},ownerArchive=false,snapshot?:MemoryReadSnapshot,exposure:MemoryExposure={policy:defaultEvidenceExposurePolicy,operation:'discover'}):Promise<ReturnType<MemoryStore['page']>>{
+    const owned=!snapshot&&this.memoryBindings?this.memoryBindings.retainSnapshot():undefined,pin=snapshot??owned;
+    try{
+      const metadataPage=(scope:Parameters<MemoryStore['page']>[0]&Range)=>{const page=ownerArchive?this.memoryPage({...scope,level:'overview'},true):this.agentMemoryPage({...scope,level:'overview'},exposure.policy,exposure.operation);return {...page,items:page.items.filter(value=>!pin?.lineage[value.id]||this.memoryLineageVisible(pin.lineage[value.id],scope,ownerArchive,exposure))};};
+      const pinnedMetadata=(current:any)=>pin?.metadata[current.id]?{...pin.metadata[current.id],disclosure:current.disclosure}:current;
+      if(args.query&&pin?.binding.namespace){
+        const keys=Object.values(pin.catalog);if(!keys.length)return {items:[],nextCursor:null};
+        const signature=createHash('sha256').update(JSON.stringify({binding:pin.binding,catalog:pin.catalog,args:{...args,cursor:undefined,limit:undefined,level:undefined}})).digest('hex');let offset=0;
+        if(args.cursor){try{const cursor=JSON.parse(Buffer.from(args.cursor,'base64url').toString());if(cursor.kind!=='provider-memory'||cursor.signature!==signature||!Number.isSafeInteger(cursor.offset)||cursor.offset<0)throw Error();offset=cursor.offset;}catch{throw new StoreError('Memory query binding or catalog changed; restart this search',409);}}
+        const hits=await this.memoryBindings!.provider(pin.binding.namespace.instanceId,pin.binding.namespace).search({namespace:pin.binding.namespace,query:args.query,keys,limit:keys.length});
+        const expectedNamespace=JSON.stringify(memoryProviderNamespaceSchema.parse(pin.binding.namespace));
+        const candidates=hits.map(hit=>memoryProviderRecordSchema.parse({namespace:hit.namespace,key:hit.key,memory:hit.memory})).filter(hit=>{
+          if(JSON.stringify(hit.namespace)!==expectedNamespace)throw new StoreError('Memory retrieval crossed its bound namespace',502);
+          if(!pin.catalog[hit.key.memoryId]||JSON.stringify(pin.catalog[hit.key.memoryId])!==JSON.stringify(hit.key))return false;
+          if(memoryBodyDigest(hit.memory)!==pin.recordDigests[hit.key.memoryId])throw new StoreError('Memory retrieval did not preserve its pinned immutable body',502);return true;
+        });
+        const selected:Memory[]=[];let scanned=offset;const limit=args.limit??30;
+        for(;scanned<candidates.length&&selected.length<limit;scanned++){
+          const hit=candidates[scanned],scope={...args,query:undefined,cursor:undefined,id:formatEvidenceRef('memory',hit.key.memoryId),level:'overview' as const,limit:1};
+          const metadata=metadataPage(scope).items[0];if(!metadata)continue;
+          const memory=await this.memoryAsync(formatEvidenceRef('memory',hit.key.memoryId),args,ownerArchive,pin,exposure);
+          if(memory&&metadataPage(scope).items.length)selected.push(args.level==='detail'?memory:pinnedMetadata(metadata) as Memory);
+        }
+        return {items:selected,nextCursor:scanned<candidates.length?Buffer.from(JSON.stringify({kind:'provider-memory',signature,offset:scanned})).toString('base64url'):null};
+      }
+      const page=metadataPage(args),items:Memory[]=[];
+      for(const metadata of page.items){
+        if(pin&&!pin.catalog[metadata.id])continue;
+        if(args.level==='detail'){
+          const memory=await this.memoryAsync(formatEvidenceRef('memory',metadata.id),args,ownerArchive,pin,exposure);
+          if(memory&&metadataPage({...args,query:undefined,cursor:undefined,id:formatEvidenceRef('memory',metadata.id),limit:1}).items.length)items.push(memory);
+        }else items.push(pinnedMetadata(metadata) as Memory);
+      }
+      return {...page,items};
+    }catch(error){if(error instanceof MemoryProviderError)throw new StoreError(error.message,error.code==='invalid_record'||error.code==='conflict'?502:503);throw error;}finally{owned?.release();}
   }
   context(records:CaptureRecord[]){return records.map(record=>{
     const formal=this.materials&&this.store.db.prepare('SELECT 1 FROM material_evidence WHERE id=?').get(record.id);
@@ -144,6 +221,7 @@ export class EvidenceReader {
   }
   timeline(args:Range){return this.store.list(args);}
   catalog(args:Range&{path?:string;query?:string}={}){return contextIndex(this.store,{page:args=>this.memoryPage(args)},this.sources,args,args=>this.segments(args));}
+  catalogAsync(args:Range&{path?:string;query?:string}={},snapshot?:MemoryReadSnapshot){return contextIndexAsync(this.store,{page:scope=>this.memoryPageAsync(scope,false,snapshot)},this.sources,args,scope=>this.segments(scope));}
   fileCatalog(sourceId:string,args:Parameters<typeof browseSourceCatalog>[2]){this.sources.getSource(sourceId);return browseSourceCatalog(this.store.db,sourceId,args);}
   private artifactMembers(id:string,revision:string,scope:Range={}){
     const pending=[{id,revision}],seen=new Set<string>(),directMembers=new Set<string>(),materialRefs=new Map<string,{ref:string;offset?:number;length?:number}[]>();
@@ -841,7 +919,10 @@ export class EvidenceReader {
       return this.captureExposure(record,operation('expand'),policy,'capture',hasScreenGrant(record.id));
     };
     return {
-      catalog:async args=>contextIndex(this.store,{page:scope=>this.agentMemoryPage({...scope,asOf:scope?.asOf??options.currentContextTime?.()},policy,operation('discover'))},this.sources,args,scope=>this.agentSegments(scope,policy,operation('discover'))),
+      catalog:async args=>{
+        const pin=this.memoryToolSnapshot(options.currentGrantContext?.());
+        try{return await contextIndexAsync(this.store,{page:scope=>this.memoryPageAsync({...scope,asOf:scope?.asOf??options.currentContextTime?.()},false,pin.snapshot,{policy,operation:operation('discover')})},this.sources,args,scope=>this.agentSegments(scope,policy,operation('discover')));}finally{pin.release();}
+      },
       materialCatalog:async args=>{const page=this.materialCatalog(args),items=page.items.filter(material=>this.materialExposure(material,operation('discover'),policy));return {...page,items,disclosureDependencies:this.materialDisclosureDependencies(items.map(item=>item.ref))};},
       materialRead:async args=>{
         const material=this.materials?.get(args.ref);if(!material||this.materials?.get(material.id)?.ref!==material.ref||!this.materialExposure(material,operation('expand'),policy))throw new StoreError('Material not found in selected scope',404);
@@ -907,8 +988,9 @@ export class EvidenceReader {
         }
         return page as any;},
       memories:async args=>{
+        const pin=this.memoryToolSnapshot(options.currentGrantContext?.());try{
         const id=args.id===undefined?undefined:formatEvidenceRef('memory',z.string().uuid().parse(args.id));
-        const page=this.agentMemoryPage({...args,id,asOf:args.asOf??options.currentContextTime?.(),level:args.id?'detail':'overview'},policy,operation('discover'));
+        const page=await this.memoryPageAsync({...args,id,asOf:args.asOf??options.currentContextTime?.(),level:args.id?'detail':'overview'},false,pin.snapshot,{policy,operation:operation('discover')});
         const refs=args.id?page.items.flatMap((m:any)=>(m.evidence??[]) as import('./memory-schema.js').MemoryEvidence[]):[];
         const references=refs.map(e=>({id:e.id,capturedAt:e.capturedAt,characters:e.length??0}));
         if(!args.id||!args.includeEvidence)return {...page,references};
@@ -929,6 +1011,7 @@ export class EvidenceReader {
           sourceSpans.push({record:this.context([record])[0],offset,length});
         }
         return {...page,references,sourceSpans,sourceCoverage:{references:refs.length,delivered:sourceSpans.length,partial}};
+        }finally{pin.release();}
       },
       search:async args=>diagnostics.measure('source','search',async()=>{const results=await this.agentSearch(args,policy,operation('discover'));return Object.assign(this.context(results),{retrieval:results.retrieval});},rows=>({count:rows.length})),timeline:async args=>diagnostics.measure('source','timeline',()=>{const page=this.agentTimeline(args,policy,operation('discover'));return {...page,items:this.context(page.items)};},page=>({count:page.items.length})),evidence:async args=>diagnostics.measure('source','evidence',()=>this.context(this.evidenceById(args.ids,args).filter(boundedEvidenceAllowed)),rows=>({count:rows.length})),activity:async args=>diagnostics.measure('source','activity',()=>store.activity(args),result=>({count:result.captures})),devices:async()=>diagnostics.measure('source','devices',()=>store.devices(),rows=>({count:rows.length}))};
   }
