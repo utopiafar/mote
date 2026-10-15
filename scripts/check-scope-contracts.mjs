@@ -64,6 +64,8 @@ export function checkProductionImports(directory=root){
   // M05 reuses the pure WeakMap failure-context projection. It opens no store,
   // installs no legacy service and accepts no provider prose.
   allowed.add(sourceRoot+'/execution-failures.ts');
+  // M03 reuses immutable chunk preparation/durable replacement without a Store.
+  for(const path of ['content-encryption.ts','asset-work.ts'])allowed.add(sourceRoot+'/'+path);
   // M04 uses the original configuration and pure model/usage contracts.
   for(const path of ['config-service.ts','model-settings.ts','usage-metrics.ts','i18n.ts'])allowed.add(sourceRoot+'/'+path);
   const entries=[resolve(directory,sourceRoot,'index.ts'),resolve(directory,sourceRoot,'app.ts'),...files(resolve(directory,sourceRoot,'scope'))];
@@ -102,7 +104,7 @@ export function checkScopes(directory=root){
  * installation is the explicit, inventoried exception; it is never a user API.
  * This detects new bypasses, and complements real A/B and composite-FK tests. */
 export function privateSqlViolations(source,path){
-  if(path==='apps/server/src/scope/private-data-schema.ts'||path==='apps/server/src/scope/private-data-sql.ts')return [];
+  if(path==='apps/server/src/scope/private-data-schema.ts'||path==='apps/server/src/scope/private-data-sql.ts'||path==='apps/server/src/scope/ingress-schema.ts')return [];
   const failures=[],tree=ts.createSourceFile(path,source,ts.ScriptTarget.Latest,true);
   function visit(node){
     if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)){

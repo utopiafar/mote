@@ -3,6 +3,7 @@ import {z} from 'zod';
 import {sourceConnectionSchema,sourceItemSchema,sourceContentTime,captureSchema,ownerRelationSchema,sourceContextUpdateSchema,type AttributionContext,type SourceConnection,type CaptureInput,type CaptureRecord,type SourceItemRecord} from '@mote/shared';
 import {materialDraftSchema,type MaterialDraft} from './material-model.js';
 import {PrivateSql,PrivateCursor,PrivateDataError,missing} from './private-data-sql.js';
+import {storeCapture,type StoredCapture} from './capture-original.js';
 
 export const PRIVATE_DATA_DOMAIN='private-data';
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -66,13 +67,13 @@ export class PrivateData{
       return {...value,fingerprint};
     });
   }
-  receiveCaptures(raw:unknown[]){
+  receiveCaptures(raw:unknown[],original?:{sourceId?:string;verify:(input:CaptureInput)=>void}){
     const inputs=z.array(captureSchema).min(1).max(500).parse(raw);
-    if(inputs.some(c=>c.imageBase64||c.imageMime||c.provenance))throw new PrivateDataError('scope_unavailable',503);
-    return this.sql.transaction(()=>inputs.map(input=>this.insertCapture(input)));
+    if(inputs.some(c=>c.provenance||((c.imageBase64||c.imageMime)&&!original)))throw new PrivateDataError('scope_unavailable',503);
+    return this.sql.transaction(()=>inputs.map(input=>{if(input.imageBase64)original!.verify(input);if(original?.sourceId){const source=this.source(original.sourceId);if(!source.enabled||source.deviceId!==input.deviceId||source.platform!==input.platform)throw conflict();}return this.insertCapture(input,undefined,original?.sourceId);}));
   }
-  private insertCapture(input:CaptureInput,sourceFingerprint?:string){
-    const at=now(),record={...input,capturedAt:new Date(input.capturedAt).toISOString()},fingerprint=sourceFingerprint??hash(record);
+  private insertCapture(input:CaptureInput,sourceFingerprint?:string,ingressSourceId?:string){
+    const at=now(),record={...storeCapture({...input,capturedAt:new Date(input.capturedAt).toISOString()}),...(ingressSourceId?{ingressSourceId}:{})},fingerprint=sourceFingerprint??hash(record);
     if(Date.parse(record.capturedAt)>Date.now()+86400000)throw new PrivateDataError('invalid_data');
     const prior=this.sql.get('SELECT fingerprint FROM pd_captures WHERE user_id=$user AND id=?',record.id);
     if(prior){if(prior.fingerprint!==fingerprint)throw conflict();return {id:record.id,duplicate:true};}
@@ -80,13 +81,16 @@ export class PrivateData{
     this.sql.run('INSERT INTO pd_captures VALUES($user,?,?,?,?,?,?,?,?)',record.id,p?.sourceId??null,p?.externalId??null,p?.revision??null,fingerprint,new Date(sourceContentTime(record)).toISOString(),at,JSON.stringify(record));
     return {id:record.id,duplicate:false};
   }
-  receiveSourceItems(sourceId:string,raw:unknown[]){
+  receiveSourceItems(sourceId:string,raw:unknown[],archiveOriginal?:{verify:(item:import('@mote/shared').SourceItem)=>void}){
     const items=z.array(sourceItemSchema).min(1).max(500).parse(raw);
     if(new Set(items.map(i=>JSON.stringify([i.externalId,i.revision]))).size!==items.length)throw conflict();
     return this.sql.transaction(()=>{
       const source=this.source(sourceId);if(!source.enabled)throw conflict();
-      if(source.retention==='archive')throw new PrivateDataError('scope_unavailable',503);
+      if(source.retention==='archive'&&!archiveOriginal)throw new PrivateDataError('scope_unavailable',503);
       return {receipts:items.map(item=>{
+        // Archive originals remain behind M03's restricted reader. Public data
+        // candidates never index raw Coding transcripts or transport payloads.
+        if(source.retention==='archive'){archiveOriginal!.verify(item);item={...item,text:''};}
         if(source.retention==='reference'&&item.layer!=='reference')throw conflict();
         const {observedAt,...semantic}=item,fingerprint=hash(semantic);
         const previous=this.sql.get('SELECT id,fingerprint FROM pd_captures WHERE user_id=$user AND source_id=? AND external_id=? AND revision=?',sourceId,item.externalId,item.revision);
@@ -107,8 +111,8 @@ export class PrivateData{
   }
   capture(id:string):CaptureRecord{
     const row=this.sql.get('SELECT json,received_at FROM pd_captures WHERE user_id=$user AND id=?',id);
-    const {imageBase64:_,imageMime:__,...input}=json<CaptureInput>(row);
-    return {...input,receivedAt:String(row!.received_at),blobHash:null,imageMime:null,indexingStatus:'indexed'};
+    const {originalImage,ingressSourceId:_,...input}=json<StoredCapture>(row);
+    return {...input,receivedAt:String(row!.received_at),blobHash:originalImage?.hash??null,imageMime:originalImage?.mime??null,indexingStatus:originalImage?'pending':'indexed'};
   }
   sourceItem(sourceId:string,externalId:string):SourceItemRecord|null{
     this.source(sourceId);const row=this.sql.get('SELECT capture_id FROM pd_source_heads WHERE user_id=$user AND source_id=? AND external_id=?',sourceId,externalId);
@@ -186,6 +190,8 @@ export class PrivateData{
         if(member.kind==='capture'){
           if(!member.ref.startsWith('capture:'))throw new PrivateDataError('invalid_data');
           const id=member.ref.slice(8),capture=this.capture(id);
+          const stored=json<StoredCapture>(this.sql.get('SELECT json FROM pd_captures WHERE user_id=$user AND id=?',id));
+          if(stored.ingressSourceId)sources.add(stored.ingressSourceId);
           if(capture.provenance?.deleted||member.revision&&member.revision!==capture.provenance?.revision)throw conflict();
           if(capture.provenance){
             const p=capture.provenance,head=this.sourceItem(p.sourceId,p.externalId);if(head?.captureId!==id)throw conflict();

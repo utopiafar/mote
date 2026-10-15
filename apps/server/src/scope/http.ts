@@ -22,6 +22,9 @@ export async function requestContext(req:FastifyRequest,authority:UserContextAut
   const cookie=cookieCredential(req),auth=req.headers.authorization;
   if(cookie&&auth)throw new ScopeError('invalid_identity',401);
   const context=await authority.authenticate(cookie??(typeof auth==='string'&&auth.startsWith('Bearer ')?auth.slice(7):undefined));
+  // A device handoff is an ingestion capability, not a private archive session.
+  // Check before every existing domain route, including credential minting.
+  if(accounts?.credentialInfo(context,authority).deviceId&&!req.url.startsWith('/api/ingress/')&&!['/api/connections/self','/api/auth/logout'].includes(req.url.split('?')[0]))throw new ScopeError('invalid_identity',403);
   if(req.headers['x-mote-protocol-version']!==String(SCOPE_BASELINE.wireProtocol))throw new ScopeError('incompatible_protocol',426);
   if(cookie){
     if(!accounts||accounts.credentialInfo(context,authority).kind!=='web')throw new ScopeError('invalid_identity',401);
@@ -30,9 +33,9 @@ export async function requestContext(req:FastifyRequest,authority:UserContextAut
   }else if(accounts?.credentialInfo(context,authority).kind==='web')throw new ScopeError('invalid_identity',401);
   return context;
 }
-type Route={method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE';url:string;administrator?:boolean;revokesSelf?:boolean|((context:UserContext,request:FastifyRequest)=>boolean);discoverSession?:boolean;handle:(context:UserContext,req:FastifyRequest,reply:FastifyReply)=>unknown|Promise<unknown>};
+type Route={method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE';url:string;bodyLimit?:number;administrator?:boolean;revokesSelf?:boolean|((context:UserContext,request:FastifyRequest)=>boolean);discoverSession?:boolean;handle:(context:UserContext,req:FastifyRequest,reply:FastifyReply)=>unknown|Promise<unknown>};
 export function registerAuthenticatedRoute(runtime:ScopedRuntime,route:Route){
-  runtime.app.route({method:route.method,url:route.url,handler:async(req,reply)=>{
+  runtime.app.route({method:route.method,url:route.url,bodyLimit:route.bodyLimit,handler:async(req,reply)=>{
     const context=await requestContext(req,runtime.authority,runtime.accounts,{discoverSession:route.discoverSession});
     if(route.administrator)runtime.authority.assertAdministrator(context);
     const result=await route.handle(context,req,reply);
@@ -41,7 +44,7 @@ export function registerAuthenticatedRoute(runtime:ScopedRuntime,route:Route){
     return result;
   }});
 }
-export function registerUserRoute(runtime:ScopedRuntime,route:{scope:'user';method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE';url:string;service:string;handle:(input:{context:UserContext;services:ReturnType<ScopedServices['forUser']>;request:FastifyRequest})=>unknown|Promise<unknown>}){
+export function registerUserRoute(runtime:ScopedRuntime,route:{scope:'user';method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE';url:string;bodyLimit?:number;service:string;handle:(input:{context:UserContext;services:ReturnType<ScopedServices['forUser']>;request:FastifyRequest})=>unknown|Promise<unknown>}){
   if(route.scope!=='user'||!route.url.startsWith('/api/')||route.url==='/api/health'||!route.service)throw new ScopeError('undeclared_scope',500);
   registerAuthenticatedRoute(runtime,{...route,handle:async(context,request)=>{const services=runtime.services.forUser(context);services.require(route.service);return route.handle({context,services,request});}});
 }

@@ -1385,12 +1385,114 @@
       "api:registerAuthenticatedRoute:method:'POST',url:'/api/login/ticket'"
     ]
   },
+  "apps/server/src/scope/configuration-routes.ts": {
+    "scope": "mixed",
+    "module": "M04",
+    "status": "implemented",
+    "surfaces": [
+      "api:registerAuthenticatedRoute:method:'GET',url:'/api/admin/configuration/models'",
+      "api:registerAuthenticatedRoute:method:'PUT',url:'/api/admin/configuration/models'",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/configuration',service:'configuration'",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/models',service:'configuration'",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/models/selection/:feature',service:'configuration'",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/usage',service:'configuration'",
+      "api:registerUserRoute:scope:'user',method:'PATCH',url:'/api/configuration',service:'configuration'",
+      "api:registerUserRoute:scope:'user',method:'POST',url:'/api/configuration/reload',service:'configuration'",
+      "api:registerUserRoute:scope:'user',method:'PUT',url:'/api/configuration/:domain',service:'configuration'",
+      "extension:runtime.services.registerInstance:'model-resources'",
+      "extension:runtime.services.registerUser:'configuration'"
+    ]
+  },
+  "apps/server/src/scope/configuration.ts": {
+    "scope": "mixed",
+    "module": "M04",
+    "status": "implemented",
+    "surfaces": [
+      "directory:path",
+      "table:model_resource_generations",
+      "table:model_resource_revision",
+      "table:user_configuration_restore_journal",
+      "table:user_configuration_state",
+      "table:user_model_credential_generations",
+      "table:user_model_snapshot_revision",
+      "table:user_model_usage"
+    ]
+  },
   "apps/server/src/scope/http.ts": {
     "scope": "mixed",
     "module": "M01",
     "status": "implemented",
     "surfaces": [
       "api:registerAuthenticatedRoute:{...route,handle:async(context,request)=>{const services=runtime.services.forUser(context);services.require(route.service);return route.handle({context,services,request});}}"
+    ]
+  },
+  "apps/server/src/scope/ingress-routes.ts": {
+    "scope": "user",
+    "module": "M03",
+    "surfaces": [
+      "api:registerAuthenticatedRoute:method:'GET',url:'/api/ingress/originals/:id/content'",
+      "api:registerAuthenticatedRoute:method:'POST',url:'/api/ingress/host-import'",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/ingress/devices',service:INGRESS_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/ingress/sources/:id/originals',service:INGRESS_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/ingress/sources/:id/receipts/:batch',service:INGRESS_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/ingress/uploads/:id',service:INGRESS_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'POST',url:'/api/ingress/devices',service:INGRESS_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'POST',url:'/api/ingress/gc',service:INGRESS_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'POST',url:'/api/ingress/originals/:id/tickets',service:INGRESS_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'POST',url:'/api/ingress/sources',service:INGRESS_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'POST',url:'/api/ingress/sources/:id/captures',service:INGRESS_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'POST',url:'/api/ingress/sources/:id/items',service:INGRESS_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'POST',url:'/api/ingress/sources/:id/uploads',service:INGRESS_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'POST',url:'/api/ingress/uploads/:id/commit',service:INGRESS_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'PUT',url:'/api/ingress/uploads/:id/parts/:part',service:INGRESS_DOMAIN"
+    ]
+  },
+  "apps/server/src/scope/ingress-schema.ts": {
+    "scope": "mixed",
+    "module": "M03",
+    "surfaces": [
+      "table:ig_activity",
+      "table:ig_batches",
+      "table:ig_capture_scopes",
+      "table:ig_devices",
+      "table:ig_meta",
+      "table:ig_objects",
+      "table:ig_originals",
+      "table:ig_parts",
+      "table:ig_pins",
+      "table:ig_restore",
+      "table:ig_state",
+      "table:ig_upload_parts",
+      "table:ig_uploads",
+      "table:ig_work"
+    ]
+  },
+  "apps/server/src/scope/ingress.ts": {
+    "scope": "user",
+    "module": "M03",
+    "surfaces": [
+      "extension:runtime.services.registerUser:INGRESS_DOMAIN"
+    ]
+  },
+  "apps/server/src/scope/model-snapshots.ts": {
+    "scope": "user",
+    "module": "M04",
+    "status": "implemented",
+    "surfaces": [
+      "directory:path",
+      "table:user_model_snapshots"
+    ]
+  },
+  "apps/server/src/scope/originals.ts": {
+    "scope": "user",
+    "module": "M03",
+    "surfaces": [
+      "directory:path",
+      "directory:root",
+      "directory:stage",
+      "directory:this.area('work')",
+      "directory:this.directory",
+      "directory:user"
     ]
   },
   "apps/server/src/scope/private-data-routes.ts": {
@@ -1618,48 +1720,6 @@
       "extension:backendContext.provide:'moteOwnerQuestions'",
       "extension:registerMemoryExtensions:{integrationSettings:memoryIntegrationSettings,semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model}",
       "extension:registerPluginRoutes:app"
-    ]
-  },
-  "apps/server/src/scope/configuration.ts": {
-    "scope": "mixed",
-    "module": "M04",
-    "status": "implemented",
-    "surfaces": [
-      "directory:path",
-      "table:model_resource_generations",
-      "table:model_resource_revision",
-      "table:user_configuration_restore_journal",
-      "table:user_configuration_state",
-      "table:user_model_credential_generations",
-      "table:user_model_snapshot_revision",
-      "table:user_model_usage"
-    ]
-  },
-  "apps/server/src/scope/configuration-routes.ts": {
-    "scope": "mixed",
-    "module": "M04",
-    "status": "implemented",
-    "surfaces": [
-      "api:registerAuthenticatedRoute:method:'GET',url:'/api/admin/configuration/models'",
-      "api:registerAuthenticatedRoute:method:'PUT',url:'/api/admin/configuration/models'",
-      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/configuration',service:'configuration'",
-      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/models',service:'configuration'",
-      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/models/selection/:feature',service:'configuration'",
-      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/usage',service:'configuration'",
-      "api:registerUserRoute:scope:'user',method:'PATCH',url:'/api/configuration',service:'configuration'",
-      "api:registerUserRoute:scope:'user',method:'POST',url:'/api/configuration/reload',service:'configuration'",
-      "api:registerUserRoute:scope:'user',method:'PUT',url:'/api/configuration/:domain',service:'configuration'",
-      "extension:runtime.services.registerInstance:'model-resources'",
-      "extension:runtime.services.registerUser:'configuration'"
-    ]
-  },
-  "apps/server/src/scope/model-snapshots.ts": {
-    "scope": "user",
-    "module": "M04",
-    "status": "implemented",
-    "surfaces": [
-      "directory:path",
-      "table:user_model_snapshots"
     ]
   }
 }

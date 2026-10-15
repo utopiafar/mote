@@ -1,7 +1,8 @@
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
-import {captureSchema,sourceConnectionSchema,sourceContentTime,sourceContextUpdateSchema,sourceItemSchema,type AttributionContext} from '@mote/shared';
+import {sourceConnectionSchema,sourceContentTime,sourceContextUpdateSchema,sourceItemSchema,type AttributionContext} from '@mote/shared';
 import {materialDraftSchema} from './material-model.js';
+import {storedCaptureSchema} from './capture-original.js';
 import {PrivateDataError,type PrivateSql} from './private-data-sql.js';
 import type {DomainLifecycle,LifecyclePurpose,UserDataSubject,UserExport} from './lifecycle.js';
 
@@ -86,9 +87,10 @@ function validate(payload:Payload){
     if(latest?(!pin||pin.version!==latest.version||pin.fingerprint!==latest.fingerprint):Boolean(pin))invalid();
   }
   const parsedCaptures=new Map(payload.captures.map(row=>{
-    const capture=decode(captureSchema,row.json),provenance=capture.provenance;
-    if(capture.id!==row.id||capture.imageBase64||capture.imageMime||new Date(sourceContentTime(capture)).toISOString()!==row.context_at||capture.capturedAt!==new Date(capture.capturedAt).toISOString())invalid();
+    const capture=decode(storedCaptureSchema,row.json),provenance=capture.provenance;
+    if(capture.id!==row.id||new Date(sourceContentTime(capture)).toISOString()!==row.context_at||capture.capturedAt!==new Date(capture.capturedAt).toISOString())invalid();
     if((provenance?.sourceId??null)!==row.source_id||(provenance?.externalId??null)!==row.external_id||(provenance?.revision??null)!==row.revision)invalid();
+    if(capture.ingressSourceId){const source=parsedSources.get(capture.ingressSourceId);if(provenance||!source||capture.deviceId!==source.deviceId||capture.platform!==source.platform)invalid();}
     if(provenance){
       const source=parsedSources.get(provenance.sourceId);if(!source||capture.deviceId!==source.deviceId||capture.platform!==source.platform)invalid();
       const item=sourceItemSchema.parse({externalId:provenance.externalId,revision:provenance.revision,observedAt:capture.capturedAt,
@@ -129,6 +131,7 @@ function validate(payload:Payload){
         if(visible&&capture.provenance&&heads.get(key(capture.provenance.sourceId,capture.provenance.externalId))?.capture_id!==capture.id)invalid();
         captureIds.add(link.capture_id);seenCaptureLinks.add(id);
         if(capture.provenance)sourcesForVersion.add(capture.provenance.sourceId);
+        if(capture.ingressSourceId)sourcesForVersion.add(capture.ingressSourceId);
       }else if(member.kind==='material'){
         const link=inputs.get(id);
         if(!link||![`material:${link.input_material_id}@${link.input_revision}`,`${link.input_material_id}@${link.input_revision}`].includes(member.ref)||member.revision&&member.revision!==link.input_revision||link.input_material_id===row.material_id||!versions.has(key(link.input_material_id,link.input_revision)))invalid();

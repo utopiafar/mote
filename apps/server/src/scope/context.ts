@@ -60,4 +60,5 @@ export class UserContextAuthority {
     if(!issued||!(issued.mode==='task'?this.taskVerifier?.isCurrent(issued.identity):this.verifier.isCurrent(issued.identity)))throw new ScopeError('invalid_identity',401);
   }
   assertAdministrator(context:unknown){this.assert(context);if(!this.issued.get(context)!.identity.administrator)throw new ScopeError('invalid_identity',403);}
+  isTask(context:UserContext){this.assert(context);return this.issued.get(context)!.mode==='task';}
 }

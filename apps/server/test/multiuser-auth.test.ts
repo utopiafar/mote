@@ -102,11 +102,14 @@ test('the existing one-use ticket and PKCE handoffs remain bound to their accoun
  const a=(await f.request('POST','/api/login/poll',{id:first.id,verifier})).json(),b=(await f.request('POST','/api/login/poll',{id:second.id,verifier})).json();assert.equal(a.userId,f.a.userId);assert.equal(b.userId,f.b.userId);
  assert.notEqual((await f.request('POST','/api/login/poll',{id:first.id,verifier:'x'.repeat(43)})).statusCode,200);
  await f.request('POST','/api/login/ack',{id:first.id,verifier});assert.equal((await f.request('POST','/api/login/poll',{id:first.id,verifier})).statusCode,410);
- const ticket=(await f.request('POST','/api/login/ticket',{},headers(a.token))).json();
+ assert.equal((await f.request('POST','/api/login/ticket',{},headers(a.token))).statusCode,403);
+ const ticket=(await f.request('POST','/api/login/ticket',{},headers(f.alice.token))).json();
  const webResponse=await f.request('POST','/api/login/exchange',ticket);assert.equal(webResponse.statusCode,200);assert.equal(webResponse.json().userId,f.a.userId);assert.equal(webResponse.json().token,undefined);
  assert.equal((await f.request('POST','/api/login/exchange',ticket)).statusCode,410);
  const web={r:webResponse,...webResponse.json()};assert.equal((await f.request('GET','/api/auth/self',undefined,f.cookieHeaders(web))).statusCode,200);
- await f.request('POST','/api/auth/logout',{},headers(a.token));assert.equal((await f.request('GET','/api/auth/self',undefined,f.cookieHeaders(web))).statusCode,401);
+ await f.request('POST','/api/auth/logout',{},headers(f.alice.token));assert.equal((await f.request('GET','/api/auth/self',undefined,f.cookieHeaders(web))).statusCode,401);
+ assert.equal((await f.request('GET','/api/connections/self',undefined,headers(a.token))).statusCode,200);
+ await f.request('POST','/api/auth/logout',{},headers(a.token));assert.equal((await f.request('GET','/api/connections/self',undefined,headers(a.token))).statusCode,401);
  const revoked=(await f.request('POST','/api/login/ticket',{},headers(f.bob.token))).json();await f.request('POST','/api/auth/logout',{},headers(f.bob.token));assert.equal((await f.request('POST','/api/login/exchange',revoked)).statusCode,401);
 });
 
