@@ -216,6 +216,14 @@ checked for whitespace, grammar and local links.
 Before publication, the M03 remote branch and open PR were both absent and
 integration still resolved to `6272a9b51ec92cc4c32e2ff1a1eeb4fa38b142ed`.
 Checks and Component checks were read-only verified as `disabled_manually`;
-neither workflow nor any repository setting was changed. Final Draft PR and
-remote-head/check records are appended after creation. No merge is authorized
-or performed.
+neither workflow nor any repository setting was changed.
+
+Draft PR [#131](https://github.com/utopiafar/mote/pull/131) is **OPEN / Draft**, base
+`codex/mote-multiuser-integration`, head `codex/mote-multiuser-m03-ingress`.
+The initial published documentation head `c8f1aa675062ef795c2487f199828c16afe4a38d`
+matched both the PR API and `git ls-remote`; base remained the SHA above.
+`merged:false`, `statusCheckRollup:[]`: **zero CI records, not CI passed**.
+The PR was attached to this task. This final publication-record commit changes
+only this validation document; runtime/tests remain exact `14858e86`.
+The remote head is verified again after that documentation-only push and recorded
+in the final handoff. No merge is authorized or performed.
