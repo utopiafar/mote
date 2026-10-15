@@ -98,7 +98,9 @@ export class Configurations {
       this.assertSubject(context,'export');
       if(this.entries.get(context.userId)!==prior)return this.entry(context);
       if(prior.accessKey===accessKey&&('credentialId' in context||prior.subject===context)){this.assertGeneration(context.userId,prior.generation);return prior;}
-      this.entries.delete(context.userId);await prior.service.close();return this.entry(context);
+      // Keep the retiring entry visible while its transaction queue drains.
+      // A concurrent new epoch must wait for rollback before reading the YAML.
+      await prior.service.close();if(this.entries.get(context.userId)===prior)this.entries.delete(context.userId);return this.entry(context);
     }
     const pending=this.opening.get(context.userId);if(pending){await pending.catch(()=>{});return this.entry(context);}
     const create=async()=>{
@@ -142,7 +144,7 @@ export class Configurations {
     const {settings,reference}=this.resources.resolve(entry.service.current('models'),feature);
     const prices=entry.service.current<z.infer<typeof priceDomain>>('modelPrices').items;
     const lease=Object.freeze({id:randomUUID(),deploymentId:context.deploymentId,userId:context.userId,operationId,feature,revision:entry.service.revision,instanceRevision:this.instance.revision,reference:Object.freeze(reference),provider:settings.provider,model:settings.model});
-    this.leases.set(lease,{context,generation:entry.generation,...(reference.kind==='shared'?{sharedGeneration:this.resources.generation(reference.id)}:{}),settings:clone(settings),price:clone(prices.find(p=>p.provider===settings.provider&&p.model===settings.model)),configuration:entry.service.document()});
+    this.leases.set(lease,{context,generation:entry.generation,...(reference.kind==='shared'?{sharedGeneration:this.resources.generation(reference.id)}:{}),settings:clone(settings),price:clone(prices.find(p=>p.provider===settings.provider&&p.model===settings.model)),configuration:entry.service.effectiveDocument()});
     return lease;
   }
   /** M05/M06/M07 hold a genuine lease, not a deserialized receipt. Logout does

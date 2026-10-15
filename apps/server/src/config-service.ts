@@ -194,6 +194,13 @@ export class ConfigService {
   onChange(listener: () => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   /** Internal bootstrap only; HTTP owners receive the redacted view. */
   document(): ConfigDocument { return clone(this.state()); }
+  /** Host task snapshots contain only committed effective values. Saved restart
+   * candidates and failed applications must never become task authorization. */
+  effectiveDocument():ConfigDocument {
+    const state=this.state(),document:ConfigDocument={version:1,revision:state.revision};
+    for(const domain of this.domains.values())if(!domain.documentPath)document[domain.id]=this.current(domain.id);
+    return document;
+  }
   setValidator(validate: (resolvedDocument: ConfigDocument) => void): void { this.validateDocument = validate; }
   setNormalizer(normalize: (rawDocument: unknown) => unknown): void { this.normalizeDocument = normalize; }
   private notify(): void { for (const listener of this.listeners) { try { listener(); } catch { /* observers cannot invalidate a committed configuration */ } } }

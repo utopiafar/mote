@@ -12,6 +12,7 @@ import {Configurations} from '../src/scope/configuration.js';
 import {UserContextAuthority} from '../src/scope/context.js';
 import {LifecycleAuthority} from '../src/scope/lifecycle.js';
 import {defaultModelSettings} from '../src/model-settings.js';
+import {ConfigService} from '../src/config-service.js';
 
 const execute=promisify(execFile),deploymentId='synthetic-recovery-deployment',userId='synthetic-a',operationId='synthetic-restore';
 const personal=(key:string)=>({profiles:[{id:'synthetic-profile',name:'Synthetic personal',settings:{...defaultModelSettings(),provider:'custom',protocol:'openai-completions',reasoningEffort:'auto',baseUrl:'https://synthetic.invalid/v1',model:'synthetic-model',apiKey:key}}],selections:{chat:{kind:'personal',id:'synthetic-profile'}}});
@@ -148,4 +149,41 @@ test('a valid new epoch request survives the previous epoch initialization failu
   f.setEpoch(1);const current=await f.authority.authenticate('new-a'),first=f.manager.forUser(current).view();
   release();await oldRejected;
   assert.doesNotThrow(()=>f.authority.assert(current));assert.equal((await first).revision,0);
+});
+
+test('parallel new epoch requests wait for a revoked transaction rollback before reopening its file',async t=>{
+  const f=await fixture(t);let release!:()=>void,entered!:()=>void,closing!:()=>void;
+  const wait=new Promise<void>(resolve=>{release=resolve;}),started=new Promise<void>(resolve=>{entered=resolve;}),closingStarted=new Promise<void>(resolve=>{closing=resolve;});
+  f.manager.registerDomain('extension',context=>({
+    id:'extension',schema:z.object({limit:z.number()}).strict(),defaultValue:{limit:1},resolve:raw=>raw,
+    prepare:(next:unknown)=>({
+      apply:async()=>{if('credentialId' in context&&context.authorizationEpoch===0&&(next as {limit:number}).limit===99){entered();await wait;}},
+      publish:()=>{},rollback:()=>{},
+    }),
+  }));
+  const old=f.manager.forUser(await f.authority.authenticate('old-a'));await old.view();
+  const pending=old.replace('extension',{limit:99},0),rejected=assert.rejects(pending,{code:'invalid_identity'});
+  await started;
+  const initialize=ConfigService.prototype.initialize,close=ConfigService.prototype.close;
+  let released=false,reopenedBeforeDrain=0;
+  t.mock.method(ConfigService.prototype,'initialize',function(this:ConfigService){
+    if(this.path===f.file()&&!released)reopenedBeforeDrain++;
+    return initialize.call(this);
+  });
+  t.mock.method(ConfigService.prototype,'close',function(this:ConfigService){
+    if(this.path===f.file())closing();
+    return close.call(this);
+  });
+  f.setEpoch(1);const current=f.manager.forUser(await f.authority.authenticate('new-a'));
+  const first=current.view();await closingStarted;
+  const second=current.view();await Promise.resolve();
+  released=true;release();await rejected;
+  const views=await Promise.all([first,second]);
+  assert.equal(reopenedBeforeDrain,0,'A new epoch must not initialize from the old transaction candidate');
+  for(const view of views){
+    const extension=view.domains.find(domain=>domain.id==='extension')!;
+    assert.deepEqual(extension.saved,{limit:1});assert.deepEqual(extension.effective,{limit:1});
+    assert.equal(view.lastError,null);
+  }
+  assert.equal(parse(readFileSync(f.file(),'utf8')).extension.limit,1);
 });
