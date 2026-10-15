@@ -120,7 +120,10 @@ complete reference sets and exact dependency graph before writing. It accepts an
 empty domain or an identical complete retry; a conflicting nonempty domain fails.
 History retains exact old references, while current visible versions must pass
 current input and source-context checks. Failure rolls back rows and FTS together.
-Deletion is idempotent and touches only its subject's rows.
+Deletion is idempotent and touches only its subject's canonical rows and index
+entries. Its complete receipt covers those registered records; it does not claim
+forensic erasure of shared SQLite pages or storage media. M16 owns instance-level
+backup/media maintenance and the final deletion report.
 
 `ScopedServices.assertSubject` lets the gateway revalidate a user or a
 purpose/domain-limited `LifecycleContext` at commit. The production builder accepts

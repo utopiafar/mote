@@ -123,10 +123,10 @@ The earlier exploratory run passed, but it is not used as final-code evidence
 because the review fixes followed that run's initial test discovery. The next
 complete run on `1323c7e1` caught the startup race (server 1959 passed, one failed,
 one existing conditional skip). That failed run is retained as a failure; the
-production ordering was fixed and a final complete run is required below. No
+production ordering was fixed and the final complete run below passed. No
 startup assertion was relaxed and no test was skipped to hide the failure. A
 subsequent background run lost its execution handle and stopped without a final
-result; it is recorded as incomplete, not passed. The final run writes an explicit
+result; it is recorded as incomplete, not passed. The final run wrote an explicit
 exit-status receipt in addition to the complete log.
 
 The final command selected full TypeScript integration and Android JVM checks:
@@ -154,11 +154,22 @@ interrupted run into a pass.
 
 ## Remote delivery and limits
 
-Remote module head, Draft PR base/head and final CI state will be recorded after
-the final affected run. M00 PR #126 remains an open prerequisite at the checked
-baseline; this module does not merge it. On read-only inspection, repository
-workflows **Checks** and **Component checks** were both `disabled_manually`.
-No workflow setting was changed and no CI success is inferred from that state.
+[Draft PR #128](https://github.com/utopiafar/mote/pull/128) is open with base
+`codex/mote-multiuser-integration` at
+`6272a9b51ec92cc4c32e2ff1a1eeb4fa38b142ed`. Its source is
+`codex/mote-multiuser-m02-data`. Creation-time verification matched the remote
+module branch and PR head at `5e4ef80e9f4db9ce1723194a410ec1c1dc653fbe` (the tested
+implementation plus the acceptance document). This final evidence update changes
+only documentation; the final delivery SHA is reported in task completion and
+can be read from the PR. The application implementation remains exactly `d8aaef97`.
+
+The checked head had an empty `statusCheckRollup`; CI did not run. On read-only
+inspection, repository workflows **Checks** and **Component checks** were both
+`disabled_manually`. No workflow setting was changed and no CI success is inferred
+from that state. [M00 PR #126](https://github.com/utopiafar/mote/pull/126) remains
+an open prerequisite at the checked baseline, so the PR includes its changes and
+explicitly declares that dependency. No PR, main or integration branch was merged
+or advanced by M02.
 
 Not run: physical devices, Android emulator/renderer UI, native client journeys,
 real models/providers, external indexes, production deployment or real-vault
