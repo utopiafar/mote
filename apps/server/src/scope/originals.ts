@@ -1,6 +1,6 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {constants,existsSync,lstatSync,openSync,closeSync,fstatSync,readFileSync,writeFileSync,fsyncSync,renameSync,rmSync,readdirSync} from 'node:fs';
-import {join} from 'node:path';
+import {join,dirname} from 'node:path';
 import {FILE_PART_BYTES,FILE_MAX_BYTES} from '@mote/shared';
 import {privateDirectory} from '../private-storage.js';
 import {replaceContentFile} from '../content-encryption.js';
@@ -26,6 +26,7 @@ export class Originals{
  root(){this.assert();return this.trustedRoot();}
  private trustedArea(kind:'objects'|'uploads'|'work'){const path=join(this.trustedRoot(),kind);privateDirectory(path);return path;}
  area(kind:'objects'|'uploads'|'work'){this.assert();return this.trustedArea(kind);}
+ private cleanStage(path:string){if(dirname(path)!==this.trustedArea('objects'))throw conflict();rmSync(path,{recursive:true,force:true});}
  private objectPath(hash:string){if(!digest.test(hash))throw missing();const path=join(this.area('objects'),hash);privateDirectory(path);return path;}
  uploadPath(id:string){if(!uuid.test(id))throw missing();const path=join(this.area('uploads'),id);privateDirectory(path);return path;}
  private readFile(path:string){
@@ -45,7 +46,7 @@ export class Originals{
    if(existsSync(destination)){this.verifyDirectory(destination,hash,bytes.length,checksums);}
    else {renameSync(stage,destination);sync(parent);}
    this.record(hash,bytes.length,checksums);return this.get(hash);
-  }finally{rmSync(stage,{recursive:true,force:true});}
+  }finally{this.cleanStage(stage);}
  }
  private verifyDirectory(path:string,hash:string,size:number,checksums:string[]){
   privateDirectory(path);const sum=createHash('sha256');let total=0;
@@ -66,8 +67,9 @@ export class Originals{
   * transaction or user-selected path crosses the await. Pins protect GC. */
  async prepareUpload(id:string,size:number,hash:string,signal?:AbortSignal){
   this.assert();const parent=this.area('objects'),stage=join(parent,hash+'.'+randomUUID()+'.tmp');privateDirectory(stage);
-  const release=this.pin(hash,true);
+  let release:(()=>void)|undefined;
   try{
+   release=this.pin(hash,true);
    const parts=this.sql.all('SELECT part,checksum,bytes FROM ig_upload_parts WHERE user_id=$user AND upload_id=? ORDER BY part',id).map(row=>({part:Number(row.part),hash:String(row.checksum),bytes:Number(row.bytes)}));
    if(parts.length!==Math.ceil(size/FILE_PART_BYTES))throw conflict();
    const result=await prepareAsset({directory:this.uploadPath(id),staging:stage,destinationRoot:parent,hash,bytes:size,partBytes:FILE_PART_BYTES,parts,encryption:{enabled:false}},signal);
@@ -79,8 +81,8 @@ export class Originals{
     this.record(hash,size,result.checksums);
    });
    return {hash,bytes:size,parts:parts.length,release};
-  }catch(error){try{release();}catch{/* Revoked pins expire or are removed by lifecycle. */}throw error;}
-  finally{rmSync(stage,{recursive:true,force:true});}
+  }catch(error){try{release?.();}catch{/* Revoked pins expire or are removed by lifecycle. */}throw error;}
+  finally{this.cleanStage(stage);}
  }
  attach(sourceId:string,captureId:string,hash:string,mime:string,retention:'snapshot'|'archive'):Original{
   const id=identityHash([this.sql.userId,sourceId,captureId,hash,mime,retention]),prior=this.sql.get('SELECT hash,mime,retention FROM ig_originals WHERE user_id=$user AND source_id=? AND capture_id=?',sourceId,captureId);
@@ -114,20 +116,21 @@ export class Originals{
   return ()=>{this.sql.run('DELETE FROM ig_pins WHERE user_id=$user AND id=?',id);};
  }
  gc(){return this.sql.transaction(()=>{
+  if(this.sql.get('SELECT id FROM ig_activity WHERE user_id=$user LIMIT 1'))throw conflict();
   this.sql.run('DELETE FROM ig_pins WHERE user_id=$user AND expires<=?',Date.now());let removed=0;
   const parent=this.area('objects');
   for(const row of this.sql.all('SELECT hash FROM ig_objects o WHERE o.user_id=$user AND NOT EXISTS(SELECT 1 FROM ig_originals r WHERE r.user_id=o.user_id AND r.hash=o.hash) AND NOT EXISTS(SELECT 1 FROM ig_pins p WHERE p.user_id=o.user_id AND p.hash=o.hash)')){
    const hash=String(row.hash);if(!digest.test(hash))throw conflict();const path=join(parent,hash);if(existsSync(path)){privateDirectory(path);rmSync(path,{recursive:true});}this.sql.run('DELETE FROM ig_objects WHERE user_id=$user AND hash=?',hash);removed++;
   }
-  for(const name of readdirSync(parent))if(digest.test(name)&&!this.sql.get('SELECT hash FROM ig_objects WHERE user_id=$user AND hash=?',name)){const path=join(parent,name);privateDirectory(path);rmSync(path,{recursive:true});}
+  for(const name of readdirSync(parent))if(/^[a-f0-9]{64}\.[a-f0-9-]{36}\.tmp$/.test(name)||digest.test(name)&&!this.sql.get('SELECT hash FROM ig_objects WHERE user_id=$user AND hash=?',name)){const path=join(parent,name);privateDirectory(path);rmSync(path,{recursive:true});}
   return {removed};
  });}
  cleanUpload(id:string){if(!uuid.test(id))throw missing();const path=join(this.trustedArea('uploads'),id);if(existsSync(path)){privateDirectory(path);rmSync(path,{recursive:true});}}
  cleanWork(id:string){if(!uuid.test(id))throw missing();const path=join(this.trustedArea('work'),id);if(existsSync(path)){privateDirectory(path);rmSync(path,{recursive:true});}}
  async workspace<T>(work:(workspace:{write(name:string,bytes:Buffer):void;read(name:string):Buffer})=>Promise<T>){
-  const id=randomUUID(),root=this.area('work'),path=join(root,id);privateDirectory(path);this.sql.run('INSERT INTO ig_work VALUES($user,?,?)',id,Date.now()+86400000);
+  const id=randomUUID(),root=this.area('work'),path=join(root,id);privateDirectory(path);
   const child=(name:string)=>{this.assert();if(!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(name)||name==='..')throw new PrivateDataError('invalid_data');privateDirectory(this.area('work'));privateDirectory(path);return join(path,name);};
-  try{const result=await work(Object.freeze({write:(name:string,bytes:Buffer)=>{if(!Buffer.isBuffer(bytes)||bytes.length>FILE_MAX_BYTES)throw new PrivateDataError('invalid_data');const target=child(name);if(existsSync(target)){const info=lstatSync(target);if(!info.isFile()||info.isSymbolicLink()||info.nlink!==1)throw conflict();}const fd=openSync(target,constants.O_WRONLY|constants.O_CREAT|constants.O_TRUNC|constants.O_NOFOLLOW,0o600);try{writeFileSync(fd,bytes);}finally{closeSync(fd);}},read:(name:string)=>this.readFile(child(name))}));this.assert();return result;}
+  try{this.sql.run('INSERT INTO ig_work VALUES($user,?,?)',id,Date.now()+86400000);const result=await work(Object.freeze({write:(name:string,bytes:Buffer)=>{if(!Buffer.isBuffer(bytes)||bytes.length>FILE_MAX_BYTES)throw new PrivateDataError('invalid_data');const target=child(name);if(existsSync(target)){const info=lstatSync(target);if(!info.isFile()||info.isSymbolicLink()||info.nlink!==1)throw conflict();}const fd=openSync(target,constants.O_WRONLY|constants.O_CREAT|constants.O_TRUNC|constants.O_NOFOLLOW,0o600);try{writeFileSync(fd,bytes);}finally{closeSync(fd);}},read:(name:string)=>this.readFile(child(name))}));this.assert();return result;}
   finally{this.cleanWork(id);try{this.sql.run('DELETE FROM ig_work WHERE user_id=$user AND id=?',id);}catch{/* A revoked metadata row is swept by lifecycle/recovery. */}}
  }
 }

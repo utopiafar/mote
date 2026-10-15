@@ -192,3 +192,16 @@ test('FIFO originals and administrator imports fail without blocking a real isol
  const code=`import {buildApp} from ${JSON.stringify(new URL('../src/app.ts',import.meta.url).href)};const node=await buildApp({dataDir:${JSON.stringify(f.directory)}});try{const context=await node.authority.authenticate(${JSON.stringify(f.alice.token)});let denied=false;try{node.ingress.forUser(context).readOriginal(${JSON.stringify(receipt.captures[0].original.ref)});}catch{denied=true;}if(!denied)throw Error('FIFO original accepted');const response=await node.app.inject({method:'POST',url:'/api/ingress/host-import',headers:{'x-mote-protocol-version':'2','x-mote-ingress-version':'3',authorization:'Bearer '+${JSON.stringify(f.admin.token)}},payload:${JSON.stringify({sourceId:'same-source',batchId:'fifo',path:file,revision:revision('same-source',bytes)})}});if(response.statusCode!==400)throw Error('FIFO import not rejected: '+response.statusCode);process.stdout.write('FIFO rejected without blocking');}finally{await node.app.close();}`;
  const result=execFileSync(process.execPath,['--import','tsx','--input-type=module','-e',code],{encoding:'utf8',timeout:5000,stdio:['ignore','pipe','pipe']});assert.match(result,/FIFO rejected without blocking/);
 });
+
+test('revocation between preparation directory creation and pin admission removes the uncommitted temporary directory',async t=>{
+ const f=await fixture(t);await f.register(f.alice.token);const bytes=Buffer.from('Generated preparation admission fence'),upload=await f.begin(f.alice.token,bytes);await f.part(f.alice.token,upload.id,bytes);
+ const root=join(f.directory,'originals',identityHash([f.deploymentId,f.a.userId]),'objects'),context=await f.node.authority.authenticate(f.alice.token),service=f.node.ingress.forUser(context,undefined,()=>{let names:string[]=[];try{names=readdirSync(root);}catch{}if(names.some(name=>name.endsWith('.tmp')))throw Error('Generated revoked preparation admission');});
+ await assert.rejects(service.commitUpload(upload.id));assert.ok(readdirSync(root).every(name=>!name.endsWith('.tmp')));
+});
+
+test('workspace admission failure cleans its directory and owner GC removes crash staging only after I/O is quiescent',async t=>{
+ const f=await fixture(t);await f.register(f.alice.token);const context=await f.node.authority.authenticate(f.alice.token),root=join(f.directory,'originals',identityHash([f.deploymentId,f.a.userId])),workRoot=join(root,'work');let invoked=false;
+ const revoked=f.node.ingress.forUser(context,undefined,()=>{let names:string[]=[];try{names=readdirSync(workRoot);}catch{}if(names.length)throw Error('Generated revoked workspace admission');});
+ await assert.rejects(revoked.withWorkspace(async()=>{invoked=true;}));assert.equal(invoked,false);assert.deepEqual(readdirSync(workRoot),[]);
+ const objects=join(root,'objects');mkdirSync(objects,{recursive:true});const staging=join(objects,bytesHash(Buffer.from('Generated crash staging'))+'.'+randomUUID()+'.tmp');mkdirSync(staging);writeFileSync(join(staging,'0.plain'),'Generated uncommitted bytes');(await f.service(f.alice.token)).gc();assert.ok(!readdirSync(objects).some(name=>name.endsWith('.tmp')));
+});

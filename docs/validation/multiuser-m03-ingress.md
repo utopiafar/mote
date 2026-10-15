@@ -117,3 +117,15 @@ pass or a reason to merge anything. Additional runtime-generation/probe-director
 observations are in `/tmp/mote-m09-review-from-m03.md`. Several cross-thread app
 message attempts returned unavailable/unconfirmed; delivery is not claimed.
 The parent must ensure M09 receives this evidence before combining the modules.
+
+After freeze `fffe1d12`, an added admission-fence fault injection reproduced a
+P2: a temporary preparation directory could remain if pin admission was revoked
+before entering the cleanup `try`. The same ordering existed for workspace
+metadata admission. Both admissions are now inside their cleanup boundary;
+cleanup validates the owner path without requiring the revoked user grant.
+A regression first failed and then passed. Owner GC additionally removes orphan
+crash staging only when there is no unresolved I/O journal. Logs:
+`/tmp/mote-m03-stage-regression-before.log` and `...-after.log`.
+The `fffe1d12` full affected candidate was explicitly stopped before completion
+because these runtime changes made it obsolete; it is **not** counted as passed.
+The next frozen SHA and complete final results supersede the earlier candidate.
