@@ -1336,6 +1336,55 @@
       "api:get:'/api/health'"
     ]
   },
+  "apps/server/src/scope/private-data-routes.ts": {
+    "scope": "user",
+    "module": "M02",
+    "surfaces": [
+      "api:registerUserRoute:scope:'user',method:'DELETE',url:'/api/captures/:id',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'DELETE',url:'/api/materials/:id',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'DELETE',url:'/api/sources/:id',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/captures',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/captures/:id',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/data/search',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/data/statistics',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/layers',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/materials',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/materials/:id',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/materials/:id/members',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/materials/:id/read',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/materials/:id/revisions/:revision',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/source-items',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/sources',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/sources/:id',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/sources/:id/context',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/sources/:id/history',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/sources/:id/item',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'GET',url:'/api/sources/:id/items',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'PATCH',url:'/api/materials/:id/context',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'PATCH',url:'/api/sources/:id',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'PATCH',url:'/api/sources/:id/context',service:PRIVATE_DATA_DOMAIN",
+      "api:registerUserRoute:scope:'user',method:'POST',url:'/api/sources',service:PRIVATE_DATA_DOMAIN",
+      "extension:runtime.services.registerUser:PRIVATE_DATA_DOMAIN"
+    ]
+  },
+  "apps/server/src/scope/private-data-schema.ts": {
+    "scope": "mixed",
+    "module": "M02",
+    "surfaces": [
+      "table:pd_captures",
+      "table:pd_fts",
+      "table:pd_material_captures",
+      "table:pd_material_contexts",
+      "table:pd_material_inputs",
+      "table:pd_material_sources",
+      "table:pd_material_versions",
+      "table:pd_materials",
+      "table:pd_meta",
+      "table:pd_source_contexts",
+      "table:pd_source_heads",
+      "table:pd_sources"
+    ]
+  },
   "apps/server/src/scope/storage.ts": {
     "scope": "mixed",
     "module": "M00",

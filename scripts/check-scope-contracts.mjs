@@ -91,7 +91,32 @@ export function checkProductionImports(directory=root){
 }
 export function checkScopes(directory=root){
   const declared=JSON.parse(readFileSync(resolve(directory,'docs/design/scope-inventory.json'),'utf8'));
-  return [...checkScopeInventory(currentScopeInventory(directory),declared),...checkProductionImports(directory)];
+  return [...checkScopeInventory(currentScopeInventory(directory),declared),...checkProductionImports(directory),...checkPrivateDataSql(directory)];
+}
+/** M02 keeps private SQL behind one owner-binding gateway. Schema/trigger
+ * installation is the explicit, inventoried exception; it is never a user API.
+ * This detects new bypasses, and complements real A/B and composite-FK tests. */
+export function privateSqlViolations(source,path){
+  if(path==='apps/server/src/scope/private-data-schema.ts'||path==='apps/server/src/scope/private-data-sql.ts')return [];
+  const failures=[],tree=ts.createSourceFile(path,source,ts.ScriptTarget.Latest,true);
+  function visit(node){
+    if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)){
+      const method=node.expression.name.text,receiver=node.expression.expression.getText(tree),arg=node.arguments[0];
+      if(method==='prepare'||method==='exec'&&node.expression.expression.kind!==ts.SyntaxKind.RegularExpressionLiteral)failures.push(`private SQL bypass: ${path}`);
+      if(['get','all','run'].includes(method)&&/(?:^|\.)sql$/.test(receiver)){
+        if(!arg||!(ts.isStringLiteralLike(arg)||ts.isTemplateExpression(arg))||!/(?:\buser_id\s*=\s*\$user|\bVALUES\s*\(\s*\$user)/i.test(arg.getText(tree)))failures.push(`private SQL missing owner binding: ${path}`);
+      }
+    }
+    ts.forEachChild(node,visit);
+  }
+  visit(tree);return failures;
+}
+export function checkPrivateDataSql(directory=root){
+  const src=resolve(directory,sourceRoot);if(!existsSync(src))return [];
+  return files(src).flatMap(path=>{
+    const source=readFileSync(path,'utf8');
+    return /\bpd_[a-z_]+\b|\bPrivateSql\b/.test(source)||/\/private-data[^/]*\.ts$/.test(path)?privateSqlViolations(source,relative(directory,path)):[];
+  });
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   const failures=checkScopes();if(failures.length){console.error(failures.join('\n'));process.exitCode=1;}else console.log('Scope inventory and production import boundary passed');

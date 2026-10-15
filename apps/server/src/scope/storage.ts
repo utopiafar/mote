@@ -43,6 +43,6 @@ export function openScopeStorage(directory:string){
       PRAGMA user_version=5;`);
     db.prepare('INSERT OR IGNORE INTO scope_meta VALUES(1,?,?,?)').run(SCOPE_BASELINE.storageEpoch,SCOPE_FORMAT,randomUUID());
     const deploymentId=String(db.prepare('SELECT deployment_id FROM scope_meta WHERE singleton=1').get()!.deployment_id);
-    return {deploymentId,close:()=>db.close()};
+    return {deploymentId,db,close:()=>db.close()};
   }catch(error){db.close();throw error;}
 }

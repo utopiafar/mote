@@ -1,6 +1,6 @@
 import {ScopeError} from './baseline.js';
 import {UserContextAuthority,type UserContext} from './context.js';
-import {LifecycleAuthority,type LifecycleContext,type DomainLifecycle,type UserExport} from './lifecycle.js';
+import {LifecycleAuthority,type LifecycleContext,type DomainLifecycle,type UserExport,type UserDataSubject,type LifecyclePurpose} from './lifecycle.js';
 
 type UserRegistration<T>={scope:'user';create:(context:UserContext)=>T;lifecycle:DomainLifecycle};
 /** Factories receive a host-bound identity, never a caller-selected owner id.
@@ -10,6 +10,14 @@ export class ScopedServices {
   private readonly users=new Map<string,UserRegistration<unknown>>();
   private readonly instances=new Map<string,unknown>();
   constructor(private readonly authority:UserContextAuthority,private readonly lifecycleAuthority?:LifecycleAuthority){}
+  /** Domains revalidate at each SQL operation and transactional publication.
+   * A lifecycle grant can only authorize its named domain and purpose. */
+  assertSubject(context:UserDataSubject,domain:string,purpose:LifecyclePurpose){
+    if('credentialId' in context){this.authority.assert(context);return;}
+    if(!this.lifecycleAuthority)throw new ScopeError('scope_unavailable',503);
+    this.lifecycleAuthority.assert(context);
+    if(context.domain!==domain||context.purpose!==purpose)throw new ScopeError('invalid_identity',403);
+  }
   registerUser<T>(id:string,registration:UserRegistration<T>){
     if(!id||this.users.has(id)||this.instances.has(id)||registration.scope!=='user'||!['exportUser','deleteUser','restoreUser'].every(key=>typeof registration.lifecycle?.[key as keyof DomainLifecycle]==='function'))throw new ScopeError('undeclared_scope',500);
     this.users.set(id,Object.freeze({...registration}));

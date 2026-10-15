@@ -66,7 +66,8 @@ test('production builder defaults closed; old tokens and identity selectors cann
   for(const path of ['/api/login/exchange','/api/file-sync/batches','/api/plugins','/mcp'])assert.notEqual((await node.app.inject({method:'POST',url:path,payload:{}})).statusCode,200);
   assert.equal(readdirSync(directory).includes('access-token'),false);
   const db=new DatabaseSync(join(directory,'mote.sqlite'),{readOnly:true});t.after(()=>db.close());
-  assert.deepEqual(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r=>r.name),['scope_meta']);
+  assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().some(r=>r.name==='pd_captures'));
+  assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='captures'").get(),undefined);
 });
 
 test('real scoped HTTP registration binds identities, rejects spoofing and fences a late revoked response',async t=>{
@@ -82,7 +83,7 @@ test('real scoped HTTP registration binds identities, rejects spoofing and fence
   for(const attempt of [{url:'/api/fixture?userId=generated-user-b',payload:{}},{url:'/api/fixture',payload:{userId:'generated-user-b'}},{url:'/api/fixture',payload:{},headers:{'x-owner-id':'generated-user-b'}}]){
     const response=await node.app.inject({method:'POST',...attempt,headers:{authorization:'Bearer generated-a',...attempt.headers}});assert.equal(response.statusCode,401);
   }
-  assert.equal((await node.app.inject({url:'/api/captures',headers:{authorization:'Bearer generated-a','x-mote-protocol-version':'2'}})).statusCode,503);
+  assert.deepEqual((await node.app.inject({url:'/api/captures',headers:{authorization:'Bearer generated-a','x-mote-protocol-version':'2'}})).json(),{items:[],nextCursor:null});
   const late=node.app.inject({method:'POST',url:'/api/fixture',headers:{authorization:'Bearer generated-a','x-mote-protocol-version':'2'},payload:{wait:true}});await started;fixture.disabled.add('generated-user-a');release();assert.equal((await late).statusCode,401);
 });
 
@@ -130,5 +131,5 @@ test('actual production process serves health and rejects private requests witho
   const health=await fetch(`http://127.0.0.1:${port}/api/health`);assert.equal(health.status,200);assert.equal((await health.json() as any).mode,'multiuser-foundation');
   const privateResponse=await fetch(`http://127.0.0.1:${port}/api/captures`,{headers:{authorization:'Bearer old-owner-token'}});assert.equal(privateResponse.status,401);
   assert.equal(readdirSync(directory).includes('access-token'),false);
-  const db=new DatabaseSync(join(directory,'mote.sqlite'),{readOnly:true});try{assert.deepEqual(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row=>row.name),['scope_meta']);}finally{db.close();}
+  const db=new DatabaseSync(join(directory,'mote.sqlite'),{readOnly:true});try{assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().some(row=>row.name==='pd_captures'));assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='captures'").get(),undefined);}finally{db.close();}
 });
