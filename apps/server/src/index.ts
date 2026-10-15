@@ -27,6 +27,11 @@ if(existsSync(pidPath))unlinkSync(pidPath);
 writeFileSync(pidPath,String(process.pid),{mode:0o600,flag:'wx'});
 process.on('exit',()=>{try{if(existsSync(pidPath)&&readFileSync(pidPath,'utf8').trim()===String(process.pid))unlinkSync(pidPath);}catch{/* Never print a filesystem exception containing private paths. */}});
 app.addHook('onSend',async(req,reply,payload)=>{if(req.routeOptions.url==='/api/health')reply.header('X-Mote-Runtime-Instance',instanceId);return payload;});
+// A health request can arrive as soon as listen() binds, while publishing the
+// runtime-listener file is still awaiting I/O. Install orderly shutdown before
+// exposing that listener, so an immediate stop never uses the signal default.
+let closing=false;
+for(const signal of ['SIGTERM','SIGINT'] as const)process.on(signal,async()=>{if(closing)return;closing=true;try{await app.close();console.info(JSON.stringify({event:'server.stopped'}));process.exit(0);}catch{console.error(JSON.stringify({event:'server.stop_failed',category:'shutdown'}));process.exit(1);}});
 try{
   await app.listen({host:config.host,port:config.port});
   const address=app.server.address();
@@ -34,8 +39,6 @@ try{
   await writeRuntimeListener(configFile,{version:1,pid:process.pid,port:address.port,address:address.address,instanceId});
   console.info(JSON.stringify({event:'server.listening',port:address.port,mode:'multiuser-foundation'}));
 }catch(error){await app.close();throw error;}
-let closing=false;
-for(const signal of ['SIGTERM','SIGINT'] as const)process.on(signal,async()=>{if(closing)return;closing=true;try{await app.close();console.info(JSON.stringify({event:'server.stopped'}));process.exit(0);}catch{console.error(JSON.stringify({event:'server.stop_failed',category:'shutdown'}));process.exit(1);}});
 }
 void main().catch(error=>{
   const code=(error as {code?:unknown})?.code;
