@@ -2,6 +2,11 @@
 
 Date: 2026-10-14
 
+Multi-user production supersession: [M04](design/multiuser-configuration.md)
+splits instance and private ownership while retaining this ConfigService
+transaction contract. The one-owner file and model-copy assumptions below do not
+authorize shared credential inheritance or mounting retired global routes.
+
 ## Decision and user journey
 
 The owner asked to keep file-based startup and the settings pages, unify ordinary

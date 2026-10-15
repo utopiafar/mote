@@ -8,6 +8,7 @@ import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 import { ConfigService, ConfigServiceError, type ConfigDocument, type ConfigServiceOptions } from '../src/config-service.js';
 import { registerBuiltinDomains } from '../src/config.js';
+import { ScopeError } from '../src/scope/baseline.js';
 
 async function fixture(t: { after(fn: () => Promise<void>): void }, options: Partial<ConfigServiceOptions> = {}) {
   const directory = await fs.mkdtemp(join(tmpdir(), 'mote-unified-config-'));
@@ -271,4 +272,127 @@ test('synchronous disposal errors leave the original safe error and continue cle
   service.setHandler('plugin.failing', () => { throw Error('generated-private-prepare-error'); });
   await edit(file, doc => { doc.execution = { limit: 8 }; doc.secret = { key: '${FIXTURE_KEY}', label: 'new' }; (doc.plugins as { configuration: Record<string, unknown> }).configuration.failing = { n: 1 }; });
   await assert.rejects(service.reload(), { code: 'config_prepare_failed' }); assert.equal(disposed, 2); assert.equal(service.revision, 0);
+});
+
+test('request revocation during preparation rejects before atomic rename and disposes the private candidate', async t => {
+  let renames = 0;
+  const { service, file, directory } = await fixture(t, { fileSystem: { rename: async (source, destination) => { renames++; await fs.rename(source, destination); } } });
+  const original = await fs.readFile(file, 'utf8'); renames = 0;
+  let current = true, entered = false, applied = 0, disposed = 0, release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  const assertCurrent = () => { if (!current) { const error = new ScopeError('invalid_identity', 401); error.message = 'synthetic-private-key'; throw error; } };
+  service.setHandler('execution', async () => {
+    entered = true; await hold;
+    return { apply: () => { applied++; }, dispose: () => { disposed++; } };
+  });
+  const update = service.updateMany({ execution: { limit: 8 } }, 0, false, assertCurrent);
+  await until(() => entered); current = false; release();
+  await assert.rejects(update, (error: unknown) => error instanceof ScopeError && error.code === 'invalid_identity' && error.statusCode === 401 && error.message === 'invalid_identity');
+  assert.equal(applied, 0); assert.equal(disposed, 1); assert.equal(renames, 0);
+  assert.equal(service.revision, 0); assert.deepEqual(service.current('execution'), { limit: 3 });
+  assert.equal(await fs.readFile(file, 'utf8'), original);
+  assert.deepEqual(await fs.readdir(directory), ['mote.yaml']);
+});
+
+test('queued request guards remain attached to their own transaction and reject a revoked editor', async t => {
+  const { service, file } = await fixture(t);
+  let entered = false, current = true, release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  service.setHandler('execution', async () => { entered = true; await hold; return { apply: () => {} }; });
+  const first = service.update('execution', { limit: 4 }, 0, () => {});
+  await until(() => entered);
+  const queued = service.update('secret', { label: 'revoked-candidate' }, 1, () => { if (!current) throw new ScopeError('invalid_identity', 401); });
+  const rejected = assert.rejects(queued, { code: 'invalid_identity', statusCode: 401 });
+  current = false; release(); await first; await rejected;
+  assert.equal(service.revision, 1); assert.deepEqual(service.current('execution'), { limit: 4 });
+  assert.equal((service.saved('secret') as { label: string }).label, 'fixture');
+  assert.ok(!(await fs.readFile(file, 'utf8')).includes('revoked-candidate'));
+});
+
+test('revocation during an async resource install rolls it back before publication and restores the saved file', async t => {
+  for (const rejectsInstall of [false, true]) {
+    const { service, file } = await fixture(t); const original = await fs.readFile(file, 'utf8');
+    let current = true, entered = false, live = 3, installed = 3, published = 0, disposed = 0, release!: () => void;
+    const hold = new Promise<void>(resolve => { release = resolve; });
+    const assertCurrent = () => { if (!current) throw new ScopeError('invalid_identity', 401); };
+    service.setHandler<{ limit: number }>('execution', (next, previous) => ({
+      apply: async () => { installed = next.limit; entered = true; await hold; if (rejectsInstall) throw Error('synthetic-private-install-fault'); },
+      publish: () => { published++; live = next.limit; },
+      rollback: () => { installed = previous.limit; live = previous.limit; },
+      dispose: () => { disposed++; },
+    }));
+    const update = service.replace('execution', { limit: 8 }, 0, assertCurrent);
+    await until(() => entered); assert.equal(installed, 8); assert.equal(live, 3);
+    assert.deepEqual(service.current('execution'), { limit: 3 });
+    current = false; release(); await assert.rejects(update, { code: 'invalid_identity', statusCode: 401 });
+    assert.equal(published, 0); assert.equal(disposed, 1); assert.equal(installed, 3); assert.equal(live, 3);
+    assert.equal(service.revision, 0); assert.deepEqual(service.saved('execution'), { limit: 3 });
+    assert.equal(await fs.readFile(file, 'utf8'), original);
+    current = true; await service.reload(assertCurrent);
+    assert.equal(published, 0); assert.deepEqual(service.current('execution'), { limit: 3 });
+    await service.close(); const restarted = await fixture(t, { path: file });
+    assert.deepEqual(restarted.service.current('execution'), { limit: 3 });
+  }
+});
+
+test('an owner generation fence blocks private reads and file reload publication after account revocation', async t => {
+  let enabled = true;
+  const { service, file } = await fixture(t, { assertAccess: () => { if (!enabled) throw new ScopeError('invalid_identity', 401); } });
+  let entered = false, installed = 3, published = 0, release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  service.setHandler<{ limit: number }>('execution', (next, previous) => ({
+    apply: async () => { installed = next.limit; entered = true; await hold; },
+    publish: () => { published++; }, rollback: () => { installed = previous.limit; },
+  }));
+  await edit(file, document => { document.execution = { limit: 8 }; });
+  const reload = service.reload(); await until(() => entered); enabled = false;
+  for (const read of [() => service.current('execution'), () => service.saved('secret'), () => service.document(), () => service.view(), () => service.revision]) {
+    assert.throws(read, { code: 'invalid_identity', statusCode: 401 });
+  }
+  const queued = assert.rejects(service.update('execution', { limit: 9 }, 1), { code: 'invalid_identity', statusCode: 401 });
+  release(); await assert.rejects(reload, { code: 'invalid_identity', statusCode: 401 }); await queued;
+  assert.equal(installed, 3); assert.equal(published, 0);
+  enabled = true; assert.equal(service.revision, 0); assert.deepEqual(service.current('execution'), { limit: 3 });
+  assert.equal(parse(await fs.readFile(file, 'utf8')).execution.limit, 3);
+});
+
+test('revocation while rolling an async install back also restores its saved candidate', async t => {
+  const { service, file } = await fixture(t); const original = await fs.readFile(file, 'utf8');
+  let entered = false, current = true, release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  service.setHandler('execution', () => ({
+    apply: () => { throw Error('synthetic-private-install-fault'); },
+    rollback: async () => { entered = true; await hold; },
+  }));
+  const update = service.update('execution', { limit: 8 }, 0, () => { if (!current) throw new ScopeError('invalid_identity', 401); });
+  await until(() => entered); current = false; release();
+  await assert.rejects(update, { code: 'invalid_identity', statusCode: 401 });
+  assert.equal(service.revision, 0); assert.deepEqual(service.current('execution'), { limit: 3 });
+  assert.equal(await fs.readFile(file, 'utf8'), original);
+});
+
+test('revoked reload restoration uses CAS and never overwrites an external replacement', async t => {
+  const { service, file } = await fixture(t);
+  let entered = false, current = true, installed = 3, disposed = 0, release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  service.setHandler<{ limit: number }>('execution', (next, previous) => ({
+    apply: async () => { installed = next.limit; entered = true; await hold; },
+    publish: () => { assert.fail('A revoked reload must not publish'); },
+    rollback: () => { installed = previous.limit; }, dispose: () => { disposed++; },
+  }));
+  await edit(file, document => { document.execution = { limit: 8 }; });
+  const reload = service.reload(() => { if (!current) throw new ScopeError('invalid_identity', 401); });
+  await until(() => entered);
+  await edit(file, document => { document.execution = { limit: 9 }; }); const external = await fs.readFile(file, 'utf8');
+  current = false; release(); await assert.rejects(reload, { code: 'config_commit_uncertain' });
+  assert.equal(installed, 3); assert.equal(disposed, 1); assert.equal(await fs.readFile(file, 'utf8'), external);
+  assert.throws(() => service.current('execution'), { code: 'config_unavailable' });
+});
+
+test('unknown authorization callback failures return only a fixed safe error', async t => {
+  const { service, file } = await fixture(t); const original = await fs.readFile(file, 'utf8');
+  for (const guard of [() => { throw Error('synthetic-private-authorization-fault'); }, async () => { throw Error('synthetic-private-authorization-fault'); }]) {
+    await assert.rejects(service.reload(guard), (error: unknown) => error instanceof ConfigServiceError && error.code === 'config_unavailable' && error.message === 'config_unavailable');
+  }
+  assert.equal(await fs.readFile(file, 'utf8'), original); assert.equal(service.revision, 0);
 });

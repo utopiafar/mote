@@ -10,8 +10,17 @@ import {
 } from '@mote/shared/models';
 
 const line = (max: number, min = 0) => z.string().min(min).max(max).refine(value => !/[\u0000-\u001f\u007f]/.test(value));
+const registeredProviders=new Map<string,{validate:(settings:Readonly<ModelSettings>)=>void|boolean}>();
+/** Trusted installed provider declarations extend the same model schema used
+ * by instance YAML and personal configuration. Transport validation stays in
+ * validateModelOptions; registration never grants a user host credentials. */
+export function registerModelSettingsProvider(id:string,validate:(settings:Readonly<ModelSettings>)=>void|boolean=()=>true){
+  if(!/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/.test(id)||modelProvider(id)||registeredProviders.has(id))throw new ConfigServiceError('config_invalid','models');
+  const registration={validate};registeredProviders.set(id,registration);
+  return ()=>{if(registeredProviders.get(id)===registration)registeredProviders.delete(id);};
+}
 const parameters = {
-  provider: line(128, 1).refine(value => modelProvider(value) !== undefined),
+  provider: line(128, 1).refine(value => modelProvider(value) !== undefined||registeredProviders.has(value)),
   protocol: z.enum(MODEL_PROTOCOLS),
   baseUrl: line(4096),
   model: line(512),
@@ -35,6 +44,9 @@ const modelSettingsObjectSchema = z.object({ ...parameters, apiKey, headers, ext
   validateTimeouts(value,ctx);
   try {
     validateModelOptions(value);
+    const result=registeredProviders.get(value.provider)?.validate(structuredClone(value)) as unknown;
+    if(result&&typeof (result as {then?:unknown}).then==='function'){void Promise.resolve(result).catch(()=>{});throw Error();}
+    if(result===false)throw Error();
     if(value.protocol==='codex-app-server'&&value.apiKey)throw Error();
     if(value.protocol!=='codex-app-server'&&!value.baseUrl.trim()&&value.model.trim())throw Error();
   } catch {ctx.addIssue({code:'custom',message:'Invalid model parameters'});}

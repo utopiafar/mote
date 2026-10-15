@@ -1,5 +1,7 @@
 # 服务端配置参考
 
+多用户生产路径已在 M04 拆分实例 YAML 与各账号的私人 YAML，真实 API、共享模型只读引用和凭据边界见 [M04 配置合同](design/multiuser-configuration.md)。下文的单所有者页面与各领域运行时说明仅适用于原有隔离算法 fixture；尚未完成的多用户能力继续拒绝，不能据此启用旧全局路由。M13 负责消费新合同的设置 renderer。
+
 中央使用一份私有 `mote.yaml`。网页设置与手改文件更新同一来源，ConfigService 按领域校验、准备资源、原子保存并应用。选型与边界见 [统一配置 ADR](adr-unified-configuration.md)，任务快照和授权见 [配置归属](configuration-ownership.md)。
 
 中央一级入口为今天、资料库、问一问、行动、连接。系统管理包含模型、费用、处理任务、存储和诊断；模型入口为 `#/system/models`，诊断为 `#/system/diagnostics`。已有设置页面仍提供草稿、保存与当前生效值。页面没有覆盖的配置可直接编辑文件。
