@@ -22,7 +22,7 @@ second configuration framework.
 | Personal `models` domain | `profiles` contain only that user's connections; `selections` maps existing model features to strict `{kind,id}` references. Empty selection is unconfigured and fails explicitly. |
 | Instance shared models | Configured `models.deployment` and `models.profiles` publish fixed resource references. The public catalog contains only ID, name, provider, model and `readOnly`. No copying of shared credentials, endpoint override, or shared-to-personal credential inheritance is exposed. |
 | Personal `modelPrices` | Prices use the established price schema. Accounting preserves unknown prices/cache quantities and introduces no daily fee quota. |
-| SQLite `user_configuration_state`, `user_model_usage`, `user_configuration_restore_journal` | M04-owned state/generation fences, user-qualified usage receipts and credential-free restore provenance hashes. No legacy global Store or owner model runtime is mounted. |
+| SQLite M04 state, generation, usage, encrypted snapshot and restore-journal tables | User-qualified state/receipts/ciphertext, durable resource and credential generations, and credential-free restore provenance hashes. No legacy global Store or owner model runtime is mounted. |
 
 HTTP uses M01's real `requestContext` and `registerUserRoute`, including protocol
 2, session binding and CSRF. Management privilege never selects someone else's
@@ -69,21 +69,40 @@ M05/M06/M07 obtain
 `lease(feature, operationId)` pins the user's effective document, personal
 credentials, selected fixed transport, price and configuration revisions. The
 host's `configuration.withModel(lease, callback)` provides the pinned settings to
-trusted runtime adapters. JSON receipts contain no credentials; copied or
-deserialized lease objects cannot obtain host access. A changes neither B's
-document nor B's active lease. Normal private configuration changes affect new
-admission; account reset/disable, deletion and shared resource withdrawal fence
-publication and usage. Shared resource generations are monotonic, so withdrawing
-and republishing the same settings never revives old leases. Web logout alone
-does not revoke already admitted account work.
+trusted runtime adapters. Each lease includes an opaque `snapshotId`; its model,
+effective document, selection, price and authorization metadata are durably
+AES-256-GCM encrypted in a user-qualified record. AAD binds deployment, user and
+snapshot ID. Each account has a private 32-byte host key in its configuration
+directory; keys and encrypted snapshots are excluded from portable user export.
+JSON receipts contain no credentials; copied or deserialized lease objects cannot
+obtain host access. A changes neither B's document nor B's active lease. Normal
+configuration changes affect new admission; account reset/disable, deletion and
+shared resource withdrawal fence publication and usage. Shared generations are
+monotonic and durable, including identical republication. Web logout alone does
+not revoke already admitted account work.
 
 `recordUsage(lease, result)` derives user, model and operation from the genuine
-lease, uses a user-qualified receipt key, deduplicates repeated delivery and
-reuses existing cost/totals functions. M05 owns durable task authorization,
-persisted task snapshots and recovery; it must not deserialize a receipt into a
-live lease or regain old authorization after reset. M06/M07 own their processing
-and evidence publication fences. No unfinished executor or real model calls are
-enabled by M04.
+lease, uses a user-qualified receipt key and reuses existing cost/totals functions.
+M05 owns durable task authorization and recovers a current host UserContext. It
+stores only the snapshot ID and public receipt, never plaintext model credentials.
+On restart it calls `configuration.restoreLease(context, snapshotId,
+expectedOperationId)` (or the same bound user service method). The result is
+`{status:'restored',lease}` with a new genuine host object for the original values,
+or `{status:'unavailable',reason}`. It never leases current settings as a
+substitute. User/deployment, account epoch, configuration deletion generation,
+operation and durable resource/credential generations must match. Key/ciphertext
+damage returns explicit unavailable; account reset, credential withdrawal or
+resource withdrawal cannot be undone by republishing identical settings. The
+recovered ID is also the usage receipt ID, so restart does not double count an
+already delivered result.
+
+Personal nonempty credential replacement preserves admitted live work, as in the
+original next-request contract; it prevents rehydrating an old credential
+generation, including after changing back. Clearing any credential component
+(including whitespace) or removing a profile revokes live and durable access.
+Persisted catalog/configuration revisions detect uncertain host restarts; unknown
+generation history fails closed. M06/M07 own processing/evidence publication
+fences. No unfinished executor or real model calls are enabled by M04.
 
 Trusted plugins can register user configuration domains before first admission
 with `registerDomain(id, factory)`, using the same ConfigDomainRegistration
@@ -138,8 +157,8 @@ ownership, explicit reference selection, host leases and per-user usage keys.
 REMOVE: ordinary owner-token access, shared credential inheritance, private
 environment expansion and silent deployment-model fallback. EXCEPTION: trusted
 operators and installed provider code can access host plaintext. UNKNOWN: M13
-renderer, durable M05 task recovery, physical clients, real providers and actual
+renderer, joint M05 grant/snapshot recovery, physical clients, real providers and actual
 deployment behavior remain downstream validation; no live keys or data are used.
 
 Executed results and independent review are recorded in the
-[M04 acceptance record](multiuser-configuration-acceptance.md).
+[M04 acceptance record](../validation/multiuser-m04-configuration.md).

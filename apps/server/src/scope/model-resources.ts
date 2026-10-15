@@ -23,6 +23,17 @@ export interface SharedModelResource {
   readOnly:true;
 }
 export type ModelProviderValidator=(settings:Readonly<ModelSettings>)=>void|boolean;
+export interface ResourceGenerationState {
+  generation:number;
+  /** Hash of the complete fixed connection. Omission represents withdrawal. */
+  fingerprint?:string;
+}
+export interface ResourceGenerationRecord extends ResourceGenerationState {id:string}
+/** Host-only synchronous persistence. Rows contain hashes, never credentials. */
+export interface ResourceGenerationStore {
+  load():ResourceGenerationRecord[];
+  save(id:string,state:Readonly<ResourceGenerationState>):void;
+}
 
 /** Metadata is shared by file and page edits. Register the user domain with an
  * identity resolve function: personal fields must never resolve process.env. */
@@ -62,17 +73,31 @@ function configured(settings:ModelSettings):boolean {
  * combines their fixed endpoint and credentials; private documents contain refs. */
 export class ModelResources {
   private readonly providers=new Map<string,{dispose:()=>void}>();
-  private readonly generations=new Map<string,{generation:number;fingerprint:string|undefined}>();
+  private readonly generations=new Map<string,ResourceGenerationState>();
   private readonly stopObserving:()=>void;
   private closed=false;
-  constructor(private readonly instance:ConfigService){
+  private generationUnavailable=false;
+  constructor(private readonly instance:ConfigService,private readonly generationStore?:ResourceGenerationStore){
+    if(generationStore)try{
+      const records=z.array(z.object({
+        id:z.union([identifier,z.literal(DEPLOYMENT_MODEL_PROFILE_ID)]),
+        generation:z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+        fingerprint:z.string().regex(/^[a-f0-9]{64}$/).optional(),
+      }).strict()).parse(generationStore.load());
+      if(new Set(records.map(record=>record.id)).size!==records.length)throw invalid();
+      for(const {id,...state} of records)this.generations.set(id,state);
+    }catch{throw new ConfigServiceError('config_unavailable');}
     this.stopObserving=instance.onChange(()=>{try{this.reconcile();}catch{/* A failed instance projection cannot disclose callback or configuration values. */}});
+  }
+
+  private assertAvailable():void {
+    if(this.closed||this.generationUnavailable)throw new ConfigServiceError('config_unavailable');
   }
 
   /** Trusted provider plugins extend the existing ModelSettings wire contract.
    * Protocol and transport validation still runs through modelSettingsSchema. */
   registerProvider(id:string,validate?:ModelProviderValidator):()=>void {
-    if(this.closed)throw new ConfigServiceError('config_unavailable');
+    this.assertAvailable();
     if(!/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/.test(id)||modelProvider(id)||this.providers.has(id))throw invalid();
     const registration={dispose:registerModelSettingsProvider(id,validate)};
     this.providers.set(id,registration);
@@ -85,10 +110,11 @@ export class ModelResources {
   }
 
   schema():ZodType<UserModelConfiguration,any,unknown> {
-    if(this.closed)throw new ConfigServiceError('config_unavailable');
+    this.assertAvailable();
     const personalSettings=z.unknown().transform((raw,context):ModelSettings=>{
       try {
-        if(this.closed||!raw||typeof raw!=='object'||Array.isArray(raw)||hasEnvironmentReference(raw))throw invalid();
+        this.assertAvailable();
+        if(!raw||typeof raw!=='object'||Array.isArray(raw)||hasEnvironmentReference(raw))throw invalid();
         const input=raw as Record<string,unknown>;
         if(input.protocol==='codex-app-server'||typeof input.provider!=='string')throw invalid();
         const builtin=Boolean(modelProvider(input.provider));
@@ -119,24 +145,46 @@ export class ModelResources {
   }
 
   private reconcile():ModelProfile[] {
-    if(this.closed)throw new ConfigServiceError('config_unavailable');
+    this.assertAvailable();
     const profiles=this.shared(),present=new Set(profiles.map(profile=>profile.id));
     for(const [id,state] of this.generations)if(!present.has(id)&&state.fingerprint!==undefined){
-      state.generation++;state.fingerprint=undefined;
+      this.saveGeneration(id,{generation:state.generation+1});
     }
     for(const profile of profiles){
       const fingerprint=createHash('sha256').update(JSON.stringify(profile.settings,(_key,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.keys(value).sort().map(key=>[key,value[key]])):value)).digest('hex');
       const prior=this.generations.get(profile.id);
-      if(!prior)this.generations.set(profile.id,{generation:1,fingerprint});
-      else if(prior.fingerprint!==fingerprint){prior.generation++;prior.fingerprint=fingerprint;}
+      if(!prior)this.saveGeneration(profile.id,{generation:1,fingerprint});
+      else if(prior.fingerprint!==fingerprint)this.saveGeneration(profile.id,{generation:prior.generation+1,fingerprint});
     }
     return profiles;
   }
 
-  /** Monotonic during this host lifetime, including removal and republication of
-   * identical settings. A prior lease must never regain authority by equality. */
+  private saveGeneration(id:string,state:ResourceGenerationState):void {
+    try{
+      if(!Number.isSafeInteger(state.generation))throw invalid();
+      const result=this.generationStore?.save(id,Object.freeze({...state})) as unknown;
+      if(result&&typeof (result as {then?:unknown}).then==='function'){
+        void Promise.resolve(result).catch(()=>{});throw invalid();
+      }
+    }catch{
+      // A lost or uncertain transition must not authorize a lease from the old
+      // in-memory generation. Only a fresh host with durable state may recover.
+      this.generationUnavailable=true;throw new ConfigServiceError('config_unavailable');
+    }
+    this.generations.set(id,{...state});
+  }
+
+  /** Monotonic across host reconstruction when a generation store is supplied,
+   * including withdrawal and republication of identical fixed connections. */
   generation(id:string):number {
     this.reconcile();return this.generations.get(id)?.generation??0;
+  }
+
+  /** The host calls this before reconciling an instance revision whose durable
+   * resource transitions are uncertain. Every older shared snapshot is fenced. */
+  invalidateGenerations():void {
+    this.assertAvailable();
+    for(const [id,state] of this.generations)this.saveGeneration(id,{...state,generation:state.generation+1});
   }
 
   listShared():SharedModelResource[] {
@@ -146,6 +194,7 @@ export class ModelResources {
   /** Missing or retired references explicitly fail. There is no implicit
    * deployment/default model and no caller-supplied endpoint or model override. */
   resolve(configuration:UserModelConfiguration,feature:ModelFeature):{reference:UserModelReference;settings:ModelSettings} {
+    this.assertAvailable();
     let parsed:UserModelConfiguration;
     try{parsed=this.schema().parse(configuration);}catch{throw invalid();}
     const selection=Object.hasOwn(parsed.selections,feature)?parsed.selections[feature]:undefined;

@@ -1532,8 +1532,12 @@
     "status": "implemented",
     "surfaces": [
       "directory:path",
+      "table:model_resource_generations",
+      "table:model_resource_revision",
       "table:user_configuration_restore_journal",
       "table:user_configuration_state",
+      "table:user_model_credential_generations",
+      "table:user_model_snapshot_revision",
       "table:user_model_usage"
     ]
   },
@@ -1553,6 +1557,15 @@
       "api:registerUserRoute:scope:'user',method:'PUT',url:'/api/configuration/:domain',service:'configuration'",
       "extension:runtime.services.registerInstance:'model-resources'",
       "extension:runtime.services.registerUser:'configuration'"
+    ]
+  },
+  "apps/server/src/scope/model-snapshots.ts": {
+    "scope": "user",
+    "module": "M04",
+    "status": "implemented",
+    "surfaces": [
+      "directory:path",
+      "table:user_model_snapshots"
     ]
   }
 }

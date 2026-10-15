@@ -22,7 +22,7 @@ export function registerConfigurationRoutes(runtime:ScopedRuntime,configuration:
   registerUserRoute(runtime,{scope:'user',method:'GET',url:'/api/models',service:'configuration',handle:({services})=>services.get<UserConfigurationService>('configuration').models()});
   registerUserRoute(runtime,{scope:'user',method:'GET',url:'/api/models/selection/:feature',service:'configuration',handle:({services,request})=>{
     const feature=z.object({feature:z.enum(MODEL_FEATURES)}).strict().parse(request.params).feature;
-    return services.get<UserConfigurationService>('configuration').lease(feature,'selection-preview');
+    return services.get<UserConfigurationService>('configuration').selection(feature);
   }});
   registerUserRoute(runtime,{scope:'user',method:'GET',url:'/api/usage',service:'configuration',handle:({services})=>services.get<UserConfigurationService>('configuration').usage()});
   // Instance administration only exposes the deployment resource domain. The

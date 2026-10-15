@@ -7,7 +7,7 @@ import {parse,stringify} from 'yaml';
 import {DEPLOYMENT_MODEL_PROFILE_ID,type ModelSettings} from '@mote/shared/models';
 import {ConfigService,type ConfigDocument} from '../src/config-service.js';
 import {defaultModelSettings,modelDomainSchema,modelSettingsSchema} from '../src/model-settings.js';
-import {ModelResources,removeCredentials,userModelFields,type UserModelConfiguration} from '../src/scope/model-resources.js';
+import {ModelResources,removeCredentials,userModelFields,type UserModelConfiguration,type ResourceGenerationStore,type ResourceGenerationState,type ResourceGenerationRecord} from '../src/scope/model-resources.js';
 
 const settings=(apiKey='synthetic-personal-key'):ModelSettings=>({
   ...defaultModelSettings(),provider:'custom',protocol:'openai-completions',
@@ -32,6 +32,14 @@ async function fixture(t:TestContext,configuredShared=true){
   const resources=new ModelResources(instance);
   t.after(()=>resources.close());
   return {instance,resources,directory,services};
+}
+function generationStore(){
+  const rows=new Map<string,ResourceGenerationState>(),writes:ResourceGenerationRecord[]=[];
+  const store:ResourceGenerationStore={
+    load:()=>[...rows].map(([id,state])=>({id,...structuredClone(state)})),
+    save:(id,state)=>{rows.set(id,structuredClone(state));writes.push({id,...structuredClone(state)});},
+  };
+  return {store,rows,writes};
 }
 
 test('shared models expose only fixed references; missing or retired selections do not fall back',async t=>{
@@ -84,6 +92,70 @@ test('shared generations fence withdrawal and republication even when credential
   // effective resource; it must neither revoke it nor leak the invalid value.
   await assert.rejects(instance.update('models',{deployment:{baseUrl:'http://invalid-remote.invalid'}},instance.revision),{code:'config_invalid'});
   assert.equal(resources.generation(id),4);
+});
+
+test('reconstructed resource catalogs load persisted generations without exposing or rewriting connection credentials',async t=>{
+  const {instance}=await fixture(t),persistence=generationStore(),id=DEPLOYMENT_MODEL_PROFILE_ID;
+  const first=new ModelResources(instance,persistence.store);
+  assert.equal(first.generation(id),1);assert.equal(persistence.writes.length,1);
+  const row=persistence.rows.get(id)!;assert.match(row.fingerprint!,/^[a-f0-9]{64}$/);
+  assert.ok(!JSON.stringify(persistence.writes).includes('synthetic-shared-key'));
+  first.close();const second=new ModelResources(instance,persistence.store);t.after(()=>second.close());
+  assert.equal(second.generation(id),1);assert.equal(persistence.writes.length,1);
+  await instance.update('models',{deployment:{apiKey:'synthetic-persisted-rotation'}},instance.revision);
+  assert.equal(persistence.rows.get(id)!.generation,2);
+  assert.equal(second.generation(id),2);assert.equal(persistence.writes.length,2);
+});
+
+test('withdrawn shared models retain their durable generation across instance restart and identical republication',async t=>{
+  const {instance,services}=await fixture(t),persistence=generationStore(),id=DEPLOYMENT_MODEL_PROFILE_ID;
+  const first=new ModelResources(instance,persistence.store),initial=instance.current<{deployment:ModelSettings}>('models').deployment;
+  const originalGeneration=first.generation(id);
+  await instance.update('models',{deployment:{model:''}},instance.revision);
+  assert.deepEqual(persistence.rows.get(id),{generation:2});
+  first.close();await instance.close();
+  const restarted=new ConfigService({path:instance.path,watch:false});services.push(restarted);
+  restarted.register({id:'models',schema:modelDomainSchema,defaultValue:{}});await restarted.initialize();
+  const second=new ModelResources(restarted,persistence.store);t.after(()=>second.close());
+  assert.equal(second.generation(id),2);assert.deepEqual(second.listShared(),[]);
+  await restarted.update('models',{deployment:initial},restarted.revision);
+  assert.equal(second.generation(id),3);assert.notEqual(second.generation(id),originalGeneration);
+  second.close();const third=new ModelResources(restarted,persistence.store);t.after(()=>third.close());
+  assert.equal(third.generation(id),3);assert.notEqual(third.generation(id),originalGeneration);
+});
+
+test('uncertain instance revisions durably invalidate every known resource before reconciliation',async t=>{
+  const {instance}=await fixture(t),persistence=generationStore(),id=DEPLOYMENT_MODEL_PROFILE_ID;
+  const first=new ModelResources(instance,persistence.store);assert.equal(first.generation(id),1);
+  await instance.update('models',{profiles:[{id:'retired',name:'Retired fixture',settings:settings('synthetic-retired-key')}]},instance.revision);
+  assert.equal(first.generation('retired'),1);
+  await instance.update('models',{profiles:[]},instance.revision);
+  assert.deepEqual(persistence.rows.get('retired'),{generation:2});
+  const fingerprint=persistence.rows.get(id)!.fingerprint;first.close();
+  const restarted=new ModelResources(instance,persistence.store);t.after(()=>restarted.close());
+  restarted.invalidateGenerations();
+  assert.deepEqual(persistence.rows.get(id),{generation:2,fingerprint});
+  assert.deepEqual(persistence.rows.get('retired'),{generation:3});
+  assert.equal(restarted.generation(id),2);assert.equal(restarted.generation('retired'),3);
+});
+
+test('generation-store failures are value-free and latch all resource reads closed until host reconstruction',async t=>{
+  const {instance}=await fixture(t),persistence=generationStore(),id=DEPLOYMENT_MODEL_PROFILE_ID;
+  let fail=false;
+  const store:ResourceGenerationStore={load:()=>persistence.store.load(),save:(key,state)=>{if(fail)throw Error('synthetic-storage-credential');persistence.store.save(key,state);}};
+  const resources=new ModelResources(instance,store);t.after(()=>resources.close());
+  assert.equal(resources.generation(id),1);const previous=structuredClone(persistence.rows.get(id));fail=true;
+  await instance.update('models',{deployment:{apiKey:'synthetic-after-failed-generation'}},instance.revision);
+  assert.deepEqual(persistence.rows.get(id),previous);
+  fail=false;
+  for(const read of [()=>resources.generation(id),()=>resources.listShared(),()=>resources.schema(),()=>resources.resolve({profiles:[],selections:{chat:{kind:'shared',id}}},'chat'),()=>resources.invalidateGenerations()]){
+    assert.throws(read,error=>Boolean(error&&typeof error==='object'&&'code' in error&&error.code==='config_unavailable'&&!String(error).includes('synthetic-storage-credential')));
+  }
+  resources.close();const recovered=new ModelResources(instance,store);t.after(()=>recovered.close());
+  recovered.invalidateGenerations();assert.equal(recovered.generation(id),3);
+  assert.throws(()=>new ModelResources(instance,{load:()=>{throw Error('synthetic-load-credential');},save:()=>{}}),{code:'config_unavailable'});
+  assert.throws(()=>new ModelResources(instance,{load:()=>[{id,generation:0}],save:()=>{}}),{code:'config_unavailable'});
+  assert.throws(()=>new ModelResources(instance,{load:()=>[{id,generation:1},{id,generation:1}],save:()=>{}}),{code:'config_unavailable'});
 });
 
 test('personal profile identity and credentials stay within each passed configuration',async t=>{

@@ -14,6 +14,8 @@ import type {UserContext,UserContextAuthority} from './context.js';
 import type {Accounts} from './accounts.js';
 import type {DomainLifecycle,LifecycleAuthority,UserDataSubject,UserExport} from './lifecycle.js';
 import {ModelResources,userModelFields,removeCredentials,type UserModelConfiguration} from './model-resources.js';
+import {ModelSnapshots} from './model-snapshots.js';
+import {modelSettingsSchema} from '../model-settings.js';
 
 const priceDomain=z.object({items:z.array(priceSchema).max(500).default([])}).strict();
 const nonnegative=z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -42,8 +44,17 @@ function restoreFileHash(path:string):string{
   finally{if(handle!==undefined)closeSync(handle);}
 }
 type Entry={service:ConfigService;generation:number;accessKey:string;subject:UserDataSubject;initializing:Promise<void>};
-export type ModelLease=Readonly<{id:string;deploymentId:string;userId:string;operationId:string;feature:ModelFeature;revision:number;instanceRevision:number;reference:Readonly<{kind:'shared'|'personal';id:string}>;provider:string;model:string}>;
-type PrivateLease={context:UserContext;generation:number;sharedGeneration?:number;settings:ModelSettings;price?:ModelPrice;configuration:ConfigDocument};
+export type ModelLease=Readonly<{id:string;snapshotId:string;deploymentId:string;userId:string;operationId:string;feature:ModelFeature;revision:number;instanceRevision:number;reference:Readonly<{kind:'shared'|'personal';id:string}>;provider:string;model:string}>;
+type PrivateLease={context:UserContext;generation:number;sharedGeneration?:number;credentialGeneration?:number;credentialRecoveryGeneration?:number;settings:ModelSettings;price?:ModelPrice;configuration:ConfigDocument};
+type DurableSnapshot=Omit<PrivateLease,'context'>&{version:1;deploymentId:string;userId:string;authorizationEpoch:number;operationId:string;feature:ModelFeature;revision:number;instanceRevision:number;reference:{kind:'shared'|'personal';id:string};credentialFingerprint?:string};
+export type ModelLeaseRestore={status:'restored';lease:ModelLease}|{status:'unavailable';reason:'snapshot_unavailable'|'authorization_changed'|'configuration_deleted'|'credentials_revoked'|'shared_resource_revoked'|'operation_mismatch'};
+type CredentialState={profile_id:string;generation:number;recovery_generation:number;present:number;has_credentials:number;fingerprint:string|null;components:string};
+const credentialsHash=(settings:ModelSettings)=>restoreHash({apiKey:settings.apiKey,headers:settings.headers,extraBody:settings.extraBody});
+function credentialComponents(settings:ModelSettings){
+  const paths:string[]=[];
+  const visit=(value:unknown,path:string[])=>{if(value&&typeof value==='object'){for(const [key,child] of Object.entries(value))visit(child,[...path,key]);}else if(value!==null&&value!==undefined&&!(typeof value==='string'&&!value.trim()))paths.push(restoreHash(path));};
+  visit({apiKey:settings.apiKey,headers:settings.headers,extraBody:settings.extraBody},[]);return paths.sort();
+}
 export type UserConfigurationService=ReturnType<Configurations['forUser']>;
 
 /** Host-owned per-account ConfigService instances. No request path or userId is
@@ -51,6 +62,9 @@ export type UserConfigurationService=ReturnType<Configurations['forUser']>;
  * the same service; the private resolver never expands instance environment. */
 export class Configurations {
   readonly resources:ModelResources;
+  private readonly snapshots:ModelSnapshots;
+  private resourcesUnavailable=false;
+  private readonly credentialsUnavailable=new Set<string>();
   private readonly entries=new Map<string,Entry>();
   private readonly opening=new Map<string,Promise<Entry>>();
   private readonly lifecycleQueue=new Map<string,Promise<void>>();
@@ -58,16 +72,24 @@ export class Configurations {
   private readonly domains=new Map<string,(context:UserDataSubject)=>ConfigDomainRegistration>();
   private closed=false;
   private constructor(private readonly options:{directory:string;db:DatabaseSync;authority:UserContextAuthority;accounts?:Accounts;lifecycleAuthority?:LifecycleAuthority},readonly instance:ConfigService){
-    this.resources=new ModelResources(instance);
     options.db.exec(`CREATE TABLE IF NOT EXISTS user_configuration_state(user_id TEXT PRIMARY KEY,generation INTEGER NOT NULL DEFAULT 0,deleted INTEGER NOT NULL DEFAULT 0,restore_operation TEXT);
       CREATE TABLE IF NOT EXISTS user_model_usage(user_id TEXT NOT NULL,id TEXT NOT NULL,json TEXT NOT NULL,PRIMARY KEY(user_id,id));
-      CREATE TABLE IF NOT EXISTS user_configuration_restore_journal(user_id TEXT PRIMARY KEY,operation_id TEXT NOT NULL,payload_hash TEXT NOT NULL,generation INTEGER NOT NULL,target_hash TEXT,staging_id TEXT NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS user_configuration_restore_journal(user_id TEXT PRIMARY KEY,operation_id TEXT NOT NULL,payload_hash TEXT NOT NULL,generation INTEGER NOT NULL,target_hash TEXT,staging_id TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS model_resource_generations(id TEXT PRIMARY KEY,generation INTEGER NOT NULL,fingerprint TEXT);
+      CREATE TABLE IF NOT EXISTS model_resource_revision(singleton INTEGER PRIMARY KEY CHECK(singleton=1),revision INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS user_model_credential_generations(user_id TEXT NOT NULL,profile_id TEXT NOT NULL,generation INTEGER NOT NULL,recovery_generation INTEGER NOT NULL,present INTEGER NOT NULL,has_credentials INTEGER NOT NULL,fingerprint TEXT,components TEXT NOT NULL,PRIMARY KEY(user_id,profile_id));
+      CREATE TABLE IF NOT EXISTS user_model_snapshot_revision(user_id TEXT PRIMARY KEY,revision INTEGER NOT NULL);`);
+    this.resources=new ModelResources(instance,{
+      load:()=>options.db.prepare('SELECT id,generation,fingerprint FROM model_resource_generations').all().map(r=>({id:String(r.id),generation:Number(r.generation),...(r.fingerprint?{fingerprint:String(r.fingerprint)}:{})})),
+      save:(id,state)=>{options.db.prepare('INSERT INTO model_resource_generations VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,fingerprint=excluded.fingerprint').run(id,state.generation,state.fingerprint??null);},
+    });
+    this.snapshots=new ModelSnapshots({directory:options.directory,db:options.db,deploymentId:options.authority.deploymentId});
   }
   static async open(options:Configurations['options']&{instancePath?:string;instanceDocument?:ConfigDocument}){
     const instance=new ConfigService({path:options.instancePath??join(options.directory,'instance.yaml'),initialDocument:options.instanceDocument??{version:1,revision:0}});
     registerBuiltinDomains(instance);
     const service=new Configurations(options,instance);
-    try{await instance.initialize();await instance.startWatching();return service;}
+    try{await instance.initialize();service.syncResources(true);instance.onChange(()=>{try{service.syncResources(false);}catch{service.resourcesUnavailable=true;}});await instance.startWatching();return service;}
     catch(error){await instance.close();throw error;}
   }
   /** Register before the first account is opened. Factories own schema,
@@ -90,6 +112,35 @@ export class Configurations {
     if('credentialId' in context){if(this.options.accounts)this.options.accounts.assertAccountEnabled(context.userId,context.authorizationEpoch);else this.options.authority.assert(context);}
   }
   private path(userId:string){if(!validScopeId(userId))throw new ScopeError('invalid_identity',401);return join(this.options.directory,'configuration','users',userId);}
+  private syncResources(bootstrap:boolean){
+    if(this.resourcesUnavailable)throw new ConfigServiceError('config_unavailable');
+    const prior=this.options.db.prepare('SELECT revision FROM model_resource_revision WHERE singleton=1').get();
+    if(bootstrap&&prior&&Number(prior.revision)!==this.instance.revision)this.resources.invalidateGenerations();
+    this.resources.listShared();
+    this.options.db.prepare('INSERT INTO model_resource_revision VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET revision=excluded.revision').run(this.instance.revision);
+  }
+  private assertResources(){if(this.resourcesUnavailable)throw new ConfigServiceError('config_unavailable');}
+  private credentialState(userId:string,profileId:string){return this.options.db.prepare('SELECT profile_id,generation,recovery_generation,present,has_credentials,fingerprint,components FROM user_model_credential_generations WHERE user_id=? AND profile_id=?').get(userId,profileId) as CredentialState|undefined;}
+  private syncCredentials(userId:string,service:ConfigService,bootstrap:boolean){
+    if(this.credentialsUnavailable.has(userId))throw new ConfigServiceError('config_unavailable');
+    try{
+      const profiles=service.current<UserModelConfiguration>('models').profiles;
+      const previous=this.options.db.prepare('SELECT profile_id,generation,recovery_generation,present,has_credentials,fingerprint,components FROM user_model_credential_generations WHERE user_id=?').all(userId) as CredentialState[];
+      const revision=this.options.db.prepare('SELECT revision FROM user_model_snapshot_revision WHERE user_id=?').get(userId);
+      const uncertain=bootstrap&&revision&&Number(revision.revision)!==service.revision;
+      this.options.db.exec('BEGIN IMMEDIATE');try{
+        for(const row of previous){
+          const profile=profiles.find(p=>p.id===row.profile_id),present=Boolean(profile),components=profile?credentialComponents(profile.settings):[];
+          const previousComponents=z.array(z.string()).parse(JSON.parse(row.components));
+          const revoke=Boolean(uncertain)||Boolean(row.present&&!present)||previousComponents.some(path=>!components.includes(path));
+          const fingerprint=profile?credentialsHash(profile.settings):null,recoveryRevoke=Boolean(uncertain)||row.fingerprint!==fingerprint||Boolean(row.present&&!present);
+          this.options.db.prepare('UPDATE user_model_credential_generations SET generation=?,recovery_generation=?,present=?,has_credentials=?,fingerprint=?,components=? WHERE user_id=? AND profile_id=?').run(row.generation+Number(revoke),row.recovery_generation+Number(recoveryRevoke),Number(present),Number(components.length>0),fingerprint,JSON.stringify(components),userId,row.profile_id);
+        }
+        for(const profile of profiles)if(!previous.some(p=>p.profile_id===profile.id)){const components=credentialComponents(profile.settings);this.options.db.prepare('INSERT INTO user_model_credential_generations VALUES(?,?,1,1,1,?,?,?)').run(userId,profile.id,Number(components.length>0),credentialsHash(profile.settings),JSON.stringify(components));}
+        this.options.db.prepare('INSERT INTO user_model_snapshot_revision VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET revision=excluded.revision').run(userId,service.revision);this.options.db.exec('COMMIT');
+      }catch(error){this.options.db.exec('ROLLBACK');throw error;}
+    }catch(error){if(error instanceof ScopeError)throw error;this.credentialsUnavailable.add(userId);throw new ConfigServiceError('config_unavailable');}
+  }
   private async entry(context:UserDataSubject):Promise<Entry>{
     this.assertSubject(context,'export');const state=this.state(context.userId);this.assertGeneration(context.userId,state.generation);
     const accessKey='credentialId' in context?'account:'+context.authorizationEpoch:'lifecycle:'+context.operationId;
@@ -114,7 +165,8 @@ export class Configurations {
       service.register({id:'modelPrices',schema:priceDomain,defaultValue:{items:[]},resolve:raw=>raw});
       for(const [id,factory] of this.domains){const domain=factory(context);if(domain.id!==id||!domain.resolve)throw new ConfigServiceError('config_invalid');service.register(lifecycle?{...domain,prepare:undefined}:domain);}
       const entry:Entry={service,generation:state.generation,accessKey,subject:context,initializing:Promise.resolve()};
-      entry.initializing=(async()=>{await service.initialize();if(!lifecycle)await service.startWatching();guard();})();
+      if(!lifecycle)service.onChange(()=>{try{this.syncCredentials(context.userId,service,false);}catch{/* Snapshot admission remains closed until a clean restart. */}});
+      entry.initializing=(async()=>{await service.initialize();if(!lifecycle){this.syncCredentials(context.userId,service,true);await service.startWatching();}guard();})();
       this.entries.set(context.userId,entry);
       try{await entry.initializing;return entry;}catch(error){if(this.entries.get(context.userId)===entry)this.entries.delete(context.userId);await service.close();throw error;}
     };
@@ -129,8 +181,10 @@ export class Configurations {
       update:async(patches:Record<string,unknown>,revision:number)=>{current();const {service}=await this.entry(context);await service.updateMany(patches,revision,false,current);current();return safeView(service);},
       replace:async(domain:string,value:unknown,revision:number)=>{current();const {service}=await this.entry(context);await service.replace(domain,value,revision,current);current();return safeView(service);},
       reload:async()=>{current();const {service}=await this.entry(context);await service.reload(current);current();return safeView(service);},
-      models:async()=>{current();const {service}=await this.entry(context);current();return {shared:this.resources.listShared(),personal:(safeView(service).domains.find(d=>d.id==='models')!.effective as UserModelConfiguration).profiles,selections:service.current<UserModelConfiguration>('models').selections};},
+      models:async()=>{current();const {service}=await this.entry(context);current();this.assertResources();return {shared:this.resources.listShared(),personal:(safeView(service).domains.find(d=>d.id==='models')!.effective as UserModelConfiguration).profiles,selections:service.current<UserModelConfiguration>('models').selections};},
       lease:(feature:ModelFeature,operationId:string)=>this.lease(context,feature,operationId),
+      restoreLease:(snapshotId:string,operationId:string)=>this.restoreLease(context,snapshotId,operationId),
+      selection:async(feature:ModelFeature)=>{current();const {service}=await this.entry(context);current();this.assertResources();const {reference,settings}=this.resources.resolve(service.current('models'),feature);return {reference,provider:settings.provider,model:settings.model,revision:service.revision,instanceRevision:this.instance.revision};},
       usage:()=>{current();this.assertGeneration(context.userId,this.state(context.userId).generation);return this.usage(context.userId);},
     });
   }
@@ -141,11 +195,42 @@ export class Configurations {
   async lease(context:UserContext,feature:ModelFeature,operationId:string):Promise<ModelLease>{
     this.options.authority.assert(context);if(!MODEL_FEATURES.includes(feature)||!validScopeId(operationId))throw new ConfigServiceError('config_invalid');
     const entry=await this.entry(context);this.options.authority.assert(context);
+    this.assertResources();if(this.credentialsUnavailable.has(context.userId))throw new ConfigServiceError('config_unavailable');
     const {settings,reference}=this.resources.resolve(entry.service.current('models'),feature);
     const prices=entry.service.current<z.infer<typeof priceDomain>>('modelPrices').items;
-    const lease=Object.freeze({id:randomUUID(),deploymentId:context.deploymentId,userId:context.userId,operationId,feature,revision:entry.service.revision,instanceRevision:this.instance.revision,reference:Object.freeze(reference),provider:settings.provider,model:settings.model});
-    this.leases.set(lease,{context,generation:entry.generation,...(reference.kind==='shared'?{sharedGeneration:this.resources.generation(reference.id)}:{}),settings:clone(settings),price:clone(prices.find(p=>p.provider===settings.provider&&p.model===settings.model)),configuration:entry.service.effectiveDocument()});
+    const credential=reference.kind==='personal'?this.credentialState(context.userId,reference.id):undefined;
+    const snapshot:DurableSnapshot={version:1,deploymentId:context.deploymentId,userId:context.userId,authorizationEpoch:context.authorizationEpoch,operationId,feature,revision:entry.service.revision,instanceRevision:this.instance.revision,reference,generation:entry.generation,...(reference.kind==='shared'?{sharedGeneration:this.resources.generation(reference.id)}:{credentialGeneration:credential?.generation,credentialRecoveryGeneration:credential?.recovery_generation,credentialFingerprint:credentialsHash(settings)}),settings:clone(settings),price:clone(prices.find(p=>p.provider===settings.provider&&p.model===settings.model)),configuration:entry.service.effectiveDocument()};
+    const id=this.snapshots.save(context.userId,snapshot);
+    const lease=Object.freeze({id,snapshotId:id,deploymentId:context.deploymentId,userId:context.userId,operationId,feature,revision:snapshot.revision,instanceRevision:snapshot.instanceRevision,reference:Object.freeze(reference),provider:settings.provider,model:settings.model});
+    this.leases.set(lease,{context,generation:snapshot.generation,sharedGeneration:snapshot.sharedGeneration,credentialGeneration:snapshot.credentialGeneration,settings:snapshot.settings,price:snapshot.price,configuration:snapshot.configuration});
     return lease;
+  }
+  /** Only a freshly host-verified user/task context can restore a stored
+   * capability. Public receipts and caller-selected settings are never inputs. */
+  async restoreLease(context:UserContext,snapshotId:string,expectedOperationId:string):Promise<ModelLeaseRestore>{
+    this.options.authority.assert(context);
+    const unavailable=(reason:Extract<ModelLeaseRestore,{status:'unavailable'}>['reason']):ModelLeaseRestore=>({status:'unavailable',reason});
+    if(!z.string().uuid().safeParse(snapshotId).success||!validScopeId(expectedOperationId))return unavailable('snapshot_unavailable');
+    let raw:unknown;try{raw=this.snapshots.read(context.userId,snapshotId);}catch{return unavailable('snapshot_unavailable');}
+    if(!raw)return unavailable('snapshot_unavailable');
+    const parsed=z.object({version:z.literal(1),deploymentId:z.string(),userId:z.string(),authorizationEpoch:nonnegative,operationId:z.string(),feature:z.enum(MODEL_FEATURES),revision:nonnegative,instanceRevision:nonnegative,reference:z.object({kind:z.enum(['shared','personal']),id:z.string()}).strict(),generation:nonnegative,sharedGeneration:nonnegative.optional(),credentialGeneration:nonnegative.optional(),credentialRecoveryGeneration:nonnegative.optional(),credentialFingerprint:z.string().optional(),settings:modelSettingsSchema,price:priceSchema.optional(),configuration:z.record(z.unknown())}).strict().safeParse(raw);
+    if(!parsed.success)return unavailable('snapshot_unavailable');const snapshot=parsed.data;
+    if(snapshot.deploymentId!==context.deploymentId||snapshot.userId!==context.userId)return unavailable('snapshot_unavailable');
+    if(snapshot.operationId!==expectedOperationId)return unavailable('operation_mismatch');
+    if(snapshot.authorizationEpoch!==context.authorizationEpoch)return unavailable('authorization_changed');
+    const state=this.state(context.userId);if(state.deleted||state.generation!==snapshot.generation)return unavailable('configuration_deleted');
+    this.accountFence(context);
+    let entry:Entry;try{entry=await this.entry(context);}catch(error){this.options.authority.assert(context);return unavailable('snapshot_unavailable');}
+    this.options.authority.assert(context);try{this.assertResources();}catch{return unavailable('snapshot_unavailable');}
+    if(snapshot.reference.kind==='shared'){
+      try{if(snapshot.sharedGeneration!==this.resources.generation(snapshot.reference.id))return unavailable('shared_resource_revoked');const current=this.resources.resolve({profiles:[],selections:{[snapshot.feature]:snapshot.reference}},snapshot.feature);if(restoreHash(current.settings)!==restoreHash(snapshot.settings))return unavailable('shared_resource_revoked');}catch{return unavailable('shared_resource_revoked');}
+    }else{
+      const credential=this.credentialState(context.userId,snapshot.reference.id);
+      if(this.credentialsUnavailable.has(context.userId)||!credential?.present||credential.generation!==snapshot.credentialGeneration||credential.recovery_generation!==snapshot.credentialRecoveryGeneration||credential.fingerprint!==snapshot.credentialFingerprint)return unavailable('credentials_revoked');
+    }
+    const id=snapshotId,lease=Object.freeze({id,snapshotId:id,deploymentId:context.deploymentId,userId:context.userId,operationId:snapshot.operationId,feature:snapshot.feature,revision:snapshot.revision,instanceRevision:snapshot.instanceRevision,reference:Object.freeze(snapshot.reference),provider:snapshot.settings.provider,model:snapshot.settings.model});
+    this.leases.set(lease,{context,generation:snapshot.generation,sharedGeneration:snapshot.sharedGeneration,credentialGeneration:snapshot.credentialGeneration,settings:clone(snapshot.settings),price:clone(snapshot.price),configuration:clone(snapshot.configuration) as ConfigDocument});
+    this.assertLease(lease);return {status:'restored',lease};
   }
   /** M05/M06/M07 hold a genuine lease, not a deserialized receipt. Logout does
    * not cancel admitted work; disable/reset/delete fences all late publications.
@@ -153,11 +238,13 @@ export class Configurations {
   assertLease(lease:ModelLease){
     const privateLease=this.leases.get(lease);if(!privateLease)throw new ScopeError('invalid_identity',401);
     this.assertGeneration(lease.userId,privateLease.generation);this.accountFence(privateLease.context);
+    this.assertResources();if(this.credentialsUnavailable.has(lease.userId))throw new ConfigServiceError('config_unavailable');
     if(lease.reference.kind==='shared'){
       if(privateLease.sharedGeneration!==this.resources.generation(lease.reference.id))throw new ScopeError('invalid_identity',401);
       const actual=this.resources.resolve({profiles:[],selections:{[lease.feature]:lease.reference}},lease.feature);
       if(JSON.stringify(actual.settings)!==JSON.stringify(privateLease.settings))throw new ScopeError('invalid_identity',401);
     }
+    else{const credential=this.credentialState(lease.userId,lease.reference.id);if(!credential?.present||credential.generation!==privateLease.credentialGeneration)throw new ScopeError('invalid_identity',401);}
     return privateLease;
   }
   /** Only trusted runtime adapters receive credentials. A model tool or HTTP
@@ -199,9 +286,12 @@ export class Configurations {
       this.assertSubject(context,'delete');if(!validScopeId(operationId))throw new ConfigServiceError('config_invalid');
       this.options.db.exec('BEGIN IMMEDIATE');try{
         this.options.db.prepare('INSERT INTO user_configuration_state(user_id,generation,deleted) VALUES(?,1,1) ON CONFLICT(user_id) DO UPDATE SET generation=generation+CASE WHEN deleted=0 THEN 1 ELSE 0 END,deleted=1,restore_operation=NULL').run(context.userId);
-        this.options.db.prepare('DELETE FROM user_configuration_restore_journal WHERE user_id=?').run(context.userId);this.options.db.exec('COMMIT');
+        this.options.db.prepare('DELETE FROM user_configuration_restore_journal WHERE user_id=?').run(context.userId);
+        this.snapshots.deleteUser(context.userId);
+        this.options.db.prepare('DELETE FROM user_model_credential_generations WHERE user_id=?').run(context.userId);
+        this.options.db.prepare('DELETE FROM user_model_snapshot_revision WHERE user_id=?').run(context.userId);this.options.db.exec('COMMIT');
       }catch(error){this.options.db.exec('ROLLBACK');throw error;}
-      await this.forget(context.userId);this.assertSubject(context,'delete');
+      await this.forget(context.userId);this.assertSubject(context,'delete');this.credentialsUnavailable.delete(context.userId);
       rmSync(this.path(context.userId),{recursive:true,force:true});this.options.db.prepare('DELETE FROM user_model_usage WHERE user_id=?').run(context.userId);
       return {status:'complete' as const,operationId};
     }),
@@ -277,5 +367,5 @@ export class Configurations {
       }finally{rmSync(staging,{force:true});}
     }),
   };
-  async close(){this.closed=true;await Promise.allSettled([...this.opening.values(),...this.lifecycleQueue.values()]);await Promise.all([...this.entries.values()].map(e=>e.service.close()));this.resources.close();await this.instance.close();}
+  async close(){this.closed=true;await Promise.allSettled([...this.opening.values(),...this.lifecycleQueue.values()]);await Promise.all([...this.entries.values()].map(e=>e.service.close()));this.snapshots.close();this.resources.close();await this.instance.close();}
 }
