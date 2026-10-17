@@ -1,0 +1,34 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import React,{act} from 'react';
+import {JSDOM} from 'jsdom';
+import {createServer} from 'node:http';
+import {setTimeout as delay} from 'node:timers/promises';
+import {configureLocale} from '@mote/shared/i18n';
+import {scopedFilesFixture} from '../../server/test/fixtures/scoped-files.js';
+import {waitForScopedState} from '../../server/test/fixtures/scoped-process.js';
+import {defaultModelSettings} from '../../server/src/model-settings.js';
+import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider.js';
+import {createApi,type Api} from '../src/api.js';
+import {FileDetail} from '../src/Files.js';
+configureLocale(()=> 'zh-CN');
+
+test('original FileDetail renders actual summary and dialogue publications separately without losing the exact transcript, and retires held A products under B',async t=>{
+ const f=await scopedFilesFixture(t);let mode='summary';
+ const provider=createServer((req,res)=>{void(async()=>{const parts=[];for await(const part of req)parts.push(part);const raw=Buffer.concat(parts).toString(),body=JSON.parse(raw),context=JSON.parse(typeof body.messages[0].content==='string'?body.messages[0].content:body.messages[0].content[0].text),ids=context.untrustedEvidence.map((r:any)=>r.id);writeMessagesResponse(res,{stage:1,text:JSON.stringify({answer:mode==='turns'?JSON.stringify({groups:ids.map((_:string,index:number)=>[index])}):'GENERATED_A_ACTUAL_SUMMARY',citationIds:mode==='turns'?[]:ids})});})().catch(error=>{res.statusCode=500;res.end(String(error));});});
+ await new Promise<void>(r=>provider.listen(0,'127.0.0.1',r));t.after(()=>{provider.closeAllConnections();return new Promise<void>(r=>provider.close(()=>r()));});const address=provider.address();assert.ok(address&&typeof address!=='string');
+ const a=await f.upload(f.a.token,'same-products','GENERATED_A_ORIGINAL\n\nGENERATED_A_SECOND'),b=await f.upload(f.b.token,'same-products','GENERATED_B_ORIGINAL');assert.equal(a.id,b.id);
+ for(const [owner,file]of [[f.a,a],[f.b,b]]){const task=await f.checked(owner.token,'/api/processing','POST',{originalRef:file.original.ref,operationId:'generated-product-extract'});await waitForScopedState(async()=>(await f.checked(owner.token,'/api/tasks/'+task.id)).state==='succeeded',()=>'actual text extraction');}
+ const view=await f.checked(f.a.token,'/api/configuration');await f.checked(f.a.token,'/api/configuration/models','PUT',{revision:view.revision,value:{profiles:[{id:'generated-products',name:'Generated products',settings:{...defaultModelSettings(),provider:'custom',protocol:'anthropic-messages',baseUrl:'http://127.0.0.1:'+address.port,model:'generated-products',apiKey:'GENERATED_PRODUCTS'}}],selections:{file:{kind:'personal',id:'generated-products'}}}});
+ mode='turns';const grouped=await f.checked(f.a.token,'/api/processing/derivations','POST',{originalRef:a.original.ref,operationId:'generated-dialogue',modes:['turns']});await waitForScopedState(async()=>(await f.checked(f.a.token,'/api/tasks/'+grouped.id)).state==='succeeded',()=>'actual semantic grouping');mode='summary';
+ const job=await f.checked(f.a.token,'/api/processing/derivations','POST',{originalRef:a.original.ref,operationId:'generated-summary',modes:['summary']});await waitForScopedState(async()=>(await f.checked(f.a.token,'/api/tasks/'+job.id)).state==='succeeded',()=>'actual summary');
+ const file=await f.checked(f.a.token,'/api/files/'+a.id),summary=file.artifacts.find((row:any)=>row.kind==='summary');assert.ok(summary);assert.ok(file.artifacts.some((row:any)=>row.kind==='dialogue'));assert.match(JSON.stringify(await f.checked(f.a.token,'/api/processing/artifacts/'+summary.id)),/GENERATED_A_ACTUAL_SUMMARY/);
+ const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/#/library',pretendToBeVisual:true}),prior=new Map<string,PropertyDescriptor|undefined>();let cookie='',current:Api|undefined,hold=false,enter!:()=>void,release!:()=>void;const entered=new Promise<void>(r=>enter=r),gate=new Promise<void>(r=>release=r);
+ for(const [key,value]of Object.entries({window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage,HTMLElement:dom.window.HTMLElement,Event:dom.window.Event,IS_REACT_ACT_ENVIRONMENT:true,fetch:async(path:string,init:RequestInit={})=>{const headers=new Headers(init.headers);headers.set('cookie',cookie);const r=await f.host.app.inject({url:path,method:init.method as any??'GET',headers:Object.fromEntries(headers),...(init.body?{payload:String(init.body)}:{})});if(hold&&path==='/api/processing/artifacts/'+summary.id){hold=false;assert.equal(r.statusCode,200,r.body);enter();await gate;}return new Response(r.rawPayload,{status:r.statusCode,headers:r.headers as Record<string,string>});}})){prior.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
+ const {createRoot}=await import('react-dom/client'),root=createRoot(dom.window.document.getElementById('root')!),d=dom.window.document;t.after(async()=>{release();current?.close?.();await act(async()=>root.unmount());for(const [key,value]of prior){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
+ const login=async(label:string)=>{const r=await f.request(undefined,'/api/auth/login','POST',{username:'generated-'+label,password:'Generated-joint-files-password',mode:'web'});assert.equal(r.statusCode,200,r.body);cookie=String(r.headers['set-cookie']).split(';')[0];const api=createApi({mode:'web',origin:'http://localhost',...r.json()},undefined,()=>current===api);current?.close?.();current=api;return api;},render=async(api:Api)=>act(async()=>{root.render(React.createElement(React.StrictMode,null,React.createElement(FileDetail,{api,id:a.id,onOpen:()=>{}})));await delay(20);}),wait=async(read:()=>boolean,label:string)=>{for(let i=0;i<500&&!read();i++)await act(async()=>delay(10));assert.ok(read(),label+' '+d.body.textContent);};
+ const api=await login('a');await render(api);await wait(()=>d.body.textContent!.includes('GENERATED_A_ACTUAL_SUMMARY'),'actual published summary must remain visible');
+ await act(async()=>{const button=Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(value=>value.textContent==='展开转写 / 原文片段');assert.ok(button);button.click();await delay(20);});await wait(()=>d.body.textContent!.includes('GENERATED_A_ORIGINAL'),'summary must not replace the current transcript reader');
+ // Start a fresh account-scoped tree so the actual product read can be held.
+ await act(async()=>root.render(null));hold=true;await render(api);await entered;await render(await login('b'));release();await act(async()=>delay(30));assert.doesNotMatch(d.body.textContent!,/GENERATED_A_ACTUAL_SUMMARY|GENERATED_A_ORIGINAL/);
+});

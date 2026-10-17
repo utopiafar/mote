@@ -20,6 +20,9 @@ export function registerConfigurationRoutes(runtime:ScopedRuntime,configuration:
   }});
   registerUserRoute(runtime,{scope:'user',method:'POST',url:'/api/configuration/reload',service:'configuration',handle:({services,request})=>{z.object({}).strict().parse(request.body??{});return services.get<UserConfigurationService>('configuration').reload();}});
   registerUserRoute(runtime,{scope:'user',method:'GET',url:'/api/models',service:'configuration',handle:({services})=>services.get<UserConfigurationService>('configuration').models()});
+  registerUserRoute(runtime,{scope:'user',method:'POST',url:'/api/models/profiles/:id/copy',service:'configuration',handle:({services,request})=>services.get<UserConfigurationService>('configuration').copyModel(z.object({id:z.string()}).strict().parse(request.params).id,request.body)});
+  registerUserRoute(runtime,{scope:'user',method:'POST',url:'/api/models/catalog',service:'configuration',handle:({services,request})=>services.get<UserConfigurationService>('configuration').modelCatalog(request.body)});
+  registerUserRoute(runtime,{scope:'user',method:'POST',url:'/api/models/probe',service:'configuration',handle:({services,request})=>services.get<UserConfigurationService>('configuration').probeModel(request.body)});
   registerUserRoute(runtime,{scope:'user',method:'GET',url:'/api/models/selection/:feature',service:'configuration',handle:({services,request})=>{
     const feature=z.object({feature:z.enum(MODEL_FEATURES)}).strict().parse(request.params).feature;
     return services.get<UserConfigurationService>('configuration').selection(feature);

@@ -166,7 +166,14 @@ export class ScopedConnectors {
     if(adapter instanceof LarkAdapter){adapter.startSync();result=await adapter.wait();}else if(adapter instanceof ScopedRecordingAdapter)result=await adapter.sync(input.due>0);else result=await adapter.sync();assert();
     if(input.recurring&&this.row(run.context.userId,row.id).sync_authorized)await this.schedule(run.context,row.id,run.task.id);
    }else {let timer:ReturnType<typeof setInterval>|undefined;if(adapter instanceof LarkAdapter)timer=setInterval(()=>{try{assert();run.progress({connector:adapter instanceof LarkAdapter?adapter.status().job:undefined});}catch{}},100);try{if(['login','setup'].includes(input.operation!))run.external.begin('connector-authorization:'+run.task.id);result=await this.operation(adapter,input.operation!,this.operationPayload(run,input,row,assert),value=>{assert();run.progress(value);});if(['login','setup'].includes(input.operation!)){run.external.complete();run.progress({authorization:'complete'});}}finally{clearInterval(timer);}}
-   assert();if(input.action==='operation'&&input.operation==='disconnect'){await adapter.close();assert();this.clearOperationPayloads(run.context.userId,row.id);const vault=this.vault(run.context,row.id,assert);await rm(vault.directory,{recursive:true,force:true});assert();this.options.db.prepare('DELETE FROM connector_secrets WHERE user_id=? AND instance_id=?').run(run.context.userId,row.id+':'+row.storage_generation+':'+run.context.authorizationEpoch);this.options.db.prepare('UPDATE connector_connections SET storage_generation=storage_generation+1 WHERE user_id=? AND id=? AND generation=?').run(run.context.userId,row.id,row.generation);}return this.safeResult(result);
+   assert();
+   if(adapter instanceof LarkAdapter&&input.action==='operation'&&input.operation==='calendars'&&result&&typeof result==='object'&&'calendars' in result&&Array.isArray(result.calendars)&&Buffer.byteLength(JSON.stringify(result))>24000){
+    // Preserve the complete explicit discovery in the existing encrypted,
+    // owner/connection/epoch vault instead of truncating a task receipt.
+    this.vault(run.context,row.id,assert).write('calendar-inventory',{taskId:run.task.id,generation:row.generation,items:result.calendars});
+    return {calendarInventory:run.task.id,count:result.calendars.length};
+   }
+   assert();if(input.action==='operation'&&input.operation==='disconnect'){await adapter.close();assert();this.clearOperationPayloads(run.context.userId,row.id);const vault=this.vault(run.context,row.id,assert);await rm(vault.directory,{recursive:true,force:true});assert();this.options.db.prepare('DELETE FROM connector_secrets WHERE user_id=? AND instance_id=?').run(run.context.userId,row.id+':'+row.storage_generation+':'+run.context.authorizationEpoch);this.options.db.prepare('UPDATE connector_connections SET storage_generation=storage_generation+1 WHERE user_id=? AND id=? AND generation=?').run(run.context.userId,row.id,row.generation);}return this.safeResult(adapter instanceof LarkAdapter?this.publicLarkStatus(run.context,row.id,result):result,adapter instanceof LarkAdapter);
   }finally{signal.removeEventListener('abort',stop);let confirmed=false;try{await adapter?.close();confirmed=Boolean(adapter)||!this.extensions.has(connectionSchema.parse(JSON.parse(row.settings)).provider);}finally{journal.finish(confirmed);group.delete(controller);if(!group.size)this.active.delete(key);}}
  }
  private async schedule(context:UserContext,id:string,currentTaskId?:string){
@@ -203,7 +210,20 @@ export class ScopedConnectors {
   if(payloadRef){const vault=new ConnectorVault(this.options.db,this.options.directory,this.runtime.authority.deploymentId,String(task.user_id),row!.id+':'+row!.storage_generation+':'+step!.ownership!.authorizationEpoch,()=>{if(this.closed)throw new ScopeError('invalid_identity',401);});vault.write('operation:'+payloadRef,{taskId:String(task.task_id),operation:input.operation,generation:input.generation,snapshotId:input.snapshotId,payload});}
   const encoded=JSON.stringify(canonical(input));this.options.db.prepare('UPDATE user_tasks SET input=? WHERE user_id=? AND task_id=?').run(encoded,task.user_id,task.task_id);this.options.db.prepare('UPDATE execution_steps SET input=? WHERE user_id=? AND id=?').run(encoded,task.user_id,task.task_id);
  }});}
- private safeResult(value:unknown){const json=JSON.stringify(value);if(!json||json.length>24000)return {completed:true};return value;}
+ private safeResult(value:unknown,lark=false){
+  const json=JSON.stringify(value),status=lark&&value&&typeof value==='object'&&'selection' in value;
+  if(json&&(status?Buffer.byteLength(json):json.length)<=24000)return value;
+  // The owned status reader already exposes the complete durable Lark scope
+  // and document journal. Keep the actual CLI probe/job in the task budget.
+  if(status){const {selection:_,documentSync:__,...probe}=value as import('@mote/shared').LarkStatus,summary={...probe,statusInConnection:true};if(Buffer.byteLength(JSON.stringify(summary))>24000)throw new ConnectorError('connector_result_too_large',413);return summary;}
+  return {completed:true};
+ }
+ private publicLarkStatus(context:UserContext,id:string,value:unknown){
+  const status=value as import('@mote/shared').LarkStatus;if(!status?.documentSync?.sourceId)return value;
+  this.assert(context);const row=this.options.db.prepare('SELECT source_id FROM connector_sources WHERE user_id=? AND instance_id=? AND local_id=?').get(context.userId,id,status.documentSync.sourceId);
+  if(!row)throw new ConnectorError('connector_source_missing',404);
+  return {...status,documentSync:{...status.documentSync,sourceId:String(row.source_id)}};
+ }
  private oauthAdapter(adapter:Awaited<ReturnType<ScopedConnectors['adapter']>>){return adapter instanceof GmailAdapter||adapter instanceof GoogleCalendarConnector?adapter:'oauth' in adapter?adapter.oauth:undefined;}
  private async operation(adapter:Awaited<ReturnType<ScopedConnectors['adapter']>>,operation:string,payload:Record<string,unknown>,progress:(value:unknown)=>void=()=>{}){
   if(operation==='disconnect')return adapter.disconnect();
@@ -241,7 +261,17 @@ export class ScopedConnectors {
     const plugin=this.options.plugins.forUser(context),pv=await plugin.view();if(!pv.instances.some(i=>i.id===pluginId(input.id)))await plugin.configure({id:pluginId(input.id),packageId:this.packages.get(input.provider),name:input.provider,configuration:{},desired:false,grants:{capabilities:['source'],sourceIds:[],history:false}},pv.revision);
     const latest=await this.options.configuration.forUser(context).view();await this.options.configuration.forUser(context).replace(CONFIG,{connections:[...connections.filter(c=>c.id!==input.id),input]},latest.revision);return this.forUser(context).view();},
    action:async(id:string,action:'enable'|'pause'|'resume'|'stop',expectedRevision:number)=>{this.row(context.userId,id);const plugin=this.options.plugins.forUser(context),view=await plugin.view();if(view.revision!==expectedRevision)throw new ConnectorError('connector_configuration_changed',409);if(action==='enable'){await plugin.check(pluginId(id));return plugin.action(pluginId(id),'enable',(await plugin.view()).revision);}const result=await plugin.action(pluginId(id),action,expectedRevision);if(action==='stop'){this.abort(context.userId,id);this.options.db.prepare("UPDATE connector_oauth SET status='revoked' WHERE user_id=? AND instance_id=? AND status IN ('pending','ready')").run(context.userId,id);}return result;},
-   status:async(id:string)=>{const activity=this.activity(context,this.row(context.userId,id));try{return await(await activity.open()).status();}finally{await activity.finish();}},
+   status:async(id:string)=>{
+    const row=this.row(context.userId,id),activity=this.activity(context,row);let result:unknown;
+    try{
+     const adapter=await activity.open(),value=await adapter.status();result=adapter instanceof LarkAdapter?this.publicLarkStatus(context,id,value):value;
+     if(adapter instanceof LarkAdapter){
+      const inventory=this.vault(context,id,activity.assert).read<{taskId:string;generation:number;items:unknown[]}>('calendar-inventory');
+      if(inventory?.generation===row.generation)result={...result as object,calendarInventory:{taskId:inventory.taskId,items:inventory.items}};
+     }
+    }finally{await activity.finish();}
+    activity.assert();return result;
+   },
    start:async(id:string)=>{
     const row=this.row(context.userId,id),snapshot=await this.options.plugins.forUser(context).admit(pluginId(id)),input=connectorTask.parse({connectionId:id,generation:row.generation,snapshotId:snapshot.id,action:'oauth'}),activity=this.activity(context,row,()=>{this.binding(context,input);}),assert=activity.assert;
     try{const adapter=await activity.open(),oauth=this.oauthAdapter(adapter);if(!oauth)throw new ConnectorError('connector_oauth_unsupported');const result=await oauth.start();assert();const state=new URL(result.authorizationUrl).searchParams.get('state')!;this.options.db.prepare("INSERT INTO connector_oauth VALUES(?,?,?,?,?,?,'pending',NULL)").run(hash(state),context.userId,id,row.generation,snapshot.id,Date.now()+result.expiresIn*1000);const task=await this.submit(context,id,{...input,state},'oauth:'+hash(state));this.options.db.prepare('UPDATE connector_oauth SET task_id=? WHERE state_hash=?').run(task.id,hash(state));return {...result,taskId:task.id};}finally{await activity.finish();}

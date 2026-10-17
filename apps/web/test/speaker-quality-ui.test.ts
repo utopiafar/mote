@@ -13,7 +13,7 @@ test('generated transcript groups retain child correction/seek controls and scop
  const root=createRoot(dom.window.document.getElementById('root')!),d=dom.window.document,id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',raw='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',dialogue='cccccccc-cccc-4ccc-8ccc-cccccccccccc',writes:{path:string;body:any}[]=[];
  const chunks=[0,1,2].map(i=>({id:'generated-child-'+i,ocrText:'[SPEAKER_0] Generated '+i,fileEvidence:{artifactId:dialogue,chunkId:'generated-child-'+i,speaker:'SPEAKER_0',startMs:i*500,endMs:(i+1)*500,uncertain:i===1}}));
  const file={captureId:id,sourceId:'generated',sizeBytes:16,hasOriginal:true,originMissing:false,item:{title:'Generated recording',layer:'original',mimeType:'audio/wav',observedAt:'2026-10-01T00:00:00Z'},job:{state:'succeeded',summary_state:'skipped'},cancellation:{canCancel:false,wait:null},processingPolicy:{capabilities:{dialogue:true,summary:false},current:{profile:{name:'Generated profile',processorId:'audio.local-dialogue',parameters:{},summarize:false},rule:{type:'audio/*'}}},artifacts:[{id:raw,kind:'transcript'},{id:dialogue,kind:'dialogue'}]};
- const api={request:async(path:string,init?:RequestInit)=>{
+ const api={raw:async(path:string)=>{assert.equal(path,'/generated.wav');return new Response('Generated audio bytes',{headers:{'content-type':'audio/wav'}});},request:async(path:string,init?:RequestInit)=>{
   if(init?.method==='POST'){writes.push({path,body:JSON.parse(String(init.body))});return path.endsWith('/playback')?{url:'/generated.wav'}:{queued:true};}
   if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};
   if(path==='/api/files/'+id)return file;

@@ -212,6 +212,9 @@ export function createApi(input: Connection, onUnauthorized?: () => void, isCurr
     }else headers.set('Authorization',`Bearer ${connection.token}`);
     const response = await fetch(path, {
       ...init,
+      // A held response can lock a browser cache entry before its no-store
+      // response headers arrive. New-owner reads must bypass that entry too.
+      cache: "no-store",
       redirect: "error",
       credentials: isWebConnection(connection) || path.startsWith("/api/files/") ? "same-origin" : "omit",
       signal,

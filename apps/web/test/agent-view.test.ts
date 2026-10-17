@@ -18,6 +18,13 @@ test('recorded text uses tool-returned offsets and never invents reads from meta
  assert.deepEqual(recordedReads({...base,trace:{...base.trace!,status:'failed'}}),[]);
  assert.deepEqual(recordedReads({...base,trace:{...base.trace!,payload:{result:{data:{id:'fixture',title:'Metadata only'}}}}}),[]);
 });
+test('typed Harness tool results keep exact returned Material text while calls, user messages and truncated data never become reads',()=>{
+ const message={role:'tool',isError:false,content:[{type:'text',text:JSON.stringify({source:'untrusted_personal_context',data:{material:{id:'generated-material',ref:'material:generated@revision',title:'Generated Material'},text:'Generated returned Material text',textRange:{offset:4000,total:12000}}})}]};
+ const event:TraceEvent={seq:'generated-run:1',at:'fixture',trace:{type:'provider.event',payload:{type:'tool/result',data:{message}}}};
+ assert.deepEqual(recordedReads(event),[{id:'generated-material',ref:'material:generated@revision',title:'Generated Material',text:'Generated returned Material text',offset:4000,total:12000}]);
+ for(const payload of [{type:'tool/call',data:{message}},{type:'tool/result',data:{message:{...message,isError:true}}},{type:'tool/result',data:{message:{...message,role:'user'}}},{type:'tool/result',data:{message:{...message,content:[{type:'text',text:'not JSON'}]}}}])assert.deepEqual(recordedReads({...event,trace:{...event.trace!,payload}}),[]);
+ assert.deepEqual(recordedReads({...event,trace:{...event.trace!,truncated:true}}),[]);
+});
 test('a Cordis home contribution is removed with its plugin and leaves unrelated pages installed',async()=>{
  const host=new WebFeatureHost();try{
   await host.install({id:'fixture.system',version:'1',components:[]},[{surface:'page',entry:{id:'overview',featureId:'fixture.system',render:()=>null}}]);

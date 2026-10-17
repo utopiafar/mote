@@ -21,9 +21,11 @@ function query(scope:Scope,values:Record<string,string|number|undefined>={}){
 }
 function EntryDetail({api,entry,scope,onSelect}:{api:Api;entry:Entry;scope:Scope;onSelect:(entry:Entry)=>void}){
  const [offset,setOffset]=useState(0);
- const endpoint=entry.expand==='memories'?'memories':entry.expand==='segments'?'segments':'evidence';
- const id=endpoint==='segments'?entry.ref:entry.id;
- const page=useResource<Details>(api,`/api/agent-view/${endpoint}?`+query(scope,{id,includeEvidence:endpoint==='memories'?'true':undefined,offset:endpoint==='evidence'||endpoint==='segments'?offset:undefined}));
+ const endpoint=entry.expand==='memories'?'memories':entry.expand==='material_read'?'material-read':entry.expand==='segments'?'segments':'evidence';
+ const id=endpoint==='segments'?(api.connection?.mode==='web'?entry.id:entry.ref):entry.id;
+ const read=useResource<Details&{material?:{ref:string};text?:string;textRange?:Detail['textRange']}>(api,`/api/agent-view/${endpoint}?`+query(scope,{...(endpoint==='material-read'?{ref:entry.ref}:{id}),includeEvidence:endpoint==='memories'?'true':undefined,offset:endpoint!=='memories'?offset:undefined}));
+ const materialPage=read.data,validMaterial=endpoint!=='material-read'||!materialPage||(materialPage.material?.ref===entry.ref&&typeof materialPage.text==='string'&&Number.isSafeInteger(materialPage.textRange?.offset)&&Number.isSafeInteger(materialPage.textRange?.total));
+ const page={...read,error:read.error??(!validMaterial?Error(moteText('服务返回的操作回执与当前账号不一致。')):undefined),data:!validMaterial?undefined:endpoint==='material-read'&&materialPage?{items:[{...entry,text:materialPage.text,textRange:materialPage.textRange}]}:read.data};
  useEffect(()=>setOffset(0),[id,endpoint,scope.deviceId,scope.after,scope.before]);
  return <section className="panel panel-pad agent-detail" aria-label={moteText('条目内容')}>
   <h2>{entry.title??entry.windowTitle??entry.appName??entry.layer??entry.id}</h2><p className="badge muted">{moteText('可访问 · 本次浏览展开')}</p>
@@ -61,7 +63,9 @@ function Catalog({api,scope,onOpen}:{api:Api;scope:Scope;onOpen:(ref:string)=>vo
   </div>
  </div>;
 }
-export function AgentInspector({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}){
+type Props={api:Api;onOpen:(ref:string)=>void};
+export function AgentInspector(props:Props){return <AgentInspectorContents key={JSON.stringify(props.api.connection)} {...props}/>;}
+function AgentInspectorContents({api,onOpen}:Props){
  const [tab,setTab]=useState('catalog'),[deviceId,setDeviceId]=useState(''),[after,setAfter]=useState(''),[before,setBefore]=useState('');
  const [runId,setRunId]=useState(()=>new URLSearchParams(location.hash.split('?')[1]).get('runId')??'');
  useEffect(()=>{if(runId)setTab('input');},[]);

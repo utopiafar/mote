@@ -179,7 +179,7 @@ function cleanEvent(value:unknown):DiagnosticEvent|undefined {
 }
 
 const traceStringLimit=1_000_000,traceArrayLimit=500,traceObjectLimit=250,traceDepthLimit=8;
-function compactTraceValue(value:unknown,depth=0):{value:unknown;truncated:boolean} {
+export function compactTraceValue(value:unknown,depth=0):{value:unknown;truncated:boolean} {
   if(value===undefined)return {value:undefined,truncated:false};
   if(typeof value==='string')return value.length>traceStringLimit?{value:value.slice(0,traceStringLimit),truncated:true}:{value,truncated:false};
   if(value===null||typeof value==='number'||typeof value==='boolean')return {value,truncated:false};

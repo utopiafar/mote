@@ -3,6 +3,20 @@ import assert from 'node:assert/strict';
 import {createApi, type Connection} from '../src/api.js';
 
 const connection=()=>({mode:'web',origin:'https://fixture.invalid',deploymentId:'deployment-fixture',userId:'user-a',credentialId:'session-a',csrfToken:'generated-csrf',username:'alice',administrator:false,expiresAt:Date.now()+60000} as unknown as Connection);
+test('private GETs bypass the browser cache entry shared by a held old-owner URL',async t=>{
+ const calls:{path:unknown;init:RequestInit}[]=[];
+ t.mock.method(globalThis,'fetch',async(path:unknown,init?:RequestInit)=>{calls.push({path,init:init!});return Response.json({items:[]});});
+ const path='/api/captures?kind=note&limit=30';
+ const a=createApi(connection());
+ await a.request(path);a.close?.();
+ const b=createApi({...connection(),userId:'user-b',credentialId:'session-b'} as Connection);
+ await b.request(path,{cache:'force-cache'});
+ await createApi({token:'generated-native-only'}).raw(path,{cache:'default'});
+ assert.deepEqual(calls.map(call=>call.path),[path,path,path]);
+ assert.deepEqual(calls.map(call=>call.init.cache),['no-store','no-store','no-store']);
+ assert.equal(new Headers(calls[0].init.headers).get('X-Mote-Session-Id'),'session-a');
+ assert.equal(new Headers(calls[1].init.headers).get('X-Mote-Session-Id'),'session-b');
+});
 test('Web API pins Cookie requests to the original session with protocol and CSRF; callers cannot replace authority',async t=>{
  const calls:RequestInit[]=[];
  t.mock.method(globalThis,'fetch',async(_path:unknown,init?:RequestInit)=>{calls.push(init!);return Response.json({ok:true});});

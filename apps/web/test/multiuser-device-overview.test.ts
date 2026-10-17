@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import React,{act} from 'react';
+import {JSDOM} from 'jsdom';
+import {setTimeout as delay} from 'node:timers/promises';
+import {configureLocale} from '@mote/shared/i18n';
+import {scopedFilesFixture} from '../../server/test/fixtures/scoped-files.js';
+import {waitForScopedState} from '../../server/test/fixtures/scoped-process.js';
+import {createApi,type Api} from '../src/api.js';
+import {ScopedDevices,ScopedOverview} from '../src/ScopedSummary.js';
+configureLocale(()=> 'zh-CN');
+
+test('original account device status and recent work use actual owner heartbeats and work receipts, with held A inventory retired under B',async t=>{
+ const f=await scopedFilesFixture(t);for(const [owner,label,pending]of [[f.a,'A',7],[f.b,'B',13]] as const){await f.checked(owner.token,'/api/ingress/devices','POST',{id:'same-phone',name:'GENERATED_'+label+'_PHONE',platform:'android'});await f.checked(owner.token,'/api/ingress/devices/heartbeat','POST',{deviceId:'same-phone',deviceName:'GENERATED_'+label+'_PHONE',platform:'android',status:'paused',queueDepth:pending,sync:{mode:'manual',state:'manual',intervalMinutes:15,batchSize:20,pendingRecords:pending},error:'GENERATED_'+label+'_DEVICE_REASON'});}
+ await f.checked(f.a.token,'/api/ingress/devices','POST',{id:'registered-only',name:'GENERATED_REGISTERED_ONLY',platform:'macos'});
+ const upload=await f.upload(f.a.token,'GENERATED_A_RECENT_WORK','GENERATED_A_FILE'),task=await f.checked(f.a.token,'/api/processing','POST',{originalRef:upload.original.ref,operationId:'generated-home-work'});await waitForScopedState(async()=>(await f.checked(f.a.token,'/api/tasks/'+task.id)).state==='succeeded',()=>'actual recent work');assert.ok((await f.checked(f.a.token,'/api/work-activity?limit=5')).items.length);
+ const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/#/connections/devices',pretendToBeVisual:true}),prior=new Map<string,PropertyDescriptor|undefined>();let cookie='',current:Api|undefined,hold=false,enter!:()=>void,release!:()=>void;const entered=new Promise<void>(r=>enter=r),gate=new Promise<void>(r=>release=r);
+ for(const [key,value]of Object.entries({window:dom.window,document:dom.window.document,location:dom.window.location,HTMLElement:dom.window.HTMLElement,Event:dom.window.Event,IS_REACT_ACT_ENVIRONMENT:true,fetch:async(path:string,init:RequestInit={})=>{const headers=new Headers(init.headers);headers.set('cookie',cookie);const r=await f.host.app.inject({url:path,method:init.method as any??'GET',headers:Object.fromEntries(headers),...(init.body?{payload:String(init.body)}:{})});if(hold&&path==='/api/ingress/devices'){hold=false;enter();await gate;}return new Response(r.rawPayload,{status:r.statusCode,headers:r.headers as Record<string,string>});}})){prior.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
+ const {createRoot}=await import('react-dom/client'),root=createRoot(dom.window.document.getElementById('root')!),d=dom.window.document;t.after(async()=>{release();current?.close?.();await act(async()=>root.unmount());for(const [key,value]of prior){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
+ const login=async(label:string)=>{const r=await f.request(undefined,'/api/auth/login','POST',{username:'generated-'+label,password:'Generated-joint-files-password',mode:'web'});assert.equal(r.statusCode,200,r.body);cookie=String(r.headers['set-cookie']).split(';')[0];const api=createApi({mode:'web',origin:'http://localhost',...r.json()},undefined,()=>current===api);current?.close?.();current=api;return api;},render=async(api:Api,home=false)=>act(async()=>{root.render(React.createElement(React.StrictMode,null,home?React.createElement(ScopedOverview,{api,onPage:()=>{}}):React.createElement(ScopedDevices,{api,onConnect:()=>{}})));await delay(20);}),wait=async(read:()=>boolean,label:string)=>{for(let i=0;i<500&&!read();i++)await act(async()=>delay(10));assert.ok(read(),label+' '+d.body.textContent);};
+ const a=await login('a');await render(a);await wait(()=>d.body.textContent!.includes('GENERATED_A_DEVICE_REASON'),'original device heartbeat details');assert.match(d.body.textContent!,/上报的待同步记录/);assert.match(d.body.textContent!,/GENERATED_REGISTERED_ONLY/);assert.doesNotMatch(d.body.textContent!,/GENERATED_B_DEVICE_REASON/);
+ await render(a,true);await wait(()=>d.querySelectorAll('.activity-card').length>0,'original recent background work must remain on Today');
+ await act(async()=>root.render(null));hold=true;await render(a);await entered;await render(await login('b'));release();await wait(()=>d.body.textContent!.includes('GENERATED_B_DEVICE_REASON'),'B own device heartbeat');assert.doesNotMatch(d.body.textContent!,/GENERATED_A_DEVICE_REASON|GENERATED_REGISTERED_ONLY|GENERATED_A_RECENT_WORK/);
+});

@@ -3,6 +3,7 @@ import type {ModelSettingsView} from '@mote/shared/models';
 import {moteText} from '@mote/shared/i18n';
 import {type Api,errorMessage,dateTime} from './api';
 import {useResource} from './useResource';
+import {ScopedMemoryIntegration} from './ScopedMemoryIntegration';
 
 export type IntegrationCandidate={id:string;title:string;version?:number;fingerprint?:string;status:string;supersededBy?:string;validFrom?:string;validUntil?:string;admission?:{layer:string}};
 type Recipe={id:string;version:string;available:boolean};
@@ -16,7 +17,10 @@ export function currentIntegrationCandidate(item:IntegrationCandidate|undefined,
 
 const statusLabels:Record<string,string>={pending:moteText('等待执行'),running:moteText('正在整理'),retry_wait:moteText('等待自动重试'),failed:moteText('整理失败'),cancelled:moteText('已取消')};
 const recipeLabel=(item:Recipe)=>item.id==='mote.memory-integration'?moteText('记忆整理'):item.id;
-export function MemoryIntegration({api,candidate,verificationPending=false}:{api:Api;candidate?:IntegrationCandidate;verificationPending?:boolean}){
+export function MemoryIntegration(props:{api:Api;candidate?:IntegrationCandidate;verificationPending?:boolean}){
+ return props.api.connection?.mode==='web'?<ScopedMemoryIntegration key={JSON.stringify(props.api.connection)} {...props}/>:<LegacyMemoryIntegration {...props}/>;
+}
+function LegacyMemoryIntegration({api,candidate,verificationPending=false}:{api:Api;candidate?:IntegrationCandidate;verificationPending?:boolean}){
   const eligible=currentIntegrationCandidate(candidate);
   const lifecycle=useResource<LifecycleView>(api,'/api/memory-settings',3000);
   const recipes=useResource<{items:Recipe[]}>(api,eligible?'/api/memory-integration-recipes':null);

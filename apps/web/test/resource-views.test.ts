@@ -15,6 +15,8 @@ import {SourceMaterialView} from '../src/features/source-material.js';
 import {resources} from '../src/resource-cache.js';
 import {ApiError,dateTime,type Api} from '../src/api.js';
 import {DatabaseSync} from 'node:sqlite';
+import {resolveObjectURL} from 'node:buffer';
+import sharp from 'sharp';
 import {requestMemoryIntegration} from '../../server/src/memory-integration.js';
 const ids=['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'];
 function deferred(){let resolve!:(value:any)=>void,reject!:(value:unknown)=>void;const promise=new Promise<any>((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
@@ -583,26 +585,28 @@ test('explicit memory source rejects invalid or revoked records and fences a lat
 });
 
 test('generated archived JPEG renders after authorized load and supports native-size reading',async t=>{
- const {root,document:d}=await fixture(t);let loads=0;
+ const {root,document:d}=await fixture(t);let loads=0,byteReads=0;const image=await sharp({create:{width:1,height:1,channels:3,background:'#234567'}}).jpeg().toBuffer();
  const api=apiWith(path=>{if(path.endsWith('/playback')){loads++;return {url:'/api/files/'+ids[0]+'/content'};}return {captureId:ids[0],item:{title:'Generated diagram.jpg',mimeType:'image/jpeg'},sizeBytes:100,hasOriginal:true,job:null,artifacts:[]};});
+ api.raw=async path=>{assert.equal(path,'/api/files/'+ids[0]+'/content');byteReads++;return new Response(image,{headers:{'content-type':'image/jpeg'}});};
  await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
  await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>/加载原件|查看原图/.test(b.textContent!))!.click());
- const img=d.querySelector('img');assert.ok(img,'authorized image original must be visible');assert.equal(img.getAttribute('src'),'/api/files/'+ids[0]+'/content');assert.equal(img.getAttribute('alt'),'Generated diagram.jpg');
- await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='原始尺寸')!.click());assert.ok(d.querySelector('.native-size'));assert.equal(loads,1,'resizing reuses authorized URL');
+ const img=d.querySelector('img');assert.ok(img,'authorized image original must be visible');assert.ok(img.src.startsWith('blob:'));assert.deepEqual(Buffer.from(await resolveObjectURL(img.src)!.arrayBuffer()),image);assert.equal(img.getAttribute('alt'),'Generated diagram.jpg');
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='原始尺寸')!.click());assert.ok(d.querySelector('.native-size'));assert.equal(loads,1,'resizing reuses authorized URL');assert.equal(byteReads,1);
  await act(async()=>img.dispatchEvent(new d.defaultView!.Event('error')));assert.ok(d.querySelector('[role=alert]'));
 });
 
 for(const outcome of ['resolve','reject'] as const)test('archived image ignores late '+outcome+' after API session changes',async t=>{
- const {root,document:d}=await fixture(t),pending=deferred();let oldSignal:AbortSignal|undefined;
+ const {root,document:d}=await fixture(t),pending=deferred();let oldSignal:AbortSignal|undefined,oldBytes=0;const image=await sharp({create:{width:1,height:1,channels:3,background:'#654321'}}).jpeg().toBuffer();
  const file={captureId:ids[0],item:{title:'Generated image.jpg',mimeType:'image/jpeg'},sizeBytes:100,hasOriginal:true,job:null,artifacts:[]};
  const oldApi=apiWith((path,init)=>{if(path.endsWith('/playback')){oldSignal=init?.signal as AbortSignal;return pending.promise;}return file;});
  const newApi=apiWith(path=>path.endsWith('/playback')?{url:'/generated-current.jpg'}:file);
+ oldApi.raw=async()=>{oldBytes++;return new Response(image);};newApi.raw=async path=>{assert.equal(path,'/generated-current.jpg');return new Response(image,{headers:{'content-type':'image/jpeg'}});};
  const render=(api:Api)=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}}));
  await act(async()=>render(oldApi));await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='查看原图')!.click());
  await act(async()=>render(newApi));assert.equal(oldSignal?.aborted,true);
  await act(async()=>{if(outcome==='resolve')pending.resolve({url:'/generated-stale.jpg'});else pending.reject(new Error('generated stale failure'));});
- assert.equal(d.querySelector('img'),null);assert.doesNotMatch(d.body.textContent!,/generated stale failure/);
- await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='查看原图')!.click());assert.equal(d.querySelector('img')!.getAttribute('src'),'/generated-current.jpg');
+ assert.equal(d.querySelector('img'),null);assert.doesNotMatch(d.body.textContent!,/generated stale failure/);assert.equal(oldBytes,0,'retired playback ACK cannot start a stale byte read');
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='查看原图')!.click());const img=d.querySelector('img')!;assert.ok(img.src.startsWith('blob:'));assert.deepEqual(Buffer.from(await resolveObjectURL(img.src)!.arrayBuffer()),image);
 });
 
 test('source drawer decodes only declared organizer text once and separates actions from the body heading',async t=>{

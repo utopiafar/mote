@@ -1,12 +1,14 @@
 import {useResource} from './useResource';
 import {readResource,resources} from './resource-cache';
 import {ApiError} from './api';
-import React,{useEffect,useRef,useState} from 'react';
+import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {CheckCircle2,ExternalLink,Link2,RefreshCw} from 'lucide-react';
 import type {LarkStatus,LarkSelection,LarkCalendar,LarkJob,SourceConnection} from '@mote/shared';
 import {type Api,errorMessage} from './api';
 import {moteText} from '@mote/shared/i18n';
 import {SourceContextEditor} from './SourceContextEditor';
+import {ScopedConnectorSettings} from './ScopedConnectorSettings';
+import {scopedLarkApi} from './scoped-lark-api';
 
 const errors:Record<string,string>={
  lark_cli_missing:'服务端尚未安装 Lark CLI。请点击安装，然后重新检测。',
@@ -50,7 +52,24 @@ export function LarkJobStatus({job}:{job:LarkJob}){
   {job.authorizationUrl&&<div className="lark-authorization"><p>{moteText('在你的手机或当前浏览器完成授权，页面会自动更新。')}</p><a className="button" href={job.authorizationUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{moteText('打开飞书授权页面')}<ExternalLink size={15}/></a><button className="button subtle" onClick={async()=>{try{await navigator.clipboard.writeText(job.authorizationUrl!);setCopyState(moteText('授权链接已复制。'));}catch{setCopyState(moteText('复制失败，请使用二维码或授权链接。'));}}}>{moteText('复制授权链接')}</button><p className="fine-print">{copyState||moteText('如果无法打开，可复制链接到浏览器，或扫码。')}</p>{qr&&<img src={qr} alt={moteText('飞书授权二维码')} width={220} height={220}/>} {qrError&&<p>{moteText('二维码生成失败，请使用上方授权链接。')}</p>}{job.expiresAt&&<p className="fine-print">{moteText('链接有效至')} {new Date(job.expiresAt).toLocaleTimeString()}</p>}</div>}
  </div>;
 }
-export function LarkSettings({api,onSources}:{api:Api;onSources:()=>void}){
+export function LarkSettings(props:{api:Api;onSources:()=>void}){
+ return props.api.connection?.mode==='web'?<OwnedLarkSettings key={JSON.stringify(props.api.connection)} {...props}/>:<LarkSettingsContent {...props}/>;
+}
+function OwnedLarkSettings({api,onSources}:{api:Api;onSources:()=>void}){
+ const inventory=useResource<{revision:number;connections:{id:string;provider:string;generation:number}[]}>(api,'/api/connectors'),plugins=useResource<{revision:number;instances:{id:string;desired:boolean}[]}>(api,'/api/plugins');
+ const [selected,setSelected]=useState(''),[editor,setEditor]=useState<'new'|{id:string}>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),alive=useRef(true),running=useRef(false);
+ useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[api]);
+ const connection=inventory.data?.connections.find(c=>c.provider==='lark'&&c.id===selected),plugin=plugins.data?.instances.find(p=>p.id==='connector.'+selected);
+ async function lifecycle(action:'enable'|'pause'|'stop'){
+  if(!alive.current||running.current||!plugins.data||!connection)return;running.current=true;setBusy(true);setError('');try{await api.request('/api/connectors/'+encodeURIComponent(connection.id)+'/'+action,{method:'POST',body:JSON.stringify({expectedRevision:plugins.data.revision})});if(!alive.current)return;resources(api).invalidate(key=>key==='/api/plugins'||key==='/api/connectors');}catch(error){if(alive.current)setError(errorMessage(error));}finally{if(alive.current){running.current=false;setBusy(false);}}
+ }
+ return <><div className="source-toolbar"><label>{moteText('连接 ID')}<select aria-label={moteText('连接 ID')} value={selected} onChange={event=>{setSelected(event.target.value);setEditor(undefined);setError('');}}><option value="">{moteText('选择连接')}</option>{inventory.data?.connections.filter(c=>c.provider==='lark').map(c=><option key={c.id} value={c.id}>{c.id}</option>)}</select></label><button className="button" disabled={!inventory.data||!!editor} onClick={()=>setEditor('new')}>{moteText('新建连接')}</button></div>
+ {(error||inventory.error||plugins.error)&&<p role="alert">{error||errorMessage(inventory.error??plugins.error)}</p>}
+ {editor?<ScopedConnectorSettings key={editor==='new'?'new':editor.id} api={api} provider="lark" id={editor==='new'?undefined:editor.id} onSaved={id=>{setSelected(id);setEditor(undefined);inventory.refresh();plugins.refresh();}} onCancel={()=>setEditor(undefined)}/>:connection&&<><div className="source-toolbar"><button className="button" disabled={busy} onClick={()=>setEditor({id:connection.id})}>{moteText('编辑连接')}</button>{plugin&&<><button className="button" disabled={busy} onClick={()=>void lifecycle(plugin.desired?'pause':'enable')}>{plugin.desired?moteText('暂停'):moteText('启用')}</button><button className="button" disabled={busy} onClick={()=>void lifecycle('stop')}>{moteText('停止')}</button></>}</div>{plugin?.desired&&<OwnedLarkConnection key={connection.id+':'+connection.generation} api={api} id={connection.id} onSources={onSources}/>}</>}
+ </>;
+}
+function OwnedLarkConnection({api,id,onSources}:{api:Api;id:string;onSources:()=>void}){const adapter=useMemo(()=>scopedLarkApi(api,id),[api,id]);return <LarkSettingsContent api={adapter} onSources={onSources} owned/>;}
+function LarkSettingsContent({api,onSources,owned=false}:{api:Api;onSources:()=>void;owned?:boolean}){
  const [status,setStatus]=useState<LarkStatus>(),[selection,setSelection]=useState<LarkSelection>(emptySelection),[documents,setDocuments]=useState(''),[folders,setFolders]=useState(''),[wikiRoots,setWikiRoots]=useState(''),[excludedDocuments,setExcludedDocuments]=useState(''),[calendars,setCalendars]=useState<LarkCalendar[]>([]),[calendarLoaded,setCalendarLoaded]=useState(false);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[appId,setAppId]=useState(''),[secret,setSecret]=useState(''),[brand,setBrand]=useState<'feishu'|'lark'>('feishu'),[disconnecting,setDisconnecting]=useState(false);
  const alive=useRef(true),dirty=useRef(false),wasConnected=useRef(false);
@@ -80,7 +99,7 @@ export function LarkSettings({api,onSources}:{api:Api;onSources:()=>void}){
   {Boolean(error||read.error)&&<div className="notice error" role="alert">{error||requestError(read.error)}<button className="button subtle" disabled={running} onClick={()=>void perform(async()=>accept(await request<LarkStatus>('/api/connectors/lark/check',{method:'POST'})))}>{moteText('重试')}</button></div>}{notice&&<p role="status" className="notice">{notice}</p>}
   {!status&&<p role="status">{moteText('正在检测服务端环境…')}</p>}
   {status&&<>
-   <section className="panel lark-step"><div className="section-heading"><h2>1 · {moteText('服务端环境')}</h2><span className={`badge ${status.installed?'green':'muted'}`}>{status.installed?`Lark CLI ${status.version??''}`:moteText('未安装')}</span></div><p>{moteText('复用服务端已安装的 CLI；如未安装，可安装到 Mote 专用目录，无需修改全局软件。')}</p><div className="lark-buttons"><button className="button subtle" disabled={running} onClick={()=>command('check')}><RefreshCw size={15}/>{moteText('重新检测')}</button><button className="button subtle" disabled={running} onClick={()=>command('install')}>{status.installed?moteText('安装兼容版本到专用目录'):moteText('安装 Lark CLI')}</button></div></section>
+   <section className="panel lark-step"><div className="section-heading"><h2>1 · {moteText('服务端环境')}</h2><span className={`badge ${status.installed?'green':'muted'}`}>{status.installed?`Lark CLI ${status.version??''}`:moteText('未安装')}</span></div><p>{moteText('复用服务端已安装的 CLI；如未安装，可安装到 Mote 专用目录，无需修改全局软件。')}</p>{owned&&<p>{moteText('尚未提供账号隔离的 CLI 安装入口。')}</p>}<div className="lark-buttons"><button className="button subtle" disabled={running} onClick={()=>command('check')}><RefreshCw size={15}/>{moteText('重新检测')}</button><button className="button subtle" disabled={running||owned} onClick={()=>command('install')}>{status.installed?moteText('安装兼容版本到专用目录'):moteText('安装 Lark CLI')}</button></div></section>
    <section className="panel lark-step"><div className="section-heading"><h2>2 · {moteText('连接飞书账号')}</h2><span className={`badge ${status.connected?'green':'muted'}`}>{status.connected?moteText('已连接'):status.configured?moteText('应用已配置'):moteText('待配置应用')}</span></div>
     {status.accountName&&<p><CheckCircle2 size={15}/> {status.accountName}</p>}
     <p>{moteText('Mote 使用独立的 CLI 配置。首次使用先创建应用，也可以填写已有应用的 App ID 和 App Secret。')}</p>

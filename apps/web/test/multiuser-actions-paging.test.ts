@@ -18,7 +18,11 @@ test('original Actions walks actual opaque owner pages and retires a held old pa
   writeMessagesResponse(res,{stage,text:JSON.stringify({answer:JSON.stringify({actions:Array.from({length:count},(_,i)=>({kind:'calendar.create',event:{...event,title:'GENERATED_A_PAGE_'+batch+'_'+i},uncertainty:'Generated page fixture',sameAs:null,evidence:[{id:record.id,quote:'GENERATED_A_PRIVATE_APPOINTMENT'}]}))}),citationIds:[record.id]})});
  });
  let expected=0;
- for(const [index,size]of [8,8,5].entries()){batch=index;count=size;await f.ingest(f.a,'A','page-item-'+index);if(index===0)await f.enable(f.a);else await f.ok(f.a.token,'/api/actions/retry','POST',{});expected+=size;await waitForState(()=>f.ok(f.a.token,'/api/actions?limit=100'),value=>value.items.length===expected,'actual model-produced page '+index,30000);}
+ for(const [index,size]of [8,8,5].entries()){
+  batch=index;count=size;const started=Date.now(),before=f.requests.length;await f.ingest(f.a,'A','page-item-'+index);if(index===0)await f.enable(f.a);else await f.ok(f.a.token,'/api/actions/retry','POST',{});expected+=size;
+  try{await waitForState(()=>f.ok(f.a.token,'/api/actions?limit=100'),value=>value.items.length===expected,'actual model-produced page '+index,30000);}
+  finally{console.error('generated Actions paging preparation',JSON.stringify({index,elapsed:Date.now()-started,providerRequests:f.requests.length-before,tasks:f.read(db=>db.prepare("SELECT kind,state,attempts,available_at,error FROM execution_steps WHERE user_id=? AND kind LIKE 'actions.%' ORDER BY created_at,id").all(f.a.userId))}));}
+ }
  await f.ingest(f.b,'B');await f.enable(f.b);await f.proposal(f.b);
  const first=await f.ok(f.a.token,'/api/actions');assert.equal(first.items.length,20);assert.equal(typeof first.nextCursor,'string');assert.ok(first.nextCursor);assert.equal((await f.request(f.b.token,'/api/actions?cursor='+encodeURIComponent(first.nextCursor))).statusCode,400);
  const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/#/actions',pretendToBeVisual:true}),before=new Map<string,PropertyDescriptor|undefined>();let cookie='',current:Api|undefined,hold=false,release!:()=>void,entered!:()=>void;const held=new Promise<void>(r=>release=r),ready=new Promise<void>(r=>entered=r);const paths:string[]=[];

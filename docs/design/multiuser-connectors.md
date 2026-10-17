@@ -188,3 +188,43 @@ The scoped adapter therefore does not translate disconnect into source.enabled
 false. A disconnected recording sync rejects before querying provider identity;
 explicit connect/login is still required to acquire a new provider association.
 No credentials or collection grant are recovered from the retained archive.
+
+### Lark Web presentation increment (M13 checkpoint, not final acceptance)
+
+Lark's document source ID in owned status and successful task results is the exact
+public M03 source resolved through `(user_id, instance_id, local_id)` in
+`connector_sources`. Consumers must not use adapter-local `lark-docs-*` IDs as
+public source identities. No source is created by this projection.
+
+The Lark task-result budget uses actual UTF-8 bytes, including a check on the
+compact metadata. For an oversized Lark status-shaped result, M10 retains the
+actual CLI probe/job fields and returns `statusInConnection:true`
+in place of `selection` and `documentSync`. The same credential-bound
+`GET /api/connectors/:id` provides those complete durable fields. Its newly opened
+adapter has not probed CLI environment: consumers preserve the task's actual
+probe fields when combining the result, and recheck their captured Api after each
+await. Failed tasks retain their M05 failure; a status read supplies the current
+persisted document errors for explicit per-document retry. There is no implicit
+new model/provider job or permission.
+
+This increment does not add ordinary CLI installation, new vendor aliases,
+oversized-calendar result storage or a second connector runtime. Broader
+recording/Lark capabilities and current final validation remain open.
+
+### Lark calendar inventory beyond task metadata
+
+An explicit Lark `calendars` operation whose full UTF-8 result exceeds the
+existing task metadata budget retains the complete inventory in the existing
+connector encrypted vault, under its deployment/user/connection/storage and
+authorization epoch. The stored proof also pins the connection generation and
+actual admitted task ID. Its small successful task result is
+`{calendarInventory:taskId,count}`. The existing owned `GET /api/connectors/:id`
+exposes `calendarInventory:{taskId,items}` only for that same current generation.
+The original Lark consumer requires the exact task ID, count, unique IDs and
+calendar field types before replacing its choices; an intervening discovery or
+configuration change rejects rather than adopting a different result. No title
+or list is truncated. Small inventory results keep their original shape. This
+adds no route, table, scheduler, provider call or new execution authority.
+Disconnect uses the existing vault retirement; lifecycle export/deletion and
+instance backup already cover the same encrypted state. The inventory is a
+read-only discovery receipt and never grants calendar write or source admission.

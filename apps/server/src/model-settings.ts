@@ -153,6 +153,7 @@ const testMessages: Record<ModelTestResult['code'], string> = {
   get provider_error() { return moteText("模型服务未能完成测试，请检查地址、凭据及模型配置。"); },
   get invalid_response() { return moteText("模型返回格式或工具调用能力未通过测试。"); },
 };
+export const modelTestMessage=(code:ModelTestResult['code'])=>testMessages[code];
 
 /** Owner-only configuration transactions. HTTP authentication belongs to the app. */
 export class ModelSettingsStore {

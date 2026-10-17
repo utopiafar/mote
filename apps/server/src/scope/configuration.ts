@@ -6,7 +6,7 @@ import {z} from 'zod';
 import {MODEL_FEATURES,type ModelFeature,type ModelSettings} from '@mote/shared/models';
 import type {ConfigServiceView,ModelPrice,TokenUsage,UsageReceipt} from '@mote/shared';
 import {ConfigService,ConfigServiceError,type ConfigDocument,type ConfigDomainRegistration} from '../config-service.js';
-import {registerBuiltinDomains} from '../config.js';
+import {registerBuiltinDomains,diagnosticsConfigSchema} from '../config.js';
 import {privateDirectory,privateFile} from '../private-storage.js';
 import {estimateCost,priceSchema,usageTotals} from '../usage-metrics.js';
 import {ScopeError,validScopeId} from './baseline.js';
@@ -15,7 +15,10 @@ import type {Accounts} from './accounts.js';
 import type {DomainLifecycle,LifecycleAuthority,UserDataSubject,UserExport} from './lifecycle.js';
 import {ModelResources,userModelFields,removeCredentials,type UserModelConfiguration,type UserModelReference} from './model-resources.js';
 import {ModelSnapshots} from './model-snapshots.js';
-import {modelSettingsSchema} from '../model-settings.js';
+import {modelSettingsSchema,modelTestMessage,type ModelDomain} from '../model-settings.js';
+import {providerModels,codexModels} from '../model-catalog.js';
+import {testModelConnection} from '../model-connection-probe.js';
+import {createAgent} from '@mote/agent';
 
 const priceDomain=z.object({items:z.array(priceSchema).max(500).default([])}).strict();
 const nonnegative=z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -177,6 +180,34 @@ export class Configurations {
     const result=create();this.opening.set(context.userId,result);
     try{return await result;}finally{if(this.opening.get(context.userId)===result)this.opening.delete(context.userId);}
   }
+  /** The original trace opt-in is now personal; the instance still supplies
+   * retention bounds. Observe the opened account entry synchronously without
+   * exposing global diagnostics or a host directory. */
+  async observeAgentTrace(context:UserContext){
+    const entry=await this.entry(context);
+    // An admitted task may outlive its login. Retiring this settings entry
+    // stops payload recording without borrowing a fresh session's authority.
+    return ()=>{this.options.authority.assert(context);this.assertGeneration(context.userId,entry.generation);const traceEnabled=this.entries.get(context.userId)===entry&&z.object({traceEnabled:z.boolean()}).strict().parse(entry.service.current('agentTrace')).traceEnabled,{maxBytes,maxFiles,maxEntries}=diagnosticsConfigSchema.parse(this.instance.current('diagnostics'));return {traceEnabled,maxBytes,maxFiles,maxEntries};};
+  }
+  private async copyPersonalModel(context:UserContext,id:string,raw:unknown){
+    const identifier=z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/).refine(value=>value!=='default'),input=z.object({revision:nonnegative,id:identifier,name:z.string().min(1).max(100).refine(value=>!/[\u0000-\u001f\u007f]/.test(value)),includeCredentials:z.boolean().default(true)}).strict().parse(raw);
+    identifier.parse(id);const entry=await this.entry(context),current=()=>this.options.authority.assert(context);current();
+    if(entry.service.revision!==input.revision)throw new ConfigServiceError('config_conflict');
+    const configuration=this.resources.schema().parse(entry.service.saved('models')),source=configuration.profiles.find(profile=>profile.id===id);
+    if(!source)throw new ScopeError('scope_unavailable',404);
+    if(configuration.profiles.some(profile=>profile.id===input.id))throw new ConfigServiceError('config_conflict');
+    const copied=input.includeCredentials?clone(source):removeCredentials({profiles:[source],selections:{}}).profiles[0]!;
+    await entry.service.replace('models',{...configuration,profiles:[...configuration.profiles,{...copied,id:input.id,name:input.name}]},input.revision,current);current();return safeView(entry.service);
+  }
+  /** Manual connection tools receive only a pinned complete reference. They
+   * never borrow another profile's credentials or a private archive reader. */
+  private async inspectModel<T>(context:UserContext,raw:unknown,work:(settings:ModelSettings,current:()=>void)=>Promise<T>){
+    const input=z.object({revision:nonnegative,reference:z.object({kind:z.enum(['personal','shared']),id:z.string().min(1).max(80)}).strict()}).strict().parse(raw),entry=await this.entry(context);
+    const settings=()=>{this.assertResources();const configuration=this.resources.schema().parse(entry.service.current('models'));if(input.reference.kind==='shared')return this.resources.resolve({profiles:[],selections:{chat:input.reference}},'chat').settings;const profile=configuration.profiles.find(profile=>profile.id===input.reference.id);if(!profile)throw new ScopeError('scope_unavailable',404);return clone(profile.settings);};
+    const selected=settings(),fingerprint=restoreHash(selected),sharedGeneration=input.reference.kind==='shared'?this.resources.generation(input.reference.id):undefined;
+    const current=()=>{this.options.authority.assert(context);this.assertGeneration(context.userId,entry.generation);if(this.entries.get(context.userId)!==entry||entry.service.revision!==input.revision||sharedGeneration!==undefined&&sharedGeneration!==this.resources.generation(input.reference.id)||restoreHash(settings())!==fingerprint)throw new ConfigServiceError('config_conflict');};
+    current();try{const result=await work(selected,current);current();return result;}catch(error){current();throw error;}
+  }
   forUser(context:UserContext){
     this.options.authority.assert(context);
     const current=()=>this.options.authority.assert(context);
@@ -186,7 +217,13 @@ export class Configurations {
       replace:async(domain:string,value:unknown,revision:number,preserveRedactedSecrets=false)=>{current();const {service}=await this.entry(context);await (preserveRedactedSecrets?service.replaceView(domain,value,revision,current):service.replace(domain,value,revision,current));current();return safeView(service);},
       replaceViews:async(values:Record<string,unknown>,revision:number)=>{current();const {service}=await this.entry(context);await service.updateMany(values,revision,true,current,true);current();return safeView(service);},
       reload:async()=>{current();const {service}=await this.entry(context);await service.reload(current);current();return safeView(service);},
-      models:async()=>{current();const {service}=await this.entry(context);current();this.assertResources();return {shared:this.resources.listShared(),personal:(safeView(service).domains.find(d=>d.id==='models')!.effective as UserModelConfiguration).profiles,selections:service.current<UserModelConfiguration>('models').selections};},
+      models:async()=>{current();const {service}=await this.entry(context);current();this.assertResources();return {features:[...MODEL_FEATURES],shared:this.resources.listShared(),personal:(safeView(service).domains.find(d=>d.id==='models')!.effective as UserModelConfiguration).profiles,selections:service.current<UserModelConfiguration>('models').selections};},
+      copyModel:(id:string,input:unknown)=>this.copyPersonalModel(context,id,input),
+      modelCatalog:(input:unknown)=>this.inspectModel(context,input,async(settings,assert)=>{
+        if(settings.protocol==='codex-app-server')return codexModels(undefined,this.instance.current<ModelDomain>('models').codex,assert);
+        return providerModels(settings,async(...args)=>{assert();const response=await fetch(...args);try{assert();return response;}catch(error){await response.body?.cancel();throw error;}});
+      }),
+      probeModel:(input:unknown)=>this.inspectModel(context,input,async(settings,assert)=>{const result=await testModelConnection(settings,async(value,reader)=>createAgent({...value,reader,requestTimeoutMs:value.modelRequestTimeoutMs,agentTimeoutMs:value.agentTimeoutMs,codex:this.instance.current<ModelDomain>('models').codex,authorizeModelRequest:assert}));return {...result,message:modelTestMessage(result.code)};}),
       lease:(feature:ModelFeature,operationId:string)=>this.lease(context,feature,operationId),
       restoreLease:(snapshotId:string,operationId:string)=>this.restoreLease(context,snapshotId,operationId),
       selection:async(feature:ModelFeature)=>{current();const {service}=await this.entry(context);current();this.assertResources();const {reference,settings}=this.resources.resolve(service.current('models'),feature);return {reference,provider:settings.provider,model:settings.model,revision:service.revision,instanceRevision:this.instance.revision};},
