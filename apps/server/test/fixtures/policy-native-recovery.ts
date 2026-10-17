@@ -95,7 +95,7 @@ test('compiled personal plans survive one native/Hindsight/Docker archive withou
  const recovered=inspect();assert.equal(recovered.bindings.find((row:any)=>row.user_id===a.userId).plan_id,planSection.bindings[0].plan_id);assert.ok(recovered.controls.find((row:any)=>row.user_id===a.userId).generation>0);assert.deepEqual(recovered.authority,missing.authority);assert.deepEqual(recovered.calls,missing.calls);assert.deepEqual(recovered.confirmations,missing.confirmations);
  assert.equal(ok(p,first,'/api/files/'+files[1].id,b.token).processing.indexed,true);
  docker(['stop','--time','20',first]);assert.equal(JSON.parse(docker(['inspect',first]))[0].State.ExitCode,0);
- progress('compiled-personal-passed');const combinedSource=join(root,'combined-source');await backupProfile(p,combinedSource,{execute});
+ progress('compiled-personal-passed');const personalReadback=join(root,'personal-readback'),combinedSource=join(root,'combined-source');await backupProfile(p,personalReadback,{execute});await restoreScopedInstance({from:personalReadback,target:combinedSource,deploymentId});
  // Historical native bodies are generated directly in actual migrated host/PG
  // schemas, as in the original Container native runner. No semantic retain,
  // inference, fake runtime, imported grant or capability-probe success is used.
