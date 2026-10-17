@@ -1708,3 +1708,19 @@ checks; `image-review91-locale-identity-failed` remains an environment receipt,
 not a production RED. The final fixture restores exact frozen module metadata.
 Server, strict producer-test and scope checks0 (`image-lineage-types/strict/scope`).
 Independent source re-review and final combined gate remain pending.
+
+### Default image recipe ID with a different version
+
+A real policy preview/reprocess to the default recipe ID at version `2`, with
+only a named pixel-derived step, exposed a remaining export identity mismatch.
+M06 correctly treated the version as a custom graph, but export checked only the
+ID and relabelled retained raw OCR as the current transcript. The durable first
+custom-recipe journey failed its tar assertion (1/1 RED,9.310s,
+`/tmp/mote-joint-image-version-red.log/.exit`). Export now compares both ID and
+version, matching existing processing selection. The same journey passed1/1,
+12.286s (`/tmp/mote-joint-image-version-green-approved.log/.exit`), including
+same-ID A/B isolation, exact recipe replacement, raw history preservation and
+no additional OCR call. A prior sandbox loopback EPERM is retained separately
+in `image-version-green`; it did not execute the intended journey. This narrow
+closure does not supersede the still-failed combined gate or establish whole
+module acceptance.
