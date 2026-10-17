@@ -1,3 +1,24 @@
+# Post-Draft finite Coding follow-up
+
+Latest source/tests are `e712d051aed7f755ce938583df1dd3e025bc6107` (runtime
+optimization26c35e15), on the published3a9178ec Draft. It consumes the frozen
+ACK test migration and removes repeated private-SQL compilation while retaining
+every authorization and owner bind. The original15s Coding deadline and all
+body/zero-task/foreign/original assertions remain, with a stronger late-completion
+deadline guard. Exact thin commits, paired measurements, direct safety30/30,
+original direct25/25 and repeated original-window results are recorded in
+[the Coding follow-up](multiuser-m13-coding-followup.md).
+
+The old whole-gate timeout was not reliably reproduced in isolation, so neither
+that old result nor a conclusively unique cause is rewritten. The measured
+preparation cost drops94,440→114; matched finite workload originals pass
+8.117–8.244s after the change. No processing producer, policy, model/provider or
+public DTO is changed. No new complete platform gate is claimed; the following
+immutable5a receipt remains historical EXIT1. Independent KEEP and final union
+acceptance remain open.
+
+---
+
 # M13 Web delivery candidate and actual gate results
 
 The immutable runtime/test candidate is

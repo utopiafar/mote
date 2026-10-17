@@ -54,5 +54,10 @@
     "physical ACK fixture-only33ce not selected",
     "shared advanced processing and same-SHA final union"
   ],
-  "deniedHiddenWebElectronExecuted": false
+  "deniedHiddenWebElectronExecuted": false,
+  "latestSourceAndTests": "e712d051aed7f755ce938583df1dd3e025bc6107",
+  "latestRuntimeOptimization": "26c35e1554e39d7b56a36e052690c9b8c335f6e8",
+  "codingFollowup": "docs/validation/multiuser-m13-coding-followup.md",
+  "newWholeGateExecuted": false,
+  "oldCompleteAffectedReceiptPreserved": true
 }
