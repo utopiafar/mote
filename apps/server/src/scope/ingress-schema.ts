@@ -51,6 +51,12 @@ export function installIngress(db:DatabaseSync){
  BEGIN
  INSERT INTO ig_file_generations VALUES(old.user_id,old.source_id,old.external_id,COALESCE((SELECT generation FROM ig_file_forgets WHERE user_id=old.user_id AND source_id=old.source_id AND external_id=old.external_id),0)+1)
  ON CONFLICT(user_id,source_id,external_id) DO UPDATE SET generation=MAX(ig_file_generations.generation+1,excluded.generation);
+ END;
+ CREATE TRIGGER IF NOT EXISTS ig_raw_capture_retired BEFORE DELETE ON pd_captures
+ WHEN json_extract(old.json,'$.source')!='file' AND COALESCE((SELECT deleted FROM ig_state WHERE user_id=old.user_id),0)=0
+ BEGIN
+ INSERT INTO ig_file_generations VALUES(old.user_id,'@capture',old.id,1)
+ ON CONFLICT(user_id,source_id,external_id) DO UPDATE SET generation=ig_file_generations.generation+1;
  END;`);
  if(!db.prepare('PRAGMA table_info(ig_pins)').all().some(row=>row.name==='original_id'))db.exec('ALTER TABLE ig_pins ADD COLUMN original_id TEXT');
  // Existing admitted snapshot references receive their initial recovery window
