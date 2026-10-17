@@ -1,3 +1,15 @@
+# Statement lifecycle successor
+
+Latest exact production/test successor is `a2f299c86891997827c16c77bfe342287b35c146`, selecting the two-file
+independent fix `acbfd7f1907c8457a301b69d303c9b2745526d4a` without conflicts or source differences. Original
+70fc/b598 source matched its prerequisite; later delivery changes are docs only.
+M13's two new lifecycle tests and source/strict test types pass. See
+[the lifecycle receipt](multiuser-m13-statement-lifecycle.md). No additional
+platform gate is run or historical failure reclassified; final C owns the
+same-version union.
+
+--- Earlier bounded Coding and complete-gate receipts ---
+
 # Post-Draft finite Coding follow-up
 
 Latest source/tests are `e712d051aed7f755ce938583df1dd3e025bc6107` (runtime

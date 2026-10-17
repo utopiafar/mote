@@ -68,5 +68,15 @@
     "selectedIntoM13": false,
     "wholeGatePassed": false,
     "finalUnionAcceptancePending": true
+  },
+  "statementLifecycleFix": {
+    "sourceCommit": "acbfd7f1907c8457a301b69d303c9b2745526d4a",
+    "m13Commit": "a2f299c86891997827c16c77bfe342287b35c146",
+    "exactBlobMatch": true,
+    "newTestsPass": 2,
+    "newTestsFail": 0,
+    "sourceTypesExit": 0,
+    "strictTypesExit": 0,
+    "newPlatformGateRun": false
   }
 }
