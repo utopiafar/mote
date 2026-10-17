@@ -1,4 +1,4 @@
-import type {DatabaseSync,SQLInputValue} from 'node:sqlite';
+import type {DatabaseSync,SQLInputValue,StatementSync} from 'node:sqlite';
 import {createHmac,timingSafeEqual} from 'node:crypto';
 import {deflateRawSync,inflateRawSync} from 'node:zlib';
 
@@ -6,19 +6,24 @@ export class PrivateDataError extends Error{
   constructor(readonly code:'not_found'|'conflict'|'invalid_data'|'invalid_cursor'|'scope_unavailable'|'snapshot_input_expired'|'file_forgotten',readonly statusCode=400){super(code);}
 }
 export const missing=()=>new PrivateDataError('not_found',404);
+// Reuse only compiled SQL, never rows, owner bindings or an authorization result.
+// Synchronous get/all/run leave no iterator active; SQLite reparses on schema changes.
+const statements=new WeakMap<DatabaseSync,Map<string,StatementSync>>();
 /** The sole private SQL gateway. Named owner binding is supplied by the host,
  * never by a caller. Ordinary operations revalidate captured authority; an exact
  * pin disposer is minted while current and only deletes its fixed row.
  * No connection or statement escapes through a user service. */
 export class PrivateSql{
   constructor(private readonly db:DatabaseSync,readonly userId:string,private readonly authorize:()=>void){}
-  private statement(sql:string){
+  private statement(sql:string,write=false){
     this.authorize();if(!/(?:\buser_id\s*=\s*\$user|\bVALUES\s*\(\s*\$user)/i.test(sql))throw new Error('Private SQL requires an owner binding');
-    return this.db.prepare(sql);
+    let cache=statements.get(this.db);if(!cache){cache=new Map();statements.set(this.db,cache);}
+    const key=(write?'write:':'read:')+sql,prior=cache.get(key);if(prior)return prior;
+    const statement=this.db.prepare(sql);if(cache.size>=256)cache.delete(cache.keys().next().value!);cache.set(key,statement);return statement;
   }
   get(sql:string,...args:SQLInputValue[]){return this.statement(sql).get({$user:this.userId},...args);}
   all(sql:string,...args:SQLInputValue[]){return this.statement(sql).all({$user:this.userId},...args);}
-  run(sql:string,...args:SQLInputValue[]){const statement=this.statement(sql);statement.setReadBigInts(true);return statement.run({$user:this.userId},...args);}
+  run(sql:string,...args:SQLInputValue[]){const statement=this.statement(sql,true);statement.setReadBigInts(true);return statement.run({$user:this.userId},...args);}
   /** Cleanup capability for one fixed pin UUID; retirement must not
    * turn its release into a read or leave a live pin until expiration. */
   pinDisposer(id:string):()=>void{

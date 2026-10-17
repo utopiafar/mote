@@ -34,6 +34,9 @@ test('reused private statements observe a replacement schema and keep fixed pin 
  assert.equal(a.get(query)!.value,1);assert.equal(b.get(query)!.value,2);
  db.exec("DROP TABLE owned;CREATE TABLE owned(user_id TEXT,value INTEGER);INSERT INTO owned VALUES('A',3),('B',4)");
  assert.equal(a.get(query)!.value,3);assert.equal(b.get(query)!.value,4);
+ const other=new DatabaseSync(':memory:');t.after(()=>other.close());other.exec("CREATE TABLE owned(user_id TEXT,value INTEGER);INSERT INTO owned VALUES('A',9),('B',10)");
+ assert.equal(new PrivateSql(other,'A',()=>{}).get(query)!.value,9,'equal owner and SQL on another database cannot reuse this database statement');
+ assert.equal(b.get(query)!.value,4);
  const release=a.pinDisposer('same');active=false;release();
  assert.deepEqual(db.prepare('SELECT user_id FROM ig_pins').all().map(row=>row.user_id),['B']);
  assert.throws(()=>new PrivateSql(db,'B',()=>{}).get('SELECT value FROM owned'),/owner binding/);
