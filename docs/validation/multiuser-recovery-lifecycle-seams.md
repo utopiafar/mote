@@ -300,3 +300,71 @@ Final M13/M15/Desktop consumer candidates, profiles/rules and image-profile
 execution are not frozen here. The eventual unified candidate must rerun this
 lane. No real central data or derived private artifacts were used; no merge,
 deployment, CI enablement, existing service cleanup or live inference occurred.
+
+
+## Follow-up: failure classification and nonzero Docker counters
+
+The frozen test/runner leaf is `f09e4f312285075263a1e994d31fa46e6b3be64d`.
+Its production tree remains identical to candidate `2528a67d`; `git diff
+2528a67d HEAD --name-only` lists only tests, their helper, this report and the
+new opt-in runner. Earlier failures and gate outcomes above remain unchanged.
+
+| Original failure | Follow-up evidence and disposition |
+| --- | --- |
+| Automatic Processing admission and caught nested admission expect four tasks | Unchanged originals reproduce 0/2. A diagnostic continuation retains both original errors, then proves the two `memory.materials` tasks have the same capture/hash with distinct operations. `MemoryCaptureMaterials.bind` enqueues ingress intake and subsequent M06 publication separately. All failed-child, orphan task/grant/resource/operation, fairness and progress counts are zero; five legitimate tasks have five grants and sequence 5. This is an obsolete fixture count, not demonstrated rollback leakage. |
+| Processing malformed `../../private` expects 400/401 | Peer preserves the exact 404. `Originals.original` rejects the invalid digest with `missing()` before a filesystem read; this matches the foreign/absent private-object 404 contract in `docs/design/multiuser-private-data.md`. The other malformed/forged cases retain their existing expectations. |
+| Files cancel expects generic child retry 200 | A cancelled coordinator cannot be restored by retrying its cancelled child. The frozen Files contract fences live calls. Original RED and a continuation retaining its error prove that all subsequent late-ACK, A/B, import, restart, stopped restore and fresh explicit retry assertions pass. The test now expects 409 and checks both original parent and child stay cancelled. |
+| Ask failed-child branch retry | Unchanged exact original passes 1/1, 14.450 seconds, with its original 20-second wait: `/tmp/mote-recovery7-ask-failed-child-exact.log/.exit`. The broader failure remains recorded; no production defect is inferred from that run alone. |
+| Ask pause/resume/restart | Unchanged exact original passes 1/1, 20.265 seconds for the whole multi-phase case, retaining the original per-wait budget: `/tmp/mote-recovery7-ask-pause-exact.log/.exit`. No assertion or wait duration was changed. |
+| Web legacy Imports metadata and binary auth | Cross-user lane owns these, so this lane did not repeat them. That lane reports the Web metadata assertion obsolete after scoped Imports restoration. It separately retains a production auth RED: the global octet-stream parser admits only PUT Imports, making private binary POST return 400 `invalid_data` instead of native A200. Its evidence is `/tmp/mote-crossuser-repaired-narrow.log/.exit`; the auth fix belongs to Joint/M01/M03. |
+| Plugin stop/delete physical process retirement | Cross-user lane reports two unchanged reproducible REDs, `/tmp/mote-crossuser-processing-plugin-repro.log/.exit`. They were not duplicated or fixed here. |
+
+Exact unchanged Processing reproductions are preserved at
+`/tmp/mote-recovery7-processing-three-exact.log/.exit` (0/3, exit 1).
+The diagnostic continuation is `/tmp/mote-recovery7-processing-diagnostic.log/.exit`
+(0/2, exit 1, both original errors retained; subsequent atomic absence checks pass).
+After the four fixture corrections, the exact final committed checks are:
+
+- `/tmp/mote-recovery7-fixtures-final.log/.exit`: 7/7, no skips, exit 0,
+  14.286 seconds. This includes the full Files cancel/import/restart/stopped
+  backup/restore journey and the three neighboring atomic Material hook cases.
+- Server noEmit: `/tmp/mote-recovery7-fixture-types.log/.exit`, exit 0.
+- Scripts noEmit after importing the real Files fixture:
+  `/tmp/mote-recovery7-generation-script-types-fixed.log/.exit`, exit 0.
+  The first scripts attempt exposed the helper's `unknown` payload typing;
+  `/tmp/mote-recovery7-generation-script-types.log/.exit` retains exit 2.
+  A test-only `InjectOptions` payload annotation resolves it without changing
+  the fixture's runtime input or the production app.
+
+The new `scripts/validation/recovery-file-generation-container.ts` closes the
+previous **nonzero counter Docker** gap using only generated bodies, original
+production APIs, an existing fixed production image and its own labelled volumes.
+It passes from clean `f09e4f31`, 1/1 with no skips, exit 0, 9.777 seconds:
+`/tmp/mote-recovery7-generation-container-final.log/.exit`.
+Its runner SHA-256 is
+`f821f4eaec52922763dea8e3246b09afbb95fbac9eed904ff4c55758a69ba2f9`.
+The exact command is:
+
+```sh
+MOTE_CONTAINER_VALIDATION_IMAGE=mote-recovery7-validation:2528 \
+MOTE_RECOVERY_CANDIDATE=2528a67d48e5c1ab8f44fc89e521eab1d0f6e2bd \
+node --import tsx --test scripts/validation/recovery-file-generation-container.ts
+```
+
+The production image remains
+`sha256:50fd77030d446bf6af30f2cd35702d305e8ad059209dfa5362a3cd16cca0c076`.
+A real file forget/allow advances generation 0 to 1; real source deletion and
+same-ID upload advance it to 2. Both old tickets already fail under the original
+credential before backup. Stopped backup/profile restore then starts the normal
+production container twice: generation stays 2, four stale first-send DELETEs
+return 409, fresh tickets read exact bytes, cross-owner ticket reads return 404,
+and equal-ID B remains readable with its independent generation 0. A new explicit
+A deletion advances to 3; a second stopped readback preserves that counter and
+B's original. The container and every created volume were removed after label
+checks. No pull, fresh dependency install, model call or existing instance was used.
+
+This supplements the earlier Container and ManagedHindsight results; it still
+is not one combined app-plus-Hindsight archive. The 103-case set has not been
+rerun at `f09e4f31`, and the full required affected gate is still **not accepted**.
+The declared Joint candidate remains bounded `2528a67d`, with final public/client
+freeze pending. These new results do not promote that candidate to whole acceptance.
