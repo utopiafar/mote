@@ -135,8 +135,11 @@ changes after them are documentation-only.
 - `26c35e1554e39d7b56a36e052690c9b8c335f6e8` — one-file compiled-SQL metadata reuse and original15s completion guard/diagnostic; no processing producer edits.
 - `e712d051aed7f755ce938583df1dd3e025bc6107` — omitted-binding safety assertions; runtime unchanged.
 
-The separately assigned KEEP owner subsequently reports its initialaad complete
-check EXIT1 (Server0 failures, independent Desktop/Web failures), and finite
-e663d48d351cdc9c4c21b9039f2023ef5295021a with direct32/UI5 pass and a Central-only
-increment check still running. Neither initial nor later KEEP source is selected
-into this Coding follow-up. This status update is not an execution by M13.
+The separately assigned KEEP owner has now delivered DraftPR158, runtime
+e663d48d351cdc9c4c21b9039f2023ef5295021a/head1d33119b00eb91515ad9e24d356b937bbaa637bc.
+Its direct32/UI5/strict/scope pass, but initialaad complete gate and finale663
+Central increment both remain EXIT1. The latter has Server2847pass/1fail/2skip
+(older ACK retry409!=200) and Web561/561; its later unchanged single-case pass
+is not substituted. Source remains unselected in this Coding follow-up; final
+C must compose the declared finite stack and the explicit ACK fixture migration.
+See the updated KEEP matrix and `/tmp/mote-keep-controls-e2e-input.json`.

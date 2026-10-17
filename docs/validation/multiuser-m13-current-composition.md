@@ -135,14 +135,22 @@ are not claimed.
 
 ## Remaining acceptance and ownership
 
-The parent assigned three preserved KEEP controls to an independent owner:
-administrator instance concurrency/safe diagnostic write controls, administrator
-safe shared-index maintenance, and separate owner metadata/data-and-attachment
-export modes. Its finite PREP `db321f64` / docs `aad77a8c` reports30 direct and5
-original-UI checks; its complete gate has no final receipt at this handoff.
-Those source commits are not mixed into this immutable M13 candidate. The local
-`/tmp/mote-m13-three-keep-controls-handoff.md` records exact original paths and
-contracts. Personal queues/statistics and portable3 are not equivalents.
+The parent assigned three preserved KEEP controls to an independent owner.
+That owner now delivered [Draft PR158](https://github.com/utopiafar/mote/pull/158),
+exact head1d33119b00eb91515ad9e24d356b937bbaa637bc, runtime
+e663d48d351cdc9c4c21b9039f2023ef5295021a on prerequisite4ac9604a. Read-only
+remote metadata matches the delivered head/base/Draft state. The finite contracts
+are administrator instance four execution limits/safe diagnostics CAS, M05
+`pd_fts` text maintenance, and owner explicit-MIME/current-history metadata/data
+TAR of originals and declared attachments. Owner direct32/UI5/strict/scope pass;
+both its older complete gate and final Central increment remain EXIT1 (latest
+Server2847pass/1fail/2skip, Web561/561; ACK fixture409!=200). Single-case passes
+are not substituted. Those source commits are not mixed into this M13 candidate.
+
+Exact ordered finite inputs, independent tests and failed/unperformed stages are
+in `/tmp/mote-keep-controls-e2e-input.json` and the updated KEEP matrix. Final
+same-SHA union acceptance remains required; personal statistics, PR151 typed
+products and portable3 are not equivalents of the three new modes.
 
 Final shared/default-component observation, advanced shared processing and
 same-SHA cross-client/whole17 acceptance remain separate. M15's final Draft155

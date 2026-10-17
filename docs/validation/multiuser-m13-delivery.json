@@ -59,5 +59,14 @@
   "latestRuntimeOptimization": "26c35e1554e39d7b56a36e052690c9b8c335f6e8",
   "codingFollowup": "docs/validation/multiuser-m13-coding-followup.md",
   "newWholeGateExecuted": false,
-  "oldCompleteAffectedReceiptPreserved": true
+  "oldCompleteAffectedReceiptPreserved": true,
+  "independentKeepDelivery": {
+    "pr": 158,
+    "head": "1d33119b00eb91515ad9e24d356b937bbaa637bc",
+    "runtime": "e663d48d351cdc9c4c21b9039f2023ef5295021a",
+    "prerequisite": "4ac9604a290701b731cbbb7b5d1775b8af13d782",
+    "selectedIntoM13": false,
+    "wholeGatePassed": false,
+    "finalUnionAcceptancePending": true
+  }
 }

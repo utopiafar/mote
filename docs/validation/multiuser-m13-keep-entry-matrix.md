@@ -7,7 +7,7 @@ results from different candidates together.
 
 ## Exact consumable bounds
 
-Current immutable runtime/test is **5a6f59f127769a321508ff5763f6425ca30ac89d**. It includes final declared PR151 typed/named image products, accepted-step reuse, snapshot lineage and current/history export, plus the exact recording/Ask and own storage/Memory increments. Complete affected naturally exits1: Desktop501/501, Web571/571, Server2841pass/2fail/2existing skips. Detailed red cases and direct remainder checks are in the composition receipt above. The following earlier finite checkpoints remain historical dependency bounds.
+Latest finite source/tests are **e712d051aed7f755ce938583df1dd3e025bc6107**, runtime optimization26c35e15 on the earlier5a composition; later delivery changes are documentation-only. The bounded Coding follow-up and frozen ACK fixture are explicit in the current composition receipt. It includes final declared PR151 typed/named image products, accepted-step reuse, snapshot lineage and current/history export, plus the exact recording/Ask and own storage/Memory increments. The earlier complete affected on5a naturally exits1: Desktop501/501, Web571/571, Server2841pass/2fail/2existing skips. Detailed red cases and direct remainder checks are in the composition receipt above. The following earlier finite checkpoints remain historical dependency bounds.
 
 - **953c866a6102eb0552499624f54f2cbec9fadd9d** is the selected original Web
   consumer checkpoint: actual Web540/540 with no skips, Webbuild0, selected
@@ -67,8 +67,10 @@ final whole-consumer gate.
 | R-ARCHIVE | Recording card “最近归档的录音”, original Files acoustic/sample/playback/tar/export controls | Current transcript/correction/names/authenticated original/tar narrow journeys are verified. Original actual recording card→App EvidenceDialog now verifies authenticated original bytes/playback, complete101 chunks, raw/corrected exports, RTTM/CSV/two clips, failed-audio resume without repeated text, pause/disconnect history and A/B/restart. M13 composed original-page5/5/no skip passed. | Finite R-ARCHIVE original entry closed on declared PR152 consumer; custom typed image archive is a separate current Joint/image dependency. Live vendor/media semantics remain unverified. `scripts/recordings-browser-fixture.ts` and `recording-outcomes-fixture-server.mjs` import **legacy-app**; their success is characterization only. |
 | S-POLICY | Original Models/services → images / file-and-voice / per-source policy controls | Named graphs/rules/match/preview/reprocess/single-M04 Save remain. Declared503 explicit saved/displayed-default root/Imports/attachment producer is composed; original saved local-service controlc948 real route/worker/UI2/2 passed, with dirty/late-owner/corrupt-body boundaries. The declared final image custom-recipe chain is composed and directly verified; shared/default-model/component observation remains outside this finite delivery. | Consume only declared finite Joint contracts and original controls. A clean2349 bounded review does not freeze or execute it; no silent preview-policy save or whole-policy claim. |
 | S-MEMORY | Original “高级：记忆、洞察与自动处理节奏” / `MemorySettings.tsx` | Lifecycle values and the original versioned automatic recipe chooser are restored: cc6 exercises default/capture/Lark-docs/source overrides with whole-M04 CAS, exact refs/unavailable choices and inheritance. The original expanded Memory settings now read actual per-account extraction/consolidation windows and explicit Insight/working policies, pending/due/failure and exact M05 retry/cancel. Read-only receipts and policy generation CAS prevent new work on GET and old same-ID controls affecting replacements. | Recipe editor source2/UI2, observation source2 and original operational renderer1 passed, including held A→B and same-owner replacement. Finite registered-window/policy observation only; no global extension inventory. Allowed original IAB A/B cancel and exact retry also pass on an isolated localhost origin with108 successful polls; no provider call. Contract: `../design/multiuser-memory-observations.md`. |
-| S-STORAGE | `#/system/storage` → `ContentStorage.tsx`; `#/system` → `StorageStatistics.tsx` | Restored real personal M04 encryption policy and existing M03 `.plain`/`.aes` format, exact M05 decrypt/cancel with durable operation and progress, mixed/restarted reads, portable plaintext without keys, and stopped backup verification. Physical owner file/type/day totals cover originals, upload/work files, personal configuration and fixed managed provider directories. Source5/5 and original-page/configuration12/12 passed. | Finite personal storage controls implemented; shared SQLite/index bytes, model weights, instance capacity and external provider volumes are explicitly excluded. Index management and separate legacy export modes are assigned to an independent thin owner and not selected here; no fabricated zeros or administrator private aggregation. Contract: `../design/multiuser-content-storage.md`. |
-| S-RUNTIME | Original runtime/concurrency/diagnostic preferences and full effective deployment controls | Web models route deliberately selects `ScopedConfiguration`; original `ServerSettings` advanced `RuntimeSettings` is not simply reachable as its prior UI. M16 provides safe admin diagnostics and readonly signed update checks, and says writable instance config remains startup YAML. New queue metadata does not implement editable execution limits. | Explicit separately assigned KEEP scope: owner PREPdb321/aad adds instance controls and safe pd_fts maintenance, but has no final receipt and is not selected into this checked source. Do not infer capacity or expose private content. Personal trace opt-in and saved model tools are already implemented. |
+| S-STORAGE | `#/system/storage` → `ContentStorage.tsx`; `#/system` → `StorageStatistics.tsx` | Restored real personal M04 encryption policy and existing M03 `.plain`/`.aes` format, exact M05 decrypt/cancel with durable operation and progress, mixed/restarted reads, portable plaintext without keys, and stopped backup verification. Physical owner file/type/day totals cover originals, upload/work files, personal configuration and fixed managed provider directories. Source5/5 and original-page/configuration12/12 passed. | Finite personal storage controls implemented; shared SQLite/index bytes, model weights, instance capacity and external provider volumes are explicitly excluded. Index maintenance and separate original/attachment export modes are delivered independently in PR158 and not selected here; no fabricated zeros or administrator private aggregation. Contract: `../design/multiuser-content-storage.md`. |
+| S-RUNTIME | Existing account administration → original `RuntimeSettings`; safe diagnostics preferences | Delivered PR158 restores GET/PUT `/api/admin/execution-settings` four actual harness limits with instance revision CAS and safe occupancy, and GET/PUT `/api/admin/diagnostics-settings` enabled/debug/level with private trace forced false. It reuses M04 ConfigService, M05 and the existing physical gates/sink. Only these exact fields supersede startup-YAML-only editing. | Independently delivered runtimee663/head1d331, not selected into this M13 source. Owner direct32/UI5 pass; its complete and Central-increment gates remain EXIT1. No private browsing, impersonation, second scheduler or broader deployment editor. |
+| S-INDEX | Original administrator index maintenance controls | PR158 GET `/api/admin/index`, POST `/api/admin/index/rebuild` UUID and fixed-kind cancel reuse M05 plus the existing `pd_fts`, checking administrator epoch and canonical owner/source/head/attachment visibility through commit. Exact operation retry/remount and explicit local pending-intent removal are finite controls. | Declared scoped mode is `text`; no legacy hybrid/vector producer, second index or other-owner content browsing is claimed. Independent source delivered, final composed acceptance pending. |
+| S-EXPORT | Original storage metadata/data export buttons | PR158 GET `/api/files/export` requires explicit `mode=metadata|data`, MIME `type`, and `selection=current|history`. Complete matching pagination, manifest/version/current flags, original hashes/bytes and declared linked attachments use existing M03/TAR; per-output account/source/head/incarnation proof retires changed streams. | Independent source delivered, not selected here. Manifest explicitly excludes processing products and recovery: PR151 typed images and portable3 remain separate. Metadata opens no byte reader. Final combined export/IAB/download acceptance is not inferred from owner direct tests. |
 
 Broad nonempty Memory-provider migration and provider fault/restart/real permission
 coverage remain acceptance gaps, not extra generic UI redesign work. Current
@@ -76,15 +78,17 @@ normal Gmail/Google/Lark generated paths are not invalidated by this statement.
 
 ## Same-candidate gate / delivery status
 
-Current5a complete affected is terminal EXIT1 with two Server failures; Desktop
+The retained historical5a complete affected is terminal EXIT1 with two Server failures; Desktop
 and Web pass. Root remainder passes separately. See the exact composition
 receipt for the red physical-ACK fixture premise and Coding completion-observation
 case; neither is relabeled successful. Earlier750 and4ac failed full gates remain
 historical records, and focused passes do not replace them.
 
 This is an authorized reviewable Draft delivery with explicit remaining work,
-not final FW/whole17 acceptance. Three remaining KEEP controls have an independent
-finite PREPdb321/aad and await their final receipt and explicit union consumption.
+not final FW/whole17 acceptance. The three separately assigned KEEP controls now have a delivered finite PR158
+receipt, runtimee663d48d351cdc9c4c21b9039f2023ef5295021a and head
+1d33119b00eb91515ad9e24d356b937bbaa637bc. Their source is not selected here;
+explicit final union consumption and acceptance remain required.
 The denied hidden Web Electron action remained not executed; allowed IAB proof
 is separate. No merge, deployment or CI enablement is included.
 
@@ -165,3 +169,31 @@ The account physical report explicitly excludes shared SQLite/index, shared
 model files, other accounts and external provider volumes. Those areas and
 index management remain distinct, with no per-user allocation estimate. Final
 whole-candidate gates and original IAB follow-up remain separately recorded.
+
+## Independently delivered three KEEP controls — PR158
+
+Read-only GitHub metadata confirms PR158 OPEN/Draft, target integration and exact
+head1d33119b00eb91515ad9e24d356b937bbaa637bc. Its runtime is
+e663d48d351cdc9c4c21b9039f2023ef5295021a and prerequisite is exact
+4ac9604a290701b731cbbb7b5d1775b8af13d782. Only the finite ordered commits in
+`/tmp/mote-keep-controls-e2e-input.json` are declared for the final union;
+no arbitrary owner HEAD or M13 source selection is implied. Detailed shared
+contract is that owner's `docs/design/multiuser-keep-controls.md`.
+
+Owner evidence: direct32/32, original UI5/5, strict/scope0. Independent selected
+old HTTP8/new cache5/pendingUI1/export2 also report0 and remain separately owned.
+The external496cae8d/e8962fb8 tests are not silently added to PR158 or M13.
+
+Both owner gate failures remain red. Initialaad full check EXIT1 has Desktop
+499pass/2fail (missing Electron and snapshot recovery assertion), Server2846pass/
+0fail/2skip and Web560pass/1fail (image complete/recompute409
+`file_processing_active` vs200); root-tail/Android were not reached. Runtimee663
+Central-only increment exits1 with Server2847pass/1fail/2skip and Web561/561;
+the sole Server case is the older physical-ACK generic retry409!=200. Its
+unchanged later single-case pass does not erase that suite failure. Runner and
+release tail were not reached. M13's separately selected frozen33ce test
+migration is an explicit final-union dependency, not a claim PR158 contains it.
+
+The final eight journeys and same-SHA gate remain unperformed here. This is
+status/contract bookkeeping only; M13 did not run these owner tests, merge its
+runtime, deploy, enable CI, or perform real private-content/credential actions.
