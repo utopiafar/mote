@@ -15,8 +15,10 @@ import {resources} from '../src/resource-cache.js';
 import {configureLocale} from '@mote/shared/i18n';
 configureLocale(()=> 'zh-CN');
 
-for(const withOcr of [true,false])test(`original Files consumes typed custom recipe with ${withOcr?'actual OCR and derived output':'no OCR prerequisite'}`,async t=>{
+for(const mode of ['ocr','no-ocr','partial'] as const)test(`original Files consumes typed custom recipe: ${mode}`,async t=>{
+ const withOcr=mode!=='no-ocr',partial=mode==='partial';
  const calls:string[]=[],interpretations:string[]=[];
+ let tailFail=partial,tailRuns=0,uninstallRecipe:()=>void=()=>{};
  let holdStage=false,stageEntered:()=>void=()=>{},releaseStage:()=>void=()=>{};
  t.after(()=>releaseStage());
  const provider=createServer(async(req,res)=>{
@@ -34,7 +36,8 @@ for(const withOcr of [true,false])test(`original Files consumes typed custom rec
    const text=withOcr?'INTERPRETATION_'+(input.dependencies.ocr as any).segments[0].text:'INTERPRETATION_'+input.record.windowTitle;
    interpretations.push(text);if(holdStage){stageEntered();await new Promise<void>(r=>releaseStage=r);}return {text,regions:[{x:0,y:0,width:1,height:1,description:''}]};
   }});
-  registry.registerRecipe({id:'generated.ui-image',version:'1',steps:[...(withOcr?[{name:'ocr',stage:{id:'mote.image-ocr',version:'1'},dependsOn:[]}]:[]),{name:'interpretation',stage:{id:'generated.ui-interpretation',version:'1'},dependsOn:withOcr?['ocr']:[]}]});
+  registry.registerStage({id:'generated.ui-tail',version:'1',kind:'derived',run:async input=>{tailRuns++;const text=(input.dependencies.interpretation as any).text;if(tailFail&&text.includes('GENERATED_A_OCR'))throw Error('Generated tail failure');return {text:'TAIL_'+text,regions:[]};}});
+  uninstallRecipe=registry.registerRecipe({id:'generated.ui-image',version:'1',steps:[...(withOcr?[{name:'ocr',stage:{id:'mote.image-ocr',version:'1'},dependsOn:[]}]:[]),{name:'interpretation',stage:{id:'generated.ui-interpretation',version:'1'},dependsOn:withOcr?['ocr']:[]},...(partial?[{name:'tail',stage:{id:'generated.ui-tail',version:'1'},dependsOn:['interpretation']}]:[])]});
  });
  for(const [actor,label] of [[f.a,'A'],[f.b,'B']] as const){
   const page=await f.checked(actor.token,'/api/file-processing');
@@ -51,7 +54,7 @@ for(const withOcr of [true,false])test(`original Files consumes typed custom rec
  const details:any[]=[];
  for(const actor of [f.a,f.b])await waitForScopedState(async()=>{
   const detail=await f.checked(actor.token,'/api/files/'+a.id);
-  if(detail.job?.state==='succeeded'){details.push(detail);return true;}return false;
+  if(detail.job?.state===(partial&&actor===f.a?'failed':'succeeded')){details.push(detail);return true;}return false;
  },()=> 'Actual custom recipe has not completed',20000);
  assert.equal(interpretations.length,2);assert.equal(calls.length,withOcr?2:0);
  if(!withOcr){assert.equal(details[0].processing.artifactId,undefined);assert.equal(details[0].processing.materialId,undefined);assert.equal(details[0].rawArtifactId,undefined);}
@@ -59,12 +62,13 @@ for(const withOcr of [true,false])test(`original Files consumes typed custom rec
  assert.equal(artifact.payload.format,'mote-image-product-v1');assert.equal(artifact.payload.interpretation.regions[0].description,'');
  const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/#/library?view=files',pretendToBeVisual:true});
  const saved=new Map<string,PropertyDescriptor|undefined>();let cookie='',current:Api|undefined,holdRead=false,readEntered:()=>void=()=>{},releaseRead:()=>void=()=>{};
- const writes:string[]=[];t.after(()=>releaseRead());
+ const writes:string[]=[];let actionAcks=0;t.after(()=>releaseRead());
  for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,fetch:async(path:string,init:RequestInit={})=>{
   const headers=new Headers(init.headers);headers.set('cookie',cookie);
   if(init.method==='POST'&&path.startsWith('/api/images/'))writes.push(String(init.body));
   const requestCookie=cookie;
   const response=await f.host.app.inject({url:path,method:init.method as any??'GET',headers:Object.fromEntries(headers),...(init.body?{payload:String(init.body)}:{})});
+  if(init.method==='POST'&&path.startsWith('/api/images/'))actionAcks++;
   if(holdRead&&requestCookie===heldCookie&&path==='/api/images/'+a.id&&(!init.method||init.method==='GET')){readEntered();await new Promise<void>(r=>releaseRead=r);}
   return new Response(response.body,{status:response.statusCode,headers:response.headers as HeadersInit});
  }})){saved.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
@@ -80,7 +84,7 @@ for(const withOcr of [true,false])test(`original Files consumes typed custom rec
  await waitForScopedState(async()=>{await act(async()=>delay(10));return !!d.querySelector('.image-progress');},()=>d.body.textContent??'',20000);
  const section=d.querySelector('.image-progress')!,state=(label:string)=>Array.from(section.querySelectorAll('dt')).find(node=>node.textContent===label)?.nextElementSibling?.textContent;
  assert.equal(state('文字识别'),withOcr?'已就绪':'未安排');
- assert.equal(state('内容理解'),'已就绪','typed derived interpretation remains visible irrespective of the optional global default');
+ assert.equal(state('内容理解'),partial?'处理失败':'已就绪','current named steps determine the aggregate, while accepted interpretations remain visible');
  assert.match(section.textContent!,new RegExp(artifact.payload.interpretation.text));
  assert.doesNotMatch(state('记忆（Memory）')??'',/已完成/);
  const progress=await f.checked(f.a.token,'/api/images/'+a.id);
@@ -90,13 +94,14 @@ for(const withOcr of [true,false])test(`original Files consumes typed custom rec
 
  const button=(label:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('.image-progress button')).find(node=>node.textContent===label);
  const refresh=async()=>act(async()=>{resources(current!).get('/api/images/'+a.id).refresh();await delay(20);});
- const press=async(label:string)=>act(async()=>{const node=button(label);assert.ok(node,label);assert.equal(node.disabled,false,label);node.click();await delay(30);});
+ const press=async(label:string)=>{const before=actionAcks;await act(async()=>{const node=button(label);assert.ok(node,label);assert.equal(node.disabled,false,label);node.click();await delay(30);});await waitForScopedState(async()=>{await act(async()=>delay(10));return actionAcks>before;},()=>label+' ACK not received',20000);};
  const settled=async()=>waitForScopedState(async()=>{
   const view=await f.checked(f.a.token,'/api/images/'+a.id);return !view.canCancel&&!view.wait;
  },()=> 'Image command did not settle',20000);
- await press('补齐未完成步骤');await settled();await refresh();
+ tailFail=false;await press('补齐未完成步骤');await settled();await refresh();
  assert.equal(interpretations.length,2,'complete must preserve every successful custom interpretation');
  assert.equal(calls.length,withOcr?2:0,'complete does not rerun OCR');
+ if(partial)assert.equal(tailRuns,3,'only the missing tail is completed');
  await press('重新计算已有结果');
  await waitForScopedState(async()=>interpretations.length===3,()=> 'Explicit recompute did not run custom step',20000);await settled();await refresh();
  assert.equal(calls.length,withOcr?3:0,'explicit recompute reruns actual OCR when the recipe has it');
@@ -106,7 +111,7 @@ for(const withOcr of [true,false])test(`original Files consumes typed custom rec
  await press('停止处理');releaseStage();holdStage=false;await settled();await refresh();
  assert.equal(state('内容理解'),'已取消');
  const afterCancel=await f.checked(f.a.token,'/api/files/'+a.id);
- assert.equal(afterCancel.processing.derivations[0].artifactId,beforeCancel.processing.derivations[0].artifactId,'late cancelled interpretation cannot replace the last accepted product');
+ assert.ok(afterCancel.processing.derivations.every((item:any)=>beforeCancel.processing.derivations.some((previous:any)=>previous.artifactId===item.artifactId)),'late cancelled interpretation cannot publish a replacement; fresh OCR may already retire old derivatives');
  const retiredButton=button('补齐未完成步骤')!;heldCookie=cookie;holdRead=true;
  const enteredRead=new Promise<void>(r=>readEntered=r);await act(async()=>{resources(api).get('/api/images/'+a.id).refresh();await delay(20);});await enteredRead;
  const apiB=await login('b');await act(async()=>{root.render(React.createElement(FileDetail,{api:apiB,id:b.id,onOpen:()=>{}}));await delay(30);});
@@ -116,4 +121,6 @@ for(const withOcr of [true,false])test(`original Files consumes typed custom rec
  assert.equal((await f.request(f.b.token,'/api/processing/artifacts/'+artifact.id)).statusCode,404);
  await f.restart();assert.ok((await f.checked(f.a.token,'/api/images/'+a.id)).jobs.some((job:any)=>job.state==='cancelled'));
  assert.equal((await f.checked(f.b.token,'/api/files/'+b.id)).processing.derivations[0].artifactId,details[1].processing.derivations[0].artifactId);
+ uninstallRecipe();const unavailable=await f.checked(f.b.token,'/api/images/'+b.id);assert.equal(unavailable.original.state,'ready');assert.ok(unavailable.jobs.every((job:any)=>job.state==='blocked'&&job.error==='image_recipe_unavailable'));
+ await refresh();assert.match(d.querySelector('.image-progress')!.textContent!,/需要处理/);assert.doesNotMatch(d.querySelector('.image-progress')!.textContent!,/scope_unavailable/);
 });
