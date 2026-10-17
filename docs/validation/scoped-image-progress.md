@@ -247,3 +247,89 @@ A direct parent-thread status notification returned `thread not found` once and
 was not retried; this task's commentary/final provides the automatic handoff.
 M13's bounded status handoffs were delivered. An earlier Joint checkpoint
 notification had an unconfirmed submission and was not blindly retried.
+
+## Installed image recipe consumer continuation (PREP)
+
+This continuation is isolated in local branch
+`codex/mote-image-recipe-consumption-probe`; it is not yet in PR151 or a final
+producer/consumer freeze. Exact mechanical composition
+`10bd84e9c4fe8477174cc6d2246f8fd37cc35dde` combines declared Joint candidate
+`2349a341da658ff6bb2ee16e67574908dd1d6325` with the full original PR151
+`21e97819f275944e39025eadcdd7675e4610782d`, retaining M13's Files and original
+retirement prerequisites. Later observer and attachment WIP was not consumed.
+PR151 was freshly verified OPEN and Draft, with that unchanged head and the same
+integration target. The earlier receipt's custom-recipe UNKNOWN is narrowed below;
+the platform-gate failures above remain recorded and have not been rerun.
+
+KEEP the original five phases, retry operation IDs, cancellation, unknown
+confirmation, owner/source/original generation fences and real Memory receipts.
+CHANGE the existing image projection to read declared named recipe steps and
+explicit derivation artifact/material IDs. Parse typed interpretations with the
+canonical `mote-image-product-v1` schema, including original metadata and empty
+region descriptions. Legal noOCR recipes expose `ocrEnabled:false`; no primary
+OCR/raw artifact is invented. Additional named OCR remains separately readable
+without being labelled model interpretation. Missing installed recipes are
+blocked while retained products and the original remain readable. REMOVE the
+assumption that global understanding settings describe a custom recipe, or that
+its derived Material is an OCR product. EXCEPTION: generated OCR and installed
+stages exercise the actual scoped producer in tests. UNKNOWN: producer complete
+reuse for noOCR and partially failed recipes is still RED on this exact candidate;
+Joint owns that fix, typed Files export and snapshot original lifetime.
+
+Consumer production candidate after the production-import correction:
+`b14922465bd3f1018b123efcc611c043f90be358` (the browser UI ran the
+identical UI/behavior bytes at parent `9e8a910b86b5be66a24662d8b5e84683ca3b53d9`;
+the correction only changes the StoreError import to existing execution-storage).
+`apps/web/test/multiuser-image-recipes.test.ts` exercises original FileDetail and
+createApi Web login against actual M03/M05/M06. Four generated cases cover OCR,
+noOCR, partial failure and two named OCR steps, explicit typed artifact reads,
+complete/recompute/cancel, cancelled late results, A/B same IDs, retired controls
+and held account responses, restart without replay, and removed recipe blocking.
+The original two display RED cases are retained in local logs; named OCR also had
+a real hidden-product RED before the consumer change. No helper inserts success.
+Independent read-only review of this consumer candidate found no new confirmed
+permission, phase or evidence-boundary issue.
+
+`build:central` passed with the current production bytes. Fresh probe-local
+locked dependencies (no copied peer node_modules) passed Node26.11.1/ABI147
+better-sqlite3 constructor/write/read/close through both the root and actual mem0
+resolution. Diagnostics build and scripts type check passed. The positive OCR
+and double-OCR original UI cases passed 2/2 after test teardown changes.
+
+Supported hidden IAB ran the built original Web app using
+`scripts/scoped-image-recipes-browser.ts`: generated A login → Files → original
+image detail → complete showed OCR, understanding and Material ready, while
+Memory remained waiting. Original account settings switched to same-ID B, whose
+noOCR recipe showed OCR unarranged, its own pixel-only interpretation and Memory
+waiting. No A result appeared in B. The actual local OCR provider recorded one
+call for A and none for B. Both own fixture processes and the browser tab were
+closed; generated temporary server data was removed. This is generated-provider
+UI evidence, not a real-model quality or final producer acceptance claim.
+
+Local generated screenshots (outside Git):
+`../image-recipes-iab-a.jpg` SHA256
+`a866d81732da5444abe7045451e1a046e67f4c5118e253badcbd431efbdb0f5b`,
+`../image-recipes-iab-b.jpg` SHA256
+`70f607fc83c6b0de4a86ec2688fae350daf8143bc0011033b54aa7527659d2b1`.
+ImageProgress source SHA256:
+`38682d0596e31290147ca0946cf3a9b19cb56d5d58f36b7f8269259477d99240`;
+projection source SHA256:
+`268fa3663cd31941286c0ec3bef60aabfef97488542eff59ccef6df67af00330`.
+
+The direct 36-case suite after test teardown correction finished 34 pass /
+2 fail / 0 cancelled / 0 skipped in 83.753s; only noOCR and partial recipes
+failed the real complete assertion (interpretation executions 3, expected 2).
+Local log: `../image-recipes-direct-current.log`. A subsequent scope gate
+correctly rejected a StoreError import from the old Store; the import was
+changed to existing execution-storage without an allowlist exception. Scope
+inventory/production boundary then passed (`../image-recipes-scope-fixed.log`),
+and `build:central` passed (`../image-recipes-build-current.log`). The four
+custom recipe cases were rerun after that import correction: 2 pass / 2 fail /
+0 cancelled / 0 skipped, 45.839s, with exactly the same two complete assertions
+(`../image-recipes-custom-import-fixed.log`). Independent
+review verified the correction and found no further confirmed issue.
+
+Final combination, direct affected acceptance and PR update await Joint's narrow
+reviewed producer freeze. This probe is not a substitute for the final union's
+required gate. Per the parent instruction, inherited whole-platform checks were
+not rerun for this continuation.
