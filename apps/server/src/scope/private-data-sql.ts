@@ -18,7 +18,13 @@ export class PrivateSql{
   private statement(sql:string,write=false){
     this.authorize();if(!/(?:\buser_id\s*=\s*\$user|\bVALUES\s*\(\s*\$user)/i.test(sql))throw new Error('Private SQL requires an owner binding');
     let cache=statements.get(this.db);if(!cache){cache=new Map();statements.set(this.db,cache);}
-    const key=(write?'write:':'read:')+sql,prior=cache.get(key);if(prior)return prior;
+    const key=(write?'write:':'read:')+sql,prior=cache.get(key);
+    if(prior){
+      // close() finalizes statements even if this DatabaseSync is later reopened.
+      // Only inspect native statement state here; execution errors stay outside.
+      try{void prior.sourceSQL;return prior;}
+      catch(error){if((error as NodeJS.ErrnoException).code!=='ERR_INVALID_STATE'||!this.db.isOpen)throw error;cache.delete(key);}
+    }
     const statement=this.db.prepare(sql);if(cache.size>=256)cache.delete(cache.keys().next().value!);cache.set(key,statement);return statement;
   }
   get(sql:string,...args:SQLInputValue[]){return this.statement(sql).get({$user:this.userId},...args);}
