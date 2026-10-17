@@ -315,4 +315,100 @@ The final required command is rerun once after these narrow closures and this
 joint recovery. Its distinct evidence prefix is
 `/tmp/mote-policy-archive-close-required`; the preceding complete failed gate and
 all untouched-a2 RED remain unchanged. Final client union and later Joint
-contracts remain separate; this phase proves the bounded complete module2699.
+contracts remain separate; the precise terminal limits follow below.
+
+## Closing required gate: actual terminal and remaining RED
+
+The one closing command naturally completed at clean documentation tip
+`da11d1c4bc9aa8188d6f837dc1e3870569572fdb`, test freeze
+`371bd18649a40b0ac3a9764a5223b08970266d38`, production
+`2699d1f7eeeb12390c2b87229c11c32dc731d9ee`:
+
+```sh
+npm run check:affected -- --base 20f04d0c09ad721f42040763e62d1bf876c4e87c
+```
+
+`/tmp/mote-policy-archive-close-required.log` and its `.exit` marker record
+**actual exit 1**, without interruption. Build, type and i18n stages passed.
+
+| Workspace | Actual result |
+| --- | --- |
+| Shared | 192 passed, no failure/skip |
+| Agent | 317 passed, 1 skipped, no failure |
+| Server | 2795 total: 2780 passed, 12 failed, 1 cancelled, 2 skipped; 2661.826 seconds |
+| Web | 515 passed, no failure/skip; 97.224 seconds |
+
+All 27 owner-matrix success markers are present in this complete gate
+(`/tmp/mote-policy-archive-close-required-module-receipt.json`). All eight held
+media fence cases, including configuration, pass, as does scoped Imports
+metadata. The failed-sibling case remains RED at its original 20-second Ask
+wait despite its earlier isolated 18.903-second PASS. The fixture change does
+not establish stable closure of that scenario. Post-test commands behind the
+failed central `&&` chain are not claimed to have run in this invocation;
+the separately recorded supervisor/release checks retain their original SHA.
+
+| Server RED | Actual observation and follow-up |
+| --- | --- |
+| Memory 1000 originals | Original 120-second timeout, reported cancelled. The same unmodified case previously passed in 91.667 seconds in the preceding complete gate and 95.076 seconds in a diagnostic singleton. |
+| HTTP background import 1000 | Original 300-second prefix budget expired with 999 imported and 915 checkpoints; no recorded execution failures. |
+| Actions catalog | Original wait for `other-source` completed job expired. Corrected-loopback Node24 singleton passes. |
+| Ask ordered / Insight narrowed / pause and restart | Original Ask waits expired. Each passes in the separate Node24 singleton list without increasing a budget. |
+| Ask parent disclosure / failed sibling retry | Original 20-second Ask waits also remain RED in supported Node24 diagnostics. No repeated-yield loop was observed. |
+| Live physical original ACK | Generic child retry returned `409 task_retry_invalid` before the test reached its new-operation guard assertion. Reproduces on untouched a2. |
+| Coding complete dialogue | Complete/indexed six-member Material was present, but the fixture's global pending-task condition exceeded its original deadline. Reproduces on untouched a2. |
+| MCP Unicode raw window | Raw `mote_read` returned `not_found`; the fixture assumes an unprocessed raw locator. Reproduces on untouched a2. |
+| Screenshot Memory prerequisites | OCR succeeded; analysis/derivatives remained running and Memory waited on `memory_image_products_pending`. Reproduces on untouched a2. |
+| Summary restart checkpoints | The old analysis child became `stale/input_changed` after configuration change/restart, retaining its checkpoint and unresolved fact. Reproduces on untouched a2. |
+
+The additional three a2 baseline cases are 0/3, exit 1, 53.857 seconds
+(`/tmp/mote-policy-archive-a2-additional3-baseline.log`); the final screenshot and
+summary baseline cases are 0/2, exit 1, 48.036 seconds
+(`/tmp/mote-policy-archive-a2-final2-baseline.log`). These snapshots contain no
+personal-plan archive implementation. This establishes inherited RED for
+those five scenarios, without declaring each to be a production defect.
+
+Two transparent live-ACK observers preserve every original assertion. The first
+shows a cancelled child with one still-issued fact and retains the generic
+retry409. The second adds only a task-list read and passes the whole case:
+the new operation remains409 while the physical call is held, B succeeds, and
+after release A completes with exactly two external calls. Their separate logs
+are `/tmp/mote-policy-archive-live-ack-observer.log` (exit1) and
+`/tmp/mote-policy-archive-live-ack-parent-observer.log` (exit0). This is evidence
+of observation-sensitive retry readiness; no physical-occupancy bypass is
+confirmed. The M04/M05/M06 owners must resolve the contract/fixture classification
+before a public backend fix. No shared backend is changed here.
+
+### Supported-runtime comparison and resource boundary
+
+An independent clean copy of da11 uses the installed Node24.21.0 executable
+`/tmp/mote-node24-runtime-20261014/node-v24.21.0-darwin-arm64/bin/node` and ABI137.
+Its own locked better-sqlite3 is compiled offline using that runtime's local
+headers; no package download or other workspace dependency mutation occurs.
+Root and actual mem0 resolution both pass constructor/read/write smoke in
+`/tmp/mote-policy-archive-node24-abi-smoke.json`. Its native binary has a different
+inode from the main Node26/ABI147 binary; no cross-ABI binary is copied.
+
+The initial eight-case comparison naturally ends with 0 passed, 7 failed,
+1 cancelled, exit1 in 447.876 seconds. Six provider cases fail at sandbox
+`listen EPERM` and are environment errors, not product RED. The two Memory
+cases retain their original timeout failures: HTTP prefix has 615 checkpoints,
+999 imports and a 24.646-second maximum event-loop delay. Corrected-loopback
+Actions/Ask comparison is 4/5, exit1, 146.777 seconds; parent disclosure remains
+at its original 20s wait. A tool-name-only failed-sibling observer also retains
+the original 20s RED. These runs do not establish a Node-version cause. No
+second broad gate is started for an already failing list, and no timeout or
+public backend is changed to manufacture a pass.
+
+Actual 18-logical-CPU resource samples show 12% to 79% CPU idle, roughly 5GB free,
+zero interval swap activity and no thermal warning. They do not justify a
+hardware-causation claim or global throttling. The successful compiled joint
+restore remains independent evidence: a fresh exact-name check at 05:29 UTC
+finds none of its 10 containers or 12 volumes, and no recovery runner is active
+(`/tmp/mote-policy-archive-joint-current-cleanup.json`).
+
+The applied-plan matrix and compiled native/Docker/Hindsight paths pass at
+runtime2699. The complete required gate remains RED, including the original
+Ask retry budget scenario. Later Joint contracts, final clients and whole-system
+acceptance remain unverified. All evidence uses generated data and fake external
+model/release I/O; no live model, private central data, merge, deployment or CI
+enablement is involved.
