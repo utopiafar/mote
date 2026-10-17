@@ -18,7 +18,7 @@ type Control={original_id:string;generation:number;cancelled:number};
  * opaque history, not a freshly verified processor receipt or execution grant. */
 export function policyPlanArchive(sql:PrivateSql){return {
  export:()=>({version:1 as const,plans:sql.all('SELECT id,original_id,json FROM mp_file_plans WHERE user_id=$user ORDER BY id'),bindings:sql.all('SELECT original_id,plan_id FROM mp_file_policy_bindings WHERE user_id=$user ORDER BY original_id')}),
- prepare:(raw:unknown,controls:Control[])=>{
+ preflight:(raw:unknown,controls:Control[])=>{
   if(raw===undefined)return ()=>{}; // Existing processing-v1 archives predate plans.
   const value=policyPlanArchiveSchema.parse(raw),plans=new Map(value.plans.map(row=>[row.id,row]));
   if(plans.size!==value.plans.length||new Set(value.bindings.map(row=>row.original_id)).size!==value.bindings.length)throw invalid();
