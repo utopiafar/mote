@@ -16,7 +16,7 @@ import type {MemoryHost} from './memory.js';
 export function registerProcessingImages(runtime:ScopedRuntime,db:DatabaseSync,host:ProcessingHost,execution:TaskExecution){
  const bind=(context:UserContext,id:string)=>{
   const sql=new PrivateSql(db,context.userId,()=>runtime.authority.assert(context)),service=host.forUser(context);
-  const row=sql.get('SELECT id FROM ig_originals WHERE user_id=$user AND capture_id=?',id);if(!row)throw missing();
+  const row=sql.get("SELECT r.id FROM ig_originals r JOIN pd_sources s ON s.user_id=r.user_id AND s.id=r.source_id WHERE r.user_id=$user AND s.user_id=$user AND COALESCE(json_extract(s.json,'$.enabled'),1)=1 AND r.capture_id=?",id);if(!row)throw missing();
   const ref='original:'+row.id,status=service.status(ref);
   if(!status.original.mime.startsWith('image/')||!status.current)throw missing();
   const control=sql.get('SELECT generation,cancelled FROM mp_file_controls WHERE user_id=$user AND original_id=?',row.id);
