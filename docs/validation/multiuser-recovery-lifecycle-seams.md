@@ -1,0 +1,302 @@
+# Independent recovery and data lifecycle seams
+
+Final bounded test leaf: `dc2b0801f885a174d120478157d150d7bab439e0`.
+Production runtime remains the exact Joint `2528a67d` tree. The new four cases
+pass three consecutive rounds (12/12); the complete focused recovery combination
+passes 103/103 after a test-observer connection correction. Actual current-runtime
+Docker production recovery and managed Hindsight recovery also pass. The complete
+required gate is **not accepted**: the original call was interrupted after seven
+emitted failures, and its resumed Server segment exits 1 with five failures.
+These outcomes and their code versions are kept separate below.
+
+## Frozen scope
+
+This lane uses its own clone, feature branch, generated accounts, SQLite files,
+loopback ports and randomly named Docker resources. Main and integration were
+both remotely verified at `6272a9b51ec92cc4c32e2ff1a1eeb4fa38b142ed` with
+`git ls-remote origin refs/heads/main refs/heads/codex/mote-multiuser-integration`.
+The same base commit was independently resolved with the connected GitHub API.
+
+The consumed Joint PREP is `2528a67d48e5c1ab8f44fc89e521eab1d0f6e2bd`;
+its latest runtime change is source-incarnation repair
+`519dc3f5ec9daa3aac61759c6c0c090942ffbad0`. New tests are committed separately as
+`942995ef0e2ef1b0f012f461b28e317f376fc571`. They change no production code.
+Follow-up `dc2b0801` changes only the read-only test observer's SQLite busy wait.
+This is a bounded combination, not final acceptance of all clients or modules.
+The [Joint contract](multiuser-joint-validation.md) and
+[lifecycle contract](../design/multiuser-lifecycle.md) retain their open items.
+
+## New durable cases
+
+| Case | Actual path and assertions |
+| --- | --- |
+| Issued external call → SIGKILL → restart | Real listening production `buildApp`, HTTP credentials and task routes, SQLite, executor, external issuance journal, checkpoint and a separate held HTTP endpoint. Kill only the owned child; expire only its generated DB lease. Replacement blocks the unknown parent and dependent, rejects ordinary retry and foreign confirmation, and does not issue again. Explicit owner consent produces a different issuance, reuses the completed local checkpoint, retains the old unknown fact and allows the dependent to finish after explicit retry. |
+| Cancel → late ACK | Cancel through the real HTTP route while the external HTTP reply is held. The returning old callback cannot complete its issuance or publish a result; B completes independent work. |
+| Account disable → late ACK | Disable A through the administrator HTTP route while its call is held. The callback is rejected, A loses ordinary access, its result remains absent and the issued fact survives; B remains usable. |
+| Personal export → file forget/reimport → personal merge → restart | Full same-deployment/same-account portable export/import. Merge cannot rewind the newer file generation, renew an old original ticket or apply an unsent old delete operation. A previously admitted delete repeats its fixed receipt without deleting the replacement. Repeated import is idempotent and B's equal-ID file remains readable. |
+
+Only external I/O and task-specific generated work are fixtures. The runtime,
+authority, journal, HTTP transport, SQLite and lifecycle ordering are real. This
+is not a live model, calendar mutation, native UI or physical-device result.
+
+## Executed evidence
+
+The final focused combination uses installed Node `v26.11.1`, which matches the
+already installed `better-sqlite3` ABI 147. All logs contain generated data only.
+
+| Command / evidence | Actual result |
+| --- | --- |
+| `node --import tsx --test --test-concurrency=2 --test-timeout=60000 apps/server/test/multiuser-recovery-portable-file.test.ts apps/server/test/multiuser-recovery-http-seams.test.ts`; `/tmp/mote-recovery7-seams-final.log` | 4/4, no skips, exit 0. This earlier new-case run used Node 24 without invoking native Mem0. |
+| Node 26 focused combination below; `/tmp/mote-recovery7-neighbors-node26.log` | Original `942995ef` run: 103/103, no skips, exit 0, 67.141 seconds. |
+| Same focused combination after probe-only `dc2b0801`; `/tmp/mote-recovery7-neighbors-probe-fixed.log` and `.exit` | 103/103, no skips, actual exit 0, 80.321 seconds. |
+| Three consecutive runs of the two new test files after `dc2b0801`; `/tmp/mote-recovery7-probe-fixed-repeated.log` and `.exit` | Each 4/4, 12/12 total, no skips, actual exit 0. |
+| `node --import tsx scripts/validation/hindsight-recovery.ts`; `/tmp/mote-recovery7-hindsight-current.log` | Actual Docker and fixed Hindsight native API startup/restore, current `ManagedHindsightRuntime` reopen and canonical reads: PASS, source `942995ef`. Two canonical bodies, unknown operation retained, identity rotated, old API token rejected, unsafe tar rejected before volume creation, automatic worker disabled, zero external model calls. Canonical setup is generated SQL in the actual migrated provider schema. |
+| `MOTE_CONTAINER_VALIDATION_IMAGE=mote-recovery7-validation:2528 MOTE_CONTAINER_VALIDATE_STARTUP=1 node --import tsx scripts/validation/container-recovery.ts`; `/tmp/mote-recovery7-container-current.log` | Actual Docker production default CMD startup, restore and restart: PASS, source `942995ef`. Two clean shutdown cycles; A/B identities and equal capture IDs remain isolated; two exact original bodies retained; old credentials and task grants not revived; unknown external journal unchanged; occupied valid volume preserved and corrupted package rejected before Docker admission. |
+
+Focused Node 26 command:
+
+```sh
+node --import tsx --test --test-concurrency=3 --test-timeout=120000 \
+  apps/server/test/multiuser-recovery-http-seams.test.ts \
+  apps/server/test/multiuser-recovery-portable-file.test.ts \
+  apps/server/test/multiuser-execution-retry-hook.test.ts \
+  apps/server/test/multiuser-file-attachments.test.ts \
+  apps/server/test/multiuser-portable-import.test.ts \
+  apps/server/test/multiuser-file-source-incarnation.test.ts \
+  apps/server/test/multiuser-file-forget-decision.test.ts \
+  apps/server/test/multiuser-instance-backup.test.ts \
+  apps/server/test/multiuser-backup-actions.test.ts \
+  apps/server/test/multiuser-container-backup.test.ts \
+  apps/server/test/hindsight-backup-admission.test.ts \
+  apps/server/test/hindsight-checkpoint.test.ts \
+  apps/server/test/hindsight-runtime.test.ts
+```
+
+These reuse delivered M12/M16/Container cases. They include failed nested
+parent/child retry preparation rolling back unknown consent, grants and Operations
+atomically; delayed attachment processing after parent/source/head retirement;
+eventual physical pin release; fresh attachment/image authority after recreation;
+same-ID source/Capture retirement; native stopped recovery of a **nonzero** file
+incarnation; complete personal merge and rollback; native Mem0 canonical bodies;
+unknown Actions facts; provider checkpoint cleanup and Hindsight backup admission.
+
+The current Docker image reuses installed immutable dependency layers from
+`sha256:2e0a192ec624a902d9396a1b0308782a0018a6c02e3af70e279e3f526563d48b`.
+It overlays current compiled Server/Web/Shared/Agent/skills and backup/schema
+scripts only. It is **not** a fresh dependency installation or a test of the
+repository Dockerfile's dependency download. Runtime source is exactly `2528a67d`;
+the image ID is
+`sha256:50fd77030d446bf6af30f2cd35702d305e8ad059209dfa5362a3cd16cca0c076`.
+Build evidence: `/tmp/mote-recovery7-image-build-local-base.log` and generated
+runtime input hashes `/tmp/mote-recovery7-image-input-hashes.json`.
+No pull or model-weight download was performed. Container and Hindsight runners
+cleaned only their own resources. A subsequent filter for this Container run's
+unique label returned no containers or volumes.
+
+The current Docker restore validates the mandatory current schema, including
+`ig_file_generations`. Its generated counters are empty. The **nonzero** counter
+round trip is the independent native case above; this document does not combine
+those into a claim that a nonzero Docker counter or one app-plus-Hindsight backup
+was exercised.
+
+## Required gate and earlier attempts
+
+`npm run check:affected -- --base 2528a67d48e5c1ab8f44fc89e521eab1d0f6e2bd`
+uses Central scope for this test-only delta. The Node 26 invocation in
+`/tmp/mote-recovery7-affected-node26.log` was interrupted before a terminal result.
+The execution session stopped being addressable; read-only inspection then found
+no original root/descendant PIDs or log holders. The last output is inside
+`multiuser-memory.test.ts`, without a summary or exit code. It is not a passed
+gate or an invented known exit status. Seven already emitted failures remain
+failures, independently of the execution interruption.
+
+At the same unchanged `942995ef` test/runtime tree, resume starts from that
+interrupted file, then the remaining 98 sorted Server test files. The exact
+99-file list is `/tmp/mote-recovery7-server-resume-files.txt`; output and actual
+exit are `/tmp/mote-recovery7-server-resumed.log` and `.exit`. Web is separately
+resumed in `/tmp/mote-recovery7-web-resumed.log` and `.exit`. Web completed
+515/515, zero skips, actual exit 0 in 107.406 seconds. Server at `942995ef`
+completed 691 total: 685 pass, 5 fail, 1 existing opt-in skip; actual exit 1 in
+433.825 seconds. Its five failures and the observer correction are recorded below.
+Already completed builds/types, Shared/Agent and the independently
+completed Central runner/release tools are reused. No healthy process was
+stopped or duplicated to resume. The original seven REDs are not erased by
+resuming later files, and whole-candidate acceptance remains false.
+It already contains one existing test timeout: `memory-delegation.test.ts`,
+`a thousand generated originals drain bounded catalogs with complete independently
+reviewed coverage`, 121556 ms against its own unchanged 120000 ms limit.
+The unchanged selected case passes 1/1, no skips, exit 0 in 81915 ms:
+
+```sh
+node --import tsx --test \
+  --test-name-pattern='a thousand generated originals drain bounded catalogs' \
+  --test-timeout=150000 apps/server/test/memory-delegation.test.ts
+```
+
+`/tmp/mote-recovery7-thousand-exact.log` preserves that exact rerun. The outer
+150000 ms runner bound does **not** change this case's explicit 120000 ms limit.
+The selected pass does not erase the required-gate failure. A resource sample
+showed 18 logical CPUs, 76% system memory free and zero throttled pages; it did not
+establish whole-machine saturation. No other lane was stopped or throttled.
+Read-only inspection of the owned gate process tree confirmed subsequent test
+files were running while earlier-file output was buffered. This is a suite timing
+failure so far, not a reproduced canonical-data/authority assertion defect.
+The committed-delta dry-run plan is also retained in
+`/tmp/mote-recovery7-affected-committed-plan.log`; runtime and test files have no
+diff against `942995ef` after this invocation started.
+
+A second existing failure is independently reproducible without changing code:
+
+```sh
+node --import tsx --test \
+  --test-name-pattern='actual model proposals paginate without gaps' \
+  --test-timeout=120000 apps/server/test/multiuser-actions-catalog.test.ts
+```
+
+`/tmp/mote-recovery7-actions-catalog-exact.log` is 0/1, exit 1:
+`actual action job for other-source: false`, from the fixture's 15000 ms
+`waitForState` deadline. A temporary copy of this runner adds only read-only
+observations around that existing failure. It records one completed source job,
+the other pending with an `actions.extract` task still running, and no public
+progress error. A second observation keeps the original error, permits the real
+task to continue and then **throws that same error**: the second job completes
+19322 ms after the original failed wait, both jobs become completed and progress
+is no longer running or errored. Evidence:
+`/tmp/mote-recovery7-actions-catalog-diagnostic.log` and
+`/tmp/mote-recovery7-actions-catalog-observe.log`.
+
+This confirms a reproducible fixture readiness failure, rather than a permanently
+stuck job or a demonstrated data/authority assertion defect. The catalog's later
+pagination assertions were not reached in these failing runs; eventual job
+completion alone is not counted as their pass. No common Actions runtime or
+global timeout was changed. The existing durable case and exact commands are
+the handoff to Joint/M12 for a bounded fixture-budget decision.
+
+M08 also exhibits fixture completion timing failures in the full suite:
+`parent cannot cite a successful child handle or prior-fragment originals without
+current disclosure` and `pause/resume and restart preserve successful child
+checkpoints and replace cancelled generation authority`.
+The first original case independently fails at its existing 20000 ms Ask wait
+while event receipts show ongoing child/model validation, rather than an
+accepted forbidden citation: `/tmp/mote-recovery7-ask-citation-exact.log`, 0/1.
+A temporary copy adds a failure-only observation around those original waits
+without changing their 20000 ms deadlines. With both cases selected, they pass
+2/2 in 50.434 seconds, including the original citation, child-start count and
+retained child-checkpoint assertions; neither failure-only observation executes.
+That is instrumented-copy evidence (`/tmp/mote-recovery7-ask-observe.log`), not a
+new passed full gate or a claim that the earlier original invocation passed.
+No M08 product code or original test is modified. These timing-sensitive cases
+are retained for Joint/M08 fixture review; no confirmed authority violation is
+inferred from a completion wait expiring.
+
+The full suite also fails the existing `multiuser-file-controls.test.ts`.
+An unchanged standalone rerun is 0/1, exit 1:
+`/tmp/mote-recovery7-file-cancel-exact.log`. At line 25 it expects generic retry
+of the still-physically-active cancelled ASR child to return 200, while the
+actual response is 409 `task_retry_invalid`. Read-only diagnostics confirm it
+selected the correct original, the child is cancelled with an issued external
+fact, and the File remains `canCancel:false, wait:running`.
+`/tmp/mote-recovery7-file-cancel-diagnostic.log` retains that RED and safe state.
+
+A temporary diagnostic continuation **retains the original assertion error**,
+checks the actual 409 and executes every remaining original assertion. They all
+pass: the old physical call settles without publication; B and another A file
+finish; cancellation prevents automatic revival; personal export includes the
+exact cancellation intent; an invalid owner link fails import; same-account
+import retains cancellation; real app restart and stopped backup/restore retain
+the original and cancelled state; old login fails; a new explicit File retry
+issues one new ASR call and publishes; retry receipt replay adds no call or old
+task revival. It records `remainingOriginalAssertionsPassed:true, asrCalls:2`
+and then throws the retained error, so its result remains 0/1, exit 1.
+Evidence: `/tmp/mote-recovery7-file-cancel-continuation.log`.
+This bounded continuation differs only at the old generic-retry expectation;
+it does not prove that generic retry was acknowledged while physically active.
+The current physical fence contract supports rejection. Joint should resolve
+this test expectation explicitly rather than weaken production fencing.
+
+The binary private-route/CSRF case in `multiuser-auth.test.ts` also fails in the
+full suite. Its raw suite evidence is handed to the cross-user/Joint scope;
+this lane does not duplicate the other E2E lane's common authentication repair.
+
+### Seven emitted failures before interruption
+
+All seven below are from candidate `2528a67d` plus test-only `942995ef`, with
+locked dependencies copied and host Node 26 selected. They are distinct from
+earlier sandbox/missing-dependency/ABI setup failures.
+
+| Exact test title | Classification and reproduction |
+| --- | --- |
+| a thousand generated originals drain bounded catalogs with complete independently reviewed coverage | Full-suite 120 s timeout; original selected case passes 1/1 in 81.9 s. |
+| actual model proposals paginate without gaps and the read-only catalog filters all sources before its limit | Original selected 0/1: `actual action job for other-source: false`, fixture 15 s wait. Observation after the original error shows natural completion 19.3 s later; original RED retained. |
+| parent cannot cite a successful child handle or prior-fragment originals without current disclosure | Original selected 0/1: `Ask timeout`, still running at the fixture's 20 s wait. Failure-observation copy paired with the next case passes 2/2 within unchanged original waits; observation branch not used. |
+| pause/resume and restart preserve successful child checkpoints and replace cancelled generation authority | Full-suite failure; original detailed error unavailable after interruption. Paired observation-copy original assertions pass; no separate unchanged failing reproduction. Classification remains provisional. |
+| failed real child retries only its own model branch while successful checkpoints remain single-use | Full-suite failure at 21.79 s; detailed error unavailable after interruption; not independently reproduced or classified. |
+| authentication composes with a binary private route while Cookie mutations still require CSRF | Full-suite failure at 339 ms; detailed error unavailable after interruption; not independently reproduced or classified. Cross-user scope handoff. |
+| original Files cancel fences the held recording without cancelling another A file or equal-ID B and survives restart | Original selected 0/1: line 25 expects 200, gets 409 `task_retry_invalid` for the correct still-active cancelled child. Failure-preserving diagnostic continuation passes every later original assertion, including stopped restore and fresh File retry. |
+
+### Resumed Server failures and the lane's observer correction
+
+The 99-file resume is a **stage result at `942995ef`**, not a replacement for an
+uninterrupted gate. It emits these five failures:
+
+| Exact test title | Actual failure / scope |
+| --- | --- |
+| real M03 intake automatically admits a durable pipeline while its receipt still attests only reception | `multiuser-processing.test.ts:82`: task-kind array contains an extra `memory.materials`. Not independently rerun or classified as a production duplication defect. |
+| processing rejects missing/forged identity, malformed inputs, foreign originals and unknown formats without partial publication | `multiuser-processing.test.ts:96`: response is outside expected `[400,401]`; original assertion does not print the actual status/input case. Not independently rerun; contract review remains with Joint/M06. |
+| caught nested admission failure rolls back every child row while the publishing Material transaction succeeds | `multiuser-processing.test.ts:272`: the same extra `memory.materials` in task kinds. This does not itself prove a leaked failed child or broken transaction; Joint/M06 must inspect the changed admission contract. |
+| late external HTTP ACK cannot publish after disable | This lane's observer SELECT races a real child-process writer: `SQLITE_BUSY`, errcode 5, `database is locked`. HTTP revocation/late-callback checks have already run. Corrected in `dc2b0801`, as detailed below. |
+| Web feature metadata describes real routes and Library keeps owned canonical material/source paging | `multiuser-web.test.ts:78`: `do not advertise absent legacy runtime`. Not independently rerun; metadata/runtime expectation review remains with Joint/Web. |
+
+The lane's sole correction adds connection-local `PRAGMA busy_timeout=5000` to
+its **read-only test connection**, matching `scope/storage.ts`. It does not
+change application SQLite behavior, assertions, production task authority or
+public timeouts. The actual RED remains in the resumed log. After this correction,
+three real HTTP/SIGKILL/import rounds pass 12/12 and the complete focused set
+passes 103/103. The post-correction scope-plan dry run is
+`/tmp/mote-recovery7-probe-fixed-scope.log`; it is explicitly only a plan, not an
+executed full gate. The complete required gate has **not** been rerun at the new
+test leaf, and final uniform acceptance remains pending with the module owners.
+
+The `&&` stages following the failed workspace test command were independently
+covered without changing the failed gate result: Central supervisor runner exit 0
+(`/tmp/mote-recovery7-central-runner.log`), release tools 52/52, no skips, exit 0
+(`/tmp/mote-recovery7-release-tools-host.log`). The first restricted release-tool
+attempt also hit local `listen EPERM` and remains a failed environment attempt.
+
+Earlier attempts are retained, not reclassified as passes:
+
+- Default sandbox local `listen` returned `EPERM`; approved host execution ran
+  the same generated loopback cases. `/tmp/mote-recovery7-http-initial.log` and
+  `/tmp/mote-recovery7-neighbors.log` are environment failures, not product REDs.
+- The first affected run lacked copied server-nested `mem0ai/oss`; the existing
+  locked nested dependencies were independently copied without changing peer
+  directories or installing a new dependency. `/tmp/mote-recovery7-affected.log`.
+- A Node 24 recovery-neighbor run reached 65/66; native Mem0 could not load the
+  installed SQLite ABI 147. Direct native-module probes established the ABI
+  mismatch. Node 26 resolves it, including the same native Mem0 case, in 103/103.
+  The obsolete Node 24 broad gate was stopped after verifying its root cwd and
+  descendant process tree belonged only to this checkout.
+- The initial image overlay build used an image ID in `FROM`, which BuildKit
+  parsed as a remote repository and rejected. The existing local tag's full
+  immutable ID was checked before the successful `--pull=false --network=none`
+  build. No dependency layer was downloaded by these attempts.
+
+## Handoff and remaining limits
+
+No new confirmed product defect was found in the four added seams; the observed
+test-only SQLite race was corrected without a production fix. The two minimal
+test commits `942995ef` and `dc2b0801` are cherry-pickable for Joint, published on
+`codex/mote-recovery-lifecycle-validation`. Integration was remotely verified at
+the baseline. Opening this composed
+branch as another integration PR would repeat the full upstream module stack,
+so this lane has not opened a duplicate all-stack PR.
+
+The attempted Joint message returned `earlier turn submission is not yet
+confirmed`, and the parent status message returned `thread not found`. Neither
+is claimed delivered or blindly retried. This document, commentary and
+`/tmp/mote-recovery7-handoff.md` preserve the handoff.
+
+Final M13/M15/Desktop consumer candidates, profiles/rules and image-profile
+execution are not frozen here. The eventual unified candidate must rerun this
+lane. No real central data or derived private artifacts were used; no merge,
+deployment, CI enablement, existing service cleanup or live inference occurred.
