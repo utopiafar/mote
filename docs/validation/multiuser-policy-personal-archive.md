@@ -209,3 +209,110 @@ explicitly disclosed. Its integration comparison includes pending dependencies
 and earlier recovery tests; the independent module comparison against `20f04d0c`
 contains five files, including two production files. No merge, deployment or CI
 configuration change is performed. The task delivery records the actual PR URL.
+
+## Bounded closing phase: fixture repairs and compiled joint recovery
+
+The parent required continuing PR150 through the inherited failures and the new
+module's compiled recovery. Production remains exact
+`2699d1f7eeeb12390c2b87229c11c32dc731d9ee`; no public backend, schema, plan body,
+ID formula or timeout changes follow it. Closing test/runner freeze is
+`371bd18649a40b0ac3a9764a5223b08970266d38`.
+
+The exact E2E test-only pin repair
+`94241d7e7d71e4dd1ed50e0279104e78864bafb0` was read from its owner's task-6
+checkout, then selected without modifying that workspace. It awaits actual pin
+release within the existing `until` budget after immediate task retirement.
+The Imports assertion now advertises the real scoped `/api/imports` route.
+The first bounded list passes 10/10, no skip, exit 0, 55.561 seconds in
+`/tmp/mote-policy-archive-close-narrow1.log/.exit`; Ask still uses its original
+assertions/budget there. Subsequent overlapping runs retain their failures.
+
+The failed-child retry fixture had also inherited duplicate parent submission
+and ordered-child setup beyond its own sibling-retry assertion. Only its
+`failSecond` variant now submits its two independent units once. Ordered and
+pause/restart variants keep their ordered dependencies and duplicate submission.
+The retry case still exercises real host tools/workers, requires `one:1/two:2`,
+one completed turn and the original 20-second completion wait. It additionally
+captures the successful sibling's actual task ID/state/attempts/result/checkpoints
+before retry and compares them after completion. No shared Ask code is changed.
+The final retry case passes in 18.903 seconds and the unchanged ordered neighbor
+passes in `/tmp/mote-policy-archive-ask-closure5.log`; that same overlapping run
+fails the unchanged pause/restart case. The latter then passes alone, unchanged,
+in `/tmp/mote-policy-archive-pause-original-idle.log/.exit`: 1/1, exit 0, 29.083
+seconds including setup/pause/restart, with its original wait budget.
+Earlier `close-narrow2`, `close-narrow3` and `ask-closure4/5` failures remain
+failed. The temporary checkpoint observer initially queried the wrong table;
+the final observer uses `user_tasks` for result/checkpoints. No other named
+case's fix or timeout is mechanically transferred to the retry case.
+
+### Actual compiled Docker/native/Hindsight combination
+
+The new opt-in runner is `apps/server/test/fixtures/policy-native-recovery.ts`:
+
+```sh
+MOTE_CONTAINER_VALIDATION_IMAGE=mote-recovery7-validation:policy-2699d1f7 \
+node --import tsx --test --test-timeout=600000 \
+  apps/server/test/fixtures/policy-native-recovery.ts
+```
+
+`/tmp/mote-policy-archive-compiled-joint5.log/.exit` records 1/1, no fail/skip,
+actual exit 0, 218.249 seconds, clean source freeze `371bd186`. Runner SHA-256:
+`95ee0c0f0f25c03d4d2263f6e97f3dad6cd9a72b2de8561002825d19c8736f4e`.
+The new image is
+`sha256:45ba7b69cb72ae419cf5b69e6ed191767baa87ac7ac3a9d73059e9a61a8b7c38`.
+It overlays freshly compiled Server2699 and unchanged backup scripts on the
+verified installed a2 dependency image, with `--pull=false --network=none`;
+no dependency is installed/downloaded. Both new compiled module files were
+hashed inside the image and match the host build byte for byte. Build/input/hash
+receipts use `/tmp/mote-policy-archive-compiled-{build,image-build,image-inputs,files}`
+and `/tmp/mote-policy-archive-compiled-image-files.json`.
+
+The real compiled HTTP host exports complete applied-plan history and bindings,
+reprocesses under a new current policy, merges the older personal archive while
+preserving current binding/control/settings/authority, deletes the original and
+reconstructs its missing historical plan under a fresh generation. B remains
+readable. Production stopped backup/restore then carries that actual state,
+generic issued/unknown fact and two owner-scoped native providers in **one**
+whole-instance archive, through both native and production Docker restore.
+Plan/binding/control rows round-trip exactly. Old HTTP credentials reject,
+all prior task grants are revoked, issued/unknown fields and unacknowledged
+native operation journals remain unchanged; no grant, confirmation or physical
+settlement is fabricated.
+
+Historical native canonical bodies are generated SQL fixtures in the actual
+migrated host/PostgreSQL schemas. Package/instance/snapshot and model-descriptor
+setup use the real compiled plugin and M04 APIs; only external release bytes
+are fake. This does not claim semantic retain/publication or a successful native
+capability probe. Real pinned Hindsight API, PostgreSQL, tar/whole-instance
+backup, fresh native volumes and compiled ManagedHindsight/HindsightEngine run.
+Four exact canonical reads across A/B and both restore paths succeed, wrong
+namespaces return no body, old API tokens reject, runtime identities rotate,
+automatic workers stay disabled and model-call count is zero.
+
+Earlier runner logs `compiled-joint1..4` retain actual failures: empty DELETE
+with a JSON Content-Type, treating a backup package as a live vault, wrong
+synthetic instance-fingerprint encoding, and a descriptor helper using the image
+UID rather than the restored profile UID. These were runner corrections, with
+no production changes. In the fourth run, two freshly restored native volumes
+escaped the first cleanup ledger. They were independently identified by exact
+generated namespace hashes matching that failed runner's paths, verified
+unmounted and removed; `/tmp/mote-policy-archive-joint4-cleanup-proof.json` records
+both. The final runner discovers published native descriptors before cleanup,
+and `/tmp/mote-policy-archive-joint-final-receipt.json` verifies zero remaining
+owned volumes/containers plus matching compiled file hashes.
+
+Before the next full gate, actual no-network/no-model native-constructor smoke
+passes under its exact executable `/opt/homebrew/Cellar/node/26.11.1/bin/node`,
+Node26.11.1/ABI147. Both root and mem0 resolve the working local
+`node_modules/better-sqlite3/lib/index.js`. The image separately passes under
+`/usr/local/bin/node`, Node24.22.0/ABI137, resolving `/app/node_modules` for both.
+Full resolved paths and constructor read/write receipts are in
+`/tmp/mote-policy-archive-node-abi-smoke.json` and
+`/tmp/mote-policy-archive-image-abi-smoke.json`; both exit markers are 0.
+No binary is copied between those environments.
+
+The final required command is rerun once after these narrow closures and this
+joint recovery. Its distinct evidence prefix is
+`/tmp/mote-policy-archive-close-required`; the preceding complete failed gate and
+all untouched-a2 RED remain unchanged. Final client union and later Joint
+contracts remain separate; this phase proves the bounded complete module2699.
