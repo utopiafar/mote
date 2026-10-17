@@ -368,3 +368,73 @@ is not one combined app-plus-Hindsight archive. The 103-case set has not been
 rerun at `f09e4f31`, and the full required affected gate is still **not accepted**.
 The declared Joint candidate remains bounded `2528a67d`, with final public/client
 freeze pending. These new results do not promote that candidate to whole acceptance.
+
+
+## Bounded parser composition: f6889867
+
+A newly declared independent consumer freeze,
+`/tmp/mote-parser-public-freeze.md`, contains the exact lineage
+`2528a67d` → tests `69243430e8db26856b3d91c70044821e31894962` → owner fix
+`caf0551975fac56347f5e944d2a7e3b7a06f61f8`. The verified local owner repository
+was fetched read-only; no peer files were edited. This lane merged only that
+three-file freeze into its own feature, producing clean composed candidate
+`f688986723bb0109f0c10b67f47d3df5cba2cc41`. The original owner retains the
+production fix; this lane made no independent shared-backend repair. The new
+production delta over `2528a67d` is only `scope/ingress-routes.ts`.
+
+This supersedes the **unfixed binary parser** status above. The parser owner's
+41/41 auth/Imports/ingress result belongs to its exact `caf05519` source and
+`/tmp/mote-parser-standalone-green.log/.exit`; it is separate peer evidence.
+Joint review was requested but remains unconfirmed. No owner-review acceptance,
+new whole Joint freeze or all-module acceptance is inferred from this composition.
+No Web cache, policy, configuration relogin, plugin, theme or client WIP was taken.
+
+Fresh execution from the same clean composed `f6889867` is:
+
+| Check | Exact current result |
+| --- | --- |
+| Previous 13-file recovery set plus full Files controls journey | 104/104, 0 skips, exit 0, 97.248 seconds; `/tmp/mote-recovery7-parser-composed-focused.log/.exit`. |
+| Six Processing admission/malformed/atomic-hook cases | 6/6, 0 skips, exit 0, 20.640 seconds; `/tmp/mote-recovery7-parser-processing-fixtures.log/.exit`. These six are distinct from the 104 cases. |
+| Server production compile | Exit 0; `/tmp/mote-recovery7-parser-composed-build.log/.exit`. |
+| Scripts noEmit | Exit 0; `/tmp/mote-recovery7-parser-composed-script-types.log/.exit`. |
+| New existing-dependency image overlay | Exit 0; `/tmp/mote-recovery7-parser-image-build.log/.exit`; current compiled Server replaced in an independently copied context. Input file hashes: `/tmp/mote-recovery7-parser-image-input-hashes.json`. |
+| Actual stopped instance/container restore and production restart | PASS, exit 0, two clean startup/shutdown cycles; `/tmp/mote-recovery7-parser-container.log/.exit`. |
+| Actual nonzero-generation container restore | 1/1, 0 skips, exit 0, 17.724 seconds; `/tmp/mote-recovery7-parser-generation-container.log/.exit`. Clean candidate and unchanged runner hash are in its JSON receipt. |
+| Actual native ManagedHindsight restore | PASS, exit 0; `/tmp/mote-recovery7-parser-hindsight.log/.exit`. |
+
+The newly compiled production image is
+`mote-recovery7-validation:parser-f6889867`, immutable ID
+`sha256:b1b99e099553e8bcb02ea2b2f7fbb6e105cb6635e88a238c9d2fa48612a7c92f`.
+Its source label is the exact composed candidate. The trusted dependency base
+remains `sha256:2e0a192ec624a902d9396a1b0308782a0018a6c02e3af70e279e3f526563d48b`;
+image creation used `--pull=false --network=none` and no install or download.
+The ordinary container runner retains two equal-ID A/B originals, unknown facts
+and identities while retiring old credentials/task authority, rejecting corrupt
+archives before Docker and preserving an occupied valid volume. The generation
+runner retains the 0→1→2→3 sequence, current bytes, old-intent and ticket fences,
+and B isolation through actual compiled startup and stopped readback. Native
+Hindsight restarts its real offline API, reopens the managed runtime, verifies
+two generated canonical bodies, rotates runtime identity and rejects old tokens;
+unknown operation facts persist and external model calls remain zero.
+All three Docker runs use independent random names/volumes and clean only their
+own labelled resources. They ran concurrently without observed test failures;
+no claim about absence of all-machine resource contention is made.
+
+The opt-in commands were the previously recorded commands with
+`MOTE_CONTAINER_VALIDATION_IMAGE=mote-recovery7-validation:parser-f6889867`,
+`MOTE_CONTAINER_VALIDATE_STARTUP=1` for `container-recovery.ts`, and
+`MOTE_RECOVERY_CANDIDATE=f688986723bb0109f0c10b67f47d3df5cba2cc41` for the
+nonzero-generation runner. `hindsight-recovery.ts` ran directly from clean
+`f6889867`. No old-image result is attributed to this new production source.
+
+The peer has also corrected its plugin status: transparent PID observation
+passes 2/2 in 3.799 seconds, while the old 10-second RED is unresolved. Joint is
+investigating an async marker open/write → empty string → PID 0 process-group
+probe false-negative. Those observations are **not a confirmed production
+process-retirement defect** and have not been independently rerun here.
+
+The full affected gate remains unaccepted; it has not been rerun at `f6889867`.
+Final M13/M15/Desktop and later Joint configuration/policy/profile changes are
+outside this bounded candidate. The lane continues tracking the next declared
+uniform candidate. The single combined app-plus-Hindsight archive boundary is
+still not claimed; native and app container restore are separately exercised.
