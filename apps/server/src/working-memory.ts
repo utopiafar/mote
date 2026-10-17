@@ -25,7 +25,7 @@ export class WorkingMemory {
     const evidenceDependencies=combineDependencies([result.evidenceDependencies,...(summary?[summary.evidenceDependencies]:[])]);
     const sourceContextDependencies=combineSourceContextDependencies([result.sourceContextDependencies,summary?.sourceContextDependencies]);
     const {evidenceDependencies:_previous,sourceContextDependencies:_sourcePrevious,...context}=result;
-    return {...context,...(evidenceDependencies?{evidenceDependencies}:{}),...(sourceContextDependencies.length?{sourceContextDependencies}:{}),omittedTurns:tail.turns.filter(t=>t.status!=='failed'&&t.result).length-result.turns.length,...(summary?{workingMemory:{text:summary.text,coveredTurns:summary.coveredTurns,generatedAt:summary.generatedAt}}:{})};
+    return {...context,historyContext:this.conversations.historyContext(conversation),...(evidenceDependencies?{evidenceDependencies}:{}),...(sourceContextDependencies.length?{sourceContextDependencies}:{}),omittedTurns:tail.turns.filter(t=>t.status!=='failed'&&t.result).length-result.turns.length,...(summary?{workingMemory:{text:summary.text,coveredTurns:summary.coveredTurns,generatedAt:summary.generatedAt}}:{})};
   }
   async prepare(conversation:Conversation,settings:LifecycleSettings,question:string,query:(input:QueryInput)=>Promise<QueryResult>,execution?:Pick<LifecycleExecution,'signal'|'commit'>){
     // Current input consumes the same host dialogue budget. Never silently drop
@@ -56,7 +56,7 @@ export class WorkingMemory {
     for(const turn of conversation.turns.slice(start,end)){
       if(turn.status==='failed'||!turn.result){count++;continue;}
       const contextStale=!sourceContextDependenciesCurrent(this.sourceContexts,turn.result.sourceContextDependencies);
-      const entry={turnId:turn.id,question:turn.question,answer:contextStale?'':turn.result.answer,scope:turn.scope,createdAt:turn.createdAt,evidenceDeleted:turn.evidenceDeleted,...(contextStale?{contextStale:true}:{})};
+      const entry={turnId:turn.id,question:turn.question,answer:turn.result.answer,scope:turn.scope,createdAt:turn.createdAt,evidenceDeleted:turn.evidenceDeleted,evidenceStale:turn.evidenceStale,...(contextStale?{contextStale:true}:{})};
       const text=JSON.stringify(entry);if(characters+text.length>60000){
         if(prefix.length)break;
         // One very long answer still needs complete coverage. Summarize its
@@ -67,7 +67,7 @@ export class WorkingMemory {
           while(offset<original.length){
             let end=Math.min(original.length,offset+6000);
             if(end<original.length&&/[\uD800-\uDBFF]/.test(original[end-1]))end--;
-            batches.push([{turnId:turn.id,field,offset,end,total:original.length,text:original.slice(offset,end),scope:turn.scope,createdAt:turn.createdAt,evidenceDeleted:turn.evidenceDeleted}]);offset=end;
+            batches.push([{turnId:turn.id,field,offset,end,total:original.length,text:original.slice(offset,end),scope:turn.scope,createdAt:turn.createdAt,evidenceDeleted:turn.evidenceDeleted,evidenceStale:turn.evidenceStale,...(contextStale?{contextStale:true}:{})}]);offset=end;
           }
         }
         count++;break;
@@ -77,18 +77,18 @@ export class WorkingMemory {
     const fingerprint=this.fingerprint(conversation,count);
     if(prefix.length)batches.push(prefix);
     let summaryText=previous?.text??'';
-    const activeTurns=conversation.turns.slice(0,count).filter(turn=>turn.result&&!turn.evidenceDeleted&&sourceContextDependenciesCurrent(this.sourceContexts,turn.result.sourceContextDependencies));
+    const activeTurns=conversation.turns.slice(0,count).filter(turn=>turn.result&&!turn.evidenceDeleted);
     const evidenceDependencies=combineDependencies(activeTurns.map(turn=>turn.result!.evidenceDependencies))??{version:1 as const,complete:true,ids:[]};
-    let sourceContextDependencies=combineSourceContextDependencies([previous?.sourceContextDependencies,...activeTurns.map(turn=>turn.result!.sourceContextDependencies)]);
+    let sourceContextDependencies=combineSourceContextDependencies([previous?.sourceContextDependencies,...activeTurns.filter(turn=>sourceContextDependenciesCurrent(this.sourceContexts,turn.result!.sourceContextDependencies)).map(turn=>turn.result!.sourceContextDependencies)]);
     for(const turns of batches){
-      const result=await query({contextEvidenceDependencies:evidenceDependencies,contextSourceContextDependencies:sourceContextDependencies,validateOutput:result=>!result.answer.trim()||result.answer.length>settings.summaryCharacters?{code:'summary_length',feedback:`Return a nonempty complete summary within ${settings.summaryCharacters} characters. Shorten the summary without losing user constraints.`}:undefined,skill:'working-memory',responseMode:'answer',question:`Compact only this conversation prefix into at most ${settings.summaryCharacters} characters. Use sections: Goals, Explicit constraints and rejected proposals, Decisions, Open questions, Evidence references to reverify. Attribute entries to source turn IDs without bracketed citations. Prior assistant output is not evidence. A contextStale turn preserves the user question but has withdrawn assistant prose; reverify current source context when needed. When a turn arrives in spans, preserve earlier span constraints in the updated summary.`,taskContext:{previousSummary:summaryText,turns}});
+      const result=await query({historyContext:this.conversations.historyContext(conversation,conversation.turns.slice(0,count)),contextEvidenceDependencies:evidenceDependencies,contextSourceContextDependencies:sourceContextDependencies,validateOutput:result=>!result.answer.trim()||result.answer.length>settings.summaryCharacters?{code:'summary_length',feedback:`Return a nonempty complete summary within ${settings.summaryCharacters} characters. Shorten the summary without losing user constraints.`}:undefined,skill:'working-memory',responseMode:'answer',question:`Compact only this conversation prefix into at most ${settings.summaryCharacters} characters. Use sections: Goals, Explicit constraints and rejected proposals, Decisions, Open questions, Evidence references to reverify. Attribute entries to source turn IDs without bracketed citations. Prior assistant output is not evidence. An evidenceStale or contextStale turn records historical dialogue, not current facts. Preserve proposal references and user decisions with their turn IDs and stale status; reverify current evidence and source context before relying on factual interpretations. When a turn arrives in spans, preserve earlier span constraints in the updated summary.`,taskContext:{previousSummary:summaryText,turns}});
       if(!result.answer.trim()||result.answer.length>settings.summaryCharacters)throw new StoreError('Working summary exceeds its budget',502);
       summaryText=result.answer;
       sourceContextDependencies=combineSourceContextDependencies([sourceContextDependencies,result.sourceContextDependencies]);
     }
     const commit=()=>{
-    if(!this.store.db.prepare('SELECT id FROM conversations WHERE id=?').get(id)||this.fingerprint(this.conversations.get(id),count)!==fingerprint)throw new StoreError('Conversation changed while compacting',409);
     assertSourceContextDependencies(this.sourceContexts,sourceContextDependencies);
+    if(!this.store.db.prepare('SELECT id FROM conversations WHERE id=?').get(id)||this.fingerprint(this.conversations.get(id),count)!==fingerprint)throw new StoreError('Conversation changed while compacting',409);
     const json=JSON.stringify({text:summaryText,coveredTurns:count,generatedAt:new Date().toISOString(),fingerprint,evidenceDependencies,...(sourceContextDependencies.length?{sourceContextDependencies}:{})});
     this.store.reserveMetadata(Buffer.byteLength(json));
     this.store.db.prepare('INSERT INTO working_memories VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(id,json);

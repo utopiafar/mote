@@ -237,7 +237,16 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
   ]));
   const contextFailure=(code:'context_lineage_incomplete'|'context_evidence_restricted')=>Object.assign(new StoreError(code,409),{code});
   const sourceContextDependencies=(input:QueryInput|undefined)=>combineSourceContextDependencies([input?.conversation?.sourceContextDependencies,input?.contextSourceContextDependencies]);
+  const modelContextGroups=(input:QueryInput|undefined)=>{
+    const historicalIds=new Set(input?.conversation?.historyContext?input.conversation.evidenceDependencies?.ids:[]);
+    return [
+    ...(input?.conversation?[{ids:(input.conversation.historyContext?.evidenceDependencies??input.conversation.evidenceDependencies)?.ids??[],historical:Boolean(input.conversation.historyContext)}]:[]),
+    ...(input?.contextEvidenceDependencies?[{ids:input.historyContext?input.historyContext.evidenceDependencies.ids:input.contextEvidenceDependencies.ids.filter(id=>!historicalIds.has(id)),historical:Boolean(input.historyContext)}]:[]),
+    ...(input?.derivedContextEvidenceIds?[{ids:input.derivedContextEvidenceIds,historical:false}]:[]),
+    ].map(group=>({...group,ids:resolveDependencies(store,{version:1,complete:true,ids:[...group.ids]})!.ids}));
+  };
   const assertModelContext=(input:QueryInput|undefined)=>{
+    for(const snapshot of [input?.historyContext,input?.conversation?.historyContext])if(snapshot){conversations.assertHistoryContext(snapshot);if(!snapshot.evidenceDependencies.complete)throw contextFailure('context_lineage_incomplete');}
     assertSourceContextDependencies(sourceContexts,sourceContextDependencies(input));
     if(input?.derivedContextEvidenceIds?.some(id=>!evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy())))throw new StoreError('Derived context evidence is no longer permitted for this model',409);
     const conversationText=Boolean(input?.conversation?.workingMemory?.text||input?.conversation?.turns.some(turn=>!turn.evidenceDeleted&&turn.answer));
@@ -255,7 +264,7 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
     }
     // Derived nodes remain in the fence alongside every original ancestor.
     // Private metadata checks never disclose bodies or grant raw reads.
-    if(!evidenceReader.contextDependenciesAllowed(contextDependencies(input)?.ids??[],new EvidenceExposurePolicy()))throw contextFailure('context_evidence_restricted');
+    for(const group of modelContextGroups(input))if(!evidenceReader.contextDependenciesAllowed(group.ids,new EvidenceExposurePolicy(),group.historical))throw contextFailure('context_evidence_restricted');
     // The bridge may already hold restricted originals while deletion or a
     // Formal input/owner declaration changes. Check the frozen Memory grant at
     // every outbound request as well as before entering the agent; publication
@@ -267,12 +276,12 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
   const assertModelEvidenceAsync=async(input:QueryInput)=>{
     input.assertContextAuthority?.();
     assertModelContext(input);
-    const ids=contextDependencies(input)?.ids??[],policy=new EvidenceExposurePolicy();
+    const policy=new EvidenceExposurePolicy();
     // This is scheduling granularity, not a scope or processing limit. Inspect
     // every dependency while allowing lease renewal, cancellation and intake.
-    for(let offset=0;offset<ids.length;offset+=256){
+    for(const group of modelContextGroups(input))for(let offset=0;offset<group.ids.length;offset+=256){
       input.signal?.throwIfAborted();
-      if(!evidenceReader.contextDependenciesAllowed(ids.slice(offset,offset+256),policy))throw contextFailure('context_evidence_restricted');
+      if(!evidenceReader.contextDependenciesAllowed(group.ids.slice(offset,offset+256),policy,group.historical))throw contextFailure('context_evidence_restricted');
       await yieldEventLoop();
     }
     input.signal?.throwIfAborted();
@@ -567,7 +576,10 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
       const evidenceDependencies=resolveDependencies(store,combineDependencies([contextDependencies(input),result.evidenceDependencies]));
       // Metadata/declaration reads also pin their original Material lineage.
       // They need correction fences even when no original quote was expanded.
-      if(evidenceDependencies)assertModelEvidence({question:'',contextEvidenceDependencies:evidenceDependencies});
+      if(evidenceDependencies){
+        const historicalIds=new Set([...(input.conversation?.historyContext?input.conversation.evidenceDependencies?.ids??[]:[]),...(input.historyContext?input.contextEvidenceDependencies?.ids??[]:[])]);
+        assertModelEvidence({question:'',contextEvidenceDependencies:{...evidenceDependencies,ids:evidenceDependencies.ids.filter(id=>!historicalIds.has(id))}});
+      }
       const sourcePins=combineSourceContextDependencies([disclosedSourcePins,result.sourceContextDependencies]);
       assertSourceContextDependencies(sourceContexts,sourcePins);
       // A long-running review may overlap routine imports and derived-layer updates.
@@ -760,7 +772,7 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
       if(saved.configurationFingerprint!==current.fingerprint)throw new StoreError('Query model configuration changed',409);
       assertModelEvidence(saved.prepared);
     };
-    const assertResult=(result:QueryResult)=>{assertModelEvidence({question:'',contextEvidenceDependencies:result.evidenceDependencies});assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies);};
+    const assertResult=(result:QueryResult)=>{assertModelEvidence({...delegation.journal.payload<SavedQuery>(work.id).prepared!,contextEvidenceDependencies:result.evidenceDependencies});assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies);};
     return {assertCurrent,read:stage=>{
       assertCurrent();const result=delegation.journal.payload<SavedQuery>(work.id).qualityStages?.[stage];if(result)assertResult(result);return result;
     },write:(stage,result)=>{

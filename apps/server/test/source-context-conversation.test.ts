@@ -18,7 +18,7 @@ const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',h
 const answer=(text:string,pins:SourceContextDeclaration[]=[])=>({answer:text,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[] as string[]},...(pins.length?{sourceContextDependencies:pins}:{})});
 const agent=(query:QueryAgent['query']):QueryAgent=>({configured:true,query,close:async()=>{}});
 
-test('source-only answers survive restart as history but withdraw obsolete prose from follow-up context',async t=>{
+test('source-only answers survive restart with stale status and historical prose in follow-up context',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-source-dialogue-')),seen:QueryInput[]=[];
   let pin:SourceContextDeclaration;
   let running=await buildApp(config(dir),{agent:agent(async input=>{seen.push(input);return answer('Generated source description interpretation',[pin]);})});
@@ -36,7 +36,7 @@ test('source-only answers survive restart as history but withdraw obsolete prose
   assert.equal(second.statusCode,200);
   const previous=seen.at(-1)!.conversation!;
   assert.equal(previous.turns[0].question,'Keep my explicitly stated fixture constraint');
-  assert.equal(previous.turns[0].answer,'');assert.equal(previous.turns[0].contextStale,true);
+  assert.equal(previous.turns[0].answer,'Generated source description interpretation');assert.equal(previous.turns[0].evidenceStale,true);assert.equal(previous.turns[0].contextStale,true);
   assert.equal(previous.omittedTurns,0);assert.deepEqual(previous.evidenceDependencies,{version:1,complete:true,ids:[]});
   assert.equal(previous.sourceContextDependencies,undefined);
   const history=(await running.app.inject({url:`/api/conversations/${conversationId}`,headers})).json();

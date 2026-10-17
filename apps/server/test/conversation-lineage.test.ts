@@ -56,8 +56,8 @@ for(const operation of ['delete','prune','revise'] as const)test(`${operation} i
  assert.ok(summaryB?.evidenceDependencies?.ids.includes(ids[1]));
  if(operation==='delete')store.delete(ids[0]);else if(operation==='prune')store.prune('2026-09-10T00:00:00Z');else store.invalidateMemoryEvidence(ids[0]);
  const updatedA=conversations.get(a.conversationId),updatedB=conversations.get(b.conversationId);
- assert.ok(updatedA.turns.every(turn=>turn.evidenceDeleted));assert.equal(updatedA.turns[1].id,a2.turnId);assert.equal(working.get(updatedA),undefined);
- assert.equal(conversations.get(legacy.conversationId).turns[0].evidenceDeleted,true);
+ assert.ok(updatedA.turns.every(turn=>operation==='revise'?turn.evidenceStale&&!turn.evidenceDeleted&&turn.result?.answer==='Generated derived answer':turn.evidenceDeleted));assert.equal(updatedA.turns[1].id,a2.turnId);assert.equal(working.get(updatedA),undefined);
+ assert.equal(conversations.get(legacy.conversationId).turns[0][operation==='revise'?'evidenceStale':'evidenceDeleted'],true);
  assert.deepEqual(updatedB,beforeB);assert.deepEqual(working.get(updatedB),summaryB);
 });
 

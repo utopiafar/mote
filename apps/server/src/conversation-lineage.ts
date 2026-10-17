@@ -25,3 +25,23 @@ export function resolveDependencies(store:Store,value:EvidenceDependencies|undef
   ) SELECT id FROM ancestors`).all(JSON.stringify(value.ids));
   return {...value,ids:rows.map(row=>String(row.id))};
 }
+
+/** Dialogue retains its full privacy lineage, including disposable derived IDs.
+ * Permission checks use the retained original roots instead of requiring an old
+ * cache entry to exist. These receipts grant no original reads or citations. */
+export function historyEvidenceDependencies(store:Store,value:EvidenceDependencies|undefined,inherited:readonly {result?:{evidenceDependencies?:EvidenceDependencies};historyEvidenceDependencies?:EvidenceDependencies}[]=[]):EvidenceDependencies|undefined {
+  if(!value)return;
+  const encoded=JSON.stringify(value.ids),exists=(name:string)=>Boolean(store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
+  const roots=new Set(store.db.prepare(`SELECT id FROM captures WHERE id IN (SELECT value FROM json_each(?))
+    ${exists('material_evidence')?'UNION SELECT id FROM material_evidence WHERE id IN (SELECT value FROM json_each(?))':''}`)
+    .all(...(exists('material_evidence')?[encoded,encoded]:[encoded])).map(row=>String(row.id)));
+  const known=new Set(roots),selected=new Set(value.ids);
+  for(const table of ['memories','context_artifacts','file_artifacts','file_chunks'])if(exists(table))for(const row of store.db.prepare(`SELECT id FROM ${table} WHERE id IN (SELECT value FROM json_each(?))`).all(encoded))known.add(String(row.id));
+  let complete=value.complete;
+  for(const turn of inherited){
+    const ids=turn.result?.evidenceDependencies?.ids??[],receipt=turn.historyEvidenceDependencies;
+    if(!receipt||!ids.some(id=>selected.has(id)))continue;
+    complete&&=receipt.complete;for(const id of ids)known.add(id);for(const id of receipt.ids)roots.add(id);
+  }
+  return {version:1,complete:complete&&value.ids.every(id=>known.has(id))&&(!value.ids.length||roots.size>0),ids:[...roots]};
+}

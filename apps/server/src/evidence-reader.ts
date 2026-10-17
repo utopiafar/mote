@@ -550,13 +550,13 @@ export class EvidenceReader {
   /** Validate every disclosed dependency without loading its body. Reuse only
    * within this synchronous check: the next external request/commit gets a fresh
    * view, including current source tombstones and attachment/Material policy. */
-  contextDependenciesAllowed(ids:readonly string[],policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy):boolean {
+  contextDependenciesAllowed(ids:readonly string[],policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy,historical=false):boolean {
     const selected=[...new Set(ids)],encoded=JSON.stringify(selected),db=this.store.db;
     if(!selected.length)return true;
     const anchors=this.materials?db.prepare(`SELECT e.id,e.material_id,e.revision,e.block_id FROM material_evidence e
       JOIN json_each(?) wanted ON wanted.value=e.id JOIN material_heads h ON h.id=e.material_id
       JOIN material_revisions r ON r.material_id=e.material_id AND r.revision=e.revision
-      WHERE h.retired=0 AND r.sequence>=h.min_visible_sequence AND (
+      WHERE h.retired=0 AND ${historical?'1':'r.sequence>=h.min_visible_sequence'} AND (
         EXISTS(SELECT 1 FROM material_blocks b WHERE b.material_id=e.material_id AND b.revision=e.revision AND b.block_id=e.block_id)
         OR EXISTS(SELECT 1 FROM material_block_versions b WHERE b.material_id=e.material_id AND b.from_revision=e.revision AND b.block_id=e.block_id AND b.anchor_id=e.id))`)
       .all(encoded) as {id:string;material_id:string;revision:string;block_id:string}[]:[];
@@ -582,7 +582,7 @@ export class EvidenceReader {
     for(const id of selected){
       const capture=captures.get(id);if(capture){if(!allowRecord(capture))return false;continue;}
       const anchor=anchorMap.get(id);
-      if(anchor){const prior=material(`material:${anchor.material_id}@${anchor.revision}`),current=prior&&material(prior.id);
+      if(anchor){const prior=material(historical?anchor.material_id:`material:${anchor.material_id}@${anchor.revision}`),current=prior&&material(prior.id);
         if(!prior||!current||!attachment(id)||tombstone(prior.origin.sourceId,prior.id)||!allowMaterial(current))return false;continue;}
       const chunk=chunkMap.get(id);
       if(chunk){if(!fileAllowed.has(chunk.capture_id)){const parent=captures.get(chunk.capture_id);fileAllowed.set(chunk.capture_id,Boolean(parent&&allowRecord({...parent,id,provenance:parent.provenance?{...parent.provenance,layer:'derived'}:undefined},chunk.capture_id)));}if(!fileAllowed.get(chunk.capture_id))return false;continue;}

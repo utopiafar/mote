@@ -224,9 +224,9 @@ for(const manual of [false,true])test(`confirmed ${manual?'manual':'model'} text
   const after=f.files.chunks(f.id);
   assert.equal(after[1].id,raw[1].id,'the unedited segment keeps its immutable evidence identity');
   assert.equal(memoryEvidenceFingerprint(after[1]),stableFingerprint);
-  assert.equal(conversations.get(answers[0].conversationId).turns[0].evidenceDeleted,true);
-  assert.equal(conversations.get(derivedAnswers[0].conversationId).turns[0].evidenceDeleted,true,'aggregate material read depends on the changed segment even without citations');
-  assert.equal(conversations.get(derivedAnswers[1].conversationId).turns[0].evidenceDeleted,true,'derived memory read retains its segment lineage');
+  assert.equal(conversations.get(answers[0].conversationId).turns[0].evidenceStale,true);
+  assert.equal(conversations.get(derivedAnswers[0].conversationId).turns[0].evidenceStale,true,'aggregate material read depends on the changed segment even without citations');
+  assert.equal(conversations.get(derivedAnswers[1].conversationId).turns[0].evidenceStale,true,'derived memory read retains its segment lineage');
   assert.equal(conversations.get(derivedAnswers[2].conversationId).turns[0].result?.answer,'Generated derived answer');
   assert.equal(conversations.get(answers[1].conversationId).turns[0].result?.answer,'Generated answer '+raw[1].id);
   assert.notEqual(after[0].id,raw[0].id);assert.match(after[0].ocrText,/Cordis/);

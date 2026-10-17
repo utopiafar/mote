@@ -31,7 +31,9 @@ test('server conversations survive restart, preserve follow-up dialogue and allo
   const next=await running.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId,question:'继续解释它'}});
   assert.equal(next.statusCode,200);assert.equal(next.json().conversationId,conversationId);assert.notEqual(next.json().turnId,turnId);
   assert.equal(seen[1].deviceId,undefined);assert.equal(seen[1].after,undefined);assert.equal(seen[1].before,undefined);assert.equal(seen[1].timeZone,scope.timeZone);
-  assert.deepEqual(seen[1].conversation,{turns:[{question:'关于我那份合成观测笔记',answer:'Synthetic first answer',scope,createdAt:seen[1].conversation!.turns[0].createdAt}],omittedTurns:0,evidenceDependencies:{version:1,complete:true,ids:[]}});
+  assert.equal(seen[1].conversation!.historyContext?.conversationId,conversationId);
+  const {historyContext:_authority,...visibleContext}=seen[1].conversation!;
+  assert.deepEqual(visibleContext,{turns:[{question:'关于我那份合成观测笔记',answer:'Synthetic first answer',scope,createdAt:seen[1].conversation!.turns[0].createdAt}],omittedTurns:0,evidenceDependencies:{version:1,complete:true,ids:[]}});
   const detail=(await running.app.inject({url:`/api/conversations/${conversationId}`,headers})).json();
   assert.equal(detail.turnCount,2);assert.deepEqual(detail.turns.map((turn:any)=>turn.question),['关于我那份合成观测笔记','继续解释它']);
   assert.equal(detail.turns[0].result.answer,'Synthetic first answer');

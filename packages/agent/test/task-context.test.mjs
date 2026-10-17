@@ -190,3 +190,11 @@ test('large host task context is retained and measured without local character r
  const draft='x'.repeat(181000),assembled=assembleContext({question:'Generated',taskContext:{turns:[],draft}},[],'system',[],4096),wire=JSON.parse(assembled.prompt);
  assert.equal(wire.untrustedTaskContext.draft,draft);assert.ok(assembled.metrics.task>180000);assert.equal(wire.contextBudget,undefined);assert.equal(wire.maxToolCalls,undefined);
 });
+
+test('historical dialogue status is visible while its privacy and permission receipts remain host-only',()=>{
+ const dependencies={version:1,complete:true,ids:['generated-private-root']},historyContext={conversationId:'generated-private-conversation',revision:1,evidenceDependencies:dependencies};
+ const envelope=buildContextEnvelope({question:'Explain an earlier proposal',historyContext,conversation:{historyContext,evidenceDependencies:dependencies,turns:[{question:'Generated',answer:'The second proposal was a glider.',scope:{},createdAt:'2026-10-01T00:00:00Z',evidenceStale:true}],omittedTurns:0}},[]);
+ assert.equal(envelope.conversation.turns[0].evidenceStale,true);assert.match(envelope.conversation.turns[0].answer,/second proposal/);
+ assert.doesNotMatch(JSON.stringify(envelope),/generated-private-root|generated-private-conversation|historyContext|evidenceDependencies/);
+ assert.match(systemInstructions({question:'Generated follow-up'},[]),/resolve earlier proposals.*never as verified current facts/);
+});

@@ -181,11 +181,15 @@ export interface QueryInput {
   before?: string;
   deviceId?: string;
   timeZone?: string;
+  /** Host-only dialogue snapshot for compaction; never an original-read grant. */
+  historyContext?:{conversationId:string;revision:number;evidenceDependencies:import('@mote/shared').EvidenceDependencies};
   /** Server-owned dialogue context. Earlier model prose is not original evidence. */
   conversation?: {
+    /** Host-only immutable dialogue snapshot and original permission roots. */
+    historyContext?:NonNullable<QueryInput['historyContext']>;
     evidenceDependencies?:import('@mote/shared').EvidenceDependencies;
     sourceContextDependencies?:{sourceId:string;version:number;fingerprint:string}[];
-    turns: {question:string;answer:string;scope:{after?:string;before?:string;deviceId?:string;timeZone?:string};createdAt:string;answerTruncated?:boolean;evidenceDeleted?:boolean;contextStale?:boolean;attachments?:{id:string;name:string;mimeType:string}[]}[];
+    turns: {question:string;answer:string;scope:{after?:string;before?:string;deviceId?:string;timeZone?:string};createdAt:string;answerTruncated?:boolean;evidenceDeleted?:boolean;evidenceStale?:boolean;contextStale?:boolean;attachments?:{id:string;name:string;mimeType:string}[]}[];
     omittedTurns:number;
     workingMemory?:{text:string;coveredTurns:number;generatedAt:string};
   };

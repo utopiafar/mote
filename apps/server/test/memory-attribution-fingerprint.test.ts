@@ -65,7 +65,7 @@ test('description-only source changes fence raw and ASR Memory extraction and cl
   for(let index=0;index<ids.length;index++)assert.throws(()=>memories.extract(pending[index],'fixture',{expectedFingerprints:{[ids[index]]:fingerprints[ids[index]]}}),{statusCode:409,message:'Memory evidence changed during extraction'});
   for(const memory of saved)assert.equal(memories.get(memory.id).status,'stale');
   assert.equal(memories.page({layer:'memory'}).items.length,0);
-  for(const answer of answers){const turn=conversations.get(answer.conversationId).turns[0];assert.equal(turn.evidenceDeleted,true);assert.ok(!turn.result?.answer.includes('Generated answer from a derived memory'));assert.equal(turn.question,'Generated question');}
+  for(const answer of answers){const turn=conversations.get(answer.conversationId).turns[0];assert.equal(turn.evidenceDeleted,undefined);assert.equal(turn.evidenceStale,true);assert.equal(turn.result?.answer,'Generated answer from a derived memory');assert.equal(turn.question,'Generated question');}
   const currentFingerprints=Object.fromEntries(current.map(record=>[record.id,memoryEvidenceFingerprint(record)])),pendingRevision=ids.map(id=>resultFor(id)),chunks=store.db.prepare('SELECT * FROM file_chunks').all();
   sources.updateContext(sourceId,{expectedVersion:1,description:'Updated generated phone call description.'});
   for(let index=0;index<ids.length;index++){

@@ -1004,7 +1004,7 @@ export class MaterialStore {
       const head=this.head(id);if(!head)throw new StoreError('Material not found',404);
       if(head.retired){if(ownTransaction)db.exec('COMMIT');return {id,revision:head.revision,retired:true};}
       if(head.revision!==options.expectedRevision)throw new StoreError('Material revision changed; refresh and retry',409);
-      this.setSearchable(id,false);for(const anchor of this.evidenceIds(id))this.store.invalidateMemoryEvidence(anchor);
+      this.setSearchable(id,false);this.store.invalidateConversationAnswers(this.store.db.prepare('SELECT id FROM material_evidence WHERE material_id=?').all(id).map(row=>String(row.id)),true);for(const anchor of this.evidenceIds(id))this.store.invalidateMemoryEvidence(anchor);
       const now=new Date().toISOString(),revision=hash(JSON.stringify(['retire',id,head.revision])),sequence=head.sequence+1;
       db.prepare('INSERT INTO material_revisions VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,revision,sequence,JSON.stringify({id,kind:head.kind,retired:true}),now,0,0,0,0,null);
       db.prepare('UPDATE material_heads SET revision=?,sequence=?,retired=1,updated_at=? WHERE id=?').run(revision,sequence,now,id);

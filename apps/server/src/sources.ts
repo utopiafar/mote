@@ -104,7 +104,7 @@ export class SourceStore {
         if(!ack.duplicate)this.memoryInputs?.receive({sourceId,inputKey:id,captureId:id},!item.deleted);
         if(!head||Date.parse(item.observedAt)>=Date.parse(head.observed_at)){
           this.store.db.prepare('INSERT INTO source_heads(source_id,external_id,capture_id,observed_at,deleted) VALUES(?,?,?,?,?) ON CONFLICT(source_id,external_id) DO UPDATE SET capture_id=excluded.capture_id,observed_at=excluded.observed_at,deleted=excluded.deleted').run(sourceId,item.externalId,id,new Date(item.observedAt).toISOString(),Number(item.deleted));
-          if(head){this.store.invalidateMemoryEvidence(head.capture_id);this.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(head.capture_id,new Date().toISOString());}
+          if(head){this.store.invalidateMemoryEvidence(head.capture_id);if(item.deleted)this.store.invalidateConversationAnswers(this.store.db.prepare('SELECT capture_id FROM source_versions WHERE source_id=? AND external_id=?').all(sourceId,item.externalId).map(row=>String(row.capture_id)),true);this.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(head.capture_id,new Date().toISOString());}
         }
       }
       transaction?.(ack,index);

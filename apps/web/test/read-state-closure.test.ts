@@ -281,3 +281,17 @@ test('image progress keeps ready OCR visible after vision failure and reports a 
  assert.equal(state('文字识别'),'已就绪');assert.equal(state('内容理解'),'处理失败');assert.equal(state('记忆（Memory）'),'已完成，未生成新记忆');assert.equal(writes.length,0);
  await act(async()=>button(d,'补齐未完成步骤').click());assert.deepEqual(writes,[{mode:'complete',confirmUnknown:false}]);
 });
+
+test('ordinary evidence revisions preserve the visible historical answer and citation; later deletion clears both',async t=>{
+ const {root,d}=await fixture(t);let revision=1;
+ const api=apiWith(path=>{
+  if(path==='/api/conversations?limit=30')return {items:[summary('generated-history')]};if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/conversations/generated-history')return {...summary('generated-history'),revision,nextCursor:null,turns:[{id:'generated-turn',question:'Generated original question',status:'completed',createdAt:when,evidenceStale:revision===2,evidenceDeleted:revision===3,result:{answer:revision===3?'Cleared':'GENERATED HISTORICAL PROPOSAL',citations:revision===3?[]:[{id:'generated-original',excerpt:'GENERATED OLD QUOTE'}],trace:[],runId:'generated-history'}}]};return {items:[]};
+ });
+ await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:(answer:any)=>answer.answer+' '+answer.citations.map((citation:any)=>citation.excerpt).join(' ')})));
+ await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());
+ revision=2;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/conversations')));
+ assert.match(d.body.textContent!,/这是历史版本，当前资料已更新/);assert.match(d.body.textContent!,/GENERATED HISTORICAL PROPOSAL.*GENERATED OLD QUOTE/);
+ revision=3;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/conversations')));
+ assert.match(d.body.textContent!,/相关证据已删除/);assert.doesNotMatch(d.body.textContent!,/GENERATED HISTORICAL PROPOSAL|GENERATED OLD QUOTE/);
+});

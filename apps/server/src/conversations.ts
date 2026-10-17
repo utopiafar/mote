@@ -2,12 +2,12 @@ import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {Store,StoreError} from './store.js';
-import {combineDependencies,resolveDependencies} from './conversation-lineage.js';
+import {combineDependencies,resolveDependencies,historyEvidenceDependencies} from './conversation-lineage.js';
 import {SourceContextStore} from './source-context.js';
 import {assertSourceContextDependencies,combineSourceContextDependencies,sourceContextDependenciesCurrent} from './source-context-lineage.js';
 
 export type ConversationScope = Pick<QueryInput,'after'|'before'|'deviceId'|'timeZone'>;
-export type ConversationTurn = {id:string;question:string;scope:ConversationScope;result?:QueryResult;status:'completed'|'failed';error?:{code:string;message:string};createdAt:string;evidenceDeleted?:boolean;attachments?:{id:string;name:string;mimeType:string}[]};
+export type ConversationTurn = {id:string;question:string;scope:ConversationScope;result?:QueryResult;status:'completed'|'failed';error?:{code:string;message:string};createdAt:string;evidenceDeleted?:boolean;evidenceStale?:boolean;historyEvidenceDependencies?:QueryResult['evidenceDependencies'];attachments?:{id:string;name:string;mimeType:string}[]};
 export type ConversationSummary = {id:string;title:string;createdAt:string;updatedAt:string;turnCount:number;scope:ConversationScope;status:'completed'|'failed'};
 export type Conversation = ConversationSummary & {turns:ConversationTurn[];revision?:number};
 type Row = {id:string;title:string;created_at:string;updated_at:string;json:string};
@@ -19,7 +19,12 @@ export class Conversations {
   constructor(private readonly store:Store) {
     this.sourceContexts=new SourceContextStore(store);
     store.db.exec(`CREATE TABLE IF NOT EXISTS conversation_turns(conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,idx INTEGER NOT NULL,id TEXT NOT NULL UNIQUE,json TEXT NOT NULL,PRIMARY KEY(conversation_id,idx));`);
-
+    // Capture original permission roots before subsequent cache eviction can
+    // remove a derived node. Do not reconstruct already-erased answer content.
+    for(const row of store.db.prepare("SELECT id,conversation_id,json FROM conversation_turns WHERE json_extract(json,'$.result') IS NOT NULL AND coalesce(json_extract(json,'$.evidenceDeleted'),0)!=1 AND json_extract(json,'$.historyEvidenceDependencies') IS NULL").all()){
+      const turn=JSON.parse(String(row.json)) as ConversationTurn,receipt=historyEvidenceDependencies(store,resolveDependencies(store,turn.result?.evidenceDependencies));
+      if(receipt){const growth=Buffer.byteLength(JSON.stringify({...turn,historyEvidenceDependencies:receipt}))-Buffer.byteLength(String(row.json));store.reserveMetadata(Math.max(0,growth));store.db.prepare("UPDATE conversation_turns SET json=json_set(json,'$.historyEvidenceDependencies',json(?)) WHERE id=?").run(JSON.stringify(receipt),row.id);store.db.prepare("UPDATE conversations SET json=json_set(json,'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?) WHERE id=?").run(growth,row.conversation_id);}
+    }
   }
 
   list({limit=50,cursor}:{limit?:number;cursor?:string}={}) {
@@ -49,7 +54,7 @@ export class Conversations {
     if(!row)throw new StoreError('Conversation not found',404);
     const value=JSON.parse(row.json);
     const rows=this.store.db.prepare('SELECT idx,json FROM conversation_turns WHERE conversation_id=? AND idx<? ORDER BY idx DESC LIMIT ?').all(id,before??value.turnCount,limit).reverse();
-    const turns=rows.map(r=>JSON.parse(String(r.json)) as ConversationTurn);
+    const turns=rows.map(r=>{const turn=JSON.parse(String(r.json)) as ConversationTurn;return !turn.evidenceDeleted&&turn.result&&!sourceContextDependenciesCurrent(this.sourceContexts,turn.result.sourceContextDependencies)?{...turn,evidenceStale:true}:turn;});
     return {id:row.id,title:row.title,createdAt:row.created_at,updatedAt:row.updated_at,scope:value.scope,turnCount:value.turnCount,status:value.status,revision:value.revision,turns,firstIndex:Number(rows[0]?.idx??0)};
   }
 
@@ -57,7 +62,8 @@ export class Conversations {
     assertSourceContextDependencies(this.sourceContexts,result.sourceContextDependencies);
     const {question,attachments,...scope}=input,now=new Date().toISOString();
     const evidenceDependencies=resolveDependencies(this.store,result.evidenceDependencies);
-    const turn:ConversationTurn={id:randomUUID(),question,scope,result:{...result,...(evidenceDependencies?{evidenceDependencies}:{})},status:'completed',createdAt:now,...(attachments?.length?{attachments}:{})};
+    const history=historyEvidenceDependencies(this.store,evidenceDependencies,previous?.turns);
+    const turn:ConversationTurn={id:randomUUID(),question,scope,result:{...result,...(evidenceDependencies?{evidenceDependencies}:{})},status:'completed',createdAt:now,...(history?{historyEvidenceDependencies:history}:{}),...(attachments?.length?{attachments}:{})};
     return this.write(previous,turn);
   }
 
@@ -94,26 +100,36 @@ export class Conversations {
     return {deleted:Number(this.store.db.prepare('DELETE FROM conversations WHERE id=?').run(id).changes)};
   }
 
+  historyContext(conversation:Conversation,turns:readonly ConversationTurn[]=conversation.turns):NonNullable<QueryInput['historyContext']>{
+    const active=turns.filter(turn=>turn.result&&!turn.evidenceDeleted);
+    return {conversationId:conversation.id,revision:conversation.revision??0,evidenceDependencies:combineDependencies(active.map(turn=>turn.historyEvidenceDependencies))??{version:1,complete:!active.length,ids:[]}};
+  }
+  assertHistoryContext(snapshot:NonNullable<QueryInput['historyContext']>){
+    const row=this.store.db.prepare("SELECT coalesce(json_extract(json,'$.revision'),0) revision FROM conversations WHERE id=?").get(snapshot.conversationId);
+    if(!row||Number(row.revision)!==snapshot.revision)throw new StoreError('Conversation changed; reload its current history',409);
+  }
+
   context(conversation:Conversation,maxTurns=20,maxCharacters=60000):NonNullable<QueryInput['conversation']> {
     const turns:NonNullable<QueryInput['conversation']>['turns']=[];
     const dependencies:QueryResult['evidenceDependencies'][]=[];
     const sourcePins:QueryResult['sourceContextDependencies'][]=[];
+    const selected:ConversationTurn[]=[];
     let length=0;
     const completedTurns=conversation.turns.filter(turn=>turn.status!=='failed'&&turn.result).length;
     for(const turn of [...conversation.turns].reverse()) {
       if(turn.status==='failed'||!turn.result)continue;
 
       const contextStale=!sourceContextDependenciesCurrent(this.sourceContexts,turn.result.sourceContextDependencies);
-      const answer=contextStale?'':turn.result.answer.slice(0,20000);
-      const value={question:turn.question,answer,scope:turn.scope,createdAt:turn.createdAt,...(!contextStale&&answer.length<turn.result.answer.length?{answerTruncated:true}:{}),...(contextStale?{contextStale:true}:{}),...(turn.evidenceDeleted?{evidenceDeleted:true}:{}),...(turn.attachments?.length?{attachments:turn.attachments}:{})};
+      const answer=turn.result.answer.slice(0,20000);
+      const value={question:turn.question,answer,scope:turn.scope,createdAt:turn.createdAt,...(answer.length<turn.result.answer.length?{answerTruncated:true}:{}),...(contextStale?{contextStale:true}:{}),...(turn.evidenceStale?{evidenceStale:true}:{}),...(turn.evidenceDeleted?{evidenceDeleted:true}:{}),...(turn.attachments?.length?{attachments:turn.attachments}:{})};
       const size=JSON.stringify(value).length;
       if(turns.length===maxTurns||length+size>maxCharacters)break;
-      turns.unshift(value);length+=size;
-      dependencies.push(turn.evidenceDeleted||contextStale?{version:1,complete:true,ids:[]}:turn.result.evidenceDependencies);
+      turns.unshift(value);selected.push(turn);length+=size;
+      dependencies.push(turn.evidenceDeleted?{version:1,complete:true,ids:[]}:turn.result.evidenceDependencies);
       if(!turn.evidenceDeleted&&!contextStale)sourcePins.push(turn.result.sourceContextDependencies);
     }
     const evidenceDependencies=combineDependencies(dependencies);
     const sourceContextDependencies=combineSourceContextDependencies(sourcePins);
-    return {turns,omittedTurns:completedTurns-turns.length,...(evidenceDependencies?{evidenceDependencies}:{}),...(sourceContextDependencies.length?{sourceContextDependencies}:{})};
+    return {turns,omittedTurns:completedTurns-turns.length,historyContext:this.historyContext(conversation,selected),...(evidenceDependencies?{evidenceDependencies}:{}),...(sourceContextDependencies.length?{sourceContextDependencies}:{})};
   }
 }
