@@ -50,7 +50,9 @@ async function fixture(t:TestContext){
  const first=await start(true),admin=await first.login('generated-admin');
  for(const username of ['generated-a','generated-b'])await first.ok(admin.token,'/api/admin/accounts','POST',{username,password});
  const a=await first.login('generated-a'),b=await first.login('generated-b');
- const read=<T>(query:(db:DatabaseSync)=>T)=>{const db=new DatabaseSync(join(directory,'mote.sqlite'),{readOnly:true});try{return query(db);}finally{db.close();}};
+ // Match the product's connection wait while the separate host finishes a
+ // revocation transaction; a zero-wait observer can race the real writer.
+ const read=<T>(query:(db:DatabaseSync)=>T)=>{const db=new DatabaseSync(join(directory,'mote.sqlite'),{readOnly:true});try{db.exec('PRAGMA busy_timeout=5000');return query(db);}finally{db.close();}};
  return {directory,calls,start,first,admin,a,b,read};
 }
 
