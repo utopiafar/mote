@@ -16,6 +16,7 @@ type View = {
     };
     automatic: boolean;
     understandingEnabled: boolean;
+    ocrEnabled?: boolean;
     policy?: {
         profile: {
             name: string;
@@ -61,7 +62,7 @@ function ImageProgressView({ api, id }: {
         return read.error ? <p role="alert">{errorMessage(read.error)}<button className="button" onClick={read.refresh}>{moteText('重新读取')}</button></p> : null;
     const value = read.data, archive = value.processingRequired === false || value.policy?.profile.processorId === 'archive';
     const label = (state: string) => moteText(states[state] ?? '处理未完成');
-    const phase = (name: string) => { const job = value.jobs.find(j => j.name === name), product = value.products.find(p => p.name === name); return value.exclusion ? moteText('已跳过') : archive || name === 'understanding' && !value.understandingEnabled ? moteText('未安排') : job && job.state !== 'succeeded' ? label(job.state) : product ? moteText('已就绪') : value.enabled === false ? moteText('已暂停') : !value.automatic ? moteText('历史未安排') : moteText('等待处理'); };
+    const phase = (name: string) => { const job = value.jobs.find(j => j.name === name), product = value.products.find(p => p.name === name); return value.exclusion ? moteText('已跳过') : archive || name === 'ocr' && value.ocrEnabled === false || name === 'understanding' && !value.understandingEnabled ? moteText('未安排') : job && job.state !== 'succeeded' ? label(job.state) : product ? moteText('已就绪') : value.enabled === false ? moteText('已暂停') : !value.automatic ? moteText('历史未安排') : moteText('等待处理'); };
     const locked = busy || read.loading || !!read.error;
     async function send(kind: 'retry' | 'cancel', body: string) {
         if(!alive.current || request.current || read.error) return;

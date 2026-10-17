@@ -1,6 +1,9 @@
 import type {DatabaseSync} from 'node:sqlite';
 import {z} from 'zod';
 import {transcriptSchema} from '@mote/shared';
+import {DEFAULT_IMAGE_RECIPE} from '../image-recipes.js';
+import {StoreError} from '../store.js';
+import {imageProductSchema} from './processing-image-products.js';
 import type {UserContext} from './context.js';
 import {registerUserRoute,type ScopedRuntime} from './http.js';
 import {PrivateSql,PrivateDataError,missing} from './private-data-sql.js';
@@ -27,15 +30,34 @@ export function registerProcessingImages(runtime:ScopedRuntime,db:DatabaseSync,h
  registerUserRoute(runtime,{scope:'user',service:PROCESSING_DOMAIN,method:'GET',url:'/api/images/:id',handle:async({context,request})=>{
   await host.forUser(context).view();
   const {sql,service,ref,status,proof}=bind(context,params(request.params)),settings=(await service.view()).settings;
+  const selected=status.appliedPolicy?.profile.imageRecipe;
+  const custom=selected&&(selected.id!==DEFAULT_IMAGE_RECIPE.id||selected.version!==DEFAULT_IMAGE_RECIPE.version);
+  let recipe:ReturnType<typeof host.processors.imageRecipes.resolve>|undefined,recipeError:string|undefined;
+  if(custom)try{recipe=host.processors.imageRecipes.resolve(selected,settings.understandingEnabled);}catch(error){if(!(error instanceof StoreError)||error.statusCode!==409)throw error;recipeError='image_recipe_unavailable';}
+  const ocrEnabled=recipe?recipe.steps.some(step=>step.kind==='ocr'):true;
+  const understandingEnabled=recipe?recipe.steps.some(step=>step.kind!=='ocr'):custom?true:settings.understandingEnabled;
   const latest=sql.get('SELECT a.task_id FROM mp_admissions a WHERE a.user_id=$user AND a.original_id=? AND a.task_id IS NOT NULL ORDER BY a.rowid DESC LIMIT 1',ref.slice(9));
   const root=latest?sql.get("SELECT input FROM user_tasks WHERE user_id=$user AND task_id=?",latest.task_id):undefined;
   const rootInput=root?JSON.parse(String(root.input)):undefined;
-  const tasks=rootInput?sql.all("SELECT e.id,json_extract(u.input,'$.mode') mode FROM user_tasks u JOIN execution_steps e ON e.user_id=u.user_id AND e.id=u.task_id WHERE u.user_id=$user AND e.user_id=$user AND json_extract(u.input,'$.originalRef')=? AND e.kind LIKE 'processing.%' AND COALESCE(json_extract(u.input,'$.fileGeneration'),0)=? AND COALESCE(json_extract(u.input,'$.originalGeneration'),0)=? AND json_extract(u.input,'$.generation')=? AND json_extract(u.input,'$.policyPlanId') IS ? AND json_extract(u.input,'$.attachmentGeneration') IS ? ORDER BY e.created_at DESC,e.id DESC",ref,Number(rootInput.fileGeneration??0),Number(rootInput.originalGeneration??0),Number(rootInput.generation),rootInput.policyPlanId??null,rootInput.attachmentGeneration??null).map(row=>({...execution.forUser(context).get(String(row.id)),mode:row.mode})):[];
-  const jobs=['ocr',...(settings.understandingEnabled?['understanding']:[])].flatMap(name=>{
-   const coordinator=tasks.find(task=>task.id===latest?.task_id),task=coordinator&&coordinator.state!=='succeeded'&& !tasks.some(t=>t.kind==='processing.ocr'&&t.state==='running')?coordinator:tasks.find(task=>name==='ocr'?task.kind==='processing.ocr':task.kind==='processing.analysis'&&task.mode==='image')??tasks.find(task=>task.kind==='processing.pipeline');
+  const tasks=rootInput?sql.all("SELECT e.id,json_extract(u.input,'$.mode') mode,json_extract(u.input,'$.imageStep.name') image_step FROM user_tasks u JOIN execution_steps e ON e.user_id=u.user_id AND e.id=u.task_id WHERE u.user_id=$user AND e.user_id=$user AND json_extract(u.input,'$.originalRef')=? AND e.kind LIKE 'processing.%' AND COALESCE(json_extract(u.input,'$.fileGeneration'),0)=? AND COALESCE(json_extract(u.input,'$.originalGeneration'),0)=? AND json_extract(u.input,'$.generation')=? AND json_extract(u.input,'$.policyPlanId') IS ? AND json_extract(u.input,'$.attachmentGeneration') IS ? ORDER BY e.created_at DESC,e.id DESC",ref,Number(rootInput.fileGeneration??0),Number(rootInput.originalGeneration??0),Number(rootInput.generation),rootInput.policyPlanId??null,rootInput.attachmentGeneration??null).map(row=>({...execution.forUser(context).get(String(row.id)),mode:row.mode,imageStep:row.image_step})):[];
+  const jobs=[...(ocrEnabled?['ocr']:[]),...(understandingEnabled?['understanding']:[])].flatMap(name=>{
+   const coordinator=tasks.find(task=>task.id===latest?.task_id);
+   if(recipeError)return [{name,state:'blocked',error:recipeError}];
+   if(recipe){
+    const steps=recipe.steps.filter(step=>(step.kind==='ocr')===(name==='ocr'));
+    const phaseTasks=steps.flatMap(step=>{const task=tasks.find(task=>task.kind==='processing.image-stage'&&task.imageStep===step.name);return task?[task]:[];});
+    const unfinished=phaseTasks.find(task=>task.state!=='succeeded');
+    const task=unfinished??(phaseTasks.length===steps.length?phaseTasks[0]:coordinator);
+    return task?[{name,state:task.state,error:task.failure?.code??task.error??undefined}]:[];
+   }
+   const task=coordinator&&coordinator.state!=='succeeded'&&!tasks.some(t=>t.kind==='processing.ocr'&&t.state==='running')?coordinator:tasks.find(task=>name==='ocr'?task.kind==='processing.ocr':task.kind==='processing.analysis'&&task.mode==='image')??tasks.find(task=>task.kind==='processing.pipeline');
    return task?[{name,state:task.state,error:task.failure?.code??task.error??undefined}]:[];
   });
-  const products=[...(status.artifactId?[{id:status.artifactId,name:'ocr',kind:'ocr'}]:[]),...status.derivations.filter(d=>d.kind==='image').map(d=>({id:d.artifactId,name:'understanding',kind:'image'}))].map(p=>({...p,text:transcriptSchema.parse(service.artifact(String(p.id)).payload).segments.map(s=>s.text).join('\n')}));
+  const products=[...(status.artifactId?[{id:status.artifactId,name:'ocr',kind:'ocr',materialId:status.materialId}]:[]),...status.derivations.filter(d=>d.kind==='image'||d.kind.startsWith('image:')||d.kind.startsWith('image-ocr:')).map(d=>({id:d.artifactId,name:d.kind.startsWith('image-ocr:')?'ocr':'understanding',kind:d.kind.startsWith('image-ocr:')?'ocr':'image',materialId:d.materialId}))].map(product=>{
+   const payload=service.artifact(product.id).payload;
+   if(product.kind==='image'&&product.name==='understanding'&&typeof payload==='object'&&payload!==null&&'format' in payload){const interpretation=imageProductSchema.parse(payload);return {...product,text:interpretation.interpretation.text,interpretation};}
+   return {...product,text:transcriptSchema.parse(payload).segments.map(segment=>segment.text).join('\n')};
+  });
   // Exact material revision receipts only; a completed extraction alone never
   // implies Memory completion. Read the existing scoped M07 job for live state.
   const materials=[...(status.materialId?[{id:status.materialId,revision:status.revision!}]:[]),...status.derivations.map(d=>({id:d.materialId,revision:d.revision}))];
@@ -48,7 +70,7 @@ export function registerProcessingImages(runtime:ScopedRuntime,db:DatabaseSync,h
    return {state,count,error:failure?.failure?.code};
   }));
   runtime.authority.assert(context);const current=bind(context,params(request.params));if(current.proof!==proof)throw new PrivateDataError('conflict',409);
-  return {proof,original:{state:status.original.available===false?'unavailable':'ready'},automatic:settings.automatic||tasks.length>0,understandingEnabled:settings.understandingEnabled,policy:status.appliedPolicy,wait:service.cancellation(ref).wait,canCancel:service.cancellation(ref).canCancel,processingRequired:status.processingRequired,enabled:settings.enabled,jobs,products,materials:materials.map(m=>({id:m.id,state:'indexed'})),memory};
+  return {proof,original:{state:status.original.available===false?'unavailable':'ready'},automatic:settings.automatic||tasks.length>0,ocrEnabled,understandingEnabled,policy:status.appliedPolicy,wait:service.cancellation(ref).wait,canCancel:service.cancellation(ref).canCancel,processingRequired:status.processingRequired,enabled:settings.enabled,jobs,products,materials:materials.map(m=>({id:m.id,state:'indexed'})),memory};
  }});
  for(const action of ['retry','cancel'] as const)registerUserRoute(runtime,{scope:'user',service:PROCESSING_DOMAIN,method:'POST',url:'/api/images/:id/'+action,handle:async({context,request})=>{
   const id=params(request.params),input=z.object({proof:z.string().regex(/^[a-f0-9]{64}$/),...(action==='retry'?{operationId:z.string().uuid(),mode:z.enum(['complete','recompute']),confirmUnknown:z.boolean().default(false)}:{})}).strict().parse(request.body),owned=bind(context,id);
