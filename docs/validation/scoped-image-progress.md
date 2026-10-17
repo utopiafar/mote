@@ -333,3 +333,81 @@ Final combination, direct affected acceptance and PR update await Joint's narrow
 reviewed producer freeze. This probe is not a substitute for the final union's
 required gate. Per the parent instruction, inherited whole-platform checks were
 not rerun for this continuation.
+
+### Named completion and consumer closure after the first PREP
+
+Current bounded runtime is `5563c30ab01da7e1b2a8819278e530fb7c0922ba`.
+Joint explicitly named finite producer freeze
+`dcac72341004e6008ed24c1b1ca48eee625756d2`; it was selected narrowly as
+`b288c9d23f7bd10520d8d48e958ca7057c86adf9`. Its redundant projection type
+annotation was already present. The documentation append conflict retained this
+branch's old receipt and only the exact 26 added named-completion lines, without
+importing observer/attachment history or runtime. The source change adds verified
+same-plan/recipe/dependency accepted-step reuse to the existing M06 graph.
+
+Independent review found another real consumer omission after that producer
+change. When a tail fails a second time, successfully reused OCR/interpretation
+steps have current-generation M06 receipts but no new M05 tasks. Falling back to
+the failed coordinator incorrectly marked OCR failed. The new original Files
+partial test first reproduced this RED, then verified the thin projection fix:
+actual current-admission step receipts must match owner, original, generation,
+canonical plan/recipe/step key, complete artifact and currently visible product
+ID. Existing actual tasks take priority. Reuse is reported as `ready` with
+`jobs[].receipts[{step,artifactId}]`, never as an invented succeeded task. OCR
+stays ready, the twice-failed tail stays failed, actual successful interpretation
+and OCR invocation counts remain unchanged, and a later complete retries only
+the missing tail. Recompute/cancel/restart remain exercised. Independent review
+of this receipt seam found no further confirmed issue.
+
+The original browser also demonstrated that ImageProgress could refresh its own
+facts while FileDetail retained its pre-processing snapshot. A durable manual
+noOCR RED now mounts FileDetail before processing, clicks the real complete
+button, waits for actual M05 completion and revalidates only the image read. The
+export control initially failed to appear. A stable image-fact signature now
+invokes FileDetail's existing resource refresh through optional `onChanged`.
+Product IDs, original availability, proof and phase changes refresh the outer
+original view; parent renders do not form a refresh loop. Other original entry
+points remain valid without the callback. No route, store or poller was added.
+
+The noOCR export-only entry reuses `downloadFileExport`; it does not create
+transcript review or fabricated OCR. Real typed export assertions compare complete
+canonical bodies from explicit derivation artifact IDs, including regions with
+empty descriptions, exact original metadata and hash. Existing OCR-only export
+is a distinct positive control: genuine download, same-ID B switch, ignored-abort
+late A response, retired A button and object URL retirement pass. It is not
+counted as typed-export acceptance. The generated browser fixture now includes
+an actual snapshot account and two installed derived steps for final acceptance.
+
+Terminal bounded receipts on the composed named-completion source:
+
+- Original image/custom recipe/late-read compatibility: 36/36, zero skips or
+  cancellations, 89.579s (`../image-products-complete-composed.log`).
+- Actual public image-recipe producer file: 5/5, zero skips or cancellations,
+  29.696s (`../image-products-producer-complete.log`).
+- Existing FileReview/original/derived-product UI neighbors: 3/3, 16.254s
+  (`../image-products-adjacent.log`).
+- Real OCR-only export control: 1/1, zero skips; body 2.699s, process 62.775s
+  including the existing download URL cleanup timer
+  (`../image-products-ocr-control2.log`).
+- Production import boundary and Server build passed; Web/script/new-test strict
+  types and bilingual catalog checks passed during the thin-consumer changes.
+
+One default-recipe test exposed a fixture ordering assumption: an individual
+failed child was visible before its root coordinator settled, so immediate retry
+correctly returned `file_processing_active` (31/32 run retained in
+`../image-products-progress-compat.log`). Failed tasks intentionally remain
+cancelable, so `canCancel:false` was not a valid settlement test. The fixture now
+waits for its genuine M05 root task to leave waiting/running before retry. The
+full 36-case rerun above passes with the original provider call-count assertions
+preserved; no production admission guard was relaxed.
+
+Still OPEN on this branch: typed export actual 400/404 and snapshot early expiry
+on the old 2349 producer. The original hidden IAB snapshot journey reproduced
+ready OCR plus unavailable original and blocked understanding with the explicit
+snapshot-expired reason; generated screenshot is local
+`../image-snapshot-iab-red.jpg`. Joint reports its producer repairs green and is
+checking physical expiry/cancellation before publishing their separate exact
+freeze. Those repairs have not been silently copied from WIP. The final typed
+consumer and browser GREEN, final affected build and PR151 update remain pending
+that freeze. Inherited full-platform failures above remain recorded; the parent
+assigns the final same-SHA platform gate to the union owner.
