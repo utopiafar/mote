@@ -1,5 +1,57 @@
 # Ask / Insight / Actions waiting failures
 
+Final runtime/test commit: `d622a4f2fb2d187882483e92a65b642cda2572ac`.
+The final complete required gate naturally exits **1**, with all original
+Ask/Insight/Actions waits and all five new regressions passing inside it.
+The complete gate is **RED**, not a splice of passing subsets.
+
+| Final required stage | Actual terminal |
+| --- | --- |
+| i18n, Central builds and types | Exit0 |
+| Shared | 192 pass,0 fail/skip |
+| Agent | 317 pass,0 fail,1 existing opt-in skip |
+| Server | 2797 pass,1 fail,2 existing skips /2800;1454.566s |
+| Web | 515/515,0 fail/skip;41.572s |
+| Later supervisor/release `&&` stages | Not reached in this failed invocation |
+| Same frozen source, independently invoked supervisor / release | Exit0;52/52,0 fail/skip,exit0 |
+
+Launched clean at documentation HEAD
+`b944fafd70501bdf189b2ffa79e5300a347c0486`, source exactly finald622a4f2,
+using its own Node24.21.0/ABI137 locked dependency installation.
+`required-final.sha/.production.sha/.dirty/.log/.exit` retain the exact receipt.
+Later commits change validation documentation only.
+
+The sole final failure is `multiuser-file-unknown.test.ts`: “owner acknowledgement
+cannot release a still-live physical original through a new processing operation”.
+At line68 its generic child retry returns409 `task_retry_invalid` instead of the
+fixture's200. The subsequent new-operation occupancy guard, B-positive and
+post-settlement assertions are **not reached in that case**. It is not evidence
+that an unknown physical call can be replayed. The identical original scenario
+already fails409 on untoucheda2 in
+`/tmp/mote-policy-archive-a2-additional3-baseline.log` (0/3 whole diagnostic list,
+exit1,53.857s). Contract/fixture classification remains with M04/M05/M06/Joint;
+this lane changes neither their backend nor this fixture.
+
+The earlier complete e53787e2 gate fails a different inherited M06 summary-restart
+case; that case passes in the final run. The earlier ACK pass and later summary
+pass are **not combined into an aggregate green gate**. All historical REDs remain.
+
+Inside the final complete run: ordered14.211s, narrowedInsight13.617s,
+no-current-disclosure14.223s, pause/restart11.814s and failed-child retry11.383s;
+real periodic Insight78.767s; unchanged-child admission8.997s and stale-conversation
+while child held7.259s. All original waits/assertions remain. Memory1000 originals
+passes50.226s and HTTP1000 import138.761s, with original120/300/390s and125 package
+budgets/corpora unchanged. These timings are observed runs, not a new product SLA.
+
+Existing skips: installed-Codex synthetic opt-in (Agent), configured pinned Python
+Source Pack and macOS sandbox opt-in (Server). Physical client union and real-model
+semantic quality are not acceptance claims of this module. No private Central data,
+merge, deployment, CI enablement or real permission change is involved.
+
+The following sections retain the investigation and failed candidates; final
+terminal status and source above supersede their launch-time status.
+
+
 The independent baseline is PR150
 `67b992f32016ac5d31f4da265ff0e02cfb2e12bd` (production `2699d1f7`, test
 freeze `371bd186`). PR151 `21e97819f275944e39025eadcdd7675e4610782d` and
@@ -9,7 +61,7 @@ failed gates remain failed. Later Joint WIP is not consumed.
 M08 production and the reader-race fixture at this baseline are byte-identical
 to Joint `a2cbf3aaf1ae2f2fbfe5f647cf9a4f23dfdc1695`. The Ask fixture includes
 PR150's explicit independent-branch retry setup and retained-sibling checkpoint
-assertion; that setup still reproduces RED here. The final module changes four files
+assertion; that setup still reproduces RED here. The final module changes four runtime/test files plus this ledger
 and does not require the personal-archive implementation. The Draft comparison
 against the old integration base includes pending module dependencies; consuming
 owners should select the exact module commits below.
@@ -80,7 +132,7 @@ database or derived private data was read, committed or attached.
 | `ask-pin-journal-red.log/.exit` | New real-Harness audit trigger: 0/1, exit1, 12.564s; 96 identical journal writes. |
 | `ask-pin-candidate.log/.exit`,04fa9ce3 | 2/2, exit0, 31.901s. Insufficient closure: subsequent six-case run fails. |
 | `ask-delegated-candidate.log/.exit`,04fa9ce3 | 5 pass / 1 fail, exit1; retry again expires at20s. |
-| `ask-domain-fence-candidate.log/.exit`, final productione53787e2 | 7/7, exit0, 98.785s, no skip/cancel. Includes original ordered, narrowed Insight, no-disclosure, pause/restart, failed-child, any-child cancellation and pin-journal scenarios. |
+| `ask-domain-fence-candidate.log/.exit`, candidate productione53787e2 | 7/7, exit0, 98.785s, no skip/cancel. Includes original ordered, narrowed Insight, no-disclosure, pause/restart, failed-child, any-child cancellation and pin-journal scenarios. |
 | `ask-actions-fence-neighbors.log/.exit`, same production | 20/20, exit0, 68.770s; external provider waits, same-ID recreation, source-context change, conversation deletion, catalog-source revocation and native ACK fences. |
 | `ask-caller-fence-final.log/.exit`,e53787e2 | 2/2, exit0, 9.093s; caller-policy revocation and request abort during actual provider await while account identity remains current; A body rejected, B-positive and foreign-ref rejection. |
 | `ask-sql-final.log/.exit`,e53787e2 | Original retry1/1, exit0, 18.907s; same observer records727,634 prepares,12.142s SQLite and2 pin UPDATEs. One comparison, not a latency distribution. |
@@ -123,12 +175,12 @@ There is no executor, scheduler, retry-policy, timeout or physical-call change.
 The following complete-proof read-only improvement records the original retry1/1,
 exit0,18.045s with538,545 prepares and10.960s SQLite
 (`ask-pure-recheck-profile.log`, diagnostic projection before final defensive
-JSON-shape hardening). The final production/test freeze is
+JSON-shape hardening). The intermediate production/test freeze was
 `2fdcef08782d1ea504164e164f520e9f5c2acb6c`.
 Its complete Ask/Insight and reader-neighbor suite, exact a2 minimal projection,
 original Web Actions consumers and required gate are reported separately below.
 
-The exact a2 patch now contains only four M08 files, including PR150's eight additions/five removals
+The intermediate a2 patch contains only four M08 files, including PR150's eight additions/five removals
 fixture delta. SHA256 of local `next-minimal-a2.patch`:
 `9c7eb425798736bd55181a3502ad618f05aee7aef8a95e88364fed217fbd6307`.
 It excludes all personal-archive and image runtime changes. Root lock, Shared
@@ -146,8 +198,8 @@ npm run check:affected -- --base 67b992f32016ac5d31f4da265ff0e02cfb2e12bd
 The selector chooses i18n and the full Central build/type/Shared/Agent/Server/Web/
 supervisor/release chain. `required.sha`, `required.dirty`, `required.log` and
 `required.exit` retain source, clean status and natural terminal result. The
-terminal result is pending; it remains independent of the later candidate.
-The final2fdcef08 candidate requires its own full gate; no first-run outcome
+terminal result is exit1 as recorded below; it remains independent of the later candidate.
+The later guarded candidate has its own full gate; no first-run outcome
 substitutes for that source. Narrow receipts do not establish full acceptance. Native
 client union, real-model semantics, merge, deployment and CI are not claimed.
 
@@ -190,7 +242,7 @@ Git commit already existed at projection launch.
 
 Final runtime/test freeze: `d622a4f2fb2d187882483e92a65b642cda2572ac`. The
 final complete affected gate uses distinct `required-final.log/.exit/.sha/.dirty`
-receipts and the same base67b992f3 command. Its result is pending. First-gate
+receipts and the same base67b992f3 command. Its natural terminal result is recorded above. First-gate
 `required.*` remains separate on runtimee53787e2. Neither whole run is interrupted
 or reported green before its natural terminal result.
 
@@ -235,3 +287,30 @@ Final a2 four-file patch SHA256:
 `6d8a01a0746ffe5cd22199bc27b68aedeabbfadde9cb00a13fa63b0feff6ce17`.
 Module-only patch against67b SHA256:
 `d9a439375832f7855a32fe5d1600949adab05bd3ebad398f02ef02565ec059bb`.
+
+
+## Exact source consumption
+
+Select these seven source/test commits after the stated fixture baseline;
+documentation commits are independent:
+
+- `31a75095874a579443392342d9318e0a50fd6396` — test(ask): expose repeated writes while rechecking pinned originals.
+- `04fa9ce31aab86f50306b3817a8ffd4ed6dfb63c` — fix(ask): avoid rewriting unchanged persistent evidence pins.
+- `e53787e2edc1951e6b24474bb3a42efaadc95c66` — fix(ask): bound compound evidence checks to read and publication fences.
+- `87be8907fc9f84128f244d75b08891e020d33b7f` — test(ask): expose coordinator lease churn while children remain pending.
+- `2fdcef08782d1ea504164e164f520e9f5c2acb6c` — fix(ask): wait at admission and recheck complete proofs without recursive observation.
+- `61c09bad71103b7046151c69601f3385631b3e3b` — test(ask): expose stale conversation hidden by pending-child admission.
+- `d622a4f2fb2d187882483e92a65b642cda2572ac` — fix(ask): preserve stale-input rejection while children wait at admission.
+
+The four-file a2 patch (including the declared PR150 test-only delta) has SHA256
+`6d8a01a0746ffe5cd22199bc27b68aedeabbfadde9cb00a13fa63b0feff6ce17`.
+The module-only patch against67b has SHA256
+`d9a439375832f7855a32fe5d1600949adab05bd3ebad398f02ef02565ec059bb`.
+No personal-archive/image implementation or later Joint WIP is required.
+
+The independent release check initially encountered sandbox loopbackEPERM, then
+50pass/2skip because the installed Docker CLI directory was absent from the
+constructed PATH. Both environment receipts are retained separately. With the
+installed CLI restored to PATH, the exact unchanged52-case list executes52/52,
+zero skip,exit0. Only offline Compose `config` checks run; no Docker service or
+volume is started or changed. This does not rewrite the failed Central command.
