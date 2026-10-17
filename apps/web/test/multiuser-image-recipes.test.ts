@@ -64,13 +64,13 @@ for(const mode of ['ocr','no-ocr','partial','double-ocr'] as const)test(`origina
  assert.equal(artifact.payload.format,'mote-image-product-v1');assert.equal(artifact.payload.interpretation.regions[0].description,'');
  const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/#/library?view=files',pretendToBeVisual:true});
  const saved=new Map<string,PropertyDescriptor|undefined>();let cookie='',current:Api|undefined,holdRead=false,readEntered:()=>void=()=>{},releaseRead:()=>void=()=>{};
- const writes:string[]=[];let actionAcks=0;t.after(()=>releaseRead());
+ const writes:string[]=[];let actionAcks=0,latestActionTaskId:string|undefined;t.after(()=>releaseRead());
  for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,fetch:async(path:string,init:RequestInit={})=>{
   const headers=new Headers(init.headers);headers.set('cookie',cookie);
   if(init.method==='POST'&&path.startsWith('/api/images/'))writes.push(String(init.body));
   const requestCookie=cookie;
   const response=await f.host.app.inject({url:path,method:init.method as any??'GET',headers:Object.fromEntries(headers),...(init.body?{payload:String(init.body)}:{})});
-  if(init.method==='POST'&&path.startsWith('/api/images/'))actionAcks++;
+  if(init.method==='POST'&&path.startsWith('/api/images/')){actionAcks++;if(path.endsWith('/retry')&&response.statusCode===200)latestActionTaskId=response.json().taskId;}
   if(holdRead&&requestCookie===heldCookie&&path==='/api/images/'+a.id&&(!init.method||init.method==='GET')){readEntered();await new Promise<void>(r=>releaseRead=r);}
   return new Response(response.body,{status:response.statusCode,headers:response.headers as HeadersInit});
  }})){saved.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
@@ -104,10 +104,11 @@ for(const mode of ['ocr','no-ocr','partial','double-ocr'] as const)test(`origina
  const settled=async()=>act(async()=>{await waitForScopedState(async()=>{
   const view=await f.checked(f.a.token,'/api/images/'+a.id);return !view.canCancel&&!view.wait;
  },()=> 'Image command did not settle',20000);});
+ if(partial){await press('补齐未完成步骤');assert.ok(latestActionTaskId);await act(async()=>{await waitForScopedState(async()=>['failed','blocked'].includes((await f.checked(f.a.token,'/api/tasks/'+latestActionTaskId)).state),()=> 'Repeated failed tail did not settle',20000);});await refresh();assert.equal(interpretations.length,2,'repeated tail failure preserves successful interpretation');assert.equal(calls.length,2,'repeated tail failure reuses actual OCR');assert.equal(state('文字识别'),'已就绪','a reused accepted OCR step remains ready when another step fails again');assert.equal(state('内容理解'),'处理失败');}
  tailFail=false;await press('补齐未完成步骤');await settled();await refresh();
  assert.equal(interpretations.length,2,'complete must preserve every successful custom interpretation');
  assert.equal(calls.length,withOcr?2:0,'complete does not rerun OCR');
- if(partial)assert.equal(tailRuns,3,'only the missing tail is completed');
+ if(partial)assert.equal(tailRuns,4,'only the missing tail is completed');
  await press('重新计算已有结果');
  await act(async()=>{await waitForScopedState(async()=>interpretations.length===3,()=> 'Explicit recompute did not run custom step',20000);});await settled();await refresh();
  assert.equal(calls.length,withOcr?3:0,'explicit recompute reruns actual OCR when the recipe has it');
