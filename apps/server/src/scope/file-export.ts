@@ -36,9 +36,10 @@ export function registerFileExport(runtime:ScopedRuntime,db:DatabaseSync,ingress
    WHERE f.user_id=$user AND c.user_id=$user AND s.user_id=$user AND json_extract(f.json,'$.mimeType') LIKE ? ESCAPE '\\' AND ${live}
    AND EXISTS(SELECT 1 FROM json_each(c.json,'$.provenance.document.attachments') d WHERE json_extract(d.value,'$.id')=f.id)
    ORDER BY c.id,f.id`,pattern);
-  const files=originals(),attached=attachments();
-  const proof=()=>identityHash([originals().map(row=>[row.id,row.hash,row.fingerprint,fileOriginalGeneration(sql,'original:'+row.id)]),attachments().map(row=>[row.capture_id,row.id,row.hash,row.fingerprint,captureIncarnationGeneration(sql,String(row.capture_id))])]);
-  const expected=proof(),current=()=>{assert();if(proof()!==expected)throw new PrivateDataError('conflict',409);};
+  const initial=sql.changeToken(),files=originals(),attached=attachments();
+  const proof=(rows=originals(),links=attachments())=>identityHash([rows.map(row=>[row.id,row.hash,row.fingerprint,fileOriginalGeneration(sql,'original:'+row.id)]),links.map(row=>[row.capture_id,row.id,row.hash,row.fingerprint,captureIncarnationGeneration(sql,String(row.capture_id))])]);
+  const expected=proof(files,attached);if(sql.changeToken()!==initial)throw new PrivateDataError('conflict',409);let observed=initial;
+  const current=()=>{assert();const next=sql.changeToken();if(next===observed)return;if(proof()!==expected||sql.changeToken()!==next)throw new PrivateDataError('conflict',409);observed=next;};
   const manifest={format:'mote-files-export',version:1,...selected,
    originals:files.map(row=>({ref:'original:'+row.id,captureId:row.capture_id,sourceId:row.source_id,sha256:row.hash,sizeBytes:Number(row.bytes),mimeType:row.mime,retention:row.retention,current:Boolean(row.is_current),member:'originals/'+row.id+'.blob',record:JSON.parse(String(row.json)),originalGeneration:fileOriginalGeneration(sql,'original:'+row.id)})),
    attachments:attached.map(row=>({parentCaptureId:row.capture_id,sourceId:row.source_id,current:Boolean(row.is_current),member:'attachments/'+row.id+'.blob',file:JSON.parse(String(row.file))})),

@@ -25,6 +25,13 @@ export class PrivateSql{
     const statement=this.statement('DELETE FROM ig_pins WHERE user_id=$user AND id=?'),owner=this.userId,pinId=id;
     return ()=>{statement.run({$user:owner},pinId);};
   }
+  /** Host-only invalidation proof, never returned by a scoped service. Local
+   * writes (including rolled-back work) and commits from other connections
+   * invalidate a stream snapshot without reopening every private row per block. */
+  changeToken(){
+    this.authorize();const own=this.db.prepare('SELECT total_changes() AS n');own.setReadBigInts(true);
+    return String(own.get()!.n)+':'+String(this.db.prepare('PRAGMA data_version').get()!.data_version);
+  }
   transaction<T>(run:()=>T):T{
     this.authorize();
     // Host callers may compose atomic source/task writes. Savepoints keep a
