@@ -75,7 +75,7 @@ test('Web feature metadata describes real routes and Library keeps owned canonic
  const inventory=await a.request<any>('/api/features');
  assert.equal(inventory.schemaVersion,1);const ids=inventory.capabilities.map((item:any)=>item.id);
  for(const id of ['http:GET:/api/materials','http:GET:/api/library/catalog','http:GET:/api/features'])assert.ok(ids.includes(id),id);
- assert.ok(!ids.includes('http:GET:/api/imports'),'do not advertise absent legacy runtime');
+ assert.ok(ids.includes('http:GET:/api/imports'),'advertise the restored scoped Imports runtime');
  const note={id:'6d477b3e-fb43-4657-818d-c143ad76430f',deviceId:'same-device',deviceName:'Generated web',platform:'import' as const,client:'web' as const,capturedAt:'2026-10-16T12:00:00Z',text:'GENERATED_A_LIBRARY_NOTE'};
  await submitWebNote(a,note);f.cookie('b');const b=createApi(f.bi);await submitWebNote(b,{...note,text:'GENERATED_B_LIBRARY_NOTE'});f.cookie('a');
  const end=Date.now()+20000;let page:any;
