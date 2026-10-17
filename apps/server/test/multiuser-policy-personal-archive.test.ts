@@ -139,4 +139,5 @@ test('a corrupt surviving local binding cannot be repaired underneath historical
  // must fail closed rather than make historical input current as a side effect.
  try{db.exec('PRAGMA foreign_keys=OFF');db.prepare('DELETE FROM mp_file_plans WHERE user_id=? AND id=?').run(f.a.userId,id);}finally{db.close();}
  const authority=f.authority(),before=f.data(),receipt=await f.imported(saved);assert.equal(receipt.state,'failed','RED: import must not silently activate a surviving dangling binding');assert.equal(receipt.error,'archive_conflict');assert.deepEqual(f.data(),before);assert.deepEqual(f.authority(),authority);
+ const plansOnly=structuredClone(saved);plansOnly.domains.find((domain:any)=>domain.domain==='processing').payload.policyPlans.bindings=[];assert.equal((await f.imported(plansOnly)).state,'failed','omitting archived bindings cannot repair a live dangling binding either');assert.deepEqual(f.data(),before);assert.deepEqual(f.authority(),authority);
 });

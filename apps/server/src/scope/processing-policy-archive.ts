@@ -33,11 +33,13 @@ export function policyPlanArchive(sql:PrivateSql){return {
    if(JSON.stringify(references)!==JSON.stringify(saved))throw invalid();
    const fingerprints=new Map<string,string|undefined>();for(const connection of connections){const key=referenceKey(connection.reference);if(fingerprints.has(key)&&fingerprints.get(key)!==connection.fingerprint)throw invalid();fingerprints.set(key,connection.fingerprint);}
    const prior=sql.get('SELECT original_id,json FROM mp_file_plans WHERE user_id=$user AND id=?',row.id);if(prior&&(prior.original_id!==row.original_id||prior.json!==row.json))throw conflict();
+   if(!prior&&sql.get('SELECT original_id FROM mp_file_policy_bindings WHERE user_id=$user AND plan_id=? LIMIT 1',row.id))throw conflict();
   }
   const fresh=new Map<string,number>();
   for(const binding of value.bindings){
    if(plans.get(binding.plan_id)?.original_id!==binding.original_id)throw invalid();
-   if(sql.get('SELECT plan_id FROM mp_file_policy_bindings WHERE user_id=$user AND original_id=?',binding.original_id))continue;
+   const current=sql.get('SELECT b.plan_id,p.original_id FROM mp_file_policy_bindings b LEFT JOIN mp_file_plans p ON p.user_id=b.user_id AND p.id=b.plan_id WHERE b.user_id=$user AND b.original_id=?',binding.original_id);
+   if(current){if(current.original_id!==binding.original_id)throw conflict();continue;}
    const local=sql.get('SELECT generation,cancelled FROM mp_file_controls WHERE user_id=$user AND original_id=?',binding.original_id),tasks=sql.all("SELECT u.input,e.state FROM user_tasks u JOIN execution_steps e ON e.id=u.task_id AND e.user_id=u.user_id WHERE u.user_id=$user AND e.user_id=$user AND json_extract(u.input,'$.originalRef')=?",'original:'+binding.original_id).map(row=>({input:JSON.parse(String(row.input)),state:String(row.state)}));
    if(local){
     // Existing local controls win. Never make an unfinished historical task

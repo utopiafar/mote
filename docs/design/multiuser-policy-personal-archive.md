@@ -73,6 +73,10 @@ confirmations are preserved. A missing control receives a generation strictly
 above surviving task generations, so reintroducing a plan ID cannot make an old
 task current again. Integer exhaustion rejects rather than wrapping. Existing
 local controls are never overwritten with archived generation/cancellation.
+An existing binding must already have its correctly owned original/plan parent.
+Import rejects a dangling local binding instead of filling a missing plan under
+historical execution. Exporting/importing plans without bindings cannot bypass
+that check; this is a local integrity conflict, not an implicit repair tool.
 The existing M06 physical-activity guard continues to reject import beside an
 unresolved call; import neither settles nor acknowledges that fact. Elapsed time
 and restart are not evidence of physical settlement.
