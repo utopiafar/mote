@@ -128,8 +128,8 @@ JSON-shape hardening). The final production/test freeze is
 Its complete Ask/Insight and reader-neighbor suite, exact a2 minimal projection,
 original Web Actions consumers and required gate are reported separately below.
 
-The exact a2 patch now contains only four M08 files, including PR150's eight-line
-net fixture delta. SHA256 of local `next-minimal-a2.patch`:
+The exact a2 patch now contains only four M08 files, including PR150's eight additions/five removals
+fixture delta. SHA256 of local `next-minimal-a2.patch`:
 `9c7eb425798736bd55181a3502ad618f05aee7aef8a95e88364fed217fbd6307`.
 It excludes all personal-archive and image runtime changes. Root lock, Shared
 and Agent source are byte-identical between a2 and67b; only this task's own
@@ -162,3 +162,34 @@ Module commits (select after the stated fixture baseline):
 
 Delivery records the Draft URL and verified remote exact head/base. Nothing is
 merged into integration or main.
+
+
+## Final admission boundary and source freeze
+
+Intermediate2fdcef08's complete Ask/Insight/reader/catalog-source suite is64/64,
+exit0,423.866s (`next-ask-full-neighbors.log`), including the real61-second
+periodic Insight and all original delegated waits. Its exact four-file a2
+projection is5/5, exit0,40.829s (`next-minimal-a2-critical.log`). Original Web
+paging and immutable review are2/2, exit0,34.090s; the native review-target file
+is3/3, exit0,33.578s. Server noEmit and scope checks exit0.
+
+A further real journey caught a regression in that **new admission candidate**,
+not in a2: a competing turn completes while the original child remains held,
+but the old coordinator keeps waiting rather than rejecting the changed
+conversation. `ask-admission-conversation-red.log/.exit`:0/1,exit1,30.403s with
+the original20s wait. RED commit `61c09bad` retains the scenario. The minimal
+predicate correction lets a deleted Ask domain or changed conversation scope,
+incarnation or revision enter the existing `execute/current` rejection path
+immediately. It creates no context, repairs no old grant and does not wait for
+physical child settlement. The three-case corrected projection (original retry,
+unchanged-child lease stability, changed conversation while held) passes3/3,
+exit0,37.616s (`ask-admission-conversation-green.log`). Its four M08 files are
+byte-identical to final `d622a4f2fb2d187882483e92a65b642cda2572ac`, recorded in
+`final-projection-source-receipt.json`; this mapping does not pretend the later
+Git commit already existed at projection launch.
+
+Final runtime/test freeze: `d622a4f2fb2d187882483e92a65b642cda2572ac`. The
+final complete affected gate uses distinct `required-final.log/.exit/.sha/.dirty`
+receipts and the same base67b992f3 command. Its result is pending. First-gate
+`required.*` remains separate on runtimee53787e2. Neither whole run is interrupted
+or reported green before its natural terminal result.
