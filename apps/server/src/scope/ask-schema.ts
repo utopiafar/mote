@@ -67,7 +67,14 @@ export function persistedAutomationCurrent(db:DatabaseSync,userId:string,runId:s
  * Admit real coordination when a unit needs scheduling or a fragment can advance.
  */
 export function persistedAskChildrenPending(db:DatabaseSync,userId:string,runId:string){
- const row=persistedAskRun(db,userId,runId);if(!row)return false;
+ const row=persistedAskRun(db,userId,runId);if(!row||askUserDeleted(db,userId))return false;
+ // Waiting must not conceal an error that normal coordination would detect.
+ // A stale conversation enters the existing execute/current failure path now,
+ // even when a physical child is still held and has not produced another event.
+ let conversationId:unknown;try{conversationId=JSON.parse(row.input).conversationId;}catch{return false;}
+ if(typeof conversationId!=='string')return false;
+ const conversation=db.prepare('SELECT scope,incarnation,revision FROM ma_conversations WHERE user_id=? AND id=?').get(userId,conversationId);
+ if(!conversation||conversation.scope!==row.scope||conversation.incarnation!==row.conversation_incarnation||conversation.revision!==row.conversation_revision)return false;
  const units=db.prepare('SELECT u.id,u.task_id,e.state,f.id fragment FROM ma_units u LEFT JOIN execution_steps e ON e.user_id=u.user_id AND e.id=u.task_id LEFT JOIN ma_fragments f ON f.user_id=u.user_id AND f.run_id=u.run_id AND f.task_id=u.task_id WHERE u.user_id=? AND u.run_id=?').all(userId,runId);
  if(units.some(unit=>!unit.task_id||unit.state!=='succeeded'&&unit.fragment!=='unit:'+unit.id+':'+row.generation))return false;
  const fragment='main:'+row.generation+':'+row.fragment,step=db.prepare('SELECT e.state FROM ma_fragments f JOIN execution_steps e ON e.user_id=f.user_id AND e.id=f.task_id WHERE f.user_id=? AND f.run_id=? AND f.id=?').get(userId,runId,fragment);
