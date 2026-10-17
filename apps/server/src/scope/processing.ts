@@ -435,7 +435,15 @@ export class ProcessingHost {
   let releaseOriginal:(()=>void)|undefined;
   // Snapshot bytes are admitted before external issuance; cached stages need no
   // expired bytes. All readers share one exact pin through provider completion.
-  const holdOriginal=()=>{releaseOriginal??=this.ingress.forUser(run.context).holdOriginal(original.ref);};
+  const holdOriginal=()=>{
+   if(releaseOriginal)return;
+   const parent=input.parentTaskId?this.sql(run.context).get("SELECT u.input FROM user_tasks u JOIN execution_steps e ON e.id=u.task_id AND e.user_id=u.user_id WHERE u.user_id=$user AND e.user_id=$user AND u.task_id=? AND e.kind='processing.image-stage'",input.parentTaskId):undefined;
+   if(parent){
+    const stage=imageRecipeInputSchema.parse(JSON.parse(String(parent.input)));this.imageStep(run.context,stage);
+    if(identityHash(processingInputSchema.parse({...baseInput(stage),parentTaskId:input.parentTaskId}))!==identityHash(input))throw new ExecutionFailure('stale','image_recipe_changed');
+    releaseOriginal=this.retainImageOriginal(stage.parentTaskId!,original.ref);if(!releaseOriginal)throw new PrivateDataError('snapshot_input_expired',410);
+   }else releaseOriginal=this.ingress.forUser(run.context).holdOriginal(original.ref);
+  };
   const bytes=async function*(host:ProcessingHost){holdOriginal();let offset=0;while(offset<original.bytes){run.grant.assert();host.input(run.context,input);const chunk=source.readOriginal(original.ref,{offset});if(!chunk.bytes.length)throw new ExecutionFailure('stale','processing_input_changed');yield chunk.bytes;offset+=chunk.bytes.length;}};
   let mediaCalled=false;
   const withSettings=async(settings:ReturnType<typeof fileProcessingSchema.parse>)=>{

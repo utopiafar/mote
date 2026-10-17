@@ -1674,3 +1674,37 @@ The original Files export-only button is separately owned by the image consumer.
 Its latest consumer/runtime56d3 has not yet been composed into Joint; the producer
 freeze does not claim that UI or whole affected acceptance. Independent bounded
 review and final combined check:affected/recovery remain pending. CI is disabled.
+
+
+### Independent image review: later OCR pin and retired OCR export
+
+Consumer91c17e8ab3a9a212e1a49cd5597363ad0ae334a7 exposed two additional
+producer failures after f555. Joint independently reproduced both in durable
+backend scenarios (test60f60fea):2/2 RED,11.020s
+(`/tmp/mote-joint-image-lineage-history-backend-red.log/.exit`).
+The derived-first graph had an actual existing M03 pin and denied a new expired
+HTTP ticket, yet later OCR blocked before its provider call. Explicit policy
+preview/reprocess from OCR to noOCR preserved genuine raw history but tar
+incorrectly made that history the current transcript.
+
+The extraction child's original hold now validates its exact owned image-stage
+input/root lineage and retains the same existing graph pin; ordinary extraction
+keeps its existing hold path. No new hold permission, recovery issuer, table or
+lifetime mechanism was added. Named-image export now takes current transcript
+identity only from its current publication; historical raw extraction remains
+explicitly raw and does not populate current transcript/manifest identity.
+Raw-only history export remains possible under the same owner/current-stream
+checks.
+
+Same backend pair2/2 GREEN12.226s, complete producer8/8 GREEN28.420s
+(`image-lineage-history-backend-green`, `image-lineage-final8`).
+Exact immutable consumer91c source, root package metadata and shared own
+React/locale dependencies were used for original Files six journeys:6/6,0skip,
+85.303s EXIT0 (`/tmp/mote-joint-image-review91-green2.log/.exit`).
+Only frontend import paths/classic JSX loader environment were adapted; the
+product assertions stayed unchanged. The first snapshot copied without root
+`type:module` produced dual i18n state/English labels and failed before intended
+checks; `image-review91-locale-identity-failed` remains an environment receipt,
+not a production RED. The final fixture restores exact frozen module metadata.
+Server, strict producer-test and scope checks0 (`image-lineage-types/strict/scope`).
+Independent source re-review and final combined gate remain pending.
