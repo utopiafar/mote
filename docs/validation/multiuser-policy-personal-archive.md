@@ -8,7 +8,9 @@ The module consumes exact Joint production freeze
 `decf3153`. Final audit reproduced a local-integrity gap in RED
 `7242c9cef6371673844b813e151619b4a1e4fec3`; final production/test freeze
 `77a2818ec45b0bac2732cd613787daf7ee6fea81` adds the minimal parent guard.
-It supersedes `decf3153` for composition. The [contract and supersession decisions](../design/multiuser-policy-personal-archive.md)
+It supersedes `decf3153` for composition. Final gate-compatible runtime
+`2699d1f7eeeb12390c2b87229c11c32dc731d9ee` then mechanically renames the helper
+method from `prepare` to `preflight`; its two-line delta changes no behavior. The [contract and supersession decisions](../design/multiuser-policy-personal-archive.md)
 record current configuration/control precedence, opaque historical plan IDs and
 the absence of execution authority in personal data recovery.
 
@@ -97,31 +99,62 @@ case on an isolated **unmodified a2 tracked-source snapshot** also fails:
 5.437 seconds, expected pin count 0 versus actual 1. The source test is around
 line 134 at a2 (135 in the recovery composition). This establishes a preexisting
 failing scenario, not a newly confirmed production defect or permission to
-change shared processing. Whether its global pin assertion is stale under
-fresh unfinished-work reconciliation or reveals a physical cleanup problem is
-left to Joint; no production repair or assertion change is made here. The other
+change shared processing. The accepted QR exact-pin disposer is already present in a2 through selected
+composition `08fa2ba1` (producer `1d6d933c`). A generated read-only observer in
+`/tmp/mote-policy-archive-pin-composition-observer.log/.exit` retains the failing
+assertion and records the acquired old pin disappearing after physical
+settlement. The remaining pin has a different UUID and belongs to fresh
+reconciliation with new task/grant IDs. The account-wide zero-pin assertion
+conflates that new work with the retired attempt. No duplicate production repair
+or assertion change is made here. The other
 80 existing neighboring cases passed in that broad attempt. Their outcomes are
 not spliced into a successful full affected gate.
 
-The required scope planner reports Central only in
-`/tmp/mote-policy-archive-affected-plan.log/.exit`. It is a **dry run**, not a
-passed `check:central`. The parent requested this bounded owner module without
-repeating the full stack. Full affected checks, UI, final clients and compiled
-runtime recovery of this new personal module are not claimed. The fresh Server
-build verifies compilation; the old a2 Docker image remains evidence only for
-the preceding recovery phase.
+The affected scope is Central only. The parent subsequently requested the actual
+required gate and an independently reviewable Draft PR. The first gate started on
+clean documentation tip `a606d97b`, with production/test source exactly final77:
+
+```sh
+npm run check:affected -- --base 20f04d0c09ad721f42040763e62d1bf876c4e87c
+```
+
+Its log, source SHA and original clean status are retained in
+`/tmp/mote-policy-archive-required.log`, `.sha` and `.dirty`. After reproducing the
+checker failure below, the owner intentionally stopped only that runner
+and its verified descendants to avoid completing the superseded candidate.
+The shell exits 143; cancellation-generated failures are not test defects or a
+complete suite result. The exact stop reason/PIDs are recorded in
+`/tmp/mote-policy-archive-required.interrupted.json`. Before interruption, four
+component builds/types, Shared 192/192 and Agent 317 pass/1 skip had completed.
+The final gate will rerun the full Central scope on the renamed runtime; no
+first-run success is substituted for that rerun. UI, final clients and compiled-container recovery of
+this new personal module remain unverified. The fresh Server build verifies
+compilation; the old a2 Docker image remains evidence only for the preceding
+recovery phase.
+
+Joint then reproduced a scope-checker failure: its conservative `.prepare`
+rule interprets the new helper call as raw SQL. This lane independently ran
+`node scripts/check-scope-contracts.mjs` on final77: actual exit 1,
+`private SQL bypass: apps/server/src/scope/processing.ts`, retained in
+`/tmp/mote-policy-archive-scope77-red.log/.exit`. The bounded correction is a
+mechanical helper method rename to `.preflight`, with no checker exemption,
+SQL, archive semantics or ID/JSON changes. Commit `2699d1f7` applies exactly that
+rename and independently passes the checker, exit 0, retained in
+`/tmp/mote-policy-archive-preflight-scope.log/.exit`. The original RED is retained.
 
 ## Minimal handoff
 
-Joint directly confirmed three-table semantics and the old ID formula's missing
-processor receipt. The outbound requests to review initial `decf3153` and then superseding final
-`77a2818e` both returned
-`An earlier turn submission is not yet confirmed`; it is not recorded as
-delivered, accepted or composed. The earlier `decf3153` is superseded. Final
-composition and independent owner review remain pending.
+Joint completed an independent read-only review of exact final77, recorded in
+`/tmp/mote-joint-review-policy-archive-77a2818e.md`, and directly confirmed no new
+P0/P1/P2 findings. It checked optional v1 compatibility, owned parent closure,
+current-control precedence, fresh generations/unfinished-task fencing, the
+final dangling-local-plan guard and publication ordering. It did not execute
+our tests. The earlier outbound review requests returned unconfirmed; the later
+direct review supersedes that pending state. Joint is selecting the module
+commits into its own composition; its tests and later WIP are separate evidence.
 
 The feature commits can be selected after a2 without the old recovery-lane test
-cohort: `74c0fee6`, `decf3153`, `2206d33b`, `7242c9ce`, then `77a2818e`. Strict standalone test noEmit
+cohort: `74c0fee6`, `decf3153`, `2206d33b`, `7242c9ce`, then `77a2818e`, followed by checker-compatible `2699d1f7`. Strict standalone test noEmit
 also uses the earlier two-line `scoped-files.ts` Fastify payload typing correction
 from the recovery lane; it has no runtime effect. The explicit minimal patch
 `/tmp/mote-policy-archive-a2-final77.patch` includes only those four module files
@@ -133,5 +166,6 @@ Repository dependencies and Shared/Agent runtime are unchanged from a2.
 
 The integration branch was remotely verified still at
 `6272a9b51ec92cc4c32e2ff1a1eeb4fa38b142ed`. This checkpoint supplies a minimal
-module patch and feature commits for Joint composition; no PR, merge, deployment
-or CI configuration change is part of this handoff.
+module patch and feature commits for Joint composition. The authorized Draft PR
+will target integration and disclose its frozen dependency stack; no merge,
+deployment or CI configuration change is performed.
