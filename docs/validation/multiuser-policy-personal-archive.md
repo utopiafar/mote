@@ -1,4 +1,4 @@
-# Personal applied-policy archive checkpoint
+# Personal applied-policy archive validation
 
 The module consumes exact Joint production freeze
 `a2cbf3aaf1ae2f2fbfe5f647cf9a4f23dfdc1695`. Its RED commit is
@@ -39,6 +39,9 @@ Only external media HTTP is fake. No real model or central private data is used.
 | Final `77a2818e` same nine consumers; `/tmp/mote-policy-archive-final77-neighbors.log/.exit` | 9/9 pass, 0 fail/skip, exit 0, 22.792 seconds. |
 | Isolated a2 source plus final minimal five-file patch; `/tmp/mote-policy-archive-exact-a2-final77.log/.exit` | 5/5 critical cases pass, 0 fail/skip, exit 0, 25.180 seconds. No prior recovery cohort is copied. |
 | Final Server build and strict new-test/minimal-projection noEmit | Exit 0: `/tmp/mote-policy-archive-final-build.log/.exit`, `/tmp/mote-policy-archive-final-test-types.log/.exit`, `/tmp/mote-policy-archive-final77-minimal-types.log/.exit`. |
+| Checker-compatible `2699d1f7` owner matrix; `/tmp/mote-policy-archive-preflight27.log/.exit` | 27/27 pass, 0 fail/skip, exit 0, 55.800 seconds. |
+| Checker-compatible `2699d1f7` isolated a2 plus minimal patch; `/tmp/mote-policy-archive-preflight-minimal5.log/.exit` | 5/5 pass, 0 fail/skip, exit 0, 31.804 seconds. |
+| Same runtime supervisor fixtures and release tools | Exit 0: `/tmp/mote-policy-archive-preflight-runner.log/.exit`; 52/52, 0 fail/skip, exit 0: `/tmp/mote-policy-archive-preflight-release.log/.exit`. Recorded separately so a prior Server failure cannot hide unexecuted `&&` stages. |
 | Server noEmit and fresh Server build | Exit 0: `/tmp/mote-policy-archive-server-types.log/.exit`, `/tmp/mote-policy-archive-build.log/.exit`. |
 | Strict new-test noEmit and i18n | Exit 0: `/tmp/mote-policy-archive-test-types-owner-final.log/.exit`, `/tmp/mote-policy-archive-i18n.log/.exit`. I18n checks 8,439 bilingual messages/call sites. |
 
@@ -126,8 +129,10 @@ The shell exits 143; cancellation-generated failures are not test defects or a
 complete suite result. The exact stop reason/PIDs are recorded in
 `/tmp/mote-policy-archive-required.interrupted.json`. Before interruption, four
 component builds/types, Shared 192/192 and Agent 317 pass/1 skip had completed.
-The final gate will rerun the full Central scope on the renamed runtime; no
-first-run success is substituted for that rerun. UI, final clients and compiled-container recovery of
+A new full Central affected gate started from clean doc-only tip `1170f676`
+with production freeze `2699d1f7`; its distinct evidence prefix is
+`/tmp/mote-policy-archive-required-final`. No first-run success is substituted
+for that rerun. Its actual terminal exit is **1**, with the complete results below. UI, final clients and compiled-container recovery of
 this new personal module remain unverified. The fresh Server build verifies
 compilation; the old a2 Docker image remains evidence only for the preceding
 recovery phase.
@@ -141,6 +146,37 @@ mechanical helper method rename to `.preflight`, with no checker exemption,
 SQL, archive semantics or ID/JSON changes. Commit `2699d1f7` applies exactly that
 rename and independently passes the checker, exit 0, retained in
 `/tmp/mote-policy-archive-preflight-scope.log/.exit`. The original RED is retained.
+
+## Complete required gate on the final candidate
+
+`/tmp/mote-policy-archive-required-final.log/.exit` records the real command above,
+actual exit **1**, started on clean
+`1170f67654c1a2fe4026c1e750de30453dc11827` with production source exactly
+`2699d1f7eeeb12390c2b87229c11c32dc731d9ee`. Only validation documentation was
+edited while it ran. The same gate completes all four builds/types and i18n.
+
+| Required component | Actual result |
+| --- | --- |
+| Shared | 192/192 pass, 0 fail/skip. |
+| Agent | 317 pass, 0 fail, 1 skip. |
+| Server | 2,790 pass, 3 fail, 2 skip; 2,795 total, 1,505.827 seconds. All 27 personal-plan archive cases and production scope architecture pass inside this complete run. |
+| Web | 515/515 pass, 0 fail/skip, 85.943 seconds. |
+
+The required gate is **not accepted as green**. Its three original failures are
+retained without changing shared backends, fixture assertions or timeouts:
+
+| Current failure | Actual untouched-a2 reproduction and classification |
+| --- | --- |
+| `failed real child retries only its own model branch while successful checkpoints remain single-use` | `/tmp/mote-policy-archive-a2-ask-baseline.log/.exit`: 0/1, exit 1, 24.165 seconds. The original fixture's 20-second Ask wait expires with status running and a final validating event. Source is an unmodified tracked a2 snapshot at `/tmp/mote-policy-archive-a2-required-baseline`. This confirms a preexisting failing scenario, without claiming a cause or a later successful completion. |
+| `a held actual media result is fenced after configuration while B remains operational` | `/tmp/mote-policy-archive-a2-configuration-baseline.log/.exit`: 0/1, exit 1, 5.437 seconds, pin count 1 versus 0. The exact-pin observer above shows the old pin retires and a distinct new pin belongs to fresh work; the QR disposer repair is already present. |
+| `Web feature metadata describes real routes and Library keeps owned canonical material/source paging` | `/tmp/mote-policy-archive-a2-web-metadata-baseline.log/.exit`: 0/1, exit 1, 6.705 seconds, `do not advertise absent legacy runtime`. The frozen runtime has scoped Imports, while this old assertion assumes absence; the peer already reported the same stale fixture. No peer WIP is copied. |
+
+The failed workspace command prevents its later `&&` supervisor/release stages
+from running. They were also run independently on this same frozen candidate:
+supervisor fixture exit 0; release tools 52/52, no fail/skip, exit 0. Those results
+are separate evidence and do not turn the failed required command into a pass.
+No additional source changes follow this gate; final publication edits only
+documentation and PR metadata.
 
 ## Minimal handoff
 
@@ -157,15 +193,19 @@ The feature commits can be selected after a2 without the old recovery-lane test
 cohort: `74c0fee6`, `decf3153`, `2206d33b`, `7242c9ce`, then `77a2818e`, followed by checker-compatible `2699d1f7`. Strict standalone test noEmit
 also uses the earlier two-line `scoped-files.ts` Fastify payload typing correction
 from the recovery lane; it has no runtime effect. The explicit minimal patch
-`/tmp/mote-policy-archive-a2-final77.patch` includes only those four module files
-and that fixture typing correction, with SHA-256
-`66464b9adc0a01e14aa9e00c1b8932d5ca3d5f93113fb1b9da3079da14e48f08`.
+`/tmp/mote-policy-archive-a2-final77.patch` preserves the reviewed final77 module
+with SHA-256 `66464b9adc0a01e14aa9e00c1b8932d5ca3d5f93113fb1b9da3079da14e48f08`.
+The checker-compatible `/tmp/mote-policy-archive-a2-preflight.patch` contains only
+those four module files and the fixture typing correction, with SHA-256
+`be8fd61a7ae7d9ce1095b231c064fded41e5462f0a3ce508e65416828b44209a`.
 An isolated a2 source projection plus precisely these files is separately
 checked; its command/log and final result are recorded in the public freeze file.
 Repository dependencies and Shared/Agent runtime are unchanged from a2.
 
 The integration branch was remotely verified still at
 `6272a9b51ec92cc4c32e2ff1a1eeb4fa38b142ed`. This checkpoint supplies a minimal
-module patch and feature commits for Joint composition. The authorized Draft PR
-will target integration and disclose its frozen dependency stack; no merge,
-deployment or CI configuration change is performed.
+module patch and feature commits for Joint composition. The authorized Draft PR targets integration with its frozen dependency stack
+explicitly disclosed. Its integration comparison includes pending dependencies
+and earlier recovery tests; the independent module comparison against `20f04d0c`
+contains five files, including two production files. No merge, deployment or CI
+configuration change is performed. The task delivery records the actual PR URL.
