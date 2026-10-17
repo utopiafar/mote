@@ -2,7 +2,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {z} from 'zod';
 import {transcriptSchema} from '@mote/shared';
 import {DEFAULT_IMAGE_RECIPE} from '../image-recipes.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../execution-storage.js';
 import {imageProductSchema} from './processing-image-products.js';
 import type {UserContext} from './context.js';
 import {registerUserRoute,type ScopedRuntime} from './http.js';
