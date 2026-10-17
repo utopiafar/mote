@@ -340,3 +340,16 @@ test('explicit request model reference and personal model ID preserve own fixed 
  assert.equal((await f.request(f.a.token,'/api/query-runs','POST',{id:randomUUID(),input:{question:'Generated forged endpoint',modelReference:{kind:'personal',id:'request-only',baseUrl:'https://external.invalid'}}})).statusCode,400);
  assert.equal(f.requests.length,prior);
 });
+
+
+test('rechecking disclosed originals keeps the persistent Ask pin journal read-only',async t=>{
+ const f=await fixture(t);await f.publish(f.a,'A');
+ // A generated audit trigger observes writes through the real Harness. It does
+ // not replace account, task, source or receipt validation.
+ f.read(db=>db.exec("CREATE TABLE generated_pin_updates(changed INTEGER NOT NULL); CREATE TRIGGER generated_pin_update AFTER UPDATE OF pins,materials ON ma_runs BEGIN INSERT INTO generated_pin_updates VALUES(OLD.pins!=NEW.pins OR OLD.materials!=NEW.materials); END"));
+ const id=randomUUID();await f.checked(f.a.token,'/api/query-runs','POST',{id,input:{question:'Generated persistent receipt recheck'}});const result=await f.wait(f.a,id);assert.equal(result.status,'completed',JSON.stringify(result));
+ const writes=f.read(db=>db.prepare('SELECT changed,count(*) n FROM generated_pin_updates GROUP BY changed ORDER BY changed').all());
+ assert.ok(writes.some(row=>row.changed===1),'first genuine original/material observations must persist');
+ assert.equal(writes.filter(row=>row.changed===0).reduce((n,row)=>n+Number(row.n),0),0,'revalidating a retained original must not rewrite identical persistent pins');
+ assert.equal(result.result.citations.length,1);assert.equal((await f.request(f.b.token,'/api/query-runs/'+id)).statusCode,404);
+});
