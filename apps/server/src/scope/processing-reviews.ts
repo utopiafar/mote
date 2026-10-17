@@ -22,7 +22,7 @@ type Host={snapshot(context:UserContext,ref:string):Snapshot;read(context:UserCo
 const requestSchema=proposalInput.extend({operationId:z.string().min(1).max(128)}).strict();
 const inputSchema=processingInputSchema.extend({reviewId:z.string().uuid(),artifactId:z.string().regex(/^[a-f0-9]{64}$/),materialId:z.string().regex(/^mat_[a-f0-9]{64}$/),materialRevision:z.string().regex(/^[a-f0-9]{64}$/),review:proposalInput}).strict();
 type Input=z.infer<typeof inputSchema>;
-const base=(value:Input)=>processingInputSchema.parse({originalRef:value.originalRef,generation:value.generation,originalGeneration:value.originalGeneration,attachmentGeneration:value.attachmentGeneration,fileGeneration:value.fileGeneration,settings:value.settings});
+const base=(value:Input)=>processingInputSchema.parse({policyPlanId:value.policyPlanId,originalRef:value.originalRef,generation:value.generation,originalGeneration:value.originalGeneration,attachmentGeneration:value.attachmentGeneration,fileGeneration:value.fileGeneration,settings:value.settings});
 const uuid=(value:unknown)=>{const h=identityHash(value);return h.slice(0,8)+'-'+h.slice(8,12)+'-5'+h.slice(13,16)+'-a'+h.slice(17,20)+'-'+h.slice(20,32);};
 const conflict=()=>new PrivateDataError('conflict',409);
 const inputsSchema=z.object({contexts:z.array(z.object({sourceId:z.string().min(1).max(128),version:z.number().int().nonnegative(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/).optional()}).strict()).max(201),calendar:z.array(z.object({id:z.string().uuid(),hash:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).max(200)}).strict();

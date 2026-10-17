@@ -341,3 +341,11 @@ erasure removes it, native backup preserves it. Evidence: own50527 actualRED,
 519 repair8/8 plus nonzero1/1 and source native recovery1/1. Current type, independent
 repair review and final compiled/container/client gates remain pending. Ordinary
 engineering work is authorized; no user approval is pending in this slot.
+
+
+Configuration relogin: KEEP immutable request/task subjects and existing account
+epoch/durable grant boundaries. CHANGE cached M04 entry reuse to require its
+original admission subject still current. Retired handlers drain before a fresh
+login opens the same YAML; no old suspended request borrows new credentials.
+Actual same-account logout/relogin save503 RED and fixed same-case GREEN, plus
+18 existing lease/lifecycle cases, are recorded in the validation ledger.

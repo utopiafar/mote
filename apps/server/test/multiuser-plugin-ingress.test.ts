@@ -18,10 +18,10 @@ function find(directory:string,name:string):string|undefined{if(!existsSync(dire
 
 // The fixture gate is inside trusted generated plugin code and its own cwd.
 // Every RPC still traverses the production binder and real M03 transactions.
-const code=generatedScopedPluginSource.replace("if(input.method)return host.call(input.method,input.args??[]);",String.raw`
+const code=generatedScopedPluginSource.replace("import {readFile,writeFile} from 'node:fs/promises';","import {readFile,writeFile,rename} from 'node:fs/promises';").replace("if(input.method)return host.call(input.method,input.args??[]);",String.raw`
   if(input.method){
    const key=input.waitForRelease;if(key&&!/^[a-z0-9-]+$/.test(key))throw Error('bad_generated_gate');
-   if(key){await writeFile('joint-entered-'+key,String(process.pid));for(;;){try{await readFile('joint-release-'+key);break;}catch{await new Promise(resolve=>setTimeout(resolve,5));}}}
+   if(key){await writeFile('joint-entered-'+key+'.pending',String(process.pid));await rename('joint-entered-'+key+'.pending','joint-entered-'+key);for(;;){try{await readFile('joint-release-'+key);break;}catch{await new Promise(resolve=>setTimeout(resolve,5));}}}
    try{const result=await host.call(input.method,input.args??[]);if(input.emitAfterRelease)await host.call('emit',{late:true});return result;}
    finally{if(key)await writeFile('joint-attempted-'+key,'attempted');}
   }`);
@@ -85,14 +85,14 @@ test('pause drains an already admitted real source RPC while blocking new admiss
 
 for(const mode of ['stop','grant-revoke','plugin-delete','ingress-delete','account-disable'] as const)test('real source late RPC and subscription cannot publish after '+mode+', while B continues',async t=>{
  const f=await fixture(t),key=mode+'-'+randomUUID(),events:unknown[]=[],context=await f.node.authority.authenticate(f.alice.token);f.node.plugins!.forUser(context).subscribe(f.snapshots.a.id,event=>events.push(event));
- const task=await f.submit(f.alice.token,f.snapshots.a.id,'receiveSourceItems',['allowed-source','late-'+mode,[item('late-'+mode)]],{waitForRelease:key,emitAfterRelease:true});let entered:string|undefined;await until(()=>Boolean(entered=find(join(f.directory,'plugins','instances'),'joint-entered-'+key)),'source worker did not enter');const directory=dirname(entered!),pid=Number(readFileSync(entered!,'utf8'));
+ const task=await f.submit(f.alice.token,f.snapshots.a.id,'receiveSourceItems',['allowed-source','late-'+mode,[item('late-'+mode)]],{waitForRelease:key,emitAfterRelease:true});let entered:string|undefined;await until(()=>Boolean(entered=find(join(f.directory,'plugins','instances'),'joint-entered-'+key)),'source worker did not enter');const directory=dirname(entered!),pid=Number(readFileSync(entered!,'utf8'));assert.ok(Number.isSafeInteger(pid)&&pid>0,'generated worker marker must name one real process');
  if(mode==='stop')await f.action(f.alice.token,'stop');
  if(mode==='grant-revoke'){await f.action(f.alice.token,'pause');const instance=(await f.view(f.alice.token)).instances[0];delete instance.generation;delete instance.checked;delete instance.secretStatus;delete instance.capabilities;instance.grants.sourceIds=[];await f.configure(f.alice.token,instance);}
  if(mode==='plugin-delete')assert.equal((await f.node.services.forUser(context).deleteUser('plugins','joint-delete-plugins')).status,'complete');
  if(mode==='ingress-delete')assert.equal((await f.node.services.forUser(context).deleteUser('ingress','joint-delete-ingress')).status,'complete');
  if(mode==='account-disable')await f.checked(f.admin.token,'/api/admin/accounts/'+f.a.userId,'PATCH',{disabled:true});
  if(mode==='ingress-delete'||mode==='account-disable'){writeFileSync(join(directory,'joint-release-'+key),'release');await until(()=>existsSync(join(directory,'joint-attempted-'+key)),'revoked source worker did not attempt its actual RPC');}
- else{await until(()=>{try{process.kill(pid,0);return false;}catch{return true;}},'retired source process remained alive');if(existsSync(directory))writeFileSync(join(directory,'joint-release-'+key),'release');assert.equal(existsSync(join(directory,'joint-attempted-'+key)),false);}
+ else{await until(()=>{try{process.kill(pid,0);return false;}catch(error){if((error as NodeJS.ErrnoException).code==='ESRCH')return true;throw error;}},'retired source process remained alive');if(existsSync(directory))writeFileSync(join(directory,'joint-release-'+key),'release');assert.equal(existsSync(join(directory,'joint-attempted-'+key)),false);}
  await until(()=>f.node.execution!.engine.get(task.id)?.state==='stale','late source task did not become stale');assert.equal(f.db.prepare('SELECT result FROM user_tasks WHERE task_id=?').get(task.id)!.result,null);assert.deepEqual(events,[]);assert.equal(f.db.prepare('SELECT count(*) n FROM pd_source_heads WHERE user_id=? AND external_id=?').get(f.a.userId,'late-'+mode)!.n,0);
  const other=(await f.rpc(f.bob.token,f.snapshots.b.id,'receiveSourceItems',['allowed-source','b-'+mode,[item('b-'+mode)]])).result;assert.equal(other.userId,f.b.userId);
 });

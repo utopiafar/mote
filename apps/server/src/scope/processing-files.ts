@@ -3,7 +3,7 @@ import {fileOriginalGeneration} from './ingress-file-forget.js';
 import {Readable} from 'node:stream';
 import {z} from 'zod';
 import {exportTar,transcriptMarkdown,transcriptCsv,csvCell} from '../file-export-tar.js';
-import {transcriptSchema} from '@mote/shared';
+import {fileTypePattern,transcriptSchema} from '@mote/shared';
 import {executionEnvelope} from '@mote/shared/execution';
 import type {DatabaseSync} from 'node:sqlite';
 import type {UserContext} from './context.js';
@@ -16,7 +16,7 @@ import {PROCESSING_DOMAIN} from './processing.js';
 import type {TaskExecution} from './task-execution.js';
 import {evidenceId as chunkId} from './processing-analysis.js';
 
-const listSchema = z.object({sourceId:z.string().max(128).optional(),query:z.string().max(2000).optional(),mimePrefix:z.enum(['audio/','text/','image/']).optional(),limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().max(8192).optional()}).strict();
+const listSchema = z.object({sourceId:z.string().max(128).optional(),query:z.string().max(2000).optional(),type:fileTypePattern.optional(),mimePrefix:z.enum(['audio/','text/','image/']).optional(),limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().max(8192).optional()}).strict();
 
 /** Owned presentation of existing M03 originals and M06 publications. This has
  * no data store, processor, scheduler, model call or inferred default owner. */
@@ -32,18 +32,20 @@ export function registerProcessingFiles(runtime:ScopedRuntime,db:DatabaseSync,pr
     };
     const detail=(id:string,includeAcoustics=true)=>{
       const {row,ref,info,capture,status}=owned(id),taskRow=sql.get('SELECT a.task_id FROM mp_admissions a JOIN execution_steps e ON e.user_id=a.user_id AND e.id=a.task_id WHERE a.user_id=$user AND e.user_id=$user AND a.original_id=? ORDER BY e.updated_at DESC,e.id LIMIT 1',String(row.id));
-      const task=taskRow?execution.forUser(context).get(String(taskRow.task_id)):undefined,diarization=includeAcoustics?service.fileDiarization(ref):undefined;
+      const task=taskRow?execution.forUser(context).get(String(taskRow.task_id)):undefined,diarization=includeAcoustics?service.fileDiarization(ref):undefined,error=task?.failure?.code??task?.error??null;
       return {captureId:id,originalGeneration:fileOriginalGeneration(sql,ref),sourceId:info.sourceId,originalRef:ref,sizeBytes:info.totalBytes,sha256:info.hash,hasOriginal:info.available!==false,originMissing:!status.current,
         rawArtifactId:service.fileStageIds(ref).raw,cancellation:service.cancellation(ref),calendarLink:service.fileCalendar(ref),item:{...capture.provenance,title:capture.windowTitle,observedAt:capture.capturedAt,mimeType:info.mime},processing:status,
-        job:task?{state:task.state,stage:task.kind,attempts:task.attempts,error:task.failure?.code??null,execution:executionEnvelope({state:task.state,attempts:task.attempts,errorCode:task.failure?.code})}:null,
+        job:task?{state:task.state,stage:task.kind,attempts:task.attempts,error,execution:executionEnvelope({state:task.state,attempts:task.attempts,errorCode:error})}:null,
         artifacts:[...(diarization?[{...diarization,kind:'diarization',complete:true}]:[]),...(status.artifactId?[{id:status.artifactId,kind:'transcript',complete:true}]:[]),...status.derivations.map(x=>({id:x.artifactId,kind:x.kind==='turns'?'dialogue':x.kind,complete:true}))]};
     };
     return {owned,detail,
+      proof:(id:string)=>{const {ref}=owned(id);return identityHash({detail:detail(id,false),control:sql.get('SELECT generation,cancelled FROM mp_file_controls WHERE user_id=$user AND original_id=?',ref.slice(9)),tasks:sql.all('SELECT u.task_id,e.state,e.updated_at FROM user_tasks u JOIN execution_steps e ON e.user_id=u.user_id AND e.id=u.task_id WHERE u.user_id=$user AND e.user_id=$user AND json_extract(u.input,\'$.originalRef\')=? ORDER BY u.task_id',ref)});},
       list:(raw:unknown)=>{
         const {cursor:token,limit,...filters}=listSchema.parse(raw),query={collection:'processing-files',...filters,limit},position=token?z.object({at:z.string(),id:z.string().uuid()}).strict().parse(cursor.decodeCompact(token,query)):undefined,args:(string|number)[]=[],where:string[]=[];
         if(filters.sourceId){where.push('r.source_id=?');args.push(filters.sourceId);}
         if(filters.query){where.push("instr(lower(json_extract(c.json,'$.windowTitle')),lower(?))>0");args.push(filters.query);}
         if(filters.mimePrefix){where.push('instr(r.mime,?)=1');args.push(filters.mimePrefix);}
+        if(filters.type&&filters.type!=='*/*'){where.push('r.mime LIKE ?');args.push(filters.type.replace('*','%'));}
         if(position){where.push('(c.context_at<? OR(c.context_at=? AND c.id>?))');args.push(position.at,position.at,position.id);}
         const rows=sql.all(`SELECT c.id,c.context_at ${base} AND r.user_id=$user ${where.length?' AND '+where.join(' AND '):''} ORDER BY c.context_at DESC,c.id LIMIT ?`,...args,limit+1),page=rows.slice(0,limit),last=page.at(-1);
         return {items:page.map(row=>detail(String(row.id),false)),nextCursor:rows.length>limit&&last?cursor.encodeCompact(query,{at:String(last.context_at),id:String(last.id)}):null};
@@ -95,4 +97,5 @@ export function registerProcessingFiles(runtime:ScopedRuntime,db:DatabaseSync,pr
   registerUserRoute(runtime,{scope:'user',service:PROCESSING_DOMAIN,method:'POST',url:'/api/files/:id/retry',handle:({context,request})=>{const file=bind(context).owned(z.object({id:z.string().uuid()}).parse(request.params).id);return processing.forUser(context).retryFile(file.ref,request.body);}});
   registerUserRoute(runtime,{scope:'user',service:PROCESSING_DOMAIN,method:'POST',url:'/api/files/:id/corrections',handle:({context,request})=>{const file=bind(context).owned(z.object({id:z.string().uuid()}).parse(request.params).id);return processing.forUser(context).correctFile(file.ref,request.body);}});
   registerUserRoute(runtime,{scope:'user',service:PROCESSING_DOMAIN,method:'POST',url:'/api/files/:id/speakers',handle:({context,request})=>{const file=bind(context).owned(z.object({id:z.string().uuid()}).parse(request.params).id);return processing.forUser(context).nameFileSpeakers(file.ref,request.body);}});
+  return bind;
 }

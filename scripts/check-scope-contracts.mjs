@@ -85,7 +85,7 @@ export function checkProductionImports(directory=root){
   // M06 constructs only the existing shared processor registry and uses pure
   // recipes, decoder subprocess, transport and fingerprint algorithms. No
   // legacy private Store is constructed; scoped Original/TaskRun provide I/O.
-  for(const path of ['base64.ts','python-source-pack-executor.ts','import-review.ts','import-record.ts','import-disposition-validation.mjs','archive-contract.ts','file-export-tar.ts','file-review-contract.ts','file-processors.ts','file-recipes.ts','file-dialogue.ts','format-work.ts','file-configuration.ts','local-http.ts','image-understanding.ts','evidence-image.ts'])allowed.add(sourceRoot+'/'+path);
+  for(const path of ['base64.ts','python-source-pack-executor.ts','import-review.ts','import-record.ts','import-disposition-validation.mjs','archive-contract.ts','file-export-tar.ts','file-review-contract.ts','file-processors.ts','file-recipes.ts','file-dialogue.ts','format-work.ts','file-configuration.ts','file-policy-validation.ts','processor-parameters.ts','local-http.ts','image-understanding.ts','evidence-image.ts'])allowed.add(sourceRoot+'/'+path);
   // M13's public static assets helper opens no private Store or user service.
   allowed.add(sourceRoot+'/web-assets.ts');
   // M11 uses only the existing pinned-address HTTP transport and fixed error

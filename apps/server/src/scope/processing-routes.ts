@@ -17,7 +17,13 @@ export function registerProcessing(runtime:ScopedRuntime,db:DatabaseSync,configu
  registerUserRoute(runtime,{scope:'user',method:'POST',url:'/api/processing',service:PROCESSING_DOMAIN,handle:({services,request})=>service(services).submit(request.body)});
  registerUserRoute(runtime,{scope:'user',method:'GET',url:'/api/processing/originals/:id',service:PROCESSING_DOMAIN,handle:({services,request})=>service(services).status('original:'+z.object({id:z.string().regex(/^[a-f0-9]{64}$/)}).parse(request.params).id)});
  registerUserRoute(runtime,{scope:'user',method:'GET',url:'/api/processing/artifacts/:id',service:PROCESSING_DOMAIN,handle:({services,request})=>service(services).artifact(z.object({id:z.string().regex(/^[a-f0-9]{64}$/)}).parse(request.params).id)});
- registerProcessingFiles(runtime,db,host,ingress,execution,privateCursorKey);
+ const files=registerProcessingFiles(runtime,db,host,ingress,execution,privateCursorKey);
+ registerUserRoute(runtime,{scope:'user',method:'GET',url:'/api/file-processing',service:PROCESSING_DOMAIN,handle:({context})=>host.policies.view(context)});
+ registerUserRoute(runtime,{scope:'user',method:'PUT',url:'/api/file-processing',service:PROCESSING_DOMAIN,bodyLimit:262144,handle:({context,request})=>host.policies.save(context,request.body)});
+ registerUserRoute(runtime,{scope:'user',method:'POST',url:'/api/file-processing/match',service:PROCESSING_DOMAIN,handle:({context,request})=>host.policies.match(context,request.body)});
+ registerUserRoute(runtime,{scope:'user',method:'POST',url:'/api/file-processing/preview',service:PROCESSING_DOMAIN,handle:({context,request})=>host.policies.preview(context,request.body,files(context))});
+ registerUserRoute(runtime,{scope:'user',method:'POST',url:'/api/file-processing/reprocess',service:PROCESSING_DOMAIN,handle:({context,request})=>host.policies.reprocess(context,request.body,files(context),(token,refs,assertPreview)=>host.reprocessPolicies(context,token,refs,assertPreview))});
+
  registerUserRoute(runtime,{scope:'user',service:PROCESSING_DOMAIN,method:'GET',url:'/api/import-capabilities',handle:({context})=>host.importJobs.forUser(context).capabilities()});
  registerUserRoute(runtime,{scope:'user',service:PROCESSING_DOMAIN,method:'GET',url:'/api/import-source-packs',handle:({context})=>host.importJobs.forUser(context).sourcePacks()});
  registerUserRoute(runtime,{scope:'user',service:PROCESSING_DOMAIN,method:'GET',url:'/api/imports',handle:({context})=>host.importJobs.forUser(context).list()});

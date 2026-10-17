@@ -1048,3 +1048,275 @@ bytes through a fresh signed M03 ticket, rejects that ticket under B, and permit
 fresh A deletion while B remains readable. No build, compiled entry, packaged CLI,
 Docker/Hindsight provider or full J11/J13 gate was run by this case. An initial
 source-only native1/1 pass is retained separately before final cleanup/byte checks.
+
+### Original processing policy page: implementation checkpoint, NOT release
+
+The existing source consumer freeze2528a67d now has actual Server/scripts noEmit
+EXIT0: `/tmp/mote-joint-current-types.log/.exit/.sha`. Parent subsequently removed
+the blanket heavy serialization constraint for isolated resources; this check did
+not use Desktop's dist, Gradle, port, database, simulator or container. New E2E and
+recovery owners received exact2528 and remaining gaps, not subsequent WIP.
+
+Own durablee3b7c030 characterizes the original settings page GET503, actual1/1fail
+EXIT1 `/tmp/mote-joint-processing-policy-page-red.log/.exit`. Current intermediate
+implementation restores read/save/match, M04 reference graph, original shared
+profile/parameter validation, immutable M06 plan metadata, original-only/new-file
+processing and fixed personal/shared model reference hydration. It is not a full
+policy-page/old capability acceptance or a declared consumer freeze.
+
+`/tmp/mote-joint-processing-policy-page-green5.log/.exit`:4/4,0fail/cancel/skip,
+12.630s EXIT0. Real original routes/SQLite/M04/M05 cover source/exact-MIME/wildcard/
+default matching, stale save CAS, invalid parameter and embedded-key rejection
+without partial multi-domain writes, A archive-only with zero fake tasks versus
+same-ID B text processing, deletion of bound plan metadata with B unaffected,
+and same-ID named image services using different complete private endpoint/key
+references while global OCR selection remains empty. Only a generated loopback
+OCR responder was substituted; no real inference/provider data. Earlier green3/4
+failures retain a fixture's400 expectation versus generic configuration
+prepare503; moving original profile validation into the existing M04 schema phase
+restores a real invalid-config400 and atomic rejection. No global ConfigService
+failure handling was relaxed.
+
+Original unscoped algorithm characterization after extracting its pure validator:
+`/tmp/mote-joint-processing-policy-original-validator.log/.exit`16/16,27.784s0,
+no skip. That remains legacy algorithm evidence, not new scoped lifecycle proof.
+Current scoped legacy neighbors `/tmp/mote-joint-policy-legacy-processing-neighbors.log/.exit`
+3/3,9.805s0 cover actual text→Material, exact historical generation-zero/lost ACK,
+and real M09 bounded processor entry. A final view-only refinement keeps file
+recipes instead of overwriting them with image recipes; its explicit capability
+assertions pass1/1,2.522s0 in `/tmp/mote-joint-policy-capability-view.log/.exit`.
+Server/scripts noEmit is0 in `/tmp/mote-joint-policy-wip-types4.log/.exit`, boundary
+checker0 in `/tmp/mote-joint-policy-wip-scope4.log/.exit`. No whole affected,
+compiled/UI/native/container recovery or independent source review of this new
+policy checkpoint is claimed. All remaining implementation items are listed in
+the design checkpoint above; especially unfinished work is not yet reconciled.
+
+### Named graph reconciliation: bounded implementation evidence
+
+93dd6daa adds the unfinished-work target. Its first run waited only for `blocked`,
+while the original missing-service failure can be `failed`; the test timed out
+(cancelled1) and is not a business RED. After the fixture waits for either actual
+unfinished terminal, exact a250 runtime was restored temporarily in the own tree
+and run serially, then the saved WIP file restored in a finally block. This valid
+old-source RED is1/1fail,3.532s EXIT1:
+`/tmp/mote-joint-processing-policy-reconcile-red2.log/.exit`, processingRequired
+remains true after selecting archive. No peer tree or running build was modified.
+The same case GREEN is1/1,3.341s0; including completed/cancelled preservation,
+`/tmp/mote-joint-processing-policy-reconcile-neighbors.log/.exit` is2/2,9.608s0.
+
+New real loopback request-body acceptance followed by socket loss proves a
+physical unknown. Named service reference changes admit a new coordinator but no
+new provider request without explicit file confirmation. B's equal-ID request
+still succeeds; after confirmation exactly one new A request succeeds and the
+old issuance remains un-settled. Current actual1/1,6.915s EXIT0:
+`/tmp/mote-joint-processing-policy-reconcile-unknown3.log/.exit`. First unknown1/2
+failures were a fixture that selected only state `unknown`, while a durable
+unsettled fact may still be `issued`; the first attempted correction did not
+actually change that SQL predicate. Both failures are preserved, not claimed as
+product RED. The corrected predicate explicitly observes issued/unknown IDs and
+null settled_at before/after, without weakening byte/request-count/B assertions.
+
+The changed common coordinator guard also reran11 exact legacy extraction/ASR/
+diarization/retry/parentless scenarios,0fail/cancel/skip,67.029s EXIT0 in
+`/tmp/mote-joint-policy-reconcile-retry-neighbors.log/.exit`. These are source
+cases with generated localhost services, not a whole affected/compiled/physical
+or full runtime-fingerprint acceptance. Current types and boundary receipts are
+`/tmp/mote-joint-policy-reconcile-types2.log/.exit` and
+`/tmp/mote-joint-policy-reconcile-scope.log/.exit`; final result is checked before
+this implementation checkpoint is committed. Public consumer freeze stays2528.
+
+
+### Configuration relogin admission subject
+
+Actual generated HTTP logout → same-account fresh login → processing settings
+save failed503/config_prepare_failed on the unchanged M04 cached-entry code
+(durable RED80ac30ee; `/tmp/mote-joint-configuration-relogin-red.log/.exit`,
+1/1fail,1.162s). Domain factories capture their admission subject; an entry
+keyed only by account epoch still held the logged-out credential. A current new
+caller now drains and closes that retired entry before opening domain handlers
+with its own immutable subject. The old subject is never rebound to new authority.
+Same regression passes1/1,1.096s in
+`/tmp/mote-joint-configuration-relogin-green.log/.exit`, including old-token401
+and unchanged sibling configuration. Three existing M04 suites pass18/18,8.282s
+(`/tmp/mote-joint-configuration-relogin-neighbors.log/.exit`), including admitted
+work after logout, pinned leases, reset/deletion, restore and credential fencing.
+This is a narrow source correction, not whole client/recovery acceptance.
+
+
+### Named reference publication checkpoint (not consumer freeze)
+
+Durable f45af053 exercises absent `same-media` → blocked original → publish
+complete personal M04 connection with the same ID and unchanged policy. Sandbox
+listen EPERM occurred before product execution and is retained. The authorized
+localhost run actually failed to resume within6s (EXIT1,7.438s),
+`/tmp/mote-joint-policy-service-change-red-approved.log/.exit`. M04's existing
+domain resolve now derives only canonical referenced-connection fingerprints;
+its ordinary effective-change transaction triggers the existing unfinished-plan
+reconciliation. YAML and applied-plan metadata keep references/hashes, never a
+second endpoint/key store. Only the selected profile's connection hashes enter
+the immutable plan identity. Same-case GREEN1/1,2.472s EXIT0 is
+`/tmp/mote-joint-policy-service-change-green2.log/.exit`; green1 reached processing
+success but compared the raw input policy to canonical defaults, so its final
+fixture assertion failed and is retained. Green2 compares the actual saved policy
+without weakening request-count, output, plan-change or sibling assertions.
+Server noEmit0: `/tmp/mote-joint-policy-service-change-types.log/.exit`.
+Shared-instance change notification, global/default selections, processor-version
+startup reconciliation, raw-stage reuse and complete applied-plan lifecycle remain
+OPEN; this bounded personal-reference case is not whole fingerprint acceptance.
+
+
+### Independent plugin retirement discrepancy remains unresolved
+
+The cross-user owner reports two repeated10s PID-presence failures on2528 for
+source stop/delete, preserving its RED logs. Joint's unchanged plugin runtime,
+worker, scoped host and generated plugin fixture run the same two cases2/2
+EXIT0,2.776s (`/tmp/mote-joint-plugin-retirement-red.log/.exit`; the planned
+filename does not imply RED). Tightening the PID probe to accept only ESRCH as
+exit proof, propagating every other OS error, passes2/2,2.282s
+(`/tmp/mote-joint-plugin-retirement-esrch.log/.exit`). Temporarily restoring
+exact2528 configuration.ts and restoring current bytes in finally also passes
+2/2,2.459s (`/tmp/mote-joint-plugin-retirement-before-relogin.log/.exit`).
+The relogin cache correction is therefore not established as its cause/fix.
+No plugin production change or closure claim is made; failed-process PID/state
+diagnostics are requested from the independently failing workspace. These narrow
+results cannot replace that owner's required gate or whole plugin acceptance.
+
+
+### Original settings-page atomic connection edit
+
+The old processing page saved service configuration and policy in one action.
+Durable57691558 shows the new route rejected its personal M04 connection edit
+400 (1/1fail,2.672s `/tmp/mote-joint-policy-atomic-editor-red.log/.exit`).
+The scoped page now accepts optional complete personal `models` beside settings
+and reference-only policy; all domains use the existing M04 `updateMany` replace
+transaction and existing stable-ID masked-secret handling at one CAS revision.
+There is no shared-resource write, second secret store, or second user step.
+The route returns redacted personal connections and shared read-only metadata.
+Same-case GREEN1/1,1.282s0 (`/tmp/mote-joint-policy-atomic-editor-green.log/.exit`)
+checks revision+1, secret redaction/retention, invalid-profile atomic rejection,
+stale409 and sibling unchanged. Current four-file policy/relogin combination
+10/10,22.742s0 is `/tmp/mote-joint-policy-atomic-editor-neighbors.log/.exit`;
+Server types and scope checker both0 in corresponding `-types`/`-scope` receipts.
+These backend entry checks do not establish client page integration or whole
+policy/final joint acceptance. Public limited consumer candidate remains2528.
+
+
+Plugin fixture timing characterization: a generated-only150ms hold after the
+real marker file open and before its write reproduces the exact stop failure
+with `GENERATED_PID_RAW="" PID=0`,1/1fail11.627s in
+`/tmp/mote-joint-plugin-marker-timing-red.log/.exit`. This PID probes a process
+group, not the worker. Publishing the generated PID via same-directory temporary
+file→rename, asserting a positive safe PID and requiring ESRCH, passes both
+stop/delete under the identical held-write timing2/2,4.630s
+(`/tmp/mote-joint-plugin-marker-timing-green.log/.exit`, actual86038/86052).
+Only the durable generated marker protocol is corrected; no production worker
+code changes. The ignored `.mote/joint-fixture-pid-probe*.test.ts` files preserve
+the deterministic timing instrumentation locally. The independent owner's
+original failed runs still need its own diagnostics/recheck before closure.
+
+
+### Original preview and explicit reprocess entry checkpoint
+
+Durable2e4352d2 records actual missing preview503 RED1/1fail,5.035s
+(`/tmp/mote-joint-policy-preview-red.log/.exit`). The added entry reuses the
+existing Files owner projection and existing M05/M06 file retry body, extracting
+its synchronous core so the batch has one transaction rather than awaiting
+inside a SQL transaction. The first GREEN attempt reached reprocess but its
+fixture waited only for an old indexed publication, then retried while the new
+root was running409; this retained failure is not a product regression. It now
+waits for the actual new job succeeded state before starting another action.
+Owner A/B equal-ID, one-use token, cross-account409, stale-file rejection and
+late second-item SQL admission fault rollback/retry pass2/2,12.541s in
+`/tmp/mote-joint-policy-preview-green3.log/.exit`. Trigger faults are generated
+fixture SQL; no system permissions or real data are changed. Current final
+preview cases plus11 ASR/diarization/extraction-retry/authority/parentless neighbors
+pass13/13,45.713s0 (`/tmp/mote-joint-policy-preview-retry-neighbors.log/.exit`).
+Server+scripts types2 and scope receipts both0. Capacity/expiry/unknown reprocess
+and UI/whole recovery remain unclaimed. Public consumer freeze still2528.
+
+Generated source-plugin original full file, after atomic marker publication,
+passes9/9,30.686s0 (`/tmp/mote-joint-plugin-marker-full.log/.exit`): source reads/
+publication, pause/drain, stop, grant revoke, plugin/ingress delete, account disable
+and restart. These are Joint execution receipts; the independent cross-user
+owner must still confirm its originally failing workspace. No production plugin
+change was made to obtain this result.
+
+
+Settings-only named work: the first target accidentally increased the default
+maximum timeout beyond its schema limit and returned400; it is retained as a
+fixture error, not product RED. Corrected in-range timeout change with the policy
+unchanged produces valid RED84cd5df1: no fresh admission under the new processing
+generation (1/1fail4.807s `/tmp/mote-joint-policy-settings-change-red2.log/.exit`).
+The existing processing-domain completion now calls the same named-policy
+reconciliation after publication; unchanged plan ID is insufficient to skip a
+changed processing generation. Same case1/1,6.671s0 is
+`/tmp/mote-joint-policy-settings-change-green1.log/.exit`, Server types0. This
+does not yet close disable/resume, global-policy-null legacy work, derived phases
+or raw-extraction reuse after downstream-only changes.
+
+
+### Independently owned binary parser correction composed
+
+E2E minimal producer69243430→caf05519 is reviewed and selectively composed as
+192703dc/41c5d413; its runtime blob equals the producer main feature b084. Global
+Buffer decoding remains bounded4MiB; selected Imports routes retain MIME and
+decimal-part validation, with existing owner/credential/protocol/CSRF/hash/length
+checks unchanged. Unknown MIME/oversize errors retain the original503 mapping;
+unknown binary routes remain rejected by scope fallback (503 instead of former
+parser400), without staging writes. Own current profile combination targeted
+auth/CSRF+Imports bounds2/2,9.527s0 is
+`/tmp/mote-joint-parser-composed-narrow.log/.exit`. Source review is
+`/tmp/mote-joint-review-binary-parser-caf.md`. Producer41/41 and Recovery104/104/
+new compiled recovery are peer evidence on their exact candidates, not Joint's
+new policy-table restore proof. Own full affected/final clients remain pending.
+The independent cross-user original stop/delete cases also pass2/2,6.552s after
+the fixture-only PID patch (peer e88e1727, `/tmp/mote-crossuser-plugin-marker-green.*`).
+Old failure logs remain preserved; no production plugin fix was inferred.
+
+
+### Disabled processing and fresh resume checkpoint
+
+Durable a2409841 shows disabling named processing cancels the old root and loses
+its resumable state (actual1/1fail9.507s, `/tmp/mote-joint-policy-pause-resume-red.*`).
+The first fix produced a genuine blocked M05 root, but Files ignored the actual
+M05 admission error when no attempt failure receipt existed; green1 retains that
+missing projection failure. The projection now reads the actual task error.
+The original-policy-null intake is separately RED-characterized against exact
+190ff2ab processing.ts/processing-files.ts, temporarily restored and returned in
+finally: job remained null while disabled,1/1fail7.492s
+(`/tmp/mote-joint-processing-legacy-pause-red.*`, test69696080).
+Current scalar/named/global-default cases3/3,9.147s0 are
+`/tmp/mote-joint-policy-pause-resume-green3.log/.exit`: zero-attempt disabled root,
+new intake while disabled, restart, fresh enabled admission, explicit file cancel
+not revived, equal-ID B's successful artifact unchanged. No policy is invented
+for legacy data. Source hashes are in `/tmp/mote-joint-policy-pause-source-manifest.json`.
+Full retry/policy neighbor and types reruns for this checkpoint are pending;
+these results alone are not a consumer freeze or whole final acceptance.
+
+
+Exact27706804 policy/relogin/preview/pause combination15/15,52.932s0 and distinct
+legacy ASR/retry authority neighbors11/11,53.046s0 are recorded separately in
+`/tmp/mote-joint-policy-pause-composed.*` and `-pause-retry-neighbors.*`.
+Server+scripts types and boundary checker0. Those26 tests precede the next
+stage-dependency source change and are not its full regression receipt.
+
+Named-stage reuse: first target supplied a server root instead of the original
+ASR `/transcribe` endpoint, so both accounts failed before the intended assertion;
+that fixture error remains in `stage-reuse-red`. Corrected durableab9d6117
+reaches real accepted raw ASR, changes a complete private connection, then changes
+only downstream speakerCount. It fails with an extra raw request2!=1,1/1fail
+7.151s in `/tmp/mote-joint-policy-stage-reuse-red2.log/.exit`. The implementation
+uses the original per-processor dependency fingerprint instead of the entire
+named plan/settings generation for raw stage cache identity; diarization and
+alignment keep their own dependency inputs. Legacy policy-null keys are unchanged.
+Same case1/1,5.234s0 (`-stage-reuse-green1`); adding explicit full-transcribe plus
+fixed repeated receipt passes1/1,7.143s0 (`-stage-reuse-green2`). Tests prove changed
+credentials do not reuse old raw, speaker-only change does, explicit force does
+execute again, and equal-ID B retains its own result/call count. Server types0.
+The new stage source still needs selected consumer/legacy neighbor verification.
+
+Recovery of this execution turn: HEADab9d6117 and its2dirtyfiles+1newMD were
+verified and preserved as `/tmp/mote-joint-recovered-dirty.patch` and a separate
+contract copy. Existing8 terminal receipts were read rather than rerun; lsof
+read-only cwd inspection returned no Node process in the Joint checkout. This
+proves preservation/current resources, not the reason the earlier turn failed.

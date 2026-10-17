@@ -343,3 +343,94 @@ remains the historical representation for a never-retired original. Tickets and
 M06 already read the same helper, so recreating the source or Capture cannot
 re-enable an old signed ticket or processing input. Current native/container
 schema composition remains a separate pending gate.
+
+### Processing-policy implementation checkpoint (not a consumer freeze)
+
+The original GET/PUT `/api/file-processing` and POST `/match` are being restored
+through the same M04 revision/atomic multi-domain transaction. Services contain
+complete `{kind:personal|shared,id}` references instead of endpoint/key copies.
+A private M06 plan ID keeps the selected profile/rule/parameters out of M05's
+bounded task metadata. Named original-only plans retain bytes without admitting a
+fake successful extraction; new text/media files use the shared registry and
+existing M05 handlers. Named OCR/ASR references are pinned by M04 without changing
+the user's global feature selection. Existing file recipe capabilities and image
+recipe capabilities remain separate. Untouched legacy files keep their historical
+input identity and applied results; a late old operation cannot adopt a new plan.
+
+This intermediate source is **not released for consumer composition**. Original
+unfinished-work fingerprint reconciliation, preview/explicit reprocess, saved
+service testing, explicit root/import/attachment profile overrides, non-default
+image recipe execution and data-only applied-plan history export/restore are still
+OPEN. At a250 the configuration-complete callback did not yet reconcile unfinished
+work; the later graph-change subset is recorded below. Full runtime-fingerprint
+reconciliation is still pending. Consumers and independent tests continue using declared
+2528a67d until another exact limited freeze is explicitly announced. Raw service
+credentials are rejected by the policy graph and remain solely in M04.
+
+### Named graph changes and outstanding physical work (implementation only)
+
+A changed applied graph for an unfinished ordinary pipeline now retires that
+file's old M05 tasks and admits a fresh coordinator under the current owner's
+configuration intent. It does not retry/re-authorize the old task. Completed
+results, manually cancelled files and explicit M09 processor grants retain their
+previous boundaries. Original-only selection stops unfinished processing without
+pretending to have extracted/indexed the file. Cosmetic graph edits with the same
+execution plan do not create work.
+
+The existing shared coordinator waits for old physical I/O to finish; unresolved
+issued/unknown facts block it with `external_result_unknown`. Existing explicit
+file retry confirmation can authorize a fresh request after physical completion,
+while preserving the old unresolved issuance and B's result. This is a narrow
+named-graph reconciliation subset, not full connection/runtime fingerprint
+observation: same-reference model-body changes, scalar-only settings changes,
+shared-resource notifications and unfinished derived-only jobs still need their
+original semantics wired and verified. Preview/reprocess/health/profile overrides,
+applied-plan data restore and non-default image recipes remain unreleased.
+
+
+Policy-page WIP refinement: optional `models:{profiles,selections}` in the same
+PUT `/api/file-processing` preserves the original one-action connection/policy
+save. These are complete personal M04 connections, validated and redacted by the
+existing models domain and stable-ID masked-secret rules; policy services remain
+opaque `{kind,id}` references. Processing, filePolicy and optional models replace
+together at one revision. Shared instance connections remain read-only metadata.
+No client-consumer freeze is declared for this refinement yet.
+
+
+Policy preview/reprocess WIP: original POST `/api/file-processing/preview` uses
+`{revision,sourceId?,type?,profileId?}` and returns the existing token/count/items
+shape. It pages the same owner/current-source/current-attachment Files projection;
+MIME filtering occurs before LIMIT. It retains the original1000 scanned/100
+selected/20 previews per account/10-minute expiry bounds with explicit bounded.
+No second file projection/store is introduced. POST `/reprocess` accepts only
+`{token}` and verifies account epoch, configuration revision and exact file task/
+control/publication proofs. One synchronous existing SQLite transaction validates
+all files, chooses current named plans and uses the existing file retry admission.
+The original explicit reprocess action acknowledges unknown old outcomes, while
+live physical work remains blocked by the existing guard. It never settles old
+external facts. Failed batches roll back all admissions and retain the preview;
+success consumes it. Preview tokens are not portable data and are retired with
+the M06 account domain. Whole preview bounds/expiry/unknown/UI acceptance remains
+to be run; this WIP has not been declared a consumer freeze.
+
+
+Disabled processing preserves ordinary owned work as a genuine M05 blocked
+coordinator (`processing_disabled`, zero attempts), including new automatic
+originals accepted while disabled. No child/model is admitted by this state.
+The host-only pipeline admission permits only the exact current original/head,
+settings generation and non-cancelled file; execution still requires enabled
+settings. Enabling processing uses a fresh coordinator/grant for unfinished work,
+while completed results and explicit per-file cancellation remain intact. This
+uses the existing executor/journal, with no synthetic task state or new queue.
+Files now preserves M05's actual admission error when no attempt failure exists.
+
+
+Named stage reuse uses the existing processor contract and declared settings/
+parameter dependencies. Raw extraction depends on its actual ASR/OCR connection;
+diarization uses the diarizer's own descriptor and speaker parameters, and
+alignment includes its input artifact IDs. Current complete task input, head,
+source, file/original generations and model authorization are still checked
+before every cached read and publication. A downstream-only named plan change
+can reuse accepted raw bytes; a changed credential or an explicit full-transcribe
+file generation cannot. Existing policy-null stage identities remain unchanged.
+No cache record grants authority, revives an old task, or settles an unknown call.
