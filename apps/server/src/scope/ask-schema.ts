@@ -60,3 +60,23 @@ export function persistedAskRun(db:DatabaseSync,userId:string,id:string){return 
 export function askUserDeleted(db:DatabaseSync,userId:string){return Boolean(db.prepare('SELECT 1 FROM ma_state WHERE user_id=? AND deleted=1').get(userId));}
 
 export function persistedAutomationCurrent(db:DatabaseSync,userId:string,runId:string){const link=db.prepare('SELECT policy_id,generation FROM ma_auto_runs WHERE user_id=? AND run_id=?').get(userId,runId);return !link||Boolean(db.prepare("SELECT 1 FROM ma_automations a WHERE user_id=? AND id=? AND generation=? AND state='active' AND NOT EXISTS(SELECT 1 FROM ma_auto_state s WHERE s.user_id=a.user_id AND s.deleted=1)").get(userId,link.policy_id,link.generation));}
+
+
+/** Read-only M08 admission predicate. The engine supplies the durable owner and
+ * validates the root task before consulting this; no context or grant is minted.
+ * Admit real coordination when a unit needs scheduling or a fragment can advance.
+ */
+export function persistedAskChildrenPending(db:DatabaseSync,userId:string,runId:string){
+ const row=persistedAskRun(db,userId,runId);if(!row)return false;
+ const units=db.prepare('SELECT u.id,u.task_id,e.state,f.id fragment FROM ma_units u LEFT JOIN execution_steps e ON e.user_id=u.user_id AND e.id=u.task_id LEFT JOIN ma_fragments f ON f.user_id=u.user_id AND f.run_id=u.run_id AND f.task_id=u.task_id WHERE u.user_id=? AND u.run_id=?').all(userId,runId);
+ if(units.some(unit=>!unit.task_id||unit.state!=='succeeded'&&unit.fragment!=='unit:'+unit.id+':'+row.generation))return false;
+ const fragment='main:'+row.generation+':'+row.fragment,step=db.prepare('SELECT e.state FROM ma_fragments f JOIN execution_steps e ON e.user_id=f.user_id AND e.id=f.task_id WHERE f.user_id=? AND f.run_id=? AND f.id=?').get(userId,runId,fragment);
+ if(!step)return false;
+ if(step.state==='waiting'||step.state==='running')return true;
+ if(step.state!=='succeeded')return false;
+ const artifact=db.prepare('SELECT json FROM ma_artifacts WHERE user_id=? AND run_id=? AND fragment_id=?').get(userId,runId,fragment);if(!artifact)return false;
+ let result:{kind?:string;wait?:{unitIds:string[];mode:'any'|'all'}};try{result=JSON.parse(String(artifact.json));}catch{return false;}
+ if(!result||result.kind!=='yield'||result.wait&&(!Array.isArray(result.wait.unitIds)||result.wait.unitIds.some(id=>typeof id!=='string')||!['any','all'].includes(result.wait.mode)))return false;
+ const states=units.filter(unit=>!result.wait||result.wait.unitIds.includes(String(unit.id))).map(unit=>Boolean(unit.task_id)&&!['waiting','running'].includes(String(unit.state)));
+ return states.length>0&&!(result.wait?.mode==='any'?states.some(Boolean):states.every(Boolean));
+}
