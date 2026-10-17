@@ -91,3 +91,13 @@ Scope inventory, production import boundary, `git diff --check`, focused tests,
 Web/server type checks and `build:central` have passed during development.
 The full required affected gate is recorded separately below when it terminates;
 these bounded receipts are not a whole-platform final acceptance claim.
+
+Source-withdrawal follow-up: the presentation binds its original through the same
+owner/enabled-source condition as Files. A disabled source returns 404, allowing
+the existing resource cache to erase denied data. The original Files regression
+also holds the next read, refreshes, unmounts and remounts the same account/ID;
+previous progress never reappears. A component-only denial latch was rejected in
+review because it could lose that boundary on remount. Focused tests are 5/5 green.
+Earlier broad runs are diagnostic/superseded, not final gate receipts: one lacked
+the locked Electron binary; later source-withdrawal changes invalidated the old
+snapshot. Only the final fixed-snapshot gate below is a delivery gate.
