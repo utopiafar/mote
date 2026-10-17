@@ -2463,5 +2463,15 @@
     "surfaces": [
       "task:execution.register:kind:'processing.review'"
     ]
+  },
+  "apps/server/src/scope/processing-images.ts": {
+    "module": "M06",
+    "scope": "user",
+    "status": "implemented",
+    "notes": "Original ImageProgress presentation of scoped M03/M05/M06/M07 facts. No secondary pipeline or store.",
+    "surfaces": [
+      "api:registerUserRoute:scope:'user',service:PROCESSING_DOMAIN,method:'GET',url:'/api/images/:id'",
+      "api:registerUserRoute:scope:'user',service:PROCESSING_DOMAIN,method:'POST',url:'/api/images/:id/'+action"
+    ]
   }
 }

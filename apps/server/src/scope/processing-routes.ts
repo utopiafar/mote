@@ -6,6 +6,7 @@ import type {TaskExecution} from './task-execution.js';
 import type {IngressHost} from './ingress.js';
 import type {ScopedPluginHost} from './plugins.js';
 import {ProcessingHost,PROCESSING_DOMAIN} from './processing.js';
+import {registerProcessingImages} from './processing-images.js';
 import {registerProcessingFiles} from './processing-files.js';
 import type {ImportPythonPackConfig} from '../config.js';
 
@@ -17,6 +18,7 @@ export function registerProcessing(runtime:ScopedRuntime,db:DatabaseSync,configu
  registerUserRoute(runtime,{scope:'user',method:'POST',url:'/api/processing',service:PROCESSING_DOMAIN,handle:({services,request})=>service(services).submit(request.body)});
  registerUserRoute(runtime,{scope:'user',method:'GET',url:'/api/processing/originals/:id',service:PROCESSING_DOMAIN,handle:({services,request})=>service(services).status('original:'+z.object({id:z.string().regex(/^[a-f0-9]{64}$/)}).parse(request.params).id)});
  registerUserRoute(runtime,{scope:'user',method:'GET',url:'/api/processing/artifacts/:id',service:PROCESSING_DOMAIN,handle:({services,request})=>service(services).artifact(z.object({id:z.string().regex(/^[a-f0-9]{64}$/)}).parse(request.params).id)});
+ registerProcessingImages(runtime,db,host,execution);
  const files=registerProcessingFiles(runtime,db,host,ingress,execution,privateCursorKey);
  registerUserRoute(runtime,{scope:'user',method:'GET',url:'/api/file-processing',service:PROCESSING_DOMAIN,handle:({context})=>host.policies.view(context)});
  registerUserRoute(runtime,{scope:'user',method:'PUT',url:'/api/file-processing',service:PROCESSING_DOMAIN,bodyLimit:262144,handle:({context,request})=>host.policies.save(context,request.body)});
