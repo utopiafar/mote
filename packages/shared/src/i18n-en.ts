@@ -8475,5 +8475,6 @@ export const english: Readonly<Record<string, string>> = {
   "记录当前账号的 Agent 输入与读取内容": "Record Agent inputs and reads for this account",
   "模型传输事件": "Model transport event" ,
   "尚未上报采集与同步状态。": "Capture and sync status has not been reported yet.",
-  "这些操作使用已保存的连接；修改草稿后请先保存并应用。": "These tools use the saved connection. Save and apply draft changes first."
+  "这些操作使用已保存的连接；修改草稿后请先保存并应用。": "These tools use the saved connection. Save and apply draft changes first.",
+  "导出图片处理结果": "Export image processing results"
 };

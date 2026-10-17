@@ -5,6 +5,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {gunzipSync} from 'node:zlib';
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
+// @ts-expect-error jsdom ships no declarations in the locked workspace; DOM use is typed below.
 import {JSDOM} from 'jsdom';
 import sharp from 'sharp';
 import {scopedFilesFixture} from '../../server/test/fixtures/scoped-files.js';
@@ -12,7 +13,7 @@ import {waitForScopedState} from '../../server/test/fixtures/scoped-process.js';
 import {defaultModelSettings} from '../../server/src/model-settings.js';
 import {bytesHash} from '../../server/src/scope/originals.js';
 import {FileDetail} from '../src/Files.js';
-import {createApi,type Api} from '../src/api.js';
+import {createApi,type Api,type WebConnection} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
 import {configureLocale} from '@mote/shared/i18n';
 configureLocale(()=> 'zh-CN');
@@ -33,13 +34,13 @@ for(const journey of ['export-ocr','export-no-ocr','snapshot'] as const)test('or
  if(snapshot){await f.checked(f.a.token,'/api/ingress/sources/same-source','PATCH',{retention:'snapshot'});const hash=bytesHash(png),upload=await f.checked(f.a.token,'/api/ingress/sources/same-source/uploads','POST',{batchId:'generated-products',revision:{sourceId:'same-source',previousRevision:null,processingProfileId:'image',sizeBytes:png.length,sha256:hash,relativePath:'generated.png',item:{externalId:'generated-products',revision:'r1',observedAt:'2026-10-17T00:00:00Z',title:'Generated products snapshot',text:'',kind:'file',layer:'snapshot',mimeType:'image/png',document:{fileIndex:{version:1,fileId:'generated-products',contentVersion:hash,mode:'index',coverage:'none',parser:'central-pending',status:'pending',totalCharacters:0,offset:0,length:0,maxIndexCharacters:100000,allowRead:true}}}}});await f.checked(f.a.token,'/api/ingress/uploads/'+upload.id+'/parts/0','PUT',{bytes:png.toString('base64'),checksum:hash});file=(await f.checked(f.a.token,'/api/ingress/uploads/'+upload.id+'/commit','POST',{})).captures[0];}
  else file=await f.uploadBytes(f.a.token,'generated-products',png,'image/png');
  await waitForScopedState(async()=>snapshot?entered:(await f.checked(f.a.token,'/api/files/'+file.id)).job?.state==='succeeded',()=> 'Actual generated recipe not ready',15000);
- const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost',pretendToBeVisual:true}),saved=new Map<string,PropertyDescriptor|undefined>(),downloads:Blob[]=[],urls=new Set<string>();let current:Api|undefined,cookie='',exportStatus:number|undefined;
+ const dom:{window:Window&typeof globalThis}=new JSDOM('<div id="root"></div>',{url:'http://localhost',pretendToBeVisual:true}),saved=new Map<string,PropertyDescriptor|undefined>(),downloads:Blob[]=[],urls=new Set<string>();let current:Api|undefined,cookie='',exportStatus:number|undefined;
  const originalCreate=URL.createObjectURL,originalRevoke=URL.revokeObjectURL;
  URL.createObjectURL=value=>{downloads.push(value as Blob);const url='blob:generated-'+downloads.length;urls.add(url);return url;};URL.revokeObjectURL=value=>urls.delete(value);dom.window.HTMLAnchorElement.prototype.click=()=>{};
- for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,fetch:async(path:string,init:RequestInit={})=>{const headers=new Headers(init.headers);headers.set('cookie',cookie);const response=await f.host.app.inject({url:path,method:init.method as any??'GET',headers:Object.fromEntries(headers),...(init.body?{payload:String(init.body)}:{})});if(path.endsWith('/export'))exportStatus=response.statusCode;return new Response(response.rawPayload,{status:response.statusCode,headers:response.headers as HeadersInit});}})){saved.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
+ for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,fetch:async(path:string,init:RequestInit={})=>{const headers=new Headers(init.headers);headers.set('cookie',cookie);const response=await f.host.app.inject({url:path,method:init.method as any??'GET',headers:Object.fromEntries(headers),...(init.body?{payload:String(init.body)}:{})});if(path.endsWith('/export'))exportStatus=response.statusCode;return new Response(new Uint8Array(response.rawPayload).buffer,{status:response.statusCode,headers:response.headers as HeadersInit});}})){saved.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
  const root=createRoot(dom.window.document.getElementById('root')!),d=dom.window.document;
  closeUI=async()=>{current?.close?.();await act(async()=>root.unmount());URL.createObjectURL=originalCreate;URL.revokeObjectURL=originalRevoke;dom.window.close();for(const [key,value] of saved){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}};
- const login=await f.request(undefined,'/api/auth/login','POST',{username:'generated-a',password:'Generated-joint-files-password',mode:'web'});cookie=String(login.headers['set-cookie']).split(';')[0];const api=createApi({mode:'web',origin:'http://localhost',...login.json()},undefined,()=>current===api);current=api;
+ const login=await f.request(undefined,'/api/auth/login','POST',{username:'generated-a',password:'Generated-joint-files-password',mode:'web'});cookie=String(login.headers['set-cookie']).split(';')[0];const api=createApi({...login.json<WebConnection>(),origin:'http://localhost'},undefined,()=>current===api);current=api;
  const refresh=async()=>act(async()=>{resources(api).invalidate(path=>path.startsWith('/api/files/')||path.startsWith('/api/images/'));await delay(20);});
  await act(async()=>{root.render(React.createElement(FileDetail,{api,id:file.id,onOpen:()=>{}}));await delay(20);});await waitForScopedState(async()=>{await act(async()=>delay(10));return !!d.querySelector('.image-progress');},()=>d.body.textContent??'',10000);
  const phase=(label:string)=>Array.from(d.querySelectorAll('.image-progress dt')).find(node=>node.textContent===label)?.nextElementSibling?.textContent;

@@ -8,7 +8,7 @@ import {useOperationUpdates} from './useOperationUpdates';
 import { getLocale, moteText } from '@mote/shared/i18n';
 import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {ApiError,type Api,type Capture,bytes,dateTime,errorMessage} from './api';
-import {FileReview} from './FileReview';
+import {FileReview,FileImageExport} from './FileReview';
 import {FileForgetting} from './FileForgetting';
 import {AnswerMarkdown} from './AnswerMarkdown';
 import {FileProcessingControls} from './FileProcessingControls';
@@ -124,6 +124,7 @@ function FileDetailContents({api,id,startMs=0,onOpen}:{api:Api;id:string;startMs
  {file.item.mimeType?.startsWith('image/')?<ImageProgress api={api} id={id}/>:<FileProcessingControls api={api} id={id}/>}
  {file.processingPolicy&&<details className="source-item"><summary>{moteText("处理策略与匹配原因")}</summary>{file.processingPolicy.applied?<><p>{moteText("实际使用：")}{getLocale()==='en'?' ':''}{file.processingPolicy.applied.profile.name} · {file.processingPolicy.applied.profile.processorId}</p><p>{moteText("命中")}{getLocale()==='en'?' ':''}{file.processingPolicy.applied.rule.sourceId?moteText("来源覆盖"):moteText("全局类型规则")}：{file.processingPolicy.applied.rule.type}</p><p>{moteText("配置版本：")}{getLocale()==='en'?' ':''}{file.processingPolicy.applied.revision}</p><pre>{JSON.stringify(file.processingPolicy.applied.profile.parameters,null,2)}</pre></>:<p>{moteText("尚未执行内容处理。")}</p>}<p>{moteText("按当前设置重新处理将使用：")}{getLocale()==='en'?' ':''}{file.processingPolicy.current.profile.name}（{file.processingPolicy.current.rule.type}）</p></details>}
  {file.steps?.map(s=><p key={s.step}>{{extract:moteText("转写 / 提取"),diarize:moteText("说话人分离"),align:moteText("时间对齐"),turns:moteText("语义分组")}[s.step]??s.step}：{states[s.state]??s.state}{' '}{moteText("· 尝试")}{' '}{s.attempts}{' '}{moteText("次")}</p>)}
+ {web&&file.item.mimeType?.startsWith('image/')&&!file.artifacts.some(a=>['transcript','text','image-text'].includes(a.kind))&&file.artifacts.some(a=>a.kind==='image'||a.kind.startsWith('image:')||a.kind.startsWith('image-ocr:'))&&<FileImageExport api={api} id={id}/>}
  {file.artifacts.some(a=>['transcript','text','image-text'].includes(a.kind))&&<FileReview key={JSON.stringify([id,file.artifacts.map(a=>a.id)])} api={api} id={id} artifacts={file.artifacts} onChanged={async()=>{resetChunks();await load();}}/>}
  {file.artifacts.filter(a=>web?['summary','dialogue','image'].includes(a.kind):a.kind==='summary').map(a=>web&&file.originalRef?<FileArtifactContents key={JSON.stringify([api.connection,a.id])} api={api} id={a.id} originalRef={file.originalRef} kind={a.kind as 'summary'|'dialogue'|'image'}/>:<div key={a.id}><h4>{moteText("模型摘要")}</h4>{a.sections?.map((s,i)=><AnswerMarkdown key={i} onOpen={onOpen} answer={{answer:s.answer,runId:a.id,trace:[],citations:s.citationIds.map(id=>({id,capturedAt:file.item.observedAt,appName:file.item.title,excerpt:''}))}}/>)}</div>)}
  {rawTranscript&&<p>{moteText("原始转写已保留，尚未校正；说话人分离与对话整理的结果另行生成。")}</p>}
