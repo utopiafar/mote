@@ -6,6 +6,114 @@ M13 explicitly authorized exact baseline
 `a2cbf3aaf1ae2f2fbfe5f647cf9a4f23dfdc1695` contracts. No later owner WIP was taken.
 The PR targets `codex/mote-multiuser-integration`; no main merge or deployment.
 
+## Latest bounded delivery: named recipes and original Files export
+
+Runtime/test candidate: `23d00bdae786fd80581b88a3ba296251c2960be0`.
+The earlier OPEN recipe/export/pin statements below are historical RED receipts;
+this section supersedes them for the explicitly tested image slice. The whole
+platform gate remains failed and is not superseded by bounded passes.
+
+The validation composition starts at the original PR151/M13 baseline and Joint's
+explicit checkpoint `2349a341da658ff6bb2ee16e67574908dd1d6325`. It then selects
+only these declared finite producer deltas:
+
+| Producer freeze | Local composition | Purpose |
+| --- | --- | --- |
+| `dcac72341004e6008ed24c1b1ca48eee625756d2` | `b288c9d23f7bd10520d8d48e958ca7057c86adf9` | Complete only missing named steps; accepted products remain single-use |
+| `f555103132f1a66e2d42acc57c4adc821372e6a1` | `2ed17913f1aa54278b06d660a4dc685e1d0c5312` | Canonical typed exports and admitted graph pixel lifetime |
+| `34650b2686a57d94b5b2172c7570139531a79b70` | `8e477d275bf7864657ea3b50b7adb55b0b41af77` | Delayed OCR retains verified parent graph pin; historical OCR is not current transcript |
+| `73cebbc3abb0fe0f21a90e23242c65646f0620b5` | `23d00bdae786fd80581b88a3ba296251c2960be0` | Same default recipe ID with a different version follows the same current/history rule |
+
+The stacked diff contains frozen upstream dependency history; it is not a whole
+M13/Joint final union. No subsequent observer, scheduler or arbitrary owner HEAD
+was consumed. Only receipt appends were resolved manually; unrelated owner
+receipt history was excluded. The original file-intent/retirement semantics are
+preserved. No second pipeline, store, scheduler or grant mechanism is introduced.
+
+Consumer source checkpoints are `b14922465bd3f1018b123efcc611c043f90be358`
+(canonical typed product and phase consumption), `e33419984c8f1f896bab00a101a2a6b650a89307`
+(existing download helper for noOCR), `56d3a8428af89bb94097d81aa0459b6a5ab24d23`
+(retired export requests), `04f1cc85a70b78ac4b20199264b537270cabc65c`
+(existing outer Files resource refresh), and
+`5563c30ab01da7e1b2a8819278e530fb7c0922ba` (verified accepted-step receipts).
+`products[].stepName` identifies named products, `ocrEnabled` can explicitly be
+false, and `jobs[].receipts[{step,artifactId}]` represents genuine accepted reuse.
+An accepted receipt is `ready`, never an invented succeeded M05 task; live failed
+or running jobs still win. Primary/raw OCR artifact IDs are never invented for
+noOCR products. Explicit derivation IDs select full canonical typed payloads,
+including empty region descriptions and original hash/dimensions.
+
+Independent review exposed three additional actual regressions:
+
+- `91c17e8ab3a9a212e1a49cd5597363ad0ae334a7`: a derived-first snapshot graph
+  had one live M03 pin and denied fresh expired downloads, but its later real OCR
+  failed `snapshot_input_expired` before any provider call. The same test also
+  exposed historical raw OCR exported as current transcript after actual policy
+  preview/reprocessing to noOCR. Original Files UI: 0/2, EXIT1, 71.572s, retained
+  in `../image-products-review-red2.log`. Joint's existing-lineage/current-history
+  repair turned the unchanged six-case original UI suite 6/6 green.
+- `771e2900da37d5e5cb85ab9e67fabe38892c8d36`: actual OCR to `mote.image@2`
+  noOCR replacement still exported current `transcript.json`; 0/1, EXIT1,
+  65.528s (`../image-products-version-red.log`). The existing custom predicate
+  now compares ID OR version; no assertions were weakened.
+- The initial no-TSX invocation failed `React is not defined`, and one scope
+  command used a nonexistent script path. Those local invocation diagnostics
+  are retained separately and are not production failures or acceptance passes.
+
+All final direct receipts below are terminal EXIT0 on the runtime candidate:
+
+| Check | Terminal result | Local receipt outside Git |
+| --- | --- | --- |
+| Original Files typed-product journeys | 7/7, 93.455s | `../image-products-release-journeys.log` |
+| ImageProgress, named recipes, read-state and original Files neighbors | 39/39, 86.723s | `../image-products-release-compatible.log` |
+| Public image-recipe producer matrix | 8/8, 41.883s | `../image-products-release-producer.log` |
+| `npm run build:central` | EXIT0 | `../image-products-release-build.log` |
+| Scope inventory/import boundary | EXIT0 | `../image-products-release-scope.log` |
+| Bilingual catalogs | 8,476 messages, EXIT0 | `../image-products-release-i18n.log` |
+| Scripts and strict new-test TypeScript | EXIT0 | `../image-products-release-scripts.log`, `../image-products-release-test-types.log` |
+
+All three suites have zero failures, cancellations or skips. Tests use real
+M03 upload/retention, M05 admission/execution, M06 artifacts/Material and original
+React FileDetail clicks. Actual HTTP archive bytes are parsed and recursively
+compared to canonical artifacts. No helper inserts processing success. Cases
+cover source retirement, same-ID A/B, late ignored-abort reads/downloads, empty
+selection, pagination, deletion/recreation, cancel, restart, unknown confirmation,
+failed-tail reuse, fully-complete no-op and explicit recompute. Independent final
+read-only review found no remaining confirmed issue in the finite source changes.
+
+Supported hidden IAB used predecessor `8e477d27` with identical UI/pin source;
+the only subsequent source change is the versioned export predicate. It verified
+A's OCR and named interpretation, same-ID B's isolated noOCR product and automatic
+export control, plus full snapshot graph completion followed by unavailable
+original/buttons removed while both named products stayed readable. Memory
+remained waiting. The generated snapshot view required a fresh generated login
+before its final persisted-state read; uninterrupted browser-session recovery is
+not claimed. A browser download-event wait timed out and reset the controller;
+no completed IAB download is claimed. Original FileDetail tests above verify
+actual download bytes. All temporary tabs/providers/servers closed; real OCR
+physical call count was two, zero real models or private inputs were used.
+
+Generated-only screenshots remain outside Git:
+
+| File | SHA256 |
+| --- | --- |
+| `../image-products-closed-iab-a.png` | `e8dd2b3b95437fe82ed6e0638be334d9879bd42f135740223a0d48d056600181` |
+| `../image-products-closed-iab-b.png` | `8f53d2a73ee287ff3e054159517ce6c935d6a6c9a21638b2d4a56734e793dc12` |
+| `../image-products-closed-iab-snapshot.png` | `1e428dbfe9214aec8031c46f4157181a8e513b5944ff935a8260eef519de4f77` |
+
+`npm run check:affected -- --base 21e97819f275944e39025eadcdd7675e4610782d
+--head HEAD --dry-run` records the inherited stacked plan (check:local and Android)
+in `../image-products-release-affected-plan.log`. Per explicit parent direction,
+this continuation does not rerun inherited whole-platform checks; the final
+same-SHA platform gate belongs to the union owner. The failed required gate and
+all earlier diagnostic failures below remain visible. Native SQLite constructor/
+write/read/close prerequisites for this task's locked root and mem0 dependency
+resolutions passed before these runs; no dependency changes followed.
+
+Current narrow slice is ready for bounded Draft review. Overall merge/release
+acceptance remains blocked by the union gate. No main/integration merge,
+deployment, private-data export, physical-device or live-model validation occurred.
+
 ## Boundary and wire
 
 KEEP the original Files, LibraryBrowse and evidence-detail ImageProgress entry
@@ -16,7 +124,7 @@ M06 publications and M07 intake/job receipts. REMOVE the assumption that an
 original, OCR success or Material publication implies Memory completion.
 EXCEPTION: external OCR/language transports in tests return generated responses.
 UNKNOWN: this receipt does not establish real-model semantics or the later Joint
-custom-profile/attachment processing chain.
+attachment processing chain. Named custom image support is bounded above.
 
 `GET /api/images/:captureId` returns:
 
@@ -24,7 +132,7 @@ custom-profile/attachment processing chain.
   processing control generation, applied policy and attachment generation;
 - `original.state`, `automatic`, `understandingEnabled`, `enabled`,
   `processingRequired`, `policy`, `wait`, `canCancel`;
-- `jobs[{name,state,error?}]` from the latest admission's original/file/settings/
+- `jobs[{name,state,error?,receipts?}]` from the latest admission's original/file/settings/
   policy/attachment fences; no admission means no historical task scan;
 - `products[{id,name,kind,text}]` and `materials[{id,state}]` from visible M06
   publications; `memory[{state,count,error?}]` from exact M07 material receipts.
