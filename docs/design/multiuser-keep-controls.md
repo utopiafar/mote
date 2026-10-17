@@ -19,7 +19,10 @@ fixed index maintenance and safe operational metadata, never impersonation,
 private-content browsing or global detailed traces. UNKNOWN: physical devices,
 live providers, and the final composed platform gate require separate evidence.
 
-This extends the multi-user ADR and the M04/M05/M16 contracts. It supersedes
+This extends the [multi-user ADR](../adr-multiuser-scope.md),
+[M04 configuration](multiuser-configuration.md),
+[M05 execution](multiuser-execution.md) and
+[M16 lifecycle](../validation/multiuser-m16-lifecycle.md) contracts. It supersedes
 M04's statement that only the models instance domain has an online editor, for
 the exact execution and diagnostic fields below. Other deployment settings keep
 their startup/restart contracts. Personal trace opt-in remains in M04's existing
@@ -103,7 +106,12 @@ The existing TAR helper now accepts lazy, fixed-size chunk entries as well as
 its original buffers. Each original chunk is read through M03 only after
 response hooks and current-authority checks. Existing owner/source/head,
 attachment relationship, file incarnation and account/session fences are checked
-again before each private output block. Retirement or a changed selection aborts
+again before each private output block. Account/session authority is asserted
+every time. A host-only SQLite token avoids reopening an unchanged full set: any
+same-connection write or other-connection commit requires a fresh complete
+selection/incarnation proof and a stable token before output continues. The
+initial captured set and proof are also bracketed by token checks. The token
+is neither stored nor returned by user services. Retirement or a changed selection aborts
 the stream; it cannot leave a successful completed download. There is no new
 export store, background export job, host path selector or download grant.
 
@@ -111,4 +119,6 @@ The original storage page mounts the two controls with explicit type/version
 choices. Its controller aborts on cancellation, unmount and account replacement;
 late A controls cannot issue requests through B. Index operation UUIDs remain
 owner-qualified in local storage for exact lost-ACK retry after remount. Invalid
-local intents require explicit removal instead of silently creating a new task.
+local intents fail closed. Valid pending or malformed intents can be explicitly
+removed locally; removal sends no submission or cancellation. Accepted server
+work remains visible through the existing safe status.
