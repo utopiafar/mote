@@ -3,7 +3,7 @@ import {z} from 'zod';
 import {transcriptSchema} from '@mote/shared';
 import {DEFAULT_IMAGE_RECIPE} from '../image-recipes.js';
 import {StoreError} from '../execution-storage.js';
-import {imageProductSchema} from './processing-image-products.js';
+import {imageProductSchema,imageStepKey} from './processing-image-products.js';
 import type {UserContext} from './context.js';
 import {registerUserRoute,type ScopedRuntime} from './http.js';
 import {PrivateSql,PrivateDataError,missing} from './private-data-sql.js';
@@ -40,15 +40,27 @@ export function registerProcessingImages(runtime:ScopedRuntime,db:DatabaseSync,h
   const root=latest?sql.get("SELECT input FROM user_tasks WHERE user_id=$user AND task_id=?",latest.task_id):undefined;
   const rootInput=root?JSON.parse(String(root.input)):undefined;
   const tasks=rootInput?sql.all("SELECT e.id,json_extract(u.input,'$.mode') mode,json_extract(u.input,'$.imageStep.name') image_step FROM user_tasks u JOIN execution_steps e ON e.user_id=u.user_id AND e.id=u.task_id WHERE u.user_id=$user AND e.user_id=$user AND json_extract(u.input,'$.originalRef')=? AND e.kind LIKE 'processing.%' AND COALESCE(json_extract(u.input,'$.fileGeneration'),0)=? AND COALESCE(json_extract(u.input,'$.originalGeneration'),0)=? AND json_extract(u.input,'$.generation')=? AND json_extract(u.input,'$.policyPlanId') IS ? AND json_extract(u.input,'$.attachmentGeneration') IS ? ORDER BY e.created_at DESC,e.id DESC",ref,Number(rootInput.fileGeneration??0),Number(rootInput.originalGeneration??0),Number(rootInput.generation),rootInput.policyPlanId??null,rootInput.attachmentGeneration??null).map(row=>({...execution.forUser(context).get(String(row.id)),mode:row.mode,imageStep:row.image_step})):[];
-  const jobs=[...(ocrEnabled?['ocr']:[]),...(understandingEnabled?['understanding']:[])].flatMap<{name:string;state:string;error?:string}>(name=>{
+  const acceptedSteps=recipe&&rootInput?sql.all('SELECT s.stage,s.artifact_id FROM mp_file_steps s JOIN mp_artifacts a ON a.user_id=s.user_id AND a.id=s.artifact_id WHERE s.user_id=$user AND a.user_id=$user AND s.original_id=? AND s.generation=? AND a.complete=1',ref.slice(9),Number(rootInput.fileGeneration??0)):[];
+  const jobs=[...(ocrEnabled?['ocr']:[]),...(understandingEnabled?['understanding']:[])].flatMap<{name:string;state:string;error?:string;receipts?:{step:string;artifactId:string}[]}>(name=>{
    const coordinator=tasks.find(task=>task.id===latest?.task_id);
    if(recipeError)return [{name,state:'blocked',error:recipeError}];
    if(recipe){
-    const steps=recipe.steps.filter(step=>(step.kind==='ocr')===(name==='ocr'));
-    const phaseTasks=steps.flatMap(step=>{const task=tasks.find(task=>task.kind==='processing.image-stage'&&task.imageStep===step.name);return task?[task]:[];});
-    const unfinished=phaseTasks.find(task=>task.state!=='succeeded');
-    const task=unfinished??(phaseTasks.length===steps.length?phaseTasks[0]:coordinator);
-    return task?[{name,state:task.state,error:task.failure?.code??task.error??undefined}]:[];
+    const currentRecipe=recipe;
+    const steps=currentRecipe.steps.filter(step=>(step.kind==='ocr')===(name==='ocr'));
+    // Complete-only work can carry accepted M06 receipts without creating a
+    // new M05 task. A receipt must match this generation and visible product.
+    const phaseFacts=steps.flatMap<{state:string;error?:string;receipt?:{step:string;artifactId:string}}>(step=>{
+     const task=tasks.find(task=>task.kind==='processing.image-stage'&&task.imageStep===step.name);
+     if(task)return [{state:task.state,error:task.failure?.code??task.error??undefined}];
+     const primary=currentRecipe.steps.find(item=>item.kind==='ocr')?.name===step.name;
+     const artifactId=primary?status.artifactId:status.derivations.find(item=>item.kind===(step.kind==='ocr'?'image-ocr:':'image:')+step.name)?.artifactId;
+     const key=imageStepKey(status.appliedPolicy!.id,currentRecipe.fingerprint,step.name);
+     const receipt=acceptedSteps.find(item=>(item.stage===key||String(item.stage).startsWith(key+':'))&&item.artifact_id===artifactId);
+     return receipt?[{state:'ready',receipt:{step:step.name,artifactId:String(receipt.artifact_id)}}]:[];
+    });
+    const unfinished=phaseFacts.find(fact=>!['succeeded','ready'].includes(fact.state));
+    const phase=unfinished??(phaseFacts.length===steps.length?phaseFacts[0]:coordinator?{state:coordinator.state,error:coordinator.failure?.code??coordinator.error??undefined}:undefined);
+    return phase?[{name,state:phase.state,error:phase.error,receipts:phaseFacts.flatMap(fact=>fact.receipt?[fact.receipt]:[])}]:[];
    }
    const task=coordinator&&coordinator.state!=='succeeded'&&!tasks.some(t=>t.kind==='processing.ocr'&&t.state==='running')?coordinator:tasks.find(task=>name==='ocr'?task.kind==='processing.ocr':task.kind==='processing.analysis'&&task.mode==='image')??tasks.find(task=>task.kind==='processing.pipeline');
    return task?[{name,state:task.state,error:task.failure?.code??task.error??undefined}]:[];
