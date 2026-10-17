@@ -12,7 +12,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {buildApp} from '../../dist/app.js';
 import {defaultModelSettings} from '../../dist/model-settings.js';
 import {EXECUTION_POLICIES} from '../../dist/execution-policy.js';
-import {ManagedHindsightRuntime,hindsightModelFingerprint} from '../../dist/hindsight-runtime.js';
+import {ManagedHindsightRuntime,hindsightModelFingerprint,hindsightDigest} from '../../dist/hindsight-runtime.js';
 import {HindsightEngine} from '../../dist/hindsight-engine.js';
 import {memoryBodyDigest,memoryProviderRecordSchema} from '../../dist/memory-provider-contract.js';
 import {generatedHindsightRelease} from './scoped-memory-release.js';
@@ -121,7 +121,7 @@ test('compiled personal plans survive one native/Hindsight/Docker archive withou
  for(const item of native){
   progress('seed-native-'+item.userId);mkdirSync(join(item.directory,'runtime'),{recursive:true,mode:0o700});mkdirSync(join(item.directory,'provider'),{recursive:true,mode:0o700});
   const token=randomUUID()+randomUUID(),volume='mote-hindsight-'+item.identity+'-data';docker(['volume','create','--label','mote.runtime.identity='+item.identity,'--label','dev.mote.fixture='+runId,volume]);volumes.set(volume,item.identity);item.oldToken=token;
-  writeFileSync(join(item.directory,'runtime/runtime-descriptor.json'),JSON.stringify({version:1,identity:item.identity,image:HINDSIGHT_BACKUP_IMAGE,modelFingerprint:hindsightModelFingerprint(item.settings),instanceFingerprint:digest(item.binding.instanceId)}),{mode:0o600});
+  writeFileSync(join(item.directory,'runtime/runtime-descriptor.json'),JSON.stringify({version:1,identity:item.identity,image:HINDSIGHT_BACKUP_IMAGE,modelFingerprint:hindsightModelFingerprint(item.settings),instanceFingerprint:hindsightDigest(item.binding.instanceId)}),{mode:0o600});
   writeFileSync(join(item.directory,'provider/provider-control.json'),JSON.stringify({version:1,entries:[item.entry],projections:[],prepared:[],operations:[{opId:'generated-native-unknown',kind:'put',inputDigest:'3'.repeat(64)}]}),{mode:0o600});
   const name=nativeShell(item.identity,token),python=["import asyncio,asyncpg,json,urllib.request","from hindsight_api.pg0 import EmbeddedPostgres","record=json.loads("+JSON.stringify(JSON.stringify(item.record))+");entry=json.loads("+JSON.stringify(JSON.stringify(item.entry))+")","async def main():"," pg=EmbeddedPostgres();conn=await asyncpg.connect(await pg.get_uri())"," try:","  req=urllib.request.Request('http://127.0.0.1:8888/v1/default/banks/'+entry['bank'],data=json.dumps({'name':'Generated recovery'}).encode(),headers={'Authorization':'Bearer "+token+"','Content-Type':'application/json'},method='PUT');urllib.request.urlopen(req).read()","  metadata={'mote_record':json.dumps(record,separators=(',',':'),ensure_ascii=False),'mote_digest':entry['digest']}","  await conn.execute('INSERT INTO public.memory_units(bank_id,text,metadata) VALUES($1,$2,$3::jsonb)',entry['bank'],record['memory']['statement'],json.dumps(metadata))"," finally: await conn.close()","asyncio.run(main())"].join('\n');
   docker(['exec',name,'python3','-c',python]);docker(['stop','--time','30',name]);assert.equal(JSON.parse(docker(['inspect',name]))[0].State.ExitCode,0);
