@@ -14,7 +14,7 @@ export async function downloadFileExport(api:Api,id:string,signal?:AbortSignal,o
 export function FileImageExport({api,id}:{api:Api;id:string}){
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
  const alive=useRef(false),request=useRef<AbortController|null>(null),urls=useRef(new Set<string>());
- useLayoutEffect(()=>{alive.current=true;return()=>{alive.current=false;request.current?.abort();for(const url of urls.current)URL.revokeObjectURL(url);urls.current.clear();};},[api,id]);
+ useLayoutEffect(()=>{alive.current=true;setBusy(false);setError('');return()=>{alive.current=false;request.current?.abort();request.current=null;for(const url of urls.current)URL.revokeObjectURL(url);urls.current.clear();};},[api,id]);
  async function download(){
   if(!alive.current||request.current)return;const controller=new AbortController();request.current=controller;setBusy(true);setError('');
   try{await downloadFileExport(api,id,controller.signal,url=>urls.current.add(url));}
