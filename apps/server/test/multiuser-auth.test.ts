@@ -157,12 +157,14 @@ test('actual stdin initialization entry creates only a synthetic admin and never
 
 test('authentication composes with a binary private route while Cookie mutations still require CSRF',async t=>{
  const f=await fixture(t,node=>{
-  node.app.addContentTypeParser('application/octet-stream',{parseAs:'buffer'},(_req,body,done)=>done(null,body));
+  assert.ok(node.app.hasContentTypeParser('application/octet-stream'),'reuse the production binary transport parser');
   node.services.registerUser('binary-test',{scope:'user',create:()=>({}),lifecycle:{exportUser:async c=>({domain:'binary-test',version:1,deploymentId:c.deploymentId,userId:c.userId,payload:null}),deleteUser:async(_c,operationId)=>({status:'complete',operationId}),restoreUser:async()=>{}}});
   registerUserRoute(node,{scope:'user',method:'POST',url:'/api/binary-test',service:'binary-test',handle:({context,request})=>({userId:context.userId,bytes:Buffer.isBuffer(request.body)?request.body.length:0})});
  });
  const binary=(extra:any)=>f.node.app.inject({method:'POST',url:'/api/binary-test',headers:{...protocol,...extra,'content-type':'application/octet-stream'},payload:Buffer.from('generated-binary')});
- const native=await binary(headers(f.alice.token));assert.equal(native.statusCode,200);assert.equal(native.json().bytes,16);assert.equal(native.json().userId,f.a.userId);
+ const native=await binary(headers(f.alice.token));assert.equal(native.statusCode,200,native.body);assert.equal(native.json().bytes,16);assert.equal(native.json().userId,f.a.userId);
+ const other=await binary(headers(f.bob.token));assert.equal(other.statusCode,200,other.body);assert.equal(other.json().userId,f.b.userId);assert.equal(other.json().bytes,16);
+ assert.equal((await binary({})).statusCode,401);assert.equal((await binary({...headers(f.alice.token),'x-user-id':f.b.userId})).statusCode,401);assert.equal((await binary({...headers(f.alice.token),'x-mote-protocol-version':'1'})).statusCode,426);
  const web=await f.login('fixture-b','web'),cookie=f.cookieHeaders(web);assert.equal((await binary({...cookie,'x-mote-csrf':''})).statusCode,403);const current=await binary(cookie);assert.equal(current.statusCode,200);assert.equal(current.json().userId,f.b.userId);
 });
 
