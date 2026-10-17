@@ -101,3 +101,149 @@ review because it could lose that boundary on remount. Focused tests are 5/5 gre
 Earlier broad runs are diagnostic/superseded, not final gate receipts: one lacked
 the locked Electron binary; later source-withdrawal changes invalidated the old
 snapshot. Only the final fixed-snapshot gate below is a delivery gate.
+
+## Fixed-snapshot runtime receipts
+
+Production/test snapshot: `4a7168f1bf42a153607bdeccd3e9412ac38ff2f7`
+(on `9b037b9e3867618cd037030f2385683e85ddf0c2`). Independent review of
+that final source-withdrawal delta found no further actionable issue.
+The focused original-component tests passed 5/5 on that snapshot.
+
+Dependencies were installed locally from the lockfile with offline `npm ci`,
+then the locked native module was rebuilt locally. No peer `node_modules` was
+copied. Same-runtime, generated in-memory constructor/read smoke passed for both
+root and `mem0ai/oss`-resolved `better-sqlite3`, with no model/network calls:
+
+- Node `v26.11.1`, ABI `147`, executable
+  `/opt/homebrew/Cellar/node/26.11.1/bin/node`;
+- both module resolutions use this workspace's
+  `node_modules/better-sqlite3/lib/index.js`;
+- actual native binary is this workspace's
+  `node_modules/better-sqlite3/build/Release/better_sqlite3.node`.
+
+Generated-only local proof artifacts (outside Git):
+
+| Receipt | SHA256 |
+| --- | --- |
+| `../image-progress-iab.jpg` | `639fe7cc7d50da5251c778dd5b0e8592f1cfdb009a9808fd1a3ef116815aab4e` |
+| `../image-progress-iab-b.jpg` | `91adae6b0f5eec1ce4b77b574f6b265941f2a5e169fc15241ecb8bccb966d762` |
+| `../image-focused-final.log` | `f7633c3682d81257f90c9b33f46d67fd3039833071e0bb1b89bdad0978527c95` |
+| `../image-desktop-triage.log` | `008ad91f3497d724425642d276b1f89c4f2861b2ce9a621083b10753588c7a59` |
+
+A parent-requested read-only resource sample at 2026-10-17 05:17–05:18 UTC
+observed 18 logical CPUs, 64 GiB RAM, load 18.01–19.65, and CPU idle
+37.73–40.27% (user about 36%, system about 24–26%). `memory_pressure -Q`
+reported 67% system-wide free; compressor usage was 15 GiB, with zero new
+swapins/swapouts across the two samples. The workspace volume had 605 GiB
+available. Multiple heavy Node/npm processes were concurrent, but this sample
+alone does not prove CPU saturation, active paging or resource causation for the
+platform failures. No other task arguments, data or processes were changed.
+The complete local resource receipt remains outside Git at
+`../image-resource-snapshot.txt`.
+
+## Required affected gate: failed, Draft remains blocked
+
+`JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ANDROID_HOME=/Users/utopiafar/Library/Android/sdk npm run check:affected -- --base origin/codex/mote-multiuser-integration`
+ran to its natural exit **1** on production snapshot `4a7168f1`. It was not
+interrupted. The source remained unchanged afterward; `68174ed2` updates only
+the retained component test fixture to the required proof/operation/ACK wire.
+That correction and the existing real scoped tests passed together **32/32**.
+This bounded pass does not turn the full gate green.
+
+| Suite | Natural full-run result |
+| --- | --- |
+| Desktop | 500 pass, 1 fail (60 files) |
+| Server | 2,762 pass, 10 fail, 3 cancelled, 2 skipped / 2,777 tests |
+| Web | 541 pass, 4 fail / 545 tests; one old ImageProgress wire fixture subsequently corrected |
+
+The failed workspace test command short-circuited the root post-workspace tests
+and Android check; those checks are not claimed as passed. The following list
+retains every unsatisfied scenario, including cancelled timeouts. Unrelated
+Ask/Memory/Actions implementations were not changed. Root cause of the broader
+failures remains unestablished; concurrent-process observations do not substitute
+for regression attribution. Parent explicitly authorized a narrow Draft with
+this full-gate blocker, without indefinite unrelated repair work.
+
+| Component / test | Observed failure or follow-up |
+| --- | --- |
+| desktop: revokes the old actual document before replacing private stores or publishing the new collector | 1-second diagnostics entry wait; unchanged single-test rerun passed |
+| server: a thousand generated originals drain bounded catalogs with complete independently reviewed coverage | 120-second test timeout |
+| server: HTTP import of a thousand generated originals rolls through bounded background packages without planning | 300-second prefix deadline; 807/999 checkpoints, event-loop max 25.75 seconds |
+| server: real ordered Agent subtasks deduplicate proposals and disclose fresh original receipts before parent citations | Ask timeout |
+| server: Insight research children receive their narrowed request without the parent report coverage snapshot | Ask timeout |
+| server: parent cannot cite a successful child handle or prior-fragment originals without current disclosure | Ask timeout |
+| server: pause/resume and restart preserve successful child checkpoints and replace cancelled generation authority | Ask timeout |
+| server: failed real child retries only its own model branch while successful checkpoints remain single-use | Ask timeout |
+| server: automatic Insight waits for interval AND increments, freezes archive candidates and revokes late output with the owner policy | 120-second test timeout |
+| server: actual M03 Coding archives project only complete declared dialogue through M06 and Memory organizers for equal A/B identities | expected M06/Memory organizer publication not ready |
+| server: two real HTTP host processes retain Memory state and original user/model grants across SIGKILL during feedback | 90-second test timeout |
+| server: native Hindsight uses the real engine, independent review and exact private read banks across A/B and restart | HTTP 503 memory_provider_unavailable |
+| server: raw screenshot daily observations wait for real M06 OCR and enabled pixel understanding for both owners, then consume each recipe once | 25-second aggregate deadline; OCR succeeded, pixel analysis still running |
+| server: summary page checkpoints and original M04 snapshot survive restart without replaying completed model pages | analysis became stale/input_changed after provider_unavailable |
+| web: the original question entry binds the actual calendar.update review to its required native target | actual model related-change wait |
+| web: original Actions walks actual opaque owner pages and retires a held old page on account replacement | actual model-produced page wait |
+| web: the original Actions dialog displays the actual immutable M12 review before an OwnerQuestions approval | actual Actions proposal wait |
+| web: image progress keeps ready OCR visible after vision failure and reports a successful empty Memory result | old fixture omitted required proof and task ACK; corrected in 68174ed2, 32/32 compatibility tests pass |
+
+Full generated-fixture log: `../image-required-delivery.log`, SHA256
+`731a7f651f531e20cc59f57dd849f95f804ac7c4d63f8d7d7237bec0c449e2af`.
+Machine-readable exact locations are retained locally in `../image-gate-failures.json`.
+
+Post-gate bounded follow-up: `68174ed2` changes only the old component fixture's
+wire. Its existing OCR/vision/empty-Memory assertions remain, while requests now
+assert the owner proof and UUID operation ID and the fixture returns a task ACK.
+A second independent review accepted this test-only delta. The 32-test command
+includes `read-state-closure.test.ts`, `multiuser-image-progress.test.ts` and
+`image-exclusion.test.ts`; all passed. Default-sandbox loopback `listen` initially
+returned EPERM, so the authorized generated local-server check ran with its
+normal supported execution permission; that environmental failure was not a pass.
+
+The original, unchanged M06 summary-page restart test passed when run sequentially
+with the raw-image combination check. The raw daily-observation test still
+expired while OCR was succeeded and both image analysis tasks were running;
+Memory correctly remained `memory_image_products_pending`. No success or Memory
+publication was fabricated to satisfy its deadline. Exact-baseline comparison is
+recorded separately below.
+
+Later Joint freeze `2349a341da658ff6bb2ee16e67574908dd1d6325` was announced after
+this bounded implementation. It is not consumed here and this is not a custom
+recipe/whole-image final. Future composition must consume named `image:<name>` /
+`image-ocr:<name>` derivation IDs and typed `mote-image-product-v1`, including
+noOCR policies with no primary artifact/material; it must not invent
+`rawArtifactId` or infer success from indexing alone. M13 owns the later union.
+
+Exact-baseline attribution check: the unchanged raw daily-observation test also
+failed on this task's separate worktree at
+`9565bc7fbec0d0ee90ce47ed49d8f7df75af1abf` (32.50 seconds, same 25-second
+window and same OCR-succeeded / image-analysis-running /
+`memory_image_products_pending` snapshot). The fixed branch separately failed
+that unchanged combination at 49.54 seconds. This is a demonstrated pre-existing
+baseline gap, not a green integration receipt. It remains for the owning
+M06/M07/Joint composition rather than this progress projection.
+
+## Final bounded delivery receipts
+
+Final `build:central` on `68174ed2f62e83dc9f630ac8064b219270ef293f`
+passed. The production source is identical to `4a7168f1`; the ImageProgress
+source hash remains the IAB-verified hash above. The entire affected Web suite was
+rerun after the test-only correction: **544/545 pass**, **1 fail**, 104.35 seconds.
+The remaining failure is `multiuser-actions.test.ts` — “the original Actions
+dialog displays the actual immutable M12 review before an OwnerQuestions
+approval” — waiting for an actual proposal while its job remained running.
+All image-progress tests, including the retained component regression, pass.
+The earlier Actions review-target and paging failures passed in this rerun.
+This is still a failed Web/platform gate, not an aggregate pass.
+
+| Additional local receipt | SHA256 |
+| --- | --- |
+| `../image-compat-final.log` (32/32) | `6e66589c366e72b61e0b11e4a8a0a1913b951a237f3db2248e1b25e0da3f20ca` |
+| `../image-build-delivery.log` (pass) | `9f487b4c79dac753c94acf8a4e6faf5ab879e834ab372183f5c19f3afaca8ea9` |
+| `../image-web-delivery.log` (544 pass / 1 fail) | `0f8bba8f5fa9cb2169c459ba95a3d25b7590ffcf183e6029892447d14d316d26` |
+| `../image-related-triage.log` (summary pass / raw combination fail) | `4701f50740c59d75fc7662be50d2fa94a6265170c8cf742eeaf2f978b2f62b77` |
+| `../image-raw-baseline.log` (same raw gap at exact 9565 baseline) | `d7faa41394ffbbb387e199bb9bd7d9414f5b9b5832d03c55675a03547e86ab20` |
+| `../image-resource-snapshot.txt` | `58fefc5fb0c9334f3ab1616dc03f824ff9415c47dc9fa8f1fac6e0802fbc159b` |
+
+A direct parent-thread status notification returned `thread not found` once and
+was not retried; this task's commentary/final provides the automatic handoff.
+M13's bounded status handoffs were delivered. An earlier Joint checkpoint
+notification had an unconfirmed submission and was not blindly retried.
