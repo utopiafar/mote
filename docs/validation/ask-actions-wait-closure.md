@@ -193,3 +193,45 @@ final complete affected gate uses distinct `required-final.log/.exit/.sha/.dirty
 receipts and the same base67b992f3 command. Its result is pending. First-gate
 `required.*` remains separate on runtimee53787e2. Neither whole run is interrupted
 or reported green before its natural terminal result.
+
+
+## First full terminal and dependency-layout correction
+
+The complete e53787e2 gate naturally exits1: Shared192/192; Agent317pass/1skip;
+Server2795pass/1fail/2skip out of2798,1460.716s; Web515/515,46.409s. All original
+Ask/Insight/Actions waits pass inside that whole run, including retry17.620s,
+periodic Insight77.378s and catalog18.720s. The unchanged1000-original cases
+pass70.712s and175.899s with their original budgets and125 packaging unchanged.
+The sole remaining failure is the already recorded M06 summary-page restart:
+`processing.analysis` becomes `stale/input_changed` after `provider_unavailable`,
+retaining its checkpoint and one unresolved fact. Its original a2 reproduction
+remains in PR150's retained evidence; this lane does not change M04/M05/M06.
+The failed Central workspace command prevents its later supervisor/release
+`&&` stages from running in that invocation. No full-green claim is made.
+
+The first final-candidate attempt used this task's other checkout's dependency
+links. That was an environment error: a direct relative Agent import and
+`@mote/agent` resolved different physical modules and different ContextToolError
+classes. The unchanged legacy bridge case reproduced `context_tool_failed`
+instead of `invalid_delegation_arguments`: `next-delegation-env-red.log`,0/1,
+exit1,1.531s; `next-module-identity-red.json` records different paths/false.
+It does not run through M08 production. After this exact proof, only that owned
+invalid-environment runner and its verified15 descendants received SIGTERM;
+`required-final-env-interruption.json` retains identities/reason, with no KILL.
+The earlier healthy gate was excluded and naturally finished as above.
+`required-final-linked-env.*` retains the interrupted candidate's actual143;
+cancellation output is not a complete suite or a product failure count.
+
+The final worktree now has its **own** offline lockfile installation and local
+ABI137 native build, including all three nested workspace dependency trees.
+No source, assertion, lockfile or peer dependency changes were needed. Actual
+root/mem0 constructor-read-write and module-identity checks pass; alias and
+relative Agent paths now resolve inside next-candidate and classes are identical.
+The unchanged whole delegation-proposal file passes3/3 in
+`next-delegation-env-green.log`. Fresh final gate receipts use `required-final.*`;
+all interrupted evidence remains separately named.
+
+Final a2 four-file patch SHA256:
+`6d8a01a0746ffe5cd22199bc27b68aedeabbfadde9cb00a13fa63b0feff6ce17`.
+Module-only patch against67b SHA256:
+`d9a439375832f7855a32fe5d1600949adab05bd3ebad398f02ef02565ec059bb`.
