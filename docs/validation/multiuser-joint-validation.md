@@ -1610,3 +1610,29 @@ failed receipts; neither is overwritten or counted as runtime acceptance.
 Final union/consumer/compiled/backup acceptance remains pending. Optional disabled
 recipe dependency behavior and all legacy custom packs are not inferred from this
 finite matrix.
+
+### Named image completion, finite producer freeze
+
+Compose only PR151's declared9b037b9e/4a7168f1 production and68174ed2 test delta
+plus the parent's declared2a1abd26/d10a6a4f consumer PREP; no full M13 baseline
+was merged. M15's parent-confirmed769a30b0 exact blocked-summary-parent retry
+was selected separately, preserving its own10-case evidence and limited docs.
+
+Both noOCR-complete and partial named-step replay were independently reproduced
+on this composition:2/2 actual RED (`custom-image-complete-red`). The existing
+M06 graph now recognizes actual named accepted outputs before admission; partial
+completion carries verified same-plan/recipe/dependency artifact data into the
+new current step generation. Existing mp_file_steps keys gain a dependency hash;
+the first PREP key remains readable, using exact accepted Material input refs
+when dependencies exist. No old execution grant/context is used for this cache.
+
+Exact backend cases2/2,7.064s EXIT0 (`custom-image-complete-green1`), original
+Files/ImageProgress OCR/noOCR/partial journey3/3,38.565s EXIT0
+(`mote-joint-image-recipes-original-ui1`) preserve no-op complete, successful
+steps on partial failure, explicit full recompute, actual cancel/late result,
+A/B same ID, restart and registry-unavailable states. Server noEmit3 passes;
+consumer flatMap annotation and explicit string-valued status typing repair
+PREP TypeScript inference without changing scheduling. These source paths are
+frozen only for named completion. Typed export and snapshot lifetime fixes and
+the stronger physical-pin matrix are separate subsequent work, not covered by
+this producer freeze or advertised as final by these original UI cases.

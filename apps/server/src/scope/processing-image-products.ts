@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {transcriptSchema,diarizationSchema,type Transcript} from '@mote/shared';
 import {imageInterpretationSchema} from '../image-recipes.js';
@@ -10,8 +11,8 @@ export const processingArtifactSchema=z.union([transcriptSchema,diarizationSchem
 export const imageRecipeInputSchema=processingInputSchema.extend({imageStep:z.object({recipe:component,fingerprint:hash,name,dependencies:z.record(hash)}).strict()}).strict();
 export type ImageRecipeInput=z.infer<typeof imageRecipeInputSchema>;
 export const imageUnderstandingInputSchema=processingInputSchema.extend({ocrArtifactId:hash.optional()}).strict();
-export const imageStepKey=(planId:string,fingerprint:string,stepName:string)=>'image:'+planId+':'+fingerprint+':'+stepName;
-export const imageStepKeySchema=z.string().regex(/^image:[a-f0-9]{64}:[a-f0-9]{64}:[a-z][a-z0-9.-]{0,63}$/);
+export const imageStepKey=(planId:string,fingerprint:string,stepName:string,dependencies?:Readonly<Record<string,string>>)=>'image:'+planId+':'+fingerprint+':'+stepName+(dependencies?':'+createHash('sha256').update(JSON.stringify(Object.entries(dependencies).sort(([a],[b])=>a.localeCompare(b)))).digest('hex'):'');
+export const imageStepKeySchema=z.string().regex(/^image:[a-f0-9]{64}:[a-f0-9]{64}:[a-z][a-z0-9.-]{0,63}(?::[a-f0-9]{64})?$/);
 export const imageDerivationKind=z.string().regex(/^image(?:-ocr)?:[a-z][a-z0-9.-]{0,63}$/);
 /** Display/publication view only. The exact interpretation including empty
  * region descriptions remains in the immutable typed product, never as OCR. */
