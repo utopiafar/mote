@@ -451,3 +451,86 @@ defer held exact pins, retire held transport, require fresh same-byte admission
 and reject parentless old task authority. No new regression code or production
 change was needed. The bounded cohort is therefore 104 + 6 + 6 = 116 distinct
 cases across three commands, all passing; this is still not a full affected gate.
+
+## Frozen policy checkpoint: a2cbf3aa
+
+The resumed lane consumed only Joint runtime
+`a2cbf3aaf1ae2f2fbfe5f647cf9a4f23dfdc1695`, with `2528a67d` verified as an
+ancestor. Composition `1357b5e119fb3d2bf83deb2120e3ce458e8fe256` has no production
+diff from that checkpoint. Later Joint HEAD and its root/Imports work were not
+consumed. The limited contract is
+[multiuser-file-processing-contract.md](../design/multiuser-file-processing-contract.md).
+This phase adds tests and a generated-only Docker runner, with no backend repair.
+
+| Current-checkpoint seam | Evidence and actual result |
+| --- | --- |
+| Retired configuration cache after relogin; scalar/service changes; genuine disabled automatic originals; restart/enable/manual cancellation; named raw-stage dependency cache | `/tmp/mote-recovery7-a2-new-lifecycle.log/.exit`: six cases, 6 pass, 0 fail/skip, exit 0, 14.983 seconds. |
+| Admitted work after logout and late-publication fencing; named policy change cannot replay an unknown physical call | `/tmp/mote-recovery7-a2-authority-neighbors.log/.exit`: three cases, 3 pass, 0 fail/skip, exit 0, 8.620 seconds. |
+| Nonempty new policy tables through stopped native backup/restore and source reopen; old token/grant retirement; omission of each table rejected before target publication | New `multiuser-recovery-policy-lifecycle.test.ts`, first case. Exact immutable policy/plan/binding rows, A/B text and completed pipeline history survive. Missing-table copies have recomputed checksums and are still rejected. |
+| Same-instance/same-account personal merge/restart preserves existing plans without new processing grants; repeated import; real account erasure removes A's three tables and preserves B | Same new file, second case. This is preservation of existing local plans, not complete applied-plan reconstruction from a personal archive. |
+| Held named HTTP media call → logout/relogin → disable/enable → late ACK | Same new file, third case. Logout retains the admitted grant; disable creates a fresh genuine blocked coordinator with zero attempts; enable cannot replay the live physical request; even explicit unknown consent returns 409 while live. Old execution is cancelled and loses its fence. Only the fresh call's generated response enters chunks; B's local text succeeds independently. |
+| Three new regression cases together | `/tmp/mote-recovery7-a2-policy-seams-verified.log/.exit`: 3/3, 0 fail/skip, exit 0, 36.297 seconds. |
+| New compiled production image: nonempty policies/plans/bindings, stopped restore, two default-CMD startup/shutdown cycles, exact stopped readback, old credentials/grants retired, account erasure isolated | `/tmp/mote-recovery7-a2-policy-container.log/.exit`: 1/1, 0 fail/skip, exit 0, 26.797 seconds. All three tables initially have two rows, one per generated owner; first stopped readback equals all source rows; final readback retains only B's rows. |
+
+The six-case command selected `multiuser-configuration-relogin-processing`,
+`multiuser-processing-policy-settings-change`,
+`multiuser-processing-policy-service-change`, and
+`multiuser-processing-policy-stage-reuse` test files. The three-case neighbor
+command selected `a new named policy cannot replay`,
+`logout preserves admitted account work`, and
+`Web logout keeps admitted background` from the policy-page, configuration and
+execution files. Both used `node --import tsx --test --test-concurrency=2
+--test-timeout=120000`. The new cases ran with concurrency 1 and the same timeout.
+The opt-in Docker command was:
+
+```sh
+MOTE_CONTAINER_VALIDATION_IMAGE=mote-recovery7-validation:a2cbf3aa \
+MOTE_RECOVERY_CANDIDATE=a2cbf3aaf1ae2f2fbfe5f647cf9a4f23dfdc1695 \
+node --import tsx --test --test-timeout=240000 \
+  scripts/validation/recovery-policy-container.ts
+```
+
+The 13 current-phase checks above all pass; this count is not added to the old
+116 as a claim of globally distinct coverage. Old unchanged full cohorts were
+not rerun. Server noEmit, fresh Server build and scripts noEmit all exit 0;
+logs are `/tmp/mote-recovery7-a2-server-types.log`,
+`/tmp/mote-recovery7-a2-server-build.log`, and
+`/tmp/mote-recovery7-a2-new-runner-types.log`, each with its `.exit` file.
+
+The new local image is
+`sha256:0ac524104e57e93d561390539fd4a20da75af8f52cb94740bb1d97deaa89f82d`,
+labelled with exact runtime `a2cbf3aa`. It overlays that checkpoint's freshly
+compiled Server and current scripts on the existing immutable `f6889867` image
+dependency layers, without pulling or downloading. Shared/Agent/Web source has
+no delta between those runtime checkpoints. This proves the compiled Server and
+backup scripts in that image, not a new dependency installation or final client
+UI. Build log: `/tmp/mote-recovery7-a2-image-build.log/.exit`. Docker run identity
+is `mote-recovery7-policy-772f0e7b-7076-43ab-937b-bf6ab6dd7527`; its randomly named
+containers and volumes are cleaned after label verification. Execution checkout
+was `1357b5e1` with the two new runner/test files uncommitted; their exact hashes
+are recorded separately, rather than claiming a clean commit execution.
+
+Early new-case failures were fixture/observer assumptions, not confirmed backend
+defects: canonical policies supply the default diarization processor; task kind
+belongs to `execution_steps`; intentionally damaged FK-linked tables require
+foreign keys disabled only in the copied damaged fixture; missing tables may
+fail integrity validation before catalog validation; cancelled execution loses
+its fence without necessarily setting the durable authorization history bit.
+Original logs remain in `/tmp/mote-recovery7-a2-new-table-seams*.log`,
+`/tmp/mote-recovery7-a2-live-policy-seam.log`, and
+`/tmp/mote-recovery7-a2-policy-seams-final.log`. Corrected assertions verify actual
+old-fence retirement and exclusion of the retired ACK's text, rather than
+requiring an invented revocation-bit contract. No newly confirmed production
+defect required an owner handoff in this phase.
+
+Actual personal export includes the configuration `filePolicy` graph. Its
+processing payload contains annotations, artifacts, controls, derivations,
+diarization, formats, imports, publications, reviews and steps, but no applied
+plans/bindings. Complete applied-plan personal export/import/restore therefore
+remains OPEN as declared by Joint; the passing merge case preserves existing
+same-account rows and cannot close that gap. Shared/default model watching,
+test-local/root/import/attachment overrides and custom recipes remain outside
+the checkpoint. New tables combined with ManagedHindsight in one archive were
+not exercised. Old actual Hindsight evidence retains its original SHA; no old
+image or 116-case result is relabelled as `a2cbf3aa`. Full affected checks and a
+uniform public-runtime plus final Web/Android/Desktop combination remain open.
