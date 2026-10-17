@@ -16,11 +16,13 @@ test('repeated private SQL keeps preparation bounded while every access rechecks
  assert.equal(checks,64,'preparation reuse must not reuse an authorization decision');
  assert.ok(preparations<=2,'64 identical owner-bound reads repeatedly prepare their SQL: '+preparations);
  const a=new PrivateSql(db,'A',()=>{checks++;assert.ok(active,'retired authority');}),b=new PrivateSql(db,'B',()=>{});
+ assert.equal(a.get(query),undefined,'an omitted argument cannot retain the preceding caller binding');
+ assert.deepEqual(b.all(query),[]);
  a.run('UPDATE owned SET value=? WHERE user_id=$user AND id=?',3,'same');
  assert.equal(a.get(query,'same')!.value,3,'a cached statement cannot cache its earlier row');
  assert.equal(b.get(query,'same')!.value,2,'bindings cannot carry A into an equal B identity');
  const returning='UPDATE owned SET value=value+1 WHERE user_id=$user AND id=? RETURNING value';
- a.run(returning,'same');assert.equal(a.get(returning,'same')!.value,5,'run bigint metadata cannot change a later get result type');
+ a.run(returning,'same');assert.equal(a.run(returning).changes,0n);assert.equal(a.get(returning,'same')!.value,5,'run bigint metadata cannot change a later get result type');
  active=false;assert.throws(()=>a.get(query,'same'),/retired authority/);
  assert.throws(()=>a.all('SELECT value FROM owned WHERE user_id=$user'),/retired authority/);
  assert.throws(()=>a.run('UPDATE owned SET value=? WHERE user_id=$user AND id=?',4,'same'),/retired authority/);
