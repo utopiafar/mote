@@ -1,5 +1,5 @@
 import { failureMessage } from './failure-message';
-import { useState, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { readImageRetry, saveImageRetry, clearImageRetry } from './image-retry-intent';
 import { moteText } from '@mote/shared/i18n';
 import { type Api, ApiError, errorMessage } from './api';
@@ -47,16 +47,19 @@ type View = {
     }[];
 };
 const states: Record<string, string> = { skipped: '已跳过', ready: '已就绪', indexed: '已就绪', succeeded: '已完成', completed: '已完成', pending: '等待处理', waiting: '等待处理', queued: '等待处理', running: '处理中', blocked: '需要处理，查看具体原因', failed: '处理失败', cancelled: '已取消', unavailable: '原件不可用', disabled: '未安排', not_scheduled: '未安排', waiting_for_input: '等待资料', waiting_for_model: '等待模型配置', paused: '已暂停', stale: '来源变化待重验' };
-type Props = {api: Api; id: string};
+type Props = {api: Api; id: string; onChanged?:()=>void};
 export function ImageProgress(props: Props) {return <ImageProgressView key={JSON.stringify([props.api.connection,props.id])} {...props}/>;}
-function ImageProgressView({ api, id }: {
-    api: Api;
-    id: string;
-}) {
+function ImageProgressView({ api, id, onChanged }: Props) {
     const read = useResource<View>(api, '/api/images/' + encodeURIComponent(id), 5000), [busy, setBusy] = useState(false), [error, setError] = useState(''), [confirmUnknown, setConfirmUnknown] = useState(false);
     const request = useRef<AbortController | null>(null), alive = useRef(false), [pending, setPending] = useState<string>();
     useLayoutEffect(() => { alive.current = true; try { setPending(readImageRetry(api,id)); } catch(e) { setError(errorMessage(e)); } return () => {alive.current=false;request.current?.abort();}; }, [api,id]);
     const revoked = read.error instanceof ApiError && [401,403,404,410].includes(read.error.status);
+    const publication = useRef<string|undefined>(undefined);
+    useEffect(() => {
+        if(!read.data?.original || revoked)return;
+        const signature=JSON.stringify([read.data.proof,read.data.original.state,read.data.jobs,read.data.products.map(p=>p.id),read.data.materials.map(m=>m.id)]);
+        if(publication.current===signature)return;publication.current=signature;onChanged?.();
+    },[read.data,revoked,onChanged]);
     useLayoutEffect(() => {if(revoked){request.current?.abort();setBusy(false);setConfirmUnknown(false);}}, [revoked]);
     useLayoutEffect(() => {setConfirmUnknown(false);}, [read.data?.proof,read.data?.wait]);
     if (!read.data?.original || revoked)
