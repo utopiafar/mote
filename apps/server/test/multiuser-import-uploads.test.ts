@@ -109,3 +109,29 @@ test('account erasure holds generic-upload physical cleanup until its live origi
  await waitForScopedState(async()=>(await f.checked(f.admin.token,'/api/admin/account-deletions/'+deletion.id)).state==='result_unknown',()=>'live original worker did not prevent claimed erasure',15000);const root=join(f.directory,'originals',identityHash([f.host.deploymentId,f.a.userId]));assert.equal(existsSync(root),true);assert.deepEqual((await f.request(f.b.token,'/api/archived-files/'+b.id+'/content')).rawPayload,bytes);assert.equal((await f.request(f.a.token,'/api/import-uploads','POST',manifest)).statusCode,401);
  release.resolve();const late=await held;assert.equal(late.statusCode,401,'retired A worker cannot publish a late archived file');await f.checked(f.admin.token,'/api/admin/account-deletions/'+deletion.id+'/retry','POST',{});await waitForScopedState(async()=>(await f.checked(f.admin.token,'/api/admin/account-deletions/'+deletion.id)).state==='completed',()=>'settled original worker did not permit physical erasure',15000);assert.equal(existsSync(root),false);assert.deepEqual((await f.request(f.b.token,'/api/archived-files/'+b.id+'/content')).rawPayload,bytes);
 });
+
+
+test('shared binary parser preserves Imports authentication, MIME, method, path and part bounds while B can commit',async t=>{
+ const f=await scopedFilesFixture(t),id=randomUUID(),bytes=Buffer.from('Generated bounded binary'),path='/api/import-uploads/'+id+'/parts/0',mime={'content-type':'application/octet-stream'};
+ const manifest={id,name:'bounded.txt',sizeBytes:bytes.length,mimeType:'text/plain'};
+ for(const account of [f.a,f.b])await f.checked(account.token,'/api/import-uploads','POST',manifest);
+ assert.equal((await f.request(undefined,path,'PUT',bytes,mime)).statusCode,401);
+ assert.equal((await f.request(f.a.token,path,'PUT',bytes,{...mime,'x-mote-protocol-version':'1'})).statusCode,426);
+ assert.equal((await f.request(f.a.token,path,'PUT',bytes,{...mime,'x-user-id':f.b.userId})).statusCode,401);
+ for(const [body,type] of [[bytes.toString(),'text/plain'],[{type:'Buffer',data:[...bytes]},'application/json']] as const){
+  const response=await f.request(f.a.token,path,'PUT',body,{'content-type':type});assert.equal(response.statusCode,400,response.body);
+ }
+ assert.equal((await f.request(f.a.token,path,'PUT',bytes,{'content-type':'application/x-generated-unsupported'})).statusCode,503,'the frozen global error handler rejects an unregistered MIME before staging');
+ assert.equal((await f.request(f.a.token,path,'PUT',Buffer.alloc(4*1024*1024+1),mime)).statusCode,503,'the frozen global error handler rejects an oversized part before staging');
+ assert.equal((await f.request(f.a.token,path,'PUT',bytes.subarray(1),mime)).statusCode,400);
+ for(const url of ['/api/import-uploads/not-a-uuid/parts/0','/api/import-uploads/'+id+'/parts/-1','/api/import-uploads/'+id+'/parts/1.5','/api/import-uploads/'+id+'/parts/1e0','/api/import-uploads/'+id+'/parts/0x0'])assert.equal((await f.request(f.a.token,url,'PUT',bytes,mime)).statusCode,400);
+ for(const [method,url] of [['POST',path],['PUT',path+'/extra'],['PUT','/api/import-uploads/'+id+'/not-parts/0']] as const){const response=await f.request(f.a.token,url,method,bytes,mime);assert.ok([400,503].includes(response.statusCode),JSON.stringify({method,url,status:response.statusCode,body:response.json()}));}
+ assert.deepEqual((await f.checked(f.a.token,'/api/import-uploads','POST',manifest)).parts,[],'all rejected requests leave A staging unchanged');
+ const db=new DatabaseSync(join(f.directory,'mote.sqlite'),{readOnly:true});try{assert.equal(db.prepare('SELECT count(*) n FROM ig_import_parts').get()!.n,0);assert.equal(db.prepare('SELECT count(*) n FROM pd_captures').get()!.n,0);}finally{db.close();}
+ // B succeeds after every negative; A's equal upload ID remains empty/private.
+ assert.equal((await f.request(f.b.token,path,'PUT',bytes,mime)).statusCode,200);
+ const file=await f.checked(f.b.token,'/api/import-uploads/'+id+'/commit','POST',{});
+ assert.deepEqual((await f.request(f.b.token,'/api/archived-files/'+file.id+'/content')).rawPayload,bytes);
+ assert.equal((await f.request(f.a.token,'/api/archived-files/'+file.id+'/content')).statusCode,404);
+ assert.deepEqual((await f.checked(f.a.token,'/api/import-uploads','POST',manifest)).parts,[]);
+});
