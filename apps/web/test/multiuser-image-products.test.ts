@@ -1,0 +1,52 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
+import {setTimeout as delay} from 'node:timers/promises';
+import {gunzipSync} from 'node:zlib';
+import React,{act} from 'react';
+import {createRoot} from 'react-dom/client';
+import {JSDOM} from 'jsdom';
+import sharp from 'sharp';
+import {scopedFilesFixture} from '../../server/test/fixtures/scoped-files.js';
+import {waitForScopedState} from '../../server/test/fixtures/scoped-process.js';
+import {defaultModelSettings} from '../../server/src/model-settings.js';
+import {bytesHash} from '../../server/src/scope/originals.js';
+import {FileDetail} from '../src/Files.js';
+import {createApi,type Api} from '../src/api.js';
+import {resources} from '../src/resource-cache.js';
+import {configureLocale} from '@mote/shared/i18n';
+configureLocale(()=> 'zh-CN');
+function tarEntries(gzip:Buffer){const data=gunzipSync(gzip),entries=new Map<string,Buffer>();for(let offset=0;offset+512<=data.length;){const name=data.subarray(offset,offset+100).toString().replace(/\0.*$/s,'');if(!name)break;const size=parseInt(data.subarray(offset+124,offset+136).toString().replace(/\0.*$/s,'').trim(),8);assert.ok(Number.isSafeInteger(size)&&size>=0);entries.set(name,data.subarray(offset+512,offset+512+size));offset+=512+Math.ceil(size/512)*512;}return entries;}
+
+for(const journey of ['export-ocr','export-no-ocr','snapshot'] as const)test('original Files typed image product journey: '+journey,async t=>{
+ const withOcr=journey!=='export-no-ocr',snapshot=journey==='snapshot';
+ let release=()=>{},entered=false,readCount=0,closeUI=async()=>{};t.after(()=>closeUI());t.after(()=>release());
+ const ocrCalls:string[]=[];
+ const provider=createServer(async(req,res)=>{for await(const _ of req){}ocrCalls.push(String(req.headers.authorization));res.setHeader('X-Mote-Execution','local');res.end(JSON.stringify({durationMs:0,engine:'generated-image-products',segments:[{startMs:0,endMs:0,text:'GENERATED_REAL_OCR'}]}));});
+ await new Promise<void>(r=>provider.listen(0,'127.0.0.1',r));t.after(()=>{provider.closeAllConnections();return new Promise<void>(r=>provider.close(()=>r()));});const address=provider.address();assert.ok(address&&typeof address!=='string');
+ const f=await scopedFilesFixture(t,node=>{const registry=node.processing!.processors.imageRecipes;
+  for(const name of ['first','last'])registry.registerStage({id:'generated.products-'+name,version:'1',kind:'derived',run:async input=>{if(snapshot&&name==='first'){entered=true;await new Promise<void>(r=>release=r);}const image=await input.readImage({view:'image'});assert.equal(image.imageView?.original.width,2);readCount++;return {text:'GENERATED_TYPED_'+name,regions:[{x:0,y:0,width:1,height:1,description:''}]};}});
+  registry.registerRecipe({id:'generated.products-recipe',version:'1',steps:[...(withOcr?[{name:'ocr',stage:{id:'mote.image-ocr',version:'1'},dependsOn:[]}]:[]),{name:'first',stage:{id:'generated.products-first',version:'1'},dependsOn:withOcr?['ocr']:[]},...(snapshot?[{name:'last',stage:{id:'generated.products-last',version:'1'},dependsOn:['first']}]:[])]});
+ });
+ const page=await f.checked(f.a.token,'/api/file-processing');await f.checked(f.a.token,'/api/file-processing','PUT',{revision:page.revision,settings:{...page.settings,automatic:true,understandingEnabled:false,summarize:false},policy:{version:1,services:withOcr?[{id:'ocr',name:'Generated OCR',kind:'image',reference:{kind:'personal',id:'generated-ocr'}}]:[],profiles:[{id:'image',name:'Generated image products',processorId:'image.http',...(withOcr?{serviceId:'ocr'}:{}),parameters:{},summarize:false,imageRecipe:{id:'generated.products-recipe',version:'1'}},{id:'archive',name:'Archive',processorId:'archive',parameters:{},summarize:false}],rules:[{type:'image/*',profileId:'image'},{type:'*/*',profileId:'archive'}]},...(withOcr?{models:{profiles:[{id:'generated-ocr',name:'Generated local OCR',settings:{...defaultModelSettings(),provider:'custom',protocol:'mote-media',baseUrl:'http://127.0.0.1:'+address.port,apiKey:'GENERATED_LOCAL',model:''}}],selections:{}}}:{})});
+ const png=await sharp({create:{width:2,height:2,channels:3,background:'#336644'}}).png().toBuffer();let file:{id:string};
+ if(snapshot){await f.checked(f.a.token,'/api/ingress/sources/same-source','PATCH',{retention:'snapshot'});const hash=bytesHash(png),upload=await f.checked(f.a.token,'/api/ingress/sources/same-source/uploads','POST',{batchId:'generated-products',revision:{sourceId:'same-source',previousRevision:null,processingProfileId:'image',sizeBytes:png.length,sha256:hash,relativePath:'generated.png',item:{externalId:'generated-products',revision:'r1',observedAt:'2026-10-17T00:00:00Z',title:'Generated products snapshot',text:'',kind:'file',layer:'snapshot',mimeType:'image/png',document:{fileIndex:{version:1,fileId:'generated-products',contentVersion:hash,mode:'index',coverage:'none',parser:'central-pending',status:'pending',totalCharacters:0,offset:0,length:0,maxIndexCharacters:100000,allowRead:true}}}}});await f.checked(f.a.token,'/api/ingress/uploads/'+upload.id+'/parts/0','PUT',{bytes:png.toString('base64'),checksum:hash});file=(await f.checked(f.a.token,'/api/ingress/uploads/'+upload.id+'/commit','POST',{})).captures[0];}
+ else file=await f.uploadBytes(f.a.token,'generated-products',png,'image/png');
+ await waitForScopedState(async()=>snapshot?entered:(await f.checked(f.a.token,'/api/files/'+file.id)).job?.state==='succeeded',()=> 'Actual generated recipe not ready',15000);
+ const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost',pretendToBeVisual:true}),saved=new Map<string,PropertyDescriptor|undefined>(),downloads:Blob[]=[],urls=new Set<string>();let current:Api|undefined,cookie='',exportStatus:number|undefined;
+ const originalCreate=URL.createObjectURL,originalRevoke=URL.revokeObjectURL;
+ URL.createObjectURL=value=>{downloads.push(value as Blob);const url='blob:generated-'+downloads.length;urls.add(url);return url;};URL.revokeObjectURL=value=>urls.delete(value);dom.window.HTMLAnchorElement.prototype.click=()=>{};
+ for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true,fetch:async(path:string,init:RequestInit={})=>{const headers=new Headers(init.headers);headers.set('cookie',cookie);const response=await f.host.app.inject({url:path,method:init.method as any??'GET',headers:Object.fromEntries(headers),...(init.body?{payload:String(init.body)}:{})});if(path.endsWith('/export'))exportStatus=response.statusCode;return new Response(response.rawPayload,{status:response.statusCode,headers:response.headers as HeadersInit});}})){saved.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
+ const root=createRoot(dom.window.document.getElementById('root')!),d=dom.window.document;
+ closeUI=async()=>{current?.close?.();await act(async()=>root.unmount());URL.createObjectURL=originalCreate;URL.revokeObjectURL=originalRevoke;dom.window.close();for(const [key,value] of saved){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}};
+ const login=await f.request(undefined,'/api/auth/login','POST',{username:'generated-a',password:'Generated-joint-files-password',mode:'web'});cookie=String(login.headers['set-cookie']).split(';')[0];const api=createApi({mode:'web',origin:'http://localhost',...login.json()},undefined,()=>current===api);current=api;
+ const refresh=async()=>act(async()=>{resources(api).invalidate(path=>path.startsWith('/api/files/')||path.startsWith('/api/images/'));await delay(20);});
+ await act(async()=>{root.render(React.createElement(FileDetail,{api,id:file.id,onOpen:()=>{}}));await delay(20);});await waitForScopedState(async()=>{await act(async()=>delay(10));return !!d.querySelector('.image-progress');},()=>d.body.textContent??'',10000);
+ const phase=(label:string)=>Array.from(d.querySelectorAll('.image-progress dt')).find(node=>node.textContent===label)?.nextElementSibling?.textContent;
+ if(snapshot){assert.equal(phase('原件'),'已就绪','OCR cannot retire original before custom stages read its pixels');assert.ok(Array.from(d.querySelectorAll('button')).some(b=>b.textContent==='查看原图'));assert.equal(phase('文字识别'),'已就绪');release();await act(async()=>{await waitForScopedState(async()=>(await f.checked(f.a.token,'/api/files/'+file.id)).job?.state==='succeeded',()=> 'Custom snapshot steps did not complete',15000);});await refresh();assert.equal(readCount,2);assert.equal(phase('原件'),'原件不可用','snapshot expires after all custom steps publish');assert.equal(phase('内容理解'),'已就绪');assert.ok(!Array.from(d.querySelectorAll('button')).some(b=>b.textContent==='查看原图'));assert.match(d.querySelector('.image-progress')!.textContent!,/GENERATED_TYPED_first/);assert.match(d.querySelector('.image-progress')!.textContent!,/GENERATED_TYPED_last/);assert.doesNotMatch(phase('记忆（Memory）')??'',/已完成/);}
+ const button=Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(b=>/^导出/.test(b.textContent??''));assert.ok(button,'original Files exposes typed image export even without OCR');await act(async()=>{button.click();await delay(50);});await waitForScopedState(async()=>{await act(async()=>delay(10));return exportStatus!==undefined;},()=>d.body.textContent??'',10000);assert.equal(exportStatus,200,d.body.textContent!);await act(async()=>delay(20));
+ assert.equal(downloads.length,1,d.body.textContent!);const entries=tarEntries(Buffer.from(await downloads[0].arrayBuffer()));const serialized=[...entries].filter(([name])=>name.endsWith('.json')).map(([,bytes])=>bytes.toString()).join('\n');assert.match(serialized,/mote-image-product-v1/);assert.match(serialized,/GENERATED_TYPED_first/);assert.match(serialized,/"description":\s*""/);assert.ok(serialized.includes(bytesHash(png)),'export retains exact original hash');
+ for(const [name,bytes]of entries)if(/transcript|raw-extraction|image-ocr/.test(name))assert.doesNotMatch(bytes.toString(),/GENERATED_TYPED_/,'typed interpretation never becomes original OCR');
+ if(!withOcr)assert.ok(![...entries.keys()].some(name=>/transcript|raw-extraction/.test(name)),'no fabricated transcript for noOCR');
+ assert.equal(ocrCalls.length,withOcr?1:0);await act(async()=>root.unmount());assert.equal(urls.size,0,'export object URLs retire with original UI');
+});
