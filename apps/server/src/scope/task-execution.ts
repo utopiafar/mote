@@ -6,7 +6,7 @@ import {ExecutionEngine,ExecutionFailure,type ExecutionStep,type ExecutionGrant,
 import {failureContext,retainFailureContext} from '../execution-failures.js';
 import type {ModelFeature} from '@mote/shared/models';
 import type {TaskModelHost,TaskModelLease,TaskModelConfiguration,TaskModelRun} from './task-model.js';
-import type {ExecutionPolicy} from '../execution-policy.js';
+import {EXECUTION_POLICIES,type ExecutionPolicy} from '../execution-policy.js';
 import {randomUUID} from 'node:crypto';
 import {linkOperation} from '../operation-projection.js';
 import {Operations} from '../operations.js';
@@ -77,6 +77,8 @@ export class TaskExecution {
  private readonly handlers=new Map<string,UserTaskHandler>();
  private readonly storage:ExecutionStorage;
  private modelHost:TaskModelHost|undefined;
+ private modelAdmission:((run:TaskRun,work:()=>Promise<unknown>)=>Promise<unknown>)|undefined;
+ bindModelAdmission(admit:NonNullable<TaskExecution['modelAdmission']>){if(this.modelAdmission)throw new TaskError('model_host_conflict',409);this.modelAdmission=admit;}
  private readonly modelLeases=new Map<string,TaskModelLease>();
  private readonly modelRecovery=new Map<string,string>();
  private timer:ReturnType<typeof setInterval>|undefined;
@@ -161,7 +163,7 @@ export class TaskExecution {
      progress:value=>write(()=>this.db.prepare('UPDATE user_tasks SET progress=? WHERE task_id=?').run(json(value),step.id)),
      external:{begin:(key,onIssued)=>{id.parse(key);const issuanceId=randomUUID();write(()=>{const current=this.row(step.id)!;if(!['none','succeeded'].includes(current.external_state))throw new ExecutionFailure('blocked','external_result_unknown');this.db.prepare("INSERT INTO task_external_calls VALUES(?,?,?,?,'issued',?,?,?,NULL)").run(issuanceId,step.id,current.user_id,key,step.ownership!.authorizationEpoch,step.attempts,Date.now());this.db.prepare("UPDATE user_tasks SET external_state='issued',external_key=?,external_issuance=? WHERE task_id=?").run(key,issuanceId,step.id);if(onIssued){const result=onIssued(issuanceId);if(result&&typeof (result as {then?:unknown}).then==='function')throw new TaskError('asynchronous_external_admission',409);}});return issuanceId;},complete:()=>write(()=>{const current=this.row(step.id)!;if(current.external_state!=='issued'||!current.external_issuance)throw new ExecutionFailure('permanent','external_call_not_issued');this.db.prepare("UPDATE task_external_calls SET state='succeeded',settled_at=? WHERE issuance_id=? AND task_id=? AND user_id=?").run(Date.now(),current.external_issuance,step.id,current.user_id);this.db.prepare("UPDATE user_tasks SET external_state='succeeded' WHERE task_id=?").run(step.id);})},
     };
-    const result=await handler.execute(run);grant.assert();if(this.row(step.id)!.external_state==='issued')throw new ExecutionFailure('blocked','external_result_unknown');return {value:result,run};
+    const result=await (this.modelAdmission&&handler.policy===EXECUTION_POLICIES.modelCall?this.modelAdmission(run,()=>handler.execute(run)):handler.execute(run));grant.assert();if(this.row(step.id)!.external_state==='issued')throw new ExecutionFailure('blocked','external_result_unknown');return {value:result,run};
    },
    commit:(step,result)=>{this.assertTask(step);const {run,value}=result as {run:TaskRun;value:unknown};this.authority.assert(run.context);handler.commit?.(run,value);this.db.prepare('UPDATE user_tasks SET result=? WHERE task_id=?').run(json(handler.publicResult?handler.publicResult(value):value??null),step.id);},
    project:step=>{if(step.state==='succeeded')this.modelLeases.delete(step.id);},

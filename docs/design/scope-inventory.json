@@ -2499,5 +2499,32 @@
       "api:registerUserRoute:scope:'user',service:PROCESSING_DOMAIN,method:'GET',url:'/api/images/:id'",
       "api:registerUserRoute:scope:'user',service:PROCESSING_DOMAIN,method:'POST',url:'/api/images/:id/'+action"
     ]
+  },
+  "apps/server/src/scope/instance-controls.ts": {
+    "scope": "instance",
+    "module": "M04",
+    "surfaces": [
+      "api:registerAuthenticatedRoute:method:'GET',url:'/api/admin/diagnostics-settings'",
+      "api:registerAuthenticatedRoute:method:'GET',url:'/api/admin/execution-settings'",
+      "api:registerAuthenticatedRoute:method:'PUT',url:'/api/admin/diagnostics-settings'",
+      "api:registerAuthenticatedRoute:method:'PUT',url:'/api/admin/execution-settings'"
+    ]
+  },
+  "apps/server/src/scope/index-maintenance.ts": {
+    "scope": "mixed",
+    "module": "M05",
+    "surfaces": [
+      "api:registerAuthenticatedRoute:method:'GET',url:'/api/admin/index'",
+      "api:registerAuthenticatedRoute:method:'POST',url:'/api/admin/index/:id/cancel'",
+      "api:registerAuthenticatedRoute:method:'POST',url:'/api/admin/index/rebuild'",
+      "task:execution.register:{kind,pool:kind,concurrency:()=>1,policy:EXECUTION_POLICIES.deterministic,parseInput:raw=>input.parse(raw), authorizeInput:context=>runtime.authority.assertAdministrator(context), resources:()=>[{scope:'shared',key:'lexical-index-maintenance'}], validate:task=>!!task.ownership&&current(task.ownership.userId,task.ownership.authorizationEpoch), execute:async run=>{run.grant.assert();await yieldTurn();run.grant.assert();return {};}, commit:run=>{ // M05 invokes commit synchronously in its lease-fenced SQLite transaction. // Read live owners, sources and heads here; nothing captured before the // asynchronous boundary may reintroduce withdrawn evidence. if(!current(run.context.userId,run.context.authorizationEpoch))throw new ExecutionFailure('stale','grant_revoked'); rebuildPrivateIndex(db); },classify:error=>error instanceof ExecutionFailure?error:new ExecutionFailure('permanent','index_maintenance_failed')}"
+    ]
+  },
+  "apps/server/src/scope/file-export.ts": {
+    "scope": "user",
+    "module": "M03",
+    "surfaces": [
+      "api:registerUserRoute:scope:'user',service:'ingress',method:'GET',url:'/api/files/export'"
+    ]
   }
 }

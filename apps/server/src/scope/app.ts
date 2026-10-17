@@ -1,3 +1,6 @@
+import {registerFileExport} from './file-export.js';
+import {registerIndexMaintenance} from './index-maintenance.js';
+import {registerInstanceControls} from './instance-controls.js';
 import {registerScopedContentStorage,type ScopedContentStorage} from './content-storage.js';
 import {registerScopedTodos} from './todos.js';
 import {registerScopedActions} from './action-routes.js';
@@ -86,8 +89,10 @@ export async function buildScopedApp(config:ManagementConfig&{dataDir:string;max
     configuration=await Configurations.open({directory:config.dataDir,db:storage.db,authority,accounts:runtime.accounts,lifecycleAuthority,instancePath:config.configuration?.configFile??undefined,instanceDocument:config.configuration?.document});
     registerConfigurationRoutes(runtime,configuration);
     execution?.bindConfiguration(configuration);
+    if(execution){registerInstanceControls(runtime,configuration,execution);registerIndexMaintenance(runtime,storage.db,execution); }
     if(execution)contentStorage=registerScopedContentStorage(runtime,storage.db,config.dataDir,configuration,execution);
     const ingress=registerIngress(runtime,storage.db,config.dataDir,contentStorage?.cipher);
+    registerFileExport(runtime,storage.db,ingress,configuration);
     const ownerQuestions=registerOwnerQuestions(runtime,storage.db);
     if(!options.verifier)mcp=registerScopedMcp(runtime,storage.db,configuration,ingress);
     plugins=execution?registerScopedPlugins(runtime,{db:storage.db,directory:config.dataDir,configuration,execution,releaseTransport:options.pluginReleaseTransport}):undefined;

@@ -68,6 +68,9 @@ export function checkProductionImports(directory=root){
   // M03 reuses immutable chunk preparation/durable replacement and the original
   // pure capture byte/count constants; none imports or opens a legacy Store.
   for(const path of ['content-encryption.ts','asset-work.ts','capture-limits.ts'])allowed.add(sourceRoot+'/'+path);
+  // Instance controls reuse the original pure harness gate and settings schemas;
+  // these helpers construct no Store and register no legacy routes.
+  for(const path of ['concurrency.ts','execution-settings.ts'])allowed.add(sourceRoot+'/'+path);
   // M04 uses the original configuration and pure model/usage contracts.
   for(const path of ['config-service.ts','model-settings.ts','usage-metrics.ts','i18n.ts'])allowed.add(sourceRoot+'/'+path);
   // M09's adapted package catalog and worker/Cordis lifecycle have no private

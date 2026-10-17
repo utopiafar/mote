@@ -1,3 +1,4 @@
+import {attachmentVisible} from './ingress-attachments.js';
 import type {DatabaseSync} from 'node:sqlite';
 import {randomBytes} from 'node:crypto';
 
@@ -79,4 +80,26 @@ export function installPrivateData(db:DatabaseSync){
     if(row?.version!==1||typeof row.cursor_key!=='string'||!/^[a-f0-9]{64}$/.test(row.cursor_key))throw Error('Invalid private-data schema');
     db.exec('COMMIT');return row.cursor_key;
   }catch(error){db.exec('ROLLBACK');throw error;}
+}
+
+/** Fixed host-only maintenance, called inside the existing M05 commit transaction. */
+export function rebuildPrivateIndex(db:DatabaseSync){
+ db.exec(`DELETE FROM pd_fts;
+    INSERT INTO pd_fts(user_id,kind,entity_id,revision,text)
+     SELECT c.user_id,'capture',c.id,'',json_extract(c.json,'$.windowTitle')||char(10)||json_extract(c.json,'$.ocrText')
+     FROM pd_captures c JOIN auth_accounts a ON a.user_id=c.user_id
+     LEFT JOIN ig_capture_scopes b ON b.user_id=c.user_id AND b.capture_id=c.id
+     LEFT JOIN pd_sources s ON s.user_id=c.user_id AND s.id=coalesce(c.source_id,b.source_id)
+     WHERE a.disabled=0 AND COALESCE(json_extract(c.json,'$.privacy.excluded'),0)=0
+     AND COALESCE(json_extract(c.json,'$.provenance.deleted'),0)=0
+     AND (coalesce(c.source_id,b.source_id) IS NULL OR(s.id IS NOT NULL AND COALESCE(json_extract(s.json,'$.enabled'),1)=1))
+     AND(c.source_id IS NULL OR EXISTS(SELECT 1 FROM pd_source_heads h WHERE h.user_id=c.user_id AND h.capture_id=c.id))
+     AND ${attachmentVisible()};
+    INSERT INTO pd_fts(user_id,kind,entity_id,revision,text)
+     SELECT m.user_id,'material',m.id,m.revision,json_extract(v.json,'$.title')||char(10)||v.text
+     FROM pd_materials m JOIN pd_material_versions v ON v.user_id=m.user_id AND v.material_id=m.id AND v.revision=m.revision
+     JOIN auth_accounts a ON a.user_id=m.user_id
+     WHERE a.disabled=0 AND m.sequence>=m.min_visible_sequence
+     AND NOT EXISTS(SELECT 1 FROM pd_material_sources x LEFT JOIN pd_sources s ON s.user_id=x.user_id AND s.id=x.source_id
+      WHERE x.user_id=m.user_id AND x.material_id=m.id AND x.revision=m.revision AND(s.id IS NULL OR COALESCE(json_extract(s.json,'$.enabled'),1)=0));`);
 }
