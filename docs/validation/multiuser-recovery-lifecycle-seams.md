@@ -438,3 +438,16 @@ Final M13/M15/Desktop and later Joint configuration/policy/profile changes are
 outside this bounded candidate. The lane continues tracking the next declared
 uniform candidate. The single combined app-plus-Hindsight archive boundary is
 still not claimed; native and app container restore are separately exercised.
+
+
+Six additional existing file-lifecycle neighbors pass 6/6, no skips, exit 0,
+26.444 seconds: `/tmp/mote-recovery7-parser-file-lifecycle-neighbors.log/.exit/.sha`.
+The exact checkout was documentation-only descendant
+`e815c15a1b73f8ac65600ce1843f92c9dff46cb7`; its production and test files are
+identical to clean runtime candidate `f6889867`. These distinct cases retain
+admitted processing after logout, reject an old personal archive while forgotten,
+mint a new allow decision during data-only restore, preserve other owners,
+defer held exact pins, retire held transport, require fresh same-byte admission
+and reject parentless old task authority. No new regression code or production
+change was needed. The bounded cohort is therefore 104 + 6 + 6 = 116 distinct
+cases across three commands, all passing; this is still not a full affected gate.
