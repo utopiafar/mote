@@ -132,3 +132,11 @@ test('a B-only canonical original cannot supply an A plan parent even with a val
  plans.plans[0].original_id=foreign.original.ref.slice(9);plans.bindings[0].original_id=foreign.original.ref.slice(9);
  assert.equal((await f.imported(saved)).state,'failed');assert.deepEqual(f.data(),before);assert.deepEqual(f.data(f.b.userId),beforeB);assert.deepEqual(f.authority(),authority);assert.equal((await f.request(f.a.token,'/api/files/'+foreign.id)).statusCode,404);assert.equal((await f.request(f.b.token,'/api/files/'+foreign.id)).statusCode,200);
 });
+
+test('a corrupt surviving local binding cannot be repaired underneath historical execution by importing its missing plan',async t=>{
+ const f=await fixture(t),saved=await f.exported(),id=f.data().plans[0].id,db=new DatabaseSync(join(f.directory,'mote.sqlite'));
+ // Fault injection is confined to this generated DB. A dangling local binding
+ // must fail closed rather than make historical input current as a side effect.
+ try{db.exec('PRAGMA foreign_keys=OFF');db.prepare('DELETE FROM mp_file_plans WHERE user_id=? AND id=?').run(f.a.userId,id);}finally{db.close();}
+ const authority=f.authority(),before=f.data(),receipt=await f.imported(saved);assert.equal(receipt.state,'failed','RED: import must not silently activate a surviving dangling binding');assert.equal(receipt.error,'archive_conflict');assert.deepEqual(f.data(),before);assert.deepEqual(f.authority(),authority);
+});
