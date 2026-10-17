@@ -40,7 +40,7 @@ export function registerProcessingImages(runtime:ScopedRuntime,db:DatabaseSync,h
   const root=latest?sql.get("SELECT input FROM user_tasks WHERE user_id=$user AND task_id=?",latest.task_id):undefined;
   const rootInput=root?JSON.parse(String(root.input)):undefined;
   const tasks=rootInput?sql.all("SELECT e.id,json_extract(u.input,'$.mode') mode,json_extract(u.input,'$.imageStep.name') image_step FROM user_tasks u JOIN execution_steps e ON e.user_id=u.user_id AND e.id=u.task_id WHERE u.user_id=$user AND e.user_id=$user AND json_extract(u.input,'$.originalRef')=? AND e.kind LIKE 'processing.%' AND COALESCE(json_extract(u.input,'$.fileGeneration'),0)=? AND COALESCE(json_extract(u.input,'$.originalGeneration'),0)=? AND json_extract(u.input,'$.generation')=? AND json_extract(u.input,'$.policyPlanId') IS ? AND json_extract(u.input,'$.attachmentGeneration') IS ? ORDER BY e.created_at DESC,e.id DESC",ref,Number(rootInput.fileGeneration??0),Number(rootInput.originalGeneration??0),Number(rootInput.generation),rootInput.policyPlanId??null,rootInput.attachmentGeneration??null).map(row=>({...execution.forUser(context).get(String(row.id)),mode:row.mode,imageStep:row.image_step})):[];
-  const jobs=[...(ocrEnabled?['ocr']:[]),...(understandingEnabled?['understanding']:[])].flatMap(name=>{
+  const jobs=[...(ocrEnabled?['ocr']:[]),...(understandingEnabled?['understanding']:[])].flatMap<{name:string;state:string;error?:string}>(name=>{
    const coordinator=tasks.find(task=>task.id===latest?.task_id);
    if(recipeError)return [{name,state:'blocked',error:recipeError}];
    if(recipe){
@@ -53,7 +53,8 @@ export function registerProcessingImages(runtime:ScopedRuntime,db:DatabaseSync,h
    const task=coordinator&&coordinator.state!=='succeeded'&&!tasks.some(t=>t.kind==='processing.ocr'&&t.state==='running')?coordinator:tasks.find(task=>name==='ocr'?task.kind==='processing.ocr':task.kind==='processing.analysis'&&task.mode==='image')??tasks.find(task=>task.kind==='processing.pipeline');
    return task?[{name,state:task.state,error:task.failure?.code??task.error??undefined}]:[];
   });
-  const products=[...(status.artifactId?[{id:status.artifactId,name:'ocr',kind:'ocr',materialId:status.materialId}]:[]),...status.derivations.filter(d=>d.kind==='image'||d.kind.startsWith('image:')||d.kind.startsWith('image-ocr:')).map(d=>({id:d.artifactId,name:d.kind.startsWith('image-ocr:')?'ocr':'understanding',kind:d.kind.startsWith('image-ocr:')?'ocr':'image',materialId:d.materialId}))].map(product=>{
+  const namedProducts=status.derivations.map(d=>({id:String(d.artifactId),materialId:String(d.materialId),kind:String(d.kind)})).filter(d=>d.kind==='image'||d.kind.startsWith('image:')||d.kind.startsWith('image-ocr:')).map(d=>({...d,stepName:d.kind.includes(':')?d.kind.slice(d.kind.indexOf(':')+1):undefined,name:d.kind.startsWith('image-ocr:')?'ocr':'understanding',kind:d.kind.startsWith('image-ocr:')?'ocr':'image'}));
+  const products=[...(status.artifactId?[{id:String(status.artifactId),name:'ocr',kind:'ocr',materialId:status.materialId?String(status.materialId):undefined}]:[]),...namedProducts].map(product=>{
    const payload=service.artifact(product.id).payload;
    if(product.kind==='image'&&product.name==='understanding'&&typeof payload==='object'&&payload!==null&&'format' in payload){const interpretation=imageProductSchema.parse(payload);return {...product,text:interpretation.interpretation.text,interpretation};}
    return {...product,text:transcriptSchema.parse(payload).segments.map(segment=>segment.text).join('\n')};

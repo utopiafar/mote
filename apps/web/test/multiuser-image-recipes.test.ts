@@ -18,6 +18,7 @@ configureLocale(()=> 'zh-CN');
 for(const mode of ['ocr','no-ocr','partial','double-ocr'] as const)test(`original Files consumes typed custom recipe: ${mode}`,async t=>{
  const withOcr=mode!=='no-ocr',partial=mode==='partial',doubleOcr=mode==='double-ocr';
  const calls:string[]=[],interpretations:string[]=[];
+ let closeUI=async()=>{};t.after(()=>closeUI());
  let tailFail=partial,tailRuns=0,uninstallRecipe:()=>void=()=>{};
  let holdStage=false,stageEntered:()=>void=()=>{},releaseStage:()=>void=()=>{};
  t.after(()=>releaseStage());
@@ -75,7 +76,7 @@ for(const mode of ['ocr','no-ocr','partial','double-ocr'] as const)test(`origina
  }})){saved.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
  let heldCookie='';
  const d=dom.window.document,root=createRoot(d.getElementById('root')!);
- t.after(async()=>{current?.close?.();await act(async()=>root.unmount());dom.window.close();for(const [key,value]of saved){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}});
+ closeUI=async()=>{current?.close?.();await act(async()=>root.unmount());dom.window.close();for(const [key,value]of saved){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}};
  const login=async(label:string)=>{
   const response=await f.request(undefined,'/api/auth/login','POST',{username:'generated-'+label,password:'Generated-joint-files-password',mode:'web'});assert.equal(response.statusCode,200,response.body);cookie=String(response.headers['set-cookie']).split(';')[0];
   const api=createApi({mode:'web',origin:'http://localhost',...response.json()},undefined,()=>current===api);current?.close?.();current=api;return api;
@@ -100,18 +101,18 @@ for(const mode of ['ocr','no-ocr','partial','double-ocr'] as const)test(`origina
  const button=(label:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('.image-progress button')).find(node=>node.textContent===label);
  const refresh=async()=>act(async()=>{resources(current!).get('/api/images/'+a.id).refresh();await delay(20);});
  const press=async(label:string)=>{const before=actionAcks;await act(async()=>{const node=button(label);assert.ok(node,label);assert.equal(node.disabled,false,label);node.click();await delay(30);});await waitForScopedState(async()=>{await act(async()=>delay(10));return actionAcks>before;},()=>label+' ACK not received',20000);};
- const settled=async()=>waitForScopedState(async()=>{
+ const settled=async()=>act(async()=>{await waitForScopedState(async()=>{
   const view=await f.checked(f.a.token,'/api/images/'+a.id);return !view.canCancel&&!view.wait;
- },()=> 'Image command did not settle',20000);
+ },()=> 'Image command did not settle',20000);});
  tailFail=false;await press('补齐未完成步骤');await settled();await refresh();
  assert.equal(interpretations.length,2,'complete must preserve every successful custom interpretation');
  assert.equal(calls.length,withOcr?2:0,'complete does not rerun OCR');
  if(partial)assert.equal(tailRuns,3,'only the missing tail is completed');
  await press('重新计算已有结果');
- await waitForScopedState(async()=>interpretations.length===3,()=> 'Explicit recompute did not run custom step',20000);await settled();await refresh();
+ await act(async()=>{await waitForScopedState(async()=>interpretations.length===3,()=> 'Explicit recompute did not run custom step',20000);});await settled();await refresh();
  assert.equal(calls.length,withOcr?3:0,'explicit recompute reruns actual OCR when the recipe has it');
  const beforeCancel=await f.checked(f.a.token,'/api/files/'+a.id),entered=new Promise<void>(r=>stageEntered=r);holdStage=true;
- await press('重新计算已有结果');await entered;await refresh();
+ await press('重新计算已有结果');await act(async()=>entered);await refresh();
  assert.equal(state('内容理解'),'处理中');
  await press('停止处理');releaseStage();holdStage=false;await settled();await refresh();
  assert.equal(state('内容理解'),'已取消');
@@ -124,7 +125,7 @@ for(const mode of ['ocr','no-ocr','partial','double-ocr'] as const)test(`origina
  assert.equal(writes.length,written,'retired A node cannot issue an action as B');
  if(withOcr){assert.match(d.querySelector('.image-progress')!.textContent!,/INTERPRETATION_GENERATED_B_OCR/);assert.doesNotMatch(d.querySelector('.image-progress')!.textContent!,/INTERPRETATION_GENERATED_A_OCR/);}
  assert.equal((await f.request(f.b.token,'/api/processing/artifacts/'+artifact.id)).statusCode,404);
- await f.restart();assert.ok((await f.checked(f.a.token,'/api/images/'+a.id)).jobs.some((job:any)=>job.state==='cancelled'));
+ await act(async()=>f.restart());assert.ok((await f.checked(f.a.token,'/api/images/'+a.id)).jobs.some((job:any)=>job.state==='cancelled'));
  assert.equal((await f.checked(f.b.token,'/api/files/'+b.id)).processing.derivations[0].artifactId,details[1].processing.derivations[0].artifactId);
  uninstallRecipe();const unavailable=await f.checked(f.b.token,'/api/images/'+b.id);assert.equal(unavailable.original.state,'ready');assert.ok(unavailable.jobs.every((job:any)=>job.state==='blocked'&&job.error==='image_recipe_unavailable'));
  await refresh();assert.match(d.querySelector('.image-progress')!.textContent!,/需要处理/);assert.doesNotMatch(d.querySelector('.image-progress')!.textContent!,/scope_unavailable/);
