@@ -1,5 +1,15 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "版本范围": "Version range",
+  "实例运行设置与索引维护": "Instance runtime settings and index maintenance",
+  "仅管理员可修改实例参数；此处不提供其他账号的资料或详细过程。": "Only administrators can change instance settings. Other accounts’ records and detailed traces are not available here.",
+  "重建共享全文索引；来源、账号和原件授权在提交结果前重新核对。": "Rebuild the shared text index. Source, account and original authority are checked again before publication.",
+  "重建索引": "Rebuild index",
+  "按文件类型导出本人的原件与已声明附件。元数据模式不读取文件字节；历史范围只包含仍获授权的保留版本。": "Export your originals and declared attachments by file type. Metadata mode reads no file bytes; history includes only retained versions that remain authorized.",
+  "导出文件类型": "Export file type",
+  "导出版本范围": "Export version range",
+  "包含保留历史": "Include retained history",
+
   "结果待确认": "Outcome awaiting confirmation",
   "周期到达时间": "Window due time",
   "查看任务": "View task",

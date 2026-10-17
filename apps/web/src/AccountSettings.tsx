@@ -1,3 +1,4 @@
+import {InstanceControls} from './InstanceControls';
 import {ScopedConfiguration} from './ScopedConfiguration';
 import {useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
@@ -21,7 +22,7 @@ export function AccountSettings({api,disconnect,onLogin}:{api:Api;disconnect:()=
    <label>{moteText('新密码')}<input type="password" minLength={12} autoComplete="new-password" value={password} onChange={e=>setPassword(e.target.value)} required/></label>
    {error&&<p role="alert">{error}</p>}<button className="button" disabled={busy}>{moteText('修改密码')}</button>
   </form></details>
- </section>{connection.administrator&&<><AccountAdministration api={api}/><details className="panel panel-pad"><summary>{moteText('共享模型资源')}</summary><ScopedConfiguration api={api} administrator/></details></>}</>;
+ </section>{connection.administrator&&<><AccountAdministration api={api}/><InstanceControls api={api}/><details className="panel panel-pad"><summary>{moteText('共享模型资源')}</summary><ScopedConfiguration api={api} administrator/></details></>}</>;
 }
 export function AccountAdministration({api}:{api:Api}){return <OwnedAccountAdministration key={JSON.stringify(api.connection)} api={api}/>;}
 function OwnedAccountAdministration({api}:{api:Api}){
