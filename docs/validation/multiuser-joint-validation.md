@@ -1636,3 +1636,41 @@ PREP TypeScript inference without changing scheduling. These source paths are
 frozen only for named completion. Typed export and snapshot lifetime fixes and
 the stronger physical-pin matrix are separate subsequent work, not covered by
 this producer freeze or advertised as final by these original UI cases.
+
+
+### Named image products: truthful export and graph-local original lifetime
+
+The producer now exports canonical `mote-image-product-v1` JSON per named product,
+plus Markdown/CSV views under `image/<name>` or `image-ocr/<name>`. A graph without
+OCR has no invented transcript/raw-extraction entries; its manifest explicitly
+reports `uncorrectedPreserved:false`. Existing audio/document export entries and
+authorization/current-stream checks remain in place. Typed original hash and MIME
+are checked before export. The exact exported JSON, including empty regions, is
+compared with the accepted artifact in durable tests.
+
+Custom recipes retain one existing M03 physical pin across the admitted graph.
+Each executing child retains that pin until its actual promise settles, including
+after coordinator retirement. This grants neither a fresh expired-input admission
+nor a download ticket: the expiry cases assert a new HTTP ticket is denied while
+the admitted pixel reader can finish. Successful whole-graph commit releases the
+transient snapshot; source withdrawal prevents late publication while physical
+cleanup waits for the actual held child. No new route, table, grant or executor
+was added. This is graph-local byte ownership over M03, not a replacement lifetime
+framework.
+
+Actual pre-fix RED receipts: `custom-image-export-red` (2/2 failing),
+`custom-image-snapshot-red` (1/1 failing). Producer matrix
+`/tmp/mote-joint-custom-image-final7.log/.exit`:7/7,0skip,57.646s EXIT0.
+It covers OCR+derived, no-OCR export and data restore, model-only original pixel
+reads, held privacy retirement with equal-ID B, partial completion/recompute,
+custom snapshot expiry and model-child expiry. Existing snapshot recovery and
+export-stream neighbors4/4,14.134s EXIT0 (`image-lifetime-adjacent`).
+Server noEmit, strict image-test noEmit and scope checks are0
+(`image-lifetime-final-types`, `image-lifetime-final-strict`,
+`image-lifetime-final-scope`). The image owner's b149 import correction was
+selected as0d8c8169.
+
+The original Files export-only button is separately owned by the image consumer.
+Its latest consumer/runtime56d3 has not yet been composed into Joint; the producer
+freeze does not claim that UI or whole affected acceptance. Independent bounded
+review and final combined check:affected/recovery remain pending. CI is disabled.
