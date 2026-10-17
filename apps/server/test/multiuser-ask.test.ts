@@ -353,3 +353,10 @@ test('rechecking disclosed originals keeps the persistent Ask pin journal read-o
  assert.equal(writes.filter(row=>row.changed===0).reduce((n,row)=>n+Number(row.n),0),0,'revalidating a retained original must not rewrite identical persistent pins');
  assert.equal(result.result.citations.length,1);assert.equal((await f.request(f.b.token,'/api/query-runs/'+id)).statusCode,404);
 });
+
+test('a coordinator waiting for an unchanged real child does not repeatedly claim execution leases',async t=>{
+ const f=await delegated(t,{holdSecond:true});f.read(db=>db.exec("CREATE TABLE generated_coordinator_claims(task_id TEXT NOT NULL); CREATE TRIGGER generated_coordinator_claim AFTER UPDATE OF state ON execution_steps WHEN NEW.kind='ask.coordinate' AND NEW.state='running' AND OLD.state!='running' BEGIN INSERT INTO generated_coordinator_claims VALUES(NEW.id); END"));
+ const id=randomUUID();await f.checked(f.a.token,'/api/query-runs','POST',{id,input:{question:'Generated unchanged child admission'}});await f.entered.promise;const taskId=f.read(db=>String(db.prepare('SELECT task_id FROM ma_runs WHERE user_id=? AND id=?').get(f.a.userId,id)!.task_id)),claims=()=>f.read(db=>Number(db.prepare('SELECT count(*) n FROM generated_coordinator_claims WHERE task_id=?').get(taskId)!.n)),deadline=Date.now()+5000;
+ try{while((await f.checked(f.a.token,'/api/tasks/'+taskId)).state!=='waiting'){assert.ok(Date.now()<deadline,'coordinator did not yield its execution slot');await delay(10);}const before=claims();await delay(400);assert.equal(claims(),before,'an unchanged pending child is admission waiting, not fresh coordinator execution');}finally{f.gate.resolve();}
+ const result=await f.wait(f.a,id);assert.equal(result.status,'completed',JSON.stringify(result));assert.deepEqual(f.childStarts,{one:1,two:1});assert.equal(result.result.citations[0].id,f.canonical);
+});
