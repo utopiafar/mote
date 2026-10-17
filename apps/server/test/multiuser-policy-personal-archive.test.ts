@@ -36,7 +36,7 @@ test('personal merge restores missing named applied plans as data and keeps curr
  const current=await f.checked(f.a.token,'/api/file-processing'),authority=f.authority(),id=randomUUID(),receipt=await f.imported(saved,id);assert.equal(receipt.state,'completed',JSON.stringify(receipt));
  assert.deepEqual(f.data(),before,'RED: missing applied plan history and binding must round-trip');assert.deepEqual(f.data(f.b.userId),beforeB);assert.deepEqual(f.authority(),authority);assert.deepEqual(await f.checked(f.a.token,'/api/file-processing'),current);
  assert.equal((await f.checked(f.a.token,'/api/files/'+file.id)).processing.appliedPolicy.id,old.processing.appliedPolicy.id);
- assert.deepEqual(await f.imported(saved,id),receipt);assert.equal((await f.imported(saved)).state,'completed');await f.restart();assert.deepEqual(f.data(),before);assert.deepEqual(f.authority(),authority);assert.deepEqual(f.data(f.b.userId),beforeB);
+ const controls=read(f.directory,db=>db.prepare('SELECT * FROM mp_file_controls ORDER BY user_id,original_id').all());assert.deepEqual(await f.imported(saved,id),receipt);assert.equal((await f.imported(saved)).state,'completed');await f.restart();assert.deepEqual(f.data(),before);assert.deepEqual(f.authority(),authority);assert.deepEqual(f.data(f.b.userId),beforeB);assert.deepEqual(read(f.directory,db=>db.prepare('SELECT * FROM mp_file_controls ORDER BY user_id,original_id').all()),controls);
 });
 
 test('older personal policy history preserves the current binding and controls; changed immutable IDs reject atomically',async t=>{
@@ -124,4 +124,11 @@ test('reconstructing an absent control and binding fences surviving old tasks wi
  const db=new DatabaseSync(join(f.directory,'mote.sqlite'));try{db.prepare('DELETE FROM mp_file_policy_bindings WHERE user_id=? AND original_id=?').run(f.a.userId,originalId);}finally{db.close();}
  const authority=f.authority();assert.equal((await f.imported(saved)).state,'completed');assert.deepEqual(f.authority(),authority);assert.equal((await f.checked(f.a.token,'/api/files/'+f.file.id)).originalGeneration,incarnation);assert.equal(read(f.directory,db=>db.prepare('SELECT generation FROM mp_file_controls WHERE user_id=? AND original_id=?').get(f.a.userId,originalId)!.generation),1);
  const retry=await f.request(f.a.token,'/api/tasks/'+old+'/retry','POST',{});assert.equal(retry.statusCode,200,retry.body);await f.host.execution!.engine.drain([String(old)]);assert.equal(read(f.directory,db=>db.prepare('SELECT state FROM execution_steps WHERE id=?').get(old)!.state),'stale');assert.equal(f.calls(),0);assert.deepEqual(f.authority(),authority);
+});
+
+test('a B-only canonical original cannot supply an A plan parent even with a valid same-deployment envelope',async t=>{
+ const f=await fixture(t),foreign=await f.upload(f.b.token,'generated-only-b-plan-parent','GENERATED_B_ONLY_PLAN_PARENT');await waitForScopedState(async()=>(await f.checked(f.b.token,'/api/files/'+foreign.id)).processing.indexed,()=> 'Generated B-only positive did not finish',12000);
+ const saved=await f.exported(),before=f.data(),beforeB=f.data(f.b.userId),authority=f.authority(),plans=saved.domains.find((domain:any)=>domain.domain==='processing').payload.policyPlans;
+ plans.plans[0].original_id=foreign.original.ref.slice(9);plans.bindings[0].original_id=foreign.original.ref.slice(9);
+ assert.equal((await f.imported(saved)).state,'failed');assert.deepEqual(f.data(),before);assert.deepEqual(f.data(f.b.userId),beforeB);assert.deepEqual(f.authority(),authority);assert.equal((await f.request(f.a.token,'/api/files/'+foreign.id)).statusCode,404);assert.equal((await f.request(f.b.token,'/api/files/'+foreign.id)).statusCode,200);
 });
