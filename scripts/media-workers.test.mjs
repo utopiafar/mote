@@ -35,7 +35,8 @@ test('failed installation is not marked ready',async t=>{
 });
 test('workers start before model files, restart after exit, and stop with the parent',async t=>{
   const root=await fixture(t),controller=new AbortController();
-  const code=`const fs=require('node:fs');const path=require('node:path');const name=path.basename(__filename);fs.appendFileSync(name+'.started',process.pid+'\\n');fs.writeFileSync(name+'.arguments',JSON.stringify(process.argv.slice(2)));setInterval(()=>{if(fs.existsSync('models-ready'))fs.writeFileSync(name+'.ready','yes')},20);`;
+  // The parent consumes .started as readiness, so publish its argument snapshot first.
+  const code=`const fs=require('node:fs');const path=require('node:path');const name=path.basename(__filename);fs.writeFileSync(name+'.arguments',JSON.stringify(process.argv.slice(2)));fs.appendFileSync(name+'.started',process.pid+'\\n');setInterval(()=>{if(fs.existsSync('models-ready'))fs.writeFileSync(name+'.ready','yes')},20);`;
   for(const name of ['ocr-server.py','transcription-server.py'])await writeFile(join(root,'scripts',name),code);
   const workers=startMediaWorkers({root,signal:controller.signal,runtime:'docker',configuration:{modelDirectory:join(root,'models'),python:process.execPath,workerToken:'fixture'},report:()=>{}});
   t.after(()=>workers.close());

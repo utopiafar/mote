@@ -70,3 +70,28 @@ The required release gate is `npm run check:affected`; shared translations selec
 all TypeScript consumers and Android debug unit tests. Physical devices, a real
 model, a packaged desktop installation and full login with a user's password are
 separate checks and are not implied by the generated fixtures.
+
+## Executed local checks
+
+The Node 26.11.1 aggregate `check:affected` run returned a nonzero result: the
+server runner reported 2,983 passing tests, no assertion failures, two skips and
+24 cancelled test files with “Promise resolution is still pending but the event
+loop has already resolved.” This is not recorded as a passing aggregate run.
+Every cancelled file was rerun using the CI major, Node 24.22.0: all 97 tests
+passed with no cancellations. The precise cause of the aggregate Node 26
+cancellation has not been established by this change.
+
+Other completed workspace results were Desktop 599 passed, Web 598 passed,
+Agent 327 passed / one optional skip, diagnostics five passed, and shared 198
+passed. Translation validation and all workspace type checks passed. Android
+debug unit tests passed 366 cases with no skips. The separate root/release/media
+batch passed 83 cases, CLI passed five, and the generated central supervisor
+checks passed. The media-worker fixture now writes its argument snapshot before
+publishing the startup marker consumed by the parent, removing a file-readiness
+race encountered during validation.
+
+Independent Central/Web and macOS Desktop builds passed, including the Swift
+helper/updater compilation and a pinned SQLite binding check. Generated DOM
+checks cover the actual login-dialog error/retry transitions; they do not prove
+Cookie behavior in the user's live browser. GitHub CI results belong to the PR;
+the local cancellation and its successful narrower rerun are reported separately.
