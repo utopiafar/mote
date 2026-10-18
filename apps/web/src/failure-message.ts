@@ -1,7 +1,43 @@
 import { moteText } from '@mote/shared/i18n';
+import {commonFailureMessage} from '@mote/shared';
 /** Display follows protocol codes, never provider text or semantic matching. The
  * server's allowedActions remains the authority for recovery controls. */
 const messages: Record<string, string> = {
+    release_access_denied: '更新服务器拒绝访问，请检查网络入口或发布资源的访问权限。',
+    release_not_found: '此渠道暂未提供可验证的发布清单。请稍后检查；旧版未签名发布不能用于应用内安装。',
+    release_rate_limited: 'GitHub 暂时限制请求，请稍后重试。',
+    invalid_manifest_signature: '发布清单签名无效，已停止更新。',
+    unknown_release_key: '发布密钥不受信任，已停止更新。',
+    release_channel_mismatch: '发布渠道与当前设置不匹配，已停止更新。',
+    release_identity_mismatch: '发布信息与当前组件不匹配，已停止更新。',
+    update_request_cancelled: '更新检查已取消。',
+    release_check_failed: '更新检查未完成，请检查网络和发布服务后重试。',
+    external_result_unknown: '上次外部处理结果尚未确认，请先查看任务回执，再决定是否重试。',
+    file_processing_active: '文件仍在处理中，请等待当前任务结束后再操作。',
+    file_processing_archive_only: '此文件当前采用仅归档策略，未安排内容处理。',
+    file_processing_cancelled: '文件处理已取消，请查看任务状态。',
+    file_forgotten: '此文件已被删除或遗忘，无法继续读取。',
+    archive_identity_mismatch: '归档不属于当前部署和账号，无法导入。',
+    archive_incomplete: '归档内容不完整，无法导入。请检查归档文件。',
+    archive_corrupt: '归档校验失败，无法导入。请检查归档文件。',
+    archive_changed: '归档内容已变化，请重新读取操作回执后再确认。',
+    archive_conflict: '归档操作状态已变化，请重新读取操作回执后再确认。',
+    archive_authorization_changed: '归档操作授权已变化，请重新确认当前账号与操作。',
+    archive_not_ready: '归档尚未准备好，请查看导出任务状态。',
+    archive_cancelled: '归档操作已取消。',
+    archive_too_large: '归档超过节点当前大小限制，请检查归档和容量配置。',
+    archive_import_unavailable: '归档导入服务暂不可用，请检查节点状态后重试。',
+    conversation_changed: '对话状态已变化，请重新读取后继续。',
+    conversation_storage_limit: '对话存储已达到容量限制，请检查存储用量后再试。',
+    conversation_turn_limit: '此对话已达到轮次限制，请新建对话后继续。',
+    ask_revoked: '本次查询授权已撤销，请重新确认后发起新查询。',
+    ask_cancelled: '查询已取消。',
+    ask_evidence_changed: '查询所用资料已变化，请重新核对证据后发起查询。',
+    ask_resume_invalid: '此查询当前不能继续，请重新读取运行状态。',
+    ask_unavailable: '查询服务暂不可用，请检查中央节点状态后重试。',
+    task_retry_invalid: '此任务当前不能重试，请重新读取任务状态。',
+    model_configuration_unavailable: '模型配置暂不可用，请检查模型设置和授权。',
+    model_snapshot_unavailable: '本次任务所需的模型配置已不可用，请重新确认模型设置后发起任务。',
     processor_response_unknown: '上次处理结果未知，需要确认后重试',
     processor_still_running: '处理器仍在运行',
     archive_only: '按归档策略未安排内容处理',
@@ -53,8 +89,10 @@ export function failureMessage(failure?: {
     code?: string;
     message?: string;
     safeMessage?: string;
-} | string | null): string {
+} | string | null,status?:number): string {
     const code = typeof failure === 'string' ? failure : failure?.code;
+    const common=code&&commonFailureMessage(code,status);
+    if(common)return common;
     if (code && Object.hasOwn(messages, code))
         return moteText(messages[code]);
     return code && /^[a-z][a-z0-9_.-]{0,99}$/.test(code) ? moteText('操作未完成。错误码：{0}', code) : moteText('请求未完成，请稍后重试。');

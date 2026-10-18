@@ -106,7 +106,11 @@ async function responseFromGitHub(url: string, options: ReleaseNetworkOptions): 
     if (parsed.protocol !== 'https:' || parsed.port || parsed.username || parsed.password || !allowedHost(parsed.hostname)) return fail('update_host_rejected');
     const response = await request(url, { redirect: 'manual', headers: { Accept: 'application/octet-stream, application/json', 'User-Agent': 'Mote-Update/1' }, signal: options.signal });
     if ([301, 302, 303, 307, 308].includes(response.status)) { const location = response.headers.get('location'); await response.body?.cancel(); if (!location) return fail('update_redirect_invalid'); url = new URL(location, url).href; continue; }
-    if (!response.ok) { await response.body?.cancel(); return fail(response.status === 404 ? 'release_not_found' : response.status === 403 || response.status === 429 ? 'release_rate_limited' : 'release_download_failed'); }
+    if (!response.ok) {
+      const rateLimited=response.status===429||response.status===403&&(response.headers.get('x-ratelimit-remaining')==='0'||response.headers.has('retry-after'));
+      await response.body?.cancel();
+      return fail(response.status===404?'release_not_found':rateLimited?'release_rate_limited':[401,403].includes(response.status)?'release_access_denied':'release_download_failed');
+    }
     return response;
   }
   return fail('update_redirect_limit');

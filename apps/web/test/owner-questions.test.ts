@@ -69,7 +69,7 @@ test('an ambiguous transport failure reuses the same admission UUID; stale revis
  const api={request:async(_path:string,init?:RequestInit)=>{if(init?.method==='POST'){writes.push(JSON.parse(String(init.body)));throw failure;}return current;}} as Api;
  await act(async()=>root.render(React.createElement(OwnerQuestionConversation,{api,id:generated.id,onOpen:()=>{}})));
  await act(async()=>button(d,'我是讲述者').click());await act(async()=>send(d).click());await act(async()=>send(d).click());assert.equal(writes[0].requestId,writes[1].requestId);
- failure=new ApiError('Generated stale version',409);current={...current,revision:2,prompt:'更新后的合成问题',messages:[{role:'assistant',text:'更新后的合成问题',createdAt:when}]};await act(async()=>send(d).click());assert.match(d.body.textContent!,/这个问题已更新/);assert.match(d.body.textContent!,/更新后的合成问题/);
+ failure=new ApiError('Generated stale version',409,undefined,'conflict');current={...current,revision:2,prompt:'更新后的合成问题',messages:[{role:'assistant',text:'更新后的合成问题',createdAt:when}]};await act(async()=>send(d).click());assert.match(d.body.textContent!,/这个问题已更新/);assert.match(d.body.textContent!,/更新后的合成问题/);
  await act(async()=>send(d).click());assert.equal(writes.at(-1).expectedRevision,2);assert.notEqual(writes.at(-1).requestId,writes[0].requestId);
 });
 test('late replies from a previous identity cannot populate the replacement conversation',async t=>{

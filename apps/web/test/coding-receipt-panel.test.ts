@@ -176,7 +176,7 @@ for(const locale of ['en','zh-CN'] as const)test('Coding receipt request failure
   f.failUploads();
   await f.refreshUploads();
   assert.equal(status(),locale==='en'?'Receipt status unavailable. Expand to retry.':'接收状态暂不可用，请展开重试。');
-  assert.equal(f.d.querySelector('.coding-uploads [role="alert"]')!.textContent,'Generated receipt read failed');
+  assert.equal(f.d.querySelector('.coding-uploads [role="alert"]')!.textContent,locale==='en'?'The central service is temporarily unavailable (503). Check the node status and try again.':'中央服务暂不可用（503），请检查节点状态后重试。');
   f.setUploads([upload('after-error',1,0),upload('recovered',4,2)]);
   await f.refreshUploads();
   assert.equal(status(),locale==='en'?'Current page · Sources: 2 · Received increments: 5 · Published conversations: 2':'当前页 2 个来源 · 已接收 5 条增量 · 已发布 2 份会话');

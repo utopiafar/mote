@@ -9,13 +9,60 @@ import java.net.URL
 
 internal data class CentralDownload(val bytes: Long, val sha256: String, val contentType: String, val requireEtag: Boolean = true)
 
-internal class CentralFailure(val status: Int, val code: String = "", val detail: String = "") : IllegalStateException(when {
-    status == 401 && code in setOf("", "unauthorized") -> MoteI18n.text("令牌无效或已失效，请检查后重新登录。")
-    status == 403 && code in setOf("", "connection_scope_denied") -> MoteI18n.text("此凭据不具备客户端权限，请升级中央节点或重新登录。")
-    detail.isNotBlank() -> detail.take(2000)
-    status in setOf(404, 410) -> MoteI18n.text("资料不存在或已删除。")
-    else -> MoteI18n.text("中央请求失败（HTTP {0}），请稍后重试。", status)
-})
+/** Server/provider detail is untrusted. Only protocol codes select recovery advice. */
+internal class CentralFailure(val status: Int, val code: String = "", val detail: String = "") : IllegalStateException(centralFailureMessage(status, code))
+
+internal fun centralFailureMessage(status: Int, code: String): String {
+    when (code) {
+        "invalid_login" -> return MoteI18n.text("用户名或密码不正确，请重新登录。")
+        "origin_denied" -> return MoteI18n.text("当前网页地址未获中央节点允许，请检查公开地址与反向代理配置。")
+        "csrf_required" -> return MoteI18n.text("登录校验已失效，请刷新页面并重新登录。")
+        "session_changed" -> return MoteI18n.text("登录会话已改变，请重新登录。")
+        "identity_required", "unauthorized", "connection_revoked", "session_binding_required" -> return MoteI18n.text("访问凭据已失效，请重新连接。")
+        "invalid_identity" -> return if (status == 403) MoteI18n.text("当前登录没有执行此操作的权限，请确认账号和连接权限。") else MoteI18n.text("访问凭据已失效，请重新连接。")
+        "forbidden", "connection_scope_denied" -> return MoteI18n.text("当前登录没有执行此操作的权限，请确认账号和连接权限。")
+        "login_throttled" -> return MoteI18n.text("登录尝试过于频繁，请稍后再试。")
+        "login_busy", "login_capacity" -> return MoteI18n.text("中央节点正在处理其他登录请求，请稍后再试。")
+        "login_expired" -> return MoteI18n.text("登录请求已失效或过期，请重新发起登录。")
+        "invitation_invalid_or_expired" -> return MoteI18n.text("邀请无效、已使用或已过期，请在中央重新生成")
+        "invitation_subject_mismatch", "invitation_device_mismatch", "invitation_claim_changed" -> return MoteI18n.text("邀请已失效、已使用或不匹配，请重新生成。")
+        "login_owner_changed" -> return MoteI18n.text("此登录请求已由其他账号确认，请重新发起登录。")
+        "login_pending" -> return MoteI18n.text("登录请求尚未获确认，请先在浏览器中完成授权。")
+        "google_not_connected" -> return MoteI18n.text("尚未连接 Google 账号，请在对应来源设置中完成授权。")
+        "incompatible_protocol" -> return MoteI18n.text("网页或客户端与中央节点的协议版本不匹配，请使用匹配版本。")
+        "invalid_request", "json_required" -> return MoteI18n.text("输入格式无效，请检查必填项和取值范围。")
+        "invalid_data" -> if (status != 413) return MoteI18n.text("请求内容无效，请检查输入和当前操作状态。")
+        "config_invalid" -> return MoteI18n.text("配置内容无效，请检查必填项和取值范围。")
+        "config_conflict", "model_settings_conflict" -> return MoteI18n.text("配置或相关操作状态已变化，请重新读取后再确认。")
+        "invalid_cursor" -> return MoteI18n.text("分页内容已变化或游标无效，请返回第一页重新读取。")
+        "username_unavailable" -> return MoteI18n.text("此用户名已被使用，请选择其他用户名。")
+        "last_administrator" -> return MoteI18n.text("不能停用最后一个启用的管理员账号。")
+        "not_found", "account_not_found", "credential_not_found", "task_not_found", "connector_not_found" -> return MoteI18n.text("请求的资源不存在或已删除。")
+        "config_unavailable", "authentication_closed", "processing_closed", "actions_settings_unavailable" -> return MoteI18n.text("所需服务暂不可用，请检查中央节点状态后重试。")
+        "scope_unavailable" -> if (status != 403) return MoteI18n.text("所需服务暂不可用，请检查中央节点状态后重试。")
+    }
+    // Invalid or absent codes use HTTP evidence; valid unknown codes remain diagnostic.
+    if (code.matches(Regex("[a-z][a-z0-9_.-]{0,99}")) && code !in setOf("invalid_data", "scope_unavailable"))
+        return MoteI18n.text("请求未完成（{0}）。错误码：{1}", status, code)
+    return when (status) {
+        401 -> MoteI18n.text("中央节点未接受当前登录身份（401），请检查登录信息后重试。")
+        403 -> MoteI18n.text("请求被拒绝（403），请检查账号权限和入口访问配置。")
+        404 -> MoteI18n.text("请求的接口或资源不存在，请检查节点地址和当前操作。")
+        408, 504 -> MoteI18n.text("请求等待超时（{0}），请检查节点和网络状态后重试。", status)
+        409 -> MoteI18n.text("操作状态已变化，请重新读取后再确认。")
+        410 -> MoteI18n.text("请求的操作或资源已失效，请重新读取后再确认。")
+        413 -> MoteI18n.text("请求内容超过中央节点或公网入口的大小限制（413），请减少本次提交内容后重试。")
+        426 -> MoteI18n.text("网页或客户端与中央节点的协议版本不匹配，请使用匹配版本。")
+        429 -> MoteI18n.text("请求过于频繁，请稍后再试。")
+        502 -> MoteI18n.text("入口暂时无法连接中央服务（502），请检查节点运行状态和入口转发配置。")
+        503 -> MoteI18n.text("中央服务暂不可用（503），请检查节点状态后重试。")
+        524 -> MoteI18n.text("入口等待服务响应超时（524）。请检查节点运行诊断；较慢的模型请求可能超过代理等待上限。")
+        else -> MoteI18n.text("请求未完成（{0}）", status)
+    }
+}
+
+internal fun centralResponseFailureCode(value: JSONObject?): String = listOf(value?.opt("reason"), value?.opt("code"), value?.optJSONObject("error")?.opt("code") ?: value?.opt("error"))
+    .filterIsInstance<String>().firstOrNull { it.matches(Regex("[a-z][a-z0-9_.-]{0,99}")) }.orEmpty()
 
 /** Fixed-origin native transport shared by every central feature. No HTML, JS or redirects. */
 internal class CentralClient(
@@ -129,8 +176,8 @@ internal class CentralClient(
     }
     private fun checkActive() { check(active()) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") } }
     private fun fail(status: Int, value: JSONObject? = null): Nothing {
-        val code = value?.optString("error").orEmpty()
-        if (status == 401 && code in setOf("", "unauthorized")) runCatching(unauthorized)
+        val code = centralResponseFailureCode(value)
+        if (status == 401 && code in setOf("", "unauthorized", "invalid_identity", "identity_required", "connection_revoked", "session_binding_required")) runCatching(unauthorized)
         throw CentralFailure(status, code, value?.optString("message").orEmpty())
     }
     override fun toString() = "CentralClient(credentials=redacted)"

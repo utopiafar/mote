@@ -146,3 +146,13 @@ test('API exposes bounded retry delay from transport headers or structured error
   await assert.rejects(createApi({token:'fixture'}).request('/api/imports'),error=>{assert.ok(error instanceof ApiError);assert.equal(error.retryAfterMs,expected);return true;});mocked.mock.restore();
  }
 });
+
+test('uncoded response text stays private and timeout guidance is not a model failure',async t=>{
+ const mocked=t.mock.method(globalThis,'fetch',async()=>Response.json({message:'PRIVATE_RAW_PROVIDER_DETAIL'},{status:503}));
+ await assert.rejects(createApi({token:'fixture'}).request('/api/files'),error=>{assert.ok(error instanceof ApiError);assert.match(errorMessage(error),/503/);assert.doesNotMatch(errorMessage(error),/PRIVATE/);return true;});mocked.mock.restore();
+ assert.match(errorMessage(new DOMException('PRIVATE_TIMEOUT_DETAIL','TimeoutError')),/节点和网络/);
+});
+test('malformed successful JSON cannot disclose its body in an error message',async t=>{
+ t.mock.method(globalThis,'fetch',async()=>new Response('PRIVATE_INVALID_JSON_BODY',{status:200}));
+ await assert.rejects(createApi({token:'fixture'}).request('/api/files'),error=>{assert.ok(error instanceof ApiError);assert.match(errorMessage(error),/响应格式无效/);assert.doesNotMatch(errorMessage(error),/PRIVATE/);return true;});
+});

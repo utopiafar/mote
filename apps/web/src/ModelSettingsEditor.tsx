@@ -191,9 +191,9 @@ export function ModelSettingsEditor({ api, revision, onApplied, profileId }: {
         catch (e) {
             if (controller.signal.aborted || requestEpoch !== epoch.current)
                 return;
-            if (e instanceof ApiError && e.status === 409) {
+            if (e instanceof ApiError && ['config_conflict','model_settings_conflict'].includes(e.code??'')) {
                 setConflict(true);
-                setError(moteText("配置已被其他会话更新。请重新读取生效配置，再编辑并保存。"));
+                setError(errorMessage(e));
             }
             else
                 setError(errorMessage(e));

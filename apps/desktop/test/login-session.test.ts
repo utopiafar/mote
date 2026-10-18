@@ -37,6 +37,14 @@ it('preserves app-only checkpoint binding when editing the same normalized endpo
  expect(updateConfig(config,{...config,serverUrl:config.serverUrl+'/'}).authSourceBinding).toBe(config.authSourceBinding);
  expect(updateConfig(config,{...config,serverUrl:'https://elsewhere.invalid',token:''}).authSourceBinding).toBeUndefined();
 });
+it.each([[401,'invalid_login','用户名或密码'],[403,'origin_denied','公开地址'],[426,'incompatible_protocol','协议版本'],[429,'login_throttled','登录尝试']])('explains central login refusals without exposing response detail: %s %s',async(status,code,expected)=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>Response.json({error:code,message:'PRIVATE_SERVER_DETAIL'},{status:Number(status)})));
+ try{await expect(loginRequest({serverUrl:'https://fixture.invalid'},'/api/auth/login',{})).rejects.toThrow(String(expected));}finally{vi.unstubAllGlobals();}
+});
+it('does not expose a malformed successful login response',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response('PRIVATE_INVALID_JSON_BODY')));
+ try{await expect(loginRequest({serverUrl:'https://fixture.invalid'},'/api/auth/login',{})).rejects.toThrow('响应格式无效');}finally{vi.unstubAllGlobals();}
+});
 it('keeps exact pending source revisions after an app-only login restart and same-node reauthorization',async()=>{
  const {writeFile}=await import('node:fs/promises'),{LocalSourceManager}=await import('../src/source-manager'),{DEFAULT_SOURCE_OPTIONS}=await import('../src/source-types');
  const root=await mkdtemp(join(tmpdir(),'mote-login-source-')),config={...defaultConfig(),token:'generated-session-token'.repeat(3),authSessionOnly:true,syncMode:'manual' as const};

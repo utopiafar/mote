@@ -28,7 +28,7 @@ function ContentStorageView({api,onChange}:{api:Api;onChange?:()=>void}) {
     if(!alive.current||request.current)return;const controller=new AbortController();request.current=controller;setBusy(true);setError('');
     const current=()=>alive.current&&activeApi.current===api&&request.current===controller&&!controller.signal.aborted;
     try{const encoded=path==='/api/content-storage/decrypt'&&scoped?(intent.current??JSON.stringify({operationId:crypto.randomUUID()})):JSON.stringify(body);if(path==='/api/content-storage/decrypt'&&scoped){localStorage.setItem(key,encoded);intent.current=encoded;setPending(encoded);}const next=await api.request<StorageState>(path,{method,body:encoded,signal:controller.signal});if(current()){if(scoped&&(path==='/api/content-storage/decrypt'&&scopedState.parse(next).job.operationId!==JSON.parse(encoded).operationId||path==='/api/content-storage/decrypt/cancel'&&scopedState.parse(next).job.id!==JSON.parse(encoded).taskId))throw Error(moteText('服务返回的操作回执与当前账号不一致。'));setState(next);invalidateConfiguration(api);onChange?.();}}
-    catch(e){if(current())setError(e instanceof ApiError&&e.status===409?moteText('配置已被其他会话更新。请重新读取生效配置，再编辑并保存。'):errorMessage(e));}finally{if(current()){request.current=undefined;setBusy(false);}}
+    catch(e){if(current())setError(errorMessage(e));}finally{if(current()){request.current=undefined;setBusy(false);}}
   }
   const running=state?.job.state==='running';
   return <section className="panel" aria-labelledby="content-storage-title">

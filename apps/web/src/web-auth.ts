@@ -1,4 +1,5 @@
-import {ApiError,createApi,type WebConnection} from './api';
+import {ApiError,createApi,readApiError,readApiJson,type WebConnection} from './api';
+import {moteText,getLocale} from '@mote/shared/i18n';
 import {clearSession} from './session';
 
 export const authChangeKey='mote.web-auth-change';
@@ -22,23 +23,26 @@ export function changeWebAuthentication<T>(action:(isCurrent:()=>boolean)=>Promi
   const result=sequence.then(run,run);sequence=result.catch(()=>{});return result;
 }
 export async function publicAuth<T>(path:string,body?:unknown):Promise<T>{
-  const response=await fetch(path,{method:body===undefined?'GET':'POST',credentials:'same-origin',redirect:'error',headers:{'X-Mote-Protocol-Version':'2',...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});
-  if(!response.ok){let code='unauthorized';try{const value=await response.json();if(typeof value.error==='string')code=value.error;}catch{}throw new ApiError(code,response.status,undefined,code);}
-  return response.json() as Promise<T>;
+  const response=await fetch(path,{method:body===undefined?'GET':'POST',credentials:'same-origin',redirect:'error',headers:{'X-Mote-Protocol-Version':'2','Accept-Language':getLocale(),...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});
+  if(!response.ok)throw await readApiError(response);
+  return readApiJson<T>(response);
 }
 export async function discoverWebSession():Promise<WebConnection|null>{
   try{
     const self=await publicAuth<Record<string,unknown>>('/api/auth/self');
-    if(!['deploymentId','userId','credentialId','csrfToken','username'].every(key=>typeof self[key]==='string'&&Boolean(self[key])) || typeof self.administrator!=='boolean')throw Error('Invalid Web session response');
+    if(!self||typeof self!=='object'||Array.isArray(self)||!['deploymentId','userId','credentialId','csrfToken','username'].every(key=>typeof self[key]==='string'&&Boolean(self[key])) || typeof self.administrator!=='boolean')throw Error(moteText('中央响应格式无效，请刷新后重试。'));
     return {mode:'web',origin:location.origin,deploymentId:self.deploymentId as string,userId:self.userId as string,credentialId:self.credentialId as string,csrfToken:self.csrfToken as string,username:self.username as string,administrator:self.administrator,viewScope:self.credentialId as string,...(typeof self.expiresAt==='number'?{expiresAt:self.expiresAt}:{})};
   }catch(error){if(error instanceof ApiError&&error.status===401)return null;throw error;}
 }
 export function loginWeb(username:string,password:string,durationMs:number):Promise<WebConnection>{
   return changeWebAuthentication(async isCurrent=>{
     const grant=await publicAuth<{deploymentId:string;userId:string;credentialId:string}>('/api/auth/login',{username,password,durationMs,mode:'web'});
-    if(!isCurrent())throw Error('Login changed');
+    if(!grant||typeof grant!=='object'||!['deploymentId','userId','credentialId'].every(key=>typeof grant[key as keyof typeof grant]==='string'&&Boolean(grant[key as keyof typeof grant])))throw Error(moteText('中央响应格式无效，请刷新后重试。'));
+    if(!isCurrent())throw Error(moteText('登录会话已改变，请重新登录。'));
     const session=await discoverWebSession();
-    if(!isCurrent()||!session||session.deploymentId!==grant.deploymentId||session.userId!==grant.userId||session.credentialId!==grant.credentialId)throw Error('Login changed');
+    if(!isCurrent())throw Error(moteText('登录会话已改变，请重新登录。'));
+    if(!session)throw Error(moteText('无法确认登录会话，请刷新页面并重新登录。'));
+    if(session.deploymentId!==grant.deploymentId||session.userId!==grant.userId||session.credentialId!==grant.credentialId)throw Error(moteText('登录会话已改变，请重新登录。'));
     return session;
   });
 }

@@ -133,7 +133,7 @@ class AppUpdatesActivity : MoteActivity() {
             "manifest", "manifest_signature", "host", "redirect" -> MoteI18n.text("发布清单签名、格式或来源不可信，已拒绝")
             "not_found" -> MoteI18n.text("该渠道尚无可用的已签名发布，或 GitHub 未找到发布清单")
             "asset_missing" -> MoteI18n.text("请先检查更新；该发布可能没有匹配当前包名的 Android 资产")
-            "rate_limit" -> MoteI18n.text("GitHub 暂时限流，稍后重试"); "network" -> MoteI18n.text("网络暂不可用，断点保留，等待重试")
+            "rate_limit" -> MoteI18n.text("GitHub 暂时限流，稍后重试"); "access_denied" -> MoteI18n.text("更新服务器拒绝访问，请检查网络入口或发布资源的访问权限。"); "network" -> MoteI18n.text("网络暂不可用，断点保留，等待重试")
             "storage" -> MoteI18n.text("更新空间不足或文件保存失败；应用数据未删除"); "configuration" -> MoteI18n.text("仓库应为 owner/repository，渠道为 stable 或 preview")
             "cancelled" -> MoteI18n.text("操作已取消；旧应用数据及下载断点保留"); "install_failed" -> MoteI18n.text("系统未确认安装成功；旧应用保留，可重新检查或安装")
             else -> MoteI18n.text("更新未完成，请重试；旧应用和数据保留")

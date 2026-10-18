@@ -125,7 +125,7 @@ export function LibraryMaterials({ api, revision, selected, onSelect, onBrowseCh
       {(current.sourceId || current.deviceId || current.after || current.before) && <button className="text-button" onClick={() => update({ sourceId: '', deviceId: '', after: '', before: '' })}>{moteText('清除筛选')}</button>}
     </div>
     {invalidDate&&<p role="alert">{moteText('请选择有效日期')}</p>}
-    {page.error !== undefined && <ErrorNotice text={page.error instanceof ApiError && page.error.status === 409 ? moteText('资料目录已变化，请返回第一页继续浏览。') : errorMessage(page.error)} retry={() => current.cursor ? update({ cursor: undefined }) : page.refresh()}/>}
+    {page.error !== undefined && <ErrorNotice text={page.error instanceof ApiError && page.error.status === 409 && page.error.code === 'invalid_cursor' ? moteText('资料目录已变化，请返回第一页继续浏览。') : errorMessage(page.error)} retry={() => current.cursor ? update({ cursor: undefined }) : page.refresh()}/>}
     {page.loading && !page.data && <Spinner />}
     {page.error === undefined && page.data && <><div className="library-record-list">{page.data.items.map(item => {
                 const type = page.data!.types.find(type => type.kind === item.kind && type.schemaVersion === item.schemaVersion);

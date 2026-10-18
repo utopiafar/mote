@@ -30,7 +30,7 @@ export function createUpdateService(context: UpdateContext, dependencies: { chec
       result = { ...result, latestVersion: manifest.version, available: checked.available, verified: true, checkedAt: new Date(clock()).toISOString(), state: 'ready', releaseUrl: manifest.notesUrl,
         commands: supported ? { check: `node scripts/mote.mjs check-update${suffix}`, update: `node scripts/mote.mjs update${suffix} --version ${quote(manifest.version)}`, rollback: `node scripts/mote.mjs rollback${suffix} --restore-data` } : null };
     } catch (error) {
-      const codes = ['release_not_found', 'release_rate_limited', 'invalid_manifest_signature', 'unknown_release_key', 'release_channel_mismatch', 'release_identity_mismatch', 'update_request_cancelled'];
+      const codes = ['release_not_found', 'release_rate_limited', 'release_access_denied', 'invalid_manifest_signature', 'unknown_release_key', 'release_channel_mismatch', 'release_identity_mismatch', 'update_request_cancelled'];
       const code = error instanceof ReleaseError && codes.includes(error.code) ? error.code : 'release_check_failed';
       result = { ...result, latestVersion: null, available: false, verified: false, checkedAt: new Date(clock()).toISOString(), state: 'error', error: code, releaseUrl: null, commands: null };
     }

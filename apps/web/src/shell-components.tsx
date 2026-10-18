@@ -327,11 +327,7 @@ export function LoginDialog({ destination, onConnected, onClose }: {
       const session=await loginWeb(username.trim(),password,durationForLifetime[lifetime]);
       if (!controller.signal.aborted) onConnected(session, lifetime);
     } catch (e) {
-      if (!controller.signal.aborted) setError(e instanceof ApiError && e.status === 401
-        ? moteText("用户名或密码不正确，请重新登录。")
-        : e instanceof ApiError && e.status === 403
-          ? moteText("请升级中央节点后再登录。")
-          : errorMessage(e));
+      if (!controller.signal.aborted) setError(errorMessage(e));
     } finally { if (!controller.signal.aborted) setBusy(false); active.current = null; }
   }
   return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()} onKeyDown={e => e.key === "Escape" && onClose()}>

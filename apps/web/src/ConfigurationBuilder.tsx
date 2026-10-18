@@ -40,7 +40,7 @@ export function ConfigurationBuilder({api,config,category,sources=[],sourcesErro
       }
       if(next){setBaseline(next);setChanges({});setCredentialReview(false);setAllowCredentialReuse(false);setNotice(next.restartRequired?moteText('已保存到配置文件；标记的设置需要重启后生效。'):moteText('已保存，立即生效。'));}
       invalidateConfiguration(api);onApplied?.();
-    } catch(e){if(activeApi.current!==api)return;if(e instanceof ApiError&&e.code==='model_settings_credential_reuse'){setCredentialReview(true);setError(errorMessage(e));}else setError(e instanceof ApiError&&e.status===409?moteText('配置已被其他会话更新。请重新读取生效配置，再编辑并保存。'):errorMessage(e));}
+    } catch(e){if(activeApi.current!==api)return;if(e instanceof ApiError&&e.code==='model_settings_credential_reuse'){setCredentialReview(true);setError(errorMessage(e));}else setError(errorMessage(e));}
     finally{if(activeApi.current===api)setBusy(false);}
   }
   return <section className="panel config-builder" aria-label={moteText("配置文件")}>

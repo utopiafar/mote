@@ -75,7 +75,7 @@ export function MemorySettings({ api, onPlans }: {
     }
     catch (e) {
         if (!controller.signal.aborted)
-            setError(e instanceof ApiError&&e.status===409?moteText('配置已被其他会话更新。请重新读取生效配置，再编辑并保存。'):errorMessage(e));
+            setError(errorMessage(e));
     }
     finally {
         if (!controller.signal.aborted)

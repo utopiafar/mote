@@ -54,7 +54,7 @@ export function OwnerQuestionConversation({api,id,onOpen}:{api:Api;id:string;onO
       setAccepted({api,id,value});setDraft('');setChoiceId(undefined);setReopened(false);pending.current=undefined;
       resources(api).invalidate(key=>key.startsWith('/api/owner-questions')||key.startsWith('/api/work-activity')||key.startsWith('/api/materials'));
     }catch(e){if(current()){
-      setError(e instanceof ApiError&&e.status===409?moteText('这个问题已更新，请查看最新内容后再回答。'):errorMessage(e));
+      setError(e instanceof ApiError&&e.status===409&&e.code==='conflict'?moteText('这个问题已更新，请查看最新内容后再回答。'):errorMessage(e));
       if(e instanceof ApiError&&[401,403,404,409,410].includes(e.status)){pending.current=undefined;setAccepted(undefined);detail.refresh();}
     }}finally{if(current()){setBusy(false);controller.current=null;}}
   }

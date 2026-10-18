@@ -139,6 +139,8 @@ TLS overlay 使用固定 Caddy 2.11.4 Alpine 镜像；与中央在独立 Compose
 
 已有反向代理可以保持 TLS overlay 关闭，将请求代理到 `127.0.0.1:47832`。`tls --disable` 只调整配置；已有 Caddy 容器需用该 profile 的 `compose -- down --remove-orphans` 后再 `start`，保留卷即可。自定义宿主端口可设置 `server.tls.httpPort`、`server.tls.httpsPort`，但公共 ACME 验证仍需正确转发到标准 80/443。项目不会修改 DNS、防火墙或购买域名。
 
+通过 HTTPS 反向代理访问网页登录时，在所选 profile 的私有 `mote.yaml` 中设置 `server.publicUrl` 为浏览器使用的公开 origin（例如 `https://mote.example.com`），然后重启中央节点。浏览器登录使用这个公开地址。代理到中央的内部连接可以继续使用 loopback HTTP；来源校验不会仅凭 `X-Forwarded-Proto` 信任任意代理。缺少或填错公开地址会返回 `403 origin_denied`，应检查公开地址与代理配置，不能据此判断中央版本过旧。实际 profile 配置位于被 Git 忽略的 `.mote/` 目录，不要把含凭据的配置提交到仓库。
+
 旧 `mote.env`、JSON 设置、旧 owner token 和旧存储不会自动转换。当前主配置为 YAML version 1，中央使用 storage epoch 5、Wire 2 / Ingress 3，Desktop / Android 本机格式为 4，个人便携归档为 version 3。手改文件与设置页共用主 YAML；端口、目录、插件模块、媒体 worker 资源、TLS/Tunnel 启停仍需重启或对应明确 CLI 操作。
 
 ## 升级与回退

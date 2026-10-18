@@ -19,6 +19,12 @@ const grouped = (component = 'central', version = '0.5.0') => {
 };
 const feedEntry = (tag_name, extra = {}) => ({tag_name, draft:false, prerelease:false, ...extra});
 
+test('release access refusals are only described as throttling when HTTP metadata proves it',async()=>{
+ for(const [status,headers,code] of [[403,{},'release_access_denied'],[401,{},'release_access_denied'],[429,{},'release_rate_limited'],[403,{'X-RateLimit-Remaining':'0'},'release_rate_limited'],[403,{'Retry-After':'30'},'release_rate_limited']]){
+  await assert.rejects(checkRelease({repository:'utopiafar/mote',channel:'stable',component:'central',fetch:async()=>new Response('PRIVATE_RESPONSE',{status,headers})}),error=>error.code===code);
+ }
+});
+
 test('release identity pins the public key and authenticates raw bytes, metadata and asset locations', async () => {
   assert.equal(RELEASE_PUBLIC_KEY, await readFile(new URL('../../../release/release-public-key.pem', import.meta.url), 'utf8'));
   assert.equal(verifyReleaseEnvelope(signed(), {publicKey}).version, '0.5.0');

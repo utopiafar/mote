@@ -23,6 +23,13 @@ it('retires replaced previews and checks expiry again at confirmation',()=>{
 it.each([302,409,500])('uses fixed errors without leaking a provider body or following redirects: %s',async status=>{
  await expect(connectionRequest(invitation.serverUrl,'/api/connections/redeem',{method:'POST'},async(_url,init)=>{expect(init?.redirect).toBe('error');return response({secret:token},status);})).rejects.not.toThrow(token);
 });
+it.each([[403,'origin_denied','公开地址'],[404,'not_found','资源不存在'],[426,'incompatible_protocol','协议版本'],[410,'login_expired','登录请求']])('does not infer an upgrade or device conflict from HTTP alone: %s',async(status,code,expected)=>{
+ await expect(connectionRequest(invitation.serverUrl,'/api/login/poll',{method:'POST'},async()=>response({error:code,message:'PRIVATE_DETAIL'},Number(status)))).rejects.toThrow(String(expected));
+});
+it('keeps explicit expired-invitation guidance without treating any bad request as expiry',async()=>{
+ await expect(connectionRequest(invitation.serverUrl,'/api/connections/redeem',{method:'POST'},async()=>response({error:'invitation_invalid_or_expired'},410))).rejects.toThrow('邀请无效');
+ await expect(connectionRequest(invitation.serverUrl,'/api/connections/redeem',{method:'POST'},async()=>response({error:'invalid_request'},400))).rejects.toThrow('输入格式');
+});
 it('validates connection scope, device binding and bounded responses', async () => {
   const config = { serverUrl: invitation.serverUrl, token, deviceId: 'fixture-device' };
   const result = await testConnection(config, async (_url, init) => { expect(init?.headers).toEqual({ Authorization: 'Bearer ' + token, 'Accept-Language': 'zh-CN', 'X-Mote-Protocol-Version': '2' }); expect(init?.redirect).toBe('error'); return response(identity); });

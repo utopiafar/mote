@@ -11,7 +11,7 @@ export function SourceMaterialView({api,value,fallback,onOpen}:ViewProps){
   const [position,setPosition]=useState<Position>({block:0,offset:0}),[history,setHistory]=useState<Position[]>([]),[raw,setRaw]=useState(false);
   const match=/^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$/.exec(value.ref);
   const page=useResource<Page>(api,match&&!raw?`/api/materials/${match[1]}/source-view?`+new URLSearchParams({revision:match[2],block:String(position.block),offset:String(position.offset),length:'4000'}):null,5000);
-  const pending=page.error instanceof ApiError&&page.error.status===409;
+  const pending=page.error instanceof ApiError&&page.error.status===409&&page.error.code==='conflict';
   const go=(next:Position)=>{setHistory(old=>[...old,position]);setPosition(next);};
   if(!match)return <>{fallback}</>;
   return <div className="source-material-view"><button className="button subtle" aria-expanded={raw} onClick={()=>setRaw(!raw)}>{raw?moteText('返回阅读视图'):moteText('查看原始结构')}</button>

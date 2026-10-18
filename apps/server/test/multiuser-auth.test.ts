@@ -60,6 +60,15 @@ test('Web sessions use protected cookies, recover CSRF on reload, and reject cro
  assert.equal((await f.request('GET','/api/auth/self',undefined,cookie)).statusCode,401);assert.equal((await f.request('GET','/api/auth/self',undefined,headers(f.alice.token))).statusCode,200);
 });
 
+test('an HTTPS reverse-proxy origin requires the configured public URL rather than the internal HTTP listener',async t=>{
+ const root=mkdtempSync(join(tmpdir(),'mote-public-origin-'));
+ const node=await buildApp({dataDir:root,configuration:{publicUrl:'https://generated-central.invalid'}});
+ t.after(async()=>{await node.app.close();rmSync(root,{recursive:true,force:true});});
+ const request=(origin:string)=>node.app.inject({method:'POST',url:'/api/auth/login',headers:{...protocol,host:'127.0.0.1:47999',origin,'content-type':'application/json','x-forwarded-proto':'https'},payload:{}});
+ const denied=await request('https://another-origin.invalid');assert.equal(denied.statusCode,403);assert.equal(denied.json().error,'origin_denied');
+ const accepted=await request('https://generated-central.invalid');assert.equal(accepted.statusCode,400);assert.equal(accepted.json().error,'invalid_request','The same-origin request reaches input validation without touching a real account');
+});
+
 test('password change, administrator reset and disable revoke all account credentials, preserve identity and do not affect B',async t=>{
  const f=await fixture(t);
  let r=await f.request('POST','/api/auth/password',{currentPassword:password,password:replacement},headers(f.alice.token));assert.equal(r.statusCode,200);

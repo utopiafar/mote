@@ -4,6 +4,7 @@ import { validateServerUrl } from './config';
 import { moteText } from '@mote/shared/i18n';
 import { readResponseText } from './response-body';
 import {accountKey,DESKTOP_PROTOCOL_HEADERS} from './account';
+import {httpFailureMessage,responseFailureCode} from '@mote/shared';
 export type LoginSettings = {account?:Config['account'];token?:string;authSignedOut?:boolean;authExpiresAt?:number;authSourceBinding?:string};
 export function validSourceBinding(value:string|undefined):string|undefined {
   if(value!==undefined&&!/^[a-f0-9]{64}$/.test(value))throw Error('Invalid source checkpoint binding');return value;
@@ -19,7 +20,8 @@ export function requireConnectionToken(config:LoginSettings):string {
 }
 export async function loginRequest(config:Pick<Config,'serverUrl'>,path:string,body:unknown,token?:string):Promise<any>{
   const response=await fetch(validateServerUrl(config.serverUrl)+path,{method:'POST',credentials:'omit',redirect:'error',signal:AbortSignal.timeout(15000),headers:{...DESKTOP_PROTOCOL_HEADERS,'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(body)});
-  if(!response.ok){await response.body?.cancel();throw Error(moteText('中央请求失败（HTTP {0}），请稍后重试。',response.status));}
-  return JSON.parse(await readResponseText(response,16384));
+  if(!response.ok){let code:string|undefined;try{code=responseFailureCode(JSON.parse(await readResponseText(response,16384)));}catch{}throw Error(httpFailureMessage(response.status,code));}
+  const text=await readResponseText(response,16384);
+  try{return JSON.parse(text);}catch{throw Error(httpFailureMessage(response.status,'invalid_response'));}
 }
 export function loginVerifier(){const verifier=randomBytes(32).toString('base64url');return {verifier,challenge:createHash('sha256').update(verifier).digest('hex')};}

@@ -81,11 +81,17 @@ class UpdateNetwork(private val stopped: () -> Boolean = { false }, private val 
             val code = try { r.responseCode } catch (e: Exception) { r.disconnect(); throw e }
             if (code in setOf(301, 302, 303, 307, 308)) { val location = r.getHeaderField("Location"); r.disconnect(); url = URL(url, location ?: throw UpdateFailure("redirect")) }
             else if (code == 200 || code == 206) return r
-            else { r.disconnect(); throw UpdateFailure(when (code) { 404 -> "not_found"; 403, 429 -> "rate_limit"; else -> "network" }) }
+            else { val failure = failureCode(code, r.getHeaderField("X-RateLimit-Remaining"), r.getHeaderField("Retry-After")); r.disconnect(); throw UpdateFailure(failure) }
         }
         throw UpdateFailure("redirect")
     }
     companion object {
+        internal fun failureCode(status: Int, remaining: String?, retryAfter: String?): String = when {
+            status == 404 -> "not_found"
+            status == 429 || status == 403 && (remaining == "0" || retryAfter != null) -> "rate_limit"
+            status == 401 || status == 403 -> "access_denied"
+            else -> "network"
+        }
         fun validateUrl(url: URL) { if (url.protocol != "https" || url.port != -1 || url.userInfo != null || url.ref != null || url.host !in setOf("github.com", "api.github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com")) throw UpdateFailure("host") }
     }
 }

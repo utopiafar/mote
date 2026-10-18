@@ -39,7 +39,7 @@ function ActionsPage({api,onOpen}:ActionsProps){
   try{await api.request('/api/actions/settings',{method:'PUT',body:JSON.stringify({revision:versions.revision,authorizationRevision:versions.authorizationRevision,settings:next})});if(live()){setTimeZoneEdit(undefined);setSettingsError(false);invalidateConfiguration(api);}}
   catch(e){
    if(live()){setSettingsError(true);invalidateConfiguration(api);if(withdrawn.length)try{const current=await api.request<State>(`/api/actions?cursor=${encodeURIComponent(String(cursor))}`);if(activeApi.current===api&&withdrawn.every(id=>!current.settings.reviewDeviceIds.includes(id)))setWithdrawalApplied(true);}catch{/* The refreshed permission controls remain authoritative when the extra read fails. */}}
-   throw e instanceof ApiError&&e.status===409?new Error(moteText('配置已被其他会话更新。请重新读取生效配置，再编辑并保存。')):e;
+   throw e;
   }
  };
  const item=review,current=data?.items.find(a=>a.id===review?.id),reviewChanged=!!review&&(!current||current.version!==review.version||current.status!=='proposed'||!!current.resolution);

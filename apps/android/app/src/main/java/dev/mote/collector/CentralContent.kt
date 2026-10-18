@@ -324,7 +324,7 @@ internal class CentralContent(
             work(MoteI18n.text("正在验证令牌…"), {
                 check(session.generation == generation) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
                 val (code, result) = HttpJson.post(origin + "/api/auth/login", org.json.JSONObject().put("username", loginName).put("password", password).put("mode", "client").put("durationMs", duration))
-                if (code !in 200..299 || result == null) throw CentralFailure(code, result?.optString("error").orEmpty())
+                if (code !in 200..299 || result == null) throw CentralFailure(code, centralResponseFailureCode(result))
                 val grant = result
                 session.signIn(origin, grant.getString("token"), duration, generation, adoptLocal)
                 CentralAccess.resolve(this)
@@ -423,7 +423,7 @@ internal class CentralContent(
         if (client == null && body.childCount == 0) {
             button(MoteI18n.text("重试")) { recreate() }; connectionButton()
         }
-        if (error is CentralFailure && error.status == 401 && error.code in setOf("", "unauthorized")) {
+        if (error is CentralFailure && error.status == 401 && error.code in setOf("", "unauthorized", "invalid_identity", "identity_required", "connection_revoked", "session_binding_required")) {
             work(MoteI18n.text("正在退出登录…"), { session.signOut(generation); CentralAccess.resolve(this) }, allowSessionChange = true) { selected -> applyAccess(selected); notice(error.message.orEmpty()) }
         } else {
             handler.removeCallbacks(refreshLogin); handler.post(refreshLogin)

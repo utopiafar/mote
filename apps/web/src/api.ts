@@ -1,5 +1,6 @@
 import {failureMessage} from './failure-message';
 import { moteText, getLocale } from '@mote/shared/i18n';
+import {httpStatusMessage,responseFailureCode} from '@mote/shared';
 import type {RecordMetadata, SourceMetadata, OcrResult, CaptureRecord} from '@mote/shared';
 export interface WebConnection {
   mode: 'web';
@@ -173,6 +174,27 @@ export class ApiError extends Error {
     super(message);
   }
 }
+export async function readApiError(response:Response):Promise<ApiError> {
+  let requestId=response.headers.get('X-Request-Id')??undefined;
+  let code:string|undefined;
+  const retryAfter=response.headers.get('Retry-After');
+  const seconds=retryAfter&&/^\d+$/.test(retryAfter)?Number(retryAfter):undefined;
+  let retryAfterMs=seconds!==undefined&&Number.isSafeInteger(seconds*1000)?seconds*1000:undefined;
+  try {
+    const value=await response.json();
+    code=responseFailureCode(value);
+    if(value&&typeof value==='object'){
+      if(!requestId&&typeof value.requestId==='string')requestId=value.requestId;
+      if(retryAfterMs===undefined&&Number.isSafeInteger(value.retryAfterMs)&&value.retryAfterMs>=0)retryAfterMs=value.retryAfterMs;
+    }
+  }catch{/* Proxy responses may be HTML. Never display their bodies. */}
+  if(!requestId||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId))requestId=undefined;
+  return new ApiError(code?failureMessage(code,response.status):httpStatusMessage(response.status),response.status,requestId,code,retryAfterMs);
+}
+export async function readApiJson<T>(response:Response):Promise<T> {
+  try{return await response.json() as T;}
+  catch(error){if(error instanceof SyntaxError)throw new ApiError(moteText('中央响应格式无效，请刷新后重试。'),response.status,undefined,'invalid_response');throw error;}
+}
 export function createApi(input: Connection, onUnauthorized?: () => void, isCurrentConnection: () => boolean = () => true): Api {
   const connection=Object.freeze({...input});
   let closed=false;
@@ -182,7 +204,7 @@ export function createApi(input: Connection, onUnauthorized?: () => void, isCurr
   };
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await raw(path, init);
-    const value=await response.json() as T;
+    const value=await readApiJson<T>(response);
     assertCurrent();
     if(isWebConnection(connection)&&path==='/api/auth/self'){
       const self=value as {credentialId?:string;deploymentId?:string;userId?:string};
@@ -222,33 +244,10 @@ export function createApi(input: Connection, onUnauthorized?: () => void, isCurr
     });
     assertCurrent();
     if (!response.ok) {
-      let message = response.status === 524
-        ? moteText("入口等待服务响应超时（524）。请检查节点运行诊断；较慢的模型请求可能超过代理等待上限。")
-        : response.status === 413
-          ? moteText("上传超过中央节点或公网入口的大小限制（413）。可以分批上传，或将文件放到中央服务器后从目录导入。")
-          : response.status === 502
-            ? moteText("入口暂时无法连接中央服务（502）。请检查中央进程和隧道的 origin 地址。")
-            : moteText("请求未完成（{0}）", response.status);
-      let requestId = response.headers.get("X-Request-Id") ?? undefined;
-      let code: string | undefined;
-      const retryAfter=response.headers.get('Retry-After');
-      const retrySeconds=retryAfter&&/^\d+$/.test(retryAfter)?Number(retryAfter):undefined;
-      let retryAfterMs=retrySeconds!==undefined&&Number.isSafeInteger(retrySeconds)&&retrySeconds>=0?retrySeconds*1000:undefined;
-      try {
-        const value = await response.json();
-        const candidate=value.reason??value.code??(typeof value.error==='object'?value.error?.code:value.error);
-        if(typeof candidate==='string'&&/^[a-z][a-z0-9_.-]{0,99}$/.test(candidate))code=candidate;
-        if (typeof value.message === "string") message = value.message;
-        else if (typeof value.error === "string") message = value.error;
-        if (!requestId && typeof value.requestId === "string") requestId = value.requestId;
-        if(retryAfterMs===undefined&&Number.isSafeInteger(value.retryAfterMs)&&value.retryAfterMs>=0)retryAfterMs=value.retryAfterMs;
-      } catch {
-        /* response might not be JSON */
-      }
+      const error=await readApiError(response),code=error.code;
       if ((response.status === 401 && (!code || ['unauthorized','connection_revoked','invalid_identity','session_binding_required'].includes(code)) || response.status===409&&code==='session_changed') && !init.signal?.aborted && isCurrentConnection()) onUnauthorized?.();
       assertCurrent();
-      if (!requestId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) requestId = undefined;
-      throw new ApiError(message, response.status, requestId, code, retryAfterMs);
+      throw error;
     }
     return new Proxy(response, {get(target,key){
       const value=Reflect.get(target,key,target);
@@ -316,6 +315,6 @@ export const deviceLabels: Record<string, string> = {
   stale: moteText("状态待更新"),
 };
 export function errorMessage(error: unknown) {
-  const message=error instanceof ApiError&&error.code?failureMessage(error.code):error instanceof TypeError?failureMessage('network'):error instanceof Error?error.message:moteText("请求未完成，请稍后重试。");
+  const message=error instanceof ApiError&&error.code?failureMessage(error.code,error.status):error instanceof DOMException&&error.name==='TimeoutError'?moteText('请求等待超时，请检查节点和网络状态后重试。'):error instanceof TypeError?failureMessage('network'):error instanceof Error?error.message:moteText("请求未完成，请稍后重试。");
   return error instanceof ApiError&&error.requestId?moteText("{0} 请求编号：{1}",message,error.requestId):message;
 }

@@ -33,6 +33,7 @@ const dependencies: UpdateDependencies = {
 const messages: Record<string, string> = {
   get release_not_found() { return moteText("此渠道暂未提供可验证的发布清单。请稍后检查；旧版未签名发布不能用于应用内安装。"); },
   get release_rate_limited() { return moteText("GitHub 暂时限制请求，请稍后重试。"); },
+  get release_access_denied() { return moteText('更新服务器拒绝访问，请检查网络入口或发布资源的访问权限。'); },
   get invalid_manifest_signature() { return moteText("发布清单签名无效，已停止更新。"); }, get unknown_release_key() { return moteText("发布密钥不受此 App 信任，已停止更新。"); },
   get asset_checksum_mismatch() { return moteText("安装包校验失败，已删除不完整下载。请重新下载。"); }, get asset_size_mismatch() { return moteText("安装包大小不符，已停止更新。"); },
   get UPDATE_ARCHIVE_INVALID() { return moteText("安装包目录、压缩格式或链接不安全，已停止解压。"); }, get UPDATE_BUNDLE_INVALID() { return moteText("应用签名、版本或架构校验失败，未替换现有 App。"); },

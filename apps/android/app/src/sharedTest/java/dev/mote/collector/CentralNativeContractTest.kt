@@ -62,7 +62,8 @@ class CentralNativeContractTest {
         assertEquals(1, invalidations)
         val connector = CentralClient(origin, token, { _, _, _, _, _ -> 401 to JSONObject().put("error", "google_not_connected").put("message", "Generated connector status") }, unauthorized = { invalidations++ })
         val separate = assertThrows(CentralFailure::class.java) { connector.get("/api/connectors/google/calendars") }
-        assertEquals("google_not_connected", separate.code); assertEquals("Generated connector status", separate.message)
+        assertEquals("google_not_connected", separate.code); assertEquals(MoteI18n.text("尚未连接 Google 账号，请在对应来源设置中完成授权。"), separate.message)
+        assertFalse(separate.message!!.contains("Generated connector status"))
         assertEquals(1, invalidations)
     }
     @Test fun defaultDeleteSendsTheScopedEmptyJsonBodyAndPreservesExplicitControlFields() {

@@ -7,6 +7,23 @@ import java.io.FileOutputStream
 import java.time.Instant
 import java.util.Base64
 
+internal fun connectionFailureCategory(status: Int, body: JSONObject?): String = when (centralResponseFailureCode(body)) {
+    "device_already_registered" -> "device_conflict"
+    "incompatible_protocol" -> "protocol_incompatible"
+    "origin_denied" -> "origin_denied"
+    "invitation_invalid_or_expired", "login_expired" -> "expired"
+    "invitation_claim_changed", "invitation_subject_mismatch", "invitation_device_mismatch", "login_owner_changed" -> "invite_rejected"
+    else -> when (status) {
+        400, 409, 415, 422 -> "response"
+        410 -> "expired"
+        401, 403 -> "invite_rejected"
+        404 -> "not_found"
+        426 -> "protocol_incompatible"
+        429 -> "rate_limit"
+        else -> "network"
+    }
+}
+
 /** One encrypted recovery intent, persisted before claiming the fixed M01 subject. */
 class ConnectionClient(private val context: Context) {
     private val settings = Settings(context)
@@ -104,7 +121,7 @@ class ConnectionClient(private val context: Context) {
     }
     private fun post(server: String, path: String, body: JSONObject): JSONObject {
         val (status, response) = HttpJson.post(server + path, body)
-        if (status != 200) throw ConnectionFailure(when (status) { 409 -> "device_conflict"; 410 -> "expired"; 401, 403 -> "invite_rejected"; 429 -> "rate_limit"; else -> "network" })
+        if (status != 200) throw ConnectionFailure(connectionFailureCategory(status, response))
         return response ?: throw ConnectionFailure("response")
     }
     private fun <T> recoverable(work: () -> T): T = try { work() } catch (e: Exception) {
@@ -117,7 +134,7 @@ class ConnectionClient(private val context: Context) {
     }
     private fun verifySelf(server: String, token: String, credentialId: String? = null, invitation: ConnectionInvitation? = null): JSONObject {
         val (status, body) = HttpJson.get("$server/api/connections/self", token, ProtocolCompatibility.headers)
-        if (status != 200) throw ConnectionFailure(if (status in setOf(401, 403)) "authentication" else "network")
+        if (status != 200) throw ConnectionFailure(if (status in setOf(401, 403)) "authentication" else connectionFailureCategory(status, body))
         if (body == null) throw ConnectionFailure("response")
         val binding = AccountBinding.self(server, body); val credential = body.getJSONObject("credential")
         if (credential.has("deviceId") && credential.optString("deviceId") != settings.deviceId) throw ConnectionFailure("identity")

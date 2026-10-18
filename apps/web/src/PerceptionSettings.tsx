@@ -81,7 +81,7 @@ export function PerceptionSettings({ api, onMemory, onAdvanced }: {
         await work();
     }
     catch (error) {
-        if(activeApi.current!==api)return;setError(error instanceof ApiError&&error.status===409?moteText('配置已被其他会话更新。请重新读取生效配置，再编辑并保存。'):errorMessage(error));
+        if(activeApi.current!==api)return;setError(errorMessage(error));
     }
     finally {
         if(activeApi.current===api)setBusy(false);
