@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 1,
+  "moteCommit": "cc5d30f8e84bff9276b4487ffd7254c594b154df",
+  "lockfileGitBlob": "32f16233f65c47bec845bd859dc238c2a9a48d12",
+  "dshVersion": "0.2.0-rc.2",
+  "cordisVersion": "4.0.4",
+  "upstreamDocumentationCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "marketSource": {
+    "url": "https://dpharness.com/market/index.json",
+    "status": "fetch_blocked_in_this_environment",
+    "snapshotDigest": null
+  },
+  "samples": [
+    {
+      "id": "skill-tool",
+      "package": "@deepseek-ai/dsh-tool-skill",
+      "origin": "upstream",
+      "category": "skill",
+      "track": "target",
+      "scenario": "Load a generated skill and verify its actual text reaches the next model request.",
+      "unit": "package; bundle declaration requires package inspection",
+      "source": {
+        "type": "npm-lock",
+        "version": "0.2.0-rc.2",
+        "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-tool-skill/-/dsh-tool-skill-0.2.0-rc.2.tgz",
+        "integrity": "sha512-gPD5isAk3AP8oerJ+KiEpZgZ/UAp5g/obSqDJmJrUYzWJ6TYzdY9xFZgb2k8TYDDX7nBM/K5kS7hfRxhH9aerQ=="
+      }
+    },
+    {
+      "id": "skill-registry",
+      "package": "@deepseek-ai/dsh-skill",
+      "origin": "upstream",
+      "category": "skill",
+      "track": "target",
+      "scenario": "Register and revoke a generated skill without granting new archive access.",
+      "unit": "package; bundle declaration requires package inspection",
+      "source": {
+        "type": "npm-lock",
+        "version": "0.2.0-rc.2",
+        "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-skill/-/dsh-skill-0.2.0-rc.2.tgz",
+        "integrity": "sha512-3QfzZ6qWfESq1TRoVjEfoBRCTONRLU9aLopKpA7hJg/LZ2GqCgMoSvOwJJL+q2Djbs3oiUyC9qJHRnnN6EacIA=="
+      }
+    },
+    {
+      "id": "mcp-client",
+      "package": "@deepseek-ai/dsh-mcp-client",
+      "origin": "upstream",
+      "category": "mcp",
+      "track": "target",
+      "scenario": "Discover and call a generated loopback MCP tool through the native client.",
+      "unit": "package; bundle declaration requires package inspection",
+      "source": {
+        "type": "npm-lock",
+        "version": "0.2.0-rc.2",
+        "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-mcp-client/-/dsh-mcp-client-0.2.0-rc.2.tgz",
+        "integrity": "sha512-UqP2sY1r6qAhBPFeuclqrXiMBBxPaCNrXlXRqKxAON7uI1wmZZ0B3/1GmBviQ3/WjjTQlOOkj0su2v4e5DMkug=="
+      }
+    },
+    {
+      "id": "mcp-resources",
+      "package": "@deepseek-ai/dsh-mcp-resources",
+      "origin": "upstream",
+      "category": "mcp",
+      "track": "target",
+      "scenario": "Read a generated resource with paging; verify revocation and source attribution.",
+      "unit": "package; bundle declaration requires package inspection",
+      "source": {
+        "type": "npm-lock",
+        "version": "0.2.0-rc.2",
+        "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-mcp-resources/-/dsh-mcp-resources-0.2.0-rc.2.tgz",
+        "integrity": "sha512-ZP4B0DQPFlFpzUymv7GuZ2rwcyxTJ/xPAhn2r06yPUfUnwVFpcyt32ipOSAds8OnpHm9jEybRX4+lWzE8MK+JA=="
+      }
+    },
+    {
+      "id": "file-tools",
+      "package": "@deepseek-ai/dsh-tool-fs",
+      "origin": "upstream",
+      "category": "tool",
+      "track": "boundary",
+      "scenario": "Exercise explicit temporary-workspace access; archive query remains read-only.",
+      "unit": "package; bundle declaration requires package inspection",
+      "source": {
+        "type": "npm-lock",
+        "version": "0.2.0-rc.2",
+        "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-tool-fs/-/dsh-tool-fs-0.2.0-rc.2.tgz",
+        "integrity": "sha512-QDtVmZoc84iDwrM4ftMDwzuttQd5dXu93NMeas5cSsUvptnW4CiPrMOkYswRXmSry5WRWn7Gk0lSRJ1bpynwiQ=="
+      }
+    },
+    {
+      "id": "local-files",
+      "package": "@deepseek-ai/dsh-fs-local",
+      "origin": "upstream",
+      "category": "service",
+      "track": "boundary",
+      "scenario": "Provide an isolated generated workspace; do not mount the personal archive.",
+      "unit": "package; bundle declaration requires package inspection",
+      "source": {
+        "type": "npm-lock",
+        "version": "0.2.0-rc.2",
+        "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-fs-local/-/dsh-fs-local-0.2.0-rc.2.tgz",
+        "integrity": "sha512-lDzh5VlQsXf3nI+E0+T0weYdH1VAoo+htj6Kwc62P7/Lx+xjnYSLQYTeGeaJR1d8H2iQv2FvlwaDKv60AorKdA=="
+      }
+    },
+    {
+      "id": "model-adapter",
+      "package": "@deepseek-ai/dsh-llm-pi-ai",
+      "origin": "upstream",
+      "category": "model",
+      "track": "target",
+      "scenario": "Run scripted loopback model responses with the existing selected provider.",
+      "unit": "package; bundle declaration requires package inspection",
+      "source": {
+        "type": "npm-lock",
+        "version": "0.2.0-rc.2",
+        "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-llm-pi-ai/-/dsh-llm-pi-ai-0.2.0-rc.2.tgz",
+        "integrity": "sha512-8DxCwQNhfQwqNQ6khxyDSh6Pba9PjpnNQqvAz29SF/V86ClZNH5xZuqCdNfU8E426Ec6wti5oUtM+uKohMAe3A=="
+      }
+    },
+    {
+      "id": "attachments",
+      "package": "@deepseek-ai/dsh-attachment-local",
+      "origin": "upstream",
+      "category": "service",
+      "track": "target",
+      "scenario": "Store a generated image in the disposable run and retain its source receipt.",
+      "unit": "package; bundle declaration requires package inspection",
+      "source": {
+        "type": "npm-lock",
+        "version": "0.2.0-rc.2",
+        "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-attachment-local/-/dsh-attachment-local-0.2.0-rc.2.tgz",
+        "integrity": "sha512-VDyHGvKoN59D+3t3rwkZYNFJJJ1PbCV/6z9ngL5lErd1H98NqmFqFzGgGypGPvBGdmi42ckhVldBPq8ZJWzKcA=="
+      }
+    },
+    {
+      "id": "schedule-bundle",
+      "package": "@deepseek-ai/dsh-experimental-schedule-bundle",
+      "origin": "upstream",
+      "category": "event",
+      "track": "boundary",
+      "scenario": "Investigate adapter to durable Mote tasks before enabling native scheduling.",
+      "unit": "package; bundle declaration requires package inspection",
+      "source": {
+        "type": "npm-lock",
+        "version": "0.2.0-rc.2",
+        "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-experimental-schedule-bundle/-/dsh-experimental-schedule-bundle-0.2.0-rc.2.tgz",
+        "integrity": "sha512-6oGDFceBMAsrKeJfFxByyvXBPE+Obfd0oMCwNYdWesPmRBueuRwj5lwp8BY+v59mQAc3Jzdkx1hZh/E6xRcMng=="
+      }
+    },
+    {
+      "id": "client-theme",
+      "package": "@deepseek-ai/dsh-client-ui-theme",
+      "origin": "upstream",
+      "category": "ui",
+      "track": "boundary",
+      "scenario": "Test client-only dependency detection without replacing Mote navigation.",
+      "unit": "package; bundle declaration requires package inspection",
+      "source": {
+        "type": "npm-lock",
+        "version": "0.2.0-rc.2",
+        "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-client-ui-theme/-/dsh-client-ui-theme-0.2.0-rc.2.tgz",
+        "integrity": "sha512-1pdHD6QfRGalG3BchmvvuVZportaMcSGQ1lwjFlddB2oyZrHk4lsYMYN8l1icQDgB7VrA4cA1VIlYlUfl7qbLw=="
+      }
+    },
+    {
+      "id": "community-calculator",
+      "package": "@deepseek-ai/dsh-tool-calculator",
+      "origin": "community",
+      "category": "tool",
+      "track": "target",
+      "unit": "bundle",
+      "scenario": "Invoke the unchanged calculator on generated operands; compare returned value and actual tool events.",
+      "source": {
+        "type": "git",
+        "repository": "omdsh-dev/dsh-tool-calculator",
+        "commit": "b2007a13f06bcf75bf07b9d277ee8d434a316490",
+        "manifestGitBlob": "56f63dc7f4c17a495eab4b854d316469e54ab4d3",
+        "files": {
+          "package.json": "56f63dc7f4c17a495eab4b854d316469e54ab4d3",
+          "cordis.patch.yml": "98331d488d70f9f15c7921ef4fa6d23b1edb7f49",
+          "lib/index.js": "7cf8578d4ec2ce9cbbd40fae0c84426bae707844",
+          "lib/evaluate.js": "5cecdf0189b620c9ebbb2caff5c6e3d71b4c3212"
+        }
+      },
+      "review": {
+        "private": true,
+        "version": "0.0.1",
+        "dshToolsPeer": ">=0.0.1-rc.1 <0.2.0",
+        "compatibility": "requires_upstream_installer_check",
+        "warning": "Repository is community-owned despite the package scope; do not infer official publisher identity."
+      }
+    },
+    {
+      "id": "community-toolkit",
+      "package": "@deepseek-ai/dsh-toolkit",
+      "origin": "community",
+      "category": "tool",
+      "track": "target",
+      "unit": "bundle",
+      "scenario": "Verify multiple zero-dependency tool registrations, duplicate-name conflicts, and independent teardown.",
+      "source": {
+        "type": "git",
+        "repository": "omdsh-dev/dsh-toolkit",
+        "commit": "c3319d9d3e78a18191e1381461b69e84bc547575",
+        "manifestGitBlob": "01778d9cd84eede1dcb2b667077208ab59e1f6db",
+        "files": {
+          "package.json": "01778d9cd84eede1dcb2b667077208ab59e1f6db"
+        }
+      },
+      "review": {
+        "private": true,
+        "version": "0.0.1",
+        "dshToolsPeer": ">=0.0.1-rc.1 <0.2.0",
+        "compatibility": "requires_upstream_installer_check",
+        "runtimeSourceAudit": "pending"
+      }
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "phase": 1,
+  "phaseStatus": "in_progress",
+  "moteBase": "cc5d30f8e84bff9276b4487ffd7254c594b154df",
+  "environment": {
+    "os": "linux",
+    "arch": "x64",
+    "node": "22.16.0"
+  },
+  "executed": {
+    "offlineUnitTests": {
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "command": "node --test scripts/release/dsh-compatibility.test.mjs",
+      "tapSha256": "a76a9f93903c092a2c991ca907f814988b078932b9861d600a7e64416c8e00d4"
+    },
+    "lockMetadataAudit": {
+      "samples": 12,
+      "npmPinsMatched": 10,
+      "resultSha256": "54d18187fa340aca94227cab006f5b92c40c18b6973733658f4703e97bb039ae"
+    },
+    "nativePreflight": {
+      "schemaVersion": 1,
+      "scope": "upstream-sdk-only",
+      "status": "blocked",
+      "sampleId": "community-calculator",
+      "model": "scripted-loopback",
+      "liveModelCalls": 0,
+      "marketInstallation": "not_run",
+      "moteJourney": "not_run",
+      "cleanupConfirmed": true,
+      "moteCommit": "cc5d30f8e84bff9276b4487ffd7254c594b154df",
+      "dshVersion": "0.2.0-rc.2",
+      "node": "v22.16.0",
+      "problems": [
+        "node_24_required",
+        "dependency_missing:@deepseek-ai/dsh-sdk-client",
+        "dependency_missing:@deepseek-ai/dsh",
+        "dependency_missing:@deepseek-ai/dsh-tools",
+        "dependency_missing:@deepseek-ai/dsh-llm-pi-ai",
+        "pinned_plugin_directory_required"
+      ]
+    }
+  },
+  "notRun": [
+    "nativePluginInstall",
+    "nativePluginLoad",
+    "nativePluginInvoke",
+    "moteJourney",
+    "independentReview",
+    "independentEvaluation",
+    "check:affected"
+  ],
+  "sourceFiles": {
+    "docs/design/dsh-ecosystem-compatibility-2026-10-20.md": {
+      "sha256": "986f344fccf51f79d68877beeb60df728196146c84bea681f4572fa8487bc12a",
+      "gitBlob": "d9c4787612179e1d1e09e1cb2cb39acd34a827bd"
+    },
+    "docs/validation/dsh-compatibility/phase-01.md": {
+      "sha256": "47240d373e5fb530af0dd7469d4f686f2b7a9ec7819cdcbfe528c899dfc6ca68",
+      "gitBlob": "ab711f9a7568de69e03e93ae0d12867dfd8166d2"
+    },
+    "docs/validation/dsh-compatibility/samples.v1.json": {
+      "sha256": "c6f3b7937c72a520e90b6dece0ee34ced0a5221ded7ca3328a564975d27e2e1f",
+      "gitBlob": "c0f7fc91f36e83f761ea8368a40a4ee9b23f3402"
+    },
+    "scripts/dsh-compatibility/audit.mjs": {
+      "sha256": "16f848fa004ffc15287d895f325e9eeca78a6a7bfd73b1920b3b207ae29a9271",
+      "gitBlob": "fe03d024d7fb1a9a412c6e88f159b6621bdaebb4"
+    },
+    "scripts/dsh-compatibility/native-smoke.mjs": {
+      "sha256": "e5c6662bf57c5e9d885b6694c7f90b26cd1898904d721c4c6ef6c56fbfbb0a2b",
+      "gitBlob": "94edfbf406e99d84af80edc1631e7a59810075e3"
+    },
+    "scripts/release/dsh-compatibility.test.mjs": {
+      "sha256": "5dcb7a0e9060d9f68f1f173849d7682215fa9cacdc8e9d99cc443e37a75b0090",
+      "gitBlob": "d13276d542d434cf9347ac38403d4a8cd2018719"
+    }
+  }
+}
