@@ -146,7 +146,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 }
                 stage = EventStage.QUEUE
                 val preferNew = liveBytes < 16L * 1024 * 1024
-                val events = queue.peekBatch(maxCount = remaining, maxBytes = 4 * 1024 * 1024, metadataWindowMinutes = config.jsonlWindowMinutes, preferSince = if (preferNew) preferSince else null)
+                val events = queue.peekUploadBatch(remaining, config.packedUpload, config.jsonlWindowMinutes, if (preferNew) preferSince else null)
                 if (events.isEmpty()) {
                     finishStatus()
                     runCatching { PerceptionSync.pull(applicationContext, settings, config, queue) }
