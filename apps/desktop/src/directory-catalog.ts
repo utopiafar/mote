@@ -21,7 +21,7 @@ export class DirectoryCatalog {
   private changes=new Map<string,FileCatalogEntry|undefined>();
   private baseCatalog:Record<string,FileCatalogEntry>={};
   private rollback?:{state:Omit<LocalFileCheckpoint,'catalog'>;entries:Map<string,FileCatalogEntry|undefined>};
-  private listing?:{path:string;entries:string[]};
+  private listing?:{path:string;entries:string[];position:number};
   get inProgress(){return this.state.inProgress;}
   savepoint(){const {catalog,...state}=this.state;this.rollback={state:structuredClone(state),entries:new Map()};}
   previous(path:string){return this.rollback?.entries.has(path)?this.rollback.entries.get(path):this.state.catalog[path];}
@@ -87,15 +87,23 @@ export class DirectoryCatalog {
     while (candidates.length < limit && (this.state.activeDirectory || this.state.pendingDirectories.length)) {
       if (!this.state.activeDirectory) this.state.activeDirectory = { path: this.state.pendingDirectories.shift()! };
       const active = this.state.activeDirectory;
-      let entries: string[];
-      try { if(this.listing?.path!==active.path)this.listing={path:active.path,entries:(await readdir(active.path)).sort()};entries=this.listing.entries; }
+      let listing: NonNullable<DirectoryCatalog['listing']>;
+      try {
+        if(this.listing?.path!==active.path){
+          const entries=(await readdir(active.path)).sort();
+          // Durable recovery is name based; the position belongs only to this listing.
+          let low=0,high=entries.length;
+          if(active.after)while(low<high){const middle=low+Math.floor((high-low)/2);if(entries[middle]<=active.after)low=middle+1;else high=middle;}
+          this.listing={path:active.path,entries,position:low};
+        }
+        listing=this.listing;
+      }
       catch { complete = false; faulted = true; this.state.scanFaulted = true; this.state.activeDirectory = undefined; continue; }
-      const remaining = entries.filter(entry => !active.after || entry > active.after);
-      if (!remaining.length) { this.state.activeDirectory = undefined; continue; }
+      if (listing.position >= listing.entries.length) { this.state.activeDirectory = undefined; continue; }
       // Bound metadata I/O while preserving the lexicographic commit cursor. A
       // failed stat belongs to this scan epoch even if a later shard succeeds.
-      for(let offset=0;offset<remaining.length&&candidates.length<limit;){
-        const names=remaining.slice(offset,offset+Math.min(4,limit-candidates.length));offset+=names.length;
+      while(listing.position<listing.entries.length&&candidates.length<limit){
+        const names=listing.entries.slice(listing.position,listing.position+Math.min(4,limit-candidates.length));
         const inspected=await Promise.all(names.map(async name=>{
           const path=join(active.path,name),relativePath=relative(this.root,path).split('\\').join('/');
           if(isExcluded(relativePath))return {name,path,relativePath,excluded:true,info:undefined};
@@ -103,7 +111,7 @@ export class DirectoryCatalog {
           catch{return {name,path,relativePath,excluded:false,info:undefined};}
         }));
         for(const {name,path,relativePath,excluded,info} of inspected){
-          active.after=name;
+          active.after=name;listing.position++;
           if(excluded){skipped++;continue;}
           if(!info){complete=false;faulted=true;this.state.scanFaulted=true;skipped++;continue;}
           if(info.isSymbolicLink()){skipped++;continue;}

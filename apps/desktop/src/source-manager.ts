@@ -225,7 +225,7 @@ export class LocalSourceManager {
         // Stage locally even when offline; this same revision is retried after process restarts.
         const now = Date.now(); const scope = { start: new Date(now - 30 * 86400000).toISOString(), end: new Date(now + 90 * 86400000).toISOString() };
         const priorityVersions = new Map(this.dirtyPathVersions.get(source.id) ?? []);
-        const scan = await this.adapters.scan({ source, signal, checkpoint: engine.checkpoint(), fileCheckpoint: engine.fileCheckpoint(), priorityPaths: [...priorityVersions.keys()], stateDirectory: this.directory, helperPath: this.helperPath, scope });
+        const scan = await this.adapters.scan({ source, signal, checkpoint: adapter.checkpointMode === 'file' ? undefined : engine.checkpoint(), fileCheckpoint: engine.fileCheckpoint(), priorityPaths: [...priorityVersions.keys()], stateDirectory: this.directory, helperPath: this.helperPath, scope });
         unqueuedScan = scan; accessValidated = true;
         if (!scan.queue) scan.queue = source.initialSync === 'all' && !engine.initialized() ? 'history' : 'realtime';
         signal.throwIfAborted(); status.skipped = scan.skipped; status.scanComplete = scan.complete;
@@ -285,7 +285,7 @@ export class LocalSourceManager {
     }while(after);
     }catch(error){if(signal.aborted||request.account)throw error;return;/* Older legacy nodes can still receive ordinary revisions. */}
     if(!count)return;
-    const now=Date.now(),adapter=this.adapters.get(source.kind),scan=await this.adapters.scan({source,signal,checkpoint:engine.checkpoint(),fileCheckpoint:engine.fileCheckpoint(),priorityPaths:[],stateDirectory:this.directory,helperPath:this.helperPath,scope:{start:new Date(now-30*86400000).toISOString(),end:new Date(now+90*86400000).toISOString()}});
+    const now=Date.now(),adapter=this.adapters.get(source.kind),scan=await this.adapters.scan({source,signal,checkpoint:adapter.checkpointMode==='file'?undefined:engine.checkpoint(),fileCheckpoint:engine.fileCheckpoint(),priorityPaths:[],stateDirectory:this.directory,helperPath:this.helperPath,scope:{start:new Date(now-30*86400000).toISOString(),end:new Date(now+90*86400000).toISOString()}});
     try{signal.throwIfAborted();await engine.stage(scan,adapter.tracksDeletions&&source.trackDeletions,undefined,source.initialSync);}finally{await engine.discardUnqueuedOriginals(scan.items);}
   }
   private async prepareSource(source: LocalSource, request: SourceRequest, signal: AbortSignal): Promise<void> {

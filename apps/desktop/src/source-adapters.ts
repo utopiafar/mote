@@ -19,6 +19,8 @@ export interface SourceScanContext {
 }
 export interface SourceAdapter {
   readonly kind: LocalSource['kind'];
+  /** Explicit opt-in; adapters otherwise retain the independently cloned generic checkpoint. */
+  readonly checkpointMode?: 'file';
   readonly version: number;
   readonly watchesPath: boolean;
   readonly tracksDeletions: boolean;
@@ -61,7 +63,7 @@ export function builtInSourceAdapters(): SourceAdapterRegistry {
         const scan = await sourceWork.run<SourceScan>({ kind: 'coding-scan', root: source.path!, provider: source.agent!, options: source, checkpoint: checkpoint as CodingCheckpoint | undefined },undefined,signal);
         return { version: 1, scan };
       } })
-    .register({ kind: 'local-files', version: 2, watchesPath: true, tracksDeletions: true, allowsArchive: true,
+    .register({ kind: 'local-files', checkpointMode: 'file', version: 2, watchesPath: true, tracksDeletions: true, allowsArchive: true,
       validateConfiguration(source) { if (typeof source.path !== 'string') throw new Error('Invalid file source'); },
       async scan({ source, signal, stateDirectory, fileCheckpoint, priorityPaths }) {
         const scan = await scanSourceFiles(source.path!, source, signal, join(stateDirectory, 'access-markers', source.id + '.json'), fileCheckpoint, priorityPaths, true);

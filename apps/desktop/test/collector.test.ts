@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import sharp from 'sharp';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DurableQueue } from '../src/queue';
 import { defaultConfig } from '../src/config';
 import { captureAck } from './fixtures';
 import { SyncHistory } from '../src/sync-history';
+import * as localContent from '../src/local-content';
+import {imageWork} from '../src/background';
 
 const fixtureConfig=()=>({...defaultConfig(),syncMode:'realtime' as const,syncIntervalMinutes:15,syncBatchSize:20,packedUpload:false});
 
@@ -478,4 +480,96 @@ it('changes the non-secret authorization epoch when credentials change, includin
   const {collector}=await makeCollector();const generation=collector.status().authorizationGeneration;
   collector.updateConfig({...fixtureConfig(),token:'new-generated-token'});expect(collector.status().authorizationGeneration).toBe((generation??0)+1);
   expect(JSON.stringify(collector.status())).not.toContain('new-generated-token');
+});
+
+
+it.each([{packed:true,enabled:true},{packed:true,enabled:false},{packed:false,enabled:true},{packed:false,enabled:false}])('E reads each queued shared image once and preserves exact payload/counter bytes ($packed/$enabled)',async({packed,enabled})=>{
+  const {event,image}=await import('./fixtures');
+  const config={...fixtureConfig(),token:'generated-token',syncMode:'manual' as const,packedUpload:packed};
+  const queue=new DurableQueue(directory,config);await queue.initialize();
+  const events=[3,1,2].map(i=>event(`00000000-0000-4000-8000-${String(i).padStart(12,'0')}`));
+  for(const item of events)await queue.enqueue(item,image);
+  expect(await readdir(join(directory,'blobs'))).toHaveLength(1);
+  const diagnostics={status:()=>({enabled}),recordUpload:vi.fn(),close:async()=>{}};
+  syncHistory=new SyncHistory(join(directory,'history.sqlite'));await syncHistory.initialize();
+  collector=new Collector(config,queue,'/never-native',()=>true,()=>undefined,diagnostics as any,undefined,undefined,syncHistory);
+  const payloads:string[]=[];
+  vi.mocked(fetch).mockImplementation(async(_url,init)=>{const raw=await new Response(init!.body).text();payloads.push(raw);const body=JSON.parse(raw);return new Response(JSON.stringify(packed?{results:body.captures.map((item:any)=>({...captureAck(item.id),status:201}))}:captureAck(body.id)),{status:packed?200:201});});
+  const reads=vi.spyOn(localContent,'readLocalContent'),hashes=vi.spyOn(imageWork,'run'),next=vi.spyOn(queue,'next');
+  const originalToString=Buffer.prototype.toString;let base64=0;
+  const encoding=vi.spyOn(Buffer.prototype,'toString').mockImplementation(function(this:Buffer,...args:Parameters<Buffer['toString']>){if(args[0]==='base64'&&this.equals(image))base64++;return originalToString.apply(this,args);});
+  try{
+    await collector.upload(true);
+    expect(next).toHaveBeenCalledTimes(packed?0:3);
+    expect(reads.mock.calls.filter(([path])=>String(path).includes('/blobs/'))).toHaveLength(3);
+    expect(hashes.mock.calls.filter(([request])=>request.kind==='hash')).toHaveLength(3);
+    expect(base64).toBe(enabled?6:3);
+    expect(diagnostics.recordUpload.mock.calls.flat()).toEqual(enabled?events.map(item=>Buffer.byteLength(JSON.stringify({...item,imageBase64:originalToString.call(image,'base64')}))):[]);
+    const sent=payloads.flatMap(raw=>{const body=JSON.parse(raw);return body.captures??[body];});
+    expect(sent).toEqual(events.map(item=>({...item,imageBase64:originalToString.call(image,'base64')})));
+    const d=new Date(),day=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    expect(syncHistory.page(config,{day}).items[0].bytes).toBe(payloads.reduce((sum,raw)=>sum+Buffer.byteLength(raw),0));
+    expect(queue.stats().depth).toBe(0);expect(await readdir(join(directory,'blobs'))).toEqual([]);
+  }finally{encoding.mockRestore();reads.mockRestore();hashes.mockRestore();next.mockRestore();}
+});
+
+it.each([0,1])('E preserves storage bookkeeping when packed image %i fails verification',async broken=>{
+  const {event,image}=await import('./fixtures');const config={...fixtureConfig(),token:'generated-token',syncMode:'manual' as const,packedUpload:true};
+  const queue=new DurableQueue(directory,config);await queue.initialize();
+  const images=[image,Buffer.concat([image.subarray(0,-2),Buffer.from([1,2]),image.subarray(-2)])];
+  const events=[event('00000000-0000-4000-8000-000000000001'),event('00000000-0000-4000-8000-000000000002')];
+  for(let i=0;i<2;i++)await queue.enqueue(events[i],images[i]);
+  const {imageHash}=await import('../src/queue');await writeFile(join(directory,'blobs',imageHash(images[broken])+'.jpg'),Buffer.from('Generated broken image'));
+  const journal={record:vi.fn(async()=>{})};collector=new Collector(config,queue,'/never-native',()=>true,()=>undefined,undefined,journal as any);
+  await collector.upload(true);expect(fetch).not.toHaveBeenCalled();expect(queue.stats().depth).toBe(2);
+  expect(queue.recordForHistory(events[0].id)?.attempts).toBe(broken===0?0:1);
+  expect(queue.recordForHistory(events[1].id)?.attempts).toBe(0);
+  const starts=journal.record.mock.calls.filter(args=>args[0]==='UPLOAD'&&args[1]==='STARTED');expect(starts).toHaveLength(broken===0?0:1);
+  if(broken===0)expect(journal.record).toHaveBeenCalledWith('QUEUE','STORAGE');
+});
+
+
+it('E retains missing receipts and held conflicts with shared blobs until explicit retry ACKs',async()=>{
+  const {event,image}=await import('./fixtures');const {queue}=await makeCollector({syncMode:'manual',packedUpload:true});
+  const records=[1,2,3,4].map(i=>event(`00000000-0000-4000-8000-${String(i).padStart(12,'0')}`));
+  for(const item of records)await queue.enqueue(item,image);
+  vi.mocked(fetch).mockImplementationOnce(async()=>new Response(JSON.stringify({results:[{...captureAck(records[0].id),status:201},{id:records[1].id,status:409},{id:records[2].id,status:410}]})));
+  await collector!.upload(true);expect(queue.stats()).toMatchObject({depth:3,blocked:2,eligibleDepth:1});
+  expect(queue.recordForHistory(records[3].id)?.attempts).toBe(1);expect(await readdir(join(directory,'blobs'))).toHaveLength(1);
+  vi.mocked(fetch).mockImplementation(async(_url,init)=>{const body=JSON.parse(await new Response(init!.body).text());return new Response(JSON.stringify({results:body.captures.map((item:any)=>({...captureAck(item.id),status:200}))}));});
+  await collector!.retry();expect(queue.stats().depth).toBe(0);expect(await readdir(join(directory,'blobs'))).toEqual([]);
+});
+
+it.each([false,true])('E yields the 15-second slice with eligible work still waiting (%s)',async packed=>{
+  const {event,image}=await import('./fixtures'),config={...fixtureConfig(),token:'generated-token',syncMode:'manual' as const,packedUpload:packed};
+  const queue=new DurableQueue(directory,config);await queue.initialize();
+  const original=event('00000000-0000-4000-8000-000000000001'),held=event('00000000-0000-4000-8000-000000000002'),fresh=event('00000000-0000-4000-8000-000000000003');
+  await queue.enqueue(original,image);await queue.enqueue(held,image);await queue.blockSync(held.id,'Generated held record keeps the initial count limit above one');
+  let elapsed=0,sourcePending=1,sourceVisited=false;const sent:string[]=[];
+  vi.mocked(fetch).mockImplementation(async(_url,init)=>{const body=JSON.parse(await new Response(init!.body).text()),items=body.captures??[body];sent.push(...items.map((item:any)=>item.id));
+    if(sent.length===1){fresh.capturedAt=new Date().toISOString();await queue.enqueue(fresh,image);}elapsed+=15001;
+    return new Response(JSON.stringify(packed?{results:items.map((item:any)=>({...captureAck(item.id),status:201}))}:captureAck(body.id)),{status:packed?200:201});});
+  const sources={nodeBinding:{unbound:()=>false},pendingStats:()=>({pendingRecords:sourcePending,eligibleRecords:sourcePending}),flushPending:async()=>{expect(sent).toEqual([original.id]);expect(queue.recordForHistory(fresh.id)).toBeDefined();sourcePending=0;sourceVisited=true;}};
+  collector=new Collector(config,queue,'/never-native',()=>true,()=>undefined,undefined,undefined,sources as any);
+  const clock=vi.spyOn(performance,'now').mockImplementation(()=>elapsed);
+  try{await collector.upload(true);expect(sourceVisited).toBe(true);expect(queue.stats()).toMatchObject({depth:1,blocked:1});expect(sent).toEqual([original.id,fresh.id]);}finally{clock.mockRestore();}
+});
+
+it('E gives history its existing turn after 16 MiB of live-priority slices',async()=>{
+  const {event}=await import('./fixtures'),config={...fixtureConfig(),token:'generated-token',syncMode:'manual' as const,packedUpload:true};
+  const queue=new DurableQueue(directory,config);await queue.initialize();
+  const pixels=Buffer.alloc(4_000_000);pixels[0]=255;pixels[1]=216;pixels[pixels.length-2]=255;pixels[pixels.length-1]=217;
+  const generated=(i:number,at:string)=>({...event(`00000000-0000-4000-8000-${String(i).padStart(12,'0')}`),capturedAt:at});
+  const historical=Array.from({length:6},(_,i)=>generated(i+1,new Date(Date.UTC(2025,0,1+i)).toISOString()));
+  for(const item of historical)await queue.enqueue(item,pixels);
+  const sent:string[]=[];let sourcePending=1;
+  vi.mocked(fetch).mockImplementation(async(_url,init)=>{const body=JSON.parse(await new Response(init!.body).text());expect(body.captures).toHaveLength(1);sent.push(body.captures[0].id);return new Response(JSON.stringify({results:[{...captureAck(body.captures[0].id),status:201}]}));});
+  const sources={nodeBinding:{unbound:()=>false},pendingStats:()=>({pendingRecords:sourcePending,eligibleRecords:sourcePending}),flushPending:async(_signal:AbortSignal,between:()=>Promise<void>)=>{
+    for(let i=0;i<4;i++){await queue.enqueue(generated(100+i,new Date().toISOString()),pixels);await between();}
+    sourcePending=0;
+  }};
+  collector=new Collector(config,queue,'/never-native',()=>true,()=>undefined,undefined,undefined,sources as any);
+  await collector.upload(true);
+  expect(sent.slice(0,5)).toEqual([historical[0].id,...[100,101,102].map(i=>generated(i,'').id),historical[1].id]);
+  expect(new Set(sent).size).toBe(10);expect(queue.stats().depth).toBe(0);
 });

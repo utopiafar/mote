@@ -383,15 +383,22 @@ export class Collector {
       let sliceBytes=0,completed=0;const sliceStarted=performance.now(),preferSince=liveBytes<16*1024*1024?liveSince:undefined;
       // Bound each flush so the UI and new capture policy changes stay responsive.
       for (let count = 0, limit = Math.min(25,this.queue.stats().depth); count < limit && sliceBytes<4*1024*1024 && (count===0||performance.now()-sliceStarted<15000) && !abort.signal.aborted; count++) {
-        const entry = await this.queue.next(Date.now(),preferSince);
-        if (!entry) break;
-        let attempted = [entry];
-        const uploadStarted = Date.now();
-        void this.events?.record('UPLOAD', 'STARTED');
+        let entry: Awaited<ReturnType<DurableQueue['next']>>;
+        let attempted: NonNullable<typeof entry>[] = [];
+        let uploadStarted = 0;
+        const startAttempt = (first: NonNullable<typeof entry>) => {
+          entry = first; attempted = [first]; uploadStarted = Date.now();
+          void this.events?.record('UPLOAD', 'STARTED');
+        };
+        if (!this.config.packedUpload) {
+          const first = await this.queue.next(Date.now(),preferSince);
+          if (!first) break;
+          startAttempt(first);
+        }
         try {
           if (this.config.packedUpload) {
-            const batch = await this.queue.nextBatch(25, Date.now(), preferSince);
-            if (!batch.length) continue;
+            const batch = await this.queue.nextBatch(25, Date.now(), preferSince, startAttempt);
+            if (!entry) break;
             sliceBytes+=batch.reduce((sum,item)=>sum+Buffer.byteLength(JSON.stringify(item.record.event))+Math.ceil((item.image?.length??0)/3)*4+64,0);
             attempted = batch;
             if (historyRun) this.history!.attempt(historyRun, batch.map(item => captureHistoryItem(item.record.event)));
@@ -403,7 +410,7 @@ export class Collector {
               if (historyRun) this.history!.settle(historyRun, item.record.event.id, code === 200 || code === 201, item.record.event.id, code);
               if (code === 200 || code === 201) {
                 await this.queue.acknowledge(item.record.event.id, item.record.event.stateSeries?.samples.length ?? 0);
-                this.diagnostics?.recordUpload(Buffer.byteLength(JSON.stringify({ ...item.record.event, ...(item.image ? {imageBase64: item.image.toString('base64')} : {}) })));
+                if (this.diagnostics?.status().enabled) this.diagnostics.recordUpload(Buffer.byteLength(JSON.stringify({ ...item.record.event, ...(item.image ? {imageBase64: item.image.toString('base64')} : {}) })));
                 this.lastUploadAt = new Date().toISOString(); this.archiveAcknowledgment={at:this.lastUploadAt,origin:this.config.serverUrl};
               }
               else if (code === 409 || code === 410) await this.queue.blockSync(item.record.event.id, moteText("中央记录冲突或已删除，本机副本保留待处理。"));
@@ -412,6 +419,7 @@ export class Collector {
             if (incomplete) { this.lastUploadError = moteText("部分记录未确认，已保留等待重试"); break; }
             count += batch.length - 1;
           } else {
+            if (!entry) break;
             sliceBytes+=Buffer.byteLength(JSON.stringify(entry.record.event))+Math.ceil((entry.image?.length??0)/3)*4+64;
             if (historyRun) this.history!.attempt(historyRun, [captureHistoryItem(entry.record.event)]);
             await uploadCapture(this.config, entry.record.event, entry.image, abort.signal, onBytes);
@@ -419,9 +427,11 @@ export class Collector {
             await this.queue.acknowledge(entry.record.event.id, entry.record.event.stateSeries?.samples.length??0);
           }
           void this.events?.record('UPLOAD', 'OK', { elapsedMs: Date.now() - uploadStarted });
-          if (!this.config.packedUpload) this.diagnostics?.recordUpload(Buffer.byteLength(JSON.stringify({ ...entry.record.event, ...(entry.image ? { imageBase64: entry.image.toString('base64') } : {}) })));
+          if (!this.config.packedUpload && this.diagnostics?.status().enabled) this.diagnostics.recordUpload(Buffer.byteLength(JSON.stringify({ ...entry.record.event, ...(entry.image ? { imageBase64: entry.image.toString('base64') } : {}) })));
           this.lastUploadAt = new Date().toISOString(); if(!this.config.packedUpload)this.archiveAcknowledgment={at:this.lastUploadAt,origin:this.config.serverUrl}; this.lastUploadError = undefined;completed++;
         } catch (error) {
+          // Reading/validating the first item has never been an upload attempt.
+          if (!entry) throw error;
           if (historyRun) for (const item of attempted) this.history!.settle(historyRun, item.record.event.id, false, undefined, error instanceof TransportFailure ? error.httpStatus : undefined, abort.signal.aborted);
           if (abort.signal.aborted) break;
           const stage: EventStage = error instanceof TransportFailure ? 'UPLOAD' : 'QUEUE';

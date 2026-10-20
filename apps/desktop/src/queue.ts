@@ -389,7 +389,7 @@ export class DurableQueue {
   async next(now = Date.now(), preferSince?:number): Promise<{ record: QueueRecord; image?: Buffer } | undefined> {
     return (await this.nextBatch(1, now, preferSince))[0];
   }
-  async nextBatch(limit = 25, now = Date.now(), preferSince?:number): Promise<{ record: QueueRecord; image?: Buffer }[]> {
+  async nextBatch(limit = 25, now = Date.now(), preferSince?:number, onFirst?: (entry: { record: QueueRecord; image?: Buffer }) => void): Promise<{ record: QueueRecord; image?: Buffer }[]> {
     return this.exclusive(async () => {
       this.assertReady();
       const records = [...this.records.values()].filter(r => !r.syncBlocked && r.nextAttemptAt <= now).sort((a, b) => (preferSince===undefined?0:Number(Date.parse(b.event.capturedAt)>=preferSince)-Number(Date.parse(a.event.capturedAt)>=preferSince))||a.event.capturedAt.localeCompare(b.event.capturedAt));
@@ -400,6 +400,9 @@ export class DurableQueue {
         if (result.length && bytes + size > 4 * 1024 * 1024) break;
         if (image) { validateImage(image); if (await imageWork.run<string>({ kind: 'hash', bytes: image }) !== record.blobHash) throw new Error(moteText("队列图片校验和不正确")); }
         result.push({ record: structuredClone(record), image }); bytes += size;
+        // Internal observer only records the first validated attempt. If a later
+        // read fails, the caller retains the same first-item failure bookkeeping.
+        if(result.length===1)onFirst?.(result[0]);
       }
       return result;
     });

@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { LocalSourceManager } from '../src/source-manager';
 import { DEFAULT_SOURCE_OPTIONS, type SourceItem } from '../src/source-types';
 import { sourceAck } from './fixtures';
+import {builtInSourceAdapters, SourceAdapterRegistry, type SourceScanContext} from '../src/source-adapters';
+import {SourceSync} from '../src/source-sync';
 let directory: string;
 let managers: LocalSourceManager[] = [];
 let servers: Server[] = [];
@@ -13,14 +15,15 @@ beforeEach(async () => { directory = await realpath(await mkdtemp(join(tmpdir(),
 afterEach(async () => { for (const manager of managers) await manager.close(); for (const server of servers) await new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }); managers = []; servers = []; await rm(directory, { recursive: true, force: true }); });
 async function endpoint(dropFirstAck = false) {
   const items: SourceItem[] = []; const registered: unknown[] = []; let id = ''; let dropNext = dropFirstAck;
-  const sessions=new Map<string,any>();
+  const sessions=new Map<string,any>();let recoveries:unknown[]=[];
   const server = createServer(async (req, res) => {
     expect(req.headers['x-mote-ingress-version']).toBe('2');
     const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(chunk);
-    if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({revision:null}));return;}
+    if(req.method==='GET'){res.setHeader('Content-Type','application/json');if(req.url?.startsWith('/api/file-sync/v1/recovery')){res.end(JSON.stringify({items:recoveries}));recoveries=[];}else res.end(JSON.stringify({revision:null}));return;}
     res.setHeader('Content-Type','application/json');
     if(req.url?.includes('/uploads/')&&req.url.includes('/parts/')){const bytes=Buffer.concat(chunks),part=Number(req.url.split('/').at(-1));res.end(JSON.stringify({part,hash:(await import('../src/source-sync')).sourceHash(bytes),bytes:bytes.length}));return;}
     const manifest = JSON.parse(Buffer.concat(chunks).toString()); const body = manifest.item ?? manifest;
+    if(req.url?.startsWith('/api/file-sync/v1/recovery/')&&req.url.endsWith('/uploads')){const m=[...sessions.values()].at(-1),uploadId='recovery-'+m.item.revision;sessions.set(uploadId,m);res.end(JSON.stringify({uploadId,partBytes:4194304,parts:[]}));return;}
     if(req.url==='/api/file-sync/v1/uploads'){const uploadId=body.revision;sessions.set(uploadId,manifest);res.end(JSON.stringify({uploadId,partBytes:4194304,parts:[]}));return;}
     if(req.url?.endsWith('/commit')){const m=sessions.get(req.url.split('/').at(-2)!);items.push(m.item);if(dropNext){dropNext=false;res.destroy();return;}res.end(JSON.stringify({...sourceAck(id,m.item,'file-revision',items.length>1),sha256:m.sha256,sizeBytes:m.sizeBytes}));return;}
     res.setHeader('Content-Type', 'application/json');
@@ -30,10 +33,10 @@ async function endpoint(dropFirstAck = false) {
     else { items.push(body); if (dropNext) { dropNext = false; res.destroy(); return; } res.end(JSON.stringify(sourceAck(id,body,body.kind==='file'?'file-revision':'source-item',items.length>1))); }
   });
   servers.push(server); await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-  return { url: 'http://127.0.0.1:' + (server.address() as { port: number }).port, items, registered, loseNextAck: () => { dropNext = true; } };
+  return { url: 'http://127.0.0.1:' + (server.address() as { port: number }).port, items, registered, loseNextAck: () => { dropNext = true; },recoverLast:()=>{const m=[...sessions.values()].at(-1);expect(m).toBeDefined();recoveries=[{captureId:'b67c1b84-f2cd-4e59-bf67-215545a882dc',externalId:m.item.externalId,revision:m.item.revision,sha256:m.sha256,sizeBytes:m.sizeBytes,observedAt:m.item.observedAt}];} };
 }
-async function manager(url: string, token = 'synthetic-source-token') {
-  const value = new LocalSourceManager(join(directory, 'private-state'), { serverUrl: url, token, deviceId: 'synthetic-device' }, '/must-not-be-invoked-calendar-helper');
+async function manager(url: string, token = 'synthetic-source-token', adapters?:SourceAdapterRegistry) {
+  const value = new LocalSourceManager(join(directory, 'private-state'), { serverUrl: url, token, deviceId: 'synthetic-device' }, '/must-not-be-invoked-calendar-helper',false,undefined,adapters);
   managers.push(value); await value.initialize(); return value;
 }
 describe('native source lifecycle with local HTTP fixtures', () => {
@@ -240,4 +243,46 @@ for(const mode of ['full','lightweight'])it(`rejects retired ${mode} index confi
  await expect(reopened.initialize()).rejects.toThrow('Existing files were preserved');
  expect(await Promise.all(paths.map(path=>readFile(path)))).toEqual(before);
  expect(reopened.status()).toEqual([]);expect(source.centralProcessingConsent).toBe(true);
+});
+
+
+it.each(['file','default'] as const)('E preserves %s checkpoint mode through normal scan and actual snapshot recovery work',async mode=>{
+  const server=await endpoint(),file=join(directory,'generated-checkpoint.txt');await writeFile(file,'Generated checkpoint input');
+  const builtIn=builtInSourceAdapters().get('local-files'),contexts:SourceScanContext[]=[];
+  const registry=new SourceAdapterRegistry().register({...builtIn,checkpointMode:mode==='file'?'file':undefined,scan:async context=>{
+    contexts.push(context);
+    if(context.checkpoint&&'catalog' in context.checkpoint){
+      expect(context.checkpoint.catalog).not.toBe(context.fileCheckpoint!.catalog);
+      const entries=Object.values(context.fileCheckpoint!.catalog);
+      if(entries.length){const key=entries[0].relativePath,before=context.fileCheckpoint!.catalog[key].size;
+        (context.checkpoint.catalog as any)[key].size=-1;expect(context.fileCheckpoint!.catalog[key].size).toBe(before);}
+    }
+    return builtIn.scan(context);
+  }});
+  const app=await manager(server.url,'synthetic-source-token',registry);await app.addFiles(file,DEFAULT_SOURCE_OPTIONS);await app.sync();
+  (app as any).watcher.close();expect(app.pendingStats().pendingRecords).toBe(0);expect(server.items).toHaveLength(1);
+  contexts.length=0;server.recoverLast();const full=vi.spyOn(SourceSync.prototype,'checkpoint');
+  try{
+    await app.sync();
+    expect(contexts).toHaveLength(2); // Normal scan plus recovery scan after a matched revision invalidates the cursor.
+    expect(full).toHaveBeenCalledTimes(mode==='file'?0:2);
+    expect(contexts[0].fileCheckpoint?.catalog).toBeDefined();
+    expect(contexts[1].fileCheckpoint).toBeUndefined();
+    expect(server.items).toHaveLength(2);expect(app.pendingStats().pendingRecords).toBe(0);
+    if(mode==='file')expect(contexts.every(context=>context.checkpoint===undefined)).toBe(true);
+    else expect(contexts[0].checkpoint).toBeDefined();
+  }finally{full.mockRestore();}
+});
+
+it('E leaves the complete independent coding adapter checkpoint available by default',async()=>{
+  const received:unknown[]=[];
+  const registry=new SourceAdapterRegistry().register({kind:'coding-agent',version:1,watchesPath:false,tracksDeletions:false,allowsArchive:false,validateConfiguration(){},async scan(context){
+    received.push(context.checkpoint);if(context.checkpoint)(context.checkpoint as any).nested.offset=999;
+    return {version:1,scan:{items:[],seen:[],complete:true,skipped:0,checkpoint:{version:1,nested:{offset:17,tail:'Generated checkpoint'}}}};
+  }});
+  const app=new LocalSourceManager(join(directory,'coding-state'),{serverUrl:'',token:'',deviceId:'synthetic-device'},'/never-native',true,undefined,registry);
+  managers.push(app);await app.initialize();await app.addAdapterSource({kind:'coding-agent',name:'Generated coding source'},DEFAULT_SOURCE_OPTIONS);await app.sync();
+  await app.sync();expect(received.at(-1)).toEqual({version:1,nested:{offset:999,tail:'Generated checkpoint'}});
+  const engine=[...(app as any).engines.values()][0] as SourceSync;
+  expect(engine.checkpoint()).toEqual({version:1,nested:{offset:17,tail:'Generated checkpoint'}});
 });
