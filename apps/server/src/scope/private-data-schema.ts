@@ -30,6 +30,7 @@ export function installPrivateData(db:DatabaseSync){
       user_id TEXT NOT NULL,source_id TEXT NOT NULL,external_id TEXT NOT NULL,capture_id TEXT NOT NULL,observed_at TEXT NOT NULL,
       PRIMARY KEY(user_id,source_id,external_id),
       FOREIGN KEY(user_id,source_id,external_id,capture_id) REFERENCES pd_captures(user_id,source_id,external_id,id) ON DELETE CASCADE);
+    CREATE INDEX IF NOT EXISTS pd_source_heads_capture ON pd_source_heads(user_id,capture_id);
     CREATE TABLE IF NOT EXISTS pd_materials(
       user_id TEXT NOT NULL,id TEXT NOT NULL,source_id TEXT NOT NULL,external_id TEXT NOT NULL,
       revision TEXT NOT NULL,sequence INTEGER NOT NULL CHECK(sequence>0),created_at TEXT NOT NULL,updated_at TEXT NOT NULL,min_visible_sequence INTEGER NOT NULL DEFAULT 1 CHECK(min_visible_sequence>0 AND min_visible_sequence<=sequence+1),
