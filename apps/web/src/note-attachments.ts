@@ -26,9 +26,9 @@ async function uploadWebAttachment(api:Api,file:File,deviceId:string,sourcePrefi
  if(!upload.id||upload.partBytes!==FILE_PART_BYTES||!Array.isArray(upload.parts))throw Error('Invalid attachment upload acknowledgement');
  for(let part=0;part*FILE_PART_BYTES<file.size;part++){
   const prior=upload.parts.find(value=>value.part===part);
-  await uploadFilePart(file,part,FILE_PART_BYTES,prior?{...prior,hash:prior.checksum}:undefined,async body=>{
+  await uploadFilePart(file,part,FILE_PART_BYTES,prior?{...prior,hash:prior.checksum}:undefined,async (body,checksum)=>{
    const bytes=new Uint8Array(body);let binary='';for(let offset=0;offset<bytes.length;offset+=32768)binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));
-   const checksum=await uploadHash(body);signal?.throwIfAborted();
+   signal?.throwIfAborted();
    const ack=await request<{part:number;checksum:string;bytes:number}>('/api/ingress/uploads/'+encodeURIComponent(upload.id)+'/parts/'+part,{method:'PUT',body:JSON.stringify({bytes:btoa(binary),checksum})});return {...ack,hash:ack.checksum};
   },signal);
  }

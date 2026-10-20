@@ -7,7 +7,7 @@ import {requestModelSelection} from './ask-model-selection';
 import { moteText } from '@mote/shared/i18n';
 import {QueryProgress,type QueryRun} from './QueryProgress';
 import {uploadChatImage} from './note-attachments';
-import React,{useEffect, useLayoutEffect, useRef, useState, type ReactNode} from 'react';
+import React,{useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode} from 'react';
 import {AlertCircle, ArrowRight, ArrowUp, ImagePlus, LoaderCircle, MessageSquare, Monitor, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Trash2, X} from 'lucide-react';
 import {ApiError,dateTime, errorMessage, type Answer, type Api, type Device, type Range} from './api';
 import {ConversationHeading,ConversationComposer} from './ConversationShell';
@@ -46,6 +46,20 @@ type ConversationProps={
   renderAnswer: (answer: Answer) => ReactNode;
   onOpen?: (ref:string)=>void;
 };
+function createQuestionDraft(){
+ let value='';const listeners=new Set<()=>void>();
+ return {
+  getSnapshot:()=>value,
+  subscribe:(listener:()=>void)=>{listeners.add(listener);return()=>{listeners.delete(listener);};},
+  set:(next:string)=>{if(next===value)return;value=next;listeners.forEach(listener=>listener());},
+ };
+}
+/** Only the controlled composer subscribes to typing. The session still owns
+ * draft clear/restore timing, including while supplemental routes hide it. */
+function DraftComposer({draft,children}:{draft:ReturnType<typeof createQuestionDraft>;children:(question:string)=>ReactNode}){
+ const question=useSyncExternalStore(draft.subscribe,draft.getSnapshot,draft.getSnapshot);
+ return children(question);
+}
 export function Conversations(props:ConversationProps){
  const connection=props.api.connection;
  return <ConversationSession key={connection?.mode==='web'?JSON.stringify([connection.origin,connection.deploymentId,connection.userId,connection.credentialId,connection.viewScope]):'legacy'} {...props}/>;
@@ -64,7 +78,7 @@ function ConversationSession({api,configured,devices,renderAnswer,onOpen=()=>{},
   const conversation=detail.data&&!pageRevoked?{...detail.data,turns:[...(currentOlder?.turns??[]).filter(turn=>!detail.data!.turns.some(next=>next.id===turn.id)),...detail.data.turns],...(currentOlder?{nextCursor:currentOlder.nextCursor}:{})}:null;
   const latestDetail=useRef({api,selectedId,data:detail.data,error:detail.error});
   latestDetail.current={api,selectedId,data:detail.data,error:detail.error};
-  const [question, setQuestion] = useState('');
+  const [draft]=useState(createQuestionDraft),setQuestion=draft.set;
   const [attachments,setAttachments]=useState<{id:string;name:string;mimeType:string}[]>([]);
   const [uploading,setUploading]=useState(false);
   const attachmentInput=useRef<HTMLInputElement>(null);
@@ -167,7 +181,7 @@ function ConversationSession({api,configured,devices,renderAnswer,onOpen=()=>{},
   }
   async function submit(event?: {preventDefault(): void}, sample?: string) {
     event?.preventDefault();
-    const text = (sample ?? question).trim();
+    const text = (sample ?? draft.getSnapshot()).trim();
     if (!text || busy || uploading || opening || operation.current || !modelReady) return;
     selectionMade.current=true;
     const controller = new AbortController(); operation.current = controller;
@@ -250,10 +264,10 @@ function ConversationSession({api,configured,devices,renderAnswer,onOpen=()=>{},
       </div>
       {Boolean(error||detail.error||recentRuns.error||feedError)&&<p className="notice error" role="alert">{error||errorMessage(detail.error||recentRuns.error||feedError)}</p>}
       <div className="filter-bar"><ModelSelector api={api} feature="chat" value={modelProfileId} onChange={setModelProfileId} model={modelOverride} onModelChange={setModelOverride} disabled={busy||opening}/></div>
-      <ConversationComposer label={moteText('向 Mote 提问')} placeholder={conversation?moteText('接着问，Mote 会结合前面的对话。'):moteText('比如，我最近都在忙什么？')} value={question} onChange={setQuestion} onSubmit={()=>void submit()} disabled={busy||opening} hintId="composer-hint">
+      <DraftComposer draft={draft}>{question=><ConversationComposer label={moteText('向 Mote 提问')} placeholder={conversation?moteText('接着问，Mote 会结合前面的对话。'):moteText('比如，我最近都在忙什么？')} value={question} onChange={setQuestion} onSubmit={()=>void submit()} disabled={busy||opening} hintId="composer-hint">
         {Boolean(attachments.length)&&<div className="chat-attachment-list">{attachments.map(attachment=><span key={attachment.id} className="chat-attachment"><ImagePlus size={14}/><span>{attachment.name}</span><button type="button" disabled={busy||uploading} aria-label={moteText("移除图片 {0}",attachment.name)} onClick={()=>setAttachments(current=>current.filter(item=>item.id!==attachment.id))}><X size={13}/></button></span>)}</div>}
         <div><span><ShieldCheck size={14}/>{moteText("只读查询 · 回答附带原始证据")}</span><input ref={attachmentInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={event=>void addImages(event.target.files)}/><button className="chat-image-button" type="button" aria-label={moteText("添加图片")} title={moteText("聊天图片最多 4 张，每张不超过 8 MiB，支持 PNG、JPEG、WebP。") } disabled={busy||uploading||opening||attachments.length>=4} onClick={()=>attachmentInput.current?.click()}>{uploading?<LoaderCircle className="spin" size={17}/>:<ImagePlus size={17}/>}</button><span id="composer-hint" className="composer-hint">{moteText("Enter 发送 · Shift+Enter 换行")}</span><button className="send-button" type="submit" disabled={busy || uploading || opening || !question.trim() || !modelReady} aria-label={moteText("发送问题")}>{busy ? <LoaderCircle className="spin" size={19}/> : <ArrowUp size={19}/>}</button></div>
-      </ConversationComposer>
+      </ConversationComposer>}</DraftComposer>
       {!conversation && !busy && !opening && <div className="suggestions"><span>{moteText("从一个小问题开始")}</span>{[moteText("我最近都做了些什么？"), moteText("这周的时间主要花在了哪里？"), moteText("最近有哪些值得接着做的事情？")].map(sample => <button key={sample} disabled={!modelReady} onClick={() => void submit(undefined, sample)}>{sample}<ArrowRight size={14}/></button>)}</div>}
     </section>}
   </div>;
