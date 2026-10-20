@@ -1,58 +1,73 @@
-# Mote UI 清晰度迭代：执行状态
+# Mote UI：15 轮 HTML 原型迭代
 
-本次目标是沿用 Anthropic 的独立评估循环，对 Mote 现有 UI 实际迭代约 15 轮，并增加首屏理解、功能覆盖和完整旅程的要求。
+已完成 **R0 源码重建基线 + R1–R15 共 16 个 HTML 候选**。本次评估产品第一眼理解、功能发现、主次层级、导航、输入、反馈和恢复路径，全部使用演示数据及模拟状态。
 
-**当前状态：准备材料和隔离运行环境已建立；R0 实操被访问通道审批阻塞，已完成 UI 改进轮次为 0/15。产品代码尚未修改。**
+## 直接查看
 
-产品基线是 `main` 的 `2c78ca8d52a7d17fae20962cf68d09a717ffc73a`。本分支的文档提交不改变产品候选。未合并的其他 PR 不视为基线已具备的行为。
-
-## 已完成的准备
-
-| 项目 | 当前成果 |
+| 交付 | 用途 |
 | --- | --- |
-| 功能盘点 | 20 类用户能力；交叉核对现有功能目录的 4 大区、16 组、78 个单元（42 core、36 advanced） |
-| 初始问题 | 12 项源码发现性风险，均等待独立 UI 实测 |
-| 独立评估规程 | 原文四项指标，加“理解与信息架构”；计分、门槛、角色隔离、阶段盲测和最终候选比较 |
-| 运行环境 | 安装依赖并构建共享包、Central Server、Central Web；真实用户作用域服务已在本地运行 |
-| 生成数据 | 空白普通账号及有数据普通账号；后者含 26 条原始记录、6 个来源、35 份资料、3 条待办 |
-| 基线记录 | R0 标记为 `blocked`；所有 UI 分数为 `null`，所有未执行任务为 `not_run` |
+| [最终 HTML](prototype/dist/mote-ui-final.html) | 下载后用浏览器打开，直接操作完整演示 |
+| [四阶段对照](prototype/dist/mote-ui-comparison.html) | 切换 R0 / R9 / R12 / R15 与查看宽度 |
+| [最终报告](final-report.md) | 功能地图、15 轮变化、指标、盲评、候选选择和剩余问题 |
+| [20 类功能地图](prototype/evidence/feature-map-review.md) | 每项任务的主要位置及 78 个原目录编号 |
+| [R15 独立评审](prototype/evidence/r15/review.json) | 五维评分、证据及问题 |
+| [R15 逐项语义复核](prototype/evidence/r15/coverage-review.json) | 78 项分类与具体依据 |
+| [R15 门槛判定](prototype/evidence/r15/gate-review.json) | 哪些通过、哪些仍部分完成 |
 
-环境构建和生成数据创建验证了测试准备过程，尚未验证用户能完成 UI 旅程。没有真实个人资料、截图或外部账户接入这套 fixture；模型调用未配置，因此涉及真实模型结果的旅程仍需分别记录。
+HTML 包含全部样式、图标、演示数据和交互代码。顶部工具条可切换已有资料/空账号、网页/Mac/Android 布局及浅色/深色。对照页通过隔离 iframe 打开原始候选，切换版本会重新进入演示。
 
-## 可审阅材料
+## 已完成的评估
 
-- [功能、入口与完整旅程盘点](feature-inventory.md)：三端覆盖、12 项待复核风险及自然语言任务。
-- [机器可读功能清单](feature-manifest.json)：20 类能力和源目录 78 个单元，所有运行验证状态保留为 `not_run`。
-- [15 轮执行与独立评估规程](plan.md)：五项评分、硬门槛、盲测信息隔离、候选保存和选择。
-- [每轮记录格式](schema.json)与 [R0 当前状态](rounds/r00.json)。
-- [原生端改动规划](native-ui-change-plan.md)：最小改法、已有清楚的说明及各项必要验证。
+功能分母沿用仓库已有目录：**42 个 core + 36 个 advanced = 78 个唯一单元**，归纳为 20 类用户任务。最终 78 个入口均可达；独立呈现核对为 77 清楚、1 部分、0 错位、0 缺呈现。`clear` 指主要对象和下一步清楚，不代表所有子操作或真实业务均完成。
 
-## 当前访问阻塞及拟审批范围
+R15 的 28 条交互场景和 5 份初态检查全部通过所列断言：378 个步骤，其中 200 次操作、178 次断言。独立审阅另行判断目标是否得到充分支持；自然探索的部分完成结论与剩余问题原样保留，详见最终报告。
 
-评估浏览器与本地运行容器不共享 `127.0.0.1`，直接访问本地 Web 返回连接拒绝。浏览器扩展连接也未建立。
+同一冻结 HTML 另有 [9 条定向补测](prototype/evidence/r15/supplemental/index.json)，85 步，8 条脚本通过、1 条失败：屏幕应用勾选范围在保存及重开后没有保留。登录预览的观察通过不代表账户切换成功；笔记离线演示未提供。补测单列，不并入原固定套件或追改原五维分数。
 
-启动临时 Cloudflare 公网隧道的请求被**自动审批拒绝**。审批给出的原因是：该操作会把测试 UI、认证入口及会话可访问的数据暴露到外部地址，用户原有的 UI 评估授权尚未明确包含这项外部披露。没有启动隧道，也没有采用其他外部暴露方式。
+最终独立评分为 **75/100**，三个遮名候选比较均排序 **R15 ＞ R12 ＞ R9**。八项严格门槛已判定：**4 通过、4 未通过**。推荐 R15 作为这批候选的 UI 方案，原评审结论保留 `refine`，不宣称整体验收通过。
 
-下一步拟请求用户批准的具体范围如下；批准前保持未公开状态：
+R0 依据源码基线 `2c78ca8d52a7d17fae20962cf68d09a717ffc73a` 的导航、入口、文案和设计色值重建。它并非生产界面捕获，R0 缺呈现统计也不表示原产品没有相应能力。候选全部位于 `prototype/dist/rounds/r00.html` 至 `r15.html`，对应 SHA-256 保存在每轮 candidate 和正式记录中。
 
-| 项目 | 拟执行范围 |
+## 方法与记录
+
+参考 [Anthropic 的前端生成与独立评估循环](https://www.anthropic.com/engineering/harness-design-long-running-apps)，保留 Design、Originality、Craft、Functionality，增加 Clarity；本项目权重分别为 20%、10%、15%、30%、25%，采用 0–4 分。
+
+生成器修改 HTML；独立知情评估者查看可见状态与执行记录。新上下文评估者先回答首屏问题，再按自然目标自行选路，最后用隐藏轮次、轮换顺序的材料比较保留候选。完成 15 轮与全部门槛通过分别记录。
+
+| 材料 | 内容 |
 | --- | --- |
-| 用途 | 让独立 evaluator 和全新盲测 agent 操作本轮生成数据测试环境 |
-| 传输 | 一个临时 Cloudflare HTTPS 地址，指向本地测试网关 |
-| 页面 | 当前 Central 已构建的 Web 与其真实 API；不对外代理 Vite 开发服务器 |
-| 数据 | 仅本轮生成的资料、图片和普通测试账号 |
-| 访问控制 | 随机入口凭据、固定普通测试账号的一次性入口，以及产品原有会话认证；仅接受本网关签发的普通测试会话 |
-| 凭据 | 测试账户密码随机化；所有秘密仅留在私有临时文件中 |
-| 时限 | 本轮结束关闭；每次批准的测试通道最长 8 小时，到期主动关闭网关连接 |
+| [功能源码盘点](feature-inventory.md) / [冻结分母](feature-manifest.json) | 来源、编号、20 类映射 |
+| [评估规程](plan.md) / [记录 Schema](schema.json) | 角色、刻度、门槛、证据与隔离方式 |
+| [正式逐轮记录](rounds/) | R0–R15 分数、范围、交互、盲评和下一步 |
+| [各轮原始材料](prototype/evidence/) | 评审、动作、采集及渲染元数据 |
+| [最终候选对照](prototype/evidence/final-comparison/) | 遮名材料、轮换顺序、原始排序和映射 |
+| [原生落地参考](native-ui-change-plan.md) | HTML 迭代之前的代码盘点，供后续产品实施定位 |
 
-测试网关属于运行环境准备，不改变 Mote 的认证、产品设置或默认部署方式。外部测试通道尚未验证；上表说明计划公开的范围，不代表隧道已启动或浏览器已通过认证。
+## 证据类型
 
-本地访问准备已经验证：只在 loopback 运行过一次 8 秒截止的网关，12 项检查通过，覆盖构建页面、入口与 Host 限制、匿名 API 限制、一次性普通用户登录、外来凭据和任意账号登录拒绝、真实管理员权限及 CSRF、到期断连和会话撤销。验证网关已自动停止，验证会话撤销后身份接口返回 `401`。正式网关和所有隧道均未启动。
+**jsdom 执行 HTML 的 DOM 事件，WeasyPrint/Poppler 生成静态排版图。** 文件中记录执行步骤、可见内容、候选与快照哈希、尺寸、分页及渲染兼容信息。静态图不等于浏览器截图，分页不证明真实滚动或遮挡；模拟连接、模型、任务和问答不等于真实业务验证。
 
-该检查使用与正式网关相同的到期代码，但没有实际等待 8 小时，也没有验证公网 TLS 或浏览器操作。正式使用前还须配置获批的确切 HTTPS 地址，并让隔离 Central profile 的 `publicUrl` 与其匹配。以上访问准备结果不属于 R0 UI 评分。
+## 恢复原始证据与复现
 
-## 原生端与后续执行
+为便于浏览仓库，原始 DOM JSON、静态 HTML 和大部分 PNG 按轮归档；每份原始字节都有 SHA-256。候选、评审、actions、正式记录与元数据直接保留。查看报告中原始执行文件的路径前，可先恢复归档。可重建 PDF 另有排除和复现清单。[详细说明](prototype/EVIDENCE-PACKAGING.md)
 
-当前执行环境是 Linux，无法实际运行 macOS 客户端。Android 环境缺少 SDK、完整 JDK 和可用的硬件虚拟化；原生验证须独立记录为受阻，Web 窄屏结果不能替代原生结果。
+```sh
+python3 docs/design/ui-clarity-2026-10-20/prototype/restore-evidence.py --repository-root . --extract
+node docs/design/ui-clarity-2026-10-20/prototype/finalize-rounds.mjs 15 --check
+```
 
-访问恢复后先执行 R0：冻结功能清单与评分锚点，在空用户和已有资料用户两种状态下完成独立基线操作。R1 的实际改动由这次反馈决定。每轮保存候选、操作证据、评分和下一步决定；完成约 15 轮后比较多个候选，保留表现最好的版本。不得把准备工作、静态审阅或重试计入迭代轮次。
+单个场景可以直接使用冻结候选和该轮 actions 重放：
+
+```sh
+cd docs/design/ui-clarity-2026-10-20/prototype
+node capture-dom.mjs --input dist/rounds/r15.html \
+  --url 'https://mote-prototype.invalid/?reset=1#/memories' \
+  --actions evidence/r15/existing-memory-continue.actions.json \
+  --output /tmp/mote-replayed.html
+python3 render-evidence.py /tmp/mote-replayed.html \
+  --width 1440 --height 1200 --output /tmp/mote-replayed.png
+```
+
+执行依赖包括 Node、jsdom 26.1、Ajv 2020，以及 Python、WeasyPrint 70.0、Poppler 和 CJK 字体。归档里的旧候选不要重新 build；当前 `journey-fixtures.json` 已随迭代扩展，不能代替历史 actions。若继续改动，保存为新的候选或明确的 recheck，并保留原评审。
+
+既有草稿：[PR #185](https://github.com/utopiafar/mote/pull/185)。本次修改位于本设计目录。
