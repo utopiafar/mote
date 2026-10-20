@@ -1,0 +1,2374 @@
+{
+  "version": "mote-ui-features-v1-draft",
+  "source_revision": "2c78ca8d52a7d17fae20962cf68d09a717ffc73a",
+  "status": "source_inventory_pending_live_validation",
+  "source_documents": [
+    "feature-inventory.md",
+    "../../../apps/web/src/feature-guide-catalog.ts"
+  ],
+  "notes": [
+    "用户能力的P0/P1为本次评估优先级；现有目录的core/advanced为源代码口径，两者不能直接等同。",
+    "主要管理位置为待实测的信息归属建议；当前入口保留源目录原文，包括需要核对的旧标签。",
+    "功能单元、来源类型、完整用户旅程和UI迭代轮次分别计数；本清单不代表任何旅程已通过。",
+    "运行前冻结清单版本并补充fixture状态；每项实际证据应链接至对应轮次记录。"
+  ],
+  "counts": {
+    "families": 20,
+    "p0_families": 12,
+    "p1_families": 8,
+    "sections": 4,
+    "groups": 16,
+    "units": 78,
+    "core_units": 42,
+    "advanced_units": 36
+  },
+  "families": [
+    {
+      "id": "F01",
+      "priority": "P0",
+      "user_goal": "理解 Mote，知道如何放入资料、找回和提问",
+      "platform_implementation": "三端有解释，首屏覆盖不一致",
+      "proposed_canonical_home": "首次进入的资料库/内容，补充 Home/全部功能",
+      "journey_id": "J-F01",
+      "journey_and_success_state": "从空白新用户状态说明是什么、列出可加入内容、选择一个入口到真正操作页",
+      "source_anchors": "Web `main.tsx/Overview.tsx/ScopedSummary.tsx`；Mac `index.html`；Android `MainActivity.buildLibrary/buildToday`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F02",
+      "priority": "P0",
+      "user_goal": "登录中央、连接设备、恢复连接",
+      "platform_implementation": "Web 账号；Mac 账号/浏览器批准/设备凭据；Android 账号与连接流程",
+      "proposed_canonical_home": "设置 → 账号/连接；来源 → 连接设备为快捷路径",
+      "journey_id": "J-F02",
+      "journey_and_success_state": "登录→看自己资料→退出/失效→重登；设备批准后有正确权限和状态；返回原 Ask/内容",
+      "source_anchors": "Web `web-auth.ts/AccountSettings.tsx/ClientLoginApproval.tsx/PersonalConnections.tsx`；Mac `account.ts/login-session.ts/connection-pairing.ts`；Android `CentralContent.kt/ConnectionActivity.kt`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F03",
+      "priority": "P0",
+      "user_goal": "保存随手记、保留草稿、离线恢复",
+      "platform_implementation": "Web 文字+已有附件；Mac 本地文字，附件按钮转中央 Web；Android 本地文字+中央笔记入口",
+      "proposed_canonical_home": "添加 → 随手记；历史归资料库",
+      "journey_id": "J-F03",
+      "journey_and_success_state": "输入→离页/返回草稿→保存→看到本地/同步状态→从列表打开同一原文；失败可重试且不会生成重复记",
+      "source_anchors": "Web `Notes.tsx/notes-state.ts/web-notes.ts`；Mac `note-draft.ts/ui.ts`；Android `QuickNotes.kt/NoteDraftStore.kt/CentralNotes.kt`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F04",
+      "priority": "P0",
+      "user_goal": "导入已有文件、文件夹、ZIP、音频或图片",
+      "platform_implementation": "Web 多文件/文件夹/ZIP/中央目录导入；Mac/Android 本机文件任务",
+      "proposed_canonical_home": "添加 → 导入文件/导入资料",
+      "journey_id": "J-F04",
+      "journey_and_success_state": "选择→范围/保存方式→提交→进度→需要确认时核对→回到已发布正文/原件；未配置模型去配置后返回同一任务",
+      "source_anchors": "Web `Imports.tsx/ImportQueueEntry.tsx/import-queue.ts`；Mac `ui.ts/source-files.ts`；Android `FileTaskActivity.kt/CentralImports.kt`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F05",
+      "priority": "P0",
+      "user_goal": "持续同步一个文件夹或文件",
+      "platform_implementation": "Mac/Android 真正本机来源；Web 提供导入和设备说明，中央目录导入是一次任务",
+      "proposed_canonical_home": "添加 → 同步文件夹；后续管理归来源",
+      "journey_id": "J-F05",
+      "journey_and_success_state": "选择本机范围→首次同步与持续选项→保存→查看来源→更改文件→看到同来源新版→暂停/恢复",
+      "source_anchors": "Mac `source-manager.ts/source-sync.ts/source-files.ts`；Android `FileTaskActivity.kt/SourcesActivity.kt/LocalSources.kt`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F06",
+      "priority": "P0",
+      "user_goal": "记录屏幕、页面、应用活动、通知/媒体状态",
+      "platform_implementation": "采集在 Mac/Android；Web 浏览和设备状态",
+      "proposed_canonical_home": "添加 → 记录屏幕；范围管理归来源",
+      "journey_id": "J-F06",
+      "journey_and_success_state": "选择范围→需要的权限→明确开始→查看记录→暂停→历史仍可读；拒绝屏幕权限后笔记/文件继续",
+      "source_anchors": "Mac `index.html screen/privacy`、`collector.ts/capture-stages.ts`；Android `MainActivity.buildCapture/buildPrivacy`、`CaptureRecordsActivity.kt`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F07",
+      "priority": "P0",
+      "user_goal": "管理隐私和三个不同暂停范围",
+      "platform_implementation": "Mac/Android 本机权限/按应用/遮挡/过滤；Web 来源暂停和授权撤销",
+      "proposed_canonical_home": "来源 → 对应来源；设备隐私归本机设置",
+      "journey_id": "J-F07",
+      "journey_and_success_state": "暂停屏幕、暂停一来源、暂停所有发送各自呈现当前范围→恢复→等待数据不丢",
+      "source_anchors": "Mac `ui.ts/upload-gate.ts/privacy.ts`；Android `SendPauseControl.kt/MainActivity.kt`；Web `Sources.tsx`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F08",
+      "priority": "P0",
+      "user_goal": "浏览完整资料、原始记录、文件/录音，并核对来源",
+      "platform_implementation": "Web 完整；Mac 内容以本机/接收数据为中心，详情可跳中央；Android 本地内容/中央归档切换",
+      "proposed_canonical_home": "资料库/内容",
+      "journey_id": "J-F08",
+      "journey_and_success_state": "筛选/选择→正文→来源/时间/版本→证据原件→关闭回同列表位置；空/过滤无结果/读取失败有清楚下一步",
+      "source_anchors": "Web `Archive.tsx/LibraryBrowse.tsx/ReferenceDetail.tsx/Files.tsx`；Mac `content-library-ui.ts/content-library.ts`；Android `CentralLibrary.kt/CaptureRecordsActivity.kt/FileContentActivity.kt`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F09",
+      "priority": "P0",
+      "user_goal": "根据资料提问，查看依据和历史",
+      "platform_implementation": "三端直接 Ask；Mac 引用详情转中央；Web 有图片提问",
+      "proposed_canonical_home": "问一问",
+      "journey_id": "J-F09",
+      "journey_and_success_state": "输入→发送→看真实工作状态→离页后回到同对话→完成答案→点引用回原文；停止/失败/未配置时恢复",
+      "source_anchors": "Web `Ask.tsx/ConversationShell.tsx/Conversations.tsx`；Mac `ask.ts/ask-presentation.ts/ui.ts`；Android `CentralScreens.kt/CentralConversationPresentation.kt`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F10",
+      "priority": "P0",
+      "user_goal": "看后台正在做什么，处理失败或等待确认",
+      "platform_implementation": "Web Activity；Mac 本机发送+中央工作；Android 嵌入 CentralContent Activity",
+      "proposed_canonical_home": "活动",
+      "journey_id": "J-F10",
+      "journey_and_success_state": "从来源/导入/问答跳相关活动→辨认目标/状态/待自己动作→有效重试/取消/补充→打开结果",
+      "source_anchors": "Web `Activity.tsx/WorkProgress.tsx/WorkIssueNotice.tsx`；Mac `work-activity-ui.ts/work-activity.ts`；Android `CentralWorkActivity.kt`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F11",
+      "priority": "P0",
+      "user_goal": "配置必要模型，随后继续原任务",
+      "platform_implementation": "Web 完整，普通用户 scoped settings；Mac 中央 Web；Android native CentralModels",
+      "proposed_canonical_home": "设置 → 模型与服务",
+      "journey_id": "J-F11",
+      "journey_and_success_state": "未配置提示→对应模型页→配置/保存→返回原提问或导入→继续原草稿；直接进设置不伪造返回任务",
+      "source_anchors": "Web `ModelStartGuide.tsx/ScopedModelsForm.tsx/ModelAssignments.tsx/ServerSettings.tsx`；Android `CentralModels.kt`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F12",
+      "priority": "P0",
+      "user_goal": "找到所有已支持输入来源，不漏掉重要来源",
+      "platform_implementation": "Web SourceCatalog 完整目录；Mac 本机来源+中央；Android 本机 Sources+中央多个入口",
+      "proposed_canonical_home": "来源 → 新增数据源；本机 Add 使用同一来源定义",
+      "journey_id": "J-F12",
+      "journey_and_success_state": "从“我有某类资料”找到合适来源→看到授权与处理所在端→完成设置→看到已接入来源",
+      "source_anchors": "Web `SourceCatalog.tsx/Sources.tsx/DiscoveryLink.tsx`；Mac `ui.ts/index.html sources`；Android `MainActivity.buildSources/SourcesActivity.kt`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F13",
+      "priority": "P1",
+      "user_goal": "接入飞书文档/日历、Google 日历、Gmail、厂商录音、MCP资料、外部/NAS引用",
+      "platform_implementation": "中央 Web 和 Android native Central connectors；Mac 经中央 Web；Mac 另有本机 Calendar",
+      "proposed_canonical_home": "来源 → 新增数据源 → 指定来源",
+      "journey_id": "J-F13",
+      "journey_and_success_state": "选提供方→准备 CLI/OAuth（若需要）→授权→选择内容范围→同步→回来源或资料；单独错误重试/断开",
+      "source_anchors": "Web `LarkSettings.tsx/ScopedGmail.tsx/RecordingsSettings.tsx/ScopedMcpImport.tsx/Sources.tsx`；Android `CentralLark*/CentralRecordings.kt/CentralConnectors.kt/CentralMcp.kt`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F14",
+      "priority": "P1",
+      "user_goal": "接入 Coding Agent 会话并回看经验依据",
+      "platform_implementation": "Mac 发现 Claude Code/Codex/Kimi 并同步；Web/Android 阅读和同步状态",
+      "proposed_canonical_home": "Mac 来源 → 连接 Coding Agent；正文归资料库",
+      "journey_id": "J-F14",
+      "journey_and_success_state": "发现本机 Agent→选择历史/过滤→保存→接收状态→已发布会话正文→核对工具记录/来源→可选记忆",
+      "source_anchors": "Mac `coding-agents.ts/source-manager.ts/ui.ts`；Web `CodingUploads.tsx/LibraryBrowse.tsx`；Android `CentralLibrary.materials/codingStatus`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F15",
+      "priority": "P1",
+      "user_goal": "浏览、纠正、删除、导出和手动提取记忆",
+      "platform_implementation": "Web 和 Android native central；Mac 中央 Web",
+      "proposed_canonical_home": "资料库 → 记忆；配置归设置",
+      "journey_id": "J-F15",
+      "journey_and_success_state": "记忆→当前/历史/证据→核对→修正或手动提取→任务→新结果；待澄清问题从 Ask/相关活动回答",
+      "source_anchors": "Web `Memories.tsx/MemoryProgress.tsx/OwnerQuestions.tsx/ScopedMemoryControl.tsx`；Android `CentralLibrary.memories/memory`、`CentralAdmin.memoryJobs`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F16",
+      "priority": "P1",
+      "user_goal": "生成阶段洞察并回看证据",
+      "platform_implementation": "Web 和 Android native central；Mac 中央 Web",
+      "proposed_canonical_home": "资料库 → 洞察；Ask/Home 可有入口",
+      "journey_id": "J-F16",
+      "journey_and_success_state": "选时间/设备与问题→提交→离页进度→结果→原文引用→历史",
+      "source_anchors": "Web `Insights.tsx/InsightReport.tsx/InsightProgress.tsx`；Android `CentralLibrary.insights`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F17",
+      "priority": "P1",
+      "user_goal": "管理普通待办，审核日程建议再写日历",
+      "platform_implementation": "Web 有 Todos 和 Actions；Mac 已授权日历执行；Android native Actions",
+      "proposed_canonical_home": "今天 → 行动（待办/日程建议两个可区分区域）",
+      "journey_id": "J-F17",
+      "journey_and_success_state": "创建普通待办→完成；日程建议→原文核对→选真实设备/日历→固定预览/确认→设备写入/核对结果",
+      "source_anchors": "Web `Actions.tsx/Todos.tsx/ActionReview.tsx`；Mac `calendar-actions.ts/ui.ts`；Android `CentralAdmin.actions`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F18",
+      "priority": "P1",
+      "user_goal": "给其他 Chatbot/MCP 与设备授予或撤销权限",
+      "platform_implementation": "Web/Android central；Mac 中央 Web",
+      "proposed_canonical_home": "来源 → 对外授权",
+      "journey_id": "J-F18",
+      "journey_and_success_state": "新建指定用途授权→查看连接方式→检索或设备接收→列出/撤销→确认状态",
+      "source_anchors": "Web `PersonalConnections.tsx/Connections.tsx/DevicePairing.tsx`；Android `CentralAdmin.connections/CentralMcp.kt`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F19",
+      "priority": "P1",
+      "user_goal": "自动记忆暂停、选择记忆方案、可信插件安装/启停",
+      "platform_implementation": "Web PluginCenter 和 scoped 分支；Android CentralPlugins；Mac 中央 Web",
+      "proposed_canonical_home": "设置 → 自动记忆与插件",
+      "journey_id": "J-F19",
+      "journey_and_success_state": "发现/已安装→详情/依赖/授权→准备→明确激活→确认当前方案；暂停/恢复自动处理",
+      "source_anchors": "Web `PluginCenter.tsx/scoped-plugin-center.ts/ScopedMemoryIntegration.tsx/FeatureInventory.tsx`；Android `CentralPlugins.kt`",
+      "live_validation": "not_run"
+    },
+    {
+      "id": "F20",
+      "priority": "P1",
+      "user_goal": "存储/保留/备份/导出/删除、用量、诊断、语言与外观",
+      "platform_implementation": "三端各自本机设置+中央管理；Web 中央存储；费用在中央",
+      "proposed_canonical_home": "设置 → 对应维护项",
+      "journey_id": "J-F20",
+      "journey_and_success_state": "查看当前范围→编辑草稿→保存/取消；导出生成文件→恢复确认；诊断筛选/下载；切换主题和语言保持草稿/位置",
+      "source_anchors": "Web `Vault.tsx/ScopedVault.tsx/ContentStorage.tsx/Usage.tsx/Diagnostics.tsx/AppearanceSelector.tsx`；Mac `ui.ts/config.ts/appearance.ts`；Android `BackupActivity.kt/MainActivity.kt/MoteAppearance.kt`",
+      "live_validation": "not_run"
+    }
+  ],
+  "guide_groups": [
+    {
+      "id": "G05",
+      "section_id": "capture",
+      "section_title": "接入与记录",
+      "title": "随手记与已有附件",
+      "units": [
+        {
+          "id": "C12",
+          "authored_priority": "core",
+          "title": "随手记下文字",
+          "purpose": "保存快速笔记，保留本地草稿，并查看离线待同步或已经保存的记录。",
+          "primary_target": {
+            "pageId": "notes",
+            "href": "#/library/notes",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "随手记",
+            "path": "资料库工具 → 随手记",
+            "where": "笔记编辑器下方查看草稿、待同步队列和历史。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C13",
+          "authored_priority": "core",
+          "title": "上传已有图片或音频附件",
+          "purpose": "随文字上传已有图片或音频文件，也可以只保存附件。",
+          "primary_target": {
+            "pageId": "notes",
+            "href": "#/library/notes",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "随手记",
+            "path": "资料库工具 → 随手记 → 图片与语音附件",
+            "where": "在编辑器附件入口选择已有图片或音频文件；保存后从历史或资料库打开证据。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=images",
+              "collectionId": null,
+              "categoryId": "images",
+              "label": "图片",
+              "path": "设置 → 模型与服务 → 图片",
+              "where": "在「图片」查看统一处理与授权，历史任务位于「处理已有图片」。"
+            },
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=file-processing",
+              "collectionId": null,
+              "categoryId": "file-processing",
+              "label": "文件与语音",
+              "path": "设置 → 模型与服务 → 文件与语音",
+              "where": "在「文件与语音」查看模型安装、规则、方案与服务，具体操作在对应区域。"
+            }
+          ],
+          "condition": null,
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G04",
+      "section_id": "capture",
+      "section_title": "接入与记录",
+      "title": "导入文档、文件夹和媒体",
+      "units": [
+        {
+          "id": "C09",
+          "authored_priority": "core",
+          "title": "导入已有文档、文件夹和媒体",
+          "purpose": "把已有聊天导出、文档、笔记和附件提交到独立导入队列，并补充背景。",
+          "primary_target": {
+            "pageId": "imports",
+            "href": "#/library/import",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "导入",
+            "path": "资料库 → 导入资料；资料库工具 → 导入",
+            "where": "选择文件、文件夹或拖入；填写资料说明后加入队列。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C10",
+          "authored_priority": "core",
+          "title": "查看并处理导入进度",
+          "purpose": "分清原件归档、解析预览、记录发布和记忆整理，处理需要确认或重试的步骤。",
+          "primary_target": {
+            "pageId": "imports",
+            "href": "#/library/import",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "导入",
+            "path": "资料库工具 → 导入 → 导入详情",
+            "where": "选择一条本地队列或中央导入记录，查看详情与状态对应的操作。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "模型与服务",
+              "path": "设置 → 模型与服务",
+              "where": "进入后按页面中的名称操作。"
+            }
+          ],
+          "condition": "操作随所选导入的状态出现；没有导入记录时先提交文件。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C11",
+          "authored_priority": "core",
+          "title": "删除整次导入",
+          "purpose": "确认移除一次导入及不再被其他资料使用的依赖内容。",
+          "primary_target": {
+            "pageId": "imports",
+            "href": "#/library/import",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "导入",
+            "path": "资料库工具 → 导入 → 导入详情 → 删除这次导入",
+            "where": "选中中央导入记录后，在详情底部查看「删除这次导入」。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": "只有已有中央导入记录才有此操作；进行中的接收会禁用删除。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A01",
+          "authored_priority": "advanced",
+          "title": "从中央机器的目录导入",
+          "purpose": "让中央节点复制其机器上可读取的目录内容进入归档。",
+          "primary_target": {
+            "pageId": "imports",
+            "href": "#/library/import",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "导入",
+            "path": "资料库工具 → 导入 → 服务器目录",
+            "where": "切换到服务器目录方式，填写「中央服务器上的目录」。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A02",
+          "authored_priority": "advanced",
+          "title": "选择导入解析器和图片处理方案",
+          "purpose": "为当前导入选择已安装的来源解析器，或调整其图片处理方案。",
+          "primary_target": {
+            "pageId": "imports",
+            "href": "#/library/import",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "导入",
+            "path": "资料库工具 → 导入 → 解析方式 / 修改图片处理",
+            "where": "提交表单中的解析方式，以及导入详情里的图片处理方案。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "extensions",
+              "href": "#/system/plugins",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "自动记忆与插件",
+              "path": "设置 → 自动记忆与插件",
+              "where": "进入后按页面中的名称操作。"
+            }
+          ],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A03",
+          "authored_priority": "advanced",
+          "title": "恢复被中断的本地上传",
+          "purpose": "在上传队列继续、重试或丢弃尚未完成的本地提交。",
+          "primary_target": {
+            "pageId": "imports",
+            "href": "#/library/import",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "导入",
+            "path": "资料库工具 → 导入 → 本地上传队列",
+            "where": "查看本地队列卡片；控制按钮随上传状态出现。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": "需要未完成或失败的本地上传队列项。",
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G03",
+      "section_id": "capture",
+      "section_title": "接入与记录",
+      "title": "接入来源、飞书与录音",
+      "units": [
+        {
+          "id": "C07",
+          "authored_priority": "core",
+          "title": "选择要加入的来源",
+          "purpose": "按需加入文件、引用或外部服务，找到每种来源的授权和选择范围。",
+          "primary_target": {
+            "pageId": "sourceCatalog",
+            "href": "#/connections/add",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "新增数据源",
+            "path": "采集与设备 → 新增数据源",
+            "where": "先选择录音、设备、导入文件或在线资料卡片；管理已有来源使用「管理已接入来源」。"
+          },
+          "contextual_targets": [
+            {
+              "pageId": "imports",
+              "href": "#/library/import",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "导入",
+              "path": "来源 → 添加来源 → 导入",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "lark",
+              "href": "#/connections/lark",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "飞书",
+              "path": "采集与设备 → 来源与连接 → 飞书",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "recordings",
+              "href": "#/connections/recordings",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "录音归档",
+              "path": "采集与设备 → 来源与连接 → 录音归档",
+              "where": "进入后按页面中的名称操作。"
+            }
+          ],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C08",
+          "authored_priority": "core",
+          "title": "管理来源接收与内容关系",
+          "purpose": "暂停或恢复一个来源的接收，查看同步情况，并说明内容与你的关系。",
+          "primary_target": {
+            "pageId": "sources",
+            "href": "#/connections",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "来源",
+            "path": "采集与设备 → 来源与连接 → 来源 → 已连接来源",
+            "where": "选择已连接来源，查看状态、内容关系和归档入口。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": "需要已有来源；部分服务的同步控制随连接状态出现。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A04",
+          "authored_priority": "advanced",
+          "title": "保存外部或 NAS 引用",
+          "purpose": "记录资料名称和位置，便于以后从能读取它的客户端提交正文快照。",
+          "primary_target": {
+            "pageId": "sources",
+            "href": "#/connections?setup=reference",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "来源",
+            "path": "新增数据源 → 外部文件 / NAS 引用",
+            "where": "从「新增数据源」选择「外部文件 / NAS 引用」，在来源设置中完成该服务的配置。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A05",
+          "authored_priority": "advanced",
+          "title": "只读归档 Google 日历",
+          "purpose": "授权 Google 后选择日历，把选中的日程同步到资料库供回顾。",
+          "primary_target": {
+            "pageId": "sources",
+            "href": "#/connections?setup=google",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "来源",
+            "path": "新增数据源 → Google Calendar",
+            "where": "从「新增数据源」选择「Google Calendar」，在来源设置中完成该服务的配置。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=connectors",
+              "collectionId": null,
+              "categoryId": "connectors",
+              "label": "来源与外部应用",
+              "path": "设置 → 模型与服务 → 来源与外部应用",
+              "where": "在「来源与外部应用」编辑并校验部署草稿，核对当前生效值。"
+            }
+          ],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A06",
+          "authored_priority": "advanced",
+          "title": "只读归档 Gmail 邮件",
+          "purpose": "授权 Google 后归档邮件正文、发件人和时间，持续同步或继续分页。",
+          "primary_target": {
+            "pageId": "sources",
+            "href": "#/connections?setup=gmail",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "来源",
+            "path": "新增数据源 → Gmail 邮件",
+            "where": "从「新增数据源」选择「Gmail 邮件」，在来源设置中完成该服务的配置。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=connectors",
+              "collectionId": null,
+              "categoryId": "connectors",
+              "label": "来源与外部应用",
+              "path": "设置 → 模型与服务 → 来源与外部应用",
+              "where": "在「来源与外部应用」编辑并校验部署草稿，核对当前生效值。"
+            }
+          ],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A07",
+          "authored_priority": "advanced",
+          "title": "从远程 MCP 选择资源导入",
+          "purpose": "查看远程 MCP 服务公开的资源列表，选择资源一次性加入归档。",
+          "primary_target": {
+            "pageId": "sources",
+            "href": "#/connections?setup=mcp",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "来源",
+            "path": "新增数据源 → MCP 资料服务",
+            "where": "从「新增数据源」选择「MCP 资料服务」，在来源设置中完成该服务的配置。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A09",
+          "authored_priority": "advanced",
+          "title": "连接飞书文档和日历",
+          "purpose": "在中央节点授权飞书，归档你创建、编辑或打开的文档及活动线索，也可持续跟踪指定范围和日历。",
+          "primary_target": {
+            "pageId": "lark",
+            "href": "#/connections/lark",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "飞书",
+            "path": "新增数据源 → 飞书文档与日历",
+            "where": "选择「飞书文档与日历」卡片，再按 CLI、应用、账号授权和内容选择的步骤设置。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A10",
+          "authored_priority": "advanced",
+          "title": "归档厂商录音和转写",
+          "purpose": "连接中央节点已授权的录音账号，选择首次历史范围及是否继续后台同步。",
+          "primary_target": {
+            "pageId": "recordings",
+            "href": "#/connections/recordings",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "录音归档",
+            "path": "新增数据源 → 录音与转写 → 录音厂商",
+            "where": "先选择飞书录音 / 妙记或钉钉录音 / 闪记卡片，再查看该厂商的首次授权、历史范围和同步设置。"
+          },
+          "contextual_targets": [
+            {
+              "pageId": "recordings",
+              "href": "#/connections/recordings?provider=feishu",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "飞书录音 / 妙记",
+              "path": "新增数据源 → 飞书录音 / 妙记",
+              "where": "查看此厂商的首次授权、历史范围和同步。"
+            },
+            {
+              "pageId": "recordings",
+              "href": "#/connections/recordings?provider=dingtalk",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "钉钉录音 / 闪记",
+              "path": "新增数据源 → 钉钉录音 / 闪记",
+              "where": "查看此厂商的首次授权、历史范围和同步。"
+            }
+          ],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A11",
+          "authored_priority": "advanced",
+          "title": "查看来源版本和原位置",
+          "purpose": "查看一个来源的当前或历史版本，以及原位置和元数据。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=sources",
+            "collectionId": "sources",
+            "categoryId": null,
+            "label": "来源资料",
+            "path": "资料库 → 来源资料",
+            "where": "选中来源后展开版本和证据。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": "需要已归档的来源版本；版本详情随所选来源显示。",
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G02",
+      "section_id": "capture",
+      "section_title": "接入与记录",
+      "title": "连接设备与查看采集",
+      "units": [
+        {
+          "id": "C03",
+          "authored_priority": "core",
+          "title": "从今天开始整理资料",
+          "purpose": "查看已有资料和最近洞察，找到连接设备、导入资料或配置问答的第一步。",
+          "primary_target": {
+            "pageId": "overview",
+            "href": "#/today",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "今天",
+            "path": "今天",
+            "where": "初次使用指引、最近资料和最近洞察；具体入口随资料库状态显示。"
+          },
+          "contextual_targets": [
+            {
+              "pageId": "devices",
+              "href": "#/connections/devices",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "采集与设备",
+              "path": "今天 → 连接设备",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "imports",
+              "href": "#/library/import",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "导入",
+              "path": "今天 → 导入资料",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=providers",
+              "collectionId": null,
+              "categoryId": "providers",
+              "label": "模型连接（Provider）",
+              "path": "设置 → 模型与服务 → 模型连接（Provider）",
+              "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+            },
+            {
+              "pageId": "insights",
+              "href": "#/library/insights",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "洞察",
+              "path": "今天 → 最近洞察",
+              "where": "进入后按页面中的名称操作。"
+            }
+          ],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C04",
+          "authored_priority": "core",
+          "title": "查看设备上报的采集与同步状态",
+          "purpose": "了解每台设备最后联系、最后采集以及待上传、受阻和已保留的内容。",
+          "primary_target": {
+            "pageId": "devices",
+            "href": "#/connections/devices",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "采集与设备",
+            "path": "采集与设备 → 设备",
+            "where": "查看设备卡片，展开详细信息。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C05",
+          "authored_priority": "core",
+          "title": "连接或重新授权设备",
+          "purpose": "生成一次性邀请，让原生客户端确认中央节点地址后连接。",
+          "primary_target": {
+            "pageId": "connections",
+            "href": "#/connections/access",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "对外授权",
+            "path": "采集与设备 → 连接设备 → 对外授权 → 连接设备",
+            "where": "选择「连接设备」，填写地址、名称和设备身份。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C06",
+          "authored_priority": "core",
+          "title": "检查和撤销已发出的连接权限",
+          "purpose": "查看每个连接的名称、权限和状态，撤销不再使用的访问。",
+          "primary_target": {
+            "pageId": "connections",
+            "href": "#/connections/access",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "对外授权",
+            "path": "采集与设备 → 来源与连接 → 对外授权 → 已授权连接",
+            "where": "页面下方「已授权连接」列表。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": "已有授权连接时才能选择一条连接并撤销。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A08",
+          "authored_priority": "advanced",
+          "title": "让其他 Chatbot 使用 Mote MCP",
+          "purpose": "为支持 HTTP MCP 的客户端生成独立的只读或指定来源写入配置。",
+          "primary_target": {
+            "pageId": "connections",
+            "href": "#/connections/access",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "对外授权",
+            "path": "采集与设备 → 来源与连接 → 对外授权 → 连接 Chatbot",
+            "where": "切换到「连接 Chatbot」，查看 MCP 访问权限与配置。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=connectors",
+              "collectionId": null,
+              "categoryId": "connectors",
+              "label": "来源与外部应用",
+              "path": "设置 → 模型与服务 → 来源与外部应用",
+              "where": "在「来源与外部应用」编辑并校验部署草稿，核对当前生效值。"
+            }
+          ],
+          "condition": null,
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G06",
+      "section_id": "use",
+      "section_title": "阅读与使用",
+      "title": "阅读正文与原始证据",
+      "units": [
+        {
+          "id": "C14",
+          "authored_priority": "core",
+          "title": "浏览已经发布的资料正文",
+          "purpose": "按来源、类型、设备和日期筛选正式资料，打开可读正文。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=materials",
+            "collectionId": "materials",
+            "categoryId": null,
+            "label": "全部资料",
+            "path": "资料库 → 全部资料",
+            "where": "默认分类为「全部资料」；使用筛选后选中资料。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C15",
+          "authored_priority": "core",
+          "title": "核对资料正文、来源与处理状态",
+          "purpose": "阅读当前或获准查看的历史正文，追溯原件，并了解哪些派生产物还在处理。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=materials",
+            "collectionId": "materials",
+            "categoryId": null,
+            "label": "全部资料",
+            "path": "资料库 → 全部资料 → 资料详情",
+            "where": "选中一份资料，查看正文及「来源与处理」。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": "需要已发布资料；索引重试只在失败状态并提供控制时出现。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C16",
+          "authored_priority": "core",
+          "title": "说明单份资料关系并提取记忆",
+          "purpose": "为一份资料覆盖来源的内容关系，并从它当前可用的正文提取记忆。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=materials",
+            "collectionId": "materials",
+            "categoryId": null,
+            "label": "全部资料",
+            "path": "资料库 → 全部资料 → 资料详情 → 来源与处理 / 记忆入口",
+            "where": "先选中资料，在「来源与处理」中声明关系；符合条件时使用记忆提取入口。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=model",
+              "collectionId": null,
+              "categoryId": "model",
+              "label": "模块与模型",
+              "path": "设置 → 模型与服务 → 模块与模型",
+              "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+            }
+          ],
+          "condition": "记忆入口仅对当前、输入已就绪的正式资料提供。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C17",
+          "authored_priority": "core",
+          "title": "查看原始采集证据",
+          "purpose": "按日期、设备或内容类型查找原始记录，打开图像、文本和附件核对。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=records",
+            "collectionId": "records",
+            "categoryId": null,
+            "label": "原始采集记录",
+            "path": "资料库 → 原始采集记录 → 记录 → 完整详情",
+            "where": "选中记录后打开完整证据详情。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C18",
+          "authored_priority": "core",
+          "title": "删除一条原始记录",
+          "purpose": "核对影响后移除原始记录，让依赖它的证据失效。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=records",
+            "collectionId": "records",
+            "categoryId": null,
+            "label": "原始采集记录",
+            "path": "资料库 → 原始采集记录 → 完整详情 → 删除这条记录",
+            "where": "打开一条记录的完整详情，在删除操作前核对依赖影响。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": "需要先打开一条可删除的原始记录。",
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G08",
+      "section_id": "use",
+      "section_title": "阅读与使用",
+      "title": "提问与回看对话",
+      "units": [
+        {
+          "id": "C20",
+          "authored_priority": "core",
+          "title": "围绕归档资料提问",
+          "purpose": "开始或继续对话，让问答模型检索已归档证据，阅读答案并打开引用。",
+          "primary_target": {
+            "pageId": "ask",
+            "href": "#/ask",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "问一问",
+            "path": "问一问",
+            "where": "在对话输入区提问；答案中的引用可打开证据。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=providers",
+              "collectionId": null,
+              "categoryId": "providers",
+              "label": "模型连接（Provider）",
+              "path": "设置 → 模型与服务 → 模型连接（Provider）",
+              "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+            },
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=model",
+              "collectionId": null,
+              "categoryId": "model",
+              "label": "模块与模型",
+              "path": "设置 → 模型与服务 → 模块与模型",
+              "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+            }
+          ],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C21",
+          "authored_priority": "core",
+          "title": "回看和管理对话历史",
+          "purpose": "继续过去对话，查看更多轮次，核对引用、用量和读取记录，或删除整段对话。",
+          "primary_target": {
+            "pageId": "ask",
+            "href": "#/ask",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "问一问",
+            "path": "问一问 → 对话历史",
+            "where": "在对话历史选中记录；具体轮次的用量和轨迹在该轮详情。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": "删除和轮次详情需要已有对话；读取轨迹依记录存在情况显示。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C22",
+          "authored_priority": "core",
+          "title": "随问题提交图片",
+          "purpose": "直接为当前问题选择图片，并在发送前移除不需要的附件。",
+          "primary_target": {
+            "pageId": "ask",
+            "href": "#/ask",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "问一问",
+            "path": "问一问 → 输入区 → 添加图片",
+            "where": "使用对话输入区的图片入口，发送后在该轮查看附件信息。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=providers",
+              "collectionId": null,
+              "categoryId": "providers",
+              "label": "模型连接（Provider）",
+              "path": "设置 → 模型与服务 → 模型连接（Provider）",
+              "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+            }
+          ],
+          "condition": null,
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G09",
+      "section_id": "use",
+      "section_title": "阅读与使用",
+      "title": "查看、纠正与整理记忆",
+      "units": [
+        {
+          "id": "C23",
+          "authored_priority": "core",
+          "title": "浏览有证据的记忆",
+          "purpose": "搜索已保存的记忆，核对结论、适用边界、状态和支持它的原始资料。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=memories",
+            "collectionId": "memories",
+            "categoryId": null,
+            "label": "记忆",
+            "path": "资料库 → 记忆",
+            "where": "在「记忆」视图筛选并打开卡片。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C24",
+          "authored_priority": "core",
+          "title": "纠正、删除或导出一条记忆",
+          "purpose": "把自己的纠正保存为替代版本，或删除结论、下载文本。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=memories",
+            "collectionId": "memories",
+            "categoryId": null,
+            "label": "记忆",
+            "path": "资料库 → 记忆 → 记忆详情",
+            "where": "选中记忆，在详情使用「纠正记忆」「删除记忆」或「下载文本」。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": "需要已有记忆；被替代版本不提供当前纠正操作。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C25",
+          "authored_priority": "core",
+          "title": "手动提取记忆",
+          "purpose": "从当前范围或明确选中的资料启动提取，选择模型与配方并跟踪结果。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=memories",
+            "collectionId": "memories",
+            "categoryId": null,
+            "label": "记忆",
+            "path": "资料库 → 记忆 → 提取记忆；原始或正式资料详情 → 记忆提取",
+            "where": "在记忆视图使用手动提取；也可从满足条件的资料详情启动单份提取。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=model",
+              "collectionId": null,
+              "categoryId": "model",
+              "label": "模块与模型",
+              "path": "设置 → 模型与服务 → 模块与模型",
+              "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+            }
+          ],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C26",
+          "authored_priority": "core",
+          "title": "回答需要你澄清的问题",
+          "purpose": "在相关工作或资料中补充信息，帮助 Mote 处理这份输入的疑问。",
+          "primary_target": {
+            "pageId": "ask",
+            "href": "#/ask",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "问一问",
+            "path": "问一问中的待澄清问题；活动详情 / 资料来源上下文 → 需要你补充",
+            "where": "在问一问历史、活动详情或资料上下文查找「需要你补充」的问题入口。具体问题链接由现有对象提供。"
+          },
+          "contextual_targets": [
+            {
+              "pageId": "activity",
+              "href": "#/activity",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "活动",
+              "path": "活动 → 工作详情 → 需要你补充",
+              "where": "打开有澄清请求的工作。"
+            },
+            {
+              "pageId": "archive",
+              "href": "#/library?view=materials",
+              "collectionId": "materials",
+              "categoryId": null,
+              "label": "全部资料",
+              "path": "资料库 → 全部资料 → 来源与处理",
+              "where": "查看资料上下文中的澄清请求。"
+            }
+          ],
+          "setup_targets": [],
+          "condition": "只有实际产生澄清问题时才出现；没有固定独立的全局问题页面。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A16",
+          "authored_priority": "advanced",
+          "title": "核对记忆的历史和有效时间",
+          "purpose": "查看某一时间有效的记忆、旧版本和替代或矛盾关系。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=memories",
+            "collectionId": "memories",
+            "categoryId": null,
+            "label": "记忆",
+            "path": "资料库 → 记忆 → 历史 / 截至时间筛选 → 记忆详情",
+            "where": "在记忆筛选区切换历史或截至时间，然后打开卡片。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": "历史关联、审核和生成记录依所选记忆存在情况显示。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A17",
+          "authored_priority": "advanced",
+          "title": "从一条当前记忆继续整理",
+          "purpose": "以一条已发布整理记忆为起点，使用整合配方生成进一步整理结果。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=memories",
+            "collectionId": "memories",
+            "categoryId": null,
+            "label": "记忆",
+            "path": "资料库 → 记忆 → 可用记忆详情 → 从这条记忆开始整理",
+            "where": "选择符合条件的当前整理记忆，点击「从这条记忆开始整理」。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=model",
+              "collectionId": null,
+              "categoryId": "model",
+              "label": "模块与模型",
+              "path": "设置 → 模型与服务 → 模块与模型",
+              "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+            }
+          ],
+          "condition": "只在当前、已发布且满足整合条件的整理记忆详情出现。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A18",
+          "authored_priority": "advanced",
+          "title": "调整记忆策略和回顾节奏",
+          "purpose": "设置提取历史窗口、整合与回顾节奏，以及默认、截图和来源的配方组合。",
+          "primary_target": {
+            "pageId": "settings",
+            "href": "#/system/models?category=model",
+            "collectionId": null,
+            "categoryId": "model",
+            "label": "模块与模型",
+            "path": "设置 → 模型与服务 → 模块与模型 → 记忆与洞察节奏",
+            "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G10",
+      "section_id": "use",
+      "section_title": "阅读与使用",
+      "title": "生成洞察与回顾",
+      "units": [
+        {
+          "id": "C27",
+          "authored_priority": "core",
+          "title": "生成并回看有证据的洞察",
+          "purpose": "按自选方向或默认回顾生成报告，核对引用并重访已保存结果。",
+          "primary_target": {
+            "pageId": "insights",
+            "href": "#/library/insights",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "洞察",
+            "path": "资料库工具 → 洞察；问一问 → 查看洞察；今天 → 最近洞察",
+            "where": "在洞察页选择方向、范围和模型；已有报告列于历史。"
+          },
+          "contextual_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=model",
+              "collectionId": null,
+              "categoryId": "model",
+              "label": "模块与模型",
+              "path": "设置 → 模型与服务 → 模块与模型 → 记忆与洞察节奏",
+              "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+            }
+          ],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=model",
+              "collectionId": null,
+              "categoryId": "model",
+              "label": "模块与模型",
+              "path": "设置 → 模型与服务 → 模块与模型",
+              "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+            }
+          ],
+          "condition": null,
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G11",
+      "section_id": "manage",
+      "section_title": "跟进与管理",
+      "title": "跟进工作与失败恢复",
+      "units": [
+        {
+          "id": "C28",
+          "authored_priority": "core",
+          "title": "查看正在做的工作和结果",
+          "purpose": "集中查看 Mote 的工作、需要关注的问题、执行分支和完成结果。",
+          "primary_target": {
+            "pageId": "activity",
+            "href": "#/activity",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "活动",
+            "path": "活动；资料库 → 处理任务",
+            "where": "选择一项工作，查看进度、结果及相关操作。"
+          },
+          "contextual_targets": [
+            {
+              "pageId": "archive",
+              "href": "#/library?view=work-activity",
+              "collectionId": "work-activity",
+              "categoryId": null,
+              "label": "处理任务",
+              "path": "资料库 → 处理任务",
+              "where": "进入后按页面中的名称操作。"
+            }
+          ],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A25",
+          "authored_priority": "advanced",
+          "title": "检查技术步骤并恢复可重试工作",
+          "purpose": "深入查看任务依赖、尝试和失败原因，找到负责该工作的设置或恢复入口。",
+          "primary_target": {
+            "pageId": "processing",
+            "href": "#/system/processing",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "技术执行记录",
+            "path": "活动 → 高级 / 工作详情 → 技术执行记录",
+            "where": "活动的高级入口，或工作详情中的技术记录；也可由插件运行记录进入。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": "步骤详情和重试依已有技术任务及其失败状态显示。",
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G12",
+      "section_id": "manage",
+      "section_title": "跟进与管理",
+      "title": "待办与日程建议",
+      "units": [
+        {
+          "id": "C29",
+          "authored_priority": "core",
+          "title": "记录和完成普通待办",
+          "purpose": "添加标题和可选到期时间，管理完成、取消或重新打开的待办。",
+          "primary_target": {
+            "pageId": "actions",
+            "href": "#/actions",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "行动",
+            "path": "今天 → 行动建议 → 待办",
+            "where": "进入行动页的待办区域。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C30",
+          "authored_priority": "core",
+          "title": "审核日程建议并交给设备执行",
+          "purpose": "查看有证据的日程建议，核对内容和目标日历后确认，跟踪设备的执行结果。",
+          "primary_target": {
+            "pageId": "actions",
+            "href": "#/actions",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "行动",
+            "path": "今天 → 行动建议",
+            "where": "行动页中开启建议发现；选中建议打开审核，选择已有设备日历。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": "审核需要已有建议；目标日历需要设备端已提供可写日历。",
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G07",
+      "section_id": "manage",
+      "section_title": "跟进与管理",
+      "title": "按分类回看与查看时间",
+      "units": [
+        {
+          "id": "C19",
+          "authored_priority": "core",
+          "title": "按内容类型查看资料库",
+          "purpose": "在同一资料库切换分类，找到片段、来源、文件、活动、记忆和处理视图。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=materials",
+            "collectionId": "materials",
+            "categoryId": null,
+            "label": "全部资料",
+            "path": "资料库 → 分类",
+            "where": "使用资料库分类切换视图；导入、随手记和洞察属于「资料库工具」。"
+          },
+          "contextual_targets": [
+            {
+              "pageId": "archive",
+              "href": "#/library?view=records",
+              "collectionId": "records",
+              "categoryId": null,
+              "label": "原始采集记录",
+              "path": "资料库 → 原始采集记录",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "archive",
+              "href": "#/library?view=segments",
+              "collectionId": "segments",
+              "categoryId": null,
+              "label": "片段",
+              "path": "资料库 → 片段",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "archive",
+              "href": "#/library?view=sources",
+              "collectionId": "sources",
+              "categoryId": null,
+              "label": "来源资料",
+              "path": "资料库 → 来源资料",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "archive",
+              "href": "#/library?view=files",
+              "collectionId": "files",
+              "categoryId": null,
+              "label": "文件与录音",
+              "path": "资料库 → 文件与录音",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "archive",
+              "href": "#/library?view=activity",
+              "collectionId": "activity",
+              "categoryId": null,
+              "label": "应用活动",
+              "path": "资料库 → 应用活动",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "archive",
+              "href": "#/library?view=media",
+              "collectionId": "media",
+              "categoryId": null,
+              "label": "媒体播放",
+              "path": "资料库 → 媒体播放",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "archive",
+              "href": "#/library?view=memories",
+              "collectionId": "memories",
+              "categoryId": null,
+              "label": "记忆",
+              "path": "资料库 → 记忆",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "archive",
+              "href": "#/library?view=work-activity",
+              "collectionId": "work-activity",
+              "categoryId": null,
+              "label": "处理任务",
+              "path": "资料库 → 处理任务",
+              "where": "查看产品工作，并展开 Coding 会话接收状态。"
+            }
+          ],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A12",
+          "authored_priority": "advanced",
+          "title": "按截图片段或应用相册回看",
+          "purpose": "按日期和设备查看连续会话或应用分组，打开组内采集证据。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=segments",
+            "collectionId": "segments",
+            "categoryId": null,
+            "label": "片段",
+            "path": "资料库 → 片段",
+            "where": "选择日期、设备和分组方式，再打开片段。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A13",
+          "authored_priority": "advanced",
+          "title": "查看测得的应用活动时间",
+          "purpose": "查看采样得到的各应用时长和占比，理解其统计范围。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=activity",
+            "collectionId": "activity",
+            "categoryId": null,
+            "label": "应用活动",
+            "path": "资料库 → 应用活动",
+            "where": "查看应用时长汇总。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A14",
+          "authored_priority": "advanced",
+          "title": "查看媒体播放观测",
+          "purpose": "查看播放器、标题、状态和播放进度，核对按设备统计的播放观测。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=media",
+            "collectionId": "media",
+            "categoryId": null,
+            "label": "媒体播放",
+            "path": "资料库 → 媒体播放",
+            "where": "查看媒体汇总并展开记录信息。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A15",
+          "authored_priority": "advanced",
+          "title": "查看 Coding 会话接收与同步状态",
+          "purpose": "在处理任务中核对 Coding 增量接收、会话发布、索引与记忆进度，再打开已发布正文。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=work-activity",
+            "collectionId": "work-activity",
+            "categoryId": null,
+            "label": "处理任务",
+            "path": "资料库 → 处理任务 → Coding 会话接收状态",
+            "where": "在处理任务中的「Coding 会话接收状态」摘要展开「查看接收、发布、索引与记忆进度」。",
+            "requiredCollectionIds": [
+              "coding-status"
+            ],
+            "requires": [
+              "http:GET:/api/coding/uploads"
+            ]
+          },
+          "contextual_targets": [
+            {
+              "pageId": "archive",
+              "href": "#/library?view=materials",
+              "collectionId": "materials",
+              "categoryId": null,
+              "label": "全部资料",
+              "path": "资料库 → 全部资料",
+              "where": "查看已发布的会话正文。"
+            }
+          ],
+          "setup_targets": [
+            {
+              "pageId": "sourceCatalog",
+              "href": "#/connections/add",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "新增数据源",
+              "path": "新增数据源 → Coding Agent 会话",
+              "where": "查看客户端接入与同步状态。"
+            }
+          ],
+          "condition": "具体进度依已接收来源显示；没有来源时会显示客户端接入步骤。",
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G15",
+      "section_id": "manage",
+      "section_title": "跟进与管理",
+      "title": "备份、存储、索引与费用",
+      "units": [
+        {
+          "id": "C39",
+          "authored_priority": "core",
+          "title": "导入导出归档并找到完整备份",
+          "purpose": "导出可携带的资料或元数据，合并当前归档，检查索引并找到离线备份方式。",
+          "primary_target": {
+            "pageId": "vault",
+            "href": "#/system/storage",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "存储、加密与备份",
+            "path": "设置 → 存储、加密与备份 → 导入与导出 / 索引与 Agent",
+            "where": "查看「导入与导出」「大资料库适合使用离线备份」以及索引区域。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C40",
+          "authored_priority": "core",
+          "title": "查看保留、容量和内容存储政策",
+          "purpose": "查看实际空间和保留情况，控制未来文件加密，并找到部署层保留与容量配置。",
+          "primary_target": {
+            "pageId": "vault",
+            "href": "#/system/storage",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "存储、加密与备份",
+            "path": "设置 → 存储、加密与备份 → 内容存储 / 数据与备份",
+            "where": "查看内容存储政策和数据概览；保留与容量修改位于模型与服务。"
+          },
+          "contextual_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=storage",
+              "collectionId": null,
+              "categoryId": "storage",
+              "label": "保留与容量",
+              "path": "设置 → 模型与服务 → 保留与容量",
+              "where": "在「保留与容量」编辑并校验部署草稿，核对当前生效值。"
+            }
+          ],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=storage",
+              "collectionId": null,
+              "categoryId": "storage",
+              "label": "保留与容量",
+              "path": "设置 → 模型与服务 → 保留与容量",
+              "where": "在「保留与容量」编辑并校验部署草稿，核对当前生效值。"
+            }
+          ],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C41",
+          "authored_priority": "core",
+          "title": "核对模型用量和估算费用",
+          "purpose": "按日期、模块、模型和状态查看请求、Token、缓存、耗时及费用明细。",
+          "primary_target": {
+            "pageId": "usage",
+            "href": "#/system/usage",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "用量与费用",
+            "path": "设置 → 用量与费用",
+            "where": "设置筛选，查看汇总、趋势和运行明细。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A31",
+          "authored_priority": "advanced",
+          "title": "把已有加密文件转为明文",
+          "purpose": "关闭未来加密后，按需安排已有内容对象解密，并查看后台转换进度。",
+          "primary_target": {
+            "pageId": "vault",
+            "href": "#/system/storage",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "存储、加密与备份",
+            "path": "设置 → 存储、加密与备份 → 内容存储",
+            "where": "关闭加密后查看已有文件的批量解密入口。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": "有可转换的加密对象，且未来写入加密已关闭时才能执行。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A32",
+          "authored_priority": "advanced",
+          "title": "查看运行状态与空间",
+          "purpose": "按类型和日期查看中央机器可访问文件的字节与数量，并进入模型用量。",
+          "primary_target": {
+            "pageId": "statistics",
+            "href": "#/system",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "运行状态与空间",
+            "path": "设置 → 运行状态与空间",
+            "where": "在「运行状态与空间」查看中央节点磁盘统计，或打开用量与费用。"
+          },
+          "contextual_targets": [
+            {
+              "pageId": "usage",
+              "href": "#/system/usage",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "用量与费用",
+              "path": "运行状态 → 用量与费用",
+              "where": "进入后按页面中的名称操作。"
+            }
+          ],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A33",
+          "authored_priority": "advanced",
+          "title": "维护估价并追查用量明细",
+          "purpose": "按 Agent、模块、技能或模型汇总，逐层筛选请求，并维护后续请求使用的价格。",
+          "primary_target": {
+            "pageId": "usage",
+            "href": "#/system/usage",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "用量与费用",
+            "path": "设置 → 用量与费用 → 汇总 / 价格",
+            "where": "切换汇总方式并点击数据行；展开价格设置。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G13",
+      "section_id": "settings",
+      "section_title": "设置与维护",
+      "title": "模型、图片、文件与语音",
+      "units": [
+        {
+          "id": "C31",
+          "authored_priority": "core",
+          "title": "配置或检查模型连接（Provider）",
+          "purpose": "查看或保存模型连接的地址、凭据和模型，再核对实际生效配置。",
+          "primary_target": {
+            "pageId": "settings",
+            "href": "#/system/models?category=providers",
+            "collectionId": null,
+            "categoryId": "providers",
+            "label": "模型连接（Provider）",
+            "path": "设置 → 模型与服务 → 模型连接（Provider）",
+            "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C32",
+          "authored_priority": "core",
+          "title": "检查或分配功能使用的模型",
+          "purpose": "检查问答、记忆、回顾等功能当前用的连接和模型，按需为要使用的模块分配。",
+          "primary_target": {
+            "pageId": "settings",
+            "href": "#/system/models?category=model",
+            "collectionId": null,
+            "categoryId": "model",
+            "label": "模块与模型",
+            "path": "设置 → 模型与服务 → 模块与模型",
+            "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=providers",
+              "collectionId": null,
+              "categoryId": "providers",
+              "label": "模型连接（Provider）",
+              "path": "设置 → 模型与服务 → 模型连接（Provider）",
+              "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+            }
+          ],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C36",
+          "authored_priority": "core",
+          "title": "控制新图片识别与原图授权",
+          "purpose": "为截图、上传、同步和笔记图片设置识字、理解方式，并单独决定问答模型能否读原图。",
+          "primary_target": {
+            "pageId": "settings",
+            "href": "#/system/models?category=images",
+            "collectionId": null,
+            "categoryId": "images",
+            "label": "图片",
+            "path": "设置 → 模型与服务 → 图片",
+            "where": "在「图片」查看统一处理与授权，历史任务位于「处理已有图片」。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C37",
+          "authored_priority": "core",
+          "title": "查看文件或录音的内容提取和恢复",
+          "purpose": "核对原件、正文、转写及摘要状态，下载或播放原件，处理可取消或重试的阶段。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=files",
+            "collectionId": "files",
+            "categoryId": null,
+            "label": "文件与录音",
+            "path": "资料库 → 文件与录音 → 文件详情；导入 → 媒体详情",
+            "where": "选择一个文件或录音，查看原件、文本与处理控制。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=file-processing",
+              "collectionId": null,
+              "categoryId": "file-processing",
+              "label": "文件与语音",
+              "path": "设置 → 模型与服务 → 文件与语音",
+              "where": "在「文件与语音」查看模型安装、规则、方案与服务，具体操作在对应区域。"
+            }
+          ],
+          "condition": "恢复操作依文件处理状态和处理器能力显示。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C38",
+          "authored_priority": "core",
+          "title": "配置文件与语音处理",
+          "purpose": "启用中央处理，安装所需本地语音模型，并按文件类型选择处理方案。",
+          "primary_target": {
+            "pageId": "settings",
+            "href": "#/system/models?category=file-processing",
+            "collectionId": null,
+            "categoryId": "file-processing",
+            "label": "文件与语音",
+            "path": "设置 → 模型与服务 → 文件与语音",
+            "where": "在「文件与语音」查看模型安装、规则、方案与服务，具体操作在对应区域。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A19",
+          "authored_priority": "advanced",
+          "title": "调整模型性能和协议细节",
+          "purpose": "在预设中调整推理、速度、超时及协议参数，并确认敏感地址或凭据变更。",
+          "primary_target": {
+            "pageId": "settings",
+            "href": "#/system/models?category=providers",
+            "collectionId": null,
+            "categoryId": "providers",
+            "label": "模型连接（Provider）",
+            "path": "设置 → 模型与服务 → 模型连接（Provider） → 预设编辑 → 高级",
+            "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A20",
+          "authored_priority": "advanced",
+          "title": "复制或删除模型预设",
+          "purpose": "复用已有连接设置，或清理未使用的自定义预设。",
+          "primary_target": {
+            "pageId": "settings",
+            "href": "#/system/models?category=providers",
+            "collectionId": null,
+            "categoryId": "providers",
+            "label": "模型连接（Provider）",
+            "path": "设置 → 模型与服务 → 模型连接（Provider） → 选中预设",
+            "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": "删除仅对允许删除且未被使用的自定义预设提供。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A21",
+          "authored_priority": "advanced",
+          "title": "补处理或重算历史图片",
+          "purpose": "明确选择历史日期与来源，预览数量后安排补齐或重新计算。",
+          "primary_target": {
+            "pageId": "settings",
+            "href": "#/system/models?category=images",
+            "collectionId": null,
+            "categoryId": "images",
+            "label": "图片",
+            "path": "设置 → 模型与服务 → 图片 → 处理已有图片",
+            "where": "在「图片」查看统一处理与授权，历史任务位于「处理已有图片」。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A22",
+          "authored_priority": "advanced",
+          "title": "配置文件规则、方案和处理服务",
+          "purpose": "为文件类型或特定来源选择处理方案，设置模型、摘要和服务连接。",
+          "primary_target": {
+            "pageId": "settings",
+            "href": "#/system/models?category=file-processing",
+            "collectionId": null,
+            "categoryId": "file-processing",
+            "label": "文件与语音",
+            "path": "设置 → 模型与服务 → 文件与语音",
+            "where": "在「文件与语音」查看模型安装、规则、方案与服务，具体操作在对应区域。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A23",
+          "authored_priority": "advanced",
+          "title": "预览文件规则并重新处理已有原件",
+          "purpose": "用已保存规则试算 MIME 匹配，选择已有原件，核对预览后排队。",
+          "primary_target": {
+            "pageId": "settings",
+            "href": "#/system/models?category=file-processing",
+            "collectionId": null,
+            "categoryId": "file-processing",
+            "label": "文件与语音",
+            "path": "设置 → 模型与服务 → 文件与语音 → 规则试算与已有文件",
+            "where": "在「文件与语音」查看模型安装、规则、方案与服务，具体操作在对应区域。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A24",
+          "authored_priority": "advanced",
+          "title": "纠正转写并确认说话人",
+          "purpose": "手动校正文段、试听说话人样本，或让模型建议修改后逐项确认。",
+          "primary_target": {
+            "pageId": "archive",
+            "href": "#/library?view=files",
+            "collectionId": "files",
+            "categoryId": null,
+            "label": "文件与录音",
+            "path": "资料库 → 文件与录音 → 文件详情 → 文段 / 说话人试听与命名 / 复核",
+            "where": "打开有转写的文件详情，查看文段、说话人和复核入口。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=model",
+              "collectionId": null,
+              "categoryId": "model",
+              "label": "模块与模型",
+              "path": "设置 → 模型与服务 → 模块与模型",
+              "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+            }
+          ],
+          "condition": "需要已有转写；说话人、试听和模型复核按文件产物及处理能力出现。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A29",
+          "authored_priority": "advanced",
+          "title": "设置执行并发和查看等待名额",
+          "purpose": "调整问答和后台执行的同时工作数量，了解哪些工作在排队。",
+          "primary_target": {
+            "pageId": "settings",
+            "href": "#/system/models?category=model",
+            "collectionId": null,
+            "categoryId": "model",
+            "label": "模块与模型",
+            "path": "设置 → 模型与服务 → 模块与模型 → 执行并发",
+            "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A30",
+          "authored_priority": "advanced",
+          "title": "配置检索和外部连接的部署草稿",
+          "purpose": "准备向量检索、来源间隔、MCP 和 OAuth 的配置差异，交给部署机器应用。",
+          "primary_target": {
+            "pageId": "settings",
+            "href": "#/system/models?category=embedding",
+            "collectionId": null,
+            "categoryId": "embedding",
+            "label": "检索索引",
+            "path": "设置 → 模型与服务 → 检索索引 / 来源与外部应用",
+            "where": "在「检索索引」编辑并校验部署草稿，核对当前生效值。"
+          },
+          "contextual_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=connectors",
+              "collectionId": null,
+              "categoryId": "connectors",
+              "label": "来源与外部应用",
+              "path": "设置 → 模型与服务 → 来源与外部应用",
+              "where": "在「来源与外部应用」编辑并校验部署草稿，核对当前生效值。"
+            }
+          ],
+          "setup_targets": [
+            {
+              "pageId": "settings",
+              "href": "#/system/models?category=connectors",
+              "collectionId": null,
+              "categoryId": "connectors",
+              "label": "来源与外部应用",
+              "path": "设置 → 模型与服务 → 来源与外部应用",
+              "where": "在「来源与外部应用」编辑并校验部署草稿，核对当前生效值。"
+            }
+          ],
+          "condition": null,
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G14",
+      "section_id": "settings",
+      "section_title": "设置与维护",
+      "title": "自动记忆与可信插件方案",
+      "units": [
+        {
+          "id": "C33",
+          "authored_priority": "core",
+          "title": "暂停或立即停止自动记忆",
+          "purpose": "控制全局新自动记忆的接收，并区分继续收尾与立即撤销旧工作。",
+          "primary_target": {
+            "pageId": "extensions",
+            "href": "#/system/plugins?tab=memory",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "自动记忆与插件",
+            "path": "设置 → 自动记忆与插件 → 记忆方案 → 自动记忆",
+            "where": "在当前记忆方案中查看「自动记忆」的状态和控制。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C34",
+          "authored_priority": "core",
+          "title": "核对和替换整套记忆方案",
+          "purpose": "查看当前运行的整套记忆实现，准备和验证替换，再单独应用已验证方案。",
+          "primary_target": {
+            "pageId": "extensions",
+            "href": "#/system/plugins?tab=memory",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "自动记忆与插件",
+            "path": "设置 → 自动记忆与插件 → 记忆方案",
+            "where": "查看当前方案；选择替换目标后依次预览、准备、验证和应用。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C35",
+          "authored_priority": "core",
+          "title": "管理可信记忆插件",
+          "purpose": "从支持的固定版本发现、安装和配置实例，检查后启用或绑定方案。",
+          "primary_target": {
+            "pageId": "extensions",
+            "href": "#/system/plugins",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "自动记忆与插件",
+            "path": "设置 → 自动记忆与插件 → 已安装 / 发现",
+            "where": "在「发现」选受支持发布；在「已安装」查看实例、配置、验证和启用。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G01",
+      "section_id": "settings",
+      "section_title": "设置与维护",
+      "title": "登录、语言与页面入口",
+      "units": [
+        {
+          "id": "C01",
+          "authored_priority": "core",
+          "title": "登录并管理当前会话",
+          "purpose": "确认正在使用哪个中央节点，选择浏览器保留登录的时间，或退出当前会话。",
+          "primary_target": {
+            "pageId": "about",
+            "href": "#/preferences",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "设置",
+            "path": "设置 → 当前服务（中央节点）",
+            "where": "页面下方的「当前服务（中央节点）」和「登录会话有效期」；未登录时由目标页进入登录。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "C02",
+          "authored_priority": "core",
+          "title": "找到常用页面和所属工具",
+          "purpose": "从五个主入口进入日常工作，再到各自的工具或设置继续操作。",
+          "primary_target": {
+            "pageId": "overview",
+            "href": "#/today",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "今天",
+            "path": "主导航 → 今天 / 资料库 / 问一问 / 活动 / 采集与设备；设置",
+            "where": "主导航切换工作区；资料库的「资料库工具」、采集与设备的「来源与连接」选择框进入所属工具。"
+          },
+          "contextual_targets": [
+            {
+              "pageId": "archive",
+              "href": "#/library?view=materials",
+              "collectionId": "materials",
+              "categoryId": null,
+              "label": "全部资料",
+              "path": "主导航 → 资料库",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "ask",
+              "href": "#/ask",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "问一问",
+              "path": "主导航 → 问一问",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "activity",
+              "href": "#/activity",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "活动",
+              "path": "主导航 → 活动",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "devices",
+              "href": "#/connections/devices",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "采集与设备",
+              "path": "主导航 → 采集与设备",
+              "where": "进入后按页面中的名称操作。"
+            },
+            {
+              "pageId": "about",
+              "href": "#/preferences",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "设置",
+              "path": "设置",
+              "where": "进入后按页面中的名称操作。"
+            }
+          ],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        }
+      ]
+    },
+    {
+      "id": "G16",
+      "section_id": "settings",
+      "section_title": "设置与维护",
+      "title": "帮助、诊断与 Agent 视角",
+      "units": [
+        {
+          "id": "C42",
+          "authored_priority": "core",
+          "title": "找到帮助、版本和维护方式",
+          "purpose": "查找问题反馈入口，核对网页与中央版本，以及中央节点的手动升级说明。",
+          "primary_target": {
+            "pageId": "help",
+            "href": "#/help",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "帮助与反馈",
+            "path": "设置 → 帮助与反馈",
+            "where": "查看反馈链接；版本也在设置的「版本与更新」或「诊断与更新」。"
+          },
+          "contextual_targets": [
+            {
+              "pageId": "about",
+              "href": "#/preferences",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "设置",
+              "path": "设置 → 版本与更新",
+              "where": "展开「版本与更新」。"
+            },
+            {
+              "pageId": "developer",
+              "href": "#/system/diagnostics",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "诊断与更新",
+              "path": "设置 → 诊断与更新",
+              "where": "进入后按页面中的名称操作。"
+            }
+          ],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A26",
+          "authored_priority": "advanced",
+          "title": "查看 Agent 当前能读取的上下文",
+          "purpose": "只读浏览 Agent 的虚拟目录，并为一个问题预览首次上下文，不必调用模型。",
+          "primary_target": {
+            "pageId": "agentView",
+            "href": "#/agent",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "Agent 能看到什么",
+            "path": "今天 → 更多上下文视图 → Agent 视角；设置 → Agent 能看到什么",
+            "where": "打开 Agent 视角，在目录、范围和首次上下文预览中核对。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A27",
+          "authored_priority": "advanced",
+          "title": "查看已记录的实际模型输入和工具读取",
+          "purpose": "按运行查阅当时保存的上下文、模型和工具事件，核对真实记录。",
+          "primary_target": {
+            "pageId": "agentView",
+            "href": "#/agent",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "Agent 能看到什么",
+            "path": "Agent 视角 → 实际输入与读取过程",
+            "where": "切换实际输入与读取过程，选择已有运行；详细记录开关在诊断偏好。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [
+            {
+              "pageId": "developer",
+              "href": "#/system/diagnostics",
+              "collectionId": null,
+              "categoryId": null,
+              "label": "诊断与更新",
+              "path": "设置 → 诊断与更新 → 诊断偏好",
+              "where": "查看「记录详细 Agent 过程」。"
+            }
+          ],
+          "condition": "只有已保留的详细运行记录可查；没有记录时只能理解设置与边界。",
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A28",
+          "authored_priority": "advanced",
+          "title": "核对实际注册的插件能力",
+          "purpose": "查看服务端与网页实际加载的能力、版本、状态和当前模块绑定。",
+          "primary_target": {
+            "pageId": "extensions",
+            "href": "#/system/plugins",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "自动记忆与插件",
+            "path": "设置 → 自动记忆与插件 → 高级 → 已注册能力清单",
+            "where": "在插件页高级区域展开已注册能力清单。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A34",
+          "authored_priority": "advanced",
+          "title": "查阅运行日志并导出支持包",
+          "purpose": "按文件、阶段和时间范围查看保留的日志，导出诊断资料用于排查。",
+          "primary_target": {
+            "pageId": "developer",
+            "href": "#/system/diagnostics",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "诊断与更新",
+            "path": "设置 → 诊断与更新 → 运行诊断",
+            "where": "使用日志筛选和导出入口；以实际保留范围为准。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A35",
+          "authored_priority": "advanced",
+          "title": "设置诊断记录并查看部署生效值",
+          "purpose": "调整今后的日志和详细过程记录，核对中央节点实际使用的目录和配置。",
+          "primary_target": {
+            "pageId": "developer",
+            "href": "#/system/diagnostics",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "诊断与更新",
+            "path": "设置 → 诊断与更新 → 诊断偏好 / 部署与全部生效配置",
+            "where": "查看「诊断偏好」，展开「部署与全部生效配置」。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        },
+        {
+          "id": "A36",
+          "authored_priority": "advanced",
+          "title": "切换界面语言",
+          "purpose": "按当前使用习惯选择中文或 English 界面。",
+          "primary_target": {
+            "pageId": "about",
+            "href": "#/preferences",
+            "collectionId": null,
+            "categoryId": null,
+            "label": "设置",
+            "path": "设置 → 语言",
+            "where": "设置入口顶部的语言选择器。"
+          },
+          "contextual_targets": [],
+          "setup_targets": [],
+          "condition": null,
+          "live_validation": "not_run"
+        }
+      ]
+    }
+  ]
+}

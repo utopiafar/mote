@@ -1,0 +1,127 @@
+{
+  "record_id": "r00-baseline-pending",
+  "record_kind": "baseline",
+  "round_index": 0,
+  "status": "blocked",
+  "counted_as_iteration": false,
+  "rubric_version": "mote-ui-v1",
+  "candidate_revision": null,
+  "parent_revision": null,
+  "scope": "源码盘点见 feature-inventory.md，待实测清单见 feature-manifest.json；范围为 Central Web、macOS、Android。适用旅程与评分锚点待 R0 实操前确认。",
+  "environment": "源码盘点、合成数据运行环境和构建已就绪。Cloudflare 公网通道申请被自动审批拒绝，原因是用户尚未授权向外部披露测试 UI 及认证入口。未启动隧道；R0 实操未运行，完成 0/15 轮。",
+  "hypothesis": null,
+  "changes": [],
+  "independent_evaluator": {
+    "agent_id": null,
+    "status": "not_run",
+    "mode": "none",
+    "result": null,
+    "evidence_refs": []
+  },
+  "blind_sessions": [],
+  "scores": {
+    "design": null,
+    "originality": null,
+    "craft": null,
+    "functionality": null,
+    "clarity": null
+  },
+  "score_reasoning": null,
+  "weighted_score": null,
+  "tasks": [
+    {
+      "id": "G-COMPREHENSION",
+      "kind": "gate",
+      "context": "R0 基线；待实际验证",
+      "goal": "首屏理解",
+      "status": "not_run",
+      "actual_steps": [],
+      "actual_result": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "G-DISCOVERABILITY",
+      "kind": "gate",
+      "context": "R0 基线；待实际验证",
+      "goal": "P0 入口可发现",
+      "status": "not_run",
+      "actual_steps": [],
+      "actual_result": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "G-P0-COMPLETION",
+      "kind": "gate",
+      "context": "R0 基线；待实际验证",
+      "goal": "核心旅程完成",
+      "status": "not_run",
+      "actual_steps": [],
+      "actual_result": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "G-FEATURE-COVERAGE",
+      "kind": "gate",
+      "context": "R0 基线；待实际验证",
+      "goal": "重要功能无遗漏",
+      "status": "not_run",
+      "actual_steps": [],
+      "actual_result": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "G-NO-CONFLICT",
+      "kind": "gate",
+      "context": "R0 基线；待实际验证",
+      "goal": "结构无冲突",
+      "status": "not_run",
+      "actual_steps": [],
+      "actual_result": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "G-NO-BLOCKER",
+      "kind": "gate",
+      "context": "R0 基线；待实际验证",
+      "goal": "关键阻断清零",
+      "status": "not_run",
+      "actual_steps": [],
+      "actual_result": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "G-DIMENSION-FLOORS",
+      "kind": "gate",
+      "context": "R0 基线；待实际验证",
+      "goal": "分项质量下限",
+      "status": "not_run",
+      "actual_steps": [],
+      "actual_result": null,
+      "evidence_refs": []
+    },
+    {
+      "id": "G-VALIDATION-COVERAGE",
+      "kind": "gate",
+      "context": "R0 基线；待实际验证",
+      "goal": "验证覆盖完整",
+      "status": "not_run",
+      "actual_steps": [],
+      "actual_result": null,
+      "evidence_refs": []
+    }
+  ],
+  "evidence": [],
+  "findings": [],
+  "next_step": {
+    "decision": "pending",
+    "reason": "R0 受浏览器访问通道审批阻塞，尚未进行 UI 实操。",
+    "actions": [
+      "在已授权且可访问本地 UI 的环境中继续；上述公网方式须先取得对应用户授权。",
+      "确认适用旅程与评分锚点，保留所有未执行任务，执行 R0 独立实操及新上下文盲测。",
+      "根据 R0 的实际发现决定 R1 改动。"
+    ]
+  },
+  "notes": [
+    "本次仅静态规程与格式审阅；UI 评分均为 null、任务均为 not_run、完成 0/15 轮。"
+  ]
+}
