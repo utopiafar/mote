@@ -14,7 +14,7 @@ function fixture(file:File){
  let manifest:any,commits=0,lost=false,badPart='',badReceipt='',badOwner=false,badResume=false,onPut:(()=>void)|undefined;
  const parts=new Map<number,Buffer>(),wire:{path:string;body:string}[]=[],requests:string[]=[];
  const receipt=()=>{
-  const {sourceId,batchId,revision}=manifest,h=identity([sourceId,revision.item.externalId,revision.item.revision]),captureId=`${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`;
+  const {batchId,revision}=manifest,sourceId=revision.sourceId,h=identity([sourceId,revision.item.externalId,revision.item.revision]),captureId=`${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`;
   const original={ref:'original:'+identity([connection.userId,sourceId,captureId,revision.sha256,file.type,'archive']),sourceId,captureId,hash:revision.sha256,bytes:file.size,mime:file.type,retention:'archive'};
   if(badReceipt==='hash')original.hash='wrong';if(badReceipt==='bytes')original.bytes++;if(badReceipt==='original')original.ref='wrong';
   return {version:3,state:'received',deploymentId:connection.deploymentId,userId:badReceipt==='owner'?'other-owner':connection.userId,sourceId,batchId,captures:[{id:captureId,sourceId,externalId:revision.item.externalId,revision:revision.item.revision,duplicate:false,original}]};
@@ -25,7 +25,7 @@ function fixture(file:File){
   if(path.endsWith('/uploads')){
    const incoming=JSON.parse(String(init.body));if(manifest)assert.deepEqual(incoming,manifest);manifest=incoming;
    assert.equal(manifest.revision.sizeBytes,file.size);
-   return {id:'generated-upload',deploymentId:connection.deploymentId,userId:badOwner?'wrong':connection.userId,sourceId:manifest.sourceId,partBytes:FILE_PART_BYTES,parts:[...parts].map(([part,bytes])=>({part,checksum:badResume?'wrong':hash(bytes),bytes:bytes.length})),...(commits?{receipt:receipt()}:{})};
+   return {id:'generated-upload',deploymentId:connection.deploymentId,userId:badOwner?'wrong':connection.userId,sourceId:manifest.revision.sourceId,partBytes:FILE_PART_BYTES,parts:[...parts].map(([part,bytes])=>({part,checksum:badResume?'wrong':hash(bytes),bytes:bytes.length})),...(commits?{receipt:receipt()}:{})};
   }
   if(path.endsWith('/commit')){commits++;return receipt();}
   const part=Number(path.split('/').at(-1)),bytes=Buffer.from(await file.slice(part*FILE_PART_BYTES,(part+1)*FILE_PART_BYTES).arrayBuffer());
@@ -61,10 +61,10 @@ test('Web mismatched resume checksum resends the selected bytes and retains the 
 });
 
 for(const field of ['checksum','part','bytes'])test(`Web bad ${field} part acknowledgement cannot commit`,async()=>{
- const file=generated(1),f=fixture(file);f.corruptPart(field);await assert.rejects(uploadChatImage(f.api,file,'generated-device'),/does not match/);assert.equal(f.commits,0);
+ const file=generated(1),f=fixture(file);f.corruptPart(field);await assert.rejects(uploadChatImage(f.api,file,'generated-device'),/does not match/);assert.equal(f.wire.length,1,'failure actually occurs after a transmitted part');assert.equal(f.commits,0);
 });
 for(const field of ['hash','bytes','original','owner'])test(`Web wrong ${field} archive receipt never produces an attachment reference`,async()=>{
- const file=generated(1),f=fixture(file);f.corruptReceipt(field);await assert.rejects(uploadNoteAttachment(f.api,file,'generated-device'),/does not match/);
+ const file=generated(1),f=fixture(file);f.corruptReceipt(field);await assert.rejects(uploadNoteAttachment(f.api,file,'generated-device'),/does not match/);assert.equal(f.commits,1,'failure actually occurs at commit receipt');
 });
 test('Web upload owner mismatch cannot send parts or commit',async()=>{
  const file=generated(1),f=fixture(file);f.corruptOwner();await assert.rejects(uploadChatImage(f.api,file,'generated-device'),/owner acknowledgement/);assert.equal(f.wire.length,0);assert.equal(f.commits,0);
