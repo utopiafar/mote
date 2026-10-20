@@ -10,14 +10,14 @@ See the [export plan](performance-round1-C-export-plan.md) and the independent
 ## Executed export evidence
 
 NEW execution on macOS arm64, Node `v26.11.1`. The existing `keepFixture`
-starts the real scoped builder and loopback HTTP server on port0, creates generated
+starts the real scoped builder and loopback HTTP server on port 0, creates generated
 accounts and disables automatic processing. Generated binary files go through real
 HTTP begin/part/commit and split Files export, then consumer gunzip/TAR parsing,
 exact sizes and final SHA comparison. Unique MIME values are supplied by actual
 upload metadata; no database row is rewritten to select these final cases.
 The fixture uses ephemeral client credentials, not a browser cookie/UI session.
 
-Data generation fills each32-byte slice from SHA-256 of the UTF-8 string
+Data generation fills each 32-byte slice from SHA-256 of the UTF-8 string
 `C_GENERATED_ONLY_` plus the decimal byte offset. No personal screenshot, document,
 account, credential or model is used. Measurements instrument the existing Node
 builtin imports before loading the unchanged product modules:
@@ -45,9 +45,9 @@ tail: ed204bfc0e2ef979493143fb68de9416ec4bdde22c67b2bbf8023efffc94a8ee
 encrypted: 1741fdae533c1ecfbbba88527a0d842a633fb45d0820df3677f9995bb69be9ed
 ```
 
-The encrypted sample has two full parts and a317-byte tail. Its129 physical-file
-API reads include28 bytes of AES-GCM framing each; SHA input is plaintext. For a
-full4-MiB plaintext object,64 output windows read/hash256 MiB. These are **logical
+The encrypted sample has two full parts and a 317-byte tail. Its 129 physical-file
+API reads include 28 bytes of AES-GCM framing each; SHA input is plaintext. For a
+full 4-MiB plaintext object, 64 output windows read/hash 256 MiB. These are **logical
 read/hash bytes**, not physical disk traffic or a disk-read multiplier. Page-cache
 state and physical block reads were not measured. Stack instrumentation adds
 cost; the times are single-run diagnostic observations, not production latency,
@@ -55,8 +55,8 @@ a throughput comparison or a measured async improvement. Event-loop latency,
 concurrent request responsiveness, CPU/RSS and an async candidate remain untested.
 
 The same final run separately exercised the unchanged host reader after real HTTP
-upload: read `[0,65536)`, mutate offset4,194,303 of that part on disk, then read
-`[65536,131072)`. The second read throws `conflict`, status409, even though the
+upload: read `[0,65536)`, mutate offset 4,194,303 of that part on disk, then read
+`[65536,131072)`. The second read throws `conflict`, status 409, even though the
 changed byte lies outside the requested output window. This directly demonstrates
 the current next-window full-part corruption discovery. This witness is a direct
 Ingress reader check, **not** an HTTP stream-mutation/cancellation test; that real
@@ -72,11 +72,11 @@ include `DEFAULT_SYNCHRONOUS=2`, `DEFAULT_WAL_SYNCHRONOUS=2`,
 
 | Generated state | Actual result |
 | --- | --- |
-| New scoped database | `journal_mode=delete`, `synchronous=2` (FULL), auto-checkpoint1000, page size4096. |
-| Existing current-format WAL after own writer SIGKILL | Reopens as WAL/FULL; committed generated row recovered; `integrity_check=ok`. Auto-checkpoint1000 and page size4096 on reopened connection. |
+| New scoped database | `journal_mode=delete`, `synchronous=2` (FULL), auto-checkpoint 1000, page size 4096. |
+| Existing current-format WAL after own writer SIGKILL | Reopens as WAL/FULL; committed generated row recovered; `integrity_check=ok`. Auto-checkpoint1000 and page size 4096 on reopened connection. |
 | Wrong epoch with stopped uncheckpointed WAL/SHM | `unsupported_vault`,409. Main DB, WAL and SHM names, lengths, mode, mtime and SHA identical before/after rejected preflight. |
 
-The child explicitly sets WAL/FULL and auto-checkpoint0 **only in a new generated
+The child explicitly sets WAL/FULL and auto-checkpoint 0 **only in a new generated
 fixture**, commits a generated row, and kills itself. No active same-process vault
 is passed to preflight. The rejection snapshots contain exact per-file SHA in the
 local JSON receipt; comparisons exclude access time. All generated directories
@@ -100,7 +100,7 @@ python3 "$CONTROL/run-resource.py" --owner C --kind heavy --wait-seconds 180 -- 
 ```
 
 The combined final command imports the WAL probe, then the export probe
-sequentially under one lease. Both finish with exit0, `cleanupConfirmed:true`;
+sequentially under one lease. Both finish with exit 0, `cleanupConfirmed:true`;
 the gate confirms the entire process group has ended and releases lease
 `5a78a31f-3984-48a1-965e-f3b9709c4377`. The independent local installation and
 library `dist` outputs are retained in this worktree as prerequisites, not
@@ -117,16 +117,16 @@ identities; this documentation-only PR does not add a public executable harness:
 | `wal-baseline-evidence.mjs` | `f19e09b09b2f4eea9f983563f925e48f6b1c0c4ce5eb099023c1c8a62d8cdbd6` |
 | `wal-baseline-evidence.json` | `400f8cd0aadf8685bca361ef50f05e4ddb248786098085419e625f11b69312e4` |
 
-Earlier diagnostic attempts are retained separately: export attempt1 used a
-nonexistent returned `storage.db` field; attempt2 included directory identity
-hashes; attempt3 included content-key fingerprints. Their exit1 results are not
+Earlier diagnostic attempts are retained separately: export attempt 1 used a
+nonexistent returned `storage.db` field; attempt 2 included directory identity
+hashes; attempt 3 included content-key fingerprints. Their exit 1 results are not
 PASS. The corrections fix instrumentation, preserve the real entry and exact
 expected read/hash/size/SHA assertions, and do not relax a product test. A passed
 intermediate run used a disposable MIME-row control; the final run above supplies
 MIME through actual HTTP metadata instead and removes that extra DB connection.
 The first WAL attempt failed its child-script quoting before WAL scenarios; its
 source was corrected without changing any success assertion. Every acquired
-failed-run process group/fixture was cleaned. Resource-occupied requests exited75
+failed-run process group/fixture was cleaned. Resource-occupied requests exited 75
 `UNRUN` without executing a probe or stealing a lease.
 
 REUSED evidence: none. The final command is newly executed. No complete
