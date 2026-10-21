@@ -58,3 +58,7 @@ R29 独立评估：Web **81.3**、Mac **87.5**、Android **87.5**，三端等权
 | R29 | [打开](rounds/r29/web.html) | [打开](rounds/r29/mac.html) | [打开](rounds/r29/android.html) | [修改](rounds/r29/changes.json) | [报告](rounds/r29/reports/independent-evaluation.md) |
 
 `manifest.json` 对应当轮 HTML 与源码；评估报告再次记录候选哈希。修复进入下一轮，修复前的失败和评分继续保留。完整截图、可见 DOM、实际行动与追踪文件位于相应轮次及 `reports/` 的独立首访目录。
+
+## 每轮独立分支
+
+R20–R29 已按各轮原始提交建立 10 个快照分支，命名为 `codex/mote-ui-rNN-20261021`。所有远端分支均已核对到对应提交。见 [逐轮分支索引](round-branches.md) 和 [机器可读对应表](round-branches.json)。汇总继续使用草稿 PR #185 的现有分支。
