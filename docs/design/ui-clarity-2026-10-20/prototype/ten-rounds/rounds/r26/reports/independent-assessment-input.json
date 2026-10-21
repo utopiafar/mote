@@ -1,0 +1,160 @@
+{
+  "summary": "三端保存、查找、引用核对与记忆发现完成。新增进口到持续来源的复核发现Web目标不明：未选择设备却生成Mac来源；本轮Web未通过Clarity门槛。",
+  "score_explanation": "Web从80降为72.5：Clarity由3降为2，权限/设置子项由4降为2，原因是实际完成结果显示未选择过的Mac标签且没有目标确认。核心保存/搜索/引用功能仍完成，Functionality保持3。Mac与Android保持80；新的返回和存储文案有正面证据，但仍有非阻断文字与低频表单问题。本轮新观察路径暴露的问题不等于已证明代码在本轮才引入。",
+  "actual_work": "三端保存“青鸟R26”合成决定，以“白色信笺”搜索、核对，限定资料提问、查看引用与原文后返回，最后打开记忆。三端从顶部添加内容→导入文件→改为持续同步文件夹进入来源设置。Web填写合成路径/示例/青鸟R26并命名保存，暂停后在概览看到Mac标签，但此前没有设备选择或连接。Mac与Android使用阅读资料示例，保存命名来源并暂停。Android连接完成后用页头返回键回到原导入页，再从来源进入同一具名目录；滚动到关系设置末尾后点击底栏资料库，页面从顶部开始，搜索条件保留。",
+  "resolved_from_previous": [
+    "导入页面现在区分单次保存与持续收集，三个平台实际跳转成功。",
+    "目录保存文案明确清理Mote待传副本，选定文件夹内原文件保留。",
+    "Android连接完成后的页头返回及深滚动后跨路由顶部复位均在本轮通过。",
+    "R25-A仍可观察；R25-B屏幕拒绝后的就地提示本轮未复测，保持历史未解决状态而不计为本轮执行。"
+  ],
+  "resolved_summary": "本轮设置最小路径以文件夹来源的范围说明、保存、暂停和返回完成；没有重复屏幕权限路径。未执行实际上传、目录读取或原生设备连接。",
+  "findings": [
+    {
+      "id": "R26-A",
+      "severity": "major",
+      "platforms": [
+        "web"
+      ],
+      "observation": "空白Web会话从导入转持续文件夹时，设置页只给原始路径字段与“本机指这台电脑”；没有设备/服务器目标说明或选择。保存/暂停后来源概览实际标为“Mac · /示例/青鸟R26”，而本轮从未选择或连接Mac。",
+      "impact": "用户无法从操作前后的界面理解由哪台设备持续接收目录变化。这是设置目标与结果的实质歧义，Clarity与新人设置评分下降；模拟标签阻止将其误报为真实系统动作。",
+      "evidence": [
+        "evidence/independent/web/16-continuous-folder-handoff.png",
+        "evidence/independent/web/18-folder-connected.dom.json",
+        "evidence/independent/web/20-source-overview.png"
+      ]
+    },
+    {
+      "id": "R26-B",
+      "severity": "minor",
+      "platforms": [
+        "web",
+        "mac",
+        "android"
+      ],
+      "observation": "新保存选项与帮助文字明确说清理Mote暂存副本、原目录文件保留，但下方仍残留“中央…本机…保存方式决定两处是否保留原件”的旧说明。",
+      "impact": "新旧术语混用，把已解释清楚的原文件与Mote副本边界再次模糊；可删除或同步改写旧句。Web首次连接时还说“另一个/现有来源”，与空账号不一致。",
+      "evidence": [
+        "evidence/independent/web/16-continuous-folder-handoff.png",
+        "evidence/independent/mac/16-continuous-folder-handoff.dom.json",
+        "evidence/independent/android/16-continuous-folder-handoff.dom.json"
+      ]
+    },
+    {
+      "id": "R26-C",
+      "severity": "minor",
+      "platforms": [
+        "web",
+        "mac",
+        "android"
+      ],
+      "observation": "已有来源的低频内容关系仍为全展开表单，Android实际滚动后看到完整说明、下拉、文本框和两项动作。",
+      "impact": "日常状态已前置，但长表单仍增加页面长度；保留R25-A的改进建议。",
+      "evidence": [
+        "evidence/independent/android/25-deep-settings-scroll.png",
+        "evidence/independent/mac/20-folder-connected.dom.json",
+        "evidence/independent/web/18-folder-connected.dom.json"
+      ]
+    }
+  ],
+  "next_priority": [
+    "优先让Web文件夹接入先说明并确认具名设备或工作台服务器，结果必须显示同一目标；空账号使用首次连接语言。",
+    "统一原文件/Mote副本的存储说明，再完成低频关系设置折叠与历史权限恢复提示。"
+  ],
+  "platforms": {
+    "web": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 2
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 2,
+        "first_value_verify": 4,
+        "progressive_disclosure": 3
+      },
+      "score_reasons": {
+        "design": "首屏和核心资料任务层级保持清楚，已有来源仍有长表单。",
+        "originality": "个人资料、来源、记忆与引用核对组成连贯产品结构，维持3。",
+        "craft": "当前截图和导航稳定；状态与目录名保存后可读。",
+        "functionality": "保存、搜索核对、限定提问、引用原文返回、设置退出和记忆发现均在本轮完成。",
+        "clarity": "持续目录设置未标明执行目标，完成概览却显示未曾选择或连接的Mac，造成实质目标歧义。",
+        "new_user_friendliness": "首步和首值仍明确，但Web文件夹设置无法说明目标设备/服务器，设置子项为2。"
+      },
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "advanced_discovery": "pass_memory_page_opened",
+        "import_to_continuous_source": "pass_route",
+        "source_setup_control": "partial_saved_and_paused_but_target_unexplained_mac_without_selection"
+      }
+    },
+    "mac": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 3
+      },
+      "score_reasons": {
+        "design": "首屏和核心资料任务层级保持清楚，已有来源仍有长表单。",
+        "originality": "个人资料、来源、记忆与引用核对组成连贯产品结构，维持3。",
+        "craft": "当前截图和导航稳定；状态与目录名保存后可读。",
+        "functionality": "保存、搜索核对、限定提问、引用原文返回、设置退出和记忆发现均在本轮完成。",
+        "clarity": "单次导入与持续来源的区分明确，原文件不删除的说明改善；旧原件/中央术语仍与副本说明混用。",
+        "new_user_friendliness": "用途、首步和首值核对保持强；本机目录范围、命名与暂停结果清楚，低频表单仍为3。"
+      },
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "advanced_discovery": "pass_memory_page_opened",
+        "import_to_continuous_source": "pass_route",
+        "source_setup_control": "pass_example_folder_named_pause"
+      }
+    },
+    "android": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 3
+      },
+      "score_reasons": {
+        "design": "首屏和核心资料任务层级保持清楚，已有来源仍有长表单。",
+        "originality": "个人资料、来源、记忆与引用核对组成连贯产品结构，维持3。",
+        "craft": "本轮返回、来源状态与资料库导航实际完成；Android深滚动后回资料库正确复位到顶部。",
+        "functionality": "保存、搜索核对、限定提问、引用原文返回、设置退出和记忆发现均在本轮完成。",
+        "clarity": "单次导入与持续来源的区分明确，原文件不删除的说明改善；旧原件/中央术语仍与副本说明混用。",
+        "new_user_friendliness": "用途、首步和首值核对保持强；本机目录范围、命名与暂停结果清楚，低频表单仍为3。"
+      },
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "advanced_discovery": "pass_memory_page_opened",
+        "import_to_continuous_source": "pass_route",
+        "source_setup_control": "pass_example_folder_named_pause",
+        "changed_navigation": "pass_header_back_to_import_and_deep_scroll_library_top_reset"
+      }
+    }
+  }
+}
