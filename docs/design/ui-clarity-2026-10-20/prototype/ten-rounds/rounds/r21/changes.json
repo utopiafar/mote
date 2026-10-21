@@ -1,0 +1,22 @@
+{
+  "round": 21,
+  "parent": "R20",
+  "purpose": "解决首轮独立发现的设备边界与 Android 操作遮挡，压缩手机首屏的信息顺序。",
+  "input_evaluation": "rounds/r20/reports/independent-evaluation.json",
+  "input_findings": [
+    "Web 屏幕设置缺少客户端设备边界，记录按钮的执行位置有歧义。",
+    "Android 旧笔记保存提示跨页面保留，与底栏一起遮挡权限设置的取消按钮。",
+    "单份资料回答缺少靠近正文的示例标识。",
+    "作者观察：Android 大示例卡将持续收集入口推到首屏下方。",
+    "作者观察：Mac 空库 Cmd K 没有搜索反馈。"
+  ],
+  "changes": [
+    "导航离开时清理旧操作提示；移动端提示进入正文流，表单与安全区留足底部空间。",
+    "Web 屏幕设置说明目标设备、系统权限位置及设备入口。",
+    "回答正文附近展示示例回答和核对引用提示。",
+    "Android 将示例移至持续收集入口之后，保留文件夹与屏幕同级。",
+    "Mac 空库搜索展示可继续的空态。"
+  ],
+  "evaluation_focus": ["R20 三项主要问题复核", "Android 首屏与取消按钮", "Mac 空库搜索", "首次保存和核对连续性"],
+  "scope": "HTML UI simulation with synthetic data"
+}

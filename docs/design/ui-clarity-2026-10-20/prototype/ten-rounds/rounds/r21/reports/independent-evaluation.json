@@ -1,0 +1,274 @@
+{
+  "schema_version": "1.0",
+  "round": "R21",
+  "evaluator": "/root/r20_29_independent_evaluator",
+  "rubric": "../../../rubric-independent.json",
+  "started_at_utc": "2026-10-21T04:41:33.392Z",
+  "finished_at_utc": "2026-10-21T04:42:49.705Z",
+  "report_written_at_utc": "2026-10-21T04:43:59.324295+00:00",
+  "candidate_sha256": {
+    "web": "0a5326ff0284bdb6b83974f686bead6f4615d8e0d4d59b40e5f6e7bf2de58405",
+    "android": "102cfeea35272941c89610a9777f3f73dc10ed93922f1176c1e9ab86611e574c",
+    "mac": "47d7152fa75c77d7a988ad68ab601bc0584a51d231784cf5567d091b817aec60"
+  },
+  "hashes_after": {
+    "web": "0a5326ff0284bdb6b83974f686bead6f4615d8e0d4d59b40e5f6e7bf2de58405",
+    "mac": "47d7152fa75c77d7a988ad68ab601bc0584a51d231784cf5567d091b817aec60",
+    "android": "102cfeea35272941c89610a9777f3f73dc10ed93922f1176c1e9ab86611e574c"
+  },
+  "candidate_unchanged": true,
+  "browser": "133.0.6943.16",
+  "viewports": {
+    "web": {
+      "width": 1440,
+      "height": 1000
+    },
+    "mac": {
+      "width": 1280,
+      "height": 900
+    },
+    "android": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "weights": {
+    "design": 15,
+    "originality": 5,
+    "craft": 10,
+    "functionality": 25,
+    "clarity": 20,
+    "new_user_friendliness": 25
+  },
+  "scope": "Current-round rendered HTML simulations and synthetic natural flows only; informed iterative evaluator, no implementation reads.",
+  "platforms": {
+    "web": {
+      "candidate_sha256": "0a5326ff0284bdb6b83974f686bead6f4615d8e0d4d59b40e5f6e7bf2de58405",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3,
+        "new_user_friendliness": 3.4
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 3,
+        "first_value_verify": 3,
+        "progressive_disclosure": 3
+      },
+      "weighted_total": 77.5,
+      "critical_gate": "pass",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "主要任务层级清楚；未见足以支持4分的全面优化证据。",
+        "originality": "保存—找回—核对的具体产品表达一致。",
+        "craft": "本轮截图与操作无阻断性遮挡；手机完成提示仍重复。",
+        "functionality": "当前轮次保存/找回、提问/引用/原文返回、拒绝/取消、记忆发现均完成。",
+        "clarity": "原型回答和录屏平台边界较上一轮明确；Web目标设备仍不具体。",
+        "new_user_friendliness": "用途与第一步明确，许可说明可理解，首份资料可独立找回，进阶入口可发现。"
+      },
+      "findings": [
+        "R21-A"
+      ],
+      "actions_file": "evidence/independent/web/actions.json",
+      "first_look_file": "evidence/independent/web/first-look.json",
+      "screenshots": [
+        "evidence/independent/web/00-first-look.png",
+        "evidence/independent/web/01-note-editor.png",
+        "evidence/independent/web/03-note-saved.png",
+        "evidence/independent/web/04-library-after-save.png",
+        "evidence/independent/web/06-verified-note.png",
+        "evidence/independent/web/07-ask-scoped.png",
+        "evidence/independent/web/09-answer.png",
+        "evidence/independent/web/10-citation.png",
+        "evidence/independent/web/11-original.png",
+        "evidence/independent/web/13-answer-returned.png",
+        "evidence/independent/web/14-sources.png",
+        "evidence/independent/web/15-source-catalog.png",
+        "evidence/independent/web/16-screen-setup.png",
+        "evidence/independent/web/17-permission-denied.png",
+        "evidence/independent/web/18-setup-cancelled.png",
+        "evidence/independent/web/20-memory-discovery.png"
+      ],
+      "actual_action_records": 20,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "permission_deny_cancel": "pass",
+        "advanced_discovery": "pass_memory_page_opened"
+      },
+      "browser_errors": []
+    },
+    "mac": {
+      "candidate_sha256": "47d7152fa75c77d7a988ad68ab601bc0584a51d231784cf5567d091b817aec60",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3,
+        "new_user_friendliness": 3.4
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 3,
+        "first_value_verify": 3,
+        "progressive_disclosure": 3
+      },
+      "weighted_total": 77.5,
+      "critical_gate": "pass",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "主要任务层级清楚；未见足以支持4分的全面优化证据。",
+        "originality": "保存—找回—核对的具体产品表达一致。",
+        "craft": "本轮截图与操作无阻断性遮挡；手机完成提示仍重复。",
+        "functionality": "当前轮次保存/找回、提问/引用/原文返回、拒绝/取消、记忆发现均完成。",
+        "clarity": "局部示例回答、权限范围和返回路径表达明确。",
+        "new_user_friendliness": "用途与第一步明确，许可说明可理解，首份资料可独立找回，进阶入口可发现。"
+      },
+      "findings": [],
+      "actions_file": "evidence/independent/mac/actions.json",
+      "first_look_file": "evidence/independent/mac/first-look.json",
+      "screenshots": [
+        "evidence/independent/mac/00-first-look.png",
+        "evidence/independent/mac/01-note-editor.png",
+        "evidence/independent/mac/03-note-saved.png",
+        "evidence/independent/mac/04-library-after-save.png",
+        "evidence/independent/mac/06-verified-note.png",
+        "evidence/independent/mac/07-ask-scoped.png",
+        "evidence/independent/mac/09-answer.png",
+        "evidence/independent/mac/10-citation.png",
+        "evidence/independent/mac/11-original.png",
+        "evidence/independent/mac/13-answer-returned.png",
+        "evidence/independent/mac/14-sources.png",
+        "evidence/independent/mac/15-source-catalog.png",
+        "evidence/independent/mac/16-screen-setup.png",
+        "evidence/independent/mac/17-permission-denied.png",
+        "evidence/independent/mac/18-setup-cancelled.png",
+        "evidence/independent/mac/20-memory-discovery.png"
+      ],
+      "actual_action_records": 20,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "permission_deny_cancel": "pass",
+        "advanced_discovery": "pass_memory_page_opened"
+      },
+      "browser_errors": []
+    },
+    "android": {
+      "candidate_sha256": "102cfeea35272941c89610a9777f3f73dc10ed93922f1176c1e9ab86611e574c",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3,
+        "new_user_friendliness": 3.4
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 3,
+        "first_value_verify": 3,
+        "progressive_disclosure": 3
+      },
+      "weighted_total": 77.5,
+      "critical_gate": "pass",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "主要任务层级清楚；未见足以支持4分的全面优化证据。",
+        "originality": "保存—找回—核对的具体产品表达一致。",
+        "craft": "本轮截图与操作无阻断性遮挡；手机完成提示仍重复。",
+        "functionality": "当前轮次保存/找回、提问/引用/原文返回、拒绝/取消、记忆发现均完成。",
+        "clarity": "局部示例回答、权限范围和返回路径表达明确。",
+        "new_user_friendliness": "用途与第一步明确，许可说明可理解，首份资料可独立找回，进阶入口可发现。"
+      },
+      "findings": [
+        "R21-B"
+      ],
+      "actions_file": "evidence/independent/android/actions.json",
+      "first_look_file": "evidence/independent/android/first-look.json",
+      "screenshots": [
+        "evidence/independent/android/00-first-look.png",
+        "evidence/independent/android/01-note-editor.png",
+        "evidence/independent/android/03-note-saved.png",
+        "evidence/independent/android/04-library-after-save.png",
+        "evidence/independent/android/06-verified-note.png",
+        "evidence/independent/android/07-ask-scoped.png",
+        "evidence/independent/android/09-answer.png",
+        "evidence/independent/android/10-citation.png",
+        "evidence/independent/android/11-original.png",
+        "evidence/independent/android/13-answer-returned.png",
+        "evidence/independent/android/14-sources.png",
+        "evidence/independent/android/15-source-catalog.png",
+        "evidence/independent/android/16-screen-setup.png",
+        "evidence/independent/android/17-permission-denied.png",
+        "evidence/independent/android/18-setup-cancelled.png",
+        "evidence/independent/android/20-memory-discovery.png"
+      ],
+      "actual_action_records": 20,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "permission_deny_cancel": "pass",
+        "advanced_discovery": "pass_memory_page_opened"
+      },
+      "browser_errors": []
+    }
+  },
+  "findings": [
+    {
+      "id": "R21-A",
+      "severity": "minor",
+      "platforms": [
+        "web"
+      ],
+      "observation": "屏幕设置新增了Mac/Android执行责任说明，但文案说“所选设备”而当前空白来源状态没有具体设备名或选择器。",
+      "impact": "第一次连接的人仍要自行判断哪个设备将接收此范围；目前观察到的取消分支未受阻。",
+      "evidence": [
+        "evidence/independent/web/16-screen-setup.png",
+        "evidence/independent/web/16-screen-setup.dom.json"
+      ],
+      "next_priority": "在无设备状态给出明确的连接下一步；已有设备时显示目标名称。"
+    },
+    {
+      "id": "R21-B",
+      "severity": "minor",
+      "platforms": [
+        "android"
+      ],
+      "observation": "保存后的编辑页同时有顶部保存提示、按钮旁已保存状态和下方绿色结果区。",
+      "impact": "确认信息重复且占屏，新手找下一步要在多个完成提示间扫描。",
+      "evidence": [
+        "evidence/independent/android/03-note-saved.png"
+      ],
+      "next_priority": "合并为一个靠近保存位置、可直接打开结果的完成反馈。"
+    }
+  ],
+  "resolved_from_previous": [
+    "R20-A: Android normal cancel succeeds after preceding save and navigation.",
+    "R20-B: Web now explains native capture responsibility.",
+    "R20-C: Scoped answer now has a local 示例回答 badge."
+  ],
+  "actions_and_screens": "evidence/independent/",
+  "unverified": [
+    "真实后端/模型",
+    "原生权限/采集",
+    "上传/外部授权/同步",
+    "跨刷新持久化",
+    "未执行分支与全部78单元",
+    "键盘/辅助技术完整检查"
+  ],
+  "equal_platform_mean": 77.5,
+  "minimum_platform_score": 77.5,
+  "critical_gate": "pass",
+  "next_priority": [
+    "在无设备状态给出明确的连接下一步；已有设备时显示目标名称。",
+    "合并为一个靠近保存位置、可直接打开结果的完成反馈。"
+  ]
+}
