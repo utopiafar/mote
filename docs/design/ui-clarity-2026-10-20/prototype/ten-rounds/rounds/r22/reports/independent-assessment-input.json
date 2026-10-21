@@ -1,0 +1,133 @@
+{
+  "summary": "三端核心保存与核对路径完成；Web的设备责任和具体目标已清楚，Android文件夹新增、选择、命名与暂停可区分。",
+  "score_explanation": "统一保存结果提供明确打开/提问下一步，且本轮离页找回与原文核对完整，因此N4从3升至4。Web执行了无设备→具体示例设备→设备端授权说明→取消额外连接；Android执行了目录授权范围、命名、暂停，N3有足够证据给4。Mac仍为已观察的清楚拒绝/取消，N3保持3。其余维度保持3，不把局部修复等同全面卓越。",
+  "actual_work": "三端均保存“燕子R22”合成会议记录，搜索“蓝色信封”，核对日期/叶青/周三/四份资料，限定资料提问，打开引用和原始内容并返回；最后打开记忆。Mac/Android模拟拒绝屏幕权限并正常取消。Web从无设备提示连接Mac示例设备，看到具名目标与只读设备上报状态，再进入追加连接并取消。Android另从本机文件夹卡打开选择器，选Documents/阅读资料，命名晨光R22阅读，保存后转为管理界面；暂停后来源列表显示相同名称、路径和已暂停状态。",
+  "resolved_from_previous": [
+    "R21-A: Web有明确无设备路径和Mac示例设备目标，权限转至设备端。",
+    "R21-B: 首次笔记保存合并为单个结果区并提供打开/提问。"
+  ],
+  "resolved_summary": "R21两项较小摩擦均在当前候选复核改善。Android本轮新增来源的验证只证明合成UI状态，不证明文件系统选择器或实际同步。",
+  "findings": [
+    {
+      "id": "R22-A",
+      "severity": "minor",
+      "platforms": [
+        "android"
+      ],
+      "observation": "已暂停一个文件夹后，来源首屏的文件夹卡显示“已暂停接收”，主要动作仍是“连接一个文件夹”；该已连接来源的名称和管理动作位于下方。",
+      "impact": "想管理刚连接来源的人需要继续下滚或理解总览卡与具体来源行的区别。",
+      "evidence": [
+        "evidence/independent/android/25-folder-source-row.png",
+        "evidence/independent/android/25-folder-source-row.dom.json"
+      ]
+    },
+    {
+      "id": "R22-B",
+      "severity": "minor",
+      "platforms": [
+        "android"
+      ],
+      "observation": "来源连接完成后，顶部提示、设置已保存条、正在接收条、正在管理的来源块连续出现，实际目录与管理动作被推到下方。",
+      "impact": "第一条来源的确认信息重复，占用窄屏可用空间。",
+      "evidence": [
+        "evidence/independent/android/23-folder-connected.png"
+      ]
+    }
+  ],
+  "next_priority": [
+    "Android可把已连接来源名称与管理入口带到本机总览卡，并合并来源完成后的重复状态提示。"
+  ],
+  "platforms": {
+    "web": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 3
+      },
+      "score_reasons": {
+        "design": "首屏与当前任务布局清楚；Android源管理完成信息仍重复。",
+        "originality": "个人资料、来源与原文核对的组织一致，保持3。",
+        "craft": "实际点击和返回可靠，无旧提示覆盖；手机来源页仍有可缩减冗余。",
+        "functionality": "本轮核心路径完整；没有扩大成真实采集/同步。",
+        "clarity": "示例回答、原文来源、权限职责与结果范围可辨认。",
+        "new_user_friendliness": "用途与第一步明确；统一完成反馈支持首值核对。Web/Android新增设置路径补足范围解释。"
+      },
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "permission_setup": "pass_device_handoff_and_extra_connection_cancel",
+        "advanced_discovery": "pass_memory_page_opened"
+      }
+    },
+    "mac": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 3,
+        "first_value_verify": 4,
+        "progressive_disclosure": 3
+      },
+      "score_reasons": {
+        "design": "首屏与当前任务布局清楚；Android源管理完成信息仍重复。",
+        "originality": "个人资料、来源与原文核对的组织一致，保持3。",
+        "craft": "实际点击和返回可靠，无旧提示覆盖；手机来源页仍有可缩减冗余。",
+        "functionality": "本轮核心路径完整；没有扩大成真实采集/同步。",
+        "clarity": "示例回答、原文来源、权限职责与结果范围可辨认。",
+        "new_user_friendliness": "用途与第一步明确；统一完成反馈支持首值核对。Web/Android新增设置路径补足范围解释。"
+      },
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "permission_setup": "pass_denial_and_cancel",
+        "advanced_discovery": "pass_memory_page_opened"
+      }
+    },
+    "android": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 3
+      },
+      "score_reasons": {
+        "design": "首屏与当前任务布局清楚；Android源管理完成信息仍重复。",
+        "originality": "个人资料、来源与原文核对的组织一致，保持3。",
+        "craft": "实际点击和返回可靠，无旧提示覆盖；手机来源页仍有可缩减冗余。",
+        "functionality": "本轮核心路径完整；没有扩大成真实采集/同步。",
+        "clarity": "示例回答、原文来源、权限职责与结果范围可辨认。",
+        "new_user_friendliness": "用途与第一步明确；统一完成反馈支持首值核对。Web/Android新增设置路径补足范围解释。"
+      },
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "permission_setup": "pass_denial_and_cancel",
+        "advanced_discovery": "pass_memory_page_opened",
+        "changed_folder_path": "pass_new_picker_named_source_pause_and_list_state"
+      }
+    }
+  }
+}
