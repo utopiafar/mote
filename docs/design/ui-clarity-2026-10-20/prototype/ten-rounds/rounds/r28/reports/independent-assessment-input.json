@@ -1,0 +1,173 @@
+{
+  "summary": "三端当前观察范围门槛通过。回顾的资料存入日期与日程事件时间明确分开，证据、详情和原始内容一致；Android首次文件夹选择器位于手动路径之前。",
+  "score_explanation": "维持Web80、Mac81.25、Android87.5的既有评分校准。本轮日期改动提供了更具体的清晰度证据，但不足以仅凭一个改动将整体Clarity由3升至4。Android的Functionality4延续R27独立执行过的记忆修正/缩放/历史结果校准；该精确异常路径本轮未重跑，明确标为历史证据，不宣称R28重验通过。本轮三端均重新执行核心最小路径，并完成新增报告证据往返。",
+  "actual_work": "三端从空白账号保存“雨雀R28”合成会议决定，以“金色书灯”离开后搜索，核对正文，再限定提问、打开引用/原文并返回。三端添加持续同步文件夹，命名、保存及暂停：Web使用明确工作台服务器的示例路径；Mac与Android实际打开本机示例选择器并选择阅读资料。Android在未手动输入路径前使用新的主操作选择器。随后从资料库发现洞察；通过明确的“预览数据→已有资料”控件切换到六份合成夹具，重新打开洞察，以默认“最近7天”生成报告。滚动到日历证据，打开详情、原始内容，关闭并返回报告；三个视图均显示资料于2026-10-17存入、事件发生于10月22日14:00。返回后仍保留10月14日–20日范围及六份证据。夹具切换发生在自己的首条内容及来源验证完成后，不宣称原空白账号数据在切换后仍保留。",
+  "resolved_from_previous": [
+    "本轮针对日期歧义：报告明确按资料存入日期纳入，事件时间另列；详情及原始内容一致。",
+    "Android首次连接文件夹的主操作先提供选择器，手动路径位于其后；实际选择与保存完成。"
+  ],
+  "resolved_summary": "本轮未重新执行R27记忆缩放修正；历史校准依据见R27报告与Android35–40证据，不能视为当前候选的新执行记录。",
+  "findings": [
+    {
+      "id": "R28-A",
+      "severity": "minor",
+      "platforms": [
+        "web"
+      ],
+      "observation": "Web已有服务器来源仍先呈现目标说明、接收状态条、来源身份与完整设置表单；1440×1000的已保存截图仅在底边开始出现当前状态卡，暂停/浏览仍在表单之后。",
+      "impact": "延续R27-A：日常管理需越过低频设置；将具名来源、当前状态和常用操作前置，同时保留服务器目标与编辑入口。",
+      "evidence": [
+        "evidence/independent/web/18-folder-connected.png",
+        "evidence/independent/web/19-folder-paused.dom.json"
+      ]
+    }
+  ],
+  "next_priority": [
+    "优先解决Web已有来源的操作顺序；本轮执行到的日期核对和Android首次选择路径未发现新的实质问题。"
+  ],
+  "platforms": {
+    "web": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 3
+      },
+      "score_reasons": {
+        "design": "用途、首次写入和核对路径明确；Web已有来源操作仍在长表单后。",
+        "originality": "资料、来源和证据的组织延续一致产品身份；本轮没有足够新的独创性证据改变评分。",
+        "craft": "当前视口下关键操作、日期行、原文弹窗和返回状态可见；未做全面响应式或辅助技术检查。",
+        "functionality": "本轮重新完成保存/找回、限定问答/原文往返、来源保存/暂停，以及回顾证据→详情→原文→报告往返。",
+        "clarity": "回顾按存入日期纳入，日历事件时间独立标注；报告、详情、原文数值一致。整体仍按3分校准，不由单一新增分支直接升至4。",
+        "new_user_friendliness": "首屏用途与首步清楚，写入后能找回和核对；来源目标明确，但日常管理仍需穿过设置，渐进展开保持3。"
+      },
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "source_setup_control": "pass_named_target_folder_save_pause",
+        "advanced_discovery": "pass_insights_opened_after_first_success",
+        "review_date_verification": {
+          "result": "pass_current_round",
+          "preview_dataset": "explicitly_switched_to_existing_synthetic_fixture_after_core_checks",
+          "range_label": "最近7天 / 10月14日–20日",
+          "basis": "资料存入日期",
+          "calendar_library_date": "2026-10-17",
+          "calendar_event_time": "10月22日14:00",
+          "observed_views": [
+            "generated_review_evidence",
+            "calendar_detail",
+            "original_content",
+            "returned_review"
+          ],
+          "return_preserved_range_and_six_evidence_items": true
+        }
+      }
+    },
+    "mac": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 4
+      },
+      "score_reasons": {
+        "design": "用途、首次写入、阅读与核对层级稳定；已连接来源优先展示状态和控制。",
+        "originality": "资料、来源和证据的组织延续一致产品身份；本轮没有足够新的独创性证据改变评分。",
+        "craft": "当前视口下关键操作、日期行、原文弹窗和返回状态可见；未做全面响应式或辅助技术检查。",
+        "functionality": "本轮重新完成保存/找回、限定问答/原文往返、来源保存/暂停，以及回顾证据→详情→原文→报告往返。",
+        "clarity": "回顾按存入日期纳入，日历事件时间独立标注；报告、详情、原文数值一致。整体仍按3分校准，不由单一新增分支直接升至4。",
+        "new_user_friendliness": "首屏不用前置设置即可完成首值；来源范围可理解，日常管理与低频设置分开；成功后可发现洞察并核对依据。"
+      },
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "source_setup_control": "pass_named_target_folder_save_pause",
+        "advanced_discovery": "pass_insights_opened_after_first_success",
+        "review_date_verification": {
+          "result": "pass_current_round",
+          "preview_dataset": "explicitly_switched_to_existing_synthetic_fixture_after_core_checks",
+          "range_label": "最近7天 / 10月14日–20日",
+          "basis": "资料存入日期",
+          "calendar_library_date": "2026-10-17",
+          "calendar_event_time": "10月22日14:00",
+          "observed_views": [
+            "generated_review_evidence",
+            "calendar_detail",
+            "original_content",
+            "returned_review"
+          ],
+          "return_preserved_range_and_six_evidence_items": true
+        }
+      }
+    },
+    "android": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 4,
+        "clarity": 3
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 4
+      },
+      "score_reasons": {
+        "design": "用途、首次写入、阅读与核对层级稳定；已连接来源优先展示状态和控制。",
+        "originality": "资料、来源和证据的组织延续一致产品身份；本轮没有足够新的独创性证据改变评分。",
+        "craft": "当前视口下关键操作、日期行、原文弹窗和返回状态可见；未做全面响应式或辅助技术检查。",
+        "functionality": "本轮核心路径、文件夹选择/保存/暂停和报告证据往返均完成。4分沿用R27独立的记忆修正跨缩放/重开/版本历史校准；本轮未重复该异常路径，未将历史结果算作当前执行。",
+        "clarity": "回顾按存入日期纳入，日历事件时间独立标注；报告、详情、原文数值一致。整体仍按3分校准，不由单一新增分支直接升至4。",
+        "new_user_friendliness": "首屏不用前置设置即可完成首值；来源范围可理解，日常管理与低频设置分开；成功后可发现洞察并核对依据。"
+      },
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "source_setup_control": "pass_named_target_folder_save_pause",
+        "advanced_discovery": "pass_insights_opened_after_first_success",
+        "review_date_verification": {
+          "result": "pass_current_round",
+          "preview_dataset": "explicitly_switched_to_existing_synthetic_fixture_after_core_checks",
+          "range_label": "最近7天 / 10月14日–20日",
+          "basis": "资料存入日期",
+          "calendar_library_date": "2026-10-17",
+          "calendar_event_time": "10月22日14:00",
+          "observed_views": [
+            "generated_review_evidence",
+            "calendar_detail",
+            "original_content",
+            "returned_review"
+          ],
+          "return_preserved_range_and_six_evidence_items": true
+        },
+        "first_folder_picker": "pass_picker_clicked_before_manual_path_entry",
+        "memory_correction_resize": {
+          "current_round": "not_reexecuted",
+          "historical_round": "R27",
+          "historical_candidate_sha256": "b4c703a2d50efad4aa327ec8af1d501552446b30457b6b6db22a9b1d366cd58c",
+          "historical_report": "../r27/reports/independent-evaluation.json",
+          "role": "score_calibration_only_not_current_execution"
+        }
+      }
+    }
+  }
+}
