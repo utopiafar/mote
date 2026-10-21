@@ -1,0 +1,18 @@
+{
+  "round": 27,
+  "parent": "R26",
+  "purpose": "消除 Web 文件夹目标混淆，修复记忆纠正丢稿，并渐进呈现可选设置。",
+  "input_evaluation": "rounds/r26/reports/independent-evaluation.json",
+  "additional_input": ["rounds/r25/reports/independent-evaluation.json", "reports/fresh-android-advanced-r25/report.md", "rounds/r25/author/native-checks/memory-resize-repro-result.json"],
+  "input_findings": ["R26-A Web 未选择 Mac 却产生 Mac 来源，目标有实质歧义", "R26 旧保存方式说明仍混淆副本与原文件", "R25-A 已有来源完整展开可选关系表单", "R25-B 屏幕保存按钮旁没有权限恢复提示", "独立 Android 首访：记忆纠正丢失，历史产生未变化的人工纠正版本；已在视口改变时复现"],
+  "changes": [
+    "Web 明确连接工作台服务器目录，提供示例服务器路径；本机目录交接到命名的 Mac 或 Android 设备。",
+    "服务器来源保存目标元数据，在来源列表和管理页保持正确身份。",
+    "统一说明工作台归档、Mote 副本和文件夹原文件的区别。",
+    "已有来源的可选内容关系折叠为带状态摘要的设置，未保存草稿保持展开。",
+    "屏幕保存旁说明权限阻断原因，并提供定位实际授权控件的恢复入口。",
+    "记忆编辑在界面重新渲染后恢复草稿，保存和历史使用同一份确切文本，未改变正文不新增纠正版本。"
+  ],
+  "evaluation_focus": ["Web 来源创建、保存、暂停和回到总览后的目标一致性", "记忆纠正跨视口变化后的全文和历史核对", "权限恢复提示及可选关系可发现性", "三端主要旅程"],
+  "scope": "HTML UI simulation with synthetic data"
+}
