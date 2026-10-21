@@ -1,0 +1,1154 @@
+{
+  "input": "/tmp/mote-source-english-audit.html",
+  "executed": [
+    {
+      "route": "notes",
+      "action": "attach",
+      "errors": []
+    },
+    {
+      "route": "notes",
+      "action": "save-note",
+      "errors": []
+    },
+    {
+      "route": "import",
+      "action": "import-origin",
+      "errors": []
+    },
+    {
+      "route": "import",
+      "action": "choose-file",
+      "errors": []
+    },
+    {
+      "route": "imports",
+      "action": "new-import",
+      "errors": []
+    },
+    {
+      "route": "imports",
+      "action": "delete-import",
+      "errors": []
+    },
+    {
+      "route": "imports",
+      "action": "resume-import",
+      "errors": []
+    },
+    {
+      "route": "sources",
+      "action": "source-add",
+      "errors": []
+    },
+    {
+      "route": "sources",
+      "action": "browse-source",
+      "errors": []
+    },
+    {
+      "route": "setup/nas",
+      "action": "save-source",
+      "errors": []
+    },
+    {
+      "route": "setup/google",
+      "action": "save-source",
+      "errors": []
+    },
+    {
+      "route": "setup/gmail",
+      "action": "save-source",
+      "errors": []
+    },
+    {
+      "route": "setup/mcp",
+      "action": "preview-mcp",
+      "errors": []
+    },
+    {
+      "route": "setup/mcp",
+      "action": "save-source",
+      "errors": []
+    },
+    {
+      "route": "setup/lark",
+      "action": "save-source",
+      "errors": []
+    },
+    {
+      "route": "setup/lark",
+      "action": "pause-source",
+      "errors": []
+    },
+    {
+      "route": "setup/lark",
+      "action": "browse-source",
+      "errors": []
+    },
+    {
+      "route": "library/sources",
+      "action": "source-versions",
+      "errors": []
+    },
+    {
+      "route": "today",
+      "action": "check-todo",
+      "errors": []
+    },
+    {
+      "route": "today",
+      "action": "manage-todo",
+      "errors": []
+    },
+    {
+      "route": "today",
+      "action": "add-todo",
+      "errors": []
+    },
+    {
+      "route": "devices",
+      "action": "reauthorize-device",
+      "errors": []
+    },
+    {
+      "route": "setup/device",
+      "action": "connect-device",
+      "errors": []
+    },
+    {
+      "route": "access",
+      "action": "grant-info",
+      "errors": []
+    },
+    {
+      "route": "access",
+      "action": "grant-revoke",
+      "errors": []
+    },
+    {
+      "route": "access",
+      "action": "grant-new",
+      "errors": []
+    },
+    {
+      "route": "material/m1",
+      "action": "copy-material",
+      "errors": []
+    },
+    {
+      "route": "material/m1",
+      "action": "material-more",
+      "errors": []
+    },
+    {
+      "route": "material/m1",
+      "action": "original",
+      "errors": []
+    },
+    {
+      "route": "material/m1",
+      "action": "ask-material",
+      "errors": []
+    },
+    {
+      "route": "material/m1",
+      "action": "material-background",
+      "errors": []
+    },
+    {
+      "route": "material/m1",
+      "action": "material-memory",
+      "errors": []
+    },
+    {
+      "route": "material/m1",
+      "action": "edit-note",
+      "errors": []
+    },
+    {
+      "route": "library/raw",
+      "action": "original",
+      "errors": []
+    },
+    {
+      "route": "library/raw",
+      "action": "delete-record",
+      "errors": []
+    },
+    {
+      "route": "ask",
+      "action": "new-chat",
+      "errors": []
+    },
+    {
+      "route": "ask",
+      "action": "open-chat",
+      "errors": []
+    },
+    {
+      "route": "ask",
+      "action": "prompt",
+      "errors": []
+    },
+    {
+      "route": "ask",
+      "action": "attach-ask-image",
+      "errors": []
+    },
+    {
+      "route": "ask",
+      "action": "mock-missing",
+      "errors": []
+    },
+    {
+      "route": "ask",
+      "action": "send-ask",
+      "errors": []
+    },
+    {
+      "route": "memories",
+      "action": "memory-history",
+      "errors": []
+    },
+    {
+      "route": "memories",
+      "action": "manual-memory",
+      "errors": []
+    },
+    {
+      "route": "memories",
+      "action": "correct-memory",
+      "errors": []
+    },
+    {
+      "route": "memories",
+      "action": "continue-memory",
+      "errors": []
+    },
+    {
+      "route": "memories",
+      "action": "memory-more",
+      "errors": []
+    },
+    {
+      "route": "ask/clarifications",
+      "action": "answer-clarification",
+      "errors": []
+    },
+    {
+      "route": "settings/memory-strategy",
+      "action": "save-config",
+      "errors": []
+    },
+    {
+      "route": "insights",
+      "action": "generate-insight",
+      "errors": []
+    },
+    {
+      "route": "activity",
+      "action": "activity-tab",
+      "errors": []
+    },
+    {
+      "route": "activity",
+      "action": "authorize-task",
+      "errors": []
+    },
+    {
+      "route": "activity",
+      "action": "cancel-task",
+      "errors": []
+    },
+    {
+      "route": "activity/details",
+      "action": "authorize-task",
+      "errors": []
+    },
+    {
+      "route": "activity/details",
+      "action": "retry-source-check",
+      "errors": []
+    },
+    {
+      "route": "todos",
+      "action": "add-todo",
+      "errors": []
+    },
+    {
+      "route": "todos",
+      "action": "check-todo",
+      "errors": []
+    },
+    {
+      "route": "todos",
+      "action": "manage-todo",
+      "errors": []
+    },
+    {
+      "route": "todos/schedule",
+      "action": "review-calendar",
+      "errors": []
+    },
+    {
+      "route": "todos/schedule",
+      "action": "ignore-calendar",
+      "errors": []
+    },
+    {
+      "route": "library/snippets",
+      "action": "original",
+      "errors": []
+    },
+    {
+      "route": "library/snippets",
+      "action": "delete-record",
+      "errors": []
+    },
+    {
+      "route": "settings/storage",
+      "action": "save-storage",
+      "errors": []
+    },
+    {
+      "route": "settings/storage",
+      "action": "export-data",
+      "errors": []
+    },
+    {
+      "route": "settings/storage",
+      "action": "restore-backup",
+      "errors": []
+    },
+    {
+      "route": "settings/storage",
+      "action": "rebuild-index",
+      "errors": []
+    },
+    {
+      "route": "settings/usage",
+      "action": "usage-reset",
+      "errors": []
+    },
+    {
+      "route": "settings/usage",
+      "action": "usage-drill",
+      "errors": []
+    },
+    {
+      "route": "settings/usage",
+      "action": "usage-request",
+      "errors": []
+    },
+    {
+      "route": "settings/usage",
+      "action": "usage-page",
+      "errors": []
+    },
+    {
+      "route": "settings/system",
+      "action": "refresh-system",
+      "errors": []
+    },
+    {
+      "route": "settings/providers",
+      "action": "clone-provider",
+      "errors": []
+    },
+    {
+      "route": "settings/providers",
+      "action": "save-config",
+      "errors": []
+    },
+    {
+      "route": "settings/providers",
+      "action": "test-provider",
+      "errors": []
+    },
+    {
+      "route": "settings/assignments",
+      "action": "save-config",
+      "errors": []
+    },
+    {
+      "route": "settings/images",
+      "action": "save-config",
+      "errors": []
+    },
+    {
+      "route": "library/files",
+      "action": "reprocess-file",
+      "errors": []
+    },
+    {
+      "route": "library/files",
+      "action": "edit-transcript",
+      "errors": []
+    },
+    {
+      "route": "settings/file-processing",
+      "action": "install-voice",
+      "errors": []
+    },
+    {
+      "route": "settings/file-processing",
+      "action": "save-config",
+      "errors": []
+    },
+    {
+      "route": "settings/file-processing",
+      "action": "preview-file-rules",
+      "errors": []
+    },
+    {
+      "route": "settings/image-history",
+      "action": "preview-image-batch",
+      "errors": []
+    },
+    {
+      "route": "settings/concurrency",
+      "action": "save-config",
+      "errors": []
+    },
+    {
+      "route": "settings/advanced",
+      "action": "save-config",
+      "errors": []
+    },
+    {
+      "route": "settings/advanced",
+      "action": "preview-deployment",
+      "errors": []
+    },
+    {
+      "route": "settings/advanced",
+      "action": "refresh-deployment",
+      "errors": []
+    },
+    {
+      "route": "settings/plugins",
+      "action": "toggle-memory",
+      "errors": []
+    },
+    {
+      "route": "settings/plugins",
+      "action": "stop-memory",
+      "errors": []
+    },
+    {
+      "route": "settings/plugins",
+      "action": "plugin-switch",
+      "errors": []
+    },
+    {
+      "route": "settings/plugins",
+      "action": "plugins-catalog",
+      "errors": []
+    },
+    {
+      "route": "settings/plugins",
+      "action": "plugin-capabilities",
+      "errors": []
+    },
+    {
+      "route": "settings/account",
+      "action": "logout-demo",
+      "errors": []
+    },
+    {
+      "route": "settings/help",
+      "action": "export-diagnostics",
+      "errors": []
+    },
+    {
+      "route": "settings/help",
+      "action": "maintenance-guide",
+      "errors": []
+    },
+    {
+      "route": "settings/help",
+      "action": "check-versions",
+      "errors": []
+    },
+    {
+      "route": "settings/agent-scope",
+      "action": "preview-context",
+      "errors": []
+    },
+    {
+      "route": "settings/agent-events",
+      "action": "inspect-read",
+      "errors": []
+    },
+    {
+      "route": "settings/diagnostics",
+      "action": "diagnostic-log",
+      "errors": []
+    },
+    {
+      "route": "settings/diagnostics",
+      "action": "export-diagnostics",
+      "errors": []
+    },
+    {
+      "route": "settings/diagnostics",
+      "action": "save-diagnostic",
+      "errors": []
+    },
+    {
+      "route": "settings/diagnostics",
+      "action": "feedback-save",
+      "errors": []
+    },
+    {
+      "route": "setup/screen",
+      "action": "allow-screen",
+      "errors": []
+    },
+    {
+      "route": "setup/screen",
+      "action": "deny-screen",
+      "errors": []
+    },
+    {
+      "route": "setup/screen",
+      "action": "pause-source",
+      "errors": []
+    },
+    {
+      "route": "setup/screen",
+      "action": "browse-source",
+      "errors": []
+    },
+    {
+      "route": "setup/folder",
+      "action": "save-source",
+      "errors": []
+    },
+    {
+      "route": "setup/folder",
+      "action": "pause-source",
+      "errors": []
+    },
+    {
+      "route": "setup/folder",
+      "action": "browse-source",
+      "errors": []
+    },
+    {
+      "route": "settings/usage-prices",
+      "action": "save-prices",
+      "errors": []
+    }
+  ],
+  "unique": [
+    {
+      "text": "林",
+      "originalText": "林",
+      "scenario": "notes → attach",
+      "tag": "span",
+      "class": "avatar"
+    },
+    {
+      "text": "林同学",
+      "originalText": "林同学",
+      "scenario": "notes → attach",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "产品草图.png",
+      "originalText": "产品草图.png",
+      "scenario": "notes → attach",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "讨论录音.wav",
+      "originalText": "讨论录音.wav",
+      "scenario": "notes → attach",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "研究资料.md",
+      "originalText": "研究资料.md",
+      "scenario": "import → choose-file",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "项目讨论.wav",
+      "originalText": "项目讨论.wav",
+      "scenario": "import → choose-file",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "资料归档.zip",
+      "originalText": "资料归档.zip",
+      "scenario": "import → choose-file",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "研究资料文件夹",
+      "originalText": "研究资料文件夹",
+      "scenario": "import → choose-file",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "会议录音.wav",
+      "originalText": "会议录音.wav",
+      "scenario": "imports → delete-import",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "Delete the import “研究资料.md” and the 1 material it created. External originals and other imports are retained.",
+      "originalText": "删除“研究资料.md”这次导入及其生成的 1 份资料。外部原件与其他导入保留。",
+      "scenario": "imports → delete-import",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "资料归档.zip · Originals saved. Add context to continue.",
+      "originalText": "资料归档.zip · 原件已保存，补充背景后继续。",
+      "scenario": "imports → resume-import",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "Archive preview: 研究方法.md, 阅读记录.md, 访谈摘要.md, 来源清单.md. 4 materials in total.",
+      "originalText": "归档预览：研究方法.md、阅读记录.md、访谈摘要.md、来源清单.md。共 4 份资料。",
+      "scenario": "imports → resume-import",
+      "tag": "div",
+      "class": "notice"
+    },
+    {
+      "text": "连接新的文件夹，持续保存后续变化",
+      "originalText": "连接新的文件夹，持续保存后续变化",
+      "scenario": "sources → source-add",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "当前来源：",
+      "originalText": "当前来源：",
+      "scenario": "sources → browse-source",
+      "tag": "strong",
+      "class": ""
+    },
+    {
+      "text": "这里只显示这个来源已经保存的资料。",
+      "originalText": "这里只显示这个来源已经保存的资料。",
+      "scenario": "sources → browse-source",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "管理此来源",
+      "originalText": "管理此来源",
+      "scenario": "sources → browse-source",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "查看全部资料",
+      "originalText": "查看全部资料",
+      "scenario": "sources → browse-source",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "当前筛选：",
+      "originalText": "当前筛选：",
+      "scenario": "sources → browse-source",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "研究资料",
+      "originalText": "研究资料",
+      "scenario": "sources → browse-source",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "研究方法.md",
+      "originalText": "研究方法.md",
+      "scenario": "setup/mcp → preview-mcp",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "先记录研究问题，再保留资料出处，最后整理观察结果。",
+      "originalText": "先记录研究问题，再保留资料出处，最后整理观察结果。",
+      "scenario": "setup/mcp → preview-mcp",
+      "tag": "div",
+      "class": "evidence-box"
+    },
+    {
+      "text": "此来源已暂停接收新内容，已保存资料仍可阅读。同步策略保留，恢复后按已保存策略运行。",
+      "originalText": "此来源已暂停接收新内容，已保存资料仍可阅读。同步策略保留，恢复后按已保存策略运行。",
+      "scenario": "setup/lark → pause-source",
+      "tag": "div",
+      "class": "notice warn"
+    },
+    {
+      "text": "这个来源还没有已保存资料",
+      "originalText": "这个来源还没有已保存资料",
+      "scenario": "setup/lark → browse-source",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "连接已保存，收到的内容会出现在这里。其他来源的资料保持原样。",
+      "originalText": "连接已保存，收到的内容会出现在这里。其他来源的资料保持原样。",
+      "scenario": "setup/lark → browse-source",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "产品评审 · 让第一步更清楚",
+      "originalText": "产品评审 · 让第一步更清楚",
+      "scenario": "library/sources → source-versions",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "长期记忆系统调研笔记",
+      "originalText": "长期记忆系统调研笔记",
+      "scenario": "library/sources → source-versions",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "研究资料 · 文件 / 研究资料/记忆系统.md",
+      "originalText": "研究资料 · 文件 / 研究资料/记忆系统.md",
+      "scenario": "library/sources → source-versions",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "Mote / 来源目录整理",
+      "originalText": "Mote / 来源目录整理",
+      "scenario": "library/sources → source-versions",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "Codex sessions · Codex / mote / 会话记录",
+      "originalText": "Codex 会话 · Codex / mote / 会话记录",
+      "scenario": "library/sources → source-versions",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "周四设计评审",
+      "originalText": "周四设计评审",
+      "scenario": "library/sources → source-versions",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "Google Calendar · Google Calendar / 工作日历",
+      "originalText": "Google 日历 · Google Calendar / 工作日历",
+      "scenario": "library/sources → source-versions",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "项目讨论录音 · 本周计划",
+      "originalText": "项目讨论录音 · 本周计划",
+      "scenario": "library/sources → source-versions",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "Lark recordings · 飞书妙记 / 项目讨论",
+      "originalText": "飞书录音 · 飞书妙记 / 项目讨论",
+      "scenario": "library/sources → source-versions",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "文章摘录 · 渐进式披露",
+      "originalText": "文章摘录 · 渐进式披露",
+      "scenario": "library/sources → source-versions",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "“第一轮设计”指哪个阶段？",
+      "originalText": "“第一轮设计”指哪个阶段？",
+      "scenario": "today → check-todo",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "核对移动端的添加入口",
+      "originalText": "核对移动端的添加入口",
+      "scenario": "today → check-todo",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "整理这周保存的研究资料",
+      "originalText": "整理这周保存的研究资料",
+      "scenario": "today → check-todo",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "周四设计评审 · Oct 22 14:00–15:00",
+      "originalText": "周四设计评审 · 10月22日 14:00–15:00",
+      "scenario": "today → check-todo",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "研究资料 · Yesterday 18:34",
+      "originalText": "研究资料 · 昨天 18:34",
+      "scenario": "today → check-todo",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "我的 Mac",
+      "originalText": "我的 Mac",
+      "scenario": "devices → reauthorize-device",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "屏幕：未在记录 · 等待授权",
+      "originalText": "屏幕：未在记录 · 等待授权",
+      "scenario": "devices → reauthorize-device",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "文件夹：正在同步",
+      "originalText": "文件夹：正在同步",
+      "scenario": "devices → reauthorize-device",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "个人助手",
+      "originalText": "个人助手",
+      "scenario": "access → grant-info",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "个人助手 · Connection information",
+      "originalText": "个人助手 · 连接信息",
+      "scenario": "access → grant-info",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "今天的产品评审围绕新用户的第一步展开。\n最重要的事情是让输入方式清楚：一次导入文件，或持续同步一个文件夹。已有资料应该随时可读，用户也可以直接提问。\n下次评审：周四下午核对三端的入口和文案。",
+      "originalText": "今天的产品评审围绕新用户的第一步展开。\n最重要的事情是让输入方式清楚：一次导入文件，或持续同步一个文件夹。已有资料应该随时可读，用户也可以直接提问。\n下次评审：周四下午核对三端的入口和文案。",
+      "scenario": "material/m1 → original",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "这周有哪些值得跟进的事？",
+      "originalText": "这周有哪些值得跟进的事？",
+      "scenario": "material/m1 → ask-material",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "资料与记忆有什么区别？",
+      "originalText": "资料与记忆有什么区别？",
+      "scenario": "material/m1 → ask-material",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "Mac 屏幕",
+      "originalText": "Mac 屏幕",
+      "scenario": "material/m1 → material-memory",
+      "tag": "small",
+      "class": ""
+    },
+    {
+      "text": "界面可以首先呈现少量高频任务，再让用户按需探索更多能力。\n来源：示例浏览器页面的屏幕记录。\n记录中保留原始时间、应用和来源。",
+      "originalText": "界面可以首先呈现少量高频任务，再让用户按需探索更多能力。\n来源：示例浏览器页面的屏幕记录。\n记录中保留原始时间、应用和来源。",
+      "scenario": "library/raw → original",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "根据已保存的资料，有两件事值得跟进：",
+      "originalText": "根据已保存的资料，有两件事值得跟进：",
+      "scenario": "ask → open-chat",
+      "tag": "strong",
+      "class": ""
+    },
+    {
+      "text": "1. 核对移动端的添加入口，让文件夹同步和屏幕记录同样容易发现。",
+      "originalText": "1. 核对移动端的添加入口，让文件夹同步和屏幕记录同样容易发现。",
+      "scenario": "ask → open-chat",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "2. 周四设计评审时，检查资料库的首屏说明和各类来源的设置路径。",
+      "originalText": "2. 周四设计评审时，检查资料库的首屏说明和各类来源的设置路径。",
+      "scenario": "ask → open-chat",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "产品评审记录 · View citation",
+      "originalText": "产品评审记录 · 查看引用",
+      "scenario": "ask → open-chat",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "周四设计评审 · View citation",
+      "originalText": "周四设计评审 · 查看引用",
+      "scenario": "ask → open-chat",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "产品设计偏好",
+      "originalText": "产品设计偏好",
+      "scenario": "memories → memory-history",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "偏好入口简洁、按任务组织的界面。复杂设置放在相关上下文里。",
+      "originalText": "偏好入口简洁、按任务组织的界面。复杂设置放在相关上下文里。",
+      "scenario": "memories → memory-history",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "最初整理：偏好入口简洁、按任务组织的界面。",
+      "originalText": "最初整理：偏好入口简洁、按任务组织的界面。",
+      "scenario": "memories → memory-history",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "“第一轮设计”指的是哪个阶段？",
+      "originalText": "“第一轮设计”指的是哪个阶段？",
+      "scenario": "ask/clarifications → answer-clarification",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "From memory processing of “项目讨论录音 · 本周计划”.",
+      "originalText": "来自“项目讨论录音 · 本周计划”的记忆整理。",
+      "scenario": "ask/clarifications → answer-clarification",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "“本周完成第一轮设计，保留每一轮的改动和判断依据。”",
+      "originalText": "“本周完成第一轮设计，保留每一轮的改动和判断依据。”",
+      "scenario": "ask/clarifications → answer-clarification",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "这周有什么进展，接下来关注什么？",
+      "originalText": "这周有什么进展，接下来关注什么？",
+      "scenario": "insights → generate-insight",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "昨天的调研区分了原始资料、长期记忆与阶段洞察。今天的评审开始明确首次添加的步骤：一次导入文件，或持续同步文件夹。",
+      "originalText": "昨天的调研区分了原始资料、长期记忆与阶段洞察。今天的评审开始明确首次添加的步骤：一次导入文件，或持续同步文件夹。",
+      "scenario": "insights → generate-insight",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "周四下午核对三端的入口和文案。依据来自评审记录最后一段。",
+      "originalText": "周四下午核对三端的入口和文案。依据来自评审记录最后一段。",
+      "scenario": "insights → generate-insight",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "Please clarify which stage “第一轮设计” refers to.",
+      "originalText": "请补充“第一轮设计”指哪个阶段。",
+      "scenario": "activity → activity-tab",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "Suggestion: 周四设计评审",
+      "originalText": "建议：周四设计评审",
+      "scenario": "todos/schedule → review-calendar",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "我的 Mac · Work calendar",
+      "originalText": "我的 Mac · 工作日历",
+      "scenario": "todos/schedule → review-calendar",
+      "tag": "option",
+      "class": ""
+    },
+    {
+      "text": "个人助手 / Example cloud model",
+      "originalText": "个人助手 / 示例云端模型",
+      "scenario": "settings/usage → usage-request",
+      "tag": "td",
+      "class": ""
+    },
+    {
+      "text": "Content extraction complete · 研究资料",
+      "originalText": "正文提取已完成 · 研究资料",
+      "scenario": "library/files → reprocess-file",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "Source: 研究资料 · Original: 记忆系统.md",
+      "originalText": "来源：研究资料 · 原件：记忆系统.md",
+      "scenario": "settings/file-processing → preview-file-rules",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "Today 09:25 · 个人助手 · Read 2 materials and 1 memory",
+      "originalText": "今天 09:25 · 个人助手 · 读取 2 份资料、1 条记忆",
+      "scenario": "settings/agent-events → inspect-read",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "个人助手 · Today 09:25 · Read-only access",
+      "originalText": "个人助手 · 今天 09:25 · 只读访问",
+      "scenario": "settings/agent-events → inspect-read",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "Draft saved: 来源同步需要重新授权",
+      "originalText": "已保存草稿：来源同步需要重新授权",
+      "scenario": "settings/diagnostics → feedback-save",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "正在按已保存的应用范围记录。尚未保存的勾选不会改变当前记录范围。",
+      "originalText": "正在按已保存的应用范围记录。尚未保存的勾选不会改变当前记录范围。",
+      "scenario": "setup/screen → allow-screen",
+      "tag": "div",
+      "class": "notice good"
+    },
+    {
+      "text": "授权只控制能否记录；应用勾选需保存后才生效。",
+      "originalText": "授权只控制能否记录；应用勾选需保存后才生效。",
+      "scenario": "setup/screen → allow-screen",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "已保存的记录范围",
+      "originalText": "已保存的记录范围",
+      "scenario": "setup/screen → allow-screen",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "浏览器、编辑器 · 2 个应用",
+      "originalText": "浏览器、编辑器 · 2 个应用",
+      "scenario": "setup/screen → allow-screen",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "选择允许记录的应用",
+      "originalText": "选择允许记录的应用",
+      "scenario": "setup/screen → allow-screen",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "勾选暂存为草稿；保存前仍使用上方的已保存范围。",
+      "originalText": "勾选暂存为草稿；保存前仍使用上方的已保存范围。",
+      "scenario": "setup/screen → allow-screen",
+      "tag": "p",
+      "class": "small muted"
+    },
+    {
+      "text": "当前勾选与已保存范围一致。",
+      "originalText": "当前勾选与已保存范围一致。",
+      "scenario": "setup/screen → allow-screen",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "保存记录范围",
+      "originalText": "保存记录范围",
+      "scenario": "setup/screen → allow-screen",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "编辑应用范围",
+      "scenario": "setup/screen → allow-screen",
+      "attr": "aria-label"
+    },
+    {
+      "text": "权限已拒绝，当前不会记录屏幕。已保存范围和已有资料仍保留。",
+      "originalText": "权限已拒绝，当前不会记录屏幕。已保存范围和已有资料仍保留。",
+      "scenario": "setup/screen → deny-screen",
+      "tag": "div",
+      "class": "notice warn"
+    },
+    {
+      "text": "等待屏幕录制授权，当前不会记录屏幕。已保存范围和已有资料仍保留。",
+      "originalText": "等待屏幕录制授权，当前不会记录屏幕。已保存范围和已有资料仍保留。",
+      "scenario": "setup/screen → pause-source",
+      "tag": "div",
+      "class": "notice warn"
+    },
+    {
+      "text": "核对这个文件夹的范围、保存方式与接收状态。",
+      "originalText": "核对这个文件夹的范围、保存方式与接收状态。",
+      "scenario": "setup/folder → save-source",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "正在管理的来源",
+      "originalText": "正在管理的来源",
+      "scenario": "setup/folder → save-source",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "这是恢复接收后的策略。暂停时不接收新变化，已保存内容仍保留。",
+      "originalText": "这是恢复接收后的策略。暂停时不接收新变化，已保存内容仍保留。",
+      "scenario": "setup/folder → save-source",
+      "tag": "small",
+      "class": ""
+    },
+    {
+      "text": "连接另一个文件夹",
+      "originalText": "连接另一个文件夹",
+      "scenario": "setup/folder → save-source",
+      "tag": "button",
+      "class": "btn text"
+    }
+  ]
+}

@@ -1,0 +1,292 @@
+{
+  "input": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/work/interface-states.html",
+  "sha256": "1a5e1a5da473b7c008bca52bf1533b2f976995badc119152776d5c53dc8c8d6d",
+  "scope": "HTML DOM language boundaries; no product backend or layout assertions",
+  "routes": 52,
+  "checks": [
+    {
+      "name": "Stable option values: settings/appearance",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: notes",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: import",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: imports",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: catalog",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: sources",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: setup/nas",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: setup/google",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: setup/gmail",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: setup/mcp",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: setup/lark",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: library/sources",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: today",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: devices",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: setup/device",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: access",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: library",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: material/m1",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: library/raw",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: ask",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: memories",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: ask/clarifications",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/memory-strategy",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: insights",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: activity",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: activity/details",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: todos",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: todos/schedule",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: library/snippets",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: application",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: media",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: activity/coding",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/storage",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/usage",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/system",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/providers",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/assignments",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/images",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: library/files",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/file-processing",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/image-history",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/concurrency",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/advanced",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/plugins",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/account",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/help",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/agent-scope",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/agent-events",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings/diagnostics",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: settings",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: setup/screen",
+      "passed": true
+    },
+    {
+      "name": "Stable option values: setup/folder",
+      "passed": true
+    },
+    {
+      "name": "User title is retained in English",
+      "passed": true
+    },
+    {
+      "name": "User body is retained in English",
+      "passed": true
+    },
+    {
+      "name": "User title retained after English to Chinese",
+      "passed": true
+    },
+    {
+      "name": "User title retained after Chinese to English",
+      "passed": true
+    },
+    {
+      "name": "Example prompts translate",
+      "passed": true
+    },
+    {
+      "name": "History questions keep original text",
+      "passed": true
+    },
+    {
+      "name": "Answer interface note translates",
+      "passed": true
+    },
+    {
+      "name": "Original example answer remains unchanged",
+      "passed": true
+    },
+    {
+      "name": "Queued original content retained",
+      "passed": true
+    },
+    {
+      "name": "Username matching an interface key is preserved",
+      "passed": true
+    }
+  ],
+  "residual": [
+    {
+      "label": "Offline saved note",
+      "texts": []
+    },
+    {
+      "label": "Offline sync retry",
+      "texts": []
+    },
+    {
+      "label": "Queued note preview",
+      "texts": []
+    },
+    {
+      "label": "Discard confirmation",
+      "texts": []
+    },
+    {
+      "label": "Sign-out confirmation",
+      "texts": []
+    },
+    {
+      "label": "Sign-in page",
+      "texts": []
+    },
+    {
+      "label": "Missing username",
+      "texts": []
+    },
+    {
+      "label": "Incorrect password",
+      "texts": []
+    }
+  ],
+  "errors": [],
+  "status": "passed"
+}

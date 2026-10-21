@@ -1,0 +1,149 @@
+{
+  "input": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/dist/r18.html",
+  "sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+  "scope": "New C01/A02/A13 views only, English Android preview at 390px",
+  "records": [
+    {
+      "name": "account-en-390",
+      "viewport": {
+        "width": 390,
+        "height": 900
+      },
+      "pageWidth": 390,
+      "headings": [
+        {
+          "level": "H1",
+          "text": "Settings"
+        },
+        {
+          "level": "H2",
+          "text": "Account and devices"
+        },
+        {
+          "level": "H2",
+          "text": "林同学"
+        },
+        {
+          "level": "H2",
+          "text": "Current service and central node"
+        },
+        {
+          "level": "H3",
+          "text": "Current service"
+        },
+        {
+          "level": "H3",
+          "text": "Central node"
+        },
+        {
+          "level": "H2",
+          "text": "Browser sign-in retention"
+        },
+        {
+          "level": "H2",
+          "text": "Connected devices"
+        },
+        {
+          "level": "H3",
+          "text": "我的 Mac"
+        }
+      ]
+    },
+    {
+      "name": "import-en-android-390",
+      "viewport": {
+        "width": 390,
+        "height": 900
+      },
+      "pageWidth": 390,
+      "headings": [
+        {
+          "level": "H1",
+          "text": "Import materials"
+        },
+        {
+          "level": "H2",
+          "text": "产品草图.png"
+        }
+      ]
+    },
+    {
+      "name": "import-details-en-390",
+      "viewport": {
+        "width": 390,
+        "height": 900
+      },
+      "pageWidth": 390,
+      "headings": [
+        {
+          "level": "H1",
+          "text": "Import details"
+        },
+        {
+          "level": "H2",
+          "text": "保留我的标题"
+        },
+        {
+          "level": "H3",
+          "text": "Selected file"
+        },
+        {
+          "level": "H3",
+          "text": "Material name"
+        },
+        {
+          "level": "H3",
+          "text": "Storage method"
+        },
+        {
+          "level": "H3",
+          "text": "Parser"
+        },
+        {
+          "level": "H3",
+          "text": "Source device"
+        },
+        {
+          "level": "H3",
+          "text": "Image processing plan"
+        }
+      ]
+    },
+    {
+      "name": "app-activity-en-390",
+      "viewport": {
+        "width": 390,
+        "height": 900
+      },
+      "pageWidth": 390,
+      "headings": [
+        {
+          "level": "H1",
+          "text": "App activity"
+        },
+        {
+          "level": "H2",
+          "text": "Sampling time and device"
+        },
+        {
+          "level": "H3",
+          "text": "Sampling period"
+        },
+        {
+          "level": "H3",
+          "text": "Source device"
+        },
+        {
+          "level": "H2",
+          "text": "App time and share"
+        },
+        {
+          "level": "H2",
+          "text": "Unrecorded intervals"
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "status": "captured"
+}

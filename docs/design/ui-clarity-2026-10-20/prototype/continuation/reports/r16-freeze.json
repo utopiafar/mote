@@ -1,0 +1,10 @@
+{
+  "round": 16,
+  "frozen_at": "2026-10-21T02:04:13.823560+00:00",
+  "candidate": "dist/r16.html",
+  "bytes": 481726,
+  "sha256": "a9528188ef5703a9b368ace47e44632ab472f0ec31c7e661b0d7c0201400dad6",
+  "base_sha256": "65257ad350e155a01bd1e64c3241e812bff98c93fda593be70de2dae17bf32f9",
+  "status": "frozen_for_independent_review",
+  "scope": "HTML UI only, generated demo data; no live account, model, collector or backend validation"
+}

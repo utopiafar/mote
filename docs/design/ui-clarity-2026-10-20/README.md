@@ -1,35 +1,23 @@
-# Mote UI：15 轮 HTML 迭代交付
+# Mote UI：HTML 迭代与最终交付
 
-本次按 HTML UI 范围完成迭代。最终 R15 原型已恢复并保持冻结字节，可直接下载打开。传输中断后部分后期原始材料未恢复，当前可用内容与缺失项明确分列。
+当前推荐 **R19**。它承接原 R1–R15 迭代，继续关闭独立评估发现的范围、状态和功能细项问题，最后修正新首访发现的长对话标题越界。
 
 ## 直接查看
 
-- [mote-ui-final.html](prototype/dist/mote-ui-final.html)：最终自包含 HTML。
-- [final-report.md](final-report.md)：功能地图、十五轮改动及评估结果、当前证据限制。
-- [artifact-availability.json](artifact-availability.json)：实际可提供的候选和原始评估文件。
-- [recovery-review-memo.md](prototype/evidence/recovery-review-memo.md)：原评估者依据本会话结论恢复的备忘录，不能当作丢失原始 JSON。
-- [恢复后新检查说明](prototype/evidence/recovery-r15-recheck/README.md)与[索引](prototype/evidence/recovery-r15-recheck/index.json)：对同一 R15 的新执行记录摘要，与历史检查分开。
+- [mote-ui-final.html](prototype/dist/mote-ui-final.html)：最终单文件 HTML，浏览器打开即可。
+- [mote-ui-review.html](prototype/continuation/dist/mote-ui-review.html)：R15 / R19 可交互对照。
+- [最终报告](prototype/continuation/final-report.md)：结果、功能地图、评估、门槛与实际边界。
+- [78 项功能矩阵](prototype/continuation/reports/independent-feature-matrix-r18.md)：主要语义覆盖与逐项未测范围。
+- [源码功能盘点](feature-inventory.md)与[冻结功能清单](feature-manifest.json)。
 
-本次对话另提供 `mote-ui-comparison.html`（恢复后重建的 R0 / R8 / R15 自包含对照）和 `mote-ui-recovered-evidence.zip`（404 个现存原件及恢复后材料）。压缩评估归档向公开仓库的上传被自动审批拒绝，理由是压缩片段的潜在资料披露风险；归档没有挂载到本 PR。原始轨迹及对照页请使用对话提供的下载文件。
+## 当前结果
 
-## 结果
+20 类 / 78 项主要用途有可识别的归属与下一步；原 R17 的 10 项部分支持和 1 项范围冲突关闭。三个全新上下文能解释首屏，并在 1 / 3 / 1 次导航内找到各自目标入口、完成 UI 任务。最后完整独立评分为 75/100；R19 的窄排版修复另有独立附录。
 
-中断前已冻结的独立评分为 **75/100**，五项均 3/4；严格门槛为 **4 通过 / 4 未通过**。78 项主要呈现为 77 clear、1 partial（英文界面 A36）。三个独立新上下文理解首屏用途，两条自然任务在 1 次、3 次导航内找到入口；原遮名比较均排序 R15 > R12 > R9。后期原始评审和比较包现已缺失，这些结论保留其来源与可核对性限制。
+严格门槛为 6 项在已评范围内通过、2 项证据部分满足。完整 P0 条件分支没有穷尽，原部分历史原件仍缺失；入口可达、主要语义支持和真实业务成功分别报告。所有状态均为 HTML 模拟，不需要用户运行环境。
 
-仍有明确 UI 问题：来源专属浏览未延续范围，屏幕应用勾选保存后恢复，旧示例记忆采用内容少一句，英文文案不完整；登录仅提供预览。当前推荐 R15 作为本批方案，原评审决定保留 refine。
+## 历史与证据
 
-## 文件完整性
+[原 R15 报告](final-report.md)、[历史材料清单](artifact-availability.json)与[恢复说明](RECOVERY.md)继续保留。R9–R14 与部分后期原件未恢复；新的 R16–R19 和新执行记录另存，不回写原失败为通过。当前交付和证据入口见 [continuation](prototype/continuation/README.md)。
 
-最终 HTML 为 355392 字节，SHA-256：`65257ad350e155a01bd1e64c3241e812bff98c93fda593be70de2dae17bf32f9`。
-
-当前保有 R0–R8 与 R15 候选，正式早期记录与原始证据的范围以清单为准。R9–R14 及后期原始文件未伪造补回。中断前的报告原文字节保存在 [final-report-original.md](final-report-original.md)，其中“全套原件已归档”的交付描述已不再成立。
-
-HTML 使用演示数据和模拟状态；DOM 事件检查与静态排版图用于 UI 评估，未声明真实服务或设备闭环通过。既有草稿：[PR #185](https://github.com/utopiafar/mote/pull/185)。
-
-## 恢复后实际核对
-
-同一 R15 新执行 4 条主场景和 1 条独立暂停观察，共 43 步、27 次操作、16 次断言。笔记草稿/附件历史、原问题/时间范围恢复成立；屏幕范围保存重开再次失败；账户仅预览的限制得到确认。完整新记录与旧统计分开保存。
-
-## 下载包与材料范围
-
-对话中的 `mote-ui-recovered-evidence.zip` 仅打包当前真实存在的材料，共 404 个文件、5,160,999 字节，SHA-256 为 `0c3848a1e0e6b209f23d5102277e350750f0b2202e8e298299cddacf012da948`。将它解压到一个新的空目录，文件按仓库相对路径排列。根目录当前 README 和最终报告单独提供；PDF 另列为可重建材料。缺失的后期原件不在此包中。[完整交付状态](RECOVERY.md)区分 PR 直接文件、对话下载材料与无法恢复的原件。
+最终文件为 530,254 bytes，SHA-256 `8cabb1d2c2914170a5b00dad56a7814bbb21e28fead38ecb59f894658cbcb7bf`。完整截图及较大 raw 轨迹随对话下载包提供，PR 直接保存可读 HTML、报告、脚本和索引。[草稿 PR #185](https://github.com/utopiafar/mote/pull/185)。

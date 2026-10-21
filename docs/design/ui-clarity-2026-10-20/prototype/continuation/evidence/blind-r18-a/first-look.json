@@ -1,0 +1,38 @@
+{
+  "evaluation": "blind-r18-a",
+  "locked_before_interaction": true,
+  "evidence_viewed": [
+    "r18/visuals/desktop-library-light-viewport.png",
+    "r18/visuals/mobile-empty-dark-viewport.png"
+  ],
+  "candidate_source_or_other_reports_read": false,
+  "product_understanding": "Mote 是个人资料库：把文件、随手记和各处来源的资料汇集起来，之后搜索、提问，并回看正文和出处。还可以把内容整理成长期记忆、回顾一段时间的洞察。",
+  "what_can_be_added": [
+    "文件",
+    "自己写的随手记",
+    "屏幕记录",
+    "在线资料或连接的来源"
+  ],
+  "examples_visible_not_verified": [
+    "录音",
+    "日历内容",
+    "Coding 会话"
+  ],
+  "what_happens_after_save": "保存后应能在资料库回看或搜索，也可以到问一问提问并核对出处；记忆和洞察是后续整理及回顾用途。",
+  "first_action_for_decision_task": {
+    "desktop": "点击右上角的随手记。",
+    "mobile_empty": "点击从一份资料开始区域的写随手记。"
+  },
+  "initial_uncertainties": [
+    "桌面左侧资料出处、来源和原始采集记录名称相近，初看不能准确判断三者边界。",
+    "工作台在线的具体含义尚不清楚。",
+    "手机空状态最醒目的动作是导入一份文件，写决定需要选择旁边较弱的写随手记，但入口仍能直接看见。"
+  ],
+  "confidence": {
+    "product_purpose": "high",
+    "save_decision_entry": "high",
+    "find_saved_text": "high",
+    "source_and_capture_taxonomy": "medium"
+  },
+  "boundary": "以上只来自两张截图；未操作、未检验任何功能或真实后端。"
+}

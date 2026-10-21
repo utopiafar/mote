@@ -1,0 +1,16 @@
+import {readFile,writeFile} from 'node:fs/promises';
+import {createOfflineDom,settle,visibility} from '../../capture-dom.mjs';
+const input=process.argv[2]||new URL('../work/interface-states.html',import.meta.url).pathname;
+const output=process.argv[3]||new URL('../reports/english-actions-inventory.json',import.meta.url).pathname;
+const source=(await readFile(input,'utf8')).replace('function localizeUI(){',"function localizeUI(){ window.moteRawTexts=new WeakMap();const tw=document.createTreeWalker(document.getElementById('prototype'),NodeFilter.SHOW_TEXT);let tn;while(tn=tw.nextNode())window.moteRawTexts.set(tn,tn.textContent);"),directory=JSON.parse(source.match(/^const DIRECTORY = (.*);$/m)[1]);
+const routes=[...new Set([...directory.map(x=>x.route),'setup/screen','setup/folder','settings/usage-prices','notes','memories','insights','todos/schedule'])];
+const all=new Map(),executed=[];const omit=new Set(['go','filter','skip-main','reset','dismiss-toast','open-material','compact-pages','add','library-filter-clear']);
+async function open(route){const errors=[],dom=createOfflineDom(source,'https://mote-prototype.invalid/#/settings/appearance',errors);await settle(dom.window);const select=dom.window.document.querySelector('#language-choice');select.value='en';select.dispatchEvent(new dom.window.Event('change',{bubbles:true}));dom.window.location.hash='#/'+route;await settle(dom.window);await settle(dom.window);return {dom,errors};}
+function collect(document,scenario){const root=document.querySelector('#prototype'),walker=document.createTreeWalker(root,document.defaultView.NodeFilter.SHOW_TEXT);let node;while(node=walker.nextNode()){const el=node.parentElement;if(el.closest('script,style,textarea,pre,.reading-body,.message.user,.material-title,.material-preview,[data-user-content]'))continue;const text=node.textContent.trim();if(/[\u3400-\u9fff]/.test(text)&&!all.has(text))all.set(text,{text,originalText:document.defaultView.moteRawTexts?.get(node)?.trim()||text,scenario,tag:el.tagName.toLowerCase(),class:el.className});}for(const el of root.querySelectorAll('[aria-label],[placeholder],[title]'))for(const attr of ['aria-label','placeholder','title']){const text=el.getAttribute(attr);if(text&&/[\u3400-\u9fff]/.test(text)&&!all.has(text))all.set(text,{text,scenario,attr});}}
+for(const route of routes){
+ const initial=await open(route),document=initial.dom.window.document,visible=visibility(document);
+ const actions=[...document.querySelectorAll('main [data-action]')].filter(x=>visible(x)&&!x.disabled&&!omit.has(x.dataset.action)).map(x=>({action:x.dataset.action,id:x.dataset.id||'',text:x.textContent.trim()}));initial.dom.window.close();
+ const dedup=[...new Map(actions.map(x=>[x.action,x])).values()];
+ for(const action of dedup){const {dom,errors}=await open(route);const d=dom.window.document,v=visibility(d);const el=[...d.querySelectorAll('main [data-action]')].find(x=>v(x)&&!x.disabled&&x.dataset.action===action.action);if(!el){dom.window.close();continue;}el.click();await settle(dom.window);await settle(dom.window);collect(d,route+' → '+action.action);executed.push({route,action:action.action,errors});dom.window.close();}
+}
+await writeFile(output,JSON.stringify({input,executed,unique:[...all.values()]},null,2)+'\n');console.log(JSON.stringify({output,executed:executed.length,uniqueCjk:all.size}));

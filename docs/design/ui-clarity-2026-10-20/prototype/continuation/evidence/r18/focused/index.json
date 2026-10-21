@@ -1,0 +1,58 @@
+{
+  "candidate": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/dist/r18.html",
+  "sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+  "created_at": "2026-10-21T02:40:39.419Z",
+  "browser": "Chromium 133.0.6943.16",
+  "scope": "Generated HTML mock UI, rendered controls, all requests locally intercepted; no native OS, network services or app-internal state.",
+  "scenarios": [
+    {
+      "id": "screen-range-permission-save-draft",
+      "goal": "屏幕选项、权限、保存与未保存草稿保持一致",
+      "status": "passed",
+      "steps": 43,
+      "operations": 18,
+      "assertions": 25
+    },
+    {
+      "id": "folder-rename-pause-read-return",
+      "goal": "既有来源改名、暂停、阅读与返回保留具体范围",
+      "status": "passed",
+      "steps": 34,
+      "operations": 15,
+      "assertions": 19
+    },
+    {
+      "id": "new-folder-isolated-empty-and-same-name",
+      "goal": "新建来源与既有来源分离，同名来源不串资料",
+      "status": "passed",
+      "steps": 41,
+      "operations": 18,
+      "assertions": 23
+    },
+    {
+      "id": "ask-recovery",
+      "goal": "遇到模型未配置时完成设置，带着原问题继续",
+      "status": "passed",
+      "steps": 9,
+      "operations": 7,
+      "assertions": 2
+    },
+    {
+      "id": "activity-recovery",
+      "goal": "从需要处理的工作重新授权，返回后确认问题已移出待处理列表",
+      "status": "passed",
+      "steps": 9,
+      "operations": 5,
+      "assertions": 4
+    },
+    {
+      "id": "source-versions",
+      "goal": "找到已归档资料的版本与原位置并核对原文",
+      "status": "passed",
+      "steps": 5,
+      "operations": 2,
+      "assertions": 3
+    }
+  ],
+  "all_passed": true
+}

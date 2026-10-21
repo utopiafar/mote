@@ -1,0 +1,1268 @@
+{
+  "input": "/tmp/mote-source-english-audit.html",
+  "sha256": "285da8cecdff9ab48119d5cf8142e663d0da9d39cf83352f4b3ac0972e00d987",
+  "routes": 54,
+  "featureIds": 78,
+  "pages": [
+    {
+      "route": "settings/appearance",
+      "mode": "populated",
+      "cjk": 3
+    },
+    {
+      "route": "guide",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "notes",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "import",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "imports",
+      "mode": "populated",
+      "cjk": 5
+    },
+    {
+      "route": "catalog",
+      "mode": "populated",
+      "cjk": 3
+    },
+    {
+      "route": "sources",
+      "mode": "populated",
+      "cjk": 11
+    },
+    {
+      "route": "setup/nas",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "setup/google",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "setup/gmail",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "setup/mcp",
+      "mode": "populated",
+      "cjk": 3
+    },
+    {
+      "route": "setup/lark",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "library/sources",
+      "mode": "populated",
+      "cjk": 12
+    },
+    {
+      "route": "today",
+      "mode": "populated",
+      "cjk": 9
+    },
+    {
+      "route": "devices",
+      "mode": "populated",
+      "cjk": 5
+    },
+    {
+      "route": "setup/device",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "access",
+      "mode": "populated",
+      "cjk": 3
+    },
+    {
+      "route": "library",
+      "mode": "populated",
+      "cjk": 16
+    },
+    {
+      "route": "material/m1",
+      "mode": "populated",
+      "cjk": 3
+    },
+    {
+      "route": "library/raw",
+      "mode": "populated",
+      "cjk": 4
+    },
+    {
+      "route": "ask",
+      "mode": "populated",
+      "cjk": 5
+    },
+    {
+      "route": "memories",
+      "mode": "populated",
+      "cjk": 4
+    },
+    {
+      "route": "ask/clarifications",
+      "mode": "populated",
+      "cjk": 5
+    },
+    {
+      "route": "settings/memory-strategy",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "insights",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "activity",
+      "mode": "populated",
+      "cjk": 3
+    },
+    {
+      "route": "activity/details",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "todos",
+      "mode": "populated",
+      "cjk": 4
+    },
+    {
+      "route": "todos/schedule",
+      "mode": "populated",
+      "cjk": 3
+    },
+    {
+      "route": "library/snippets",
+      "mode": "populated",
+      "cjk": 4
+    },
+    {
+      "route": "application",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "media",
+      "mode": "populated",
+      "cjk": 5
+    },
+    {
+      "route": "activity/coding",
+      "mode": "populated",
+      "cjk": 5
+    },
+    {
+      "route": "settings/storage",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "settings/usage",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "settings/system",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "settings/providers",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "settings/assignments",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "settings/images",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "library/files",
+      "mode": "populated",
+      "cjk": 5
+    },
+    {
+      "route": "settings/file-processing",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "settings/image-history",
+      "mode": "populated",
+      "cjk": 3
+    },
+    {
+      "route": "settings/concurrency",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "settings/advanced",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "settings/plugins",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "settings/account",
+      "mode": "populated",
+      "cjk": 4
+    },
+    {
+      "route": "settings/help",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "settings/agent-scope",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "settings/agent-events",
+      "mode": "populated",
+      "cjk": 4
+    },
+    {
+      "route": "settings/diagnostics",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "settings",
+      "mode": "populated",
+      "cjk": 2
+    },
+    {
+      "route": "setup/screen",
+      "mode": "populated",
+      "cjk": 11
+    },
+    {
+      "route": "setup/folder",
+      "mode": "populated",
+      "cjk": 6
+    },
+    {
+      "route": "ask/history",
+      "mode": "populated",
+      "cjk": 4
+    },
+    {
+      "route": "settings/appearance",
+      "mode": "empty",
+      "cjk": 3
+    },
+    {
+      "route": "guide",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "notes",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "import",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "imports",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "catalog",
+      "mode": "empty",
+      "cjk": 3
+    },
+    {
+      "route": "sources",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "setup/nas",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "setup/google",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "setup/gmail",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "setup/mcp",
+      "mode": "empty",
+      "cjk": 3
+    },
+    {
+      "route": "setup/lark",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "library/sources",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "today",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "devices",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "setup/device",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "access",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "library",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "material/m1",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "library/raw",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "ask",
+      "mode": "empty",
+      "cjk": 3
+    },
+    {
+      "route": "memories",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "ask/clarifications",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/memory-strategy",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "insights",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "activity",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "activity/details",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "todos",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "todos/schedule",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "library/snippets",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "application",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "media",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "activity/coding",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/storage",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/usage",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/system",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/providers",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/assignments",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/images",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "library/files",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/file-processing",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/image-history",
+      "mode": "empty",
+      "cjk": 3
+    },
+    {
+      "route": "settings/concurrency",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/advanced",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/plugins",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/account",
+      "mode": "empty",
+      "cjk": 3
+    },
+    {
+      "route": "settings/help",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/agent-scope",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/agent-events",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings/diagnostics",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "settings",
+      "mode": "empty",
+      "cjk": 2
+    },
+    {
+      "route": "setup/screen",
+      "mode": "empty",
+      "cjk": 11
+    },
+    {
+      "route": "setup/folder",
+      "mode": "empty",
+      "cjk": 4
+    },
+    {
+      "route": "ask/history",
+      "mode": "empty",
+      "cjk": 2
+    }
+  ],
+  "unique": [
+    {
+      "text": "林",
+      "tag": "span",
+      "id": null,
+      "class": "avatar",
+      "action": null,
+      "visible": true,
+      "route": "settings/appearance",
+      "mode": "populated"
+    },
+    {
+      "text": "林同学",
+      "tag": "span",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "settings/appearance",
+      "mode": "populated"
+    },
+    {
+      "text": "简体中文",
+      "tag": "option",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "settings/appearance",
+      "mode": "populated"
+    },
+    {
+      "text": "研究资料.md",
+      "tag": "h2",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "imports",
+      "mode": "populated"
+    },
+    {
+      "text": "会议录音.wav",
+      "tag": "h2",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "imports",
+      "mode": "populated"
+    },
+    {
+      "text": "资料归档.zip",
+      "tag": "h2",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "imports",
+      "mode": "populated"
+    },
+    {
+      "text": "连接新的文件夹，持续保存后续变化",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": "go",
+      "visible": true,
+      "route": "catalog",
+      "mode": "populated"
+    },
+    {
+      "text": "1 份已保存资料",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "sources",
+      "mode": "populated"
+    },
+    {
+      "text": "浏览已保存资料",
+      "tag": "button",
+      "id": null,
+      "class": "btn text",
+      "action": "browse-source",
+      "visible": true,
+      "route": "sources",
+      "mode": "populated"
+    },
+    {
+      "text": "Mac · 已保存 2 个应用：浏览器、编辑器",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "sources",
+      "mode": "populated"
+    },
+    {
+      "text": "未在记录 · 等待授权",
+      "tag": "span",
+      "id": null,
+      "class": "tag yellow",
+      "action": null,
+      "visible": true,
+      "route": "sources",
+      "mode": "populated"
+    },
+    {
+      "text": "工作资料 · 只读同步",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "sources",
+      "mode": "populated"
+    },
+    {
+      "text": "0 份已保存资料",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "sources",
+      "mode": "populated"
+    },
+    {
+      "text": "研究方法.md",
+      "tag": "span",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "setup/mcp",
+      "mode": "populated"
+    },
+    {
+      "text": "产品评审 · 让第一步更清楚",
+      "tag": "h3",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "library/sources",
+      "mode": "populated"
+    },
+    {
+      "text": "长期记忆系统调研笔记",
+      "tag": "h3",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "library/sources",
+      "mode": "populated"
+    },
+    {
+      "text": "研究资料 · 文件 / 研究资料/记忆系统.md",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "library/sources",
+      "mode": "populated"
+    },
+    {
+      "text": "Mote / 来源目录整理",
+      "tag": "h3",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "library/sources",
+      "mode": "populated"
+    },
+    {
+      "text": "Codex sessions · Codex / mote / 会话记录",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "library/sources",
+      "mode": "populated"
+    },
+    {
+      "text": "周四设计评审",
+      "tag": "h3",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "library/sources",
+      "mode": "populated"
+    },
+    {
+      "text": "Google Calendar · Google Calendar / 工作日历",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "library/sources",
+      "mode": "populated"
+    },
+    {
+      "text": "项目讨论录音 · 本周计划",
+      "tag": "h3",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "library/sources",
+      "mode": "populated"
+    },
+    {
+      "text": "Lark recordings · 飞书妙记 / 项目讨论",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "library/sources",
+      "mode": "populated"
+    },
+    {
+      "text": "文章摘录 · 渐进式披露",
+      "tag": "h3",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "library/sources",
+      "mode": "populated"
+    },
+    {
+      "text": "“第一轮设计”指哪个阶段？",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "today",
+      "mode": "populated"
+    },
+    {
+      "text": "核对移动端的添加入口",
+      "tag": "span",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "today",
+      "mode": "populated"
+    },
+    {
+      "text": "整理这周保存的研究资料",
+      "tag": "span",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "today",
+      "mode": "populated"
+    },
+    {
+      "text": "周四设计评审 · Oct 22 14:00–15:00",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "today",
+      "mode": "populated"
+    },
+    {
+      "text": "研究资料 · Yesterday 18:34",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "today",
+      "mode": "populated"
+    },
+    {
+      "text": "我的 Mac",
+      "tag": "h2",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "devices",
+      "mode": "populated"
+    },
+    {
+      "text": "屏幕：未在记录 · 等待授权",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "devices",
+      "mode": "populated"
+    },
+    {
+      "text": "文件夹：正在同步",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "devices",
+      "mode": "populated"
+    },
+    {
+      "text": "个人助手",
+      "tag": "h2",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "access",
+      "mode": "populated"
+    },
+    {
+      "text": "先让新用户知道可以保存什么，再引导他回到资料里找到答案。",
+      "tag": "span",
+      "id": null,
+      "class": "material-preview",
+      "action": "open-material",
+      "visible": true,
+      "route": "library",
+      "mode": "populated"
+    },
+    {
+      "text": "原始资料、事实记忆和阶段洞察分别承担不同职责。",
+      "tag": "span",
+      "id": null,
+      "class": "material-preview",
+      "action": "open-material",
+      "visible": true,
+      "route": "library",
+      "mode": "populated"
+    },
+    {
+      "text": "研究资料",
+      "tag": "span",
+      "id": null,
+      "class": null,
+      "action": "open-material",
+      "visible": true,
+      "route": "library",
+      "mode": "populated"
+    },
+    {
+      "text": "把文件夹同步和屏幕记录放在同级入口，保留原有确认步骤。",
+      "tag": "span",
+      "id": null,
+      "class": "material-preview",
+      "action": "open-material",
+      "visible": true,
+      "route": "library",
+      "mode": "populated"
+    },
+    {
+      "text": "核对资料库、来源目录与移动端添加入口。",
+      "tag": "span",
+      "id": null,
+      "class": "material-preview",
+      "action": "open-material",
+      "visible": true,
+      "route": "library",
+      "mode": "populated"
+    },
+    {
+      "text": "本周完成资料整理和第一轮设计评审，周末回顾进展。",
+      "tag": "span",
+      "id": null,
+      "class": "material-preview",
+      "action": "open-material",
+      "visible": true,
+      "route": "library",
+      "mode": "populated"
+    },
+    {
+      "text": "最常用的操作先展示，复杂细节放在需要它的上下文里。",
+      "tag": "span",
+      "id": null,
+      "class": "material-preview",
+      "action": "open-material",
+      "visible": true,
+      "route": "library",
+      "mode": "populated"
+    },
+    {
+      "text": "Mac 屏幕",
+      "tag": "span",
+      "id": null,
+      "class": null,
+      "action": "open-material",
+      "visible": true,
+      "route": "library",
+      "mode": "populated"
+    },
+    {
+      "text": "界面可以首先呈现少量高频任务，再让用户按需探索更多能力。\n来源：示例浏览器页面的屏幕记录。\n记录中保留原始时间、应用和来源。",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "library/raw",
+      "mode": "populated"
+    },
+    {
+      "text": "这周有哪些值得跟进的事？",
+      "tag": "button",
+      "id": null,
+      "class": "btn text",
+      "action": "open-chat",
+      "visible": true,
+      "route": "ask",
+      "mode": "populated"
+    },
+    {
+      "text": "资料与记忆有什么区别？",
+      "tag": "button",
+      "id": null,
+      "class": "btn text",
+      "action": "open-chat",
+      "visible": true,
+      "route": "ask",
+      "mode": "populated"
+    },
+    {
+      "text": "产品设计偏好",
+      "tag": "h2",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "memories",
+      "mode": "populated"
+    },
+    {
+      "text": "偏好入口简洁、按任务组织的界面。复杂设置放在相关上下文里。",
+      "tag": "p",
+      "id": "memory-text",
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "memories",
+      "mode": "populated"
+    },
+    {
+      "text": "“第一轮设计”指的是哪个阶段？",
+      "tag": "h2",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "ask/clarifications",
+      "mode": "populated"
+    },
+    {
+      "text": "From memory processing of “项目讨论录音 · 本周计划”.",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "ask/clarifications",
+      "mode": "populated"
+    },
+    {
+      "text": "“本周完成第一轮设计，保留每一轮的改动和判断依据。”",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "ask/clarifications",
+      "mode": "populated"
+    },
+    {
+      "text": "Please clarify which stage “第一轮设计” refers to.",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "activity",
+      "mode": "populated"
+    },
+    {
+      "text": "Suggestion: 周四设计评审",
+      "tag": "h2",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "todos/schedule",
+      "mode": "populated"
+    },
+    {
+      "text": "研究播客 · 上下文与记忆",
+      "tag": "h2",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "media",
+      "mode": "populated"
+    },
+    {
+      "text": "我的 Mac · 播客 · Yesterday 19:30",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "media",
+      "mode": "populated"
+    },
+    {
+      "text": "我的 Mac · Codex · 会话 mote-source-guide",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "activity/coding",
+      "mode": "populated"
+    },
+    {
+      "text": "Content extraction complete · 研究资料",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "library/files",
+      "mode": "populated"
+    },
+    {
+      "text": "Today 09:25 · 个人助手 · Read 2 materials and 1 memory",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "settings/agent-events",
+      "mode": "populated"
+    },
+    {
+      "text": "等待屏幕录制授权，当前不会记录屏幕。已保存范围和已有资料仍保留。",
+      "tag": "div",
+      "id": null,
+      "class": "notice warn",
+      "action": null,
+      "visible": true,
+      "route": "setup/screen",
+      "mode": "populated"
+    },
+    {
+      "text": "授权只控制能否记录；应用勾选需保存后才生效。",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "setup/screen",
+      "mode": "populated"
+    },
+    {
+      "text": "已保存的记录范围",
+      "tag": "h2",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "setup/screen",
+      "mode": "populated"
+    },
+    {
+      "text": "浏览器、编辑器 · 2 个应用",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "setup/screen",
+      "mode": "populated"
+    },
+    {
+      "text": "选择允许记录的应用",
+      "tag": "h2",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "setup/screen",
+      "mode": "populated"
+    },
+    {
+      "text": "勾选暂存为草稿；保存前仍使用上方的已保存范围。",
+      "tag": "p",
+      "id": null,
+      "class": "small muted",
+      "action": null,
+      "visible": true,
+      "route": "setup/screen",
+      "mode": "populated"
+    },
+    {
+      "text": "当前勾选与已保存范围一致。",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "setup/screen",
+      "mode": "populated"
+    },
+    {
+      "text": "保存记录范围",
+      "tag": "button",
+      "id": null,
+      "class": "btn primary",
+      "action": "save-source",
+      "visible": true,
+      "route": "setup/screen",
+      "mode": "populated"
+    },
+    {
+      "text": "编辑应用范围",
+      "attr": "aria-label",
+      "tag": "section",
+      "id": null,
+      "route": "setup/screen",
+      "mode": "populated"
+    },
+    {
+      "text": "核对这个文件夹的范围、保存方式与接收状态。",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "setup/folder",
+      "mode": "populated"
+    },
+    {
+      "text": "正在管理的来源",
+      "tag": "h2",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "setup/folder",
+      "mode": "populated"
+    },
+    {
+      "text": "这是恢复接收后的策略。暂停时不接收新变化，已保存内容仍保留。",
+      "tag": "small",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "setup/folder",
+      "mode": "populated"
+    },
+    {
+      "text": "连接另一个文件夹",
+      "tag": "button",
+      "id": null,
+      "class": "btn text",
+      "action": "go",
+      "visible": true,
+      "route": "setup/folder",
+      "mode": "populated"
+    },
+    {
+      "text": "尚未保存应用范围",
+      "tag": "p",
+      "id": null,
+      "class": null,
+      "action": null,
+      "visible": true,
+      "route": "setup/screen",
+      "mode": "empty"
+    },
+    {
+      "text": "请选择至少一个允许记录的应用。",
+      "tag": "p",
+      "id": null,
+      "class": "small",
+      "action": null,
+      "visible": true,
+      "route": "setup/screen",
+      "mode": "empty"
+    },
+    {
+      "text": "保存范围并开始记录",
+      "tag": "button",
+      "id": null,
+      "class": "btn primary",
+      "action": "save-source",
+      "visible": true,
+      "route": "setup/screen",
+      "mode": "empty"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "scope": "Focused HTML UI evidence only; synthetic materials; visible controls and visible DOM assertions; no app-state reads, network, OS permissions, live device, or backend claims.",
+  "journeys": [
+    {
+      "id": "source-task-count-and-recovery",
+      "status": "passed",
+      "executed": 30,
+      "steps": 30,
+      "failure": null,
+      "errors": [],
+      "candidate_sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095"
+    },
+    {
+      "id": "source-relationship-save-reopen-scope",
+      "status": "passed",
+      "executed": 27,
+      "steps": 27,
+      "failure": null,
+      "errors": [],
+      "candidate_sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095"
+    },
+    {
+      "id": "device-filter-materials-and-raw",
+      "status": "passed",
+      "executed": 29,
+      "steps": 29,
+      "failure": null,
+      "errors": [],
+      "candidate_sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095"
+    },
+    {
+      "id": "screenshot-group-date-device-evidence",
+      "status": "passed",
+      "executed": 29,
+      "steps": 29,
+      "failure": null,
+      "errors": [],
+      "candidate_sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095"
+    },
+    {
+      "id": "send-pause-independent-scopes",
+      "status": "passed",
+      "executed": 43,
+      "steps": 43,
+      "failure": null,
+      "errors": [],
+      "candidate_sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095"
+    },
+    {
+      "id": "source-new-controls-english-content-preserved",
+      "status": "passed",
+      "executed": 35,
+      "steps": 35,
+      "failure": null,
+      "errors": [],
+      "candidate_sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095"
+    }
+  ]
+}

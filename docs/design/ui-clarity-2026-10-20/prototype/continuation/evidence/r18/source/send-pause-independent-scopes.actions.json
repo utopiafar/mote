@@ -1,0 +1,195 @@
+[
+  {
+    "type": "assertText",
+    "selector": "[data-send-status]",
+    "text": "向中央发送已开启"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"pause-all\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[role=\"dialog\"]",
+    "text": "屏幕采集、单个来源接收、向中央发送分别控制"
+  },
+  {
+    "type": "click",
+    "selector": "[role=\"dialog\"] [data-action=\"close-modal\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-send-status]",
+    "text": "向中央发送已开启"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"pause-all\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"confirm-pause-all\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-send-status]",
+    "text": "本机继续保留，向中央发送已暂停"
+  },
+  {
+    "type": "click",
+    "selector": ".sidebar [data-page=\"sources\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-send-status]",
+    "text": "向中央发送已暂停"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-id=\"folder\"]",
+    "text": "正在同步"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-id=\"screen\"]",
+    "text": "未在记录 · 等待授权"
+  },
+  {
+    "type": "click",
+    "selector": "[data-source-id=\"folder\"] [data-action=\"go\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"pause-source\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-receiving]",
+    "text": "已暂停接收新内容"
+  },
+  {
+    "type": "click",
+    "selector": ".sidebar [data-page=\"sources\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"resume-all\"]"
+  },
+  {
+    "type": "assertCount",
+    "selector": "[data-send-status]",
+    "count": 0
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-id=\"folder\"]",
+    "text": "已暂停接收"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-id=\"screen\"]",
+    "text": "未在记录 · 等待授权"
+  },
+  {
+    "type": "click",
+    "selector": "[data-source-id=\"screen\"] [data-action=\"go\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"allow-screen\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"save-source\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-receiving]",
+    "text": "正在按已保存的应用范围记录"
+  },
+  {
+    "type": "click",
+    "selector": ".sidebar [data-page=\"settings\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-page=\"settings/privacy\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"pause-all\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"confirm-pause-all\"]"
+  },
+  {
+    "type": "click",
+    "selector": ".sidebar [data-page=\"sources\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-id=\"screen\"]",
+    "text": "正在记录"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-id=\"folder\"]",
+    "text": "已暂停接收"
+  },
+  {
+    "type": "click",
+    "selector": "[data-page=\"devices\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-send-status]",
+    "text": "向中央发送已暂停"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-device-id=\"mac\"]",
+    "text": "屏幕：正在记录"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-device-id=\"mac\"]",
+    "text": "向中央发送已暂停"
+  },
+  {
+    "type": "click",
+    "selector": "[data-page=\"setup/screen\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"pause-source\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-receiving]",
+    "text": "屏幕记录已暂停"
+  },
+  {
+    "type": "click",
+    "selector": ".sidebar [data-page=\"sources\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-send-status]",
+    "text": "向中央发送已暂停"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"resume-all\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-id=\"screen\"]",
+    "text": "已暂停记录"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-id=\"folder\"]",
+    "text": "已暂停接收"
+  }
+]

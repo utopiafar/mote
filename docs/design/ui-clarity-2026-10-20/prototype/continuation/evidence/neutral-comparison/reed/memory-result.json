@@ -1,0 +1,209 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1&theme=light#/activity/memory-continuation",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · 交互原型\n演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n活动\n/\n后台工作\n工作台在线\n随手记\n添加内容\n继续整理 · 工作详情\n\n产品设计偏好\n\n返回后台工作\n本次继续整理\n已完成\n\n采用当前已保存的记忆，结合关联原文补充建议。\n\n本次采用的记忆内容\n\n偏好入口简洁、按任务组织的界面。\n\n处理记录\n\n读取当前记忆 → 核对 1 份原文依据 → 生成补充建议\n\n整理结果 · 演示\n\n补充建议：分别核对一次导入、持续同步和回到原文的操作入口，让这些步骤清楚可见。\n\n当前记忆保留你的纠正。你可以回到记忆，决定是否进一步修改。\n\n查看这条记忆\n核对原文 · 产品评审 · 让第一步更清楚\n本次继续整理已完成，可以查看结果与依据。\n查看\n×",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回后台工作",
+      "label": "返回后台工作",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看这条记忆",
+      "label": "查看这条记忆",
+      "action": "go",
+      "page": "memories",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "核对原文 · 产品评审 · 让第一步更清楚",
+      "label": "核对原文 · 产品评审 · 让第一步更清楚",
+      "action": "go",
+      "page": "material/m1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看",
+      "label": "查看",
+      "action": "go",
+      "page": "activity/memory-continuation",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "×",
+      "label": "关闭提示",
+      "action": "dismiss-toast",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "继续整理 · 工作详情"
+    },
+    {
+      "level": "H2",
+      "text": "本次继续整理"
+    },
+    {
+      "level": "H3",
+      "text": "本次采用的记忆内容"
+    },
+    {
+      "level": "H3",
+      "text": "处理记录"
+    },
+    {
+      "level": "H3",
+      "text": "整理结果 · 演示"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state"
+}

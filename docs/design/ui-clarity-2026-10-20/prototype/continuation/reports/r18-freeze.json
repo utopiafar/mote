@@ -1,0 +1,437 @@
+{
+  "candidate": "continuation/dist/r18.html",
+  "revision": 18,
+  "sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+  "bytes": 529969,
+  "base_sha256": "290534ad7b054e1349ca836e13e7c30d3913860964479517052c8523031d7c6c",
+  "created_at": "2026-10-21T02:39:35.118888+00:00",
+  "scope": "Self-contained HTML mock UI. No live backend or system permission validation.",
+  "applied_replacements": [
+    {
+      "family": "memory-context-r18",
+      "index": 1,
+      "count": 1,
+      "label": ""
+    },
+    {
+      "family": "memory-context-r18",
+      "index": 2,
+      "count": 1,
+      "label": ""
+    },
+    {
+      "family": "memory-context-r18",
+      "index": 3,
+      "count": 1,
+      "label": ""
+    },
+    {
+      "family": "memory-context-r18",
+      "index": 4,
+      "count": 1,
+      "label": ""
+    },
+    {
+      "family": "memory-context-r18",
+      "index": 5,
+      "count": 1,
+      "label": ""
+    },
+    {
+      "family": "memory-context-r18",
+      "index": 6,
+      "count": 1,
+      "label": ""
+    },
+    {
+      "family": "memory-context-r18",
+      "index": 7,
+      "count": 2,
+      "label": ""
+    },
+    {
+      "family": "memory-context-r18",
+      "index": 8,
+      "count": 1,
+      "label": ""
+    },
+    {
+      "family": "memory-context-r18",
+      "index": 9,
+      "count": 1,
+      "label": ""
+    },
+    {
+      "family": "memory-context-r18",
+      "index": 10,
+      "count": 1,
+      "label": ""
+    },
+    {
+      "family": "memory-context-r18",
+      "index": 11,
+      "count": 1,
+      "label": ""
+    },
+    {
+      "family": "memory-context-r18",
+      "index": 12,
+      "count": 1,
+      "label": ""
+    },
+    {
+      "family": "memory-context-r18",
+      "index": 13,
+      "count": 1,
+      "label": ""
+    },
+    {
+      "family": "source-r18",
+      "index": 1,
+      "count": 1,
+      "label": "Independent defaults; preserve the initial state and merge anchor"
+    },
+    {
+      "family": "source-r18",
+      "index": 2,
+      "count": 1,
+      "label": "Explicit synthetic capture metadata on the existing m6 record; no extra material or reassigned source"
+    },
+    {
+      "family": "source-r18",
+      "index": 3,
+      "count": 1,
+      "label": "One stable source identity for the existing authorization task"
+    },
+    {
+      "family": "source-r18",
+      "index": 4,
+      "count": 1,
+      "label": "Expose stable task/source identity on the existing activity card"
+    },
+    {
+      "family": "source-r18",
+      "index": 5,
+      "count": 1,
+      "label": "Show the actual source name and saved material count in activity"
+    },
+    {
+      "family": "source-r18",
+      "index": 6,
+      "count": 1,
+      "label": "Keep both pre-authorization and recovery activity links inside their source"
+    },
+    {
+      "family": "source-r18",
+      "index": 7,
+      "count": 1,
+      "label": "Derive task detail from the same stable source identity"
+    },
+    {
+      "family": "source-r18",
+      "index": 8,
+      "count": 1,
+      "label": "Protect the current source name while retaining task structure"
+    },
+    {
+      "family": "source-r18",
+      "index": 9,
+      "count": 1,
+      "label": "Replace fabricated archived count with the actual material collection"
+    },
+    {
+      "family": "source-r18",
+      "index": 10,
+      "count": 1,
+      "label": "Task detail view and settings both use the same source"
+    },
+    {
+      "family": "source-r18",
+      "index": 11,
+      "count": 1,
+      "label": "Keep authorization and the adjoining source browse action aligned"
+    },
+    {
+      "family": "source-r18",
+      "index": 12,
+      "count": 1,
+      "label": "Device filter uses actual record/device identities, not source-name heuristics"
+    },
+    {
+      "family": "source-r18",
+      "index": 13,
+      "count": 1,
+      "label": "Apply device scope consistently to all material and raw views"
+    },
+    {
+      "family": "source-r18",
+      "index": 14,
+      "count": 1,
+      "label": "Include device and capture date in visible filter scope"
+    },
+    {
+      "family": "source-r18",
+      "index": 15,
+      "count": 1,
+      "label": "Compact filter summary preserves the new scopes"
+    },
+    {
+      "family": "source-r18",
+      "index": 16,
+      "count": 1,
+      "label": "Show empty/filter feedback whenever the new controls narrow results"
+    },
+    {
+      "family": "source-r18",
+      "index": 17,
+      "count": 1,
+      "label": "Explain the actual grouping and filter axes"
+    },
+    {
+      "family": "source-r18",
+      "index": 18,
+      "count": 1,
+      "label": "Add a device control beside the existing source and type controls"
+    },
+    {
+      "family": "source-r18",
+      "index": 19,
+      "count": 1,
+      "label": "Source-empty advice covers the active device filter"
+    },
+    {
+      "family": "source-r18",
+      "index": 20,
+      "count": 1,
+      "label": "Group existing screenshot evidence by explicit session or app plus date and device"
+    },
+    {
+      "family": "source-r18",
+      "index": 21,
+      "count": 1,
+      "label": "Raw records share real metadata and evidence links without a hardcoded list date/app"
+    },
+    {
+      "family": "source-r18",
+      "index": 22,
+      "count": 1,
+      "label": "Original evidence displays the exact capture metadata and protects its content"
+    },
+    {
+      "family": "source-r18",
+      "index": 23,
+      "count": 1,
+      "label": "Independent source-level relationship editor with saved context and resumable drafts"
+    },
+    {
+      "family": "source-r18",
+      "index": 24,
+      "count": 1,
+      "label": "Expose the relation editor for each exact connected source"
+    },
+    {
+      "family": "source-r18",
+      "index": 25,
+      "count": 1,
+      "label": "New folder setup describes connection policy; existing folders describe recovery policy"
+    },
+    {
+      "family": "source-r18",
+      "index": 26,
+      "count": 1,
+      "label": "Save/discard context independently of source intake, authorization and screen scope"
+    },
+    {
+      "family": "source-r18",
+      "index": 27,
+      "count": 1,
+      "label": "Persist only source-context inputs without rerendering or losing cursor/focus"
+    },
+    {
+      "family": "source-r18",
+      "index": 28,
+      "count": 1,
+      "label": "Separate global send scope from screen capture and per-source intake"
+    },
+    {
+      "family": "source-r18",
+      "index": 29,
+      "count": 1,
+      "label": "Persistently expose paused transport and recovery in sources"
+    },
+    {
+      "family": "source-r18",
+      "index": 30,
+      "count": 1,
+      "label": "Persistently expose paused transport and recovery in devices"
+    },
+    {
+      "family": "source-r18",
+      "index": 31,
+      "count": 1,
+      "label": "Device sync state reflects transport pause without changing capture status or mock pending count"
+    },
+    {
+      "family": "source-r18",
+      "index": 32,
+      "count": 1,
+      "label": "Privacy displays current send state and the appropriate pause/resume action"
+    },
+    {
+      "family": "source-r18",
+      "index": 33,
+      "count": 1,
+      "label": "Replace generic-save with confirmed, persistent send pause and explicit recovery"
+    },
+    {
+      "family": "source-r18",
+      "index": 34,
+      "count": 1,
+      "label": "Clear new scopes through clear-filters"
+    },
+    {
+      "family": "source-r18",
+      "index": 35,
+      "count": 1,
+      "label": "Clear new scopes through browse-source"
+    },
+    {
+      "family": "source-r18",
+      "index": 36,
+      "count": 1,
+      "label": "Clear new scopes through clear-source-scope"
+    },
+    {
+      "family": "source-r18",
+      "index": 37,
+      "count": 1,
+      "label": "Clear new scopes through clear-source-filters"
+    },
+    {
+      "family": "source-r18",
+      "index": 38,
+      "count": 1,
+      "label": "Collection switch resets device and capture-date scope consistently"
+    },
+    {
+      "family": "source-r18",
+      "index": 39,
+      "count": 1,
+      "label": "Wire the three actual filter/group controls using stable values"
+    },
+    {
+      "family": "source-r18",
+      "index": 40,
+      "count": 1,
+      "label": "Static English labels for source, device, capture grouping and send scope"
+    },
+    {
+      "family": "source-r18",
+      "index": 41,
+      "count": 1,
+      "label": "English templates for computed group, session and evidence counts"
+    },
+    {
+      "family": "settings-r18",
+      "index": 1,
+      "count": 1,
+      "label": "Independent defaults before snapshot"
+    },
+    {
+      "family": "settings-r18",
+      "index": 2,
+      "count": 1,
+      "label": "Independent completion helpers and English dictionary"
+    },
+    {
+      "family": "settings-r18",
+      "index": 3,
+      "count": 1,
+      "label": "Account service and retention entry"
+    },
+    {
+      "family": "settings-r18",
+      "index": 4,
+      "count": 1,
+      "label": "Independent settings action dispatch"
+    },
+    {
+      "family": "settings-r18",
+      "index": 5,
+      "count": 1,
+      "label": "Import detail route"
+    },
+    {
+      "family": "settings-r18",
+      "index": 6,
+      "count": 1,
+      "label": "Platform-specific local file label"
+    },
+    {
+      "family": "settings-r18",
+      "index": 7,
+      "count": 1,
+      "label": "Current import image plan field"
+    },
+    {
+      "family": "settings-r18",
+      "index": 8,
+      "count": 1,
+      "label": "Preserve original title in completion notice"
+    },
+    {
+      "family": "settings-r18",
+      "index": 9,
+      "count": 1,
+      "label": "Completed import exposes its saved image plan"
+    },
+    {
+      "family": "settings-r18",
+      "index": 10,
+      "count": 1,
+      "label": "Current import opens its own details"
+    },
+    {
+      "family": "settings-r18",
+      "index": 11,
+      "count": 1,
+      "label": "New imports start with default image plan"
+    },
+    {
+      "family": "settings-r18",
+      "index": 12,
+      "count": 1,
+      "label": "Capture selected image scheme at submission"
+    },
+    {
+      "family": "settings-r18",
+      "index": 13,
+      "count": 1,
+      "label": "Use current preview device for local import metadata"
+    },
+    {
+      "family": "settings-r18",
+      "index": 14,
+      "count": 1,
+      "label": "Snapshot each import configuration separately"
+    },
+    {
+      "family": "settings-r18",
+      "index": 15,
+      "count": 1,
+      "label": "All import records expose details"
+    },
+    {
+      "family": "settings-r18",
+      "index": 16,
+      "count": 1,
+      "label": "Reading result links back to its import image plan"
+    },
+    {
+      "family": "settings-r18",
+      "index": 17,
+      "count": 1,
+      "label": "Application activity uses measured sample duration shares"
+    }
+  ]
+}

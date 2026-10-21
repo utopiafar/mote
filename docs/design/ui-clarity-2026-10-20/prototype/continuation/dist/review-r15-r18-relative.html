@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mote UI · R15 / R18 对照</title>
+<style>
+:root{color-scheme:light;--bg:#f5f5f8;--paper:#fff;--ink:#272532;--muted:#696574;--line:#dedbe6;--accent:#6953a8;--soft:#eee9f7;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}button,select{font:inherit;color:inherit}button,select{min-height:40px;border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--paper)}button{cursor:pointer}button:hover,select:hover{border-color:var(--accent)}button:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid #b4a0e2;outline-offset:3px}a{color:var(--accent)}header,main,footer{max-width:1880px;margin:auto}header{padding:28px 28px 20px}.eyebrow{font-size:11px;letter-spacing:.14em;color:var(--accent);font-weight:750;margin:0 0 8px}h1{font-size:clamp(25px,3vw,34px);line-height:1.25;letter-spacing:-.035em;margin:0 0 10px}.intro{color:var(--muted);font-size:14px;line-height:1.75;margin:0;max-width:940px}.toolbar{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end;margin-top:22px}.control{display:grid;gap:6px;font-size:12px;color:var(--muted)}.control select{font-size:14px;color:var(--ink)}.toolbar button{font-size:13px}.hint{display:flex;flex-wrap:wrap;gap:8px 20px;color:var(--muted);font-size:12px;line-height:1.7;margin:13px 0 0}.hint p{margin:0}#status{min-height:21px}.error{color:#9d3f3f}.compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;padding:0 22px 24px}.panel{min-width:0;border:1px solid var(--line);border-radius:14px;background:var(--paper);overflow:hidden;box-shadow:0 4px 24px #29243206}.panel.recommended{border-color:var(--accent)}.version-badge{display:inline-block;font-size:11px;line-height:1.4;letter-spacing:0;font-weight:600;padding:3px 6px;background:var(--soft);color:var(--accent);border-radius:5px;margin-left:7px;white-space:nowrap}.panel-head{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line)}.panel h2{font-size:17px;line-height:1.35;margin:0;font-weight:700;letter-spacing:-.02em}.panel small{font-size:12px;color:var(--muted);white-space:nowrap}.viewport{padding:12px;background:#e9e7ee;overflow:auto;min-height:340px}.frame-wrap{position:relative;margin:auto;background:white;box-shadow:0 3px 15px #32284616;overflow:hidden}.frame-wrap iframe{display:block;border:0;transform-origin:top left;background:white}.panel-foot{font-size:11px;color:var(--muted);padding:10px 18px;line-height:1.6}.compare.phone{grid-template-columns:1fr;max-width:490px;margin:auto;padding-left:14px;padding-right:14px;gap:24px}.compare.phone .panel.recommended{order:-1}.compare.phone .viewport{padding:12px}.compare.phone .panel-head{padding:14px}.compare.phone .panel h2{font-size:16px}.compare.phone .panel small{font-size:11px}footer{padding:0 28px 28px;font-size:12px;color:var(--muted);line-height:1.75}footer details{border-top:1px solid var(--line);padding-top:14px}footer summary{cursor:pointer}footer code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}footer ul{padding-left:20px}noscript{display:block;padding:20px}.dark-shell{--bg:#1e1d24;--paper:#28262f;--ink:#e9e6f0;--muted:#b0aabc;--line:#45404f;--accent:#c2a9f4;--soft:#332b44;color-scheme:dark}.dark-shell .viewport{background:#15141b}@media(max-width:780px){header{padding:22px 16px 18px}.toolbar{gap:12px}.control{flex:1 1 145px}.control select{width:100%}.compare{grid-template-columns:1fr;padding:0 12px 20px}.panel-head{padding:14px}.intro{font-size:13px}footer{padding:0 16px 24px}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<header>
+<p class="eyebrow">MOTE / UI REVIEW</p>
+<h1>两版界面，放在一起看</h1>
+<p class="intro">建议先看 R18，再与上轮交付 R15 对照。从相同场景比较第一眼的用途说明、重要功能入口和操作反馈。两侧均为可操作的 HTML 原型，使用模拟资料和状态。</p>
+<div class="toolbar" aria-label="对照查看设置">
+<label class="control" for="layout">查看方式<select id="layout"><option value="desktop">并排桌面 · 1440 px</option><option value="phone">单列手机 · 390 px</option></select></label>
+<label class="control" for="scene">主要场景<select id="scene"><option value="library">资料库</option><option value="sources">来源</option><option value="setup/screen">屏幕设置</option><option value="notes">随手记</option><option value="memories">记忆</option></select></label>
+<label class="control" for="data-state">资料状态<select id="data-state"><option value="populated">已有资料</option><option value="empty">空白账号</option></select></label>
+<label class="control" for="theme">外观<select id="theme"><option value="light">浅色</option><option value="dark">深色</option></select></label>
+<button id="reset" type="button">重置两侧</button>
+</div>
+<div class="hint"><p>切换上方选项会重置两侧预览；进入原型后的操作彼此独立。</p><p id="status" role="status" aria-live="polite">正在载入两份原型…</p></div>
+</header>
+<main>
+<div class="compare" id="compare">
+<section class="panel" data-version="r15" aria-labelledby="title-r15"><div class="panel-head"><h2 id="title-r15">R15 · 上轮交付</h2><small class="viewport-label">桌面 1440 px</small></div><div class="viewport"><div class="frame-wrap"><iframe id="frame-r15" title="R15 · 上轮交付，可操作界面" sandbox="allow-scripts allow-forms allow-downloads"></iframe></div></div><div class="panel-foot">可在原型内继续导航、输入与查看反馈。</div></section>
+<section class="panel recommended" data-version="r18" aria-labelledby="title-r18"><div class="panel-head"><h2 id="title-r18">R18 · 本次候选<span class="version-badge">建议先看</span></h2><small class="viewport-label">桌面 1440 px</small></div><div class="viewport"><div class="frame-wrap"><iframe id="frame-r18" title="R18 · 本次候选，可操作界面" sandbox="allow-scripts allow-forms allow-downloads"></iframe></div></div><div class="panel-foot">可在原型内继续导航、输入与查看反馈。</div></section>
+</div>
+<noscript>请启用 JavaScript 体验对照原型。也可以分别打开 ./r18.html 与 ../../dist/rounds/r15.html。</noscript>
+</main>
+<footer><details><summary>版本与使用说明</summary><p>这是界面对照工具。所有资料、账号、同步与处理结果均为模拟内容。每次载入的两侧会话相互隔离；查看器不改写两份冻结候选。</p><ul id="version-details"></ul><p id="delivery-note">本页以相对路径读取仓库内的候选；直接双击打开时，会进入同目录的离线单文件版。</p></details></footer>
+<script id="candidate-data" type="application/json">[
+  {
+    "id": "r15",
+    "label": "R15 · 上轮交付",
+    "path": "../../dist/rounds/r15.html",
+    "recommended": false,
+    "sha256": "65257ad350e155a01bd1e64c3241e812bff98c93fda593be70de2dae17bf32f9",
+    "bytes": 355392
+  },
+  {
+    "id": "r18",
+    "label": "R18 · 本次候选",
+    "path": "./r18.html",
+    "recommended": true,
+    "sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+    "bytes": 529969
+  }
+]</script>
+<script>
+'use strict';
+const candidates=JSON.parse(document.getElementById('candidate-data').textContent);
+const bundled=false;
+const controls={layout:document.getElementById('layout'),scene:document.getElementById('scene'),data:document.getElementById('data-state'),theme:document.getElementById('theme')};
+const status=document.getElementById('status'),panels=[...document.querySelectorAll('.panel')];
+let generation=0,loaded=new Set(),ready=false;
+const query=new URLSearchParams(location.search);
+for(const [name,control] of Object.entries(controls)){const value=query.get(name);if(value&&[...control.options].some(option=>option.value===value))control.value=value;}
+function fit(panel){
+ const phone=controls.layout.value==='phone',width=phone?390:1440,height=phone?900:1000;
+ const viewport=panel.querySelector('.viewport'),wrap=panel.querySelector('.frame-wrap'),frame=panel.querySelector('iframe');
+ const available=Math.max(240,viewport.clientWidth-24),scale=Math.min(1,available/width);
+ wrap.style.width=(width*scale)+'px';wrap.style.height=(height*scale)+'px';
+ frame.style.width=width+'px';frame.style.height=height+'px';frame.style.transform='scale('+scale+')';
+ panel.querySelector('.viewport-label').textContent=phone?'手机 390 px':'桌面 1440 px';
+}
+function reviewCopy(candidate,token){
+ const params=new URLSearchParams({reset:'1',state:controls.data.value,theme:controls.theme.value,surface:'web'}).toString();
+ const config={id:candidate.id,token,route:controls.scene.value,prefix:'mote-review:'+candidate.id+':'+token+':'};
+ // The original is kept in candidate.html; only its live review copy gets a parameter hook.
+ let html=candidate.html.replace('const parameters = new URLSearchParams(location.search);','const parameters = new URLSearchParams('+JSON.stringify('?'+params)+');');
+ const bootstrap='('+function(config){
+   const values=new Map(),prefix=config.prefix;
+   const storage={getItem:key=>values.has(prefix+String(key))?values.get(prefix+String(key)):null,setItem:(key,value)=>{values.set(prefix+String(key),String(value));},removeItem:key=>{values.delete(prefix+String(key));},clear:()=>values.clear(),key:index=>[...values.keys()][Number(index)]?.slice(prefix.length)??null,get length(){return values.size;}};
+   Object.defineProperty(window,'sessionStorage',{configurable:true,value:storage});
+   Object.defineProperty(window,'__MOTE_REVIEW_STORAGE_PREFIX',{value:prefix});
+   location.hash='/'+config.route;
+   addEventListener('DOMContentLoaded',()=>parent.postMessage({type:'mote-review-ready',id:config.id,token:config.token},'*'),{once:true});
+ }.toString()+')('+JSON.stringify(config)+');';
+ return html.replace('<head>','<head><scr'+'ipt>'+bootstrap+'</scr'+'ipt>');
+}
+function render(){
+ if(!ready)return;
+ generation++;loaded=new Set();status.className='';status.textContent='正在载入两份原型…';
+ document.getElementById('compare').classList.toggle('phone',controls.layout.value==='phone');
+ document.body.classList.toggle('dark-shell',controls.theme.value==='dark');
+ for(const candidate of candidates){const panel=document.querySelector('[data-version="'+candidate.id+'"]'),frame=panel.querySelector('iframe');frame.dataset.reviewToken=candidate.id+'-'+generation;frame.srcdoc=reviewCopy(candidate,frame.dataset.reviewToken);fit(panel);}
+}
+addEventListener('message',event=>{
+ if(event.data?.type!=='mote-review-ready')return;
+ const frame=document.getElementById('frame-'+event.data.id);
+ if(!frame||event.source!==frame.contentWindow||event.data.token!==frame.dataset.reviewToken)return;
+ loaded.add(event.data.id);status.textContent=loaded.size===2?'两份原型已载入，可分别操作。':'已载入 '+loaded.size+' / 2 份原型…';
+});
+for(const control of Object.values(controls))control.addEventListener('change',render);
+document.getElementById('reset').addEventListener('click',render);
+for(const panel of panels){let previousWidth=-1;new ResizeObserver(entries=>{const width=entries[0].contentRect.width;if(Math.abs(width-previousWidth)<0.5)return;previousWidth=width;requestAnimationFrame(()=>fit(panel));}).observe(panel.querySelector('.viewport'));}
+document.getElementById('version-details').innerHTML=candidates.map(candidate=>'<li>'+candidate.label+'<br><code>SHA256 '+candidate.sha256+'</code></li>').join('');
+(async()=>{
+ if(!bundled&&location.protocol==='file:'){
+  const target=new URL('mote-ui-review.html',location.href);target.search=location.search;
+  status.textContent='正在打开可离线使用的单文件对照页…';location.replace(target.href);return;
+ }
+ try{
+  if(!bundled)await Promise.all(candidates.map(async candidate=>{const response=await fetch(candidate.path,{cache:'no-store'});if(!response.ok)throw new Error(candidate.label+' 无法载入');candidate.html=await response.text();}));
+  ready=true;render();
+ }catch(error){status.className='error';status.textContent='相对文件未能载入。请打开同目录 mote-ui-review.html 使用离线对照页。';}
+})();
+</script>
+</body>
+</html>

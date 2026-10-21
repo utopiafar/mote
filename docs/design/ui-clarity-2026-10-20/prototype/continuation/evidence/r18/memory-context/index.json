@@ -1,0 +1,25 @@
+{
+  "candidate": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/dist/r18.html",
+  "sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+  "browser": "Chromium 133.0.6943.16",
+  "scope": "Generated HTML UI; visible DOM controls only; no backend or model calls",
+  "created_at": "2026-10-21T02:40:10.703Z",
+  "scenarios": [
+    {
+      "id": "memory-search-effective-history",
+      "status": "passed",
+      "steps": 8
+    },
+    {
+      "id": "question-context-scope-and-return",
+      "status": "passed",
+      "steps": 4
+    },
+    {
+      "id": "memory-context-english",
+      "status": "passed",
+      "steps": 2
+    }
+  ],
+  "all_passed": true
+}

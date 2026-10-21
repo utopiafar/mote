@@ -1,0 +1,4666 @@
+{
+  "review_phase": "completed_informed_semantic_review_r17_with_unresolved_conflict",
+  "evaluator": "finish_independent_criteria",
+  "exposure": "Informed evaluator after fixed R15 first understanding and bounded baseline; no candidate implementation or internal app state read",
+  "requirements": {
+    "manifest_version": "mote-ui-features-v1-draft",
+    "manifest_sha256": "17519e82e200a06692fafee7d08fcb5f4facc5029bc0acbaca6858ddb9866aef",
+    "inventory_sha256": "022edb4c411d95448fc645c27dbb4c4030878995250bd1c18638b36d0bc837f4",
+    "plan_sha256": "f4528bb41273e1b0c56fe769ee14fb3ea7afa4874672723f0d623b7a7d74df09",
+    "counts": {
+      "families": 20,
+      "p0_families": 12,
+      "p1_families": 8,
+      "sections": 4,
+      "groups": 16,
+      "units": 78,
+      "core_units": 42,
+      "advanced_units": 36
+    },
+    "note": "Source inventory metadata remains draft/pending live validation; frozen as the requested HTML prototype coverage denominator, not proof of production implementation."
+  },
+  "candidate": {
+    "path": "dist/r17.html",
+    "sha256": "290534ad7b054e1349ca836e13e7c30d3913860964479517052c8523031d7c6c"
+  },
+  "method": {
+    "semantic_review": "Read actual rendered visible per-entry DOM from frozen browser evidence, then independently assess home, next step and completeness against the unit purpose. Do not infer completion from card presence or routing alone.",
+    "natural_tasks": "One complete G1–G4 independent re-evaluation after candidate freeze; choices based on visible controls.",
+    "conditional_features": "If required fixture/state is absent, use not_verified; do not silently remove the unit or count it as pass.",
+    "non_duplicate_rule": "Contextual shortcuts are allowed when one primary management responsibility, naming and state semantics remain consistent.",
+    "legacy_paths": "Old inventory labels/routes are semantic source references, not exact expected strings in the new UI.",
+    "production_boundary": "Mock state changes are valid for this HTML prototype; external service, model, permission and native implementation are out of scope."
+  },
+  "status_vocabulary": {
+    "not_run": "No candidate evidence reviewed yet.",
+    "pass": "Clear semantic home and concrete next step visible; no observed conflict or significant purpose omission.",
+    "partial": "Some purpose supported, but significant step/condition/semantic distinction unclear or unverified.",
+    "missing": "Observed appropriate state lacks required unit or meaningful next step.",
+    "conflict": "Names, primary responsibility, scope or actual destination contradict the user-facing promise.",
+    "not_verified": "Required evidence or applicable state unavailable; retained in denominator."
+  },
+  "coverage": {
+    "families_reviewed": 20,
+    "units_reviewed": 78,
+    "primary_home_and_next_step_supported": 78,
+    "units_pass": 67,
+    "units_partial": 10,
+    "units_missing": 0,
+    "units_conflict": 1,
+    "units_not_verified": 0,
+    "units_not_run": 0,
+    "families_status_counts": {
+      "pass": 13,
+      "partial": 6,
+      "conflict": 1
+    },
+    "independently_interacted_units_with_limited_scope": 11,
+    "interpretation": "67 pass is a primary semantic review result, not 67 end-to-end implementations or all branches. 10 partial units retain unproven or absent sub-capabilities; 1 observed conflict remains."
+  },
+  "scores": {
+    "Design": {
+      "weight": 20,
+      "score": 3,
+      "evidence": [
+        "evidence/r17/visuals/desktop-library-light.png",
+        "evidence/r17/visuals/desktop-empty-light.png",
+        "evidence/r17/visuals/tablet-library-light.png"
+      ],
+      "reason": "桌面/平板/手机的布局和层级协调，资料库、空白引导与设置保持统一视觉语言；不因样式精致自动给 4。"
+    },
+    "Originality": {
+      "weight": 10,
+      "score": 3,
+      "evidence": [
+        "evidence/r17/visuals/desktop-memory.png",
+        "evidence/r17/feature-coverage.json",
+        "evidence/independent/r17/g2-original-evidence.png"
+      ],
+      "reason": "资料/记忆/洞察的内容结构、出处与来源连接区分、原文核对入口适合个人资料归档任务。"
+    },
+    "Craft": {
+      "weight": 15,
+      "score": 3,
+      "evidence": [
+        "evidence/r17/visuals/index.json",
+        "evidence/independent/r17/g4-library-retrieved-import-viewport.png"
+      ],
+      "reason": "已看 12 个实际画面，字号、留白、对齐和响应式层级稳定；窄屏 G4 控件能完成目标。未做对比度测量与完整键盘审计，不给复杂状态全稳定的 4。"
+    },
+    "Functionality": {
+      "weight": 30,
+      "score": 2,
+      "evidence": [
+        "evidence/independent/r17/natural-tasks.trace.json",
+        "evidence/independent/r17-supplement/natural-tasks.trace.json"
+      ],
+      "reason": "G1–G4 均完成，R15 四项问题在原路径修复；但 R17-S1 的失败工作返回丢范围且数量冲突，必须手动筛选才能确认，符合明显绕路的 2 分锚点。"
+    },
+    "Clarity": {
+      "weight": 25,
+      "score": 3,
+      "evidence": [
+        "evidence/r17/visuals/desktop-empty-light.png",
+        "evidence/r17/visuals/mobile-empty-dark.png",
+        "evidence/r17/feature-coverage.json"
+      ],
+      "reason": "用途、首份资料、主要导航和 78 单元主要归属清楚；已识别的细项不足和一处状态冲突使完整细致的 4 缺乏依据。"
+    }
+  },
+  "weighted_score": 67.5,
+  "score_rules": "Integer 0–4; sum(weight*score/4) only when all dimensions have evidence. Specific failures and gates cannot be overridden by aggregate score.",
+  "families": [
+    {
+      "id": "F01",
+      "priority": "P0",
+      "goal": "理解 Mote，知道如何放入资料、找回和提问",
+      "expected_home": "首次进入的资料库/内容，补充 Home/全部功能",
+      "expected_journey": "从空白新用户状态说明是什么、列出可加入内容、选择一个入口到真正操作页",
+      "review_status": "pass",
+      "visible_home": "资料库首屏；空白账号首份资料入口",
+      "semantic_support": "已有资料时搜索/阅读/添加突出，空白状态导入主动作突出，三类产物的职责明确。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C02",
+            "C03"
+          ]
+        }
+      ],
+      "issues": [],
+      "limitations": [
+        "全新上下文的最终三人门槛不由本评估者证明。"
+      ],
+      "related_unit_ids": [
+        "C02",
+        "C03"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F02",
+      "priority": "P0",
+      "goal": "登录中央、连接设备、恢复连接",
+      "expected_home": "设置 → 账号/连接；来源 → 连接设备为快捷路径",
+      "expected_journey": "登录→看自己资料→退出/失效→重登；设备批准后有正确权限和状态；返回原 Ask/内容",
+      "review_status": "partial",
+      "visible_home": "设置 → 账号与设备；来源 → 连接设备",
+      "semantic_support": "当前会话、连接设备和重新授权的主要位置清楚。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C01",
+            "C04",
+            "C05"
+          ]
+        }
+      ],
+      "issues": [
+        "C01 的登录保留时长和中央节点确认条件态未验证。"
+      ],
+      "limitations": [
+        "C01 的登录保留时长和中央节点确认条件态未验证。"
+      ],
+      "related_unit_ids": [
+        "C01",
+        "C04",
+        "C05"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F03",
+      "priority": "P0",
+      "goal": "保存随手记、保留草稿、离线恢复",
+      "expected_home": "添加 → 随手记；历史归资料库",
+      "expected_journey": "输入→离页/返回草稿→保存→看到本地/同步状态→从列表打开同一原文；失败可重试且不会生成重复记",
+      "review_status": "pass",
+      "visible_home": "随手记；资料库历史",
+      "semantic_support": "G1 完整保存及找回，额外离页草稿也保留。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C12",
+            "C13"
+          ]
+        }
+      ],
+      "issues": [],
+      "limitations": [
+        "离线、刷新、失败重试与防重复未执行。"
+      ],
+      "related_unit_ids": [
+        "C12",
+        "C13"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F04",
+      "priority": "P0",
+      "goal": "导入已有文件、文件夹、ZIP、音频或图片",
+      "expected_home": "添加 → 导入文件/导入资料",
+      "expected_journey": "选择→范围/保存方式→提交→进度→需要确认时核对→回到已发布正文/原件；未配置模型去配置后返回同一任务",
+      "review_status": "partial",
+      "visible_home": "导入资料；上传与处理",
+      "semantic_support": "G4 空账号到可阅读资料闭环成立；阶段、待确认和中断队列可见。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C09",
+            "C10",
+            "C11",
+            "A01",
+            "A02",
+            "A03"
+          ]
+        }
+      ],
+      "issues": [
+        "A02 当前导入图片处理方案未获证据；其他类型/模型恢复分支未执行。"
+      ],
+      "limitations": [
+        "A02 当前导入图片处理方案未获证据；其他类型/模型恢复分支未执行。"
+      ],
+      "related_unit_ids": [
+        "C09",
+        "C10",
+        "C11",
+        "A01",
+        "A02",
+        "A03"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F05",
+      "priority": "P0",
+      "goal": "持续同步一个文件夹或文件",
+      "expected_home": "添加 → 同步文件夹；后续管理归来源",
+      "expected_journey": "选择本机范围→首次同步与持续选项→保存→查看来源→更改文件→看到同来源新版→暂停/恢复",
+      "review_status": "pass",
+      "visible_home": "连接新的文件夹；来源 → 管理文件夹来源",
+      "semantic_support": "G3 新建独立来源、保存策略、暂停及历史资料回看成立。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C07",
+            "C08"
+          ]
+        }
+      ],
+      "issues": [],
+      "limitations": [
+        "真实文件修改、新版本、同步和恢复收集未执行。"
+      ],
+      "related_unit_ids": [
+        "C07",
+        "C08"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F06",
+      "priority": "P0",
+      "goal": "记录屏幕、页面、应用活动、通知/媒体状态",
+      "expected_home": "添加 → 记录屏幕；范围管理归来源",
+      "expected_journey": "选择范围→需要的权限→明确开始→查看记录→暂停→历史仍可读；拒绝屏幕权限后笔记/文件继续",
+      "review_status": "partial",
+      "visible_home": "来源 → 屏幕采集；资料库原始记录/应用/媒体",
+      "semantic_support": "屏幕范围、权限模拟和当前记录状态可辨，原始记录可回看。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C04",
+            "C17",
+            "A12",
+            "A13",
+            "A14"
+          ]
+        }
+      ],
+      "issues": [
+        "A12 分组/设备维度和 A13 采样范围不足；通知/媒体采集许可未执行。"
+      ],
+      "limitations": [
+        "A12 分组/设备维度和 A13 采样范围不足；通知/媒体采集许可未执行。"
+      ],
+      "related_unit_ids": [
+        "C04",
+        "C17",
+        "A12",
+        "A13",
+        "A14"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F07",
+      "priority": "P0",
+      "goal": "管理隐私和三个不同暂停范围",
+      "expected_home": "来源 → 对应来源；设备隐私归本机设置",
+      "expected_journey": "暂停屏幕、暂停一来源、暂停所有发送各自呈现当前范围→恢复→等待数据不丢",
+      "review_status": "partial",
+      "visible_home": "具体来源管理；设置 → 采集与隐私",
+      "semantic_support": "已验证暂停某一来源保留旧资料，屏幕页显示自己的授权/范围。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C08",
+            "C04"
+          ]
+        }
+      ],
+      "issues": [
+        "三种暂停范围中的所有发送暂停未由本次可见证据完整核对。"
+      ],
+      "limitations": [
+        "三种暂停范围中的所有发送暂停未由本次可见证据完整核对。"
+      ],
+      "related_unit_ids": [
+        "C08",
+        "C04"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F08",
+      "priority": "P0",
+      "goal": "浏览完整资料、原始记录、文件/录音，并核对来源",
+      "expected_home": "资料库/内容",
+      "expected_journey": "筛选/选择→正文→来源/时间/版本→证据原件→关闭回同列表位置；空/过滤无结果/读取失败有清楚下一步",
+      "review_status": "partial",
+      "visible_home": "资料库 → 正文、资料出处、文件与录音、原始记录",
+      "semantic_support": "正文、来源、原件闭环实际可走通；出处与持续来源管理的语义分开。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C14",
+            "C15",
+            "C17",
+            "C18",
+            "C19",
+            "A11",
+            "C37"
+          ]
+        }
+      ],
+      "issues": [
+        "C14/C17 设备筛选缺少；历史版本、全部原件类型与读取失败未执行。"
+      ],
+      "limitations": [
+        "C14/C17 设备筛选缺少；历史版本、全部原件类型与读取失败未执行。"
+      ],
+      "related_unit_ids": [
+        "C14",
+        "C15",
+        "C17",
+        "C18",
+        "C19",
+        "A11",
+        "C37"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F09",
+      "priority": "P0",
+      "goal": "根据资料提问，查看依据和历史",
+      "expected_home": "问一问",
+      "expected_journey": "输入→发送→看真实工作状态→离页后回到同对话→完成答案→点引用回原文；停止/失败/未配置时恢复",
+      "review_status": "pass",
+      "visible_home": "问一问",
+      "semantic_support": "G2 示例状态、范围、引用、原始内容和返回保留问题成立。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C20",
+            "C21",
+            "C22"
+          ]
+        }
+      ],
+      "issues": [],
+      "limitations": [
+        "停止、失败、未配置模型后的恢复及多轮管理未执行。"
+      ],
+      "related_unit_ids": [
+        "C20",
+        "C21",
+        "C22"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F10",
+      "priority": "P0",
+      "goal": "看后台正在做什么，处理失败或等待确认",
+      "expected_home": "活动",
+      "expected_journey": "从来源/导入/问答跳相关活动→辨认目标/状态/待自己动作→有效重试/取消/补充→打开结果",
+      "review_status": "conflict",
+      "visible_home": "活动 → 工作详情",
+      "semantic_support": "工作状态和恢复动作有主要归属，但具体失败工作的历史内容范围与数量不可靠。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C28",
+            "A25",
+            "C26"
+          ]
+        }
+      ],
+      "issues": [
+        "R17-S1 阻止无冲突门槛通过。"
+      ],
+      "limitations": [
+        "R17-S1 阻止无冲突门槛通过。"
+      ],
+      "related_unit_ids": [
+        "C28",
+        "A25",
+        "C26"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F11",
+      "priority": "P0",
+      "goal": "配置必要模型，随后继续原任务",
+      "expected_home": "设置 → 模型与服务",
+      "expected_journey": "未配置提示→对应模型页→配置/保存→返回原提问或导入→继续原草稿；直接进设置不伪造返回任务",
+      "review_status": "pass",
+      "visible_home": "设置 → 模型与服务",
+      "semantic_support": "连接与功能分配分开，测试示例、保存和高级参数有具体位置。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C31",
+            "C32",
+            "C36",
+            "C38"
+          ]
+        }
+      ],
+      "issues": [],
+      "limitations": [
+        "缺模型后配置再回原任务的完整模拟分支未由本评估者执行。"
+      ],
+      "related_unit_ids": [
+        "C31",
+        "C32",
+        "C36",
+        "C38"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F12",
+      "priority": "P0",
+      "goal": "找到所有已支持输入来源，不漏掉重要来源",
+      "expected_home": "来源 → 新增数据源；本机 Add 使用同一来源定义",
+      "expected_journey": "从“我有某类资料”找到合适来源→看到授权与处理所在端→完成设置→看到已接入来源",
+      "review_status": "pass",
+      "visible_home": "来源 → 连接来源 / 添加内容",
+      "semantic_support": "本机、外部、一次导入与引用入口分组完整，符合各类内容进入方式。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C07"
+          ]
+        }
+      ],
+      "issues": [],
+      "limitations": [
+        "提供方内全部条件态未执行；目录可达不等于连接成功。"
+      ],
+      "related_unit_ids": [
+        "C07"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F13",
+      "priority": "P1",
+      "goal": "接入飞书文档/日历、Google 日历、Gmail、厂商录音、MCP资料、外部/NAS引用",
+      "expected_home": "来源 → 新增数据源 → 指定来源",
+      "expected_journey": "选提供方→准备 CLI/OAuth（若需要）→授权→选择内容范围→同步→回来源或资料；单独错误重试/断开",
+      "review_status": "pass",
+      "visible_home": "来源目录 → 飞书、Google、Gmail、录音、MCP、NAS",
+      "semantic_support": "每类外部来源有适当入口；已展示的配置包含授权、范围和确认。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "A04",
+            "A05",
+            "A06",
+            "A07",
+            "A09",
+            "A10"
+          ]
+        }
+      ],
+      "issues": [],
+      "limitations": [
+        "录音历史范围及持续同步等后续条件未展开；真实服务不在范围。"
+      ],
+      "related_unit_ids": [
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A09",
+        "A10"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F14",
+      "priority": "P1",
+      "goal": "接入 Coding Agent 会话并回看经验依据",
+      "expected_home": "Mac 来源 → 连接 Coding Agent；正文归资料库",
+      "expected_journey": "发现本机 Agent→选择历史/过滤→保存→接收状态→已发布会话正文→核对工具记录/来源→可选记忆",
+      "review_status": "pass",
+      "visible_home": "来源目录 → Coding；资料库 → Coding 会话",
+      "semantic_support": "接收、发布、索引、记忆各阶段和正文入口具体，管理与回看有区分。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "A15"
+          ]
+        }
+      ],
+      "issues": [],
+      "limitations": [
+        "历史选择、过滤、原始工具记录与真实增量未执行。"
+      ],
+      "related_unit_ids": [
+        "A15"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F15",
+      "priority": "P1",
+      "goal": "浏览、纠正、删除、导出和手动提取记忆",
+      "expected_home": "资料库 → 记忆；配置归设置",
+      "expected_journey": "记忆→当前/历史/证据→核对→修正或手动提取→任务→新结果；待澄清问题从 Ask/相关活动回答",
+      "review_status": "partial",
+      "visible_home": "资料库 → 记忆；设置 → 自动记忆与策略",
+      "semantic_support": "结论、依据、纠正、继续整理及手动提取有清楚归属。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C23",
+            "C24",
+            "C25",
+            "C26",
+            "A16",
+            "A17",
+            "A18"
+          ]
+        }
+      ],
+      "issues": [
+        "C23 搜索与适用边界、A16 有效时间/关系的可见证据不足。"
+      ],
+      "limitations": [
+        "C23 搜索与适用边界、A16 有效时间/关系的可见证据不足。"
+      ],
+      "related_unit_ids": [
+        "C23",
+        "C24",
+        "C25",
+        "C26",
+        "A16",
+        "A17",
+        "A18"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F16",
+      "priority": "P1",
+      "goal": "生成阶段洞察并回看证据",
+      "expected_home": "资料库 → 洞察；Ask/Home 可有入口",
+      "expected_journey": "选时间/设备与问题→提交→离页进度→结果→原文引用→历史",
+      "review_status": "pass",
+      "visible_home": "资料库 → 洞察",
+      "semantic_support": "时间、方向、生成和历史清楚；报告保留范围、问题与资料清单。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C27"
+          ]
+        }
+      ],
+      "issues": [],
+      "limitations": [
+        "本评估者未执行洞察生成与多报告历史。"
+      ],
+      "related_unit_ids": [
+        "C27"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F17",
+      "priority": "P1",
+      "goal": "管理普通待办，审核日程建议再写日历",
+      "expected_home": "今天 → 行动（待办/日程建议两个可区分区域）",
+      "expected_journey": "创建普通待办→完成；日程建议→原文核对→选真实设备/日历→固定预览/确认→设备写入/核对结果",
+      "review_status": "pass",
+      "visible_home": "今天 → 待办 / 日程建议",
+      "semantic_support": "普通待办与有证据的日程建议分开，建议需核对确认。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C29",
+            "C30"
+          ]
+        }
+      ],
+      "issues": [],
+      "limitations": [
+        "到期、目标设备/日历、实际执行状态未展开。"
+      ],
+      "related_unit_ids": [
+        "C29",
+        "C30"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F18",
+      "priority": "P1",
+      "goal": "给其他 Chatbot/MCP 与设备授予或撤销权限",
+      "expected_home": "来源 → 对外授权",
+      "expected_journey": "新建指定用途授权→查看连接方式→检索或设备接收→列出/撤销→确认状态",
+      "review_status": "pass",
+      "visible_home": "来源/设置 → 对外授权",
+      "semantic_support": "已有连接、名称/范围、连接方式、新建和撤销有主要归属。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C06",
+            "A08"
+          ]
+        }
+      ],
+      "issues": [],
+      "limitations": [
+        "新建授权、撤销与指定来源写入未执行。"
+      ],
+      "related_unit_ids": [
+        "C06",
+        "A08"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F19",
+      "priority": "P1",
+      "goal": "自动记忆暂停、选择记忆方案、可信插件安装/启停",
+      "expected_home": "设置 → 自动记忆与插件",
+      "expected_journey": "发现/已安装→详情/依赖/授权→准备→明确激活→确认当前方案；暂停/恢复自动处理",
+      "review_status": "pass",
+      "visible_home": "设置 → 自动记忆与插件",
+      "semantic_support": "暂停新工作与立即停止分开，当前方案、插件与已加载能力各有下一步。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C33",
+            "C34",
+            "C35",
+            "A28"
+          ]
+        }
+      ],
+      "issues": [],
+      "limitations": [
+        "方案验证应用、插件安装/依赖/启用未执行。"
+      ],
+      "related_unit_ids": [
+        "C33",
+        "C34",
+        "C35",
+        "A28"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    },
+    {
+      "id": "F20",
+      "priority": "P1",
+      "goal": "存储/保留/备份/导出/删除、用量、诊断、语言与外观",
+      "expected_home": "设置 → 对应维护项",
+      "expected_journey": "查看当前范围→编辑草稿→保存/取消；导出生成文件→恢复确认；诊断筛选/下载；切换主题和语言保持草稿/位置",
+      "review_status": "pass",
+      "visible_home": "设置 → 存储、用量、诊断、语言与外观",
+      "semantic_support": "维护功能按用途分组，未来/已有内容、草稿/实际生效等关键边界可见。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_ids": [
+            "C39",
+            "C40",
+            "C41",
+            "C42",
+            "A31",
+            "A32",
+            "A33",
+            "A34",
+            "A35",
+            "A36"
+          ]
+        }
+      ],
+      "issues": [],
+      "limitations": [
+        "备份恢复、真实导出、完整语言切换保留草稿等未执行。"
+      ],
+      "related_unit_ids": [
+        "C39",
+        "C40",
+        "C41",
+        "C42",
+        "A31",
+        "A32",
+        "A33",
+        "A34",
+        "A35",
+        "A36"
+      ],
+      "verification_level": "Visible home and purpose review; only G1–G4 and R17-S1 explicitly executed by this evaluator."
+    }
+  ],
+  "units": [
+    {
+      "id": "C12",
+      "priority": "core",
+      "group_id": "G05",
+      "section": "接入与记录",
+      "group": "随手记与已有附件",
+      "title": "随手记下文字",
+      "purpose": "保存快速笔记，保留本地草稿，并查看离线待同步或已经保存的记录。",
+      "expected_canonical_home": {
+        "pageId": "notes",
+        "href": "#/library/notes",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "随手记",
+        "path": "资料库工具 → 随手记",
+        "where": "笔记编辑器下方查看草稿、待同步队列和历史。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "随手记编辑器；历史回资料库",
+      "visible_next_step": "输入文字后保存；离页后可返回草稿",
+      "semantic_support": "G1 实际保留离页草稿并保存、检索、打开同一完整正文。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C12",
+          "scope": "rendered target main text and visible controls"
+        },
+        {
+          "path": "evidence/independent/r17/natural-tasks.trace.json",
+          "task": "G1",
+          "scope": "草稿离页保存、提交、搜索并阅读完整正文"
+        }
+      ],
+      "interaction_verified": true,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/notes",
+      "limitations": [
+        "离线、刷新及真实同步未执行。"
+      ],
+      "interaction_scope": "草稿离页保存、提交、搜索并阅读完整正文"
+    },
+    {
+      "id": "C13",
+      "priority": "core",
+      "group_id": "G05",
+      "section": "接入与记录",
+      "group": "随手记与已有附件",
+      "title": "上传已有图片或音频附件",
+      "purpose": "随文字上传已有图片或音频文件，也可以只保存附件。",
+      "expected_canonical_home": {
+        "pageId": "notes",
+        "href": "#/library/notes",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "随手记",
+        "path": "资料库工具 → 随手记 → 图片与语音附件",
+        "where": "在编辑器附件入口选择已有图片或音频文件；保存后从历史或资料库打开证据。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=images",
+          "collectionId": null,
+          "categoryId": "images",
+          "label": "图片",
+          "path": "设置 → 模型与服务 → 图片",
+          "where": "在「图片」查看统一处理与授权，历史任务位于「处理已有图片」。"
+        },
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=file-processing",
+          "collectionId": null,
+          "categoryId": "file-processing",
+          "label": "文件与语音",
+          "path": "设置 → 模型与服务 → 文件与语音",
+          "where": "在「文件与语音」查看模型安装、规则、方案与服务，具体操作在对应区域。"
+        }
+      ],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "随手记 → 图片与语音附件",
+      "visible_next_step": "打开附件选择，再保存笔记",
+      "semantic_support": "文字输入和已有附件入口同处编辑器，附件作为笔记证据有适当归属。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C13",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/notes",
+      "limitations": [
+        "未执行纯附件、移除附件或真实上传。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C09",
+      "priority": "core",
+      "group_id": "G04",
+      "section": "接入与记录",
+      "group": "导入文档、文件夹和媒体",
+      "title": "导入已有文档、文件夹和媒体",
+      "purpose": "把已有聊天导出、文档、笔记和附件提交到独立导入队列，并补充背景。",
+      "expected_canonical_home": {
+        "pageId": "imports",
+        "href": "#/library/import",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "导入",
+        "path": "资料库 → 导入资料；资料库工具 → 导入",
+        "where": "选择文件、文件夹或拖入；填写资料说明后加入队列。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "添加内容/空白资料库 → 导入资料",
+      "visible_next_step": "选择示例文件、保存方式和名称后开始导入",
+      "semantic_support": "G4 从空账号完成示例导入，并从资料库打开新名称和正文。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C09",
+          "scope": "rendered target main text and visible controls"
+        },
+        {
+          "path": "evidence/independent/r17/natural-tasks.trace.json",
+          "task": "G4",
+          "scope": "示例文档选择、命名、提交、结果与资料库回访"
+        }
+      ],
+      "interaction_verified": true,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/import",
+      "limitations": [
+        "仅执行文档示例，其他类型及真实上传未验证。"
+      ],
+      "interaction_scope": "示例文档选择、命名、提交、结果与资料库回访"
+    },
+    {
+      "id": "C10",
+      "priority": "core",
+      "group_id": "G04",
+      "section": "接入与记录",
+      "group": "导入文档、文件夹和媒体",
+      "title": "查看并处理导入进度",
+      "purpose": "分清原件归档、解析预览、记录发布和记忆整理，处理需要确认或重试的步骤。",
+      "expected_canonical_home": {
+        "pageId": "imports",
+        "href": "#/library/import",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "导入",
+        "path": "资料库工具 → 导入 → 导入详情",
+        "where": "选择一条本地队列或中央导入记录，查看详情与状态对应的操作。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "模型与服务",
+          "path": "设置 → 模型与服务",
+          "where": "进入后按页面中的名称操作。"
+        }
+      ],
+      "condition": "操作随所选导入的状态出现；没有导入记录时先提交文件。",
+      "review_status": "pass",
+      "visible_primary_home": "资料库 → 上传与处理",
+      "visible_next_step": "对需要确认的录音核对并继续；对已完成项打开结果",
+      "semantic_support": "原件归档、解析/确认、可阅读、记忆整理四阶段明确，各状态有对应操作。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C10",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/imports",
+      "limitations": [
+        "未逐项执行确认、重试与记忆整理。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C11",
+      "priority": "core",
+      "group_id": "G04",
+      "section": "接入与记录",
+      "group": "导入文档、文件夹和媒体",
+      "title": "删除整次导入",
+      "purpose": "确认移除一次导入及不再被其他资料使用的依赖内容。",
+      "expected_canonical_home": {
+        "pageId": "imports",
+        "href": "#/library/import",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "导入",
+        "path": "资料库工具 → 导入 → 导入详情 → 删除这次导入",
+        "where": "选中中央导入记录后，在详情底部查看「删除这次导入」。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": "只有已有中央导入记录才有此操作；进行中的接收会禁用删除。",
+      "review_status": "pass",
+      "visible_primary_home": "资料库 → 上传与处理 → 已有导入",
+      "visible_next_step": "选择具体导入的删除这次导入",
+      "semantic_support": "删除位于已有导入项旁，作用对象可辨认。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C11",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/imports",
+      "limitations": [
+        "删除确认、依赖清理及进行中禁用条件未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A01",
+      "priority": "advanced",
+      "group_id": "G04",
+      "section": "接入与记录",
+      "group": "导入文档、文件夹和媒体",
+      "title": "从中央机器的目录导入",
+      "purpose": "让中央节点复制其机器上可读取的目录内容进入归档。",
+      "expected_canonical_home": {
+        "pageId": "imports",
+        "href": "#/library/import",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "导入",
+        "path": "资料库工具 → 导入 → 服务器目录",
+        "where": "切换到服务器目录方式，填写「中央服务器上的目录」。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "导入资料 → 中央目录",
+      "visible_next_step": "切换中央目录方式并填写可读取的目录",
+      "semantic_support": "中央目录与电脑文件分开，符合中央机器导入的主归属。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A01",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/import",
+      "limitations": [
+        "中央目录展开态与复制结果未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A02",
+      "priority": "advanced",
+      "group_id": "G04",
+      "section": "接入与记录",
+      "group": "导入文档、文件夹和媒体",
+      "title": "选择导入解析器和图片处理方案",
+      "purpose": "为当前导入选择已安装的来源解析器，或调整其图片处理方案。",
+      "expected_canonical_home": {
+        "pageId": "imports",
+        "href": "#/library/import",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "导入",
+        "path": "资料库工具 → 导入 → 解析方式 / 修改图片处理",
+        "where": "提交表单中的解析方式，以及导入详情里的图片处理方案。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "extensions",
+          "href": "#/system/plugins",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "自动记忆与插件",
+          "path": "设置 → 自动记忆与插件",
+          "where": "进入后按页面中的名称操作。"
+        }
+      ],
+      "condition": null,
+      "review_status": "partial",
+      "visible_primary_home": "导入资料 → 解析方式",
+      "visible_next_step": "选择自动识别、文档、聊天、音频或归档包解析方式",
+      "semantic_support": "当前导入解析器选择清楚；当前导入的图片处理方案未在此页或已观察结果页出现。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A02",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [
+        {
+          "id": "SEM-A02",
+          "finding": "当前导入的图片处理方案缺少可见证据。"
+        }
+      ],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/import",
+      "limitations": [
+        "图片方案可能属于后续详情；当前证据不能确认。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A03",
+      "priority": "advanced",
+      "group_id": "G04",
+      "section": "接入与记录",
+      "group": "导入文档、文件夹和媒体",
+      "title": "恢复被中断的本地上传",
+      "purpose": "在上传队列继续、重试或丢弃尚未完成的本地提交。",
+      "expected_canonical_home": {
+        "pageId": "imports",
+        "href": "#/library/import",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "导入",
+        "path": "资料库工具 → 导入 → 本地上传队列",
+        "where": "查看本地队列卡片；控制按钮随上传状态出现。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": "需要未完成或失败的本地上传队列项。",
+      "review_status": "pass",
+      "visible_primary_home": "资料库 → 上传与处理 → 本地上传队列",
+      "visible_next_step": "对暂停 68% 的资料归档.zip 继续上传或删除",
+      "semantic_support": "有实际中断示例和可操作下一步，区别于已完成导入。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A03",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/imports",
+      "limitations": [
+        "未执行恢复完成、失败重试或丢弃。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C07",
+      "priority": "core",
+      "group_id": "G03",
+      "section": "接入与记录",
+      "group": "接入来源、飞书与录音",
+      "title": "选择要加入的来源",
+      "purpose": "按需加入文件、引用或外部服务，找到每种来源的授权和选择范围。",
+      "expected_canonical_home": {
+        "pageId": "sourceCatalog",
+        "href": "#/connections/add",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "新增数据源",
+        "path": "采集与设备 → 新增数据源",
+        "where": "先选择录音、设备、导入文件或在线资料卡片；管理已有来源使用「管理已接入来源」。"
+      },
+      "contextual_targets": [
+        {
+          "pageId": "imports",
+          "href": "#/library/import",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "导入",
+          "path": "来源 → 添加来源 → 导入",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "lark",
+          "href": "#/connections/lark",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "飞书",
+          "path": "采集与设备 → 来源与连接 → 飞书",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "recordings",
+          "href": "#/connections/recordings",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "录音归档",
+          "path": "采集与设备 → 来源与连接 → 录音归档",
+          "where": "进入后按页面中的名称操作。"
+        }
+      ],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "来源 → 连接来源；添加内容快捷入口",
+      "visible_next_step": "按本机记录、外部服务或已有资料选择来源",
+      "semantic_support": "目录用资料来源和任务分组，连接与一次导入的边界明确。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C07",
+          "scope": "rendered target main text and visible controls"
+        },
+        {
+          "path": "evidence/independent/r17/natural-tasks.trace.json",
+          "task": "G3",
+          "scope": "从目录选择并新建持续文件夹来源"
+        }
+      ],
+      "interaction_verified": true,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/catalog",
+      "limitations": [
+        "仅文件夹连接走完自然任务。"
+      ],
+      "interaction_scope": "从目录选择并新建持续文件夹来源"
+    },
+    {
+      "id": "C08",
+      "priority": "core",
+      "group_id": "G03",
+      "section": "接入与记录",
+      "group": "接入来源、飞书与录音",
+      "title": "管理来源接收与内容关系",
+      "purpose": "暂停或恢复一个来源的接收，查看同步情况，并说明内容与你的关系。",
+      "expected_canonical_home": {
+        "pageId": "sources",
+        "href": "#/connections",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "来源",
+        "path": "采集与设备 → 来源与连接 → 来源 → 已连接来源",
+        "where": "选择已连接来源，查看状态、内容关系和归档入口。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": "需要已有来源；部分服务的同步控制随连接状态出现。",
+      "review_status": "partial",
+      "visible_primary_home": "来源 → 具体来源管理",
+      "visible_next_step": "调整范围、保存方式、暂停/恢复或浏览已保存资料",
+      "semantic_support": "G3 新建、保存、暂停和来源内回看成立；可见管理页没有说明内容与用户关系的设置。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C08",
+          "scope": "rendered target main text and visible controls"
+        },
+        {
+          "path": "evidence/independent/r17/natural-tasks.trace.json",
+          "task": "G3",
+          "scope": "新来源、保存方式、暂停、来源内回看以及旧内容保留"
+        }
+      ],
+      "interaction_verified": true,
+      "issues": [
+        {
+          "id": "SEM-C08",
+          "finding": "来源级内容关系缺少可见说明或设置。"
+        }
+      ],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/sources",
+      "limitations": [
+        "来源级内容关系未获可见证据。"
+      ],
+      "interaction_scope": "新来源、保存方式、暂停、来源内回看以及旧内容保留"
+    },
+    {
+      "id": "A04",
+      "priority": "advanced",
+      "group_id": "G03",
+      "section": "接入与记录",
+      "group": "接入来源、飞书与录音",
+      "title": "保存外部或 NAS 引用",
+      "purpose": "记录资料名称和位置，便于以后从能读取它的客户端提交正文快照。",
+      "expected_canonical_home": {
+        "pageId": "sources",
+        "href": "#/connections?setup=reference",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "来源",
+        "path": "新增数据源 → 外部文件 / NAS 引用",
+        "where": "从「新增数据源」选择「外部文件 / NAS 引用」，在来源设置中完成该服务的配置。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "来源目录 → 外部/NAS 引用",
+      "visible_next_step": "填写资料名称、位置、说明后保存引用",
+      "semantic_support": "明确保存外部位置，正文仍在外部，并可以后提交快照。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A04",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/setup/nas",
+      "limitations": [
+        "未执行引用保存与后续快照。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A05",
+      "priority": "advanced",
+      "group_id": "G03",
+      "section": "接入与记录",
+      "group": "接入来源、飞书与录音",
+      "title": "只读归档 Google 日历",
+      "purpose": "授权 Google 后选择日历，把选中的日程同步到资料库供回顾。",
+      "expected_canonical_home": {
+        "pageId": "sources",
+        "href": "#/connections?setup=google",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "来源",
+        "path": "新增数据源 → Google Calendar",
+        "where": "从「新增数据源」选择「Google Calendar」，在来源设置中完成该服务的配置。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=connectors",
+          "collectionId": null,
+          "categoryId": "connectors",
+          "label": "来源与外部应用",
+          "path": "设置 → 模型与服务 → 来源与外部应用",
+          "where": "在「来源与外部应用」编辑并校验部署草稿，核对当前生效值。"
+        }
+      ],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "来源目录 → Google 日历",
+      "visible_next_step": "选择授权账号、日历范围和起始日期后连接",
+      "semantic_support": "只读归档边界和范围选择清楚，有具体确认动作。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A05",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/setup/google",
+      "limitations": [
+        "仅模拟配置语义；未执行授权和同步。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A06",
+      "priority": "advanced",
+      "group_id": "G03",
+      "section": "接入与记录",
+      "group": "接入来源、飞书与录音",
+      "title": "只读归档 Gmail 邮件",
+      "purpose": "授权 Google 后归档邮件正文、发件人和时间，持续同步或继续分页。",
+      "expected_canonical_home": {
+        "pageId": "sources",
+        "href": "#/connections?setup=gmail",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "来源",
+        "path": "新增数据源 → Gmail 邮件",
+        "where": "从「新增数据源」选择「Gmail 邮件」，在来源设置中完成该服务的配置。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=connectors",
+          "collectionId": null,
+          "categoryId": "connectors",
+          "label": "来源与外部应用",
+          "path": "设置 → 模型与服务 → 来源与外部应用",
+          "where": "在「来源与外部应用」编辑并校验部署草稿，核对当前生效值。"
+        }
+      ],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "来源目录 → Gmail",
+      "visible_next_step": "选择账号、收件箱/星标/授权范围与起始日期后连接",
+      "semantic_support": "只读邮件归档及内容范围清楚，不与发信混淆。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A06",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/setup/gmail",
+      "limitations": [
+        "分页、持续接收和邮件结果未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A07",
+      "priority": "advanced",
+      "group_id": "G03",
+      "section": "接入与记录",
+      "group": "接入来源、飞书与录音",
+      "title": "从远程 MCP 选择资源导入",
+      "purpose": "查看远程 MCP 服务公开的资源列表，选择资源一次性加入归档。",
+      "expected_canonical_home": {
+        "pageId": "sources",
+        "href": "#/connections?setup=mcp",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "来源",
+        "path": "新增数据源 → MCP 资料服务",
+        "where": "从「新增数据源」选择「MCP 资料服务」，在来源设置中完成该服务的配置。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "来源目录 → MCP 资料",
+      "visible_next_step": "填写服务地址、预览选中资源并导入",
+      "semantic_support": "资源选择与一次性导入有明确步骤，区别于让外部助手访问资料。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A07",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/setup/mcp",
+      "limitations": [
+        "远程资源读取和导入结果未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A09",
+      "priority": "advanced",
+      "group_id": "G03",
+      "section": "接入与记录",
+      "group": "接入来源、飞书与录音",
+      "title": "连接飞书文档和日历",
+      "purpose": "在中央节点授权飞书，归档你创建、编辑或打开的文档及活动线索，也可持续跟踪指定范围和日历。",
+      "expected_canonical_home": {
+        "pageId": "lark",
+        "href": "#/connections/lark",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "飞书",
+        "path": "新增数据源 → 飞书文档与日历",
+        "where": "选择「飞书文档与日历」卡片，再按 CLI、应用、账号授权和内容选择的步骤设置。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "来源目录/来源管理 → 飞书文档与日历",
+      "visible_next_step": "核对文档、日历范围与起始日期后重新授权并继续",
+      "semantic_support": "授权失效、只读范围和已保存资料保留均有说明。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A09",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/setup/lark",
+      "limitations": [
+        "活动详情的历史数量/范围另见 R17-S1；真实授权未验证。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A10",
+      "priority": "advanced",
+      "group_id": "G03",
+      "section": "接入与记录",
+      "group": "接入来源、飞书与录音",
+      "title": "归档厂商录音和转写",
+      "purpose": "连接中央节点已授权的录音账号，选择首次历史范围及是否继续后台同步。",
+      "expected_canonical_home": {
+        "pageId": "recordings",
+        "href": "#/connections/recordings",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "录音归档",
+        "path": "新增数据源 → 录音与转写 → 录音厂商",
+        "where": "先选择飞书录音 / 妙记或钉钉录音 / 闪记卡片，再查看该厂商的首次授权、历史范围和同步设置。"
+      },
+      "contextual_targets": [
+        {
+          "pageId": "recordings",
+          "href": "#/connections/recordings?provider=feishu",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "飞书录音 / 妙记",
+          "path": "新增数据源 → 飞书录音 / 妙记",
+          "where": "查看此厂商的首次授权、历史范围和同步。"
+        },
+        {
+          "pageId": "recordings",
+          "href": "#/connections/recordings?provider=dingtalk",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "钉钉录音 / 闪记",
+          "path": "新增数据源 → 钉钉录音 / 闪记",
+          "where": "查看此厂商的首次授权、历史范围和同步。"
+        }
+      ],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "来源目录 → 厂商录音与转写",
+      "visible_next_step": "选择具体录音提供方进入设置",
+      "semantic_support": "两类录音提供方有独立入口，目录说明录音及转写归档目的。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A10",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/catalog",
+      "limitations": [
+        "首次历史范围、持续同步和连接后的条件态未展开。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A11",
+      "priority": "advanced",
+      "group_id": "G03",
+      "section": "接入与记录",
+      "group": "接入来源、飞书与录音",
+      "title": "查看来源版本和原位置",
+      "purpose": "查看一个来源的当前或历史版本，以及原位置和元数据。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=sources",
+        "collectionId": "sources",
+        "categoryId": null,
+        "label": "来源资料",
+        "path": "资料库 → 来源资料",
+        "where": "选中来源后展开版本和证据。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": "需要已归档的来源版本；版本详情随所选来源显示。",
+      "review_status": "pass",
+      "visible_primary_home": "资料库 → 资料出处",
+      "visible_next_step": "对某份资料打开版本与原位置，或阅读正文",
+      "semantic_support": "此页解释版本/原位置，明确区别于持续接收的来源连接与暂停。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A11",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/library/sources",
+      "limitations": [
+        "历史版本切换和权限条件未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C03",
+      "priority": "core",
+      "group_id": "G02",
+      "section": "接入与记录",
+      "group": "连接设备与查看采集",
+      "title": "从今天开始整理资料",
+      "purpose": "查看已有资料和最近洞察，找到连接设备、导入资料或配置问答的第一步。",
+      "expected_canonical_home": {
+        "pageId": "overview",
+        "href": "#/today",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "今天",
+        "path": "今天",
+        "where": "初次使用指引、最近资料和最近洞察；具体入口随资料库状态显示。"
+      },
+      "contextual_targets": [
+        {
+          "pageId": "devices",
+          "href": "#/connections/devices",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "采集与设备",
+          "path": "今天 → 连接设备",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "imports",
+          "href": "#/library/import",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "导入",
+          "path": "今天 → 导入资料",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=providers",
+          "collectionId": null,
+          "categoryId": "providers",
+          "label": "模型连接（Provider）",
+          "path": "设置 → 模型与服务 → 模型连接（Provider）",
+          "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+        },
+        {
+          "pageId": "insights",
+          "href": "#/library/insights",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "洞察",
+          "path": "今天 → 最近洞察",
+          "where": "进入后按页面中的名称操作。"
+        }
+      ],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "今天",
+      "visible_next_step": "处理需要关注的问题、查看最近资料或生成周回顾",
+      "semantic_support": "当前工作、最近内容、待办/日程和首次设置各有清楚位置。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C03",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/today",
+      "limitations": [
+        "本轮未从今天执行完整新手任务。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C04",
+      "priority": "core",
+      "group_id": "G02",
+      "section": "接入与记录",
+      "group": "连接设备与查看采集",
+      "title": "查看设备上报的采集与同步状态",
+      "purpose": "了解每台设备最后联系、最后采集以及待上传、受阻和已保留的内容。",
+      "expected_canonical_home": {
+        "pageId": "devices",
+        "href": "#/connections/devices",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "采集与设备",
+        "path": "采集与设备 → 设备",
+        "where": "查看设备卡片，展开详细信息。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "来源 → 设备与记录范围",
+      "visible_next_step": "查看设备最后联系、采集及待上传状态，调整相应来源",
+      "semantic_support": "设备在线、上报时间、待上传和记录/同步状态并列，有对应管理操作。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C04",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/devices",
+      "limitations": [
+        "离线、受阻和多设备变化未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C05",
+      "priority": "core",
+      "group_id": "G02",
+      "section": "接入与记录",
+      "group": "连接设备与查看采集",
+      "title": "连接或重新授权设备",
+      "purpose": "生成一次性邀请，让原生客户端确认中央节点地址后连接。",
+      "expected_canonical_home": {
+        "pageId": "connections",
+        "href": "#/connections/access",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "对外授权",
+        "path": "采集与设备 → 连接设备 → 对外授权 → 连接设备",
+        "where": "选择「连接设备」，填写地址、名称和设备身份。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "来源 → 连接设备 / 设置 → 账号与设备",
+      "visible_next_step": "选择连接 Mac 或 Android，随后查看设备",
+      "semantic_support": "说明原生客户端和本机收集范围，设备接入主归属清楚。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C05",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/setup/device",
+      "limitations": [
+        "邀请生成、中央地址确认及一次性过期条件未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C06",
+      "priority": "core",
+      "group_id": "G02",
+      "section": "接入与记录",
+      "group": "连接设备与查看采集",
+      "title": "检查和撤销已发出的连接权限",
+      "purpose": "查看每个连接的名称、权限和状态，撤销不再使用的访问。",
+      "expected_canonical_home": {
+        "pageId": "connections",
+        "href": "#/connections/access",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "对外授权",
+        "path": "采集与设备 → 来源与连接 → 对外授权 → 已授权连接",
+        "where": "页面下方「已授权连接」列表。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": "已有授权连接时才能选择一条连接并撤销。",
+      "review_status": "pass",
+      "visible_primary_home": "来源/设置 → 对外授权",
+      "visible_next_step": "查看已有连接方式或撤销具体连接",
+      "semantic_support": "连接名称、只读范围和状态可见，撤销针对明确对象。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C06",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/access",
+      "limitations": [
+        "撤销确认及撤销后的访问阻断未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A08",
+      "priority": "advanced",
+      "group_id": "G02",
+      "section": "接入与记录",
+      "group": "连接设备与查看采集",
+      "title": "让其他 Chatbot 使用 Mote MCP",
+      "purpose": "为支持 HTTP MCP 的客户端生成独立的只读或指定来源写入配置。",
+      "expected_canonical_home": {
+        "pageId": "connections",
+        "href": "#/connections/access",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "对外授权",
+        "path": "采集与设备 → 来源与连接 → 对外授权 → 连接 Chatbot",
+        "where": "切换到「连接 Chatbot」，查看 MCP 访问权限与配置。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=connectors",
+          "collectionId": null,
+          "categoryId": "connectors",
+          "label": "来源与外部应用",
+          "path": "设置 → 模型与服务 → 来源与外部应用",
+          "where": "在「来源与外部应用」编辑并校验部署草稿，核对当前生效值。"
+        }
+      ],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "来源/设置 → 对外授权",
+      "visible_next_step": "新建只读授权并查看连接方式",
+      "semantic_support": "外部助手使用 Mote 的方向明确，与导入 MCP 资源分开。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A08",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/access",
+      "limitations": [
+        "指定来源写入授权、HTTP 配置复制未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C14",
+      "priority": "core",
+      "group_id": "G06",
+      "section": "阅读与使用",
+      "group": "阅读正文与原始证据",
+      "title": "浏览已经发布的资料正文",
+      "purpose": "按来源、类型、设备和日期筛选正式资料，打开可读正文。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=materials",
+        "collectionId": "materials",
+        "categoryId": null,
+        "label": "全部资料",
+        "path": "资料库 → 全部资料",
+        "where": "默认分类为「全部资料」；使用筛选后选中资料。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "partial",
+      "visible_primary_home": "资料库 → 全部资料",
+      "visible_next_step": "搜索、按来源/类型/日期筛选后打开正文",
+      "semantic_support": "G1/G3/G4 实际找回目标内容；来源与正文一致。需求中的设备筛选未显示。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C14",
+          "scope": "rendered target main text and visible controls"
+        },
+        {
+          "path": "evidence/independent/r17/natural-tasks.trace.json",
+          "task": "G1/G3/G4",
+          "scope": "关键词与来源范围找回并阅读对应资料"
+        }
+      ],
+      "interaction_verified": true,
+      "issues": [
+        {
+          "id": "SEM-C14",
+          "finding": "筛选中没有设备维度。"
+        }
+      ],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/library",
+      "limitations": [
+        "设备筛选为可见细项缺口；其他筛选组合未全量执行。"
+      ],
+      "interaction_scope": "关键词与来源范围找回并阅读对应资料"
+    },
+    {
+      "id": "C15",
+      "priority": "core",
+      "group_id": "G06",
+      "section": "阅读与使用",
+      "group": "阅读正文与原始证据",
+      "title": "核对资料正文、来源与处理状态",
+      "purpose": "阅读当前或获准查看的历史正文，追溯原件，并了解哪些派生产物还在处理。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=materials",
+        "collectionId": "materials",
+        "categoryId": null,
+        "label": "全部资料",
+        "path": "资料库 → 全部资料 → 资料详情",
+        "where": "选中一份资料，查看正文及「来源与处理」。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": "需要已发布资料；索引重试只在失败状态并提供控制时出现。",
+      "review_status": "pass",
+      "visible_primary_home": "资料库 → 单份资料正文",
+      "visible_next_step": "阅读正文、核对来源时间和可阅读状态，打开原始内容",
+      "semantic_support": "G2 原始内容与引用往返、G1/G4 正文核对均完成。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C15",
+          "scope": "rendered target main text and visible controls"
+        },
+        {
+          "path": "evidence/independent/r17/natural-tasks.trace.json",
+          "task": "G1/G2/G3/G4",
+          "scope": "正文与原始内容核对"
+        }
+      ],
+      "interaction_verified": true,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/material/m1",
+      "limitations": [
+        "获准历史版本、索引失败恢复未验证。"
+      ],
+      "interaction_scope": "正文与原始内容核对"
+    },
+    {
+      "id": "C16",
+      "priority": "core",
+      "group_id": "G06",
+      "section": "阅读与使用",
+      "group": "阅读正文与原始证据",
+      "title": "说明单份资料关系并提取记忆",
+      "purpose": "为一份资料覆盖来源的内容关系，并从它当前可用的正文提取记忆。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=materials",
+        "collectionId": "materials",
+        "categoryId": null,
+        "label": "全部资料",
+        "path": "资料库 → 全部资料 → 资料详情 → 来源与处理 / 记忆入口",
+        "where": "先选中资料，在「来源与处理」中声明关系；符合条件时使用记忆提取入口。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=model",
+          "collectionId": null,
+          "categoryId": "model",
+          "label": "模块与模型",
+          "path": "设置 → 模型与服务 → 模块与模型",
+          "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+        }
+      ],
+      "condition": "记忆入口仅对当前、输入已就绪的正式资料提供。",
+      "review_status": "pass",
+      "visible_primary_home": "单份资料正文 → 补充背景 / 提取记忆",
+      "visible_next_step": "为该资料补充背景或启动记忆提取",
+      "semantic_support": "两项操作处于单份资料上下文，不要求跳全局设置。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C16",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/material/m1",
+      "limitations": [
+        "关系覆盖选项与当前输入就绪条件未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C17",
+      "priority": "core",
+      "group_id": "G06",
+      "section": "阅读与使用",
+      "group": "阅读正文与原始证据",
+      "title": "查看原始采集证据",
+      "purpose": "按日期、设备或内容类型查找原始记录，打开图像、文本和附件核对。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=records",
+        "collectionId": "records",
+        "categoryId": null,
+        "label": "原始采集记录",
+        "path": "资料库 → 原始采集记录 → 记录 → 完整详情",
+        "where": "选中记录后打开完整证据详情。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "partial",
+      "visible_primary_home": "资料库 → 原始采集记录",
+      "visible_next_step": "按可见条件查找，打开原始内容或整理后的资料",
+      "semantic_support": "原始文本、应用、设备和时间可核对，范围调整有入口；设备筛选未显示。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C17",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [
+        {
+          "id": "SEM-C17",
+          "finding": "原始记录筛选中没有设备维度。"
+        }
+      ],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/library/raw",
+      "limitations": [
+        "图像和附件原件、设备筛选未获完整证据。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C18",
+      "priority": "core",
+      "group_id": "G06",
+      "section": "阅读与使用",
+      "group": "阅读正文与原始证据",
+      "title": "删除一条原始记录",
+      "purpose": "核对影响后移除原始记录，让依赖它的证据失效。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=records",
+        "collectionId": "records",
+        "categoryId": null,
+        "label": "原始采集记录",
+        "path": "资料库 → 原始采集记录 → 完整详情 → 删除这条记录",
+        "where": "打开一条记录的完整详情，在删除操作前核对依赖影响。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": "需要先打开一条可删除的原始记录。",
+      "review_status": "pass",
+      "visible_primary_home": "原始采集记录 → 具体记录",
+      "visible_next_step": "删除这条原始记录",
+      "semantic_support": "删除作用对象在记录正文旁清楚，未与整次导入删除混淆。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C18",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/library/raw",
+      "limitations": [
+        "影响确认及依赖失效结果未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C20",
+      "priority": "core",
+      "group_id": "G08",
+      "section": "阅读与使用",
+      "group": "提问与回看对话",
+      "title": "围绕归档资料提问",
+      "purpose": "开始或继续对话，让问答模型检索已归档证据，阅读答案并打开引用。",
+      "expected_canonical_home": {
+        "pageId": "ask",
+        "href": "#/ask",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "问一问",
+        "path": "问一问",
+        "where": "在对话输入区提问；答案中的引用可打开证据。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=providers",
+          "collectionId": null,
+          "categoryId": "providers",
+          "label": "模型连接（Provider）",
+          "path": "设置 → 模型与服务 → 模型连接（Provider）",
+          "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+        },
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=model",
+          "collectionId": null,
+          "categoryId": "model",
+          "label": "模块与模型",
+          "path": "设置 → 模型与服务 → 模块与模型",
+          "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+        }
+      ],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "问一问",
+      "visible_next_step": "输入具体问题、查看资料范围并提问，打开引用核对",
+      "semantic_support": "G2 明确示例回答，引用、原件、返回后问题和答案完整。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C20",
+          "scope": "rendered target main text and visible controls"
+        },
+        {
+          "path": "evidence/independent/r17/natural-tasks.trace.json",
+          "task": "G2",
+          "scope": "提问、示例结果、引用与原件往返"
+        }
+      ],
+      "interaction_verified": true,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/ask",
+      "limitations": [
+        "真实模型语义质量不在本次范围。"
+      ],
+      "interaction_scope": "提问、示例结果、引用与原件往返"
+    },
+    {
+      "id": "C21",
+      "priority": "core",
+      "group_id": "G08",
+      "section": "阅读与使用",
+      "group": "提问与回看对话",
+      "title": "回看和管理对话历史",
+      "purpose": "继续过去对话，查看更多轮次，核对引用、用量和读取记录，或删除整段对话。",
+      "expected_canonical_home": {
+        "pageId": "ask",
+        "href": "#/ask",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "问一问",
+        "path": "问一问 → 对话历史",
+        "where": "在对话历史选中记录；具体轮次的用量和轨迹在该轮详情。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": "删除和轮次详情需要已有对话；读取轨迹依记录存在情况显示。",
+      "review_status": "pass",
+      "visible_primary_home": "问一问 → 对话历史",
+      "visible_next_step": "打开已有对话继续阅读",
+      "semantic_support": "有已有会话与历史入口；G2 返回原对话保留具体问题和答案。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C21",
+          "scope": "rendered target main text and visible controls"
+        },
+        {
+          "path": "evidence/independent/r17/natural-tasks.trace.json",
+          "task": "G2",
+          "scope": "引用往返保留本次问题和答案；历史管理未执行"
+        }
+      ],
+      "interaction_verified": true,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/ask",
+      "limitations": [
+        "多轮、删除、用量和读取轨迹未执行。"
+      ],
+      "interaction_scope": "引用往返保留本次问题和答案；历史管理未执行"
+    },
+    {
+      "id": "C22",
+      "priority": "core",
+      "group_id": "G08",
+      "section": "阅读与使用",
+      "group": "提问与回看对话",
+      "title": "随问题提交图片",
+      "purpose": "直接为当前问题选择图片，并在发送前移除不需要的附件。",
+      "expected_canonical_home": {
+        "pageId": "ask",
+        "href": "#/ask",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "问一问",
+        "path": "问一问 → 输入区 → 添加图片",
+        "where": "使用对话输入区的图片入口，发送后在该轮查看附件信息。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=providers",
+          "collectionId": null,
+          "categoryId": "providers",
+          "label": "模型连接（Provider）",
+          "path": "设置 → 模型与服务 → 模型连接（Provider）",
+          "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+        }
+      ],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "问一问 → 图片附件",
+      "visible_next_step": "为当前问题添加图片",
+      "semantic_support": "图片附件位于问题编辑上下文，有清晰下一步。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C22",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/ask",
+      "limitations": [
+        "选择、移除和发送图片未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C23",
+      "priority": "core",
+      "group_id": "G09",
+      "section": "阅读与使用",
+      "group": "查看、纠正与整理记忆",
+      "title": "浏览有证据的记忆",
+      "purpose": "搜索已保存的记忆，核对结论、适用边界、状态和支持它的原始资料。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=memories",
+        "collectionId": "memories",
+        "categoryId": null,
+        "label": "记忆",
+        "path": "资料库 → 记忆",
+        "where": "在「记忆」视图筛选并打开卡片。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "partial",
+      "visible_primary_home": "资料库 → 记忆",
+      "visible_next_step": "阅读当前结论并打开支持它的资料",
+      "semantic_support": "结论、个人偏好类型、当前记忆和依据明确；本页没有记忆搜索，单条结论的适用边界未展开。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C23",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [
+        {
+          "id": "SEM-C23",
+          "finding": "记忆搜索未在当前页体现，单条结论适用边界未展开；不要求新增状态筛选器。"
+        }
+      ],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/memories",
+      "limitations": [
+        "只有一条示例；搜索、适用边界及更多状态的表现未验证。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C24",
+      "priority": "core",
+      "group_id": "G09",
+      "section": "阅读与使用",
+      "group": "查看、纠正与整理记忆",
+      "title": "纠正、删除或导出一条记忆",
+      "purpose": "把自己的纠正保存为替代版本，或删除结论、下载文本。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=memories",
+        "collectionId": "memories",
+        "categoryId": null,
+        "label": "记忆",
+        "path": "资料库 → 记忆 → 记忆详情",
+        "where": "选中记忆，在详情使用「纠正记忆」「删除记忆」或「下载文本」。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": "需要已有记忆；被替代版本不提供当前纠正操作。",
+      "review_status": "pass",
+      "visible_primary_home": "记忆 → 具体记忆 → 纠正/更多操作",
+      "visible_next_step": "纠正当前记忆，或进入更多操作",
+      "semantic_support": "当前结论附近有具体纠正入口，删除/导出有合理管理位置。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C24",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/memories",
+      "limitations": [
+        "更多操作、旧版本限制与导出文件未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C25",
+      "priority": "core",
+      "group_id": "G09",
+      "section": "阅读与使用",
+      "group": "查看、纠正与整理记忆",
+      "title": "手动提取记忆",
+      "purpose": "从当前范围或明确选中的资料启动提取，选择模型与配方并跟踪结果。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=memories",
+        "collectionId": "memories",
+        "categoryId": null,
+        "label": "记忆",
+        "path": "资料库 → 记忆 → 提取记忆；原始或正式资料详情 → 记忆提取",
+        "where": "在记忆视图使用手动提取；也可从满足条件的资料详情启动单份提取。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=model",
+          "collectionId": null,
+          "categoryId": "model",
+          "label": "模块与模型",
+          "path": "设置 → 模型与服务 → 模块与模型",
+          "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+        }
+      ],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "记忆 → 从资料整理",
+      "visible_next_step": "选择资料后启动手动整理",
+      "semantic_support": "手动整理与查看当前记忆、自动策略设置分开。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C25",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/memories",
+      "limitations": [
+        "资料范围、模型和配方选择及结果未展开。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C26",
+      "priority": "core",
+      "group_id": "G09",
+      "section": "阅读与使用",
+      "group": "查看、纠正与整理记忆",
+      "title": "回答需要你澄清的问题",
+      "purpose": "在相关工作或资料中补充信息，帮助 Mote 处理这份输入的疑问。",
+      "expected_canonical_home": {
+        "pageId": "ask",
+        "href": "#/ask",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "问一问",
+        "path": "问一问中的待澄清问题；活动详情 / 资料来源上下文 → 需要你补充",
+        "where": "在问一问历史、活动详情或资料上下文查找「需要你补充」的问题入口。具体问题链接由现有对象提供。"
+      },
+      "contextual_targets": [
+        {
+          "pageId": "activity",
+          "href": "#/activity",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "活动",
+          "path": "活动 → 工作详情 → 需要你补充",
+          "where": "打开有澄清请求的工作。"
+        },
+        {
+          "pageId": "archive",
+          "href": "#/library?view=materials",
+          "collectionId": "materials",
+          "categoryId": null,
+          "label": "全部资料",
+          "path": "资料库 → 全部资料 → 来源与处理",
+          "where": "查看资料上下文中的澄清请求。"
+        }
+      ],
+      "setup_targets": [],
+      "condition": "只有实际产生澄清问题时才出现；没有固定独立的全局问题页面。",
+      "review_status": "pass",
+      "visible_primary_home": "相关工作 → 待澄清问题",
+      "visible_next_step": "阅读录音依据，补充文字后保存并继续，或稍后处理",
+      "semantic_support": "已有具体疑问与原文，下一步能直接补足当前输入。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C26",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/ask/clarifications",
+      "limitations": [
+        "保存后原工作的推进未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A16",
+      "priority": "advanced",
+      "group_id": "G09",
+      "section": "阅读与使用",
+      "group": "查看、纠正与整理记忆",
+      "title": "核对记忆的历史和有效时间",
+      "purpose": "查看某一时间有效的记忆、旧版本和替代或矛盾关系。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=memories",
+        "collectionId": "memories",
+        "categoryId": null,
+        "label": "记忆",
+        "path": "资料库 → 记忆 → 历史 / 截至时间筛选 → 记忆详情",
+        "where": "在记忆筛选区切换历史或截至时间，然后打开卡片。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": "历史关联、审核和生成记录依所选记忆存在情况显示。",
+      "review_status": "partial",
+      "visible_primary_home": "记忆 → 全部修改记录",
+      "visible_next_step": "打开修改记录核对历史",
+      "semantic_support": "历史入口明确；当前页没有有效时间选择或替代/矛盾关系内容。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A16",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [
+        {
+          "id": "SEM-A16",
+          "finding": "历史有效时间及替代/矛盾关系尚未获得展开态证据。"
+        }
+      ],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/memories",
+      "limitations": [
+        "条件态历史详情未展开，不能据此宣称完整支持。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A17",
+      "priority": "advanced",
+      "group_id": "G09",
+      "section": "阅读与使用",
+      "group": "查看、纠正与整理记忆",
+      "title": "从一条当前记忆继续整理",
+      "purpose": "以一条已发布整理记忆为起点，使用整合配方生成进一步整理结果。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=memories",
+        "collectionId": "memories",
+        "categoryId": null,
+        "label": "记忆",
+        "path": "资料库 → 记忆 → 可用记忆详情 → 从这条记忆开始整理",
+        "where": "选择符合条件的当前整理记忆，点击「从这条记忆开始整理」。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=model",
+          "collectionId": null,
+          "categoryId": "model",
+          "label": "模块与模型",
+          "path": "设置 → 模型与服务 → 模块与模型",
+          "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+        }
+      ],
+      "condition": "只在当前、已发布且满足整合条件的整理记忆详情出现。",
+      "review_status": "pass",
+      "visible_primary_home": "记忆 → 当前条目 → 继续整理",
+      "visible_next_step": "以当前记忆继续整理",
+      "semantic_support": "动作在符合条件的当前记忆旁，有明确起点。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A17",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/memories",
+      "limitations": [
+        "配方、采用内容和后续结果未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A18",
+      "priority": "advanced",
+      "group_id": "G09",
+      "section": "阅读与使用",
+      "group": "查看、纠正与整理记忆",
+      "title": "调整记忆策略和回顾节奏",
+      "purpose": "设置提取历史窗口、整合与回顾节奏，以及默认、截图和来源的配方组合。",
+      "expected_canonical_home": {
+        "pageId": "settings",
+        "href": "#/system/models?category=model",
+        "collectionId": null,
+        "categoryId": "model",
+        "label": "模块与模型",
+        "path": "设置 → 模型与服务 → 模块与模型 → 记忆与洞察节奏",
+        "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 记忆策略",
+      "visible_next_step": "调整历史窗口、整理/回顾节奏和配方后保存",
+      "semantic_support": "默认、截图、来源配方及工作记忆分开，策略目的清楚。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A18",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/memory-strategy",
+      "limitations": [
+        "未执行配置生效和恢复提取。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C27",
+      "priority": "core",
+      "group_id": "G10",
+      "section": "阅读与使用",
+      "group": "生成洞察与回顾",
+      "title": "生成并回看有证据的洞察",
+      "purpose": "按自选方向或默认回顾生成报告，核对引用并重访已保存结果。",
+      "expected_canonical_home": {
+        "pageId": "insights",
+        "href": "#/library/insights",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "洞察",
+        "path": "资料库工具 → 洞察；问一问 → 查看洞察；今天 → 最近洞察",
+        "where": "在洞察页选择方向、范围和模型；已有报告列于历史。"
+      },
+      "contextual_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=model",
+          "collectionId": null,
+          "categoryId": "model",
+          "label": "模块与模型",
+          "path": "设置 → 模型与服务 → 模块与模型 → 记忆与洞察节奏",
+          "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+        }
+      ],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=model",
+          "collectionId": null,
+          "categoryId": "model",
+          "label": "模块与模型",
+          "path": "设置 → 模型与服务 → 模块与模型",
+          "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+        }
+      ],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "资料库 → 洞察",
+      "visible_next_step": "选择时间与方向，生成回顾并查看历史",
+      "semantic_support": "已保存报告保留问题、范围与资料清单的说明可见，有自定义时间。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C27",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/insights",
+      "limitations": [
+        "本评估者未执行生成与历史回访。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C28",
+      "priority": "core",
+      "group_id": "G11",
+      "section": "跟进与管理",
+      "group": "跟进工作与失败恢复",
+      "title": "查看正在做的工作和结果",
+      "purpose": "集中查看 Mote 的工作、需要关注的问题、执行分支和完成结果。",
+      "expected_canonical_home": {
+        "pageId": "activity",
+        "href": "#/activity",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "活动",
+        "path": "活动；资料库 → 处理任务",
+        "where": "选择一项工作，查看进度、结果及相关操作。"
+      },
+      "contextual_targets": [
+        {
+          "pageId": "archive",
+          "href": "#/library?view=work-activity",
+          "collectionId": "work-activity",
+          "categoryId": null,
+          "label": "处理任务",
+          "path": "资料库 → 处理任务",
+          "where": "进入后按页面中的名称操作。"
+        }
+      ],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "活动",
+      "visible_next_step": "按状态找到工作，进入对应恢复、取消、澄清或结果",
+      "semantic_support": "集中列出失败、进行中、完成及待确认工作，区别于应用使用时长。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C28",
+          "scope": "rendered target main text and visible controls"
+        },
+        {
+          "path": "evidence/independent/r17-supplement/natural-tasks.trace.json",
+          "task": "R17-S1 supplement",
+          "scope": "从失败活动进入工作详情"
+        }
+      ],
+      "interaction_verified": true,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/activity",
+      "limitations": [
+        "工作详情的具体冲突单独记 A25 / R17-S1。"
+      ],
+      "interaction_scope": "从失败活动进入工作详情"
+    },
+    {
+      "id": "A25",
+      "priority": "advanced",
+      "group_id": "G11",
+      "section": "跟进与管理",
+      "group": "跟进工作与失败恢复",
+      "title": "检查技术步骤并恢复可重试工作",
+      "purpose": "深入查看任务依赖、尝试和失败原因，找到负责该工作的设置或恢复入口。",
+      "expected_canonical_home": {
+        "pageId": "processing",
+        "href": "#/system/processing",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "技术执行记录",
+        "path": "活动 → 高级 / 工作详情 → 技术执行记录",
+        "where": "活动的高级入口，或工作详情中的技术记录；也可由插件运行记录进入。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": "步骤详情和重试依已有技术任务及其失败状态显示。",
+      "review_status": "conflict",
+      "visible_primary_home": "活动 → 失败工作 → 工作详情",
+      "visible_next_step": "核对失败原因后重新检查、调整来源，或查看已保存资料",
+      "semantic_support": "可见失败原因和恢复入口；但飞书详情声称已归档 12 份，查看已保存资料却到全部 6 份，飞书筛选实际为 0。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A25",
+          "scope": "rendered target main text and visible controls"
+        },
+        {
+          "path": "evidence/independent/r17-supplement/natural-tasks.trace.json",
+          "task": "R17-S1 supplement",
+          "scope": "进入飞书失败详情、查看已保存资料、手动来源筛选"
+        }
+      ],
+      "interaction_verified": true,
+      "issues": [
+        {
+          "id": "R17-S1",
+          "finding": "可见失败原因和恢复入口；但飞书详情声称已归档 12 份，查看已保存资料却到全部 6 份，飞书筛选实际为 0。"
+        }
+      ],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/activity/details",
+      "limitations": [
+        "R17-S1 已通过 4 次产品动作复现，不能以入口存在判通过。"
+      ],
+      "interaction_scope": "进入飞书失败详情、查看已保存资料、手动来源筛选"
+    },
+    {
+      "id": "C29",
+      "priority": "core",
+      "group_id": "G12",
+      "section": "跟进与管理",
+      "group": "待办与日程建议",
+      "title": "记录和完成普通待办",
+      "purpose": "添加标题和可选到期时间，管理完成、取消或重新打开的待办。",
+      "expected_canonical_home": {
+        "pageId": "actions",
+        "href": "#/actions",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "行动",
+        "path": "今天 → 行动建议 → 待办",
+        "where": "进入行动页的待办区域。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "今天 → 待办",
+      "visible_next_step": "添加标题或管理已有待办的状态",
+      "semantic_support": "普通待办与日程建议分开，有状态筛选和完成操作。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C29",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/todos",
+      "limitations": [
+        "到期时间、取消及重新打开未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C30",
+      "priority": "core",
+      "group_id": "G12",
+      "section": "跟进与管理",
+      "group": "待办与日程建议",
+      "title": "审核日程建议并交给设备执行",
+      "purpose": "查看有证据的日程建议，核对内容和目标日历后确认，跟踪设备的执行结果。",
+      "expected_canonical_home": {
+        "pageId": "actions",
+        "href": "#/actions",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "行动",
+        "path": "今天 → 行动建议",
+        "where": "行动页中开启建议发现；选中建议打开审核，选择已有设备日历。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": "审核需要已有建议；目标日历需要设备端已提供可写日历。",
+      "review_status": "pass",
+      "visible_primary_home": "今天 → 日程建议",
+      "visible_next_step": "查看建议依据，核对并添加到日历，或忽略",
+      "semantic_support": "建议保留来源与日期时间，确认动作与普通待办不同。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C30",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/todos/schedule",
+      "limitations": [
+        "设备/日历选择、执行状态和最终结果未展开。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C19",
+      "priority": "core",
+      "group_id": "G07",
+      "section": "跟进与管理",
+      "group": "按分类回看与查看时间",
+      "title": "按内容类型查看资料库",
+      "purpose": "在同一资料库切换分类，找到片段、来源、文件、活动、记忆和处理视图。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=materials",
+        "collectionId": "materials",
+        "categoryId": null,
+        "label": "全部资料",
+        "path": "资料库 → 分类",
+        "where": "使用资料库分类切换视图；导入、随手记和洞察属于「资料库工具」。"
+      },
+      "contextual_targets": [
+        {
+          "pageId": "archive",
+          "href": "#/library?view=records",
+          "collectionId": "records",
+          "categoryId": null,
+          "label": "原始采集记录",
+          "path": "资料库 → 原始采集记录",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "archive",
+          "href": "#/library?view=segments",
+          "collectionId": "segments",
+          "categoryId": null,
+          "label": "片段",
+          "path": "资料库 → 片段",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "archive",
+          "href": "#/library?view=sources",
+          "collectionId": "sources",
+          "categoryId": null,
+          "label": "来源资料",
+          "path": "资料库 → 来源资料",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "archive",
+          "href": "#/library?view=files",
+          "collectionId": "files",
+          "categoryId": null,
+          "label": "文件与录音",
+          "path": "资料库 → 文件与录音",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "archive",
+          "href": "#/library?view=activity",
+          "collectionId": "activity",
+          "categoryId": null,
+          "label": "应用活动",
+          "path": "资料库 → 应用活动",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "archive",
+          "href": "#/library?view=media",
+          "collectionId": "media",
+          "categoryId": null,
+          "label": "媒体播放",
+          "path": "资料库 → 媒体播放",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "archive",
+          "href": "#/library?view=memories",
+          "collectionId": "memories",
+          "categoryId": null,
+          "label": "记忆",
+          "path": "资料库 → 记忆",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "archive",
+          "href": "#/library?view=work-activity",
+          "collectionId": "work-activity",
+          "categoryId": null,
+          "label": "处理任务",
+          "path": "资料库 → 处理任务",
+          "where": "查看产品工作，并展开 Coding 会话接收状态。"
+        }
+      ],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "资料库 → 分类导航",
+      "visible_next_step": "切换原文、来源、文件、原始记录、应用、媒体、Coding 等视图",
+      "semantic_support": "桌面分组侧栏、窄屏标签与分类下拉呈现同一内容体系。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C19",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/library",
+      "limitations": [
+        "未执行所有分类内部操作。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A12",
+      "priority": "advanced",
+      "group_id": "G07",
+      "section": "跟进与管理",
+      "group": "按分类回看与查看时间",
+      "title": "按截图片段或应用相册回看",
+      "purpose": "按日期和设备查看连续会话或应用分组，打开组内采集证据。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=segments",
+        "collectionId": "segments",
+        "categoryId": null,
+        "label": "片段",
+        "path": "资料库 → 片段",
+        "where": "选择日期、设备和分组方式，再打开片段。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "partial",
+      "visible_primary_home": "资料库 → 截图片段",
+      "visible_next_step": "按日期/来源查看片段并打开原始内容",
+      "semantic_support": "有片段、应用、时间和原始内容；未见连续会话分组、应用相册或设备筛选。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A12",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [
+        {
+          "id": "SEM-A12",
+          "finding": "缺少连续会话或应用分组及设备筛选的可见证据。"
+        }
+      ],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/library/snippets",
+      "limitations": [
+        "片段可读，但完整分组浏览目的仅部分支持。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A13",
+      "priority": "advanced",
+      "group_id": "G07",
+      "section": "跟进与管理",
+      "group": "按分类回看与查看时间",
+      "title": "查看测得的应用活动时间",
+      "purpose": "查看采样得到的各应用时长和占比，理解其统计范围。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=activity",
+        "collectionId": "activity",
+        "categoryId": null,
+        "label": "应用活动",
+        "path": "资料库 → 应用活动",
+        "where": "查看应用时长汇总。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "partial",
+      "visible_primary_home": "资料库 → 应用使用记录",
+      "visible_next_step": "阅读今天各应用的使用时长",
+      "semantic_support": "编辑器、浏览器、笔记的时长分开，明确区别于 Mote 后台工作；没有占比及采样范围说明。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A13",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [
+        {
+          "id": "SEM-A13",
+          "finding": "未说明各应用占比和采样统计范围。"
+        }
+      ],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/application",
+      "limitations": [
+        "时长含义与统计边界仍需补充可见解释。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A14",
+      "priority": "advanced",
+      "group_id": "G07",
+      "section": "跟进与管理",
+      "group": "按分类回看与查看时间",
+      "title": "查看媒体播放观测",
+      "purpose": "查看播放器、标题、状态和播放进度，核对按设备统计的播放观测。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=media",
+        "collectionId": "media",
+        "categoryId": null,
+        "label": "媒体播放",
+        "path": "资料库 → 媒体播放",
+        "where": "查看媒体汇总并展开记录信息。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "资料库 → 媒体播放",
+      "visible_next_step": "核对播放器、标题、播放状态和进度，打开原始观测",
+      "semantic_support": "设备、观测条数、播放器、时间和进度均具体，按设备分布有展开入口。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A14",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/media",
+      "limitations": [
+        "展开分布和原始观测未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A15",
+      "priority": "advanced",
+      "group_id": "G07",
+      "section": "跟进与管理",
+      "group": "按分类回看与查看时间",
+      "title": "查看 Coding 会话接收与同步状态",
+      "purpose": "在处理任务中核对 Coding 增量接收、会话发布、索引与记忆进度，再打开已发布正文。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=work-activity",
+        "collectionId": "work-activity",
+        "categoryId": null,
+        "label": "处理任务",
+        "path": "资料库 → 处理任务 → Coding 会话接收状态",
+        "where": "在处理任务中的「Coding 会话接收状态」摘要展开「查看接收、发布、索引与记忆进度」。",
+        "requiredCollectionIds": [
+          "coding-status"
+        ],
+        "requires": [
+          "http:GET:/api/coding/uploads"
+        ]
+      },
+      "contextual_targets": [
+        {
+          "pageId": "archive",
+          "href": "#/library?view=materials",
+          "collectionId": "materials",
+          "categoryId": null,
+          "label": "全部资料",
+          "path": "资料库 → 全部资料",
+          "where": "查看已发布的会话正文。"
+        }
+      ],
+      "setup_targets": [
+        {
+          "pageId": "sourceCatalog",
+          "href": "#/connections/add",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "新增数据源",
+          "path": "新增数据源 → Coding Agent 会话",
+          "where": "查看客户端接入与同步状态。"
+        }
+      ],
+      "condition": "具体进度依已接收来源显示；没有来源时会显示客户端接入步骤。",
+      "review_status": "pass",
+      "visible_primary_home": "资料库 → Coding 会话",
+      "visible_next_step": "按客户端核对接收、发布、索引和记忆进度，打开正文",
+      "semantic_support": "事件数量、字节、发布数量和各阶段分别显示，配套接入与策略入口可见。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A15",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/activity/coding",
+      "limitations": [
+        "真实会话、过滤和增量同步未验证。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C39",
+      "priority": "core",
+      "group_id": "G15",
+      "section": "跟进与管理",
+      "group": "备份、存储、索引与费用",
+      "title": "导入导出归档并找到完整备份",
+      "purpose": "导出可携带的资料或元数据，合并当前归档，检查索引并找到离线备份方式。",
+      "expected_canonical_home": {
+        "pageId": "vault",
+        "href": "#/system/storage",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "存储、加密与备份",
+        "path": "设置 → 存储、加密与备份 → 导入与导出 / 索引与 Agent",
+        "where": "查看「导入与导出」「大资料库适合使用离线备份」以及索引区域。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 存储与备份",
+      "visible_next_step": "导出资料、恢复备份示例或重建索引",
+      "semantic_support": "归档、备份恢复和索引操作聚在存储维护，下一步具体。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C39",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/storage",
+      "limitations": [
+        "真实文件下载、合并冲突与离线备份过程未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C40",
+      "priority": "core",
+      "group_id": "G15",
+      "section": "跟进与管理",
+      "group": "备份、存储、索引与费用",
+      "title": "查看保留、容量和内容存储政策",
+      "purpose": "查看实际空间和保留情况，控制未来文件加密，并找到部署层保留与容量配置。",
+      "expected_canonical_home": {
+        "pageId": "vault",
+        "href": "#/system/storage",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "存储、加密与备份",
+        "path": "设置 → 存储、加密与备份 → 内容存储 / 数据与备份",
+        "where": "查看内容存储政策和数据概览；保留与容量修改位于模型与服务。"
+      },
+      "contextual_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=storage",
+          "collectionId": null,
+          "categoryId": "storage",
+          "label": "保留与容量",
+          "path": "设置 → 模型与服务 → 保留与容量",
+          "where": "在「保留与容量」编辑并校验部署草稿，核对当前生效值。"
+        }
+      ],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=storage",
+          "collectionId": null,
+          "categoryId": "storage",
+          "label": "保留与容量",
+          "path": "设置 → 模型与服务 → 保留与容量",
+          "where": "在「保留与容量」编辑并校验部署草稿，核对当前生效值。"
+        }
+      ],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 存储与备份",
+      "visible_next_step": "核对空间和保留，调整未来写入的存储/加密策略后保存",
+      "semantic_support": "未来加密和已有对象转换分开，保存当前值的边界清楚。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C40",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/storage",
+      "limitations": [
+        "容量数值真实性与部署层配置不在原型证明范围。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C41",
+      "priority": "core",
+      "group_id": "G15",
+      "section": "跟进与管理",
+      "group": "备份、存储、索引与费用",
+      "title": "核对模型用量和估算费用",
+      "purpose": "按日期、模块、模型和状态查看请求、Token、缓存、耗时及费用明细。",
+      "expected_canonical_home": {
+        "pageId": "usage",
+        "href": "#/system/usage",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "用量与费用",
+        "path": "设置 → 用量与费用",
+        "where": "设置筛选，查看汇总、趋势和运行明细。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 用量与费用",
+      "visible_next_step": "按日期、模块、模型、状态筛选请求并展开明细",
+      "semantic_support": "Token、缓存、耗时、费用及虚构美元估算标识可见，说明实际调用为 0。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C41",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/usage",
+      "limitations": [
+        "筛选和明细计算未逐项执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A31",
+      "priority": "advanced",
+      "group_id": "G15",
+      "section": "跟进与管理",
+      "group": "备份、存储、索引与费用",
+      "title": "把已有加密文件转为明文",
+      "purpose": "关闭未来加密后，按需安排已有内容对象解密，并查看后台转换进度。",
+      "expected_canonical_home": {
+        "pageId": "vault",
+        "href": "#/system/storage",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "存储、加密与备份",
+        "path": "设置 → 存储、加密与备份 → 内容存储",
+        "where": "关闭加密后查看已有文件的批量解密入口。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": "有可转换的加密对象，且未来写入加密已关闭时才能执行。",
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 存储与备份 → 已有加密文件",
+      "visible_next_step": "关闭未来加密并保存后，安排已有 3 个对象转换",
+      "semantic_support": "执行条件、对象数量与未来加密的区别明确，当前不能执行的原因清楚。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A31",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/storage",
+      "limitations": [
+        "未满足条件并执行转换；不把条件禁用误判为功能缺失。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A32",
+      "priority": "advanced",
+      "group_id": "G15",
+      "section": "跟进与管理",
+      "group": "备份、存储、索引与费用",
+      "title": "查看运行状态与空间",
+      "purpose": "按类型和日期查看中央机器可访问文件的字节与数量，并进入模型用量。",
+      "expected_canonical_home": {
+        "pageId": "statistics",
+        "href": "#/system",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "运行状态与空间",
+        "path": "设置 → 运行状态与空间",
+        "where": "在「运行状态与空间」查看中央节点磁盘统计，或打开用量与费用。"
+      },
+      "contextual_targets": [
+        {
+          "pageId": "usage",
+          "href": "#/system/usage",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "用量与费用",
+          "path": "运行状态 → 用量与费用",
+          "where": "进入后按页面中的名称操作。"
+        }
+      ],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 系统状态与空间",
+      "visible_next_step": "查看按类型/日期的文件字节与数量，进入用量或诊断",
+      "semantic_support": "有在线状态、实际查看范围和分类表，并连到相关维护入口。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A32",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/system",
+      "limitations": [
+        "统计真实性、刷新变化和日期展开未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A33",
+      "priority": "advanced",
+      "group_id": "G15",
+      "section": "跟进与管理",
+      "group": "备份、存储、索引与费用",
+      "title": "维护估价并追查用量明细",
+      "purpose": "按 Agent、模块、技能或模型汇总，逐层筛选请求，并维护后续请求使用的价格。",
+      "expected_canonical_home": {
+        "pageId": "usage",
+        "href": "#/system/usage",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "用量与费用",
+        "path": "设置 → 用量与费用 → 汇总 / 价格",
+        "where": "切换汇总方式并点击数据行；展开价格设置。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 用量与费用",
+      "visible_next_step": "按模型/模块/Agent/Skill 汇总、下钻，并维护价格",
+      "semantic_support": "定价与后续估算的关系清楚，汇总、请求、分页各有入口。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A33",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/usage",
+      "limitations": [
+        "价格保存和逐层筛选未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C31",
+      "priority": "core",
+      "group_id": "G13",
+      "section": "设置与维护",
+      "group": "模型、图片、文件与语音",
+      "title": "配置或检查模型连接（Provider）",
+      "purpose": "查看或保存模型连接的地址、凭据和模型，再核对实际生效配置。",
+      "expected_canonical_home": {
+        "pageId": "settings",
+        "href": "#/system/models?category=providers",
+        "collectionId": null,
+        "categoryId": "providers",
+        "label": "模型连接（Provider）",
+        "path": "设置 → 模型与服务 → 模型连接（Provider）",
+        "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 模型与服务 → 模型连接",
+      "visible_next_step": "选择预设，填写地址、模型和凭据后保存/测试示例",
+      "semantic_support": "连接草稿、凭据保留/替换、测试示例和功能分配下一步可见。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C31",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/providers",
+      "limitations": [
+        "未执行保存、实际生效比对和返回原任务。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C32",
+      "priority": "core",
+      "group_id": "G13",
+      "section": "设置与维护",
+      "group": "模型、图片、文件与语音",
+      "title": "检查或分配功能使用的模型",
+      "purpose": "检查问答、记忆、回顾等功能当前用的连接和模型，按需为要使用的模块分配。",
+      "expected_canonical_home": {
+        "pageId": "settings",
+        "href": "#/system/models?category=model",
+        "collectionId": null,
+        "categoryId": "model",
+        "label": "模块与模型",
+        "path": "设置 → 模型与服务 → 模块与模型",
+        "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=providers",
+          "collectionId": null,
+          "categoryId": "providers",
+          "label": "模型连接（Provider）",
+          "path": "设置 → 模型与服务 → 模型连接（Provider）",
+          "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+        }
+      ],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 模型与服务 → 功能分配",
+      "visible_next_step": "为问答、记忆、回顾、工作记忆、图片、语音选择连接和模型",
+      "semantic_support": "功能与连接管理分开，未分配状态清楚，有保存动作。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C32",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/assignments",
+      "limitations": [
+        "模块调用和原任务恢复未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C36",
+      "priority": "core",
+      "group_id": "G13",
+      "section": "设置与维护",
+      "group": "模型、图片、文件与语音",
+      "title": "控制新图片识别与原图授权",
+      "purpose": "为截图、上传、同步和笔记图片设置识字、理解方式，并单独决定问答模型能否读原图。",
+      "expected_canonical_home": {
+        "pageId": "settings",
+        "href": "#/system/models?category=images",
+        "collectionId": null,
+        "categoryId": "images",
+        "label": "图片",
+        "path": "设置 → 模型与服务 → 图片",
+        "where": "在「图片」查看统一处理与授权，历史任务位于「处理已有图片」。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 模型与服务 → 图片",
+      "visible_next_step": "调整识字/理解及外部 OCR 授权，单独决定问答原图权限",
+      "semantic_support": "新图片处理、已生效值和问答原图授权分开；历史任务另有入口。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C36",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/images",
+      "limitations": [
+        "保存和实际处理未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C37",
+      "priority": "core",
+      "group_id": "G13",
+      "section": "设置与维护",
+      "group": "模型、图片、文件与语音",
+      "title": "查看文件或录音的内容提取和恢复",
+      "purpose": "核对原件、正文、转写及摘要状态，下载或播放原件，处理可取消或重试的阶段。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=files",
+        "collectionId": "files",
+        "categoryId": null,
+        "label": "文件与录音",
+        "path": "资料库 → 文件与录音 → 文件详情；导入 → 媒体详情",
+        "where": "选择一个文件或录音，查看原件、文本与处理控制。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=file-processing",
+          "collectionId": null,
+          "categoryId": "file-processing",
+          "label": "文件与语音",
+          "path": "设置 → 模型与服务 → 文件与语音",
+          "where": "在「文件与语音」查看模型安装、规则、方案与服务，具体操作在对应区域。"
+        }
+      ],
+      "condition": "恢复操作依文件处理状态和处理器能力显示。",
+      "review_status": "pass",
+      "visible_primary_home": "资料库 → 文件与录音",
+      "visible_next_step": "阅读提取正文、查看转写或重处理具体文件",
+      "semantic_support": "文件与录音均有具体已完成示例和正文入口，不只有设置页。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C37",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/library/files",
+      "limitations": [
+        "原件下载/播放、失败取消恢复未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C38",
+      "priority": "core",
+      "group_id": "G13",
+      "section": "设置与维护",
+      "group": "模型、图片、文件与语音",
+      "title": "配置文件与语音处理",
+      "purpose": "启用中央处理，安装所需本地语音模型，并按文件类型选择处理方案。",
+      "expected_canonical_home": {
+        "pageId": "settings",
+        "href": "#/system/models?category=file-processing",
+        "collectionId": null,
+        "categoryId": "file-processing",
+        "label": "文件与语音",
+        "path": "设置 → 模型与服务 → 文件与语音",
+        "where": "在「文件与语音」查看模型安装、规则、方案与服务，具体操作在对应区域。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 模型与服务 → 文件与语音",
+      "visible_next_step": "开启中央处理、安装示例语音模型、选择文档/语音方案并保存",
+      "semantic_support": "模型未安装状态和模拟安装下一步明确，处理方式有具体选择。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C38",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/file-processing",
+      "limitations": [
+        "安装结果、保存与真实处理未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A19",
+      "priority": "advanced",
+      "group_id": "G13",
+      "section": "设置与维护",
+      "group": "模型、图片、文件与语音",
+      "title": "调整模型性能和协议细节",
+      "purpose": "在预设中调整推理、速度、超时及协议参数，并确认敏感地址或凭据变更。",
+      "expected_canonical_home": {
+        "pageId": "settings",
+        "href": "#/system/models?category=providers",
+        "collectionId": null,
+        "categoryId": "providers",
+        "label": "模型连接（Provider）",
+        "path": "设置 → 模型与服务 → 模型连接（Provider） → 预设编辑 → 高级",
+        "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "模型连接 → 性能、协议与地址高级区域",
+      "visible_next_step": "展开高级设置，调整参数并保存",
+      "semantic_support": "高级参数在相关连接内逐步展开，没有堆在日常主界面。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A19",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/providers",
+      "limitations": [
+        "高级字段和敏感变更确认未展开。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A20",
+      "priority": "advanced",
+      "group_id": "G13",
+      "section": "设置与维护",
+      "group": "模型、图片、文件与语音",
+      "title": "复制或删除模型预设",
+      "purpose": "复用已有连接设置，或清理未使用的自定义预设。",
+      "expected_canonical_home": {
+        "pageId": "settings",
+        "href": "#/system/models?category=providers",
+        "collectionId": null,
+        "categoryId": "providers",
+        "label": "模型连接（Provider）",
+        "path": "设置 → 模型与服务 → 模型连接（Provider） → 选中预设",
+        "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": "删除仅对允许删除且未被使用的自定义预设提供。",
+      "review_status": "pass",
+      "visible_primary_home": "模型连接 → 复制预设",
+      "visible_next_step": "复制当前预设；未被使用的自定义预设可删除",
+      "semantic_support": "复制与条件删除的管理归属清楚，明确限制未被使用的自定义项。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A20",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/providers",
+      "limitations": [
+        "未创建自定义副本以验证删除条件。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A21",
+      "priority": "advanced",
+      "group_id": "G13",
+      "section": "设置与维护",
+      "group": "模型、图片、文件与语音",
+      "title": "补处理或重算历史图片",
+      "purpose": "明确选择历史日期与来源，预览数量后安排补齐或重新计算。",
+      "expected_canonical_home": {
+        "pageId": "settings",
+        "href": "#/system/models?category=images",
+        "collectionId": null,
+        "categoryId": "images",
+        "label": "图片",
+        "path": "设置 → 模型与服务 → 图片 → 处理已有图片",
+        "where": "在「图片」查看统一处理与授权，历史任务位于「处理已有图片」。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 图片 → 处理已有图片",
+      "visible_next_step": "选日期、来源和补齐/重算方式，先预览数量",
+      "semantic_support": "历史处理与未来处理分开，预览范围前置。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A21",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/image-history",
+      "limitations": [
+        "预览和排队未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A22",
+      "priority": "advanced",
+      "group_id": "G13",
+      "section": "设置与维护",
+      "group": "模型、图片、文件与语音",
+      "title": "配置文件规则、方案和处理服务",
+      "purpose": "为文件类型或特定来源选择处理方案，设置模型、摘要和服务连接。",
+      "expected_canonical_home": {
+        "pageId": "settings",
+        "href": "#/system/models?category=file-processing",
+        "collectionId": null,
+        "categoryId": "file-processing",
+        "label": "文件与语音",
+        "path": "设置 → 模型与服务 → 文件与语音",
+        "where": "在「文件与语音」查看模型安装、规则、方案与服务，具体操作在对应区域。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "文件与语音 → 规则、来源与处理服务",
+      "visible_next_step": "展开对应高级区域后配置并保存",
+      "semantic_support": "类型/来源规则、处理方案与服务归于同一处理设置，有明确展开入口。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A22",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/file-processing",
+      "limitations": [
+        "展开字段、服务验证和配置生效未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A23",
+      "priority": "advanced",
+      "group_id": "G13",
+      "section": "设置与维护",
+      "group": "模型、图片、文件与语音",
+      "title": "预览文件规则并重新处理已有原件",
+      "purpose": "用已保存规则试算 MIME 匹配，选择已有原件，核对预览后排队。",
+      "expected_canonical_home": {
+        "pageId": "settings",
+        "href": "#/system/models?category=file-processing",
+        "collectionId": null,
+        "categoryId": "file-processing",
+        "label": "文件与语音",
+        "path": "设置 → 模型与服务 → 文件与语音 → 规则试算与已有文件",
+        "where": "在「文件与语音」查看模型安装、规则、方案与服务，具体操作在对应区域。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "文件与语音 → 预览规则并重新处理",
+      "visible_next_step": "用已保存规则预览，核对原件后重处理",
+      "semantic_support": "入口文案明确先预览后处理，区别于直接修改未来规则。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A23",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/file-processing",
+      "limitations": [
+        "MIME 匹配、原件选择与排队结果未展开。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A24",
+      "priority": "advanced",
+      "group_id": "G13",
+      "section": "设置与维护",
+      "group": "模型、图片、文件与语音",
+      "title": "纠正转写并确认说话人",
+      "purpose": "手动校正文段、试听说话人样本，或让模型建议修改后逐项确认。",
+      "expected_canonical_home": {
+        "pageId": "archive",
+        "href": "#/library?view=files",
+        "collectionId": "files",
+        "categoryId": null,
+        "label": "文件与录音",
+        "path": "资料库 → 文件与录音 → 文件详情 → 文段 / 说话人试听与命名 / 复核",
+        "where": "打开有转写的文件详情，查看文段、说话人和复核入口。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=model",
+          "collectionId": null,
+          "categoryId": "model",
+          "label": "模块与模型",
+          "path": "设置 → 模型与服务 → 模块与模型",
+          "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+        }
+      ],
+      "condition": "需要已有转写；说话人、试听和模型复核按文件产物及处理能力出现。",
+      "review_status": "pass",
+      "visible_primary_home": "文件与录音 → 已有转写 → 纠正",
+      "visible_next_step": "打开两位说话人的转写并纠正文段",
+      "semantic_support": "已有转写与说话人示例满足功能基本条件，纠正入口贴近结果。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A24",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/library/files",
+      "limitations": [
+        "试听、模型建议和逐项确认未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A29",
+      "priority": "advanced",
+      "group_id": "G13",
+      "section": "设置与维护",
+      "group": "模型、图片、文件与语音",
+      "title": "设置执行并发和查看等待名额",
+      "purpose": "调整问答和后台执行的同时工作数量，了解哪些工作在排队。",
+      "expected_canonical_home": {
+        "pageId": "settings",
+        "href": "#/system/models?category=model",
+        "collectionId": null,
+        "categoryId": "model",
+        "label": "模块与模型",
+        "path": "设置 → 模型与服务 → 模块与模型 → 执行并发",
+        "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 执行并发",
+      "visible_next_step": "核对正在工作/等待数量，调整问答及后台并发后保存",
+      "semantic_support": "当前 2 项工作、1 项等待与各类限制分开说明，可跳具体后台工作。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A29",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/concurrency",
+      "limitations": [
+        "排队调度和保存后的数值影响未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A30",
+      "priority": "advanced",
+      "group_id": "G13",
+      "section": "设置与维护",
+      "group": "模型、图片、文件与语音",
+      "title": "配置检索和外部连接的部署草稿",
+      "purpose": "准备向量检索、来源间隔、MCP 和 OAuth 的配置差异，交给部署机器应用。",
+      "expected_canonical_home": {
+        "pageId": "settings",
+        "href": "#/system/models?category=embedding",
+        "collectionId": null,
+        "categoryId": "embedding",
+        "label": "检索索引",
+        "path": "设置 → 模型与服务 → 检索索引 / 来源与外部应用",
+        "where": "在「检索索引」编辑并校验部署草稿，核对当前生效值。"
+      },
+      "contextual_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=connectors",
+          "collectionId": null,
+          "categoryId": "connectors",
+          "label": "来源与外部应用",
+          "path": "设置 → 模型与服务 → 来源与外部应用",
+          "where": "在「来源与外部应用」编辑并校验部署草稿，核对当前生效值。"
+        }
+      ],
+      "setup_targets": [
+        {
+          "pageId": "settings",
+          "href": "#/system/models?category=connectors",
+          "collectionId": null,
+          "categoryId": "connectors",
+          "label": "来源与外部应用",
+          "path": "设置 → 模型与服务 → 来源与外部应用",
+          "where": "在「来源与外部应用」编辑并校验部署草稿，核对当前生效值。"
+        }
+      ],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 部署草稿",
+      "visible_next_step": "填写检索、同步、MCP、OAuth 草稿，验证并查看差异",
+      "semantic_support": "草稿与实际生效明确分开，需交由部署机器应用，没有伪装即时生效。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A30",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/advanced",
+      "limitations": [
+        "验证差异、应用与实际刷新未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C33",
+      "priority": "core",
+      "group_id": "G14",
+      "section": "设置与维护",
+      "group": "自动记忆与可信插件方案",
+      "title": "暂停或立即停止自动记忆",
+      "purpose": "控制全局新自动记忆的接收，并区分继续收尾与立即撤销旧工作。",
+      "expected_canonical_home": {
+        "pageId": "extensions",
+        "href": "#/system/plugins?tab=memory",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "自动记忆与插件",
+        "path": "设置 → 自动记忆与插件 → 记忆方案 → 自动记忆",
+        "where": "在当前记忆方案中查看「自动记忆」的状态和控制。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 自动记忆与插件",
+      "visible_next_step": "暂停接收新自动工作，或明确立即停止已有工作",
+      "semantic_support": "两种暂停语义分开，已有工作、等待和检查点各有状态。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C33",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/plugins",
+      "limitations": [
+        "停止/恢复与检查点实际变化未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C34",
+      "priority": "core",
+      "group_id": "G14",
+      "section": "设置与维护",
+      "group": "自动记忆与可信插件方案",
+      "title": "核对和替换整套记忆方案",
+      "purpose": "查看当前运行的整套记忆实现，准备和验证替换，再单独应用已验证方案。",
+      "expected_canonical_home": {
+        "pageId": "extensions",
+        "href": "#/system/plugins?tab=memory",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "自动记忆与插件",
+        "path": "设置 → 自动记忆与插件 → 记忆方案",
+        "where": "查看当前方案；选择替换目标后依次预览、准备、验证和应用。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "自动记忆与插件 → 当前记忆方案",
+      "visible_next_step": "预览替换方案，核对后另行应用",
+      "semantic_support": "当前整套方案与准备替换有清楚位置，不把安装等同启用。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C34",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/plugins",
+      "limitations": [
+        "验证失败与应用过程未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C35",
+      "priority": "core",
+      "group_id": "G14",
+      "section": "设置与维护",
+      "group": "自动记忆与可信插件方案",
+      "title": "管理可信记忆插件",
+      "purpose": "从支持的固定版本发现、安装和配置实例，检查后启用或绑定方案。",
+      "expected_canonical_home": {
+        "pageId": "extensions",
+        "href": "#/system/plugins",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "自动记忆与插件",
+        "path": "设置 → 自动记忆与插件 → 已安装 / 发现",
+        "where": "在「发现」选受支持发布；在「已安装」查看实例、配置、验证和启用。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "自动记忆与插件 → 管理插件",
+      "visible_next_step": "进入可信插件管理，检查后启用或绑定方案",
+      "semantic_support": "插件管理与整套方案选择分开，下一步明确。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C35",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/plugins",
+      "limitations": [
+        "具体发现、版本、依赖、安装及授权未展开。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C01",
+      "priority": "core",
+      "group_id": "G01",
+      "section": "设置与维护",
+      "group": "登录、语言与页面入口",
+      "title": "登录并管理当前会话",
+      "purpose": "确认正在使用哪个中央节点，选择浏览器保留登录的时间，或退出当前会话。",
+      "expected_canonical_home": {
+        "pageId": "about",
+        "href": "#/preferences",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "设置",
+        "path": "设置 → 当前服务（中央节点）",
+        "where": "页面下方的「当前服务（中央节点）」和「登录会话有效期」；未登录时由目标页进入登录。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "partial",
+      "visible_primary_home": "设置 → 账号与设备",
+      "visible_next_step": "核对当前账号/工作台，管理连接或退出当前会话",
+      "semantic_support": "当前账号和会话明确；浏览器保留登录时长及中央节点地址未在该已登录页显示。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C01",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [
+        {
+          "id": "SEM-C01",
+          "finding": "会话保留时长及中央节点确认的适用态未验证。"
+        }
+      ],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/account",
+      "limitations": [
+        "登录表单与会话时长的条件态未执行，不能判定完全缺失。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "C02",
+      "priority": "core",
+      "group_id": "G01",
+      "section": "设置与维护",
+      "group": "登录、语言与页面入口",
+      "title": "找到常用页面和所属工具",
+      "purpose": "从五个主入口进入日常工作，再到各自的工具或设置继续操作。",
+      "expected_canonical_home": {
+        "pageId": "overview",
+        "href": "#/today",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "今天",
+        "path": "主导航 → 今天 / 资料库 / 问一问 / 活动 / 采集与设备；设置",
+        "where": "主导航切换工作区；资料库的「资料库工具」、采集与设备的「来源与连接」选择框进入所属工具。"
+      },
+      "contextual_targets": [
+        {
+          "pageId": "archive",
+          "href": "#/library?view=materials",
+          "collectionId": "materials",
+          "categoryId": null,
+          "label": "全部资料",
+          "path": "主导航 → 资料库",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "ask",
+          "href": "#/ask",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "问一问",
+          "path": "主导航 → 问一问",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "activity",
+          "href": "#/activity",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "活动",
+          "path": "主导航 → 活动",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "devices",
+          "href": "#/connections/devices",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "采集与设备",
+          "path": "主导航 → 采集与设备",
+          "where": "进入后按页面中的名称操作。"
+        },
+        {
+          "pageId": "about",
+          "href": "#/preferences",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "设置",
+          "path": "设置",
+          "where": "进入后按页面中的名称操作。"
+        }
+      ],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "资料库、问一问、来源、活动；今天/全部功能/设置为次级入口",
+      "visible_next_step": "从主要任务进入相关内容或上下文工具",
+      "semantic_support": "主导航职责稳定，次级工具按内容/维护分组；G1–G4 无需先读功能目录。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C02",
+          "scope": "rendered target main text and visible controls"
+        },
+        {
+          "path": "evidence/independent/r17/natural-tasks.trace.json",
+          "task": "G1–G4",
+          "scope": "主入口之间自主导航"
+        }
+      ],
+      "interaction_verified": true,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/today",
+      "limitations": [
+        "本评估者已熟悉 R15，不把此结果称作全新用户发现率。"
+      ],
+      "interaction_scope": "主入口之间自主导航"
+    },
+    {
+      "id": "C42",
+      "priority": "core",
+      "group_id": "G16",
+      "section": "设置与维护",
+      "group": "帮助、诊断与 Agent 视角",
+      "title": "找到帮助、版本和维护方式",
+      "purpose": "查找问题反馈入口，核对网页与中央版本，以及中央节点的手动升级说明。",
+      "expected_canonical_home": {
+        "pageId": "help",
+        "href": "#/help",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "帮助与反馈",
+        "path": "设置 → 帮助与反馈",
+        "where": "查看反馈链接；版本也在设置的「版本与更新」或「诊断与更新」。"
+      },
+      "contextual_targets": [
+        {
+          "pageId": "about",
+          "href": "#/preferences",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "设置",
+          "path": "设置 → 版本与更新",
+          "where": "展开「版本与更新」。"
+        },
+        {
+          "pageId": "developer",
+          "href": "#/system/diagnostics",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "诊断与更新",
+          "path": "设置 → 诊断与更新",
+          "where": "进入后按页面中的名称操作。"
+        }
+      ],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 帮助与诊断 / 帮助",
+      "visible_next_step": "核对网页/中央版本、打开反馈或查手动升级说明",
+      "semantic_support": "版本、帮助、反馈、下载/升级与诊断各有具体入口，演示版本边界可见。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "C42",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/help",
+      "limitations": [
+        "外部网站、下载文件和真实升级未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A26",
+      "priority": "advanced",
+      "group_id": "G16",
+      "section": "设置与维护",
+      "group": "帮助、诊断与 Agent 视角",
+      "title": "查看 Agent 当前能读取的上下文",
+      "purpose": "只读浏览 Agent 的虚拟目录，并为一个问题预览首次上下文，不必调用模型。",
+      "expected_canonical_home": {
+        "pageId": "agentView",
+        "href": "#/agent",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "Agent 能看到什么",
+        "path": "今天 → 更多上下文视图 → Agent 视角；设置 → Agent 能看到什么",
+        "where": "打开 Agent 视角，在目录、范围和首次上下文预览中核对。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "partial",
+      "visible_primary_home": "设置 → 助手可读取的范围",
+      "visible_next_step": "只读预览资料、记忆、洞察目录，或核对读取记录",
+      "semantic_support": "虚拟内容目录有数量和具体预览；未见输入问题并预览首次上下文的功能。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A26",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [
+        {
+          "id": "SEM-A26",
+          "finding": "没有问题特定的首次上下文预览。"
+        }
+      ],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/agent-scope",
+      "limitations": [
+        "目录预览不等于问题特定的首次上下文预览。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A27",
+      "priority": "advanced",
+      "group_id": "G16",
+      "section": "设置与维护",
+      "group": "帮助、诊断与 Agent 视角",
+      "title": "查看已记录的实际模型输入和工具读取",
+      "purpose": "按运行查阅当时保存的上下文、模型和工具事件，核对真实记录。",
+      "expected_canonical_home": {
+        "pageId": "agentView",
+        "href": "#/agent",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "Agent 能看到什么",
+        "path": "Agent 视角 → 实际输入与读取过程",
+        "where": "切换实际输入与读取过程，选择已有运行；详细记录开关在诊断偏好。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [
+        {
+          "pageId": "developer",
+          "href": "#/system/diagnostics",
+          "collectionId": null,
+          "categoryId": null,
+          "label": "诊断与更新",
+          "path": "设置 → 诊断与更新 → 诊断偏好",
+          "where": "查看「记录详细 Agent 过程」。"
+        }
+      ],
+      "condition": "只有已保留的详细运行记录可查；没有记录时只能理解设置与边界。",
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 助手读取记录",
+      "visible_next_step": "选择已保留示例运行，查看读取过程和范围",
+      "semantic_support": "记录标明具体问题、完成状态、读取 2 份资料和 1 条记忆，有运行级下一步。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A27",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/agent-events",
+      "limitations": [
+        "详细模型输入与工具事件未展开；不推断未保留记录。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A28",
+      "priority": "advanced",
+      "group_id": "G16",
+      "section": "设置与维护",
+      "group": "帮助、诊断与 Agent 视角",
+      "title": "核对实际注册的插件能力",
+      "purpose": "查看服务端与网页实际加载的能力、版本、状态和当前模块绑定。",
+      "expected_canonical_home": {
+        "pageId": "extensions",
+        "href": "#/system/plugins",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "自动记忆与插件",
+        "path": "设置 → 自动记忆与插件 → 高级 → 已注册能力清单",
+        "where": "在插件页高级区域展开已注册能力清单。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "自动记忆与插件 → 检查已加载能力",
+      "visible_next_step": "查看实际加载能力与当前方案绑定",
+      "semantic_support": "入口位于对应插件上下文，区别于只查看可安装目录。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A28",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/plugins",
+      "limitations": [
+        "能力详情、版本和客户端/服务端差异未展开。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A34",
+      "priority": "advanced",
+      "group_id": "G16",
+      "section": "设置与维护",
+      "group": "帮助、诊断与 Agent 视角",
+      "title": "查阅运行日志并导出支持包",
+      "purpose": "按文件、阶段和时间范围查看保留的日志，导出诊断资料用于排查。",
+      "expected_canonical_home": {
+        "pageId": "developer",
+        "href": "#/system/diagnostics",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "诊断与更新",
+        "path": "设置 → 诊断与更新 → 运行诊断",
+        "where": "使用日志筛选和导出入口；以实际保留范围为准。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 帮助与诊断",
+      "visible_next_step": "查看错误或导出诊断资料",
+      "semantic_support": "诊断记录与用户反馈分开，有明确查看与导出下一步。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A34",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/diagnostics",
+      "limitations": [
+        "文件/阶段/日期筛选和下载支持包未执行。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A35",
+      "priority": "advanced",
+      "group_id": "G16",
+      "section": "设置与维护",
+      "group": "帮助、诊断与 Agent 视角",
+      "title": "设置诊断记录并查看部署生效值",
+      "purpose": "调整今后的日志和详细过程记录，核对中央节点实际使用的目录和配置。",
+      "expected_canonical_home": {
+        "pageId": "developer",
+        "href": "#/system/diagnostics",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "诊断与更新",
+        "path": "设置 → 诊断与更新 → 诊断偏好 / 部署与全部生效配置",
+        "where": "查看「诊断偏好」，展开「部署与全部生效配置」。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "帮助与诊断 → 诊断设置 / 部署信息",
+      "visible_next_step": "调整今后日志级别与详细记录，保存后核对生效值",
+      "semantic_support": "未来记录、当前生效和部署配置分开，有相关展开入口。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A35",
+          "scope": "rendered target main text and visible controls"
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings/diagnostics",
+      "limitations": [
+        "目录与全部配置展开、保存后的实效未验证。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    },
+    {
+      "id": "A36",
+      "priority": "advanced",
+      "group_id": "G16",
+      "section": "设置与维护",
+      "group": "帮助、诊断与 Agent 视角",
+      "title": "切换界面语言",
+      "purpose": "按当前使用习惯选择中文或 English 界面。",
+      "expected_canonical_home": {
+        "pageId": "about",
+        "href": "#/preferences",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "设置",
+        "path": "设置 → 语言",
+        "where": "设置入口顶部的语言选择器。"
+      },
+      "contextual_targets": [],
+      "setup_targets": [],
+      "condition": null,
+      "review_status": "pass",
+      "visible_primary_home": "设置 → 语言与外观",
+      "visible_next_step": "选择中文或 English 以及主题",
+      "semantic_support": "中英界面和深浅主题实际截图可比较，说明已保存资料保留原语言。",
+      "evidence": [
+        {
+          "path": "evidence/r17/feature-coverage.json",
+          "unit_id": "A36",
+          "scope": "rendered target main text and visible controls"
+        },
+        {
+          "path": "evidence/r17/visuals/index.json",
+          "cases": [
+            "desktop-library-english",
+            "mobile-empty-english",
+            "desktop-settings-english"
+          ]
+        }
+      ],
+      "interaction_verified": false,
+      "issues": [],
+      "primary_home_verified": true,
+      "meaningful_next_step_verified": true,
+      "visible_destination_url": "https://mote-prototype.invalid/?reset=1#/settings",
+      "limitations": [
+        "未逐页验证全量翻译和切换时草稿保留。"
+      ],
+      "interaction_scope": "Not independently executed beyond the provided directory entry; semantic UI review only."
+    }
+  ],
+  "review_scope": {
+    "natural_tasks": "G1–G4 completed before consulting per-entry coverage; 40 product actions plus 2 preview-state selections.",
+    "semantic_review": "All 78 unit destinations reviewed as rendered visible DOM; 49 distinct main-page bodies; home and next step distinguished from full operation verification.",
+    "visual_review": "All 12 Chrome screenshot cases reviewed visually; desktop/tablet/mobile, light/dark, Chinese/English, empty/populated.",
+    "supplement": "One bounded 4-action check of R17-S1 after count contradiction was noticed in rendered DOM.",
+    "independence": "No candidate source, internal app state, author task scripts or author check verdicts used. Evaluator already knew R15. A team status tool exposed another independent evaluator summary after autonomous tasks and semantic initial review; it is not evidence for this report.",
+    "limitations": "HTML prototype only; same-session mock behavior, not backend, models, real permissions, uploads or external services. Unexecuted conditional branches retained as explicit limitations."
+  },
+  "criteria": [
+    {
+      "id": "C1",
+      "status": "pass",
+      "scope": "可见首屏用途与当前状态第一步清楚；知情复评，不替代全新上下文门槛。"
+    },
+    {
+      "id": "C2",
+      "status": "partial",
+      "scope": "主要职责及所有 78 单元归属成立；10 项细项语义不足/未证实，不能宣称完全不遗漏。"
+    },
+    {
+      "id": "C3",
+      "status": "pass",
+      "scope": "G1/G4 保存/导入→离页→检索/列表→正确正文，同会话内完成。"
+    },
+    {
+      "id": "C4",
+      "status": "fail",
+      "scope": "G3 来源范围和 G4 返回标签正确；R17-S1 活动详情仍丢来源范围且数量冲突。"
+    },
+    {
+      "id": "C5",
+      "status": "pass",
+      "scope": "G2 示例标识、问题、引用、原始内容及返回保留完成。"
+    },
+    {
+      "id": "C6",
+      "status": "pass",
+      "scope": "G3 独立新来源、范围和存储、暂停保留历史均成立；仅模拟文件夹路径。"
+    },
+    {
+      "id": "C7",
+      "status": "partial",
+      "scope": "草稿离页、原件弹窗往返与窄屏导入完成；R17-S1 恢复上下文仍不可靠，其他分支未验证。"
+    }
+  ],
+  "findings": [
+    {
+      "id": "R17-S1",
+      "severity": "must_fix_for_no_conflict_gate",
+      "goal": "核对需要重新授权的飞书来源已保存的历史资料",
+      "actual": "活动工作详情声称 12 份；查看已保存资料打开全部 6 份；手动飞书来源筛选为 0。",
+      "evidence": "evidence/independent/r17-supplement/natural-tasks.trace.json",
+      "recommended_change": "使用该来源实际保存数量，并让历史资料入口保留具体来源筛选。"
+    },
+    {
+      "id": "R17-N1",
+      "severity": "non_blocking_copy",
+      "actual": "Android HTML 预览导入仍显示电脑文件；新导入元数据为网页。",
+      "evidence": "evidence/independent/r17/g4-library-retrieved-import.json",
+      "recommended_change": "让选择方式与来源设备文案匹配预览平台，或明确演示资料元数据。"
+    },
+    {
+      "id": "R17-N2",
+      "severity": "non_blocking_copy",
+      "actual": "首次连接文件夹的持续接收说明使用恢复接收后的策略措辞。",
+      "evidence": "evidence/independent/r17/natural-tasks.trace.json",
+      "recommended_change": "首次连接与暂停后恢复使用各自准确的说明。"
+    }
+  ],
+  "gates_in_this_review": {
+    "G-COMPREHENSION": "not_verified: requires independent fresh-context counts beyond this informed evaluator",
+    "G-DISCOVERABILITY": "not_verified: natural tasks found starts, but this evaluator is familiar with R15",
+    "G-P0-COMPLETION": "partial: G1–G4 pass; not all P0 branches independently executed",
+    "G-FEATURE-COVERAGE": "partial: 20/78 reviewed, 78 homes/next steps; 10 semantic detail gaps and 1 conflict retained",
+    "G-NO-CONFLICT": "fail: R17-S1",
+    "G-NO-BLOCKER": "pass_in_G1_G4: no observed task blocking controls or dead ends in executed goals; does not assert every branch",
+    "G-DIMENSION-FLOORS": "fail: Functionality is 2",
+    "G-VALIDATION-COVERAGE": "partial: full semantic denominator reviewed, G1–G4 and one bounded supplement; remaining P0 branches require other evidence"
+  }
+}

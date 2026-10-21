@@ -1,0 +1,284 @@
+{
+  "review_phase": "R19 final bounded supplement",
+  "candidate": {
+    "path": "dist/r19.html",
+    "sha256": "8cabb1d2c2914170a5b00dad56a7814bbb21e28fead38ecb59f894658cbcb7bf",
+    "bytes": 530254
+  },
+  "evaluator": "/root/finish_independent_criteria",
+  "exposure": "Informed independent evaluator: previously observed R15, R17 and R18; not a fresh-context or fully blind review.",
+  "conclusion": {
+    "status": "pass_in_bounded_scope",
+    "unresolved_substantive_issues_in_checked_scope": [],
+    "further_testing": "Stopped after agreed bounded recheck and report-integrity verification."
+  },
+  "source_finding": {
+    "id": "R18-V1",
+    "origin": "Root relay of independent first-look C; original discovery not attributed to this evaluator",
+    "original_evidence": "evidence/blind-r18-c/04-answer.png",
+    "description": "长对话标题从左侧历史栏进入回答区。",
+    "r19_status": "resolved_in_checked_sample",
+    "implementation_boundary": "Root supplied frozen change scope; evaluator did not read source or verify cross-version implementation diff."
+  },
+  "method": {
+    "browser": "133.0.6943.16",
+    "interaction": "Autonomous visible DOM controls, actual rendered text and screenshots; no internal state, candidate implementation, author patches or author test verdicts read.",
+    "network": "Local intercepted browser session only.",
+    "raw_trace": "evidence/independent/r19/natural-tasks.trace.json",
+    "trace_records": 19,
+    "product_action_attempts": 11,
+    "successful_product_actions": 11,
+    "tool_action_failures": [],
+    "browser_errors": [],
+    "step_numbering": "Zero-based trace indices. Tool pass records execution, not by itself task success."
+  },
+  "scope": {
+    "direct_r19": [
+      "Desktop long history title",
+      "Full question after switching and reopening",
+      "Citation → original → conversation return",
+      "Adjacent 390 px answer/history/reopen"
+    ],
+    "not_rerun": [
+      "R17 G1–G4 in full",
+      "R18 ten partial units, A25/S1 and F07",
+      "All 78 units or all P0 paths on R19"
+    ]
+  },
+  "synthetic_question": {
+    "text": "我明天要向第一次使用 Mote 的同事演示如何把一份会议笔记变成可以回查的资料。请结合已有资料，说明先保存什么、怎样找到原文、什么时候适合提问，以及如何分清资料、记忆和洞察；请给出可以核对的出处，并指出完成第一步后最自然的下一步。",
+    "character_count": 115,
+    "present_in_rendered_text_at_steps": {
+      "3": true,
+      "6": true,
+      "11": true,
+      "18": true
+    },
+    "interpretation": "Text checks supplement visible content, destinations and screenshots; they do not replace semantic judgment."
+  },
+  "checks": [
+    {
+      "id": "R19-V1-DESKTOP",
+      "status": "pass",
+      "steps": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "result": "1440 × 1000 下长对话摘要在左栏内换行和截断，没有进入回答区；主区域完整问题与示例答案可读。",
+      "evidence": [
+        "evidence/independent/r19/long-question-desktop-answer-viewport.png",
+        "evidence/independent/r19/long-question-desktop-answer.json"
+      ]
+    },
+    {
+      "id": "R19-V1-REOPEN",
+      "status": "pass",
+      "steps": [
+        5,
+        6
+      ],
+      "result": "切换到已有对话后从历史重新打开长问题，完整问题保留。",
+      "evidence": [
+        "evidence/independent/r19/natural-tasks.trace.json"
+      ]
+    },
+    {
+      "id": "R19-CITATION-RETURN",
+      "status": "pass",
+      "steps": [
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "result": "打开产品评审引用与原始内容，关闭弹窗并返回对话后，完整问题、示例答案和引用保留。",
+      "evidence": [
+        "evidence/independent/r19/long-question-original-viewport.png",
+        "evidence/independent/r19/long-question-original.json",
+        "evidence/independent/r19/long-question-desktop-returned-viewport.png",
+        "evidence/independent/r19/long-question-desktop-returned.json"
+      ]
+    },
+    {
+      "id": "R19-V1-MOBILE",
+      "status": "pass",
+      "steps": [
+        13,
+        14,
+        15,
+        16,
+        17,
+        18
+      ],
+      "result": "390 × 844 下问题、答案和历史条目正常换行，页面宽度 390；从历史重开后问题全文保留。",
+      "evidence": [
+        "evidence/independent/r19/long-question-mobile-answer-viewport.png",
+        "evidence/independent/r19/long-question-mobile-answer.json",
+        "evidence/independent/r19/long-question-mobile-history-viewport.png",
+        "evidence/independent/r19/long-question-mobile-history.json"
+      ]
+    }
+  ],
+  "semantic_evidence_carried": {
+    "matrix": "reports/independent-feature-review-r18.json",
+    "matrix_candidate_sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+    "latest_matrix_alias": "reports/independent-feature-review.json",
+    "families": 20,
+    "units": 78,
+    "primary_semantic_support_pass": 78,
+    "r18_direct_issue_units": 11,
+    "r17_carry_forward_units": 67,
+    "r18_adjacent_family": "F07",
+    "r19_full_matrix_retest": false,
+    "boundary": "Cumulative primary-home, next-step and visible-semantic support only. Individual unit limits remain. A12 has one capture sample; multi-capture grouping and ordering are unproven."
+  },
+  "criteria": [
+    {
+      "id": "C1",
+      "status": "pass",
+      "basis": "R17 首屏证据带入；不是新上下文人数证明。",
+      "evidence_origin": "R18 cumulative judgment; original R17 evidence retained where stated"
+    },
+    {
+      "id": "C2",
+      "status": "pass",
+      "basis": "R17 78 主要归属加 R18 10 项细节复核；仅主要语义，不宣称全分支端到端覆盖。",
+      "evidence_origin": "R18 cumulative judgment; original R17 evidence retained where stated"
+    },
+    {
+      "id": "C3",
+      "status": "pass",
+      "basis": "R17 G1/G4 证据保留，R18 未重跑。",
+      "evidence_origin": "R18 cumulative judgment; original R17 evidence retained where stated"
+    },
+    {
+      "id": "C4",
+      "status": "pass",
+      "basis": "R17 原有通过路径保留；R18 实际消除 S1，并核对设备和时间范围。",
+      "evidence_origin": "R18 cumulative judgment; original R17 evidence retained where stated",
+      "r19_supplement": "引用去向和返回对话标签与实际结果一致。"
+    },
+    {
+      "id": "C5",
+      "status": "pass",
+      "basis": "R17 G2 证据保留，R18 未重跑；A26 新预览原文往返另有 R18 证据。",
+      "evidence_origin": "R18 cumulative judgment; original R17 evidence retained where stated",
+      "r19_supplement": "长问题的引用→原始内容→返回保持完整问题与示例答案。"
+    },
+    {
+      "id": "C6",
+      "status": "pass",
+      "basis": "R17 G3 保留，R18 来源关系、全局发送/来源暂停独立范围补证。",
+      "evidence_origin": "R18 cumulative judgment; original R17 evidence retained where stated"
+    },
+    {
+      "id": "C7",
+      "status": "pass_in_bounded_scope",
+      "basis": "R17 往返结果保留；R18 本次设置离页、时间回看与预览往返无新阻碍。未执行分支仍未验证。",
+      "evidence_origin": "R18 cumulative judgment; original R17 evidence retained where stated",
+      "r19_supplement": "历史切换、原文往返与 390 px 历史重开未发现新阻碍。"
+    }
+  ],
+  "scores": {
+    "Design": {
+      "weight": 20,
+      "score": 3,
+      "basis": "R18 cumulative score retained; no full R19 retest",
+      "r18_evidence": [
+        "evidence/r17/visuals/index.json",
+        "evidence/independent/r18/a02-current-import-image-scheme.png",
+        "evidence/independent/r18/c01-session-retention-returned.png"
+      ]
+    },
+    "Originality": {
+      "weight": 10,
+      "score": 3,
+      "basis": "R18 cumulative score retained; no full R19 retest",
+      "r18_evidence": [
+        "evidence/r17/visuals/desktop-memory.png",
+        "evidence/r17/feature-coverage.json",
+        "evidence/independent/r17/g2-original-evidence.png"
+      ]
+    },
+    "Craft": {
+      "weight": 15,
+      "score": 3,
+      "basis": "R18 cumulative score retained; no full R19 retest",
+      "r18_evidence": [
+        "evidence/independent/r18/a26-mobile-fresh-form.png",
+        "evidence/independent/r18/a26-mobile-fresh-preview.png",
+        "evidence/independent/r18/a16-valid-history-relationship.png"
+      ],
+      "r19_evidence": [
+        "evidence/independent/r19/long-question-desktop-answer-viewport.png",
+        "evidence/independent/r19/long-question-mobile-history-viewport.png"
+      ]
+    },
+    "Functionality": {
+      "weight": 30,
+      "score": 3,
+      "basis": "R18 cumulative score retained; no full R19 retest",
+      "r18_evidence": [
+        "evidence/independent/r18/natural-tasks.trace.json",
+        "evidence/independent/r17/natural-tasks.trace.json"
+      ],
+      "r19_evidence": [
+        "evidence/independent/r19/natural-tasks.trace.json"
+      ]
+    },
+    "Clarity": {
+      "weight": 25,
+      "score": 3,
+      "basis": "R18 cumulative score retained; no full R19 retest",
+      "r18_evidence": [
+        "evidence/independent/r18/natural-tasks.trace.json",
+        "evidence/independent/r18/a13-sampling-scope.png",
+        "evidence/independent/r18/a16-valid-history-relationship.png"
+      ],
+      "r19_evidence": [
+        "evidence/independent/r19/long-question-desktop-returned-viewport.png"
+      ]
+    }
+  },
+  "weighted_score": 75.0,
+  "score_rules": {
+    "scale": "0–4 integers",
+    "weights": {
+      "Design": 20,
+      "Originality": 10,
+      "Craft": 15,
+      "Functionality": 30,
+      "Clarity": 25
+    },
+    "interpretation": "All five scores remain 3. A narrow correction does not justify 4; specific failures cannot be overridden by total."
+  },
+  "gates_in_this_review": {
+    "G-COMPREHENSION": "not_verified_by_this_evaluator: fresh-context evidence belongs to root aggregation",
+    "G-DISCOVERABILITY": "not_verified_by_this_evaluator: informed evaluator does not replace new users",
+    "G-P0-COMPLETION": "partial_evidence: R17 G1–G4 retained, R18 bounded fixes and R19 adjacent conversation return; other P0 paths require other records",
+    "G-FEATURE-COVERAGE": "pass_primary_semantic_scope: 20 families / 78 units cumulative with R17 and R18 evidence identities",
+    "G-NO-CONFLICT": "pass_in_bounded_semantic_scope: R18 S1 resolution retained; R19 examined links and question retention consistent",
+    "G-NO-BLOCKER": "pass_in_executed_scope: no task dead end; long-title intrusion resolved in checked R19 sample",
+    "G-DIMENSION-FLOORS": "pass: all own scores 3",
+    "G-VALIDATION-COVERAGE": "partial_by_this_evaluator: cumulative semantic review and bounded traces, not complete current-candidate P0 retest",
+    "root_aggregation_boundary": "Final gate counts belong to root and may combine other independent evidence; this supplement does not claim those additional tests."
+  },
+  "preserved_history": {
+    "r17": "reports/independent-review-r17.md",
+    "r18": "reports/independent-review-r18.md",
+    "r18_tool_incident": "R18-EVAL-INPUT-1 remains invalid test input, not a product failure or repair; valid later input was separately verified.",
+    "no_relabeling": "R17 and R18 records and matrices remain frozen at original candidate identity."
+  },
+  "production_limits": [
+    "Real backend and models",
+    "Actual authorization and external sync",
+    "Real upload, capture and processing",
+    "Cross-refresh persistence and actual session retention",
+    "Complete keyboard, contrast and assistive technology audit"
+  ],
+  "report": "reports/independent-review-r19.md"
+}

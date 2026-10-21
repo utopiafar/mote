@@ -1,0 +1,25 @@
+{
+  "scope": "Generated HTML mock UI only; rendered controls, no internal app state; no live services",
+  "candidate": "r18.html",
+  "sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+  "browser": "Chromium 133.0.6943.16",
+  "created_at": "2026-10-21T02:40:11.476Z",
+  "scenarios": [
+    {
+      "name": "memory-full-content",
+      "status": "passed",
+      "steps": 9
+    },
+    {
+      "name": "note-offline-sync",
+      "status": "passed",
+      "steps": 11
+    },
+    {
+      "name": "account-workspace-return",
+      "status": "passed",
+      "steps": 7
+    }
+  ],
+  "all_passed": true
+}

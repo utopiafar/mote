@@ -1,0 +1,2409 @@
+{
+  "input": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/work/interface-states.html",
+  "executed": [
+    {
+      "route": "notes",
+      "action": "attach",
+      "errors": []
+    },
+    {
+      "route": "notes",
+      "action": "save-note",
+      "errors": []
+    },
+    {
+      "route": "import",
+      "action": "import-origin",
+      "errors": []
+    },
+    {
+      "route": "import",
+      "action": "choose-file",
+      "errors": []
+    },
+    {
+      "route": "imports",
+      "action": "new-import",
+      "errors": []
+    },
+    {
+      "route": "imports",
+      "action": "delete-import",
+      "errors": []
+    },
+    {
+      "route": "imports",
+      "action": "resume-import",
+      "errors": []
+    },
+    {
+      "route": "sources",
+      "action": "source-add",
+      "errors": []
+    },
+    {
+      "route": "setup/nas",
+      "action": "save-source",
+      "errors": []
+    },
+    {
+      "route": "setup/google",
+      "action": "save-source",
+      "errors": []
+    },
+    {
+      "route": "setup/gmail",
+      "action": "save-source",
+      "errors": []
+    },
+    {
+      "route": "setup/mcp",
+      "action": "preview-mcp",
+      "errors": []
+    },
+    {
+      "route": "setup/mcp",
+      "action": "save-source",
+      "errors": []
+    },
+    {
+      "route": "setup/lark",
+      "action": "save-source",
+      "errors": []
+    },
+    {
+      "route": "setup/lark",
+      "action": "pause-source",
+      "errors": []
+    },
+    {
+      "route": "library/sources",
+      "action": "source-versions",
+      "errors": []
+    },
+    {
+      "route": "today",
+      "action": "check-todo",
+      "errors": []
+    },
+    {
+      "route": "today",
+      "action": "manage-todo",
+      "errors": []
+    },
+    {
+      "route": "today",
+      "action": "add-todo",
+      "errors": []
+    },
+    {
+      "route": "devices",
+      "action": "reauthorize-device",
+      "errors": []
+    },
+    {
+      "route": "setup/device",
+      "action": "connect-device",
+      "errors": []
+    },
+    {
+      "route": "access",
+      "action": "grant-info",
+      "errors": []
+    },
+    {
+      "route": "access",
+      "action": "grant-revoke",
+      "errors": []
+    },
+    {
+      "route": "access",
+      "action": "grant-new",
+      "errors": []
+    },
+    {
+      "route": "material/m1",
+      "action": "copy-material",
+      "errors": []
+    },
+    {
+      "route": "material/m1",
+      "action": "material-more",
+      "errors": []
+    },
+    {
+      "route": "material/m1",
+      "action": "original",
+      "errors": []
+    },
+    {
+      "route": "material/m1",
+      "action": "ask-material",
+      "errors": []
+    },
+    {
+      "route": "material/m1",
+      "action": "material-background",
+      "errors": []
+    },
+    {
+      "route": "material/m1",
+      "action": "material-memory",
+      "errors": []
+    },
+    {
+      "route": "material/m1",
+      "action": "edit-note",
+      "errors": []
+    },
+    {
+      "route": "library/raw",
+      "action": "original",
+      "errors": []
+    },
+    {
+      "route": "library/raw",
+      "action": "delete-record",
+      "errors": []
+    },
+    {
+      "route": "ask",
+      "action": "new-chat",
+      "errors": []
+    },
+    {
+      "route": "ask",
+      "action": "open-chat",
+      "errors": []
+    },
+    {
+      "route": "ask",
+      "action": "prompt",
+      "errors": []
+    },
+    {
+      "route": "ask",
+      "action": "attach-ask-image",
+      "errors": []
+    },
+    {
+      "route": "ask",
+      "action": "mock-missing",
+      "errors": []
+    },
+    {
+      "route": "ask",
+      "action": "send-ask",
+      "errors": []
+    },
+    {
+      "route": "memories",
+      "action": "memory-history",
+      "errors": []
+    },
+    {
+      "route": "memories",
+      "action": "manual-memory",
+      "errors": []
+    },
+    {
+      "route": "memories",
+      "action": "correct-memory",
+      "errors": []
+    },
+    {
+      "route": "memories",
+      "action": "continue-memory",
+      "errors": []
+    },
+    {
+      "route": "memories",
+      "action": "memory-more",
+      "errors": []
+    },
+    {
+      "route": "ask/clarifications",
+      "action": "answer-clarification",
+      "errors": []
+    },
+    {
+      "route": "settings/memory-strategy",
+      "action": "save-config",
+      "errors": []
+    },
+    {
+      "route": "insights",
+      "action": "generate-insight",
+      "errors": []
+    },
+    {
+      "route": "activity",
+      "action": "activity-tab",
+      "errors": []
+    },
+    {
+      "route": "activity",
+      "action": "authorize-task",
+      "errors": []
+    },
+    {
+      "route": "activity",
+      "action": "cancel-task",
+      "errors": []
+    },
+    {
+      "route": "activity/details",
+      "action": "authorize-task",
+      "errors": []
+    },
+    {
+      "route": "activity/details",
+      "action": "retry-source-check",
+      "errors": []
+    },
+    {
+      "route": "todos",
+      "action": "add-todo",
+      "errors": []
+    },
+    {
+      "route": "todos",
+      "action": "check-todo",
+      "errors": []
+    },
+    {
+      "route": "todos",
+      "action": "manage-todo",
+      "errors": []
+    },
+    {
+      "route": "todos/schedule",
+      "action": "review-calendar",
+      "errors": []
+    },
+    {
+      "route": "todos/schedule",
+      "action": "ignore-calendar",
+      "errors": []
+    },
+    {
+      "route": "library/snippets",
+      "action": "original",
+      "errors": []
+    },
+    {
+      "route": "library/snippets",
+      "action": "delete-record",
+      "errors": []
+    },
+    {
+      "route": "settings/storage",
+      "action": "save-storage",
+      "errors": []
+    },
+    {
+      "route": "settings/storage",
+      "action": "export-data",
+      "errors": []
+    },
+    {
+      "route": "settings/storage",
+      "action": "restore-backup",
+      "errors": []
+    },
+    {
+      "route": "settings/storage",
+      "action": "rebuild-index",
+      "errors": []
+    },
+    {
+      "route": "settings/usage",
+      "action": "usage-reset",
+      "errors": []
+    },
+    {
+      "route": "settings/usage",
+      "action": "usage-drill",
+      "errors": []
+    },
+    {
+      "route": "settings/usage",
+      "action": "usage-request",
+      "errors": []
+    },
+    {
+      "route": "settings/usage",
+      "action": "usage-page",
+      "errors": []
+    },
+    {
+      "route": "settings/system",
+      "action": "refresh-system",
+      "errors": []
+    },
+    {
+      "route": "settings/providers",
+      "action": "clone-provider",
+      "errors": []
+    },
+    {
+      "route": "settings/providers",
+      "action": "save-config",
+      "errors": []
+    },
+    {
+      "route": "settings/providers",
+      "action": "test-provider",
+      "errors": []
+    },
+    {
+      "route": "settings/assignments",
+      "action": "save-config",
+      "errors": []
+    },
+    {
+      "route": "settings/images",
+      "action": "save-config",
+      "errors": []
+    },
+    {
+      "route": "library/files",
+      "action": "reprocess-file",
+      "errors": []
+    },
+    {
+      "route": "library/files",
+      "action": "edit-transcript",
+      "errors": []
+    },
+    {
+      "route": "settings/file-processing",
+      "action": "install-voice",
+      "errors": []
+    },
+    {
+      "route": "settings/file-processing",
+      "action": "save-config",
+      "errors": []
+    },
+    {
+      "route": "settings/file-processing",
+      "action": "preview-file-rules",
+      "errors": []
+    },
+    {
+      "route": "settings/image-history",
+      "action": "preview-image-batch",
+      "errors": []
+    },
+    {
+      "route": "settings/concurrency",
+      "action": "save-config",
+      "errors": []
+    },
+    {
+      "route": "settings/advanced",
+      "action": "save-config",
+      "errors": []
+    },
+    {
+      "route": "settings/advanced",
+      "action": "preview-deployment",
+      "errors": []
+    },
+    {
+      "route": "settings/advanced",
+      "action": "refresh-deployment",
+      "errors": []
+    },
+    {
+      "route": "settings/plugins",
+      "action": "toggle-memory",
+      "errors": []
+    },
+    {
+      "route": "settings/plugins",
+      "action": "stop-memory",
+      "errors": []
+    },
+    {
+      "route": "settings/plugins",
+      "action": "plugin-switch",
+      "errors": []
+    },
+    {
+      "route": "settings/plugins",
+      "action": "plugins-catalog",
+      "errors": []
+    },
+    {
+      "route": "settings/plugins",
+      "action": "plugin-capabilities",
+      "errors": []
+    },
+    {
+      "route": "settings/account",
+      "action": "logout-demo",
+      "errors": []
+    },
+    {
+      "route": "settings/help",
+      "action": "export-diagnostics",
+      "errors": []
+    },
+    {
+      "route": "settings/help",
+      "action": "maintenance-guide",
+      "errors": []
+    },
+    {
+      "route": "settings/help",
+      "action": "check-versions",
+      "errors": []
+    },
+    {
+      "route": "settings/agent-scope",
+      "action": "preview-context",
+      "errors": []
+    },
+    {
+      "route": "settings/agent-events",
+      "action": "inspect-read",
+      "errors": []
+    },
+    {
+      "route": "settings/diagnostics",
+      "action": "diagnostic-log",
+      "errors": []
+    },
+    {
+      "route": "settings/diagnostics",
+      "action": "export-diagnostics",
+      "errors": []
+    },
+    {
+      "route": "settings/diagnostics",
+      "action": "save-diagnostic",
+      "errors": []
+    },
+    {
+      "route": "settings/diagnostics",
+      "action": "feedback-save",
+      "errors": []
+    },
+    {
+      "route": "setup/screen",
+      "action": "allow-screen",
+      "errors": []
+    },
+    {
+      "route": "setup/screen",
+      "action": "deny-screen",
+      "errors": []
+    },
+    {
+      "route": "setup/screen",
+      "action": "save-source",
+      "errors": []
+    },
+    {
+      "route": "setup/screen",
+      "action": "pause-source",
+      "errors": []
+    },
+    {
+      "route": "setup/folder",
+      "action": "save-source",
+      "errors": []
+    },
+    {
+      "route": "setup/folder",
+      "action": "pause-source",
+      "errors": []
+    },
+    {
+      "route": "settings/usage-prices",
+      "action": "save-prices",
+      "errors": []
+    }
+  ],
+  "unique": [
+    {
+      "text": "林",
+      "originalText": "林",
+      "scenario": "notes → attach",
+      "tag": "span",
+      "class": "avatar"
+    },
+    {
+      "text": "林同学",
+      "originalText": "林同学",
+      "scenario": "notes → attach",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "添加已有附件",
+      "originalText": "添加已有附件",
+      "scenario": "notes → attach",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "选择一份示例附件，与当前文字一起保存。",
+      "originalText": "选择一份示例附件，与当前文字一起保存。",
+      "scenario": "notes → attach",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "产品草图.png",
+      "originalText": "产品草图.png",
+      "scenario": "notes → attach",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "讨论录音.wav",
+      "originalText": "讨论录音.wav",
+      "scenario": "notes → attach",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "关闭对话框",
+      "scenario": "notes → attach",
+      "attr": "aria-label"
+    },
+    {
+      "text": "先写一点内容或添加附件。",
+      "originalText": "先写一点内容或添加附件。",
+      "scenario": "notes → save-note",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "用预置资料体验导入后的界面。",
+      "originalText": "用预置资料体验导入后的界面。",
+      "scenario": "import → choose-file",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "研究资料.md",
+      "originalText": "研究资料.md",
+      "scenario": "import → choose-file",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "项目讨论.wav",
+      "originalText": "项目讨论.wav",
+      "scenario": "import → choose-file",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "资料归档.zip",
+      "originalText": "资料归档.zip",
+      "scenario": "import → choose-file",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "研究资料文件夹",
+      "originalText": "研究资料文件夹",
+      "scenario": "import → choose-file",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "会议录音.wav",
+      "originalText": "会议录音.wav",
+      "scenario": "imports → delete-import",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "确认操作",
+      "originalText": "确认操作",
+      "scenario": "imports → delete-import",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "删除“研究资料.md”这次导入及其生成的 1 份资料。外部原件与其他导入保留。",
+      "originalText": "删除“研究资料.md”这次导入及其生成的 1 份资料。外部原件与其他导入保留。",
+      "scenario": "imports → delete-import",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "确认",
+      "originalText": "确认",
+      "scenario": "imports → delete-import",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "核对这次导入",
+      "originalText": "核对这次导入",
+      "scenario": "imports → resume-import",
+      "tag": "h1",
+      "class": ""
+    },
+    {
+      "text": "资料归档.zip · 原件已保存，补充背景后继续。",
+      "originalText": "资料归档.zip · 原件已保存，补充背景后继续。",
+      "scenario": "imports → resume-import",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "返回上传与处理",
+      "originalText": "返回上传与处理",
+      "scenario": "imports → resume-import",
+      "tag": "button",
+      "class": "btn subtle"
+    },
+    {
+      "text": "原件已保存",
+      "originalText": "原件已保存",
+      "scenario": "imports → resume-import",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "核对内容",
+      "originalText": "核对内容",
+      "scenario": "imports → resume-import",
+      "tag": "span",
+      "class": "active"
+    },
+    {
+      "text": "资料主题",
+      "originalText": "资料主题",
+      "scenario": "imports → resume-import",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "背景与关系",
+      "originalText": "背景与关系",
+      "scenario": "imports → resume-import",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "归档预览：研究方法.md、阅读记录.md、访谈摘要.md、来源清单.md。共 4 份资料。",
+      "originalText": "归档预览：研究方法.md、阅读记录.md、访谈摘要.md、来源清单.md。共 4 份资料。",
+      "scenario": "imports → resume-import",
+      "tag": "div",
+      "class": "notice"
+    },
+    {
+      "text": "当前只核对这次导入，原文件和其他资料不受影响。",
+      "originalText": "当前只核对这次导入，原文件和其他资料不受影响。",
+      "scenario": "imports → resume-import",
+      "tag": "div",
+      "class": "notice"
+    },
+    {
+      "text": "确认并继续整理",
+      "originalText": "确认并继续整理",
+      "scenario": "imports → resume-import",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "稍后再处理",
+      "originalText": "稍后再处理",
+      "scenario": "imports → resume-import",
+      "tag": "button",
+      "class": "btn subtle"
+    },
+    {
+      "text": "说明这份资料与什么有关",
+      "scenario": "imports → resume-import",
+      "attr": "placeholder"
+    },
+    {
+      "text": "设置已保存，可以在来源中查看。",
+      "originalText": "设置已保存，可以在来源中查看。",
+      "scenario": "setup/nas → save-source",
+      "tag": "div",
+      "class": ""
+    },
+    {
+      "text": "来源设置已保存。",
+      "originalText": "来源设置已保存。",
+      "scenario": "setup/nas → save-source",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "研究方法.md",
+      "originalText": "研究方法.md",
+      "scenario": "setup/mcp → preview-mcp",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "外部 MCP 服务 · 文本资源",
+      "originalText": "外部 MCP 服务 · 文本资源",
+      "scenario": "setup/mcp → preview-mcp",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "先记录研究问题，再保留资料出处，最后整理观察结果。",
+      "originalText": "先记录研究问题，再保留资料出处，最后整理观察结果。",
+      "scenario": "setup/mcp → preview-mcp",
+      "tag": "div",
+      "class": "evidence-box"
+    },
+    {
+      "text": "授权已更新，正在继续同步原有资料。",
+      "originalText": "授权已更新，正在继续同步原有资料。",
+      "scenario": "setup/lark → save-source",
+      "tag": "div",
+      "class": ""
+    },
+    {
+      "text": "授权已更新，继续原来的同步。",
+      "originalText": "授权已更新，继续原来的同步。",
+      "scenario": "setup/lark → save-source",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "此来源已暂停，已保存资料仍可阅读。",
+      "originalText": "此来源已暂停，已保存资料仍可阅读。",
+      "scenario": "setup/lark → pause-source",
+      "tag": "div",
+      "class": "notice warn"
+    },
+    {
+      "text": "恢复此来源",
+      "originalText": "恢复此来源",
+      "scenario": "setup/lark → pause-source",
+      "tag": "button",
+      "class": "btn subtle"
+    },
+    {
+      "text": "研究资料",
+      "originalText": "研究资料",
+      "scenario": "library/sources → source-versions",
+      "tag": "option",
+      "class": ""
+    },
+    {
+      "text": "Mac 屏幕",
+      "originalText": "Mac 屏幕",
+      "scenario": "library/sources → source-versions",
+      "tag": "option",
+      "class": ""
+    },
+    {
+      "text": "产品评审 · 让第一步更清楚",
+      "originalText": "产品评审 · 让第一步更清楚",
+      "scenario": "library/sources → source-versions",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "长期记忆系统调研笔记",
+      "originalText": "长期记忆系统调研笔记",
+      "scenario": "library/sources → source-versions",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "研究资料 · 文件 / 研究资料/记忆系统.md",
+      "originalText": "研究资料 · 文件 / 研究资料/记忆系统.md",
+      "scenario": "library/sources → source-versions",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "Mote / 来源目录整理",
+      "originalText": "Mote / 来源目录整理",
+      "scenario": "library/sources → source-versions",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "Codex sessions · Codex / mote / 会话记录",
+      "originalText": "Codex 会话 · Codex / mote / 会话记录",
+      "scenario": "library/sources → source-versions",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "周四设计评审",
+      "originalText": "周四设计评审",
+      "scenario": "library/sources → source-versions",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "Google Calendar · Google Calendar / 工作日历",
+      "originalText": "Google 日历 · Google Calendar / 工作日历",
+      "scenario": "library/sources → source-versions",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "项目讨论录音 · 本周计划",
+      "originalText": "项目讨论录音 · 本周计划",
+      "scenario": "library/sources → source-versions",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "Lark recordings · 飞书妙记 / 项目讨论",
+      "originalText": "飞书录音 · 飞书妙记 / 项目讨论",
+      "scenario": "library/sources → source-versions",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "文章摘录 · 渐进式披露",
+      "originalText": "文章摘录 · 渐进式披露",
+      "scenario": "library/sources → source-versions",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "当前版本",
+      "originalText": "当前版本",
+      "scenario": "library/sources → source-versions",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "Today 09:12 · 正文可阅读",
+      "originalText": "今天 09:12 · 正文可阅读",
+      "scenario": "library/sources → source-versions",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "阅读这个版本",
+      "originalText": "阅读这个版本",
+      "scenario": "library/sources → source-versions",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "“第一轮设计”指哪个阶段？",
+      "originalText": "“第一轮设计”指哪个阶段？",
+      "scenario": "today → check-todo",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "核对移动端的添加入口",
+      "originalText": "核对移动端的添加入口",
+      "scenario": "today → check-todo",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "整理这周保存的研究资料",
+      "originalText": "整理这周保存的研究资料",
+      "scenario": "today → check-todo",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "周四设计评审 · Oct 22 14:00–15:00",
+      "originalText": "周四设计评审 · 10月22日 14:00–15:00",
+      "scenario": "today → check-todo",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "研究资料 · Yesterday 18:34",
+      "originalText": "研究资料 · 昨天 18:34",
+      "scenario": "today → check-todo",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "管理待办",
+      "originalText": "管理待办",
+      "scenario": "today → manage-todo",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "请输入待办内容。",
+      "originalText": "请输入待办内容。",
+      "scenario": "today → add-todo",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "我的 Mac",
+      "originalText": "我的 Mac",
+      "scenario": "devices → reauthorize-device",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "授权已更新",
+      "originalText": "授权已更新",
+      "scenario": "devices → reauthorize-device",
+      "tag": "span",
+      "class": "tag green"
+    },
+    {
+      "text": "个人助手",
+      "originalText": "个人助手",
+      "scenario": "access → grant-info",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "个人助手 · 连接信息",
+      "originalText": "个人助手 · 连接信息",
+      "scenario": "access → grant-info",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "仅允许读取 资料与记忆",
+      "originalText": "仅允许读取 资料与记忆",
+      "scenario": "access → grant-info",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "示例地址：https://mote.example.invalid/read",
+      "originalText": "示例地址：https://mote.example.invalid/read",
+      "scenario": "access → grant-info",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "示例凭据：demo-read-only-grant-1",
+      "originalText": "示例凭据：demo-read-only-grant-1",
+      "scenario": "access → grant-info",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "连接具有只读权限，可随时在授权页撤销。",
+      "originalText": "连接具有只读权限，可随时在授权页撤销。",
+      "scenario": "access → grant-info",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "撤销这个助手的只读连接。其他授权与已保存资料保留。",
+      "originalText": "撤销这个助手的只读连接。其他授权与已保存资料保留。",
+      "scenario": "access → grant-revoke",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "为一个助手命名，并明确允许读取的范围。",
+      "originalText": "为一个助手命名，并明确允许读取的范围。",
+      "scenario": "access → grant-new",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "仅资料",
+      "originalText": "仅资料",
+      "scenario": "access → grant-new",
+      "tag": "option",
+      "class": ""
+    },
+    {
+      "text": "资料与记忆",
+      "originalText": "资料与记忆",
+      "scenario": "access → grant-new",
+      "tag": "option",
+      "class": ""
+    },
+    {
+      "text": "资料、记忆与洞察",
+      "originalText": "资料、记忆与洞察",
+      "scenario": "access → grant-new",
+      "tag": "option",
+      "class": ""
+    },
+    {
+      "text": "创建这个只读连接",
+      "originalText": "创建这个只读连接",
+      "scenario": "access → grant-new",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "正文已准备好，可在原型中选取复制。",
+      "originalText": "正文已准备好，可在原型中选取复制。",
+      "scenario": "material/m1 → copy-material",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "资料操作",
+      "originalText": "资料操作",
+      "scenario": "material/m1 → material-more",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "管理这份资料。",
+      "originalText": "管理这份资料。",
+      "scenario": "material/m1 → material-more",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "导出正文",
+      "originalText": "导出正文",
+      "scenario": "material/m1 → material-more",
+      "tag": "button",
+      "class": "btn "
+    },
+    {
+      "text": "删除演示副本",
+      "originalText": "删除演示副本",
+      "scenario": "material/m1 → material-more",
+      "tag": "button",
+      "class": "btn danger"
+    },
+    {
+      "text": "原始内容",
+      "originalText": "原始内容",
+      "scenario": "material/m1 → original",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "保留内容的来源、时间与原始记录。",
+      "originalText": "保留内容的来源、时间与原始记录。",
+      "scenario": "material/m1 → original",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "今天的产品评审围绕新用户的第一步展开。\n最重要的事情是让输入方式清楚：一次导入文件，或持续同步一个文件夹。已有资料应该随时可读，用户也可以直接提问。\n下次评审：周四下午核对三端的入口和文案。",
+      "originalText": "今天的产品评审围绕新用户的第一步展开。\n最重要的事情是让输入方式清楚：一次导入文件，或持续同步一个文件夹。已有资料应该随时可读，用户也可以直接提问。\n下次评审：周四下午核对三端的入口和文案。",
+      "scenario": "material/m1 → original",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "这周有哪些值得跟进的事？",
+      "originalText": "这周有哪些值得跟进的事？",
+      "scenario": "material/m1 → ask-material",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "资料与记忆有什么区别？",
+      "originalText": "资料与记忆有什么区别？",
+      "scenario": "material/m1 → ask-material",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "只基于这份资料提问",
+      "originalText": "只基于这份资料提问",
+      "scenario": "material/m1 → ask-material",
+      "tag": "strong",
+      "class": ""
+    },
+    {
+      "text": "回到资料",
+      "originalText": "回到资料",
+      "scenario": "material/m1 → ask-material",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "补充资料背景",
+      "originalText": "补充资料背景",
+      "scenario": "material/m1 → material-background",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "说明它与其他资料的关系，原始正文仍保留。",
+      "originalText": "说明它与其他资料的关系，原始正文仍保留。",
+      "scenario": "material/m1 → material-background",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "保存背景",
+      "originalText": "保存背景",
+      "scenario": "material/m1 → material-background",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "选择具体资料，说明这次希望记住什么。",
+      "originalText": "选择具体资料，说明这次希望记住什么。",
+      "scenario": "material/m1 → material-memory",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "例如：记住评审决定和后续关注点",
+      "scenario": "material/m1 → material-memory",
+      "attr": "placeholder"
+    },
+    {
+      "text": "已保存到资料库",
+      "originalText": "已保存到资料库",
+      "scenario": "material/m1 → edit-note",
+      "tag": "span",
+      "class": "small muted"
+    },
+    {
+      "text": "笔记已保存。",
+      "originalText": "笔记已保存。",
+      "scenario": "material/m1 → edit-note",
+      "tag": "div",
+      "class": ""
+    },
+    {
+      "text": "打开这条笔记",
+      "originalText": "打开这条笔记",
+      "scenario": "material/m1 → edit-note",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "界面可以首先呈现少量高频任务，再让用户按需探索更多能力。\n来源：示例浏览器页面的屏幕记录。\n记录中保留原始时间、应用和来源。",
+      "originalText": "界面可以首先呈现少量高频任务，再让用户按需探索更多能力。\n来源：示例浏览器页面的屏幕记录。\n记录中保留原始时间、应用和来源。",
+      "scenario": "library/raw → original",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "屏幕记录 / 浏览器",
+      "originalText": "屏幕记录 / 浏览器",
+      "scenario": "library/raw → original",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "移除这条原始采集记录；已整理资料仍保留。",
+      "originalText": "移除这条原始采集记录；已整理资料仍保留。",
+      "scenario": "library/raw → delete-record",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "根据已保存的资料，有两件事值得跟进：",
+      "originalText": "根据已保存的资料，有两件事值得跟进：",
+      "scenario": "ask → open-chat",
+      "tag": "strong",
+      "class": ""
+    },
+    {
+      "text": "1. 核对移动端的添加入口，让文件夹同步和屏幕记录同样容易发现。",
+      "originalText": "1. 核对移动端的添加入口，让文件夹同步和屏幕记录同样容易发现。",
+      "scenario": "ask → open-chat",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "2. 周四设计评审时，检查资料库的首屏说明和各类来源的设置路径。",
+      "originalText": "2. 周四设计评审时，检查资料库的首屏说明和各类来源的设置路径。",
+      "scenario": "ask → open-chat",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "产品评审记录 · 查看引用",
+      "originalText": "产品评审记录 · 查看引用",
+      "scenario": "ask → open-chat",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "周四设计评审 · 查看引用",
+      "originalText": "周四设计评审 · 查看引用",
+      "scenario": "ask → open-chat",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "为本次提问附加图片",
+      "originalText": "为本次提问附加图片",
+      "scenario": "ask → attach-ask-image",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "选择一张示例图片，随问题一起提交。",
+      "originalText": "选择一张示例图片，随问题一起提交。",
+      "scenario": "ask → attach-ask-image",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "已切换为未配置模型状态。",
+      "originalText": "已切换为未配置模型状态。",
+      "scenario": "ask → mock-missing",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "先输入你想了解的问题。",
+      "originalText": "先输入你想了解的问题。",
+      "scenario": "ask → send-ask",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "产品设计偏好",
+      "originalText": "产品设计偏好",
+      "scenario": "memories → memory-history",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "偏好入口简洁、按任务组织的界面。复杂设置放在相关上下文里。",
+      "originalText": "偏好入口简洁、按任务组织的界面。复杂设置放在相关上下文里。",
+      "scenario": "memories → memory-history",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "所有记忆的修改记录",
+      "originalText": "所有记忆的修改记录",
+      "scenario": "memories → memory-history",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "按记忆名称与依据分别查看，初次整理和人工纠正都保留。",
+      "originalText": "按记忆名称与依据分别查看，初次整理和人工纠正都保留。",
+      "scenario": "memories → memory-history",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "最初整理：偏好入口简洁、按任务组织的界面。",
+      "originalText": "最初整理：偏好入口简洁、按任务组织的界面。",
+      "scenario": "memories → memory-history",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "纠正记忆",
+      "originalText": "纠正记忆",
+      "scenario": "memories → correct-memory",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "写下准确的内容，保留原文依据。",
+      "originalText": "写下准确的内容，保留原文依据。",
+      "scenario": "memories → correct-memory",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "纠正后的内容",
+      "originalText": "纠正后的内容",
+      "scenario": "memories → correct-memory",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "保存纠正",
+      "originalText": "保存纠正",
+      "scenario": "memories → correct-memory",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "已基于当前记忆继续整理，保留已有纠正与出处。",
+      "originalText": "已基于当前记忆继续整理，保留已有纠正与出处。",
+      "scenario": "memories → continue-memory",
+      "tag": "div",
+      "class": "notice good section"
+    },
+    {
+      "text": "查看本次整理结果",
+      "originalText": "查看本次整理结果",
+      "scenario": "memories → continue-memory",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "本次继续整理已完成，可以查看结果与依据。",
+      "originalText": "本次继续整理已完成，可以查看结果与依据。",
+      "scenario": "memories → continue-memory",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "记忆操作",
+      "originalText": "记忆操作",
+      "scenario": "memories → memory-more",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "管理当前记忆，原始资料保留。",
+      "originalText": "管理当前记忆，原始资料保留。",
+      "scenario": "memories → memory-more",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "导出这条记忆",
+      "originalText": "导出这条记忆",
+      "scenario": "memories → memory-more",
+      "tag": "button",
+      "class": "btn "
+    },
+    {
+      "text": "删除记忆演示",
+      "originalText": "删除记忆演示",
+      "scenario": "memories → memory-more",
+      "tag": "button",
+      "class": "btn danger"
+    },
+    {
+      "text": "“第一轮设计”指的是哪个阶段？",
+      "originalText": "“第一轮设计”指的是哪个阶段？",
+      "scenario": "ask/clarifications → answer-clarification",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "From memory processing of “项目讨论录音 · 本周计划”.",
+      "originalText": "来自“项目讨论录音 · 本周计划”的记忆整理。",
+      "scenario": "ask/clarifications → answer-clarification",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "“本周完成第一轮设计，保留每一轮的改动和判断依据。”",
+      "originalText": "“本周完成第一轮设计，保留每一轮的改动和判断依据。”",
+      "scenario": "ask/clarifications → answer-clarification",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "请先补充你的说明。",
+      "originalText": "请先补充你的说明。",
+      "scenario": "ask/clarifications → answer-clarification",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "设置已保存。重新打开仍使用这些值。",
+      "originalText": "设置已保存。重新打开仍使用这些值。",
+      "scenario": "settings/memory-strategy → save-config",
+      "tag": "div",
+      "class": "section notice good"
+    },
+    {
+      "text": "最近 7 天的回顾",
+      "originalText": "最近 7 天的回顾",
+      "scenario": "insights → generate-insight",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "Oct 14–20日 · 按保存日期纳入 6 份资料",
+      "originalText": "10月14日–20日 · 按保存日期纳入 6 份资料",
+      "scenario": "insights → generate-insight",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "有原文依据",
+      "originalText": "有原文依据",
+      "scenario": "insights → generate-insight",
+      "tag": "span",
+      "class": "tag green"
+    },
+    {
+      "text": "这周有什么进展，接下来关注什么？",
+      "originalText": "这周有什么进展，接下来关注什么？",
+      "scenario": "insights → generate-insight",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "Yesterday的调研区分了原始资料、长期记忆与阶段洞察。今天的评审开始明确首次添加的步骤：一次导入文件，或持续同步文件夹。",
+      "originalText": "昨天的调研区分了原始资料、长期记忆与阶段洞察。今天的评审开始明确首次添加的步骤：一次导入文件，或持续同步文件夹。",
+      "scenario": "insights → generate-insight",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "周四下午核对三端的入口和文案。依据来自评审记录最后一段。",
+      "originalText": "周四下午核对三端的入口和文案。依据来自评审记录最后一段。",
+      "scenario": "insights → generate-insight",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "本次使用的资料 · 6 份",
+      "originalText": "本次使用的资料 · 6 份",
+      "scenario": "insights → generate-insight",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "Please clarify which stage “第一轮设计” refers to.",
+      "originalText": "请补充“第一轮设计”指哪个阶段。",
+      "scenario": "activity → activity-tab",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "本次整理已停止，原始资料仍然保留。",
+      "originalText": "本次整理已停止，原始资料仍然保留。",
+      "scenario": "activity → cancel-task",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "重新开始整理",
+      "originalText": "重新开始整理",
+      "scenario": "activity → cancel-task",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "返回工作详情",
+      "originalText": "返回工作详情",
+      "scenario": "activity/details → authorize-task",
+      "tag": "button",
+      "class": "btn subtle"
+    },
+    {
+      "text": "第 1 次检查：仍需重新授权。",
+      "originalText": "第 1 次检查：仍需重新授权。",
+      "scenario": "activity/details → retry-source-check",
+      "tag": "div",
+      "class": "section notice warn"
+    },
+    {
+      "text": "建议：周四设计评审",
+      "originalText": "建议：周四设计评审",
+      "scenario": "todos/schedule → review-calendar",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "确认时间、目标设备和日历。",
+      "originalText": "确认时间、目标设备和日历。",
+      "scenario": "todos/schedule → review-calendar",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "标题",
+      "originalText": "标题",
+      "scenario": "todos/schedule → review-calendar",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "开始时间",
+      "originalText": "开始时间",
+      "scenario": "todos/schedule → review-calendar",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "结束时间",
+      "originalText": "结束时间",
+      "scenario": "todos/schedule → review-calendar",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "执行设备与日历",
+      "originalText": "执行设备与日历",
+      "scenario": "todos/schedule → review-calendar",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "我的 Mac · Work calendar",
+      "originalText": "我的 Mac · 工作日历",
+      "scenario": "todos/schedule → review-calendar",
+      "tag": "option",
+      "class": ""
+    },
+    {
+      "text": "Android 示例设备 · Personal calendar",
+      "originalText": "Android 示例设备 · 个人日历",
+      "scenario": "todos/schedule → review-calendar",
+      "tag": "option",
+      "class": ""
+    },
+    {
+      "text": "确认加入日历演示",
+      "originalText": "确认加入日历演示",
+      "scenario": "todos/schedule → review-calendar",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "这条日程建议已忽略",
+      "originalText": "这条日程建议已忽略",
+      "scenario": "todos/schedule → ignore-calendar",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "原始资料仍保留，稍后可以恢复核对。",
+      "originalText": "原始资料仍保留，稍后可以恢复核对。",
+      "scenario": "todos/schedule → ignore-calendar",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "恢复日程建议",
+      "originalText": "恢复日程建议",
+      "scenario": "todos/schedule → ignore-calendar",
+      "tag": "button",
+      "class": "btn subtle"
+    },
+    {
+      "text": "导出内容已在原型中准备好。",
+      "originalText": "导出内容已在原型中准备好。",
+      "scenario": "settings/storage → export-data",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "选择备份并查看将恢复的内容。",
+      "originalText": "选择备份并查看将恢复的内容。",
+      "scenario": "settings/storage → restore-backup",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "示例备份 · 6 materials · 3 个来源",
+      "originalText": "示例备份 · 6 份资料 · 3 个来源",
+      "scenario": "settings/storage → restore-backup",
+      "tag": "div",
+      "class": "card"
+    },
+    {
+      "text": "确认恢复演示",
+      "originalText": "确认恢复演示",
+      "scenario": "settings/storage → restore-backup",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "索引已重建 · 6 份资料可检索 · 原始资料保留",
+      "originalText": "索引已重建 · 6 份资料可检索 · 原始资料保留",
+      "scenario": "settings/storage → rebuild-index",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "请求 run-101",
+      "originalText": "请求 run-101",
+      "scenario": "settings/usage → usage-request",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "字段",
+      "originalText": "字段",
+      "scenario": "settings/usage → usage-request",
+      "tag": "th",
+      "class": ""
+    },
+    {
+      "text": "本次请求",
+      "originalText": "本次请求",
+      "scenario": "settings/usage → usage-request",
+      "tag": "th",
+      "class": ""
+    },
+    {
+      "text": "模块 / 技能",
+      "originalText": "模块 / 技能",
+      "scenario": "settings/usage → usage-request",
+      "tag": "td",
+      "class": ""
+    },
+    {
+      "text": "提问 / 资料问答",
+      "originalText": "提问 / 资料问答",
+      "scenario": "settings/usage → usage-request",
+      "tag": "td",
+      "class": ""
+    },
+    {
+      "text": "Agent / 模型",
+      "originalText": "Agent / 模型",
+      "scenario": "settings/usage → usage-request",
+      "tag": "td",
+      "class": ""
+    },
+    {
+      "text": "个人助手 / 示例云端模型",
+      "originalText": "个人助手 / 示例云端模型",
+      "scenario": "settings/usage → usage-request",
+      "tag": "td",
+      "class": ""
+    },
+    {
+      "text": "结果",
+      "originalText": "结果",
+      "scenario": "settings/usage → usage-request",
+      "tag": "td",
+      "class": ""
+    },
+    {
+      "text": "已完成处理，账单快照已保留",
+      "originalText": "已完成处理，账单快照已保留",
+      "scenario": "settings/usage → usage-request",
+      "tag": "td",
+      "class": ""
+    },
+    {
+      "text": "文件 / 示例本地模型",
+      "originalText": "文件 / 示例本地模型",
+      "scenario": "settings/usage → usage-page",
+      "tag": "td",
+      "class": ""
+    },
+    {
+      "text": "Workspace online · Just now检查",
+      "originalText": "工作台在线 · 刚刚检查",
+      "scenario": "settings/system → refresh-system",
+      "tag": "div",
+      "class": "notice good"
+    },
+    {
+      "text": "复制模型预设",
+      "originalText": "复制模型预设",
+      "scenario": "settings/providers → clone-provider",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "副本可以独立修改。",
+      "originalText": "副本可以独立修改。",
+      "scenario": "settings/providers → clone-provider",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "副本名称",
+      "originalText": "副本名称",
+      "scenario": "settings/providers → clone-provider",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "一并复制凭据",
+      "originalText": "一并复制凭据",
+      "scenario": "settings/providers → clone-provider",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "确认复制",
+      "originalText": "确认复制",
+      "scenario": "settings/providers → clone-provider",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "示例连接可用 · 通用助手 · 当前保存的地址 https://example.invalid/v1",
+      "originalText": "示例连接可用 · 通用助手 · 当前保存的地址 https://example.invalid/v1",
+      "scenario": "settings/providers → test-provider",
+      "tag": "div",
+      "class": "notice good section"
+    },
+    {
+      "text": "Content extraction complete · 研究资料",
+      "originalText": "正文提取已完成 · 研究资料",
+      "scenario": "library/files → reprocess-file",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "重新处理文件",
+      "originalText": "重新处理文件",
+      "scenario": "library/files → reprocess-file",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "使用当前处理规则重新提取正文，原件保留。",
+      "originalText": "使用当前处理规则重新提取正文，原件保留。",
+      "scenario": "library/files → reprocess-file",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "查看处理规则",
+      "originalText": "查看处理规则",
+      "scenario": "library/files → reprocess-file",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "原音频 · 00:00 / 24:18 · 示例转写片段",
+      "originalText": "原音频 · 00:00 / 24:18 · 示例转写片段",
+      "scenario": "library/files → edit-transcript",
+      "tag": "div",
+      "class": "notice"
+    },
+    {
+      "text": "说话人",
+      "originalText": "说话人",
+      "scenario": "library/files → edit-transcript",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "转写内容",
+      "originalText": "转写内容",
+      "scenario": "library/files → edit-transcript",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "保存校对",
+      "originalText": "保存校对",
+      "scenario": "library/files → edit-transcript",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "本地语音模型已就绪",
+      "originalText": "本地语音模型已就绪",
+      "scenario": "settings/file-processing → install-voice",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "检查模型状态",
+      "originalText": "检查模型状态",
+      "scenario": "settings/file-processing → install-voice",
+      "tag": "button",
+      "class": "btn subtle"
+    },
+    {
+      "text": "规则试算与处理预览",
+      "originalText": "规则试算与处理预览",
+      "scenario": "settings/file-processing → preview-file-rules",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "使用已保存规则，确认后安排原件重新处理。",
+      "originalText": "使用已保存规则，确认后安排原件重新处理。",
+      "scenario": "settings/file-processing → preview-file-rules",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "试算 MIME",
+      "originalText": "试算 MIME",
+      "scenario": "settings/file-processing → preview-file-rules",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "匹配方案：提取正文与摘要",
+      "originalText": "匹配方案：提取正文与摘要",
+      "scenario": "settings/file-processing → preview-file-rules",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "来源：研究资料 · 原件：记忆系统.md",
+      "originalText": "来源：研究资料 · 原件：记忆系统.md",
+      "scenario": "settings/file-processing → preview-file-rules",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "预计处理 1 份示例原件，保留已有正文直到新结果就绪。",
+      "originalText": "预计处理 1 份示例原件，保留已有正文直到新结果就绪。",
+      "scenario": "settings/file-processing → preview-file-rules",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "确认加入队列",
+      "originalText": "确认加入队列",
+      "scenario": "settings/file-processing → preview-file-rules",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "核对历史图片范围",
+      "originalText": "核对历史图片范围",
+      "scenario": "settings/image-history → preview-image-batch",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "只处理本次选定范围。",
+      "originalText": "只处理本次选定范围。",
+      "scenario": "settings/image-history → preview-image-batch",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "2026-10-01 至 2026-10-20",
+      "originalText": "2026-10-01 至 2026-10-20",
+      "scenario": "settings/image-history → preview-image-batch",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "来源：全部图片来源",
+      "originalText": "来源：全部图片来源",
+      "scenario": "settings/image-history → preview-image-batch",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "Process missing images only · 3 张示例图片",
+      "originalText": "只补齐未处理图片 · 3 张示例图片",
+      "scenario": "settings/image-history → preview-image-batch",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "安排处理",
+      "originalText": "安排处理",
+      "scenario": "settings/image-history → preview-image-batch",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "部署配置差异",
+      "originalText": "部署配置差异",
+      "scenario": "settings/advanced → preview-deployment",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "已完成表单校验。将草稿交给部署机器应用。",
+      "originalText": "已完成表单校验。将草稿交给部署机器应用。",
+      "scenario": "settings/advanced → preview-deployment",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "保存差异文件演示",
+      "originalText": "保存差异文件演示",
+      "scenario": "settings/advanced → preview-deployment",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "实际生效值已刷新：示例工作台 / 来源间隔 15 分钟。未自动应用草稿。",
+      "originalText": "实际生效值已刷新：示例工作台 / 来源间隔 15 分钟。未自动应用草稿。",
+      "scenario": "settings/advanced → refresh-deployment",
+      "tag": "div",
+      "class": "section notice"
+    },
+    {
+      "text": "暂停接收新任务，已有工作继续收尾。",
+      "originalText": "暂停接收新任务，已有工作继续收尾。",
+      "scenario": "settings/plugins → toggle-memory",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "恢复接收新任务",
+      "originalText": "恢复接收新任务",
+      "scenario": "settings/plugins → toggle-memory",
+      "tag": "button",
+      "class": "btn subtle"
+    },
+    {
+      "text": "立即停止现有自动记忆工作并暂停新接收。已保存的检查点和原始资料保留。",
+      "originalText": "立即停止现有自动记忆工作并暂停新接收。已保存的检查点和原始资料保留。",
+      "scenario": "settings/plugins → stop-memory",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "准备替换记忆方案",
+      "originalText": "准备替换记忆方案",
+      "scenario": "settings/plugins → plugin-switch",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "先预览和验证，再单独应用。当前仍运行 内置方案。",
+      "originalText": "先预览和验证，再单独应用。当前仍运行 内置方案。",
+      "scenario": "settings/plugins → plugin-switch",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "目标方案",
+      "originalText": "目标方案",
+      "scenario": "settings/plugins → plugin-switch",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "已有授权历史范围",
+      "originalText": "已有授权历史范围",
+      "scenario": "settings/plugins → plugin-switch",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "全部已授权资料",
+      "originalText": "全部已授权资料",
+      "scenario": "settings/plugins → plugin-switch",
+      "tag": "option",
+      "class": ""
+    },
+    {
+      "text": "我已核对历史范围与示例处理费用",
+      "originalText": "我已核对历史范围与示例处理费用",
+      "scenario": "settings/plugins → plugin-switch",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "本次示例使用 6 份资料，实际模型调用为 0。",
+      "originalText": "本次示例使用 6 份资料，实际模型调用为 0。",
+      "scenario": "settings/plugins → plugin-switch",
+      "tag": "small",
+      "class": ""
+    },
+    {
+      "text": "准备并验证",
+      "originalText": "准备并验证",
+      "scenario": "settings/plugins → plugin-switch",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "可信记忆插件",
+      "originalText": "可信记忆插件",
+      "scenario": "settings/plugins → plugins-catalog",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "按固定版本核对能力、权限与依赖后安装。",
+      "originalText": "按固定版本核对能力、权限与依赖后安装。",
+      "scenario": "settings/plugins → plugins-catalog",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "内置记忆插件 · 示例版本 1.0.0",
+      "originalText": "内置记忆插件 · 示例版本 1.0.0",
+      "scenario": "settings/plugins → plugins-catalog",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "能力：事实提取、记忆整合、引用追溯",
+      "originalText": "能力：事实提取、记忆整合、引用追溯",
+      "scenario": "settings/plugins → plugins-catalog",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "权限：读取已授权资料，写入整理结果",
+      "originalText": "权限：读取已授权资料，写入整理结果",
+      "scenario": "settings/plugins → plugins-catalog",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "依赖：已配置的模型连接",
+      "originalText": "依赖：已配置的模型连接",
+      "scenario": "settings/plugins → plugins-catalog",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "状态：可安装",
+      "originalText": "状态：可安装",
+      "scenario": "settings/plugins → plugins-catalog",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "安装并验证示例版本",
+      "originalText": "安装并验证示例版本",
+      "scenario": "settings/plugins → plugins-catalog",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "查看注册能力",
+      "originalText": "查看注册能力",
+      "scenario": "settings/plugins → plugins-catalog",
+      "tag": "button",
+      "class": "btn text"
+    },
+    {
+      "text": "已注册的插件能力",
+      "originalText": "已注册的插件能力",
+      "scenario": "settings/plugins → plugin-capabilities",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "对照工作台与网页实际加载的入口。",
+      "originalText": "对照工作台与网页实际加载的入口。",
+      "scenario": "settings/plugins → plugin-capabilities",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "事实提取与记忆整合",
+      "originalText": "事实提取与记忆整合",
+      "scenario": "settings/plugins → plugin-capabilities",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "工作台：已加载 · 网页：管理入口已加载",
+      "originalText": "工作台：已加载 · 网页：管理入口已加载",
+      "scenario": "settings/plugins → plugin-capabilities",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "版本：示例 1.0.0 · 当前绑定：内置方案",
+      "originalText": "版本：示例 1.0.0 · 当前绑定：内置方案",
+      "scenario": "settings/plugins → plugin-capabilities",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "实例：内置能力可用，自定义实例未启用",
+      "originalText": "实例：内置能力可用，自定义实例未启用",
+      "scenario": "settings/plugins → plugin-capabilities",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "登录界面预览",
+      "originalText": "登录界面预览",
+      "scenario": "settings/account → logout-demo",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "使用示例账号进入个人工作台。",
+      "originalText": "使用示例账号进入个人工作台。",
+      "scenario": "settings/account → logout-demo",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "用户名",
+      "originalText": "用户名",
+      "scenario": "settings/account → logout-demo",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "进入工作台",
+      "originalText": "进入工作台",
+      "scenario": "settings/account → logout-demo",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "诊断导出预览",
+      "originalText": "诊断导出预览",
+      "scenario": "settings/help → export-diagnostics",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "mote-diagnostics-demo.json · 查看后可保存到本机",
+      "originalText": "mote-diagnostics-demo.json · 查看后可保存到本机",
+      "scenario": "settings/help → export-diagnostics",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "保存诊断文件",
+      "originalText": "保存诊断文件",
+      "scenario": "settings/help → export-diagnostics",
+      "tag": "a",
+      "class": "btn primary"
+    },
+    {
+      "text": "中央手动升级说明",
+      "originalText": "中央手动升级说明",
+      "scenario": "settings/help → maintenance-guide",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "在中央工作台所在机器执行维护，先核对版本与发布说明。",
+      "originalText": "在中央工作台所在机器执行维护，先核对版本与发布说明。",
+      "scenario": "settings/help → maintenance-guide",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "导出资料备份并记录当前中央版本。",
+      "originalText": "导出资料备份并记录当前中央版本。",
+      "scenario": "settings/help → maintenance-guide",
+      "tag": "li",
+      "class": ""
+    },
+    {
+      "text": "从 DEV 发布页选择适用系统的安装包，核对发布说明。",
+      "originalText": "从 DEV 发布页选择适用系统的安装包，核对发布说明。",
+      "scenario": "settings/help → maintenance-guide",
+      "tag": "li",
+      "class": ""
+    },
+    {
+      "text": "暂停接收后，在中央机器停止旧进程并替换应用；保留原数据目录。",
+      "originalText": "暂停接收后，在中央机器停止旧进程并替换应用；保留原数据目录。",
+      "scenario": "settings/help → maintenance-guide",
+      "tag": "li",
+      "class": ""
+    },
+    {
+      "text": "重新启动中央，回到这里检查版本、来源状态和已保存资料。",
+      "originalText": "重新启动中央，回到这里检查版本、来源状态和已保存资料。",
+      "scenario": "settings/help → maintenance-guide",
+      "tag": "li",
+      "class": ""
+    },
+    {
+      "text": "打开 DEV 发布下载",
+      "originalText": "打开 DEV 发布下载",
+      "scenario": "settings/help → maintenance-guide",
+      "tag": "a",
+      "class": "btn subtle"
+    },
+    {
+      "text": "查看升级完成状态示例",
+      "originalText": "查看升级完成状态示例",
+      "scenario": "settings/help → maintenance-guide",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "Just now核对：网页与中央版本不同，请核对适用的发布说明。",
+      "originalText": "刚刚核对：网页与中央版本不同，请核对适用的发布说明。",
+      "scenario": "settings/help → check-versions",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "资料目录",
+      "originalText": "资料目录",
+      "scenario": "settings/agent-scope → preview-context",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "查看已归档的只读内容。",
+      "originalText": "查看已归档的只读内容。",
+      "scenario": "settings/agent-scope → preview-context",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "Today 09:25 · 个人助手 · Read 2 materials and 1 memory",
+      "originalText": "今天 09:25 · 个人助手 · 读取 2 份资料、1 条记忆",
+      "scenario": "settings/agent-events → inspect-read",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "这次读取的过程",
+      "originalText": "这次读取的过程",
+      "scenario": "settings/agent-events → inspect-read",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "个人助手 · Today 09:25 · 只读访问",
+      "originalText": "个人助手 · 今天 09:25 · 只读访问",
+      "scenario": "settings/agent-events → inspect-read",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "1. 查找相关内容",
+      "originalText": "1. 查找相关内容",
+      "scenario": "settings/agent-events → inspect-read",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "范围：最近7天的资料与记忆",
+      "originalText": "范围：最近7天的资料与记忆",
+      "scenario": "settings/agent-events → inspect-read",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "2. 阅读原文",
+      "originalText": "2. 阅读原文",
+      "scenario": "settings/agent-events → inspect-read",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "3. 生成带出处的回答",
+      "originalText": "3. 生成带出处的回答",
+      "scenario": "settings/agent-events → inspect-read",
+      "tag": "h3",
+      "class": ""
+    },
+    {
+      "text": "使用2份资料与1条记忆，没有修改原始资料。",
+      "originalText": "使用2份资料与1条记忆，没有修改原始资料。",
+      "scenario": "settings/agent-events → inspect-read",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "诊断记录",
+      "originalText": "诊断记录",
+      "scenario": "settings/diagnostics → diagnostic-log",
+      "tag": "h2",
+      "class": ""
+    },
+    {
+      "text": "最近的一项处理提示。",
+      "originalText": "最近的一项处理提示。",
+      "scenario": "settings/diagnostics → diagnostic-log",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "飞书来源授权过期。请到来源设置重新连接。",
+      "originalText": "飞书来源授权过期。请到来源设置重新连接。",
+      "scenario": "settings/diagnostics → diagnostic-log",
+      "tag": "div",
+      "class": "notice warn"
+    },
+    {
+      "text": "已保存草稿：来源同步需要重新授权",
+      "originalText": "已保存草稿：来源同步需要重新授权",
+      "scenario": "settings/diagnostics → feedback-save",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "Screen recording permission: 已授权",
+      "originalText": "屏幕录制权限：已授权",
+      "scenario": "setup/screen → allow-screen",
+      "tag": "strong",
+      "class": ""
+    },
+    {
+      "text": "Screen recording permission: 已拒绝",
+      "originalText": "屏幕录制权限：已拒绝",
+      "scenario": "setup/screen → deny-screen",
+      "tag": "strong",
+      "class": ""
+    },
+    {
+      "text": "请先允许屏幕录制，或返回添加其他内容。",
+      "originalText": "请先允许屏幕录制，或返回添加其他内容。",
+      "scenario": "setup/screen → save-source",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "维护未来请求使用的估算价格，保留历史请求的记账快照",
+      "originalText": "维护未来请求使用的估算价格，保留历史请求的记账快照",
+      "scenario": "settings/usage-prices → save-prices",
+      "tag": "p",
+      "class": ""
+    },
+    {
+      "text": "这里的价格只用于之后请求的估算，已记录请求保留当时的费用。价格为示例，可自行维护。",
+      "originalText": "这里的价格只用于之后请求的估算，已记录请求保留当时的费用。价格为示例，可自行维护。",
+      "scenario": "settings/usage-prices → save-prices",
+      "tag": "div",
+      "class": ""
+    },
+    {
+      "text": "厂商",
+      "originalText": "厂商",
+      "scenario": "settings/usage-prices → save-prices",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "币种",
+      "originalText": "币种",
+      "scenario": "settings/usage-prices → save-prices",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "每百万输入 Token",
+      "originalText": "每百万输入 Token",
+      "scenario": "settings/usage-prices → save-prices",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "每百万输出 Token",
+      "originalText": "每百万输出 Token",
+      "scenario": "settings/usage-prices → save-prices",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "每百万缓存读取 Token",
+      "originalText": "每百万缓存读取 Token",
+      "scenario": "settings/usage-prices → save-prices",
+      "tag": "span",
+      "class": ""
+    },
+    {
+      "text": "保存后续请求估价",
+      "originalText": "保存后续请求估价",
+      "scenario": "settings/usage-prices → save-prices",
+      "tag": "button",
+      "class": "btn primary"
+    },
+    {
+      "text": "返回用量",
+      "originalText": "返回用量",
+      "scenario": "settings/usage-prices → save-prices",
+      "tag": "button",
+      "class": "btn subtle"
+    },
+    {
+      "text": "已保存：示例云端模型 · USD · 输入 0.8 / 输出 3.2 / 缓存 0.2",
+      "originalText": "已保存：示例云端模型 · USD · 输入 0.8 / 输出 3.2 / 缓存 0.2",
+      "scenario": "settings/usage-prices → save-prices",
+      "tag": "div",
+      "class": "notice good section"
+    }
+  ]
+}

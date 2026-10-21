@@ -1,0 +1,214 @@
+{
+  "scope": "Review tool rendering, scene selection and frame isolation only; no product journeys",
+  "browser": "Chromium headless",
+  "candidate_sha256": [
+    "65257ad350e155a01bd1e64c3241e812bff98c93fda593be70de2dae17bf32f9",
+    "290534ad7b054e1349ca836e13e7c30d3913860964479517052c8523031d7c6c"
+  ],
+  "records": [
+    {
+      "name": "Offline file opens two interactive library frames",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/library",
+          "title": "资料库",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r15:r15-1:"
+        },
+        {
+          "hash": "#/library",
+          "title": "资料库",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r17:r17-1:"
+        }
+      ]
+    },
+    {
+      "name": "Both frames enter sources",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/sources",
+          "title": "来源管理",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r15:r15-2:"
+        },
+        {
+          "hash": "#/sources",
+          "title": "来源管理",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r17:r17-2:"
+        }
+      ]
+    },
+    {
+      "name": "Both frames enter setup/screen",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/setup/screen",
+          "title": "屏幕采集",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r15:r15-3:"
+        },
+        {
+          "hash": "#/setup/screen",
+          "title": "屏幕采集",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r17:r17-3:"
+        }
+      ]
+    },
+    {
+      "name": "Both frames enter notes",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/notes",
+          "title": "随手记",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r15:r15-4:"
+        },
+        {
+          "hash": "#/notes",
+          "title": "随手记",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r17:r17-4:"
+        }
+      ]
+    },
+    {
+      "name": "Both frames enter memories",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/memories",
+          "title": "记忆",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r15:r15-5:"
+        },
+        {
+          "hash": "#/memories",
+          "title": "记忆",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r17:r17-5:"
+        }
+      ]
+    },
+    {
+      "name": "Phone mode uses 390px, empty data and dark theme in both frames",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/notes",
+          "title": "随手记",
+          "width": 390,
+          "classes": "mobile dark",
+          "data": "empty",
+          "theme": "dark",
+          "prefix": "mote-review:r15:r15-9:"
+        },
+        {
+          "hash": "#/notes",
+          "title": "随手记",
+          "width": 390,
+          "classes": "mobile dark",
+          "data": "empty",
+          "theme": "dark",
+          "prefix": "mote-review:r17:r17-9:"
+        }
+      ]
+    },
+    {
+      "name": "Frames have separate explicit storage prefixes",
+      "passed": true,
+      "actual": [
+        "mote-review:r15:r15-9:",
+        "mote-review:r17:r17-9:"
+      ]
+    },
+    {
+      "name": "Left frame storage is absent from right frame",
+      "passed": true,
+      "actual": null
+    },
+    {
+      "name": "Typing in one frame leaves the other draft unchanged",
+      "passed": true
+    },
+    {
+      "name": "Repository page resolves relative candidates",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/library",
+          "title": "资料库",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r15:r15-1:"
+        },
+        {
+          "hash": "#/library",
+          "title": "资料库",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r17:r17-1:"
+        }
+      ]
+    },
+    {
+      "name": "Double-clicking the lightweight page opens offline companion",
+      "passed": true
+    },
+    {
+      "name": "Frozen input candidates remain byte-identical",
+      "passed": true,
+      "actual": [
+        "65257ad350e155a01bd1e64c3241e812bff98c93fda593be70de2dae17bf32f9",
+        "290534ad7b054e1349ca836e13e7c30d3913860964479517052c8523031d7c6c"
+      ]
+    },
+    {
+      "name": "No browser page errors",
+      "passed": true,
+      "actual": []
+    }
+  ],
+  "errors": [],
+  "status": "passed"
+}

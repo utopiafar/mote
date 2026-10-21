@@ -1,0 +1,378 @@
+[
+  {
+    "line": 130,
+    "function": "heading"
+  },
+  {
+    "line": 131,
+    "function": "field"
+  },
+  {
+    "line": 132,
+    "function": "pageMain"
+  },
+  {
+    "line": 133,
+    "function": "primaryPage"
+  },
+  {
+    "line": 134,
+    "function": "go"
+  },
+  {
+    "line": 135,
+    "function": "notify"
+  },
+  {
+    "line": 136,
+    "function": "navItem"
+  },
+  {
+    "line": 141,
+    "function": "localizeUI"
+  },
+  {
+    "line": 144,
+    "function": "compactUI"
+  },
+  {
+    "line": 145,
+    "function": "compactCollections"
+  },
+  {
+    "line": 146,
+    "function": "compactSettings"
+  },
+  {
+    "line": 147,
+    "function": "generatedMemoryCard"
+  },
+  {
+    "line": 151,
+    "function": "focusDescriptor"
+  },
+  {
+    "line": 152,
+    "function": "availableControl"
+  },
+  {
+    "line": 153,
+    "function": "findFocusTarget"
+  },
+  {
+    "line": 154,
+    "function": "focusMain"
+  },
+  {
+    "line": 155,
+    "function": "memoryTimeline"
+  },
+  {
+    "line": 156,
+    "function": "allMemoryHistory"
+  },
+  {
+    "line": 157,
+    "function": "materialReturnLabel"
+  },
+  {
+    "line": 159,
+    "function": "render"
+  },
+  {
+    "line": 178,
+    "function": "topExtra"
+  },
+  {
+    "line": 179,
+    "function": "pageTitle"
+  },
+  {
+    "line": 180,
+    "function": "pageContent"
+  },
+  {
+    "line": 181,
+    "function": "filterLabel"
+  },
+  {
+    "line": 182,
+    "function": "libraryIntro"
+  },
+  {
+    "line": 183,
+    "function": "libraryHeading"
+  },
+  {
+    "line": 184,
+    "function": "libraryCollections"
+  },
+  {
+    "line": 185,
+    "function": "libraryTools"
+  },
+  {
+    "line": 186,
+    "function": "filteredMaterials"
+  },
+  {
+    "line": 187,
+    "function": "filterSummary"
+  },
+  {
+    "line": 188,
+    "function": "libraryPage"
+  },
+  {
+    "line": 194,
+    "function": "libraryView"
+  },
+  {
+    "line": 203,
+    "function": "emptyLibrary"
+  },
+  {
+    "line": 204,
+    "function": "materialRow"
+  },
+  {
+    "line": 205,
+    "function": "sourcesPage"
+  },
+  {
+    "line": 208,
+    "function": "catalogPage"
+  },
+  {
+    "line": 212,
+    "function": "sourceCard"
+  },
+  {
+    "line": 213,
+    "function": "devicesPage"
+  },
+  {
+    "line": 214,
+    "function": "connectedSourceFields"
+  },
+  {
+    "line": 224,
+    "function": "setupPage"
+  },
+  {
+    "line": 235,
+    "function": "notesPage"
+  },
+  {
+    "line": 236,
+    "function": "importsPage"
+  },
+  {
+    "line": 237,
+    "function": "importPage"
+  },
+  {
+    "line": 241,
+    "function": "materialPage"
+  },
+  {
+    "line": 242,
+    "function": "clarificationsPage"
+  },
+  {
+    "line": 243,
+    "function": "askPage"
+  },
+  {
+    "line": 249,
+    "function": "startMemoryContinuation"
+  },
+  {
+    "line": 250,
+    "function": "memoryContinuationPage"
+  },
+  {
+    "line": 252,
+    "function": "activityPage"
+  },
+  {
+    "line": 266,
+    "function": "clarificationTaskPage"
+  },
+  {
+    "line": 267,
+    "function": "todoRows"
+  },
+  {
+    "line": 268,
+    "function": "todayPage"
+  },
+  {
+    "line": 269,
+    "function": "memoriesPage"
+  },
+  {
+    "line": 271,
+    "function": "memoryManagement"
+  },
+  {
+    "line": 272,
+    "function": "insightDateLabel"
+  },
+  {
+    "line": 273,
+    "function": "insightsPage"
+  },
+  {
+    "line": 274,
+    "function": "calendarCard"
+  },
+  {
+    "line": 275,
+    "function": "todosPage"
+  },
+  {
+    "line": 276,
+    "function": "taskDetailPage"
+  },
+  {
+    "line": 289,
+    "function": "configValue"
+  },
+  {
+    "line": 290,
+    "function": "configField"
+  },
+  {
+    "line": 291,
+    "function": "configSelect"
+  },
+  {
+    "line": 292,
+    "function": "configToggle"
+  },
+  {
+    "line": 293,
+    "function": "configFooter"
+  },
+  {
+    "line": 294,
+    "function": "configurationPage"
+  },
+  {
+    "line": 308,
+    "function": "advancedSettings"
+  },
+  {
+    "line": 320,
+    "function": "choiceField"
+  },
+  {
+    "line": 321,
+    "function": "tableView"
+  },
+  {
+    "line": 330,
+    "function": "selectedUsage"
+  },
+  {
+    "line": 331,
+    "function": "usageSettings"
+  },
+  {
+    "line": 332,
+    "function": "priceSettings"
+  },
+  {
+    "line": 333,
+    "function": "helpSettings"
+  },
+  {
+    "line": 334,
+    "function": "diagnosticSettings"
+  },
+  {
+    "line": 335,
+    "function": "storageSettings"
+  },
+  {
+    "line": 336,
+    "function": "systemSettings"
+  },
+  {
+    "line": 337,
+    "function": "maintenanceSettings"
+  },
+  {
+    "line": 338,
+    "function": "maintenanceAction"
+  },
+  {
+    "line": 365,
+    "function": "codingStatusPage"
+  },
+  {
+    "line": 366,
+    "function": "materialSavedDate"
+  },
+  {
+    "line": 367,
+    "function": "insightMaterials"
+  },
+  {
+    "line": 369,
+    "function": "recentToday"
+  },
+  {
+    "line": 370,
+    "function": "resetPreviewData"
+  },
+  {
+    "line": 372,
+    "function": "coherentAction"
+  },
+  {
+    "line": 387,
+    "function": "settingsPage"
+  },
+  {
+    "line": 388,
+    "function": "settingsDetail"
+  },
+  {
+    "line": 402,
+    "function": "accessPage"
+  },
+  {
+    "line": 403,
+    "function": "guidePage"
+  },
+  {
+    "line": 404,
+    "function": "guideSearchControl"
+  },
+  {
+    "line": 405,
+    "function": "featurePage"
+  },
+  {
+    "line": 406,
+    "function": "applicationPage"
+  },
+  {
+    "line": 407,
+    "function": "mediaPage"
+  },
+  {
+    "line": 408,
+    "function": "modalContent"
+  },
+  {
+    "line": 420,
+    "function": "showInfo"
+  },
+  {
+    "line": 421,
+    "function": "doAction"
+  }
+]

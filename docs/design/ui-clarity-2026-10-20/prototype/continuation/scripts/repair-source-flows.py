@@ -1,0 +1,173 @@
+from pathlib import Path
+import json, re
+
+ROOT = Path(__file__).resolve().parents[1]
+TARGET = ROOT / 'work/source-flows.html'
+BASE = ROOT / 'src/r15-frozen.html'
+text = BASE.read_text()
+changes = []
+
+def replace(old, new):
+    global text
+    if text.count(old) != 1:
+        raise ValueError(f'Expected one match, got {text.count(old)}: {old[:100]}')
+    text = text.replace(old, new, 1)
+    changes.append({'old': old, 'new': new})
+
+def function(name, new):
+    match = re.search(r'^function '+re.escape(name)+r'\(.*?(?=^function |\Z)', text, re.M|re.S)
+    if not match:
+        raise ValueError(name)
+    replace(match.group(), new.rstrip()+'\n')
+
+replace("sourceFilter:'all',typeFilter:'all',deletedRecords:[]", "sourceFilter:'all',typeFilter:'all',sourceScopeId:'',screenDraftApps:null,deletedRecords:[]")
+for item, origin in [('m2','folder'),('m3','coding'),('m4','google'),('m5','feishu-recording'),('m6','screen')]:
+    replace("{id:'"+item+"',title:", "{id:'"+item+"',sourceId:'"+origin+"',title:")
+
+replace('function filteredMaterials(){', r'''function sourceUserText(value){return '<span data-user-content>'+esc(value)+'</span>';}
+function selectedSource(){return state.sourceScopeId?state.sources.find(s=>s.id===state.sourceScopeId)||{id:state.sourceScopeId,title:state.materials.find(m=>m.sourceId===state.sourceScopeId)?.source||state.sourceScopeId}:null;}
+function sourceMaterialCount(id){return state.materials.filter(m=>m.sourceId===id).length;}
+function sourceFilterOptions(){
+ const options=new Map();
+ state.sources.forEach(s=>options.set('id:'+s.id,s.title));
+ state.materials.forEach(m=>{const key=m.sourceId?'id:'+m.sourceId:m.source;if(!options.has(key))options.set(key,m.source);});
+ const selected=state.sourceScopeId?'id:'+state.sourceScopeId:state.sourceFilter;
+ return '<option value="all">全部来源</option>'+[...options].map(([value,label])=>'<option data-user-content value="'+esc(value)+'" '+(selected===value?'selected':'')+'>'+esc(label)+'</option>').join('');
+}
+function sourceScopeNotice(){const source=selectedSource();if(!source)return '';const paused=!!state.sourcePaused[source.id];return '<section class="notice '+(paused?'warn':'')+'" data-source-scope="'+esc(source.id)+'"><div><strong>当前来源：'+sourceUserText(source.title)+'</strong><p>'+(paused?'此来源已暂停接收新内容，已保存资料仍可阅读。':'这里只显示这个来源已经保存的资料。')+'</p><div class="actions">'+goButton('管理此来源','setup/'+source.id,'text')+button('查看全部资料','clear-source-scope','','text')+'</div></div></section>';}
+function filteredMaterials(){''')
+
+function('filteredMaterials', r'''function filteredMaterials(){return state.materials.filter(m=>(!state.sourceScopeId||m.sourceId===state.sourceScopeId)&&(state.dateFilter==='全部时间'||materialSavedDate(m)>=(state.dateFilter==='今天'?'2026-10-20':'2026-10-14'))&&(state.sourceFilter==='all'||m.source===state.sourceFilter)&&(!state.search||(m.title+' '+m.preview+' '+m.body+' '+m.source).toLowerCase().includes(state.search.toLowerCase()))&&(state.typeFilter==='all'||m.type===state.typeFilter)&&(state.filter==='coding'?m.type==='coding':state.filter==='files'?['file','audio'].includes(m.type):state.filter==='notes'?m.type==='note':true));}''')
+
+function('filterSummary', r'''function filterSummary(){return [selectedSource()?.title||(state.sourceFilter!=='all'?state.sourceFilter:''),state.typeFilter!=='all'?({note:'随手记',file:'文件',audio:'录音',screen:'屏幕记录',coding:'Coding 会话',calendar:'日历'})[state.typeFilter]||state.typeFilter:'',state.dateFilter!=='全部时间'?state.dateFilter:''].filter(Boolean).join(' · ');}''')
+
+replace("if(!state.materials.length)return libraryHeading()", "if(!state.materials.length&&!state.sourceScopeId)return libraryHeading()")
+replace("const rows=filteredMaterials(),filtering=!!state.search||state.sourceFilter!=='all'", "const rows=filteredMaterials(),filtering=!!state.sourceScopeId||!!state.search||state.sourceFilter!=='all'")
+replace("return libraryHeading()+libraryIntro()+'<div class=\"library-layout\">'", "return libraryHeading()+libraryIntro()+sourceScopeNotice()+'<div class=\"library-layout\">'")
+replace("'<select id=\"source-filter\" class=\"field-input\" aria-label=\"按来源筛选\"><option value=\"all\">全部来源</option>'+[...new Set(state.materials.map(m=>m.source))].map(v=>'<option '+(state.sourceFilter===v?'selected':'')+'>'+esc(v)+'</option>').join('')+'</select>", "'<select id=\"source-filter\" class=\"field-input\" aria-label=\"按来源筛选\">'+sourceFilterOptions()+'</select>")
+
+function('emptyLibrary', r'''function emptyLibrary(filtering){const source=selectedSource();if(source)return '<div class="empty" data-source-empty="'+esc(source.id)+'">'+icon('folder')+'<h2>'+(sourceMaterialCount(source.id)?'这个来源中没有符合筛选的资料':'这个来源还没有已保存资料')+'</h2><p>当前来源：'+sourceUserText(source.title)+'</p><p>'+(sourceMaterialCount(source.id)?'可以清除关键词、类型或时间筛选。':state.sourcePaused[source.id]?'当前已暂停接收；恢复来源后，新内容才会进入这个范围。':'连接已保存，收到的内容会出现在这里。其他来源的资料保持原样。')+'</p><div class="actions">'+(sourceMaterialCount(source.id)?button('清除此来源内的筛选','clear-source-filters','','subtle'):goButton('查看来源设置','setup/'+source.id,'subtle'))+button('查看全部资料','clear-source-scope','','text')+'</div></div>';return filtering?'<div class="empty">'+icon('search')+'<h2>当前范围内没有资料</h2><p>换个关键词或来源，再找找看。</p></div>':'<div class="empty onboarding-empty">'+icon('library')+'<h2>从一份资料开始</h2><p>保存文件、随手记、屏幕记录与在线资料。以后可以搜索和提问，也可以整理长期记忆、生成阶段洞察。</p><div class="actions">'+goButton('导入一份文件','import','primary')+goButton('写随手记','notes','subtle')+'</div><div class="section">'+goButton('看看可以连接哪些来源','sources','text')+'</div><p class="path">保存内容 → 在资料库回看 → 提问并核对出处</p></div>';}
+''')
+
+replace('function sourcesPage(){', r'''const screenApplications=[{id:'browser',label:'浏览器',description:'只记录选定窗口'},{id:'editor',label:'编辑器',description:''},{id:'messaging',label:'即时通讯',description:''}];
+function savedScreenApps(){return state.sourceConfigs?.screen?.apps??(state.sources.some(s=>s.id==='screen')?['browser','editor']:[]);}
+function draftScreenApps(){return state.screenDraftApps??savedScreenApps();}
+function screenDraftChanged(){return JSON.stringify([...draftScreenApps()].sort())!==JSON.stringify([...savedScreenApps()].sort());}
+function screenAppNames(ids){return screenApplications.filter(a=>ids.includes(a.id)).map(a=>a.label).join('、');}
+function readScreenDraft(){if(state.page==='setup/screen'){const controls=[...document.querySelectorAll('[data-screen-app]')];if(controls.length)state.screenDraftApps=controls.filter(n=>n.checked).map(n=>n.dataset.screenApp);}}
+function sourceStatus(id,source){
+ if(id==='screen'){
+  if(state.permission!=='已授权')return state.permission==='已拒绝'?'未在记录 · 权限已拒绝':'未在记录 · 等待授权';
+  if(state.sourcePaused.screen)return '已暂停记录';
+  return source&&savedScreenApps().length?'正在记录':'尚未保存记录范围';
+ }
+ if(state.sourcePaused[id])return '已暂停接收';
+ if(id==='folder')return state.sourceConfigs?.folder?.continuous===false?'已连接 · 未持续接收':'正在同步';
+ return source?.status||'尚未连接';
+}
+function sourceStatusMessage(id,source){
+ if(id==='screen'){
+  if(state.permission!=='已授权')return state.permission==='已拒绝'?'权限已拒绝，当前不会记录屏幕。已保存范围和已有资料仍保留。':'等待屏幕录制授权，当前不会记录屏幕。已保存范围和已有资料仍保留。';
+  if(state.sourcePaused.screen)return '屏幕记录已暂停。已保存的应用范围保留，已有资料仍可阅读。';
+  return source&&savedScreenApps().length?'正在按已保存的应用范围记录。尚未保存的勾选不会改变当前记录范围。':'保存应用范围后才会开始记录。';
+ }
+ if(state.sourcePaused[id])return '此来源已暂停接收新内容，已保存资料仍可阅读。同步策略保留，恢复后按已保存策略运行。';
+ if(id==='folder'&&state.sourceConfigs?.folder?.continuous===false)return '已连接，未开启持续同步。后续变化暂不接收，已保存资料仍可阅读。';
+ if(source?.status.includes('授权'))return '授权已过期。已保存资料仍可阅读，重新授权后继续接收。';
+ return '此来源正在接收选定内容。';
+}
+function sourceSubtitle(source){if(source.id==='screen')return 'Mac · 已保存 '+savedScreenApps().length+' 个应用：'+(screenAppNames(savedScreenApps())||'尚未选择');return source.subtitle;}
+function screenRangeFields(){const saved=savedScreenApps(),draft=draftScreenApps(),dirty=screenDraftChanged();return '<div class="notice '+(state.permission==='已授权'?'good':'warn')+'">'+icon('shield')+'<div><strong>屏幕录制权限：'+esc(state.permission)+'</strong><p>授权只控制能否记录；应用勾选需保存后才生效。</p><div class="actions">'+button('模拟允许','allow-screen','','subtle')+button('模拟拒绝','deny-screen','','subtle')+'</div></div></div><section class="evidence-box" data-saved-screen-range><h2>已保存的记录范围</h2><p>'+(saved.length?screenAppNames(saved)+' · '+saved.length+' 个应用':'尚未保存应用范围')+'</p></section><section aria-label="编辑应用范围"><h2>选择允许记录的应用</h2><p class="small muted">勾选暂存为草稿；保存前仍使用上方的已保存范围。</p>'+screenApplications.map(a=>'<label class="checkrow"><input type="checkbox" id="screen-app-'+a.id+'" data-screen-app="'+a.id+'" '+(draft.includes(a.id)?'checked':'')+'><span>'+a.label+(a.description?'<small>'+a.description+'</small>':'')+'</span></label>').join('')+'<p role="status" data-screen-draft-status>'+(dirty?'有未保存的范围修改。离开页面后可回来继续。':'当前勾选与已保存范围一致。')+'</p>'+(!draft.length?'<p class="small">请选择至少一个允许记录的应用。</p>':'')+(dirty?button('放弃范围修改','discard-screen-draft','','text'):'')+'</section>';}
+function sourcesPage(){''')
+
+function('sourcesPage', r'''function sourcesPage(){
+ return heading('来源管理','连接持续收集的来源，调整记录范围，或随时暂停。',button(icon('plus')+' 连接来源','source-add','','primary'))+'<div class="notice"><div><strong>来源负责把内容带进来</strong><p>查看已经保存的内容，请到资料库。让其他助手读取资料，可到“对外授权”。</p></div></div><div class="section-head section"><h2>已连接来源</h2><div class="actions">'+goButton('设备与记录范围','devices','text')+goButton('对外授权','access','text')+'</div></div>'+(!state.sources.length?'<div class="empty">'+icon('sources')+'<h2>连接一次，后续内容持续保存</h2><p>从文件夹、屏幕记录，或你的文档、邮件和日历开始。</p><div class="actions">'+goButton('选择可以连接的来源','catalog','primary')+'</div></div>':state.sources.map(s=>{const status=sourceStatus(s.id,s),active=['正在记录','正在同步','已连接'].includes(status);return '<article class="source-row" data-source-id="'+esc(s.id)+'"><span class="source-badge">'+icon(s.id==='folder'?'folder':s.id==='screen'?'screen':'file')+'</span><span class="source-main"><strong data-user-content>'+esc(s.title)+'</strong><p>'+(s.id==='screen'?esc(sourceSubtitle(s)):sourceUserText(s.subtitle))+'</p><p>'+sourceMaterialCount(s.id)+' 份已保存资料</p></span>'+tag(status,active?'green':'yellow')+'<div class="actions">'+goButton('管理','setup/'+s.id,'subtle')+button('浏览已保存资料','browse-source','data-id="'+esc(s.id)+'"','text')+'</div></article>';}).join(''));
+}''')
+
+replace("(state.sourcePaused.screen?'已暂停':'已选择范围')", "sourceStatus('screen',state.sources.find(s=>s.id==='screen'))")
+replace("(state.sourcePaused.folder?'已暂停':'按来源设置接收')", "sourceStatus('folder',state.sources.find(s=>s.id==='folder'))")
+
+replace("<small>新增与修改的内容会继续归档。</small>", "<small>这是恢复接收后的策略。暂停时不接收新变化，已保存内容仍保留。</small>")
+old_screen=re.search(r" else if\(id==='screen'\)contents=.*?;\n",text).group()
+replace(old_screen," else if(id==='screen')contents=screenRangeFields();\n")
+replace("(saved?'<div class=\"notice good\">'", "(saved&&id!=='screen'?'<div class=\"notice good\">'")
+old_status="(existing?'<div class=\"notice '+(state.sourcePaused[id]||existing.status.includes('授权')?'warn':'good')+'\" role=\"status\">'+(state.sourcePaused[id]?'此来源已暂停，已保存资料仍可阅读。':existing.status.includes('授权')?'授权已过期。已保存资料仍可阅读，重新授权后继续接收。':'此来源正在接收选定内容。')+'</div>':'')"
+new_status="(existing?'<div class=\"notice '+(state.sourcePaused[id]||existing.status.includes('授权')||id==='screen'&&state.permission!=='已授权'?'warn':'good')+'\" role=\"status\" data-source-receiving>'+sourceStatusMessage(id,existing)+'</div>':'')"
+replace(old_status,new_status)
+replace("button(id==='screen'?'开始记录':", "button(id==='screen'?(existing?'保存记录范围':'保存范围并开始记录'):")
+replace("'save-source','data-id=\"'+id+'\"','primary')", "'save-source','data-id=\"'+id+'\"'+(id==='screen'&&state.permission!=='已授权'?' disabled':''),'primary')")
+replace("goButton('浏览此来源的资料','library','text')", "button('浏览此来源的资料','browse-source','data-id=\"'+id+'\"','text')")
+
+replace("if(action==='clear-filters'){state.search='';state.sourceFilter='all';", "if(action==='clear-filters'){state.search='';state.sourceScopeId='';state.sourceFilter='all';")
+replace("state.search='';state.typeFilter='all';state.sourceFilter='all';return go('library/'+f);", "state.search='';state.typeFilter='all';state.sourceFilter='all';state.sourceScopeId='';return go('library/'+f);")
+replace(" if(action==='allow-screen'){state.permission='已授权';return render();}", r''' if(action==='browse-source'){state.sourceScopeId=el.dataset.id;state.sourceFilter='all';state.search='';state.typeFilter='all';state.dateFilter='全部时间';state.mobileFiltersOpen=false;return go('library');}
+ if(action==='clear-source-scope'){state.sourceScopeId='';state.sourceFilter='all';state.search='';state.typeFilter='all';state.dateFilter='全部时间';return go('library');}
+ if(action==='clear-source-filters'){state.sourceFilter='all';state.search='';state.typeFilter='all';state.dateFilter='全部时间';persist();return render();}
+ if(action==='discard-screen-draft'){state.screenDraftApps=null;persist();return render();}
+ if(action==='allow-screen'){readScreenDraft();state.permission='已授权';persist();return render();}''')
+replace(" if(action==='deny-screen'){state.permission='已拒绝';return render();}", " if(action==='deny-screen'){readScreenDraft();state.permission='已拒绝';persist();return render();}")
+old_save=re.search(r" if\(action==='save-source'\).*?\n",text).group()
+new_save=r''' if(action==='save-source'){
+  const id=el.dataset.id,existing=state.sources.find(s=>s.id===id);
+  if(id==='screen'){readScreenDraft();if(state.permission!=='已授权')return notify('请先允许屏幕录制，当前不会记录。应用草稿已保留。');if(!draftScreenApps().length)return notify('请选择至少一个允许记录的应用。');}
+  const name=value('source-name').trim()||(id==='screen'?(existing?.title||'屏幕记录'):sourceChoices.find(x=>x.id===id)?.title||'研究资料');
+  if(id==='folder'&&(!value('source-name').trim()||!value('folder-path').trim()))return notify('请填写来源名称和文件夹位置。');
+  const previous=state.sourceConfigs?.[id]||{};
+  state.sourceConfigs={...state.sourceConfigs,[id]:{...previous,name,folderPath:value('folder-path'),saveMode:value('save-mode'),continuous:document.getElementById('continuous')?.checked!==false,scope:value('scope-range'),account:value('source-account'),since:value('source-since'),url:value('service-url'),original:value('external-path'),description:value('source-description'),...(id==='screen'?{apps:[...draftScreenApps()]}:{})}};
+  if(id==='screen')state.screenDraftApps=null;
+  state.setupSaved[id]='设置已保存，可以在来源中查看。';
+  if(id==='mcp'||id==='nas'){const m={id:'source-'+id,sourceId:id,title:id==='mcp'?'研究方法.md':name,type:'file',source:name,date:'刚刚',device:'工作台',origin:id==='mcp'?value('service-url'):value('external-path'),preview:id==='mcp'?'从外部服务导入的示例资料':value('source-description'),body:id==='mcp'?'先记录研究问题，再保留资料出处，最后整理观察结果。':'外部原件位置：'+value('external-path')+'\n'+value('source-description')};state.materials=state.materials.filter(x=>x.id!==m.id);state.materials.unshift(m);}
+  if(id==='lark'){state.taskRetried=true;state.setupSaved[id]='授权已更新，正在继续同步原有资料。';}
+  const subtitle=id==='folder'?'Mac · '+value('folder-path'):id==='screen'?'Mac · 已保存的应用范围':existing?.subtitle||'已选择的内容范围';
+  if(!existing)state.sources.push({id,title:name,subtitle,status:'已连接',count:0});else state.sources=state.sources.map(s=>s.id===id?{...s,title:name,subtitle,status:'已连接'}:s);
+  state.materials=state.materials.map(m=>m.sourceId===id?{...m,source:name}:m);
+  persist();return notify(id==='screen'?(state.sourcePaused.screen?'应用范围已保存，屏幕记录仍暂停。':'应用范围已保存，正在按此范围记录。'):id==='lark'?'授权已更新，继续原来的同步。':'来源设置已保存。',state.sourceReturn||'sources');
+ }
+'''
+replace(old_save,new_save)
+replace("if(id==='source-filter'){state.sourceFilter=v;render();}", "if(id==='source-filter'){state.sourceScopeId=v.startsWith('id:')?v.slice(3):'';state.sourceFilter=state.sourceScopeId?'all':v;persist();render();}")
+replace("document.addEventListener('change',e=>{const id=e.target.id,v=e.target.value;", "document.addEventListener('change',e=>{const id=e.target.id,v=e.target.value;if(e.target.dataset.screenApp){readScreenDraft();persist();render();return;}")
+
+# A fresh connection and an existing source have distinct identities and routes.
+replace("screenDraftApps:null,deletedRecords:[]", "screenDraftApps:null,newFolderDraft:null,sourceCounter:0,deletedRecords:[]")
+replace("{id:'folder',title:'同步文件夹',desc:'让后续修改持续归档',icon:'folder',go:'setup/folder'}", "{id:'folder',title:'同步文件夹',desc:'连接新的文件夹，持续保存后续变化',icon:'folder',go:'setup/folder/new'}")
+replace('function sourceStatus(id,source){', "function sourceKind(id){return state.sources.find(s=>s.id===id)?.kind||id;}\nfunction sourceSetupRoute(id){return sourceKind(id)==='folder'&&id!=='folder'?'setup/folder/'+id:'setup/'+id;}\nfunction sourceStatus(id,source){")
+replace("if(id==='folder')return state.sourceConfigs?.folder?.continuous===false?", "if(sourceKind(id)==='folder')return state.sourceConfigs?.[id]?.continuous===false?")
+replace(" if(state.sourcePaused[id])return '已暂停接收';", " if(!source)return '尚未连接';\n if(state.sourcePaused[id])return '已暂停接收';")
+replace("if(id==='folder'&&state.sourceConfigs?.folder?.continuous===false)", "if(sourceKind(id)==='folder'&&state.sourceConfigs?.[id]?.continuous===false)")
+replace("goButton('管理此来源','setup/'+source.id,'text')", "goButton('管理此来源',sourceSetupRoute(source.id),'text')")
+replace("goButton('查看来源设置','setup/'+source.id,'subtle')", "goButton('查看来源设置',sourceSetupRoute(source.id),'subtle')")
+replace("icon(s.id==='folder'?'folder':s.id==='screen'?'screen':'file')", "icon(sourceKind(s.id)==='folder'?'folder':s.id==='screen'?'screen':'file')")
+replace("goButton('管理','setup/'+s.id,'subtle')", "goButton('管理',sourceSetupRoute(s.id),'subtle')")
+
+function('setupPage', r'''function setupPage(){
+ const parts=state.page.split('/'),kind=parts[1]||'folder',creating=kind==='folder'&&parts[2]==='new',id=kind==='folder'&&!creating?(parts[2]||'folder'):kind;
+ const choice=sourceChoices.find(s=>s.id===kind)||({folder:{title:creating?'连接新的文件夹':'管理文件夹来源',desc:creating?'为另一个文件夹建立独立来源，现有来源保持原样。':'核对这个文件夹的范围、保存方式与接收状态。',icon:'folder'},screen:{title:'屏幕采集',desc:'选择允许记录的应用与范围。',icon:'screen'}}[kind])||{title:'连接来源',desc:'设置来源范围与保存方式。'};
+ const saved=creating?'':state.setupSaved[id],existing=creating?null:state.sources.find(s=>s.id===id),cfg=creating?(state.newFolderDraft||{}):(state.sourceConfigs?.[id]||{});
+ let contents='';
+ if(kind==='folder')contents=(existing?'<section class="evidence-box"><h2>正在管理的来源</h2><p data-user-content>'+esc(existing.title)+'</p></section>':'')+field('文件夹位置','folder-path',cfg.folderPath??(creating?'':'~/Documents/研究资料'),'text','此原型使用示例文件夹。')+'<label class="checkrow"><input type="checkbox" '+(cfg.continuous!==false?'checked':'')+' id="continuous"><span>持续同步后续变化<small>这是恢复接收后的策略。暂停时不接收新变化，已保存内容仍保留。</small></span></label>'+field('来源名称','source-name',cfg.name??existing?.title??(creating?'':'研究资料'))+'<label class="field"><span>保存方式</span><select class="field-input" id="save-mode">'+['中央保留原件，本机按需清理','本机与中央都保留','仅保存引用'].map(v=>'<option '+(cfg.saveMode===v?'selected':'')+'>'+v+'</option>').join('')+'</select></label>';
+ else if(kind==='screen')contents=screenRangeFields();
+ else if(connectedSourceFields(kind,choice,cfg))contents=connectedSourceFields(kind,choice,cfg);
+ else if(kind==='device')contents='<div class="notice">'+icon('screen')+'<div>在 Mac 或 Android 客户端连接当前工作台。采集范围在对应设备设置。</div></div><div class="card"><h2>连接一台设备</h2><p>选择设备平台并确认连接请求。</p><div class="form-actions">'+button('连接 Mac 示例设备','connect-device','data-device="Mac"','primary')+button('连接 Android 示例设备','connect-device','data-device="Android"')+'</div><p>确认后可在设备状态中核对平台、接收和记录范围。</p>'+goButton('查看已连接设备','devices','text')+'</div>';
+ else if(kind==='coding')contents='<div class="notice">'+icon('screen')+'<div>在 Mac 客户端中选择本机已有的 Coding Agent。同步后的会话进入资料库。</div></div>'+['Claude Code','Codex','Kimi'].map((x,i)=>'<label class="checkrow"><input type="checkbox" '+(i===1?'checked':'')+'><span>'+x+'<small>本机示例目录已发现</small></span></label>').join('')+goButton('查看 Coding 会话同步状态','activity/coding','text');
+ else contents=(existing&&existing.status.includes('授权')?'<div class="notice warn">授权已过期。已保存资料仍可阅读，重新连接后继续同步。</div>':'')+field(kind==='mcp'?'服务地址':kind==='nas'?'原件位置':'来源名称','source-name',kind==='mcp'?'https://example.invalid/mcp':kind==='nas'?'nas://archive/研究资料':choice.title)+(kind==='mcp'||kind==='nas'?'':'<div class="notice">'+icon('shield')+'<div>本原型用示例授权状态展示设置过程。</div></div>')+'<label class="field"><span>内容范围</span><select class="field-input" id="scope-range"><option>由我选择的内容</option><option>最近 30 天</option><option>所有可访问资料</option></select></label><label class="checkrow"><input type="checkbox" checked><span>保留资料的来源与时间</span></label>';
+ return heading(choice.title,choice.desc,(state.sourceReturn?button(icon('back')+(state.sourceReturn==='activity/details'?' 返回工作详情':' 返回活动'),'return-source-task','','subtle'):goButton(icon('back')+' 返回来源','sources','subtle')))+'<div class="fields">'+(saved&&kind!=='screen'?'<div class="notice good">'+icon('check')+'<div>'+esc(saved)+'</div></div>':'')+(existing?'<div class="notice '+(state.sourcePaused[id]||existing.status.includes('授权')||kind==='screen'&&state.permission!=='已授权'?'warn':'good')+'" role="status" data-source-receiving>'+sourceStatusMessage(id,existing)+'</div>':'')+contents+(kind==='folder'?'<p class="small muted">中央指你的 Mote 工作台存储；本机指这台电脑。保存方式决定两处是否保留原件。</p>':'')+'<div class="form-actions">'+(kind==='device'?'':button(kind==='screen'?(existing?'保存记录范围':'保存范围并开始记录'):kind==='mcp'?'导入所选资源':kind==='nas'?'保存外部引用':existing?.status.includes('授权')?'重新授权并继续':existing?'保存设置':'连接并保存','save-source','data-id="'+id+'" data-kind="'+kind+'"'+(creating?' data-new="true"':'')+(kind==='screen'&&state.permission!=='已授权'?' disabled':''),'primary'))+goButton('取消','sources','subtle')+(existing?button(state.sourcePaused[id]?'恢复此来源':'暂停此来源','pause-source','data-id="'+id+'"','subtle'):'')+'</div>'+(existing?'<div class="divider"></div>'+button('浏览此来源的资料','browse-source','data-id="'+id+'"','text'):'')+(kind==='folder'&&existing?'<div class="section">'+goButton('连接另一个文件夹','setup/folder/new','text')+'</div>':'')+'</div>';
+}''')
+
+replace("const id=el.dataset.id,existing=state.sources.find(s=>s.id===id);\n  if(id==='screen')", "const kind=el.dataset.kind||el.dataset.id,newFolder=el.dataset.new==='true',id=newFolder?'folder-'+((state.sourceCounter||0)+1):el.dataset.id,existing=state.sources.find(s=>s.id===id);\n  if(kind==='screen')")
+replace("if(id==='folder'&&(!value('source-name').trim()||!value('folder-path').trim()))", "if(kind==='folder'&&(!value('source-name').trim()||!value('folder-path').trim()))")
+replace("const subtitle=id==='folder'?'Mac · '+value('folder-path'):", "const subtitle=kind==='folder'?'Mac · '+value('folder-path'):")
+replace("state.sources.push({id,title:name,subtitle,status:'已连接',count:0})", "state.sources.push({id,kind,title:name,subtitle,status:'已连接',count:0})")
+replace("state.sources=state.sources.map(s=>s.id===id?{...s,title:name,subtitle,status:'已连接'}:s);", "state.sources=state.sources.map(s=>s.id===id?{...s,kind,title:name,subtitle,status:'已连接'}:s);")
+replace("state.materials=state.materials.map(m=>m.sourceId===id?{...m,source:name}:m);", "state.materials=state.materials.map(m=>m.sourceId===id?{...m,source:name}:m);\n  if(newFolder){state.sourceCounter=(state.sourceCounter||0)+1;state.newFolderDraft=null;state.page='setup/folder/'+id;location.hash='/'+state.page;}")
+replace("document.addEventListener('toggle',e=>", "document.addEventListener('input',e=>{if(state.page==='setup/folder/new'&&['folder-path','source-name','continuous','save-mode'].includes(e.target.id)){state.newFolderDraft={folderPath:document.getElementById('folder-path')?.value||'',name:document.getElementById('source-name')?.value||'',continuous:document.getElementById('continuous')?.checked!==false,saveMode:document.getElementById('save-mode')?.value||''};persist();}});\ndocument.addEventListener('toggle',e=>")
+
+# Keep user names and paths out of interface translation, including compact filters.
+replace('function filterSummary(){', "function filterSummaryHtml(){return [selectedSource()?sourceUserText(selectedSource().title):state.sourceFilter!=='all'?sourceUserText(state.sourceFilter):'',state.typeFilter!=='all'?esc(({note:'随手记',file:'文件',audio:'录音',screen:'屏幕记录',coding:'Coding 会话',calendar:'日历'})[state.typeFilter]||state.typeFilter):'',state.dateFilter!=='全部时间'?esc(state.dateFilter):''].filter(Boolean).join(' · ');}\nfunction filterSummary(){")
+replace("(filterSummary()?' · '+esc(filterSummary()):'')", "(filterSummary()?' · '+filterSummaryHtml():'')")
+replace("esc([state.search?'搜索「'+state.search+'」':'',filterSummary()].filter(Boolean).join(' · '))", "[state.search?'搜索「'+sourceUserText(state.search)+'」':'',filterSummaryHtml()].filter(Boolean).join(' · ')")
+replace("(s.id==='screen'?esc(sourceSubtitle(s)):sourceUserText(s.subtitle))", "(s.id==='screen'?esc(sourceSubtitle(s)):sourceKind(s.id)==='folder'?'Mac · '+sourceUserText(state.sourceConfigs?.[s.id]?.folderPath||s.subtitle.replace(/^Mac · /,'')):esc(s.subtitle))")
+
+TARGET.write_text(text)
+(ROOT/'reports/source-flow-replacements.json').write_text(json.dumps(changes,ensure_ascii=False,indent=2)+'\n')
+print(json.dumps({'file':str(TARGET),'replacements':len(changes),'bytes':len(text.encode())}))

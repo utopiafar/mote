@@ -1,0 +1,14 @@
+{
+  "round": 19,
+  "candidate": "dist/r19.html",
+  "sha256": "8cabb1d2c2914170a5b00dad56a7814bbb21e28fead38ecb59f894658cbcb7bf",
+  "bytes": 530254,
+  "base_sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+  "created_at": "2026-10-21T02:50:58.288845+00:00",
+  "scope": "HTML UI only. Narrow visual correction found by blind-r18-c. No feature or state transition changes.",
+  "exact_delta": {
+    "added_css": "\n/* R19: keep long, user-authored conversation titles inside the history rail. */\n.chat-history .btn[data-action=\"open-chat\"]{white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.6;max-width:100%}\n",
+    "revision_namespace": "18 -> 19"
+  },
+  "evidence_inheritance": "R18 semantic, feature and behavioral observations remain attached to R18; R19 separately verifies long titles and relevant rendered scenes. Same application JavaScript apart from REV is proven by byte reversal."
+}

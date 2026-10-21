@@ -1,0 +1,27 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/material/m1",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · 交互原型\n演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n资料库\n/\n资料详情\n工作台在线\n随手记\n添加内容\n返回对话\n复制正文\n更多\n产品评审 · 让第一步更清楚\n随手记\n今天 09:12\n网页\n可阅读\n\n今天的产品评审围绕新用户的第一步展开。\n\n最重要的事情是让输入方式清楚：一次导入文件，或持续同步一个文件夹。已有资料应该随时可读，用户也可以直接提问。\n\n下次评审：周四下午核对三端的入口和文案。\n\n来源与原始资料\n\n我写的记录\n\n查看原始内容\n查看来源\n基于这份资料提问\n补充背景\n从这份资料整理记忆\n编辑笔记\n原始内容\n\n保留内容的来源、时间与原始记录。\n\n产品评审 · 让第一步更清楚\n\n我写的记录\n\n今天的产品评审围绕新用户的第一步展开。 最重要的事情是让输入方式清楚：一次导入文件，或持续同步一个文件夹。已有资料应该随时可读，用户也可以直接提问。 下次评审：周四下午核对三端的入口和文案。",
+  "controls": [
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "关闭对话框",
+      "action": "close-modal",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H2",
+      "text": "原始内容"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state"
+}

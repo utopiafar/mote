@@ -1,0 +1,218 @@
+2	Add existing attachments
+3	Choose an example attachment to save with the current note.
+6	Close dialog
+7	Write some content or add an attachment first.
+8	Use example materials to explore the imported result.
+14	Confirm action
+15	Delete the import “研究资料.md” and the 1 material it created. External originals and other imports are retained.
+16	Confirm
+17	Review this import
+18	资料归档.zip · Originals saved. Add context to continue.
+19	Back to uploads and processing
+20	Originals saved
+21	Review content
+22	Material topic
+23	Context and relationships
+24	Archive preview: 研究方法.md, 阅读记录.md, 访谈摘要.md, 来源清单.md. 4 materials in total.
+25	This reviews only the current import. The original file and other materials are unaffected.
+26	Confirm and continue processing
+27	Handle later
+28	Describe what this material relates to
+29	Settings saved. Review them in Sources.
+30	Source settings saved.
+32	External MCP service · Text resource
+34	Authorization updated. Continuing sync for existing materials.
+35	Authorization updated. The original sync can continue.
+36	This source is paused. Saved materials remain readable.
+37	Resume this source
+50	Current version
+52	Read this version
+58	Manage task
+59	Enter a task first.
+61	Authorization updated
+63	个人助手 · Connection information
+64	Read access limited to materials and memories
+65	Example address: https://mote.example.invalid/read
+66	Example credential: demo-read-only-grant-1
+67	This connection is read-only. Revoke it from the access page whenever needed.
+68	Revoke this assistant's read-only connection. Other access grants and saved materials are retained.
+69	Name an assistant and choose exactly what it may read.
+70	Materials only
+71	Materials and memories
+72	Materials, memories and insights
+73	Create this read-only connection
+74	Content is ready. Select and copy it in the prototype.
+75	Material actions
+76	Manage this material.
+77	Export content
+78	Delete demo copy
+79	Original content
+80	Preserve the content's source, time and raw record.
+84	Ask only about this material
+85	Back to material
+86	Add material context
+87	Describe its relationship with other materials. The original content is retained.
+88	Save context
+89	Choose specific materials and describe what you want to remember.
+90	For example: remember the review decisions and follow-up points
+91	Saved to the library
+92	Note saved.
+93	Open this note
+95	Screen recording / Browser
+96	Remove this raw capture record. Organized materials are retained.
+100	产品评审记录 · View citation
+101	周四设计评审 · View citation
+102	Attach an image to this question
+103	Choose an example image to send with the question.
+104	Switched to the unconfigured-model state.
+105	Enter the question you want to ask first.
+108	Edit records for all memories
+109	Browse by memory name and evidence. Initial results and manual corrections are both preserved.
+111	Correct memory
+112	Write the accurate content and keep its original evidence.
+113	Corrected content
+114	Save correction
+115	Continued processing from the current memory, preserving existing corrections and provenance.
+116	View this processing result
+117	This continuation is complete. Review its result and evidence.
+118	Memory actions
+119	Manage the current memory. Original materials are retained.
+120	Export this memory
+121	Delete example memory
+125	Add your clarification first.
+126	Settings saved. These values will be used when you reopen this page.
+127	Last 7 days review
+128	Oct 14–20 · Includes 6 materials by save date
+129	Backed by original evidence
+133	Materials used in this report · 6
+135	This processing run has stopped. Original materials are retained.
+136	Restart processing
+137	Back to task details
+138	Connection check 1: Reauthorization still needed.
+139	Suggestion: 周四设计评审
+140	Confirm the time, target device and calendar.
+141	Title
+142	Start time
+143	End time
+144	Target device and calendar
+146	Example Android device · Personal calendar
+147	Confirm calendar addition in demo
+148	This calendar suggestion was ignored
+149	Original materials are retained. Restore the suggestion for review later.
+150	Restore calendar suggestion
+151	Export content is ready in the prototype.
+152	Choose a backup and review what will be restored.
+153	Example backup · 6 materials · 3 sources
+154	Confirm example restoration
+155	Index rebuilt · 6 searchable materials · Originals retained
+156	Request run-101
+157	Field
+158	This request
+159	Module / Skill
+160	Ask / Material questions
+161	Agent / Model
+162	个人助手 / Example cloud model
+163	Result
+164	Processing complete; the billing snapshot is preserved
+165	Files / Example local model
+166	Workspace online · Checked just now
+167	Copy model preset
+168	The copy can be edited independently.
+169	Copy name
+170	Include a copy of the credentials
+171	Confirm copy
+172	Example connection available · General assistant · Saved address https://example.invalid/v1
+174	Reprocess file
+175	Extract content again with the current processing rules. The original is retained.
+176	View processing rules
+177	Original audio · 00:00 / 24:18 · Example transcript excerpt
+178	Speaker
+179	Transcript content
+180	Save corrections
+181	Local speech model ready
+182	Check model status
+183	Rule check and processing preview
+184	Use saved rules and confirm before scheduling originals for reprocessing.
+185	MIME to check
+186	Matching recipe: Extract content and summary
+187	Source: 研究资料 · Original: 记忆系统.md
+188	1 example original will be processed. Existing content remains until the new result is ready.
+189	Confirm and queue
+190	Review historical image scope
+191	Only the selected scope will be processed.
+192	2026-10-01 to 2026-10-20
+193	Source: All image sources
+194	Process missing images only · 3 example images
+195	Schedule processing
+196	Deployment configuration differences
+197	Form validation complete. Apply this draft on the deployment machine.
+198	Save example configuration differences
+199	Effective values refreshed: Example workspace / Source interval 15 minutes. The draft was not applied automatically.
+200	New tasks are paused. Existing work is allowed to finish.
+201	Resume new tasks
+202	Immediately stop existing automatic memory work and pause new intake. Saved checkpoints and original materials are retained.
+203	Prepare a replacement memory implementation
+204	Preview and validate first, then apply separately. The built-in implementation is still running.
+205	Target implementation
+206	Authorized history scope
+207	All authorized materials
+208	I have reviewed the history scope and example processing cost
+209	This example uses 6 materials and makes 0 real model calls.
+210	Prepare and validate
+211	Trusted memory plugins
+212	Check capabilities, permissions and dependencies for a pinned version before installation.
+213	Built-in memory plugin · Example version 1.0.0
+214	Capabilities: Fact extraction, memory consolidation and citation tracing
+215	Permissions: Read authorized materials and write processing results
+216	Dependency: Configured model connection
+217	Status: Available to install
+218	Install and validate the example version
+219	View registered capabilities
+220	Registered plugin capabilities
+221	Compare entry points actually loaded in the workspace and web interface.
+222	Fact extraction and memory consolidation
+223	Workspace: Loaded · Web: Management interface loaded
+224	Version: Example 1.0.0 · Current binding: Built-in implementation
+225	Instance: Built-in capability available; custom instance disabled
+226	Sign-in preview
+227	Enter the personal workspace with an example account.
+228	Username
+229	Enter workspace
+230	Diagnostic export preview
+231	mote-diagnostics-demo.json · Review and save locally
+232	Save diagnostic file
+233	Manual central upgrade instructions
+234	Maintain the machine running the central workspace. First check versions and release notes.
+235	Export a material backup and record the current central version.
+236	Choose the package for the appropriate operating system from DEV releases and read its release notes.
+237	Pause intake, stop the old process on the central machine and replace the application. Keep the existing data directory.
+238	Restart the central component, then return here to check the version, source status and saved materials.
+239	Open DEV release downloads
+240	View example upgrade-complete status
+241	Checked just now: Web and central versions differ. Review the relevant release notes.
+242	Material directory
+243	View archived content with read-only access.
+245	The process for this read
+246	个人助手 · Today 09:25 · Read-only access
+247	1. Find relevant content
+248	Scope: Materials and memories from the last 7 days
+249	2. Read original content
+250	3. Generate an answer with sources
+251	Used 2 materials and 1 memory. Original materials were not modified.
+252	Diagnostic records
+253	A recent processing notification.
+254	Lark source authorization expired. Reconnect in the source settings.
+255	Draft saved: 来源同步需要重新授权
+256	Screen recording permission: Authorized
+257	Screen recording permission: Denied
+258	Allow screen recording first, or go back to add other content.
+259	Maintain estimates for future requests while preserving billing snapshots for earlier requests
+260	These prices affect estimates for future requests only. Recorded requests retain their original costs. The example prices can be edited.
+261	Provider
+262	Currency
+263	Per million input tokens
+264	Per million output tokens
+265	Per million cached input tokens
+266	Save pricing for future requests
+267	Back to usage
+268	Saved: Example cloud model · USD · Input 0.8 / Output 3.2 / Cache 0.2

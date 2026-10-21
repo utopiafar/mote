@@ -1,0 +1,341 @@
+{
+  "candidate": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/dist/r18.html",
+  "sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+  "created_at": "2026-10-21T02:40:04.938Z",
+  "browser": "Chromium 133.0.6943.16",
+  "scope": "Real isolated headless Chrome screenshots; generated fixture data; system UI and real devices not tested.",
+  "cases": [
+    {
+      "name": "desktop-library-light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "pageWidth": 1440,
+      "horizontal_overflow": false,
+      "errors": [],
+      "headings": [
+        {
+          "level": "H1",
+          "text": "资料库"
+        },
+        {
+          "level": "H2",
+          "text": "资料"
+        },
+        {
+          "level": "H2",
+          "text": "整理与回顾"
+        },
+        {
+          "level": "H2",
+          "text": "原始记录"
+        },
+        {
+          "level": "H2",
+          "text": "导入管理"
+        },
+        {
+          "level": "H2",
+          "text": "全部资料"
+        }
+      ]
+    },
+    {
+      "name": "desktop-empty-light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "pageWidth": 1440,
+      "horizontal_overflow": false,
+      "errors": [],
+      "headings": [
+        {
+          "level": "H1",
+          "text": "资料库"
+        },
+        {
+          "level": "H2",
+          "text": "从一份资料开始"
+        }
+      ]
+    },
+    {
+      "name": "desktop-library-dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "pageWidth": 1440,
+      "horizontal_overflow": false,
+      "errors": [],
+      "headings": [
+        {
+          "level": "H1",
+          "text": "资料库"
+        },
+        {
+          "level": "H2",
+          "text": "资料"
+        },
+        {
+          "level": "H2",
+          "text": "整理与回顾"
+        },
+        {
+          "level": "H2",
+          "text": "原始记录"
+        },
+        {
+          "level": "H2",
+          "text": "导入管理"
+        },
+        {
+          "level": "H2",
+          "text": "全部资料"
+        }
+      ]
+    },
+    {
+      "name": "mobile-library-light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "pageWidth": 390,
+      "horizontal_overflow": false,
+      "errors": [],
+      "headings": [
+        {
+          "level": "H1",
+          "text": "资料库"
+        },
+        {
+          "level": "H2",
+          "text": "全部资料"
+        }
+      ]
+    },
+    {
+      "name": "mobile-empty-dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "pageWidth": 390,
+      "horizontal_overflow": false,
+      "errors": [],
+      "headings": [
+        {
+          "level": "H1",
+          "text": "资料库"
+        },
+        {
+          "level": "H2",
+          "text": "从一份资料开始"
+        }
+      ]
+    },
+    {
+      "name": "tablet-library-light",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "pageWidth": 768,
+      "horizontal_overflow": false,
+      "errors": [],
+      "headings": [
+        {
+          "level": "H1",
+          "text": "资料库"
+        },
+        {
+          "level": "H2",
+          "text": "全部资料"
+        }
+      ]
+    },
+    {
+      "name": "desktop-library-english",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "pageWidth": 1440,
+      "horizontal_overflow": false,
+      "errors": [],
+      "headings": [
+        {
+          "level": "H1",
+          "text": "Library"
+        },
+        {
+          "level": "H2",
+          "text": "Materials"
+        },
+        {
+          "level": "H2",
+          "text": "Organize and review"
+        },
+        {
+          "level": "H2",
+          "text": "Raw records"
+        },
+        {
+          "level": "H2",
+          "text": "Import management"
+        },
+        {
+          "level": "H2",
+          "text": "All materials"
+        }
+      ]
+    },
+    {
+      "name": "mobile-empty-english",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "pageWidth": 390,
+      "horizontal_overflow": false,
+      "errors": [],
+      "headings": [
+        {
+          "level": "H1",
+          "text": "Library"
+        },
+        {
+          "level": "H2",
+          "text": "Start with one material"
+        }
+      ]
+    },
+    {
+      "name": "desktop-sources",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "pageWidth": 1440,
+      "horizontal_overflow": false,
+      "errors": [],
+      "headings": [
+        {
+          "level": "H1",
+          "text": "来源管理"
+        },
+        {
+          "level": "H2",
+          "text": "已连接来源"
+        }
+      ]
+    },
+    {
+      "name": "desktop-memory",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "pageWidth": 1440,
+      "horizontal_overflow": false,
+      "errors": [],
+      "headings": [
+        {
+          "level": "H1",
+          "text": "记忆"
+        },
+        {
+          "level": "H2",
+          "text": "产品设计偏好"
+        }
+      ]
+    },
+    {
+      "name": "mobile-screen-settings",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "pageWidth": 390,
+      "horizontal_overflow": false,
+      "errors": [],
+      "headings": [
+        {
+          "level": "H1",
+          "text": "屏幕采集"
+        },
+        {
+          "level": "H2",
+          "text": "已保存的记录范围"
+        },
+        {
+          "level": "H2",
+          "text": "选择允许记录的应用"
+        },
+        {
+          "level": "H2",
+          "text": "内容与你的关系"
+        },
+        {
+          "level": "H3",
+          "text": "已保存的来源关系"
+        }
+      ]
+    },
+    {
+      "name": "desktop-settings-english",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "pageWidth": 1440,
+      "horizontal_overflow": false,
+      "errors": [],
+      "headings": [
+        {
+          "level": "H1",
+          "text": "Settings"
+        },
+        {
+          "level": "H2",
+          "text": "Account and devices"
+        },
+        {
+          "level": "H2",
+          "text": "Models and services"
+        },
+        {
+          "level": "H2",
+          "text": "Capture and privacy"
+        },
+        {
+          "level": "H2",
+          "text": "Automatic memory and plugins"
+        },
+        {
+          "level": "H2",
+          "text": "Storage and backup"
+        },
+        {
+          "level": "H2",
+          "text": "External access"
+        },
+        {
+          "level": "H2",
+          "text": "Usage and cost"
+        },
+        {
+          "level": "H2",
+          "text": "Help and diagnostics"
+        },
+        {
+          "level": "H2",
+          "text": "Language and appearance"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "scope": "Three frozen candidates, same generated fixture, same rendered states. Labels conceal revision, not familiarity after initial final-candidate exposure. No ranking supplied to evaluators.",
+  "mapping": [
+    {
+      "label": "pine",
+      "file": "dist/r17.html",
+      "sha256": "290534ad7b054e1349ca836e13e7c30d3913860964479517052c8523031d7c6c",
+      "scenes": [
+        {
+          "scene": "library",
+          "actions": [],
+          "errors": []
+        },
+        {
+          "scene": "source-task",
+          "actions": [
+            "工作详情"
+          ],
+          "errors": []
+        },
+        {
+          "scene": "memory-result",
+          "actions": [
+            "继续整理",
+            "查看本次整理结果"
+          ],
+          "errors": []
+        }
+      ]
+    },
+    {
+      "label": "reed",
+      "file": "../dist/rounds/r15.html",
+      "sha256": "65257ad350e155a01bd1e64c3241e812bff98c93fda593be70de2dae17bf32f9",
+      "scenes": [
+        {
+          "scene": "library",
+          "actions": [],
+          "errors": []
+        },
+        {
+          "scene": "source-task",
+          "actions": [
+            "工作详情"
+          ],
+          "errors": []
+        },
+        {
+          "scene": "memory-result",
+          "actions": [
+            "继续整理",
+            "查看本次整理结果"
+          ],
+          "errors": []
+        }
+      ]
+    },
+    {
+      "label": "stone",
+      "file": "dist/r18.html",
+      "sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+      "scenes": [
+        {
+          "scene": "library",
+          "actions": [],
+          "errors": []
+        },
+        {
+          "scene": "source-task",
+          "actions": [
+            "工作详情"
+          ],
+          "errors": []
+        },
+        {
+          "scene": "memory-result",
+          "actions": [
+            "继续整理",
+            "查看本次整理结果"
+          ],
+          "errors": []
+        }
+      ]
+    }
+  ]
+}
