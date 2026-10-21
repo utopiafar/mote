@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-10-21T04:36:04.824Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "0bd4fe3d76af1e189d562c36aa47b7eb5f74458dadd2083d03036f609e7f0e6e",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "answers": {
+    "purpose": "本机入口汇集个人资料，以后查找、提问和核对。",
+    "input": "想法、文件、文件夹、屏幕和在线来源。",
+    "first_action": "写下第一条记录",
+    "expected_result": "保存文字并在资料库找到同一记录。",
+    "setup": "先记想法无需预先连接；未说明本机与中央保存的差别。",
+    "unclear": "顶栏工作台在线与本机操作的边界需要在后续操作确认。",
+    "visual": "Mac外壳和常规侧栏可识别；写随手记、顶部随手记、首屏记录三个入口略重复。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed evaluator; read baseline inventory and independent R15/R19 reports."
+}

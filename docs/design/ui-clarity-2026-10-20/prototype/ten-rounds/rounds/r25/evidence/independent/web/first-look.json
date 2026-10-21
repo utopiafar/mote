@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:07:37.213Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "7cd1bdfdce2327deb85a52e8d3bc3b1dae31a1f6e78b1b39febcef23ab00c978",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "answers": {
+    "purpose": "个人资料与记忆库，保存记录并在之后查找、提问、核对出处。",
+    "first_action": "写下第一条记录为最强动作；已有文件可导入。",
+    "setup_expectation": "先记一条想法即可；持续来源是可选，屏幕采集交由客户端。",
+    "first_value_expectation": "右侧实例说明保存记录后可问过去的决定并回看原文。",
+    "advanced_discovery": "来源和全部功能保留在侧栏，未压过起步任务。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

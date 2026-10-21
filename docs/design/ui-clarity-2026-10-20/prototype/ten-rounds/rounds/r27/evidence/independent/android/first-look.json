@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:17:37.345Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "b4c703a2d50efad4aa327ec8af1d501552446b30457b6b6db22a9b1d366cd58c",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "answers": {
+    "purpose": "把日常记录存为可搜索可提问的资料。",
+    "first_action": "第一屏就能写记录或导入。",
+    "setup_expectation": "不要求先授权，后续收集卡仍属可选。",
+    "first_value_expectation": "正文说明可沿出处核对，详细例子在下面。",
+    "advanced_discovery": "来源在底栏；右上更多保留高级入口。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

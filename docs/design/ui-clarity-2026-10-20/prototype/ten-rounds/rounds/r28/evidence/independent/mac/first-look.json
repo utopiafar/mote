@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:22:53.011Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "af1556f96771d4b96354e4241b0525030d7d58946a8d2ad113c824f1088d8db5",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "answers": {
+    "purpose": "保存日常资料，在需要时找回或引用核对。",
+    "first_action": "点击写下第一条记录，预期无设置门槛。",
+    "setup_expectation": "文件夹和屏幕是后续选项。",
+    "first_value_expectation": "右侧例子连接保存、提问与原文验证。",
+    "advanced_discovery": "本机操作和全功能可见但未挤压主按钮。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

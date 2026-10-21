@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-10-21T04:36:04.824Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "828b76a01226ae036e7484fcf99cae4482bdb8be3efb3a9c46581ade6d56caa6",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "answers": {
+    "purpose": "随时记录、以后搜索和提问，能够回看依据的个人资料库。",
+    "input": "文件、想法和设备记录。",
+    "first_action": "写下第一条记录",
+    "expected_result": "出现可重新打开的第一条资料。",
+    "setup": "首屏表示可先记录；当前没有权限要求。",
+    "unclear": "持续收集选项在首屏下方；更多菜单用途需操作后确认。",
+    "visual": "主按钮在首屏清楚可达，底部四项导航清楚；示例卡占用较多首屏高度。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed evaluator; read baseline inventory and independent R15/R19 reports."
+}

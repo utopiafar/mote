@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:31:34.168Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "825dd27870384f721a4ab01a75b6c2134225781d3fa06272cf6518b55b447a15",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "answers": {
+    "purpose": "首屏清楚说明保存文件、想法和设备记录，日后搜索、提问并核对原文。",
+    "first_action": "“写下第一条记录”在第一屏明显可点，导入为次选。",
+    "setup_expectation": "写想法后再按需连接来源，当前没有要求先授权；持续来源在下方。",
+    "first_value_expectation": "创建会议笔记后应可找到、提问和检查原文出处。",
+    "advanced_discovery": "底部资料库、问一问、来源、活动分工清楚；进阶内容可在首值后寻找。首屏完整示例在下方，但不阻止理解首步。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

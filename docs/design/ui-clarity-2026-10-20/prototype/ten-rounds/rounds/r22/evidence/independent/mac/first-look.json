@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-10-21T04:49:03.420Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "04da8d84e9337654220cf625c71946d5c9ed12e584cdb75aa44f8f0f7a0f977c",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "answers": {
+    "purpose": "通过Mac入口收集和回查个人资料。",
+    "input": "文字、文件夹、屏幕及在线内容。",
+    "first_action": "写下第一条记录",
+    "expected_result": "资料库中的第一条内容。",
+    "setup": "先记录，再按需授权来源。",
+    "unclear": "本机与中央状态有待操作确认。",
+    "visual": "首屏无新排版变化；几个笔记入口仍可分辨。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

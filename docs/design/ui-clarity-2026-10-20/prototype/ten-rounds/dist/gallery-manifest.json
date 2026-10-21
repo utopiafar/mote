@@ -1,0 +1,42 @@
+{
+  "rounds": 10,
+  "candidates": 30,
+  "latest_round": 29,
+  "build_status": {
+    "partial": false,
+    "frozen_rounds": 10,
+    "evaluated_rounds": 10
+  },
+  "files": [
+    {
+      "path": "dist/mote-mac-final.html",
+      "bytes": 621848,
+      "sha256": "ca9330a6e66cad8a04a5bda6393632f7a578a6031afe31359f620078c7c706a8"
+    },
+    {
+      "path": "dist/mote-android-final.html",
+      "bytes": 621876,
+      "sha256": "825dd27870384f721a4ab01a75b6c2134225781d3fa06272cf6518b55b447a15"
+    },
+    {
+      "path": "dist/mote-rounds-gallery.html",
+      "bytes": 156376,
+      "sha256": "f7e0e251cd75382aabb5cf466000607182b89aa1d826be8f90581c80cb3f94c8"
+    },
+    {
+      "path": "dist/mote-three-platforms.html",
+      "bytes": 2220126,
+      "sha256": "a7bc28460cf85300bd32109f851738e6e85b443d6571221aa5bef41995755921"
+    },
+    {
+      "path": "dist/mote-web-final.html",
+      "bytes": 621848,
+      "sha256": "058c5a9227df5acbe94ac54ed5b95d37cff54cffff0f3248aaf49e1f2000db5e"
+    },
+    {
+      "path": "dist/mote-rounds-portable.html",
+      "bytes": 19601387,
+      "sha256": "820f91af17a9f1ddd371f1eff669cf32e28a3365a3445899c66cee5377acb155"
+    }
+  ]
+}

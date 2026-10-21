@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:04:19.066Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "c78b5ec5f7e3c4dd25f48ea26b8578031512a1f67eb32a9e567e748ff1a9b235",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "answers": {
+    "purpose": "保存自己的文件、想法和设备记录，之后搜索或提问并回查原文。",
+    "first_action": "最突出的是写下第一条记录；已有资料也可以导入。",
+    "setup_expectation": "可以先记一条想法，连接来源可选；屏幕卡明确要由 Mac/Android 客户端采集。",
+    "first_value_expectation": "例子把保存、以后提问、点引用核对原文串起来。",
+    "advanced_discovery": "左侧全部功能与来源入口保留，首屏重点仍是两种起步动作。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

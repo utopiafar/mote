@@ -1,0 +1,212 @@
+[
+  {
+    "at_utc": "2026-10-21T05:17:37.500Z",
+    "action": "Click 写下第一条记录",
+    "evidence": "01-note-editor.dom.json",
+    "screenshot": "01-note-editor.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:37.513Z",
+    "action": "Fill synthetic note: 白鹤R27-mac会议决定：2026年10月21日，叶青负责在周三前整理四份背景资料。核对词：紫色信标。",
+    "evidence": "02-note-filled.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:37.652Z",
+    "action": "Save note",
+    "evidence": "03-note-saved.dom.json",
+    "screenshot": "03-note-saved.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:37.801Z",
+    "action": "Leave editor via main 资料库",
+    "evidence": "04-library-after-save.dom.json",
+    "screenshot": "04-library-after-save.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:37.835Z",
+    "action": "Search 紫色信标",
+    "evidence": "05-search-note.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:37.951Z",
+    "action": "Open matching saved note",
+    "evidence": "06-verified-note.dom.json",
+    "screenshot": "06-verified-note.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792559857554-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:38.084Z",
+    "action": "Ask from verified note",
+    "evidence": "07-ask-scoped.dom.json",
+    "screenshot": "07-ask-scoped.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:38.098Z",
+    "action": "Fill task-specific question",
+    "evidence": "08-question-filled.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:38.236Z",
+    "action": "Submit question and inspect answer",
+    "evidence": "09-answer.dom.json",
+    "screenshot": "09-answer.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:38.361Z",
+    "action": "Open displayed citation",
+    "evidence": "10-citation.dom.json",
+    "screenshot": "10-citation.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792559857554-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:38.506Z",
+    "action": "Inspect original material",
+    "evidence": "11-original.dom.json",
+    "screenshot": "11-original.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792559857554-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:38.547Z",
+    "action": "Close original dialog",
+    "evidence": "12-original-closed.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792559857554-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:38.682Z",
+    "action": "Return to original conversation",
+    "evidence": "13-answer-returned.dom.json",
+    "screenshot": "13-answer-returned.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:38.784Z",
+    "action": "Click 添加内容",
+    "evidence": "14-add-content.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:38.915Z",
+    "action": "Click 导入文件",
+    "evidence": "15-import-panel.dom.json",
+    "screenshot": "15-import-panel.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/import"
+  },
+  {
+    "at_utc": "2026-10-21T05:17:39.050Z",
+    "action": "Click 改为持续同步文件夹",
+    "evidence": "16-continuous-folder-handoff.dom.json",
+    "screenshot": "16-continuous-folder-handoff.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new"
+  },
+  {
+    "at_utc": "2026-10-21T05:18:02.555Z",
+    "action": "Click 在 Finder 中选择",
+    "evidence": "17-folder-picker.dom.json",
+    "screenshot": "17-folder-picker.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new"
+  },
+  {
+    "at_utc": "2026-10-21T05:18:02.679Z",
+    "action": "Choose 收集夹 ~/Desktop/收集夹",
+    "evidence": "18-folder-chosen.dom.json",
+    "screenshot": "18-folder-chosen.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new"
+  },
+  {
+    "at_utc": "2026-10-21T05:18:02.691Z",
+    "action": "Name synthetic source",
+    "evidence": "19-folder-named.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new"
+  },
+  {
+    "at_utc": "2026-10-21T05:18:02.829Z",
+    "action": "Click 连接并保存",
+    "evidence": "20-folder-connected.dom.json",
+    "screenshot": "20-folder-connected.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/folder-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:18:20.595Z",
+    "action": "Click 暂停此来源",
+    "evidence": "21-folder-paused.dom.json",
+    "screenshot": "21-folder-paused.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/folder-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:18:20.755Z",
+    "action": "Return to 来源 and verify target",
+    "evidence": "22-source-overview.dom.json",
+    "screenshot": "22-source-overview.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/sources"
+  },
+  {
+    "at_utc": "2026-10-21T05:18:20.819Z",
+    "action": "Click 选择屏幕范围",
+    "evidence": "23-screen-setup.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T05:18:20.863Z",
+    "action": "Click 模拟拒绝",
+    "evidence": "24-screen-denied.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T05:18:21.010Z",
+    "action": "Select 浏览器 while denied",
+    "evidence": "25-screen-selected-denied.dom.json",
+    "screenshot": "25-screen-selected-denied.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T05:18:29.787Z",
+    "action": "Click 去查看屏幕权限",
+    "evidence": "26-permission-recovery-link.dom.json",
+    "screenshot": "26-permission-recovery-link.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T05:18:29.913Z",
+    "action": "Click 模拟允许",
+    "evidence": "27-permission-recovered.dom.json",
+    "screenshot": "27-permission-recovered.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T05:18:30.044Z",
+    "action": "Cancel unsaved application range",
+    "evidence": "28-screen-cancel.dom.json",
+    "screenshot": "28-screen-cancel.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/sources"
+  },
+  {
+    "at_utc": "2026-10-21T05:18:30.110Z",
+    "action": "Click 资料库",
+    "evidence": "29-library-for-memory.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T05:18:30.251Z",
+    "action": "Click 记忆",
+    "evidence": "30-memory.dom.json",
+    "screenshot": "30-memory.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/memories"
+  }
+]

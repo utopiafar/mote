@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-10-21T04:42:19.418Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "47d7152fa75c77d7a988ad68ab601bc0584a51d231784cf5567d091b817aec60",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "answers": {
+    "purpose": "从本机入口收集和使用个人资料。",
+    "input": "想法、文件和持续来源。",
+    "first_action": "写下第一条记录",
+    "expected_result": "保存后能回到同一原文。",
+    "setup": "先写文字，不需要先接来源。",
+    "unclear": "本机和中央的保存关系尚待操作。",
+    "visual": "三处随手记入口仍重复但主按钮明确。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative review; previously reviewed R20."
+}

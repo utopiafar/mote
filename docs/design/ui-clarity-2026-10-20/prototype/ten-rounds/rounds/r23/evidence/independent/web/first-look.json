@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-10-21T04:56:52.213Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "bf4a6cd363f5ea7b3d50660892d79e7da724b8a67ca824826185b55620805d1c",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "answers": {
+    "purpose": "汇集个人资料，之后搜索、提问并回原文核对。",
+    "input": "文件、想法和设备记录。",
+    "first_action": "写下第一条记录",
+    "expected_result": "可找回的第一条原文。",
+    "setup": "可以先记录，连接不是前置要求。",
+    "unclear": "首屏未展开保存位置的细节。",
+    "visual": "主按钮及示例维持清楚层级，较R22无可见改变。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

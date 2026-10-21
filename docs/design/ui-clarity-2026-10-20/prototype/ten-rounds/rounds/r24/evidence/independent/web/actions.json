@@ -1,0 +1,170 @@
+[
+  {
+    "at_utc": "2026-10-21T05:04:19.239Z",
+    "action": "Click 写下第一条记录",
+    "evidence": "01-note-editor.dom.json",
+    "screenshot": "01-note-editor.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:19.258Z",
+    "action": "Fill synthetic note: 云雀R24-web会议决定：2026年10月21日，叶青负责在周三前整理四份背景资料。核对词：绿色书签。",
+    "evidence": "02-note-filled.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:19.390Z",
+    "action": "Save note",
+    "evidence": "03-note-saved.dom.json",
+    "screenshot": "03-note-saved.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:19.575Z",
+    "action": "Leave editor via main 资料库",
+    "evidence": "04-library-after-save.dom.json",
+    "screenshot": "04-library-after-save.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:19.599Z",
+    "action": "Search 绿色书签",
+    "evidence": "05-search-note.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:19.731Z",
+    "action": "Open matching saved note",
+    "evidence": "06-verified-note.dom.json",
+    "screenshot": "06-verified-note.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792559059285-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:19.892Z",
+    "action": "Ask from verified note",
+    "evidence": "07-ask-scoped.dom.json",
+    "screenshot": "07-ask-scoped.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:19.904Z",
+    "action": "Fill task-specific question",
+    "evidence": "08-question-filled.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:20.060Z",
+    "action": "Submit question and inspect answer",
+    "evidence": "09-answer.dom.json",
+    "screenshot": "09-answer.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:20.189Z",
+    "action": "Open displayed citation",
+    "evidence": "10-citation.dom.json",
+    "screenshot": "10-citation.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792559059285-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:20.328Z",
+    "action": "Inspect original material",
+    "evidence": "11-original.dom.json",
+    "screenshot": "11-original.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792559059285-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:20.373Z",
+    "action": "Close original dialog",
+    "evidence": "12-original-closed.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792559059285-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:20.508Z",
+    "action": "Return to original conversation",
+    "evidence": "13-answer-returned.dom.json",
+    "screenshot": "13-answer-returned.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:26.655Z",
+    "action": "Open 来源",
+    "evidence": "14-sources.dom.json",
+    "screenshot": "14-sources.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/sources"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:26.803Z",
+    "action": "Open source catalog",
+    "evidence": "15-source-catalog.dom.json",
+    "screenshot": "15-source-catalog.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/catalog"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:26.934Z",
+    "action": "Choose screen recording and inspect setup",
+    "evidence": "16-screen-setup.dom.json",
+    "screenshot": "16-screen-setup.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:35.912Z",
+    "action": "Click 连接设备",
+    "evidence": "17-device-connect.dom.json",
+    "screenshot": "17-device-connect.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/device"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:40.803Z",
+    "action": "Click 连接 Mac 示例设备",
+    "evidence": "18-device-connected.dom.json",
+    "screenshot": "18-device-connected.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:46.601Z",
+    "action": "Click 查看设备状态",
+    "evidence": "19-device-state.dom.json",
+    "screenshot": "19-device-state.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/devices"
+  },
+  {
+    "at_utc": "2026-10-21T05:04:53.914Z",
+    "action": "Click 更新设备连接授权",
+    "evidence": "20-device-reauthorize.dom.json",
+    "screenshot": "20-device-reauthorize.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/devices"
+  },
+  {
+    "at_utc": "2026-10-21T05:05:05.870Z",
+    "action": "Click 连接设备",
+    "evidence": "21-additional-device.dom.json",
+    "screenshot": "21-additional-device.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/device"
+  },
+  {
+    "at_utc": "2026-10-21T05:05:05.997Z",
+    "action": "Cancel additional device",
+    "evidence": "22-device-cancel.dom.json",
+    "screenshot": "22-device-cancel.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/sources"
+  },
+  {
+    "at_utc": "2026-10-21T05:05:19.314Z",
+    "action": "Click 资料库",
+    "evidence": "23-library-for-memory.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T05:05:31.602Z",
+    "action": "Click 记忆",
+    "evidence": "24-memory.dom.json",
+    "screenshot": "24-memory.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/memories"
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:10:47.520Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "2b136bdd314c6af99d652642d105be24053ff2662f60e2cbff7909d2b8ee24c4",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "answers": {
+    "purpose": "个人资料和记忆库，收集内容后可检索与核对。",
+    "first_action": "先写一条记录；有文件则导入。",
+    "setup_expectation": "首个记录不需要先配置文件夹或屏幕权限。",
+    "first_value_expectation": "保存、提问、看原文的例子描述了完整价值。",
+    "advanced_discovery": "本机操作单独分组，其他功能可从侧栏进入。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-10-21T04:49:03.420Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "9c758c66a07fbedccee4f8b7ed648159bf9b742787da8827ca3cd94b67337433",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "answers": {
+    "purpose": "个人资料库；保存后可搜索、提问与核对原文。",
+    "input": "文件、想法和设备/在线来源记录。",
+    "first_action": "写下第一条记录",
+    "expected_result": "一条可再次找到的原文。",
+    "setup": "首步无需先连接来源。",
+    "unclear": "本机/中央保存细节未在首屏展开。",
+    "visual": "本轮首屏与上轮相同，主行动和使用例子清楚。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

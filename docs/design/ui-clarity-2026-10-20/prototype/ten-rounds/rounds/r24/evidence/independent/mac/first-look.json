@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:04:19.066Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "7e48000a5856d2a56d1a7fc69b7cda6c7cec45cd120376187c5424d876457aa7",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "answers": {
+    "purpose": "个人资料与记忆库，把日常记录留存以便查找和追溯。",
+    "first_action": "写下第一条记录是主按钮，导入已有文件是次按钮。",
+    "setup_expectation": "不用先连接来源；本机同步文件夹、屏幕采集是后续可选项。",
+    "first_value_expectation": "右侧例子解释从资料到答案再核对原文。",
+    "advanced_discovery": "全部功能、来源、设置在侧栏；本机操作独立分组。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

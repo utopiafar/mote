@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:07:37.214Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "9aebd07dace19fc60773b5d1462149efe0a6664541911b801aaf62d43dc50e87",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "answers": {
+    "purpose": "日常资料保存后方便查找、提问、追溯原文。",
+    "first_action": "首屏有写下第一条记录主按钮及导入次按钮。",
+    "setup_expectation": "可先写记录再按需连接；来源卡是次级。",
+    "first_value_expectation": "正文写明未来可搜索、提问、核对，具体例子需往下读。",
+    "advanced_discovery": "底栏来源和右上更多可找到后续功能。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

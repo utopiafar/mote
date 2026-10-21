@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:07:37.214Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "f331f41ffa8ce09db58b1d16536d1b513dff57a7fc753f52c070726247796d66",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "answers": {
+    "purpose": "本机可保存想法和文件，汇入个人资料库并可回查原文。",
+    "first_action": "第一条记录和导入文件两个起步动作明确。",
+    "setup_expectation": "文件夹和屏幕可以之后再设置，不先要求权限。",
+    "first_value_expectation": "保存—提问—核对原文在右侧例子明确。",
+    "advanced_discovery": "本机快捷操作与全功能分组都可见。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

@@ -1,0 +1,40 @@
+{
+  "round": "r28",
+  "began": "2026-10-21T05:22:21.875Z",
+  "ended": "2026-10-21T05:27:16.803Z",
+  "browser": "133.0.6943.16",
+  "hashes_before": {
+    "mac": "af1556f96771d4b96354e4241b0525030d7d58946a8d2ad113c824f1088d8db5",
+    "web": "0df7726986c38f42e3781c3a69c8ff931c482eb1d4cf65025d73b49351780e52",
+    "android": "75352e8a07c6ae20f5bfd7dfd784b654a93306f46cfec0ba53a4b5bb90b7add1"
+  },
+  "hashes_after": {
+    "web": "0df7726986c38f42e3781c3a69c8ff931c482eb1d4cf65025d73b49351780e52",
+    "mac": "af1556f96771d4b96354e4241b0525030d7d58946a8d2ad113c824f1088d8db5",
+    "android": "75352e8a07c6ae20f5bfd7dfd784b654a93306f46cfec0ba53a4b5bb90b7add1"
+  },
+  "viewports": {
+    "web": {
+      "width": 1440,
+      "height": 1000
+    },
+    "mac": {
+      "width": 1280,
+      "height": 900
+    },
+    "android": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "action_counts": {
+    "web": 29,
+    "mac": 30,
+    "android": 30
+  },
+  "browser_errors": {
+    "web": [],
+    "mac": [],
+    "android": []
+  }
+}

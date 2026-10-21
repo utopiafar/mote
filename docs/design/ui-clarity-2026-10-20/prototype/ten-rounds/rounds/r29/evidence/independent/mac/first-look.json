@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:31:34.167Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "ca9330a6e66cad8a04a5bda6393632f7a578a6031afe31359f620078c7c706a8",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "answers": {
+    "purpose": "个人资料与记忆库，先保存日常资料，之后检索和问答核对。",
+    "first_action": "主操作“写下第一条记录”与导入并列，前者更直接适合本轮会议决定。",
+    "setup_expectation": "首条笔记不需要系统授权；持续文件夹和屏幕来源可随后连接与限定范围。",
+    "first_value_expectation": "保存后看到记录，能离开再找回并沿引用看原文。",
+    "advanced_discovery": "侧栏本机快捷操作与全部功能可用，初屏仍突出首条内容而非设置。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

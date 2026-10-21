@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-10-21T04:42:19.418Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "102cfeea35272941c89610a9777f3f73dc10ed93922f1176c1e9ab86611e574c",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "answers": {
+    "purpose": "日常记录可再次搜索、提问和核对。",
+    "input": "文件、想法、设备与在线来源。",
+    "first_action": "写下第一条记录",
+    "expected_result": "出现可找回的第一条资料。",
+    "setup": "可以先记想法再连接。",
+    "unclear": "示例已移到首屏下方，当前仍能从正文理解价值。",
+    "visual": "持续收集现已直接出现在首屏，主动作仍突出。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative review; previously reviewed R20."
+}

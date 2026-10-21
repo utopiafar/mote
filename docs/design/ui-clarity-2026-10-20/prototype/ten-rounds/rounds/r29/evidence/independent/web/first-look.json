@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:31:34.167Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "058c5a9227df5acbe94ac54ed5b95d37cff54cffff0f3248aaf49e1f2000db5e",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "answers": {
+    "purpose": "从首屏可知是个人资料与记忆库，保存文件、想法与设备记录，随后搜索、提问并按出处核对。",
+    "first_action": "选择黑色主操作“写下第一条记录”；不用先理解所有来源。",
+    "setup_expectation": "可先写想法，再按需连接来源；屏幕采集由Mac/Android客户端，文件夹可来自设备或工作台服务器。",
+    "first_value_expectation": "保存一条合成会议决定，回资料库查到内容，再提问并看原文。",
+    "advanced_discovery": "侧栏有问一问、来源、全部功能；例子说明引用核对。当前无明显术语阻止首步。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

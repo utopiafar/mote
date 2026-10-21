@@ -1,0 +1,142 @@
+[
+  {
+    "at_utc": "2026-10-21T04:42:19.587Z",
+    "action": "Click 写下第一条记录",
+    "evidence": "01-note-editor.dom.json",
+    "screenshot": "01-note-editor.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:19.605Z",
+    "action": "Fill synthetic note: 白鹭R21-mac会议决定：2026年10月21日，许宁负责在周四前完成两份资料复核。核对词：银色纸船。",
+    "evidence": "02-note-filled.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:19.739Z",
+    "action": "Save note",
+    "evidence": "03-note-saved.dom.json",
+    "screenshot": "03-note-saved.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:19.889Z",
+    "action": "Leave editor via main 资料库",
+    "evidence": "04-library-after-save.dom.json",
+    "screenshot": "04-library-after-save.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:19.907Z",
+    "action": "Search 银色纸船",
+    "evidence": "05-search-note.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:20.046Z",
+    "action": "Open saved match and inspect text",
+    "evidence": "06-verified-note.dom.json",
+    "screenshot": "06-verified-note.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792557739638-1"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:20.170Z",
+    "action": "Ask from this material",
+    "evidence": "07-ask-scoped.dom.json",
+    "screenshot": "07-ask-scoped.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:20.183Z",
+    "action": "Fill specific note question",
+    "evidence": "08-question-filled.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:20.323Z",
+    "action": "Submit question and inspect answer",
+    "evidence": "09-answer.dom.json",
+    "screenshot": "09-answer.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:20.449Z",
+    "action": "Open answer citation",
+    "evidence": "10-citation.dom.json",
+    "screenshot": "10-citation.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792557739638-1"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:20.611Z",
+    "action": "Inspect original text",
+    "evidence": "11-original.dom.json",
+    "screenshot": "11-original.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792557739638-1"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:20.648Z",
+    "action": "Close original dialog",
+    "evidence": "12-original-closed.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792557739638-1"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:20.785Z",
+    "action": "Return to same question and answer",
+    "evidence": "13-answer-returned.dom.json",
+    "screenshot": "13-answer-returned.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:48.935Z",
+    "action": "Open 来源",
+    "evidence": "14-sources.dom.json",
+    "screenshot": "14-sources.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/sources"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:49.093Z",
+    "action": "Open source choices",
+    "evidence": "15-source-catalog.dom.json",
+    "screenshot": "15-source-catalog.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/catalog"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:49.234Z",
+    "action": "Choose screen recording and inspect setup",
+    "evidence": "16-screen-setup.dom.json",
+    "screenshot": "16-screen-setup.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:49.382Z",
+    "action": "Simulate permission denial",
+    "evidence": "17-permission-denied.dom.json",
+    "screenshot": "17-permission-denied.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:49.512Z",
+    "action": "Cancel denied setup normally",
+    "evidence": "18-setup-cancelled.dom.json",
+    "screenshot": "18-setup-cancelled.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/sources"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:49.576Z",
+    "action": "Return to saved library",
+    "evidence": "19-library-return.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T04:42:49.699Z",
+    "action": "Discover memory after first value",
+    "evidence": "20-memory-discovery.dom.json",
+    "screenshot": "20-memory-discovery.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/memories"
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:04:19.066Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "5d8c2437578817a5385cab014b19258a8b609539abd476affb06376ac18936bd",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "answers": {
+    "purpose": "保存文件、想法、设备记录，以便搜索提问和核对出处。",
+    "first_action": "第一屏可见写下第一条记录和导入已有文件。",
+    "setup_expectation": "提示可以先记想法，再按需连接来源；不要求先授权。",
+    "first_value_expectation": "正文明确未来能搜索、提问和核对原文，具体使用例子在下方。",
+    "advanced_discovery": "来源在底栏，更多入口在右上；持续收集卡片排在主动作之后。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

@@ -1,0 +1,183 @@
+{
+  "round": 29,
+  "scope": "Final changed-flow author checks: Web server layout/target; native complete folder drafts and receiving policy feedback",
+  "createdAt": "2026-10-21T05:32:00.443Z",
+  "records": [
+    {
+      "surface": "web",
+      "sha256": "058c5a9227df5acbe94ac54ed5b95d37cff54cffff0f3248aaf49e1f2000db5e",
+      "step": "candidate"
+    },
+    {
+      "surface": "web",
+      "step": "server status controls and saved scope precede edit form",
+      "layout": {
+        "currentTop": 213.484375,
+        "currentBottom": 439.4375,
+        "pathTop": 665.828125,
+        "scrollY": 0,
+        "buttons": [
+          {
+            "label": "暂停此来源",
+            "top": 288.515625,
+            "bottom": 321.953125
+          },
+          {
+            "label": "浏览此来源的资料",
+            "top": 289.234375,
+            "bottom": 321.234375
+          }
+        ]
+      },
+      "scope": "已连接的工作台服务器文件夹\n\n服务器阅读资料\n/srv/mote/files/阅读资料",
+      "target": "目标：当前工作台服务器\n\nMac 或手机上的文件夹需要在对应设备选择与授权。\n\n连接 Mac 或 Android 设备",
+      "passed": true
+    },
+    {
+      "surface": "web",
+      "step": "moved server pause works",
+      "status": "当前状态：已暂停接收\n\n当前暂停接收。已有资料仍可阅读，已保存的同步策略保留。\n\n恢复此来源\n浏览此来源的资料",
+      "passed": true
+    },
+    {
+      "surface": "web",
+      "step": "server ownership retained in source row",
+      "row": "服务器阅读资料\n\n工作台服务器 · /srv/mote/files/阅读资料\n\n0 份已保存资料\n\n已暂停接收\n管理\n浏览已保存资料",
+      "passed": true
+    },
+    {
+      "surface": "web",
+      "step": "native device handoff remains distinct",
+      "heading": "设备上的文件夹",
+      "currentBlocks": 0,
+      "passed": true
+    },
+    {
+      "surface": "web",
+      "step": "browser-errors-and-width",
+      "errors": [],
+      "width": 1280,
+      "passed": true
+    },
+    {
+      "surface": "mac",
+      "sha256": "ca9330a6e66cad8a04a5bda6393632f7a578a6031afe31359f620078c7c706a8",
+      "step": "candidate"
+    },
+    {
+      "surface": "mac",
+      "step": "all draft controls survive picker",
+      "before": {
+        "path": "~/Documents/原始范围",
+        "name": "调整后的来源",
+        "continuous": false,
+        "saveMode": "本机与中央都保留",
+        "helper": "保留 Mote 的本机副本和工作台归档。你选择的文件夹中的原文件保持原样。"
+      },
+      "after": {
+        "path": "~/Desktop/收集夹",
+        "name": "调整后的来源",
+        "continuous": false,
+        "saveMode": "本机与中央都保留",
+        "helper": "保留 Mote 的本机副本和工作台归档。你选择的文件夹中的原文件保持原样。"
+      },
+      "passed": true
+    },
+    {
+      "surface": "mac",
+      "step": "saved scope and policy remain saved until Save",
+      "savedScope": "已连接的文件夹\n\n原始来源\n~/Documents/原始范围",
+      "savedState": "当前状态：正在同步\n\n正在按已保存的策略接收目录变化。可以单独暂停这个来源。\n\n暂停此来源\n浏览此来源的资料",
+      "savedPolicy": "同步策略：持续同步后续变化\n已保存的策略：持续同步。暂停时保留；修改勾选后点击“保存设置”生效。",
+      "passed": true
+    },
+    {
+      "surface": "mac",
+      "step": "save commits exact draft policy and scope",
+      "savedScope": "已连接的文件夹\n\n调整后的来源\n~/Desktop/收集夹",
+      "status": "当前状态：已连接 · 未持续接收\n\n已连接，暂不持续接收后续变化。调整同步策略并保存后生效。\n\n暂停此来源\n浏览此来源的资料",
+      "passed": true
+    },
+    {
+      "surface": "mac",
+      "step": "overview and row agree continuous receiving is off",
+      "summary": "文件夹同步\n\n已连接：调整后的来源\n\n已连接 · 未持续接收\n管理此文件夹\n连接另一个文件夹",
+      "row": "调整后的来源\n\nMac · ~/Desktop/收集夹\n\n0 份已保存资料\n\n已连接 · 未持续接收\n管理\n浏览已保存资料",
+      "passed": true
+    },
+    {
+      "surface": "mac",
+      "step": "pause and resume retain saved non-continuous policy",
+      "continuous": false,
+      "status": "当前状态：已连接 · 未持续接收\n\n已连接，暂不持续接收后续变化。调整同步策略并保存后生效。\n\n暂停此来源\n浏览此来源的资料",
+      "passed": true
+    },
+    {
+      "surface": "mac",
+      "step": "browser-errors-and-width",
+      "errors": [],
+      "width": 1280,
+      "passed": true
+    },
+    {
+      "surface": "android",
+      "sha256": "825dd27870384f721a4ab01a75b6c2134225781d3fa06272cf6518b55b447a15",
+      "step": "candidate"
+    },
+    {
+      "surface": "android",
+      "step": "all draft controls survive picker",
+      "before": {
+        "path": "Documents/原始范围",
+        "name": "调整后的来源",
+        "continuous": false,
+        "saveMode": "本机与中央都保留",
+        "helper": "保留 Mote 的本机副本和工作台归档。你选择的文件夹中的原文件保持原样。"
+      },
+      "after": {
+        "path": "Download/收集夹",
+        "name": "调整后的来源",
+        "continuous": false,
+        "saveMode": "本机与中央都保留",
+        "helper": "保留 Mote 的本机副本和工作台归档。你选择的文件夹中的原文件保持原样。"
+      },
+      "passed": true
+    },
+    {
+      "surface": "android",
+      "step": "saved scope and policy remain saved until Save",
+      "savedScope": "已连接的文件夹\n\n原始来源\nDocuments/原始范围",
+      "savedState": "当前状态：正在同步\n\n正在按已保存的策略接收目录变化。可以单独暂停这个来源。\n\n暂停此来源\n浏览此来源的资料",
+      "savedPolicy": "同步策略：持续同步后续变化\n已保存的策略：持续同步。暂停时保留；修改勾选后点击“保存设置”生效。",
+      "passed": true
+    },
+    {
+      "surface": "android",
+      "step": "save commits exact draft policy and scope",
+      "savedScope": "已连接的文件夹\n\n调整后的来源\nDownload/收集夹",
+      "status": "当前状态：已连接 · 未持续接收\n\n已连接，暂不持续接收后续变化。调整同步策略并保存后生效。\n\n暂停此来源\n浏览此来源的资料",
+      "passed": true
+    },
+    {
+      "surface": "android",
+      "step": "overview and row agree continuous receiving is off",
+      "summary": "文件夹同步\n\n已连接：调整后的来源\n\n已连接 · 未持续接收\n管理此文件夹\n连接另一个文件夹",
+      "row": "调整后的来源\n\nAndroid · Download/收集夹\n\n0 份已保存资料\n\n已连接 · 未持续接收\n管理\n浏览已保存资料",
+      "passed": true
+    },
+    {
+      "surface": "android",
+      "step": "pause and resume retain saved non-continuous policy",
+      "continuous": false,
+      "status": "当前状态：已连接 · 未持续接收\n\n已连接，暂不持续接收后续变化。调整同步策略并保存后生效。\n\n暂停此来源\n浏览此来源的资料",
+      "passed": true
+    },
+    {
+      "surface": "android",
+      "step": "browser-errors-and-width",
+      "errors": [],
+      "width": 390,
+      "passed": true
+    }
+  ]
+}
