@@ -1,0 +1,300 @@
+{
+  "schema_version": "1.0",
+  "round": "R20",
+  "evaluator": "/root/r20_29_independent_evaluator",
+  "rubric": "../../../rubric-independent.json",
+  "started_at_utc": "2026-10-21T04:35:16.155Z",
+  "finished_at_utc": "2026-10-21T04:39:18.843Z",
+  "report_written_at_utc": "2026-10-21T04:40:43.411726+00:00",
+  "candidate_sha256": {
+    "web": "225a723e4f9df6c348f0e72fdc1b7f0d2116e009ea634cd264dd179037333c65",
+    "android": "828b76a01226ae036e7484fcf99cae4482bdb8be3efb3a9c46581ade6d56caa6",
+    "mac": "0bd4fe3d76af1e189d562c36aa47b7eb5f74458dadd2083d03036f609e7f0e6e"
+  },
+  "hashes_after": {
+    "web": "225a723e4f9df6c348f0e72fdc1b7f0d2116e009ea634cd264dd179037333c65",
+    "mac": "0bd4fe3d76af1e189d562c36aa47b7eb5f74458dadd2083d03036f609e7f0e6e",
+    "android": "828b76a01226ae036e7484fcf99cae4482bdb8be3efb3a9c46581ade6d56caa6"
+  },
+  "candidate_unchanged": true,
+  "browser": "133.0.6943.16",
+  "viewports": {
+    "web": {
+      "width": 1440,
+      "height": 1000
+    },
+    "mac": {
+      "width": 1280,
+      "height": 900
+    },
+    "android": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "weights": {
+    "design": 15,
+    "originality": 5,
+    "craft": 10,
+    "functionality": 25,
+    "clarity": 20,
+    "new_user_friendliness": 25
+  },
+  "scope": "HTML simulations; synthetic notes; actual visible-control operations and screenshots only. Informed evaluator, not fresh human blind study.",
+  "platforms": {
+    "web": {
+      "candidate_sha256": "225a723e4f9df6c348f0e72fdc1b7f0d2116e009ea634cd264dd179037333c65",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 2,
+        "new_user_friendliness": 3.2
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 2,
+        "first_value_verify": 3,
+        "progressive_disclosure": 3
+      },
+      "weighted_total": 71.25,
+      "critical_gate": "fail",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "首屏主次清楚，资料详情和来源页层级连贯。",
+        "originality": "围绕保存、找回、核对原文的具体示例形成一致产品表达。",
+        "craft": "观察的桌面状态排版稳定；旧提示持续存在但没有阻断此次桌面任务。",
+        "functionality": "保存、离页搜索、原文、限定范围提问与引用返回、拒绝权限后取消均完成。",
+        "clarity": "Web 屏幕设置缺少执行设备责任，属于可复现的重要范围歧义。",
+        "new_user_friendliness": "用途和第一步明确；首次内容可找回，权限所在设备仍需猜测。"
+      },
+      "findings": [
+        "R20-B",
+        "R20-C"
+      ],
+      "actions_file": "evidence/independent/web/actions.json",
+      "first_look_file": "evidence/independent/web/first-look.json",
+      "screenshots": [
+        "evidence/independent/web/00-first-look.png",
+        "evidence/independent/web/01-note-editor.png",
+        "evidence/independent/web/03-note-saved.png",
+        "evidence/independent/web/04-library-after-save.png",
+        "evidence/independent/web/06-verified-note.png",
+        "evidence/independent/web/07-ask-scoped.png",
+        "evidence/independent/web/09-answer.png",
+        "evidence/independent/web/10-citation.png",
+        "evidence/independent/web/11-original.png",
+        "evidence/independent/web/13-answer-returned.png",
+        "evidence/independent/web/14-sources.png",
+        "evidence/independent/web/15-source-catalog.png",
+        "evidence/independent/web/16-screen-setup.png",
+        "evidence/independent/web/17-permission-denied.png",
+        "evidence/independent/web/18-setup-cancelled.png",
+        "evidence/independent/web/20-memory-discovery.png"
+      ],
+      "actual_action_records": 20,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass_with_local_simulation_label_gap",
+        "permission_deny_cancel": "pass",
+        "advanced_discovery": "pass_memory_page_opened"
+      },
+      "browser_errors": []
+    },
+    "mac": {
+      "candidate_sha256": "0bd4fe3d76af1e189d562c36aa47b7eb5f74458dadd2083d03036f609e7f0e6e",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3,
+        "new_user_friendliness": 3.4
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 3,
+        "first_value_verify": 3,
+        "progressive_disclosure": 3
+      },
+      "weighted_total": 77.5,
+      "critical_gate": "pass",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "Mac 外壳可识别，主要任务突出。",
+        "originality": "个人资料和依据的表达连贯，功能组织具有用途。",
+        "craft": "检查的长标题、对话、原文与设置布局可用；常驻旧提示是轻微干扰。",
+        "functionality": "此次核心操作及拒绝权限后取消均完成。",
+        "clarity": "本机权限与草稿范围有说明；限定资料回答缺少就近示例标签。",
+        "new_user_friendliness": "用途和第一动作明确，权限模拟可辨认，保存后回查及进阶记忆入口可发现。"
+      },
+      "findings": [
+        "R20-C"
+      ],
+      "actions_file": "evidence/independent/mac/actions.json",
+      "first_look_file": "evidence/independent/mac/first-look.json",
+      "screenshots": [
+        "evidence/independent/mac/00-first-look.png",
+        "evidence/independent/mac/01-note-editor.png",
+        "evidence/independent/mac/03-note-saved.png",
+        "evidence/independent/mac/04-library-after-save.png",
+        "evidence/independent/mac/06-verified-note.png",
+        "evidence/independent/mac/07-ask-scoped.png",
+        "evidence/independent/mac/09-answer.png",
+        "evidence/independent/mac/10-citation.png",
+        "evidence/independent/mac/11-original.png",
+        "evidence/independent/mac/13-answer-returned.png",
+        "evidence/independent/mac/14-sources.png",
+        "evidence/independent/mac/15-source-catalog.png",
+        "evidence/independent/mac/16-screen-setup.png",
+        "evidence/independent/mac/17-permission-denied.png",
+        "evidence/independent/mac/18-setup-cancelled.png",
+        "evidence/independent/mac/20-memory-discovery.png"
+      ],
+      "actual_action_records": 20,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass_with_local_simulation_label_gap",
+        "permission_deny_cancel": "pass",
+        "advanced_discovery": "pass_memory_page_opened"
+      },
+      "browser_errors": []
+    },
+    "android": {
+      "candidate_sha256": "828b76a01226ae036e7484fcf99cae4482bdb8be3efb3a9c46581ade6d56caa6",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 2,
+        "functionality": 2,
+        "clarity": 3,
+        "new_user_friendliness": 3.4
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 3,
+        "first_value_verify": 3,
+        "progressive_disclosure": 3
+      },
+      "weighted_total": 68.75,
+      "critical_gate": "fail",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "空白首屏主按钮明显，窄屏主要内容无横向溢出。",
+        "originality": "采用与资料/原文相关的具体例子。",
+        "craft": "持续提示与底栏遮挡设置底部动作，观察到真实点击受阻。",
+        "functionality": "保存、核对、问答返回完成；取消设置需关闭旧提示并额外滚动后才成功。",
+        "clarity": "本机授权与保存范围明确；回答局部示例标识不足。",
+        "new_user_friendliness": "首屏容易开始，权限为何存在有说明；第一次价值可验证，记忆定义与入口可达。"
+      },
+      "findings": [
+        "R20-A",
+        "R20-C"
+      ],
+      "actions_file": "evidence/independent/android/actions.json",
+      "first_look_file": "evidence/independent/android/first-look.json",
+      "screenshots": [
+        "evidence/independent/android/00-first-look.png",
+        "evidence/independent/android/01-note-editor.png",
+        "evidence/independent/android/03-note-saved.png",
+        "evidence/independent/android/04-library-after-save.png",
+        "evidence/independent/android/06-verified-note.png",
+        "evidence/independent/android/07-ask-scoped.png",
+        "evidence/independent/android/09-answer.png",
+        "evidence/independent/android/10-citation.png",
+        "evidence/independent/android/11-original.png",
+        "evidence/independent/android/13-answer-returned.png",
+        "evidence/independent/android/14-sources.png",
+        "evidence/independent/android/15-source-catalog.png",
+        "evidence/independent/android/16-screen-setup.png",
+        "evidence/independent/android/17-permission-denied.png",
+        "evidence/independent/android/18-cancel-blocked.png",
+        "evidence/independent/android/19-toast-dismissed.png",
+        "evidence/independent/android/20-setup-scrolled.png",
+        "evidence/independent/android/21-setup-cancelled.png",
+        "evidence/independent/android/23-memory-discovery.png"
+      ],
+      "actual_action_records": 23,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass_with_local_simulation_label_gap",
+        "permission_deny_cancel": "partial_then_recovered",
+        "advanced_discovery": "pass_memory_page_opened"
+      },
+      "browser_errors": []
+    }
+  },
+  "findings": [
+    {
+      "id": "R20-A",
+      "severity": "major",
+      "platforms": [
+        "android"
+      ],
+      "observation": "保存笔记的提示跨多页持续显示，遮挡屏幕权限设置底部取消按钮。正常点击等待30秒失败，点击记录显示 toast 与 bottom-nav 拦截。",
+      "impact": "取消权限设置需要先识别并关闭旧提示、再滚动，首轮正常退出路径受阻。",
+      "evidence": [
+        "evidence/independent/android/18-cancel-blocked.png",
+        "evidence/independent/android/actions.json",
+        "evidence/independent/android/21-setup-cancelled.png"
+      ],
+      "recovery": "关闭旧提示并向下滚动后，取消成功返回来源管理，屏幕仍尚未开启。",
+      "next_priority": "在导航后移除过时提示，并保证底部操作滚动至底栏上方；不要以强制点击掩盖。"
+    },
+    {
+      "id": "R20-B",
+      "severity": "major",
+      "platforms": [
+        "web"
+      ],
+      "observation": "Web 的屏幕采集设置直接显示授权、应用勾选与“保存范围并开始记录”，此页没有说明实际由哪台 Mac/Android 执行。",
+      "impact": "首屏说客户端采集，进入设置后平台责任消失，新手难判断自己正在授权浏览器还是管理某台设备。",
+      "evidence": [
+        "evidence/independent/web/16-screen-setup.png",
+        "evidence/independent/web/16-screen-setup.dom.json"
+      ],
+      "next_priority": "在 Web 设置页持续解释采集所在设备、当前目标和客户端下一步。"
+    },
+    {
+      "id": "R20-C",
+      "severity": "minor",
+      "platforms": [
+        "web",
+        "mac",
+        "android"
+      ],
+      "observation": "从刚保存的资料进入限定范围提问后，回答标题是“这份资料的要点”，正文没有贴近回答的“示例 / 未调用模型”说明。",
+      "impact": "全局原型条已说明演示，但 Android 滚动后它不可见；回答完成形态仍容易被单独理解为真实模型结果。",
+      "evidence": [
+        "evidence/independent/web/09-answer.png",
+        "evidence/independent/mac/09-answer.png",
+        "evidence/independent/android/09-answer.png"
+      ],
+      "next_priority": "所有回答分支就近标明模拟结果，不依赖全局条或折叠的演示状态。"
+    }
+  ],
+  "actions_and_screens": "evidence/independent/",
+  "unverified": [
+    "真实后端和模型",
+    "原生系统权限和采集",
+    "真实文件上传或外部来源连接",
+    "同步与跨刷新持久化",
+    "全部20类/78功能逐项验收",
+    "键盘与辅助技术完整检查"
+  ],
+  "harness_issues": [
+    "Initial hash variable collided with Node global Web Crypto before any candidate open; corrected to hashApi."
+  ],
+  "equal_platform_mean": 72.5,
+  "minimum_platform_score": 68.75,
+  "critical_gate": "fail",
+  "next_priority": [
+    "Android: 解决旧提示/底栏阻挡取消，重走先保存→再设置的自然路径。",
+    "Web: 补齐屏幕采集执行设备与客户端责任说明。",
+    "三端: 限定资料回答紧邻说明模拟性质。"
+  ]
+}

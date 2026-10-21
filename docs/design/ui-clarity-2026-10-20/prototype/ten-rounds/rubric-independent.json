@@ -1,0 +1,251 @@
+{
+  "schema_version": "1.0",
+  "rubric_id": "mote-r20-r29-independent-six-dimension-v1",
+  "authored_by": "/root/r20_29_independent_evaluator",
+  "frozen_at_utc": "2026-10-21T04:30:58Z",
+  "rounds": [
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29
+  ],
+  "scope": "Rendered and interacted HTML simulations only; no native or production validation.",
+  "platforms": [
+    "Web",
+    "Mac",
+    "Android"
+  ],
+  "platform_weights": {
+    "Web": 0.3333333333333333,
+    "Mac": 0.3333333333333333,
+    "Android": 0.3333333333333333
+  },
+  "score_range": {
+    "minimum": 0,
+    "maximum": 4
+  },
+  "anchors": {
+    "0": "Missing or misleading; the observed essential goal cannot start or complete.",
+    "1": "Severe obstacles requiring explanation, guessing, detours, or rework.",
+    "2": "Partial or eventual completion with material ambiguity or friction.",
+    "3": "Clear and reliable in observed scope, with nonblocking minor friction.",
+    "4": "Self-explanatory and consistent across observed normal and adjacent adverse states; positive evidence required."
+  },
+  "dimensions": [
+    {
+      "id": "design",
+      "name": "Design",
+      "weight_percent": 15,
+      "rating_type": "integer_0_to_4",
+      "focus": [
+        "visual hierarchy",
+        "task prominence",
+        "readability",
+        "platform scale",
+        "layout and density"
+      ]
+    },
+    {
+      "id": "originality",
+      "name": "Originality",
+      "weight_percent": 5,
+      "rating_type": "integer_0_to_4",
+      "focus": [
+        "useful product-specific identity",
+        "evidence-oriented organization",
+        "specific examples",
+        "novelty is not a goal"
+      ]
+    },
+    {
+      "id": "craft",
+      "name": "Craft",
+      "weight_percent": 10,
+      "rating_type": "integer_0_to_4",
+      "focus": [
+        "typography and spacing",
+        "long content",
+        "responsive layout",
+        "control and state consistency",
+        "observed navigation details"
+      ]
+    },
+    {
+      "id": "functionality",
+      "name": "Functionality",
+      "weight_percent": 25,
+      "rating_type": "integer_0_to_4",
+      "focus": [
+        "save and find",
+        "answer and verify",
+        "source scope and control",
+        "context-preserving return",
+        "recovery"
+      ]
+    },
+    {
+      "id": "clarity",
+      "name": "Clarity",
+      "weight_percent": 20,
+      "rating_type": "integer_0_to_4",
+      "focus": [
+        "navigation responsibilities",
+        "labels match destinations",
+        "data and action scope",
+        "status distinctions",
+        "simulation boundaries"
+      ]
+    },
+    {
+      "id": "new_user_friendliness",
+      "name": "New-user friendliness",
+      "weight_percent": 25,
+      "rating_type": "arithmetic_mean_of_five_integer_subcriteria",
+      "subcriteria": [
+        {
+          "id": "purpose",
+          "name": "Purpose",
+          "weight_within_dimension": 0.2,
+          "observable": "Before any product interaction, explain what Mote collects and what value it enables from the first rendered screen."
+        },
+        {
+          "id": "first_action",
+          "name": "First action",
+          "weight_within_dimension": 0.2,
+          "observable": "Independently choose an obvious, suitable, low-friction first step with a predictable result."
+        },
+        {
+          "id": "permissions_setup",
+          "name": "Permissions and setup",
+          "weight_within_dimension": 0.2,
+          "observable": "Understand why, scope, timing, and effect of requirements; cancel, defer, or complete with a clear continuation."
+        },
+        {
+          "id": "first_value_verify",
+          "name": "First value and verification",
+          "weight_within_dimension": 0.2,
+          "observable": "Leave creation, find the correct result, inspect content and provenance, and distinguish saved/readable/simulated states."
+        },
+        {
+          "id": "progressive_disclosure",
+          "name": "Progressive disclosure",
+          "weight_within_dimension": 0.2,
+          "observable": "Complete the first task without advanced overload, then discover relevant advanced abilities in context."
+        }
+      ]
+    }
+  ],
+  "aggregation": {
+    "platform_formula": "sum(weight_percent * dimension_rating / 4)",
+    "overall_formula": "(Web_total + Mac_total + Android_total) / 3",
+    "report_minimum_platform": true,
+    "rounding": "Retain raw values; display at most one decimal; gates use unrounded values.",
+    "missing_observation": "Use not_observed, never zero or assumed pass; no complete total when any scored dimension is unknown."
+  },
+  "critical_gate": {
+    "applies_to": "each_platform",
+    "minimum_dimensions": {
+      "functionality": 3,
+      "clarity": 3,
+      "new_user_friendliness": 3
+    },
+    "no_observed_critical_blocker": true,
+    "unknown_required_evidence_status": "not_verified",
+    "overall_pass_requires_all_three_platforms": true
+  },
+  "aspirational_target": {
+    "overall_score": 85,
+    "is_acceptance_requirement": false
+  },
+  "minimum_round_observation": [
+    "Candidate SHA256 identity and UTC timestamps before and after evaluation.",
+    "Each platform first screenshot and written first-look answers before product actions.",
+    "First content creation or import, leave, find, and verify.",
+    "Ask, distinguish simulation, inspect citation/original, and return.",
+    "Source/permission/setup path with cancellation or control and resulting state.",
+    "Discovery of an advanced capability after first success.",
+    "Per-platform scores, all five newcomer subscores, concrete findings and evidence."
+  ],
+  "first_look_questions": [
+    "What is Mote?",
+    "What can I put into it?",
+    "What first action would I choose?",
+    "What result do I expect?",
+    "Do I appear to need permission or setup now?",
+    "Which words or boundaries are unclear?"
+  ],
+  "evidence_rules": {
+    "synthetic_data_only": true,
+    "candidate_implementation_reads": false,
+    "internal_state_reads": false,
+    "prototype_code_edits": false,
+    "author_test_logic_authorship": false,
+    "allowed_evidence": [
+      "rendered screenshot",
+      "visible DOM",
+      "visible UI interaction",
+      "feature inventory",
+      "prior independent report",
+      "criterion files",
+      "candidate file hash"
+    ],
+    "historical_evidence": "Label its actual round and do not count as current-round execution.",
+    "prior_knowledge": "Evaluator has read baseline inventory and R15/R19 reports; iterative first-look records are informed evaluation, not fresh human blind testing.",
+    "preserve_negative_findings": true,
+    "allow_nonmonotonic_scores": true,
+    "tool_action_success_is_task_success": false
+  },
+  "severity": {
+    "critical": "No comprehensible core completion path; wrong target/scope; lost work; or simulation falsely represented as real authorization/success.",
+    "major": "Material first-success, verification, return, or labeling issue with a possible workaround.",
+    "minor": "Nonblocking presentation, wording, redundancy, or efficiency issue.",
+    "observation": "Unconfirmed suspicion or uncovered branch; neither failure nor success."
+  },
+  "default_unverified": [
+    "real backend",
+    "real model",
+    "native platform",
+    "OS permissions",
+    "capture",
+    "uploads",
+    "external authorization",
+    "sync",
+    "cross-refresh persistence",
+    "unexecuted branches",
+    "complete 20-category/78-unit acceptance"
+  ],
+  "report_required_fields": [
+    "round",
+    "started_at_utc",
+    "finished_at_utc",
+    "candidate_sha256",
+    "browser",
+    "viewports",
+    "platforms",
+    "weights",
+    "equal_platform_mean",
+    "minimum_platform_score",
+    "critical_gate",
+    "findings",
+    "actions_and_screens",
+    "unverified"
+  ],
+  "report_location": "ten-rounds/rounds/rNN/reports/independent-evaluation.json",
+  "platform_report_required_fields": [
+    "dimension_scores",
+    "newcomer_subscores",
+    "weighted_total",
+    "critical_gate",
+    "findings",
+    "actions_file",
+    "first_look_file",
+    "screenshots",
+    "candidate_sha256"
+  ]
+}
