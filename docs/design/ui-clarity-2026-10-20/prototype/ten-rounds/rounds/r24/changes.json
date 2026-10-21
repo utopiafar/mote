@@ -1,0 +1,16 @@
+{
+  "round": 24,
+  "parent": "R23",
+  "purpose": "区分设备连接授权与系统采集权限，并让 Mac 的首次文件夹连接符合新建语境。",
+  "input_evaluation": "rounds/r23/reports/independent-evaluation.json",
+  "additional_input": ["reports/fresh-web-r22/findings.json", "rounds/r23/author/native-checks/result.json"],
+  "input_findings": ["独立 Web 首访 W1：授权已更新与等待授权并存，授权种类不清楚", "独立 Web 首访 W2：中央与记忆整理术语未解释", "Mac 首次连接文件夹进入管理语境并带有预填研究目录"],
+  "changes": [
+    "设备页明确设备连接授权只允许工作台同步，屏幕权限仍由设备系统单独授予。",
+    "重新授权操作、结果和等待权限状态采用不同的完整名称。",
+    "同步目的地称为工作台，并简要解释后台记忆整理。",
+    "Mac 首次文件夹连接进入新建流程，使用模拟 Finder 选择器与明确的授权范围说明。"
+  ],
+  "evaluation_focus": ["更新连接授权后能否正确理解屏幕权限仍未开启", "Mac 首次文件夹选择、创建和取消", "三端主要旅程与来源状态"],
+  "scope": "HTML UI simulation with synthetic data"
+}

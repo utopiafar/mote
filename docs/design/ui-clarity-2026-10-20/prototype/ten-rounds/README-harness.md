@@ -40,6 +40,16 @@ python docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/scripts/gallery.py
 
 查看器从独立评估 JSON 读取已记录的分数。缺少评估时显示“待记录”。`--allow-partial` 只用于过程中的查看器预览；正式交付默认要求十轮候选全部存在。
 
+## 汇总真实评分与证据
+
+```bash
+python docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/scripts/final-summary.py
+```
+
+工具读取十轮独立报告、冻结清单与被引用的操作记录、首屏理解和截图文件，核对候选身份与评分公式后，生成 `reports/scores-evidence-summary.json` 和 `.md`。JSON 保留评分原始值，表格按四舍五入显示一位小数。操作记录、截图和 DOM 文件分别计数；每端门槛和五个新用户子项全部列出。
+
+过程检查可加 `--allow-partial`，此时文件名带 `.partial`，正文明确当前纳入及缺少的轮次。正式命令要求 R20–R29 全部有独立报告。
+
 ## 打包完整交付
 
 ```bash
