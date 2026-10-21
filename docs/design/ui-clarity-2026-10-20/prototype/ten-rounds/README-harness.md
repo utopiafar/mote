@@ -59,3 +59,5 @@ python docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/scripts/package.py
 打包之前逐一核对 30 个候选、冻结源码及 10 份独立评估的候选哈希，并要求最终报告、索引和查看器存在。压缩包包含每轮候选、源码快照、评估、截图和相关脚本；`artifact-manifest.json` 与 `delivery-checksums.txt` 记录包内文件身份。完成后执行 ZIP CRC 检查并写入 `delivery-result.json`。
 
 下载包供用户保存与离线查看。公开仓库发布可读 HTML、脚本、报告和索引，压缩归档不上传到 GitHub。
+
+轻量评审包使用 `scripts/package-lite.py` 生成 `dist/mote-ui-r20-r29-review.zip`，包含 30 个候选、冻结源码、评分、报告和功能基线；完整截图、可见 DOM、操作记录和浏览器追踪保留在完整证据包。两个包都核对候选身份并进行 ZIP CRC 检查。

@@ -1,0 +1,200 @@
+{
+  "summary": "最后一轮三端当前观察范围门槛通过。Web日常来源操作前置；Mac/Android选择器保留未保存设置；Android记忆修正跨缩放保存和历史均由本轮候选直接验证。",
+  "score_explanation": "Web为81.25：已有来源的具名摘要、状态与暂停/浏览前置，渐进展开由3到4。Mac为87.5：本轮四字段草稿经选择器取消仍完整，选定新目录只替换路径；保存的不持续接收策略又在设置、概览和菜单栏保持一致，为正常与相邻中断状态提供直接证据，Functionality由3到4。Android保持87.5：Functionality4现由R29自己的精确修正、缩放、保存、重开及版本历史证据支持，不再仅沿用R27校准。其余维度保持3；不因为最后一轮或85分目标额外加分。",
+  "actual_work": "三端从空白账号创建“雪燕R29”合成会议决定，以“银色罗盘”离开后搜索、打开核对；限定提问显示示例回答，检查引用及原文来源/时间/保存端并返回。Web从添加内容连接明确的工作台服务器示例目录，命名、保存、使用新前置暂停按钮，再回具名概览。Mac/Android先填写独特路径与来源名，取消持续同步，并选仅保存文件引用；打开选择器后关闭，四字段保留；重新选择阅读资料，只有路径变为所选目录。保存后设置页和来源概览均显示“已连接·未持续接收”；Mac菜单栏同样显示该状态。三端从资料库发现记忆。Android从本轮笔记生成记忆，输入独特修正文本，390×844变为412×915后保存，再恢复390×844重开和查看历史。Mac/Android第一次使用过短的精确字段标签定位超时，未改变产品状态；之后使用已见完整标签完成，不将该工具定位错误记为产品故障。",
+  "resolved_from_previous": [
+    "R28-A/R27-A解决：Web当前状态、暂停及浏览在完整设置之前，具名来源与服务器目标继续可见。",
+    "Mac/Android四字段草稿在选择器取消后保留；选取新目录仅替换路径，未覆盖名称、持续同步选择和保存方式。",
+    "Android保存修正后显示“已保存·版本2”；本轮精确修正跨缩放与重开、历史一致。"
+  ],
+  "resolved_summary": "精确修正文本：“雪燕R29修正：叶青负责周三前整理四份背景资料；校验串＝碧蓝纸鹤-29-Z。仅用于最终轮合成验证。”缩放前后与重开输入框一致；已保存卡片及历史版本2也显示完整文本，版本1保留原始内容并标为已被替代。本轮没有重新执行R28回顾日期路径或原生屏幕权限路径；此前证据保留在其实际轮次，不算作R29执行。菜单栏和概览状态被观察，但没有把未出现的数字计数推断为经过核验。",
+  "findings": [
+    {
+      "id": "R29-A",
+      "severity": "minor",
+      "platforms": [
+        "android"
+      ],
+      "observation": "记忆历史的版本1关系行显示“初次整理 · 已由版本2”，缺少完成句义的“替代”；同条“已被替代”徽标和版本2“人工纠正，替代版本1”仍清楚。",
+      "impact": "不影响保存和历史核对，属于可在后续文案整理中修正的小问题。十轮在R29结束，不改写已冻结候选。",
+      "evidence": [
+        "evidence/independent/android/34-memory-history.png",
+        "evidence/independent/android/34-memory-history.dom.json"
+      ]
+    }
+  ],
+  "next_priority": [
+    "后续可补全版本1关系文案；最终三端关键门槛在实际执行范围内均通过。真实系统能力及未执行分支仍需另行验证。"
+  ],
+  "platforms": {
+    "web": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 4
+      },
+      "score_reasons": {
+        "design": "首步、内容与证据层级稳定；已有服务器来源现在优先显示状态、常用动作和具名摘要。",
+        "originality": "资料、来源、依据和记忆保持一致的产品组织与身份；不以最后一轮为由改变3分。",
+        "craft": "本轮视口和所见状态排版可用，交互往返稳定；仍未做完整响应式或辅助技术验收。",
+        "functionality": "本轮保存/找回、限定问答/引用/原文往返、明确目标的来源保存和暂停及记忆发现均完成。",
+        "clarity": "来源的目标、状态和动作范围一致，示例回答与原始依据可分；整体保持3。",
+        "new_user_friendliness": "用途与首步在操作前可解释；无前置配置的首条内容可找回和核对，设置范围可理解，低频内容未阻塞首值，成功后可发现记忆。"
+      },
+      "tasks": {
+        "save_find_verify": "pass_current_round",
+        "ask_citation_original_return": "pass_current_round",
+        "source_setup_control": "pass_server_save_pause_and_named_overview",
+        "advanced_discovery": "pass_memory_opened_after_first_success",
+        "management_priority": {
+          "result": "pass_status_pause_browse_before_settings",
+          "evidence": [
+            "evidence/independent/web/17-folder-connected.png",
+            "evidence/independent/web/18-folder-paused.png"
+          ]
+        }
+      }
+    },
+    "mac": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 4,
+        "clarity": 3
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 4
+      },
+      "score_reasons": {
+        "design": "首次写入与核对入口明确；文件夹选择范围及来源日常状态可见，低频关系保持折叠。",
+        "originality": "资料、来源、依据和记忆保持一致的产品组织与身份；不以最后一轮为由改变3分。",
+        "craft": "本轮视口和所见状态排版可用，交互往返稳定；仍未做完整响应式或辅助技术验收。",
+        "functionality": "除核心路径外，本轮实际取消和重开选择器保留四字段草稿，选择后只变路径；保存策略跨管理页、概览及菜单栏一致，支持当前观察范围正常与中断状态的4分。",
+        "clarity": "来源的目标、状态和动作范围一致，示例回答与原始依据可分；整体保持3。",
+        "new_user_friendliness": "用途与首步在操作前可解释；无前置配置的首条内容可找回和核对，设置范围可理解，低频内容未阻塞首值，成功后可发现记忆。"
+      },
+      "tasks": {
+        "save_find_verify": "pass_current_round",
+        "ask_citation_original_return": "pass_current_round",
+        "source_setup_control": "pass_picker_cancel_reselect_save_noncontinuous_state",
+        "advanced_discovery": "pass_memory_opened_after_first_success",
+        "picker_draft_preservation": {
+          "result": "pass_current_round",
+          "original_path": "~/Documents/雪燕草稿29",
+          "source_name": "雪燕R29-mac草稿",
+          "continuous": false,
+          "retention_label": "仅保存文件引用",
+          "after_cancel": "all_four_fields_preserved",
+          "after_choice": "only_path_changed_to_selected_reading_folder",
+          "evidence": [
+            "evidence/independent/mac/picker-field-observations.json",
+            "evidence/independent/mac/18-picker-cancelled-draft.png",
+            "evidence/independent/mac/20-picker-chosen-draft.png"
+          ]
+        },
+        "noncontinuous_status": {
+          "result": "pass_observed_labels",
+          "views": [
+            "management",
+            "source_overview",
+            "Mac_menu_bar"
+          ],
+          "observed": "已连接 · 未持续接收",
+          "numeric_count": "not_separately_observed"
+        }
+      }
+    },
+    "android": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 4,
+        "clarity": 3
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 4
+      },
+      "score_reasons": {
+        "design": "首次写入与核对入口明确；文件夹选择范围及来源日常状态可见，低频关系保持折叠。",
+        "originality": "资料、来源、依据和记忆保持一致的产品组织与身份；不以最后一轮为由改变3分。",
+        "craft": "两个视口中的编辑、保存和历史均可操作；历史中一处关系句不完整，整体Craft保持3。",
+        "functionality": "本轮四字段选择器中断恢复、核心路径和记忆生成/独特修正跨缩放保持、准确保存、重开及版本历史均取得直接结果，支持4分。",
+        "clarity": "输入草稿、已保存版本2和历史有效/被替代状态可辨；版本1关系行句义不完整但有其他标签辅助，保持3。",
+        "new_user_friendliness": "用途与首步在操作前可解释；无前置配置的首条内容可找回和核对，设置范围可理解，低频内容未阻塞首值，成功后可发现记忆。"
+      },
+      "tasks": {
+        "save_find_verify": "pass_current_round",
+        "ask_citation_original_return": "pass_current_round",
+        "source_setup_control": "pass_picker_cancel_reselect_save_noncontinuous_state",
+        "advanced_discovery": "pass_memory_opened_after_first_success",
+        "picker_draft_preservation": {
+          "result": "pass_current_round",
+          "original_path": "Documents/雪燕草稿29",
+          "source_name": "雪燕R29-android草稿",
+          "continuous": false,
+          "retention_label": "仅保存文件引用",
+          "after_cancel": "all_four_fields_preserved",
+          "after_choice": "only_path_changed_to_selected_reading_folder",
+          "evidence": [
+            "evidence/independent/android/picker-field-observations.json",
+            "evidence/independent/android/18-picker-cancelled-draft.png",
+            "evidence/independent/android/20-picker-chosen-draft.png"
+          ]
+        },
+        "noncontinuous_status": {
+          "result": "pass_observed_labels",
+          "views": [
+            "management",
+            "source_overview"
+          ],
+          "observed": "已连接 · 未持续接收",
+          "numeric_count": "not_separately_observed"
+        },
+        "memory_correction_resize": {
+          "result": "pass_current_candidate_exact_text_preserved",
+          "viewport_sequence": [
+            "390x844",
+            "412x915",
+            "390x844"
+          ],
+          "expected_text": "雪燕R29修正：叶青负责周三前整理四份背景资料；校验串＝碧蓝纸鹤-29-Z。仅用于最终轮合成验证。",
+          "observed_states": [
+            "draft_before_resize",
+            "draft_after_resize",
+            "saved_version2_card",
+            "reopened_editor",
+            "current_history_version2"
+          ],
+          "version1": "original_preserved_replaced",
+          "version2": "exact_correction_current",
+          "evidence": [
+            "evidence/independent/android/memory-exact-text-observations.json",
+            "evidence/independent/android/30-memory-draft-after-resize.png",
+            "evidence/independent/android/31-memory-correction-saved.png",
+            "evidence/independent/android/33-memory-reopened.dom.json",
+            "evidence/independent/android/34-memory-history.png"
+          ]
+        }
+      }
+    }
+  }
+}
