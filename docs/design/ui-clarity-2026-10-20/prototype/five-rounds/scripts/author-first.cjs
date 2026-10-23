@@ -1,0 +1,1 @@
+const {openCandidate,saveEvidence}=require('./browser-session.cjs');(async()=>{const s=await openCandidate(process.argv[2],{viewport:{width:1440,height:1000}});await saveEvidence(s.page,'/tmp/mote-author','r29-web');await s.browser.close();})().catch(e=>{console.error(e);process.exit(1)});

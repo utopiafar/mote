@@ -1,0 +1,287 @@
+{
+  "schema_version": 1,
+  "round": "R29",
+  "role": "independent diagnostic baseline",
+  "status": "FAIL",
+  "evaluated_at_utc": "2026-10-22",
+  "evaluator": "/root/r30_34_independent_review",
+  "source_sha": "81a73c0ec81af876d6eeef71451b75cd51684b34",
+  "candidate_sha256": {
+    "web": "058c5a9227df5acbe94ac54ed5b95d37cff54cffff0f3248aaf49e1f2000db5e",
+    "mac": "ca9330a6e66cad8a04a5bda6393632f7a578a6031afe31359f620078c7c706a8",
+    "android": "825dd27870384f721a4ab01a75b6c2134225781d3fa06272cf6518b55b447a15"
+  },
+  "rubric_id": "mote-r30-r34-independent-v1",
+  "rubric_sha256": "58826132bd1d4c70690567482902b7ef7dac89e32f7fc727a643ce3d213abb7c",
+  "contract_sha256": "316d7ac7ea6577c4a6d28c526f6e27ad56d33c7a9afd60db4b74466e88791572",
+  "journeys_sha256": "a30546c750bc7281177985b9e993c9f1f1a163c93dad9ebc077cac9ec1badf1b",
+  "platforms": {
+    "web": {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scores": {
+        "new_user": {
+          "value": 2.5,
+          "weight_percent": 25,
+          "reason": "The empty state explains saving and finding context, but the import task mixes one-time intake and ongoing sync, and the central-directory option teaches the wrong responsibility."
+        },
+        "functionality": {
+          "value": 1.5,
+          "weight_percent": 20,
+          "reason": "Import selection and completion work at fixture level, but required explanatory metadata and its saved/revision journey are absent. Parser identity and full import states are incomplete; most contract assertions remain untested in this diagnostic baseline."
+        },
+        "simplicity": {
+          "value": 2.5,
+          "weight_percent": 20,
+          "reason": "The task is surrounded by repeated explanations, secondary navigation, and source-management panels. Routine import choices are displaced; native source cards duplicate the connected-source list."
+        },
+        "clarity": {
+          "value": 2,
+          "weight_percent": 15,
+          "reason": "Visible source ownership conflicts with the required collector boundary. Import completion does not expose the missing Agent explanation or sufficient interpretation/recovery detail."
+        },
+        "design": {
+          "value": 3,
+          "weight_percent": 10,
+          "reason": "A coherent restrained palette and typography establish hierarchy. The desktop system is consistent, while repeated nested cards weaken the mobile layout."
+        },
+        "craft": {
+          "value": 2.5,
+          "weight_percent": 5,
+          "reason": "Evaluated screens render without horizontal overflow or browser errors. Keyboard, focus, all disclosures, and exceptional states were not comprehensively verified."
+        },
+        "originality": {
+          "value": 2.5,
+          "weight_percent": 5,
+          "reason": "Context, citations, source management, and native status details are product-specific, though the interaction layout remains conventional."
+        }
+      },
+      "weighted_score_100": 56.875,
+      "threshold_gate": "fail",
+      "semantic_completeness_gate": "fail",
+      "central_collection_gate": "fail",
+      "coverage_scope": "Focused baseline diagnosis; not an exhaustive acceptance run."
+    },
+    "mac": {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "scores": {
+        "new_user": {
+          "value": 2.5,
+          "weight_percent": 25,
+          "reason": "The empty state explains saving and finding context, but the import task mixes one-time intake and ongoing sync, and the central-directory option teaches the wrong responsibility."
+        },
+        "functionality": {
+          "value": 1.5,
+          "weight_percent": 20,
+          "reason": "Import selection and completion work at fixture level, but required explanatory metadata and its saved/revision journey are absent. Parser identity and full import states are incomplete; most contract assertions remain untested in this diagnostic baseline."
+        },
+        "simplicity": {
+          "value": 2,
+          "weight_percent": 20,
+          "reason": "The task is surrounded by repeated explanations, secondary navigation, and source-management panels. Routine import choices are displaced; native source cards duplicate the connected-source list."
+        },
+        "clarity": {
+          "value": 2,
+          "weight_percent": 15,
+          "reason": "Visible source ownership conflicts with the required collector boundary. Import completion does not expose the missing Agent explanation or sufficient interpretation/recovery detail."
+        },
+        "design": {
+          "value": 3,
+          "weight_percent": 10,
+          "reason": "A coherent restrained palette and typography establish hierarchy. The desktop system is consistent, while repeated nested cards weaken the mobile layout."
+        },
+        "craft": {
+          "value": 2.5,
+          "weight_percent": 5,
+          "reason": "Evaluated screens render without horizontal overflow or browser errors. Keyboard, focus, all disclosures, and exceptional states were not comprehensively verified."
+        },
+        "originality": {
+          "value": 2.5,
+          "weight_percent": 5,
+          "reason": "Context, citations, source management, and native status details are product-specific, though the interaction layout remains conventional."
+        }
+      },
+      "weighted_score_100": 54.375,
+      "threshold_gate": "fail",
+      "semantic_completeness_gate": "fail",
+      "central_collection_gate": "fail",
+      "coverage_scope": "Focused baseline diagnosis; not an exhaustive acceptance run."
+    },
+    "android": {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scores": {
+        "new_user": {
+          "value": 2.5,
+          "weight_percent": 25,
+          "reason": "The empty state explains saving and finding context, but the import task mixes one-time intake and ongoing sync, and the central-directory option teaches the wrong responsibility."
+        },
+        "functionality": {
+          "value": 1.5,
+          "weight_percent": 20,
+          "reason": "Import selection and completion work at fixture level, but required explanatory metadata and its saved/revision journey are absent. Parser identity and full import states are incomplete; most contract assertions remain untested in this diagnostic baseline."
+        },
+        "simplicity": {
+          "value": 1.75,
+          "weight_percent": 20,
+          "reason": "The task is surrounded by repeated explanations, secondary navigation, and source-management panels. Routine import choices are displaced; native source cards duplicate the connected-source list."
+        },
+        "clarity": {
+          "value": 2,
+          "weight_percent": 15,
+          "reason": "Visible source ownership conflicts with the required collector boundary. Import completion does not expose the missing Agent explanation or sufficient interpretation/recovery detail."
+        },
+        "design": {
+          "value": 2.5,
+          "weight_percent": 10,
+          "reason": "A coherent restrained palette and typography establish hierarchy. The desktop system is consistent, while repeated nested cards weaken the mobile layout."
+        },
+        "craft": {
+          "value": 2.5,
+          "weight_percent": 5,
+          "reason": "Evaluated screens render without horizontal overflow or browser errors. Keyboard, focus, all disclosures, and exceptional states were not comprehensively verified."
+        },
+        "originality": {
+          "value": 2,
+          "weight_percent": 5,
+          "reason": "Context, citations, source management, and native status details are product-specific, though the interaction layout remains conventional."
+        }
+      },
+      "weighted_score_100": 51.25,
+      "threshold_gate": "fail",
+      "semantic_completeness_gate": "fail",
+      "central_collection_gate": "fail",
+      "coverage_scope": "Focused baseline diagnosis; not an exhaustive acceptance run."
+    }
+  },
+  "mean_score_100": 54.167,
+  "weakest_platform": "android",
+  "findings": [
+    {
+      "id": "B01",
+      "severity": "blocker",
+      "featureIds": [
+        "UF-IMPORT-CONTEXT",
+        "UF-IMPORT-CONTEXT-RECOVERY"
+      ],
+      "platforms": [
+        "web",
+        "mac",
+        "android"
+      ],
+      "title": "Agent-understanding explanation is absent from input, completion, and detail",
+      "reproduction": [
+        "From the empty library choose 导入已有文件.",
+        "Inspect all visible import form inputs.",
+        "Choose 研究资料.md, rename it, begin import, and open 查看这次导入记录."
+      ],
+      "observed": "Only name, parser, save mode, and image plan are represented. There is no optional freeform explanation or saved explanation/revision path.",
+      "correction": "Restore the existing optional 12,000-character prose field with concise examples. Preserve the exact multiline text and quote roles through input, review, edit, saved detail, and regeneration of the same task.",
+      "evidence": [
+        "../evidence/web/02-import.json",
+        "../evidence/web/05-import-detail.json",
+        "../evidence/mac/focused/01-import.json",
+        "../evidence/mac/focused/03-import-detail.json",
+        "../evidence/android/focused/01-import.json",
+        "../evidence/android/focused/03-import-detail.json"
+      ]
+    },
+    {
+      "id": "B02",
+      "severity": "blocker",
+      "featureIds": [
+        "UF-PRODUCT-BOUNDARIES"
+      ],
+      "platforms": [
+        "web",
+        "mac",
+        "android"
+      ],
+      "title": "Central-server directory intake remains visible",
+      "reproduction": [
+        "Open the import form on each platform.",
+        "Inspect the origin tabs and the Web empty-home folder offer."
+      ],
+      "observed": "All three import forms offer 中央目录. Web empty home describes connecting a 工作台服务器 folder.",
+      "correction": "Remove all central-local directory collection and sync controls, guide entries, fixtures, and cross-links. Retain one-time browser file/folder upload and device-owned Mac/Android collectors.",
+      "evidence": [
+        "../evidence/web/01-home.json",
+        "../evidence/web/02-import.json",
+        "../evidence/mac/focused/01-import.json",
+        "../evidence/android/focused/01-import.json"
+      ]
+    },
+    {
+      "id": "B03",
+      "severity": "major",
+      "featureIds": [
+        "UF-IMPORT-SELECTION",
+        "UF-SOURCE-STATE"
+      ],
+      "platforms": [
+        "web",
+        "mac",
+        "android"
+      ],
+      "title": "Repeated instruction and secondary panels compete with the immediate task",
+      "reproduction": [
+        "Open Import at the evaluated viewport.",
+        "Open populated Sources on Mac and Android."
+      ],
+      "observed": "Import repeats one-time/sync distinctions in the description and a prominent callout; on Android these consume most of the first screen before file selection. Native source dashboards show large local-collector cards above a repeated connected-source list.",
+      "correction": "Keep a concise task explanation, primary selection action, and on-demand options. Use one source list with clear device ownership and contextual controls.",
+      "evidence": [
+        "../evidence/mac/focused/01-import.png",
+        "../evidence/mac/survey/03-sources.png",
+        "../evidence/android/focused/01-import.png",
+        "../evidence/android/focused/06-sources.png"
+      ]
+    },
+    {
+      "id": "B04",
+      "severity": "major",
+      "featureIds": [
+        "UF-IMPORT-PARSER",
+        "UF-IMPORT-STAGES",
+        "UF-IMPORT-DISPOSITIONS"
+      ],
+      "platforms": [
+        "web",
+        "mac",
+        "android"
+      ],
+      "title": "The import detail is too shallow to establish the source contract",
+      "reproduction": [
+        "Complete the sample-file import.",
+        "Open the saved import record."
+      ],
+      "observed": "The detail shows selected file, name, save mode, simplified parser, device, and image scheme. It does not establish installed Source Pack/version, file-by-file dispositions, or separate original/interpretation/publication/memory stages.",
+      "correction": "Expose the audited interpretation and recovery detail at the decision point. Show source-specific selected values and outcomes; a generic settings modal or success toast cannot substitute.",
+      "evidence": [
+        "../evidence/web/05-import-detail.json",
+        "../evidence/mac/focused/03-import-detail.json",
+        "../evidence/android/focused/03-import-detail.json"
+      ]
+    }
+  ],
+  "limits": [
+    "Only rendered DOM, screenshots, and ordinary fixture UI interactions were used. Candidate JavaScript and hidden state were not inspected.",
+    "This baseline establishes the known regressions and visual starting point. It does not claim complete inspection of 188 features or all adversarial journeys.",
+    "Native permissions, real backend execution, physical devices, live models, and production were not run.",
+    "An apparent disclosure-collapse defect was excluded: DOM-only timing checks stayed open; full-page screenshot capture altered the UI. Subsequent captures use viewport screenshots and observe DOM before capture."
+  ],
+  "next_round_priorities": [
+    "Restore exact import prose and same-task revision/review/detail persistence.",
+    "Remove every central-local collection entry while retaining native collectors and browser one-time upload.",
+    "Reduce repeated explanations and duplicate source panels, especially on Android.",
+    "Evaluate all source-audited semantic controls and results; do not reuse historical route counts as a completeness claim."
+  ],
+  "contract_identity_clarification": "Final freeze adds the already-applied cross-platform shared-workspace rule and corrects one source anchor. No baseline score, assertion, or candidate changed."
+}
