@@ -98,3 +98,43 @@ proven by the clean candidate's generated launcher fixture. Local startup is not
 evidence of model accuracy, physical-device behavior or the complete affected
 candidate plan. No user archive reset, automatic migration or source edit in
 the user's original checkout was performed.
+
+## Follow-up: deployed connector page and source selection
+
+The owner subsequently reported `config_invalid` on the Lark connection page;
+the browser's `GET /api/connectors` returned HTTP 400. The original health-only
+local check above did not cover lazy loading of this account's configuration.
+
+Read-only investigation established that the running process record pointed to
+the original working directory, while the Dev profile selected the separate
+installed `central-main-c2d5129c-20261023` release. The working directory has a
+different source composition: its processing implementation does not register
+the `perception` account domain. The account YAML still contains that domain,
+which includes explicit image privacy settings. The installed release includes
+the domain's implementation. This was an incompatible source/runtime selection,
+not evidence that the account domain should be deleted.
+
+The selected installed release also requires the explicit
+`models.defaults.embedding` assignment when `models.defaults` is supplied.
+After stopping the source process, its first startup attempt identified that
+missing field. The original assignment was restored from the earlier private
+backup, after another private backup and semantic verification that no other
+instance setting changed. The account YAML, its `perception` domain and its
+disabled external-image/query-image permissions were preserved. The earlier
+removal described above applies only to the original working directory's schema;
+it is not the final deployed configuration.
+
+The installed release's actual `mote.mjs start` entry was then invoked with the
+existing explicit profile home. The managed process record now matches the
+profile-selected release, health returns HTTP 200, and the media runtime reports
+ready. Reloading the owner's existing authenticated Lark browser tab completed
+without `config_invalid` and enabled the New connection button, which requires
+the connector inventory to load successfully. Only accessibility text was read;
+no personal screenshots, connection creation, provider authorization, or sync
+were performed. The existing Dev server remains running in the background.
+
+No product-code or lifecycle change was needed for this operational correction.
+Future validation of this incident must include the actual authenticated
+connector/configuration consumer, as well as runtime-release provenance and
+health. Use `mote.mjs start` for the selected installation and `dev-server.mjs`
+only when intentionally building the current checkout's source.
