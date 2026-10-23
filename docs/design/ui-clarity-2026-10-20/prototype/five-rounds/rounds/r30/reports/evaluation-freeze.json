@@ -1,0 +1,14 @@
+{
+  "evaluator": "/root/r30_34_independent_review",
+  "round": "R30",
+  "frozen_at_utc": "2026-10-22T14:54:58.167694+00:00",
+  "files": {
+    "decisions-independent.json": "12e71e37bba766110ca2c4c28e49f531d5812d6ad330461e018a1febdef7bdb0",
+    "independent-evaluation.json": "65e40398990e94bba5b468fcc0f97a57e4d34ed8cb85aae07918f766addfb4c8",
+    "independent-evaluation.md": "11f2cf252a737f115918f84343173675f278625a64be3a96e9883996700cbfb9",
+    "feature-coverage.json": "4a85473f255c6a2c78c788b81670650e4c83a3c07be860f370eb1af1b7ca7fa4",
+    "feature-coverage.md": "0cc4d95630ad35afcffb38cf1706bd89ca4d13041ffc54eadfc62f9763ad2e5a",
+    "journey-coverage.json": "311a7b60ae29fdaefbc6fecec6eb8e69898a1c299b4e19ad85e66760b9d74a71"
+  },
+  "note": "Scores and judgments frozen. New rounds receive separate evaluations; no retrospective score inflation."
+}
