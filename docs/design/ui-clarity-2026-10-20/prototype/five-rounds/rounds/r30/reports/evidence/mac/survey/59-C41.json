@@ -1,0 +1,403 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/usage",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R30\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n设置\n工作台在线\n随手记\n添加内容\n设置\n\n调整服务与资料管理方式，或管理当前登录。\n\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观\n用量与费用\n\n按模型和任务查看消耗\n\n示例用量账本 · 金额为虚构 USD 估算，原型实际调用为 0。\n\n日期范围\n最近 7 天\n最近 30 天\n全部\n模块\n全部\n提问\n记忆\n文件\n模型\n全部\n示例云端模型\n示例本地模型\n请求状态\n全部\n成功\n失败\n清除筛选\n维护模型估价\n5 / 4\n请求 / 成功\n16800 / 3200\n输入 / 输出 Token\n2800\n缓存 Token\n48.5 秒\n总耗时\n$0.0165\n估算费用\n按维度汇总\n汇总维度\n模型\n模块\nAgent\n技能\n模型\t请求\tToken\t费用 USD\n示例云端模型\t4\t15700\t$0.0165\n示例本地模型\t1\t4300\t$0.0000\n每日趋势 · 点击日期筛选\n请求明细\n请求与日期\t模块 / 模型\t状态\t耗时\t费用 USD\nrun-101 · 2026-10-20\t提问 / 示例云端模型\t成功\t2.4 秒\t$0.0028\nrun-102 · 2026-10-20\t记忆 / 示例云端模型\t成功\t6.8 秒\t$0.0081\n上一页\n第 1 / 3 页\n下一页",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "mac",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\n收集状态",
+      "label": "Mote 菜单栏收集状态",
+      "action": "native-menu-toggle",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "⌘ K",
+      "label": "搜索资料，快捷键 Command K",
+      "action": "native-search",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "写随手记\n⌘ N",
+      "label": "写随手记\n⌘ N",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "同步文件夹",
+      "label": "同步文件夹",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "账号与设备",
+      "label": "账号与设备",
+      "action": "go",
+      "page": "settings/account",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "模型与服务",
+      "label": "模型与服务",
+      "action": "go",
+      "page": "settings/models",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "采集与隐私",
+      "label": "采集与隐私",
+      "action": "go",
+      "page": "settings/privacy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "自动记忆与插件",
+      "label": "自动记忆与插件",
+      "action": "go",
+      "page": "settings/plugins",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "存储与备份",
+      "label": "存储与备份",
+      "action": "go",
+      "page": "settings/storage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "对外授权",
+      "label": "对外授权",
+      "action": "go",
+      "page": "settings/access",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "用量与费用",
+      "label": "用量与费用",
+      "action": "go",
+      "page": "settings/usage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "帮助与诊断",
+      "label": "帮助与诊断",
+      "action": "go",
+      "page": "settings/diagnostics",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "语言与外观",
+      "label": "语言与外观",
+      "action": "go",
+      "page": "settings/appearance",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "usage-period",
+      "type": "select-one",
+      "text": "最近 7 天\n最近 30 天\n全部",
+      "label": "日期范围\n最近 7 天\n最近 30 天\n全部",
+      "value": "最近 7 天",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "usage-module",
+      "type": "select-one",
+      "text": "全部\n提问\n记忆\n文件",
+      "label": "模块\n全部\n提问\n记忆\n文件",
+      "value": "全部",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "usage-model",
+      "type": "select-one",
+      "text": "全部\n示例云端模型\n示例本地模型",
+      "label": "模型\n全部\n示例云端模型\n示例本地模型",
+      "value": "全部",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "usage-status",
+      "type": "select-one",
+      "text": "全部\n成功\n失败",
+      "label": "请求状态\n全部\n成功\n失败",
+      "value": "全部",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "清除筛选",
+      "label": "清除筛选",
+      "action": "usage-reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "维护模型估价",
+      "label": "维护模型估价",
+      "action": "go",
+      "page": "settings/usage-prices",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "usage-group",
+      "type": "select-one",
+      "text": "模型\n模块\nAgent\n技能",
+      "label": "汇总维度\n模型\n模块\nAgent\n技能",
+      "value": "模型",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "示例云端模型",
+      "label": "示例云端模型",
+      "action": "usage-drill",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "示例本地模型",
+      "label": "示例本地模型",
+      "action": "usage-drill",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "每日趋势 · 点击日期筛选",
+      "label": "每日趋势 · 点击日期筛选",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "run-101 · 2026-10-20",
+      "label": "run-101 · 2026-10-20",
+      "action": "usage-request",
+      "item": "run-101",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "run-102 · 2026-10-20",
+      "label": "run-102 · 2026-10-20",
+      "action": "usage-request",
+      "item": "run-102",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "上一页",
+      "label": "上一页",
+      "action": "usage-page",
+      "disabled": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "下一页",
+      "label": "下一页",
+      "action": "usage-page",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设置"
+    },
+    {
+      "level": "H2",
+      "text": "用量与费用"
+    },
+    {
+      "level": "H3",
+      "text": "按维度汇总"
+    },
+    {
+      "level": "H3",
+      "text": "请求明细"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

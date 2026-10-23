@@ -1,0 +1,240 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/setup/folder",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R30\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n管理手机文件夹\n\n核对这个目录的范围、保存方式与接收状态。\n\n返回来源\n当前状态：正在同步\n\n正在按已保存的策略接收目录变化。可以单独暂停这个来源。\n\n暂停此来源\n浏览此来源的资料\n已连接的文件夹\n\n研究资料\nDocuments/研究资料\n\n文件夹访问说明\n修改范围与保存设置\n手机文件夹\n只访问你选择的目录。\n选择手机文件夹\n同步策略：持续同步后续变化\n已保存的策略：持续同步。暂停时保留；修改勾选后点击“保存设置”生效。\n来源名称\n保存方式\n工作台保留原件，清理 Mote 暂存副本\n本机与工作台都保留 Mote 副本\n仅保存文件引用\n工作台确认收到后，可清理 Mote 生成的待传副本。你选择的文件夹中的原文件保留。\n\n工作台负责保存归档；设备端管理 Mote 的本机副本。文件夹中的原文件与 Mote 副本分别管理。\n\n保存设置\n取消\n连接另一个文件夹\n内容关系与背景\n尚未声明，仍可查询与整理\n选填\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回来源",
+      "label": "返回来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "暂停此来源",
+      "label": "暂停此来源",
+      "action": "pause-source",
+      "item": "folder",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "浏览此来源的资料",
+      "label": "浏览此来源的资料",
+      "action": "browse-source",
+      "item": "folder",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "文件夹访问说明",
+      "label": "文件夹访问说明",
+      "expanded": false
+    },
+    {
+      "tag": "input",
+      "id": "folder-path",
+      "type": "text",
+      "text": "",
+      "label": "手机文件夹\n只访问你选择的目录。",
+      "value": "Documents/研究资料",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "选择手机文件夹",
+      "label": "选择手机文件夹",
+      "action": "native-folder-picker",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "continuous",
+      "type": "checkbox",
+      "text": "",
+      "label": "同步策略：持续同步后续变化\n已保存的策略：持续同步。暂停时保留；修改勾选后点击“保存设置”生效。",
+      "value": "on",
+      "checked": true,
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "source-name",
+      "type": "text",
+      "text": "",
+      "label": "来源名称",
+      "value": "研究资料",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "save-mode",
+      "type": "select-one",
+      "text": "工作台保留原件，清理 Mote 暂存副本\n本机与工作台都保留 Mote 副本\n仅保存文件引用",
+      "label": "保存方式\n工作台保留原件，清理 Mote 暂存副本\n本机与工作台都保留 Mote 副本\n仅保存文件引用\n工作台确认收到后，可清理 Mote 生成的待传副本。你选择的文件夹中的原文件保留。",
+      "value": "中央保留原件，本机按需清理",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存设置",
+      "label": "保存设置",
+      "action": "save-source",
+      "item": "folder",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "取消",
+      "label": "取消",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "连接另一个文件夹",
+      "label": "连接另一个文件夹",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "内容关系与背景\n尚未声明，仍可查询与整理\n选填",
+      "label": "内容关系与背景\n尚未声明，仍可查询与整理\n选填",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "管理手机文件夹"
+    },
+    {
+      "level": "H2",
+      "text": "已连接的文件夹"
+    },
+    {
+      "level": "H2",
+      "text": "修改范围与保存设置"
+    }
+  ],
+  "viewport": {
+    "width": 412,
+    "height": 915
+  },
+  "pageWidth": 412,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

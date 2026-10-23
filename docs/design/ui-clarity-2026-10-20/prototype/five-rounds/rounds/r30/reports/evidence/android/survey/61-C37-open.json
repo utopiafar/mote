@@ -1,0 +1,271 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/library/files",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R30\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\nMote · 你的个人资料库\n资料库\n\n汇集文件、随手记和各个来源，随时查找、提问并核对原文。\n\n资料保留原文，记忆整理长期信息，洞察回顾一段时间的变化。\n\n资料\n记忆\n洞察\n浏览分类\n全部资料\n随手记\n资料出处\n文件与录音\n原始采集记录\n截图片段\n应用使用记录\n媒体播放\nCoding 会话\n上传与处理\n文件与录音\n导入文件\n筛选条件\n全部来源\n研究资料\nAndroid 屏幕\n飞书文档与日历\n随手记\nCodex 会话\nGoogle 日历\n飞书录音\n全部设备\n网页\nAndroid\nMac\n中央\n全部类型\n随手记\n文件\n录音\n屏幕记录\nCoding 会话\n日历\n保存时间\n全部时间\n今天\n最近 7 天\n文件正文、转写和说话人都在这里核对。调整文件处理规则\n长期记忆系统调研笔记\n\n正文提取已完成 · 研究资料\n\n阅读结果\n重新处理\n项目讨论录音 · 本周计划\n\n转写已完成 · 2 位说话人 · 飞书录音\n\n阅读结果\n校对转写与说话人\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料",
+      "label": "资料",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "记忆",
+      "label": "记忆",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "洞察",
+      "label": "洞察",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "compact-collection",
+      "type": "select-one",
+      "text": "全部资料\n随手记\n资料出处\n文件与录音\n原始采集记录\n截图片段\n应用使用记录\n媒体播放\nCoding 会话\n上传与处理",
+      "label": "浏览分类\n全部资料\n随手记\n资料出处\n文件与录音\n原始采集记录\n截图片段\n应用使用记录\n媒体播放\nCoding 会话\n上传与处理",
+      "value": "files",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "导入文件",
+      "label": "导入文件",
+      "action": "go",
+      "page": "import",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "material-search",
+      "type": "text",
+      "text": "",
+      "label": "搜索资料",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "筛选条件",
+      "label": "筛选条件",
+      "expanded": true
+    },
+    {
+      "tag": "select",
+      "id": "source-filter",
+      "type": "select-one",
+      "text": "全部来源\n研究资料\nAndroid 屏幕\n飞书文档与日历\n随手记\nCodex 会话\nGoogle 日历\n飞书录音",
+      "label": "按来源筛选",
+      "value": "all",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "device-filter",
+      "type": "select-one",
+      "text": "全部设备\n网页\nAndroid\nMac\n中央",
+      "label": "按设备筛选",
+      "value": "all",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "type-filter",
+      "type": "select-one",
+      "text": "全部类型\n随手记\n文件\n录音\n屏幕记录\nCoding 会话\n日历",
+      "label": "按类型筛选",
+      "value": "all",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "date-filter",
+      "type": "select-one",
+      "text": "全部时间\n今天\n最近 7 天",
+      "label": "保存时间\n全部时间\n今天\n最近 7 天",
+      "value": "全部时间",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "调整文件处理规则",
+      "label": "调整文件处理规则",
+      "action": "go",
+      "page": "settings/file-processing",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "阅读结果",
+      "label": "阅读结果",
+      "action": "go",
+      "page": "material/m2",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重新处理",
+      "label": "重新处理",
+      "action": "reprocess-file",
+      "item": "m2",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "阅读结果",
+      "label": "阅读结果",
+      "action": "go",
+      "page": "material/m5",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "校对转写与说话人",
+      "label": "校对转写与说话人",
+      "action": "edit-transcript",
+      "item": "m5",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "资料库"
+    },
+    {
+      "level": "H2",
+      "text": "文件与录音"
+    },
+    {
+      "level": "H3",
+      "text": "长期记忆系统调研笔记"
+    },
+    {
+      "level": "H3",
+      "text": "项目讨论录音 · 本周计划"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

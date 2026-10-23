@@ -1,0 +1,150 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/application",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R30\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n应用使用记录\n\n回看你使用过的前台应用，与 Mote 的后台工作分开查看。\n\nMote 后台工作\n采样时间与设备\n采样时段\n\n2026-10-20 09:00–14:00\n\nAsia/Shanghai\n\n来源设备\n\n我的 Mac\n\nMac\n\n5小时 0分\n采样窗口\n3小时 56分\n已采集应用时长\n1小时 4分\n未采集时长\n应用时长与占比\n\n占比按各应用已采集时长除以全部应用已采集时长计算。\n\n编辑器\n58.47%\n\n2小时 18分\n\n浏览器\n27.97%\n\n1小时 6分\n\n笔记\n13.56%\n\n32分\n\n未采集区间不作推算，也不计入占比分母。\n\n未采集区间\n\n以下区间没有前台应用采样，保留为空缺。\n\n09:45–10:05\n\n屏幕锁定\n\n20分\n11:20–11:44\n\n采集已暂停\n\n24分\n13:40–14:00\n\n设备未连接\n\n20分\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "Mote 后台工作",
+      "label": "Mote 后台工作",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "应用使用记录"
+    },
+    {
+      "level": "H2",
+      "text": "采样时间与设备"
+    },
+    {
+      "level": "H3",
+      "text": "采样时段"
+    },
+    {
+      "level": "H3",
+      "text": "来源设备"
+    },
+    {
+      "level": "H2",
+      "text": "应用时长与占比"
+    },
+    {
+      "level": "H2",
+      "text": "未采集区间"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

@@ -1,0 +1,378 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/providers",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R30\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n设置\n工作台在线\n随手记\n添加内容\n设置\n\n调整服务与资料管理方式，或管理当前登录。\n\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观\n模型连接\n\n先配置连接，再分配给提问、记忆与内容处理。\n\n当前预设 · 示例模型服务\n复制预设\n预设名称\n厂商与协议\nOpenAI 兼容协议\nAnthropic 协议\n本机服务\n服务地址\n模型名称\n凭据处理\n保留已有凭据\n替换为新凭据\n清除凭据\n新凭据\n演示输入，不连接真实服务。\n性能、协议与地址变更\n保存设置\n测试连接演示\n分配给功能\n自定义副本\n\n正在使用的预设需要先取消模块分配，才能删除。",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "mac",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\n收集状态",
+      "label": "Mote 菜单栏收集状态",
+      "action": "native-menu-toggle",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "⌘ K",
+      "label": "搜索资料，快捷键 Command K",
+      "action": "native-search",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "写随手记\n⌘ N",
+      "label": "写随手记\n⌘ N",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "同步文件夹",
+      "label": "同步文件夹",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "账号与设备",
+      "label": "账号与设备",
+      "action": "go",
+      "page": "settings/account",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "模型与服务",
+      "label": "模型与服务",
+      "action": "go",
+      "page": "settings/models",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "采集与隐私",
+      "label": "采集与隐私",
+      "action": "go",
+      "page": "settings/privacy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "自动记忆与插件",
+      "label": "自动记忆与插件",
+      "action": "go",
+      "page": "settings/plugins",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "存储与备份",
+      "label": "存储与备份",
+      "action": "go",
+      "page": "settings/storage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "对外授权",
+      "label": "对外授权",
+      "action": "go",
+      "page": "settings/access",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "用量与费用",
+      "label": "用量与费用",
+      "action": "go",
+      "page": "settings/usage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "帮助与诊断",
+      "label": "帮助与诊断",
+      "action": "go",
+      "page": "settings/diagnostics",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "语言与外观",
+      "label": "语言与外观",
+      "action": "go",
+      "page": "settings/appearance",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "复制预设",
+      "label": "复制预设",
+      "action": "clone-provider",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cfg-provider-name",
+      "type": "text",
+      "text": "",
+      "label": "预设名称",
+      "value": "示例模型服务",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cfg-provider-vendor",
+      "type": "select-one",
+      "text": "OpenAI 兼容协议\nAnthropic 协议\n本机服务",
+      "label": "厂商与协议\nOpenAI 兼容协议\nAnthropic 协议\n本机服务",
+      "value": "OpenAI 兼容协议",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cfg-provider-endpoint",
+      "type": "text",
+      "text": "",
+      "label": "服务地址",
+      "value": "https://example.invalid/v1",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cfg-provider-model",
+      "type": "text",
+      "text": "",
+      "label": "模型名称",
+      "value": "通用助手",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cfg-provider-key-mode",
+      "type": "select-one",
+      "text": "保留已有凭据\n替换为新凭据\n清除凭据",
+      "label": "凭据处理\n保留已有凭据\n替换为新凭据\n清除凭据",
+      "value": "保留已有凭据",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cfg-provider-key",
+      "type": "password",
+      "text": "",
+      "label": "新凭据\n演示输入，不连接真实服务。",
+      "value": "[redacted]",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "性能、协议与地址变更",
+      "label": "性能、协议与地址变更",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存设置",
+      "label": "保存设置",
+      "action": "save-config",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "测试连接演示",
+      "label": "测试连接演示",
+      "action": "test-provider",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "分配给功能",
+      "label": "分配给功能",
+      "action": "go",
+      "page": "settings/assignments",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设置"
+    },
+    {
+      "level": "H2",
+      "text": "模型连接"
+    },
+    {
+      "level": "H3",
+      "text": "当前预设 · 示例模型服务"
+    },
+    {
+      "level": "H3",
+      "text": "自定义副本"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}
