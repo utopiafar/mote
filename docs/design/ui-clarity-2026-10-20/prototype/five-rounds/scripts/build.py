@@ -25,6 +25,8 @@ def main():
     if args.round >= 32:
         for layer in ('connections', 'actions'):
             source_names += [layer+ext for ext in ('.css','.js') if (ROOT/'src'/(layer+ext)).exists()]
+    if args.round >= 34:
+        source_names += ['uploads.css', 'uploads.js']
     css = '\n'.join((ROOT/'src'/n).read_text() for n in source_names if n.endswith('.css'))
     js = '\n'.join((ROOT/'src'/n).read_text() for n in source_names if n.endswith('.js'))
     for platform in ('web', 'mac', 'android'):

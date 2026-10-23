@@ -3,7 +3,7 @@ const {openCandidate,observe}=require('./browser-session.cjs');
 (async()=>{
  const folder=process.argv[2]||'work/root-r33';
  for(const platform of ['web','mac','android']){
-  const out=path.resolve('work/author-actions',platform);await fs.mkdir(out,{recursive:true});
+  const out=path.resolve('work/author-actions-r'+(folder.match(/r(\d+)/)?.[1]||'33'),platform);await fs.mkdir(out,{recursive:true});
   const root='https://mote-prototype.invalid/?reset=1&state=populated';
   const s=await openCandidate(path.resolve(folder,platform+'.html'),{viewport:platform==='android'?{width:390,height:844}:{width:1440,height:1000},url:root+'#/todos/schedule'});
   const p=s.page,steps=[];
@@ -34,16 +34,18 @@ const {openCandidate,observe}=require('./browser-session.cjs');
    await p.locator('[data-action="ax-receipt"][data-state="uncertain"]').click();await take('03-uncertain');
    await click('verify-event');await take('04-verified-existing');
    if(!(await text()).includes('没有新建事件')||!(await text()).includes('synthetic-event-suggestion-1'))throw Error('Uncertain verification did not retain identity');
-   await nav('todos');await p.locator('#todo-text').fill('无需日历的下一步');await click('add-todo');
+   await nav('todos');if((await text()).includes('已按同一事件和操作 ID 核实'))throw Error('Calendar notice leaked into ordinary todos');await p.locator('#todo-text').fill('无需日历的下一步');await click('add-todo');
    if(!(await text()).includes('没有截止日期'))throw Error('Optional due date missing');
    const row=p.locator('.ax-todo').filter({hasText:'无需日历的下一步'});await row.locator('[data-action="ax-complete-todo"]').click();
    await p.locator('#todo-filter').selectOption('已完成');await p.locator('.ax-todo').filter({hasText:'无需日历的下一步'}).locator('[data-action="ax-reopen-todo"]').click();
    await p.locator('#todo-filter').selectOption('未完成');await take('05-todo-reopened');
    if(!(await text()).includes('无需日历的下一步'))throw Error('Todo reopen missing');
+   await nav('todos/schedule');await p.locator('#ax-examples > summary').click();await p.locator('[data-action="ax-example"][data-kind="create"]').click();const finalReview=p.url();await p.locator('#ax-target').selectOption('mac:personal');await click('freeze-review');
    await nav('todos/discovery');await p.locator('#ax-enabled').check();await p.locator('[data-ax-device="mac"]').check();await click('save-discovery');
    await p.locator('#ax-device-change > summary').click();await click('revoke-review-device');await click('save-discovery');
    if(!(await text()).includes('请先刷新设备授权'))throw Error('Stale device saved without refresh');
    await click('refresh-devices');await click('save-discovery');await take('06-discovery-refresh');
+   await p.goto(finalReview);await click('approve');if(!(await text()).includes('目标设备或日历授权已变化'))throw Error('Revoked target accepted at final approval');if(await p.locator('#ax-title').inputValue()!=='项目资料评审')throw Error('Revoked target lost draft');await take('07-revoked-target-blocked');
    if(s.errors.length)throw Error(s.errors.join(';'));
    console.log(JSON.stringify({platform,pass:true,steps:steps.length,errors:s.errors}));
   }catch(e){console.log(JSON.stringify({platform,errors:s.errors,text:await p.locator('body').innerText()}));throw e;}finally{await fs.writeFile(path.join(out,'observations.json'),JSON.stringify(steps,null,2));await s.browser.close();}

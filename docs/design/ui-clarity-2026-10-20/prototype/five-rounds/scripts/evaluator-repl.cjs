@@ -30,6 +30,14 @@ async function run(cmd) {
     if (!session) throw new Error('Open a candidate first.');
     const page = session.page;
     if (op === 'click') await locate(page, cmd).nth(cmd.index || 0).click();
+    else if (op === 'file') await locate(page, cmd).nth(cmd.index || 0).setInputFiles(cmd.path);
+    else if (op === 'download') {
+      const pending = page.waitForEvent('download');
+      await locate(page, cmd).nth(cmd.index || 0).click();
+      const download = await pending;
+      await fs.mkdir(path.dirname(cmd.path), {recursive:true});
+      await download.saveAs(cmd.path);
+    }
     else if (op === 'fill') await locate(page, cmd).nth(cmd.index || 0).fill(cmd.value);
     else if (op === 'check') await locate(page, cmd).nth(cmd.index || 0).setChecked(cmd.checked);
     else if (op === 'select') await locate(page, cmd).nth(cmd.index || 0).selectOption(cmd.value);

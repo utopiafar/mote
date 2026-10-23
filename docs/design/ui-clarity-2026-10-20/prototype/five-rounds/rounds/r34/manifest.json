@@ -1,0 +1,43 @@
+{
+  "round": 34,
+  "frozen": true,
+  "productSourceRevision": "81a73c0ec81af876d6eeef71451b75cd51684b34",
+  "prototypeBaselineRevision": "9aec3d55d9e6af391c0cc5c2b1dbca8b2936a0e1",
+  "inventorySha256": "316d7ac7ea6577c4a6d28c526f6e27ad56d33c7a9afd60db4b74466e88791572",
+  "rubricSha256": "58826132bd1d4c70690567482902b7ef7dac89e32f7fc727a643ce3d213abb7c",
+  "scope": "HTML UI simulation; synthetic data; no backend, native or live-model validation",
+  "artifacts": [
+    {
+      "platform": "web",
+      "file": "web.html",
+      "sha256": "33d63d9f009693fab234ebb37179da858b403e8a71c7e59624d4c9dcbd13d000",
+      "bytes": 1345807
+    },
+    {
+      "platform": "mac",
+      "file": "mac.html",
+      "sha256": "80520ac7f5d12fc494b5ffd1853c2039aa4f9fa9b3b8ac14d74e06cfe602160a",
+      "bytes": 1345807
+    },
+    {
+      "platform": "android",
+      "file": "android.html",
+      "sha256": "c4f9e515adc7159809536466a3bc02f107dadda56c68b6f73e79d22076fdebb4",
+      "bytes": 1345835
+    }
+  ],
+  "sourceHashes": {
+    "focus.css": "f377e8395a8addb9c1aaadd0f3802da1c2baf42816c451769607fbad49dbb3b0",
+    "focus.js": "530bf059de3c3e6606e88881ba0dc2e92caa7e321287d80480e97cd4e3f25f1a",
+    "native-semantics.css": "b46e142005a577e5f993f6e494ade71cd439dcbdffb577d220c4787ebec7ec57",
+    "native-semantics.js": "36e93051dfce77ce1c0750c58b72094375d81b1a67e23650febca2026d8fdecc",
+    "central-semantics.css": "226ee239cf695bc6651088697e9d15fce8b454c941f2af728dc9cb9b1b862a5e",
+    "central-semantics.js": "e0fdd400ecb184583efcdebef59c62e80f574c92028edddb5d9b6f0977dbc753",
+    "connections.css": "5bb35938dff43fe091b36221c8060be7bbfd2fa418db52118da0f2b8ba41c05e",
+    "connections.js": "67bf4517d40eaffdbd389605b3fecedb7a1f9c3066ad557efd1b56dc9a928617",
+    "actions.css": "309e7672545e047debbe8d5cab3f0a7f55480860ea7005c276b4b1d6eaef951a",
+    "actions.js": "a55ac91332083e174c3eb744709f58b61499c91d6074d18672dff88d161403d4",
+    "uploads.css": "57a3e63e811ff86647212380b5cc0cb48be044b957596f565143991e0536d15b",
+    "uploads.js": "e0272485c638f324d867a4c65af4927babab7eafb954df736c42b1e197b704be"
+  }
+}
