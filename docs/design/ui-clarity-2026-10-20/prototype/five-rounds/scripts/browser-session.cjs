@@ -2,8 +2,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require('playwright');
 
-const executablePath = '/tmp/mote-ui-chrome/chrome-headless-shell-linux64/chrome-headless-shell';
-const fontPath = '/tmp/mote-ui-noto-sc.otf';
+const executablePath = path.resolve(__dirname, '../work/runtime/134.0.6998.165/chrome-headless-shell-linux64/chrome-headless-shell');
+const fontPath = path.resolve(__dirname, '../work/runtime/noto-sc.otf');
 
 async function openCandidate(file, options = {}) {
   const html = await fs.readFile(file, 'utf8');

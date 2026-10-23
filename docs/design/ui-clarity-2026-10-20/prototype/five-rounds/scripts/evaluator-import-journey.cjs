@@ -18,7 +18,7 @@ async function summary(name){const el=s.page.locator('summary').filter({hasText:
  for(const [id,label] of [['ask','问一问'],['sources','来源'],['activity','活动'],['library','资料库']])await step('02-nav-'+id,()=>s.page.getByRole('button',{name:label,exact:true}).first().click());
  await s.page.locator('#preview-state').selectOption('empty');
  await step('03-empty-home');
- await step('04-import-form',()=>button('导入已有文件'));
+ await step('04-import-form',()=>button('导入第一份资料'));
  check('optional context maxLength',await s.page.locator('#focus-import-instruction').getAttribute('maxlength'));
  await s.page.locator('#focus-import-instruction').fill(context);
  await step('05-file-picker',()=>button('选择文件'));
@@ -35,6 +35,7 @@ async function summary(name){const el=s.page.locator('summary').filter({hasText:
  await summary('补充说明，重新理解资料');
  await s.page.locator('#focus-revised-instruction').fill(revised);
  await step('10-revised-draft');
+ check('confirmation disabled while explanation is dirty',!(await s.page.getByRole('button',{name:'确认并保存记录',exact:true}).isEnabled()));
  if(mode==='dirty-confirm'){
    const enabled=await s.page.getByRole('button',{name:'确认并保存记录',exact:true}).isEnabled();
    check('confirmation enabled with dirty explanation',enabled);
@@ -63,8 +64,10 @@ async function summary(name){const el=s.page.locator('summary').filter({hasText:
    await s.page.locator('#focus-import-phase').selectOption({label:'等待配置模型'});
    await step('17-model-required');await button('配置模型后继续');
    await step('18-model-settings');
-   await s.page.locator('#model-choice').selectOption({label:'示例模型 · 本地处理'});await button('保存设置');
-   d=await step('19-model-saved');check('saved model visible value',d.controls.find(c=>c.id==='model-choice')?.value);
+   check('recovery selects import module',await s.page.locator('#cs-model-module-module').inputValue()==='import');
+   await s.page.locator('#cs-model-module-provider').selectOption({label:'个人示例连接'});
+   await s.page.locator('#cs-model-module-model').fill('review-fixed-import');await button('保存模块设置');
+   d=await step('19-model-saved');check('saved model visible value',d.controls.find(c=>c.id==='cs-model-module-model')?.value);
    d=await step('20-return-same-import',()=>button('返回这次导入'));
    check('same task after model return',d.url.replace('/details/','/review/')===taskUrl||d.url===taskUrl);check('revised prose after model return',d.text.includes(revised));
  }

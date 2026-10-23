@@ -1,0 +1,58 @@
+{
+  "round": 31,
+  "basedOn": "R30 independent evaluation",
+  "changes": [
+    {
+      "finding": "R30-01",
+      "change": "Dirty import explanation disables confirmation until explicit re-preview; draft persists and can be discarded explicitly."
+    },
+    {
+      "finding": "R30-02",
+      "change": "Import model recovery selects import-format module, persists provider/model assignment, and returns to the same retained import."
+    },
+    {
+      "finding": "R30-03",
+      "change": "Per-file parsed, media-processing, attachment, container, excluded and unsupported outcomes; ZIP children have separate record identities."
+    },
+    {
+      "finding": "R30-04",
+      "change": "Explicit device invitation inputs, one-time lifetime, cancellation, transfer and clearly simulated collector acknowledgement."
+    },
+    {
+      "finding": "R30-05",
+      "change": "Source context acknowledged versions, dirty drafts and conflicts; Android local conflict action; material-specific attribution precedence; current account/model/deployment semantics."
+    },
+    {
+      "finding": "R30-06",
+      "change": "Single native source list, focused newcomer home and grouped source catalog; task-specific native settings with folded secondary options."
+    },
+    {
+      "finding": "R30-07",
+      "change": "Role-specific fixed synthetic preview differentiates own expression, vendor quotation and AI quotation without claiming model parsing."
+    }
+  ],
+  "implementationFamilies": {
+    "root": [
+      "Import and context",
+      "Source attribution and conflict",
+      "Sources and newcomer home"
+    ],
+    "native": [
+      "Capture scope and permissions",
+      "Per-app privacy and page modes",
+      "Upload conditions and receipts",
+      "Folder scope and review",
+      "Local content/storage/backup/coding/calendar handoffs"
+    ],
+    "central": [
+      "Account and session",
+      "Device invitation",
+      "Providers and module assignments",
+      "Saved/effective settings",
+      "Ask",
+      "Material processing and transcript correction"
+    ]
+  },
+  "authorVerification": "Three-platform nominal import flow completed with exact multiline explanation retention and no runtime errors; helper checks cover target native and Central routes. Independent evaluation follows freezing.",
+  "boundary": "HTML UI simulation using synthetic data. No backend, native runtime, live model, OAuth, or actual device pairing validated."
+}
