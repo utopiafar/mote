@@ -1,0 +1,303 @@
+[
+  {
+    "at": "2026-10-23T03:40:07.893Z",
+    "op": "open",
+    "file": "rounds/r34/web.html",
+    "url": "https://mote-prototype.invalid/#/library",
+    "evidenceDirectory": "rounds/r34/reports/evidence/web/calendar"
+  },
+  {
+    "at": "2026-10-23T03:40:16.272Z",
+    "op": "select",
+    "selector": "#preview-state",
+    "value": "populated"
+  },
+  {
+    "at": "2026-10-23T03:40:16.332Z",
+    "op": "click",
+    "role": "button",
+    "name": "今天"
+  },
+  {
+    "at": "2026-10-23T03:40:16.375Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看日程"
+  },
+  {
+    "at": "2026-10-23T03:40:16.431Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对建议"
+  },
+  {
+    "at": "2026-10-23T03:40:16.475Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接目标设备日历"
+  },
+  {
+    "at": "2026-10-23T03:40:16.523Z",
+    "op": "click",
+    "role": "button",
+    "name": "预览此设备授权回执"
+  },
+  {
+    "at": "2026-10-23T03:40:16.559Z",
+    "op": "click",
+    "role": "button",
+    "name": "继续核对",
+    "save": "01-review-existing-targets"
+  },
+  {
+    "at": "2026-10-23T03:40:16.660Z",
+    "op": "fill",
+    "selector": "#ax-title",
+    "value": "R34 独立日程核对"
+  },
+  {
+    "at": "2026-10-23T03:40:16.733Z",
+    "op": "check",
+    "selector": "#ax-allDay",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T03:40:16.745Z",
+    "op": "fill",
+    "selector": "#ax-end",
+    "value": "2026-10-27"
+  },
+  {
+    "at": "2026-10-23T03:40:16.756Z",
+    "op": "fill",
+    "selector": "#ax-timezone",
+    "value": "Europe/London"
+  },
+  {
+    "at": "2026-10-23T03:40:16.764Z",
+    "op": "select",
+    "selector": "#ax-target",
+    "value": {
+      "label": "我的 Mac · 工作日历"
+    }
+  },
+  {
+    "at": "2026-10-23T03:40:16.816Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对固定内容",
+    "save": "02-fixed-review"
+  },
+  {
+    "at": "2026-10-23T03:40:23.136Z",
+    "op": "click",
+    "text": "预览依据变更",
+    "save": "03-review-variants"
+  },
+  {
+    "at": "2026-10-23T03:40:35.791Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟原始资料出现新版本",
+    "save": "04-stale-evidence"
+  },
+  {
+    "at": "2026-10-23T03:40:35.927Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对固定内容",
+    "save": "05-refixed"
+  },
+  {
+    "at": "2026-10-23T03:40:36.058Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回日程建议",
+    "save": "06-suggestions"
+  },
+  {
+    "at": "2026-10-23T03:40:49.725Z",
+    "op": "click",
+    "role": "button",
+    "name": "发现设置",
+    "save": "07-discovery"
+  },
+  {
+    "at": "2026-10-23T03:40:56.285Z",
+    "op": "click",
+    "text": "预览授权变化",
+    "save": "08-device-change-fixture"
+  },
+  {
+    "at": "2026-10-23T03:41:04.489Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟审核设备被撤销",
+    "save": "09-target-revoked"
+  },
+  {
+    "at": "2026-10-23T03:41:04.624Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回日程建议"
+  },
+  {
+    "at": "2026-10-23T03:41:04.676Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对建议",
+    "save": "10-fixed-review-after-revocation"
+  },
+  {
+    "at": "2026-10-23T03:41:04.808Z",
+    "op": "click",
+    "role": "button",
+    "name": "确认交给此设备",
+    "save": "11-final-approval-rejected"
+  },
+  {
+    "at": "2026-10-23T03:41:49.053Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开目标设备同步",
+    "save": "12-target-sync"
+  },
+  {
+    "at": "2026-10-23T03:41:49.175Z",
+    "op": "click",
+    "role": "button",
+    "name": "设备已写入但回执丢失",
+    "save": "13-uncertain"
+  },
+  {
+    "at": "2026-10-23T03:41:49.305Z",
+    "op": "click",
+    "role": "button",
+    "name": "核实已有事件",
+    "save": "14-original-event-verified"
+  },
+  {
+    "at": "2026-10-23T03:41:49.431Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回日程建议"
+  },
+  {
+    "at": "2026-10-23T03:41:49.492Z",
+    "op": "click",
+    "role": "button",
+    "name": "我的待办",
+    "save": "15-todos-no-calendar-notice"
+  },
+  {
+    "at": "2026-10-23T03:42:03.108Z",
+    "op": "click",
+    "role": "button",
+    "name": "日程建议"
+  },
+  {
+    "at": "2026-10-23T03:42:03.154Z",
+    "op": "click",
+    "role": "button",
+    "name": "发现设置"
+  },
+  {
+    "at": "2026-10-23T03:42:03.203Z",
+    "op": "click",
+    "role": "button",
+    "name": "刷新设备",
+    "save": "16-revoked-target-refreshed"
+  },
+  {
+    "at": "2026-10-23T03:42:03.324Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回日程建议",
+    "save": "17-suggestion-no-discovery-notice"
+  },
+  {
+    "at": "2026-10-23T03:42:03.450Z",
+    "op": "click",
+    "text": "预览不同日程操作",
+    "save": "18-operation-fixtures"
+  },
+  {
+    "at": "2026-10-23T03:42:25.788Z",
+    "op": "click",
+    "role": "button",
+    "name": "添加日程",
+    "save": "19-new-target-test"
+  },
+  {
+    "at": "2026-10-23T03:42:57.848Z",
+    "op": "fill",
+    "selector": "#ax-title",
+    "value": "R34 目标撤销后保留此标题"
+  },
+  {
+    "at": "2026-10-23T03:42:57.863Z",
+    "op": "select",
+    "selector": "#ax-target",
+    "value": {
+      "label": "我的 Mac · 工作日历"
+    }
+  },
+  {
+    "at": "2026-10-23T03:42:57.903Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对固定内容",
+    "save": "20-second-fixed-review"
+  },
+  {
+    "at": "2026-10-23T03:42:58.035Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回日程建议"
+  },
+  {
+    "at": "2026-10-23T03:42:58.086Z",
+    "op": "click",
+    "role": "button",
+    "name": "发现设置"
+  },
+  {
+    "at": "2026-10-23T03:42:58.130Z",
+    "op": "check",
+    "label": "我的 Mac",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T03:42:58.167Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存发现设置",
+    "save": "21-actual-review-device-selected"
+  },
+  {
+    "at": "2026-10-23T03:42:58.286Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟审核设备被撤销",
+    "save": "22-selected-device-revoked"
+  },
+  {
+    "at": "2026-10-23T03:42:58.417Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回日程建议"
+  },
+  {
+    "at": "2026-10-23T03:42:58.468Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对建议"
+  },
+  {
+    "at": "2026-10-23T03:42:58.519Z",
+    "op": "click",
+    "role": "button",
+    "name": "确认交给此设备",
+    "save": "23-real-revocation-approval-blocked"
+  }
+]

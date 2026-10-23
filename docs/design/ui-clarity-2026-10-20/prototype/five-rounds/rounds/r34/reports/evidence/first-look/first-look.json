@@ -1,0 +1,259 @@
+{
+  "assessor": "独立 AI 首屏代理观察；不是人类用户研究",
+  "scope": "先逐张查看真实视口图片并冻结第一印象，随后仅核对对应 DOM JSON 与 manifest",
+  "screenshot_observations": [
+    {
+      "platform": "web",
+      "image": "web-first-use.png",
+      "observed_before_dom": true,
+      "product_purpose": {
+        "observed_words": [
+          "Mote · 个人资料与记忆库",
+          "把资料收好，需要时有据可查。",
+          "保存文件、想法和设备记录。以后搜索或提问，沿着出处回到原文。"
+        ],
+        "inference": "一个个人资料库：收集文件、笔记和设备记录，之后通过搜索或提问找回信息，并核对原文依据。"
+      },
+      "newcomer_actions": [
+        {
+          "action": "导入第一份资料",
+          "basis": "首屏深色主按钮直接写明。"
+        },
+        {
+          "action": "写随手记",
+          "basis": "主按钮旁的次按钮；顶部也有「随手记」。"
+        },
+        {
+          "action": "查看提问使用例子，再从自己的资料中找答案",
+          "basis": "右侧「上次讨论决定了什么？」示例、「看一个使用例子」和左侧「问一问」。"
+        }
+      ],
+      "first_action": {
+        "action": "导入第一份资料",
+        "reason": "唯一最突出的深色首屏主按钮，且说明明确要求从一份资料开始；先放入资料才有可查的内容。"
+      },
+      "collection_location": {
+        "observed_words": [
+          "Mac / Android 采集本机内容；中央负责接收与整理。",
+          "从一份资料开始，再按需连接更多来源。"
+        ],
+        "inference": "自动或持续采集发生在 Mac、Android 本机；网页上可以主动导入资料、写笔记；另有中央接收整理角色。",
+        "unknown": "「中央」具体是哪一端、设备采集哪些内容以及是否需要授权，截图未说明。"
+      },
+      "primary_visible_areas": [
+        "左侧资料库、问一问、来源、活动导航；底部开始使用、今天、全部功能、设置",
+        "顶部当前资料库位置、工作台在线、随手记、添加内容",
+        "中部价值说明与导入/随手记按钮",
+        "右侧有据可查的问答示例卡",
+        "下方持续积累与连接来源说明"
+      ],
+      "confusion_or_invisible_concepts": [
+        "「中央」是系统角色，但没有直观指向网页或某个服务，首次阅读仍需推断。",
+        "「记忆」「洞察」只在底部小字解释，首屏导航没有对应入口，尚不清楚与资料库的关系和使用时机。",
+        "设备记录的采集范围、权限和触发方式不可见；不能仅据此断言已经启用采集。",
+        "「今天」与「活动」的区别未从首屏建立。"
+      ],
+      "frozen_at_utc": "2026-10-23T03:40:20.431Z"
+    },
+    {
+      "platform": "mac",
+      "image": "mac-first-use.png",
+      "observed_before_dom": true,
+      "product_purpose": {
+        "observed_words": [
+          "Mote · 个人资料与记忆库",
+          "把资料收好，需要时有据可查。",
+          "保存文件、想法和设备记录。以后搜索或提问，沿着出处回到原文。"
+        ],
+        "inference": "运行在 Mac 上的个人资料与笔记库，可以把本机内容收进统一资料库，之后搜索或带原文依据地提问。"
+      },
+      "newcomer_actions": [
+        {
+          "action": "导入第一份资料",
+          "basis": "主内容区的深色主按钮。"
+        },
+        {
+          "action": "写随手记",
+          "basis": "主内容区、顶部和左侧本机快捷操作均有入口。"
+        },
+        {
+          "action": "同步文件夹或选择可连接的来源",
+          "basis": "左侧「同步文件夹」和下方「选择可连接的来源」可见。"
+        }
+      ],
+      "first_action": {
+        "action": "导入第一份资料",
+        "reason": "主标题下最显眼的按钮，也是「从一份资料开始」引导所指；相比同步整个文件夹，单份导入的意图更容易理解。"
+      },
+      "collection_location": {
+        "observed_words": [
+          "在这台设备选择范围，保存后汇集到中央资料库。",
+          "本机快捷操作",
+          "同步文件夹",
+          "收集状态"
+        ],
+        "inference": "先在本机选择要收集的范围，再把保存的内容汇入中央资料库；Mac 端还提供持续同步文件夹的入口。",
+        "unknown": "截图没有显示已选范围、收集是否正在进行、同步是单向还是双向。"
+      },
+      "primary_visible_areas": [
+        "Mac 菜单栏与窗口标题栏；菜单栏出现收集状态，标题栏有搜索与快捷键提示",
+        "左侧主导航及单独的本机快捷操作区",
+        "顶部资料库位置、工作台在线、随手记和添加内容",
+        "中部价值说明、导入与随手记动作；右侧提问示例",
+        "下方本机范围与中央资料库的说明及连接来源按钮"
+      ],
+      "confusion_or_invisible_concepts": [
+        "「工作台在线」说明连接，但不能据此判定正在收集；「收集状态」入口尚未呈现实际状态。",
+        "「同步文件夹」与「选择可连接的来源」的包含关系需要点开后才能确认。",
+        "本机选择范围到中央资料库的方向有文字说明，但中央存放位置和保留方式仍不可见。",
+        "「记忆」「洞察」仅有一句小字解释，暂无直接可见入口。"
+      ],
+      "frozen_at_utc": "2026-10-23T03:40:45.830Z"
+    },
+    {
+      "platform": "android",
+      "image": "android-first-use.png",
+      "observed_before_dom": true,
+      "product_purpose": {
+        "observed_words": [
+          "Mote · 个人资料与记忆库",
+          "把资料收好，需要时有据可查。",
+          "保存文件、想法和设备记录。以后搜索或提问，沿着出处回到原文。"
+        ],
+        "inference": "一个手机上的个人资料库，保存文件和想法，再从自己的资料中查找或提问，并通过引用回到原文。"
+      },
+      "newcomer_actions": [
+        {
+          "action": "导入第一份资料",
+          "basis": "主标题下的深色按钮。"
+        },
+        {
+          "action": "写随手记",
+          "basis": "与导入并排的次按钮。"
+        },
+        {
+          "action": "查看问答使用例子，或进入问一问",
+          "basis": "问答示例卡有「看一个使用例子」；底部有「问一问」。"
+        }
+      ],
+      "first_action": {
+        "action": "导入第一份资料",
+        "reason": "深色按钮紧接价值说明，且下面直接提示「从一份资料开始」；下一步目标足够具体。"
+      },
+      "collection_location": {
+        "observed_words": [
+          "在这台设备选择范围，保存后汇集到中央资料库。",
+          "来源"
+        ],
+        "inference": "手机本机可以选定收集范围，内容会汇入中央资料库；底部「来源」可能是配置入口。",
+        "unknown": "采集说明位于首屏最下缘，当前视口未呈现选择范围的具体控件；仅凭首屏不清楚可采集哪些手机内容或何时采集。"
+      },
+      "primary_visible_areas": [
+        "顶部原型控制条、手机状态栏和资料库标题栏；标题栏有加号与省略号",
+        "主标题、说明、导入与随手记两个按钮",
+        "一张完整的提问示例卡",
+        "屏幕下缘开始出现持续积累区及本机到中央资料库说明",
+        "底部固定导航：资料库、问一问、来源、活动"
+      ],
+      "confusion_or_invisible_concepts": [
+        "采集说明几乎落到固定底部导航上方，选择范围/连接来源的操作未出现在首屏；容易只记住手动导入和笔记。",
+        "标题里的「记忆库」没有在可见区域得到进一步说明；「洞察」在当前视口不可见。",
+        "文案承诺可以搜索，但首屏未见明确的搜索入口；加号和省略号没有文字标签，不能确定其菜单内容。",
+        "「来源」可以作为推测中的采集入口，但其功能范围仍需进入后确认。"
+      ],
+      "frozen_at_utc": "2026-10-23T03:41:28.260Z"
+    }
+  ],
+  "observation_order": [
+    "web-first-use.png",
+    "mac-first-use.png",
+    "android-first-use.png"
+  ],
+  "all_screenshot_observations_frozen_before_dom": true,
+  "candidate": "R34",
+  "created_at_utc": "2026-10-23T03:42:29.078Z",
+  "method": {
+    "type": "AI proxy first-screen observation",
+    "is_human_research": false,
+    "prior_product_context": "未阅读应用源码、功能契约、其他评估、计划或生成器说明。",
+    "sequence": "按 web → mac → android 逐张查看图片并记录；三端第一印象全部冻结后，才读取三个同名 DOM JSON 与 manifest.json。",
+    "limitations": [
+      "仅评价提供的首屏静态视口，没有点击、滚动、探索或验证实际功能。",
+      "三个平台按固定顺序观察，后续平台可能受到本次前图形成的概念影响。",
+      "不提供产品总分、人类用户正确率或对真实使用成功率的估计。",
+      "manifest 中的候选哈希只作为其声明身份记录，未读取或重新哈希候选源码。"
+    ]
+  },
+  "evidence": {
+    "directory": "previews/r34",
+    "images": [
+      {
+        "file": "web-first-use.png",
+        "sha256": "b1051d89843f2f8e3517e976d59767040d0855813112607545579cdb6fd262d2",
+        "viewport": {
+          "width": 1440,
+          "height": 1000
+        },
+        "candidate_sha256_as_declared_in_manifest": "33d63d9f009693fab234ebb37179da858b403e8a71c7e59624d4c9dcbd13d000"
+      },
+      {
+        "file": "mac-first-use.png",
+        "sha256": "ff191ea75b7bd6f210910b038643cc8f92fcdcdc0d4cbfceaaebeab60e7e57a2",
+        "viewport": {
+          "width": 1440,
+          "height": 1000
+        },
+        "candidate_sha256_as_declared_in_manifest": "80520ac7f5d12fc494b5ffd1853c2039aa4f9fa9b3b8ac14d74e06cfe602160a"
+      },
+      {
+        "file": "android-first-use.png",
+        "sha256": "a731c1719bf51904533c4292f5fec3ca10cb4777f8e126b0614fac6267ad9d7a",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "candidate_sha256_as_declared_in_manifest": "c4f9e515adc7159809536466a3bc02f107dadda56c68b6f73e79d22076fdebb4"
+      }
+    ],
+    "corroborating_files": [
+      "web-first-use.json",
+      "mac-first-use.json",
+      "android-first-use.json",
+      "manifest.json"
+    ]
+  },
+  "dom_corroboration": {
+    "observations_preserved": true,
+    "label_result": "三个 DOM JSON 均支持图片中已记录的标题、按钮与平台文字；页面状态为 empty，主题为 light，平台与截图标记一致。",
+    "android_caveat": "DOM 文本含「选择可连接的来源」及记忆/洞察说明，但这些未出现在提供的 Android 首屏可见区域中，不能用 DOM 存在来反推它们已被首屏看见。",
+    "accessible_labels": "Android 加号的 DOM label 为「添加内容」，省略号为「更多页面与设置」。这只补充语义标注，不改变截图中图标缺少可见文字的观察。",
+    "manifest_result": "manifest 将三张图片标为 frozen R34 的 first-use 视口；仅核对这三条记录的身份与尺寸，没有打开其他场景。"
+  },
+  "actionable_observations": [
+    {
+      "platform": "all",
+      "finding": "主价值与第一步一致且具体。",
+      "action": "保留「资料→查找/提问→核对原文」的主说明，以及「导入第一份资料」的单一显著主动作。"
+    },
+    {
+      "platform": "android",
+      "finding": "持续采集说明落在视口最下缘，来源连接动作不可见。",
+      "action": "若持续采集是首屏要被理解的能力，压缩示例卡高度或前移本机采集行及一个有文字的来源入口，使其在 390×844 首屏可见。"
+    },
+    {
+      "platform": "web",
+      "finding": "「中央」缺少具体所指。",
+      "action": "与 Mac/Android 统一为「中央资料库」等明确名词，减少对系统角色的猜测。"
+    },
+    {
+      "platform": "mac",
+      "finding": "在线状态与实际收集状态尚未建立对应。",
+      "action": "在可见的「收集状态」附近给出可核实的简短状态摘要；避免让连接在线成为唯一的状态线索。"
+    },
+    {
+      "platform": "all",
+      "finding": "标题引入记忆库，但记忆/洞察关系在桌面只见小字，在手机首屏不可见。",
+      "action": "若继续把「记忆库」放在标题，提供短解释或清楚可发现的入口；首屏信息仍应围绕开始收集与查找保持集中。"
+    }
+  ]
+}

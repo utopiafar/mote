@@ -1,0 +1,559 @@
+{
+  "schema_version": 1,
+  "round": "R34",
+  "evaluator": "/root/review_r31_r34",
+  "source_sha": "81a73c0ec81af876d6eeef71451b75cd51684b34",
+  "candidate_sha256": {
+    "web": "33d63d9f009693fab234ebb37179da858b403e8a71c7e59624d4c9dcbd13d000",
+    "mac": "80520ac7f5d12fc494b5ffd1853c2039aa4f9fa9b3b8ac14d74e06cfe602160a",
+    "android": "c4f9e515adc7159809536466a3bc02f107dadda56c68b6f73e79d22076fdebb4"
+  },
+  "contract_sha256": "316d7ac7ea6577c4a6d28c526f6e27ad56d33c7a9afd60db4b74466e88791572",
+  "journeys_sha256": "a30546c750bc7281177985b9e993c9f1f1a163c93dad9ebc077cac9ec1badf1b",
+  "rubric_sha256": "58826132bd1d4c70690567482902b7ef7dac89e32f7fc727a643ce3d213abb7c",
+  "rubric_id": "mote-r30-r34-independent-v1",
+  "status": "FAIL",
+  "platforms": {
+    "web": {
+      "scores": {
+        "new_user": {
+          "value": 3.25,
+          "reason": "The plain Material context field, explicit fixed review, recoverable upload steps and collector handoff provide concise guidance for multiple normal and exceptional paths. The fresh-context AI first-screen observer identified the intended purpose and first import action without the contract. These observed recovery improvements support a quarter point above clear critical-path guidance. Central terminology and memory/insight concepts still need inference, so the all-major-path orientation anchor is not reached.",
+          "evidence": [
+            "evidence/web/import/03-empty-home.json",
+            "evidence/web/import/04-import-form.json",
+            "evidence/web/import/09-preview.json",
+            "evidence/web/import/10-revised-draft.json",
+            "evidence/web/import/14-saved.json",
+            "evidence/web/major/library.json",
+            "evidence/web/major/sources.json",
+            "evidence/web/major/ask.json",
+            "evidence/web/major/activity.json"
+          ]
+        },
+        "functionality": {
+          "value": 2.5,
+          "reason": "The independently operated import, recovery, recording and selected-file paths preserve substantial user choices; selected Central scenarios also have real state-specific evidence. The full unchanged 188-feature contract remains incomplete: most families and many required variants were not operated this round. Functionality stays below anchor 3; author checks and route reachability are not added as passes.",
+          "evidence": [
+            "evidence/web/import/03-empty-home.json",
+            "evidence/web/import/04-import-form.json",
+            "evidence/web/import/09-preview.json",
+            "evidence/web/import/10-revised-draft.json",
+            "evidence/web/import/14-saved.json",
+            "evidence/web/major/library.json",
+            "evidence/web/major/sources.json",
+            "evidence/web/major/ask.json",
+            "evidence/web/major/activity.json"
+          ]
+        },
+        "simplicity": {
+          "value": 3.25,
+          "reason": "The new audio detail and upload queue have one clear task and named metadata disclosures. The import context prompt is shorter and separates plain explanation from parser/image choices. The Mac saved-file page also removes repeated editable fields from its normal state. This supports a quarter point above clear hierarchy; long settings and expanded evidence screens still prevent the consistently economical anchor.",
+          "evidence": [
+            "evidence/web/import/03-empty-home.json",
+            "evidence/web/import/04-import-form.json",
+            "evidence/web/import/09-preview.json",
+            "evidence/web/import/10-revised-draft.json",
+            "evidence/web/import/14-saved.json",
+            "evidence/web/major/library.json",
+            "evidence/web/major/sources.json",
+            "evidence/web/major/ask.json",
+            "evidence/web/major/activity.json"
+          ]
+        },
+        "clarity": {
+          "value": 2.75,
+          "reason": "Submitted versus received, transcript versus audio, exact source/context and local versus Central ownership are explicit in operated results. However after a browser reload makes pending upload bytes unavailable, the row still says Uploading while requiring re-selection and disabling progress. That contradictory exceptional-state heading keeps clarity below the accurate-at-the-moment anchor of 3. The controls correctly block advancement, so this is not a false receipt or data-loss claim.",
+          "evidence": [
+            "evidence/web/import/03-empty-home.json",
+            "evidence/web/import/04-import-form.json",
+            "evidence/web/import/09-preview.json",
+            "evidence/web/import/10-revised-draft.json",
+            "evidence/web/import/14-saved.json",
+            "evidence/web/major/library.json",
+            "evidence/web/major/sources.json",
+            "evidence/web/major/ask.json",
+            "evidence/web/major/activity.json"
+          ]
+        },
+        "design": {
+          "value": 3,
+          "reason": "Fresh Library, first-use, import and task screenshots retain coherent typography, proportion, spacing and restrained color. Mac has a separate desktop frame and collector shortcuts; Web audio detail is a focused readable document. The evidence supports a coherent system, not a verified mature hierarchy across every content-heavy page.",
+          "evidence": [
+            "evidence/web/import/03-empty-home.json",
+            "evidence/web/import/04-import-form.json",
+            "evidence/web/import/09-preview.json",
+            "evidence/web/import/10-revised-draft.json",
+            "evidence/web/import/14-saved.json",
+            "evidence/web/major/library.json",
+            "evidence/web/major/sources.json",
+            "evidence/web/major/ask.json",
+            "evidence/web/major/activity.json"
+          ]
+        },
+        "craft": {
+          "value": 3,
+          "reason": "Current evaluated controls and viewport layouts render without observed page exceptions or document-width overflow. Dirty-draft guards, file selection, downloads, original identity and ordinary media playback work in their exercised variants. Full keyboard, screen-reader, dark-theme and localization coverage were not repeated. Lost injected fonts after reload are a harness limitation and do not lower product craft.",
+          "evidence": [
+            "evidence/web/import/03-empty-home.json",
+            "evidence/web/import/04-import-form.json",
+            "evidence/web/import/09-preview.json",
+            "evidence/web/import/10-revised-draft.json",
+            "evidence/web/import/14-saved.json",
+            "evidence/web/major/library.json",
+            "evidence/web/major/sources.json",
+            "evidence/web/major/ask.json",
+            "evidence/web/major/activity.json"
+          ]
+        },
+        "originality": {
+          "value": 3,
+          "reason": "Exact explanation preservation, explicit collector ownership, separate transcript/audio archives, fixed calendar content and retained historical prices/reads are deliberate Mote task patterns expressed through familiar controls; no gratuitous novelty is needed.",
+          "evidence": [
+            "evidence/web/import/03-empty-home.json",
+            "evidence/web/import/04-import-form.json",
+            "evidence/web/import/09-preview.json",
+            "evidence/web/import/10-revised-draft.json",
+            "evidence/web/import/14-saved.json",
+            "evidence/web/major/library.json",
+            "evidence/web/major/sources.json",
+            "evidence/web/major/ask.json",
+            "evidence/web/major/activity.json"
+          ]
+        }
+      },
+      "central_collection_gate": "pass",
+      "scope_integrity_gate": "pass",
+      "weighted_score_100": 74.375,
+      "coverage_counts": {
+        "partial": 23,
+        "untested": 105,
+        "not_applicable": 60
+      },
+      "hard_gates": {
+        "platform_thresholds": "fail",
+        "semantic_completeness": "fail",
+        "critical_journeys": "fail",
+        "no_central_local_collection": "pass",
+        "scope_integrity": "pass"
+      }
+    },
+    "mac": {
+      "scores": {
+        "new_user": {
+          "value": 3.25,
+          "reason": "The plain Material context field, explicit fixed review, recoverable upload steps and collector handoff provide concise guidance for multiple normal and exceptional paths. The fresh-context AI first-screen observer identified the intended purpose and first import action without the contract. These observed recovery improvements support a quarter point above clear critical-path guidance. Central terminology and memory/insight concepts still need inference, so the all-major-path orientation anchor is not reached.",
+          "evidence": [
+            "evidence/mac/import/03-empty-home.json",
+            "evidence/mac/import/04-import-form.json",
+            "evidence/mac/import/09-preview.json",
+            "evidence/mac/import/10-revised-draft.json",
+            "evidence/mac/import/14-saved.json",
+            "evidence/mac/major/library.json",
+            "evidence/mac/major/sources.json",
+            "evidence/mac/major/ask.json",
+            "evidence/mac/major/activity.json"
+          ]
+        },
+        "functionality": {
+          "value": 2.5,
+          "reason": "The independently operated import, recovery, recording and selected-file paths preserve substantial user choices; selected Central scenarios also have real state-specific evidence. The full unchanged 188-feature contract remains incomplete: most families and many required variants were not operated this round. Functionality stays below anchor 3; author checks and route reachability are not added as passes.",
+          "evidence": [
+            "evidence/mac/import/03-empty-home.json",
+            "evidence/mac/import/04-import-form.json",
+            "evidence/mac/import/09-preview.json",
+            "evidence/mac/import/10-revised-draft.json",
+            "evidence/mac/import/14-saved.json",
+            "evidence/mac/major/library.json",
+            "evidence/mac/major/sources.json",
+            "evidence/mac/major/ask.json",
+            "evidence/mac/major/activity.json"
+          ]
+        },
+        "simplicity": {
+          "value": 3.25,
+          "reason": "The new audio detail and upload queue have one clear task and named metadata disclosures. The import context prompt is shorter and separates plain explanation from parser/image choices. The Mac saved-file page also removes repeated editable fields from its normal state. This supports a quarter point above clear hierarchy; long settings and expanded evidence screens still prevent the consistently economical anchor.",
+          "evidence": [
+            "evidence/mac/import/03-empty-home.json",
+            "evidence/mac/import/04-import-form.json",
+            "evidence/mac/import/09-preview.json",
+            "evidence/mac/import/10-revised-draft.json",
+            "evidence/mac/import/14-saved.json",
+            "evidence/mac/major/library.json",
+            "evidence/mac/major/sources.json",
+            "evidence/mac/major/ask.json",
+            "evidence/mac/major/activity.json"
+          ]
+        },
+        "clarity": {
+          "value": 2.75,
+          "reason": "Submitted versus received, transcript versus audio, exact source/context and local versus Central ownership are explicit in operated results. However after a browser reload makes pending upload bytes unavailable, the row still says Uploading while requiring re-selection and disabling progress. That contradictory exceptional-state heading keeps clarity below the accurate-at-the-moment anchor of 3. The controls correctly block advancement, so this is not a false receipt or data-loss claim.",
+          "evidence": [
+            "evidence/mac/import/03-empty-home.json",
+            "evidence/mac/import/04-import-form.json",
+            "evidence/mac/import/09-preview.json",
+            "evidence/mac/import/10-revised-draft.json",
+            "evidence/mac/import/14-saved.json",
+            "evidence/mac/major/library.json",
+            "evidence/mac/major/sources.json",
+            "evidence/mac/major/ask.json",
+            "evidence/mac/major/activity.json"
+          ]
+        },
+        "design": {
+          "value": 3,
+          "reason": "Fresh Library, first-use, import and task screenshots retain coherent typography, proportion, spacing and restrained color. Mac has a separate desktop frame and collector shortcuts; Web audio detail is a focused readable document. The evidence supports a coherent system, not a verified mature hierarchy across every content-heavy page.",
+          "evidence": [
+            "evidence/mac/import/03-empty-home.json",
+            "evidence/mac/import/04-import-form.json",
+            "evidence/mac/import/09-preview.json",
+            "evidence/mac/import/10-revised-draft.json",
+            "evidence/mac/import/14-saved.json",
+            "evidence/mac/major/library.json",
+            "evidence/mac/major/sources.json",
+            "evidence/mac/major/ask.json",
+            "evidence/mac/major/activity.json"
+          ]
+        },
+        "craft": {
+          "value": 3,
+          "reason": "Current evaluated controls and viewport layouts render without observed page exceptions or document-width overflow. Dirty-draft guards, file selection, downloads, original identity and ordinary media playback work in their exercised variants. Full keyboard, screen-reader, dark-theme and localization coverage were not repeated. Lost injected fonts after reload are a harness limitation and do not lower product craft.",
+          "evidence": [
+            "evidence/mac/import/03-empty-home.json",
+            "evidence/mac/import/04-import-form.json",
+            "evidence/mac/import/09-preview.json",
+            "evidence/mac/import/10-revised-draft.json",
+            "evidence/mac/import/14-saved.json",
+            "evidence/mac/major/library.json",
+            "evidence/mac/major/sources.json",
+            "evidence/mac/major/ask.json",
+            "evidence/mac/major/activity.json"
+          ]
+        },
+        "originality": {
+          "value": 3,
+          "reason": "Exact explanation preservation, explicit collector ownership, separate transcript/audio archives, fixed calendar content and retained historical prices/reads are deliberate Mote task patterns expressed through familiar controls; no gratuitous novelty is needed.",
+          "evidence": [
+            "evidence/mac/import/03-empty-home.json",
+            "evidence/mac/import/04-import-form.json",
+            "evidence/mac/import/09-preview.json",
+            "evidence/mac/import/10-revised-draft.json",
+            "evidence/mac/import/14-saved.json",
+            "evidence/mac/major/library.json",
+            "evidence/mac/major/sources.json",
+            "evidence/mac/major/ask.json",
+            "evidence/mac/major/activity.json"
+          ]
+        }
+      },
+      "central_collection_gate": "pass",
+      "scope_integrity_gate": "pass",
+      "weighted_score_100": 74.375,
+      "coverage_counts": {
+        "partial": 22,
+        "untested": 152,
+        "not_applicable": 14
+      },
+      "hard_gates": {
+        "platform_thresholds": "fail",
+        "semantic_completeness": "fail",
+        "critical_journeys": "fail",
+        "no_central_local_collection": "pass",
+        "scope_integrity": "pass"
+      }
+    },
+    "android": {
+      "scores": {
+        "new_user": {
+          "value": 3,
+          "reason": "The primary import action and purpose are clear, and entered context, confirmation and recovery retain an understandable next step. The fresh-context AI first-screen observer independently identified the same first action. On the 390 by 844 Android first viewport, however, the collection explanation reaches the bottom edge and its connection control is below the fold; memory terminology remains lightly explained. This meets the clear critical-path anchor but not consistently immediate orientation across major paths.",
+          "evidence": [
+            "evidence/android/import/03-empty-home.json",
+            "evidence/android/import/04-import-form.json",
+            "evidence/android/import/09-preview.json",
+            "evidence/android/import/10-revised-draft.json",
+            "evidence/android/import/14-saved.json",
+            "evidence/android/major/library.json",
+            "evidence/android/major/sources.json",
+            "evidence/android/major/ask.json",
+            "evidence/android/major/activity.json"
+          ]
+        },
+        "functionality": {
+          "value": 2.5,
+          "reason": "The independently operated import, recovery, recording and selected-file paths preserve substantial user choices; selected Central scenarios also have real state-specific evidence. The full unchanged 188-feature contract remains incomplete: most families and many required variants were not operated this round. Functionality stays below anchor 3; author checks and route reachability are not added as passes.",
+          "evidence": [
+            "evidence/android/import/03-empty-home.json",
+            "evidence/android/import/04-import-form.json",
+            "evidence/android/import/09-preview.json",
+            "evidence/android/import/10-revised-draft.json",
+            "evidence/android/import/14-saved.json",
+            "evidence/android/major/library.json",
+            "evidence/android/major/sources.json",
+            "evidence/android/major/ask.json",
+            "evidence/android/major/activity.json"
+          ]
+        },
+        "simplicity": {
+          "value": 3.25,
+          "reason": "The saved native-file page now presents one compact file/status summary, one record-opening action and named edit/context disclosures. The mobile Library keeps one app-bar title and makes types and filters optional. This is modestly beyond the clear-purpose anchor; mobile usage still puts a large title/filter region before totals and not all advanced screens were examined.",
+          "evidence": [
+            "evidence/android/import/03-empty-home.json",
+            "evidence/android/import/04-import-form.json",
+            "evidence/android/import/09-preview.json",
+            "evidence/android/import/10-revised-draft.json",
+            "evidence/android/import/14-saved.json",
+            "evidence/android/major/library.json",
+            "evidence/android/major/sources.json",
+            "evidence/android/major/ask.json",
+            "evidence/android/major/activity.json"
+          ]
+        },
+        "clarity": {
+          "value": 2.75,
+          "reason": "Submitted versus received, transcript versus audio, exact source/context and local versus Central ownership are explicit in operated results. However after a browser reload makes pending upload bytes unavailable, the row still says Uploading while requiring re-selection and disabling progress. That contradictory exceptional-state heading keeps clarity below the accurate-at-the-moment anchor of 3. The controls correctly block advancement, so this is not a false receipt or data-loss claim.",
+          "evidence": [
+            "evidence/android/import/03-empty-home.json",
+            "evidence/android/import/04-import-form.json",
+            "evidence/android/import/09-preview.json",
+            "evidence/android/import/10-revised-draft.json",
+            "evidence/android/import/14-saved.json",
+            "evidence/android/major/library.json",
+            "evidence/android/major/sources.json",
+            "evidence/android/major/ask.json",
+            "evidence/android/major/activity.json"
+          ]
+        },
+        "design": {
+          "value": 3.25,
+          "reason": "Fresh 412 by 915 Library, selected-file and audio viewports have legible narrow layouts, stable bottom navigation, restrained accent and clear hierarchy. These purpose-specific layouts support a quarter point above coherent platform adaptation. The 390 by 844 first screen and long usage heading still leave scope information or results below the fold.",
+          "evidence": [
+            "evidence/android/import/03-empty-home.json",
+            "evidence/android/import/04-import-form.json",
+            "evidence/android/import/09-preview.json",
+            "evidence/android/import/10-revised-draft.json",
+            "evidence/android/import/14-saved.json",
+            "evidence/android/major/library.json",
+            "evidence/android/major/sources.json",
+            "evidence/android/major/ask.json",
+            "evidence/android/major/activity.json"
+          ]
+        },
+        "craft": {
+          "value": 3,
+          "reason": "Current evaluated controls and viewport layouts render without observed page exceptions or document-width overflow. Dirty-draft guards, file selection, downloads, original identity and ordinary media playback work in their exercised variants. Full keyboard, screen-reader, dark-theme and localization coverage were not repeated. Lost injected fonts after reload are a harness limitation and do not lower product craft.",
+          "evidence": [
+            "evidence/android/import/03-empty-home.json",
+            "evidence/android/import/04-import-form.json",
+            "evidence/android/import/09-preview.json",
+            "evidence/android/import/10-revised-draft.json",
+            "evidence/android/import/14-saved.json",
+            "evidence/android/major/library.json",
+            "evidence/android/major/sources.json",
+            "evidence/android/major/ask.json",
+            "evidence/android/major/activity.json"
+          ]
+        },
+        "originality": {
+          "value": 3,
+          "reason": "Exact explanation preservation, explicit collector ownership, separate transcript/audio archives, fixed calendar content and retained historical prices/reads are deliberate Mote task patterns expressed through familiar controls; no gratuitous novelty is needed.",
+          "evidence": [
+            "evidence/android/import/03-empty-home.json",
+            "evidence/android/import/04-import-form.json",
+            "evidence/android/import/09-preview.json",
+            "evidence/android/import/10-revised-draft.json",
+            "evidence/android/import/14-saved.json",
+            "evidence/android/major/library.json",
+            "evidence/android/major/sources.json",
+            "evidence/android/major/ask.json",
+            "evidence/android/major/activity.json"
+          ]
+        }
+      },
+      "central_collection_gate": "pass",
+      "scope_integrity_gate": "pass",
+      "weighted_score_100": 73.438,
+      "coverage_counts": {
+        "partial": 25,
+        "untested": 159,
+        "not_applicable": 4
+      },
+      "hard_gates": {
+        "platform_thresholds": "fail",
+        "semantic_completeness": "fail",
+        "critical_journeys": "fail",
+        "no_central_local_collection": "pass",
+        "scope_integrity": "pass"
+      }
+    }
+  },
+  "mean_score_100": 74.063,
+  "weakest_platform": "android",
+  "findings": [
+    {
+      "id": "R34-01",
+      "title": "Missing browser bytes leave a stale Uploading heading on all three platforms",
+      "observed": "After an uploading item is interrupted by a normal browser reload, exact context, bytes and submission ID remain. The UI correctly requires the same files again and disables advancing the upload, but the row still says Uploading. Wrong files are rejected and the correct sample re-selection recovers; no false Central receipt or loss of explanation was observed.",
+      "correction": "Give missing local bytes an explicit primary state such as Files required; show prior progress separately until the same files are reselected.",
+      "evidence": [
+        "evidence/web/upload/20-session-file-missing.json",
+        "evidence/web/upload/22-wrong-files-rejected.json",
+        "evidence/web/upload/23-original-reselected.json",
+        "evidence/mac/upload/08-after-browser-reload.json",
+        "evidence/android/upload/08-after-browser-reload.json"
+      ]
+    },
+    {
+      "id": "R34-02",
+      "title": "The narrow first screen delays collection scope and its connection action",
+      "observed": "A fresh-context independent AI observer, shown screenshots before DOM and without the contract or earlier reviews, correctly identified purpose and the first import action on all platforms. At Android 390 by 844, however, the local-to-Central collection explanation is at the bottom edge and the connection action is below the first viewport. Web Central wording and the memory/insight relationship also require some inference. The 412 by 915 Library itself remains clear and free of horizontal overflow.",
+      "correction": "Keep the concrete first import action; shorten the example-card region or move a concise collector-scope line and named source action earlier on narrow screens. Use Central library consistently when explaining its role.",
+      "evidence": [
+        "evidence/first-look/first-look.json",
+        "evidence/first-look/android-first-use.png",
+        "evidence/first-look/web-first-use.png",
+        "evidence/android/major/library.png"
+      ]
+    },
+    {
+      "id": "R34-03",
+      "title": "Recording archives now have a real synthetic audio path and stable identity",
+      "observed": "Ordinary Feishu entry on Web/Mac and DingTalk on Android lead through independent authorization and context acknowledgment. Transcript remains readable while backup fails; retry creates a distinct audio detail. The downloaded WAV is 16044 bytes, mono PCM16 at 8000 Hz for one second, explicitly labeled as generated test audio. Native-layout play controls advance media time. Corresponding transcript and audio identities remain stable after disconnection.",
+      "correction": "Preserve the honest sample labeling and separate text/audio results; cancellation, unknown submission, all vendors and vendor-deletion variants remain unverified.",
+      "evidence": [
+        "evidence/web/recording/07-transcript-audio-split.json",
+        "evidence/web/recording/08-audio-backup-retried.json",
+        "evidence/web/recording/09-audio-original-detail.json",
+        "evidence/web/recording/13-audio-provenance.json",
+        "evidence/web/recording/18-audio-after-disconnect.json",
+        "evidence/web/recording/audio-example.inspection.json",
+        "evidence/mac/recording/07-playback.json",
+        "evidence/mac/recording/10-audio-after-disconnect.json",
+        "evidence/android/recording/01-ordinary-catalog-entry.json",
+        "evidence/android/recording/07-playback.json",
+        "evidence/android/recording/10-audio-after-disconnect.json"
+      ]
+    },
+    {
+      "id": "R34-04",
+      "title": "Import context, same-task recovery and independent uploads retain user choices",
+      "observed": "All three normal import journeys preserve the optional 12000-character field, custom multiline explanation, selected parser/image plan and exact revised text through preview, save and material reading. Dirty explanation blocks confirmation. Model configuration selects the import module and returns to the same task. Web pauses one upload while another completes; all three recover the original submission after missing-file re-selection and retain the Central import after local queue removal.",
+      "correction": "Keep these explicit confirmations and identities. Do not infer support for untouched drag/folder/image, cancellation or every failure variant from these completed examples.",
+      "evidence": [
+        "evidence/web/import/10-revised-draft.json",
+        "evidence/web/import/13-file-options.json",
+        "evidence/web/import/16-material-context.json",
+        "evidence/web/import/22-model-recovered-confirmed.json",
+        "evidence/mac/import/14-saved.json",
+        "evidence/mac/import/22-model-recovered-confirmed.json",
+        "evidence/android/import/14-saved.json",
+        "evidence/android/import/22-model-recovered-confirmed.json",
+        "evidence/web/upload/13-first-still-paused.json",
+        "evidence/web/upload/31-original-context-preserved.json",
+        "evidence/web/upload/38-original-still-openable.json",
+        "evidence/mac/upload/17-original-retained.json",
+        "evidence/android/upload/17-original-retained.json"
+      ]
+    },
+    {
+      "id": "R34-05",
+      "title": "Calendar protection and ordinary cross-page notices are repaired; fixture limitations remain",
+      "observed": "Fixed all-day content and target bind to the evidence version. A changed source requires a new review, and final approval rejects an actually selected-and-then-revoked Mac target while preserving the title. Uncertain write recovery verifies the same original event. Its success notice no longer appears on ordinary todos, and discovery refresh no longer leaks to the suggestion list. A no-selected-device revoke fixture gave a generic authorization-change notice without revoking the target; a newly generated example review also displayed an earlier stale-evidence notice. These latter observations are confined to demo-fixture paths.",
+      "correction": "Keep actual revocation enforcement. Make fixture feedback conditional on a selected device, and clear or scope the stale-evidence notice when generating a different example suggestion.",
+      "evidence": [
+        "evidence/web/calendar/02-fixed-review.json",
+        "evidence/web/calendar/04-stale-evidence.json",
+        "evidence/web/calendar/09-target-revoked.json",
+        "evidence/web/calendar/11-final-approval-rejected.json",
+        "evidence/web/calendar/13-uncertain.json",
+        "evidence/web/calendar/14-original-event-verified.json",
+        "evidence/web/calendar/15-todos-no-calendar-notice.json",
+        "evidence/web/calendar/17-suggestion-no-discovery-notice.json",
+        "evidence/web/calendar/19-new-target-test.json",
+        "evidence/web/calendar/21-actual-review-device-selected.json",
+        "evidence/web/calendar/22-selected-device-revoked.json",
+        "evidence/web/calendar/23-real-revocation-approval-blocked.json"
+      ]
+    },
+    {
+      "id": "R34-06",
+      "title": "Native saved-file summaries are calmer and keep the collector boundary",
+      "observed": "Mac and Android now show one compact saved-file summary and named editing disclosure. Confirmation restricts scope to the named research excerpt and an unconnected local destination; copy says the selected files remain at their original location. A one-time save no longer promises another scan. Android retains its exact description draft and visibly waits for Central acknowledgment. The Web folder entry directs users to Mac/Android without a server path or watched-root control.",
+      "correction": "Retain the simplified summary and device-owned scope. Continuous folder permissions, offline restarts, receipt variants and sending policies were outside this final changed-family sample.",
+      "evidence": [
+        "evidence/mac/files-corrected/04-file-confirmation.json",
+        "evidence/mac/files-corrected/05-one-time-file-saved.json",
+        "evidence/mac/files-corrected/07-local-record-detail.json",
+        "evidence/android/files-corrected/03-draft-preserved.json",
+        "evidence/android/files-corrected/04-file-confirmation.json",
+        "evidence/android/files-corrected/05-one-time-file-saved.json",
+        "evidence/android/files-corrected/07-local-record-detail.json",
+        "evidence/web/boundary/01-folder-collector-handoff.json"
+      ]
+    },
+    {
+      "id": "R34-07",
+      "title": "Usage, historical prices and retained Agent reads have substantive independent evidence",
+      "observed": "The separate Central subreview operated failed runs with known and unknown costs, separate USD/CNY totals, date/status filtering and pagination. Editing four current prices and currency survives reload without changing an earlier run’s USD price snapshot or estimate. Agent browsing, new-conversation preview and retained historical reads remain distinct; partial reads show captured ranges/failure/truncation, and an unknown run clears the previous trace. Mobile usage has a long heading/filter region before totals. The remaining family options stay explicitly partial or untested.",
+      "correction": "Preserve immutable historical receipts and clear unknown states; prioritize untested filters, directory/evidence variants and the source-ACK transition in a later verification cycle.",
+      "evidence": [
+        "central-independent/observations.json",
+        "central-independent/evidence/web/02-failed-unknown-run.json",
+        "central-independent/evidence/web/06-pricing-reloaded.json",
+        "central-independent/evidence/web/25-historical-price-expanded.json",
+        "central-independent/evidence/web/15-retained-read.json",
+        "central-independent/evidence/web/17-missing-trace.json",
+        "central-independent/evidence/web/24-initial-context-preview.json",
+        "central-independent/evidence/android/01-usage-entry.png"
+      ]
+    }
+  ],
+  "screen_inspection": {
+    "method": "Rendered DOM before viewport screenshots; no fullPage screenshots or candidate implementation inspection. First-screen external snapshots are separately identified.",
+    "rendered_dom_count": 276,
+    "document_overflows": [],
+    "fresh_major_pages": {
+      "web": [
+        "evidence/web/major/library.json",
+        "evidence/web/major/ask.json",
+        "evidence/web/major/sources.json",
+        "evidence/web/major/activity.json"
+      ],
+      "mac": [
+        "evidence/mac/major/library.json",
+        "evidence/mac/major/ask.json",
+        "evidence/mac/major/sources.json",
+        "evidence/mac/major/activity.json"
+      ],
+      "android": [
+        "evidence/android/major/library.json",
+        "evidence/android/major/ask.json",
+        "evidence/android/major/sources.json",
+        "evidence/android/major/activity.json"
+      ]
+    },
+    "first_screen_independent_proxy": "evidence/first-look/first-look.json",
+    "central_subreview": "central-independent/observations.json",
+    "scope": "First-use, import, recovery, recording, calendar, selected-file and selected Central task states; not every major page/disclosure."
+  },
+  "limits": [
+    "Only frozen R34 candidate hashes are scored, against the unchanged independent 188-feature and 188-journey contract with fixed 25/20/20/15/10/5/5 weights. The inventory is a named semantic audit contract, not a claim to enumerate every source-code path.",
+    "Every unmentioned applicable assertion stays untested. Partial or untested is not evidence that the feature is missing. No previous-round pass, generator self-check, route count or catalog presence is substituted for current semantic evidence.",
+    "This final round is the requested bounded changed-family review. Whole-feature completeness and all critical journeys remain unverified, so the hard gates fail even where the exercised scenarios improve.",
+    "All interactions use synthetic isolated HTML. No live account, backend, native permission, real filesystem collector, real calendar, vendor recording, model execution or production validation is claimed. User-visible WAV downloads and wrong-file synthetic uploads were actually exercised.",
+    "The fresh-context first-look reviewer read three screenshots and froze observations before DOM, with no contract or prior review. It is an AI proxy, not human usability research, and platform order may influence later impressions. The separate Central reviewer had inherited context and its first-look is not described as blinded.",
+    "Central usage/Agent findings are independently authored by /root/review_r31_r34/review_r34_central; only its current operated assertions are merged. Shared Web findings do not establish Mac/Android variants.",
+    "The initial native-file harness wrongly expected an Android-only description field on Mac and the import sample filename on native tasks. Those initial timeouts/false booleans are retained under files; corrected visible-UI runs under files-corrected are authoritative. They are not product defects.",
+    "Several Web REPL label guesses timed out and produced no snapshot. Captured states, not intended filenames, determine judgments: upload/24 is uploading and /25 is submitting; calendar/11-final-approval-rejected actually shows accepted because no reviewing device had been selected for its prior fixture. The actual selected-target rejection is calendar/23.",
+    "Normal browser reload removes the evaluator-injected CJK font style. Subsequent DOM remains valid but affected PNGs are not evidence of product font quality. Fresh first-use/major/task and Central web-visual captures supply legible visual evidence. No full-page resize artifact is used for findings.",
+    "No page exception or horizontal document overflow was observed in the exercised DOM evidence. Full accessibility, keyboard traversal, all resolutions, themes, translations and every disclosure were not verified.",
+    "Web folder handoff, one-time browser imports, source catalog and native file confirmations support the evaluated no-Central-local-collection gate. This is not an exhaustive unchanged-route inspection.",
+    "The functionality score remains below 3 because complete semantic coverage is required by the frozen rubric. The Android score may decrease due to a newly observed contradictory upload state; score progression is not assumed."
+  ],
+  "next_corrections": [
+    "Give missing local bytes an explicit primary state such as Files required; show prior progress separately until the same files are reselected.",
+    "Keep the concrete first import action; shorten the example-card region or move a concise collector-scope line and named source action earlier on narrow screens. Use Central library consistently when explaining its role.",
+    "Keep actual revocation enforcement. Make fixture feedback conditional on a selected device, and clear or scope the stale-evidence notice when generating a different example suggestion.",
+    "Verify the remaining applicable assertions before claiming the 188-feature contract complete."
+  ]
+}

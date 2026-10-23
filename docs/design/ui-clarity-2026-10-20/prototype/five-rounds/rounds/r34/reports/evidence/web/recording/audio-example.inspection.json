@@ -1,0 +1,9 @@
+{
+  "bytes": 16044,
+  "sha256": "d01eff47a7c1caf5908cb0bd2c4963b90153f199a689b7b954cbc47c0dd66d55",
+  "channels": 1,
+  "sample_width": 2,
+  "sample_rate": 8000,
+  "frames": 8000,
+  "duration_seconds": 1.0
+}

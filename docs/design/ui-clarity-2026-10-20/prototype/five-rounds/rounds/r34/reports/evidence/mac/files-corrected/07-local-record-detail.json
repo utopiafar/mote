@@ -1,0 +1,55 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/activity/native-queue",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R34\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n活动\n/\n后台工作\n工作台在线\n随手记\n添加内容\n待发送记录\n\n本机队列与 Central 已接收分别标明。接收不代表已解析或可检索。\n\n返回\n未连接 Central，内容留在本机\n立即发送\n来源\n全部来源\n研究摘录.md\n结果\n全部结果\n本机待发送\nCentral 已接收\n需要处理冲突\nCentral 已删除\n研究摘录.md\n\nfile-1 · 本机待发送\n\n本机原件保留\n打开记录\n刷新\n上一页\n1 / 1\n下一页\n演示读取失败\n本机记录详情\n\n核对来源、原件与接收 / 处理状态。\n\n研究摘录.md\n\n来源 / 记录\nfile-1 / source-file-1-reading\n本机原件\n保留\n接收\n本机待发送\n正文处理\n未开始\n生成的所选文件正文。\n文件：研究摘录.md\n\n完整本机正文\n\n查看元数据\n刷新状态\n在 Central 查看",
+  "controls": [
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "关闭对话框",
+      "action": "close-modal",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看元数据",
+      "label": "查看元数据",
+      "action": "ns-record-metadata",
+      "item": "source-file-1-reading",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新状态",
+      "label": "刷新状态",
+      "action": "ns-record-refresh",
+      "item": "source-file-1-reading",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "在 Central 查看",
+      "label": "在 Central 查看",
+      "action": "ns-central-record",
+      "item": "source-file-1-reading",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H2",
+      "text": "本机记录详情"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

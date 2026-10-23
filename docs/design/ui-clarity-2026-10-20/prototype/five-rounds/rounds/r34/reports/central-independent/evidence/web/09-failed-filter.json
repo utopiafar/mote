@@ -1,0 +1,438 @@
+{
+  "url": "https://mote-prototype.invalid/#/settings/usage",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R34\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n设置\n工作台在线\n随手记\n添加内容\n设置\n\n调整服务与资料管理方式，或管理当前登录。\n\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观\n用量与费用\n\n按运行归属核对已上报用量与分币种估算。\n\n当前账号的固定合成用量账本，示例截止 2026-10-22。原型没有发送模型请求；这里的金额均为估算示例。\n维护模型价格\n刷新用量\n已读取这个范围的合成账本，缺失指标仍显示未知。\n开始日期\n结束日期\n按任务、模型与状态筛选\nAgent\n全部\n上下文查询 Agent\n文件分析 Agent\n文档导入 Agent\n历史未标记\n模块\n全部\n问答\n文件分析\n资料导入\n记忆\n洞察\n历史未标记\nSkill\n全部\n未指定 Skill\n文档导入\n记忆提取\n个人洞察\n历史未标记\n模型与服务 ID\n全部模型\ndemo-cloud / demo-text\ndemo-unpriced / demo-partial\ndemo-cn / demo-reasoning\n运行状态\n全部状态\n已完成\n失败\n进行中\n\n筛选字段仅使用运行记录的归属，不从问题或正文猜测。\n\n应用筛选\n清除条件\n示例近 1 天\n示例近 7 天\n示例近 30 天\n\n当前结果范围：2026-10-22 → 2026-10-22 · UTC · failed\n\n已上报的消耗\n已知 token\n2,350\n输入 / 输出 2,100 / 250\n已知费用 · 分币种\nUSD 0.001420\n· 1 次未估算\nCNY 无记录\n运行次数\n2\n0 进行中 · 2 失败\n\n1 次用量缺失或不完整；1 次未提供缓存读取。未知部分没有按零计算。\n\n缓存、推理、请求数与完成质量\n已上报缓存读取 / 写入\n300 / 0 · 1 次写入未上报\n已上报推理 token\n0 · 1 次未上报；已包含在输出\n缓存命中率\n25.0%\n已计量 / 已知模型请求\n2 / 3 · 0 次运行底层请求数未知\n结束运行成功率\n0.0%\n结束运行耗时均值 / P95\n4.2 秒 / 5.7 秒\n\n成功率与耗时仅统计已结束运行；失败运行的已上报消耗仍计入。缓存率只按已上报缓存数据的输入加权。累计会话 token 不推算底层请求次数。\n\n按维度查看消耗分布\n每日用量 · 点击日期查看\n运行明细\n\n统计包含全部符合条件的记录，下面只对明细分页。\n\n每页条数\n10\n20\n50\n100\nusage-002 · demo-partial\n2026-10-22T09:25:00Z · 文件分析 · 失败\nUSD 未估算 · 用量缺失或不完整\n打开运行\nusage-003 · demo-text\n2026-10-22T09:25:00Z · 资料导入 · 失败\nUSD 0.001420\n打开运行\n上一页\n1 / 1\n下一页",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "账号与设备",
+      "label": "账号与设备",
+      "action": "go",
+      "page": "settings/account",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "模型与服务",
+      "label": "模型与服务",
+      "action": "go",
+      "page": "settings/models",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "采集与隐私",
+      "label": "采集与隐私",
+      "action": "go",
+      "page": "settings/privacy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "自动记忆与插件",
+      "label": "自动记忆与插件",
+      "action": "go",
+      "page": "settings/plugins",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "存储与备份",
+      "label": "存储与备份",
+      "action": "go",
+      "page": "settings/storage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "对外授权",
+      "label": "对外授权",
+      "action": "go",
+      "page": "settings/access",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "用量与费用",
+      "label": "用量与费用",
+      "action": "go",
+      "page": "settings/usage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "帮助与诊断",
+      "label": "帮助与诊断",
+      "action": "go",
+      "page": "settings/diagnostics",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "语言与外观",
+      "label": "语言与外观",
+      "action": "go",
+      "page": "settings/appearance",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "维护模型价格",
+      "label": "维护模型价格",
+      "action": "go",
+      "page": "settings/usage-prices",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新用量",
+      "label": "刷新用量",
+      "action": "cs-usage-refresh",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs34-usage-from",
+      "type": "date",
+      "text": "",
+      "label": "开始日期",
+      "value": "2026-10-22",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs34-usage-to",
+      "type": "date",
+      "text": "",
+      "label": "结束日期",
+      "value": "2026-10-22",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "按任务、模型与状态筛选",
+      "label": "按任务、模型与状态筛选",
+      "expanded": true
+    },
+    {
+      "tag": "select",
+      "id": "cs34-usage-agentId",
+      "type": "select-one",
+      "text": "全部\n上下文查询 Agent\n文件分析 Agent\n文档导入 Agent\n历史未标记",
+      "label": "Agent\n全部\n上下文查询 Agent\n文件分析 Agent\n文档导入 Agent\n历史未标记",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs34-usage-moduleId",
+      "type": "select-one",
+      "text": "全部\n问答\n文件分析\n资料导入\n记忆\n洞察\n历史未标记",
+      "label": "模块\n全部\n问答\n文件分析\n资料导入\n记忆\n洞察\n历史未标记",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs34-usage-skillId",
+      "type": "select-one",
+      "text": "全部\n未指定 Skill\n文档导入\n记忆提取\n个人洞察\n历史未标记",
+      "label": "Skill\n全部\n未指定 Skill\n文档导入\n记忆提取\n个人洞察\n历史未标记",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs34-usage-modelChoice",
+      "type": "select-one",
+      "text": "全部模型\ndemo-cloud / demo-text\ndemo-unpriced / demo-partial\ndemo-cn / demo-reasoning",
+      "label": "模型与服务 ID\n全部模型\ndemo-cloud / demo-text\ndemo-unpriced / demo-partial\ndemo-cn / demo-reasoning",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs34-usage-status",
+      "type": "select-one",
+      "text": "全部状态\n已完成\n失败\n进行中",
+      "label": "运行状态\n全部状态\n已完成\n失败\n进行中",
+      "value": "failed",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "应用筛选",
+      "label": "应用筛选",
+      "action": "cs-usage-apply",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "清除条件",
+      "label": "清除条件",
+      "action": "cs-usage-clear",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "示例近 1 天",
+      "label": "示例近 1 天",
+      "action": "cs-usage-preset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "示例近 7 天",
+      "label": "示例近 7 天",
+      "action": "cs-usage-preset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "示例近 30 天",
+      "label": "示例近 30 天",
+      "action": "cs-usage-preset",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "缓存、推理、请求数与完成质量",
+      "label": "缓存、推理、请求数与完成质量",
+      "expanded": true
+    },
+    {
+      "tag": "summary",
+      "text": "按维度查看消耗分布",
+      "label": "按维度查看消耗分布",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "每日用量 · 点击日期查看",
+      "label": "每日用量 · 点击日期查看",
+      "expanded": false
+    },
+    {
+      "tag": "select",
+      "id": "cs34-usage-view-pageSize",
+      "type": "select-one",
+      "text": "10\n20\n50\n100",
+      "label": "每页条数\n10\n20\n50\n100",
+      "value": "10",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开运行",
+      "label": "打开运行",
+      "action": "go",
+      "page": "settings/usage/run/usage-002",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开运行",
+      "label": "打开运行",
+      "action": "go",
+      "page": "settings/usage/run/usage-003",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "上一页",
+      "label": "上一页",
+      "action": "cs-usage-page",
+      "disabled": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "下一页",
+      "label": "下一页",
+      "action": "cs-usage-page",
+      "disabled": true
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设置"
+    },
+    {
+      "level": "H2",
+      "text": "用量与费用"
+    },
+    {
+      "level": "H3",
+      "text": "已上报的消耗"
+    },
+    {
+      "level": "H3",
+      "text": "运行明细"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

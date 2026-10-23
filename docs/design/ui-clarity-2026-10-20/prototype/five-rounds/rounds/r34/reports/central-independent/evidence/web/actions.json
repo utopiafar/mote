@@ -1,0 +1,378 @@
+[
+  {
+    "at": "2026-10-23T03:31:45.068Z",
+    "op": "open",
+    "file": "rounds/r34/web.html",
+    "evidenceDirectory": "rounds/r34/reports/central-independent/evidence/web",
+    "url": "https://mote-prototype.invalid/#/library"
+  },
+  {
+    "at": "2026-10-23T03:31:45.108Z",
+    "op": "select",
+    "label": "预览数据",
+    "value": "populated"
+  },
+  {
+    "at": "2026-10-23T03:31:45.173Z",
+    "op": "click",
+    "role": "button",
+    "name": "设置"
+  },
+  {
+    "at": "2026-10-23T03:31:53.533Z",
+    "op": "click",
+    "role": "button",
+    "name": "用量与费用",
+    "exact": false,
+    "save": "01-usage"
+  },
+  {
+    "at": "2026-10-23T03:32:00.548Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开运行",
+    "index": 1,
+    "save": "02-failed-unknown-run"
+  },
+  {
+    "at": "2026-10-23T03:32:13.631Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回用量与原筛选"
+  },
+  {
+    "at": "2026-10-23T03:32:13.679Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开运行",
+    "index": 2
+  },
+  {
+    "at": "2026-10-23T03:32:13.724Z",
+    "op": "click",
+    "text": "运行开始时固定的价格",
+    "save": "03-failed-priced-run"
+  },
+  {
+    "at": "2026-10-23T03:32:13.831Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回用量与原筛选"
+  },
+  {
+    "at": "2026-10-23T03:32:13.882Z",
+    "op": "click",
+    "role": "button",
+    "name": "维护模型价格",
+    "save": "04-pricing-before"
+  },
+  {
+    "at": "2026-10-23T03:32:41.738Z",
+    "op": "fill",
+    "label": "未缓存输入 / 1M tokens",
+    "value": "1.23"
+  },
+  {
+    "at": "2026-10-23T03:32:41.753Z",
+    "op": "fill",
+    "label": "输出 / 1M tokens",
+    "value": "4.56"
+  },
+  {
+    "at": "2026-10-23T03:32:41.766Z",
+    "op": "fill",
+    "label": "缓存读取 / 1M tokens",
+    "value": "0.12"
+  },
+  {
+    "at": "2026-10-23T03:32:41.780Z",
+    "op": "fill",
+    "label": "缓存写入 / 1M tokens",
+    "value": "0.78"
+  },
+  {
+    "at": "2026-10-23T03:32:41.794Z",
+    "op": "select",
+    "selector": "#cs34-prices-currency",
+    "value": "CNY"
+  },
+  {
+    "at": "2026-10-23T03:32:41.847Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存后续运行价格",
+    "save": "05-pricing-saved"
+  },
+  {
+    "at": "2026-10-23T03:32:42.065Z",
+    "op": "reload",
+    "save": "06-pricing-reloaded"
+  },
+  {
+    "at": "2026-10-23T03:32:53.555Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回用量与历史回执"
+  },
+  {
+    "at": "2026-10-23T03:32:53.696Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开运行",
+    "index": 2
+  },
+  {
+    "at": "2026-10-23T03:32:53.739Z",
+    "op": "click",
+    "text": "运行开始时固定的价格",
+    "save": "07-historical-price-preserved"
+  },
+  {
+    "at": "2026-10-23T03:32:53.884Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回用量与原筛选"
+  },
+  {
+    "at": "2026-10-23T03:32:53.969Z",
+    "op": "click",
+    "text": "按任务、模型与状态筛选"
+  },
+  {
+    "at": "2026-10-23T03:32:54.020Z",
+    "op": "click",
+    "text": "缓存、推理、请求数与完成质量",
+    "save": "08-usage-filters-quality"
+  },
+  {
+    "at": "2026-10-23T03:33:06.806Z",
+    "op": "select",
+    "selector": "#cs34-usage-status",
+    "value": {
+      "label": "失败"
+    }
+  },
+  {
+    "at": "2026-10-23T03:33:06.829Z",
+    "op": "fill",
+    "label": "开始日期",
+    "value": "2026-10-22"
+  },
+  {
+    "at": "2026-10-23T03:33:06.851Z",
+    "op": "fill",
+    "label": "结束日期",
+    "value": "2026-10-22"
+  },
+  {
+    "at": "2026-10-23T03:33:06.931Z",
+    "op": "click",
+    "role": "button",
+    "name": "应用筛选",
+    "save": "09-failed-filter"
+  },
+  {
+    "at": "2026-10-23T03:33:07.123Z",
+    "op": "click",
+    "role": "button",
+    "name": "清除条件"
+  },
+  {
+    "at": "2026-10-23T03:33:12.202Z",
+    "op": "click",
+    "role": "button",
+    "name": "帮助与诊断",
+    "save": "11-diagnostics-entry"
+  },
+  {
+    "at": "2026-10-23T03:33:43.330Z",
+    "op": "click",
+    "role": "button",
+    "name": "诊断偏好"
+  },
+  {
+    "at": "2026-10-23T03:33:49.326Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看已保留轨迹",
+    "save": "12-agent-trace-entry"
+  },
+  {
+    "at": "2026-10-23T03:34:05.858Z",
+    "op": "select",
+    "selector": "#cs32-trace-run",
+    "value": {
+      "label": "2026-10-20T09:25:00Z · trace-demo-partial"
+    }
+  },
+  {
+    "at": "2026-10-23T03:34:05.907Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开实际轨迹"
+  },
+  {
+    "at": "2026-10-23T03:34:05.936Z",
+    "op": "click",
+    "text": "查看保留的事件载荷",
+    "index": 0,
+    "save": "13-partial-trace"
+  },
+  {
+    "at": "2026-10-23T03:34:06.073Z",
+    "op": "click",
+    "role": "button",
+    "name": "下一页内容",
+    "save": "14-partial-trace-page-two"
+  },
+  {
+    "at": "2026-10-23T03:34:20.124Z",
+    "op": "click",
+    "text": "Retained research excerpt · 本次实际返回的保留内容",
+    "save": "15-retained-read"
+  },
+  {
+    "at": "2026-10-23T03:34:20.289Z",
+    "op": "click",
+    "role": "button",
+    "name": "下一页内容",
+    "save": "16-partial-trace-page-three"
+  },
+  {
+    "at": "2026-10-23T03:34:20.395Z",
+    "op": "fill",
+    "label": "或输入运行 ID",
+    "value": "r34-review-unrecorded-run"
+  },
+  {
+    "at": "2026-10-23T03:34:20.466Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开实际轨迹",
+    "save": "17-missing-trace"
+  },
+  {
+    "at": "2026-10-23T03:34:20.632Z",
+    "op": "click",
+    "role": "button",
+    "name": "可访问目录与首次预览",
+    "save": "18-agent-directory"
+  },
+  {
+    "at": "2026-10-23T03:34:33.442Z",
+    "op": "click",
+    "role": "button",
+    "name": "浏览目录",
+    "index": 2,
+    "save": "19-agent-sources"
+  },
+  {
+    "at": "2026-10-23T03:34:47.133Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开来源",
+    "index": 0,
+    "save": "20-agent-source-detail"
+  },
+  {
+    "at": "2026-10-23T03:35:02.473Z",
+    "op": "click",
+    "role": "button",
+    "name": "展开内容",
+    "save": "21-agent-material"
+  },
+  {
+    "at": "2026-10-23T03:35:14.570Z",
+    "op": "click",
+    "role": "button",
+    "name": "继续展开正文",
+    "save": "22-agent-material-complete"
+  },
+  {
+    "at": "2026-10-23T03:35:14.713Z",
+    "op": "click",
+    "role": "button",
+    "name": "首次上下文",
+    "save": "23-initial-context-form"
+  },
+  {
+    "at": "2026-10-23T03:35:21.400Z",
+    "op": "click",
+    "text": "设备与时间范围"
+  },
+  {
+    "at": "2026-10-23T03:35:35.045Z",
+    "op": "fill",
+    "label": "设备 ID（留空为全部）",
+    "value": "mac"
+  },
+  {
+    "at": "2026-10-23T03:35:35.061Z",
+    "op": "fill",
+    "label": "开始时间（UTC）",
+    "value": "2026-10-19T00:00"
+  },
+  {
+    "at": "2026-10-23T03:35:35.074Z",
+    "op": "fill",
+    "label": "结束时间（UTC）",
+    "value": "2026-10-22T23:59"
+  },
+  {
+    "at": "2026-10-23T03:35:35.135Z",
+    "op": "click",
+    "role": "button",
+    "name": "应用范围"
+  },
+  {
+    "at": "2026-10-23T03:35:35.153Z",
+    "op": "fill",
+    "label": "想问的问题",
+    "value": "R34 独立核对：这几天有哪些来源支持研究结论？"
+  },
+  {
+    "at": "2026-10-23T03:35:35.221Z",
+    "op": "click",
+    "role": "button",
+    "name": "预览首次上下文",
+    "save": "24-initial-context-preview"
+  },
+  {
+    "at": "2026-10-23T03:36:27.522Z",
+    "op": "click",
+    "role": "button",
+    "name": "用量与费用"
+  },
+  {
+    "at": "2026-10-23T03:36:27.588Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开运行",
+    "index": 2
+  },
+  {
+    "at": "2026-10-23T03:36:27.629Z",
+    "op": "click",
+    "text": "运行开始时固定的价格",
+    "save": "25-historical-price-expanded"
+  },
+  {
+    "at": "2026-10-23T03:36:27.764Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回用量与原筛选"
+  },
+  {
+    "at": "2026-10-23T03:36:27.850Z",
+    "op": "click",
+    "role": "button",
+    "name": "示例近 7 天"
+  },
+  {
+    "at": "2026-10-23T03:36:27.925Z",
+    "op": "click",
+    "role": "button",
+    "name": "下一页",
+    "save": "26-usage-page-two"
+  }
+]

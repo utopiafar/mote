@@ -1,0 +1,21 @@
+[
+  {
+    "at": "2026-10-23T03:45:20.576Z",
+    "op": "open",
+    "file": "rounds/r34/web.html",
+    "evidenceDirectory": "rounds/r34/reports/evidence/web/boundary"
+  },
+  {
+    "at": "2026-10-23T03:45:20.659Z",
+    "op": "click",
+    "role": "button",
+    "name": "导入第一份资料"
+  },
+  {
+    "at": "2026-10-23T03:45:20.715Z",
+    "op": "click",
+    "role": "button",
+    "name": "到采集端设置",
+    "save": "01-folder-collector-handoff"
+  }
+]

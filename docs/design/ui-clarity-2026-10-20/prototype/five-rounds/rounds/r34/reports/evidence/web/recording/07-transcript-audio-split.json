@@ -1,0 +1,265 @@
+{
+  "url": "https://mote-prototype.invalid/#/setup/recordings/feishu-personal",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R34\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n来源\n/\n接入设置\n工作台在线\n随手记\n添加内容\n厂商录音\n\n连接、选择范围，再查看归档结果。\n\n返回来源\n接收中\n\nfeishu-personal · 合成回执\n\n暂停接收\n连接\n选择范围\n查看结果\n这条连接的归档结果\n\n新增 1 · 重复 0\n\n文稿\n1\n音频备份\n0\n等待 / 失败\n1 / 1\n\n文稿与音频分别归档。原型用生成的测试音演示音频备份，不读取厂商原音。\n\n项目讨论 · 文稿\n\n文稿已归档，可阅读\n\n阅读归档\n项目讨论 · 音频原件示例\n\n音频备份失败 · 自动重试已安排\n\n重试此步骤\n\n还有历史内容未归档，当前结果不是全部。\n\n继续下一页历史\n刷新结果\n取消当前操作\n已保存资料与检查点\n预览结果状态\n\n帮助 Agent 理解这条来源的背景与内容归属。\n\n资料说明与归属",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回来源",
+      "label": "返回来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "暂停接收",
+      "label": "暂停接收",
+      "action": "cn-pause",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "连接",
+      "label": "连接",
+      "action": "cn-tab",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "选择范围",
+      "label": "选择范围",
+      "action": "cn-tab",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看结果",
+      "label": "查看结果",
+      "action": "cn-tab",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "阅读归档",
+      "label": "阅读归档",
+      "action": "go",
+      "page": "material/cn-feishu-personal-transcript-1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重试此步骤",
+      "label": "重试此步骤",
+      "action": "cn-retry-step",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "继续下一页历史",
+      "label": "继续下一页历史",
+      "action": "cn-history",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新结果",
+      "label": "刷新结果",
+      "action": "cn-refresh",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "取消当前操作",
+      "label": "取消当前操作",
+      "action": "cn-cancel-operation",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "已保存资料与检查点",
+      "label": "已保存资料与检查点",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "预览结果状态",
+      "label": "预览结果状态",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料说明与归属",
+      "label": "资料说明与归属",
+      "action": "go",
+      "page": "setup/context/cn-recordings-feishu-personal",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "厂商录音"
+    },
+    {
+      "level": "H2",
+      "text": "这条连接的归档结果"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

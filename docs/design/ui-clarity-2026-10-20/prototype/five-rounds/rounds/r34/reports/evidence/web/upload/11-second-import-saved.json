@@ -1,0 +1,214 @@
+{
+  "url": "https://mote-prototype.invalid/#/import/details/focus-import-1792726320989",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R34\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n资料库\n/\n导入资料\n工作台在线\n随手记\n添加内容\n导入详情\n\n读书笔记.md\n\n返回导入记录\n记录已保存\n1 个文件\n原件已归档\n理解与核对\n记录可阅读\n记忆单独整理\n\n原件和正文已保留；索引和记忆的进度单独显示。\n\n阅读导入结果\n本次导入说明\n\n第二份独立资料；与暂停的录音上传无关。\n\n说明只在声明的范围内生效，第三方和 AI 引文不会整批归为你的表达。\n\n原件与文件解析情况\n这次导入的记录\n解析、图片与处理进度\n更多操作\n预览不同处理状态",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "empty",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回导入记录",
+      "label": "返回导入记录",
+      "action": "go",
+      "page": "imports",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "阅读导入结果",
+      "label": "阅读导入结果",
+      "action": "go",
+      "page": "material/focus-material-focus-import-1792726320989-0",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "原件与文件解析情况",
+      "label": "原件与文件解析情况",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "这次导入的记录",
+      "label": "这次导入的记录",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "解析、图片与处理进度",
+      "label": "解析、图片与处理进度",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "更多操作",
+      "label": "更多操作",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "预览不同处理状态",
+      "label": "预览不同处理状态",
+      "expanded": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "导入详情"
+    },
+    {
+      "level": "H2",
+      "text": "记录已保存"
+    },
+    {
+      "level": "H3",
+      "text": "本次导入说明"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

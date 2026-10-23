@@ -1,0 +1,271 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/ask",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R34\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n问一问\n/\n新的提问\n工作台在线\n随手记\n添加内容\n问一问\n\n围绕已归档资料提问，并沿引用核对。\n\n历史对话\n待你澄清\n\n只读问答 · 此原型使用明确的合成输出，不运行模型。\n\n新建对话\n输入问题\nEnter 发送；Shift+Enter 换行。\n本轮模型连接\n跟随提问模块默认\n个人示例连接\n本轮模型 ID（留空跟随默认）\n附加图片（最多 4 张，每张 8 MiB）\n发送问题\n配置模型",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "mac",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\n收集状态",
+      "label": "Mote 菜单栏收集状态",
+      "action": "native-menu-toggle",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "⌘ K",
+      "label": "搜索资料，快捷键 Command K",
+      "action": "native-search",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "写随手记\n⌘ N",
+      "label": "写随手记\n⌘ N",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "同步文件夹",
+      "label": "同步文件夹",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "历史对话",
+      "label": "历史对话",
+      "action": "go",
+      "page": "ask/history",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "待你澄清",
+      "label": "待你澄清",
+      "action": "go",
+      "page": "ask/clarifications",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "新建对话",
+      "label": "新建对话",
+      "action": "cs-ask-new",
+      "disabled": false
+    },
+    {
+      "tag": "textarea",
+      "id": "cs-ask-question",
+      "type": "textarea",
+      "text": "",
+      "label": "输入问题\nEnter 发送；Shift+Enter 换行。",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs-ask-provider",
+      "type": "select-one",
+      "text": "跟随提问模块默认\n个人示例连接",
+      "label": "本轮模型连接\n跟随提问模块默认\n个人示例连接",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-ask-model",
+      "type": "text",
+      "text": "",
+      "label": "本轮模型 ID（留空跟随默认）",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-ask-images",
+      "type": "file",
+      "text": "",
+      "label": "附加图片（最多 4 张，每张 8 MiB）",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "发送问题",
+      "label": "发送问题",
+      "action": "cs-ask-send",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "配置模型",
+      "label": "配置模型",
+      "action": "go",
+      "page": "settings/providers",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "问一问"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

@@ -1,0 +1,66 @@
+{
+  "platform": "mac",
+  "steps": [
+    {
+      "name": "01-selected-file-task",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/native-files"
+    },
+    {
+      "name": "02-dirty-back-guard",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/native-files"
+    },
+    {
+      "name": "03-draft-preserved",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/native-files"
+    },
+    {
+      "name": "04-file-confirmation",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/native-files"
+    },
+    {
+      "name": "05-one-time-file-saved",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/file-1"
+    },
+    {
+      "name": "06-local-file-record",
+      "url": "https://mote-prototype.invalid/?reset=1#/activity/native-queue"
+    },
+    {
+      "name": "07-local-record-detail",
+      "url": "https://mote-prototype.invalid/?reset=1#/activity/native-queue"
+    }
+  ],
+  "checks": [
+    {
+      "label": "copy does not refer to selected directory",
+      "observed": true
+    },
+    {
+      "label": "named file and retention draft remain",
+      "observed": true
+    },
+    {
+      "label": "confirmation names file and limits scope to listed files",
+      "observed": true
+    },
+    {
+      "label": "confirmation no old directory retention copy",
+      "observed": true
+    },
+    {
+      "label": "one-time saved state no future scan promise",
+      "observed": true
+    },
+    {
+      "label": "named original remains local",
+      "observed": true
+    },
+    {
+      "label": "unconnected record retains local pending status",
+      "observed": true
+    }
+  ],
+  "errors": [],
+  "scope": "Synthetic native controls only; no OS/filesystem validation",
+  "browserErrors": []
+}

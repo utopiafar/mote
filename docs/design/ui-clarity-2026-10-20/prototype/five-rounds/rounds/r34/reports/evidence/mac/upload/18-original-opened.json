@@ -1,0 +1,32 @@
+{
+  "url": "https://mote-prototype.invalid/#/import/details/upload-1792726553382",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R34\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n资料库\n/\n导入资料\n工作台在线\n随手记\n添加内容\n导入详情\n\n读书笔记.md\n\n返回导入记录\n等待你确认\n1 个文件\n原件已归档\n理解与核对\n记录可阅读\n记忆单独整理\n\n原件保留在这次任务中，离开页面可以稍后继续。\n\n核对并继续\n本次导入说明\n\nR34 mac 上传恢复。\n第三方研究摘录与 AI 回答各自保留身份；不是我的个人承诺。Asia/Shanghai。\n\n说明只在声明的范围内生效，第三方和 AI 引文不会整批归为你的表达。\n\n补充说明，重新理解资料\n原件与文件解析情况\n读书笔记.md\n2,400 B · 已解析\n\n正文已提取；确认后可阅读。\n\n查看原件\n\n已生成记录：0 · 重复：0 · 容器与未完成文件不冒充记录\n\n解析、图片与处理进度\n更多操作\n预览不同处理状态\n已保留的原件\n\n读书笔记.md\n\n读书笔记.md\n\n合成文件预览。生产界面在这里打开或下载同一原件。\n\n本次导入说明\n\nR34 mac 上传恢复。\n第三方研究摘录与 AI 回答各自保留身份；不是我的个人承诺。Asia/Shanghai。\n\n说明只在声明的范围内生效，第三方和 AI 引文不会整批归为你的表达。",
+  "controls": [
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "关闭对话框",
+      "action": "close-modal",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H2",
+      "text": "已保留的原件"
+    },
+    {
+      "level": "H3",
+      "text": "本次导入说明"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

@@ -1,0 +1,102 @@
+{
+  "platform": "android",
+  "vendor": "dingtalk-personal",
+  "checks": [
+    {
+      "label": "canonical vendor connection",
+      "observed": true
+    },
+    {
+      "label": "exact acknowledged explanation",
+      "observed": true
+    },
+    {
+      "label": "transcript readable while backup failed",
+      "observed": true
+    },
+    {
+      "label": "real transcript contains context",
+      "observed": true
+    },
+    {
+      "label": "independent audio identity",
+      "observed": true
+    },
+    {
+      "label": "honest one-second test-tone explanation",
+      "observed": true
+    },
+    {
+      "label": "ordinary play control advances test audio",
+      "observed": true
+    },
+    {
+      "label": "download exists",
+      "observed": true
+    },
+    {
+      "label": "exact same transcript identity",
+      "observed": true
+    },
+    {
+      "label": "audio provenance visible",
+      "observed": true
+    },
+    {
+      "label": "same saved audio after disconnection",
+      "observed": true
+    }
+  ],
+  "steps": [
+    {
+      "name": "01-ordinary-catalog-entry",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/recordings/dingtalk-personal"
+    },
+    {
+      "name": "02-context-ack",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/recordings/dingtalk-personal"
+    },
+    {
+      "name": "03-independent-transcript-audio",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/recordings/dingtalk-personal"
+    },
+    {
+      "name": "04-actual-transcript",
+      "url": "https://mote-prototype.invalid/?reset=1#/material/cn-dingtalk-personal-transcript-1"
+    },
+    {
+      "name": "05-audio-retried",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/recordings/dingtalk-personal"
+    },
+    {
+      "name": "06-audio-detail",
+      "url": "https://mote-prototype.invalid/?reset=1#/material/cn-dingtalk-personal-audio-1"
+    },
+    {
+      "name": "07-playback",
+      "url": "https://mote-prototype.invalid/?reset=1#/material/cn-dingtalk-personal-audio-1"
+    },
+    {
+      "name": "08-corresponding-transcript",
+      "url": "https://mote-prototype.invalid/?reset=1#/material/cn-dingtalk-personal-transcript-1"
+    },
+    {
+      "name": "09-source-audio-identity",
+      "url": "https://mote-prototype.invalid/?reset=1#/material/cn-dingtalk-personal-audio-1"
+    },
+    {
+      "name": "10-audio-after-disconnect",
+      "url": "https://mote-prototype.invalid/?reset=1#/material/cn-dingtalk-personal-audio-1"
+    }
+  ],
+  "errors": [],
+  "scope": "Isolated synthetic HTML; no vendor access",
+  "media": {
+    "duration": 1,
+    "currentTime": 0.106293,
+    "paused": false,
+    "controls": true,
+    "readyState": 4
+  },
+  "browserErrors": []
+}

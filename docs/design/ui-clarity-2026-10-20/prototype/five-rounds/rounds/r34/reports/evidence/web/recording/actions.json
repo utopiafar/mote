@@ -1,0 +1,188 @@
+[
+  {
+    "at": "2026-10-23T03:36:14.372Z",
+    "op": "open",
+    "file": "rounds/r34/web.html",
+    "url": "https://mote-prototype.invalid/#/library",
+    "evidenceDirectory": "rounds/r34/reports/evidence/web/recording"
+  },
+  {
+    "at": "2026-10-23T03:36:31.861Z",
+    "op": "select",
+    "selector": "#preview-state",
+    "value": "populated",
+    "save": "01-library"
+  },
+  {
+    "at": "2026-10-23T03:36:32.029Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-23T03:36:32.072Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接来源"
+  },
+  {
+    "at": "2026-10-23T03:36:32.114Z",
+    "op": "click",
+    "text": "录音与转写",
+    "save": "02-recording-catalog"
+  },
+  {
+    "at": "2026-10-23T03:36:47.086Z",
+    "op": "click",
+    "selector": "button[data-page='setup/recordings/feishu-personal']",
+    "save": "03-feishu-entry"
+  },
+  {
+    "at": "2026-10-23T03:36:47.216Z",
+    "op": "click",
+    "role": "button",
+    "name": "填入演示连接"
+  },
+  {
+    "at": "2026-10-23T03:36:47.270Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存连接"
+  },
+  {
+    "at": "2026-10-23T03:36:47.318Z",
+    "op": "click",
+    "role": "button",
+    "name": "开始授权"
+  },
+  {
+    "at": "2026-10-23T03:36:47.364Z",
+    "op": "click",
+    "text": "预览授权回执"
+  },
+  {
+    "at": "2026-10-23T03:36:47.420Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟授权成功"
+  },
+  {
+    "at": "2026-10-23T03:36:47.472Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择范围",
+    "save": "04-authorized-scope"
+  },
+  {
+    "at": "2026-10-23T03:37:03.874Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存范围并开始同步",
+    "save": "05-unacked-blocked"
+  },
+  {
+    "at": "2026-10-23T03:37:03.987Z",
+    "op": "fill",
+    "selector": "#cn-context",
+    "value": "R34 录音归档：陈是主持人，第三方发言不是我的承诺。"
+  },
+  {
+    "at": "2026-10-23T03:37:04.035Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存录音资料说明",
+    "save": "06-context-ack"
+  },
+  {
+    "at": "2026-10-23T03:37:04.168Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存范围并开始同步",
+    "save": "07-transcript-audio-split"
+  },
+  {
+    "at": "2026-10-23T03:37:04.299Z",
+    "op": "click",
+    "role": "button",
+    "name": "重试此步骤",
+    "save": "08-audio-backup-retried"
+  },
+  {
+    "at": "2026-10-23T03:37:17.720Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开音频原件示例",
+    "save": "09-audio-original-detail"
+  },
+  {
+    "at": "2026-10-23T03:37:55.029Z",
+    "op": "download",
+    "role": "link",
+    "name": "下载合成 WAV 文件",
+    "path": "rounds/r34/reports/evidence/web/recording/audio-example.wav",
+    "save": "10-downloaded-audio"
+  },
+  {
+    "at": "2026-10-23T03:37:55.149Z",
+    "op": "click",
+    "role": "button",
+    "name": "阅读对应文稿",
+    "save": "11-corresponding-transcript"
+  },
+  {
+    "at": "2026-10-23T03:37:55.242Z",
+    "op": "back",
+    "save": "12-return-same-audio"
+  },
+  {
+    "at": "2026-10-23T03:37:55.380Z",
+    "op": "click",
+    "text": "来源与文件信息",
+    "save": "13-audio-provenance"
+  },
+  {
+    "at": "2026-10-23T03:38:42.730Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回录音归档结果"
+  },
+  {
+    "at": "2026-10-23T03:38:42.776Z",
+    "op": "click",
+    "text": "已保存资料与检查点",
+    "save": "14-saved-audio-entry"
+  },
+  {
+    "at": "2026-10-23T03:38:42.912Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择范围"
+  },
+  {
+    "at": "2026-10-23T03:38:42.959Z",
+    "op": "click",
+    "text": "持续接收与连接管理",
+    "save": "15-recording-management"
+  },
+  {
+    "at": "2026-10-23T03:39:01.560Z",
+    "op": "click",
+    "role": "button",
+    "name": "断开授权",
+    "save": "16-disconnected"
+  },
+  {
+    "at": "2026-10-23T03:39:01.676Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看结果",
+    "save": "17-results-after-disconnect"
+  },
+  {
+    "at": "2026-10-23T03:39:01.798Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开音频原件示例",
+    "save": "18-audio-after-disconnect"
+  }
+]
