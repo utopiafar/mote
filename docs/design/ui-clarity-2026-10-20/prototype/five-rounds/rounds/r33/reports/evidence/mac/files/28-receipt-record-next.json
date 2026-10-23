@@ -1,0 +1,80 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/activity/native-receipts",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R33\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n活动\n/\n后台工作\n工作台在线\n随手记\n添加内容\n上传回执\n\n接收数量按 ACK 去重；实际请求字节包括重试。\n\n返回\n日期范围\n单日\n最近七天\n结束日期\n来源\n全部来源\n研究资料\n结果\n全部\n已接收\n失败\n查看每日记录\n\n2026-10-20 — 2026-10-26（含起止日期）\n\n2026-10-20\n\n确认接收 1 条 · 实际请求 8192 B\n\n含 0 次重试；正文处理状态单独查看。\n查看回执与实际内容\n本机记录详情\n\n核对来源、原件与接收 / 处理状态。\n\n研究记录.md\n\n来源 / 记录\nfolder / local-101\n本机原件\n保留\n接收\nCentral 已接收\n正文处理\n尚在处理，未宣称可检索\n示例全文结尾：保留来源和时间，逐项核对。\n\n示例正文第 2 段 / 共 2 段\n\n返回这份回执\n下一段正文\n回到开头\n查看元数据\n刷新状态\n在 Central 查看",
+  "controls": [
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "关闭对话框",
+      "action": "close-modal",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回这份回执",
+      "label": "返回这份回执",
+      "action": "ns-receipt-return",
+      "item": "receipt-1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "下一段正文",
+      "label": "下一段正文",
+      "action": "ns-record-next",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "回到开头",
+      "label": "回到开头",
+      "action": "ns-record-start",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看元数据",
+      "label": "查看元数据",
+      "action": "ns-record-metadata",
+      "item": "local-101",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新状态",
+      "label": "刷新状态",
+      "action": "ns-record-refresh",
+      "item": "local-101",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "在 Central 查看",
+      "label": "在 Central 查看",
+      "action": "ns-central-record",
+      "item": "local-101",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H2",
+      "text": "本机记录详情"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

@@ -1,0 +1,136 @@
+[
+  {
+    "at": "2026-10-23T03:19:15.918Z",
+    "op": "open",
+    "file": "rounds/r33/android.html",
+    "viewport": {
+      "width": 412,
+      "height": 915
+    },
+    "evidenceDirectory": "rounds/r33/reports/evidence/android/files",
+    "save": "01-empty-home"
+  },
+  {
+    "at": "2026-10-23T03:19:16.036Z",
+    "op": "click",
+    "role": "button",
+    "name": "添加内容",
+    "save": "02-add-menu"
+  },
+  {
+    "at": "2026-10-23T03:19:16.148Z",
+    "op": "click",
+    "selector": "button[data-page='setup/native-files']:visible",
+    "save": "03-file-task"
+  },
+  {
+    "at": "2026-10-23T03:19:16.245Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择文件",
+    "save": "04-picker"
+  },
+  {
+    "at": "2026-10-23T03:19:26.321Z",
+    "op": "click",
+    "role": "button",
+    "name": "使用所选文件"
+  },
+  {
+    "at": "2026-10-23T03:19:26.333Z",
+    "op": "select",
+    "selector": "#ns-files-new-retention",
+    "value": "archive"
+  },
+  {
+    "at": "2026-10-23T03:19:37.649Z",
+    "op": "observe",
+    "save": "06-current-picker"
+  },
+  {
+    "at": "2026-10-23T03:19:47.039Z",
+    "op": "check",
+    "selector": "input[type='radio'][value='reading']:visible",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T03:19:47.079Z",
+    "op": "click",
+    "role": "button",
+    "name": "使用所选文件",
+    "save": "07-file-selected"
+  },
+  {
+    "at": "2026-10-23T03:20:01.692Z",
+    "op": "select",
+    "selector": "#ns-files-new-retention:visible",
+    "value": "archive"
+  },
+  {
+    "at": "2026-10-23T03:20:01.708Z",
+    "op": "fill",
+    "selector": "#ns-files-new-description:visible",
+    "value": "R33 Android 单文件来源：第三方研究摘录。\n不是我的个人承诺。"
+  },
+  {
+    "at": "2026-10-23T03:20:01.760Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回",
+    "save": "08-unsaved-guard"
+  },
+  {
+    "at": "2026-10-23T03:20:01.860Z",
+    "op": "click",
+    "role": "button",
+    "name": "继续编辑",
+    "save": "09-draft-preserved"
+  },
+  {
+    "at": "2026-10-23T03:20:01.960Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对本次导入",
+    "save": "10-file-review"
+  },
+  {
+    "at": "2026-10-23T03:20:02.064Z",
+    "op": "click",
+    "role": "button",
+    "name": "确认保存本机任务",
+    "save": "11-file-committed"
+  },
+  {
+    "at": "2026-10-23T03:20:16.458Z",
+    "op": "click",
+    "text": "资料说明",
+    "save": "12-file-context-pending"
+  },
+  {
+    "at": "2026-10-23T03:20:16.562Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看本机记录",
+    "save": "13-file-queue"
+  },
+  {
+    "at": "2026-10-23T03:20:16.661Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开记录",
+    "save": "14-file-original"
+  },
+  {
+    "at": "2026-10-23T03:20:16.758Z",
+    "op": "click",
+    "role": "button",
+    "name": "关闭对话框"
+  },
+  {
+    "at": "2026-10-23T03:20:16.811Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回",
+    "save": "15-exact-file-return"
+  }
+]

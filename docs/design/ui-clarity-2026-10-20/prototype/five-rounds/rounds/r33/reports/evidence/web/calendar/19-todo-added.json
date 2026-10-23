@@ -1,0 +1,270 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/todos",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R33\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n待办与日程\n工作台在线\n随手记\n添加内容\n待办与日程\n\n记下下一步，核对需要安排的日程。\n\n回到今天\n我的待办\n日程建议\n\n待办已保存，没有创建日历事件。\n\n记下一个下一步\n添加待办\n截止日期（选填）\n我的待办\n显示待办\n未完成\n已完成\n已取消\n全部\n核对移动端的添加入口\n\n未完成 · 没有截止日期\n\n完成\n更多\n整理这周保存的研究资料\n\n未完成 · 没有截止日期\n\n完成\n更多\nR33 没有截止日的核对任务\n\n未完成 · 没有截止日期\n\n完成\n更多\n\n待办独立保存。完成待办不会创建日历事件。",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "回到今天",
+      "label": "回到今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "我的待办",
+      "label": "我的待办",
+      "action": "go",
+      "page": "todos",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "日程建议",
+      "label": "日程建议",
+      "action": "go",
+      "page": "todos/schedule",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "todo-text",
+      "type": "text",
+      "text": "",
+      "label": "待办内容",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加待办",
+      "label": "添加待办",
+      "action": "ax-add-todo",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "截止日期（选填）",
+      "label": "截止日期（选填）",
+      "expanded": false
+    },
+    {
+      "tag": "select",
+      "id": "todo-filter",
+      "type": "select-one",
+      "text": "未完成\n已完成\n已取消\n全部",
+      "label": "显示待办\n未完成\n已完成\n已取消\n全部",
+      "value": "未完成",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "完成",
+      "label": "完成",
+      "action": "ax-complete-todo",
+      "item": "t1",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "更多",
+      "label": "更多",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "完成",
+      "label": "完成",
+      "action": "ax-complete-todo",
+      "item": "t2",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "更多",
+      "label": "更多",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "完成",
+      "label": "完成",
+      "action": "ax-complete-todo",
+      "item": "todo-1792725190520",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "更多",
+      "label": "更多",
+      "expanded": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "待办与日程"
+    },
+    {
+      "level": "H2",
+      "text": "记下一个下一步"
+    },
+    {
+      "level": "H2",
+      "text": "我的待办"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

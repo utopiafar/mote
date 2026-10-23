@@ -1,0 +1,222 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/todos/review/suggestion-1",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R33\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n待办与日程\n工作台在线\n随手记\n添加内容\n核对日程建议\n\n确认要做什么，再交给已有设备。\n\n返回日程建议\n固定审核内容\n添加日程\n标题\nR33 全天资料评审\n时间\n2026-10-26 → 2026-10-27 · 全天，结束日不包含当天\n时区\nEurope/London\n地点与备注\n线上评审室\nR33 核对备注：不发送参会邀请。\n\n目标：我的 Mac · 工作日历\n\n下周一下午 2 点核对项目资料，持续一小时。 补充：地点仍需核对。\n\n核对原始资料\n依据版本 2\n\n此确认只批准上方内容、依据版本、设备和日历。修改任何一项都要重新核对。不会邀请参与人。\n\n确认交给此设备\n返回修改\n忽略建议\n预览依据变更\n模拟原始资料出现新版本",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回日程建议",
+      "label": "返回日程建议",
+      "action": "go",
+      "page": "todos/schedule",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "核对原始资料",
+      "label": "核对原始资料",
+      "action": "go",
+      "page": "material/synthetic-calendar-evidence",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "确认交给此设备",
+      "label": "确认交给此设备",
+      "action": "ax-approve",
+      "item": "suggestion-1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回修改",
+      "label": "返回修改",
+      "action": "ax-edit-review",
+      "item": "suggestion-1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "忽略建议",
+      "label": "忽略建议",
+      "action": "ax-ignore",
+      "item": "suggestion-1",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "预览依据变更",
+      "label": "预览依据变更",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "模拟原始资料出现新版本",
+      "label": "模拟原始资料出现新版本",
+      "action": "ax-change-evidence",
+      "item": "suggestion-1",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "核对日程建议"
+    },
+    {
+      "level": "H2",
+      "text": "添加日程"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

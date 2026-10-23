@@ -1,0 +1,248 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/todos/discovery",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R33\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n待办与日程\n工作台在线\n随手记\n添加内容\n日程发现设置\n\n决定从哪些资料发现建议、由哪些设备审核。\n\n返回日程建议\n\n请先刷新设备授权，再保存。\n\n发现范围\n从已归档资料发现日程建议\n解释日期的时区\n\n使用行动发现模块配置的模型。只在本机的资料不会因此发送到远程；发现本身不会写入日历。\n\n查看此模块的模型\n允许审核的设备\n\n尚未连接设备。\n\n连接采集端\n\n设备授权已变化，请刷新后重新选择。草稿保留。\n\n保存发现设置\n刷新设备\n\n已保存：已开启 · Europe/London\n\n分析进度与恢复\n预览授权变化\n模拟审核设备被撤销",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回日程建议",
+      "label": "返回日程建议",
+      "action": "go",
+      "page": "todos/schedule",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ax-enabled",
+      "type": "checkbox",
+      "text": "",
+      "label": "从已归档资料发现日程建议",
+      "value": "on",
+      "checked": true,
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ax-timezone",
+      "type": "text",
+      "text": "",
+      "label": "解释日期的时区",
+      "value": "Europe/London",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看此模块的模型",
+      "label": "查看此模块的模型",
+      "action": "go",
+      "page": "settings/models",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "连接采集端",
+      "label": "连接采集端",
+      "action": "go",
+      "page": "devices",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存发现设置",
+      "label": "保存发现设置",
+      "action": "ax-save-discovery",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新设备",
+      "label": "刷新设备",
+      "action": "ax-refresh-devices",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "分析进度与恢复",
+      "label": "分析进度与恢复",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "预览授权变化",
+      "label": "预览授权变化",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "模拟审核设备被撤销",
+      "label": "模拟审核设备被撤销",
+      "action": "ax-revoke-review-device",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "日程发现设置"
+    },
+    {
+      "level": "H2",
+      "text": "发现范围"
+    },
+    {
+      "level": "H2",
+      "text": "允许审核的设备"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

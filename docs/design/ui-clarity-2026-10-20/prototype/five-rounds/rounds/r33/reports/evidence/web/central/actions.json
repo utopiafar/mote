@@ -1,0 +1,33 @@
+[
+  {
+    "at": "2026-10-23T03:13:47.384Z",
+    "op": "open",
+    "file": "rounds/r33/web.html",
+    "evidenceDirectory": "rounds/r33/reports/evidence/web/central"
+  },
+  {
+    "at": "2026-10-23T03:13:47.415Z",
+    "op": "select",
+    "selector": "#preview-state",
+    "value": "populated"
+  },
+  {
+    "at": "2026-10-23T03:13:47.462Z",
+    "op": "click",
+    "role": "button",
+    "name": "设置"
+  },
+  {
+    "at": "2026-10-23T03:13:47.507Z",
+    "op": "click",
+    "selector": "button[data-page='settings/storage']:visible",
+    "save": "01-storage"
+  },
+  {
+    "at": "2026-10-23T03:13:50.774Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择归档",
+    "save": "02-portable-import"
+  }
+]

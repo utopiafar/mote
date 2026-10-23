@@ -1,0 +1,261 @@
+[
+  {
+    "at": "2026-10-23T03:17:06.261Z",
+    "op": "open",
+    "file": "rounds/r33/mac.html",
+    "evidenceDirectory": "rounds/r33/reports/evidence/mac/files",
+    "save": "01-empty-home"
+  },
+  {
+    "at": "2026-10-23T03:17:17.401Z",
+    "op": "click",
+    "role": "button",
+    "name": "添加内容",
+    "save": "03-add-menu"
+  },
+  {
+    "at": "2026-10-23T03:17:21.857Z",
+    "op": "click",
+    "selector": "button[data-page='setup/native-files']:visible",
+    "save": "04-native-selected-files"
+  },
+  {
+    "at": "2026-10-23T03:17:29.368Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择文件",
+    "save": "05-native-file-picker"
+  },
+  {
+    "at": "2026-10-23T03:17:37.113Z",
+    "op": "click",
+    "role": "button",
+    "name": "取消选择",
+    "save": "06-file-picker-cancelled"
+  },
+  {
+    "at": "2026-10-23T03:17:37.248Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择文件"
+  },
+  {
+    "at": "2026-10-23T03:17:37.294Z",
+    "op": "check",
+    "selector": "input[type='checkbox'][value='reading']:visible",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T03:17:37.345Z",
+    "op": "check",
+    "selector": "input[type='checkbox'][value='meeting']:visible",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T03:17:37.399Z",
+    "op": "click",
+    "role": "button",
+    "name": "使用所选文件"
+  },
+  {
+    "at": "2026-10-23T03:17:37.419Z",
+    "op": "select",
+    "selector": "#ns-files-new-retention",
+    "value": "archive"
+  },
+  {
+    "at": "2026-10-23T03:17:37.466Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回",
+    "save": "07-file-unsaved-back"
+  },
+  {
+    "at": "2026-10-23T03:17:41.398Z",
+    "op": "click",
+    "role": "button",
+    "name": "继续编辑",
+    "save": "08-files-draft-preserved"
+  },
+  {
+    "at": "2026-10-23T03:17:41.531Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对本次导入",
+    "save": "09-files-review"
+  },
+  {
+    "at": "2026-10-23T03:17:45.516Z",
+    "op": "click",
+    "role": "button",
+    "name": "确认保存本机任务",
+    "save": "10-files-committed"
+  },
+  {
+    "at": "2026-10-23T03:17:51.316Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看本机记录",
+    "save": "11-file-source-records"
+  },
+  {
+    "at": "2026-10-23T03:17:55.463Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开记录",
+    "save": "12-file-record-original"
+  },
+  {
+    "at": "2026-10-23T03:18:04.213Z",
+    "op": "click",
+    "role": "button",
+    "name": "关闭对话框"
+  },
+  {
+    "at": "2026-10-23T03:18:04.228Z",
+    "op": "select",
+    "selector": "#ns-queue-source",
+    "value": "all",
+    "save": "13-two-files-queued"
+  },
+  {
+    "at": "2026-10-23T03:18:04.381Z",
+    "op": "click",
+    "role": "button",
+    "name": "立即发送",
+    "save": "14-unconnected-send-blocked"
+  },
+  {
+    "at": "2026-10-23T03:18:04.515Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回",
+    "save": "15-exact-file-source-return"
+  },
+  {
+    "at": "2026-10-23T03:18:04.667Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源",
+    "save": "16-selected-sources"
+  },
+  {
+    "at": "2026-10-23T03:18:11.386Z",
+    "op": "select",
+    "selector": "#preview-state",
+    "value": "populated"
+  },
+  {
+    "at": "2026-10-23T03:18:29.284Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-23T03:18:29.334Z",
+    "op": "click",
+    "role": "button",
+    "name": "发送与本机队列",
+    "save": "19-native-upload"
+  },
+  {
+    "at": "2026-10-23T03:18:29.461Z",
+    "op": "click",
+    "role": "button",
+    "name": "立即发送",
+    "save": "20-native-sent"
+  },
+  {
+    "at": "2026-10-23T03:18:35.310Z",
+    "op": "click",
+    "selector": "button[data-page='activity/native-receipts']:visible",
+    "save": "21-receipt-list"
+  },
+  {
+    "at": "2026-10-23T03:18:43.197Z",
+    "op": "fill",
+    "selector": "#ns-receipt-date",
+    "value": "2026-10-19"
+  },
+  {
+    "at": "2026-10-23T03:18:43.245Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看每日记录",
+    "save": "22-receipt-after-end-excluded"
+  },
+  {
+    "at": "2026-10-23T03:18:43.350Z",
+    "op": "select",
+    "selector": "#ns-receipt-period",
+    "value": {
+      "label": "最近七天"
+    }
+  },
+  {
+    "at": "2026-10-23T03:18:43.363Z",
+    "op": "fill",
+    "selector": "#ns-receipt-date",
+    "value": "2026-10-27"
+  },
+  {
+    "at": "2026-10-23T03:18:43.410Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看每日记录",
+    "save": "23-receipt-before-start-excluded"
+  },
+  {
+    "at": "2026-10-23T03:18:43.495Z",
+    "op": "fill",
+    "selector": "#ns-receipt-date",
+    "value": "2026-10-26"
+  },
+  {
+    "at": "2026-10-23T03:18:43.543Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看每日记录",
+    "save": "24-receipt-boundary-included"
+  },
+  {
+    "at": "2026-10-23T03:18:43.662Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看回执与实际内容",
+    "save": "25-receipt-detail"
+  },
+  {
+    "at": "2026-10-23T03:18:48.695Z",
+    "op": "click",
+    "role": "button",
+    "name": "研究记录.md",
+    "save": "26-receipt-record"
+  },
+  {
+    "at": "2026-10-23T03:18:48.813Z",
+    "op": "observe",
+    "save": "27-receipt-record-current"
+  },
+  {
+    "at": "2026-10-23T03:18:57.323Z",
+    "op": "click",
+    "role": "button",
+    "name": "下一段正文",
+    "save": "28-receipt-record-next"
+  },
+  {
+    "at": "2026-10-23T03:18:57.484Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回这份回执",
+    "save": "29-return-exact-receipt"
+  },
+  {
+    "at": "2026-10-23T03:18:57.662Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回回执列表",
+    "save": "30-return-filtered-list"
+  }
+]

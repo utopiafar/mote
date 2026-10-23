@@ -1,0 +1,108 @@
+{
+  "format": "mote-portable",
+  "version": 3,
+  "deploymentId": "demo-deployment:https://mote.example.invalid",
+  "userId": "demo-account:林同学",
+  "prototype": "mote-ui-demo",
+  "createdAt": "2026-10-23T03:14:19.850Z",
+  "scope": "account",
+  "materials": [
+    {
+      "id": "m1",
+      "title": "产品评审 · 让第一步更清楚",
+      "type": "note",
+      "source": "随手记",
+      "date": "今天 09:12",
+      "preview": "先让新用户知道可以保存什么，再引导他回到资料里找到答案。",
+      "body": "今天的产品评审围绕新用户的第一步展开。\n最重要的事情是让输入方式清楚：一次导入文件，或持续同步一个文件夹。已有资料应该随时可读，用户也可以直接提问。\n下次评审：周四下午核对三端的入口和文案。",
+      "device": "网页",
+      "origin": "我写的记录"
+    },
+    {
+      "id": "m2",
+      "sourceId": "folder",
+      "title": "长期记忆系统调研笔记",
+      "type": "file",
+      "source": "研究资料",
+      "date": "昨天 18:34",
+      "preview": "原始资料、事实记忆和阶段洞察分别承担不同职责。",
+      "body": "调研笔记记录了原始资料、记忆与洞察之间的关系。\n原始资料保留出处；记忆是从资料中整理出来、可以纠正的内容；洞察用于回答一段时间里的变化和规律。\n评估时需要可以回到原文，核对每一条重要判断。",
+      "device": "Mac",
+      "origin": "文件 / 研究资料/记忆系统.md"
+    },
+    {
+      "id": "m3",
+      "sourceId": "coding",
+      "title": "Mote / 来源目录整理",
+      "type": "coding",
+      "source": "Codex 会话",
+      "date": "昨天 16:20",
+      "preview": "把文件夹同步和屏幕记录放在同级入口，保留原有确认步骤。",
+      "body": "本次讨论整理了来源目录和原型中的导航。\n目标：让一次导入与持续同步的区别清楚，避免设置分散。\n实现记录：沿用原有来源管理、权限说明和返回路径。",
+      "device": "Mac",
+      "origin": "Codex / mote / 会话记录"
+    },
+    {
+      "id": "m4",
+      "sourceId": "google",
+      "title": "周四设计评审",
+      "type": "calendar",
+      "source": "Google 日历",
+      "date": "10月22日 14:00",
+      "preview": "核对资料库、来源目录与移动端添加入口。",
+      "body": "时间：10月22日 14:00–15:00。\n议题：资料库的首屏说明、各类输入方式、原型发现性。\n这是日历来源中的安排。",
+      "device": "中央",
+      "origin": "Google Calendar / 工作日历"
+    },
+    {
+      "id": "m5",
+      "sourceId": "feishu-recording",
+      "title": "项目讨论录音 · 本周计划",
+      "type": "audio",
+      "source": "飞书录音",
+      "date": "10月18日 15:30",
+      "preview": "本周完成资料整理和第一轮设计评审，周末回顾进展。",
+      "body": "录音转写节选：\n我们先把资料整理清楚，再看用户怎样找到之前保存的东西。\n本周完成第一轮设计，保留每一轮的改动和判断依据。",
+      "device": "中央",
+      "origin": "飞书妙记 / 项目讨论"
+    },
+    {
+      "id": "m6",
+      "sourceId": "screen",
+      "capturedAt": "2026-10-18T11:08:00",
+      "captureSessionId": "screen-session-1",
+      "captureApplication": "browser",
+      "title": "文章摘录 · 渐进式披露",
+      "type": "screen",
+      "source": "Mac 屏幕",
+      "date": "10月18日 11:08",
+      "preview": "最常用的操作先展示，复杂细节放在需要它的上下文里。",
+      "body": "界面可以首先呈现少量高频任务，再让用户按需探索更多能力。\n来源：示例浏览器页面的屏幕记录。\n记录中保留原始时间、应用和来源。",
+      "device": "Mac",
+      "origin": "屏幕记录 / 浏览器"
+    }
+  ],
+  "sources": [
+    {
+      "id": "folder",
+      "title": "研究资料",
+      "description": ""
+    },
+    {
+      "id": "screen",
+      "title": "Mac 屏幕",
+      "description": ""
+    },
+    {
+      "id": "lark",
+      "title": "飞书文档与日历",
+      "description": ""
+    }
+  ],
+  "exclusions": [
+    "credentials",
+    "execution-grants",
+    "instance-backup"
+  ],
+  "attachments": []
+}

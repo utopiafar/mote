@@ -1,0 +1,44 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/setup/native-files",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R33\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n导入本机文件\n\n通过这台设备的文件选择器授予所选文件访问范围。\n\n返回\n所选文件\n研究摘录.md\nDocuments/研究摘录.md · 8192 B\n重新选择文件\n\n导入一次，不跟踪后续修改。保存后可另行启用持续同步。\n\n本次包括所选文件的当前内容。\n\nCentral 保存方式\n仅保留提取内容\n保留原件及提取内容\n仅记录文件信息\n完整文件发送到 Central 解析，同时保留原件和提取内容；所选目录的原文件保留。\n资料说明（选填）\n可说明格式、时间、作者、背景与内容归属；保存后等待 Central 确认。\n高级文件规则\n核对本次导入\n还原修改\n\n草稿已保留，尚未应用。\n\n资料库\n问一问\n来源\n活动\n确认本次文件范围\n\n只处理列出的文件。确认后先写入本机队列，发送受当前连接与发送策略约束。\n\n研究摘录.md\nDocuments/研究摘录.md · 8192 B\n收集方式\n仅导入这一次\n首次范围\n包括所选文件当前内容\n目的地\n仅保存在本机，连接后再确认发送范围\n\n完整文件发送到 Central 解析，同时保留原件和提取内容；所选目录的原文件保留。\n\n确认保存本机任务\n继续编辑",
+  "controls": [
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "关闭对话框",
+      "action": "close-modal",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "确认保存本机任务",
+      "label": "确认保存本机任务",
+      "action": "ns-files-commit",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "继续编辑",
+      "label": "继续编辑",
+      "action": "ns-close",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H2",
+      "text": "确认本次文件范围"
+    }
+  ],
+  "viewport": {
+    "width": 412,
+    "height": 915
+  },
+  "pageWidth": 412,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

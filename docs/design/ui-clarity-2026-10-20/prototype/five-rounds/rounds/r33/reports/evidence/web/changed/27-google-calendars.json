@@ -1,0 +1,261 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/setup/google/google-personal",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R33\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n来源\n/\n接入设置\n工作台在线\n随手记\n添加内容\nGoogle 日历\n\n连接、选择范围，再查看归档结果。\n\n返回来源\n已授权 · 尚未选择接收范围\n\ngoogle-personal · 合成回执\n\n连接\n选择范围\n查看结果\n\n先授权并保存日历范围。\n\n选择只读日历\n\n授权本身不会收集日程。这里只把所选日历归档；写入日程需要单独连接并确认。\n\n读取可选日历\n工作日历\n个人日历\n已不可用的旧日历\n保存日历范围\n同步所选日历\n\n已保存范围：未选择\n\n持续接收与连接管理\n\n帮助 Agent 理解这条来源的背景与内容归属。\n\n资料说明与归属",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回来源",
+      "label": "返回来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "连接",
+      "label": "连接",
+      "action": "cn-tab",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "选择范围",
+      "label": "选择范围",
+      "action": "cn-tab",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看结果",
+      "label": "查看结果",
+      "action": "cn-tab",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "读取可选日历",
+      "label": "读取可选日历",
+      "action": "cn-list-calendars",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "type": "checkbox",
+      "text": "",
+      "label": "工作日历",
+      "value": "on",
+      "checked": false,
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "type": "checkbox",
+      "text": "",
+      "label": "个人日历",
+      "value": "on",
+      "checked": false,
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "type": "checkbox",
+      "text": "",
+      "label": "已不可用的旧日历",
+      "value": "on",
+      "checked": false,
+      "disabled": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存日历范围",
+      "label": "保存日历范围",
+      "action": "cn-save-calendars",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "同步所选日历",
+      "label": "同步所选日历",
+      "action": "cn-sync-calendars",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "持续接收与连接管理",
+      "label": "持续接收与连接管理",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料说明与归属",
+      "label": "资料说明与归属",
+      "action": "go",
+      "page": "setup/context/cn-google-google-personal",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "Google 日历"
+    },
+    {
+      "level": "H2",
+      "text": "选择只读日历"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

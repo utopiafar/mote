@@ -1,0 +1,81 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/library",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R33\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n资料库\n/\n全部资料\n工作台在线\n随手记\n添加内容\n\nMote · 个人资料与记忆库\n\n把资料收好，\n需要时有据可查。\n\n保存文件、想法和设备记录。以后搜索或提问，沿着出处回到原文。\n\n导入第一份资料\n写随手记\n\n从一份资料开始，再按需连接更多来源。\n\n以后可以这样问\n“上次讨论决定了什么？”\n\n从自己的资料中找答案，点引用核对原文。\n\n看一个使用例子\n让内容持续积累\n\n在这台设备选择范围，保存后汇集到中央资料库。\n\n选择可连接的来源\n\n资料保留原文；记忆整理长期信息；洞察用于阶段回顾。\n\n添加内容\n\n这次手动保存，或让选定来源持续送来内容。\n\n手动保存\n导入文件\n选择本机文件，确认一次导入范围。\n写随手记\n记下文字，附上图片或录音\n持续收集\n同步文件夹\n连接新的文件夹，持续保存后续变化\n记录屏幕\n选择应用与采集范围\n连接在线来源\n文档、邮件、日历与录音",
+  "controls": [
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "关闭对话框",
+      "action": "close-modal",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "导入文件\n选择本机文件，确认一次导入范围。",
+      "label": "导入文件\n选择本机文件，确认一次导入范围。",
+      "action": "go",
+      "page": "setup/native-files",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "写随手记\n记下文字，附上图片或录音",
+      "label": "写随手记\n记下文字，附上图片或录音",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "同步文件夹\n连接新的文件夹，持续保存后续变化",
+      "label": "同步文件夹\n连接新的文件夹，持续保存后续变化",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "记录屏幕\n选择应用与采集范围",
+      "label": "记录屏幕\n选择应用与采集范围",
+      "action": "go",
+      "page": "setup/screen",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "连接在线来源\n文档、邮件、日历与录音",
+      "label": "连接在线来源\n文档、邮件、日历与录音",
+      "action": "go",
+      "page": "catalog",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H2",
+      "text": "添加内容"
+    },
+    {
+      "level": "H3",
+      "text": "手动保存"
+    },
+    {
+      "level": "H3",
+      "text": "持续收集"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}
