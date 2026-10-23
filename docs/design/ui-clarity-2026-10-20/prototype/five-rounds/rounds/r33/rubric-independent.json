@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "rubric_id": "mote-r30-r34-independent-v1",
+  "frozen_at_utc": "2026-10-22T14:20:31Z",
+  "frozen_before_candidate": "r30",
+  "author": "/root/r30_34_independent_review",
+  "base_sha": "81a73c0ec81af876d6eeef71451b75cd51684b34",
+  "scope": ["web", "mac", "android"],
+  "scale": {"minimum": 0, "maximum": 4, "increment": 0.25, "meaning": "Anchors define whole points; quarter points require evidence describing both the achieved and the missing anchor."},
+  "criteria": [
+    {"id": "new_user", "name": "New-user understanding", "weight_percent": 25, "required_minimum_each_platform": 3, "anchors": {"0": "A new user cannot determine the product purpose or start a required task.", "1": "Task entry, prerequisites, ownership, or expected results are mostly implicit; guessing is required.", "2": "The main path is discoverable but important terms, prerequisites, scope, or next steps need inference or lengthy explanation.", "3": "The next action, its prerequisites, its scope, and its result are clear on each critical journey; unfamiliar terms are explained at the point of need.", "4": "All major paths orient a first-time user immediately with concise contextual guidance; empty, loading, failure, and recovery states preserve that understanding without clutter."}},
+    {"id": "functionality", "name": "Functional and semantic completeness", "weight_percent": 20, "required_minimum_each_platform": 3, "anchors": {"0": "Required core tasks are absent or cannot be completed.", "1": "Routes or controls exist but required inputs, options, outputs, or transitions are missing or misleading.", "2": "Most core tasks work in the prototype, but at least one required semantic detail or critical state transition is missing, partial, or unverified.", "3": "Every applicable required feature is verified against its inputs, options, visible results, and required transitions; critical journeys complete and preserve user choices.", "4": "The complete contract is verified, including meaningful input variation, cancellation, correction, retry, and persistence where required, with no material interaction defect."}},
+    {"id": "simplicity", "name": "Simplicity and focus", "weight_percent": 20, "required_minimum_each_platform": 3, "anchors": {"0": "The interface is unusably dense or simplicity is achieved by removing required capability.", "1": "Competing panels, controls, text, or repeated status dominate primary tasks; required detail is omitted or buried without a discoverable route.", "2": "Hierarchy exists but secondary controls, repeated explanations, visual noise, or excessive steps still distract from the task.", "3": "Each screen has a clear purpose and action hierarchy; advanced detail is discoverable on demand, required capability remains complete, and routine tasks use a concise path.", "4": "The interface is consistently calm and economical across every major screen and disclosure, with almost no redundant text, controls, or unnecessary navigation; difficult tasks remain understandable."}},
+    {"id": "clarity", "name": "Information and state clarity", "weight_percent": 15, "required_minimum_each_platform": 3, "anchors": {"0": "Visible information materially misrepresents the source, state, scope, or result.", "1": "Important labels, statuses, provenance, or action scopes are ambiguous or contradictory.", "2": "The normal state is understandable, but a required scope, status distinction, provenance detail, or transition remains unclear.", "3": "Labels, selected values, validation, outcomes, provenance, privacy boundaries, and pause scopes are accurate and understandable at the moment they matter.", "4": "The complete information hierarchy communicates state and consequence at a glance, including exceptional and cross-device states, with precise concise language."}},
+    {"id": "design", "name": "Design quality", "weight_percent": 10, "anchors": {"0": "The visual system obstructs use or has no coherent hierarchy.", "1": "Screens feel assembled from unrelated patterns; typography, color, and layout conflict.", "2": "A coherent baseline exists, but density, proportion, visual hierarchy, or platform fit is uneven.", "3": "Typography, spacing, color, layout, and components form a coherent product with clear hierarchy and appropriate platform adaptation.", "4": "A distinctive, mature visual system makes the product easier to understand and sustains excellent hierarchy across content-heavy and empty states."}},
+    {"id": "craft", "name": "Execution and interaction craft", "weight_percent": 5, "anchors": {"0": "Severe clipping, unreadable text, broken focus, or nonfunctional basic controls prevent use.", "1": "Frequent alignment, wrapping, contrast, target-size, focus, or responsive defects impair use.", "2": "Fundamentals are mostly sound, but repeated small defects or one material interaction defect remain.", "3": "Screens and disclosures render cleanly at the evaluated viewports; controls, keyboard focus, scroll, alignment, and typography work consistently.", "4": "Fine details are consistently polished, with no observed layout or interaction defect in the evaluated states and strong accessibility affordances."}},
+    {"id": "originality", "name": "Purposeful product character", "weight_percent": 5, "anchors": {"0": "Novelty or generic decoration prevents a coherent product experience.", "1": "The interface is an undifferentiated template or uses decorative patterns unrelated to Mote's tasks.", "2": "Some task-specific decisions exist but visual and interaction patterns are mostly generic.", "3": "Mote-specific choices make context, provenance, collection, and review feel deliberate while preserving familiar usable patterns.", "4": "A distinct, recognizable product identity improves understanding and interaction without gratuitous novelty."}}
+  ],
+  "aggregation": {
+    "platform_score_100": "sum(criterion_score / 4 * weight_percent)",
+    "round_score_100": "arithmetic mean of web, mac, android platform scores",
+    "no_compensation": "A high average cannot compensate for a failed platform, omitted feature, unverified required journey, or prohibited control.",
+    "no_monotonicity_assumption": true
+  },
+  "hard_gates": [
+    {"id": "platform_thresholds", "rule": "Each platform must independently score at least 3 in new_user, functionality, simplicity, and clarity."},
+    {"id": "semantic_completeness", "rule": "Zero omitted applicable required semantic features. Every required input, option, result, and transition in the independently audited contract must be verified. Partial or untested required assertions do not establish completeness."},
+    {"id": "no_central_local_collection", "rule": "No central-local folder collection, watched-root, scanner, enable-sync, or server-folder collection control anywhere in the evaluated surfaces. Browser one-time file upload remains. Mac and Android device-owned collectors remain."},
+    {"id": "critical_journeys", "rule": "Every applicable critical journey in journeys.json must pass through ordinary user-visible interactions. Route presence is insufficient."},
+    {"id": "scope_integrity", "rule": "Do not turn UI fixture results into claims of backend, native permission, device, live-model, or production validation."}
+  ],
+  "coverage_statuses": {
+    "verified": "All required assertions for the feature were observed through visible UI behavior; evidence records the state and result.",
+    "partial": "Some required assertions were observed but at least one input, option, result, transition, or recovery behavior is incomplete or fails.",
+    "missing": "No usable visible implementation of a required feature or required semantic subfeature was found after inspecting its expected page and disclosures.",
+    "untested": "Evidence is insufficient; the feature may exist but has not been exercised to the required depth.",
+    "not_applicable": "The independent contract explicitly excludes this platform; a reason and contract reference are required."
+  },
+  "evidence_rules": [
+    "Freeze the feature contract before R30. A factual correction requires an explicit contract delta and an impact assessment; never rewrite old round evidence.",
+    "Evaluate fresh frozen candidates. Record candidate hashes and contract/rubric identities with each report.",
+    "Do not inspect candidate JavaScript, hidden application state, localStorage, or generator assertions to award scores. Rendered DOM, visible form values, screenshots, and ordinary interaction outcomes are admissible.",
+    "Inspect every major page and disclosure on all three platforms, plus complete stateful critical journeys, before claiming comprehensive coverage.",
+    "Use generated fixtures and isolated headless browser sessions. Do not start or claim real native collectors, backend operations, or live models.",
+    "Capture screenshots and text/interaction evidence for material findings. Give exact reproduction steps and a concrete next correction.",
+    "Treat author checks and historical reports as leads, not as independent evaluator evidence.",
+    "Scores may stay flat or decrease. Do not award a pass to reward effort, visual attractiveness, or completion of five rounds."
+  ],
+  "method_source": {
+    "url": "https://www.anthropic.com/research/harness-design-long-running-apps",
+    "accessed_utc": "2026-10-22",
+    "application": "Separate generator, independent feature inventory, and evaluator; freeze criteria, exercise live UI, record granular functional findings, and enforce hard thresholds. The user's weighting and product contract govern this review."
+  }
+}

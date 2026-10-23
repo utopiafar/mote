@@ -14,7 +14,10 @@ async function step(name,fn){await fn?.();const d=await saveEvidence(s.page,dir,
 (async()=>{try{
  s=await openCandidate(candidate,{viewport:platform==='android'?{width:390,height:844}:{width:1440,height:1000}});s.page.setDefaultTimeout(5000);
  await s.page.getByLabel('预览数据',{exact:true}).selectOption('populated');await button('来源');await step('01-sources');
- await s.page.locator('button[data-page="setup/folder"]:visible').first().click();await summary('内容关系与背景');await step('02-source-context');
+ await s.page.locator('button[data-page="setup/folder"]:visible').first().click();
+ if(platform==='mac')await button('打开中央资料说明');
+ if(platform==='android'){await summary('内容关系与背景');await button('到中央设置内容归属');}
+ await summary('内容关系与背景');await step('02-source-context');
  await s.page.locator('#source-context-description').fill(original);await s.page.locator('#source-relation').selectOption({label:'第三方内容'});
  let d=await step('03-source-saved',()=>button('保存资料说明与归属'));check('saved exact source prose',d.text.includes(original));
  await s.page.locator('#source-context-description').fill(draft);await summary('预览说明版本冲突');

@@ -14,7 +14,7 @@ async function home(){await button('来源');await button('本机设置');}
 (async()=>{try{
  s=await openCandidate(candidate,{viewport:platform==='android'?{width:390,height:844}:{width:1440,height:1000}});s.page.setDefaultTimeout(5000);
  await s.page.getByLabel('预览数据',{exact:true}).selectOption('populated');await button('来源');await step('01-source-state');
- await button('发送与本机队列');await step('02-upload-initial');await button('立即发送');await step('03-offline-send');
+ await button('发送与本机队列');await step('02-upload-initial');await button('立即发送');await step('03-initial-send');
  await link('activity/native-queue');let d=await step('04-queue-before');check('queue has generated record rather than empty-only fixture',!d.text.includes('当前筛选没有记录'));
  if(platform==='mac'){
   await home();await link('settings/native-capture');await s.page.locator('#ns-capture-interval').fill('45');await button('保存设置');
@@ -36,7 +36,7 @@ async function home(){await button('来源');await button('本机设置');}
   await button('返回');await summary('网络与电源条件');await s.page.locator('#ns-upload-wifi').setChecked(true);await s.page.locator('#ns-upload-charging').setChecked(true);await s.page.locator('#ns-upload-battery').setChecked(true);await button('保存设置');await summary('演示连接条件');await button('模拟未充电');
   await home();await link('settings/native-connection');await button('扫描示例二维码');await button('本机预览邀请');await step('05-invitation-preview');await s.page.locator('#ns-bind-queue').setChecked(true);await button('确认连接');await step('06-connected');
   await button('来源');await button('发送与本机队列');await button('立即发送');d=await step('07-charge-block');check('manual send obeys charging condition',d.text.includes('等待充电'));
-  await link('activity/native-reconcile');await button('核对并全量补传');await step('08-resend-review');await button('确认全量补传');d=await step('09-resend-block');check('full resend obeys charging condition',d.text.includes('等待充电'));
+  await link('activity/native-reconcile');await button('核对并全量补传');await step('08-resend-review');await button('确认全量补传');d=await step('09-resend-block');check('full resend obeys saved conditions',d.text.includes('等待充电')||d.text.includes('当前发送条件未满足，未开始补传'));
   await button('返回');await summary('演示连接条件');await button('模拟充电');await button('切为计费网络');await button('立即发送');d=await step('10-wifi-block');check('manual send obeys unmetered condition',d.text.includes('等待非计费 Wi-Fi'));
   await button('切为非计费 Wi-Fi');await button('模拟低电量');await button('立即发送');d=await step('11-low-battery-block');check('manual send obeys low-battery condition',d.text.includes('系统低电量'));
   await button('恢复电量');await button('立即发送');await step('12-send-result');await link('activity/native-queue');d=await step('13-queue-after');

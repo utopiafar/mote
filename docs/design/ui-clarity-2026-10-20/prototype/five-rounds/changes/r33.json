@@ -1,0 +1,21 @@
+{
+  "round": 33,
+  "basedOn": "R32 independently observed defects and the frozen semantic inventory",
+  "changes": [
+    {"finding": "R32 recording catalog bypass", "change": "Ordinary Lark and DingTalk recording catalog entries reach their separate connection/authorization/context-acknowledgement flows. Historical recording routes resolve to the same canonical workflows."},
+    {"finding": "R32 stale source result", "change": "Google Calendar status reflects saved scope and completed archive results. A sync clears outdated pre-sync notices. New connections have a named source-context handoff before intake."},
+    {"finding": "R32 MCP result count", "change": "Each MCP import attempt reports its own imported and duplicate counts; importing the same resource again shows zero new records and one duplicate."},
+    {"finding": "R32 capture pause notice", "change": "Pausing Mac capture replaces the old started notice. Native receipt filters observe both ends of the selected period, and receipt details return to the exact source record."},
+    {"finding": "Inventory native file selection and navigation", "change": "Native one-time selected-file import is separate from directory collection. Unsaved native settings offer save/continue/discard, and permission/settings returns preserve the original task. Empty-account folder setup initializes safely."},
+    {"finding": "Inventory calendar review and todo semantics", "change": "Todos preserve optional due dates and complete/cancel/reopen independently. Calendar discovery, edit, fixed review and execution receipts are separate task pages. Fixed review binds evidence/version/target; stale evidence blocks approval, and uncertain execution verifies the existing event instead of creating another."},
+    {"finding": "Inventory Central maintenance", "change": "Central portable archives validate original deployment/account and retain same-operation retry. Future-write encryption, cancellable decryption, administrator retention, index maintenance, scoped statistics and retained diagnostics have focused task pages."},
+    {"finding": "Screen focus and obsolete guide wording", "change": "Mobile Library no longer repeats its app-bar title in the content heading. Central account/deployment guide entries reflect password/account and saved/effective settings. Unknown trace inspection does not fabricate a retained trace."}
+  ],
+  "authorVerification": {
+    "root": "All three platforms completed calendar fixed-review/stale-evidence/uncertain-result/todo journeys and source catalog/recording/Google/MCP focused checks. The final import regression includes the repaired Mac empty-account folder entry.",
+    "native": "46 initial native assertions plus targeted empty-account folder and saved-file-retention checks; handoff and evidence under work/native-r33-*.",
+    "central": "11 focused author checks, including nine lifecycle/scope journeys and shared storage/narrow-layout checks on Mac and Android; final source matches its author manifest.",
+    "limits": "These are author checks of HTML and synthetic fixtures. Independent acceptance is recorded separately after the immutable candidate freeze."
+  },
+  "boundary": "No backend, native runtime, model, OAuth, real calendar execution, real archive or actual device permission validated."
+}
