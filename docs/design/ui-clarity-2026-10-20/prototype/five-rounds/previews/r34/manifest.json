@@ -1,0 +1,125 @@
+{
+  "scope": "Viewport previews from frozen R34 using rendered controls; no backend/native execution",
+  "artifacts": [
+    {
+      "platform": "web",
+      "scene": "first-use",
+      "file": "web-first-use.png",
+      "candidateSha256": "33d63d9f009693fab234ebb37179da858b403e8a71c7e59624d4c9dcbd13d000",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "platform": "web",
+      "scene": "import-context",
+      "file": "web-import-context.png",
+      "candidateSha256": "33d63d9f009693fab234ebb37179da858b403e8a71c7e59624d4c9dcbd13d000",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "platform": "web",
+      "scene": "library",
+      "file": "web-library.png",
+      "candidateSha256": "33d63d9f009693fab234ebb37179da858b403e8a71c7e59624d4c9dcbd13d000",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "platform": "web",
+      "scene": "sources",
+      "file": "web-sources.png",
+      "candidateSha256": "33d63d9f009693fab234ebb37179da858b403e8a71c7e59624d4c9dcbd13d000",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "platform": "mac",
+      "scene": "first-use",
+      "file": "mac-first-use.png",
+      "candidateSha256": "80520ac7f5d12fc494b5ffd1853c2039aa4f9fa9b3b8ac14d74e06cfe602160a",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "platform": "mac",
+      "scene": "import-context",
+      "file": "mac-import-context.png",
+      "candidateSha256": "80520ac7f5d12fc494b5ffd1853c2039aa4f9fa9b3b8ac14d74e06cfe602160a",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "platform": "mac",
+      "scene": "library",
+      "file": "mac-library.png",
+      "candidateSha256": "80520ac7f5d12fc494b5ffd1853c2039aa4f9fa9b3b8ac14d74e06cfe602160a",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "platform": "mac",
+      "scene": "sources",
+      "file": "mac-sources.png",
+      "candidateSha256": "80520ac7f5d12fc494b5ffd1853c2039aa4f9fa9b3b8ac14d74e06cfe602160a",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    {
+      "platform": "android",
+      "scene": "first-use",
+      "file": "android-first-use.png",
+      "candidateSha256": "c4f9e515adc7159809536466a3bc02f107dadda56c68b6f73e79d22076fdebb4",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "platform": "android",
+      "scene": "import-context",
+      "file": "android-import-context.png",
+      "candidateSha256": "c4f9e515adc7159809536466a3bc02f107dadda56c68b6f73e79d22076fdebb4",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "platform": "android",
+      "scene": "library",
+      "file": "android-library.png",
+      "candidateSha256": "c4f9e515adc7159809536466a3bc02f107dadda56c68b6f73e79d22076fdebb4",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "platform": "android",
+      "scene": "sources",
+      "file": "android-sources.png",
+      "candidateSha256": "c4f9e515adc7159809536466a3bc02f107dadda56c68b6f73e79d22076fdebb4",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      }
+    }
+  ]
+}

@@ -1,0 +1,1104 @@
+[
+  {
+    "number": 30,
+    "status": "FAIL",
+    "mean": 61.562,
+    "platforms": {
+      "web": {
+        "scores": {
+          "new_user": {
+            "value": 3,
+            "reason": "The first import has two comprehensible steps, an optional explanation, and a clear one-time upload boundary. Broader workspaces still require reading substantial navigation/explanation; recovery does not reliably complete the task."
+          },
+          "functionality": {
+            "value": 1.75,
+            "reason": "The normal import context/edit/detail path now works, but edited prose can be silently discarded by confirmation, model setup fails to persist its selection or resolve the import, and many current-code contract options and state transitions are absent or untested."
+          },
+          "simplicity": {
+            "value": 2.75,
+            "reason": "Import options are disclosed without hiding the context field. The populated library still exposes numerous parallel categories; native Sources repeats a large collector panel, explanatory blocks, and the connected-source list."
+          },
+          "clarity": {
+            "value": 2.5,
+            "reason": "Originals, records, indexing, and memory are named separately. File dispositions, model-required recovery, invitation scope, and obsolete deployment-draft wording still fail to communicate the actual state or next action."
+          },
+          "design": {
+            "value": 3,
+            "reason": "Restrained typography, spacing, and purple accents form a coherent interface; desktop task composition is readable. The narrow layout retains excessive vertical material and some repeated headings."
+          },
+          "craft": {
+            "value": 2.25,
+            "reason": "Main rendered pages produced no browser errors or horizontal overflow in the sampled viewports. The dirty-context confirmation and model-value reversion are substantial state-handling defects."
+          },
+          "originality": {
+            "value": 2.5,
+            "reason": "The calm archive-and-evidence presentation fits the product and has a distinct editorial tone, but many settings still use generic forms without a strong task-specific result."
+          }
+        },
+        "central_collection_gate": "pass",
+        "boundary_evidence": [
+          "evidence/web/survey/survey.json"
+        ],
+        "boundary_note": "All 78 directory destinations and disclosed controls inspected; no Central host-directory collection control observed. Browser-selected folder is labeled one-time upload; device-local folder collection remains. Web folder management opens explicit native handoff.",
+        "weighted_score_100": 64.062,
+        "coverage_counts": {
+          "partial": 20,
+          "untested": 106,
+          "missing": 1,
+          "verified": 1,
+          "not_applicable": 60
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass"
+        }
+      },
+      "mac": {
+        "scores": {
+          "new_user": {
+            "value": 2.75,
+            "reason": "The first import has two comprehensible steps, an optional explanation, and a clear one-time upload boundary. Broader workspaces still require reading substantial navigation/explanation; recovery does not reliably complete the task."
+          },
+          "functionality": {
+            "value": 1.75,
+            "reason": "The normal import context/edit/detail path now works, but edited prose can be silently discarded by confirmation, model setup fails to persist its selection or resolve the import, and many current-code contract options and state transitions are absent or untested."
+          },
+          "simplicity": {
+            "value": 2.5,
+            "reason": "Import options are disclosed without hiding the context field. The populated library still exposes numerous parallel categories; native Sources repeats a large collector panel, explanatory blocks, and the connected-source list."
+          },
+          "clarity": {
+            "value": 2.5,
+            "reason": "Originals, records, indexing, and memory are named separately. File dispositions, model-required recovery, invitation scope, and obsolete deployment-draft wording still fail to communicate the actual state or next action."
+          },
+          "design": {
+            "value": 3,
+            "reason": "Restrained typography, spacing, and purple accents form a coherent interface; desktop task composition is readable. The narrow layout retains excessive vertical material and some repeated headings."
+          },
+          "craft": {
+            "value": 2.25,
+            "reason": "Main rendered pages produced no browser errors or horizontal overflow in the sampled viewports. The dirty-context confirmation and model-value reversion are substantial state-handling defects."
+          },
+          "originality": {
+            "value": 2.5,
+            "reason": "The calm archive-and-evidence presentation fits the product and has a distinct editorial tone, but many settings still use generic forms without a strong task-specific result."
+          }
+        },
+        "central_collection_gate": "pass",
+        "boundary_evidence": [
+          "evidence/mac/survey/survey.json"
+        ],
+        "boundary_note": "All 78 directory destinations and disclosed controls inspected; no Central host-directory collection control observed. Browser-selected folder is labeled one-time upload; device-local folder collection remains. Web folder management opens explicit native handoff.",
+        "weighted_score_100": 61.25,
+        "coverage_counts": {
+          "partial": 24,
+          "untested": 148,
+          "missing": 1,
+          "verified": 1,
+          "not_applicable": 14
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass"
+        }
+      },
+      "android": {
+        "scores": {
+          "new_user": {
+            "value": 2.75,
+            "reason": "The first import has two comprehensible steps, an optional explanation, and a clear one-time upload boundary. Broader workspaces still require reading substantial navigation/explanation; recovery does not reliably complete the task."
+          },
+          "functionality": {
+            "value": 1.75,
+            "reason": "The normal import context/edit/detail path now works, but edited prose can be silently discarded by confirmation, model setup fails to persist its selection or resolve the import, and many current-code contract options and state transitions are absent or untested."
+          },
+          "simplicity": {
+            "value": 2.25,
+            "reason": "Import options are disclosed without hiding the context field. The populated library still exposes numerous parallel categories; native Sources repeats a large collector panel, explanatory blocks, and the connected-source list."
+          },
+          "clarity": {
+            "value": 2.5,
+            "reason": "Originals, records, indexing, and memory are named separately. File dispositions, model-required recovery, invitation scope, and obsolete deployment-draft wording still fail to communicate the actual state or next action."
+          },
+          "design": {
+            "value": 2.75,
+            "reason": "Restrained typography, spacing, and purple accents form a coherent interface; desktop task composition is readable. The narrow layout retains excessive vertical material and some repeated headings."
+          },
+          "craft": {
+            "value": 2.25,
+            "reason": "Main rendered pages produced no browser errors or horizontal overflow in the sampled viewports. The dirty-context confirmation and model-value reversion are substantial state-handling defects."
+          },
+          "originality": {
+            "value": 2.5,
+            "reason": "The calm archive-and-evidence presentation fits the product and has a distinct editorial tone, but many settings still use generic forms without a strong task-specific result."
+          }
+        },
+        "central_collection_gate": "pass",
+        "boundary_evidence": [
+          "evidence/android/survey/survey.json"
+        ],
+        "boundary_note": "All 78 directory destinations and disclosed controls inspected; no Central host-directory collection control observed. Browser-selected folder is labeled one-time upload; device-local folder collection remains. Web folder management opens explicit native handoff.",
+        "weighted_score_100": 59.375,
+        "coverage_counts": {
+          "partial": 25,
+          "untested": 156,
+          "missing": 2,
+          "verified": 1,
+          "not_applicable": 4
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass"
+        }
+      }
+    },
+    "changes": [
+      "Restore one optional 12,000-character format/author/time/background/ownership explanation field in all three import surfaces.",
+      "Preserve exact explanation, fixed parser choice, image plan and selected files through preview, editing, confirmation, same-import detail and material provenance.",
+      "Expose revised context and regenerate-preview recovery on the same import; separate originals, readable records, indexing and memory.",
+      "Remove central-directory import tabs and central-local folder synchronization controls; replace Web folder setup with collector-specific handoff and received-material browsing.",
+      "Concentrate import composition on selected files and context, disclose optional name/parser/image settings, and move ongoing folder collection to a quiet task-specific link.",
+      "Preserve disclosure state across ordinary rerenders and viewport changes."
+    ]
+  },
+  {
+    "number": 31,
+    "status": "FAIL",
+    "mean": 69.375,
+    "platforms": {
+      "web": {
+        "scores": {
+          "new_user": {
+            "value": 3,
+            "reason": "The empty home states the purpose and a first import; the revised source list makes device ownership legible. Import context, review, blocked-model setup and return all have a visible next step. Exceptional invitation and cross-page source states still need improvement."
+          },
+          "functionality": {
+            "value": 2.5,
+            "reason": "The independently exercised import journey now preserves multiline context, blocks dirty confirmation and completes the same task after model configuration on this platform. Shared context and native/Central tasks have substantially more semantic controls and observed transitions, but many required assertions remain partial or untested; the 188-feature completeness anchor is not reached."
+          },
+          "simplicity": {
+            "value": 2.75,
+            "reason": "Native Sources now uses one source list and task-specific settings disclose secondary controls. Import stays focused. Populated desktop Library retains a long second category rail, while mobile repeats orientation and headings before the first record. Some expanded settings still combine several unrelated tasks."
+          },
+          "clarity": {
+            "value": 2.75,
+            "reason": "Import state, archive container counts, model module and context versions are substantially clearer. Invitation closure loses the active invitation management entry, and a Markdown file receives audio-style timestamps and speaker labels in processing."
+          },
+          "design": {
+            "value": 3,
+            "reason": "A restrained type, spacing and accent system is consistent. Desktop windows and Android bottom navigation adapt coherently; key source rows are visible in the first mobile viewport. Dense library/settings areas keep hierarchy below the highest anchor."
+          },
+          "craft": {
+            "value": 2.75,
+            "reason": "DOM was captured before viewport screenshots. No browser page errors or horizontal document overflow appeared in the surveyed pages. Stateful corrections work, but invitation reopening and stale native status copy remain interaction defects; full keyboard/accessibility coverage was not performed."
+          },
+          "originality": {
+            "value": 3,
+            "reason": "The separate batch explanation, source context, material attribution, archived-original stages and explicit device ownership form deliberate Mote-specific workflows with familiar controls."
+          }
+        },
+        "central_collection_gate": "pass",
+        "weighted_score_100": 70.0,
+        "coverage_counts": {
+          "partial": 34,
+          "untested": 94,
+          "not_applicable": 60
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass"
+        }
+      },
+      "mac": {
+        "scores": {
+          "new_user": {
+            "value": 3,
+            "reason": "The empty home states the purpose and a first import; the revised source list makes device ownership legible. Import context, review, blocked-model setup and return all have a visible next step. Exceptional invitation and cross-page source states still need improvement."
+          },
+          "functionality": {
+            "value": 2.5,
+            "reason": "The independently exercised import journey now preserves multiline context, blocks dirty confirmation and completes the same task after model configuration on this platform. Shared context and native/Central tasks have substantially more semantic controls and observed transitions, but many required assertions remain partial or untested; the 188-feature completeness anchor is not reached."
+          },
+          "simplicity": {
+            "value": 2.75,
+            "reason": "Native Sources now uses one source list and task-specific settings disclose secondary controls. Import stays focused. Populated desktop Library retains a long second category rail, while mobile repeats orientation and headings before the first record. Some expanded settings still combine several unrelated tasks."
+          },
+          "clarity": {
+            "value": 2.5,
+            "reason": "The collection and sending pause scopes can be distinguished, but a source says it is synchronizing while the native destination is still local-only. Android source conflict does not show affected-file holding. These cross-page state contradictions keep clarity below 3."
+          },
+          "design": {
+            "value": 3,
+            "reason": "A restrained type, spacing and accent system is consistent. Desktop windows and Android bottom navigation adapt coherently; key source rows are visible in the first mobile viewport. Dense library/settings areas keep hierarchy below the highest anchor."
+          },
+          "craft": {
+            "value": 2.75,
+            "reason": "DOM was captured before viewport screenshots. No browser page errors or horizontal document overflow appeared in the surveyed pages. Stateful corrections work, but invitation reopening and stale native status copy remain interaction defects; full keyboard/accessibility coverage was not performed."
+          },
+          "originality": {
+            "value": 3,
+            "reason": "The separate batch explanation, source context, material attribution, archived-original stages and explicit device ownership form deliberate Mote-specific workflows with familiar controls."
+          }
+        },
+        "central_collection_gate": "pass",
+        "weighted_score_100": 69.062,
+        "coverage_counts": {
+          "partial": 37,
+          "untested": 137,
+          "not_applicable": 14
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass"
+        }
+      },
+      "android": {
+        "scores": {
+          "new_user": {
+            "value": 3,
+            "reason": "The empty home states the purpose and a first import; the revised source list makes device ownership legible. Import context, review, blocked-model setup and return all have a visible next step. Exceptional invitation and cross-page source states still need improvement."
+          },
+          "functionality": {
+            "value": 2.5,
+            "reason": "The independently exercised import journey now preserves multiline context, blocks dirty confirmation and completes the same task after model configuration on this platform. Shared context and native/Central tasks have substantially more semantic controls and observed transitions, but many required assertions remain partial or untested; the 188-feature completeness anchor is not reached."
+          },
+          "simplicity": {
+            "value": 2.75,
+            "reason": "Native Sources now uses one source list and task-specific settings disclose secondary controls. Import stays focused. Populated desktop Library retains a long second category rail, while mobile repeats orientation and headings before the first record. Some expanded settings still combine several unrelated tasks."
+          },
+          "clarity": {
+            "value": 2.5,
+            "reason": "The collection and sending pause scopes can be distinguished, but a source says it is synchronizing while the native destination is still local-only. Android source conflict does not show affected-file holding. These cross-page state contradictions keep clarity below 3."
+          },
+          "design": {
+            "value": 3,
+            "reason": "A restrained type, spacing and accent system is consistent. Desktop windows and Android bottom navigation adapt coherently; key source rows are visible in the first mobile viewport. Dense library/settings areas keep hierarchy below the highest anchor."
+          },
+          "craft": {
+            "value": 2.75,
+            "reason": "DOM was captured before viewport screenshots. No browser page errors or horizontal document overflow appeared in the surveyed pages. Stateful corrections work, but invitation reopening and stale native status copy remain interaction defects; full keyboard/accessibility coverage was not performed."
+          },
+          "originality": {
+            "value": 3,
+            "reason": "The separate batch explanation, source context, material attribution, archived-original stages and explicit device ownership form deliberate Mote-specific workflows with familiar controls."
+          }
+        },
+        "central_collection_gate": "pass",
+        "weighted_score_100": 69.062,
+        "coverage_counts": {
+          "partial": 38,
+          "untested": 146,
+          "not_applicable": 4
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass"
+        }
+      }
+    },
+    "changes": [
+      {
+        "finding": "R30-01",
+        "change": "Dirty import explanation disables confirmation until explicit re-preview; draft persists and can be discarded explicitly."
+      },
+      {
+        "finding": "R30-02",
+        "change": "Import model recovery selects import-format module, persists provider/model assignment, and returns to the same retained import."
+      },
+      {
+        "finding": "R30-03",
+        "change": "Per-file parsed, media-processing, attachment, container, excluded and unsupported outcomes; ZIP children have separate record identities."
+      },
+      {
+        "finding": "R30-04",
+        "change": "Explicit device invitation inputs, one-time lifetime, cancellation, transfer and clearly simulated collector acknowledgement."
+      },
+      {
+        "finding": "R30-05",
+        "change": "Source context acknowledged versions, dirty drafts and conflicts; Android local conflict action; material-specific attribution precedence; current account/model/deployment semantics."
+      },
+      {
+        "finding": "R30-06",
+        "change": "Single native source list, focused newcomer home and grouped source catalog; task-specific native settings with folded secondary options."
+      },
+      {
+        "finding": "R30-07",
+        "change": "Role-specific fixed synthetic preview differentiates own expression, vendor quotation and AI quotation without claiming model parsing."
+      }
+    ]
+  },
+  {
+    "number": 32,
+    "status": "FAIL",
+    "mean": 71.667,
+    "platforms": {
+      "web": {
+        "scores": {
+          "new_user": {
+            "value": 3,
+            "reason": "Fresh empty-home and first-import checks show a clear first action, device-owned collection explanation, exact interpretation context, explicit review, and a return from model setup to the same task. Recording-connector and other exceptional journeys remain incomplete."
+          },
+          "functionality": {
+            "value": 2.5,
+            "reason": "The current frozen candidate independently completes the import and source-context/attribution regressions. New targeted workflows have meaningful results, but applicable contract assertions remain partial or untested, and the ordinary Web recording entries omit required fields. The complete-semantic anchor of 3 is not reached."
+          },
+          "simplicity": {
+            "value": 3,
+            "reason": "The populated Library removes the long second category rail and repeated orientation. Search and records now dominate, while named type/filter disclosures retain secondary controls. Sources separates native collection from online connections. Advanced file settings still become long when several sections are expanded, but each disclosure names its task."
+          },
+          "clarity": {
+            "value": 2.75,
+            "reason": "Import, attribution and source ownership are clear. The Web Google calendar shows an obsolete no-scope/not-yet-synced message beside an actual archived result, and MCP labels cumulative counts as this-attempt results."
+          },
+          "design": {
+            "value": 3,
+            "reason": "Fresh viewport inspection shows coherent typography, spacing and a restrained accent. Desktop Library uses the available width well; Android has a stable bottom navigation and readable source rows. Mobile populated Library still repeats its title and spends substantial vertical space before the first record."
+          },
+          "craft": {
+            "value": 2.75,
+            "reason": "Current captured DOM has no browser errors or horizontal document overflow. Ordinary interactions and confirmations work in the checked paths, but stale notices and a legacy recording entry remain defects. Full keyboard and accessibility testing was not performed."
+          },
+          "originality": {
+            "value": 3,
+            "reason": "Mote-specific interpretation context, source acknowledgment, material precedence and separate local/received/processed states have deliberate task-oriented presentation with familiar controls."
+          }
+        },
+        "central_collection_gate": "pass",
+        "weighted_score_100": 71.25,
+        "coverage_counts": {
+          "partial": 29,
+          "untested": 96,
+          "verified": 3,
+          "not_applicable": 60
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass"
+        }
+      },
+      "mac": {
+        "scores": {
+          "new_user": {
+            "value": 3,
+            "reason": "Fresh empty-home and first-import checks show a clear first action, device-owned collection explanation, exact interpretation context, explicit review, and a return from model setup to the same task. Recording-connector and other exceptional journeys remain incomplete."
+          },
+          "functionality": {
+            "value": 2.5,
+            "reason": "The current frozen candidate independently completes the import and source-context/attribution regressions. New targeted workflows have meaningful results, but applicable contract assertions remain partial or untested, and the ordinary Web recording entries omit required fields. The complete-semantic anchor of 3 is not reached."
+          },
+          "simplicity": {
+            "value": 3,
+            "reason": "The populated Library removes the long second category rail and repeated orientation. Search and records now dominate, while named type/filter disclosures retain secondary controls. Sources separates native collection from online connections. Advanced file settings still become long when several sections are expanded, but each disclosure names its task."
+          },
+          "clarity": {
+            "value": 2.75,
+            "reason": "Current native source rows now agree with pending queue and stopped capture state. Capture and sending pauses are separate, but stopping capture retains a stale started notice. Shared connector variants were not independently completed on this platform."
+          },
+          "design": {
+            "value": 3,
+            "reason": "Fresh viewport inspection shows coherent typography, spacing and a restrained accent. Desktop Library uses the available width well; Android has a stable bottom navigation and readable source rows. Mobile populated Library still repeats its title and spends substantial vertical space before the first record."
+          },
+          "craft": {
+            "value": 2.75,
+            "reason": "Current captured DOM has no browser errors or horizontal document overflow. Ordinary interactions and confirmations work in the checked paths, but stale notices and a legacy recording entry remain defects. Full keyboard and accessibility testing was not performed."
+          },
+          "originality": {
+            "value": 3,
+            "reason": "Mote-specific interpretation context, source acknowledgment, material precedence and separate local/received/processed states have deliberate task-oriented presentation with familiar controls."
+          }
+        },
+        "central_collection_gate": "pass",
+        "weighted_score_100": 71.25,
+        "coverage_counts": {
+          "partial": 27,
+          "untested": 147,
+          "not_applicable": 14
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass"
+        }
+      },
+      "android": {
+        "scores": {
+          "new_user": {
+            "value": 3,
+            "reason": "Fresh empty-home and first-import checks show a clear first action, device-owned collection explanation, exact interpretation context, explicit review, and a return from model setup to the same task. Recording-connector and other exceptional journeys remain incomplete."
+          },
+          "functionality": {
+            "value": 2.5,
+            "reason": "The current frozen candidate independently completes the import and source-context/attribution regressions. New targeted workflows have meaningful results, but applicable contract assertions remain partial or untested, and the ordinary Web recording entries omit required fields. The complete-semantic anchor of 3 is not reached."
+          },
+          "simplicity": {
+            "value": 3,
+            "reason": "The populated Library removes the long second category rail and repeated orientation. Search and records now dominate, while named type/filter disclosures retain secondary controls. Sources separates native collection from online connections. Advanced file settings still become long when several sections are expanded, but each disclosure names its task."
+          },
+          "clarity": {
+            "value": 3,
+            "reason": "The revised Android queue distinguishes pending, received, context-conflicted and local originals. An offline note remains local; unrelated notes send while the conflicted folder waits, then the folder sends after explicit context resolution. Reception and body processing are separate. Untested shared connector variants are not credited."
+          },
+          "design": {
+            "value": 3,
+            "reason": "Fresh viewport inspection shows coherent typography, spacing and a restrained accent. Desktop Library uses the available width well; Android has a stable bottom navigation and readable source rows. Mobile populated Library still repeats its title and spends substantial vertical space before the first record."
+          },
+          "craft": {
+            "value": 3,
+            "reason": "The exercised Android local-save failure, idempotent retry, attachment handoff, offline context acknowledgment and selective queue release retain exact data. No browser errors or document-width overflow appeared in current captured DOM; full keyboard and accessibility testing was not performed."
+          },
+          "originality": {
+            "value": 3,
+            "reason": "Mote-specific interpretation context, source acknowledgment, material precedence and separate local/received/processed states have deliberate task-oriented presentation with familiar controls."
+          }
+        },
+        "central_collection_gate": "pass",
+        "weighted_score_100": 72.5,
+        "coverage_counts": {
+          "partial": 28,
+          "untested": 156,
+          "not_applicable": 4
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass"
+        }
+      }
+    },
+    "changes": [
+      {
+        "finding": "R31 invitation lifecycle",
+        "change": "Active invitations can be reopened, cancelled and expired. A clearly labelled synthetic QR can be exported; it is not a pairing credential."
+      },
+      {
+        "finding": "R31 native state consistency",
+        "change": "Native sources expose destination and waiting state. Android description conflicts and pending Central acknowledgements hold affected source files without blocking unrelated local notes."
+      },
+      {
+        "finding": "R31 nonempty native queues",
+        "change": "Local notes have durable drafts, queued content, failure/retry and idempotent delivery. Source checks create deduplicated synthetic pending records. Capture and sending pause independently."
+      },
+      {
+        "finding": "R31 file-kind semantics",
+        "change": "Document processing uses numbered document segments and body lineage; only audio uses time and speaker information."
+      },
+      {
+        "finding": "R31 screen focus",
+        "change": "Library uses three primary tabs. Material kinds and filters are disclosed on demand; the long second navigation rail and repeated all-material headings are removed."
+      },
+      {
+        "finding": "Inventory native local access",
+        "change": "Signed-out native entry permits an explicit allowlist of local tasks, preserves device-owned data across account changes, and keeps Central tasks behind account login."
+      },
+      {
+        "finding": "Inventory source connections",
+        "change": "NAS references, MCP resources, Google Calendar, Gmail, Lark documents/calendar and vendor recordings have separate connection, scope and result steps, retained context, and explicit synthetic receipt states."
+      },
+      {
+        "finding": "Inventory processing and access",
+        "change": "File processing rules, profiles, services, saved-rule previews and source overrides are represented with saved/effective distinctions. MCP grants, plugin lifecycle, clarification and work recovery expose their own controls and outcomes."
+      }
+    ]
+  },
+  {
+    "number": 33,
+    "status": "FAIL",
+    "mean": 72.708,
+    "platforms": {
+      "web": {
+        "scores": {
+          "new_user": {
+            "value": 3,
+            "reason": "Fresh empty-home and populated primary-page evidence clearly identifies the first action and device-owned collection. The evaluated native file confirmation and Web recording/calendar/maintenance tasks explain prerequisites, scope and next steps. Unchanged first-import and other exceptional journeys were not repeated this round."
+          },
+          "functionality": {
+            "value": 2.5,
+            "reason": "Changed-family journeys preserve meaningful state and several R32 defects are repaired, but the independent full contract remains incomplete. Required assertions outside this focused round stay untested; observed families still contain unoperated branches. Functionality therefore remains below the complete-semantic anchor of 3."
+          },
+          "simplicity": {
+            "value": 3,
+            "reason": "The populated Library keeps search and records central. Recording connection, scope and results are separate steps; calendar editing and fixed review are separate states. Central maintenance has named task pages, although the repeated settings header and several expanded disclosures can still make long pages."
+          },
+          "clarity": {
+            "value": 2.75,
+            "reason": "Google scope/result copy and MCP per-attempt counts now match the operated states. However an archived audio backup has no visible audio opening control in the exercised result, and calendar-device success notices persist into unrelated task pages. These keep the score below fully consistent state clarity."
+          },
+          "design": {
+            "value": 3,
+            "reason": "Fresh desktop Library, home and task screenshots show coherent typography, spacing, a restrained accent and clear action hierarchy. Mac has a distinct menu/window frame; calendar fixed review is a readable focused document."
+          },
+          "craft": {
+            "value": 2.75,
+            "reason": "No page exception or horizontal document overflow was observed in current evidence. Ordinary selection, file export/import and recovery controls function, but missing audio opening and task-external notices remain interaction defects. Full keyboard and screen-reader testing was not repeated."
+          },
+          "originality": {
+            "value": 3,
+            "reason": "Source explanation acknowledgment, exact fixed calendar review, original-event verification, collector-owned file range and separate receipt/body states express Mote-specific tasks using familiar controls."
+          }
+        },
+        "central_collection_gate": "pass",
+        "weighted_score_100": 71.25,
+        "coverage_counts": {
+          "partial": 16,
+          "untested": 112,
+          "not_applicable": 60
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass"
+        }
+      },
+      "mac": {
+        "scores": {
+          "new_user": {
+            "value": 3,
+            "reason": "Fresh empty-home and populated primary-page evidence clearly identifies the first action and device-owned collection. The evaluated native file confirmation and Web recording/calendar/maintenance tasks explain prerequisites, scope and next steps. Unchanged first-import and other exceptional journeys were not repeated this round."
+          },
+          "functionality": {
+            "value": 2.5,
+            "reason": "Changed-family journeys preserve meaningful state and several R32 defects are repaired, but the independent full contract remains incomplete. Required assertions outside this focused round stay untested; observed families still contain unoperated branches. Functionality therefore remains below the complete-semantic anchor of 3."
+          },
+          "simplicity": {
+            "value": 3,
+            "reason": "The populated Library keeps search and records central. Recording connection, scope and results are separate steps; calendar editing and fixed review are separate states. Central maintenance has named task pages, although the repeated settings header and several expanded disclosures can still make long pages."
+          },
+          "clarity": {
+            "value": 3,
+            "reason": "Mac capture stop now replaces the prior started notice. Capture pause and sending pause remain separate. Selected files, local originals, pending reception, exact receipt identity and body processing have distinct states; both date-window boundaries filter correctly."
+          },
+          "design": {
+            "value": 3,
+            "reason": "Fresh desktop Library, home and task screenshots show coherent typography, spacing, a restrained accent and clear action hierarchy. Mac has a distinct menu/window frame; calendar fixed review is a readable focused document."
+          },
+          "craft": {
+            "value": 3,
+            "reason": "No observed page exception or horizontal document overflow. Evaluated ordinary controls, modal closure, dirty-draft guard, file confirmation and record return preserve their context. Full keyboard, screen-reader and operating-system integration were not tested."
+          },
+          "originality": {
+            "value": 3,
+            "reason": "Source explanation acknowledgment, exact fixed calendar review, original-event verification, collector-owned file range and separate receipt/body states express Mote-specific tasks using familiar controls."
+          }
+        },
+        "central_collection_gate": "pass",
+        "weighted_score_100": 72.5,
+        "coverage_counts": {
+          "partial": 18,
+          "untested": 156,
+          "not_applicable": 14
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass"
+        }
+      },
+      "android": {
+        "scores": {
+          "new_user": {
+            "value": 3,
+            "reason": "Fresh empty-home and populated primary-page evidence clearly identifies the first action and device-owned collection. The evaluated native file confirmation and Web recording/calendar/maintenance tasks explain prerequisites, scope and next steps. Unchanged first-import and other exceptional journeys were not repeated this round."
+          },
+          "functionality": {
+            "value": 2.5,
+            "reason": "Changed-family journeys preserve meaningful state and several R32 defects are repaired, but the independent full contract remains incomplete. Required assertions outside this focused round stay untested; observed families still contain unoperated branches. Functionality therefore remains below the complete-semantic anchor of 3."
+          },
+          "simplicity": {
+            "value": 3.25,
+            "reason": "The Android Library removes its repeated content title, leaving one app-bar title and moving the first row to about 490 pixels at 412 by 915. Named type and filter disclosures keep the list central. Single-file capture and its confirmation have one task each. This is a modest improvement beyond the clear-hierarchy anchor, not evidence of complete semantic coverage."
+          },
+          "clarity": {
+            "value": 3,
+            "reason": "The selected-file workflow explicitly remains local while unconnected. Its saved description awaits Central confirmation, and local-original, reception and processing states remain separate. The saved-file description wording still refers to a selected directory, a minor scope-copy defect."
+          },
+          "design": {
+            "value": 3.25,
+            "reason": "The narrow Library has one title, stable bottom navigation, legible rows and a clearer ratio of content to framing. Fresh empty-home and file-review screens retain the same typography and restrained accent. This supports a quarter-point improvement above the coherent platform-adaptation anchor."
+          },
+          "craft": {
+            "value": 3,
+            "reason": "No observed page exception or horizontal document overflow. Evaluated ordinary controls, modal closure, dirty-draft guard, file confirmation and record return preserve their context. Full keyboard, screen-reader and operating-system integration were not tested."
+          },
+          "originality": {
+            "value": 3,
+            "reason": "Source explanation acknowledgment, exact fixed calendar review, original-event verification, collector-owned file range and separate receipt/body states express Mote-specific tasks using familiar controls."
+          }
+        },
+        "central_collection_gate": "pass",
+        "weighted_score_100": 74.375,
+        "coverage_counts": {
+          "partial": 10,
+          "untested": 174,
+          "not_applicable": 4
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass"
+        }
+      }
+    },
+    "changes": [
+      {
+        "finding": "R32 recording catalog bypass",
+        "change": "Ordinary Lark and DingTalk recording catalog entries reach their separate connection/authorization/context-acknowledgement flows. Historical recording routes resolve to the same canonical workflows."
+      },
+      {
+        "finding": "R32 stale source result",
+        "change": "Google Calendar status reflects saved scope and completed archive results. A sync clears outdated pre-sync notices. New connections have a named source-context handoff before intake."
+      },
+      {
+        "finding": "R32 MCP result count",
+        "change": "Each MCP import attempt reports its own imported and duplicate counts; importing the same resource again shows zero new records and one duplicate."
+      },
+      {
+        "finding": "R32 capture pause notice",
+        "change": "Pausing Mac capture replaces the old started notice. Native receipt filters observe both ends of the selected period, and receipt details return to the exact source record."
+      },
+      {
+        "finding": "Inventory native file selection and navigation",
+        "change": "Native one-time selected-file import is separate from directory collection. Unsaved native settings offer save/continue/discard, and permission/settings returns preserve the original task. Empty-account folder setup initializes safely."
+      },
+      {
+        "finding": "Inventory calendar review and todo semantics",
+        "change": "Todos preserve optional due dates and complete/cancel/reopen independently. Calendar discovery, edit, fixed review and execution receipts are separate task pages. Fixed review binds evidence/version/target; stale evidence blocks approval, and uncertain execution verifies the existing event instead of creating another."
+      },
+      {
+        "finding": "Inventory Central maintenance",
+        "change": "Central portable archives validate original deployment/account and retain same-operation retry. Future-write encryption, cancellable decryption, administrator retention, index maintenance, scoped statistics and retained diagnostics have focused task pages."
+      },
+      {
+        "finding": "Screen focus and obsolete guide wording",
+        "change": "Mobile Library no longer repeats its app-bar title in the content heading. Central account/deployment guide entries reflect password/account and saved/effective settings. Unknown trace inspection does not fabricate a retained trace."
+      }
+    ]
+  },
+  {
+    "number": 34,
+    "status": "FAIL",
+    "mean": 74.063,
+    "platforms": {
+      "web": {
+        "scores": {
+          "new_user": {
+            "value": 3.25,
+            "reason": "The plain Material context field, explicit fixed review, recoverable upload steps and collector handoff provide concise guidance for multiple normal and exceptional paths. The fresh-context AI first-screen observer identified the intended purpose and first import action without the contract. These observed recovery improvements support a quarter point above clear critical-path guidance. Central terminology and memory/insight concepts still need inference, so the all-major-path orientation anchor is not reached.",
+            "evidence": [
+              "evidence/web/import/03-empty-home.json",
+              "evidence/web/import/04-import-form.json",
+              "evidence/web/import/09-preview.json",
+              "evidence/web/import/10-revised-draft.json",
+              "evidence/web/import/14-saved.json",
+              "evidence/web/major/library.json",
+              "evidence/web/major/sources.json",
+              "evidence/web/major/ask.json",
+              "evidence/web/major/activity.json"
+            ]
+          },
+          "functionality": {
+            "value": 2.5,
+            "reason": "The independently operated import, recovery, recording and selected-file paths preserve substantial user choices; selected Central scenarios also have real state-specific evidence. The full unchanged 188-feature contract remains incomplete: most families and many required variants were not operated this round. Functionality stays below anchor 3; author checks and route reachability are not added as passes.",
+            "evidence": [
+              "evidence/web/import/03-empty-home.json",
+              "evidence/web/import/04-import-form.json",
+              "evidence/web/import/09-preview.json",
+              "evidence/web/import/10-revised-draft.json",
+              "evidence/web/import/14-saved.json",
+              "evidence/web/major/library.json",
+              "evidence/web/major/sources.json",
+              "evidence/web/major/ask.json",
+              "evidence/web/major/activity.json"
+            ]
+          },
+          "simplicity": {
+            "value": 3.25,
+            "reason": "The new audio detail and upload queue have one clear task and named metadata disclosures. The import context prompt is shorter and separates plain explanation from parser/image choices. The Mac saved-file page also removes repeated editable fields from its normal state. This supports a quarter point above clear hierarchy; long settings and expanded evidence screens still prevent the consistently economical anchor.",
+            "evidence": [
+              "evidence/web/import/03-empty-home.json",
+              "evidence/web/import/04-import-form.json",
+              "evidence/web/import/09-preview.json",
+              "evidence/web/import/10-revised-draft.json",
+              "evidence/web/import/14-saved.json",
+              "evidence/web/major/library.json",
+              "evidence/web/major/sources.json",
+              "evidence/web/major/ask.json",
+              "evidence/web/major/activity.json"
+            ]
+          },
+          "clarity": {
+            "value": 2.75,
+            "reason": "Submitted versus received, transcript versus audio, exact source/context and local versus Central ownership are explicit in operated results. However after a browser reload makes pending upload bytes unavailable, the row still says Uploading while requiring re-selection and disabling progress. That contradictory exceptional-state heading keeps clarity below the accurate-at-the-moment anchor of 3. The controls correctly block advancement, so this is not a false receipt or data-loss claim.",
+            "evidence": [
+              "evidence/web/import/03-empty-home.json",
+              "evidence/web/import/04-import-form.json",
+              "evidence/web/import/09-preview.json",
+              "evidence/web/import/10-revised-draft.json",
+              "evidence/web/import/14-saved.json",
+              "evidence/web/major/library.json",
+              "evidence/web/major/sources.json",
+              "evidence/web/major/ask.json",
+              "evidence/web/major/activity.json"
+            ]
+          },
+          "design": {
+            "value": 3,
+            "reason": "Fresh Library, first-use, import and task screenshots retain coherent typography, proportion, spacing and restrained color. Mac has a separate desktop frame and collector shortcuts; Web audio detail is a focused readable document. The evidence supports a coherent system, not a verified mature hierarchy across every content-heavy page.",
+            "evidence": [
+              "evidence/web/import/03-empty-home.json",
+              "evidence/web/import/04-import-form.json",
+              "evidence/web/import/09-preview.json",
+              "evidence/web/import/10-revised-draft.json",
+              "evidence/web/import/14-saved.json",
+              "evidence/web/major/library.json",
+              "evidence/web/major/sources.json",
+              "evidence/web/major/ask.json",
+              "evidence/web/major/activity.json"
+            ]
+          },
+          "craft": {
+            "value": 3,
+            "reason": "Current evaluated controls and viewport layouts render without observed page exceptions or document-width overflow. Dirty-draft guards, file selection, downloads, original identity and ordinary media playback work in their exercised variants. Full keyboard, screen-reader, dark-theme and localization coverage were not repeated. Lost injected fonts after reload are a harness limitation and do not lower product craft.",
+            "evidence": [
+              "evidence/web/import/03-empty-home.json",
+              "evidence/web/import/04-import-form.json",
+              "evidence/web/import/09-preview.json",
+              "evidence/web/import/10-revised-draft.json",
+              "evidence/web/import/14-saved.json",
+              "evidence/web/major/library.json",
+              "evidence/web/major/sources.json",
+              "evidence/web/major/ask.json",
+              "evidence/web/major/activity.json"
+            ]
+          },
+          "originality": {
+            "value": 3,
+            "reason": "Exact explanation preservation, explicit collector ownership, separate transcript/audio archives, fixed calendar content and retained historical prices/reads are deliberate Mote task patterns expressed through familiar controls; no gratuitous novelty is needed.",
+            "evidence": [
+              "evidence/web/import/03-empty-home.json",
+              "evidence/web/import/04-import-form.json",
+              "evidence/web/import/09-preview.json",
+              "evidence/web/import/10-revised-draft.json",
+              "evidence/web/import/14-saved.json",
+              "evidence/web/major/library.json",
+              "evidence/web/major/sources.json",
+              "evidence/web/major/ask.json",
+              "evidence/web/major/activity.json"
+            ]
+          }
+        },
+        "central_collection_gate": "pass",
+        "scope_integrity_gate": "pass",
+        "weighted_score_100": 74.375,
+        "coverage_counts": {
+          "partial": 23,
+          "untested": 105,
+          "not_applicable": 60
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass",
+          "scope_integrity": "pass"
+        }
+      },
+      "mac": {
+        "scores": {
+          "new_user": {
+            "value": 3.25,
+            "reason": "The plain Material context field, explicit fixed review, recoverable upload steps and collector handoff provide concise guidance for multiple normal and exceptional paths. The fresh-context AI first-screen observer identified the intended purpose and first import action without the contract. These observed recovery improvements support a quarter point above clear critical-path guidance. Central terminology and memory/insight concepts still need inference, so the all-major-path orientation anchor is not reached.",
+            "evidence": [
+              "evidence/mac/import/03-empty-home.json",
+              "evidence/mac/import/04-import-form.json",
+              "evidence/mac/import/09-preview.json",
+              "evidence/mac/import/10-revised-draft.json",
+              "evidence/mac/import/14-saved.json",
+              "evidence/mac/major/library.json",
+              "evidence/mac/major/sources.json",
+              "evidence/mac/major/ask.json",
+              "evidence/mac/major/activity.json"
+            ]
+          },
+          "functionality": {
+            "value": 2.5,
+            "reason": "The independently operated import, recovery, recording and selected-file paths preserve substantial user choices; selected Central scenarios also have real state-specific evidence. The full unchanged 188-feature contract remains incomplete: most families and many required variants were not operated this round. Functionality stays below anchor 3; author checks and route reachability are not added as passes.",
+            "evidence": [
+              "evidence/mac/import/03-empty-home.json",
+              "evidence/mac/import/04-import-form.json",
+              "evidence/mac/import/09-preview.json",
+              "evidence/mac/import/10-revised-draft.json",
+              "evidence/mac/import/14-saved.json",
+              "evidence/mac/major/library.json",
+              "evidence/mac/major/sources.json",
+              "evidence/mac/major/ask.json",
+              "evidence/mac/major/activity.json"
+            ]
+          },
+          "simplicity": {
+            "value": 3.25,
+            "reason": "The new audio detail and upload queue have one clear task and named metadata disclosures. The import context prompt is shorter and separates plain explanation from parser/image choices. The Mac saved-file page also removes repeated editable fields from its normal state. This supports a quarter point above clear hierarchy; long settings and expanded evidence screens still prevent the consistently economical anchor.",
+            "evidence": [
+              "evidence/mac/import/03-empty-home.json",
+              "evidence/mac/import/04-import-form.json",
+              "evidence/mac/import/09-preview.json",
+              "evidence/mac/import/10-revised-draft.json",
+              "evidence/mac/import/14-saved.json",
+              "evidence/mac/major/library.json",
+              "evidence/mac/major/sources.json",
+              "evidence/mac/major/ask.json",
+              "evidence/mac/major/activity.json"
+            ]
+          },
+          "clarity": {
+            "value": 2.75,
+            "reason": "Submitted versus received, transcript versus audio, exact source/context and local versus Central ownership are explicit in operated results. However after a browser reload makes pending upload bytes unavailable, the row still says Uploading while requiring re-selection and disabling progress. That contradictory exceptional-state heading keeps clarity below the accurate-at-the-moment anchor of 3. The controls correctly block advancement, so this is not a false receipt or data-loss claim.",
+            "evidence": [
+              "evidence/mac/import/03-empty-home.json",
+              "evidence/mac/import/04-import-form.json",
+              "evidence/mac/import/09-preview.json",
+              "evidence/mac/import/10-revised-draft.json",
+              "evidence/mac/import/14-saved.json",
+              "evidence/mac/major/library.json",
+              "evidence/mac/major/sources.json",
+              "evidence/mac/major/ask.json",
+              "evidence/mac/major/activity.json"
+            ]
+          },
+          "design": {
+            "value": 3,
+            "reason": "Fresh Library, first-use, import and task screenshots retain coherent typography, proportion, spacing and restrained color. Mac has a separate desktop frame and collector shortcuts; Web audio detail is a focused readable document. The evidence supports a coherent system, not a verified mature hierarchy across every content-heavy page.",
+            "evidence": [
+              "evidence/mac/import/03-empty-home.json",
+              "evidence/mac/import/04-import-form.json",
+              "evidence/mac/import/09-preview.json",
+              "evidence/mac/import/10-revised-draft.json",
+              "evidence/mac/import/14-saved.json",
+              "evidence/mac/major/library.json",
+              "evidence/mac/major/sources.json",
+              "evidence/mac/major/ask.json",
+              "evidence/mac/major/activity.json"
+            ]
+          },
+          "craft": {
+            "value": 3,
+            "reason": "Current evaluated controls and viewport layouts render without observed page exceptions or document-width overflow. Dirty-draft guards, file selection, downloads, original identity and ordinary media playback work in their exercised variants. Full keyboard, screen-reader, dark-theme and localization coverage were not repeated. Lost injected fonts after reload are a harness limitation and do not lower product craft.",
+            "evidence": [
+              "evidence/mac/import/03-empty-home.json",
+              "evidence/mac/import/04-import-form.json",
+              "evidence/mac/import/09-preview.json",
+              "evidence/mac/import/10-revised-draft.json",
+              "evidence/mac/import/14-saved.json",
+              "evidence/mac/major/library.json",
+              "evidence/mac/major/sources.json",
+              "evidence/mac/major/ask.json",
+              "evidence/mac/major/activity.json"
+            ]
+          },
+          "originality": {
+            "value": 3,
+            "reason": "Exact explanation preservation, explicit collector ownership, separate transcript/audio archives, fixed calendar content and retained historical prices/reads are deliberate Mote task patterns expressed through familiar controls; no gratuitous novelty is needed.",
+            "evidence": [
+              "evidence/mac/import/03-empty-home.json",
+              "evidence/mac/import/04-import-form.json",
+              "evidence/mac/import/09-preview.json",
+              "evidence/mac/import/10-revised-draft.json",
+              "evidence/mac/import/14-saved.json",
+              "evidence/mac/major/library.json",
+              "evidence/mac/major/sources.json",
+              "evidence/mac/major/ask.json",
+              "evidence/mac/major/activity.json"
+            ]
+          }
+        },
+        "central_collection_gate": "pass",
+        "scope_integrity_gate": "pass",
+        "weighted_score_100": 74.375,
+        "coverage_counts": {
+          "partial": 22,
+          "untested": 152,
+          "not_applicable": 14
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass",
+          "scope_integrity": "pass"
+        }
+      },
+      "android": {
+        "scores": {
+          "new_user": {
+            "value": 3,
+            "reason": "The primary import action and purpose are clear, and entered context, confirmation and recovery retain an understandable next step. The fresh-context AI first-screen observer independently identified the same first action. On the 390 by 844 Android first viewport, however, the collection explanation reaches the bottom edge and its connection control is below the fold; memory terminology remains lightly explained. This meets the clear critical-path anchor but not consistently immediate orientation across major paths.",
+            "evidence": [
+              "evidence/android/import/03-empty-home.json",
+              "evidence/android/import/04-import-form.json",
+              "evidence/android/import/09-preview.json",
+              "evidence/android/import/10-revised-draft.json",
+              "evidence/android/import/14-saved.json",
+              "evidence/android/major/library.json",
+              "evidence/android/major/sources.json",
+              "evidence/android/major/ask.json",
+              "evidence/android/major/activity.json"
+            ]
+          },
+          "functionality": {
+            "value": 2.5,
+            "reason": "The independently operated import, recovery, recording and selected-file paths preserve substantial user choices; selected Central scenarios also have real state-specific evidence. The full unchanged 188-feature contract remains incomplete: most families and many required variants were not operated this round. Functionality stays below anchor 3; author checks and route reachability are not added as passes.",
+            "evidence": [
+              "evidence/android/import/03-empty-home.json",
+              "evidence/android/import/04-import-form.json",
+              "evidence/android/import/09-preview.json",
+              "evidence/android/import/10-revised-draft.json",
+              "evidence/android/import/14-saved.json",
+              "evidence/android/major/library.json",
+              "evidence/android/major/sources.json",
+              "evidence/android/major/ask.json",
+              "evidence/android/major/activity.json"
+            ]
+          },
+          "simplicity": {
+            "value": 3.25,
+            "reason": "The saved native-file page now presents one compact file/status summary, one record-opening action and named edit/context disclosures. The mobile Library keeps one app-bar title and makes types and filters optional. This is modestly beyond the clear-purpose anchor; mobile usage still puts a large title/filter region before totals and not all advanced screens were examined.",
+            "evidence": [
+              "evidence/android/import/03-empty-home.json",
+              "evidence/android/import/04-import-form.json",
+              "evidence/android/import/09-preview.json",
+              "evidence/android/import/10-revised-draft.json",
+              "evidence/android/import/14-saved.json",
+              "evidence/android/major/library.json",
+              "evidence/android/major/sources.json",
+              "evidence/android/major/ask.json",
+              "evidence/android/major/activity.json"
+            ]
+          },
+          "clarity": {
+            "value": 2.75,
+            "reason": "Submitted versus received, transcript versus audio, exact source/context and local versus Central ownership are explicit in operated results. However after a browser reload makes pending upload bytes unavailable, the row still says Uploading while requiring re-selection and disabling progress. That contradictory exceptional-state heading keeps clarity below the accurate-at-the-moment anchor of 3. The controls correctly block advancement, so this is not a false receipt or data-loss claim.",
+            "evidence": [
+              "evidence/android/import/03-empty-home.json",
+              "evidence/android/import/04-import-form.json",
+              "evidence/android/import/09-preview.json",
+              "evidence/android/import/10-revised-draft.json",
+              "evidence/android/import/14-saved.json",
+              "evidence/android/major/library.json",
+              "evidence/android/major/sources.json",
+              "evidence/android/major/ask.json",
+              "evidence/android/major/activity.json"
+            ]
+          },
+          "design": {
+            "value": 3.25,
+            "reason": "Fresh 412 by 915 Library, selected-file and audio viewports have legible narrow layouts, stable bottom navigation, restrained accent and clear hierarchy. These purpose-specific layouts support a quarter point above coherent platform adaptation. The 390 by 844 first screen and long usage heading still leave scope information or results below the fold.",
+            "evidence": [
+              "evidence/android/import/03-empty-home.json",
+              "evidence/android/import/04-import-form.json",
+              "evidence/android/import/09-preview.json",
+              "evidence/android/import/10-revised-draft.json",
+              "evidence/android/import/14-saved.json",
+              "evidence/android/major/library.json",
+              "evidence/android/major/sources.json",
+              "evidence/android/major/ask.json",
+              "evidence/android/major/activity.json"
+            ]
+          },
+          "craft": {
+            "value": 3,
+            "reason": "Current evaluated controls and viewport layouts render without observed page exceptions or document-width overflow. Dirty-draft guards, file selection, downloads, original identity and ordinary media playback work in their exercised variants. Full keyboard, screen-reader, dark-theme and localization coverage were not repeated. Lost injected fonts after reload are a harness limitation and do not lower product craft.",
+            "evidence": [
+              "evidence/android/import/03-empty-home.json",
+              "evidence/android/import/04-import-form.json",
+              "evidence/android/import/09-preview.json",
+              "evidence/android/import/10-revised-draft.json",
+              "evidence/android/import/14-saved.json",
+              "evidence/android/major/library.json",
+              "evidence/android/major/sources.json",
+              "evidence/android/major/ask.json",
+              "evidence/android/major/activity.json"
+            ]
+          },
+          "originality": {
+            "value": 3,
+            "reason": "Exact explanation preservation, explicit collector ownership, separate transcript/audio archives, fixed calendar content and retained historical prices/reads are deliberate Mote task patterns expressed through familiar controls; no gratuitous novelty is needed.",
+            "evidence": [
+              "evidence/android/import/03-empty-home.json",
+              "evidence/android/import/04-import-form.json",
+              "evidence/android/import/09-preview.json",
+              "evidence/android/import/10-revised-draft.json",
+              "evidence/android/import/14-saved.json",
+              "evidence/android/major/library.json",
+              "evidence/android/major/sources.json",
+              "evidence/android/major/ask.json",
+              "evidence/android/major/activity.json"
+            ]
+          }
+        },
+        "central_collection_gate": "pass",
+        "scope_integrity_gate": "pass",
+        "weighted_score_100": 73.438,
+        "coverage_counts": {
+          "partial": 25,
+          "untested": 159,
+          "not_applicable": 4
+        },
+        "hard_gates": {
+          "platform_thresholds": "fail",
+          "semantic_completeness": "fail",
+          "critical_journeys": "fail",
+          "no_central_local_collection": "pass",
+          "scope_integrity": "pass"
+        }
+      }
+    },
+    "changes": [
+      {
+        "finding": "R33 archived recording has no openable original",
+        "change": "Completed audio recovery now opens a distinct retained audio detail from both results and saved materials. The explicitly synthetic WAV can be played and downloaded, returns to the exact independent transcript, and retains one archive identity across retry, re-sync and disconnection."
+      },
+      {
+        "finding": "Inventory browser-local upload recovery",
+        "change": "A named local upload queue preserves per-file bytes, submission identity and exact interpretation context through pause, retry, missing-file reselection and Central receipt. Wrong files are rejected without losing context. Removing a local queue entry preserves received Central originals and import records; unfinished local uploads no longer claim their originals are archived."
+      },
+      {
+        "finding": "R33 task notices appear on unrelated pages",
+        "change": "Calendar and todo notices are scoped to their originating task page. Final calendar approval also rechecks target-device availability and preserves the draft if authorization changed."
+      },
+      {
+        "finding": "New-user context comprehension",
+        "change": "The import field is labeled Material context with a plain-language prompt to describe the content and background. The same optional multiline 12000-character field, parser/image settings, review, correction and saved-detail path remain intact."
+      },
+      {
+        "finding": "Native saved-file screen repeats information and implies another scan",
+        "change": "The selected-file page uses one compact saved summary. One-time completion and empty or filtered tasks no longer promise a future scan; explicitly continuous sources still show their next scan. Selected-file retention says files rather than directories."
+      },
+      {
+        "finding": "Inventory usage and historical price interpretation",
+        "change": "Focused usage and pricing pages provide scoped filters, grouping, pagination, separate currency totals, unknown measurements and immutable historical price receipts. Saved current prices do not rewrite historical estimates."
+      },
+      {
+        "finding": "Inventory Agent read-only context and retained evidence",
+        "change": "Agent catalog, new-conversation preview and retained historical input are separate read-only tasks. Scoped virtual directories, paged bodies and captured evidence distinguish uncertainty, failed reads and truncation. A source description awaiting Central acknowledgement is omitted from received Agent context."
+      }
+    ]
+  }
+]

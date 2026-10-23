@@ -1,0 +1,68 @@
+{
+  "repository": "utopiafar/mote",
+  "source": "work/publication/progress.json",
+  "sourceSha256": "c6aa6125cbde667608267b900efb2070596fdcde43bfe1d8b652af4b1dfe5d4b",
+  "verificationScope": "Recorded review-complete publication commits, before the final delivery-document commit. Branch heads may advance to add delivery documents without changing frozen candidates or reports. This packaging step makes no remote Git request or mutation; publication state is preserved verbatim.",
+  "rounds": [
+    {
+      "round": 30,
+      "branch": "codex/mote-ui-r30-20261022",
+      "commit": "a9bb251b7ba2ed486d6509d8bcf7300b4085caac",
+      "tree": "ebc606be3418ac41eaa6a8af769556edba99c49e",
+      "publicationState": "frozen candidate, independent review, raw DOM/action evidence and cited screenshots published",
+      "branchUrl": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r30-20261022",
+      "commitUrl": "https://github.com/utopiafar/mote/commit/a9bb251b7ba2ed486d6509d8bcf7300b4085caac",
+      "independentStatus": "FAIL",
+      "independentReportSha256": "65e40398990e94bba5b468fcc0f97a57e4d34ed8cb85aae07918f766addfb4c8",
+      "candidateManifestSha256": "36882aa96efa979b47c40a7e57c70f231bd958e2188c37f79af7e0686eb5d339"
+    },
+    {
+      "round": 31,
+      "branch": "codex/mote-ui-r31-20261022",
+      "commit": "cebe85055afe8cd667979c02b8301e9543fa86b7",
+      "tree": "1f798e44d5f1f05a325112c7676bdbd9fa10bb3b",
+      "publicationState": "frozen candidate, independent review, raw DOM/action evidence and cited screenshots published",
+      "branchUrl": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r31-20261022",
+      "commitUrl": "https://github.com/utopiafar/mote/commit/cebe85055afe8cd667979c02b8301e9543fa86b7",
+      "independentStatus": "FAIL",
+      "independentReportSha256": "5377f874c19592b3fe5b9a70c94165f507caf6d116d406adf49255a0edc86073",
+      "candidateManifestSha256": "cd864e1dca072d94bf3c0c0b7fd82020c223b27a60c4de4eadd3f374e8c67551"
+    },
+    {
+      "round": 32,
+      "branch": "codex/mote-ui-r32-20261022",
+      "commit": "8a8409adb3096817784c94aa8c4e49260a6e7d06",
+      "tree": "3895e864b9e58e693b214b2eb6e32feabc00fcb8",
+      "publicationState": "frozen candidate, independent review, raw DOM/action evidence and cited screenshots published",
+      "branchUrl": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r32-20261022",
+      "commitUrl": "https://github.com/utopiafar/mote/commit/8a8409adb3096817784c94aa8c4e49260a6e7d06",
+      "independentStatus": "FAIL",
+      "independentReportSha256": "4d564c2939af7e9739be9a73289c02af166b2839d35998d3697a1395869b0f10",
+      "candidateManifestSha256": "db5956f95c4126c5dc53b6e5ded64d4c633dcb3a44cd6feec3be3fd96068a81a"
+    },
+    {
+      "round": 33,
+      "branch": "codex/mote-ui-r33-20261022",
+      "commit": "a10a5d0e677cc6d8ec4a6c90a4a7e7731bc064a0",
+      "tree": "76c0f0cc00b432e983f80ad47d25b4aa91bc6e6f",
+      "publicationState": "frozen candidate, independent review, raw DOM/action evidence and cited screenshots published",
+      "branchUrl": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r33-20261022",
+      "commitUrl": "https://github.com/utopiafar/mote/commit/a10a5d0e677cc6d8ec4a6c90a4a7e7731bc064a0",
+      "independentStatus": "FAIL",
+      "independentReportSha256": "2b61e0441d93880c28c07c814e463be06b6334894e020c0f87ca8cede1f8e686",
+      "candidateManifestSha256": "d7fc8dbec09b90bf72cf890c052e56d479859f57407be1f66053aaef3b694da0"
+    },
+    {
+      "round": 34,
+      "branch": "codex/mote-ui-r34-20261022",
+      "commit": "960cecb241d4853dcf7237626628a4c623c0deab",
+      "tree": "aa56725c4572338216cb292bc27144506350e7c7",
+      "publicationState": "frozen candidate, independent review, raw DOM/action evidence and cited screenshots published",
+      "branchUrl": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r34-20261022",
+      "commitUrl": "https://github.com/utopiafar/mote/commit/960cecb241d4853dcf7237626628a4c623c0deab",
+      "independentStatus": "FAIL",
+      "independentReportSha256": "200e257a8df8d456dc7c245be2580549d9bb54414e7f1abcff1e1ceebd58ec64",
+      "candidateManifestSha256": "36b8092a46a12fcedfa6df759244e81e519ed5145ebc3f08f7e6be07d20c3bd0"
+    }
+  ]
+}

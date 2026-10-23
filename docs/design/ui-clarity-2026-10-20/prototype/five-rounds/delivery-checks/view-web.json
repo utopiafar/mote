@@ -1,0 +1,537 @@
+{
+  "gallery": {
+    "url": "https://mote-review.invalid/index.html",
+    "title": "Mote · 三端 UI 评审",
+    "viewport": {
+      "width": 1680,
+      "height": 1050
+    },
+    "pageWidth": 1680,
+    "headings": [],
+    "controls": [
+      {
+        "tag": "SELECT",
+        "text": "R30\nR31\nR32\nR33\nR34",
+        "label": "迭代版本\nR30\nR31\nR32\nR33\nR34",
+        "href": null,
+        "value": "34",
+        "rect": {
+          "x": 30,
+          "y": 75,
+          "width": 150,
+          "height": 42
+        }
+      },
+      {
+        "tag": "SELECT",
+        "text": "新用户第一眼\n已有资料的资料库\n导入与资料说明\n来源与采集职责\n问一问\n待办与日程\n设置",
+        "label": "演示内容\n新用户第一眼\n已有资料的资料库\n导入与资料说明\n来源与采集职责\n问一问\n待办与日程\n设置",
+        "href": null,
+        "value": "library",
+        "rect": {
+          "x": 200,
+          "y": 75,
+          "width": 162,
+          "height": 42
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "三端并排",
+        "label": "",
+        "href": null,
+        "rect": {
+          "x": 382,
+          "y": 72,
+          "width": 90,
+          "height": 46
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Web",
+        "label": "",
+        "href": null,
+        "rect": {
+          "x": 479,
+          "y": 72,
+          "width": 60,
+          "height": 46
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Mac",
+        "label": "",
+        "href": null,
+        "rect": {
+          "x": 546,
+          "y": 72,
+          "width": 58,
+          "height": 46
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Android",
+        "label": "",
+        "href": null,
+        "rect": {
+          "x": 611,
+          "y": 72,
+          "width": 85,
+          "height": 46
+        }
+      },
+      {
+        "tag": "A",
+        "text": "独立 Git 分支 ↗",
+        "label": "",
+        "href": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r34-20261022",
+        "rect": {
+          "x": 1318,
+          "y": 207,
+          "width": 104,
+          "height": 26
+        }
+      },
+      {
+        "tag": "A",
+        "text": "独立评审报告",
+        "label": "",
+        "href": "rounds/r34/reports/independent-evaluation.md",
+        "rect": {
+          "x": 1440,
+          "y": 207,
+          "width": 90,
+          "height": 26
+        }
+      },
+      {
+        "tag": "A",
+        "text": "188 项功能清单",
+        "label": "",
+        "href": "contract/user-features.md",
+        "rect": {
+          "x": 1548,
+          "y": 207,
+          "width": 102,
+          "height": 26
+        }
+      },
+      {
+        "tag": "A",
+        "text": "单独打开 ↗",
+        "label": "",
+        "href": "rounds/r34/web.html?reset=1&state=populated#/library",
+        "rect": {
+          "x": 1478,
+          "y": 281,
+          "width": 63,
+          "height": 20
+        }
+      }
+    ],
+    "activeElement": {
+      "tag": "BUTTON",
+      "id": ""
+    },
+    "skipLink": null,
+    "scope": "Viewport-visible rendered DOM only; captured before the viewport screenshot. No application state or localStorage inspection."
+  },
+  "frames": [
+    {
+      "platform": "web",
+      "url": "https://mote-review.invalid/rounds/r34/web.html?reset=1&state=populated#/library",
+      "title": "Mote · 个人资料库",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "pageWidth": 1440,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "资料库",
+          "rect": {
+            "x": 236,
+            "y": 128,
+            "width": 224,
+            "height": 41
+          }
+        }
+      ],
+      "controls": [
+        {
+          "tag": "SELECT",
+          "text": "网页\nMac\nAndroid",
+          "label": "预览平台",
+          "href": null,
+          "value": "web",
+          "rect": {
+            "x": 1093,
+            "y": 12,
+            "width": 63,
+            "height": 19
+          }
+        },
+        {
+          "tag": "SELECT",
+          "text": "已有资料\n空白账号",
+          "label": "预览数据",
+          "href": null,
+          "value": "populated",
+          "rect": {
+            "x": 1193,
+            "y": 12,
+            "width": 68,
+            "height": 19
+          }
+        },
+        {
+          "tag": "SELECT",
+          "text": "浅色\n深色\n自动",
+          "label": "预览外观",
+          "href": null,
+          "value": "light",
+          "rect": {
+            "x": 1298,
+            "y": 12,
+            "width": 44,
+            "height": 19
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "重置演示",
+          "label": "",
+          "action": "reset",
+          "href": null,
+          "rect": {
+            "x": 1352,
+            "y": 9,
+            "width": 64,
+            "height": 26
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "m\nMote.",
+          "label": "Mote 资料库",
+          "action": "go",
+          "page": "library",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 68,
+            "width": 177,
+            "height": 66
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "资料库",
+          "label": "",
+          "action": "go",
+          "page": "library",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 164,
+            "width": 177,
+            "height": 37
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "问一问",
+          "label": "",
+          "action": "go",
+          "page": "ask",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 204,
+            "width": 177,
+            "height": 37
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "来源",
+          "label": "",
+          "action": "go",
+          "page": "sources",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 245,
+            "width": 177,
+            "height": 37
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "活动",
+          "label": "",
+          "action": "go",
+          "page": "activity",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 285,
+            "width": 177,
+            "height": 37
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "开始使用",
+          "label": "",
+          "action": "nu-help",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 784,
+            "width": 177,
+            "height": 36
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "今天",
+          "label": "",
+          "action": "go",
+          "page": "today",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 823,
+            "width": 177,
+            "height": 35
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "全部功能",
+          "label": "",
+          "action": "go",
+          "page": "guide",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 861,
+            "width": 177,
+            "height": 35
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "设置",
+          "label": "",
+          "action": "go",
+          "page": "settings",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 900,
+            "width": 177,
+            "height": 35
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "随手记",
+          "label": "",
+          "action": "go",
+          "page": "notes",
+          "href": null,
+          "rect": {
+            "x": 1239,
+            "y": 56,
+            "width": 61,
+            "height": 32
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "添加内容",
+          "label": "",
+          "action": "add",
+          "href": null,
+          "rect": {
+            "x": 1312,
+            "y": 55,
+            "width": 100,
+            "height": 33
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "资料",
+          "label": "",
+          "action": "filter",
+          "href": null,
+          "rect": {
+            "x": 236,
+            "y": 225,
+            "width": 60,
+            "height": 43
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "记忆",
+          "label": "",
+          "action": "filter",
+          "href": null,
+          "rect": {
+            "x": 304,
+            "y": 225,
+            "width": 60,
+            "height": 43
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "洞察",
+          "label": "",
+          "action": "filter",
+          "href": null,
+          "rect": {
+            "x": 372,
+            "y": 225,
+            "width": 60,
+            "height": 43
+          }
+        },
+        {
+          "tag": "SUMMARY",
+          "text": "按资料类型浏览",
+          "label": "",
+          "href": null,
+          "rect": {
+            "x": 1307,
+            "y": 224,
+            "width": 105,
+            "height": 45
+          }
+        },
+        {
+          "tag": "INPUT",
+          "text": "",
+          "label": "搜索资料",
+          "href": null,
+          "value": "",
+          "rect": {
+            "x": 236,
+            "y": 306,
+            "width": 1102,
+            "height": 39
+          }
+        },
+        {
+          "tag": "SUMMARY",
+          "text": "筛选资料",
+          "label": "",
+          "href": null,
+          "rect": {
+            "x": 1346,
+            "y": 306,
+            "width": 66,
+            "height": 45
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "产品评审 · 让第一步更清楚\n先让新用户知道可以保存什么，再引导他回到资料里找到答案。\n随手记\n·\n网页\n·\n今天 09:12\n可阅读",
+          "label": "",
+          "action": "open-material",
+          "href": null,
+          "rect": {
+            "x": 236,
+            "y": 386,
+            "width": 1176,
+            "height": 98
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "长期记忆系统调研笔记\n原始资料、事实记忆和阶段洞察分别承担不同职责。\n研究资料\n·\nMac\n·\n昨天 18:34\n可阅读",
+          "label": "",
+          "action": "open-material",
+          "href": null,
+          "rect": {
+            "x": 236,
+            "y": 484,
+            "width": 1176,
+            "height": 98
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "Mote / 来源目录整理\n把文件夹同步和屏幕记录放在同级入口，保留原有确认步骤。\nCodex 会话\n·\nMac\n·\n昨天 16:20\n可阅读",
+          "label": "",
+          "action": "open-material",
+          "href": null,
+          "rect": {
+            "x": 236,
+            "y": 582,
+            "width": 1176,
+            "height": 98
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "周四设计评审\n核对资料库、来源目录与移动端添加入口。\nGoogle 日历\n·\n中央\n·\n10月22日 14:00\n可阅读",
+          "label": "",
+          "action": "open-material",
+          "href": null,
+          "rect": {
+            "x": 236,
+            "y": 680,
+            "width": 1176,
+            "height": 98
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "项目讨论录音 · 本周计划\n本周完成资料整理和第一轮设计评审，周末回顾进展。\n飞书录音\n·\n中央\n·\n10月18日 15:30\n可阅读",
+          "label": "",
+          "action": "open-material",
+          "href": null,
+          "rect": {
+            "x": 236,
+            "y": 778,
+            "width": 1176,
+            "height": 98
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "文章摘录 · 渐进式披露\n最常用的操作先展示，复杂细节放在需要它的上下文里。\nMac 屏幕\n·\nMac\n·\n10月18日 11:08\n可阅读",
+          "label": "",
+          "action": "open-material",
+          "href": null,
+          "rect": {
+            "x": 236,
+            "y": 876,
+            "width": 1176,
+            "height": 98
+          }
+        }
+      ],
+      "activeElement": {
+        "tag": "BODY",
+        "id": ""
+      },
+      "skipLink": {
+        "x": 12,
+        "y": -100,
+        "width": 116,
+        "height": 43
+      },
+      "scope": "Viewport-visible rendered DOM only; captured before the viewport screenshot. No application state or localStorage inspection."
+    }
+  ]
+}
