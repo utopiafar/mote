@@ -1,0 +1,81 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/native-upload",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R32\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n发送到 Central\n\n屏幕、随手记与本机来源共用此策略。暂停采集不会暂停已有队列。\n\n返回\n离线，等待连接\n目的地：https://mote.example.invalid\n暂停全部发送\n发送方式\n实时\n定时\n积攒一批\n仅手动\n仅手动不会自动发送；休眠或系统调度可能延迟计划。逐条收到 ACK 后才按保留策略清理本机副本。\n间隔与打包\n网络与电源条件\n保存设置\n还原修改\n立即发送\n\n当前显示已保存的设置。\n\n示例已确认接收 0 条。正文处理另行显示；暂停的文件来源和冲突条目保留。屏幕采集暂停不阻止已有记录发送。\n待发送记录\n按来源与结果查看，接收和处理分别显示\n检查两端与补传\n仅补传仍保留的本机记录\n演示连接条件\n恢复网络\n切为计费网络\n模拟未充电\n模拟低电量\n资料库\n问一问\n来源\n活动\n添加内容\n\n这次手动保存，或让选定来源持续送来内容。\n\n手动保存\n导入文件\n保存已有文件或媒体\n写随手记\n记下文字，附上图片或录音\n持续收集\n同步文件夹\n连接新的文件夹，持续保存后续变化\n记录屏幕\n选择应用与采集范围\n连接在线来源\n文档、邮件、日历与录音",
+  "controls": [
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "关闭对话框",
+      "action": "close-modal",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "导入文件\n保存已有文件或媒体",
+      "label": "导入文件\n保存已有文件或媒体",
+      "action": "go",
+      "page": "import",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "写随手记\n记下文字，附上图片或录音",
+      "label": "写随手记\n记下文字，附上图片或录音",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "同步文件夹\n连接新的文件夹，持续保存后续变化",
+      "label": "同步文件夹\n连接新的文件夹，持续保存后续变化",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "记录屏幕\n选择应用与采集范围",
+      "label": "记录屏幕\n选择应用与采集范围",
+      "action": "go",
+      "page": "setup/screen",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "连接在线来源\n文档、邮件、日历与录音",
+      "label": "连接在线来源\n文档、邮件、日历与录音",
+      "action": "go",
+      "page": "catalog",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H2",
+      "text": "添加内容"
+    },
+    {
+      "level": "H3",
+      "text": "手动保存"
+    },
+    {
+      "level": "H3",
+      "text": "持续收集"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

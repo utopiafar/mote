@@ -1,0 +1,304 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/material/m2/processing",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R32\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n资料库\n/\n资料详情\n工作台在线\n随手记\n添加内容\n文件处理详情\n\n长期记忆系统调研笔记\n\n返回文件与录音\n已归档原件\n已保留\n\n文件 / 研究资料/记忆系统.md\n\n来源位置消失不会自动删除已归档副本。原件、正文、摘要分别保留。\n\n下载示例原件\n阅读当前正文\n处理状态\n人工修正已保存为独立修订；没有模型调用。\n正文提取\n已完成\n摘要\n等待\n\n本文件方案：使用已保存的文件处理规则。原始提取正文可阅读，后续摘要失败不会移除正文。\n\n刷新\n重试正文提取\n重新生成摘要\n采用的规则、尝试与恢复\n校对文段\n文段 1\n\nR32 校对：这是第三方调研资料，应分别保留原始记录、记忆和洞察。\n\n编辑这一段\n文段 2\n\n原始资料保留出处；记忆是从资料中整理出来、可以纠正的内容；洞察用于回答一段时间里的变化和规律。\n\n编辑这一段\n文段 3\n\n评估时需要可以回到原文，核对每一条重要判断。\n\n编辑这一段\n所选文段的修正\n保存人工修正\n取消修改\n\n人工校对不会调用模型；原文件与最初提取正文保留。\n\n最初正文与修正历史\n内容与术语复核\n导出与删除",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回文件与录音",
+      "label": "返回文件与录音",
+      "action": "go",
+      "page": "library/files",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "下载示例原件",
+      "label": "下载示例原件",
+      "action": "cs-file-original",
+      "item": "m2",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "阅读当前正文",
+      "label": "阅读当前正文",
+      "action": "go",
+      "page": "material/m2",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新",
+      "label": "刷新",
+      "action": "cs-file-refresh",
+      "item": "m2",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重试正文提取",
+      "label": "重试正文提取",
+      "action": "cs-file-process",
+      "item": "m2",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重新生成摘要",
+      "label": "重新生成摘要",
+      "action": "cs-file-process",
+      "item": "m2",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "采用的规则、尝试与恢复",
+      "label": "采用的规则、尝试与恢复",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "校对文段",
+      "label": "校对文段",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "编辑这一段",
+      "label": "编辑这一段",
+      "action": "cs-file-segment-select",
+      "item": "m2",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "编辑这一段",
+      "label": "编辑这一段",
+      "action": "cs-file-segment-select",
+      "item": "m2",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "编辑这一段",
+      "label": "编辑这一段",
+      "action": "cs-file-segment-select",
+      "item": "m2",
+      "disabled": false
+    },
+    {
+      "tag": "textarea",
+      "id": "cs-file-m2-text",
+      "type": "textarea",
+      "text": "",
+      "label": "所选文段的修正",
+      "value": "R32 校对：这是第三方调研资料，应分别保留原始记录、记忆和洞察。",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存人工修正",
+      "label": "保存人工修正",
+      "action": "cs-file-segment-save",
+      "item": "m2",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "取消修改",
+      "label": "取消修改",
+      "action": "cs-file-segment-cancel",
+      "item": "m2",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "最初正文与修正历史",
+      "label": "最初正文与修正历史",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "内容与术语复核",
+      "label": "内容与术语复核",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "导出与删除",
+      "label": "导出与删除",
+      "expanded": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "文件处理详情"
+    },
+    {
+      "level": "H2",
+      "text": "已归档原件"
+    },
+    {
+      "level": "H2",
+      "text": "处理状态"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

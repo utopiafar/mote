@@ -1,0 +1,288 @@
+{
+  "schema_version": 1,
+  "round": "R32",
+  "evaluator": "/root/review_r31_r34",
+  "source_sha": "81a73c0ec81af876d6eeef71451b75cd51684b34",
+  "candidate_sha256": {
+    "web": "e304b83e3a7eae2a8c11e79825c172149f540f6e7276615b8c2c360622281432",
+    "mac": "2f95ee6ba611735f12442fc8f5c1d9bb3b403463be5c29ffb6cfe8dc0b76f51e",
+    "android": "61216734c81fff072714deb9cdbb738b48a45b53a8fa6fb15701363387d18bfa"
+  },
+  "contract_sha256": "316d7ac7ea6577c4a6d28c526f6e27ad56d33c7a9afd60db4b74466e88791572",
+  "journeys_sha256": "a30546c750bc7281177985b9e993c9f1f1a163c93dad9ebc077cac9ec1badf1b",
+  "rubric_sha256": "58826132bd1d4c70690567482902b7ef7dac89e32f7fc727a643ce3d213abb7c",
+  "rubric_id": "mote-r30-r34-independent-v1",
+  "status": "FAIL",
+  "platforms": {
+    "web": {
+      "scores": {
+        "new_user": {
+          "value": 3,
+          "reason": "Fresh empty-home and first-import checks show a clear first action, device-owned collection explanation, exact interpretation context, explicit review, and a return from model setup to the same task. Recording-connector and other exceptional journeys remain incomplete."
+        },
+        "functionality": {
+          "value": 2.5,
+          "reason": "The current frozen candidate independently completes the import and source-context/attribution regressions. New targeted workflows have meaningful results, but applicable contract assertions remain partial or untested, and the ordinary Web recording entries omit required fields. The complete-semantic anchor of 3 is not reached."
+        },
+        "simplicity": {
+          "value": 3,
+          "reason": "The populated Library removes the long second category rail and repeated orientation. Search and records now dominate, while named type/filter disclosures retain secondary controls. Sources separates native collection from online connections. Advanced file settings still become long when several sections are expanded, but each disclosure names its task."
+        },
+        "clarity": {
+          "value": 2.75,
+          "reason": "Import, attribution and source ownership are clear. The Web Google calendar shows an obsolete no-scope/not-yet-synced message beside an actual archived result, and MCP labels cumulative counts as this-attempt results."
+        },
+        "design": {
+          "value": 3,
+          "reason": "Fresh viewport inspection shows coherent typography, spacing and a restrained accent. Desktop Library uses the available width well; Android has a stable bottom navigation and readable source rows. Mobile populated Library still repeats its title and spends substantial vertical space before the first record."
+        },
+        "craft": {
+          "value": 2.75,
+          "reason": "Current captured DOM has no browser errors or horizontal document overflow. Ordinary interactions and confirmations work in the checked paths, but stale notices and a legacy recording entry remain defects. Full keyboard and accessibility testing was not performed."
+        },
+        "originality": {
+          "value": 3,
+          "reason": "Mote-specific interpretation context, source acknowledgment, material precedence and separate local/received/processed states have deliberate task-oriented presentation with familiar controls."
+        }
+      },
+      "central_collection_gate": "pass",
+      "weighted_score_100": 71.25,
+      "coverage_counts": {
+        "partial": 29,
+        "untested": 96,
+        "verified": 3,
+        "not_applicable": 60
+      },
+      "hard_gates": {
+        "platform_thresholds": "fail",
+        "semantic_completeness": "fail",
+        "critical_journeys": "fail",
+        "no_central_local_collection": "pass"
+      }
+    },
+    "mac": {
+      "scores": {
+        "new_user": {
+          "value": 3,
+          "reason": "Fresh empty-home and first-import checks show a clear first action, device-owned collection explanation, exact interpretation context, explicit review, and a return from model setup to the same task. Recording-connector and other exceptional journeys remain incomplete."
+        },
+        "functionality": {
+          "value": 2.5,
+          "reason": "The current frozen candidate independently completes the import and source-context/attribution regressions. New targeted workflows have meaningful results, but applicable contract assertions remain partial or untested, and the ordinary Web recording entries omit required fields. The complete-semantic anchor of 3 is not reached."
+        },
+        "simplicity": {
+          "value": 3,
+          "reason": "The populated Library removes the long second category rail and repeated orientation. Search and records now dominate, while named type/filter disclosures retain secondary controls. Sources separates native collection from online connections. Advanced file settings still become long when several sections are expanded, but each disclosure names its task."
+        },
+        "clarity": {
+          "value": 2.75,
+          "reason": "Current native source rows now agree with pending queue and stopped capture state. Capture and sending pauses are separate, but stopping capture retains a stale started notice. Shared connector variants were not independently completed on this platform."
+        },
+        "design": {
+          "value": 3,
+          "reason": "Fresh viewport inspection shows coherent typography, spacing and a restrained accent. Desktop Library uses the available width well; Android has a stable bottom navigation and readable source rows. Mobile populated Library still repeats its title and spends substantial vertical space before the first record."
+        },
+        "craft": {
+          "value": 2.75,
+          "reason": "Current captured DOM has no browser errors or horizontal document overflow. Ordinary interactions and confirmations work in the checked paths, but stale notices and a legacy recording entry remain defects. Full keyboard and accessibility testing was not performed."
+        },
+        "originality": {
+          "value": 3,
+          "reason": "Mote-specific interpretation context, source acknowledgment, material precedence and separate local/received/processed states have deliberate task-oriented presentation with familiar controls."
+        }
+      },
+      "central_collection_gate": "pass",
+      "weighted_score_100": 71.25,
+      "coverage_counts": {
+        "partial": 27,
+        "untested": 147,
+        "not_applicable": 14
+      },
+      "hard_gates": {
+        "platform_thresholds": "fail",
+        "semantic_completeness": "fail",
+        "critical_journeys": "fail",
+        "no_central_local_collection": "pass"
+      }
+    },
+    "android": {
+      "scores": {
+        "new_user": {
+          "value": 3,
+          "reason": "Fresh empty-home and first-import checks show a clear first action, device-owned collection explanation, exact interpretation context, explicit review, and a return from model setup to the same task. Recording-connector and other exceptional journeys remain incomplete."
+        },
+        "functionality": {
+          "value": 2.5,
+          "reason": "The current frozen candidate independently completes the import and source-context/attribution regressions. New targeted workflows have meaningful results, but applicable contract assertions remain partial or untested, and the ordinary Web recording entries omit required fields. The complete-semantic anchor of 3 is not reached."
+        },
+        "simplicity": {
+          "value": 3,
+          "reason": "The populated Library removes the long second category rail and repeated orientation. Search and records now dominate, while named type/filter disclosures retain secondary controls. Sources separates native collection from online connections. Advanced file settings still become long when several sections are expanded, but each disclosure names its task."
+        },
+        "clarity": {
+          "value": 3,
+          "reason": "The revised Android queue distinguishes pending, received, context-conflicted and local originals. An offline note remains local; unrelated notes send while the conflicted folder waits, then the folder sends after explicit context resolution. Reception and body processing are separate. Untested shared connector variants are not credited."
+        },
+        "design": {
+          "value": 3,
+          "reason": "Fresh viewport inspection shows coherent typography, spacing and a restrained accent. Desktop Library uses the available width well; Android has a stable bottom navigation and readable source rows. Mobile populated Library still repeats its title and spends substantial vertical space before the first record."
+        },
+        "craft": {
+          "value": 3,
+          "reason": "The exercised Android local-save failure, idempotent retry, attachment handoff, offline context acknowledgment and selective queue release retain exact data. No browser errors or document-width overflow appeared in current captured DOM; full keyboard and accessibility testing was not performed."
+        },
+        "originality": {
+          "value": 3,
+          "reason": "Mote-specific interpretation context, source acknowledgment, material precedence and separate local/received/processed states have deliberate task-oriented presentation with familiar controls."
+        }
+      },
+      "central_collection_gate": "pass",
+      "weighted_score_100": 72.5,
+      "coverage_counts": {
+        "partial": 28,
+        "untested": 156,
+        "not_applicable": 4
+      },
+      "hard_gates": {
+        "platform_thresholds": "fail",
+        "semantic_completeness": "fail",
+        "critical_journeys": "fail",
+        "no_central_local_collection": "pass"
+      }
+    }
+  },
+  "mean_score_100": 71.667,
+  "weakest_platform": "web",
+  "findings": [
+    {
+      "id": "R32-01",
+      "title": "Ordinary recording entries still lead to legacy forms",
+      "observed": "From Sources → Connect source → Recordings, both Feishu and DingTalk lead to old setup forms. Connection ID, separate authorization, source explanation acknowledgment and background-enable inputs are absent. The feature-directory recording entry returns to the same catalog. The expected staged workflow cannot be completed from these visible entries.",
+      "correction": "Connect the ordinary catalog and historical recording entries to the complete vendor workflow, then verify context acknowledgment before enabling intake and separate transcript/audio recovery from that same entry.",
+      "evidence": [
+        "evidence/web/changed/33-recording-catalog.json",
+        "evidence/web/changed/34-recording-entry.json",
+        "evidence/web/changed/37-recording-directory-route.json",
+        "evidence/web/changed/38-dingtalk-entry.json"
+      ]
+    },
+    {
+      "id": "R32-02",
+      "title": "Successful Google calendar intake retains obsolete status copy",
+      "observed": "After selecting Work, saving its range and synchronizing, the result shows one new read-only archived event. The header still says no reception range selected and the notice says the range is saved but not yet synced. Disconnect preserves the archived event as required.",
+      "correction": "Derive the header and current notice from saved selection and the latest completed sync result; keep authorization, scope, background intake and archive result separate.",
+      "evidence": [
+        "evidence/web/changed/27-google-scope-saved.json",
+        "evidence/web/changed/28-google-synced.json",
+        "evidence/web/changed/29-google-result.json",
+        "evidence/web/changed/30-google-management.json",
+        "evidence/web/changed/32-google-retained.json"
+      ]
+    },
+    {
+      "id": "R32-03",
+      "title": "MCP repeat-import counts are labeled as this-attempt results",
+      "observed": "First import of one selected resource reports new 1 / duplicate 0. Repeating the same selection reports new 1 / duplicate 1 under This result, although Library contains one resulting resource material. The tools-only/no-resource state is explicit and truthful.",
+      "correction": "Show new 0 / duplicate 1 for the repeat attempt, or label genuinely cumulative totals separately from the current attempt.",
+      "evidence": [
+        "evidence/web/changed/42-mcp-no-resources.json",
+        "evidence/web/changed/46-mcp-one-imported.json",
+        "evidence/web/changed/47-mcp-one-duplicate.json",
+        "evidence/web/changed/82-library-after-grant-revoke.json"
+      ]
+    },
+    {
+      "id": "R32-04",
+      "title": "Capture stop retains a started notice",
+      "observed": "Mac capture starts after the generated permission return and uses the saved 45-second interval. After Pause capture, the main state is Stopped while the page still shows the prior Started with confirmed scope message. Sending pause remains independently preserved.",
+      "correction": "Replace or clear the prior start result when capture stops; retain separate capture and sending state.",
+      "evidence": [
+        "evidence/mac/native/07-capture-running.json",
+        "evidence/mac/native/14-capture-during-send-pause.json",
+        "evidence/mac/native/15-capture-paused.json",
+        "evidence/mac/native/16-send-still-paused.json"
+      ]
+    },
+    {
+      "id": "R32-05",
+      "title": "Import, context and native queue regressions preserve meaningful state",
+      "observed": "All three platforms retain exact multiline import interpretation through correction, confirmation and model recovery. Source context and material precedence work on all three. Android now shows pending acknowledgment offline, holds the conflicted folder, allows an unrelated saved note to receive ACK, then releases the folder only after explicit context resolution. Local-note failure/retry preserves one exact record.",
+      "correction": "Keep these transitions as regression evidence while extending only the still-unverified contract branches.",
+      "evidence": [
+        "evidence/web/import-complete/22-model-recovered-confirmed.json",
+        "evidence/mac/import-complete/22-model-recovered-confirmed.json",
+        "evidence/android/import-complete/22-model-recovered-confirmed.json",
+        "evidence/android/local/17-note-repeat-save.json",
+        "evidence/android/local/18-note-original.json",
+        "evidence/android/local/20-context-resolve-offline.json",
+        "evidence/android/local/24-queue-partial-send.json",
+        "evidence/android/local/26-folder-ack-after-context.json"
+      ]
+    },
+    {
+      "id": "R32-06",
+      "title": "Invitation management, document correction and targeted Central controls improve",
+      "observed": "An issued invitation can be reopened after closing; the synthetic QR image and JSON fallback are explicit. Markdown processing now uses untimed paragraphs and retained original text. Exact MIME rules outrank wildcard rules, dirty settings disable preview confirmation, and a current preview produces a named queue receipt. Read-all MCP grants and explicitly scoped write grants are distinct; hiding and selective revocation preserve unrelated grants and archive rows.",
+      "correction": "Preserve these specific improvements without treating unoperated options or routes as verified features.",
+      "evidence": [
+        "evidence/web/changed/08-invitation-reopen.json",
+        "evidence/web/changed/11-invitation-qr-save.json",
+        "evidence/web/changed/52-document-correction.json",
+        "evidence/web/changed/54-document-lineage.json",
+        "evidence/web/changed/64-exact-rule-match.json",
+        "evidence/web/changed/67-dirty-policy-invalidates-preview.json",
+        "evidence/web/changed/69-reprocess-confirmed.json",
+        "evidence/web/changed/76-write-grant-no-source.json",
+        "evidence/web/changed/77-write-grant-scoped.json",
+        "evidence/web/changed/81-grants-refreshed.json"
+      ]
+    },
+    {
+      "id": "R32-07",
+      "title": "Library hierarchy is simpler, but contract completeness still fails",
+      "observed": "The long desktop category rail and repeated populated-home orientation are removed. Fresh three-platform screenshots show search and records as the main content, with types and filters in named disclosures. Mobile still repeats Library and leaves substantial vertical space above the first row. This focused round does not retest all unchanged families; every such assertion remains explicitly untested.",
+      "correction": "Keep the simpler hierarchy and finish remaining semantic workflows before any completeness claim. Do not infer a feature pass from the 78-entry directory or from these visual improvements.",
+      "evidence": [
+        "evidence/web/major/library.png",
+        "evidence/mac/major/library.png",
+        "evidence/android/major/library.png",
+        "evidence/android/major/sources.png"
+      ]
+    }
+  ],
+  "screen_inspection": {
+    "scope": "Fresh empty-home and complete import evidence on all three platforms; fresh populated Library/Ask/Sources/Activity on all three; shared context/attribution on all three; targeted changed Central workflows on Web; Mac capture/privacy/pause and Android pairing/conditions/context/notes/queue.",
+    "viewports": {
+      "web": "1440x1000",
+      "mac": "1440x1000",
+      "android": "412x915 import/major; 390x844 context and native/local"
+    },
+    "runtime": "Google Chrome for Testing 134.0.6998.165; persistent fixed Noto Sans SC; isolated synthetic origin; external requests blocked",
+    "visual_review": "Viewed current Web/Mac/Android first-use and populated Library; native Sources; Android attachment modal. DOM precedes every viewport screenshot. No full-page screenshot resize is used.",
+    "captured_evidence": {
+      "dom_and_journey_json": 270,
+      "viewport_png": 258,
+      "browser_errors": 0,
+      "horizontal_overflow_snapshots": 0
+    },
+    "harness_corrections": "Initial native context regression used the former shared folder editor; R32 moves Mac context to Open Central description and Android relation to its Central entry. context-central contains the adapted complete runs. Android native full-resend check originally expected the words waiting for charging; actual evidence says conditions unsatisfied, resend not started, which is a successful block. Native step 03-offline-send is a historical runner name: the populated R32 fixture starts connected; actual offline behavior was separately exercised in android/local. Manual-driver timeouts for changed button labels, a hidden duplicate selector, an open modal and a renamed route are excluded from product defects."
+  },
+  "limits": [
+    "Frozen R32 HTML only. All candidate hashes and unchanged contract/journey/rubric hashes were independently verified. No candidate source, hidden application state or storage was inspected for scoring.",
+    "The independent 188-feature contract and fixed weights remain authoritative. All 188 features and all representative journeys receive explicit statuses; every unmentioned applicable assertion is untested.",
+    "This is a bounded changed-family review, as requested: it does not repeat R31's whole directory survey. Earlier evidence is not silently carried forward as a current-round semantic pass.",
+    "Meaningful current-round state transitions support the assertions. Finding a route, a label, a directory item or a generic success message alone is not a feature pass.",
+    "Headless Chrome and generated HTML fixtures validate UI behavior only. No live account, backend, physical native collection, real OAuth/pairing, model execution or real system permission was validated.",
+    "Three-platform import and shared source-context/attribution regressions are current evidence. Changed connector, file-rule and grant journeys were exercised primarily on Web; their native variants remain untested.",
+    "There are no browser page errors or document-width overflows in captured current-round DOM. Full keyboard, screen-reader, localization and dark-mode coverage was not repeated.",
+    "The QR and model/MCP credentials are explicitly synthetic. Export buttons were operated, but downloaded byte contents and clipboard contents were not inspected.",
+    "No evaluated source surface offers Central-local folder scanning/sync controls; the Web source view reports device-owned sources. This gate statement is scoped to the evaluated surfaces, not an assertion that every untouched route was exhaustively explored."
+  ],
+  "next_corrections": [
+    "Route visible recording catalog entries into complete vendor context/auth/stage workflows.",
+    "Replace stale Google scope/sync and Mac capture notices with current state.",
+    "Separate per-attempt MCP counts from cumulative totals.",
+    "Retain exact import, native pending-ACK and selective queue-hold regressions.",
+    "Keep explicit partial/untested statuses and complete remaining contract scenarios before claiming completeness."
+  ]
+}

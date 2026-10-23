@@ -1,0 +1,44 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/native-capture",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R32\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n设置\n工作台在线\n随手记\n添加内容\n屏幕与其他记录\n\n先确认范围，再开始记录。已有队列按发送策略独立处理。\n\n返回\n已停止\n预览范围并开始\n记录屏幕与前台应用活动\n采样间隔（秒）\n5–300 秒。\n通知与其他记录\n电源与启动\n图像质量与去重\n保存设置\n还原修改\n\n当前显示已保存的设置。\n\n设置已保存。重新打开仍使用这些值；采集开停状态单独保留。\n应用隐私与记录范围检查系统权限\n确认记录范围\n\n以下为已保存的范围；确认后才检查相关系统权限。\n\n生成的界面示意\nMote · 研究笔记\n\n样张不是你的真实屏幕。\n\n屏幕 / 活动\n按已保存应用规则\n已配置应用\nSafari · 完整内容\nVisual Studio Code · 完整内容\n信息 · 仅应用活动\n其他应用\n不记录\n目的地\nhttps://mote.example.invalid\n\n仅活动不会读取标题、正文或截图。屏幕、通知、媒体与发送均按各自保存的设置。\n\n按此范围开始\n取消",
+  "controls": [
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "关闭对话框",
+      "action": "close-modal",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "按此范围开始",
+      "label": "按此范围开始",
+      "action": "ns-capture-start",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "取消",
+      "label": "取消",
+      "action": "ns-capture-cancel",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H2",
+      "text": "确认记录范围"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

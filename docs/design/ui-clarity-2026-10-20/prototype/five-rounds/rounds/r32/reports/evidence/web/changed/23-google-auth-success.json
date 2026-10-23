@@ -1,0 +1,310 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/setup/google/google-personal",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R32\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n来源\n/\n接入设置\n工作台在线\n随手记\n添加内容\nGoogle 日历\n\n连接、选择范围，再查看归档结果。\n\n返回来源\n已授权 · 尚未选择接收范围\n\ngoogle-personal · 合成回执\n\n连接\n选择范围\n查看结果\n\n已收到合成授权回执。接下来选择范围，授权本身不开始收集。\n\n连接信息\n连接 ID\nOAuth 客户端 ID\n凭据与回调地址\n客户端密钥\n保留已保存的密钥\n替换密钥\n清除密钥\n新密钥（替换时填写）\n\n已有已保存密钥，不回显。\n\n授权回调地址\n保存连接\n填入演示连接\n授权\n\n授权后仍需选择范围并启用接收。Gmail 连接需要部署项目启用 Gmail API。\n\n更换账号 / 重新授权\n刷新授权状态\n预览授权回执\n\n原型不连接真实账号。以下按钮模拟服务端回执。二维码在离线原型中不可用，可复制上方链接；不是有效授权链接。\n\n模拟授权成功模拟授权过期\n其他连接",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回来源",
+      "label": "返回来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "连接",
+      "label": "连接",
+      "action": "cn-tab",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "选择范围",
+      "label": "选择范围",
+      "action": "cn-tab",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看结果",
+      "label": "查看结果",
+      "action": "cn-tab",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cn-id",
+      "type": "text",
+      "text": "",
+      "label": "连接 ID",
+      "value": "google-personal",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cn-clientId",
+      "type": "text",
+      "text": "",
+      "label": "OAuth 客户端 ID",
+      "value": "example-client-google",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "凭据与回调地址",
+      "label": "凭据与回调地址",
+      "expanded": true
+    },
+    {
+      "tag": "select",
+      "id": "cn-secretMode",
+      "type": "select-one",
+      "text": "保留已保存的密钥\n替换密钥\n清除密钥",
+      "label": "客户端密钥\n保留已保存的密钥\n替换密钥\n清除密钥",
+      "value": "keep",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cn-secret",
+      "type": "password",
+      "text": "",
+      "label": "新密钥（替换时填写）",
+      "value": "[redacted]",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cn-callback",
+      "type": "url",
+      "text": "",
+      "label": "授权回调地址",
+      "value": "https://mote.example.invalid/auth/callback",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存连接",
+      "label": "保存连接",
+      "action": "cn-save-connection",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "填入演示连接",
+      "label": "填入演示连接",
+      "action": "cn-demo-config",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "更换账号 / 重新授权",
+      "label": "更换账号 / 重新授权",
+      "action": "cn-authorize",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新授权状态",
+      "label": "刷新授权状态",
+      "action": "cn-refresh-auth",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "预览授权回执",
+      "label": "预览授权回执",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "模拟授权成功",
+      "label": "模拟授权成功",
+      "action": "cn-auth-success",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "模拟授权过期",
+      "label": "模拟授权过期",
+      "action": "cn-auth-expired",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "其他连接",
+      "label": "其他连接",
+      "expanded": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "Google 日历"
+    },
+    {
+      "level": "H2",
+      "text": "连接信息"
+    },
+    {
+      "level": "H2",
+      "text": "授权"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

@@ -1,0 +1,760 @@
+[
+  {
+    "at": "2026-10-23T02:51:21.670Z",
+    "op": "open",
+    "file": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/five-rounds/rounds/r32/web.html",
+    "evidenceDirectory": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/five-rounds/rounds/r32/reports/evidence/web/changed",
+    "save": "01-home"
+  },
+  {
+    "at": "2026-10-23T02:51:32.315Z",
+    "op": "select",
+    "label": "预览数据",
+    "value": "populated",
+    "save": "02-library"
+  },
+  {
+    "at": "2026-10-23T02:51:32.452Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源",
+    "save": "03-sources"
+  },
+  {
+    "at": "2026-10-23T02:51:37.592Z",
+    "op": "click",
+    "role": "button",
+    "name": "设备连接"
+  },
+  {
+    "at": "2026-10-23T02:51:37.644Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接设备",
+    "save": "04-invitation-form"
+  },
+  {
+    "at": "2026-10-23T02:51:51.029Z",
+    "op": "fill",
+    "selector": "#cs-invite-url",
+    "value": "https://review-central.example.invalid"
+  },
+  {
+    "at": "2026-10-23T02:51:51.043Z",
+    "op": "fill",
+    "selector": "#cs-invite-name",
+    "value": "审阅采集端"
+  },
+  {
+    "at": "2026-10-23T02:51:51.057Z",
+    "op": "select",
+    "selector": "#cs-invite-device",
+    "value": {
+      "label": "我的 Mac"
+    }
+  },
+  {
+    "at": "2026-10-23T02:51:51.128Z",
+    "op": "click",
+    "role": "button",
+    "name": "生成一次性邀请",
+    "save": "05-invitation-generated"
+  },
+  {
+    "at": "2026-10-23T02:52:10.343Z",
+    "op": "click",
+    "role": "button",
+    "name": "关闭详情",
+    "save": "06-invitation-close"
+  },
+  {
+    "at": "2026-10-23T02:52:10.473Z",
+    "op": "back",
+    "save": "07-invitation-return"
+  },
+  {
+    "at": "2026-10-23T02:52:15.594Z",
+    "op": "click",
+    "role": "button",
+    "name": "重新打开并管理",
+    "save": "08-invitation-reopen"
+  },
+  {
+    "at": "2026-10-23T02:52:46.770Z",
+    "op": "click",
+    "text": "示例二维码图像与到期预览",
+    "save": "09-invitation-qr"
+  },
+  {
+    "at": "2026-10-23T02:52:46.920Z",
+    "op": "click",
+    "text": "手动复制内容 / 二维码不可用时",
+    "save": "10-invitation-json"
+  },
+  {
+    "at": "2026-10-23T02:52:54.862Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存示例二维码图像",
+    "save": "11-invitation-qr-save"
+  },
+  {
+    "at": "2026-10-23T02:52:54.992Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟这份邀请到期",
+    "save": "12-invitation-expired"
+  },
+  {
+    "at": "2026-10-23T02:52:55.125Z",
+    "op": "click",
+    "role": "button",
+    "name": "重新生成邀请"
+  },
+  {
+    "at": "2026-10-23T02:52:55.175Z",
+    "op": "click",
+    "role": "button",
+    "name": "取消这份邀请",
+    "save": "13-invitation-cancelled"
+  },
+  {
+    "at": "2026-10-23T02:52:55.306Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-23T02:52:55.359Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接来源",
+    "save": "14-catalog"
+  },
+  {
+    "at": "2026-10-23T02:53:18.840Z",
+    "op": "click",
+    "selector": "button[data-page=\"setup/google\"]",
+    "save": "15-google-calendar"
+  },
+  {
+    "at": "2026-10-23T02:53:39.771Z",
+    "op": "click",
+    "role": "button",
+    "name": "填入演示连接"
+  },
+  {
+    "at": "2026-10-23T02:53:39.826Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存连接",
+    "save": "16-google-saved"
+  },
+  {
+    "at": "2026-10-23T02:53:39.955Z",
+    "op": "click",
+    "text": "凭据与回调地址",
+    "save": "17-google-credentials"
+  },
+  {
+    "at": "2026-10-23T02:53:53.487Z",
+    "op": "click",
+    "role": "button",
+    "name": "开始授权",
+    "save": "18-google-auth-pending"
+  },
+  {
+    "at": "2026-10-23T02:53:58.598Z",
+    "op": "click",
+    "text": "预览授权回执",
+    "save": "20-google-auth-fixture"
+  },
+  {
+    "at": "2026-10-23T02:54:19.842Z",
+    "op": "click",
+    "role": "button",
+    "name": "取消授权",
+    "save": "21-google-auth-cancelled"
+  },
+  {
+    "at": "2026-10-23T02:54:19.986Z",
+    "op": "click",
+    "role": "button",
+    "name": "刷新授权状态",
+    "save": "22-google-auth-not-connected"
+  },
+  {
+    "at": "2026-10-23T02:54:20.122Z",
+    "op": "click",
+    "role": "button",
+    "name": "开始授权"
+  },
+  {
+    "at": "2026-10-23T02:54:20.171Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟授权成功",
+    "save": "23-google-auth-success"
+  },
+  {
+    "at": "2026-10-23T02:54:20.302Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择范围",
+    "save": "24-google-scope"
+  },
+  {
+    "at": "2026-10-23T02:54:27.333Z",
+    "op": "click",
+    "role": "button",
+    "name": "同步所选日历",
+    "save": "25-google-empty-sync"
+  },
+  {
+    "at": "2026-10-23T02:54:27.461Z",
+    "op": "click",
+    "role": "button",
+    "name": "读取可选日历",
+    "save": "26-google-calendar-list"
+  },
+  {
+    "at": "2026-10-23T02:54:37.848Z",
+    "op": "check",
+    "label": "工作日历",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T02:54:37.884Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存日历范围",
+    "save": "27-google-scope-saved"
+  },
+  {
+    "at": "2026-10-23T02:54:38.019Z",
+    "op": "click",
+    "role": "button",
+    "name": "同步所选日历",
+    "save": "28-google-synced"
+  },
+  {
+    "at": "2026-10-23T02:54:38.150Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看结果",
+    "save": "29-google-result"
+  },
+  {
+    "at": "2026-10-23T02:54:48.184Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择范围"
+  },
+  {
+    "at": "2026-10-23T02:54:48.231Z",
+    "op": "click",
+    "text": "持续接收与连接管理",
+    "save": "30-google-management"
+  },
+  {
+    "at": "2026-10-23T02:55:11.206Z",
+    "op": "click",
+    "role": "button",
+    "name": "断开授权",
+    "save": "31-google-disconnected"
+  },
+  {
+    "at": "2026-10-23T02:55:11.333Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看结果",
+    "save": "32-google-retained"
+  },
+  {
+    "at": "2026-10-23T02:55:11.467Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回来源"
+  },
+  {
+    "at": "2026-10-23T02:55:11.517Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接来源"
+  },
+  {
+    "at": "2026-10-23T02:55:11.563Z",
+    "op": "click",
+    "text": "录音与转写",
+    "save": "33-recording-catalog"
+  },
+  {
+    "at": "2026-10-23T02:55:18.860Z",
+    "op": "click",
+    "selector": "button[data-page=\"setup/feishu-recording\"]:visible",
+    "save": "34-recording-entry"
+  },
+  {
+    "at": "2026-10-23T02:55:46.670Z",
+    "op": "click",
+    "role": "button",
+    "name": "全部功能",
+    "save": "35-feature-directory"
+  },
+  {
+    "at": "2026-10-23T02:55:55.194Z",
+    "op": "click",
+    "text": "接入来源、飞书与录音",
+    "save": "36-directory-connectors"
+  },
+  {
+    "at": "2026-10-23T02:56:00.915Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开归档厂商录音和转写",
+    "save": "37-recording-directory-route"
+  },
+  {
+    "at": "2026-10-23T02:56:18.383Z",
+    "op": "click",
+    "selector": "button[data-page=\"setup/dingtalk-recording\"]:visible",
+    "save": "38-dingtalk-entry"
+  },
+  {
+    "at": "2026-10-23T02:56:18.481Z",
+    "op": "back"
+  },
+  {
+    "at": "2026-10-23T02:56:18.546Z",
+    "op": "click",
+    "text": "文件与其他资料服务",
+    "save": "39-other-catalog"
+  },
+  {
+    "at": "2026-10-23T02:56:28.816Z",
+    "op": "click",
+    "selector": "button[data-page=\"setup/mcp\"]:visible",
+    "save": "40-mcp-entry"
+  },
+  {
+    "at": "2026-10-23T02:56:35.056Z",
+    "op": "fill",
+    "selector": "#cn-title",
+    "value": "R32 合成 MCP 资源"
+  },
+  {
+    "at": "2026-10-23T02:56:35.067Z",
+    "op": "fill",
+    "selector": "#cn-url",
+    "value": "https://resources.example.invalid/mcp"
+  },
+  {
+    "at": "2026-10-23T02:56:35.111Z",
+    "op": "click",
+    "text": "预览服务返回的资源类型",
+    "save": "41-mcp-fixture"
+  },
+  {
+    "at": "2026-10-23T02:56:45.784Z",
+    "op": "select",
+    "selector": "#cn-fixture",
+    "value": {
+      "label": "无可读资源（仅工具）"
+    }
+  },
+  {
+    "at": "2026-10-23T02:56:45.834Z",
+    "op": "click",
+    "role": "button",
+    "name": "列出可读资料",
+    "save": "42-mcp-no-resources"
+  },
+  {
+    "at": "2026-10-23T02:56:45.942Z",
+    "op": "select",
+    "selector": "#cn-fixture",
+    "value": {
+      "label": "两份可读资料"
+    }
+  },
+  {
+    "at": "2026-10-23T02:56:46.012Z",
+    "op": "click",
+    "role": "button",
+    "name": "列出可读资料",
+    "save": "43-mcp-resources"
+  },
+  {
+    "at": "2026-10-23T02:56:56.878Z",
+    "op": "click",
+    "role": "button",
+    "name": "导入所选资料",
+    "save": "44-mcp-imported"
+  },
+  {
+    "at": "2026-10-23T02:56:57.012Z",
+    "op": "click",
+    "role": "button",
+    "name": "导入所选资料",
+    "save": "45-mcp-duplicate"
+  },
+  {
+    "at": "2026-10-23T02:57:01.844Z",
+    "op": "check",
+    "role": "checkbox",
+    "name": "研究笔记",
+    "exact": false,
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T02:57:01.897Z",
+    "op": "click",
+    "role": "button",
+    "name": "导入所选资料",
+    "save": "46-mcp-one-imported"
+  },
+  {
+    "at": "2026-10-23T02:57:02.031Z",
+    "op": "click",
+    "role": "button",
+    "name": "导入所选资料",
+    "save": "47-mcp-one-duplicate"
+  },
+  {
+    "at": "2026-10-23T02:57:22.479Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回来源"
+  },
+  {
+    "at": "2026-10-23T02:57:22.528Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接来源"
+  },
+  {
+    "at": "2026-10-23T02:57:22.579Z",
+    "op": "click",
+    "selector": "button[data-page=\"setup/nas\"]:visible",
+    "save": "48-nas-entry"
+  },
+  {
+    "at": "2026-10-23T02:57:39.955Z",
+    "op": "fill",
+    "selector": "#cn-title",
+    "value": "审阅 NAS 引用"
+  },
+  {
+    "at": "2026-10-23T02:57:39.967Z",
+    "op": "fill",
+    "selector": "#cn-url",
+    "value": "smb://demo-nas.invalid/research/project-q.md"
+  },
+  {
+    "at": "2026-10-23T02:57:40.013Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存外部引用",
+    "save": "49-nas-saved"
+  },
+  {
+    "at": "2026-10-23T02:57:48.947Z",
+    "op": "click",
+    "role": "button",
+    "name": "资料库"
+  },
+  {
+    "at": "2026-10-23T02:57:48.997Z",
+    "op": "click",
+    "selector": "button[data-action=\"open-material\"][data-id=\"m2\"]:visible",
+    "save": "50-material"
+  },
+  {
+    "at": "2026-10-23T02:57:57.462Z",
+    "op": "click",
+    "role": "button",
+    "name": "文件、正文与处理详情",
+    "save": "51-document-processing"
+  },
+  {
+    "at": "2026-10-23T02:57:57.588Z",
+    "op": "click",
+    "text": "校对文段",
+    "save": "52-document-correction"
+  },
+  {
+    "at": "2026-10-23T02:58:03.949Z",
+    "op": "fill",
+    "selector": "#cs-file-m2-text",
+    "value": "R32 校对：这是第三方调研资料，应分别保留原始记录、记忆和洞察。"
+  },
+  {
+    "at": "2026-10-23T02:58:03.999Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存人工修正",
+    "save": "53-document-correction-saved"
+  },
+  {
+    "at": "2026-10-23T02:58:04.123Z",
+    "op": "click",
+    "text": "最初正文与修正历史",
+    "save": "54-document-lineage"
+  },
+  {
+    "at": "2026-10-23T02:58:04.264Z",
+    "op": "click",
+    "role": "button",
+    "name": "阅读当前正文",
+    "save": "55-document-current-body"
+  },
+  {
+    "at": "2026-10-23T02:58:04.394Z",
+    "op": "click",
+    "role": "button",
+    "name": "设置",
+    "save": "56-settings"
+  },
+  {
+    "at": "2026-10-23T02:58:09.280Z",
+    "op": "click",
+    "selector": "button[data-page=\"settings/models\"]:visible",
+    "save": "57-model-services"
+  },
+  {
+    "at": "2026-10-23T02:58:13.973Z",
+    "op": "click",
+    "text": "所有模块与处理方式",
+    "save": "58-model-modules"
+  },
+  {
+    "at": "2026-10-23T02:58:19.087Z",
+    "op": "click",
+    "selector": "button[data-page=\"settings/file-processing\"]:visible",
+    "save": "59-file-settings"
+  },
+  {
+    "at": "2026-10-23T02:58:32.720Z",
+    "op": "click",
+    "text": "类型规则",
+    "save": "60-file-rules"
+  },
+  {
+    "at": "2026-10-23T02:58:32.839Z",
+    "op": "click",
+    "text": "规则试算与已有文件",
+    "save": "61-file-trial"
+  },
+  {
+    "at": "2026-10-23T02:58:40.111Z",
+    "op": "click",
+    "role": "button",
+    "name": "添加类型规则",
+    "save": "62-rule-added"
+  },
+  {
+    "at": "2026-10-23T02:58:49.194Z",
+    "op": "fill",
+    "selector": "[id=\"cs32-policy-rules.4.type\"]",
+    "value": "image/png"
+  },
+  {
+    "at": "2026-10-23T02:58:49.210Z",
+    "op": "fill",
+    "selector": "#cs32-policy-maxAudioMinutes",
+    "value": "90"
+  },
+  {
+    "at": "2026-10-23T02:58:49.263Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存处理设置",
+    "save": "63-policy-saved"
+  },
+  {
+    "at": "2026-10-23T02:58:49.378Z",
+    "op": "fill",
+    "selector": "#cs32-policy-trial-mime",
+    "value": "image/png"
+  },
+  {
+    "at": "2026-10-23T02:58:49.428Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看匹配规则",
+    "save": "64-exact-rule-match"
+  },
+  {
+    "at": "2026-10-23T02:58:49.554Z",
+    "op": "click",
+    "text": "来源覆盖",
+    "save": "65-source-overrides"
+  },
+  {
+    "at": "2026-10-23T02:58:59.631Z",
+    "op": "click",
+    "role": "button",
+    "name": "预览已有文件重处理",
+    "save": "66-reprocess-preview"
+  },
+  {
+    "at": "2026-10-23T02:58:59.761Z",
+    "op": "fill",
+    "selector": "#cs32-policy-maxAudioMinutes",
+    "value": "91",
+    "save": "67-dirty-policy-invalidates-preview"
+  },
+  {
+    "at": "2026-10-23T02:58:59.930Z",
+    "op": "click",
+    "role": "button",
+    "name": "重新加载已保存值"
+  },
+  {
+    "at": "2026-10-23T02:58:59.996Z",
+    "op": "click",
+    "role": "button",
+    "name": "预览已有文件重处理",
+    "save": "68-current-preview"
+  },
+  {
+    "at": "2026-10-23T02:59:05.379Z",
+    "op": "click",
+    "role": "button",
+    "name": "确认当前预览",
+    "save": "69-reprocess-confirmed"
+  },
+  {
+    "at": "2026-10-23T02:59:05.563Z",
+    "op": "click",
+    "selector": "button[data-page=\"settings/access\"]:visible",
+    "save": "70-access"
+  },
+  {
+    "at": "2026-10-23T02:59:25.155Z",
+    "op": "fill",
+    "selector": "#cs32-grant-name",
+    "value": "R32 只读合成助手"
+  },
+  {
+    "at": "2026-10-23T02:59:25.209Z",
+    "op": "click",
+    "role": "button",
+    "name": "生成 MCP 配置",
+    "save": "71-read-grant"
+  },
+  {
+    "at": "2026-10-23T02:59:25.353Z",
+    "op": "click",
+    "text": "来源范围",
+    "save": "72-grant-controls"
+  },
+  {
+    "at": "2026-10-23T02:59:32.260Z",
+    "op": "click",
+    "role": "button",
+    "name": "下载配置",
+    "save": "73-grant-download"
+  },
+  {
+    "at": "2026-10-23T02:59:32.390Z",
+    "op": "click",
+    "role": "button",
+    "name": "已保存，隐藏凭据",
+    "save": "74-grant-hidden"
+  },
+  {
+    "at": "2026-10-23T02:59:32.527Z",
+    "op": "click",
+    "role": "button",
+    "name": "资料库"
+  },
+  {
+    "at": "2026-10-23T02:59:32.536Z",
+    "op": "back",
+    "save": "75-grant-revisited"
+  },
+  {
+    "at": "2026-10-23T02:59:32.646Z",
+    "op": "fill",
+    "selector": "#cs32-grant-name",
+    "value": "R32 仅研究资料写入"
+  },
+  {
+    "at": "2026-10-23T02:59:32.670Z",
+    "op": "select",
+    "selector": "#cs32-grant-access",
+    "value": {
+      "label": "指定来源写入"
+    }
+  },
+  {
+    "at": "2026-10-23T02:59:32.707Z",
+    "op": "click",
+    "role": "button",
+    "name": "生成 MCP 配置",
+    "save": "76-write-grant-no-source"
+  },
+  {
+    "at": "2026-10-23T02:59:39.667Z",
+    "op": "check",
+    "selector": "#cs32-grant-source-folder",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T02:59:39.725Z",
+    "op": "click",
+    "role": "button",
+    "name": "生成 MCP 配置",
+    "save": "77-write-grant-scoped"
+  },
+  {
+    "at": "2026-10-23T02:59:39.888Z",
+    "op": "click",
+    "role": "button",
+    "name": "已保存，隐藏凭据"
+  },
+  {
+    "at": "2026-10-23T02:59:39.924Z",
+    "op": "click",
+    "role": "button",
+    "name": "撤销此连接",
+    "index": 0,
+    "save": "78-revoke-review"
+  },
+  {
+    "at": "2026-10-23T03:00:02.499Z",
+    "op": "click",
+    "role": "button",
+    "name": "取消",
+    "save": "79-revoke-cancelled"
+  },
+  {
+    "at": "2026-10-23T03:00:02.674Z",
+    "op": "click",
+    "role": "button",
+    "name": "撤销此连接",
+    "index": 0
+  },
+  {
+    "at": "2026-10-23T03:00:02.725Z",
+    "op": "click",
+    "role": "button",
+    "name": "确认撤销",
+    "save": "80-one-grant-revoked"
+  },
+  {
+    "at": "2026-10-23T03:00:02.903Z",
+    "op": "click",
+    "role": "button",
+    "name": "刷新连接",
+    "save": "81-grants-refreshed"
+  },
+  {
+    "at": "2026-10-23T03:00:03.094Z",
+    "op": "click",
+    "role": "button",
+    "name": "资料库",
+    "save": "82-library-after-grant-revoke"
+  }
+]

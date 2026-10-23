@@ -1,0 +1,512 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/file-processing",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R32\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n设置\n工作台在线\n随手记\n添加内容\n设置\n\n调整服务与资料管理方式，或管理当前登录。\n\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观\n文件与语音处理\n\n管理正文提取、语音转写、规则与处理服务。\n\n按来源和文件类型决定处理方式。保存后，新文件与未完成任务使用新设置；已有原件和已完成结果保留。\n处理设置已保存为版本 2。新文件和未完成任务采用此版本；已完成结果保留。\n启用 Central 文件处理\n单个音频最长（分钟）\n单次处理超时（秒）\n\n超出时长 / 超时限制，与缺少模型或运行服务是不同的阻塞原因。\n\n类型规则\n\n精确 MIME 优先于通配符；其他类型回退到“仅归档原件”。\n\n精确 MIME 或通配符\n处理方案\nArchive originals\nUTF-8 text（类型不兼容 / 插件不可用）\nLocal recording\nImage text（类型不兼容 / 插件不可用）\n移除规则\n精确 MIME 或通配符\n处理方案\nArchive originals\nUTF-8 text（类型不兼容 / 插件不可用）\nLocal recording（类型不兼容 / 插件不可用）\nImage text\n移除规则\n精确 MIME 或通配符\n处理方案\nArchive originals\nUTF-8 text\nLocal recording（类型不兼容 / 插件不可用）\nImage text（类型不兼容 / 插件不可用）\n移除规则\n精确 MIME 或通配符\n处理方案\nArchive originals\nUTF-8 text\nLocal recording\nImage text\n移除规则\n精确 MIME 或通配符\n处理方案\nArchive originals\nUTF-8 text（类型不兼容 / 插件不可用）\nLocal recording（类型不兼容 / 插件不可用）\nImage text\n移除规则\n添加类型规则\n处理方案\n来源覆盖\n\n来源精确类型 → 来源通配类型 → 全局精确类型 → 全局通配类型 → 其他。其他来源不受这项覆盖影响。\n\n添加来源覆盖\n服务连接与本地模型\n保存处理设置\n重新加载已保存值\n\n已保存版本 2\n\n查看当前保存的规则\n规则试算与已有文件\n\n只使用已保存设置。每批最多 100 份当前原件，预览有效 10 分钟。仅归档、Shadow 与运行中的文件跳过。\n\n目标来源\n全部来源\n研究资料\nMac 屏幕\n飞书文档与日历\nGoogle 日历\nR32 合成 MCP 资源\n审阅 NAS 引用\n目标文件类型\n录音\n图片\n文本\nPDF\n其他 / 全部类型\n试算 MIME 类型\n查看匹配规则\n预览已有文件重处理\n已按保存的版本试算。未执行内容处理。\n已保存版本\n2\n命中规则\n全部来源 · image/png\n方案\nArchive originals\n处理器\narchive",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "账号与设备",
+      "label": "账号与设备",
+      "action": "go",
+      "page": "settings/account",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "模型与服务",
+      "label": "模型与服务",
+      "action": "go",
+      "page": "settings/models",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "采集与隐私",
+      "label": "采集与隐私",
+      "action": "go",
+      "page": "settings/privacy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "自动记忆与插件",
+      "label": "自动记忆与插件",
+      "action": "go",
+      "page": "settings/plugins",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "存储与备份",
+      "label": "存储与备份",
+      "action": "go",
+      "page": "settings/storage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "对外授权",
+      "label": "对外授权",
+      "action": "go",
+      "page": "settings/access",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "用量与费用",
+      "label": "用量与费用",
+      "action": "go",
+      "page": "settings/usage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "帮助与诊断",
+      "label": "帮助与诊断",
+      "action": "go",
+      "page": "settings/diagnostics",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "语言与外观",
+      "label": "语言与外观",
+      "action": "go",
+      "page": "settings/appearance",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs32-policy-enabled",
+      "type": "checkbox",
+      "text": "",
+      "label": "启用 Central 文件处理",
+      "value": "on",
+      "checked": true,
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs32-policy-maxAudioMinutes",
+      "type": "number",
+      "text": "",
+      "label": "单个音频最长（分钟）",
+      "value": "90",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs32-policy-timeoutSeconds",
+      "type": "number",
+      "text": "",
+      "label": "单次处理超时（秒）",
+      "value": "1200",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "类型规则",
+      "label": "类型规则",
+      "expanded": true
+    },
+    {
+      "tag": "input",
+      "id": "cs32-policy-rules.0.type",
+      "type": "text",
+      "text": "",
+      "label": "精确 MIME 或通配符",
+      "value": "audio/*",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs32-policy-rules.0.profile",
+      "type": "select-one",
+      "text": "Archive originals\nUTF-8 text（类型不兼容 / 插件不可用）\nLocal recording\nImage text（类型不兼容 / 插件不可用）",
+      "label": "处理方案\nArchive originals\nUTF-8 text（类型不兼容 / 插件不可用）\nLocal recording\nImage text（类型不兼容 / 插件不可用）",
+      "value": "p-audio",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "移除规则",
+      "label": "移除规则",
+      "action": "cs-policy-rule-remove",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs32-policy-rules.1.type",
+      "type": "text",
+      "text": "",
+      "label": "精确 MIME 或通配符",
+      "value": "image/*",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs32-policy-rules.1.profile",
+      "type": "select-one",
+      "text": "Archive originals\nUTF-8 text（类型不兼容 / 插件不可用）\nLocal recording（类型不兼容 / 插件不可用）\nImage text",
+      "label": "处理方案\nArchive originals\nUTF-8 text（类型不兼容 / 插件不可用）\nLocal recording（类型不兼容 / 插件不可用）\nImage text",
+      "value": "p-image",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "移除规则",
+      "label": "移除规则",
+      "action": "cs-policy-rule-remove",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs32-policy-rules.2.type",
+      "type": "text",
+      "text": "",
+      "label": "精确 MIME 或通配符",
+      "value": "text/*",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs32-policy-rules.2.profile",
+      "type": "select-one",
+      "text": "Archive originals\nUTF-8 text\nLocal recording（类型不兼容 / 插件不可用）\nImage text（类型不兼容 / 插件不可用）",
+      "label": "处理方案\nArchive originals\nUTF-8 text\nLocal recording（类型不兼容 / 插件不可用）\nImage text（类型不兼容 / 插件不可用）",
+      "value": "p-text",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "移除规则",
+      "label": "移除规则",
+      "action": "cs-policy-rule-remove",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs32-policy-rules.3.type",
+      "type": "text",
+      "text": "",
+      "label": "精确 MIME 或通配符",
+      "value": "*/*",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs32-policy-rules.3.profile",
+      "type": "select-one",
+      "text": "Archive originals\nUTF-8 text\nLocal recording\nImage text",
+      "label": "处理方案\nArchive originals\nUTF-8 text\nLocal recording\nImage text",
+      "value": "p-archive",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "移除规则",
+      "label": "移除规则",
+      "action": "cs-policy-rule-remove",
+      "disabled": true
+    },
+    {
+      "tag": "input",
+      "id": "cs32-policy-rules.4.type",
+      "type": "text",
+      "text": "",
+      "label": "精确 MIME 或通配符",
+      "value": "image/png",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs32-policy-rules.4.profile",
+      "type": "select-one",
+      "text": "Archive originals\nUTF-8 text（类型不兼容 / 插件不可用）\nLocal recording（类型不兼容 / 插件不可用）\nImage text",
+      "label": "处理方案\nArchive originals\nUTF-8 text（类型不兼容 / 插件不可用）\nLocal recording（类型不兼容 / 插件不可用）\nImage text",
+      "value": "p-archive",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "移除规则",
+      "label": "移除规则",
+      "action": "cs-policy-rule-remove",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加类型规则",
+      "label": "添加类型规则",
+      "action": "cs-policy-rule-add",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "处理方案",
+      "label": "处理方案",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "来源覆盖",
+      "label": "来源覆盖",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加来源覆盖",
+      "label": "添加来源覆盖",
+      "action": "cs-policy-override-add",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "服务连接与本地模型",
+      "label": "服务连接与本地模型",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存处理设置",
+      "label": "保存处理设置",
+      "action": "cs-policy-save",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重新加载已保存值",
+      "label": "重新加载已保存值",
+      "action": "cs-policy-reload",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "查看当前保存的规则",
+      "label": "查看当前保存的规则",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "规则试算与已有文件",
+      "label": "规则试算与已有文件",
+      "expanded": true
+    },
+    {
+      "tag": "select",
+      "id": "cs32-policy-trial-source",
+      "type": "select-one",
+      "text": "全部来源\n研究资料\nMac 屏幕\n飞书文档与日历\nGoogle 日历\nR32 合成 MCP 资源\n审阅 NAS 引用",
+      "label": "目标来源\n全部来源\n研究资料\nMac 屏幕\n飞书文档与日历\nGoogle 日历\nR32 合成 MCP 资源\n审阅 NAS 引用",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs32-policy-trial-type",
+      "type": "select-one",
+      "text": "录音\n图片\n文本\nPDF\n其他 / 全部类型",
+      "label": "目标文件类型\n录音\n图片\n文本\nPDF\n其他 / 全部类型",
+      "value": "*/*",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs32-policy-trial-mime",
+      "type": "text",
+      "text": "",
+      "label": "试算 MIME 类型",
+      "value": "image/png",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看匹配规则",
+      "label": "查看匹配规则",
+      "action": "cs-policy-match",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "预览已有文件重处理",
+      "label": "预览已有文件重处理",
+      "action": "cs-policy-preview",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设置"
+    },
+    {
+      "level": "H2",
+      "text": "文件与语音处理"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

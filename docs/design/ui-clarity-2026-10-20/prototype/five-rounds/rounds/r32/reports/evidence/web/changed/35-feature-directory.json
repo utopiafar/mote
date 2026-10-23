@@ -1,0 +1,279 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/guide",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R32\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n全部功能\n工作台在线\n随手记\n添加内容\n全部功能\n\n按功能目录查找当前支持的操作与设置。\n\n78 项功能 · 按任务分组\n接入与记录\n随手记与已有附件\n导入文档、文件夹和媒体\n接入来源、飞书与录音\n连接设备与查看采集\n阅读与使用\n阅读正文与原始证据\n提问与回看对话\n查看、纠正与整理记忆\n生成洞察与回顾\n跟进与管理\n跟进工作与失败恢复\n待办与日程建议\n按分类回看与查看时间\n备份、存储、索引与费用\n设置与维护\n模型、图片、文件与语音\n自动记忆与可信插件方案\n登录、语言与页面入口\n帮助、诊断与 Agent 视角",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "guide-search",
+      "type": "text",
+      "text": "",
+      "label": "搜索功能",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "随手记与已有附件",
+      "label": "随手记与已有附件",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "导入文档、文件夹和媒体",
+      "label": "导入文档、文件夹和媒体",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "接入来源、飞书与录音",
+      "label": "接入来源、飞书与录音",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "连接设备与查看采集",
+      "label": "连接设备与查看采集",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "阅读正文与原始证据",
+      "label": "阅读正文与原始证据",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "提问与回看对话",
+      "label": "提问与回看对话",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "查看、纠正与整理记忆",
+      "label": "查看、纠正与整理记忆",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "生成洞察与回顾",
+      "label": "生成洞察与回顾",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "跟进工作与失败恢复",
+      "label": "跟进工作与失败恢复",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "待办与日程建议",
+      "label": "待办与日程建议",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "按分类回看与查看时间",
+      "label": "按分类回看与查看时间",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "备份、存储、索引与费用",
+      "label": "备份、存储、索引与费用",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "模型、图片、文件与语音",
+      "label": "模型、图片、文件与语音",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "自动记忆与可信插件方案",
+      "label": "自动记忆与可信插件方案",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "登录、语言与页面入口",
+      "label": "登录、语言与页面入口",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "帮助、诊断与 Agent 视角",
+      "label": "帮助、诊断与 Agent 视角",
+      "expanded": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "全部功能"
+    },
+    {
+      "level": "H2",
+      "text": "接入与记录"
+    },
+    {
+      "level": "H2",
+      "text": "阅读与使用"
+    },
+    {
+      "level": "H2",
+      "text": "跟进与管理"
+    },
+    {
+      "level": "H2",
+      "text": "设置与维护"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

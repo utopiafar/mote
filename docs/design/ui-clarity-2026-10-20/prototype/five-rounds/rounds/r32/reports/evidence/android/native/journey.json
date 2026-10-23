@@ -1,0 +1,138 @@
+{
+  "platform": "android",
+  "scope": "Generated native UI fixtures only; no operating-system or live upload validation",
+  "steps": [
+    {
+      "name": "01-source-state",
+      "url": "https://mote-prototype.invalid/?reset=1#/sources",
+      "evidence": [
+        "01-source-state.json",
+        "01-source-state.png"
+      ]
+    },
+    {
+      "name": "02-upload-initial",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-upload",
+      "evidence": [
+        "02-upload-initial.json",
+        "02-upload-initial.png"
+      ]
+    },
+    {
+      "name": "03-offline-send",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-upload",
+      "evidence": [
+        "03-offline-send.json",
+        "03-offline-send.png"
+      ]
+    },
+    {
+      "name": "04-queue-before",
+      "url": "https://mote-prototype.invalid/?reset=1#/activity/native-queue",
+      "evidence": [
+        "04-queue-before.json",
+        "04-queue-before.png"
+      ]
+    },
+    {
+      "name": "05-invitation-preview",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-connection",
+      "evidence": [
+        "05-invitation-preview.json",
+        "05-invitation-preview.png"
+      ]
+    },
+    {
+      "name": "06-connected",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-connection",
+      "evidence": [
+        "06-connected.json",
+        "06-connected.png"
+      ]
+    },
+    {
+      "name": "07-charge-block",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-upload",
+      "evidence": [
+        "07-charge-block.json",
+        "07-charge-block.png"
+      ]
+    },
+    {
+      "name": "08-resend-review",
+      "url": "https://mote-prototype.invalid/?reset=1#/activity/native-reconcile",
+      "evidence": [
+        "08-resend-review.json",
+        "08-resend-review.png"
+      ]
+    },
+    {
+      "name": "09-resend-block",
+      "url": "https://mote-prototype.invalid/?reset=1#/activity/native-reconcile",
+      "evidence": [
+        "09-resend-block.json",
+        "09-resend-block.png"
+      ]
+    },
+    {
+      "name": "10-wifi-block",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-upload",
+      "evidence": [
+        "10-wifi-block.json",
+        "10-wifi-block.png"
+      ]
+    },
+    {
+      "name": "11-low-battery-block",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-upload",
+      "evidence": [
+        "11-low-battery-block.json",
+        "11-low-battery-block.png"
+      ]
+    },
+    {
+      "name": "12-send-result",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-upload",
+      "evidence": [
+        "12-send-result.json",
+        "12-send-result.png"
+      ]
+    },
+    {
+      "name": "13-queue-after",
+      "url": "https://mote-prototype.invalid/?reset=1#/activity/native-queue",
+      "evidence": [
+        "13-queue-after.json",
+        "13-queue-after.png"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "label": "queue has generated record rather than empty-only fixture",
+      "observed": true
+    },
+    {
+      "label": "manual send obeys charging condition",
+      "observed": true
+    },
+    {
+      "label": "full resend obeys charging condition",
+      "observed": false
+    },
+    {
+      "label": "manual send obeys unmetered condition",
+      "observed": true
+    },
+    {
+      "label": "manual send obeys low-battery condition",
+      "observed": true
+    },
+    {
+      "label": "nonempty queue outcome available",
+      "observed": true
+    }
+  ],
+  "errors": [],
+  "browserErrors": []
+}
