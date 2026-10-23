@@ -70,5 +70,8 @@ async function summary(name){const el=s.page.locator('summary').filter({hasText:
    d=await step('19-model-saved');check('saved model visible value',d.controls.find(c=>c.id==='cs-model-module-model')?.value);
    d=await step('20-return-same-import',()=>button('返回这次导入'));
    check('same task after model return',d.url.replace('/details/','/review/')===taskUrl||d.url===taskUrl);check('revised prose after model return',d.text.includes(revised));
+   d=await step('21-model-recovered-preview',()=>button('核对并继续'));
+   d=await step('22-model-recovered-confirmed',()=>button('确认并保存记录'));
+   check('model recovery reaches saved same task',d.url.replace('/details/','/review/')===taskUrl&&d.text.includes('记录已保存'));
  }
 }catch(e){log.errors.push(e.message);if(s)await step('error-observed').catch(()=>{});}finally{if(s){log.browserErrors=s.errors;await s.browser.close();}await fs.mkdir(dir,{recursive:true});await fs.writeFile(path.join(dir,'journey.json'),JSON.stringify(log,null,2)+'\n');console.log(JSON.stringify(log));}})();

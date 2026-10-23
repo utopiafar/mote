@@ -96,7 +96,7 @@ def main():
         central_gate = decisions['platforms'][platform].get('central_collection_gate', 'untested')
         platform_results[platform] = {**decisions['platforms'][platform], 'weighted_score_100': round(sum(values[key] / 4 * weights[key] for key in weights), 3), 'coverage_counts': counts, 'hard_gates': {'platform_thresholds': 'pass' if threshold else 'fail', 'semantic_completeness': 'pass' if complete else 'fail', 'critical_journeys': 'pass' if journey_pass else 'fail', 'no_central_local_collection': central_gate}}
     passed = all(all(v == 'pass' for v in p['hard_gates'].values()) for p in platform_results.values())
-    identity = {'round': decisions['round'], 'evaluator': '/root/r30_34_independent_review', 'source_sha': contract['sourceSha'], 'candidate_sha256': {p: digest(round_dir / f'{p}.html') for p in PLATFORMS}, 'contract_sha256': digest(BASE / 'contract/user-features.json'), 'journeys_sha256': digest(BASE / 'contract/journeys.json'), 'rubric_sha256': digest(BASE / 'rubric-independent.json'), 'rubric_id': rubric['rubric_id']}
+    identity = {'round': decisions['round'], 'evaluator': decisions.get('evaluator', '/root/r30_34_independent_review'), 'source_sha': contract['sourceSha'], 'candidate_sha256': {p: digest(round_dir / f'{p}.html') for p in PLATFORMS}, 'contract_sha256': digest(BASE / 'contract/user-features.json'), 'journeys_sha256': digest(BASE / 'contract/journeys.json'), 'rubric_sha256': digest(BASE / 'rubric-independent.json'), 'rubric_id': rubric['rubric_id']}
     report = {'schema_version': 1, **identity, 'status': 'PASS' if passed else 'FAIL', 'platforms': platform_results, 'mean_score_100': round(sum(p['weighted_score_100'] for p in platform_results.values()) / 3, 3), 'weakest_platform': min(platform_results, key=lambda p: platform_results[p]['weighted_score_100']), 'findings': decisions.get('findings', []), 'screen_inspection': decisions.get('screen_inspection', {}), 'limits': decisions.get('limits', []), 'next_corrections': decisions.get('next_corrections', [])}
     output = round_dir / 'reports'
     output.mkdir(parents=True, exist_ok=True)
@@ -116,6 +116,10 @@ def main():
     for row in coverage:
         rows.append('| ' + row['feature_id'] + ' | ' + ' | '.join(row['platform_evidence'][p]['status'] for p in PLATFORMS) + ' |')
     (output / 'feature-coverage.md').write_text('\n'.join(rows) + '\n')
+    rows = [f'# {decisions["round"]} journey coverage', '', 'Scenario-specific outcomes are recorded independently from navigation coverage. Partial or untested required journeys block completeness.', '', '| Journey | Web | Mac | Android |', '|---|---|---|---|']
+    for row in journeys:
+        rows.append('| ' + row['journey_id'] + ' | ' + ' | '.join(row['platform_evidence'][p]['status'] for p in PLATFORMS) + ' |')
+    (output / 'journey-coverage.md').write_text('\n'.join(rows) + '\n')
     print(json.dumps({'round': decisions['round'], 'status': report['status'], 'mean': report['mean_score_100'], 'platforms': {p: {'score': r['weighted_score_100'], 'gates': r['hard_gates'], 'coverage': r['coverage_counts']} for p, r in platform_results.items()}}))
 
 

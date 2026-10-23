@@ -1,0 +1,21 @@
+{
+  "round": 32,
+  "basedOn": "R31 independent evaluation and frozen 188-feature inventory",
+  "changes": [
+    {"finding": "R31 invitation lifecycle", "change": "Active invitations can be reopened, cancelled and expired. A clearly labelled synthetic QR can be exported; it is not a pairing credential."},
+    {"finding": "R31 native state consistency", "change": "Native sources expose destination and waiting state. Android description conflicts and pending Central acknowledgements hold affected source files without blocking unrelated local notes."},
+    {"finding": "R31 nonempty native queues", "change": "Local notes have durable drafts, queued content, failure/retry and idempotent delivery. Source checks create deduplicated synthetic pending records. Capture and sending pause independently."},
+    {"finding": "R31 file-kind semantics", "change": "Document processing uses numbered document segments and body lineage; only audio uses time and speaker information."},
+    {"finding": "R31 screen focus", "change": "Library uses three primary tabs. Material kinds and filters are disclosed on demand; the long second navigation rail and repeated all-material headings are removed."},
+    {"finding": "Inventory native local access", "change": "Signed-out native entry permits an explicit allowlist of local tasks, preserves device-owned data across account changes, and keeps Central tasks behind account login."},
+    {"finding": "Inventory source connections", "change": "NAS references, MCP resources, Google Calendar, Gmail, Lark documents/calendar and vendor recordings have separate connection, scope and result steps, retained context, and explicit synthetic receipt states."},
+    {"finding": "Inventory processing and access", "change": "File processing rules, profiles, services, saved-rule previews and source overrides are represented with saved/effective distinctions. MCP grants, plugin lifecycle, clarification and work recovery expose their own controls and outcomes."}
+  ],
+  "authorVerification": {
+    "root": "All three platforms completed the import/context nominal regression and connector/material/library focused journeys with zero page errors. Library viewport screenshots were inspected with the fixed CJK font.",
+    "native": "54 author checks across Mac, Android and Web negative cases; full details in work/native-r32-handoff.md.",
+    "central": "10 focused author journeys including shared policy save and narrow layouts on Mac/Android; no JavaScript runtime errors.",
+    "limits": "Author checks do not establish independent acceptance. Independent evaluation starts only after this immutable freeze."
+  },
+  "boundary": "HTML UI simulation using synthetic data. No native runtime, backend, live model, OAuth, actual calendar or device pairing is validated."
+}
