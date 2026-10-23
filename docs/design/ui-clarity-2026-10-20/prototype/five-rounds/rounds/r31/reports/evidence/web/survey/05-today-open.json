@@ -1,0 +1,366 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/today",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n今天\n工作台在线\n随手记\n添加内容\n今天\n\n回看进展，处理需要你的事项，安排下一步。\n\n回顾这周的资料\n6\n可阅读资料\n2\n未完成待办\n2\n需要你继续\n需要你继续\n所有后台工作\n补充录音里的一个背景\n\n“第一轮设计”指哪个阶段？\n\n补充说明\n飞书来源需要重新授权\n\n已保存资料仍可阅读。\n\n恢复这个来源\n我的待办\n管理待办与日程\n核对移动端的添加入口\n管理\n整理这周保存的研究资料\n管理\n添加\n待核对的日程建议\n\n周四设计评审 · 10月22日 14:00–15:00\n\n查看日程\n最近保存的资料\n打开资料库\n产品评审 · 让第一步更清楚\n\n随手记 · 今天 09:12\n\n长期记忆系统调研笔记\n\n研究资料 · 昨天 18:34\n\n最近洞察\n\n尚未生成回顾。用页面上方“回顾这周的资料”，从一周的内容里整理变化与下一步。\n\n首次设置与接入\n连接第一台设备\n导入第一批文件\n配置问答模型\n前往问一问",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "回顾这周的资料",
+      "label": "回顾这周的资料",
+      "action": "go",
+      "page": "insights",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "所有后台工作",
+      "label": "所有后台工作",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "补充说明",
+      "label": "补充说明",
+      "action": "go",
+      "page": "ask/clarifications",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "恢复这个来源",
+      "label": "恢复这个来源",
+      "action": "go",
+      "page": "setup/lark",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "管理待办与日程",
+      "label": "管理待办与日程",
+      "action": "go",
+      "page": "todos",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "type": "checkbox",
+      "text": "",
+      "label": "核对移动端的添加入口",
+      "value": "on",
+      "checked": false,
+      "action": "check-todo",
+      "item": "t1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "管理",
+      "label": "管理",
+      "action": "manage-todo",
+      "item": "t1",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "type": "checkbox",
+      "text": "",
+      "label": "整理这周保存的研究资料",
+      "value": "on",
+      "checked": false,
+      "action": "check-todo",
+      "item": "t2",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "管理",
+      "label": "管理",
+      "action": "manage-todo",
+      "item": "t2",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "todo-text",
+      "type": "text",
+      "text": "",
+      "label": "待办内容",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加",
+      "label": "添加",
+      "action": "add-todo",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看日程",
+      "label": "查看日程",
+      "action": "go",
+      "page": "todos/schedule",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开资料库",
+      "label": "打开资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "产品评审 · 让第一步更清楚",
+      "label": "产品评审 · 让第一步更清楚",
+      "action": "go",
+      "page": "material/m1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "长期记忆系统调研笔记",
+      "label": "长期记忆系统调研笔记",
+      "action": "go",
+      "page": "material/m2",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "首次设置与接入",
+      "label": "首次设置与接入",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "连接第一台设备",
+      "label": "连接第一台设备",
+      "action": "go",
+      "page": "setup/device",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "导入第一批文件",
+      "label": "导入第一批文件",
+      "action": "go",
+      "page": "import",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "配置问答模型",
+      "label": "配置问答模型",
+      "action": "go",
+      "page": "settings/models",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "前往问一问",
+      "label": "前往问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "今天"
+    },
+    {
+      "level": "H2",
+      "text": "需要你继续"
+    },
+    {
+      "level": "H3",
+      "text": "补充录音里的一个背景"
+    },
+    {
+      "level": "H3",
+      "text": "飞书来源需要重新授权"
+    },
+    {
+      "level": "H2",
+      "text": "我的待办"
+    },
+    {
+      "level": "H2",
+      "text": "待核对的日程建议"
+    },
+    {
+      "level": "H2",
+      "text": "最近保存的资料"
+    },
+    {
+      "level": "H2",
+      "text": "最近洞察"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

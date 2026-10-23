@@ -1,0 +1,220 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/sources",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nm\n来源\n来源\n\n管理内容从哪里来，采集范围在对应设备设置。\n\n连接来源\n本机日历\n发送与本机队列\n这台 Android\n本机设置\n研究资料\n\nAndroid · Documents/研究资料\n\n当前状态：正在同步\n管理\nAndroid 屏幕\n\nAndroid · 已保存 2 个应用：浏览器、笔记与文档\n\n当前状态：已停止\n管理\n再连接一个本机来源\n在线资料来源\n飞书文档与日历\n\n工作资料 · 只读同步\n\n当前状态：需要重新授权\n管理\n导入已有文件\n对外授权\n设备连接\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "连接来源",
+      "label": "连接来源",
+      "action": "go",
+      "page": "catalog",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "本机日历",
+      "label": "本机日历",
+      "action": "go",
+      "page": "setup/native-calendar",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "发送与本机队列",
+      "label": "发送与本机队列",
+      "action": "go",
+      "page": "settings/native-upload",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "本机设置",
+      "label": "本机设置",
+      "action": "go",
+      "page": "settings/native",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "管理",
+      "label": "管理",
+      "action": "go",
+      "page": "setup/folder",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "管理",
+      "label": "管理",
+      "action": "go",
+      "page": "setup/screen",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "再连接一个本机来源",
+      "label": "再连接一个本机来源",
+      "action": "go",
+      "page": "catalog",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "管理",
+      "label": "管理",
+      "action": "go",
+      "page": "setup/lark",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "导入已有文件",
+      "label": "导入已有文件",
+      "action": "go",
+      "page": "import",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "对外授权",
+      "label": "对外授权",
+      "action": "go",
+      "page": "access",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设备连接",
+      "label": "设备连接",
+      "action": "go",
+      "page": "devices",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "来源"
+    },
+    {
+      "level": "H2",
+      "text": "这台 Android"
+    },
+    {
+      "level": "H2",
+      "text": "在线资料来源"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

@@ -1,0 +1,272 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/setup/device",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n来源\n/\n接入设置\n工作台在线\n随手记\n添加内容\n连接设备\n\n发出一次性邀请，在目标采集端确认。\n\n返回设备\n设备邀请\n已取消\n\n评审 Android 采集端\n\nCentral\nhttps://review-central.example.invalid\n设备身份\n新设备\n到期时间\n2026/10/23 02:37:26 UTC\n剩余时间\n0 分钟\n邀请只授权此账号的设备采集与同步；私人资料库及管理功能需另行登录。关闭页面不会取消邀请。\n邀请已取消；这份凭据不能再使用。关闭详情不会产生此效果。\n复制 JSON\n下载 JSON\n手动复制内容 / 二维码不可用时\n\n此离线原型不生成可扫描凭据。请用 JSON 演示交付；不会真实配对设备。\n\n重新生成邀请\n取消这份邀请\n关闭详情\n原型：模拟设备确认\n邀请地址与设备身份\n设备可访问的 Central 地址\n目标设备不能通过 localhost 访问另一台机器；请使用它可访问的 HTTPS 地址。\n连接名称\n新建或重新授权设备\n新设备\n我的 Mac\n生成一次性邀请",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回设备",
+      "label": "返回设备",
+      "action": "go",
+      "page": "devices",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "复制 JSON",
+      "label": "复制 JSON",
+      "action": "cs-invite-copy",
+      "disabled": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "下载 JSON",
+      "label": "下载 JSON",
+      "action": "cs-invite-download",
+      "disabled": true
+    },
+    {
+      "tag": "summary",
+      "text": "手动复制内容 / 二维码不可用时",
+      "label": "手动复制内容 / 二维码不可用时",
+      "expanded": true
+    },
+    {
+      "tag": "textarea",
+      "type": "textarea",
+      "text": "",
+      "label": "Invitation JSON",
+      "value": "{\n  \"demo\": true,\n  \"central\": \"https://review-central.example.invalid\",\n  \"account\": \"林同学\",\n  \"deviceId\": null,\n  \"name\": \"评审 Android 采集端\",\n  \"invitation\": \"DEMO-NOT-A-CREDENTIAL-1792722446260\",\n  \"expiresAt\": \"2026-10-23T02:37:26.260Z\"\n}",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重新生成邀请",
+      "label": "重新生成邀请",
+      "action": "cs-invite-generate",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "取消这份邀请",
+      "label": "取消这份邀请",
+      "action": "cs-invite-cancel",
+      "disabled": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "关闭详情",
+      "label": "关闭详情",
+      "action": "cs-invite-close",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "原型：模拟设备确认",
+      "label": "原型：模拟设备确认",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "邀请地址与设备身份",
+      "label": "邀请地址与设备身份",
+      "expanded": true
+    },
+    {
+      "tag": "input",
+      "id": "cs-invite-url",
+      "type": "url",
+      "text": "",
+      "label": "设备可访问的 Central 地址\n目标设备不能通过 localhost 访问另一台机器；请使用它可访问的 HTTPS 地址。",
+      "value": "https://review-central.example.invalid",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-invite-name",
+      "type": "text",
+      "text": "",
+      "label": "连接名称",
+      "value": "评审 Android 采集端",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs-invite-device",
+      "type": "select-one",
+      "text": "新设备\n我的 Mac",
+      "label": "新建或重新授权设备\n新设备\n我的 Mac",
+      "value": "new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "生成一次性邀请",
+      "label": "生成一次性邀请",
+      "action": "cs-invite-generate",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "连接设备"
+    },
+    {
+      "level": "H2",
+      "text": "设备邀请"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

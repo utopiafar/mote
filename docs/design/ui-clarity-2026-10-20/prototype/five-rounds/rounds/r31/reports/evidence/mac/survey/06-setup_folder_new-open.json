@@ -1,0 +1,339 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n来源\n/\n接入设置\n工作台在线\n随手记\n添加内容\n连接 Mac 文件夹\n\n再选一个 Mac 文件夹，分别管理它的范围与同步状态。\n\n返回来源\nMac · 选择本机文件夹\n\n通过 Finder 选择一个文件夹。同步范围与屏幕记录分别控制。\n\nMac 文件夹\n仅同步所选文件夹；路径可在这里核对。\n在 Finder 中选择\n持续同步后续变化\n连接后接收这个文件夹的后续变化。暂停时保留已有资料。\n来源名称\n已有内容\n一起导入已有内容\n完整首次清点后，只收集新条目\n未完成的扫描不作为完整基线；一次性文件导入总是导入所选文件。\nCentral 保存方式\n仅保留提取内容\n保留原件及提取内容\n仅记录文件信息\n完整文件发送到 Central 解析，处理完成后删除暂存原件，只保留提取内容；所选目录的原文件保留。\n高级来源规则\n检查间隔（分钟）\n0.5–60 分钟。\n\n单文件最大 512 MiB；跳过隐藏项与符号链接。\n\n允许扩展名（逗号分隔）\n排除相对路径（每行一项）\n精确路径或目录前缀。\n保留完整提取正文供离线读取\n仅记录文件信息时不读取正文。\n上传前遮盖的确切文字（每行一项）\n作用于文本、日历与 Coding 内容；配置后非文本文件不上传，文件位置 URI 不发送。\n跟踪来源删除\n默认关闭。只有完整成功扫描才标记消失条目；Central 历史版本保留。\n\n更改范围与保留规则后按新设置重新检查，Central 历史不会自动删除。\n\n工作台负责保存归档；设备端管理 Mote 的本机副本。文件夹中的原文件与 Mote 副本分别管理。\n\n核对并连接\n取消\n\n当前来源规则已保存。",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "mac",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\n收集状态",
+      "label": "Mote 菜单栏收集状态",
+      "action": "native-menu-toggle",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "⌘ K",
+      "label": "搜索资料，快捷键 Command K",
+      "action": "native-search",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "写随手记\n⌘ N",
+      "label": "写随手记\n⌘ N",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "同步文件夹",
+      "label": "同步文件夹",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回来源",
+      "label": "返回来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "folder-path",
+      "type": "text",
+      "text": "",
+      "label": "Mac 文件夹\n仅同步所选文件夹；路径可在这里核对。",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "在 Finder 中选择",
+      "label": "在 Finder 中选择",
+      "action": "native-folder-picker",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "continuous",
+      "type": "checkbox",
+      "text": "",
+      "label": "持续同步后续变化\n连接后接收这个文件夹的后续变化。暂停时保留已有资料。",
+      "value": "on",
+      "checked": true,
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "source-name",
+      "type": "text",
+      "text": "",
+      "label": "来源名称",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "ns-folder-new-initial",
+      "type": "select-one",
+      "text": "一起导入已有内容\n完整首次清点后，只收集新条目",
+      "label": "已有内容\n一起导入已有内容\n完整首次清点后，只收集新条目\n未完成的扫描不作为完整基线；一次性文件导入总是导入所选文件。",
+      "value": "all",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "save-mode",
+      "type": "select-one",
+      "text": "仅保留提取内容\n保留原件及提取内容\n仅记录文件信息",
+      "label": "Central 保存方式\n仅保留提取内容\n保留原件及提取内容\n仅记录文件信息\n完整文件发送到 Central 解析，处理完成后删除暂存原件，只保留提取内容；所选目录的原文件保留。",
+      "value": "snapshot",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "高级来源规则",
+      "label": "高级来源规则",
+      "expanded": true
+    },
+    {
+      "tag": "input",
+      "id": "ns-folder-new-interval",
+      "type": "number",
+      "text": "",
+      "label": "检查间隔（分钟）\n0.5–60 分钟。",
+      "value": "5",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-folder-new-extensions",
+      "type": "text",
+      "text": "",
+      "label": "允许扩展名（逗号分隔）",
+      "value": ".md,.txt,.json,.csv,.pdf,.docx,.wav,.mp3,.m4a",
+      "disabled": false
+    },
+    {
+      "tag": "textarea",
+      "id": "ns-folder-new-exclusions",
+      "type": "textarea",
+      "text": "",
+      "label": "排除相对路径（每行一项）\n精确路径或目录前缀。",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-folder-new-allowRead",
+      "type": "checkbox",
+      "text": "",
+      "label": "保留完整提取正文供离线读取\n仅记录文件信息时不读取正文。",
+      "value": "on",
+      "checked": false,
+      "disabled": false
+    },
+    {
+      "tag": "textarea",
+      "id": "ns-folder-new-redact",
+      "type": "textarea",
+      "text": "",
+      "label": "上传前遮盖的确切文字（每行一项）\n作用于文本、日历与 Coding 内容；配置后非文本文件不上传，文件位置 URI 不发送。",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-folder-new-deletions",
+      "type": "checkbox",
+      "text": "",
+      "label": "跟踪来源删除\n默认关闭。只有完整成功扫描才标记消失条目；Central 历史版本保留。",
+      "value": "on",
+      "checked": false,
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "核对并连接",
+      "label": "核对并连接",
+      "action": "save-source",
+      "item": "folder",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "取消",
+      "label": "取消",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "连接 Mac 文件夹"
+    },
+    {
+      "level": "H2",
+      "text": "Mac · 选择本机文件夹"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

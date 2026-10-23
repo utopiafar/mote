@@ -1,0 +1,186 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/activity/native-queue",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n待发送记录\n\n本机队列与 Central 已接收分别标明。接收不代表已解析或可检索。\n\n返回\n系统低电量，等待恢复\n立即发送\n来源\n全部来源\n文件夹\n屏幕\n随手记\n结果\n全部结果\n本机待发送\nCentral 已接收\n需要处理冲突\nCentral 已删除\n\n当前筛选没有记录。\n\n刷新\n上一页\n1 / 1\n下一页\n未发送：系统低电量，等待恢复。原记录保留。\n演示读取失败\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回",
+      "label": "返回",
+      "action": "go",
+      "page": "settings/native-upload",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "立即发送",
+      "label": "立即发送",
+      "action": "ns-send-now",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "ns-queue-source",
+      "type": "select-one",
+      "text": "全部来源\n文件夹\n屏幕\n随手记",
+      "label": "来源\n全部来源\n文件夹\n屏幕\n随手记",
+      "value": "all",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "ns-queue-status",
+      "type": "select-one",
+      "text": "全部结果\n本机待发送\nCentral 已接收\n需要处理冲突\nCentral 已删除",
+      "label": "结果\n全部结果\n本机待发送\nCentral 已接收\n需要处理冲突\nCentral 已删除",
+      "value": "all",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新",
+      "label": "刷新",
+      "action": "ns-queue-refresh",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "上一页",
+      "label": "上一页",
+      "action": "ns-queue-page",
+      "disabled": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "下一页",
+      "label": "下一页",
+      "action": "ns-queue-page",
+      "disabled": true
+    },
+    {
+      "tag": "summary",
+      "text": "演示读取失败",
+      "label": "演示读取失败",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "待发送记录"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

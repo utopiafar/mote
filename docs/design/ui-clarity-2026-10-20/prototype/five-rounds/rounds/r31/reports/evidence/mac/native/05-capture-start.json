@@ -1,0 +1,265 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/native-permissions",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n设置\n工作台在线\n随手记\n添加内容\n系统权限\n\n仅在相关任务需要时请求。拒绝后仍可保存本机文字与已选文件。\n\n返回\n屏幕录制\n\n授权后可能需要退出并重新打开采集器\n\n未授权\n打开系统设置示例\n辅助功能\n\n页面字段与通知中心可见内容\n\n未授权\n打开系统设置示例\n所选文件夹\n\n每个路径单独授予访问\n\n未授权\n打开系统设置示例\n日历读取\n\n只读权限与日程写入连接分别管理\n\n未授权\n打开系统设置示例\n刷新权限状态\n返回原任务\n记录尚未开始。请完成相关授权后返回，已保存范围保留。",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "mac",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\n收集状态",
+      "label": "Mote 菜单栏收集状态",
+      "action": "native-menu-toggle",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "⌘ K",
+      "label": "搜索资料，快捷键 Command K",
+      "action": "native-search",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "写随手记\n⌘ N",
+      "label": "写随手记\n⌘ N",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "同步文件夹",
+      "label": "同步文件夹",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回",
+      "label": "返回",
+      "action": "go",
+      "page": "settings/native-privacy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开系统设置示例",
+      "label": "打开系统设置示例",
+      "action": "ns-permission",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开系统设置示例",
+      "label": "打开系统设置示例",
+      "action": "ns-permission",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开系统设置示例",
+      "label": "打开系统设置示例",
+      "action": "ns-permission",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开系统设置示例",
+      "label": "打开系统设置示例",
+      "action": "ns-permission",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新权限状态",
+      "label": "刷新权限状态",
+      "action": "ns-permission-refresh",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回原任务",
+      "label": "返回原任务",
+      "action": "ns-permission-return",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "系统权限"
+    },
+    {
+      "level": "H2",
+      "text": "屏幕录制"
+    },
+    {
+      "level": "H2",
+      "text": "辅助功能"
+    },
+    {
+      "level": "H2",
+      "text": "所选文件夹"
+    },
+    {
+      "level": "H2",
+      "text": "日历读取"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

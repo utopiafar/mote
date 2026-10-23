@@ -1,0 +1,275 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n设置\n工作台在线\n随手记\n添加内容\n设置\n\n调整服务与资料管理方式，或管理当前登录。\n\n账号与设备\n\n登录、设备连接与会话\n\n模型与服务\n\n提问、图片、文件与语音处理\n\n采集与隐私\n\n记录范围、过滤与本机权限\n\n自动记忆与插件\n\n自动整理开关、方案与可信插件\n\n存储与备份\n\n保存方式、保留时间、导入与导出\n\n对外授权\n\n让其他 Agent 使用 Mote 资料\n\n用量与费用\n\n按模型和任务查看消耗\n\n帮助与诊断\n\n错误信息、日志、功能与更新\n\n语言与外观\n\n浅色、深色、自动与界面语言",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "账号与设备\n\n登录、设备连接与会话",
+      "label": "账号与设备\n\n登录、设备连接与会话",
+      "action": "go",
+      "page": "settings/account",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "模型与服务\n\n提问、图片、文件与语音处理",
+      "label": "模型与服务\n\n提问、图片、文件与语音处理",
+      "action": "go",
+      "page": "settings/models",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "采集与隐私\n\n记录范围、过滤与本机权限",
+      "label": "采集与隐私\n\n记录范围、过滤与本机权限",
+      "action": "go",
+      "page": "settings/privacy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "自动记忆与插件\n\n自动整理开关、方案与可信插件",
+      "label": "自动记忆与插件\n\n自动整理开关、方案与可信插件",
+      "action": "go",
+      "page": "settings/plugins",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "存储与备份\n\n保存方式、保留时间、导入与导出",
+      "label": "存储与备份\n\n保存方式、保留时间、导入与导出",
+      "action": "go",
+      "page": "settings/storage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "对外授权\n\n让其他 Agent 使用 Mote 资料",
+      "label": "对外授权\n\n让其他 Agent 使用 Mote 资料",
+      "action": "go",
+      "page": "settings/access",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "用量与费用\n\n按模型和任务查看消耗",
+      "label": "用量与费用\n\n按模型和任务查看消耗",
+      "action": "go",
+      "page": "settings/usage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "帮助与诊断\n\n错误信息、日志、功能与更新",
+      "label": "帮助与诊断\n\n错误信息、日志、功能与更新",
+      "action": "go",
+      "page": "settings/diagnostics",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "语言与外观\n\n浅色、深色、自动与界面语言",
+      "label": "语言与外观\n\n浅色、深色、自动与界面语言",
+      "action": "go",
+      "page": "settings/appearance",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设置"
+    },
+    {
+      "level": "H2",
+      "text": "账号与设备"
+    },
+    {
+      "level": "H2",
+      "text": "模型与服务"
+    },
+    {
+      "level": "H2",
+      "text": "采集与隐私"
+    },
+    {
+      "level": "H2",
+      "text": "自动记忆与插件"
+    },
+    {
+      "level": "H2",
+      "text": "存储与备份"
+    },
+    {
+      "level": "H2",
+      "text": "对外授权"
+    },
+    {
+      "level": "H2",
+      "text": "用量与费用"
+    },
+    {
+      "level": "H2",
+      "text": "帮助与诊断"
+    },
+    {
+      "level": "H2",
+      "text": "语言与外观"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

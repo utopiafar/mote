@@ -1,0 +1,269 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/appearance",
+  "title": "Mote · Personal library",
+  "text": "Skip to main content\nMote · Web · R31\nInteractive prototype · demo data\nSurface \nWeb\nMac\nAndroid\nData \nWith materials\nEmpty account\nAppearance \nLight\nDark\nSystem\nReset demo\nm\nMote.\nPersonal library\nLibrary\nAsk\nSources\nActivity\nGetting started\nToday\nAll features\nSettings\n林\n林同学\nPersonal workspace\nWorkspace\n/\nSettings\nWorkspace online\nQuick note\nAdd content\nSettings\n\nConfigure services, manage your materials and account.\n\nAccount and devices\nModels and services\nCapture and privacy\nAutomatic memory and plugins\nStorage and backup\nExternal access\nUsage and cost\nHelp and diagnostics\nLanguage and appearance\nLanguage and appearance\n\nChoose a theme and interface language\n\nAppearance\nLight\nDark\nSystem\nLanguage\n简体中文\nEnglish\nInterface language updated. Saved materials keep their original language.\n×",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "Skip to main content",
+      "label": "Skip to main content",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "Web\nMac\nAndroid",
+      "label": "Preview platform",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "With materials\nEmpty account",
+      "label": "Preview data",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "Light\nDark\nSystem",
+      "label": "Preview appearance",
+      "value": "dark",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "Reset demo",
+      "label": "Reset demo",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote library",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "Library",
+      "label": "Library",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "Ask",
+      "label": "Ask",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "Sources",
+      "label": "Sources",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "Activity",
+      "label": "Activity",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "Getting started",
+      "label": "Getting started",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "Today",
+      "label": "Today",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "All features",
+      "label": "All features",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "Settings",
+      "label": "Settings",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "Quick note",
+      "label": "Quick note",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "Add content",
+      "label": "Add content",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Account and devices",
+      "label": "Account and devices",
+      "action": "go",
+      "page": "settings/account",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Models and services",
+      "label": "Models and services",
+      "action": "go",
+      "page": "settings/models",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Capture and privacy",
+      "label": "Capture and privacy",
+      "action": "go",
+      "page": "settings/privacy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Automatic memory and plugins",
+      "label": "Automatic memory and plugins",
+      "action": "go",
+      "page": "settings/plugins",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Storage and backup",
+      "label": "Storage and backup",
+      "action": "go",
+      "page": "settings/storage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "External access",
+      "label": "External access",
+      "action": "go",
+      "page": "settings/access",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Usage and cost",
+      "label": "Usage and cost",
+      "action": "go",
+      "page": "settings/usage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Help and diagnostics",
+      "label": "Help and diagnostics",
+      "action": "go",
+      "page": "settings/diagnostics",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Language and appearance",
+      "label": "Language and appearance",
+      "action": "go",
+      "page": "settings/appearance",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "appearance-choice",
+      "type": "select-one",
+      "text": "Light\nDark\nSystem",
+      "label": "Appearance\nLight\nDark\nSystem",
+      "value": "dark",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "language-choice",
+      "type": "select-one",
+      "text": "简体中文\nEnglish",
+      "label": "Language\n简体中文\nEnglish",
+      "value": "en",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "×",
+      "label": "Dismiss notification",
+      "action": "dismiss-toast",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "Settings"
+    },
+    {
+      "level": "H2",
+      "text": "Language and appearance"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

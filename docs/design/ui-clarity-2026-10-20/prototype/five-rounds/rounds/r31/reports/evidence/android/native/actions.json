@@ -1,0 +1,310 @@
+[
+  {
+    "at": "2026-10-23T02:30:26.683Z",
+    "op": "open",
+    "file": "rounds/r31/android.html",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "evidenceDirectory": "rounds/r31/reports/evidence/android/native",
+    "save": "01-home"
+  },
+  {
+    "at": "2026-10-23T02:30:26.760Z",
+    "op": "select",
+    "label": "预览数据",
+    "value": "populated"
+  },
+  {
+    "at": "2026-10-23T02:30:26.824Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-23T02:30:26.876Z",
+    "op": "click",
+    "role": "button",
+    "name": "管理",
+    "index": 0,
+    "save": "02-folder"
+  },
+  {
+    "at": "2026-10-23T02:30:53.606Z",
+    "op": "click",
+    "selector": "summary",
+    "index": 1,
+    "save": "03-folder-options"
+  },
+  {
+    "at": "2026-10-23T02:30:53.704Z",
+    "op": "click",
+    "selector": "summary",
+    "index": 2,
+    "save": "04-folder-context"
+  },
+  {
+    "at": "2026-10-23T02:31:07.571Z",
+    "op": "click",
+    "selector": "summary:has-text(\"内容关系与背景\")",
+    "save": "05-context"
+  },
+  {
+    "at": "2026-10-23T02:31:21.279Z",
+    "op": "fill",
+    "selector": "#source-context-description",
+    "value": "手机会议记录：第三方原话，不是我的承诺。\n2026-10-23，Asia/Shanghai。"
+  },
+  {
+    "at": "2026-10-23T02:31:21.295Z",
+    "op": "select",
+    "selector": "#source-relation",
+    "value": {
+      "label": "混合内容"
+    }
+  },
+  {
+    "at": "2026-10-23T02:31:21.343Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存资料说明与归属",
+    "save": "06-context-saved"
+  },
+  {
+    "at": "2026-10-23T02:31:21.407Z",
+    "op": "fill",
+    "selector": "#source-context-description",
+    "value": "Android 未保存草稿：应保留双方表达边界。"
+  },
+  {
+    "at": "2026-10-23T02:31:21.454Z",
+    "op": "click",
+    "selector": "summary:has-text(\"预览说明版本冲突\")",
+    "save": "07-context-conflict-options"
+  },
+  {
+    "at": "2026-10-23T02:31:33.528Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟另一端更新了说明",
+    "save": "08-context-conflict"
+  },
+  {
+    "at": "2026-10-23T02:31:33.625Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存资料说明与归属",
+    "save": "09-context-save-blocked"
+  },
+  {
+    "at": "2026-10-23T02:31:44.458Z",
+    "op": "click",
+    "role": "button",
+    "name": "保留本机说明并保存",
+    "save": "10-context-keep-local"
+  },
+  {
+    "at": "2026-10-23T02:31:44.557Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回来源"
+  },
+  {
+    "at": "2026-10-23T02:31:44.609Z",
+    "op": "click",
+    "role": "button",
+    "name": "发送与本机队列",
+    "save": "11-upload"
+  },
+  {
+    "at": "2026-10-23T02:31:44.702Z",
+    "op": "click",
+    "selector": "summary:has-text(\"网络与电源条件\")",
+    "save": "12-network-conditions"
+  },
+  {
+    "at": "2026-10-23T02:31:44.785Z",
+    "op": "click",
+    "selector": "summary:has-text(\"演示连接条件\")",
+    "save": "13-condition-simulation"
+  },
+  {
+    "at": "2026-10-23T02:31:53.601Z",
+    "op": "check",
+    "selector": "#ns-upload-charging",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T02:31:53.640Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存设置",
+    "save": "14-conditions-saved"
+  },
+  {
+    "at": "2026-10-23T02:31:53.739Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟未充电"
+  },
+  {
+    "at": "2026-10-23T02:31:53.788Z",
+    "op": "click",
+    "role": "button",
+    "name": "立即发送",
+    "save": "15-send-blocked"
+  },
+  {
+    "at": "2026-10-23T02:32:04.293Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回"
+  },
+  {
+    "at": "2026-10-23T02:32:04.344Z",
+    "op": "click",
+    "selector": "button[data-page=\"settings/native-connection\"]"
+  },
+  {
+    "at": "2026-10-23T02:32:04.389Z",
+    "op": "click",
+    "role": "button",
+    "name": "扫描示例二维码",
+    "save": "16-sample-invitation"
+  },
+  {
+    "at": "2026-10-23T02:32:04.491Z",
+    "op": "click",
+    "role": "button",
+    "name": "本机预览邀请",
+    "save": "17-invitation-preview"
+  },
+  {
+    "at": "2026-10-23T02:32:16.468Z",
+    "op": "check",
+    "selector": "#ns-bind-queue",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T02:32:16.523Z",
+    "op": "click",
+    "role": "button",
+    "name": "确认连接",
+    "save": "18-connected"
+  },
+  {
+    "at": "2026-10-23T02:32:16.622Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-23T02:32:16.680Z",
+    "op": "click",
+    "role": "button",
+    "name": "发送与本机队列"
+  },
+  {
+    "at": "2026-10-23T02:32:16.742Z",
+    "op": "click",
+    "role": "button",
+    "name": "立即发送",
+    "save": "19-waiting-charge"
+  },
+  {
+    "at": "2026-10-23T02:32:28.156Z",
+    "op": "click",
+    "selector": "button[data-page=\"activity/native-reconcile\"]"
+  },
+  {
+    "at": "2026-10-23T02:32:28.210Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对并全量补传",
+    "save": "20-resend-review"
+  },
+  {
+    "at": "2026-10-23T02:32:35.602Z",
+    "op": "click",
+    "role": "button",
+    "name": "确认全量补传",
+    "save": "21-resend-blocked"
+  },
+  {
+    "at": "2026-10-23T02:32:35.688Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回"
+  },
+  {
+    "at": "2026-10-23T02:32:35.737Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟充电"
+  },
+  {
+    "at": "2026-10-23T02:32:35.789Z",
+    "op": "click",
+    "role": "button",
+    "name": "切为计费网络"
+  },
+  {
+    "at": "2026-10-23T02:32:35.836Z",
+    "op": "click",
+    "role": "button",
+    "name": "立即发送",
+    "save": "22-waiting-wifi"
+  },
+  {
+    "at": "2026-10-23T02:32:46.236Z",
+    "op": "click",
+    "role": "button",
+    "name": "切为非计费 Wi-Fi"
+  },
+  {
+    "at": "2026-10-23T02:32:46.288Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟低电量"
+  },
+  {
+    "at": "2026-10-23T02:32:46.340Z",
+    "op": "click",
+    "role": "button",
+    "name": "立即发送",
+    "save": "23-waiting-battery"
+  },
+  {
+    "at": "2026-10-23T02:32:51.421Z",
+    "op": "click",
+    "role": "button",
+    "name": "立即发送",
+    "save": "24-sending-result"
+  },
+  {
+    "at": "2026-10-23T02:32:51.523Z",
+    "op": "click",
+    "selector": "button[data-page=\"activity/native-queue\"]",
+    "save": "25-queue-result"
+  },
+  {
+    "at": "2026-10-23T02:33:54.800Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回"
+  },
+  {
+    "at": "2026-10-23T02:33:54.850Z",
+    "op": "click",
+    "role": "button",
+    "name": "恢复电量"
+  },
+  {
+    "at": "2026-10-23T02:33:54.901Z",
+    "op": "click",
+    "role": "button",
+    "name": "立即发送",
+    "save": "26-no-eligible-records"
+  }
+]

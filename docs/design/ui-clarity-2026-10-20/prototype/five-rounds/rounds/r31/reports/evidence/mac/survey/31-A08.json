@@ -1,0 +1,222 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/access",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n来源\n/\n对外授权\n工作台在线\n随手记\n添加内容\n对外授权\n\n让其他助手在你选择的范围内读取资料。\n\n资料来源负责把内容带入 Mote；对外授权决定谁可以读取这些内容。\n个人助手\n只读授权中\n\n范围：资料与记忆 · 原始资料不可被修改\n\n查看连接信息\n撤销这项授权\n新建只读授权",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "mac",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\n收集状态",
+      "label": "Mote 菜单栏收集状态",
+      "action": "native-menu-toggle",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "⌘ K",
+      "label": "搜索资料，快捷键 Command K",
+      "action": "native-search",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "写随手记\n⌘ N",
+      "label": "写随手记\n⌘ N",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "同步文件夹",
+      "label": "同步文件夹",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看连接信息",
+      "label": "查看连接信息",
+      "action": "grant-info",
+      "item": "grant-1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "撤销这项授权",
+      "label": "撤销这项授权",
+      "action": "grant-revoke",
+      "item": "grant-1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "新建只读授权",
+      "label": "新建只读授权",
+      "action": "grant-new",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "对外授权"
+    },
+    {
+      "level": "H2",
+      "text": "个人助手"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

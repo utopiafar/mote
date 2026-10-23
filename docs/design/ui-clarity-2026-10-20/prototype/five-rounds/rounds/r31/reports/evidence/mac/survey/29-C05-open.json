@@ -1,0 +1,242 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/setup/device",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n来源\n/\n接入设置\n工作台在线\n随手记\n添加内容\n连接设备\n\n发出一次性邀请，在目标采集端确认。\n\n返回设备\n邀请地址与设备身份\n设备可访问的 Central 地址\n目标设备不能通过 localhost 访问另一台机器；请使用它可访问的 HTTPS 地址。\n连接名称\n新建或重新授权设备\n新设备\n我的 Mac\n生成一次性邀请",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "mac",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\n收集状态",
+      "label": "Mote 菜单栏收集状态",
+      "action": "native-menu-toggle",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "⌘ K",
+      "label": "搜索资料，快捷键 Command K",
+      "action": "native-search",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "写随手记\n⌘ N",
+      "label": "写随手记\n⌘ N",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "同步文件夹",
+      "label": "同步文件夹",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回设备",
+      "label": "返回设备",
+      "action": "go",
+      "page": "devices",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "邀请地址与设备身份",
+      "label": "邀请地址与设备身份",
+      "expanded": true
+    },
+    {
+      "tag": "input",
+      "id": "cs-invite-url",
+      "type": "url",
+      "text": "",
+      "label": "设备可访问的 Central 地址\n目标设备不能通过 localhost 访问另一台机器；请使用它可访问的 HTTPS 地址。",
+      "value": "https://mote.example.invalid",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-invite-name",
+      "type": "text",
+      "text": "",
+      "label": "连接名称",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs-invite-device",
+      "type": "select-one",
+      "text": "新设备\n我的 Mac",
+      "label": "新建或重新授权设备\n新设备\n我的 Mac",
+      "value": "new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "生成一次性邀请",
+      "label": "生成一次性邀请",
+      "action": "cs-invite-generate",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "连接设备"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

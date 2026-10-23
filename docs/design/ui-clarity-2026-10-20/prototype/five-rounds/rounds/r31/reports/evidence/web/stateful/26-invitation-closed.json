@@ -1,0 +1,206 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/devices",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n来源\n/\n设备状态\n工作台在线\n随手记\n添加内容\n设备连接与采集状态\n\n查看设备上报的采集范围、同步进度和需要处理的事项。\n\n连接设备\n工作台汇集各设备保存的资料。设备连接授权允许同步到当前工作台；屏幕录制权限需在设备的系统设置中单独开启。\n我的 Mac\n在线\n\nMac · 最近上报 刚刚\n\n采集状态\n\n屏幕：未在记录 · 等待系统屏幕权限\n文件夹：正在同步\n\n同步状态\n\n向工作台同步已开启\n\n待发送 0 项\n\n资料保存后即可阅读。长期要点会在后台整理为记忆。\n\n调整屏幕与应用范围\n管理文件夹来源\n更新设备连接授权",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "连接设备",
+      "label": "连接设备",
+      "action": "go",
+      "page": "setup/device",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "调整屏幕与应用范围",
+      "label": "调整屏幕与应用范围",
+      "action": "go",
+      "page": "setup/screen",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "管理文件夹来源",
+      "label": "管理文件夹来源",
+      "action": "go",
+      "page": "setup/folder",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "更新设备连接授权",
+      "label": "更新设备连接授权",
+      "action": "reauthorize-device",
+      "item": "mac",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设备连接与采集状态"
+    },
+    {
+      "level": "H2",
+      "text": "我的 Mac"
+    },
+    {
+      "level": "H3",
+      "text": "采集状态"
+    },
+    {
+      "level": "H3",
+      "text": "同步状态"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

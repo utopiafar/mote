@@ -1,0 +1,310 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/native-connection",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n设置\n工作台在线\n随手记\n添加内容\n连接这台设备\n\n设备凭据只用于收集。访问资料与提问仍需要账号登录。\n\n返回\n离线本机模式\n仅保存在本机，连接后再确认发送范围\n测试已保存连接\n邀请文字或 URI\n本机预览邀请\n导入示例二维码图片\n设备名称与手动连接\n设备名称\nCentral 地址\n留空可本机保存。远程连接须使用 HTTPS；已绑定队列保持原账号与节点。\n新凭据（留空保留已有）\n不显示已有凭据。\n明确绑定尚未绑定的本机队列\n保存设置\n还原修改\n清空地址并保存\n\n当前显示已保存的设置。\n\n设备 ID：demo-mac-local\n\n账号登录与会话",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "mac",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\n收集状态",
+      "label": "Mote 菜单栏收集状态",
+      "action": "native-menu-toggle",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "⌘ K",
+      "label": "搜索资料，快捷键 Command K",
+      "action": "native-search",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "写随手记\n⌘ N",
+      "label": "写随手记\n⌘ N",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "同步文件夹",
+      "label": "同步文件夹",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回",
+      "label": "返回",
+      "action": "go",
+      "page": "settings/native",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "测试已保存连接",
+      "label": "测试已保存连接",
+      "action": "ns-connection-test",
+      "disabled": false
+    },
+    {
+      "tag": "textarea",
+      "id": "ns-invitation",
+      "type": "textarea",
+      "text": "",
+      "label": "邀请文字或 URI",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "本机预览邀请",
+      "label": "本机预览邀请",
+      "action": "ns-invitation-preview",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "导入示例二维码图片",
+      "label": "导入示例二维码图片",
+      "action": "ns-invitation-sample",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "设备名称与手动连接",
+      "label": "设备名称与手动连接",
+      "expanded": true
+    },
+    {
+      "tag": "input",
+      "id": "ns-connection-deviceName",
+      "type": "text",
+      "text": "",
+      "label": "设备名称",
+      "value": "我的 Mac",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-connection-url",
+      "type": "url",
+      "text": "",
+      "label": "Central 地址\n留空可本机保存。远程连接须使用 HTTPS；已绑定队列保持原账号与节点。",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-connection-secret",
+      "type": "password",
+      "text": "",
+      "label": "新凭据（留空保留已有）\n不显示已有凭据。",
+      "value": "[redacted]",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-manual-bind",
+      "type": "checkbox",
+      "text": "",
+      "label": "明确绑定尚未绑定的本机队列",
+      "value": "on",
+      "checked": false,
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存设置",
+      "label": "保存设置",
+      "action": "ns-save",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "还原修改",
+      "label": "还原修改",
+      "action": "ns-discard",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "清空地址并保存",
+      "label": "清空地址并保存",
+      "action": "ns-connection-clear",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "账号登录与会话",
+      "label": "账号登录与会话",
+      "action": "go",
+      "page": "settings/account",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "连接这台设备"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

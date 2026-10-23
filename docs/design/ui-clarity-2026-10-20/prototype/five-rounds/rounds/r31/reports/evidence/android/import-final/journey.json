@@ -1,0 +1,247 @@
+{
+  "platform": "android",
+  "mode": "normal",
+  "scope": "UI simulation; rendered DOM and ordinary actions only",
+  "steps": [
+    {
+      "name": "01-home",
+      "url": "https://mote-prototype.invalid/?reset=1#/library",
+      "evidence": [
+        "01-home.json",
+        "01-home.png"
+      ]
+    },
+    {
+      "name": "02-nav-ask",
+      "url": "https://mote-prototype.invalid/?reset=1#/ask",
+      "evidence": [
+        "02-nav-ask.json",
+        "02-nav-ask.png"
+      ]
+    },
+    {
+      "name": "02-nav-sources",
+      "url": "https://mote-prototype.invalid/?reset=1#/sources",
+      "evidence": [
+        "02-nav-sources.json",
+        "02-nav-sources.png"
+      ]
+    },
+    {
+      "name": "02-nav-activity",
+      "url": "https://mote-prototype.invalid/?reset=1#/activity",
+      "evidence": [
+        "02-nav-activity.json",
+        "02-nav-activity.png"
+      ]
+    },
+    {
+      "name": "02-nav-library",
+      "url": "https://mote-prototype.invalid/?reset=1#/library",
+      "evidence": [
+        "02-nav-library.json",
+        "02-nav-library.png"
+      ]
+    },
+    {
+      "name": "03-empty-home",
+      "url": "https://mote-prototype.invalid/?reset=1#/library",
+      "evidence": [
+        "03-empty-home.json",
+        "03-empty-home.png"
+      ]
+    },
+    {
+      "name": "04-import-form",
+      "url": "https://mote-prototype.invalid/?reset=1#/import",
+      "evidence": [
+        "04-import-form.json",
+        "04-import-form.png"
+      ]
+    },
+    {
+      "name": "05-file-picker",
+      "url": "https://mote-prototype.invalid/?reset=1#/import",
+      "evidence": [
+        "05-file-picker.json",
+        "05-file-picker.png"
+      ]
+    },
+    {
+      "name": "06-selected",
+      "url": "https://mote-prototype.invalid/?reset=1#/import",
+      "evidence": [
+        "06-selected.json",
+        "06-selected.png"
+      ]
+    },
+    {
+      "name": "07-removed",
+      "url": "https://mote-prototype.invalid/?reset=1#/import",
+      "evidence": [
+        "07-removed.json",
+        "07-removed.png"
+      ]
+    },
+    {
+      "name": "08-options",
+      "url": "https://mote-prototype.invalid/?reset=1#/import",
+      "evidence": [
+        "08-options.json",
+        "08-options.png"
+      ]
+    },
+    {
+      "name": "09-preview",
+      "url": "https://mote-prototype.invalid/?reset=1#/import/review/focus-import-1792722335101",
+      "evidence": [
+        "09-preview.json",
+        "09-preview.png"
+      ]
+    },
+    {
+      "name": "10-revised-draft",
+      "url": "https://mote-prototype.invalid/?reset=1#/import/review/focus-import-1792722335101",
+      "evidence": [
+        "10-revised-draft.json",
+        "10-revised-draft.png"
+      ]
+    },
+    {
+      "name": "11-return-to-draft",
+      "url": "https://mote-prototype.invalid/?reset=1#/import/review/focus-import-1792722335101",
+      "evidence": [
+        "11-return-to-draft.json",
+        "11-return-to-draft.png"
+      ]
+    },
+    {
+      "name": "12-reprepared",
+      "url": "https://mote-prototype.invalid/?reset=1#/import/review/focus-import-1792722335101",
+      "evidence": [
+        "12-reprepared.json",
+        "12-reprepared.png"
+      ]
+    },
+    {
+      "name": "13-file-options",
+      "url": "https://mote-prototype.invalid/?reset=1#/import/review/focus-import-1792722335101",
+      "evidence": [
+        "13-file-options.json",
+        "13-file-options.png"
+      ]
+    },
+    {
+      "name": "14-saved",
+      "url": "https://mote-prototype.invalid/?reset=1#/import/details/focus-import-1792722335101",
+      "evidence": [
+        "14-saved.json",
+        "14-saved.png"
+      ]
+    },
+    {
+      "name": "15-detail-expanded",
+      "url": "https://mote-prototype.invalid/?reset=1#/import/details/focus-import-1792722335101",
+      "evidence": [
+        "15-detail-expanded.json",
+        "15-detail-expanded.png"
+      ]
+    },
+    {
+      "name": "16-material-context",
+      "url": "https://mote-prototype.invalid/?reset=1#/material/focus-material-focus-import-1792722335101-0",
+      "evidence": [
+        "16-material-context.json",
+        "16-material-context.png"
+      ]
+    },
+    {
+      "name": "17-model-required",
+      "url": "https://mote-prototype.invalid/?reset=1#/import/details/focus-import-1792722335101",
+      "evidence": [
+        "17-model-required.json",
+        "17-model-required.png"
+      ]
+    },
+    {
+      "name": "18-model-settings",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/models",
+      "evidence": [
+        "18-model-settings.json",
+        "18-model-settings.png"
+      ]
+    },
+    {
+      "name": "19-model-saved",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/models",
+      "evidence": [
+        "19-model-saved.json",
+        "19-model-saved.png"
+      ]
+    },
+    {
+      "name": "20-return-same-import",
+      "url": "https://mote-prototype.invalid/?reset=1#/import/details/focus-import-1792722335101",
+      "evidence": [
+        "20-return-same-import.json",
+        "20-return-same-import.png"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "label": "optional context maxLength",
+      "observed": "12000"
+    },
+    {
+      "label": "context survives file picker",
+      "observed": true
+    },
+    {
+      "label": "context exact in preview",
+      "observed": true
+    },
+    {
+      "label": "confirmation disabled while explanation is dirty",
+      "observed": true
+    },
+    {
+      "label": "unsaved draft survives navigation",
+      "observed": true
+    },
+    {
+      "label": "same import after reprepare",
+      "observed": true
+    },
+    {
+      "label": "revised prose exact in new preview",
+      "observed": true
+    },
+    {
+      "label": "revised prose exact in saved detail",
+      "observed": true
+    },
+    {
+      "label": "revised prose exact in material",
+      "observed": true
+    },
+    {
+      "label": "recovery selects import module",
+      "observed": true
+    },
+    {
+      "label": "saved model visible value",
+      "observed": "review-fixed-import"
+    },
+    {
+      "label": "same task after model return",
+      "observed": true
+    },
+    {
+      "label": "revised prose after model return",
+      "observed": true
+    }
+  ],
+  "errors": [],
+  "browserErrors": []
+}

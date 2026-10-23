@@ -1,0 +1,355 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/catalog",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R30\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n连接资料来源\n\n先选内容从哪里来，再确认范围和保存方式。\n\n返回来源管理\n这台设备\n在这台 Android 上收集\n范围由你选择\n屏幕记录\n\n只记录选定应用，随时暂停。\n\n等待权限\n选择屏幕范围\n文件夹同步\n\n已连接：研究资料\n\n1 个正在接收\n管理此文件夹\n连接另一个文件夹\n\n保存后的内容进入资料库，可查找、提问并核对原文。\n\n电脑上的内容\n\n持续保存选定内容，随时可以暂停或更改范围。\n\n同步文件夹\n\n连接新的文件夹，持续保存后续变化\n\n持续收集\n记录屏幕\n\n选择应用与采集范围\n\n持续收集\nCoding Agent 会话\n\n回看 Claude Code、Codex、Kimi 的编码对话。\n\n查看客户端接入与同步状态 \n连接另一台手机或电脑\n文档、邮件与日历\n飞书文档与日历\n\n选择文档或日历范围，持续归档后续变化。\n\n打开设置 \nGmail 邮件\n\n按选定范围保存邮件正文、发件人和时间。\n\n打开设置 \nGoogle Calendar\n\n同步允许读取的日历，回看已安排的事情。\n\n打开设置 \n已有录音与转写\n飞书录音 / 妙记\n\n归档厂商已有的转写，并保留录音来源。\n\n打开设置 \n钉钉录音 / 闪记\n\n选择历史范围，持续接收录音和转写。\n\n打开设置 \n一次导入与外部位置\n导入文件\n\n保存文件、图片、音频、文件夹或 ZIP。\n\n打开设置 \nMCP 资料服务\n\n选择外部服务提供的资料，导入到 Mote。\n\n打开设置 \n外部文件 / NAS 引用\n\n保存外部原件位置，需要时回到来源查看。\n\n打开设置 \n只想记下一段文字？写随手记 · 让其他助手使用资料？管理对外授权\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回来源管理",
+      "label": "返回来源管理",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "选择屏幕范围",
+      "label": "选择屏幕范围",
+      "action": "go",
+      "page": "setup/screen",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "管理此文件夹",
+      "label": "管理此文件夹",
+      "action": "go",
+      "page": "setup/folder",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "连接另一个文件夹",
+      "label": "连接另一个文件夹",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "同步文件夹\n\n连接新的文件夹，持续保存后续变化\n\n持续收集",
+      "label": "同步文件夹\n\n连接新的文件夹，持续保存后续变化\n\n持续收集",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "记录屏幕\n\n选择应用与采集范围\n\n持续收集",
+      "label": "记录屏幕\n\n选择应用与采集范围\n\n持续收集",
+      "action": "go",
+      "page": "setup/screen",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Coding Agent 会话\n\n回看 Claude Code、Codex、Kimi 的编码对话。\n\n查看客户端接入与同步状态",
+      "label": "Coding Agent 会话\n\n回看 Claude Code、Codex、Kimi 的编码对话。\n\n查看客户端接入与同步状态",
+      "action": "go",
+      "page": "setup/coding",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "连接另一台手机或电脑",
+      "label": "连接另一台手机或电脑",
+      "action": "go",
+      "page": "setup/device",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "飞书文档与日历\n\n选择文档或日历范围，持续归档后续变化。\n\n打开设置",
+      "label": "飞书文档与日历\n\n选择文档或日历范围，持续归档后续变化。\n\n打开设置",
+      "action": "go",
+      "page": "setup/lark",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Gmail 邮件\n\n按选定范围保存邮件正文、发件人和时间。\n\n打开设置",
+      "label": "Gmail 邮件\n\n按选定范围保存邮件正文、发件人和时间。\n\n打开设置",
+      "action": "go",
+      "page": "setup/gmail",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Google Calendar\n\n同步允许读取的日历，回看已安排的事情。\n\n打开设置",
+      "label": "Google Calendar\n\n同步允许读取的日历，回看已安排的事情。\n\n打开设置",
+      "action": "go",
+      "page": "setup/google",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "飞书录音 / 妙记\n\n归档厂商已有的转写，并保留录音来源。\n\n打开设置",
+      "label": "飞书录音 / 妙记\n\n归档厂商已有的转写，并保留录音来源。\n\n打开设置",
+      "action": "go",
+      "page": "setup/feishu-recording",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "钉钉录音 / 闪记\n\n选择历史范围，持续接收录音和转写。\n\n打开设置",
+      "label": "钉钉录音 / 闪记\n\n选择历史范围，持续接收录音和转写。\n\n打开设置",
+      "action": "go",
+      "page": "setup/dingtalk-recording",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "导入文件\n\n保存文件、图片、音频、文件夹或 ZIP。\n\n打开设置",
+      "label": "导入文件\n\n保存文件、图片、音频、文件夹或 ZIP。\n\n打开设置",
+      "action": "go",
+      "page": "import",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "MCP 资料服务\n\n选择外部服务提供的资料，导入到 Mote。\n\n打开设置",
+      "label": "MCP 资料服务\n\n选择外部服务提供的资料，导入到 Mote。\n\n打开设置",
+      "action": "go",
+      "page": "setup/mcp",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "外部文件 / NAS 引用\n\n保存外部原件位置，需要时回到来源查看。\n\n打开设置",
+      "label": "外部文件 / NAS 引用\n\n保存外部原件位置，需要时回到来源查看。\n\n打开设置",
+      "action": "go",
+      "page": "setup/nas",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "写随手记",
+      "label": "写随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "管理对外授权",
+      "label": "管理对外授权",
+      "action": "go",
+      "page": "access",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "连接资料来源"
+    },
+    {
+      "level": "H2",
+      "text": "在这台 Android 上收集"
+    },
+    {
+      "level": "H3",
+      "text": "屏幕记录"
+    },
+    {
+      "level": "H3",
+      "text": "文件夹同步"
+    },
+    {
+      "level": "H2",
+      "text": "电脑上的内容"
+    },
+    {
+      "level": "H3",
+      "text": "同步文件夹"
+    },
+    {
+      "level": "H3",
+      "text": "记录屏幕"
+    },
+    {
+      "level": "H3",
+      "text": "Coding Agent 会话"
+    },
+    {
+      "level": "H2",
+      "text": "文档、邮件与日历"
+    },
+    {
+      "level": "H3",
+      "text": "飞书文档与日历"
+    },
+    {
+      "level": "H3",
+      "text": "Gmail 邮件"
+    },
+    {
+      "level": "H3",
+      "text": "Google Calendar"
+    },
+    {
+      "level": "H2",
+      "text": "已有录音与转写"
+    },
+    {
+      "level": "H3",
+      "text": "飞书录音 / 妙记"
+    },
+    {
+      "level": "H3",
+      "text": "钉钉录音 / 闪记"
+    },
+    {
+      "level": "H2",
+      "text": "一次导入与外部位置"
+    },
+    {
+      "level": "H3",
+      "text": "导入文件"
+    },
+    {
+      "level": "H3",
+      "text": "MCP 资料服务"
+    },
+    {
+      "level": "H3",
+      "text": "外部文件 / NAS 引用"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

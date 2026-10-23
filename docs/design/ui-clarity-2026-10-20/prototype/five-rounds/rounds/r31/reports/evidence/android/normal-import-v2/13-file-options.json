@@ -1,0 +1,208 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/import/review/focus-import-1792722268553",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n核对资料的理解方式\n\n北岸研究 · android\n\n返回导入记录\n\n原件已归档\n记录尚未保存\n\n这次将保存什么\n\n需要确认：示例资料含有引用与多位说话人，请核对范围后再保存。\n\n解析预览 · 演示内容\n北岸研究 · android\n\n我\n先核对资料来源，再继续整理。\n\n供应商 · 引用\n“我们建议下周交付。”\n\nAI · 引用\n“可以先列出待核对的问题。”\n\n来源限定观察：这份资料记录了交付建议；供应商和 AI 的话不记作你的承诺。固定合成预览，不执行真实模型解析。\n\n预计可读记录：4 · 其他文件的处理状态逐项保留 · 请核对引用归属\n\n本次导入说明\n\n格式：聊天导出与我的笔记混合，标题为“北岸研究”。\n作者：我、供应商和 AI。供应商说“我承诺周五交付”，这不是我的承诺；AI 的建议也不是我的观点。\n时间：2026-10-19 09:30，Asia/Shanghai。\n背景：比较三份方案，保留原作者与引用关系。\n更正：录音里的“我”指供应商，不是账户持有人。\n\n说明只在声明的范围内生效，第三方和 AI 引文不会整批归为你的表达。\n\n补充说明，重新理解资料\n格式、作者与归属说明 选填\n帮助 Agent 理解资料的格式、时间、作者和背景。第三方与 AI 引文保留原角色。\n156 / 12,000\n重新生成预览\n放弃本次说明修改\n核对文件与处理方式\n读书笔记.md\n读书笔记.md · 2,400 B\n会议记录.txt\n项目/会议记录.txt · 3,600 B\n资料归档.zip\n资料归档.zip · 18,400 B\n解析方式\n聊天导出 · 1.0.0\n图片处理\n仅保存原件\n修改文件或选项\n确认并保存记录\n稍后确认\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "empty",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回导入记录",
+      "label": "返回导入记录",
+      "action": "go",
+      "page": "imports",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "补充说明，重新理解资料",
+      "label": "补充说明，重新理解资料",
+      "expanded": true
+    },
+    {
+      "tag": "textarea",
+      "id": "focus-revised-instruction",
+      "type": "textarea",
+      "text": "",
+      "label": "格式、作者与归属说明 选填\n帮助 Agent 理解资料的格式、时间、作者和背景。第三方与 AI 引文保留原角色。\n156 / 12,000",
+      "value": "格式：聊天导出与我的笔记混合，标题为“北岸研究”。\n作者：我、供应商和 AI。供应商说“我承诺周五交付”，这不是我的承诺；AI 的建议也不是我的观点。\n时间：2026-10-19 09:30，Asia/Shanghai。\n背景：比较三份方案，保留原作者与引用关系。\n更正：录音里的“我”指供应商，不是账户持有人。",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重新生成预览",
+      "label": "重新生成预览",
+      "action": "focus-reprepare-import",
+      "item": "focus-import-1792722268553",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "放弃本次说明修改",
+      "label": "放弃本次说明修改",
+      "action": "focus-discard-import-explanation",
+      "item": "focus-import-1792722268553",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "核对文件与处理方式",
+      "label": "核对文件与处理方式",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "修改文件或选项",
+      "label": "修改文件或选项",
+      "action": "focus-edit-import",
+      "item": "focus-import-1792722268553",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "确认并保存记录",
+      "label": "确认并保存记录",
+      "action": "focus-confirm-import",
+      "item": "focus-import-1792722268553",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "稍后确认",
+      "label": "稍后确认",
+      "action": "go",
+      "page": "imports",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "核对资料的理解方式"
+    },
+    {
+      "level": "H2",
+      "text": "这次将保存什么"
+    },
+    {
+      "level": "H3",
+      "text": "北岸研究 · android"
+    },
+    {
+      "level": "H3",
+      "text": "本次导入说明"
+    }
+  ],
+  "viewport": {
+    "width": 412,
+    "height": 915
+  },
+  "pageWidth": 412,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

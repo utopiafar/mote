@@ -1,0 +1,226 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/native-capture",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n屏幕与其他记录\n\n先确认范围，再开始记录。已有队列按发送策略独立处理。\n\n返回\n已停止\n预览范围并开始\n记录屏幕与前台应用活动\n采样间隔（秒）\n5–300 秒。\n截图方式\n无障碍采集\n投屏模式 · 只截图\n投屏模式锁屏或服务终止后需重新授权。Android 10 截图使用投屏。\n通知与其他记录\n电源与启动\n图像质量与去重\n保存设置\n还原修改\n\n当前显示已保存的设置。\n\n应用隐私与记录范围检查系统权限重新授权投屏\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回",
+      "label": "返回",
+      "action": "go",
+      "page": "settings/native",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "预览范围并开始",
+      "label": "预览范围并开始",
+      "action": "ns-capture-preview",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-capture-screenEnabled",
+      "type": "checkbox",
+      "text": "",
+      "label": "记录屏幕与前台应用活动",
+      "value": "on",
+      "checked": true,
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-capture-interval",
+      "type": "number",
+      "text": "",
+      "label": "采样间隔（秒）\n5–300 秒。",
+      "value": "30",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "ns-capture-mechanism",
+      "type": "select-one",
+      "text": "无障碍采集\n投屏模式 · 只截图",
+      "label": "截图方式\n无障碍采集\n投屏模式 · 只截图\n投屏模式锁屏或服务终止后需重新授权。Android 10 截图使用投屏。",
+      "value": "accessibility",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "通知与其他记录",
+      "label": "通知与其他记录",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "电源与启动",
+      "label": "电源与启动",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "图像质量与去重",
+      "label": "图像质量与去重",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存设置",
+      "label": "保存设置",
+      "action": "ns-save",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "还原修改",
+      "label": "还原修改",
+      "action": "ns-discard",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "应用隐私与记录范围",
+      "label": "应用隐私与记录范围",
+      "action": "go",
+      "page": "settings/native-privacy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "检查系统权限",
+      "label": "检查系统权限",
+      "action": "go",
+      "page": "settings/native-permissions",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重新授权投屏",
+      "label": "重新授权投屏",
+      "action": "ns-projection",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "屏幕与其他记录"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

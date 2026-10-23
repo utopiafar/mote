@@ -1,0 +1,604 @@
+[
+  {
+    "at": "2026-10-23T02:24:09.600Z",
+    "op": "open",
+    "file": "rounds/r31/web.html",
+    "evidenceDirectory": "rounds/r31/reports/evidence/web/stateful",
+    "save": "01-home"
+  },
+  {
+    "at": "2026-10-23T02:24:30.176Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源",
+    "save": "02-sources"
+  },
+  {
+    "at": "2026-10-23T02:24:35.106Z",
+    "op": "select",
+    "label": "预览数据",
+    "value": "populated",
+    "save": "03-populated-sources"
+  },
+  {
+    "at": "2026-10-23T02:24:47.575Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源",
+    "save": "04-sources-populated"
+  },
+  {
+    "at": "2026-10-23T02:24:54.161Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看状态与资料",
+    "index": 0,
+    "save": "05-folder-source"
+  },
+  {
+    "at": "2026-10-23T02:25:09.892Z",
+    "op": "click",
+    "selector": "summary",
+    "save": "06-source-context"
+  },
+  {
+    "at": "2026-10-23T02:25:34.524Z",
+    "op": "fill",
+    "selector": "#source-context-description",
+    "value": "来源为供应商会议记录。第三方说“我保证交付”；这不是我的承诺。\nAsia/Shanghai，2026年10月。",
+    "save": "07-source-draft"
+  },
+  {
+    "at": "2026-10-23T02:25:34.656Z",
+    "op": "select",
+    "selector": "#source-relation",
+    "value": {
+      "label": "第三方内容"
+    }
+  },
+  {
+    "at": "2026-10-23T02:25:34.706Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存资料说明与归属",
+    "save": "08-source-saved"
+  },
+  {
+    "at": "2026-10-23T02:25:47.521Z",
+    "op": "fill",
+    "selector": "#source-context-description",
+    "value": "未保存草稿：供应商承诺不是我的承诺。\n保留此文本以处理冲突。",
+    "save": "09-source-unsaved"
+  },
+  {
+    "at": "2026-10-23T02:25:47.668Z",
+    "op": "click",
+    "selector": "summary",
+    "index": 1,
+    "save": "10-source-conflict-options"
+  },
+  {
+    "at": "2026-10-23T02:25:54.403Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟另一端更新了说明",
+    "save": "11-source-other-updated"
+  },
+  {
+    "at": "2026-10-23T02:25:54.520Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存资料说明与归属",
+    "save": "12-source-save-conflict"
+  },
+  {
+    "at": "2026-10-23T02:26:03.212Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-23T02:26:03.227Z",
+    "op": "back",
+    "save": "13-source-conflict-return"
+  },
+  {
+    "at": "2026-10-23T02:26:03.393Z",
+    "op": "click",
+    "role": "button",
+    "name": "放弃修改并重新加载",
+    "save": "14-source-conflict-reload"
+  },
+  {
+    "at": "2026-10-23T02:26:03.526Z",
+    "op": "click",
+    "role": "button",
+    "name": "浏览已接收资料",
+    "save": "15-source-materials"
+  },
+  {
+    "at": "2026-10-23T02:26:14.471Z",
+    "op": "click",
+    "selector": "button[data-action=\"open-material\"][data-id=\"m2\"]",
+    "save": "16-material"
+  },
+  {
+    "at": "2026-10-23T02:26:14.599Z",
+    "op": "click",
+    "selector": "summary",
+    "name": "",
+    "index": 0,
+    "save": "17-material-first-disclosure"
+  },
+  {
+    "at": "2026-10-23T02:26:22.202Z",
+    "op": "select",
+    "selector": "#cx-material-relation",
+    "value": {
+      "label": "我的表达或经历"
+    }
+  },
+  {
+    "at": "2026-10-23T02:26:22.235Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存归属修正",
+    "save": "18-material-override"
+  },
+  {
+    "at": "2026-10-23T02:26:22.369Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看来源",
+    "save": "19-source-after-material"
+  },
+  {
+    "at": "2026-10-23T02:26:22.470Z",
+    "op": "back",
+    "save": "20-material-return"
+  },
+  {
+    "at": "2026-10-23T02:26:40.746Z",
+    "op": "select",
+    "selector": "#cx-material-relation",
+    "value": {
+      "label": "跟随来源"
+    }
+  },
+  {
+    "at": "2026-10-23T02:26:40.788Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存归属修正",
+    "save": "21-material-follow-source"
+  },
+  {
+    "at": "2026-10-23T02:26:40.945Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-23T02:26:40.994Z",
+    "op": "click",
+    "role": "button",
+    "name": "设备连接",
+    "save": "22-devices"
+  },
+  {
+    "at": "2026-10-23T02:26:48.304Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接设备",
+    "save": "23-device-invitation"
+  },
+  {
+    "at": "2026-10-23T02:27:02.649Z",
+    "op": "fill",
+    "selector": "#cs-invite-url",
+    "value": "https://review-central.example.invalid"
+  },
+  {
+    "at": "2026-10-23T02:27:02.661Z",
+    "op": "fill",
+    "selector": "#cs-invite-name",
+    "value": "评审 Android 采集端"
+  },
+  {
+    "at": "2026-10-23T02:27:02.716Z",
+    "op": "click",
+    "role": "button",
+    "name": "生成一次性邀请",
+    "save": "24-invitation-generated"
+  },
+  {
+    "at": "2026-10-23T02:27:13.446Z",
+    "op": "click",
+    "selector": "summary",
+    "index": 0,
+    "save": "25-invitation-json"
+  },
+  {
+    "at": "2026-10-23T02:27:13.603Z",
+    "op": "click",
+    "role": "button",
+    "name": "关闭详情",
+    "save": "26-invitation-closed"
+  },
+  {
+    "at": "2026-10-23T02:27:13.697Z",
+    "op": "back",
+    "save": "27-invitation-return"
+  },
+  {
+    "at": "2026-10-23T02:27:26.266Z",
+    "op": "click",
+    "role": "button",
+    "name": "生成一次性邀请"
+  },
+  {
+    "at": "2026-10-23T02:27:26.327Z",
+    "op": "click",
+    "role": "button",
+    "name": "取消这份邀请",
+    "save": "28-invitation-cancelled"
+  },
+  {
+    "at": "2026-10-23T02:27:36.638Z",
+    "op": "click",
+    "role": "button",
+    "name": "设置",
+    "save": "29-settings"
+  },
+  {
+    "at": "2026-10-23T02:27:43.652Z",
+    "op": "click",
+    "selector": "button[data-page=\"settings/account\"]",
+    "save": "30-account"
+  },
+  {
+    "at": "2026-10-23T02:27:51.781Z",
+    "op": "click",
+    "role": "button",
+    "name": "切换账号",
+    "save": "31-switch-account"
+  },
+  {
+    "at": "2026-10-23T02:28:02.899Z",
+    "op": "fill",
+    "selector": "#cs-login-name",
+    "value": "审阅新账号"
+  },
+  {
+    "at": "2026-10-23T02:28:02.911Z",
+    "op": "fill",
+    "selector": "#cs-login-password",
+    "value": "mote-demo"
+  },
+  {
+    "at": "2026-10-23T02:28:02.926Z",
+    "op": "select",
+    "selector": "#cs-login-duration",
+    "value": {
+      "label": "1 天"
+    }
+  },
+  {
+    "at": "2026-10-23T02:28:02.968Z",
+    "op": "click",
+    "role": "button",
+    "name": "登录并继续",
+    "save": "32-account-switched"
+  },
+  {
+    "at": "2026-10-23T02:28:03.102Z",
+    "op": "click",
+    "role": "button",
+    "name": "资料库",
+    "save": "33-switched-library"
+  },
+  {
+    "at": "2026-10-23T02:28:23.730Z",
+    "op": "click",
+    "role": "button",
+    "name": "设置"
+  },
+  {
+    "at": "2026-10-23T02:28:23.785Z",
+    "op": "click",
+    "selector": "button[data-page=\"settings/account\"]"
+  },
+  {
+    "at": "2026-10-23T02:28:23.830Z",
+    "op": "click",
+    "role": "button",
+    "name": "切换账号"
+  },
+  {
+    "at": "2026-10-23T02:28:23.839Z",
+    "op": "fill",
+    "selector": "#cs-login-name",
+    "value": "林同学"
+  },
+  {
+    "at": "2026-10-23T02:28:23.847Z",
+    "op": "fill",
+    "selector": "#cs-login-password",
+    "value": "mote-demo"
+  },
+  {
+    "at": "2026-10-23T02:28:23.885Z",
+    "op": "click",
+    "role": "button",
+    "name": "登录并继续"
+  },
+  {
+    "at": "2026-10-23T02:28:23.936Z",
+    "op": "click",
+    "role": "button",
+    "name": "问一问",
+    "save": "34-ask"
+  },
+  {
+    "at": "2026-10-23T02:28:32.966Z",
+    "op": "fill",
+    "selector": "#cs-ask-question",
+    "value": "请根据我的归档资料，列出本周讨论的决定，并保留来源。"
+  },
+  {
+    "at": "2026-10-23T02:28:33.008Z",
+    "op": "select",
+    "selector": "#cs-ask-provider",
+    "value": {
+      "label": "个人示例连接"
+    }
+  },
+  {
+    "at": "2026-10-23T02:28:33.021Z",
+    "op": "fill",
+    "selector": "#cs-ask-model",
+    "value": "review-question-model"
+  },
+  {
+    "at": "2026-10-23T02:28:33.068Z",
+    "op": "click",
+    "role": "button",
+    "name": "发送问题",
+    "save": "35-ask-running"
+  },
+  {
+    "at": "2026-10-23T02:28:46.536Z",
+    "op": "observe",
+    "save": "36-ask-completed"
+  },
+  {
+    "at": "2026-10-23T02:28:46.676Z",
+    "op": "click",
+    "selector": "summary",
+    "index": 1,
+    "save": "37-ask-recovery-options"
+  },
+  {
+    "at": "2026-10-23T02:29:38.266Z",
+    "op": "click",
+    "role": "button",
+    "name": "预览进度中断",
+    "save": "38-ask-disconnected"
+  },
+  {
+    "at": "2026-10-23T02:29:46.162Z",
+    "op": "click",
+    "role": "button",
+    "name": "重连进度"
+  },
+  {
+    "at": "2026-10-23T02:29:46.222Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-23T02:29:46.230Z",
+    "op": "back",
+    "save": "39-ask-return"
+  },
+  {
+    "at": "2026-10-23T02:29:46.545Z",
+    "op": "click",
+    "selector": "button[data-page=\"material/m2\"]",
+    "save": "40-ask-citation"
+  },
+  {
+    "at": "2026-10-23T02:29:46.651Z",
+    "op": "back",
+    "save": "41-ask-back-from-citation"
+  },
+  {
+    "at": "2026-10-23T02:30:13.516Z",
+    "op": "click",
+    "selector": "button[data-page=\"material/m2\"]"
+  },
+  {
+    "at": "2026-10-23T02:30:13.585Z",
+    "op": "click",
+    "role": "button",
+    "name": "文件、转写与处理详情",
+    "save": "42-file-processing"
+  },
+  {
+    "at": "2026-10-23T02:30:25.823Z",
+    "op": "click",
+    "selector": "summary",
+    "index": 1,
+    "save": "43-transcript-editor"
+  },
+  {
+    "at": "2026-10-23T02:30:41.225Z",
+    "op": "fill",
+    "selector": "#cs-file-m2-text",
+    "value": "评审修正：原始资料保留出处，所有推断均应能核对原文。"
+  },
+  {
+    "at": "2026-10-23T02:30:41.279Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存人工修正",
+    "save": "44-transcript-saved"
+  },
+  {
+    "at": "2026-10-23T02:30:41.405Z",
+    "op": "click",
+    "selector": "summary",
+    "index": 2,
+    "save": "45-transcript-lineage"
+  },
+  {
+    "at": "2026-10-23T02:30:53.612Z",
+    "op": "click",
+    "role": "button",
+    "name": "阅读当前正文",
+    "save": "46-corrected-body"
+  },
+  {
+    "at": "2026-10-23T02:30:53.724Z",
+    "op": "back",
+    "save": "47-correction-return"
+  },
+  {
+    "at": "2026-10-23T02:32:16.473Z",
+    "op": "click",
+    "role": "button",
+    "name": "设置"
+  },
+  {
+    "at": "2026-10-23T02:32:16.522Z",
+    "op": "click",
+    "selector": "button[data-page=\"settings/appearance\"]",
+    "save": "48-appearance"
+  },
+  {
+    "at": "2026-10-23T02:32:28.138Z",
+    "op": "select",
+    "selector": "#language-choice",
+    "value": "en"
+  },
+  {
+    "at": "2026-10-23T02:32:28.158Z",
+    "op": "select",
+    "selector": "#appearance-choice",
+    "value": "dark",
+    "save": "49-english-dark"
+  },
+  {
+    "at": "2026-10-23T02:32:28.290Z",
+    "op": "click",
+    "selector": "button[data-page=\"settings/models\"]",
+    "save": "50-model-english-dark"
+  },
+  {
+    "at": "2026-10-23T02:32:47.423Z",
+    "op": "click",
+    "role": "button",
+    "name": "Manage providers and credentials",
+    "save": "51-provider-config"
+  },
+  {
+    "at": "2026-10-23T02:33:07.719Z",
+    "op": "click",
+    "selector": "summary:has-text(\"Credentials and advanced parameters\")",
+    "save": "52-provider-credentials"
+  },
+  {
+    "at": "2026-10-23T02:33:07.848Z",
+    "op": "click",
+    "selector": "summary:has-text(\"Effective values and preset management\")",
+    "save": "53-provider-effective"
+  },
+  {
+    "at": "2026-10-23T02:33:40.186Z",
+    "op": "select",
+    "selector": "#cs-provider-headerMode",
+    "value": {
+      "label": "Replace JSON"
+    }
+  },
+  {
+    "at": "2026-10-23T02:33:40.203Z",
+    "op": "fill",
+    "selector": "#cs-provider-headers",
+    "value": "{bad-json"
+  },
+  {
+    "at": "2026-10-23T02:33:40.258Z",
+    "op": "click",
+    "role": "button",
+    "name": "Save and apply",
+    "save": "54-invalid-json"
+  },
+  {
+    "at": "2026-10-23T02:33:40.352Z",
+    "op": "fill",
+    "selector": "#cs-provider-headers",
+    "value": "{\"X-Demo\":\"review\"}"
+  },
+  {
+    "at": "2026-10-23T02:33:40.366Z",
+    "op": "select",
+    "selector": "#cs-provider-keyMode",
+    "value": {
+      "label": "Replace"
+    }
+  },
+  {
+    "at": "2026-10-23T02:33:40.379Z",
+    "op": "fill",
+    "selector": "#cs-provider-key",
+    "value": "DEMO-REVIEW-NOT-A-SECRET"
+  },
+  {
+    "at": "2026-10-23T02:33:40.420Z",
+    "op": "click",
+    "role": "button",
+    "name": "Save and apply",
+    "save": "55-credential-saved"
+  },
+  {
+    "at": "2026-10-23T02:33:40.521Z",
+    "op": "fill",
+    "selector": "#cs-provider-url",
+    "value": "https://different.example.invalid/v1"
+  },
+  {
+    "at": "2026-10-23T02:33:40.572Z",
+    "op": "click",
+    "role": "button",
+    "name": "Save and apply",
+    "save": "56-destination-change"
+  },
+  {
+    "at": "2026-10-23T02:34:04.269Z",
+    "op": "click",
+    "role": "button",
+    "name": "Restore saved values"
+  },
+  {
+    "at": "2026-10-23T02:34:04.288Z",
+    "op": "fill",
+    "selector": "#cs-provider-model",
+    "value": "draft-unsaved-model"
+  },
+  {
+    "at": "2026-10-23T02:34:04.341Z",
+    "op": "click",
+    "role": "button",
+    "name": "Test current draft",
+    "save": "57-draft-test"
+  },
+  {
+    "at": "2026-10-23T02:34:04.486Z",
+    "op": "click",
+    "role": "button",
+    "name": "Preview version conflict",
+    "save": "58-model-version-conflict"
+  }
+]

@@ -1,0 +1,332 @@
+[
+  {
+    "at": "2026-10-22T14:38:50.960Z",
+    "op": "open",
+    "file": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/five-rounds/rounds/r30/web.html",
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "evidenceDirectory": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/five-rounds/rounds/r30/reports/evidence/web/journeys",
+    "save": "01-home"
+  },
+  {
+    "at": "2026-10-22T14:38:58.876Z",
+    "op": "click",
+    "role": "button",
+    "name": "导入已有文件",
+    "save": "02-import-empty"
+  },
+  {
+    "at": "2026-10-22T14:39:11.254Z",
+    "op": "fill",
+    "selector": "#focus-import-instruction",
+    "value": "格式：聊天导出与我的笔记混合，标题为“北岸研究”。\n作者：我、供应商和 AI。供应商说“我承诺周五交付”，这不是我的承诺；AI 的建议也不是我的观点。\n时间：2026-10-19 09:30，Asia/Shanghai。\n背景：比较三份方案，保留原作者与引用关系。",
+    "save": "03-import-context"
+  },
+  {
+    "at": "2026-10-22T14:39:11.420Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择文件",
+    "save": "04-file-picker"
+  },
+  {
+    "at": "2026-10-22T14:39:44.250Z",
+    "op": "click",
+    "role": "button",
+    "name": "全部示例文件",
+    "save": "05-files-selected"
+  },
+  {
+    "at": "2026-10-22T14:40:06.198Z",
+    "op": "click",
+    "role": "button",
+    "name": "移除 访谈录音.wav",
+    "save": "06-file-removed"
+  },
+  {
+    "at": "2026-10-22T14:40:06.353Z",
+    "op": "click",
+    "text": "名称、解析与图片处理",
+    "exact": false,
+    "save": "07-options"
+  },
+  {
+    "at": "2026-10-22T14:40:39.594Z",
+    "op": "fill",
+    "selector": "#focus-import-name",
+    "value": "北岸研究 · 混合资料"
+  },
+  {
+    "at": "2026-10-22T14:40:39.605Z",
+    "op": "select",
+    "selector": "#focus-import-parser",
+    "value": {
+      "label": "聊天导出 · 1.0.0"
+    }
+  },
+  {
+    "at": "2026-10-22T14:40:39.616Z",
+    "op": "select",
+    "selector": "#focus-import-image",
+    "value": {
+      "label": "仅保存原件"
+    },
+    "save": "08-options-selected"
+  },
+  {
+    "at": "2026-10-22T14:40:39.775Z",
+    "op": "click",
+    "role": "button",
+    "name": "上传并查看预览",
+    "save": "09-preview"
+  },
+  {
+    "at": "2026-10-22T14:41:11.849Z",
+    "op": "click",
+    "text": "补充说明，重新理解资料",
+    "save": "10-revise-context"
+  },
+  {
+    "at": "2026-10-22T14:41:35.489Z",
+    "op": "fill",
+    "selector": "#focus-revised-instruction",
+    "value": "格式：聊天导出与我的笔记混合，标题为“北岸研究”。\n作者：我、供应商和 AI。供应商说“我承诺周五交付”，这不是我的承诺；AI 的建议也不是我的观点。\n时间：2026-10-19 09:30，Asia/Shanghai。\n背景：比较三份方案，保留原作者与引用关系。\n更正：录音里的“我”指供应商，不是账户持有人。",
+    "save": "11-revised-draft"
+  },
+  {
+    "at": "2026-10-22T14:41:35.645Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-22T14:41:35.654Z",
+    "op": "back",
+    "save": "12-return-to-draft"
+  },
+  {
+    "at": "2026-10-22T14:41:59.835Z",
+    "op": "click",
+    "role": "button",
+    "name": "重新生成预览",
+    "save": "13-regenerated-preview"
+  },
+  {
+    "at": "2026-10-22T14:41:59.982Z",
+    "op": "click",
+    "text": "核对文件与处理方式",
+    "save": "14-files-and-options"
+  },
+  {
+    "at": "2026-10-22T14:42:00.121Z",
+    "op": "click",
+    "role": "button",
+    "name": "确认并保存记录",
+    "save": "15-saved-import"
+  },
+  {
+    "at": "2026-10-22T14:45:01.360Z",
+    "op": "observe",
+    "save": "16-saved-detail-resume"
+  },
+  {
+    "at": "2026-10-22T14:45:11.138Z",
+    "op": "click",
+    "text": "原件与文件解析情况",
+    "exact": true,
+    "save": "17-files-detail"
+  },
+  {
+    "at": "2026-10-22T14:45:11.256Z",
+    "op": "click",
+    "text": "解析、图片与处理进度",
+    "exact": true,
+    "save": "18-processing-detail"
+  },
+  {
+    "at": "2026-10-22T14:45:11.372Z",
+    "op": "click",
+    "text": "更多操作",
+    "exact": true,
+    "save": "19-more-operations"
+  },
+  {
+    "at": "2026-10-22T14:45:11.490Z",
+    "op": "click",
+    "text": "预览不同处理状态",
+    "exact": true,
+    "save": "20-state-fixtures"
+  },
+  {
+    "at": "2026-10-22T14:45:20.077Z",
+    "op": "click",
+    "role": "button",
+    "name": "阅读导入结果",
+    "save": "21-material-result"
+  },
+  {
+    "at": "2026-10-22T14:45:29.438Z",
+    "op": "click",
+    "text": "本次导入说明",
+    "exact": true,
+    "save": "22-material-context"
+  },
+  {
+    "at": "2026-10-22T14:45:29.593Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回导入资料",
+    "save": "23-return-import"
+  },
+  {
+    "at": "2026-10-22T14:45:29.722Z",
+    "op": "click",
+    "text": "预览不同处理状态",
+    "exact": true
+  },
+  {
+    "at": "2026-10-22T14:45:53.154Z",
+    "op": "click",
+    "text": "预览不同处理状态",
+    "exact": true
+  },
+  {
+    "at": "2026-10-22T14:45:53.167Z",
+    "op": "select",
+    "selector": "#focus-import-phase",
+    "value": {
+      "label": "等待配置模型"
+    },
+    "save": "24-model-required"
+  },
+  {
+    "at": "2026-10-22T14:46:03.111Z",
+    "op": "click",
+    "role": "button",
+    "name": "配置模型后继续",
+    "save": "25-model-settings-return"
+  },
+  {
+    "at": "2026-10-22T14:46:17.246Z",
+    "op": "select",
+    "selector": "#model-choice",
+    "value": {
+      "label": "示例模型 · 本地处理"
+    }
+  },
+  {
+    "at": "2026-10-22T14:46:17.290Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存设置",
+    "save": "26-model-saved"
+  },
+  {
+    "at": "2026-10-22T14:46:17.424Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回这次导入",
+    "save": "27-return-same-task"
+  },
+  {
+    "at": "2026-10-22T14:47:50.140Z",
+    "op": "click",
+    "role": "button",
+    "name": "全部功能",
+    "save": "28-feature-directory"
+  },
+  {
+    "at": "2026-10-22T14:47:56.433Z",
+    "op": "click",
+    "text": "连接设备与查看采集",
+    "exact": true
+  },
+  {
+    "at": "2026-10-22T14:47:56.489Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开连接或重新授权设备",
+    "save": "29-pairing"
+  },
+  {
+    "at": "2026-10-22T14:47:56.623Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接 Android 示例设备",
+    "save": "30-pairing-request"
+  },
+  {
+    "at": "2026-10-22T14:48:26.417Z",
+    "op": "click",
+    "role": "button",
+    "name": "管理文件夹来源",
+    "save": "31-web-native-folder-handoff"
+  },
+  {
+    "at": "2026-10-22T14:49:10.331Z",
+    "op": "select",
+    "selector": "#preview-state",
+    "value": "populated"
+  },
+  {
+    "at": "2026-10-22T14:49:10.388Z",
+    "op": "click",
+    "role": "button",
+    "name": "全部功能"
+  },
+  {
+    "at": "2026-10-22T14:49:10.446Z",
+    "op": "click",
+    "text": "接入来源、飞书与录音",
+    "exact": true
+  },
+  {
+    "at": "2026-10-22T14:49:10.509Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开连接飞书文档和日历",
+    "save": "32-source-context-form"
+  },
+  {
+    "at": "2026-10-22T14:49:10.629Z",
+    "op": "click",
+    "text": "内容关系与背景",
+    "exact": false,
+    "save": "33-source-context-expanded"
+  },
+  {
+    "at": "2026-10-22T14:49:21.449Z",
+    "op": "fill",
+    "selector": "#source-context-description",
+    "value": "每周导出的会议材料。时间采用 Asia/Shanghai；供应商与 AI 引述保留原作者。我的评论只出现在“我的结论”段落。"
+  },
+  {
+    "at": "2026-10-22T14:49:21.474Z",
+    "op": "select",
+    "selector": "#source-relation",
+    "value": {
+      "label": "混合内容"
+    },
+    "save": "34-source-context-draft"
+  },
+  {
+    "at": "2026-10-22T14:49:21.620Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存内容关系",
+    "save": "35-source-context-saved"
+  },
+  {
+    "at": "2026-10-22T14:49:21.798Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-22T14:49:21.809Z",
+    "op": "back",
+    "save": "36-source-context-return"
+  }
+]

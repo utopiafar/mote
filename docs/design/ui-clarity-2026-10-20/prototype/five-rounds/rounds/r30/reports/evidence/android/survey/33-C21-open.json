@@ -1,0 +1,215 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/ask",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R30\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nm\n问一问\n问一问\n\n从你的资料中寻找答案，沿着引用查看出处。\n\n待你澄清 · 1\n历史对话\n新建对话\n你想从资料中了解什么？\n\n选择范围，输入问题；每个回答都可以沿引用核对。\n\n这周有哪些值得跟进的事？ \n总结我最近保存的研究资料 \n来源目录的讨论有哪些结论？ \n全部资料\n最近 7 天\n附加图片\n演示模型状态\n演示未配置模型\n提问\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "待你澄清 · 1",
+      "label": "待你澄清 · 1",
+      "action": "go",
+      "page": "ask/clarifications",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "历史对话",
+      "label": "历史对话",
+      "action": "go",
+      "page": "ask/history",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "新建对话",
+      "label": "新建对话",
+      "action": "new-chat",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "这周有哪些值得跟进的事？",
+      "label": "这周有哪些值得跟进的事？",
+      "action": "prompt",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "总结我最近保存的研究资料",
+      "label": "总结我最近保存的研究资料",
+      "action": "prompt",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源目录的讨论有哪些结论？",
+      "label": "来源目录的讨论有哪些结论？",
+      "action": "prompt",
+      "disabled": false
+    },
+    {
+      "tag": "textarea",
+      "id": "ask-input",
+      "type": "textarea",
+      "text": "",
+      "label": "输入问题",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "ask-scope",
+      "type": "select-one",
+      "text": "全部资料\n最近 7 天",
+      "label": "提问范围",
+      "value": "全部资料",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "附加图片",
+      "label": "附加图片",
+      "action": "attach-ask-image",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "演示模型状态",
+      "label": "演示模型状态",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "演示未配置模型",
+      "label": "演示未配置模型",
+      "action": "mock-missing",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "提问",
+      "label": "提问",
+      "action": "send-ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "问一问"
+    },
+    {
+      "level": "H2",
+      "text": "你想从资料中了解什么？"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

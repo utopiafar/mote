@@ -1,0 +1,247 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/material/m1",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n资料库\n/\n资料详情\n工作台在线\n随手记\n添加内容\n返回资料库\n复制正文\n更多\n产品评审 · 让第一步更清楚\n随手记\n记录时间：今天 09:12\n网页\n可阅读\n存入资料库：2026-10-20\n\n今天的产品评审围绕新用户的第一步展开。\n\n最重要的事情是让输入方式清楚：一次导入文件，或持续同步一个文件夹。已有资料应该随时可读，用户也可以直接提问。\n\n下次评审：周四下午核对三端的入口和文案。\n\n作者与内容归属\n归属未知\n来源与原始资料\n\n我写的记录\n\n查看原始内容\n查看来源\n基于这份资料提问\n补充背景\n从这份资料整理记忆\n编辑笔记",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回资料库",
+      "label": "返回资料库",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "复制正文",
+      "label": "复制正文",
+      "action": "copy-material",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "更多",
+      "label": "更多",
+      "action": "material-more",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "作者与内容归属\n归属未知",
+      "label": "作者与内容归属\n归属未知",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看原始内容",
+      "label": "查看原始内容",
+      "action": "original",
+      "item": "m1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看来源",
+      "label": "查看来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "基于这份资料提问",
+      "label": "基于这份资料提问",
+      "action": "ask-material",
+      "item": "m1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "补充背景",
+      "label": "补充背景",
+      "action": "material-background",
+      "item": "m1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "从这份资料整理记忆",
+      "label": "从这份资料整理记忆",
+      "action": "material-memory",
+      "item": "m1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "编辑笔记",
+      "label": "编辑笔记",
+      "action": "edit-note",
+      "item": "m1",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "产品评审 · 让第一步更清楚"
+    },
+    {
+      "level": "H2",
+      "text": "来源与原始资料"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}
