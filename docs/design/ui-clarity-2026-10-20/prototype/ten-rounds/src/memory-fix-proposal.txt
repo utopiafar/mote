@@ -1,0 +1,75 @@
+R27 isolated generated-memory correction proposal
+================================================
+
+Observed evidence
+-----------------
+Fresh Android R25 reviewer entered exact textarea value:
+写作时通常喜欢短句；会议纪要先写决定和行动项。
+The saved card and new history version instead retained the old text:
+写作时喜欢短句，会议纪要先写决定
+See reports/fresh-android-advanced-r25/11-memory-correction-draft.json,
+12-memory-corrected.json and 13-memory-history.json.
+
+Root cause
+----------
+The original manage-generated-memory handler creates an info modal by writing a
+static HTML snapshot to state.modalBody. The input handler correctly stores
+state.generatedMemoryDraft. However, subsequent render() calls rebuild info
+modal textareas from the older modalBody string, without rehydrating that draft.
+The resize listener calls render() after 120ms, so resized/keyboard-like viewports
+can expose this. The reviewer's full-page screenshot also supplies a plausible
+resize trigger. Finally save-generated-memory reads document.getElementById(...)
+multiple times, so it records the stale DOM value and creates a new version even
+when that value is unchanged. It ignores the correctly persisted draft.
+
+Proposed additive common.js patch
+--------------------------------
+1. Add a baseline reference near the other nuBase... references:
+
+const nuBaseCoherentAction = coherentAction;
+
+2. Add this small adapter before enhanceCommonUI:
+
+function enhanceGeneratedMemoryDraft(){
+  const editor=document.getElementById('generated-memory-text');
+  if(editor && state.generatedMemoryDraft!=null)editor.value=state.generatedMemoryDraft;
+}
+
+coherentAction=function(action,el){
+  if(action!=='save-generated-memory')return nuBaseCoherentAction(action,el);
+  const editor=document.getElementById('generated-memory-text');
+  const content=state.generatedMemoryDraft ?? editor?.value ?? state.generatedMemoryText ?? '';
+  if(!content.trim()){
+    notify(nuText('请保留记忆内容。','Keep some text in the memory.'));
+    return true;
+  }
+  // Validate with trim, but save the user's exact text without rewriting it.
+  if(content!==state.generatedMemoryText){
+    state.generatedMemoryHistory=state.generatedMemoryHistory||[];
+    state.generatedMemoryHistory.push(content);
+    recordMemoryVersion('generated',content);
+  }
+  state.generatedMemoryText=content;
+  state.generatedMemoryDraft=null;
+  state.modal='';
+  persist();
+  render();
+  return true;
+};
+
+3. Call enhanceGeneratedMemoryDraft() inside enhanceCommonUI after baseline
+render has created the dialog (for example next to enhanceOriginalEvidence()).
+
+Scope and verification
+----------------------
+The draft adapter preserves edit text across ordinary rerenders; the save adapter
+uses one captured exact value for current content and both history stores, and
+avoids unchanged-content phantom versions. Other original actions delegate.
+The existing save-memory-continue action already reads generatedMemoryDraft.
+Verify: create generated memory from a note; open management; fill a distinctive
+correction; resize the viewport and wait for the existing 120ms render; confirm
+the exact text remains; save; confirm current card, reopened editor, and newest
+history version all show that exact text, with the original first version kept.
+Also verify an unchanged save does not add another version.
+
+No frozen candidate was edited. Parent applies this proposal to common.js.

@@ -1,0 +1,279 @@
+{
+  "schema_version": 1,
+  "round": "R30",
+  "evaluator": "/root/r30_34_independent_review",
+  "source_sha": "81a73c0ec81af876d6eeef71451b75cd51684b34",
+  "candidate_sha256": {
+    "web": "d791fe442d83e553eb71f707a7146f75a3768e4ed72a3bfce717e9aac9f4d336",
+    "mac": "c064c1de5b8e0ded9563aecf95766ecfdb6bbf4a82df67d98ff0737642766a14",
+    "android": "b029879d21a9fa3da98f4136fc0c7fd7be8a54df0c3b64c7b35251d528799a6d"
+  },
+  "contract_sha256": "316d7ac7ea6577c4a6d28c526f6e27ad56d33c7a9afd60db4b74466e88791572",
+  "journeys_sha256": "a30546c750bc7281177985b9e993c9f1f1a163c93dad9ebc077cac9ec1badf1b",
+  "rubric_sha256": "58826132bd1d4c70690567482902b7ef7dac89e32f7fc727a643ce3d213abb7c",
+  "rubric_id": "mote-r30-r34-independent-v1",
+  "status": "FAIL",
+  "platforms": {
+    "web": {
+      "scores": {
+        "new_user": {
+          "value": 3,
+          "reason": "The first import has two comprehensible steps, an optional explanation, and a clear one-time upload boundary. Broader workspaces still require reading substantial navigation/explanation; recovery does not reliably complete the task."
+        },
+        "functionality": {
+          "value": 1.75,
+          "reason": "The normal import context/edit/detail path now works, but edited prose can be silently discarded by confirmation, model setup fails to persist its selection or resolve the import, and many current-code contract options and state transitions are absent or untested."
+        },
+        "simplicity": {
+          "value": 2.75,
+          "reason": "Import options are disclosed without hiding the context field. The populated library still exposes numerous parallel categories; native Sources repeats a large collector panel, explanatory blocks, and the connected-source list."
+        },
+        "clarity": {
+          "value": 2.5,
+          "reason": "Originals, records, indexing, and memory are named separately. File dispositions, model-required recovery, invitation scope, and obsolete deployment-draft wording still fail to communicate the actual state or next action."
+        },
+        "design": {
+          "value": 3,
+          "reason": "Restrained typography, spacing, and purple accents form a coherent interface; desktop task composition is readable. The narrow layout retains excessive vertical material and some repeated headings."
+        },
+        "craft": {
+          "value": 2.25,
+          "reason": "Main rendered pages produced no browser errors or horizontal overflow in the sampled viewports. The dirty-context confirmation and model-value reversion are substantial state-handling defects."
+        },
+        "originality": {
+          "value": 2.5,
+          "reason": "The calm archive-and-evidence presentation fits the product and has a distinct editorial tone, but many settings still use generic forms without a strong task-specific result."
+        }
+      },
+      "central_collection_gate": "pass",
+      "boundary_evidence": [
+        "evidence/web/survey/survey.json"
+      ],
+      "boundary_note": "All 78 directory destinations and disclosed controls inspected; no Central host-directory collection control observed. Browser-selected folder is labeled one-time upload; device-local folder collection remains. Web folder management opens explicit native handoff.",
+      "weighted_score_100": 64.062,
+      "coverage_counts": {
+        "partial": 20,
+        "untested": 106,
+        "missing": 1,
+        "verified": 1,
+        "not_applicable": 60
+      },
+      "hard_gates": {
+        "platform_thresholds": "fail",
+        "semantic_completeness": "fail",
+        "critical_journeys": "fail",
+        "no_central_local_collection": "pass"
+      }
+    },
+    "mac": {
+      "scores": {
+        "new_user": {
+          "value": 2.75,
+          "reason": "The first import has two comprehensible steps, an optional explanation, and a clear one-time upload boundary. Broader workspaces still require reading substantial navigation/explanation; recovery does not reliably complete the task."
+        },
+        "functionality": {
+          "value": 1.75,
+          "reason": "The normal import context/edit/detail path now works, but edited prose can be silently discarded by confirmation, model setup fails to persist its selection or resolve the import, and many current-code contract options and state transitions are absent or untested."
+        },
+        "simplicity": {
+          "value": 2.5,
+          "reason": "Import options are disclosed without hiding the context field. The populated library still exposes numerous parallel categories; native Sources repeats a large collector panel, explanatory blocks, and the connected-source list."
+        },
+        "clarity": {
+          "value": 2.5,
+          "reason": "Originals, records, indexing, and memory are named separately. File dispositions, model-required recovery, invitation scope, and obsolete deployment-draft wording still fail to communicate the actual state or next action."
+        },
+        "design": {
+          "value": 3,
+          "reason": "Restrained typography, spacing, and purple accents form a coherent interface; desktop task composition is readable. The narrow layout retains excessive vertical material and some repeated headings."
+        },
+        "craft": {
+          "value": 2.25,
+          "reason": "Main rendered pages produced no browser errors or horizontal overflow in the sampled viewports. The dirty-context confirmation and model-value reversion are substantial state-handling defects."
+        },
+        "originality": {
+          "value": 2.5,
+          "reason": "The calm archive-and-evidence presentation fits the product and has a distinct editorial tone, but many settings still use generic forms without a strong task-specific result."
+        }
+      },
+      "central_collection_gate": "pass",
+      "boundary_evidence": [
+        "evidence/mac/survey/survey.json"
+      ],
+      "boundary_note": "All 78 directory destinations and disclosed controls inspected; no Central host-directory collection control observed. Browser-selected folder is labeled one-time upload; device-local folder collection remains. Web folder management opens explicit native handoff.",
+      "weighted_score_100": 61.25,
+      "coverage_counts": {
+        "partial": 24,
+        "untested": 148,
+        "missing": 1,
+        "verified": 1,
+        "not_applicable": 14
+      },
+      "hard_gates": {
+        "platform_thresholds": "fail",
+        "semantic_completeness": "fail",
+        "critical_journeys": "fail",
+        "no_central_local_collection": "pass"
+      }
+    },
+    "android": {
+      "scores": {
+        "new_user": {
+          "value": 2.75,
+          "reason": "The first import has two comprehensible steps, an optional explanation, and a clear one-time upload boundary. Broader workspaces still require reading substantial navigation/explanation; recovery does not reliably complete the task."
+        },
+        "functionality": {
+          "value": 1.75,
+          "reason": "The normal import context/edit/detail path now works, but edited prose can be silently discarded by confirmation, model setup fails to persist its selection or resolve the import, and many current-code contract options and state transitions are absent or untested."
+        },
+        "simplicity": {
+          "value": 2.25,
+          "reason": "Import options are disclosed without hiding the context field. The populated library still exposes numerous parallel categories; native Sources repeats a large collector panel, explanatory blocks, and the connected-source list."
+        },
+        "clarity": {
+          "value": 2.5,
+          "reason": "Originals, records, indexing, and memory are named separately. File dispositions, model-required recovery, invitation scope, and obsolete deployment-draft wording still fail to communicate the actual state or next action."
+        },
+        "design": {
+          "value": 2.75,
+          "reason": "Restrained typography, spacing, and purple accents form a coherent interface; desktop task composition is readable. The narrow layout retains excessive vertical material and some repeated headings."
+        },
+        "craft": {
+          "value": 2.25,
+          "reason": "Main rendered pages produced no browser errors or horizontal overflow in the sampled viewports. The dirty-context confirmation and model-value reversion are substantial state-handling defects."
+        },
+        "originality": {
+          "value": 2.5,
+          "reason": "The calm archive-and-evidence presentation fits the product and has a distinct editorial tone, but many settings still use generic forms without a strong task-specific result."
+        }
+      },
+      "central_collection_gate": "pass",
+      "boundary_evidence": [
+        "evidence/android/survey/survey.json"
+      ],
+      "boundary_note": "All 78 directory destinations and disclosed controls inspected; no Central host-directory collection control observed. Browser-selected folder is labeled one-time upload; device-local folder collection remains. Web folder management opens explicit native handoff.",
+      "weighted_score_100": 59.375,
+      "coverage_counts": {
+        "partial": 25,
+        "untested": 156,
+        "missing": 2,
+        "verified": 1,
+        "not_applicable": 4
+      },
+      "hard_gates": {
+        "platform_thresholds": "fail",
+        "semantic_completeness": "fail",
+        "critical_journeys": "fail",
+        "no_central_local_collection": "pass"
+      }
+    }
+  },
+  "mean_score_100": 61.562,
+  "weakest_platform": "android",
+  "findings": [
+    {
+      "id": "R30-01",
+      "title": "Confirmation silently discards the edited import explanation",
+      "observed": "Reproduced independently on all three platforms. After changing the review textarea, Confirm remains enabled and saves the earlier explanation. The revised vendor-ownership correction disappears from the saved detail.",
+      "correction": "Block confirmation while explanation is dirty, or require an explicit re-preview that uses the revised prose and retains the same task.",
+      "evidence": [
+        "evidence/web/dirty-context/11-confirm-with-dirty-draft.json",
+        "evidence/mac/journeys/11-confirm-with-dirty-draft.json",
+        "evidence/android/dirty-context/11-confirm-with-dirty-draft.json"
+      ]
+    },
+    {
+      "id": "R30-02",
+      "title": "Model-required recovery returns to an unresolved task",
+      "observed": "All three platforms preserve task identity and context, but the recovery screen edits the question model, reverts Local Processing on Save, and returns to Waiting for model configuration.",
+      "correction": "Identify the missing import module, persist the saved model assignment, and enable same-task continuation after the simulated readiness change.",
+      "evidence": [
+        "evidence/web/journeys/26-model-saved.json",
+        "evidence/web/journeys/27-return-same-task.json",
+        "evidence/mac/normal-import/19-model-saved.json",
+        "evidence/android/journeys/20-return-same-import.json"
+      ]
+    },
+    {
+      "id": "R30-03",
+      "title": "Per-file dispositions collapse into parsed records",
+      "observed": "The selected ZIP and both text inputs are all labeled parsed with one record each. No container, attachment, excluded, unsupported or separate-media outcome is demonstrated.",
+      "correction": "Use a meaningful mixed fixture with retained original paths, outcome reasons and counts; show failed audio/image stages independently from record publication.",
+      "evidence": [
+        "evidence/web/journeys/17-files-detail.json",
+        "evidence/mac/normal-import/15-detail-expanded.json",
+        "evidence/android/journeys/15-detail-expanded.json"
+      ]
+    },
+    {
+      "id": "R30-04",
+      "title": "Device invitation inputs and lifecycle are missing",
+      "observed": "The source screen offers two example connection buttons. Clicking Android immediately creates a connected device. No reachable Central address, connection name, existing-device identity, one-use invitation, expiry or cancellation is presented.",
+      "correction": "Restore the contract invitation preparation and transfer lifecycle with an explicit device-collection versus account-login distinction.",
+      "evidence": [
+        "evidence/web/journeys/29-pairing.json",
+        "evidence/web/journeys/30-pairing-request.json"
+      ]
+    },
+    {
+      "id": "R30-05",
+      "title": "Current source semantics are absent behind several reachable entries",
+      "observed": "The source editor lacks ACK/version/conflict recovery; Android lacks native description ACK/conflict; A30 still describes obsolete draft-only deployment; account settings omit password/switch/expiry and the one-day session option. Directory reachability therefore overstates feature coverage.",
+      "correction": "Implement the current-source inputs, transitions and state-specific results without presenting generic save feedback as completeness.",
+      "evidence": [
+        "evidence/web/journeys/33-source-context-expanded.json",
+        "evidence/web/survey/74-A30.json",
+        "evidence/web/survey/survey.json",
+        "evidence/android/survey/survey.json"
+      ]
+    },
+    {
+      "id": "R30-06",
+      "title": "Import is simpler, but broader pages remain dense",
+      "observed": "The two-zone import is a clear improvement. The populated library still has a second long category rail, and native Sources repeats a large collection panel, explanatory copy, and connected-source list. Android places the source list below the first viewport.",
+      "correction": "Consolidate source status and actions into one list and keep uncommon library categories behind a named disclosure while preserving their task inputs.",
+      "evidence": [
+        "evidence/web/survey/01-library.png",
+        "evidence/mac/survey/03-sources.png",
+        "evidence/android/major-populated/sources.png"
+      ]
+    },
+    {
+      "id": "R30-07",
+      "title": "The ordinary context journey and collection boundary are improved",
+      "observed": "All three platforms retain exact multiline import prose through re-preview, saved detail and material. Fixed parser and archive-only image choice remain visible. Web folder management explicitly sends collection setup to Mac or Android; browser-selected folders remain a one-time upload.",
+      "correction": "Keep these improvements while fixing dirty confirmation and recovery. Include a role-specific synthetic preview so vendor/AI quotations can be checked as output rather than only explained in copy.",
+      "evidence": [
+        "evidence/web/journeys/22-material-context.json",
+        "evidence/mac/normal-import/16-material-context.json",
+        "evidence/android/journeys/16-material-context.json",
+        "evidence/web/journeys/31-web-native-folder-handoff.json"
+      ]
+    }
+  ],
+  "screen_inspection": {
+    "directory_entries": {
+      "web": 78,
+      "mac": 78,
+      "android": 78
+    },
+    "major_pages": "Library, Ask, Sources, Activity, settings and the feature directory inspected on each platform; note/import and native entry pages included. Every directory destination and visible disclosure captured.",
+    "android_locator_correction": "First survey matched hidden desktop navigation. Those four failures are evaluator harness errors, not product defects; populated Android captures supplied in evidence/android/major-populated, and empty major pages in journeys.",
+    "scope": "Navigation/disclosure survey does not award semantic completion. Stateful import and selected source/pairing controls are independently exercised."
+  },
+  "limits": [
+    "Frozen HTML only, source base 81a73c0ec81af876d6eeef71451b75cd51684b34. Candidate code/internal state was not read for scoring.",
+    "Headless Chromium, viewport screenshots and visible DOM; no native runtime, backend, real file upload, live-model or provider validation.",
+    "All 188 semantic features have explicit coverage rows. Unexercised assertions and journeys remain untested; 78 reachable directory entries are not treated as complete features.",
+    "DOM was recorded before viewport screenshots; earlier full-page screenshot disclosure artifact is excluded.",
+    "Critical import scenarios exercised separately on all three platforms. The remaining contract journeys were not all completed; this is an explicit failed completeness gate."
+  ],
+  "next_corrections": [
+    "Block confirmation while explanation is dirty, or require an explicit re-preview that uses the revised prose and retains the same task.",
+    "Identify the missing import module, persist the saved model assignment, and enable same-task continuation after the simulated readiness change.",
+    "Use a meaningful mixed fixture with retained original paths, outcome reasons and counts; show failed audio/image stages independently from record publication.",
+    "Restore the contract invitation preparation and transfer lifecycle with an explicit device-collection versus account-login distinction.",
+    "Implement the current-source inputs, transitions and state-specific results without presenting generic save feedback as completeness.",
+    "Consolidate source status and actions into one list and keep uncommon library categories behind a named disclosure while preserving their task inputs."
+  ]
+}

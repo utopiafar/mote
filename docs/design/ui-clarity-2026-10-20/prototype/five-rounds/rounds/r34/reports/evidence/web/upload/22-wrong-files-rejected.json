@@ -1,0 +1,59 @@
+{
+  "url": "https://mote-prototype.invalid/#/imports/queue",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R34\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n资料库\n/\n上传与处理\n工作台在线\n随手记\n添加内容\n本地上传队列\n\n继续本机待上传的文件。接收完成后，再核对解析结果。\n\n返回导入记录\n读书笔记.md\n\n中央已接收 · 记录已保存\n\n1 个文件\n\n2,400 B / 2,400 B · 100%\n\n查看已接收资料\n文件、资料说明与更多操作\n访谈录音.wav\n\n正在上传\n\n1 个文件\n\n15,050 B / 43,000 B · 35%\n\n本机文件已不可用。说明和提交 ID 已保留，重新选择同一批文件后继续。\n\n重新选择文件\n文件、资料说明与更多操作\n录音/访谈录音.wav\n15,050 B / 43,000 B\n提交时的资料说明\n\nR34 独立上传队列检查。\n供应商的“我”不是我的承诺；AI 引文保留角色。Asia/Shanghai。\n\n提交 ID：upload-1792726290675\n\n移除本地队列项\n预览上传回执\n\n以下只模拟界面状态，不上传真实文件。\n\n收到下一段回执\n模拟上传失败\n模拟名额不足\n模拟文件已失效\n\n文件正文依赖当前浏览器会话；刷新或关闭后可能需要重新选择。队列中保留文件信息和资料说明。移除队列项不会删除中央已归档的原件。\n\n重新选择这批文件\n\n访谈录音.wav\n\n文件名称、相对路径和大小应与原提交一致。资料说明保持原样。\n\n录音/访谈录音.wav\n15,050 B / 43,000 B\n提交时的资料说明\n\nR34 独立上传队列检查。\n供应商的“我”不是我的承诺；AI 引文保留角色。Asia/Shanghai。\n\n提交 ID：upload-1792726290675\n\n选择原文件夹\n\n文件名称、路径或大小与这次提交不一致。请重新选择原文件；原说明和提交 ID 已保留。\n\n重新使用同一批示例文件稍后处理",
+  "controls": [
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "关闭对话框",
+      "action": "close-modal",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "uq-reselect-input",
+      "type": "file",
+      "text": "",
+      "label": "选择原文件夹",
+      "value": "C:\\fakepath\\other.txt",
+      "item": "upload-1792726290675",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重新使用同一批示例文件",
+      "label": "重新使用同一批示例文件",
+      "action": "uq-sample-reselect",
+      "item": "upload-1792726290675",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "稍后处理",
+      "label": "稍后处理",
+      "action": "close-modal",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H2",
+      "text": "重新选择这批文件"
+    },
+    {
+      "level": "H3",
+      "text": "提交时的资料说明"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

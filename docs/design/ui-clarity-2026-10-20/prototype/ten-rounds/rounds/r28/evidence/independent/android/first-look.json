@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:22:53.012Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "75352e8a07c6ae20f5bfd7dfd784b654a93306f46cfec0ba53a4b5bb90b7add1",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "answers": {
+    "purpose": "把记录存为可检索可提问的个人资料。",
+    "first_action": "主按钮写下第一条记录在首屏内。",
+    "setup_expectation": "提示先记想法、以后按需连接，没有先授予权限的要求。",
+    "first_value_expectation": "简介说明搜索提问和核对原文，详细例子在下方。",
+    "advanced_discovery": "底栏来源和右上更多提供后续入口。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

@@ -1,0 +1,34 @@
+{
+  "reviewer": "blind-r18-c",
+  "stage": "frozen-before-interaction",
+  "date": "2026-10-21",
+  "inputs": [
+    "evidence/r18/visuals/desktop-library-dark-viewport.png",
+    "evidence/r18/visuals/mobile-empty-english-viewport.png"
+  ],
+  "exposure": "仅看指定的两个实际首屏截图。未读候选源码、功能清单、作者报告或其他评审报告。",
+  "purpose_understanding": "这是一个个人资料库：把文件、随手记和连接来源的资料放在一起，以后可以搜索、针对资料提问，并回看原文核对回答。它还会把长期信息整理为记忆，并回顾一段时间的变化。",
+  "perceived_capabilities": [
+    {"capability": "添加或导入文件、写随手记", "evidence": "桌面顶部‘添加内容’和‘随手记’；移动空态‘Import a file’、‘Write a quick note’", "confidence": "高"},
+    {"capability": "浏览、搜索、筛选已保存的资料", "evidence": "桌面资料列表、搜索正文或出处、来源/设备/类型/保存时间筛选", "confidence": "高"},
+    {"capability": "针对已保存资料提问并核对原文", "evidence": "首屏简介明确写‘提问并核对原文’，主导航有‘问一问’/‘Ask’", "confidence": "高"},
+    {"capability": "连接或管理资料来源", "evidence": "主导航‘来源’/‘Sources’，资料行显示网页、Codex会话、Google日历、飞书录音等来源", "confidence": "中"},
+    {"capability": "整理长期记忆、生成阶段回顾", "evidence": "桌面说明和‘记忆/洞察’；移动端‘Memories/Insights’及空态说明", "confidence": "中"},
+    {"capability": "保存并查看截图、应用使用、媒体播放、Coding会话等原始记录", "evidence": "桌面二级导航‘原始记录’下的项目", "confidence": "中"}
+  ],
+  "perceived_priority": {
+    "desktop": "先看到资料库标题及用途，再看到六份可阅读资料。资料浏览/搜索是页面主任务；问一问在左侧是可见的下一步。",
+    "mobile": "先添加第一份资料。‘Start with one material’和实心‘Import a file’按钮很清楚，底栏还能直接找到Ask。"
+  },
+  "preferred_first_action": {
+    "desktop_with_existing_materials": "点‘问一问’，因为用途说明已把基于资料提问说清楚，左侧入口不用猜。",
+    "mobile_empty_account": "点‘Import a file’，因为这是当前空资料库最明确的开始方式。"
+  },
+  "confusions": [
+    "桌面二级导航项目很多；‘资料出处’和主导航‘来源’的边界不够直观。",
+    "‘记忆’和‘洞察’有一句概括，但第一眼还不知道由用户创建还是由系统生成，也不知道何时应该用。",
+    "‘原始采集记录/截图/应用使用记录/媒体播放’看起来暗示采集能力，首屏却没有直接说明如何获得这些内容。",
+    "移动端语言更新提示遮住了空态最下方一小段文字；主要导入按钮和底栏仍可见。"
+  ],
+  "task_intent_after_freeze": "基于已有资料问一个让首次使用更容易理解的问题，查看回答的引用原文，然后回到同一对话。"
+}

@@ -1,0 +1,127 @@
+[
+  {
+    "type": "click",
+    "selector": "[data-source-id=\"folder\"] [data-action=\"go\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-context-saved]",
+    "text": "不声明"
+  },
+  {
+    "type": "select",
+    "selector": "#source-relation",
+    "value": "third_party"
+  },
+  {
+    "type": "fill",
+    "selector": "#source-context-description",
+    "value": "保存内容关系"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-context-status]",
+    "text": "关系修改尚未保存"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-context-saved]",
+    "text": "不声明"
+  },
+  {
+    "type": "click",
+    "selector": ".sidebar [data-page=\"sources\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-source-id=\"folder\"] [data-action=\"go\"]"
+  },
+  {
+    "type": "assertValue",
+    "selector": "#source-relation",
+    "value": "third_party"
+  },
+  {
+    "type": "assertValue",
+    "selector": "#source-context-description",
+    "value": "保存内容关系"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"save-source-context\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-context-saved]",
+    "text": "第三方内容"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-context-saved]",
+    "text": "保存内容关系"
+  },
+  {
+    "type": "click",
+    "selector": ".sidebar [data-page=\"sources\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-source-id=\"screen\"] [data-action=\"go\"]"
+  },
+  {
+    "type": "assertValue",
+    "selector": "#source-relation",
+    "value": ""
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-receiving]",
+    "text": "等待屏幕录制授权"
+  },
+  {
+    "type": "click",
+    "selector": ".sidebar [data-page=\"sources\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-source-id=\"folder\"] [data-action=\"go\"]"
+  },
+  {
+    "type": "assertValue",
+    "selector": "#source-relation",
+    "value": "third_party"
+  },
+  {
+    "type": "assertValue",
+    "selector": "#source-context-description",
+    "value": "保存内容关系"
+  },
+  {
+    "type": "select",
+    "selector": "#source-relation",
+    "value": "mixed"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"discard-source-context\"]"
+  },
+  {
+    "type": "assertValue",
+    "selector": "#source-relation",
+    "value": "third_party"
+  },
+  {
+    "type": "click",
+    "selector": "[data-page=\"setup/folder/new\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "label.checkrow",
+    "text": "这是连接后的同步方式。"
+  },
+  {
+    "type": "assertNotText",
+    "selector": "label.checkrow",
+    "text": "这是恢复接收后的策略。"
+  }
+]

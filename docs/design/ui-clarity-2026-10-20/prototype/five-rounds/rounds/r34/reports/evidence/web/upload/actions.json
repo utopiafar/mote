@@ -1,0 +1,291 @@
+[
+  {
+    "at": "2026-10-23T03:30:56.284Z",
+    "op": "open",
+    "file": "rounds/r34/web.html",
+    "url": "https://mote-prototype.invalid/#/library",
+    "evidenceDirectory": "rounds/r34/reports/evidence/web/upload",
+    "save": "01-empty-home"
+  },
+  {
+    "at": "2026-10-23T03:31:00.561Z",
+    "op": "click",
+    "role": "button",
+    "name": "导入第一份资料",
+    "save": "02-import-form"
+  },
+  {
+    "at": "2026-10-23T03:31:09.657Z",
+    "op": "fill",
+    "selector": "#focus-import-instruction",
+    "value": "R34 独立上传队列检查。\n供应商的“我”不是我的承诺；AI 引文保留角色。Asia/Shanghai。"
+  },
+  {
+    "at": "2026-10-23T03:31:09.720Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择文件",
+    "save": "03-picker"
+  },
+  {
+    "at": "2026-10-23T03:31:18.708Z",
+    "op": "click",
+    "role": "button",
+    "name": "访谈录音.wav",
+    "save": "04-selected-large"
+  },
+  {
+    "at": "2026-10-23T03:31:18.828Z",
+    "op": "click",
+    "text": "预览上传恢复状态",
+    "save": "05-upload-fixtures"
+  },
+  {
+    "at": "2026-10-23T03:31:30.624Z",
+    "op": "select",
+    "selector": "#uq-demo-mode",
+    "value": {
+      "label": "上传中"
+    }
+  },
+  {
+    "at": "2026-10-23T03:31:30.684Z",
+    "op": "click",
+    "role": "button",
+    "name": "上传并查看预览",
+    "save": "06-queued-uploading"
+  },
+  {
+    "at": "2026-10-23T03:31:45.958Z",
+    "op": "click",
+    "text": "文件、资料说明与更多操作",
+    "save": "07-queue-details"
+  },
+  {
+    "at": "2026-10-23T03:31:46.079Z",
+    "op": "click",
+    "role": "button",
+    "name": "暂停上传",
+    "save": "08-paused"
+  },
+  {
+    "at": "2026-10-23T03:31:46.213Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回导入记录",
+    "save": "09-import-list"
+  },
+  {
+    "at": "2026-10-23T03:32:00.830Z",
+    "op": "click",
+    "role": "button",
+    "name": "导入资料"
+  },
+  {
+    "at": "2026-10-23T03:32:00.845Z",
+    "op": "fill",
+    "selector": "#focus-import-instruction",
+    "value": "第二份独立资料；与暂停的录音上传无关。"
+  },
+  {
+    "at": "2026-10-23T03:32:00.898Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择文件"
+  },
+  {
+    "at": "2026-10-23T03:32:00.946Z",
+    "op": "click",
+    "role": "button",
+    "name": "读书笔记.md"
+  },
+  {
+    "at": "2026-10-23T03:32:00.997Z",
+    "op": "click",
+    "role": "button",
+    "name": "上传并查看预览",
+    "save": "10-second-import-preview"
+  },
+  {
+    "at": "2026-10-23T03:32:01.132Z",
+    "op": "click",
+    "role": "button",
+    "name": "确认并保存记录",
+    "save": "11-second-import-saved"
+  },
+  {
+    "at": "2026-10-23T03:32:14.911Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回导入记录",
+    "save": "12-two-task-list"
+  },
+  {
+    "at": "2026-10-23T03:32:15.029Z",
+    "op": "click",
+    "role": "button",
+    "name": "本地上传队列 · 1 项待继续",
+    "save": "13-first-still-paused"
+  },
+  {
+    "at": "2026-10-23T03:32:15.194Z",
+    "op": "click",
+    "role": "button",
+    "name": "继续上传",
+    "save": "14-resumed"
+  },
+  {
+    "at": "2026-10-23T03:32:15.308Z",
+    "op": "click",
+    "text": "预览上传回执",
+    "index": 0,
+    "save": "15-queue-receipts"
+  },
+  {
+    "at": "2026-10-23T03:32:28.228Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟上传失败",
+    "save": "16-upload-failed"
+  },
+  {
+    "at": "2026-10-23T03:32:33.342Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟名额不足",
+    "save": "18-throttled"
+  },
+  {
+    "at": "2026-10-23T03:32:53.845Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟上传失败"
+  },
+  {
+    "at": "2026-10-23T03:32:53.893Z",
+    "op": "click",
+    "role": "button",
+    "name": "重试同一提交",
+    "save": "19-retry-same-id"
+  },
+  {
+    "at": "2026-10-23T03:32:54.124Z",
+    "op": "reload",
+    "save": "20-session-file-missing"
+  },
+  {
+    "at": "2026-10-23T03:33:04.153Z",
+    "op": "click",
+    "role": "button",
+    "name": "重新选择文件",
+    "save": "21-reselect"
+  },
+  {
+    "at": "2026-10-23T03:33:16.587Z",
+    "op": "file",
+    "selector": "#uq-reselect-input",
+    "path": "rounds/r34/reports/evidence/web/upload/reselect-wrong",
+    "save": "22-wrong-files-rejected"
+  },
+  {
+    "at": "2026-10-23T03:33:27.089Z",
+    "op": "click",
+    "role": "button",
+    "name": "重新使用同一批示例文件",
+    "save": "23-original-reselected"
+  },
+  {
+    "at": "2026-10-23T03:33:27.238Z",
+    "op": "click",
+    "role": "button",
+    "name": "收到下一段回执",
+    "save": "24-upload-complete-submitting"
+  },
+  {
+    "at": "2026-10-23T03:33:27.370Z",
+    "op": "click",
+    "role": "button",
+    "name": "收到下一段回执",
+    "save": "25-central-received"
+  },
+  {
+    "at": "2026-10-23T03:33:37.820Z",
+    "op": "click",
+    "role": "button",
+    "name": "收到下一段回执",
+    "save": "26-central-actually-received"
+  },
+  {
+    "at": "2026-10-23T03:33:42.968Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回导入记录",
+    "save": "28-received-list"
+  },
+  {
+    "at": "2026-10-23T03:34:03.416Z",
+    "op": "click",
+    "role": "button",
+    "name": "本地上传队列",
+    "save": "30-received-queue"
+  },
+  {
+    "at": "2026-10-23T03:34:03.571Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对已接收资料",
+    "save": "31-original-context-preserved"
+  },
+  {
+    "at": "2026-10-23T03:34:03.716Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回导入记录"
+  },
+  {
+    "at": "2026-10-23T03:34:03.767Z",
+    "op": "click",
+    "role": "button",
+    "name": "本地上传队列"
+  },
+  {
+    "at": "2026-10-23T03:34:03.823Z",
+    "op": "click",
+    "role": "button",
+    "name": "移除本地队列项",
+    "save": "32-removal-confirm"
+  },
+  {
+    "at": "2026-10-23T03:34:16.421Z",
+    "op": "click",
+    "role": "button",
+    "name": "确认移除本地项",
+    "save": "33-local-queue-removed"
+  },
+  {
+    "at": "2026-10-23T03:34:16.564Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回导入记录",
+    "save": "34-central-import-survives"
+  },
+  {
+    "at": "2026-10-23T03:34:16.714Z",
+    "op": "click",
+    "text": "访谈录音.wav",
+    "save": "35-same-original-import-survives"
+  },
+  {
+    "at": "2026-10-23T03:34:25.252Z",
+    "op": "click",
+    "text": "原件与文件解析情况",
+    "save": "37-retained-original-after-removal"
+  },
+  {
+    "at": "2026-10-23T03:34:35.784Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看原件",
+    "save": "38-original-still-openable"
+  }
+]

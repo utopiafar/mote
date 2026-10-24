@@ -1,0 +1,380 @@
+{
+  "url": "https://mote-prototype.invalid/#/settings/diagnostics",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R33\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n设置\n工作台在线\n随手记\n添加内容\n设置\n\n调整服务与资料管理方式，或管理当前登录。\n\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观\n帮助与诊断\n\n错误信息、日志、功能与更新\n\n这里只显示实例运行的安全元数据：固定事件、数量与耗时。私人正文、详细 Agent 轨迹、端点队列和共享索引统计不在覆盖范围内。\n刷新诊断\n诊断偏好\n帮助与版本\n已刷新保留的合成诊断。当前文件、阶段和页码保持不变。\n环境 / 范围\ndemo · instance-safe-diagnostics\n当前运行日志\ninfo\n保留事件 / 最早记录\n126 / 2026-10-22T02:00:00Z\n最后刷新\n2026-10-23T03:16:31.701Z\n日志中心\n\n从所选文件的最新一页开始，页内保留原始行序。刷新不会跳回第一页。按阶段筛选不拆字段或重排事件。\n\n日志文件\ncentral.0.ndjson · 当前\ncentral.1.ndjson · 保留历史\ncentral.2.ndjson · 已轮转清理\n日志阶段\n全部阶段\n系统\n请求\n入库\n索引\nAgent\n资料\n维护\n文件\n未知\n每页条数\n50\n100\n200\n500\n自动换行\n自动刷新（5 秒）\n最新一页\n较新\n第 2 / 2 · 90 条\n较旧\n原始日志（合成事件）\n复制当前页\n全选当前页\n导出诊断包",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "账号与设备",
+      "label": "账号与设备",
+      "action": "go",
+      "page": "settings/account",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "模型与服务",
+      "label": "模型与服务",
+      "action": "go",
+      "page": "settings/models",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "采集与隐私",
+      "label": "采集与隐私",
+      "action": "go",
+      "page": "settings/privacy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "自动记忆与插件",
+      "label": "自动记忆与插件",
+      "action": "go",
+      "page": "settings/plugins",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "存储与备份",
+      "label": "存储与备份",
+      "action": "go",
+      "page": "settings/storage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "对外授权",
+      "label": "对外授权",
+      "action": "go",
+      "page": "settings/access",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "用量与费用",
+      "label": "用量与费用",
+      "action": "go",
+      "page": "settings/usage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "帮助与诊断",
+      "label": "帮助与诊断",
+      "action": "go",
+      "page": "settings/diagnostics",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "语言与外观",
+      "label": "语言与外观",
+      "action": "go",
+      "page": "settings/appearance",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新诊断",
+      "label": "刷新诊断",
+      "action": "cs-diagnostic-refresh",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "诊断偏好",
+      "label": "诊断偏好",
+      "action": "go",
+      "page": "settings/diagnostic-preferences",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "帮助与版本",
+      "label": "帮助与版本",
+      "action": "go",
+      "page": "settings/help",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "日志中心",
+      "label": "日志中心",
+      "expanded": true
+    },
+    {
+      "tag": "select",
+      "id": "cs33-diagnostic-log-file",
+      "type": "select-one",
+      "text": "central.0.ndjson · 当前\ncentral.1.ndjson · 保留历史\ncentral.2.ndjson · 已轮转清理",
+      "label": "日志文件\ncentral.0.ndjson · 当前\ncentral.1.ndjson · 保留历史\ncentral.2.ndjson · 已轮转清理",
+      "value": "0",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs33-diagnostic-log-stage",
+      "type": "select-one",
+      "text": "全部阶段\n系统\n请求\n入库\n索引\nAgent\n资料\n维护\n文件\n未知",
+      "label": "日志阶段\n全部阶段\n系统\n请求\n入库\n索引\nAgent\n资料\n维护\n文件\n未知",
+      "value": "all",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs33-diagnostic-log-size",
+      "type": "select-one",
+      "text": "50\n100\n200\n500",
+      "label": "每页条数\n50\n100\n200\n500",
+      "value": "50",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs33-diagnostic-log-wrap",
+      "type": "checkbox",
+      "text": "",
+      "label": "自动换行",
+      "value": "on",
+      "checked": true,
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs33-diagnostic-log-auto",
+      "type": "checkbox",
+      "text": "",
+      "label": "自动刷新（5 秒）",
+      "value": "on",
+      "checked": false,
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "最新一页",
+      "label": "最新一页",
+      "action": "cs-diagnostic-page",
+      "page": "1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "较新",
+      "label": "较新",
+      "action": "cs-diagnostic-page",
+      "page": "1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "较旧",
+      "label": "较旧",
+      "action": "cs-diagnostic-page",
+      "page": "3",
+      "disabled": true
+    },
+    {
+      "tag": "textarea",
+      "id": "cs33-raw-log",
+      "type": "textarea",
+      "text": "",
+      "label": "原始日志（合成事件）",
+      "value": "{\"seq\":37,\"at\":\"2026-10-22T08:00:00.000Z\",\"stage\":\"system\",\"event\":\"queue.received\",\"count\":1,\"durationMs\":13}\n{\"seq\":38,\"at\":\"2026-10-22T08:10:00.000Z\",\"stage\":\"request\",\"event\":\"operation.checked\",\"count\":2,\"durationMs\":14}\n{\"seq\":39,\"at\":\"2026-10-22T08:20:00.000Z\",\"stage\":\"ingest\",\"event\":\"operation.finished\",\"count\":3,\"durationMs\":15}\n{\"seq\":40,\"at\":\"2026-10-22T08:30:00.000Z\",\"stage\":\"index\",\"event\":\"queue.received\",\"count\":4,\"durationMs\":16}\n{\"seq\":41,\"at\":\"2026-10-22T08:40:00.000Z\",\"stage\":\"agent\",\"event\":\"operation.checked\",\"count\":1,\"durationMs\":17}\n{\"seq\":42,\"at\":\"2026-10-22T08:50:00.000Z\",\"stage\":\"source\",\"event\":\"operation.finished\",\"count\":2,\"durationMs\":18}\n{\"seq\":43,\"at\":\"2026-10-22T09:00:00.000Z\",\"stage\":\"maintenance\",\"event\":\"queue.received\",\"count\":3,\"durationMs\":12}\n{\"seq\":44,\"at\":\"2026-10-22T09:10:00.000Z\",\"stage\":\"file\",\"event\":\"operation.checked\",\"count\":4,\"durationMs\":13}\n{\"seq\":45,\"at\":\"2026-10-22T09:20:00.000Z\",\"stage\":\"unknown\",\"event\":\"operation.finished\",\"count\":1,\"durationMs\":14}\n{\"seq\":46,\"at\":\"2026-10-22T09:30:00.000Z\",\"stage\":\"system\",\"event\":\"queue.received\",\"count\":2,\"durationMs\":15}\n{\"seq\":47,\"at\":\"2026-10-22T09:40:00.000Z\",\"stage\":\"request\",\"event\":\"operation.checked\",\"count\":3,\"durationMs\":16}\n{\"seq\":48,\"at\":\"2026-10-22T09:50:00.000Z\",\"stage\":\"ingest\",\"event\":\"operation.finished\",\"count\":4,\"durationMs\":17}\n{\"seq\":49,\"at\":\"2026-10-22T10:00:00.000Z\",\"stage\":\"index\",\"event\":\"queue.received\",\"count\":1,\"durationMs\":18}\n{\"seq\":50,\"at\":\"2026-10-22T10:10:00.000Z\",\"stage\":\"agent\",\"event\":\"operation.checked\",\"count\":2,\"durationMs\":12}\n{\"seq\":51,\"at\":\"2026-10-22T10:20:00.000Z\",\"stage\":\"source\",\"event\":\"operation.finished\",\"count\":3,\"durationMs\":13}\n{\"seq\":52,\"at\":\"2026-10-22T10:30:00.000Z\",\"stage\":\"maintenance\",\"event\":\"queue.received\",\"count\":4,\"durationMs\":14}\n{\"seq\":53,\"at\":\"2026-10-22T10:40:00.000Z\",\"stage\":\"file\",\"event\":\"operation.checked\",\"count\":1,\"durationMs\":15}\n{\"seq\":54,\"at\":\"2026-10-22T10:50:00.000Z\",\"stage\":\"unknown\",\"event\":\"operation.finished\",\"count\":2,\"durationMs\":16}\n{\"seq\":55,\"at\":\"2026-10-22T11:00:00.000Z\",\"stage\":\"system\",\"event\":\"queue.received\",\"count\":3,\"durationMs\":17}\n{\"seq\":56,\"at\":\"2026-10-22T11:10:00.000Z\",\"stage\":\"request\",\"event\":\"operation.checked\",\"count\":4,\"durationMs\":18}\n{\"seq\":57,\"at\":\"2026-10-22T11:20:00.000Z\",\"stage\":\"ingest\",\"event\":\"operation.finished\",\"count\":1,\"durationMs\":12}\n{\"seq\":58,\"at\":\"2026-10-22T11:30:00.000Z\",\"stage\":\"index\",\"event\":\"queue.received\",\"count\":2,\"durationMs\":13}\n{\"seq\":59,\"at\":\"2026-10-22T11:40:00.000Z\",\"stage\":\"agent\",\"event\":\"operation.checked\",\"count\":3,\"durationMs\":14}\n{\"seq\":60,\"at\":\"2026-10-22T11:50:00.000Z\",\"stage\":\"source\",\"event\":\"operation.finished\",\"count\":4,\"durationMs\":15}\n{\"seq\":61,\"at\":\"2026-10-22T12:00:00.000Z\",\"stage\":\"maintenance\",\"event\":\"queue.received\",\"count\":1,\"durationMs\":16}\n{\"seq\":62,\"at\":\"2026-10-22T12:10:00.000Z\",\"stage\":\"file\",\"event\":\"operation.checked\",\"count\":2,\"durationMs\":17}\n{\"seq\":63,\"at\":\"2026-10-22T12:20:00.000Z\",\"stage\":\"unknown\",\"event\":\"operation.finished\",\"count\":3,\"durationMs\":18}\n{\"seq\":64,\"at\":\"2026-10-22T12:30:00.000Z\",\"stage\":\"system\",\"event\":\"queue.received\",\"count\":4,\"durationMs\":12}\n{\"seq\":65,\"at\":\"2026-10-22T12:40:00.000Z\",\"stage\":\"request\",\"event\":\"operation.checked\",\"count\":1,\"durationMs\":13}\n{\"seq\":66,\"at\":\"2026-10-22T12:50:00.000Z\",\"stage\":\"ingest\",\"event\":\"operation.finished\",\"count\":2,\"durationMs\":14}\n{\"seq\":67,\"at\":\"2026-10-22T13:00:00.000Z\",\"stage\":\"index\",\"event\":\"queue.received\",\"count\":3,\"durationMs\":15}\n{\"seq\":68,\"at\":\"2026-10-22T13:10:00.000Z\",\"stage\":\"agent\",\"event\":\"operation.checked\",\"count\":4,\"durationMs\":16}\n{\"seq\":69,\"at\":\"2026-10-22T13:20:00.000Z\",\"stage\":\"source\",\"event\":\"operation.finished\",\"count\":1,\"durationMs\":17}\n{\"seq\":70,\"at\":\"2026-10-22T13:30:00.000Z\",\"stage\":\"maintenance\",\"event\":\"queue.received\",\"count\":2,\"durationMs\":18}\n{\"seq\":71,\"at\":\"2026-10-22T13:40:00.000Z\",\"stage\":\"file\",\"event\":\"operation.checked\",\"count\":3,\"durationMs\":12}\n{\"seq\":72,\"at\":\"2026-10-22T13:50:00.000Z\",\"stage\":\"unknown\",\"event\":\"operation.finished\",\"count\":4,\"durationMs\":13}\n{\"seq\":73,\"at\":\"2026-10-22T14:00:00.000Z\",\"stage\":\"system\",\"event\":\"queue.received\",\"count\":1,\"durationMs\":14}\n{\"seq\":74,\"at\":\"2026-10-22T14:10:00.000Z\",\"stage\":\"request\",\"event\":\"operation.checked\",\"count\":2,\"durationMs\":15}\n{\"seq\":75,\"at\":\"2026-10-22T14:20:00.000Z\",\"stage\":\"ingest\",\"event\":\"operation.finished\",\"count\":3,\"durationMs\":16}\n{\"seq\":76,\"at\":\"2026-10-22T14:30:00.000Z\",\"stage\":\"index\",\"event\":\"queue.received\",\"count\":4,\"durationMs\":17}\n",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "复制当前页",
+      "label": "复制当前页",
+      "action": "cs-diagnostic-copy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全选当前页",
+      "label": "全选当前页",
+      "action": "cs-diagnostic-select",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "导出诊断包",
+      "label": "导出诊断包",
+      "expanded": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设置"
+    },
+    {
+      "level": "H2",
+      "text": "帮助与诊断"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

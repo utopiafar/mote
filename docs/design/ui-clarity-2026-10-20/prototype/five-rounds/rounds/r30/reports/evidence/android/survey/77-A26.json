@@ -1,0 +1,222 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/agent-scope",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R30\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n设置\n\n调整服务与资料管理方式，或管理当前登录。\n\n设置分类\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观\n助手可读取的范围\n\n查看资料、记忆与洞察的只读内容目录\n\n助手可读取的上下文\n\n只读查看已归档内容及其出处；授权范围在对应助手连接中管理。\n\n内容目录\n管理对外授权\n资料 / 6 项\n\n正文、来源、时间与原件位置\n\n预览内容\n记忆 / 1 项\n\n已整理且可纠正的事实\n\n预览内容\n洞察 / 0 项\n\n阶段回顾及其依据\n\n预览内容\n为一个问题预览首次上下文\n\n在所选只读授权范围内预览可能交给助手的内容。不调用模型，也不改变授权。\n\n使用的只读授权\n个人助手\n\n授权范围：资料与记忆\n\n想了解的问题\n预览首次上下文\n核对读取记录\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "compact-settings",
+      "type": "select-one",
+      "text": "账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观",
+      "label": "设置分类\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观",
+      "value": "access",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "管理对外授权",
+      "label": "管理对外授权",
+      "action": "go",
+      "page": "settings/access",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "预览内容",
+      "label": "预览内容",
+      "action": "preview-context",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "预览内容",
+      "label": "预览内容",
+      "action": "preview-context",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "预览内容",
+      "label": "预览内容",
+      "action": "preview-context",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "context-preview-grant",
+      "type": "select-one",
+      "text": "个人助手",
+      "label": "使用的只读授权\n个人助手",
+      "value": "grant-1",
+      "disabled": false
+    },
+    {
+      "tag": "textarea",
+      "id": "context-question",
+      "type": "textarea",
+      "text": "",
+      "label": "想了解的问题",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "预览首次上下文",
+      "label": "预览首次上下文",
+      "action": "preview-question-context",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "核对读取记录",
+      "label": "核对读取记录",
+      "action": "go",
+      "page": "settings/agent-events",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设置"
+    },
+    {
+      "level": "H2",
+      "text": "助手可读取的范围"
+    },
+    {
+      "level": "H2",
+      "text": "内容目录"
+    },
+    {
+      "level": "H3",
+      "text": "资料 / 6 项"
+    },
+    {
+      "level": "H3",
+      "text": "记忆 / 1 项"
+    },
+    {
+      "level": "H3",
+      "text": "洞察 / 0 项"
+    },
+    {
+      "level": "H2",
+      "text": "为一个问题预览首次上下文"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

@@ -1,0 +1,37 @@
+{
+  "round": 31,
+  "frozen": true,
+  "productSourceRevision": "81a73c0ec81af876d6eeef71451b75cd51684b34",
+  "prototypeBaselineRevision": "9aec3d55d9e6af391c0cc5c2b1dbca8b2936a0e1",
+  "inventorySha256": "316d7ac7ea6577c4a6d28c526f6e27ad56d33c7a9afd60db4b74466e88791572",
+  "rubricSha256": "58826132bd1d4c70690567482902b7ef7dac89e32f7fc727a643ce3d213abb7c",
+  "scope": "HTML UI simulation; synthetic data; no backend, native or live-model validation",
+  "artifacts": [
+    {
+      "platform": "web",
+      "file": "web.html",
+      "sha256": "f8a7b17c57df032f4d3aeb42a018103b6cc1758b08b2d07c129193f473b7f7ef",
+      "bytes": 932850
+    },
+    {
+      "platform": "mac",
+      "file": "mac.html",
+      "sha256": "a2020aa410f8a856bb19145cddb30f4e60beacf99fc947207140b7f668cc0d43",
+      "bytes": 932850
+    },
+    {
+      "platform": "android",
+      "file": "android.html",
+      "sha256": "d890ae32d5b20946a575f5983927247cc1e629ae3c56caaa43949549badfca11",
+      "bytes": 932878
+    }
+  ],
+  "sourceHashes": {
+    "focus.css": "8d6346aeb8989b88c66093552f6bb49ec69760253a3cfc9673b3b1513044fb39",
+    "focus.js": "3093f92724c524483749158212fc1cbc90078ed21c755118cb7e95362290bcd1",
+    "native-semantics.css": "c811384e0ff781b86cfc3fece93b8a81a7d7c9bae78c8257aa67a25de3aa5aab",
+    "native-semantics.js": "1ab7f9629608f10bb87a0d02f40aaf8c02943dcf3737a4c449b51135c21f8562",
+    "central-semantics.css": "f16826d278dfcef2aa4acb9e8ea0eb44204326fc8829b1e14f29e9a392987f95",
+    "central-semantics.js": "637214c14d4dfaca9491b52c79b64f213c59f3a41caeaf3ecec1b21987ed5d50"
+  }
+}

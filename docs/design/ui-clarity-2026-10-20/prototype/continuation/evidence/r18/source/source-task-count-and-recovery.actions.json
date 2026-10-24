@@ -1,0 +1,142 @@
+[
+  {
+    "type": "assertText",
+    "selector": "[data-task-id=\"source-lark-sync\"] [data-task-source-count]",
+    "text": "0 份已保存资料"
+  },
+  {
+    "type": "click",
+    "selector": "[data-task-id=\"source-lark-sync\"] [data-page=\"activity/details\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-task-source-count]",
+    "text": "0 份已保存资料"
+  },
+  {
+    "type": "assertNotText",
+    "selector": "main",
+    "text": "12 份"
+  },
+  {
+    "type": "assertText",
+    "selector": "main",
+    "text": "此来源尚无已保存资料"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"browse-source\"]"
+  },
+  {
+    "type": "assertValue",
+    "selector": "#source-filter",
+    "value": "id:lark"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-scope]",
+    "text": "飞书文档与日历"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-empty]",
+    "text": "这个来源还没有已保存资料"
+  },
+  {
+    "type": "assertCount",
+    "selector": ".material-row",
+    "count": 0
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"clear-source-scope\"]"
+  },
+  {
+    "type": "assertCount",
+    "selector": ".material-list .material-row",
+    "count": 6
+  },
+  {
+    "type": "select",
+    "selector": "#source-filter",
+    "value": "id:feishu-recording"
+  },
+  {
+    "type": "assertCount",
+    "selector": ".material-list .material-row",
+    "count": 1
+  },
+  {
+    "type": "assertText",
+    "selector": ".material-list",
+    "text": "项目讨论录音"
+  },
+  {
+    "type": "click",
+    "selector": ".sidebar [data-page=\"activity\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"authorize-task\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "h1",
+    "text": "飞书文档与日历"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"save-source\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"browse-source\"]"
+  },
+  {
+    "type": "assertValue",
+    "selector": "#source-filter",
+    "value": "id:lark"
+  },
+  {
+    "type": "assertCount",
+    "selector": ".material-row",
+    "count": 0
+  },
+  {
+    "type": "click",
+    "selector": ".sidebar [data-page=\"activity\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-task-id=\"source-lark-sync\"]",
+    "text": "授权已恢复"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-task-source-count]",
+    "text": "0 份已保存资料"
+  },
+  {
+    "type": "click",
+    "selector": "[data-task-id=\"source-lark-sync\"] [data-action=\"browse-source\"]"
+  },
+  {
+    "type": "assertValue",
+    "selector": "#source-filter",
+    "value": "id:lark"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-empty]",
+    "text": "这个来源还没有已保存资料"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"clear-source-scope\"]"
+  },
+  {
+    "type": "assertCount",
+    "selector": ".material-list .material-row",
+    "count": 6
+  }
+]

@@ -1,0 +1,201 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/system",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R30\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n设置\n\n调整服务与资料管理方式，或管理当前登录。\n\n设置分类\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观\n运行状态与空间\n\n查看工作台、处理与存储情况\n\n工作台在线 · 最近检查：今天 09:30\n统计日期范围\n最近 7 天\n最近 30 天\n全部\n中央可访问文件 · 按类型\n类型\t文件数\t占用字节\n文件正文\t4\t1.2 MB\n录音原件\t2\t10.4 MB\n屏幕片段\t12\t2.6 MB\n按日期查看文件数量与字节\n日期\t新增文件数\t字节\n2026-10-20\t3\t840 KB\n2026-10-19\t2\t360 KB\n处理状态\n\n来源连接：3 项 · 可阅读资料：6 份\n\n查看后台工作\n查看模型用量\n重新检查\n调整保存与保留方式\n查看诊断记录\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "compact-settings",
+      "type": "select-one",
+      "text": "账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观",
+      "label": "设置分类\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观",
+      "value": "storage",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "space-period",
+      "type": "select-one",
+      "text": "最近 7 天\n最近 30 天\n全部",
+      "label": "统计日期范围\n最近 7 天\n最近 30 天\n全部",
+      "value": "最近 7 天",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "按日期查看文件数量与字节",
+      "label": "按日期查看文件数量与字节",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看后台工作",
+      "label": "查看后台工作",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看模型用量",
+      "label": "查看模型用量",
+      "action": "go",
+      "page": "settings/usage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重新检查",
+      "label": "重新检查",
+      "action": "refresh-system",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "调整保存与保留方式",
+      "label": "调整保存与保留方式",
+      "action": "go",
+      "page": "settings/storage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看诊断记录",
+      "label": "查看诊断记录",
+      "action": "go",
+      "page": "settings/diagnostics",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设置"
+    },
+    {
+      "level": "H2",
+      "text": "运行状态与空间"
+    },
+    {
+      "level": "H3",
+      "text": "中央可访问文件 · 按类型"
+    },
+    {
+      "level": "H3",
+      "text": "处理状态"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

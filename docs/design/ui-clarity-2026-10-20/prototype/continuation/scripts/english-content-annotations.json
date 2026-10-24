@@ -1,0 +1,10 @@
+[
+  {
+    "before": "'<strong>这份资料的要点</strong><p>'+esc(",
+    "after": "'<strong>这份资料的要点</strong><p data-user-content>'+esc("
+  },
+  {
+    "before": "<strong>根据已保存的资料，有两件事值得跟进：</strong><p>1. 核对移动端的添加入口，让文件夹同步和屏幕记录同样容易发现。</p><p>2. 周四设计评审时，检查资料库的首屏说明和各类来源的设置路径。</p>",
+    "after": "<strong data-user-content>根据已保存的资料，有两件事值得跟进：</strong><p data-user-content>1. 核对移动端的添加入口，让文件夹同步和屏幕记录同样容易发现。</p><p data-user-content>2. 周四设计评审时，检查资料库的首屏说明和各类来源的设置路径。</p>"
+  }
+]

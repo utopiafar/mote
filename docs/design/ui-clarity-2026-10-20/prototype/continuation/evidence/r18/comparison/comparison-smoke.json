@@ -1,0 +1,244 @@
+{
+  "scope": "Review tool rendering, scene selection and frame isolation only; no product journeys",
+  "browser": "Chromium headless",
+  "viewer_sha256": "f420a4bc5dc4989789b44bd0d7672d64629d527232600c7e72679d6d82ef3a2d",
+  "candidates": [
+    {
+      "id": "r15",
+      "label": "R15 · 上轮交付",
+      "sha256": "65257ad350e155a01bd1e64c3241e812bff98c93fda593be70de2dae17bf32f9",
+      "recommended": false
+    },
+    {
+      "id": "r18",
+      "label": "R18 · 本次候选",
+      "sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+      "recommended": true
+    }
+  ],
+  "records": [
+    {
+      "name": "Embedded originals match frozen input hashes",
+      "passed": true,
+      "actual": [
+        {
+          "id": "r15",
+          "sha256": "65257ad350e155a01bd1e64c3241e812bff98c93fda593be70de2dae17bf32f9"
+        },
+        {
+          "id": "r18",
+          "sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095"
+        }
+      ]
+    },
+    {
+      "name": "Offline file opens two interactive library frames",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/library",
+          "title": "资料库",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r15:r15-1:"
+        },
+        {
+          "hash": "#/library",
+          "title": "资料库",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r18:r18-1:"
+        }
+      ]
+    },
+    {
+      "name": "Current candidate is recommended for the review",
+      "passed": true,
+      "actual": "r18"
+    },
+    {
+      "name": "Both frames enter sources",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/sources",
+          "title": "来源管理",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r15:r15-2:"
+        },
+        {
+          "hash": "#/sources",
+          "title": "来源管理",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r18:r18-2:"
+        }
+      ]
+    },
+    {
+      "name": "Both frames enter setup/screen",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/setup/screen",
+          "title": "屏幕采集",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r15:r15-3:"
+        },
+        {
+          "hash": "#/setup/screen",
+          "title": "屏幕采集",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r18:r18-3:"
+        }
+      ]
+    },
+    {
+      "name": "Both frames enter notes",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/notes",
+          "title": "随手记",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r15:r15-4:"
+        },
+        {
+          "hash": "#/notes",
+          "title": "随手记",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r18:r18-4:"
+        }
+      ]
+    },
+    {
+      "name": "Both frames enter memories",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/memories",
+          "title": "记忆",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r15:r15-5:"
+        },
+        {
+          "hash": "#/memories",
+          "title": "记忆",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r18:r18-5:"
+        }
+      ]
+    },
+    {
+      "name": "Phone mode uses 390px, empty data and dark theme in both frames",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/notes",
+          "title": "随手记",
+          "width": 390,
+          "classes": "mobile dark",
+          "data": "empty",
+          "theme": "dark",
+          "prefix": "mote-review:r15:r15-9:"
+        },
+        {
+          "hash": "#/notes",
+          "title": "随手记",
+          "width": 390,
+          "classes": "mobile dark",
+          "data": "empty",
+          "theme": "dark",
+          "prefix": "mote-review:r18:r18-9:"
+        }
+      ]
+    },
+    {
+      "name": "Frames have separate explicit storage prefixes",
+      "passed": true,
+      "actual": [
+        "mote-review:r15:r15-9:",
+        "mote-review:r18:r18-9:"
+      ]
+    },
+    {
+      "name": "Left frame storage is absent from right frame",
+      "passed": true,
+      "actual": null
+    },
+    {
+      "name": "Typing in one frame leaves the other draft unchanged",
+      "passed": true
+    },
+    {
+      "name": "Repository page resolves relative candidates",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/library",
+          "title": "资料库",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r15:r15-1:"
+        },
+        {
+          "hash": "#/library",
+          "title": "资料库",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r18:r18-1:"
+        }
+      ]
+    },
+    {
+      "name": "Double-clicking the lightweight page opens offline companion",
+      "passed": true
+    },
+    {
+      "name": "Frozen input candidates remain byte-identical",
+      "passed": true,
+      "actual": [
+        "65257ad350e155a01bd1e64c3241e812bff98c93fda593be70de2dae17bf32f9",
+        "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095"
+      ]
+    },
+    {
+      "name": "No browser page errors",
+      "passed": true,
+      "actual": []
+    }
+  ],
+  "errors": [],
+  "status": "passed"
+}

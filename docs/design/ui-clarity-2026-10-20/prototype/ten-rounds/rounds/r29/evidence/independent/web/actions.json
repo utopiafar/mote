@@ -1,0 +1,149 @@
+[
+  {
+    "at_utc": "2026-10-21T05:31:34.334Z",
+    "action": "Click 写下第一条记录",
+    "evidence": "01-note-editor.dom.json",
+    "screenshot": "01-note-editor.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T05:31:34.349Z",
+    "action": "Fill synthetic note: 雪燕R29-web会议决定：2026年10月21日，叶青负责在周三前整理四份背景资料。核对词：银色罗盘。",
+    "evidence": "02-note-filled.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T05:31:34.488Z",
+    "action": "Save note",
+    "evidence": "03-note-saved.dom.json",
+    "screenshot": "03-note-saved.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T05:31:34.625Z",
+    "action": "Leave editor via main 资料库",
+    "evidence": "04-library-after-save.dom.json",
+    "screenshot": "04-library-after-save.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T05:31:34.651Z",
+    "action": "Search 银色罗盘",
+    "evidence": "05-search-note.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T05:31:34.803Z",
+    "action": "Open matching saved note",
+    "evidence": "06-verified-note.dom.json",
+    "screenshot": "06-verified-note.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792560694389-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:31:35.015Z",
+    "action": "Ask from verified note",
+    "evidence": "07-ask-scoped.dom.json",
+    "screenshot": "07-ask-scoped.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:31:35.030Z",
+    "action": "Fill task-specific question",
+    "evidence": "08-question-filled.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:31:35.175Z",
+    "action": "Submit question and inspect answer",
+    "evidence": "09-answer.dom.json",
+    "screenshot": "09-answer.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:31:35.306Z",
+    "action": "Open displayed citation",
+    "evidence": "10-citation.dom.json",
+    "screenshot": "10-citation.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792560694389-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:31:35.460Z",
+    "action": "Inspect original material",
+    "evidence": "11-original.dom.json",
+    "screenshot": "11-original.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792560694389-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:31:35.502Z",
+    "action": "Close original dialog",
+    "evidence": "12-original-closed.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792560694389-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:31:35.639Z",
+    "action": "Return to original conversation",
+    "evidence": "13-answer-returned.dom.json",
+    "screenshot": "13-answer-returned.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:31:47.373Z",
+    "action": "打开添加内容",
+    "evidence": "14-add-content.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:31:47.523Z",
+    "action": "打开首次文件夹设置，观察当前可见字段和选择器",
+    "evidence": "15-folder-setup.dom.json",
+    "screenshot": "15-folder-setup.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new"
+  },
+  {
+    "at_utc": "2026-10-21T05:32:40.727Z",
+    "action": "使用示例服务器目录并命名",
+    "evidence": "16-folder-named.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new"
+  },
+  {
+    "at_utc": "2026-10-21T05:32:40.907Z",
+    "action": "连接服务器文件夹后检查首屏管理动作",
+    "evidence": "17-folder-connected.dom.json",
+    "screenshot": "17-folder-connected.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/folder-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:33:04.350Z",
+    "action": "使用前置暂停操作核对当前状态",
+    "evidence": "18-folder-paused.dom.json",
+    "screenshot": "18-folder-paused.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/folder-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:33:04.480Z",
+    "action": "回来源概览核对具名来源及暂停计数",
+    "evidence": "19-source-overview-paused.dom.json",
+    "screenshot": "19-source-overview-paused.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/sources"
+  },
+  {
+    "at_utc": "2026-10-21T05:33:37.035Z",
+    "action": "回资料库寻找进阶能力",
+    "evidence": "20-library-for-advanced.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T05:33:37.176Z",
+    "action": "首次价值后发现记忆能力",
+    "evidence": "21-memory-discovered.dom.json",
+    "screenshot": "21-memory-discovered.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/memories"
+  }
+]

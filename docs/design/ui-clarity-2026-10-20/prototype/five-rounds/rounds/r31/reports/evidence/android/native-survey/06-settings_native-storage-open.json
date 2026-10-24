@@ -1,0 +1,205 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/native-storage",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n本机空间\n\nCentral 归档独立保留。达到本机容量上限时暂停采集。\n\n返回\n当前占用（示例）24 MiB\n共享内容只计一次；当前占用不是每日增长。\n查看统计\n本机容量上限（MiB）\n上传后保留（天，0 为立即清理）\n从 Central 的 ACK 开始计时。未发送与冲突记录不会自动删除。\n保存设置\n还原修改\n\n当前显示已保存的设置。\n\n保存位置与迁移\n\n内部应用存储\n\n迁移前检查可用空间，逐项转移并核验；失败保留原记录。草稿、设备身份与凭据的存放范围不改变。外接介质需保持连接。\n\n选择保存位置\n本机备份与恢复\n本机记录、配置和导入预览\n本机图片批量去重\n比较、暂存、恢复与确认删除\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回",
+      "label": "返回",
+      "action": "go",
+      "page": "settings/native",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看统计",
+      "label": "查看统计",
+      "action": "go",
+      "page": "settings/native-statistics",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-storage-capacity",
+      "type": "number",
+      "text": "",
+      "label": "本机容量上限（MiB）",
+      "value": "256",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-storage-days",
+      "type": "number",
+      "text": "",
+      "label": "上传后保留（天，0 为立即清理）\n从 Central 的 ACK 开始计时。未发送与冲突记录不会自动删除。",
+      "value": "7",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存设置",
+      "label": "保存设置",
+      "action": "ns-save",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "还原修改",
+      "label": "还原修改",
+      "action": "ns-discard",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "保存位置与迁移",
+      "label": "保存位置与迁移",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "选择保存位置",
+      "label": "选择保存位置",
+      "action": "ns-migration-pick",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "本机备份与恢复\n本机记录、配置和导入预览",
+      "label": "本机备份与恢复\n本机记录、配置和导入预览",
+      "action": "go",
+      "page": "settings/native-backup",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "本机图片批量去重\n比较、暂存、恢复与确认删除",
+      "label": "本机图片批量去重\n比较、暂存、恢复与确认删除",
+      "action": "go",
+      "page": "settings/native-dedupe",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "本机空间"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

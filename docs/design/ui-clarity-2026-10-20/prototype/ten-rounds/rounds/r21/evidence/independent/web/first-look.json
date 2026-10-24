@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-10-21T04:42:19.417Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "0a5326ff0284bdb6b83974f686bead6f4615d8e0d4d59b40e5f6e7bf2de58405",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "answers": {
+    "purpose": "保存个人文件、想法与设备记录，以后找回、提问和核对原文。",
+    "input": "文件、文字与来源记录。",
+    "first_action": "写下第一条记录",
+    "expected_result": "可在资料库找回的记录。",
+    "setup": "现在可以先写；来源之后连接。",
+    "unclear": "记忆功能需要后续了解。",
+    "visual": "首屏层级与已见R20一致，主要写入动作突出。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative review; previously reviewed R20."
+}

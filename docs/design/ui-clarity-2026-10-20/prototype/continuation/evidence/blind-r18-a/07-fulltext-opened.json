@@ -1,0 +1,209 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792550601373-1",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · 交互原型\n演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n资料库\n/\n资料详情\n工作台在线\n随手记\n添加内容\n返回资料库\n复制正文\n更多\n北辰茶会 · 日期决定\n随手记\n刚刚\n网页\n可阅读\n\n北辰茶会 · 日期决定\n\n我们决定把合成测试的北辰茶会安排在 2026 年 11 月 6 日 15:30，地点为虚构的青禾会议室。\n\n因为周四材料尚未齐备，本次先讨论两项议题：样稿可读性与资料找回路径。负责人为测试角色小林。\n\n如果当天出现时间冲突，则改到 11 月 9 日同一时段；最终以这条决定的完整文字为准。\n\n来源与原始资料\n\n我写的记录\n\n查看原始内容\n查看来源\n基于这份资料提问\n补充背景\n从这份资料整理记忆\n编辑笔记\n笔记已保存到资料库。\n查看\n×",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回资料库",
+      "label": "返回资料库",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "复制正文",
+      "label": "复制正文",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "更多",
+      "label": "更多",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看原始内容",
+      "label": "查看原始内容",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看来源",
+      "label": "查看来源",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "基于这份资料提问",
+      "label": "基于这份资料提问",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "补充背景",
+      "label": "补充背景",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "从这份资料整理记忆",
+      "label": "从这份资料整理记忆",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "编辑笔记",
+      "label": "编辑笔记",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看",
+      "label": "查看",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "×",
+      "label": "关闭提示",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "北辰茶会 · 日期决定"
+    },
+    {
+      "level": "H2",
+      "text": "来源与原始资料"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state"
+}

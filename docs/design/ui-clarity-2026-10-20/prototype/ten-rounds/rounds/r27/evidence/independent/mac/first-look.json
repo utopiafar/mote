@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:17:37.345Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "4623a37adcfcf4b496ae83224adc2f5604b45be1d184ecb3c635f4d823214a9f",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "answers": {
+    "purpose": "收集日常资料以便找回、提问和追溯。",
+    "first_action": "写第一条记录最明显，导入文件是另一条明确起点。",
+    "setup_expectation": "先记录后按需连接来源，权限不是首个门槛。",
+    "first_value_expectation": "保存—问决定—核对原文的说明连贯。",
+    "advanced_discovery": "本机快捷操作与全功能侧栏可找，首屏优先基础动作。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

@@ -1,0 +1,105 @@
+{
+  "input": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/dist/r18.html",
+  "sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+  "scope": "C01, A02, A13 and Android import labels only; mock HTML DOM; no backend or full product journey",
+  "checks": [
+    {
+      "name": "Account identifies current service and central node",
+      "passed": true
+    },
+    {
+      "name": "Uncommitted retention is identified",
+      "passed": true
+    },
+    {
+      "name": "Saved retention survives reopening",
+      "passed": true
+    },
+    {
+      "name": "Android import uses local-device wording",
+      "passed": true
+    },
+    {
+      "name": "Image choice preserves current file, title, parser and storage setting",
+      "passed": true
+    },
+    {
+      "name": "Form values remain stable across language switch",
+      "passed": true
+    },
+    {
+      "name": "Android local-file label translates",
+      "passed": true
+    },
+    {
+      "name": "Completed import retains user title",
+      "passed": true
+    },
+    {
+      "name": "Completed import links to its own details",
+      "passed": true
+    },
+    {
+      "name": "Import details retain all submitted settings",
+      "passed": true
+    },
+    {
+      "name": "Editing saved image plan does not alter source metadata",
+      "passed": true
+    },
+    {
+      "name": "Updated image plan survives reopening",
+      "passed": true
+    },
+    {
+      "name": "Android result metadata and original file path are correct",
+      "passed": true
+    },
+    {
+      "name": "Reading result exposes the updated image plan",
+      "passed": true
+    },
+    {
+      "name": "New account controls translate completely",
+      "passed": true,
+      "actual": []
+    },
+    {
+      "name": "English retention uses stable business value",
+      "passed": true
+    },
+    {
+      "name": "New import details controls translate completely",
+      "passed": true,
+      "actual": []
+    },
+    {
+      "name": "App durations are the supplied sample values",
+      "passed": true
+    },
+    {
+      "name": "Displayed shares derive from recorded duration",
+      "passed": true
+    },
+    {
+      "name": "Sampling window accounts for recorded and missing minutes",
+      "passed": true
+    },
+    {
+      "name": "Sampling device, intervals and gaps are explained",
+      "passed": true
+    },
+    {
+      "name": "New app activity copy translates completely",
+      "passed": true,
+      "actual": []
+    },
+    {
+      "name": "No DOM errors",
+      "passed": true,
+      "actual": []
+    }
+  ],
+  "errors": [],
+  "status": "passed"
+}

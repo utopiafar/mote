@@ -1,0 +1,97 @@
+{
+  "evaluation": "blind-r18-a",
+  "candidate": "dist/r18.html",
+  "sha256_verified": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+  "task": "保存一条合成决定，离开页面后按关键词找回，并核对完整文字。",
+  "task_result": "completed",
+  "entry_navigation_clicks_including_successful_entry": 1,
+  "wrong_turns_before_entry": 0,
+  "entry_navigation_limit": 5,
+  "entry_navigation_limit_satisfied": true,
+  "task_ui_clicks": 5,
+  "task_ui_fills": 2,
+  "route_navigation_clicks": 4,
+  "actions": [
+    {
+      "op": "click",
+      "role": "button",
+      "name": "随手记",
+      "nth": 0,
+      "step": "01-note-entry"
+    },
+    {
+      "op": "fill",
+      "role": "textbox",
+      "value": "北辰茶会 · 日期决定\n我们决定把合成测试的北辰茶会安排在 2026 年 11 月 6 日 15:30，地点为虚构的青禾会议室。\n因为周四材料尚未齐备，本次先讨论两项议题：样稿可读性与资料找回路径。负责人为测试角色小林。\n如果当天出现时间冲突，则改到 11 月 9 日同一时段；最终以这条决定的完整文字为准。",
+      "step": "02-decision-filled"
+    },
+    {
+      "op": "click",
+      "role": "button",
+      "name": "保存笔记",
+      "step": "03-saved"
+    },
+    {
+      "op": "click",
+      "role": "button",
+      "name": "活动",
+      "step": "04-left-notes"
+    },
+    {
+      "op": "click",
+      "role": "button",
+      "name": "资料库",
+      "step": "05-returned-library"
+    },
+    {
+      "op": "fill",
+      "label": "搜索资料",
+      "value": "时间冲突",
+      "step": "06-keyword-results"
+    },
+    {
+      "op": "click",
+      "text": "北辰茶会 · 日期决定",
+      "step": "07-fulltext-opened"
+    }
+  ],
+  "departure": "通过可见“活动”按钮从随手记页导航至活动页，再点击“资料库”返回。同一浏览器会话。",
+  "keyword": "时间冲突",
+  "keyword_in_title": false,
+  "keyword_in_visible_result_preview": false,
+  "result_count_text_observed": "1 份资料",
+  "expected_full_text": "北辰茶会 · 日期决定\n我们决定把合成测试的北辰茶会安排在 2026 年 11 月 6 日 15:30，地点为虚构的青禾会议室。\n因为周四材料尚未齐备，本次先讨论两项议题：样稿可读性与资料找回路径。负责人为测试角色小林。\n如果当天出现时间冲突，则改到 11 月 9 日同一时段；最终以这条决定的完整文字为准。",
+  "visible_full_text_block_exact_after_rendered_paragraph_spacing": true,
+  "line_matches": [
+    {
+      "line": "北辰茶会 · 日期决定",
+      "visible_text_exact_match": true
+    },
+    {
+      "line": "我们决定把合成测试的北辰茶会安排在 2026 年 11 月 6 日 15:30，地点为虚构的青禾会议室。",
+      "visible_text_exact_match": true
+    },
+    {
+      "line": "因为周四材料尚未齐备，本次先讨论两项议题：样稿可读性与资料找回路径。负责人为测试角色小林。",
+      "visible_text_exact_match": true
+    },
+    {
+      "line": "如果当天出现时间冲突，则改到 11 月 9 日同一时段；最终以这条决定的完整文字为准。",
+      "visible_text_exact_match": true
+    }
+  ],
+  "visual_confirmation": [
+    "06-keyword-results.png",
+    "07-fulltext-opened.png"
+  ],
+  "page_errors": [],
+  "source_read": false,
+  "internal_application_state_read": false,
+  "boundaries": [
+    "手机仅评估给定空状态深色截图，未执行手机交互。",
+    "离开是同一浏览器会话内的页面导航，未测试重载、关闭后重开、跨设备或长期持久化。",
+    "仅验证 HTML 原型可见 UI，不验证真实后端、来源接入、AI 回答、记忆生成、洞察、导入或异常网络。",
+    "目标完成后停止，无全产品审计。"
+  ],
+  "harness_note": "初次会话未启用 tty，stdin 关闭；点击尚未发送。重开相同初态后完成任务。该工具问题未计作产品误路，详见 harness-events.json。"
+}

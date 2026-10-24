@@ -1,0 +1,191 @@
+[
+  {
+    "at_utc": "2026-10-21T04:49:03.535Z",
+    "action": "Click 写下第一条记录",
+    "evidence": "01-note-editor.dom.json",
+    "screenshot": "01-note-editor.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:03.564Z",
+    "action": "Fill synthetic note: 燕子R22-android会议决定：2026年10月21日，叶青负责在周三前整理四份背景资料。核对词：蓝色信封。",
+    "evidence": "02-note-filled.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:03.652Z",
+    "action": "Save note",
+    "evidence": "03-note-saved.dom.json",
+    "screenshot": "03-note-saved.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:03.752Z",
+    "action": "Leave editor via main 资料库",
+    "evidence": "04-library-after-save.dom.json",
+    "screenshot": "04-library-after-save.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:03.770Z",
+    "action": "Search 蓝色信封",
+    "evidence": "05-search-note.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:03.873Z",
+    "action": "Open matching saved note",
+    "evidence": "06-verified-note.dom.json",
+    "screenshot": "06-verified-note.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792558143594-1"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:03.991Z",
+    "action": "Ask from verified note",
+    "evidence": "07-ask-scoped.dom.json",
+    "screenshot": "07-ask-scoped.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:04.006Z",
+    "action": "Fill task-specific question",
+    "evidence": "08-question-filled.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:04.105Z",
+    "action": "Submit question and inspect answer",
+    "evidence": "09-answer.dom.json",
+    "screenshot": "09-answer.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:04.204Z",
+    "action": "Open displayed citation",
+    "evidence": "10-citation.dom.json",
+    "screenshot": "10-citation.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792558143594-1"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:04.305Z",
+    "action": "Inspect original material",
+    "evidence": "11-original.dom.json",
+    "screenshot": "11-original.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792558143594-1"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:04.347Z",
+    "action": "Close original dialog",
+    "evidence": "12-original-closed.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792558143594-1"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:04.437Z",
+    "action": "Return to original conversation",
+    "evidence": "13-answer-returned.dom.json",
+    "screenshot": "13-answer-returned.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:19.484Z",
+    "action": "Open 来源",
+    "evidence": "14-sources.dom.json",
+    "screenshot": "14-sources.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/sources"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:19.591Z",
+    "action": "Open source catalog",
+    "evidence": "15-source-catalog.dom.json",
+    "screenshot": "15-source-catalog.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/catalog"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:19.685Z",
+    "action": "Choose screen recording and inspect setup",
+    "evidence": "16-screen-setup.dom.json",
+    "screenshot": "16-screen-setup.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:29.993Z",
+    "action": "Simulate permission denial",
+    "evidence": "17-permission-denied.dom.json",
+    "screenshot": "17-permission-denied.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:30.089Z",
+    "action": "Cancel permission setup",
+    "evidence": "18-setup-cancelled.dom.json",
+    "screenshot": "18-setup-cancelled.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/sources"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:42.450Z",
+    "action": "Inspect newly connected folder path from native source card",
+    "evidence": "19-folder-setup.dom.json",
+    "screenshot": "19-folder-setup.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new"
+  },
+  {
+    "at_utc": "2026-10-21T04:49:50.683Z",
+    "action": "Open visible phone folder picker",
+    "evidence": "20-folder-picker.dom.json",
+    "screenshot": "20-folder-picker.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new"
+  },
+  {
+    "at_utc": "2026-10-21T04:50:08.813Z",
+    "action": "Choose 阅读资料 example directory",
+    "evidence": "21-folder-selected.dom.json",
+    "screenshot": "21-folder-selected.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new"
+  },
+  {
+    "at_utc": "2026-10-21T04:50:08.825Z",
+    "action": "Name synthetic folder source 晨光R22阅读",
+    "evidence": "22-folder-named.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new"
+  },
+  {
+    "at_utc": "2026-10-21T04:50:08.914Z",
+    "action": "Connect selected synthetic folder and inspect saved state",
+    "evidence": "23-folder-connected.dom.json",
+    "screenshot": "23-folder-connected.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/folder-1"
+  },
+  {
+    "at_utc": "2026-10-21T04:50:31.965Z",
+    "action": "Pause the newly named folder source",
+    "evidence": "24-folder-paused.dom.json",
+    "screenshot": "24-folder-paused.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/folder-1"
+  },
+  {
+    "at_utc": "2026-10-21T04:50:32.064Z",
+    "action": "Return to source list and inspect new source row",
+    "evidence": "25-folder-source-row.dom.json",
+    "screenshot": "25-folder-source-row.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/sources"
+  },
+  {
+    "at_utc": "2026-10-21T04:50:32.131Z",
+    "action": "Return to saved library after setup",
+    "evidence": "26-library-return.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T04:50:32.245Z",
+    "action": "Open memory as advanced next step",
+    "evidence": "27-memory-discovery.dom.json",
+    "screenshot": "27-memory-discovery.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/memories"
+  }
+]

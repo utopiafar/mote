@@ -1,0 +1,47 @@
+[
+  {
+    "at": "2026-10-22T14:53:17.823Z",
+    "op": "open",
+    "file": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/five-rounds/rounds/r30/android.html",
+    "viewport": {
+      "width": 412,
+      "height": 915
+    },
+    "evidenceDirectory": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/five-rounds/rounds/r30/reports/evidence/android/native",
+    "save": "01-home"
+  },
+  {
+    "at": "2026-10-22T14:53:17.936Z",
+    "op": "select",
+    "selector": "#preview-state",
+    "value": "populated"
+  },
+  {
+    "at": "2026-10-22T14:53:18.017Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源",
+    "save": "02-sources"
+  },
+  {
+    "at": "2026-10-22T14:53:18.118Z",
+    "op": "click",
+    "role": "button",
+    "name": "管理",
+    "index": 0,
+    "save": "03-folder"
+  },
+  {
+    "at": "2026-10-22T14:53:34.973Z",
+    "op": "click",
+    "text": "文件夹访问说明",
+    "exact": true
+  },
+  {
+    "at": "2026-10-22T14:53:35.022Z",
+    "op": "click",
+    "text": "内容关系与背景",
+    "exact": false,
+    "save": "04-folder-context-expanded"
+  }
+]

@@ -1,0 +1,5443 @@
+{
+  "meta": {
+    "version": "mote-html-prototype-catalog-v1",
+    "sourceRevision": "2c78ca8d52a7d17fae20962cf68d09a717ffc73a",
+    "kind": "interactive-html-prototype",
+    "dataMode": "mock",
+    "referenceDate": "2026-10-20",
+    "timezone": "Asia/Shanghai",
+    "language": "zh-CN",
+    "notice": "交互原型 · 示例资料与结果",
+    "scope": "所有内容、账号、状态和处理结果均为演示数据；不连接生产服务。",
+    "sourceDocuments": [
+      "../feature-manifest.json",
+      "../feature-inventory.md",
+      "apps/web/src/feature-guide-catalog.ts",
+      "apps/web/src/SourceCatalog.tsx",
+      "apps/web/src/WorkspaceNavigation.tsx"
+    ],
+    "sourceCountingNote": "来源目录保留主干的 8 个固定卡片和 2 个录音提供方，共 10 项；5 个添加动作另列，包含已有文件夹同步与随手记。一次添加不会被描述为持续连接。",
+    "validationScope": "只检查目录数据的完整性和引用关系；原型理解与交互评价由独立 agent 执行。"
+  },
+  "product": {
+    "name": "Mote",
+    "tagline": "把分散的资料，变成随时能找回的个人资料库。",
+    "description": "汇集文件、屏幕记录、想法和在线资料；之后搜索、提问，沿出处回看原文。",
+    "firstStep": "从一份文件、一条想法，或一个想持续记录的来源开始。",
+    "valueSteps": [
+      {
+        "title": "汇集",
+        "description": "保存已有内容，或连接想持续收集的来源。"
+      },
+      {
+        "title": "找回",
+        "description": "按来源、类型与时间阅读资料和原件。"
+      },
+      {
+        "title": "提问与回顾",
+        "description": "带着问题来，核对引用，整理有依据的记忆。"
+      }
+    ]
+  },
+  "navigation": {
+    "default": "library",
+    "primary": [
+      {
+        "id": "library",
+        "label": "资料库",
+        "icon": "library",
+        "description": "阅读、搜索、记录与回顾",
+        "destination": {
+          "page": "library",
+          "view": null,
+          "href": "#/library"
+        }
+      },
+      {
+        "id": "ask",
+        "label": "问一问",
+        "icon": "message-circle",
+        "description": "根据资料提问并核对出处",
+        "destination": {
+          "page": "ask",
+          "view": null,
+          "href": "#/ask"
+        }
+      },
+      {
+        "id": "sources",
+        "label": "来源",
+        "icon": "layers",
+        "description": "连接内容并管理范围",
+        "destination": {
+          "page": "sources",
+          "view": null,
+          "href": "#/sources"
+        }
+      },
+      {
+        "id": "activity",
+        "label": "活动",
+        "icon": "activity",
+        "description": "查看后台进度与需要处理的事情",
+        "destination": {
+          "page": "activity",
+          "view": null,
+          "href": "#/activity"
+        }
+      }
+    ],
+    "auxiliary": [
+      {
+        "id": "today",
+        "label": "今天",
+        "icon": "sun",
+        "description": "近期资料、待办与日程",
+        "destination": {
+          "page": "today",
+          "view": null,
+          "href": "#/today"
+        }
+      },
+      {
+        "id": "settings",
+        "label": "设置",
+        "icon": "settings",
+        "description": "模型、资料维护与使用偏好",
+        "destination": {
+          "page": "settings",
+          "view": null,
+          "href": "#/settings"
+        }
+      },
+      {
+        "id": "guide",
+        "label": "全部功能",
+        "icon": "grid",
+        "description": "按目标查找完整功能目录",
+        "destination": {
+          "page": "guide",
+          "view": null,
+          "href": "#/guide"
+        }
+      }
+    ]
+  },
+  "inputActions": [
+    {
+      "id": "sync-folder",
+      "title": "同步文件夹",
+      "description": "选一次范围，之后的新文件和修改持续归档。",
+      "group": "continuous",
+      "mode": "continuous",
+      "icon": "folder-sync",
+      "destination": {
+        "page": "sources",
+        "view": "folder-setup",
+        "href": "#/sources?view=folder-setup"
+      },
+      "featureGroupIds": [
+        "F05",
+        "F07"
+      ],
+      "unitIds": [
+        "C07",
+        "C08"
+      ],
+      "resultLabel": "文件夹已加入同步"
+    },
+    {
+      "id": "import-files",
+      "title": "导入文件",
+      "description": "导入已有文档、图片、录音或 ZIP。",
+      "group": "one-time",
+      "mode": "one-time",
+      "icon": "file-plus",
+      "destination": {
+        "page": "library",
+        "view": "imports",
+        "href": "#/library?view=imports"
+      },
+      "sourceCatalogId": "file-import",
+      "featureGroupIds": [
+        "F04"
+      ],
+      "unitIds": [
+        "C09",
+        "C10"
+      ],
+      "resultLabel": "文件已加入资料库"
+    },
+    {
+      "id": "record-screen",
+      "title": "记录屏幕",
+      "description": "先选应用范围，再开始保留屏幕与页面。",
+      "group": "device-capture",
+      "mode": "device-capture",
+      "icon": "monitor",
+      "destination": {
+        "page": "sources",
+        "view": "screen-setup",
+        "href": "#/sources?view=screen-setup"
+      },
+      "sourceCatalogId": "devices",
+      "featureGroupIds": [
+        "F06",
+        "F07"
+      ],
+      "unitIds": [
+        "C04",
+        "C17"
+      ],
+      "resultLabel": "屏幕记录范围已保存"
+    },
+    {
+      "id": "quick-note",
+      "title": "随手记",
+      "description": "记下想法，也能附上图片或音频。",
+      "group": "one-time",
+      "mode": "note",
+      "icon": "pen-line",
+      "destination": {
+        "page": "library",
+        "view": "notes",
+        "href": "#/library?view=notes"
+      },
+      "featureGroupIds": [
+        "F03"
+      ],
+      "unitIds": [
+        "C12",
+        "C13"
+      ],
+      "resultLabel": "随手记已保存"
+    },
+    {
+      "id": "connect-lark",
+      "title": "连接飞书文档",
+      "description": "持续汇集选定文档和日历的变化。",
+      "group": "continuous",
+      "mode": "continuous",
+      "icon": "file-text",
+      "destination": {
+        "page": "sources",
+        "view": "lark",
+        "href": "#/sources?view=lark"
+      },
+      "sourceCatalogId": "lark",
+      "featureGroupIds": [
+        "F13"
+      ],
+      "unitIds": [
+        "A09"
+      ],
+      "resultLabel": "飞书文档已连接"
+    }
+  ],
+  "featureGroups": [
+    {
+      "id": "F01",
+      "title": "认识 Mote",
+      "description": "把分散的资料放在一起，之后找回、提问和回顾。",
+      "priority": "P0",
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "materials",
+        "href": "#/library?view=materials"
+      },
+      "unitIds": [
+        "C02",
+        "C03"
+      ],
+      "inputActionIds": [],
+      "sourceCatalogIds": []
+    },
+    {
+      "id": "F02",
+      "title": "账号与设备连接",
+      "description": "进入自己的资料空间，让手机和电脑加入其中。",
+      "priority": "P0",
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "account",
+        "href": "#/settings?view=account"
+      },
+      "unitIds": [
+        "C01",
+        "C05"
+      ],
+      "inputActionIds": [],
+      "sourceCatalogIds": [
+        "devices"
+      ]
+    },
+    {
+      "id": "F03",
+      "title": "随手记与附件",
+      "description": "记下想法，附上图片或音频，稍后继续编辑和找回。",
+      "priority": "P0",
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "notes",
+        "href": "#/library?view=notes"
+      },
+      "unitIds": [
+        "C12",
+        "C13"
+      ],
+      "inputActionIds": [
+        "quick-note"
+      ],
+      "sourceCatalogIds": []
+    },
+    {
+      "id": "F04",
+      "title": "导入已有资料",
+      "description": "导入文档、文件夹或录音，核对内容并继续未完成的导入。",
+      "priority": "P0",
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "imports",
+        "href": "#/library?view=imports"
+      },
+      "unitIds": [
+        "C09",
+        "C10",
+        "C11",
+        "A01",
+        "A02",
+        "A03",
+        "C37"
+      ],
+      "inputActionIds": [
+        "import-files"
+      ],
+      "sourceCatalogIds": [
+        "file-import"
+      ]
+    },
+    {
+      "id": "F05",
+      "title": "持续同步文件夹",
+      "description": "让选定文件夹的新文件和修改持续进入资料库。",
+      "priority": "P0",
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "connected",
+        "href": "#/sources?view=connected"
+      },
+      "unitIds": [
+        "C07",
+        "C08"
+      ],
+      "inputActionIds": [
+        "sync-folder"
+      ],
+      "sourceCatalogIds": []
+    },
+    {
+      "id": "F06",
+      "title": "记录屏幕与应用",
+      "description": "选择需要保留的屏幕、页面和应用活动。",
+      "priority": "P0",
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "devices",
+        "href": "#/sources?view=devices"
+      },
+      "unitIds": [
+        "C04",
+        "C17",
+        "A12",
+        "A13",
+        "A14"
+      ],
+      "inputActionIds": [
+        "record-screen"
+      ],
+      "sourceCatalogIds": [
+        "devices"
+      ]
+    },
+    {
+      "id": "F07",
+      "title": "采集范围与暂停",
+      "description": "查看正在记录什么，单独暂停一个来源或暂停发送。",
+      "priority": "P0",
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "connected",
+        "href": "#/sources?view=connected"
+      },
+      "unitIds": [
+        "C04",
+        "C08"
+      ],
+      "inputActionIds": [
+        "sync-folder",
+        "record-screen"
+      ],
+      "sourceCatalogIds": [
+        "devices"
+      ]
+    },
+    {
+      "id": "F08",
+      "title": "阅读与核对原文",
+      "description": "按类型、来源或时间找资料，沿出处查看原件和版本。",
+      "priority": "P0",
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "materials",
+        "href": "#/library?view=materials"
+      },
+      "unitIds": [
+        "C14",
+        "C15",
+        "C17",
+        "C18",
+        "C19",
+        "A11",
+        "A12",
+        "A13",
+        "A14",
+        "C37",
+        "A24"
+      ],
+      "inputActionIds": [],
+      "sourceCatalogIds": []
+    },
+    {
+      "id": "F09",
+      "title": "基于资料提问",
+      "description": "带着问题查找已有资料，阅读回答并核对引用。",
+      "priority": "P0",
+      "canonicalHome": "ask",
+      "destination": {
+        "page": "ask",
+        "view": "conversation",
+        "href": "#/ask?view=conversation"
+      },
+      "unitIds": [
+        "C20",
+        "C21",
+        "C22",
+        "C26"
+      ],
+      "inputActionIds": [],
+      "sourceCatalogIds": []
+    },
+    {
+      "id": "F10",
+      "title": "进度与问题恢复",
+      "description": "了解后台正在做什么，处理需要确认或重试的工作。",
+      "priority": "P0",
+      "canonicalHome": "activity",
+      "destination": {
+        "page": "activity",
+        "view": "all",
+        "href": "#/activity?view=all"
+      },
+      "unitIds": [
+        "C10",
+        "C28",
+        "A03",
+        "A15",
+        "A25"
+      ],
+      "inputActionIds": [],
+      "sourceCatalogIds": []
+    },
+    {
+      "id": "F11",
+      "title": "模型与内容处理",
+      "description": "选择问答和整理资料使用的模型，调整图片、文件与语音处理。",
+      "priority": "P0",
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "models",
+        "href": "#/settings?view=models"
+      },
+      "unitIds": [
+        "C31",
+        "C32",
+        "C36",
+        "C38",
+        "A19",
+        "A20",
+        "A21",
+        "A22",
+        "A23",
+        "A24",
+        "A29",
+        "A30"
+      ],
+      "inputActionIds": [],
+      "sourceCatalogIds": []
+    },
+    {
+      "id": "F12",
+      "title": "发现可接入的来源",
+      "description": "从已有设备、文件或在线服务中选择想汇集的内容。",
+      "priority": "P0",
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "catalog",
+        "href": "#/sources?view=catalog"
+      },
+      "unitIds": [
+        "C07"
+      ],
+      "inputActionIds": [],
+      "sourceCatalogIds": []
+    },
+    {
+      "id": "F13",
+      "title": "在线文档、邮件与录音",
+      "description": "汇集飞书、日历、邮件、录音和其他资料服务中的内容。",
+      "priority": "P1",
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "catalog",
+        "href": "#/sources?view=catalog"
+      },
+      "unitIds": [
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A09",
+        "A10",
+        "A11"
+      ],
+      "inputActionIds": [
+        "connect-lark"
+      ],
+      "sourceCatalogIds": [
+        "lark",
+        "gmail",
+        "google-calendar",
+        "mcp-import",
+        "reference",
+        "feishu-recordings",
+        "dingtalk-recordings"
+      ]
+    },
+    {
+      "id": "F14",
+      "title": "Coding 会话",
+      "description": "保留编码对话和工具记录，回看解决问题的过程。",
+      "priority": "P1",
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "coding",
+        "href": "#/sources?view=coding"
+      },
+      "unitIds": [
+        "A15"
+      ],
+      "inputActionIds": [],
+      "sourceCatalogIds": [
+        "coding"
+      ]
+    },
+    {
+      "id": "F15",
+      "title": "有依据的记忆",
+      "description": "查看整理出的长期信息，核对、纠正或删除不准确的内容。",
+      "priority": "P1",
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "memories",
+        "href": "#/library?view=memories"
+      },
+      "unitIds": [
+        "C16",
+        "C23",
+        "C24",
+        "C25",
+        "C26",
+        "A16",
+        "A17",
+        "A18"
+      ],
+      "inputActionIds": [],
+      "sourceCatalogIds": []
+    },
+    {
+      "id": "F16",
+      "title": "洞察与回顾",
+      "description": "围绕一个时段或主题整理回顾，并查看结论的依据。",
+      "priority": "P1",
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "insights",
+        "href": "#/library?view=insights"
+      },
+      "unitIds": [
+        "C27"
+      ],
+      "inputActionIds": [],
+      "sourceCatalogIds": []
+    },
+    {
+      "id": "F17",
+      "title": "待办与日程",
+      "description": "记录要做的事，核对日程建议后再决定是否加入日历。",
+      "priority": "P1",
+      "canonicalHome": "today",
+      "destination": {
+        "page": "today",
+        "view": "actions",
+        "href": "#/today?view=actions"
+      },
+      "unitIds": [
+        "C29",
+        "C30"
+      ],
+      "inputActionIds": [],
+      "sourceCatalogIds": []
+    },
+    {
+      "id": "F18",
+      "title": "对外授权",
+      "description": "选择哪些设备和 Chatbot 可以使用资料，随时查看或撤销授权。",
+      "priority": "P1",
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "sharing",
+        "href": "#/sources?view=sharing"
+      },
+      "unitIds": [
+        "C05",
+        "C06",
+        "A08"
+      ],
+      "inputActionIds": [],
+      "sourceCatalogIds": []
+    },
+    {
+      "id": "F19",
+      "title": "自动记忆与插件",
+      "description": "暂停自动整理，查看当前记忆方案和可用的扩展。",
+      "priority": "P1",
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "memory",
+        "href": "#/settings?view=memory"
+      },
+      "unitIds": [
+        "C33",
+        "C34",
+        "C35",
+        "A18",
+        "A28"
+      ],
+      "inputActionIds": [],
+      "sourceCatalogIds": []
+    },
+    {
+      "id": "F20",
+      "title": "资料维护与偏好",
+      "description": "备份和管理资料，查看用量，调整外观、语言并查找帮助。",
+      "priority": "P1",
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "overview",
+        "href": "#/settings?view=overview"
+      },
+      "unitIds": [
+        "C39",
+        "C40",
+        "C41",
+        "C42",
+        "A26",
+        "A27",
+        "A31",
+        "A32",
+        "A33",
+        "A34",
+        "A35",
+        "A36"
+      ],
+      "inputActionIds": [],
+      "sourceCatalogIds": []
+    }
+  ],
+  "sourceModes": [
+    {
+      "id": "continuous",
+      "label": "持续收集",
+      "description": "按已选范围继续收集新增和修改。"
+    },
+    {
+      "id": "device-capture",
+      "label": "设备记录",
+      "description": "由选定设备按应用范围记录。"
+    },
+    {
+      "id": "one-time",
+      "label": "一次添加",
+      "description": "加入本次选定的内容，不跟踪后续变化。"
+    },
+    {
+      "id": "note",
+      "label": "主动记录",
+      "description": "保存自己输入的文字和已有附件。"
+    },
+    {
+      "id": "reference",
+      "label": "保留位置",
+      "description": "保留出处和位置，正文仍在原来源。"
+    }
+  ],
+  "sourceGroups": [
+    {
+      "id": "devices",
+      "title": "设备与编码会话"
+    },
+    {
+      "id": "online",
+      "title": "在线文档、邮件与日历"
+    },
+    {
+      "id": "recordings",
+      "title": "录音与转写"
+    },
+    {
+      "id": "one-time",
+      "title": "导入已有文件"
+    },
+    {
+      "id": "references",
+      "title": "外部原件位置"
+    }
+  ],
+  "sourceCatalog": [
+    {
+      "id": "devices",
+      "title": "手机与电脑",
+      "group": "devices",
+      "mode": "device-capture",
+      "description": "把本机选定的屏幕、页面和记录汇集到资料库。",
+      "scope": "先选择设备，再查看允许记录的应用和范围。",
+      "actionLabel": "连接设备",
+      "destination": {
+        "page": "sources",
+        "view": "devices",
+        "href": "#/sources?view=devices"
+      },
+      "featureGroupIds": [
+        "F02",
+        "F06",
+        "F07"
+      ],
+      "unitIds": [
+        "C04",
+        "C05"
+      ],
+      "keywords": [
+        "屏幕",
+        "截图",
+        "页面",
+        "Android",
+        "Mac",
+        "应用活动"
+      ]
+    },
+    {
+      "id": "coding",
+      "title": "Coding Agent 会话",
+      "group": "devices",
+      "mode": "continuous",
+      "description": "保留 Claude Code、Codex 或 Kimi 的编码对话与工具记录。",
+      "scope": "选择实际使用的 Agent 和历史范围。",
+      "actionLabel": "选择编码会话",
+      "destination": {
+        "page": "sources",
+        "view": "coding",
+        "href": "#/sources?view=coding"
+      },
+      "featureGroupIds": [
+        "F14"
+      ],
+      "unitIds": [
+        "A15"
+      ],
+      "keywords": [
+        "编码",
+        "代码",
+        "编程",
+        "Claude Code",
+        "Codex",
+        "Kimi"
+      ]
+    },
+    {
+      "id": "file-import",
+      "title": "导入文件",
+      "group": "one-time",
+      "mode": "one-time",
+      "description": "把文档、图片、录音、ZIP 或文件夹导入一次。",
+      "scope": "先保留原件，再查看整理结果；不跟踪后续修改。",
+      "actionLabel": "选择文件",
+      "destination": {
+        "page": "library",
+        "view": "imports",
+        "href": "#/library?view=imports"
+      },
+      "featureGroupIds": [
+        "F04"
+      ],
+      "unitIds": [
+        "C09",
+        "C10",
+        "A01"
+      ],
+      "keywords": [
+        "文件",
+        "ZIP",
+        "文件夹",
+        "PDF",
+        "音频",
+        "上传"
+      ]
+    },
+    {
+      "id": "lark",
+      "title": "飞书文档与日历",
+      "group": "online",
+      "mode": "continuous",
+      "description": "汇集选定文档正文、版本和日历安排。",
+      "scope": "选择希望归档的范围；与录音来源分别管理。",
+      "actionLabel": "选择飞书范围",
+      "destination": {
+        "page": "sources",
+        "view": "lark",
+        "href": "#/sources?view=lark"
+      },
+      "featureGroupIds": [
+        "F13"
+      ],
+      "unitIds": [
+        "A09",
+        "A11"
+      ],
+      "keywords": [
+        "飞书",
+        "文档",
+        "日历",
+        "Lark"
+      ]
+    },
+    {
+      "id": "gmail",
+      "title": "Gmail 邮件",
+      "group": "online",
+      "mode": "continuous",
+      "description": "归档邮件正文、发件人和时间，保留附件名称与引用。",
+      "scope": "选择需要保留的邮件范围。",
+      "actionLabel": "选择邮件范围",
+      "destination": {
+        "page": "sources",
+        "view": "gmail",
+        "href": "#/sources?view=gmail"
+      },
+      "featureGroupIds": [
+        "F13"
+      ],
+      "unitIds": [
+        "A06"
+      ],
+      "keywords": [
+        "邮件",
+        "邮箱",
+        "Gmail",
+        "发件人"
+      ]
+    },
+    {
+      "id": "google-calendar",
+      "title": "Google 日历",
+      "group": "online",
+      "mode": "continuous",
+      "description": "把选定日历中的安排保留在资料库。",
+      "scope": "读取已有日程；新增日程仍需单独确认。",
+      "actionLabel": "选择日历",
+      "destination": {
+        "page": "sources",
+        "view": "google-calendar",
+        "href": "#/sources?view=google-calendar"
+      },
+      "featureGroupIds": [
+        "F13"
+      ],
+      "unitIds": [
+        "A05"
+      ],
+      "keywords": [
+        "Google Calendar",
+        "日历",
+        "日程"
+      ]
+    },
+    {
+      "id": "mcp-import",
+      "title": "MCP 资料服务",
+      "group": "online",
+      "mode": "one-time",
+      "description": "浏览资料服务中可读取的资源，选择需要的内容导入。",
+      "scope": "一次添加所选资源。",
+      "actionLabel": "选择资料资源",
+      "destination": {
+        "page": "sources",
+        "view": "mcp-import",
+        "href": "#/sources?view=mcp-import"
+      },
+      "featureGroupIds": [
+        "F13"
+      ],
+      "unitIds": [
+        "A07"
+      ],
+      "keywords": [
+        "MCP",
+        "资源",
+        "资料服务",
+        "只读"
+      ]
+    },
+    {
+      "id": "reference",
+      "title": "外部文件 / NAS 引用",
+      "group": "references",
+      "mode": "reference",
+      "description": "保留原件位置、标题和时间，之后能回到原来源。",
+      "scope": "正文仍在原位置；保存快照后才有可分析的正文。",
+      "actionLabel": "添加文件位置",
+      "destination": {
+        "page": "sources",
+        "view": "reference",
+        "href": "#/sources?view=reference"
+      },
+      "featureGroupIds": [
+        "F13"
+      ],
+      "unitIds": [
+        "A04",
+        "A11"
+      ],
+      "keywords": [
+        "NAS",
+        "外部文件",
+        "引用",
+        "原位置",
+        "链接"
+      ]
+    },
+    {
+      "id": "feishu-recordings",
+      "title": "飞书录音 / 妙记",
+      "group": "recordings",
+      "mode": "continuous",
+      "description": "汇集已有会议录音、转写和原始音频。",
+      "scope": "选择历史范围和是否继续收集新录音。",
+      "actionLabel": "选择飞书录音",
+      "destination": {
+        "page": "sources",
+        "view": "feishu-recordings",
+        "href": "#/sources?view=feishu-recordings"
+      },
+      "featureGroupIds": [
+        "F13"
+      ],
+      "unitIds": [
+        "A10",
+        "C37",
+        "A24"
+      ],
+      "keywords": [
+        "飞书",
+        "妙记",
+        "录音",
+        "会议",
+        "转写"
+      ]
+    },
+    {
+      "id": "dingtalk-recordings",
+      "title": "钉钉录音 / 闪记",
+      "group": "recordings",
+      "mode": "continuous",
+      "description": "汇集已有钉钉录音、转写和原始音频。",
+      "scope": "选择历史范围和是否继续收集新录音。",
+      "actionLabel": "选择钉钉录音",
+      "destination": {
+        "page": "sources",
+        "view": "dingtalk-recordings",
+        "href": "#/sources?view=dingtalk-recordings"
+      },
+      "featureGroupIds": [
+        "F13"
+      ],
+      "unitIds": [
+        "A10",
+        "C37",
+        "A24"
+      ],
+      "keywords": [
+        "钉钉",
+        "闪记",
+        "录音",
+        "会议",
+        "转写"
+      ]
+    }
+  ],
+  "settingsGroups": [
+    {
+      "id": "account",
+      "title": "账号与外观",
+      "description": "管理登录，选择语言和明暗主题。",
+      "destination": {
+        "page": "settings",
+        "view": "account",
+        "href": "#/settings?view=account"
+      },
+      "items": [
+        {
+          "id": "account",
+          "title": "账号与登录",
+          "description": "查看当前账号、登录时长与会话。",
+          "unitIds": [
+            "C01"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "account",
+            "href": "#/settings?view=account"
+          }
+        },
+        {
+          "id": "appearance",
+          "title": "语言与外观",
+          "description": "选择中文或英文，切换浅色、深色或跟随系统。",
+          "unitIds": [
+            "A36"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "appearance",
+            "href": "#/settings?view=appearance"
+          }
+        }
+      ]
+    },
+    {
+      "id": "models",
+      "title": "模型与服务",
+      "description": "为问答和资料整理选择模型，调整内容处理方式。",
+      "destination": {
+        "page": "settings",
+        "view": "models",
+        "href": "#/settings?view=models"
+      },
+      "items": [
+        {
+          "id": "providers",
+          "title": "模型连接",
+          "description": "连接、检查或复用一个模型预设。",
+          "unitIds": [
+            "C31",
+            "A19",
+            "A20"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "providers",
+            "href": "#/settings?view=providers"
+          }
+        },
+        {
+          "id": "assignments",
+          "title": "不同任务使用的模型",
+          "description": "分别选择问答、记忆、洞察等功能的模型。",
+          "unitIds": [
+            "C32"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "assignments",
+            "href": "#/settings?view=assignments"
+          }
+        },
+        {
+          "id": "images",
+          "title": "图片识别",
+          "description": "控制新图片识别，或补处理已有图片。",
+          "unitIds": [
+            "C36",
+            "A21"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "images",
+            "href": "#/settings?view=images"
+          }
+        },
+        {
+          "id": "file-processing",
+          "title": "文件与语音",
+          "description": "选择处理方案、预览规则和重新处理范围。",
+          "unitIds": [
+            "C38",
+            "A22",
+            "A23"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "file-processing",
+            "href": "#/settings?view=file-processing"
+          }
+        },
+        {
+          "id": "memory-strategy",
+          "title": "记忆与回顾节奏",
+          "description": "调整自动整理和回顾的时间与范围。",
+          "unitIds": [
+            "A18"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "memory-strategy",
+            "href": "#/settings?view=memory-strategy"
+          }
+        },
+        {
+          "id": "concurrency",
+          "title": "同时处理的任务数",
+          "description": "调整并发，了解等待中的工作。",
+          "unitIds": [
+            "A29"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "concurrency",
+            "href": "#/settings?view=concurrency"
+          }
+        },
+        {
+          "id": "advanced",
+          "title": "检索与外部服务",
+          "description": "查看检索和外部连接的高级配置。",
+          "unitIds": [
+            "A30"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "advanced",
+            "href": "#/settings?view=advanced"
+          }
+        }
+      ]
+    },
+    {
+      "id": "memory",
+      "title": "自动记忆与插件",
+      "description": "暂停自动整理，查看当前方案与可信扩展。",
+      "destination": {
+        "page": "settings",
+        "view": "memory",
+        "href": "#/settings?view=memory"
+      },
+      "items": [
+        {
+          "id": "memory",
+          "title": "自动记忆",
+          "description": "暂停、停止或恢复自动整理。",
+          "unitIds": [
+            "C33"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "memory",
+            "href": "#/settings?view=memory"
+          }
+        },
+        {
+          "id": "memory-plan",
+          "title": "记忆方案",
+          "description": "查看当前方案，准备并确认切换。",
+          "unitIds": [
+            "C34"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "memory-plan",
+            "href": "#/settings?view=memory-plan"
+          }
+        },
+        {
+          "id": "plugins",
+          "title": "可信插件",
+          "description": "管理已安装扩展及其提供的能力。",
+          "unitIds": [
+            "C35",
+            "A28"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "plugins",
+            "href": "#/settings?view=plugins"
+          }
+        }
+      ]
+    },
+    {
+      "id": "storage",
+      "title": "存储、加密与备份",
+      "description": "管理资料保存方式，导出或恢复归档。",
+      "destination": {
+        "page": "settings",
+        "view": "storage",
+        "href": "#/settings?view=storage"
+      },
+      "items": [
+        {
+          "id": "storage",
+          "title": "保存与保留方式",
+          "description": "查看资料容量、保留范围和加密方式。",
+          "unitIds": [
+            "C40",
+            "A31"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "storage",
+            "href": "#/settings?view=storage"
+          }
+        },
+        {
+          "id": "backup",
+          "title": "归档备份与恢复",
+          "description": "导入、导出归档，查看完整备份范围。",
+          "unitIds": [
+            "C39"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "backup",
+            "href": "#/settings?view=backup"
+          }
+        }
+      ]
+    },
+    {
+      "id": "usage",
+      "title": "用量与费用",
+      "description": "了解模型消耗和费用估算。",
+      "destination": {
+        "page": "settings",
+        "view": "usage",
+        "href": "#/settings?view=usage"
+      },
+      "items": [
+        {
+          "id": "usage",
+          "title": "用量汇总",
+          "description": "按任务与模型查看用量。",
+          "unitIds": [
+            "C41"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "usage",
+            "href": "#/settings?view=usage"
+          }
+        },
+        {
+          "id": "prices",
+          "title": "费用明细与估价",
+          "description": "追查记录并维护估算价格。",
+          "unitIds": [
+            "A33"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "prices",
+            "href": "#/settings?view=prices"
+          }
+        }
+      ]
+    },
+    {
+      "id": "system",
+      "title": "运行状态与空间",
+      "description": "查看服务状态和文件占用。",
+      "destination": {
+        "page": "settings",
+        "view": "system",
+        "href": "#/settings?view=system"
+      },
+      "items": [
+        {
+          "id": "system",
+          "title": "状态与空间",
+          "description": "按类型查看资料占用与运行状态。",
+          "unitIds": [
+            "A32"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "system",
+            "href": "#/settings?view=system"
+          }
+        }
+      ]
+    },
+    {
+      "id": "diagnostics",
+      "title": "诊断与更新",
+      "description": "查看版本、问题记录和诊断设置。",
+      "destination": {
+        "page": "settings",
+        "view": "diagnostics",
+        "href": "#/settings?view=diagnostics"
+      },
+      "items": [
+        {
+          "id": "diagnostics",
+          "title": "问题记录与导出",
+          "description": "筛选日志并导出问题诊断资料。",
+          "unitIds": [
+            "A34"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "diagnostics",
+            "href": "#/settings?view=diagnostics"
+          }
+        },
+        {
+          "id": "diagnostic-settings",
+          "title": "诊断偏好",
+          "description": "调整今后的记录方式，查看当前生效配置。",
+          "unitIds": [
+            "A35"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "diagnostic-settings",
+            "href": "#/settings?view=diagnostic-settings"
+          }
+        }
+      ]
+    },
+    {
+      "id": "agent-scope",
+      "title": "助手能看到什么",
+      "description": "核对可读资料范围与已有读取记录。",
+      "destination": {
+        "page": "settings",
+        "view": "agent-scope",
+        "href": "#/settings?view=agent-scope"
+      },
+      "items": [
+        {
+          "id": "agent-scope",
+          "title": "可读资料与上下文",
+          "description": "查看助手当前能接触到的内容。",
+          "unitIds": [
+            "A26"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "agent-scope",
+            "href": "#/settings?view=agent-scope"
+          }
+        },
+        {
+          "id": "agent-trace",
+          "title": "已有读取过程",
+          "description": "核对一次回答使用的输入与资料。",
+          "unitIds": [
+            "A27"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "agent-trace",
+            "href": "#/settings?view=agent-trace"
+          }
+        }
+      ]
+    },
+    {
+      "id": "help",
+      "title": "帮助与反馈",
+      "description": "找到连接、使用和维护说明。",
+      "destination": {
+        "page": "settings",
+        "view": "help",
+        "href": "#/settings?view=help"
+      },
+      "items": [
+        {
+          "id": "help",
+          "title": "帮助与版本",
+          "description": "查看常见问题、当前版本与反馈入口。",
+          "unitIds": [
+            "C42"
+          ],
+          "destination": {
+            "page": "settings",
+            "view": "help",
+            "href": "#/settings?view=help"
+          }
+        }
+      ]
+    }
+  ],
+  "libraryViews": [
+    {
+      "id": "materials",
+      "label": "全部资料",
+      "description": "可阅读的正文和原始资料。"
+    },
+    {
+      "id": "notes",
+      "label": "随手记",
+      "description": "自己写下的想法和附件。"
+    },
+    {
+      "id": "files",
+      "label": "文件与录音",
+      "description": "原件、转写和内容处理结果。"
+    },
+    {
+      "id": "memories",
+      "label": "记忆",
+      "description": "从资料中整理出的长期信息。"
+    },
+    {
+      "id": "insights",
+      "label": "洞察与回顾",
+      "description": "围绕时间或主题的阶段总结。"
+    },
+    {
+      "id": "records",
+      "label": "原始记录",
+      "description": "设备保留的截图、页面和观测。"
+    },
+    {
+      "id": "app-activity",
+      "label": "应用活动",
+      "description": "按应用回看的使用时间。"
+    },
+    {
+      "id": "media",
+      "label": "媒体播放",
+      "description": "设备观测到的播放记录。"
+    }
+  ],
+  "statusLabels": {
+    "ready": "可阅读",
+    "processing": "正在整理",
+    "needs-attention": "需要你确认",
+    "reference": "仅保留原位置",
+    "active": "持续收集中",
+    "paused": "已暂停",
+    "running": "进行中",
+    "completed": "已完成",
+    "failed": "可以重试"
+  },
+  "emptyStates": {
+    "library": {
+      "title": "从第一份资料开始",
+      "description": "导入文件、同步文件夹、记录屏幕或写下一条想法。之后都能在这里找回。",
+      "actionId": "import-files"
+    },
+    "search": {
+      "title": "没有找到匹配资料",
+      "description": "换个词试试，或清除来源与时间筛选。"
+    },
+    "activity": {
+      "title": "现在没有等待中的工作",
+      "description": "资料导入、整理或问答的进度会出现在这里。"
+    },
+    "sources": {
+      "title": "选择想持续汇集的内容",
+      "description": "先连接一个来源，之后可以随时调整范围或暂停。"
+    },
+    "notes": {
+      "title": "记下此刻的想法",
+      "description": "文字、图片或音频都可以；没有写完也能保留草稿。"
+    }
+  },
+  "samples": {
+    "account": {
+      "displayName": "演示用户",
+      "workspace": "个人资料空间",
+      "avatarInitial": "M",
+      "sessionLabel": "仅用于演示"
+    },
+    "content": [
+      {
+        "id": "material-brief",
+        "title": "松林项目 · 需求说明",
+        "type": "document",
+        "typeLabel": "文档",
+        "sourceId": "source-folder",
+        "sourceLabel": "项目文件夹",
+        "capturedAt": "2026-10-20T09:20:00+08:00",
+        "status": "ready",
+        "summary": "首次使用要能理解产品用途；文件夹同步、文件导入和屏幕记录需要同样容易找到。",
+        "body": "松林项目关注个人资料的汇集与找回。首次打开时，应说明能保存哪些内容，以及之后怎样检索、提问和回顾。\n\n这次评审优先处理三件事：让文件夹同步和文件导入与屏幕记录同样可见；展示答案对应的原文；保留编辑中的草稿。\n\n完整功能通过分类目录查找。低频设置继续留在各自分组中。",
+        "tags": [
+          "松林",
+          "需求",
+          "首屏"
+        ],
+        "originalName": "松林项目需求说明.md",
+        "version": "3",
+        "originalAvailable": true
+      },
+      {
+        "id": "material-note",
+        "title": "第一次使用时，我会问的三个问题",
+        "type": "note",
+        "typeLabel": "随手记",
+        "sourceId": "source-notes",
+        "sourceLabel": "随手记",
+        "capturedAt": "2026-10-20T10:05:00+08:00",
+        "status": "ready",
+        "summary": "这是什么？我能放进什么？保存之后在哪里找？",
+        "body": "第一次打开，我想先知道：\n1. 这个产品帮我做什么？\n2. 文件、文件夹和屏幕记录分别怎样加入？\n3. 之后怎样找回内容并核对出处？\n\n主操作应该清楚，更多功能可以逐步展开。",
+        "tags": [
+          "松林",
+          "想法"
+        ],
+        "originalName": "第一次使用的三个问题.txt",
+        "version": "1",
+        "originalAvailable": true,
+        "attachmentIds": [
+          "material-whiteboard"
+        ]
+      },
+      {
+        "id": "material-meeting",
+        "title": "松林评审会 · 重点与下一步",
+        "type": "transcript",
+        "typeLabel": "录音转写",
+        "sourceId": "source-feishu-recordings",
+        "sourceLabel": "飞书妙记",
+        "capturedAt": "2026-10-19T15:30:00+08:00",
+        "status": "ready",
+        "summary": "讨论文件夹同步入口、默认资料库说明以及引用回到原文的体验。",
+        "body": "林澈：先让用户知道资料保存在同一处，然后能带着问题回来找。\n周桐：导入文件是一次添加，同步文件夹会持续跟踪变化，这两种方式要讲清楚。\n林澈：回答里要能打开原文，而不是只有一个来源名字。\n周桐：本周先验证默认页理解，再看需要哪些细节。",
+        "tags": [
+          "松林",
+          "评审",
+          "会议"
+        ],
+        "durationLabel": "24 分钟",
+        "originalName": "松林评审会.m4a",
+        "version": "1",
+        "originalAvailable": true
+      },
+      {
+        "id": "material-coding",
+        "title": "修复资料详情返回后的列表位置",
+        "type": "coding",
+        "typeLabel": "Coding 会话",
+        "sourceId": "source-coding",
+        "sourceLabel": "Codex 会话",
+        "capturedAt": "2026-10-19T18:40:00+08:00",
+        "status": "ready",
+        "summary": "打开资料详情后返回，恢复之前的筛选条件和列表位置。",
+        "body": "问题：从列表打开详情后返回，筛选和滚动位置被清空。\n\n处理：将当前来源、类型筛选和滚动位置保留在列表状态中。详情关闭时恢复原位置。\n\n检查：分别从全部资料和某来源的筛选结果打开同一条记录，返回后仍在原列表上下文。",
+        "tags": [
+          "松林",
+          "开发",
+          "返回"
+        ],
+        "originalName": "coding-session-demo.json",
+        "version": "1",
+        "originalAvailable": true
+      },
+      {
+        "id": "material-screen",
+        "title": "资料库筛选 · 页面记录",
+        "type": "screen",
+        "typeLabel": "屏幕记录",
+        "sourceId": "source-mac",
+        "sourceLabel": "演示 Mac · 浏览器",
+        "capturedAt": "2026-10-20T11:12:00+08:00",
+        "status": "ready",
+        "summary": "查看项目资料时保留的页面片段，包含来源和时间筛选。",
+        "body": "页面文字：资料库。来源：项目文件夹。时间：本周。结果：松林项目需求说明、用户访谈摘录。\n这是一条合成页面记录，用于演示原始内容和资料引用之间的关系。",
+        "tags": [
+          "松林",
+          "页面"
+        ],
+        "originalName": "library-filter-demo.svg",
+        "version": "1",
+        "originalAvailable": true,
+        "previewKind": "generated-screen"
+      },
+      {
+        "id": "material-email",
+        "title": "试用反馈：想先放进自己的文件",
+        "type": "email",
+        "typeLabel": "邮件",
+        "sourceId": "source-gmail",
+        "sourceLabel": "Gmail",
+        "capturedAt": "2026-10-18T16:20:00+08:00",
+        "status": "ready",
+        "summary": "试用者希望先导入已有资料，再逐步开启需要的记录来源。",
+        "body": "主题：试用反馈\n\n我希望先放入手边的文件，看看能否顺利找回和提问。之后再决定哪些文件夹需要持续同步、哪些应用需要记录。\n\n如果界面能清楚说明两种添加方式的差别，我会更容易开始。",
+        "tags": [
+          "松林",
+          "反馈"
+        ],
+        "originalName": "试用反馈.eml",
+        "version": "1",
+        "originalAvailable": true
+      },
+      {
+        "id": "material-calendar",
+        "title": "松林体验走查",
+        "type": "calendar",
+        "typeLabel": "日历",
+        "sourceId": "source-google-calendar",
+        "sourceLabel": "Google 日历",
+        "capturedAt": "2026-10-20T08:00:00+08:00",
+        "status": "ready",
+        "summary": "10 月 21 日 14:00–14:45，检查首次使用和资料找回。",
+        "body": "时间：2026 年 10 月 21 日 14:00–14:45\n主题：首次打开后能否理解产品、加入资料并找回。\n准备：需求说明、上次评审纪要。",
+        "tags": [
+          "松林",
+          "安排"
+        ],
+        "originalName": "体验走查.ics",
+        "version": "1",
+        "originalAvailable": true
+      },
+      {
+        "id": "material-interviews",
+        "title": "用户访谈摘录.pdf",
+        "type": "file",
+        "typeLabel": "文件",
+        "sourceId": "source-imports",
+        "sourceLabel": "文件导入",
+        "capturedAt": "2026-10-20T11:35:00+08:00",
+        "status": "processing",
+        "summary": "原件已保留，正在整理可阅读的正文。",
+        "body": "原件中的合成摘录：我希望把已有笔记、工作文件和会议内容放在一起，需要时能带着问题回来查。",
+        "tags": [
+          "松林",
+          "访谈"
+        ],
+        "originalName": "用户访谈摘录.pdf",
+        "version": "1",
+        "originalAvailable": true,
+        "workId": "work-import"
+      },
+      {
+        "id": "material-reference",
+        "title": "NAS 上的研究资料目录",
+        "type": "reference",
+        "typeLabel": "外部引用",
+        "sourceId": "source-nas",
+        "sourceLabel": "NAS 引用",
+        "capturedAt": "2026-10-17T09:45:00+08:00",
+        "status": "reference",
+        "summary": "保留了原目录的位置与标题，尚未保存正文快照。",
+        "body": "资料位置：NAS / 研究 / 松林项目。\n当前保留的是位置引用。可在演示中查看位置说明，或模拟保存所选文件的快照。",
+        "tags": [
+          "松林",
+          "研究"
+        ],
+        "originalName": "研究/松林项目",
+        "version": "1",
+        "originalAvailable": false
+      },
+      {
+        "id": "material-recording-review",
+        "title": "资料整理讨论 · 待确认说话人",
+        "type": "transcript",
+        "typeLabel": "录音转写",
+        "sourceId": "source-dingtalk",
+        "sourceLabel": "钉钉闪记",
+        "capturedAt": "2026-10-20T10:40:00+08:00",
+        "status": "needs-attention",
+        "summary": "音频已保留，有两处说话人需要核对。",
+        "body": "说话人 1：先保存文件，再决定后续是否持续同步。\n说话人 2：对，范围和当前进度应该看得见。\n\n请核对说话人 1 与说话人 2 的称呼。",
+        "tags": [
+          "松林",
+          "待确认"
+        ],
+        "durationLabel": "12 分钟",
+        "originalName": "资料整理讨论.m4a",
+        "version": "1",
+        "originalAvailable": true,
+        "workId": "work-speakers"
+      },
+      {
+        "id": "material-lark",
+        "title": "资料来源范围说明",
+        "type": "document",
+        "typeLabel": "飞书文档",
+        "sourceId": "source-lark",
+        "sourceLabel": "飞书文档",
+        "capturedAt": "2026-10-18T13:10:00+08:00",
+        "status": "ready",
+        "summary": "记录哪些资料需要持续收集、哪些资料只添加一次。",
+        "body": "持续来源：项目文件夹、选定文档、指定日历和邮件范围。\n一次添加：临时文件、截图附件、随手记、从资料服务选定的资源。\n只保留位置：暂时不方便保存原件的外部文件引用。",
+        "tags": [
+          "松林",
+          "来源"
+        ],
+        "originalName": "资料来源范围说明",
+        "version": "2",
+        "originalAvailable": true
+      },
+      {
+        "id": "material-whiteboard",
+        "title": "首屏想法 · 白板草图.png",
+        "type": "image",
+        "typeLabel": "图片附件",
+        "sourceId": "source-notes",
+        "sourceLabel": "随手记附件",
+        "capturedAt": "2026-10-20T10:06:00+08:00",
+        "status": "ready",
+        "summary": "用途说明、添加入口、最近资料三个区域的草图。",
+        "body": "图片中的合成文字：汇集资料 → 找回原文 → 带着问题来。\n入口：文件夹、文件、屏幕、想法。",
+        "tags": [
+          "松林",
+          "草图"
+        ],
+        "originalName": "白板草图.png",
+        "version": "1",
+        "originalAvailable": true,
+        "previewKind": "generated-whiteboard"
+      }
+    ],
+    "connectedSources": [
+      {
+        "id": "source-folder",
+        "title": "松林项目文件夹",
+        "kind": "folder",
+        "mode": "continuous",
+        "inputActionId": "sync-folder",
+        "status": "active",
+        "scope": "项目 / 松林；包含子文件夹",
+        "lastSync": "今天 11:36",
+        "itemCount": 24,
+        "scopeOptions": [
+          "包含子文件夹",
+          "仅收集新文件和修改"
+        ],
+        "pauseLabel": "暂停这个文件夹"
+      },
+      {
+        "id": "source-mac",
+        "title": "演示 Mac",
+        "kind": "device",
+        "catalogId": "devices",
+        "mode": "device-capture",
+        "status": "active",
+        "scope": "浏览器与笔记应用；其他应用不记录",
+        "lastSync": "今天 11:12",
+        "itemCount": 36,
+        "scopeOptions": [
+          "浏览器",
+          "笔记应用"
+        ],
+        "pauseLabel": "暂停屏幕记录"
+      },
+      {
+        "id": "source-coding",
+        "title": "松林 · Codex 会话",
+        "kind": "coding",
+        "catalogId": "coding",
+        "mode": "continuous",
+        "status": "active",
+        "scope": "松林项目；最近 30 天",
+        "lastSync": "今天 10:30",
+        "itemCount": 8,
+        "pauseLabel": "暂停这些会话"
+      },
+      {
+        "id": "source-lark",
+        "title": "松林飞书文档",
+        "kind": "online",
+        "catalogId": "lark",
+        "mode": "continuous",
+        "status": "active",
+        "scope": "松林项目文件夹与指定日历",
+        "lastSync": "今天 09:45",
+        "itemCount": 14,
+        "pauseLabel": "暂停这个来源"
+      },
+      {
+        "id": "source-feishu-recordings",
+        "title": "项目评审录音",
+        "kind": "recordings",
+        "catalogId": "feishu-recordings",
+        "mode": "continuous",
+        "status": "active",
+        "scope": "最近 30 天；备份原始音频",
+        "lastSync": "昨天 16:05",
+        "itemCount": 4,
+        "pauseLabel": "暂停这些录音"
+      },
+      {
+        "id": "source-gmail",
+        "title": "项目反馈邮件",
+        "kind": "online",
+        "catalogId": "gmail",
+        "mode": "continuous",
+        "status": "paused",
+        "scope": "标签为松林项目的邮件",
+        "lastSync": "10 月 18 日",
+        "itemCount": 9,
+        "pauseLabel": "恢复这个来源"
+      },
+      {
+        "id": "source-google-calendar",
+        "title": "工作日历",
+        "kind": "online",
+        "catalogId": "google-calendar",
+        "mode": "continuous",
+        "status": "active",
+        "scope": "工作日历；只读归档",
+        "lastSync": "今天 08:00",
+        "itemCount": 6,
+        "pauseLabel": "暂停这个来源"
+      },
+      {
+        "id": "source-dingtalk",
+        "title": "资料整理讨论录音",
+        "kind": "recordings",
+        "catalogId": "dingtalk-recordings",
+        "mode": "continuous",
+        "status": "needs-attention",
+        "scope": "本周；备份原始音频",
+        "lastSync": "今天 10:42",
+        "itemCount": 2,
+        "pauseLabel": "暂停这些录音"
+      },
+      {
+        "id": "source-nas",
+        "title": "研究资料位置",
+        "kind": "reference",
+        "catalogId": "reference",
+        "mode": "reference",
+        "status": "reference",
+        "scope": "仅保存原位置与标题",
+        "lastSync": null,
+        "itemCount": 3,
+        "pauseLabel": null
+      }
+    ],
+    "oneTimeCollections": [
+      {
+        "id": "source-notes",
+        "title": "随手记",
+        "mode": "note",
+        "description": "主动保存的文字和附件；不需要连接服务。"
+      },
+      {
+        "id": "source-imports",
+        "title": "文件导入",
+        "mode": "one-time",
+        "description": "每次选择的文件独立导入，不持续跟踪。"
+      }
+    ],
+    "noteDraft": {
+      "title": "下次走查要留意什么",
+      "text": "观察第一次打开时，大家能否发现文件夹同步和文件导入。",
+      "attachmentIds": [],
+      "savedLabel": "草稿已保留"
+    },
+    "works": [
+      {
+        "id": "work-speakers",
+        "title": "核对录音说话人",
+        "description": "《资料整理讨论》中有两处称呼需要确认。",
+        "status": "needs-attention",
+        "statusLabel": "需要你确认",
+        "kind": "transcription",
+        "progress": 80,
+        "sourceId": "source-dingtalk",
+        "contentId": "material-recording-review",
+        "actionLabel": "核对说话人",
+        "destination": {
+          "page": "library",
+          "view": "files",
+          "item": "material-recording-review",
+          "href": "#/library?view=files&item=material-recording-review"
+        },
+        "resultMessage": "说话人已确认，转写已更新。"
+      },
+      {
+        "id": "work-import",
+        "title": "整理用户访谈摘录",
+        "description": "文件原件已保存，正在整理正文。",
+        "status": "running",
+        "statusLabel": "进行中",
+        "kind": "import",
+        "progress": 62,
+        "sourceId": "source-imports",
+        "contentId": "material-interviews",
+        "actionLabel": "查看进度",
+        "destination": {
+          "page": "library",
+          "view": "imports",
+          "item": "material-interviews",
+          "href": "#/library?view=imports&item=material-interviews"
+        },
+        "resultMessage": "资料已整理完成，可以阅读和提问。"
+      },
+      {
+        "id": "work-memory",
+        "title": "整理松林项目记忆",
+        "description": "上次整理未完成，可以从已保留的资料继续。",
+        "status": "failed",
+        "statusLabel": "可以重试",
+        "kind": "memory",
+        "progress": 45,
+        "sourceId": "source-folder",
+        "contentId": "material-brief",
+        "actionLabel": "重试整理",
+        "destination": {
+          "page": "activity",
+          "view": "details",
+          "task": "work-memory",
+          "href": "#/activity?view=details&task=work-memory"
+        },
+        "resultMessage": "已重新安排整理，资料和已有结果仍保留。"
+      },
+      {
+        "id": "work-coding",
+        "title": "收集 Codex 编码会话",
+        "description": "8 段会话已整理，可打开正文查看。",
+        "status": "completed",
+        "statusLabel": "已完成",
+        "kind": "coding",
+        "progress": 100,
+        "sourceId": "source-coding",
+        "contentId": "material-coding",
+        "actionLabel": "查看结果",
+        "destination": {
+          "page": "library",
+          "view": "materials",
+          "item": "material-coding",
+          "href": "#/library?view=materials&item=material-coding"
+        },
+        "resultMessage": "已打开编码会话正文。"
+      }
+    ],
+    "conversation": {
+      "id": "conversation-first-use",
+      "title": "第一次使用要先解决什么？",
+      "question": "根据最近的评审和反馈，松林项目第一次使用要先解决什么？",
+      "answer": "先让用户知道 Mote 能保存哪些内容，以及之后怎样找回和提问。入口上，要把一次导入文件与持续同步文件夹的差别说清楚，并让它们与屏幕记录一样容易发现。阅读和提问时，应能沿引用回到原文，同时保留草稿与返回位置。",
+      "citations": [
+        {
+          "label": "需求说明",
+          "contentId": "material-brief",
+          "excerpt": "文件夹同步和文件导入与屏幕记录同样可见"
+        },
+        {
+          "label": "评审会纪要",
+          "contentId": "material-meeting",
+          "excerpt": "导入文件是一次添加，同步文件夹会持续跟踪变化"
+        },
+        {
+          "label": "试用反馈",
+          "contentId": "material-email",
+          "excerpt": "先放入手边的文件，看看能否顺利找回和提问。"
+        },
+        {
+          "label": "编码会话",
+          "contentId": "material-coding",
+          "excerpt": "详情关闭时恢复原位置。"
+        }
+      ],
+      "followUps": [
+        "哪些内容需要我确认？",
+        "帮我回顾这周关于资料来源的讨论。"
+      ],
+      "history": [
+        {
+          "id": "conversation-first-use",
+          "title": "第一次使用要先解决什么？",
+          "dateLabel": "今天"
+        },
+        {
+          "id": "conversation-scope",
+          "title": "文件导入和文件夹同步有什么区别？",
+          "dateLabel": "昨天"
+        }
+      ],
+      "clarification": {
+        "id": "clarification-scope",
+        "question": "“松林资料”是指整个项目文件夹，还是只指需求文档？",
+        "choices": [
+          "整个项目文件夹",
+          "只有需求文档"
+        ],
+        "relatedContentIds": [
+          "material-note",
+          "material-brief"
+        ]
+      }
+    },
+    "memories": [
+      {
+        "id": "memory-priority",
+        "title": "松林项目优先验证首次使用理解",
+        "text": "本轮先观察新用户能否说清产品用途，并找到加入资料的起点。",
+        "status": "current",
+        "updatedLabel": "今天",
+        "contentIds": [
+          "material-brief",
+          "material-meeting"
+        ],
+        "history": [
+          {
+            "label": "当前",
+            "text": "先验证产品理解与加入资料的起点。"
+          },
+          {
+            "label": "上一个版本",
+            "text": "先调整默认页的展示。"
+          }
+        ]
+      },
+      {
+        "id": "memory-inputs",
+        "title": "文件导入与文件夹同步承担不同任务",
+        "text": "文件导入用于一次添加；文件夹同步持续收集指定范围里的新内容和修改。",
+        "status": "current",
+        "updatedLabel": "昨天",
+        "contentIds": [
+          "material-meeting",
+          "material-lark"
+        ],
+        "history": []
+      },
+      {
+        "id": "memory-return",
+        "title": "阅读资料时需要保留来路",
+        "text": "从详情或回答引用返回后，保留原列表筛选、位置和对话上下文。",
+        "status": "current",
+        "updatedLabel": "昨天",
+        "contentIds": [
+          "material-coding"
+        ],
+        "history": []
+      }
+    ],
+    "insights": [
+      {
+        "id": "insight-week",
+        "title": "这周的资料整理回顾",
+        "rangeLabel": "10 月 14 日 – 10 月 20 日",
+        "summary": "讨论集中在首次理解、来源选择和引用核对。",
+        "highlights": [
+          {
+            "title": "先理解，再逐步接入",
+            "text": "评审和试用反馈都希望先从自己的资料开始。",
+            "contentIds": [
+              "material-meeting",
+              "material-email"
+            ]
+          },
+          {
+            "title": "给不同输入方式准确命名",
+            "text": "一次导入与持续同步需要不同的范围说明。",
+            "contentIds": [
+              "material-lark",
+              "material-brief"
+            ]
+          },
+          {
+            "title": "保留上下文让旅程连续",
+            "text": "从资料详情或引用返回，应回到刚才的位置。",
+            "contentIds": [
+              "material-coding"
+            ]
+          }
+        ],
+        "contentIds": [
+          "material-meeting",
+          "material-email",
+          "material-lark",
+          "material-brief",
+          "material-coding"
+        ]
+      }
+    ],
+    "todos": [
+      {
+        "id": "todo-prepare",
+        "title": "整理明天走查要用的资料",
+        "completed": false,
+        "dateLabel": "明天",
+        "contentIds": [
+          "material-calendar"
+        ]
+      },
+      {
+        "id": "todo-sources",
+        "title": "核对文件夹与文件的说明",
+        "completed": false,
+        "dateLabel": "今天",
+        "contentIds": [
+          "material-brief"
+        ]
+      },
+      {
+        "id": "todo-record",
+        "title": "补上评审会纪要",
+        "completed": true,
+        "dateLabel": "昨天",
+        "contentIds": [
+          "material-meeting"
+        ]
+      }
+    ],
+    "scheduleSuggestions": [
+      {
+        "id": "schedule-review",
+        "title": "确认一次资料体验走查",
+        "dateLabel": "10 月 21 日 14:00–14:45",
+        "calendarLabel": "工作日历",
+        "deviceLabel": "演示 Mac",
+        "status": "needs-review",
+        "reason": "评审中提到明天核对首次理解和资料找回。",
+        "contentIds": [
+          "material-meeting",
+          "material-calendar"
+        ],
+        "actionLabel": "核对并加入日历",
+        "resultMessage": "已在演示日历中加入这项安排。"
+      }
+    ],
+    "appActivity": [
+      {
+        "label": "浏览器",
+        "minutes": 72
+      },
+      {
+        "label": "编辑器",
+        "minutes": 54
+      },
+      {
+        "label": "笔记应用",
+        "minutes": 18
+      }
+    ],
+    "mediaObservations": [
+      {
+        "id": "media-demo",
+        "title": "产品访谈录音",
+        "app": "音频播放器",
+        "observedLabel": "昨天 16:10",
+        "durationLabel": "观测到 18 分钟"
+      }
+    ],
+    "settings": {
+      "theme": "light",
+      "language": "zh-CN",
+      "modelName": "演示通用模型",
+      "modelStatus": "ready",
+      "automaticMemory": true,
+      "memoryPlan": "默认记忆方案",
+      "installedPlugins": [
+        "默认资料检索",
+        "默认记忆整理"
+      ],
+      "storageLabel": "218 MB",
+      "retentionLabel": "保留已加入的资料",
+      "usageLabel": "本月 42 次模型任务",
+      "estimatedCostLabel": "¥ 6.80（演示估算）",
+      "modelOptions": [
+        "演示通用模型",
+        "演示轻量模型"
+      ],
+      "languageOptions": [
+        {
+          "id": "zh-CN",
+          "label": "简体中文"
+        },
+        {
+          "id": "en",
+          "label": "English"
+        }
+      ],
+      "themeOptions": [
+        {
+          "id": "light",
+          "label": "浅色"
+        },
+        {
+          "id": "dark",
+          "label": "深色"
+        },
+        {
+          "id": "system",
+          "label": "跟随系统"
+        }
+      ]
+    },
+    "sharing": [
+      {
+        "id": "share-chatbot",
+        "title": "研究助手",
+        "kind": "Chatbot / MCP",
+        "scope": "只读检索松林项目资料",
+        "status": "active"
+      },
+      {
+        "id": "share-device",
+        "title": "演示 Android",
+        "kind": "设备",
+        "scope": "加入选定的本机资料",
+        "status": "active"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "T01",
+      "goal": "你第一次打开这个产品。请说明它主要帮你做什么、你认为能做哪些事，以及你会先尝试什么。"
+    },
+    {
+      "id": "T02",
+      "goal": "把“下次评审先观察大家怎样加入资料”这个想法连同一张已有图片保存下来，之后重新找到它。"
+    },
+    {
+      "id": "T03",
+      "goal": "把一份已有的访谈 PDF 放进自己的资料中，查看它是否已能阅读，并找到保留的原件。"
+    },
+    {
+      "id": "T04",
+      "goal": "让一个项目文件夹以后新增和修改的内容也继续归档，然后暂时停止只收集这个文件夹。"
+    },
+    {
+      "id": "T05",
+      "goal": "只保留浏览器和笔记应用中的屏幕内容，确认其他应用不会被记录，之后暂停这项记录。"
+    },
+    {
+      "id": "T06",
+      "goal": "根据最近的项目评审和反馈，了解首次使用最需要解决什么，并核对回答中的一份原始资料。"
+    },
+    {
+      "id": "T07",
+      "goal": "找出哪项资料整理工作正在等待你处理，完成所需确认，再查看它的结果。"
+    },
+    {
+      "id": "T08",
+      "goal": "找到汇集飞书文档、已有会议录音和编码对话的方式，分别了解会收集哪些内容。"
+    },
+    {
+      "id": "T09",
+      "goal": "回顾这周项目讨论的重点，核对一条长期记住的信息，并纠正其中不准确的表述。"
+    },
+    {
+      "id": "T10",
+      "goal": "安排一次明天下午的走查并核对要使用的日历，再把界面切换成适合夜间阅读的样式。"
+    }
+  ],
+  "directorySections": [
+    {
+      "id": "capture",
+      "title": "接入与记录",
+      "description": "保存新的想法，汇集已有资料。",
+      "groupIds": [
+        "G05",
+        "G04",
+        "G03",
+        "G02"
+      ]
+    },
+    {
+      "id": "use",
+      "title": "阅读与使用",
+      "description": "找回、提问、核对和回顾。",
+      "groupIds": [
+        "G06",
+        "G08",
+        "G09",
+        "G10"
+      ]
+    },
+    {
+      "id": "manage",
+      "title": "跟进与管理",
+      "description": "了解进度，处理待办并维护资料。",
+      "groupIds": [
+        "G11",
+        "G12",
+        "G07",
+        "G15"
+      ]
+    },
+    {
+      "id": "settings",
+      "title": "设置与帮助",
+      "description": "调整使用方式，解决连接和处理问题。",
+      "groupIds": [
+        "G13",
+        "G14",
+        "G01",
+        "G16"
+      ]
+    }
+  ],
+  "directoryGroups": [
+    {
+      "id": "G05",
+      "sectionId": "capture",
+      "title": "随手记与附件",
+      "description": "保存文字、图片或音频，继续未完成的草稿。",
+      "unitIds": [
+        "C12",
+        "C13"
+      ]
+    },
+    {
+      "id": "G04",
+      "sectionId": "capture",
+      "title": "导入已有资料",
+      "description": "导入文件，核对结果并恢复未完成的任务。",
+      "unitIds": [
+        "C09",
+        "C10",
+        "C11",
+        "A01",
+        "A02",
+        "A03"
+      ]
+    },
+    {
+      "id": "G03",
+      "sectionId": "capture",
+      "title": "资料来源",
+      "description": "选择、连接并管理不同来源的内容。",
+      "unitIds": [
+        "C07",
+        "C08",
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A09",
+        "A10",
+        "A11"
+      ]
+    },
+    {
+      "id": "G02",
+      "sectionId": "capture",
+      "title": "设备与连接",
+      "description": "连接设备，查看记录状态和访问权限。",
+      "unitIds": [
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "A08"
+      ]
+    },
+    {
+      "id": "G06",
+      "sectionId": "use",
+      "title": "阅读与原始证据",
+      "description": "查看全文、出处和原件，管理所选资料。",
+      "unitIds": [
+        "C14",
+        "C15",
+        "C16",
+        "C17",
+        "C18"
+      ]
+    },
+    {
+      "id": "G08",
+      "sectionId": "use",
+      "title": "提问与对话",
+      "description": "根据资料提问，核对引用并继续历史对话。",
+      "unitIds": [
+        "C20",
+        "C21",
+        "C22"
+      ]
+    },
+    {
+      "id": "G09",
+      "sectionId": "use",
+      "title": "记忆与纠正",
+      "description": "核对长期信息，纠正误解并继续整理。",
+      "unitIds": [
+        "C23",
+        "C24",
+        "C25",
+        "C26",
+        "A16",
+        "A17",
+        "A18"
+      ]
+    },
+    {
+      "id": "G10",
+      "sectionId": "use",
+      "title": "洞察与回顾",
+      "description": "围绕时间和主题形成有依据的回顾。",
+      "unitIds": [
+        "C27"
+      ]
+    },
+    {
+      "id": "G11",
+      "sectionId": "manage",
+      "title": "进度与问题恢复",
+      "description": "看清工作状态，处理需要确认或重试的事情。",
+      "unitIds": [
+        "C28",
+        "A25"
+      ]
+    },
+    {
+      "id": "G12",
+      "sectionId": "manage",
+      "title": "待办与日程",
+      "description": "跟进要做的事，确认日程安排。",
+      "unitIds": [
+        "C29",
+        "C30"
+      ]
+    },
+    {
+      "id": "G07",
+      "sectionId": "manage",
+      "title": "分类与时间回看",
+      "description": "按类型、时间、应用或编码会话找内容。",
+      "unitIds": [
+        "C19",
+        "A12",
+        "A13",
+        "A14",
+        "A15"
+      ]
+    },
+    {
+      "id": "G15",
+      "sectionId": "manage",
+      "title": "备份、空间与用量",
+      "description": "管理资料保留，核对存储和使用成本。",
+      "unitIds": [
+        "C39",
+        "C40",
+        "C41",
+        "A31",
+        "A32",
+        "A33"
+      ]
+    },
+    {
+      "id": "G13",
+      "sectionId": "settings",
+      "title": "模型与内容处理",
+      "description": "选择模型，调整图片、文件和语音的处理方式。",
+      "unitIds": [
+        "C31",
+        "C32",
+        "C36",
+        "C37",
+        "C38",
+        "A19",
+        "A20",
+        "A21",
+        "A22",
+        "A23",
+        "A24",
+        "A29",
+        "A30"
+      ]
+    },
+    {
+      "id": "G14",
+      "sectionId": "settings",
+      "title": "自动记忆与插件",
+      "description": "控制自动整理，查看方案和扩展。",
+      "unitIds": [
+        "C33",
+        "C34",
+        "C35"
+      ]
+    },
+    {
+      "id": "G01",
+      "sectionId": "settings",
+      "title": "账号与常用入口",
+      "description": "进入自己的空间，找到常用操作。",
+      "unitIds": [
+        "C01",
+        "C02"
+      ]
+    },
+    {
+      "id": "G16",
+      "sectionId": "settings",
+      "title": "帮助与诊断",
+      "description": "查看读取范围、版本和诊断，调整使用偏好。",
+      "unitIds": [
+        "C42",
+        "A26",
+        "A27",
+        "A28",
+        "A34",
+        "A35",
+        "A36"
+      ]
+    }
+  ],
+  "directory": [
+    {
+      "id": "C01",
+      "title": "管理账号与登录",
+      "description": "查看当前账号，调整登录时长或退出。",
+      "priority": "core",
+      "sectionId": "settings",
+      "groupId": "G01",
+      "featureGroupIds": [
+        "F02"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "account",
+        "href": "#/settings?view=account"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "account"
+      ],
+      "keywords": [
+        "登录并管理当前会话",
+        "账号与常用入口",
+        "账号与设备连接"
+      ]
+    },
+    {
+      "id": "C02",
+      "title": "找到全部功能",
+      "description": "知道各类事情在哪里完成，按目标查找功能。",
+      "priority": "core",
+      "sectionId": "settings",
+      "groupId": "G01",
+      "featureGroupIds": [
+        "F01"
+      ],
+      "canonicalHome": "guide",
+      "destination": {
+        "page": "guide",
+        "view": "all",
+        "href": "#/guide?view=all"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "找到常用页面和所属工具",
+        "账号与常用入口",
+        "认识 Mote"
+      ]
+    },
+    {
+      "id": "C03",
+      "title": "看看今天需要关注什么",
+      "description": "查看最近资料、待办和需要自己处理的事情。",
+      "priority": "core",
+      "sectionId": "capture",
+      "groupId": "G02",
+      "featureGroupIds": [
+        "F01"
+      ],
+      "canonicalHome": "today",
+      "destination": {
+        "page": "today",
+        "view": "overview",
+        "href": "#/today?view=overview"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "从今天开始整理资料",
+        "设备与连接",
+        "认识 Mote"
+      ]
+    },
+    {
+      "id": "C04",
+      "title": "查看设备记录与同步",
+      "description": "了解哪台设备正在记录、最近是否已同步。",
+      "priority": "core",
+      "sectionId": "capture",
+      "groupId": "G02",
+      "featureGroupIds": [
+        "F06",
+        "F07"
+      ],
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "devices",
+        "href": "#/sources?view=devices"
+      },
+      "sourceCatalogIds": [
+        "devices"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "查看设备上报的采集与同步状态",
+        "设备与连接",
+        "记录屏幕与应用",
+        "采集范围与暂停",
+        "手机与电脑"
+      ]
+    },
+    {
+      "id": "C05",
+      "title": "连接手机或电脑",
+      "description": "让新的设备加入自己的资料空间，或恢复失效连接。",
+      "priority": "core",
+      "sectionId": "capture",
+      "groupId": "G02",
+      "featureGroupIds": [
+        "F02",
+        "F18"
+      ],
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "devices",
+        "href": "#/sources?view=devices"
+      },
+      "sourceCatalogIds": [
+        "devices"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "连接或重新授权设备",
+        "设备与连接",
+        "账号与设备连接",
+        "对外授权",
+        "手机与电脑"
+      ]
+    },
+    {
+      "id": "C06",
+      "title": "查看和撤销连接权限",
+      "description": "确认谁能使用资料，撤销不再需要的连接。",
+      "priority": "core",
+      "sectionId": "capture",
+      "groupId": "G02",
+      "featureGroupIds": [
+        "F18"
+      ],
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "sharing",
+        "href": "#/sources?view=sharing"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "检查和撤销已发出的连接权限",
+        "设备与连接",
+        "对外授权"
+      ]
+    },
+    {
+      "id": "C07",
+      "title": "选择新的资料来源",
+      "description": "查看可加入的设备、文件和在线服务。",
+      "priority": "core",
+      "sectionId": "capture",
+      "groupId": "G03",
+      "featureGroupIds": [
+        "F05",
+        "F12"
+      ],
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "catalog",
+        "href": "#/sources?view=catalog"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "选择要加入的来源",
+        "资料来源",
+        "持续同步文件夹",
+        "发现可接入的来源"
+      ]
+    },
+    {
+      "id": "C08",
+      "title": "管理已连接来源",
+      "description": "查看收集范围、暂停某个来源或补充资料背景。",
+      "priority": "core",
+      "sectionId": "capture",
+      "groupId": "G03",
+      "featureGroupIds": [
+        "F05",
+        "F07"
+      ],
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "connected",
+        "href": "#/sources?view=connected"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "管理来源接收与内容关系",
+        "资料来源",
+        "持续同步文件夹",
+        "采集范围与暂停"
+      ]
+    },
+    {
+      "id": "C09",
+      "title": "导入文档、文件夹或媒体",
+      "description": "把已有文件加入资料库，并说明它们是什么。",
+      "priority": "core",
+      "sectionId": "capture",
+      "groupId": "G04",
+      "featureGroupIds": [
+        "F04"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "imports",
+        "href": "#/library?view=imports"
+      },
+      "sourceCatalogIds": [
+        "file-import"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "导入已有文档、文件夹和媒体",
+        "导入已有资料",
+        "导入文件"
+      ]
+    },
+    {
+      "id": "C10",
+      "title": "跟进一次导入",
+      "description": "查看进度，核对需要确认的内容，再打开导入结果。",
+      "priority": "core",
+      "sectionId": "capture",
+      "groupId": "G04",
+      "featureGroupIds": [
+        "F04",
+        "F10"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "imports",
+        "href": "#/library?view=imports"
+      },
+      "sourceCatalogIds": [
+        "file-import"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "查看并处理导入进度",
+        "导入已有资料",
+        "进度与问题恢复",
+        "导入文件"
+      ]
+    },
+    {
+      "id": "C11",
+      "title": "删除一次导入",
+      "description": "核对涉及哪些资料后移除这次导入。",
+      "priority": "core",
+      "sectionId": "capture",
+      "groupId": "G04",
+      "featureGroupIds": [
+        "F04"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "imports",
+        "href": "#/library?view=imports"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "删除整次导入",
+        "导入已有资料"
+      ]
+    },
+    {
+      "id": "C12",
+      "title": "记下一段想法",
+      "description": "保存文字，保留未完成的草稿，并在历史中找回。",
+      "priority": "core",
+      "sectionId": "capture",
+      "groupId": "G05",
+      "featureGroupIds": [
+        "F03"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "notes",
+        "href": "#/library?view=notes"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "随手记下文字",
+        "随手记与附件"
+      ]
+    },
+    {
+      "id": "C13",
+      "title": "给笔记加图片或音频",
+      "description": "附上已有图片、录音，或只保存附件。",
+      "priority": "core",
+      "sectionId": "capture",
+      "groupId": "G05",
+      "featureGroupIds": [
+        "F03"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "notes",
+        "href": "#/library?view=notes"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "上传已有图片或音频附件",
+        "随手记与附件"
+      ]
+    },
+    {
+      "id": "C14",
+      "title": "浏览全部资料",
+      "description": "在同一处阅读来自文件、设备和在线服务的内容。",
+      "priority": "core",
+      "sectionId": "use",
+      "groupId": "G06",
+      "featureGroupIds": [
+        "F08"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "materials",
+        "href": "#/library?view=materials"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "浏览已经发布的资料正文",
+        "阅读与原始证据",
+        "阅读与核对原文"
+      ]
+    },
+    {
+      "id": "C15",
+      "title": "核对内容与出处",
+      "description": "打开资料全文，查看来源、时间、原件和整理状态。",
+      "priority": "core",
+      "sectionId": "use",
+      "groupId": "G06",
+      "featureGroupIds": [
+        "F08"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "materials",
+        "href": "#/library?view=materials"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "核对资料正文、来源与处理状态",
+        "阅读与原始证据",
+        "阅读与核对原文"
+      ]
+    },
+    {
+      "id": "C16",
+      "title": "补充一份资料的背景",
+      "description": "说明资料之间的关系，让后续整理更准确。",
+      "priority": "core",
+      "sectionId": "use",
+      "groupId": "G06",
+      "featureGroupIds": [
+        "F15"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "materials",
+        "href": "#/library?view=materials"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "说明单份资料关系并提取记忆",
+        "阅读与原始证据",
+        "有依据的记忆"
+      ]
+    },
+    {
+      "id": "C17",
+      "title": "查看原始记录",
+      "description": "沿资料出处找到保留下来的截图、页面或原文。",
+      "priority": "core",
+      "sectionId": "use",
+      "groupId": "G06",
+      "featureGroupIds": [
+        "F06",
+        "F08"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "records",
+        "href": "#/library?view=records"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "查看原始采集证据",
+        "阅读与原始证据",
+        "记录屏幕与应用",
+        "阅读与核对原文"
+      ]
+    },
+    {
+      "id": "C18",
+      "title": "删除一条原始记录",
+      "description": "确认要移除的记录及其范围，再执行删除。",
+      "priority": "core",
+      "sectionId": "use",
+      "groupId": "G06",
+      "featureGroupIds": [
+        "F08"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "records",
+        "href": "#/library?view=records"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "删除一条原始记录",
+        "阅读与原始证据",
+        "阅读与核对原文"
+      ]
+    },
+    {
+      "id": "C19",
+      "title": "按类型找资料",
+      "description": "在文件、笔记、记录和其他类型之间筛选。",
+      "priority": "core",
+      "sectionId": "manage",
+      "groupId": "G07",
+      "featureGroupIds": [
+        "F08"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "materials",
+        "href": "#/library?view=materials"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "按内容类型查看资料库",
+        "分类与时间回看",
+        "阅读与核对原文"
+      ]
+    },
+    {
+      "id": "C20",
+      "title": "根据已有资料提问",
+      "description": "得到带出处的回答，并回到引用的原文。",
+      "priority": "core",
+      "sectionId": "use",
+      "groupId": "G08",
+      "featureGroupIds": [
+        "F09"
+      ],
+      "canonicalHome": "ask",
+      "destination": {
+        "page": "ask",
+        "view": "conversation",
+        "href": "#/ask?view=conversation"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "围绕归档资料提问",
+        "提问与对话",
+        "基于资料提问"
+      ]
+    },
+    {
+      "id": "C21",
+      "title": "继续之前的对话",
+      "description": "找到历史问题，继续追问或整理对话。",
+      "priority": "core",
+      "sectionId": "use",
+      "groupId": "G08",
+      "featureGroupIds": [
+        "F09"
+      ],
+      "canonicalHome": "ask",
+      "destination": {
+        "page": "ask",
+        "view": "history",
+        "href": "#/ask?view=history"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "回看和管理对话历史",
+        "提问与对话",
+        "基于资料提问"
+      ]
+    },
+    {
+      "id": "C22",
+      "title": "带着图片提问",
+      "description": "把图片和问题放在一起，请求解释或对照资料。",
+      "priority": "core",
+      "sectionId": "use",
+      "groupId": "G08",
+      "featureGroupIds": [
+        "F09"
+      ],
+      "canonicalHome": "ask",
+      "destination": {
+        "page": "ask",
+        "view": "conversation",
+        "href": "#/ask?view=conversation"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "随问题提交图片",
+        "提问与对话",
+        "基于资料提问"
+      ]
+    },
+    {
+      "id": "C23",
+      "title": "查看整理出的记忆",
+      "description": "阅读长期信息，并检查每条记忆的依据。",
+      "priority": "core",
+      "sectionId": "use",
+      "groupId": "G09",
+      "featureGroupIds": [
+        "F15"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "memories",
+        "href": "#/library?view=memories"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "浏览有证据的记忆",
+        "记忆与纠正",
+        "有依据的记忆"
+      ]
+    },
+    {
+      "id": "C24",
+      "title": "纠正或管理一条记忆",
+      "description": "修改不准确的信息，或删除、导出所选记忆。",
+      "priority": "core",
+      "sectionId": "use",
+      "groupId": "G09",
+      "featureGroupIds": [
+        "F15"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "memories",
+        "href": "#/library?view=memories"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "纠正、删除或导出一条记忆",
+        "记忆与纠正",
+        "有依据的记忆"
+      ]
+    },
+    {
+      "id": "C25",
+      "title": "从资料中整理记忆",
+      "description": "选定已有资料，发起一次记忆整理。",
+      "priority": "core",
+      "sectionId": "use",
+      "groupId": "G09",
+      "featureGroupIds": [
+        "F15"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "memories",
+        "href": "#/library?view=memories"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "手动提取记忆",
+        "记忆与纠正",
+        "有依据的记忆"
+      ]
+    },
+    {
+      "id": "C26",
+      "title": "补充需要澄清的信息",
+      "description": "回答尚不确定的问题，帮助 Mote 准确理解资料。",
+      "priority": "core",
+      "sectionId": "use",
+      "groupId": "G09",
+      "featureGroupIds": [
+        "F09",
+        "F15"
+      ],
+      "canonicalHome": "ask",
+      "destination": {
+        "page": "ask",
+        "view": "clarifications",
+        "href": "#/ask?view=clarifications"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "回答需要你澄清的问题",
+        "记忆与纠正",
+        "基于资料提问",
+        "有依据的记忆"
+      ]
+    },
+    {
+      "id": "C27",
+      "title": "生成一份阶段回顾",
+      "description": "选择时间和主题，查看有出处的洞察与回顾。",
+      "priority": "core",
+      "sectionId": "use",
+      "groupId": "G10",
+      "featureGroupIds": [
+        "F16"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "insights",
+        "href": "#/library?view=insights"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "生成并回看有证据的洞察",
+        "洞察与回顾"
+      ]
+    },
+    {
+      "id": "C28",
+      "title": "查看工作进度与结果",
+      "description": "分清进行中、需要处理和已经完成的工作。",
+      "priority": "core",
+      "sectionId": "manage",
+      "groupId": "G11",
+      "featureGroupIds": [
+        "F10"
+      ],
+      "canonicalHome": "activity",
+      "destination": {
+        "page": "activity",
+        "view": "all",
+        "href": "#/activity?view=all"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "查看正在做的工作和结果",
+        "进度与问题恢复"
+      ]
+    },
+    {
+      "id": "C29",
+      "title": "记录并完成待办",
+      "description": "写下要做的事，之后标记完成。",
+      "priority": "core",
+      "sectionId": "manage",
+      "groupId": "G12",
+      "featureGroupIds": [
+        "F17"
+      ],
+      "canonicalHome": "today",
+      "destination": {
+        "page": "today",
+        "view": "todos",
+        "href": "#/today?view=todos"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "记录和完成普通待办",
+        "待办与日程"
+      ]
+    },
+    {
+      "id": "C30",
+      "title": "核对日程建议",
+      "description": "检查时间、依据和目标日历，再确认加入日程。",
+      "priority": "core",
+      "sectionId": "manage",
+      "groupId": "G12",
+      "featureGroupIds": [
+        "F17"
+      ],
+      "canonicalHome": "today",
+      "destination": {
+        "page": "today",
+        "view": "schedule",
+        "href": "#/today?view=schedule"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "审核日程建议并交给设备执行",
+        "待办与日程"
+      ]
+    },
+    {
+      "id": "C31",
+      "title": "连接一个模型服务",
+      "description": "保存问答和资料整理所需的模型连接。",
+      "priority": "core",
+      "sectionId": "settings",
+      "groupId": "G13",
+      "featureGroupIds": [
+        "F11"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "providers",
+        "href": "#/settings?view=providers"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "models"
+      ],
+      "keywords": [
+        "配置或检查模型连接（Provider）",
+        "模型与内容处理"
+      ]
+    },
+    {
+      "id": "C32",
+      "title": "为不同任务选择模型",
+      "description": "查看问答、记忆、图片等任务各自使用的模型。",
+      "priority": "core",
+      "sectionId": "settings",
+      "groupId": "G13",
+      "featureGroupIds": [
+        "F11"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "assignments",
+        "href": "#/settings?view=assignments"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "models"
+      ],
+      "keywords": [
+        "检查或分配功能使用的模型",
+        "模型与内容处理"
+      ]
+    },
+    {
+      "id": "C33",
+      "title": "暂停自动记忆整理",
+      "description": "暂停或停止当前自动整理，之后可以恢复。",
+      "priority": "core",
+      "sectionId": "settings",
+      "groupId": "G14",
+      "featureGroupIds": [
+        "F19"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "memory",
+        "href": "#/settings?view=memory"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "memory"
+      ],
+      "keywords": [
+        "暂停或立即停止自动记忆",
+        "自动记忆与插件"
+      ]
+    },
+    {
+      "id": "C34",
+      "title": "查看和更换记忆方案",
+      "description": "比较当前方案与候选，准备完成后确认切换。",
+      "priority": "core",
+      "sectionId": "settings",
+      "groupId": "G14",
+      "featureGroupIds": [
+        "F19"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "memory",
+        "href": "#/settings?view=memory"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "memory"
+      ],
+      "keywords": [
+        "核对和替换整套记忆方案",
+        "自动记忆与插件"
+      ]
+    },
+    {
+      "id": "C35",
+      "title": "管理可信插件",
+      "description": "查看已安装扩展，配置、启用或停用需要的能力。",
+      "priority": "core",
+      "sectionId": "settings",
+      "groupId": "G14",
+      "featureGroupIds": [
+        "F19"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "plugins",
+        "href": "#/settings?view=plugins"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "memory"
+      ],
+      "keywords": [
+        "管理可信记忆插件",
+        "自动记忆与插件"
+      ]
+    },
+    {
+      "id": "C36",
+      "title": "调整图片识别范围",
+      "description": "选择新图片怎样识别，以及是否允许使用原图。",
+      "priority": "core",
+      "sectionId": "settings",
+      "groupId": "G13",
+      "featureGroupIds": [
+        "F11"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "images",
+        "href": "#/settings?view=images"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "models"
+      ],
+      "keywords": [
+        "控制新图片识别与原图授权",
+        "模型与内容处理"
+      ]
+    },
+    {
+      "id": "C37",
+      "title": "查看文件与录音的整理结果",
+      "description": "打开文本、音频或附件，继续需要处理的步骤。",
+      "priority": "core",
+      "sectionId": "settings",
+      "groupId": "G13",
+      "featureGroupIds": [
+        "F04",
+        "F08"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "files",
+        "href": "#/library?view=files"
+      },
+      "sourceCatalogIds": [
+        "feishu-recordings",
+        "dingtalk-recordings"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "查看文件或录音的内容提取和恢复",
+        "模型与内容处理",
+        "导入已有资料",
+        "阅读与核对原文",
+        "飞书录音 / 妙记",
+        "钉钉录音 / 闪记"
+      ]
+    },
+    {
+      "id": "C38",
+      "title": "设置文件与语音处理",
+      "description": "选择文档识别、音频转写等内容处理方式。",
+      "priority": "core",
+      "sectionId": "settings",
+      "groupId": "G13",
+      "featureGroupIds": [
+        "F11"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "file-processing",
+        "href": "#/settings?view=file-processing"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "models"
+      ],
+      "keywords": [
+        "配置文件与语音处理",
+        "模型与内容处理"
+      ]
+    },
+    {
+      "id": "C39",
+      "title": "导出或恢复归档",
+      "description": "为资料生成备份，或从已有归档恢复内容。",
+      "priority": "core",
+      "sectionId": "manage",
+      "groupId": "G15",
+      "featureGroupIds": [
+        "F20"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "storage",
+        "href": "#/settings?view=storage"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "storage"
+      ],
+      "keywords": [
+        "导入导出归档并找到完整备份",
+        "备份、空间与用量",
+        "资料维护与偏好"
+      ]
+    },
+    {
+      "id": "C40",
+      "title": "管理保存与保留方式",
+      "description": "查看资料占用、保留范围和内容存储设置。",
+      "priority": "core",
+      "sectionId": "manage",
+      "groupId": "G15",
+      "featureGroupIds": [
+        "F20"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "storage",
+        "href": "#/settings?view=storage"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "storage"
+      ],
+      "keywords": [
+        "查看保留、容量和内容存储政策",
+        "备份、空间与用量",
+        "资料维护与偏好"
+      ]
+    },
+    {
+      "id": "C41",
+      "title": "查看模型用量与费用",
+      "description": "了解哪些任务使用了模型，以及相应的费用估算。",
+      "priority": "core",
+      "sectionId": "manage",
+      "groupId": "G15",
+      "featureGroupIds": [
+        "F20"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "usage",
+        "href": "#/settings?view=usage"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "usage"
+      ],
+      "keywords": [
+        "核对模型用量和估算费用",
+        "备份、空间与用量",
+        "资料维护与偏好"
+      ]
+    },
+    {
+      "id": "C42",
+      "title": "查找帮助与版本信息",
+      "description": "排查连接或处理问题，找到版本、维护和反馈入口。",
+      "priority": "core",
+      "sectionId": "settings",
+      "groupId": "G16",
+      "featureGroupIds": [
+        "F20"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "help",
+        "href": "#/settings?view=help"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "help"
+      ],
+      "keywords": [
+        "找到帮助、版本和维护方式",
+        "帮助与诊断",
+        "资料维护与偏好"
+      ]
+    },
+    {
+      "id": "A01",
+      "title": "从中央机器导入目录",
+      "description": "导入中央机器可读取的目录，执行一次归档。",
+      "priority": "advanced",
+      "sectionId": "capture",
+      "groupId": "G04",
+      "featureGroupIds": [
+        "F04"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "imports",
+        "href": "#/library?view=imports"
+      },
+      "sourceCatalogIds": [
+        "file-import"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "从中央机器的目录导入",
+        "导入已有资料",
+        "导入文件"
+      ]
+    },
+    {
+      "id": "A02",
+      "title": "选择这次导入的解析方式",
+      "description": "为当前资料选择合适的解析和图片处理方案。",
+      "priority": "advanced",
+      "sectionId": "capture",
+      "groupId": "G04",
+      "featureGroupIds": [
+        "F04"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "imports",
+        "href": "#/library?view=imports"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "选择导入解析器和图片处理方案",
+        "导入已有资料"
+      ]
+    },
+    {
+      "id": "A03",
+      "title": "继续中断的文件上传",
+      "description": "找到未完成的上传，重新选择文件后继续。",
+      "priority": "advanced",
+      "sectionId": "capture",
+      "groupId": "G04",
+      "featureGroupIds": [
+        "F04",
+        "F10"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "imports",
+        "href": "#/library?view=imports"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "恢复被中断的本地上传",
+        "导入已有资料",
+        "进度与问题恢复"
+      ]
+    },
+    {
+      "id": "A04",
+      "title": "保留外部文件或 NAS 位置",
+      "description": "保存文件位置和标题，需要时再打开原来源。",
+      "priority": "advanced",
+      "sectionId": "capture",
+      "groupId": "G03",
+      "featureGroupIds": [
+        "F13"
+      ],
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "reference",
+        "href": "#/sources?view=reference"
+      },
+      "sourceCatalogIds": [
+        "reference"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "保存外部或 NAS 引用",
+        "资料来源",
+        "在线文档、邮件与录音",
+        "外部文件 / NAS 引用"
+      ]
+    },
+    {
+      "id": "A05",
+      "title": "接入 Google 日历",
+      "description": "选择希望归档的日历和时间范围。",
+      "priority": "advanced",
+      "sectionId": "capture",
+      "groupId": "G03",
+      "featureGroupIds": [
+        "F13"
+      ],
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "google-calendar",
+        "href": "#/sources?view=google-calendar"
+      },
+      "sourceCatalogIds": [
+        "google-calendar"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "只读归档 Google 日历",
+        "资料来源",
+        "在线文档、邮件与录音",
+        "Google 日历"
+      ]
+    },
+    {
+      "id": "A06",
+      "title": "接入 Gmail 邮件",
+      "description": "选择要保留的邮件范围，之后在资料库中阅读。",
+      "priority": "advanced",
+      "sectionId": "capture",
+      "groupId": "G03",
+      "featureGroupIds": [
+        "F13"
+      ],
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "gmail",
+        "href": "#/sources?view=gmail"
+      },
+      "sourceCatalogIds": [
+        "gmail"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "只读归档 Gmail 邮件",
+        "资料来源",
+        "在线文档、邮件与录音",
+        "Gmail 邮件"
+      ]
+    },
+    {
+      "id": "A07",
+      "title": "从 MCP 资料服务导入",
+      "description": "浏览可读资源，选择需要的一次导入。",
+      "priority": "advanced",
+      "sectionId": "capture",
+      "groupId": "G03",
+      "featureGroupIds": [
+        "F13"
+      ],
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "mcp-import",
+        "href": "#/sources?view=mcp-import"
+      },
+      "sourceCatalogIds": [
+        "mcp-import"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "从远程 MCP 选择资源导入",
+        "资料来源",
+        "在线文档、邮件与录音",
+        "MCP 资料服务"
+      ]
+    },
+    {
+      "id": "A08",
+      "title": "让其他 Chatbot 使用资料",
+      "description": "创建可撤销的连接，让其他助手检索授权资料。",
+      "priority": "advanced",
+      "sectionId": "capture",
+      "groupId": "G02",
+      "featureGroupIds": [
+        "F18"
+      ],
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "sharing",
+        "href": "#/sources?view=sharing"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "让其他 Chatbot 使用 Mote MCP",
+        "设备与连接",
+        "对外授权"
+      ]
+    },
+    {
+      "id": "A09",
+      "title": "接入飞书文档与日历",
+      "description": "选择文档或日历范围，持续收集正文和变化。",
+      "priority": "advanced",
+      "sectionId": "capture",
+      "groupId": "G03",
+      "featureGroupIds": [
+        "F13"
+      ],
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "lark",
+        "href": "#/sources?view=lark"
+      },
+      "sourceCatalogIds": [
+        "lark"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "连接飞书文档和日历",
+        "资料来源",
+        "在线文档、邮件与录音",
+        "飞书文档与日历"
+      ]
+    },
+    {
+      "id": "A10",
+      "title": "接入已有录音与转写",
+      "description": "从飞书或钉钉归档录音、转写和原始音频。",
+      "priority": "advanced",
+      "sectionId": "capture",
+      "groupId": "G03",
+      "featureGroupIds": [
+        "F13"
+      ],
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "recordings",
+        "href": "#/sources?view=recordings"
+      },
+      "sourceCatalogIds": [
+        "feishu-recordings",
+        "dingtalk-recordings"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "归档厂商录音和转写",
+        "资料来源",
+        "在线文档、邮件与录音",
+        "飞书录音 / 妙记",
+        "钉钉录音 / 闪记"
+      ]
+    },
+    {
+      "id": "A11",
+      "title": "查看来源版本与原位置",
+      "description": "了解资料来自哪里、何时变化，并回到原位置。",
+      "priority": "advanced",
+      "sectionId": "capture",
+      "groupId": "G03",
+      "featureGroupIds": [
+        "F08",
+        "F13"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "source-materials",
+        "href": "#/library?view=source-materials"
+      },
+      "sourceCatalogIds": [
+        "lark",
+        "reference"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "查看来源版本和原位置",
+        "资料来源",
+        "阅读与核对原文",
+        "在线文档、邮件与录音",
+        "飞书文档与日历",
+        "外部文件 / NAS 引用"
+      ]
+    },
+    {
+      "id": "A12",
+      "title": "按截图片段回看",
+      "description": "按时间片段或应用相册找回曾经看过的内容。",
+      "priority": "advanced",
+      "sectionId": "manage",
+      "groupId": "G07",
+      "featureGroupIds": [
+        "F06",
+        "F08"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "segments",
+        "href": "#/library?view=segments"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "按截图片段或应用相册回看",
+        "分类与时间回看",
+        "记录屏幕与应用",
+        "阅读与核对原文"
+      ]
+    },
+    {
+      "id": "A13",
+      "title": "查看应用使用时间",
+      "description": "按日期或应用回看测得的使用时间。",
+      "priority": "advanced",
+      "sectionId": "manage",
+      "groupId": "G07",
+      "featureGroupIds": [
+        "F06",
+        "F08"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "app-activity",
+        "href": "#/library?view=app-activity"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "查看测得的应用活动时间",
+        "分类与时间回看",
+        "记录屏幕与应用",
+        "阅读与核对原文"
+      ]
+    },
+    {
+      "id": "A14",
+      "title": "查看媒体播放记录",
+      "description": "回看设备观测到的媒体播放信息。",
+      "priority": "advanced",
+      "sectionId": "manage",
+      "groupId": "G07",
+      "featureGroupIds": [
+        "F06",
+        "F08"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "media",
+        "href": "#/library?view=media"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "查看媒体播放观测",
+        "分类与时间回看",
+        "记录屏幕与应用",
+        "阅读与核对原文"
+      ]
+    },
+    {
+      "id": "A15",
+      "title": "查看 Coding 会话同步",
+      "description": "了解编码对话的接收和整理进展，打开对应正文。",
+      "priority": "advanced",
+      "sectionId": "manage",
+      "groupId": "G07",
+      "featureGroupIds": [
+        "F10",
+        "F14"
+      ],
+      "canonicalHome": "sources",
+      "destination": {
+        "page": "sources",
+        "view": "coding",
+        "href": "#/sources?view=coding"
+      },
+      "sourceCatalogIds": [
+        "coding"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "查看 Coding 会话接收与同步状态",
+        "分类与时间回看",
+        "进度与问题恢复",
+        "Coding 会话",
+        "Coding Agent 会话"
+      ]
+    },
+    {
+      "id": "A16",
+      "title": "查看记忆的历史变化",
+      "description": "核对一条记忆何时有效，以及过去的版本。",
+      "priority": "advanced",
+      "sectionId": "use",
+      "groupId": "G09",
+      "featureGroupIds": [
+        "F15"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "memories",
+        "href": "#/library?view=memories"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "核对记忆的历史和有效时间",
+        "记忆与纠正",
+        "有依据的记忆"
+      ]
+    },
+    {
+      "id": "A17",
+      "title": "继续整理一条记忆",
+      "description": "以当前记忆为起点，结合新资料继续整理。",
+      "priority": "advanced",
+      "sectionId": "use",
+      "groupId": "G09",
+      "featureGroupIds": [
+        "F15"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "memories",
+        "href": "#/library?view=memories"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "从一条当前记忆继续整理",
+        "记忆与纠正",
+        "有依据的记忆"
+      ]
+    },
+    {
+      "id": "A18",
+      "title": "调整记忆与回顾节奏",
+      "description": "选择自动整理资料与生成回顾的频率和范围。",
+      "priority": "advanced",
+      "sectionId": "use",
+      "groupId": "G09",
+      "featureGroupIds": [
+        "F15",
+        "F19"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "memory-strategy",
+        "href": "#/settings?view=memory-strategy"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "models"
+      ],
+      "keywords": [
+        "调整记忆策略和回顾节奏",
+        "记忆与纠正",
+        "有依据的记忆",
+        "自动记忆与插件"
+      ]
+    },
+    {
+      "id": "A19",
+      "title": "调整模型的高级选项",
+      "description": "检查性能、协议和超时等模型连接参数。",
+      "priority": "advanced",
+      "sectionId": "settings",
+      "groupId": "G13",
+      "featureGroupIds": [
+        "F11"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "providers",
+        "href": "#/settings?view=providers"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "models"
+      ],
+      "keywords": [
+        "调整模型性能和协议细节",
+        "模型与内容处理"
+      ]
+    },
+    {
+      "id": "A20",
+      "title": "复制或删除模型预设",
+      "description": "复用已有连接设置，或移除不再需要的预设。",
+      "priority": "advanced",
+      "sectionId": "settings",
+      "groupId": "G13",
+      "featureGroupIds": [
+        "F11"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "providers",
+        "href": "#/settings?view=providers"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "models"
+      ],
+      "keywords": [
+        "复制或删除模型预设",
+        "模型与内容处理"
+      ]
+    },
+    {
+      "id": "A21",
+      "title": "补处理已有图片",
+      "description": "选择历史图片范围，重新识别或补齐处理。",
+      "priority": "advanced",
+      "sectionId": "settings",
+      "groupId": "G13",
+      "featureGroupIds": [
+        "F11"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "images",
+        "href": "#/settings?view=images"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "models"
+      ],
+      "keywords": [
+        "补处理或重算历史图片",
+        "模型与内容处理"
+      ]
+    },
+    {
+      "id": "A22",
+      "title": "配置文件处理规则",
+      "description": "决定不同文件使用哪些已安装的处理方式。",
+      "priority": "advanced",
+      "sectionId": "settings",
+      "groupId": "G13",
+      "featureGroupIds": [
+        "F11"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "file-processing",
+        "href": "#/settings?view=file-processing"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "models"
+      ],
+      "keywords": [
+        "配置文件规则、方案和处理服务",
+        "模型与内容处理"
+      ]
+    },
+    {
+      "id": "A23",
+      "title": "预览规则并重新处理",
+      "description": "先查看规则会怎样处理原件，再决定是否重跑。",
+      "priority": "advanced",
+      "sectionId": "settings",
+      "groupId": "G13",
+      "featureGroupIds": [
+        "F11"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "file-processing",
+        "href": "#/settings?view=file-processing"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "models"
+      ],
+      "keywords": [
+        "预览文件规则并重新处理已有原件",
+        "模型与内容处理"
+      ]
+    },
+    {
+      "id": "A24",
+      "title": "纠正转写与说话人",
+      "description": "试听原音频，修改文字并确认谁说了什么。",
+      "priority": "advanced",
+      "sectionId": "settings",
+      "groupId": "G13",
+      "featureGroupIds": [
+        "F08",
+        "F11"
+      ],
+      "canonicalHome": "library",
+      "destination": {
+        "page": "library",
+        "view": "files",
+        "href": "#/library?view=files"
+      },
+      "sourceCatalogIds": [
+        "feishu-recordings",
+        "dingtalk-recordings"
+      ],
+      "settingGroupIds": [],
+      "keywords": [
+        "纠正转写并确认说话人",
+        "模型与内容处理",
+        "阅读与核对原文",
+        "飞书录音 / 妙记",
+        "钉钉录音 / 闪记"
+      ]
+    },
+    {
+      "id": "A25",
+      "title": "检查工作详情并重试",
+      "description": "查看失败原因和处理步骤，恢复可以重试的工作。",
+      "priority": "advanced",
+      "sectionId": "manage",
+      "groupId": "G11",
+      "featureGroupIds": [
+        "F10"
+      ],
+      "canonicalHome": "activity",
+      "destination": {
+        "page": "activity",
+        "view": "details",
+        "href": "#/activity?view=details"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [],
+      "keywords": [
+        "检查技术步骤并恢复可重试工作",
+        "进度与问题恢复"
+      ]
+    },
+    {
+      "id": "A26",
+      "title": "查看助手可读的范围",
+      "description": "了解当前助手能看到哪些资料和上下文。",
+      "priority": "advanced",
+      "sectionId": "settings",
+      "groupId": "G16",
+      "featureGroupIds": [
+        "F20"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "agent-scope",
+        "href": "#/settings?view=agent-scope"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "agent-scope"
+      ],
+      "keywords": [
+        "查看 Agent 当前能读取的上下文",
+        "帮助与诊断",
+        "资料维护与偏好"
+      ]
+    },
+    {
+      "id": "A27",
+      "title": "核对一次助手读取过程",
+      "description": "查看已有记录中的模型输入和实际资料读取。",
+      "priority": "advanced",
+      "sectionId": "settings",
+      "groupId": "G16",
+      "featureGroupIds": [
+        "F20"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "agent-scope",
+        "href": "#/settings?view=agent-scope"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "agent-scope"
+      ],
+      "keywords": [
+        "查看已记录的实际模型输入和工具读取",
+        "帮助与诊断",
+        "资料维护与偏好"
+      ]
+    },
+    {
+      "id": "A28",
+      "title": "查看已启用的插件能力",
+      "description": "核对当前安装的扩展实际提供了哪些能力。",
+      "priority": "advanced",
+      "sectionId": "settings",
+      "groupId": "G16",
+      "featureGroupIds": [
+        "F19"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "plugins",
+        "href": "#/settings?view=plugins"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "memory"
+      ],
+      "keywords": [
+        "核对实际注册的插件能力",
+        "帮助与诊断",
+        "自动记忆与插件"
+      ]
+    },
+    {
+      "id": "A29",
+      "title": "调整同时处理的任务数",
+      "description": "设置并发数量，并了解哪些工作正在等待。",
+      "priority": "advanced",
+      "sectionId": "settings",
+      "groupId": "G13",
+      "featureGroupIds": [
+        "F11"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "concurrency",
+        "href": "#/settings?view=concurrency"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "models"
+      ],
+      "keywords": [
+        "设置执行并发和查看等待名额",
+        "模型与内容处理"
+      ]
+    },
+    {
+      "id": "A30",
+      "title": "查看检索与外部服务设置",
+      "description": "检查检索和外部连接的部署设置草稿。",
+      "priority": "advanced",
+      "sectionId": "settings",
+      "groupId": "G13",
+      "featureGroupIds": [
+        "F11"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "advanced",
+        "href": "#/settings?view=advanced"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "models"
+      ],
+      "keywords": [
+        "配置检索和外部连接的部署草稿",
+        "模型与内容处理"
+      ]
+    },
+    {
+      "id": "A31",
+      "title": "调整已有文件的加密方式",
+      "description": "核对范围后，将指定加密文件转换为明文。",
+      "priority": "advanced",
+      "sectionId": "manage",
+      "groupId": "G15",
+      "featureGroupIds": [
+        "F20"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "storage",
+        "href": "#/settings?view=storage"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "storage"
+      ],
+      "keywords": [
+        "把已有加密文件转为明文",
+        "备份、空间与用量",
+        "资料维护与偏好"
+      ]
+    },
+    {
+      "id": "A32",
+      "title": "查看运行状态与磁盘空间",
+      "description": "了解当前服务状态和不同类型文件的占用。",
+      "priority": "advanced",
+      "sectionId": "manage",
+      "groupId": "G15",
+      "featureGroupIds": [
+        "F20"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "system",
+        "href": "#/settings?view=system"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "system"
+      ],
+      "keywords": [
+        "查看运行状态与空间",
+        "备份、空间与用量",
+        "资料维护与偏好"
+      ]
+    },
+    {
+      "id": "A33",
+      "title": "核对费用明细与估价",
+      "description": "按任务追查用量，维护用于估算的模型价格。",
+      "priority": "advanced",
+      "sectionId": "manage",
+      "groupId": "G15",
+      "featureGroupIds": [
+        "F20"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "usage",
+        "href": "#/settings?view=usage"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "usage"
+      ],
+      "keywords": [
+        "维护估价并追查用量明细",
+        "备份、空间与用量",
+        "资料维护与偏好"
+      ]
+    },
+    {
+      "id": "A34",
+      "title": "查日志并导出问题资料",
+      "description": "查找相关诊断记录，导出用于排查的问题包。",
+      "priority": "advanced",
+      "sectionId": "settings",
+      "groupId": "G16",
+      "featureGroupIds": [
+        "F20"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "diagnostics",
+        "href": "#/settings?view=diagnostics"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "diagnostics"
+      ],
+      "keywords": [
+        "查阅运行日志并导出支持包",
+        "帮助与诊断",
+        "资料维护与偏好"
+      ]
+    },
+    {
+      "id": "A35",
+      "title": "调整诊断记录方式",
+      "description": "选择今后保留哪些诊断信息，查看当前生效配置。",
+      "priority": "advanced",
+      "sectionId": "settings",
+      "groupId": "G16",
+      "featureGroupIds": [
+        "F20"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "diagnostics",
+        "href": "#/settings?view=diagnostics"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "diagnostics"
+      ],
+      "keywords": [
+        "设置诊断记录并查看部署生效值",
+        "帮助与诊断",
+        "资料维护与偏好"
+      ]
+    },
+    {
+      "id": "A36",
+      "title": "切换界面语言",
+      "description": "选择中文或英文，保持当前阅读与编辑上下文。",
+      "priority": "advanced",
+      "sectionId": "settings",
+      "groupId": "G16",
+      "featureGroupIds": [
+        "F20"
+      ],
+      "canonicalHome": "settings",
+      "destination": {
+        "page": "settings",
+        "view": "appearance",
+        "href": "#/settings?view=appearance"
+      },
+      "sourceCatalogIds": [],
+      "settingGroupIds": [
+        "account"
+      ],
+      "keywords": [
+        "切换界面语言",
+        "帮助与诊断",
+        "资料维护与偏好"
+      ]
+    }
+  ],
+  "directoryIndex": {
+    "byId": {
+      "C01": 0,
+      "C02": 1,
+      "C03": 2,
+      "C04": 3,
+      "C05": 4,
+      "C06": 5,
+      "C07": 6,
+      "C08": 7,
+      "C09": 8,
+      "C10": 9,
+      "C11": 10,
+      "C12": 11,
+      "C13": 12,
+      "C14": 13,
+      "C15": 14,
+      "C16": 15,
+      "C17": 16,
+      "C18": 17,
+      "C19": 18,
+      "C20": 19,
+      "C21": 20,
+      "C22": 21,
+      "C23": 22,
+      "C24": 23,
+      "C25": 24,
+      "C26": 25,
+      "C27": 26,
+      "C28": 27,
+      "C29": 28,
+      "C30": 29,
+      "C31": 30,
+      "C32": 31,
+      "C33": 32,
+      "C34": 33,
+      "C35": 34,
+      "C36": 35,
+      "C37": 36,
+      "C38": 37,
+      "C39": 38,
+      "C40": 39,
+      "C41": 40,
+      "C42": 41,
+      "A01": 42,
+      "A02": 43,
+      "A03": 44,
+      "A04": 45,
+      "A05": 46,
+      "A06": 47,
+      "A07": 48,
+      "A08": 49,
+      "A09": 50,
+      "A10": 51,
+      "A11": 52,
+      "A12": 53,
+      "A13": 54,
+      "A14": 55,
+      "A15": 56,
+      "A16": 57,
+      "A17": 58,
+      "A18": 59,
+      "A19": 60,
+      "A20": 61,
+      "A21": 62,
+      "A22": 63,
+      "A23": 64,
+      "A24": 65,
+      "A25": 66,
+      "A26": 67,
+      "A27": 68,
+      "A28": 69,
+      "A29": 70,
+      "A30": 71,
+      "A31": 72,
+      "A32": 73,
+      "A33": 74,
+      "A34": 75,
+      "A35": 76,
+      "A36": 77
+    },
+    "byPage": {
+      "library": [
+        "C09",
+        "C10",
+        "C11",
+        "C12",
+        "C13",
+        "C14",
+        "C15",
+        "C16",
+        "C17",
+        "C18",
+        "C19",
+        "C23",
+        "C24",
+        "C25",
+        "C27",
+        "C37",
+        "A01",
+        "A02",
+        "A03",
+        "A11",
+        "A12",
+        "A13",
+        "A14",
+        "A16",
+        "A17",
+        "A24"
+      ],
+      "ask": [
+        "C20",
+        "C21",
+        "C22",
+        "C26"
+      ],
+      "sources": [
+        "C04",
+        "C05",
+        "C06",
+        "C07",
+        "C08",
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A08",
+        "A09",
+        "A10",
+        "A15"
+      ],
+      "activity": [
+        "C28",
+        "A25"
+      ],
+      "today": [
+        "C03",
+        "C29",
+        "C30"
+      ],
+      "settings": [
+        "C01",
+        "C31",
+        "C32",
+        "C33",
+        "C34",
+        "C35",
+        "C36",
+        "C38",
+        "C39",
+        "C40",
+        "C41",
+        "C42",
+        "A18",
+        "A19",
+        "A20",
+        "A21",
+        "A22",
+        "A23",
+        "A26",
+        "A27",
+        "A28",
+        "A29",
+        "A30",
+        "A31",
+        "A32",
+        "A33",
+        "A34",
+        "A35",
+        "A36"
+      ],
+      "guide": [
+        "C02"
+      ]
+    },
+    "byFeatureGroup": {
+      "F01": [
+        "C02",
+        "C03"
+      ],
+      "F02": [
+        "C01",
+        "C05"
+      ],
+      "F03": [
+        "C12",
+        "C13"
+      ],
+      "F04": [
+        "C09",
+        "C10",
+        "C11",
+        "A01",
+        "A02",
+        "A03",
+        "C37"
+      ],
+      "F05": [
+        "C07",
+        "C08"
+      ],
+      "F06": [
+        "C04",
+        "C17",
+        "A12",
+        "A13",
+        "A14"
+      ],
+      "F07": [
+        "C04",
+        "C08"
+      ],
+      "F08": [
+        "C14",
+        "C15",
+        "C17",
+        "C18",
+        "C19",
+        "A11",
+        "A12",
+        "A13",
+        "A14",
+        "C37",
+        "A24"
+      ],
+      "F09": [
+        "C20",
+        "C21",
+        "C22",
+        "C26"
+      ],
+      "F10": [
+        "C10",
+        "C28",
+        "A03",
+        "A15",
+        "A25"
+      ],
+      "F11": [
+        "C31",
+        "C32",
+        "C36",
+        "C38",
+        "A19",
+        "A20",
+        "A21",
+        "A22",
+        "A23",
+        "A24",
+        "A29",
+        "A30"
+      ],
+      "F12": [
+        "C07"
+      ],
+      "F13": [
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A09",
+        "A10",
+        "A11"
+      ],
+      "F14": [
+        "A15"
+      ],
+      "F15": [
+        "C16",
+        "C23",
+        "C24",
+        "C25",
+        "C26",
+        "A16",
+        "A17",
+        "A18"
+      ],
+      "F16": [
+        "C27"
+      ],
+      "F17": [
+        "C29",
+        "C30"
+      ],
+      "F18": [
+        "C05",
+        "C06",
+        "A08"
+      ],
+      "F19": [
+        "C33",
+        "C34",
+        "C35",
+        "A18",
+        "A28"
+      ],
+      "F20": [
+        "C39",
+        "C40",
+        "C41",
+        "C42",
+        "A26",
+        "A27",
+        "A31",
+        "A32",
+        "A33",
+        "A34",
+        "A35",
+        "A36"
+      ]
+    },
+    "byGuideGroup": {
+      "G05": [
+        "C12",
+        "C13"
+      ],
+      "G04": [
+        "C09",
+        "C10",
+        "C11",
+        "A01",
+        "A02",
+        "A03"
+      ],
+      "G03": [
+        "C07",
+        "C08",
+        "A04",
+        "A05",
+        "A06",
+        "A07",
+        "A09",
+        "A10",
+        "A11"
+      ],
+      "G02": [
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "A08"
+      ],
+      "G06": [
+        "C14",
+        "C15",
+        "C16",
+        "C17",
+        "C18"
+      ],
+      "G08": [
+        "C20",
+        "C21",
+        "C22"
+      ],
+      "G09": [
+        "C23",
+        "C24",
+        "C25",
+        "C26",
+        "A16",
+        "A17",
+        "A18"
+      ],
+      "G10": [
+        "C27"
+      ],
+      "G11": [
+        "C28",
+        "A25"
+      ],
+      "G12": [
+        "C29",
+        "C30"
+      ],
+      "G07": [
+        "C19",
+        "A12",
+        "A13",
+        "A14",
+        "A15"
+      ],
+      "G15": [
+        "C39",
+        "C40",
+        "C41",
+        "A31",
+        "A32",
+        "A33"
+      ],
+      "G13": [
+        "C31",
+        "C32",
+        "C36",
+        "C37",
+        "C38",
+        "A19",
+        "A20",
+        "A21",
+        "A22",
+        "A23",
+        "A24",
+        "A29",
+        "A30"
+      ],
+      "G14": [
+        "C33",
+        "C34",
+        "C35"
+      ],
+      "G01": [
+        "C01",
+        "C02"
+      ],
+      "G16": [
+        "C42",
+        "A26",
+        "A27",
+        "A28",
+        "A34",
+        "A35",
+        "A36"
+      ]
+    },
+    "bySourceCatalog": {
+      "devices": [
+        "C04",
+        "C05"
+      ],
+      "coding": [
+        "A15"
+      ],
+      "file-import": [
+        "C09",
+        "C10",
+        "A01"
+      ],
+      "lark": [
+        "A09",
+        "A11"
+      ],
+      "gmail": [
+        "A06"
+      ],
+      "google-calendar": [
+        "A05"
+      ],
+      "mcp-import": [
+        "A07"
+      ],
+      "reference": [
+        "A04",
+        "A11"
+      ],
+      "feishu-recordings": [
+        "A10",
+        "C37",
+        "A24"
+      ],
+      "dingtalk-recordings": [
+        "A10",
+        "C37",
+        "A24"
+      ]
+    },
+    "bySettingGroup": {
+      "account": [
+        "C01",
+        "A36"
+      ],
+      "models": [
+        "C31",
+        "A19",
+        "A20",
+        "C32",
+        "C36",
+        "A21",
+        "C38",
+        "A22",
+        "A23",
+        "A18",
+        "A29",
+        "A30"
+      ],
+      "memory": [
+        "C33",
+        "C34",
+        "C35",
+        "A28"
+      ],
+      "storage": [
+        "C40",
+        "A31",
+        "C39"
+      ],
+      "usage": [
+        "C41",
+        "A33"
+      ],
+      "system": [
+        "A32"
+      ],
+      "diagnostics": [
+        "A34",
+        "A35"
+      ],
+      "agent-scope": [
+        "A26",
+        "A27"
+      ],
+      "help": [
+        "C42"
+      ]
+    },
+    "searchFields": [
+      "title",
+      "description",
+      "keywords",
+      "id"
+    ]
+  },
+  "provenance": {
+    "directoryOriginalTargets": {
+      "C12": {
+        "title": "随手记下文字",
+        "pageId": "notes",
+        "href": "#/library/notes"
+      },
+      "C13": {
+        "title": "上传已有图片或音频附件",
+        "pageId": "notes",
+        "href": "#/library/notes"
+      },
+      "C09": {
+        "title": "导入已有文档、文件夹和媒体",
+        "pageId": "imports",
+        "href": "#/library/import"
+      },
+      "C10": {
+        "title": "查看并处理导入进度",
+        "pageId": "imports",
+        "href": "#/library/import"
+      },
+      "C11": {
+        "title": "删除整次导入",
+        "pageId": "imports",
+        "href": "#/library/import"
+      },
+      "A01": {
+        "title": "从中央机器的目录导入",
+        "pageId": "imports",
+        "href": "#/library/import"
+      },
+      "A02": {
+        "title": "选择导入解析器和图片处理方案",
+        "pageId": "imports",
+        "href": "#/library/import"
+      },
+      "A03": {
+        "title": "恢复被中断的本地上传",
+        "pageId": "imports",
+        "href": "#/library/import"
+      },
+      "C07": {
+        "title": "选择要加入的来源",
+        "pageId": "sourceCatalog",
+        "href": "#/connections/add"
+      },
+      "C08": {
+        "title": "管理来源接收与内容关系",
+        "pageId": "sources",
+        "href": "#/connections"
+      },
+      "A04": {
+        "title": "保存外部或 NAS 引用",
+        "pageId": "sources",
+        "href": "#/connections?setup=reference"
+      },
+      "A05": {
+        "title": "只读归档 Google 日历",
+        "pageId": "sources",
+        "href": "#/connections?setup=google"
+      },
+      "A06": {
+        "title": "只读归档 Gmail 邮件",
+        "pageId": "sources",
+        "href": "#/connections?setup=gmail"
+      },
+      "A07": {
+        "title": "从远程 MCP 选择资源导入",
+        "pageId": "sources",
+        "href": "#/connections?setup=mcp"
+      },
+      "A09": {
+        "title": "连接飞书文档和日历",
+        "pageId": "lark",
+        "href": "#/connections/lark"
+      },
+      "A10": {
+        "title": "归档厂商录音和转写",
+        "pageId": "recordings",
+        "href": "#/connections/recordings"
+      },
+      "A11": {
+        "title": "查看来源版本和原位置",
+        "pageId": "archive",
+        "href": "#/library?view=sources"
+      },
+      "C03": {
+        "title": "从今天开始整理资料",
+        "pageId": "overview",
+        "href": "#/today"
+      },
+      "C04": {
+        "title": "查看设备上报的采集与同步状态",
+        "pageId": "devices",
+        "href": "#/connections/devices"
+      },
+      "C05": {
+        "title": "连接或重新授权设备",
+        "pageId": "connections",
+        "href": "#/connections/access"
+      },
+      "C06": {
+        "title": "检查和撤销已发出的连接权限",
+        "pageId": "connections",
+        "href": "#/connections/access"
+      },
+      "A08": {
+        "title": "让其他 Chatbot 使用 Mote MCP",
+        "pageId": "connections",
+        "href": "#/connections/access"
+      },
+      "C14": {
+        "title": "浏览已经发布的资料正文",
+        "pageId": "archive",
+        "href": "#/library?view=materials"
+      },
+      "C15": {
+        "title": "核对资料正文、来源与处理状态",
+        "pageId": "archive",
+        "href": "#/library?view=materials"
+      },
+      "C16": {
+        "title": "说明单份资料关系并提取记忆",
+        "pageId": "archive",
+        "href": "#/library?view=materials"
+      },
+      "C17": {
+        "title": "查看原始采集证据",
+        "pageId": "archive",
+        "href": "#/library?view=records"
+      },
+      "C18": {
+        "title": "删除一条原始记录",
+        "pageId": "archive",
+        "href": "#/library?view=records"
+      },
+      "C20": {
+        "title": "围绕归档资料提问",
+        "pageId": "ask",
+        "href": "#/ask"
+      },
+      "C21": {
+        "title": "回看和管理对话历史",
+        "pageId": "ask",
+        "href": "#/ask"
+      },
+      "C22": {
+        "title": "随问题提交图片",
+        "pageId": "ask",
+        "href": "#/ask"
+      },
+      "C23": {
+        "title": "浏览有证据的记忆",
+        "pageId": "archive",
+        "href": "#/library?view=memories"
+      },
+      "C24": {
+        "title": "纠正、删除或导出一条记忆",
+        "pageId": "archive",
+        "href": "#/library?view=memories"
+      },
+      "C25": {
+        "title": "手动提取记忆",
+        "pageId": "archive",
+        "href": "#/library?view=memories"
+      },
+      "C26": {
+        "title": "回答需要你澄清的问题",
+        "pageId": "ask",
+        "href": "#/ask"
+      },
+      "A16": {
+        "title": "核对记忆的历史和有效时间",
+        "pageId": "archive",
+        "href": "#/library?view=memories"
+      },
+      "A17": {
+        "title": "从一条当前记忆继续整理",
+        "pageId": "archive",
+        "href": "#/library?view=memories"
+      },
+      "A18": {
+        "title": "调整记忆策略和回顾节奏",
+        "pageId": "settings",
+        "href": "#/system/models?category=model"
+      },
+      "C27": {
+        "title": "生成并回看有证据的洞察",
+        "pageId": "insights",
+        "href": "#/library/insights"
+      },
+      "C28": {
+        "title": "查看正在做的工作和结果",
+        "pageId": "activity",
+        "href": "#/activity"
+      },
+      "A25": {
+        "title": "检查技术步骤并恢复可重试工作",
+        "pageId": "processing",
+        "href": "#/system/processing"
+      },
+      "C29": {
+        "title": "记录和完成普通待办",
+        "pageId": "actions",
+        "href": "#/actions"
+      },
+      "C30": {
+        "title": "审核日程建议并交给设备执行",
+        "pageId": "actions",
+        "href": "#/actions"
+      },
+      "C19": {
+        "title": "按内容类型查看资料库",
+        "pageId": "archive",
+        "href": "#/library?view=materials"
+      },
+      "A12": {
+        "title": "按截图片段或应用相册回看",
+        "pageId": "archive",
+        "href": "#/library?view=segments"
+      },
+      "A13": {
+        "title": "查看测得的应用活动时间",
+        "pageId": "archive",
+        "href": "#/library?view=activity"
+      },
+      "A14": {
+        "title": "查看媒体播放观测",
+        "pageId": "archive",
+        "href": "#/library?view=media"
+      },
+      "A15": {
+        "title": "查看 Coding 会话接收与同步状态",
+        "pageId": "archive",
+        "href": "#/library?view=work-activity"
+      },
+      "C39": {
+        "title": "导入导出归档并找到完整备份",
+        "pageId": "vault",
+        "href": "#/system/storage"
+      },
+      "C40": {
+        "title": "查看保留、容量和内容存储政策",
+        "pageId": "vault",
+        "href": "#/system/storage"
+      },
+      "C41": {
+        "title": "核对模型用量和估算费用",
+        "pageId": "usage",
+        "href": "#/system/usage"
+      },
+      "A31": {
+        "title": "把已有加密文件转为明文",
+        "pageId": "vault",
+        "href": "#/system/storage"
+      },
+      "A32": {
+        "title": "查看运行状态与空间",
+        "pageId": "statistics",
+        "href": "#/system"
+      },
+      "A33": {
+        "title": "维护估价并追查用量明细",
+        "pageId": "usage",
+        "href": "#/system/usage"
+      },
+      "C31": {
+        "title": "配置或检查模型连接（Provider）",
+        "pageId": "settings",
+        "href": "#/system/models?category=providers"
+      },
+      "C32": {
+        "title": "检查或分配功能使用的模型",
+        "pageId": "settings",
+        "href": "#/system/models?category=model"
+      },
+      "C36": {
+        "title": "控制新图片识别与原图授权",
+        "pageId": "settings",
+        "href": "#/system/models?category=images"
+      },
+      "C37": {
+        "title": "查看文件或录音的内容提取和恢复",
+        "pageId": "archive",
+        "href": "#/library?view=files"
+      },
+      "C38": {
+        "title": "配置文件与语音处理",
+        "pageId": "settings",
+        "href": "#/system/models?category=file-processing"
+      },
+      "A19": {
+        "title": "调整模型性能和协议细节",
+        "pageId": "settings",
+        "href": "#/system/models?category=providers"
+      },
+      "A20": {
+        "title": "复制或删除模型预设",
+        "pageId": "settings",
+        "href": "#/system/models?category=providers"
+      },
+      "A21": {
+        "title": "补处理或重算历史图片",
+        "pageId": "settings",
+        "href": "#/system/models?category=images"
+      },
+      "A22": {
+        "title": "配置文件规则、方案和处理服务",
+        "pageId": "settings",
+        "href": "#/system/models?category=file-processing"
+      },
+      "A23": {
+        "title": "预览文件规则并重新处理已有原件",
+        "pageId": "settings",
+        "href": "#/system/models?category=file-processing"
+      },
+      "A24": {
+        "title": "纠正转写并确认说话人",
+        "pageId": "archive",
+        "href": "#/library?view=files"
+      },
+      "A29": {
+        "title": "设置执行并发和查看等待名额",
+        "pageId": "settings",
+        "href": "#/system/models?category=model"
+      },
+      "A30": {
+        "title": "配置检索和外部连接的部署草稿",
+        "pageId": "settings",
+        "href": "#/system/models?category=embedding"
+      },
+      "C33": {
+        "title": "暂停或立即停止自动记忆",
+        "pageId": "extensions",
+        "href": "#/system/plugins?tab=memory"
+      },
+      "C34": {
+        "title": "核对和替换整套记忆方案",
+        "pageId": "extensions",
+        "href": "#/system/plugins?tab=memory"
+      },
+      "C35": {
+        "title": "管理可信记忆插件",
+        "pageId": "extensions",
+        "href": "#/system/plugins"
+      },
+      "C01": {
+        "title": "登录并管理当前会话",
+        "pageId": "about",
+        "href": "#/preferences"
+      },
+      "C02": {
+        "title": "找到常用页面和所属工具",
+        "pageId": "overview",
+        "href": "#/today"
+      },
+      "C42": {
+        "title": "找到帮助、版本和维护方式",
+        "pageId": "help",
+        "href": "#/help"
+      },
+      "A26": {
+        "title": "查看 Agent 当前能读取的上下文",
+        "pageId": "agentView",
+        "href": "#/agent"
+      },
+      "A27": {
+        "title": "查看已记录的实际模型输入和工具读取",
+        "pageId": "agentView",
+        "href": "#/agent"
+      },
+      "A28": {
+        "title": "核对实际注册的插件能力",
+        "pageId": "extensions",
+        "href": "#/system/plugins"
+      },
+      "A34": {
+        "title": "查阅运行日志并导出支持包",
+        "pageId": "developer",
+        "href": "#/system/diagnostics"
+      },
+      "A35": {
+        "title": "设置诊断记录并查看部署生效值",
+        "pageId": "developer",
+        "href": "#/system/diagnostics"
+      },
+      "A36": {
+        "title": "切换界面语言",
+        "pageId": "about",
+        "href": "#/preferences"
+      }
+    },
+    "displayNote": "原始目录中的旧“采集与设备”路径不用于原型展示；单元保留原 ID，按当前导航显示。"
+  },
+  "counts": {
+    "featureGroups": 20,
+    "directorySections": 4,
+    "directoryGroups": 16,
+    "directoryUnits": 78,
+    "coreUnits": 42,
+    "advancedUnits": 36,
+    "sourceCatalog": 10,
+    "inputActions": 5,
+    "settingsGroups": 9,
+    "contentSamples": 12,
+    "tasks": 10
+  }
+}

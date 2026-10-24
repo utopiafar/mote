@@ -1,0 +1,99 @@
+{
+  "scope": "Delivery viewer checks only, not independent scoring; isolated browser route, network blocked, fixed font injected in memory; DOM before viewport-only screenshots",
+  "rounds": [
+    30,
+    31,
+    32,
+    33,
+    34
+  ],
+  "indexSha256": "8a599c883bf21db53d7e4906e1edeaf1276f5b221ae08b7383d053be9bb345c7",
+  "checks": [
+    {
+      "check": "Version R30 loads its three frozen candidates and matching summary/report link",
+      "result": "passed"
+    },
+    {
+      "check": "Version R31 loads its three frozen candidates and matching summary/report link",
+      "result": "passed"
+    },
+    {
+      "check": "Version R32 loads its three frozen candidates and matching summary/report link",
+      "result": "passed"
+    },
+    {
+      "check": "Version R33 loads its three frozen candidates and matching summary/report link",
+      "result": "passed"
+    },
+    {
+      "check": "Version R34 loads its three frozen candidates and matching summary/report link",
+      "result": "passed"
+    },
+    {
+      "check": "Scene first loads the expected route and data mode on all three platforms",
+      "result": "passed"
+    },
+    {
+      "check": "Scene library loads the expected route and data mode on all three platforms",
+      "result": "passed"
+    },
+    {
+      "check": "Scene import loads the expected route and data mode on all three platforms",
+      "result": "passed"
+    },
+    {
+      "check": "Scene sources loads the expected route and data mode on all three platforms",
+      "result": "passed"
+    },
+    {
+      "check": "Scene ask loads the expected route and data mode on all three platforms",
+      "result": "passed"
+    },
+    {
+      "check": "Scene todos loads the expected route and data mode on all three platforms",
+      "result": "passed"
+    },
+    {
+      "check": "Scene settings loads the expected route and data mode on all three platforms",
+      "result": "passed"
+    },
+    {
+      "check": "web iframe supports ordinary Sources → Library navigation",
+      "result": "passed"
+    },
+    {
+      "check": "mac iframe supports ordinary Sources → Library navigation",
+      "result": "passed"
+    },
+    {
+      "check": "android iframe supports ordinary Sources → Library navigation",
+      "result": "passed"
+    },
+    {
+      "check": "Platform switch web has matching iframe(s), selection state and standalone link",
+      "result": "passed"
+    },
+    {
+      "check": "Platform switch mac has matching iframe(s), selection state and standalone link",
+      "result": "passed"
+    },
+    {
+      "check": "Platform switch android has matching iframe(s), selection state and standalone link",
+      "result": "passed"
+    },
+    {
+      "check": "Platform switch all has matching iframe(s), selection state and standalone link",
+      "result": "passed"
+    },
+    {
+      "check": "390-pixel gallery remains within the viewport",
+      "result": "passed"
+    }
+  ],
+  "pageErrors": [],
+  "network": {
+    "blocked": [],
+    "missing": [],
+    "served": 53
+  }
+}

@@ -1,0 +1,343 @@
+{
+  "url": "https://mote-prototype.invalid/#/settings/usage-prices",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R34\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n设置\n工作台在线\n随手记\n添加内容\n设置\n\n调整服务与资料管理方式，或管理当前登录。\n\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观\n后续运行的模型价格\n\n保存每百万 token 价格，保留历史运行估算。\n\n每百万 token 的估算单价，仅用于之后开始的运行。历史回执保留开始时价格；订阅套餐实际扣费不能由这里推算。\n已保存的服务与模型\n服务 ID\n模型 ID\n币种\nUSD\nCNY\n未缓存输入 / 1M tokens\n输出 / 1M tokens\n缓存读取 / 1M tokens\n缓存写入 / 1M tokens\n保存后续运行价格\n还原这项已保存价格\n当前已保存、供后续运行使用\n服务 / 模型 ID\ndemo-cloud / demo-text\n币种\nUSD\n未缓存输入 / 1M tokens\n0.8\n输出 / 1M tokens\n3.2\n缓存读取 / 1M tokens\n0.2\n缓存写入 / 1M tokens\n1\n保存版本 / 时间\n1 / 2026-10-16T00:00:00Z\n返回用量与历史回执",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "账号与设备",
+      "label": "账号与设备",
+      "action": "go",
+      "page": "settings/account",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "模型与服务",
+      "label": "模型与服务",
+      "action": "go",
+      "page": "settings/models",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "采集与隐私",
+      "label": "采集与隐私",
+      "action": "go",
+      "page": "settings/privacy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "自动记忆与插件",
+      "label": "自动记忆与插件",
+      "action": "go",
+      "page": "settings/plugins",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "存储与备份",
+      "label": "存储与备份",
+      "action": "go",
+      "page": "settings/storage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "对外授权",
+      "label": "对外授权",
+      "action": "go",
+      "page": "settings/access",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "用量与费用",
+      "label": "用量与费用",
+      "action": "go",
+      "page": "settings/usage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "帮助与诊断",
+      "label": "帮助与诊断",
+      "action": "go",
+      "page": "settings/diagnostics",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "语言与外观",
+      "label": "语言与外观",
+      "action": "go",
+      "page": "settings/appearance",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "已保存的服务与模型",
+      "label": "已保存的服务与模型",
+      "expanded": false
+    },
+    {
+      "tag": "input",
+      "id": "cs34-prices-provider",
+      "type": "text",
+      "text": "",
+      "label": "服务 ID",
+      "value": "demo-cloud",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs34-prices-model",
+      "type": "text",
+      "text": "",
+      "label": "模型 ID",
+      "value": "demo-text",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs34-prices-currency",
+      "type": "select-one",
+      "text": "USD\nCNY",
+      "label": "币种\nUSD\nCNY",
+      "value": "USD",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs34-prices-input",
+      "type": "number",
+      "text": "",
+      "label": "未缓存输入 / 1M tokens",
+      "value": "0.8",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs34-prices-output",
+      "type": "number",
+      "text": "",
+      "label": "输出 / 1M tokens",
+      "value": "3.2",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs34-prices-cacheRead",
+      "type": "number",
+      "text": "",
+      "label": "缓存读取 / 1M tokens",
+      "value": "0.2",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs34-prices-cacheWrite",
+      "type": "number",
+      "text": "",
+      "label": "缓存写入 / 1M tokens",
+      "value": "1",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存后续运行价格",
+      "label": "保存后续运行价格",
+      "action": "cs-price-save",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "还原这项已保存价格",
+      "label": "还原这项已保存价格",
+      "action": "cs-price-reload",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "当前已保存、供后续运行使用",
+      "label": "当前已保存、供后续运行使用",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回用量与历史回执",
+      "label": "返回用量与历史回执",
+      "action": "go",
+      "page": "settings/usage",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设置"
+    },
+    {
+      "level": "H2",
+      "text": "后续运行的模型价格"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

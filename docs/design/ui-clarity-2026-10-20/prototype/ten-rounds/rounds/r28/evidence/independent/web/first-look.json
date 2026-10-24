@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:22:53.011Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "0df7726986c38f42e3781c3a69c8ff931c482eb1d4cf65025d73b49351780e52",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "answers": {
+    "purpose": "个人资料与记忆库，存下文件/想法/设备记录并供查找和有出处的问答。",
+    "first_action": "写下第一条记录明显适合空账号；导入文件是次选。",
+    "setup_expectation": "先记想法即可，连接来源不是必要起点；客户端屏幕边界可见。",
+    "first_value_expectation": "例子显示保存后的记录可以用于问过去决定并核对原文。",
+    "advanced_discovery": "来源、全部功能在侧栏，首屏只展示可选来源卡。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

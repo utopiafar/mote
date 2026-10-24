@@ -1,0 +1,164 @@
+[
+  {
+    "at_utc": "2026-10-21T04:36:04.997Z",
+    "action": "Click 写下第一条记录",
+    "evidence": "01-note-editor.dom.json",
+    "screenshot": "01-note-editor.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T04:36:16.375Z",
+    "action": "Fill synthetic note: 海鸥R20-android会议决定：2026年10月21日，林澄负责在周五前整理三份入门资料。核对词：橙色风筝。",
+    "evidence": "02-note-filled.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T04:36:16.564Z",
+    "action": "Click 保存笔记",
+    "evidence": "03-note-saved.dom.json",
+    "screenshot": "03-note-saved.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T04:36:21.966Z",
+    "action": "Leave editor via main 资料库 navigation",
+    "evidence": "04-library-after-save.dom.json",
+    "screenshot": "04-library-after-save.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T04:36:28.255Z",
+    "action": "Search 橙色风筝 in 资料库",
+    "evidence": "05-search-note.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T04:36:28.441Z",
+    "action": "Open matching saved note and read body",
+    "evidence": "06-verified-note.dom.json",
+    "screenshot": "06-verified-note.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792557376499-1"
+  },
+  {
+    "at_utc": "2026-10-21T04:36:34.192Z",
+    "action": "Click 基于这份资料提问",
+    "evidence": "07-ask-scoped.dom.json",
+    "screenshot": "07-ask-scoped.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T04:36:43.673Z",
+    "action": "Fill task-specific question about the newly saved note",
+    "evidence": "08-question-filled.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T04:36:43.797Z",
+    "action": "Click 提问 and inspect the displayed answer",
+    "evidence": "09-answer.dom.json",
+    "screenshot": "09-answer.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T04:36:50.817Z",
+    "action": "Open displayed citation",
+    "evidence": "10-citation.dom.json",
+    "screenshot": "10-citation.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792557376499-1"
+  },
+  {
+    "at_utc": "2026-10-21T04:36:57.120Z",
+    "action": "Open 查看原始内容",
+    "evidence": "11-original.dom.json",
+    "screenshot": "11-original.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792557376499-1"
+  },
+  {
+    "at_utc": "2026-10-21T04:37:28.891Z",
+    "action": "Close original-content dialog",
+    "evidence": "12-original-closed.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792557376499-1"
+  },
+  {
+    "at_utc": "2026-10-21T04:37:29.003Z",
+    "action": "Return to the same conversation",
+    "evidence": "13-answer-returned.dom.json",
+    "screenshot": "13-answer-returned.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T04:37:29.101Z",
+    "action": "Open 来源 to discover setup and controls",
+    "evidence": "14-sources.dom.json",
+    "screenshot": "14-sources.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/sources"
+  },
+  {
+    "at_utc": "2026-10-21T04:37:37.080Z",
+    "action": "Click 连接来源 and inspect available source choices",
+    "evidence": "15-source-catalog.dom.json",
+    "screenshot": "15-source-catalog.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/catalog"
+  },
+  {
+    "at_utc": "2026-10-21T04:37:47.528Z",
+    "action": "Choose screen recording in source catalog",
+    "evidence": "16-screen-setup.dom.json",
+    "screenshot": "16-screen-setup.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T04:37:57.714Z",
+    "action": "Simulate denial of recording permission",
+    "evidence": "17-permission-denied.dom.json",
+    "screenshot": "17-permission-denied.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T04:39:04.990Z",
+    "action": "Attempt 取消: 30s timeout; pointer intercepted by persistent saved-note toast and bottom navigation",
+    "evidence": "18-cancel-blocked.dom.json",
+    "screenshot": "18-cancel-blocked.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen",
+    "outcome": "blocked"
+  },
+  {
+    "at_utc": "2026-10-21T04:39:05.093Z",
+    "action": "Dismiss old saved-note toast to recover",
+    "evidence": "19-toast-dismissed.dom.json",
+    "screenshot": "19-toast-dismissed.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T04:39:05.156Z",
+    "action": "Scroll setup toward lower actions",
+    "evidence": "20-setup-scrolled.dom.json",
+    "screenshot": "20-setup-scrolled.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/screen"
+  },
+  {
+    "at_utc": "2026-10-21T04:39:05.258Z",
+    "action": "Retry 取消 after dismissing toast",
+    "evidence": "21-setup-cancelled.dom.json",
+    "screenshot": "21-setup-cancelled.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/sources"
+  },
+  {
+    "at_utc": "2026-10-21T04:39:18.706Z",
+    "action": "Return to saved library after cancelled permission setup",
+    "evidence": "22-library-return.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T04:39:18.809Z",
+    "action": "Discover 记忆 after first successful save",
+    "evidence": "23-memory-discovery.dom.json",
+    "screenshot": "23-memory-discovery.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/memories"
+  }
+]

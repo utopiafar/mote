@@ -1,0 +1,90 @@
+{
+  "candidate": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/dist/mote-rounds-portable.html",
+  "sha256": "820f91af17a9f1ddd371f1eff669cf32e28a3365a3445899c66cee5377acb155",
+  "at": "2026-10-21T05:41:59.711Z",
+  "scope": "Viewer controls and embedded iframe loading; prototype behavior is independently assessed in round reports.",
+  "checks": [
+    {
+      "name": "three rendered surfaces",
+      "count": 3
+    },
+    {
+      "name": "reference viewport scaling",
+      "surfaces": [
+        {
+          "surface": "web",
+          "stage_width": 450,
+          "stage_height": 313,
+          "iframe_width": 1440,
+          "iframe_height": 1000,
+          "transform": "matrix(0.3125, 0, 0, 0.3125, 0, 0)"
+        },
+        {
+          "surface": "mac",
+          "stage_width": 450,
+          "stage_height": 316,
+          "iframe_width": 1280,
+          "iframe_height": 900,
+          "transform": "matrix(0.351562, 0, 0, 0.351562, 0, 0)"
+        },
+        {
+          "surface": "android",
+          "stage_width": 450,
+          "stage_height": 844,
+          "iframe_width": 390,
+          "iframe_height": 844,
+          "transform": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "initial visible UI",
+      "frames": [
+        {
+          "title": "Mote · 个人资料库",
+          "text": "Mote · 个人资料与记忆库\n\n让日常记录，\n随时找得到。\n\n保存文件、想法和设备记录。以后随时搜索、提问，沿着出处核对原文。\n\n写下第一条记录\n导入已有文件\n\n可以先记一条想法，再按需连接来源。\n\n一个使用例子\n保存\n\n读书笔记、一次会议、一个想法\n\n以后问\n“上次讨论决定了什么？”\n\n从自己的资料中找答案，点引用回看原文。\n\n看一份示例资料\n也可以持续收集\n浏览所有来源\n同步文件夹\n连接设备或工作台服务器的文件夹\n记录屏幕\n由 Mac / Android 客户端采集\n连接在线来源\n文档、邮件、日历和更多\n\n你决定保存哪些内容。连接来源前可查看范围，之后也能单独暂停。"
+        },
+        {
+          "title": "Mote · 个人资料库",
+          "text": "Mote · 个人资料与记忆库\n\n让日常记录，\n随时找得到。\n\n保存文件、想法和设备记录。以后随时搜索、提问，沿着出处核对原文。\n\n写下第一条记录\n导入已有文件\n\n可以先记一条想法，再按需连接来源。\n\n一个使用例子\n保存\n\n读书笔记、一次会议、一个想法\n\n以后问\n“上次讨论决定了什么？”\n\n从自己的资料中找答案，点引用回看原文。\n\n看一份示例资料\n也可以持续收集\n浏览所有来源\n同步文件夹\n持续保存所选文件夹的新内容\n记录屏幕\n自己选择应用与记录范围\n连接在线来源\n文档、邮件、日历和更多\n\n你决定保存哪些内容。连接来源前可查看范围，之后也能单独暂停。"
+        },
+        {
+          "title": "Mote · 个人资料库",
+          "text": "Mote · 个人资料与记忆库\n\n让日常记录，\n随时找得到。\n\n保存文件、想法和设备记录。以后随时搜索、提问，沿着出处核对原文。\n\n写下第一条记录\n导入已有文件\n\n可以先记一条想法，再按需连接来源。\n\n也可以持续收集\n浏览所有来源\n同步文件夹\n持续保存所选文件夹的新内容\n记录屏幕\n自己选择应用与记录范围\n连接在线来源\n文档、邮件、日历和更多\n一个使用例子\n保存\n\n读书笔记、一次会议、一个想法\n\n以后问\n“上次讨论决定了什么？”\n\n从自己的资料中找答案，点引用回看原文。\n\n看一份示例资料\n\n你决定保存哪些内容。连接来源前可查看范围，之后也能单独暂停。"
+        }
+      ]
+    },
+    {
+      "name": "single Android view",
+      "frames": 1,
+      "inner_width": 390
+    },
+    {
+      "name": "theme control",
+      "dark": true
+    },
+    {
+      "name": "populated reload",
+      "visible_text": "跳到主要内容\nMote · Android · R29\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nm\n资料库\nMote · 你的个人资料库\n资料库\n\n汇集文件、随手记和各个来源，随时查找、提问并核对原文。\n\n资料保留原文，记忆整理长期信息，洞察回顾一段时间的变化。\n\n资料\n记忆\n洞察\n浏览分类\n全部资料\n随手记\n资料出处\n文件与录音\n原始采集记录\n截图片段\n应用使用记录\n媒体播放\nCoding 会话\n上传与处理\n全部资料\n筛选条件\n\n6 份资料\n\n产品评审 · 让第一步更清楚\n先让新用户知道可以保存什么，再引导他回到资料里找到答案。\n随手记\n·\n网页\n·\n今天 09:12\n长期记忆系统调研笔记\n原始资料、事实记忆和阶段洞察分别承担不同职责。\n研究资料\n·\nAndroid\n·\n昨天 18:34\nMote / 来源目录整理\n把文件夹同步和屏幕记录放在同级入口，保留原有确认步骤。\nCodex 会话\n·\nMac\n·\n昨天 16:20\n周四设计评审\n核对资料库、来源目录与移动端添加入口。\nGoogle 日历\n·\n中央\n·\n10月22日 14:00\n项目讨论录音 · 本周计划\n本周完成资料整理和第一轮设计评审，周末回顾进展。\n飞书录音\n·\n中央\n·\n10月18日 15:30\n文章摘录 · 渐进式披露\n最常用的操作先展示，复杂细节放在需要它的上下文里。\nAndroid 屏幕\n·\nAndroid\n·\n10月18日 11:08\n资料库\n问一问\n来源\n活动"
+    },
+    {
+      "name": "round change",
+      "round": 20
+    },
+    {
+      "name": "single Web view",
+      "frames": 1,
+      "inner_width": 1440
+    },
+    {
+      "name": "single Mac view",
+      "frames": 1,
+      "inner_width": 1280
+    },
+    {
+      "name": "browser errors",
+      "errors": []
+    }
+  ],
+  "errors": []
+}

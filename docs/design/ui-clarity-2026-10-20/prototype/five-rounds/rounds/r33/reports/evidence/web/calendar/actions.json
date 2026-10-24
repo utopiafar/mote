@@ -1,0 +1,244 @@
+[
+  {
+    "at": "2026-10-23T03:12:20.140Z",
+    "op": "open",
+    "file": "rounds/r33/web.html",
+    "evidenceDirectory": "rounds/r33/reports/evidence/web/calendar"
+  },
+  {
+    "at": "2026-10-23T03:12:20.175Z",
+    "op": "select",
+    "selector": "#preview-state",
+    "value": "populated"
+  },
+  {
+    "at": "2026-10-23T03:12:20.234Z",
+    "op": "click",
+    "role": "button",
+    "name": "今天"
+  },
+  {
+    "at": "2026-10-23T03:12:20.277Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看日程"
+  },
+  {
+    "at": "2026-10-23T03:12:20.332Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对建议"
+  },
+  {
+    "at": "2026-10-23T03:12:20.375Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接目标设备日历",
+    "save": "01-target-device"
+  },
+  {
+    "at": "2026-10-23T03:12:24.239Z",
+    "op": "click",
+    "role": "button",
+    "name": "预览此设备授权回执",
+    "save": "02-device-calendar-authorized"
+  },
+  {
+    "at": "2026-10-23T03:12:24.393Z",
+    "op": "click",
+    "role": "button",
+    "name": "继续核对",
+    "save": "03-review-target-options"
+  },
+  {
+    "at": "2026-10-23T03:12:24.506Z",
+    "op": "fill",
+    "selector": "#ax-title",
+    "value": "R33 全天资料评审"
+  },
+  {
+    "at": "2026-10-23T03:12:24.585Z",
+    "op": "check",
+    "selector": "#ax-allDay",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T03:12:24.600Z",
+    "op": "fill",
+    "selector": "#ax-timezone",
+    "value": "Europe/London"
+  },
+  {
+    "at": "2026-10-23T03:12:24.640Z",
+    "op": "click",
+    "text": "地点与备注",
+    "save": "04-review-edited"
+  },
+  {
+    "at": "2026-10-23T03:12:31.462Z",
+    "op": "select",
+    "selector": "#ax-target",
+    "value": {
+      "label": "我的 Mac · 工作日历"
+    }
+  },
+  {
+    "at": "2026-10-23T03:12:31.493Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对固定内容",
+    "save": "05-invalid-all-day-range"
+  },
+  {
+    "at": "2026-10-23T03:12:31.611Z",
+    "op": "fill",
+    "selector": "#ax-end",
+    "value": "2026-10-27"
+  },
+  {
+    "at": "2026-10-23T03:12:31.628Z",
+    "op": "fill",
+    "selector": "#ax-location",
+    "value": "线上评审室"
+  },
+  {
+    "at": "2026-10-23T03:12:31.646Z",
+    "op": "fill",
+    "selector": "#ax-notes",
+    "value": "R33 核对备注：不发送参会邀请。"
+  },
+  {
+    "at": "2026-10-23T03:12:31.702Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对固定内容",
+    "save": "06-fixed-review"
+  },
+  {
+    "at": "2026-10-23T03:12:36.356Z",
+    "op": "click",
+    "text": "预览依据变更",
+    "save": "07-evidence-fixture"
+  },
+  {
+    "at": "2026-10-23T03:12:40.325Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟原始资料出现新版本",
+    "save": "08-review-stale"
+  },
+  {
+    "at": "2026-10-23T03:12:45.940Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对固定内容",
+    "save": "10-refixed-v2"
+  },
+  {
+    "at": "2026-10-23T03:12:46.058Z",
+    "op": "click",
+    "role": "button",
+    "name": "确认交给此设备",
+    "save": "11-calendar-approved"
+  },
+  {
+    "at": "2026-10-23T03:12:50.346Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开目标设备同步",
+    "save": "12-device-sync"
+  },
+  {
+    "at": "2026-10-23T03:12:50.471Z",
+    "op": "click",
+    "text": "预览设备回执",
+    "save": "13-device-receipt-fixture"
+  },
+  {
+    "at": "2026-10-23T03:13:01.235Z",
+    "op": "click",
+    "text": "预览设备回执"
+  },
+  {
+    "at": "2026-10-23T03:13:01.274Z",
+    "op": "click",
+    "role": "button",
+    "name": "设备已写入但回执丢失",
+    "save": "14-calendar-uncertain"
+  },
+  {
+    "at": "2026-10-23T03:13:01.404Z",
+    "op": "click",
+    "text": "核对依据与批准内容",
+    "save": "15-calendar-approved-evidence"
+  },
+  {
+    "at": "2026-10-23T03:13:05.440Z",
+    "op": "click",
+    "role": "button",
+    "name": "核实已有事件",
+    "save": "16-calendar-verified-original"
+  },
+  {
+    "at": "2026-10-23T03:13:05.574Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回日程建议",
+    "save": "17-schedule-after-verified"
+  },
+  {
+    "at": "2026-10-23T03:13:05.747Z",
+    "op": "click",
+    "role": "button",
+    "name": "我的待办",
+    "save": "18-todos"
+  },
+  {
+    "at": "2026-10-23T03:13:10.465Z",
+    "op": "fill",
+    "selector": "#todo-text",
+    "value": "R33 没有截止日的核对任务"
+  },
+  {
+    "at": "2026-10-23T03:13:10.528Z",
+    "op": "click",
+    "role": "button",
+    "name": "添加待办",
+    "save": "19-todo-added"
+  },
+  {
+    "at": "2026-10-23T03:13:15.554Z",
+    "op": "click",
+    "role": "button",
+    "name": "完成",
+    "index": 2,
+    "save": "20-todo-completed"
+  },
+  {
+    "at": "2026-10-23T03:13:15.644Z",
+    "op": "select",
+    "selector": "#todo-filter",
+    "value": "已完成",
+    "save": "21-todo-completed-filter"
+  },
+  {
+    "at": "2026-10-23T03:13:22.074Z",
+    "op": "click",
+    "role": "button",
+    "name": "重新打开"
+  },
+  {
+    "at": "2026-10-23T03:13:22.090Z",
+    "op": "select",
+    "selector": "#todo-filter",
+    "value": "未完成",
+    "save": "23-todo-reopened"
+  },
+  {
+    "at": "2026-10-23T03:13:22.227Z",
+    "op": "click",
+    "role": "button",
+    "name": "设置",
+    "save": "24-settings"
+  }
+]

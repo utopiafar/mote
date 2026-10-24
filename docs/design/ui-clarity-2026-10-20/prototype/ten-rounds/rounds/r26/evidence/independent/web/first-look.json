@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:10:47.520Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "f096782a776ca34718d5c4f3fb404ad218be50b089964ce56abed4a8317555ca",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "answers": {
+    "purpose": "存文件、想法和设备记录以便以后搜索、提问和沿出处核对。",
+    "first_action": "写下第一条记录，比导入和持续来源更突出。",
+    "setup_expectation": "可以先保存想法；屏幕需要Mac或Android客户端，其他来源稍后连接。",
+    "first_value_expectation": "记录以后能回答过去讨论决定的问题，引用可回原文。",
+    "advanced_discovery": "来源与全部功能在左栏，例子与可选收集下沉。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

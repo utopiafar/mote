@@ -1,0 +1,73 @@
+{
+  "static": {
+    "来源同步 · 查看输入、状态与恢复方式。": "Source sync · Review inputs, status, and recovery options.",
+    "最近一次读取：今天 09:20": "Last read: Today at 09:20",
+    "这些资料保留在此来源范围内，可以继续阅读。": "These materials remain readable within this source.",
+    "此来源尚无已保存资料。其他来源的内容保持各自范围。": "This source has no saved materials yet. Other sources retain their own material scopes.",
+    "按设备筛选": "Filter by device",
+    "全部设备": "All devices",
+    "设备未注明": "Device unspecified",
+    "网页": "Web",
+    "中央": "Central",
+    "采集日期：": "Capture date: ",
+    "采集时间：": "Captured at: ",
+    "设备：": "Device: ",
+    "按采集日期、设备、连续会话或应用相册回看屏幕片段。": "Review screen snippets by capture date, device, continuous session, or app album.",
+    "可以清除关键词、设备、类型或时间筛选。": "Clear the keyword, device, type, or time filters.",
+    "应用未注明": "App unspecified",
+    "采集到的原始文字": "Original captured text",
+    "采集日期": "Capture date",
+    "全部采集日期": "All capture dates",
+    "片段分组": "Group snippets",
+    "连续会话": "Continuous sessions",
+    "应用相册": "App albums",
+    "同一设备上连续会话内的记录按时间排列。": "Records from a continuous session on one device are ordered by time.",
+    "同一日期、设备与应用的记录放在一个相册中。": "Records from the same date, device, and app appear in one album.",
+    "这个范围没有截图片段": "No screenshot snippets in this scope",
+    "调整采集日期、设备或其他筛选后再查看。": "Adjust the capture date, device, or other filters to see snippets.",
+    "可更改设备、来源或时间筛选，或连接屏幕记录来源。": "Change the device, source, or time filters, or connect a screen recording source.",
+    "不声明": "No declaration",
+    "我的表达或经历": "My expression or experience",
+    "第三方内容": "Third-party content",
+    "混合内容": "Mixed content",
+    "归属未知": "Ownership unknown",
+    "内容与你的关系": "How this content relates to you",
+    "声明帮助模型区分你的表达、第三方内容和混合引用；归属未知也能查询和整理。": "A declaration helps models distinguish your expression, third-party content, and mixed quotations. Content with unknown ownership remains available for questions and organization.",
+    "来源声明应用于已有和新资料；单份资料的声明优先。修改说明不会自动重新转写或重算历史记忆。": "Source declarations apply to existing and new materials; a material-specific declaration takes precedence. Editing this description does not automatically transcribe content again or rebuild earlier memories.",
+    "已保存的来源关系": "Saved source relationship",
+    "尚未填写来源背景说明。": "No source background description has been saved.",
+    "内容关系": "Content relationship",
+    "来源背景说明（选填）": "Source background description (optional)",
+    "可说明格式、时间、作者，以及哪些内容属于你。": "Describe the format, time, author, and which content is yours.",
+    "关系修改尚未保存，离开后可以回来继续。": "Relationship changes are not saved yet. You can leave and return to continue.",
+    "当前关系与已保存设置一致。": "The current relationship matches the saved settings.",
+    "保存内容关系": "Save content relationship",
+    "放弃关系修改": "Discard relationship changes",
+    "这个来源的内容关系已保存。": "The content relationship for this source has been saved.",
+    "这是连接后的同步方式。暂停时不接收新变化，已保存内容仍保留。": "This is the sync policy after connecting. While paused, no new changes are received and saved content is retained.",
+    "本机继续保留，向中央发送已暂停": "Content stays on the device; sending to Central is paused",
+    "向中央发送已开启": "Sending to Central is enabled",
+    "向中央发送已暂停": "Sending to Central is paused",
+    "各设备继续按本机设置保留内容，待发送内容会在恢复后继续同步。": "Each device keeps content according to its local settings. Pending content will sync after sending resumes.",
+    "允许发送的本机内容会按各来源的设置同步到中央。": "Local content allowed for sending syncs to Central according to each source’s settings.",
+    "屏幕采集、单个来源接收、向中央发送分别控制，状态独立保留。": "Screen capture, intake from each source, and sending to Central have separate controls and retain independent states.",
+    "恢复全部发送": "Resume all sending",
+    "确认暂停全部发送": "Confirm pause for all sending",
+    "向中央发送已暂停，本机内容继续保留。": "Sending to Central is paused. Local content is retained.",
+    "向中央发送已恢复。屏幕采集和各来源接收保持原有状态。": "Sending to Central has resumed. Screen capture and source intake retain their previous states."
+  },
+  "dynamic": [
+    {
+      "pattern": "^(\\d+) 组 · (\\d+) 条片段$",
+      "template": "{0} groups · {1} snippets"
+    },
+    {
+      "pattern": "^连续会话 (\\d+)$",
+      "template": "Continuous session {0}"
+    },
+    {
+      "pattern": "^(\\d+) 条片段$",
+      "template": "{0} snippet(s)"
+    }
+  ]
+}

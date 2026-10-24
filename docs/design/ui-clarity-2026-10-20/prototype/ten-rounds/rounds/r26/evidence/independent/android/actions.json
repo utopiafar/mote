@@ -1,0 +1,191 @@
+[
+  {
+    "at_utc": "2026-10-21T05:10:47.673Z",
+    "action": "Click 写下第一条记录",
+    "evidence": "01-note-editor.dom.json",
+    "screenshot": "01-note-editor.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T05:10:47.692Z",
+    "action": "Fill synthetic note: 青鸟R26-android会议决定：2026年10月21日，叶青负责在周三前整理四份背景资料。核对词：白色信笺。",
+    "evidence": "02-note-filled.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T05:10:47.818Z",
+    "action": "Save note",
+    "evidence": "03-note-saved.dom.json",
+    "screenshot": "03-note-saved.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/notes"
+  },
+  {
+    "at_utc": "2026-10-21T05:10:47.960Z",
+    "action": "Leave editor via main 资料库",
+    "evidence": "04-library-after-save.dom.json",
+    "screenshot": "04-library-after-save.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T05:10:47.997Z",
+    "action": "Search 白色信笺",
+    "evidence": "05-search-note.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T05:10:48.105Z",
+    "action": "Open matching saved note",
+    "evidence": "06-verified-note.dom.json",
+    "screenshot": "06-verified-note.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792559447726-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:10:48.214Z",
+    "action": "Ask from verified note",
+    "evidence": "07-ask-scoped.dom.json",
+    "screenshot": "07-ask-scoped.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:10:48.230Z",
+    "action": "Fill task-specific question",
+    "evidence": "08-question-filled.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:10:48.359Z",
+    "action": "Submit question and inspect answer",
+    "evidence": "09-answer.dom.json",
+    "screenshot": "09-answer.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:10:48.479Z",
+    "action": "Open displayed citation",
+    "evidence": "10-citation.dom.json",
+    "screenshot": "10-citation.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792559447726-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:10:48.585Z",
+    "action": "Inspect original material",
+    "evidence": "11-original.dom.json",
+    "screenshot": "11-original.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792559447726-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:10:48.633Z",
+    "action": "Close original dialog",
+    "evidence": "12-original-closed.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/material/note-1792559447726-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:10:48.766Z",
+    "action": "Return to original conversation",
+    "evidence": "13-answer-returned.dom.json",
+    "screenshot": "13-answer-returned.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:10:49.256Z",
+    "action": "Click top 添加内容",
+    "evidence": "14-add-content.dom.json",
+    "screenshot": "14-add-content.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/ask"
+  },
+  {
+    "at_utc": "2026-10-21T05:11:05.381Z",
+    "action": "Click 导入文件",
+    "evidence": "15-import-panel.dom.json",
+    "screenshot": "15-import-panel.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/import"
+  },
+  {
+    "at_utc": "2026-10-21T05:11:10.736Z",
+    "action": "Click 改为持续同步文件夹",
+    "evidence": "16-continuous-folder-handoff.dom.json",
+    "screenshot": "16-continuous-folder-handoff.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new"
+  },
+  {
+    "at_utc": "2026-10-21T05:11:41.582Z",
+    "action": "Click 选择手机文件夹",
+    "evidence": "17-folder-picker.dom.json",
+    "screenshot": "17-folder-picker.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new"
+  },
+  {
+    "at_utc": "2026-10-21T05:11:41.680Z",
+    "action": "Choose 阅读资料 Documents/阅读资料",
+    "evidence": "18-folder-chosen.dom.json",
+    "screenshot": "18-folder-chosen.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new"
+  },
+  {
+    "at_utc": "2026-10-21T05:11:41.697Z",
+    "action": "Name synthetic source",
+    "evidence": "19-folder-named.dom.json",
+    "screenshot": null,
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new"
+  },
+  {
+    "at_utc": "2026-10-21T05:11:41.797Z",
+    "action": "Click 连接并保存",
+    "evidence": "20-folder-connected.dom.json",
+    "screenshot": "20-folder-connected.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/folder-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:11:50.928Z",
+    "action": "Click header 返回上一页 after source connection",
+    "evidence": "21-back-after-completion.dom.json",
+    "screenshot": "21-back-after-completion.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/import"
+  },
+  {
+    "at_utc": "2026-10-21T05:12:19.344Z",
+    "action": "Click 来源 after back to import",
+    "evidence": "22-source-after-back.dom.json",
+    "screenshot": "22-source-after-back.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/sources"
+  },
+  {
+    "at_utc": "2026-10-21T05:12:19.444Z",
+    "action": "Open existing folder from overview",
+    "evidence": "23-manage-after-back.dom.json",
+    "screenshot": "23-manage-after-back.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/folder-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:12:33.328Z",
+    "action": "Click 暂停此来源",
+    "evidence": "24-folder-paused.dom.json",
+    "screenshot": "24-folder-paused.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/folder-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:12:33.412Z",
+    "action": "Scroll to visible optional relationship actions",
+    "evidence": "25-deep-settings-scroll.dom.json",
+    "screenshot": "25-deep-settings-scroll.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/folder-1"
+  },
+  {
+    "at_utc": "2026-10-21T05:12:33.515Z",
+    "action": "Click 资料库 after source management",
+    "evidence": "26-library-after-source.dom.json",
+    "screenshot": "26-library-after-source.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/library"
+  },
+  {
+    "at_utc": "2026-10-21T05:12:33.616Z",
+    "action": "Click 记忆",
+    "evidence": "27-memory.dom.json",
+    "screenshot": "27-memory.png",
+    "url": "https://mote-prototype.invalid/?reset=1#/memories"
+  }
+]

@@ -1,0 +1,61 @@
+{
+  "schema": "mote-three-surface-round-v1",
+  "round": 22,
+  "frozen_at_utc": "2026-10-21T04:48:13.896724+00:00",
+  "baseline": {
+    "path": "../../../continuation/dist/r19.html",
+    "bytes": 530254,
+    "sha256": "8cabb1d2c2914170a5b00dad56a7814bbb21e28fead38ecb59f894658cbcb7bf"
+  },
+  "candidates": {
+    "web": {
+      "path": "web.html",
+      "bytes": 582411,
+      "sha256": "9c758c66a07fbedccee4f8b7ed648159bf9b742787da8827ca3cd94b67337433",
+      "default_state": "empty",
+      "default_surface": "web"
+    },
+    "mac": {
+      "path": "mac.html",
+      "bytes": 582411,
+      "sha256": "04da8d84e9337654220cf625c71946d5c9ed12e584cdb75aa44f8f0f7a0f977c",
+      "default_state": "empty",
+      "default_surface": "mac"
+    },
+    "android": {
+      "path": "android.html",
+      "bytes": 582439,
+      "sha256": "d636f0c97c917a98eed90cc049e6008f6e48cc5ea2653bd788840ede87cd9d08",
+      "default_state": "empty",
+      "default_surface": "android"
+    }
+  },
+  "sources": {
+    "common.css": {
+      "path": "src/common.css",
+      "bytes": 4888,
+      "sha256": "0601cc8410b2fe29432fecd06f70ef740aba60c40e230218107c3b3f449fe285"
+    },
+    "platform.css": {
+      "path": "src/platform.css",
+      "bytes": 12384,
+      "sha256": "e9c268f566745759751e6ed7c51be34e79edc7e0ce4e25062f34750b2908463a"
+    },
+    "common.js": {
+      "path": "src/common.js",
+      "bytes": 13977,
+      "sha256": "100e7db1396f2d8819887042607dcf93c01bcd06dfba175a855d6446b7f6c414"
+    },
+    "platform.js": {
+      "path": "src/platform.js",
+      "bytes": 20079,
+      "sha256": "a3161dcb1689170d33b0c6735f7134df3e222f3d0b68a04131aaa3b4b4a33dc2"
+    }
+  },
+  "change_request": {
+    "path": "changes.json",
+    "sha256": "cf231ec0a1b8f0637c2142a258833c885806b4a8208804548d49f6b83ad5bcca"
+  },
+  "evaluation": "Independent evaluations are appended under evidence/ and reports/; these candidate files remain frozen.",
+  "scope": "Self-contained HTML UI simulations with synthetic data. Web, Mac, and Android have isolated round/platform session storage."
+}

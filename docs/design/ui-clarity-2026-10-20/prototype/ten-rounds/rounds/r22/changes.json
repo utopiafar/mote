@@ -1,0 +1,16 @@
+{
+  "round": 22,
+  "parent": "R21",
+  "purpose": "把设备责任、手机文件夹设置和首次保存结果落实为清楚的具体对象。",
+  "input_evaluation": "rounds/r21/reports/independent-evaluation.json",
+  "additional_input": "reports/fresh-android-r20/report.md",
+  "input_findings": ["R21-A Web 所选设备没有具体目标", "R21-B Android 首次保存出现三重确认", "全新 Android 首访：连接后来源名称与路径挤成极窄竖列", "全新 Android 首访：手机设置残留电脑路径、本机电脑和已有来源措辞"],
+  "changes": [
+    "Web 先连接具体设备，返回命名设备的屏幕状态页；系统授权与应用范围在对应客户端完成。",
+    "三端保存结果合并为一个确认区，提供打开笔记与基于笔记提问。",
+    "小屏已连接来源改为身份信息在上、操作在下的可读布局。",
+    "Android 新建文件夹提供手机目录选择模拟，使用手机路径、创建措辞与应用范围说明。"
+  ],
+  "evaluation_focus": ["Web 连接前后目标设备连续性", "Android 新建文件夹、来源行与暂停入口", "保存确认与首次提问", "三端主要旅程继续成立"],
+  "scope": "HTML UI simulation with synthetic data"
+}

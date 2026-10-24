@@ -1,0 +1,17 @@
+{
+  "round": 26,
+  "parent": "R25",
+  "purpose": "提前区分一次导入与持续收集，并让手机完成后的返回和滚动符合任务阶段。",
+  "input_evaluation": "rounds/r25/reports/independent-evaluation.json",
+  "additional_input": ["reports/fresh-android-r20/report.md", "reports/fresh-mac-r23/report.md", "rounds/r24/author/native-checks/back-check-result.json", "rounds/r25/author/native-checks/result.json"],
+  "input_findings": ["Android 首访：从导入改为持续文件夹连接需滚动到表单下方", "Mac 首访：本机按需清理未说清清理哪份文件", "Android 完成文件夹连接后返回重入空白新建页", "Android 切换来源设置页面继承旧滚动位置"],
+  "changes": [
+    "导入表单顶部解释一次导入，并提供改为持续同步文件夹的直接入口。",
+    "保存方式明确区分工作台归档、Mote 暂存副本和用户原文件；仅引用说明不读取正文。",
+    "手机完成新来源连接后替换新建历史步骤，返回实际入口。",
+    "Android 页面切换回到页首，同页修改仍保留滚动位置。"
+  ],
+  "copy_evidence": ["apps/android/app/src/main/java/dev/mote/collector/SourcesActivity.kt: 上传后仅清理 Mote 暂存，保留手机原文件", "docs/files.md: 原始文件与 Mote 暂存的范围", "docs/client-settings-and-storage.md: Mac 上传确认与本机队列"],
+  "evaluation_focus": ["导入与持续同步入口是否第一时间可区分", "保存方式切换及说明一致", "Android 来源创建后返回与跨页滚动", "三端主要旅程"],
+  "scope": "HTML UI simulation with synthetic data"
+}

@@ -1,0 +1,264 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/import",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R30\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n资料库\n/\n导入资料\n工作台在线\n随手记\n添加内容\n导入资料\n\n保存这次选定的文件，让以后查找和提问有据可依。\n\n导入记录\n1\n选择资料\n读书笔记.md\n读书笔记.md · 2,400 B\n移除\n会议记录.txt\n项目/会议记录.txt · 3,600 B\n移除\n访谈录音.wav\n录音/访谈录音.wav · 43,000 B\n移除\n资料归档.zip\n资料归档.zip · 18,400 B\n移除\n继续添加文件\n清空选择\n2\n补充理解资料所需的信息\n格式、作者与归属说明 选填\n帮助 Agent 理解资料的格式、时间、作者和背景。第三方与 AI 引文保留原角色。\n132 / 12,000\n名称、解析与图片处理\n默认格式处理或模型解析 · 跟随默认设置\n上传并查看预览\n稍后继续\n\n想持续收集文件夹变化？ 到采集端设置",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "empty",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "导入记录",
+      "label": "导入记录",
+      "action": "go",
+      "page": "imports",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "移除",
+      "label": "移除 读书笔记.md",
+      "action": "focus-remove-file",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "移除",
+      "label": "移除 会议记录.txt",
+      "action": "focus-remove-file",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "移除",
+      "label": "移除 访谈录音.wav",
+      "action": "focus-remove-file",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "移除",
+      "label": "移除 资料归档.zip",
+      "action": "focus-remove-file",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "继续添加文件",
+      "label": "继续添加文件",
+      "action": "focus-choose-files",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "清空选择",
+      "label": "清空选择",
+      "action": "focus-clear-files",
+      "disabled": false
+    },
+    {
+      "tag": "textarea",
+      "id": "focus-import-instruction",
+      "type": "textarea",
+      "text": "",
+      "label": "格式、作者与归属说明 选填\n帮助 Agent 理解资料的格式、时间、作者和背景。第三方与 AI 引文保留原角色。\n132 / 12,000",
+      "value": "格式：聊天导出与我的笔记混合，标题为“北岸研究”。\n作者：我、供应商和 AI。供应商说“我承诺周五交付”，这不是我的承诺；AI 的建议也不是我的观点。\n时间：2026-10-19 09:30，Asia/Shanghai。\n背景：比较三份方案，保留原作者与引用关系。",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "名称、解析与图片处理\n默认格式处理或模型解析 · 跟随默认设置",
+      "label": "名称、解析与图片处理\n默认格式处理或模型解析 · 跟随默认设置",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "上传并查看预览",
+      "label": "上传并查看预览",
+      "action": "focus-submit-import",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "稍后继续",
+      "label": "稍后继续",
+      "action": "go",
+      "page": "imports",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "到采集端设置",
+      "label": "到采集端设置",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "导入资料"
+    },
+    {
+      "level": "H2",
+      "text": "选择资料"
+    },
+    {
+      "level": "H2",
+      "text": "补充理解资料所需的信息"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

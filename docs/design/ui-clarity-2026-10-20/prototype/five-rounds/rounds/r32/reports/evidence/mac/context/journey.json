@@ -1,0 +1,27 @@
+{
+  "platform": "mac",
+  "scope": "Rendered UI only; generated fixture",
+  "steps": [
+    {
+      "name": "01-sources",
+      "url": "https://mote-prototype.invalid/?reset=1#/sources",
+      "evidence": [
+        "01-sources.json",
+        "01-sources.png"
+      ]
+    },
+    {
+      "name": "error-observed",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/folder",
+      "evidence": [
+        "error-observed.json",
+        "error-observed.png"
+      ]
+    }
+  ],
+  "checks": [],
+  "errors": [
+    "locator.evaluate: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('summary').filter({ hasText: '内容关系与背景' }).first()\u001b[22m\n"
+  ],
+  "browserErrors": []
+}

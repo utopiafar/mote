@@ -1,0 +1,249 @@
+[
+  {
+    "at": "2026-10-23T02:27:03.372Z",
+    "op": "open",
+    "file": "rounds/r31/mac.html",
+    "evidenceDirectory": "rounds/r31/reports/evidence/mac/native",
+    "save": "01-home"
+  },
+  {
+    "at": "2026-10-23T02:27:03.492Z",
+    "op": "select",
+    "label": "预览数据",
+    "value": "populated"
+  },
+  {
+    "at": "2026-10-23T02:27:03.566Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-23T02:27:03.602Z",
+    "op": "click",
+    "role": "button",
+    "name": "本机设置",
+    "save": "02-native-settings"
+  },
+  {
+    "at": "2026-10-23T02:27:26.269Z",
+    "op": "click",
+    "selector": "button[data-page=\"settings/native-capture\"]",
+    "save": "03-capture"
+  },
+  {
+    "at": "2026-10-23T02:27:36.621Z",
+    "op": "fill",
+    "selector": "#ns-capture-interval",
+    "value": "45"
+  },
+  {
+    "at": "2026-10-23T02:27:36.672Z",
+    "op": "click",
+    "role": "button",
+    "name": "预览范围并开始",
+    "save": "04-capture-preview"
+  },
+  {
+    "at": "2026-10-23T02:27:43.672Z",
+    "op": "click",
+    "role": "button",
+    "name": "按此范围开始",
+    "save": "05-capture-start"
+  },
+  {
+    "at": "2026-10-23T02:27:51.783Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开系统设置示例",
+    "index": 0,
+    "save": "07-permission-grant"
+  },
+  {
+    "at": "2026-10-23T02:28:02.920Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟允许并返回"
+  },
+  {
+    "at": "2026-10-23T02:28:02.969Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回原任务",
+    "save": "08-capture-return"
+  },
+  {
+    "at": "2026-10-23T02:28:03.101Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存设置"
+  },
+  {
+    "at": "2026-10-23T02:28:03.153Z",
+    "op": "click",
+    "role": "button",
+    "name": "预览范围并开始"
+  },
+  {
+    "at": "2026-10-23T02:28:03.201Z",
+    "op": "click",
+    "role": "button",
+    "name": "按此范围开始",
+    "save": "09-capture-running"
+  },
+  {
+    "at": "2026-10-23T02:28:23.757Z",
+    "op": "click",
+    "role": "button",
+    "name": "应用隐私与记录范围",
+    "save": "10-privacy"
+  },
+  {
+    "at": "2026-10-23T02:28:32.962Z",
+    "op": "select",
+    "label": "Safari 的记录级别",
+    "value": {
+      "label": "仅应用活动"
+    }
+  },
+  {
+    "at": "2026-10-23T02:28:33.017Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存设置",
+    "save": "11-privacy-saved"
+  },
+  {
+    "at": "2026-10-23T02:28:33.185Z",
+    "op": "click",
+    "selector": "button[data-page=\"settings/native-gate\"]",
+    "save": "12-privacy-gate"
+  },
+  {
+    "at": "2026-10-23T02:28:46.564Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看待复核记录",
+    "save": "13-held-before"
+  },
+  {
+    "at": "2026-10-23T02:29:38.265Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回"
+  },
+  {
+    "at": "2026-10-23T02:29:38.309Z",
+    "op": "check",
+    "selector": "#ns-gate-enabled",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T02:29:38.336Z",
+    "op": "fill",
+    "selector": "#ns-gate-literals",
+    "value": "内部样例代码\n生成测试字符串"
+  },
+  {
+    "at": "2026-10-23T02:29:38.357Z",
+    "op": "select",
+    "selector": "#ns-gate-failure",
+    "value": {
+      "label": "允许上传"
+    }
+  },
+  {
+    "at": "2026-10-23T02:29:38.404Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存设置",
+    "save": "14-gate-allow-saved"
+  },
+  {
+    "at": "2026-10-23T02:29:38.557Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看待复核记录",
+    "save": "15-held-after-policy"
+  },
+  {
+    "at": "2026-10-23T02:29:38.678Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看并决定",
+    "save": "16-held-review"
+  },
+  {
+    "at": "2026-10-23T02:29:46.163Z",
+    "op": "click",
+    "role": "button",
+    "name": "明确放行此条",
+    "save": "17-held-released"
+  },
+  {
+    "at": "2026-10-23T02:29:46.313Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-23T02:29:46.370Z",
+    "op": "click",
+    "role": "button",
+    "name": "发送与本机队列",
+    "save": "18-upload"
+  },
+  {
+    "at": "2026-10-23T02:30:13.494Z",
+    "op": "select",
+    "selector": "#ns-upload-mode",
+    "value": {
+      "label": "仅手动"
+    }
+  },
+  {
+    "at": "2026-10-23T02:30:13.545Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存设置"
+  },
+  {
+    "at": "2026-10-23T02:30:13.600Z",
+    "op": "click",
+    "role": "button",
+    "name": "暂停全部发送",
+    "save": "19-sending-paused"
+  },
+  {
+    "at": "2026-10-23T02:30:13.773Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回"
+  },
+  {
+    "at": "2026-10-23T02:30:13.810Z",
+    "op": "click",
+    "selector": "button[data-page=\"settings/native-capture\"]",
+    "save": "20-capture-during-send-pause"
+  },
+  {
+    "at": "2026-10-23T02:30:13.978Z",
+    "op": "click",
+    "role": "button",
+    "name": "暂停记录",
+    "save": "21-capture-paused"
+  },
+  {
+    "at": "2026-10-23T02:30:25.848Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-23T02:30:25.893Z",
+    "op": "click",
+    "role": "button",
+    "name": "发送与本机队列",
+    "save": "22-send-still-paused"
+  }
+]

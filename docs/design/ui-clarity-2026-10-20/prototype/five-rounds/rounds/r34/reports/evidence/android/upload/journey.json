@@ -1,0 +1,130 @@
+{
+  "platform": "android",
+  "scope": "Independent synthetic HTML UI observations",
+  "checks": [
+    {
+      "label": "queued item not archived",
+      "observed": true
+    },
+    {
+      "label": "submission identity visible",
+      "observed": true
+    },
+    {
+      "label": "exact queued explanation",
+      "observed": true
+    },
+    {
+      "label": "retry retains identity and context",
+      "observed": true
+    },
+    {
+      "label": "reload requires original file",
+      "observed": true
+    },
+    {
+      "label": "missing bytes cannot advance",
+      "observed": true
+    },
+    {
+      "label": "stale uploading heading while file missing",
+      "observed": true
+    },
+    {
+      "label": "wrong file rejected context retained",
+      "observed": true
+    },
+    {
+      "label": "received same identity",
+      "observed": true
+    },
+    {
+      "label": "review same submission and exact prose",
+      "observed": true
+    },
+    {
+      "label": "removal retains same received import",
+      "observed": true
+    },
+    {
+      "label": "original metadata still opens",
+      "observed": true
+    }
+  ],
+  "steps": [
+    {
+      "name": "01-submit-draft",
+      "url": "https://mote-prototype.invalid/#/import"
+    },
+    {
+      "name": "02-queued",
+      "url": "https://mote-prototype.invalid/#/imports/queue"
+    },
+    {
+      "name": "03-identity-context",
+      "url": "https://mote-prototype.invalid/#/imports/queue"
+    },
+    {
+      "name": "04-paused",
+      "url": "https://mote-prototype.invalid/#/imports/queue"
+    },
+    {
+      "name": "05-continued",
+      "url": "https://mote-prototype.invalid/#/imports/queue"
+    },
+    {
+      "name": "06-failed",
+      "url": "https://mote-prototype.invalid/#/imports/queue"
+    },
+    {
+      "name": "07-retried",
+      "url": "https://mote-prototype.invalid/#/imports/queue"
+    },
+    {
+      "name": "08-after-browser-reload",
+      "url": "https://mote-prototype.invalid/#/imports/queue"
+    },
+    {
+      "name": "09-reselect-dialog",
+      "url": "https://mote-prototype.invalid/#/imports/queue"
+    },
+    {
+      "name": "10-wrong-file-rejected",
+      "url": "https://mote-prototype.invalid/#/imports/queue"
+    },
+    {
+      "name": "11-same-files-ready",
+      "url": "https://mote-prototype.invalid/#/imports/queue"
+    },
+    {
+      "name": "12-submitting",
+      "url": "https://mote-prototype.invalid/#/imports/queue"
+    },
+    {
+      "name": "13-received",
+      "url": "https://mote-prototype.invalid/#/imports/queue"
+    },
+    {
+      "name": "14-received-review",
+      "url": "https://mote-prototype.invalid/#/import/review/upload-1792726552598"
+    },
+    {
+      "name": "15-remove-confirm",
+      "url": "https://mote-prototype.invalid/#/imports/queue"
+    },
+    {
+      "name": "16-removed",
+      "url": "https://mote-prototype.invalid/#/imports/queue"
+    },
+    {
+      "name": "17-original-retained",
+      "url": "https://mote-prototype.invalid/#/import/details/upload-1792726552598"
+    },
+    {
+      "name": "18-original-opened",
+      "url": "https://mote-prototype.invalid/#/import/details/upload-1792726552598"
+    }
+  ],
+  "errors": [],
+  "browserErrors": []
+}

@@ -1,0 +1,64 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/activity/native-queue",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R33\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n待发送记录\n\n本机队列与 Central 已接收分别标明。接收不代表已解析或可检索。\n\n返回\n未连接 Central，内容留在本机\n立即发送\n来源\n全部来源\n研究摘录.md\n结果\n全部结果\n本机待发送\nCentral 已接收\n需要处理冲突\nCentral 已删除\n研究摘录.md\n\nfile-1 · 本机待发 · 本机说明已保存 · 此来源文件等待 Central 确认\n\n本机原件保留\n打开记录\n刷新\n上一页\n1 / 1\n下一页\n演示读取失败\n资料库\n问一问\n来源\n活动\n本机记录详情\n\n核对来源、原件与接收 / 处理状态。\n\n研究摘录.md\n\n来源 / 记录\nfile-1 / source-file-1-reading\n本机原件\n保留\n接收\n本机待发 · 本机说明已保存 · 此来源文件等待 Central 确认\n正文处理\n未开始\n生成的所选文件正文。\n文件：研究摘录.md\n\n完整本机正文\n\n查看元数据\n导出完整本机原件示例\n刷新状态\n在 Central 查看",
+  "controls": [
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "关闭对话框",
+      "action": "close-modal",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看元数据",
+      "label": "查看元数据",
+      "action": "ns-record-metadata",
+      "item": "source-file-1-reading",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "导出完整本机原件示例",
+      "label": "导出完整本机原件示例",
+      "action": "ns-record-export",
+      "item": "source-file-1-reading",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新状态",
+      "label": "刷新状态",
+      "action": "ns-record-refresh",
+      "item": "source-file-1-reading",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "在 Central 查看",
+      "label": "在 Central 查看",
+      "action": "ns-central-record",
+      "item": "source-file-1-reading",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H2",
+      "text": "本机记录详情"
+    }
+  ],
+  "viewport": {
+    "width": 412,
+    "height": 915
+  },
+  "pageWidth": 412,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

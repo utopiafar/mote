@@ -1,0 +1,15 @@
+{
+  "round": 30,
+  "basis": ["User-reported missing import context", "User correction: collector-only folder synchronization", "Independent R29 baseline B01–B04", "Frozen independent 188-feature contract"],
+  "changes": [
+    "Restore one optional 12,000-character format/author/time/background/ownership explanation field in all three import surfaces.",
+    "Preserve exact explanation, fixed parser choice, image plan and selected files through preview, editing, confirmation, same-import detail and material provenance.",
+    "Expose revised context and regenerate-preview recovery on the same import; separate originals, readable records, indexing and memory.",
+    "Remove central-directory import tabs and central-local folder synchronization controls; replace Web folder setup with collector-specific handoff and received-material browsing.",
+    "Concentrate import composition on selected files and context, disclose optional name/parser/image settings, and move ongoing folder collection to a quiet task-specific link.",
+    "Preserve disclosure state across ordinary rerenders and viewport changes."
+  ],
+  "authorValidation": "Three fresh isolated browser sessions completed select sample -> multiline context -> nondefault parser/name -> review -> confirmation -> detail -> material explanation, with zero browser page errors. Mac/Android existing folder entry remained accessible. This author smoke is not the independent score.",
+  "pending": ["Independent R30 evaluation", "Full semantic omission restoration on other pages", "Native detailed options assigned to R31 generator helper", "Source context version conflict and material attribution work in next round"],
+  "simulationBoundary": "HTML and synthetic fixtures only; no backend/native/model verification."
+}

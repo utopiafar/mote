@@ -1,0 +1,261 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/native-diagnostics",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n本机诊断\n\n按需保存固定事件与数值。运行统计与诊断开关分别管理。\n\n返回\n记录本机数值与事件诊断\n不包含截图、正文、笔记、令牌或隐私规则。电量变化属于整机，不能归因于 Mote。\n采样间隔（秒）\n保存设置\n还原修改\n\n当前显示已保存的设置。\n\n查看与导出诊断\n导出时间范围\n最近 1 小时\n最近 24 小时\n最近 7 天\n刷新数值\n查看本地日志\n导出数值 JSON 示例\n导出安全支持包示例\n记录问题并反馈\n问题描述\n草稿随输入保留。反馈预览会带上当前平台与版本，不自动提交。\n预览 GitHub 反馈模拟浏览器打不开\n本机版本与更新查看运行统计\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回",
+      "label": "返回",
+      "action": "go",
+      "page": "settings/native",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-diagnostics-enabled",
+      "type": "checkbox",
+      "text": "",
+      "label": "记录本机数值与事件诊断\n不包含截图、正文、笔记、令牌或隐私规则。电量变化属于整机，不能归因于 Mote。",
+      "value": "on",
+      "checked": false,
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-diagnostics-interval",
+      "type": "number",
+      "text": "",
+      "label": "采样间隔（秒）",
+      "value": "60",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存设置",
+      "label": "保存设置",
+      "action": "ns-save",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "还原修改",
+      "label": "还原修改",
+      "action": "ns-discard",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "查看与导出诊断",
+      "label": "查看与导出诊断",
+      "expanded": true
+    },
+    {
+      "tag": "select",
+      "id": "ns-diagnostics-hours",
+      "type": "select-one",
+      "text": "最近 1 小时\n最近 24 小时\n最近 7 天",
+      "label": "导出时间范围\n最近 1 小时\n最近 24 小时\n最近 7 天",
+      "value": "24",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新数值",
+      "label": "刷新数值",
+      "action": "ns-diagnostic-refresh",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看本地日志",
+      "label": "查看本地日志",
+      "action": "ns-diagnostic-log",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "导出数值 JSON 示例",
+      "label": "导出数值 JSON 示例",
+      "action": "ns-diagnostic-export",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "导出安全支持包示例",
+      "label": "导出安全支持包示例",
+      "action": "ns-diagnostic-export",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "记录问题并反馈",
+      "label": "记录问题并反馈",
+      "expanded": true
+    },
+    {
+      "tag": "textarea",
+      "id": "ns-diagnostics-issue",
+      "type": "textarea",
+      "text": "",
+      "label": "问题描述\n草稿随输入保留。反馈预览会带上当前平台与版本，不自动提交。",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "预览 GitHub 反馈",
+      "label": "预览 GitHub 反馈",
+      "action": "ns-issue-preview",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "模拟浏览器打不开",
+      "label": "模拟浏览器打不开",
+      "action": "ns-issue-fail",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "本机版本与更新",
+      "label": "本机版本与更新",
+      "action": "go",
+      "page": "settings/native-update",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看运行统计",
+      "label": "查看运行统计",
+      "action": "go",
+      "page": "settings/native-statistics",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "本机诊断"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

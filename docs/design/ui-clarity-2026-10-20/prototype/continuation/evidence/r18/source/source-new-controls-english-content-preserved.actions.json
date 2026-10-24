@@ -1,0 +1,164 @@
+[
+  {
+    "type": "select",
+    "selector": "#language-choice",
+    "value": "en"
+  },
+  {
+    "type": "click",
+    "selector": ".sidebar [data-page=\"activity\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-task-source-count]",
+    "text": "0 saved materials"
+  },
+  {
+    "type": "click",
+    "selector": "[data-task-id=\"source-lark-sync\"] [data-page=\"activity/details\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "main",
+    "text": "This source has no saved materials yet."
+  },
+  {
+    "type": "click",
+    "selector": ".sidebar [data-page=\"sources\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-source-id=\"folder\"] [data-action=\"go\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-context-id]",
+    "text": "How this content relates to you"
+  },
+  {
+    "type": "select",
+    "selector": "#source-relation",
+    "value": "owner"
+  },
+  {
+    "type": "fill",
+    "selector": "#source-context-description",
+    "value": "保存内容关系"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-context-status]",
+    "text": "Relationship changes are not saved yet."
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"save-source-context\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-context-saved]",
+    "text": "My expression or experience"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-source-context-saved]",
+    "text": "保存内容关系"
+  },
+  {
+    "type": "assertValue",
+    "selector": "#source-context-description",
+    "value": "保存内容关系"
+  },
+  {
+    "type": "click",
+    "selector": ".sidebar [data-page=\"library\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "#device-filter",
+    "text": "All devices"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"filter\"][data-filter=\"snippets\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-snippet-count]",
+    "text": "1 group · 1 snippet"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-capture-group]",
+    "text": "Continuous session 1"
+  },
+  {
+    "type": "select",
+    "selector": "#snippet-grouping",
+    "value": "application"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-capture-group]",
+    "text": "App albums"
+  },
+  {
+    "type": "assertText",
+    "selector": "#capture-date-filter",
+    "text": "All capture dates"
+  },
+  {
+    "type": "click",
+    "selector": "[data-capture-group] [data-action=\"original\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[role=\"dialog\"]",
+    "text": "Captured at:"
+  },
+  {
+    "type": "assertText",
+    "selector": "[role=\"dialog\"]",
+    "text": "文章摘录 · 渐进式披露"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"close-modal\"]"
+  },
+  {
+    "type": "click",
+    "selector": ".sidebar [data-page=\"settings\"]"
+  },
+  {
+    "type": "click",
+    "selector": "[data-page=\"settings/privacy\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-send-status]",
+    "text": "Sending to Central is enabled"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"pause-all\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-action=\"confirm-pause-all\"]",
+    "text": "Confirm pause for all sending"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"confirm-pause-all\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-send-status]",
+    "text": "Content stays on the device; sending to Central is paused"
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-action=\"resume-all\"]",
+    "text": "Resume all sending"
+  }
+]

@@ -1,0 +1,3129 @@
+{
+  "schema": "mote-ten-rounds-scores-evidence-summary-v1",
+  "generated_at_utc": "2026-10-21T05:36:49.304419+00:00",
+  "partial": false,
+  "requested_rounds": [
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29
+  ],
+  "included_rounds": [
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29
+  ],
+  "missing_rounds": [],
+  "weights": {
+    "design": 15,
+    "originality": 5,
+    "craft": 10,
+    "functionality": 25,
+    "clarity": 20,
+    "new_user_friendliness": 25
+  },
+  "platform_aggregation": "equal arithmetic mean; minimum platform reported separately",
+  "rounding": "Display one decimal with ROUND_HALF_UP; raw numbers retained; gates use raw numbers.",
+  "scope": "Reads actual independent evaluations and their referenced artifacts; adds no new user study, score, or task execution.",
+  "evidence_totals": {
+    "actual_action_records": 763,
+    "reported_unique_screenshot_files": 607,
+    "first_look_records": 30,
+    "candidate_hashes_verified": 30,
+    "independent_reports": 10
+  },
+  "overall_gate_counts": {
+    "fail": 2,
+    "pass": 8
+  },
+  "rounds": [
+    {
+      "round": 20,
+      "report": "rounds/r20/reports/independent-evaluation.json",
+      "report_sha256": "2e3038d4be5e26b97943fe13d465e9f740c78f485d93ca8e3d7a925e1c07bd3e",
+      "manifest": "rounds/r20/manifest.json",
+      "manifest_sha256": "91387bb8bec96c68aa9966213ea2b71e90180f2c0efa4ee5295c2c2bd1d273cd",
+      "frozen_at_utc": "2026-10-21T04:34:55.875316+00:00",
+      "evaluation_started_at_utc": "2026-10-21T04:35:16.155Z",
+      "evaluation_finished_at_utc": "2026-10-21T04:39:18.843Z",
+      "scope": "HTML simulations; synthetic notes; actual visible-control operations and screenshots only. Informed evaluator, not fresh human blind study.",
+      "overall_gate_reported": "fail",
+      "platforms": {
+        "web": {
+          "candidate_sha256": "225a723e4f9df6c348f0e72fdc1b7f0d2116e009ea634cd264dd179037333c65",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 2,
+            "new_user_friendliness": 3.2
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 2,
+            "first_value_verify": 3,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 71.25,
+          "weighted_total_display": "71.3",
+          "newcomer_score_raw": 3.2,
+          "newcomer_score_display": "3.2",
+          "gate_reported": "fail",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": false,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "fail",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass_with_local_simulation_label_gap",
+            "permission_deny_cancel": "pass",
+            "advanced_discovery": "pass_memory_page_opened"
+          },
+          "findings": [
+            "R20-B",
+            "R20-C"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r20/evidence/independent/web/actions.json",
+            "actions_sha256": "9abf2873da14f2eddf9fdd40793ba732e23a7b8e84c4ac767ea5a14759520c0a",
+            "actual_action_records": 20,
+            "reported_action_records": 20,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 20,
+            "first_look_file": "rounds/r20/evidence/independent/web/first-look.json",
+            "first_look_sha256": "d79d26e35d14ff73f7c1f3c69200efdcc54c0de3e629904c1bea6f44a1d05322",
+            "reported_unique_screenshot_count": 16,
+            "reported_unique_screenshot_paths": [
+              "rounds/r20/evidence/independent/web/00-first-look.png",
+              "rounds/r20/evidence/independent/web/01-note-editor.png",
+              "rounds/r20/evidence/independent/web/03-note-saved.png",
+              "rounds/r20/evidence/independent/web/04-library-after-save.png",
+              "rounds/r20/evidence/independent/web/06-verified-note.png",
+              "rounds/r20/evidence/independent/web/07-ask-scoped.png",
+              "rounds/r20/evidence/independent/web/09-answer.png",
+              "rounds/r20/evidence/independent/web/10-citation.png",
+              "rounds/r20/evidence/independent/web/11-original.png",
+              "rounds/r20/evidence/independent/web/13-answer-returned.png",
+              "rounds/r20/evidence/independent/web/14-sources.png",
+              "rounds/r20/evidence/independent/web/15-source-catalog.png",
+              "rounds/r20/evidence/independent/web/16-screen-setup.png",
+              "rounds/r20/evidence/independent/web/17-permission-denied.png",
+              "rounds/r20/evidence/independent/web/18-setup-cancelled.png",
+              "rounds/r20/evidence/independent/web/20-memory-discovery.png"
+            ],
+            "action_screenshot_reference_count": 15,
+            "action_dom_reference_count": 20
+          }
+        },
+        "mac": {
+          "candidate_sha256": "0bd4fe3d76af1e189d562c36aa47b7eb5f74458dadd2083d03036f609e7f0e6e",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.4
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 3,
+            "first_value_verify": 3,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 77.5,
+          "weighted_total_display": "77.5",
+          "newcomer_score_raw": 3.4,
+          "newcomer_score_display": "3.4",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass_with_local_simulation_label_gap",
+            "permission_deny_cancel": "pass",
+            "advanced_discovery": "pass_memory_page_opened"
+          },
+          "findings": [
+            "R20-C"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r20/evidence/independent/mac/actions.json",
+            "actions_sha256": "77d3257741db6b7cd83f0fb32aac33ed777a96635a37165b66a02b06ecf5894b",
+            "actual_action_records": 20,
+            "reported_action_records": 20,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 20,
+            "first_look_file": "rounds/r20/evidence/independent/mac/first-look.json",
+            "first_look_sha256": "d29df5b2e53fd16c22b1b19ee8e965e935cf05ed16233ca08ae11b1ce70a80c3",
+            "reported_unique_screenshot_count": 16,
+            "reported_unique_screenshot_paths": [
+              "rounds/r20/evidence/independent/mac/00-first-look.png",
+              "rounds/r20/evidence/independent/mac/01-note-editor.png",
+              "rounds/r20/evidence/independent/mac/03-note-saved.png",
+              "rounds/r20/evidence/independent/mac/04-library-after-save.png",
+              "rounds/r20/evidence/independent/mac/06-verified-note.png",
+              "rounds/r20/evidence/independent/mac/07-ask-scoped.png",
+              "rounds/r20/evidence/independent/mac/09-answer.png",
+              "rounds/r20/evidence/independent/mac/10-citation.png",
+              "rounds/r20/evidence/independent/mac/11-original.png",
+              "rounds/r20/evidence/independent/mac/13-answer-returned.png",
+              "rounds/r20/evidence/independent/mac/14-sources.png",
+              "rounds/r20/evidence/independent/mac/15-source-catalog.png",
+              "rounds/r20/evidence/independent/mac/16-screen-setup.png",
+              "rounds/r20/evidence/independent/mac/17-permission-denied.png",
+              "rounds/r20/evidence/independent/mac/18-setup-cancelled.png",
+              "rounds/r20/evidence/independent/mac/20-memory-discovery.png"
+            ],
+            "action_screenshot_reference_count": 15,
+            "action_dom_reference_count": 20
+          }
+        },
+        "android": {
+          "candidate_sha256": "828b76a01226ae036e7484fcf99cae4482bdb8be3efb3a9c46581ade6d56caa6",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 2,
+            "functionality": 2,
+            "clarity": 3,
+            "new_user_friendliness": 3.4
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 3,
+            "first_value_verify": 3,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 68.75,
+          "weighted_total_display": "68.8",
+          "newcomer_score_raw": 3.4,
+          "newcomer_score_display": "3.4",
+          "gate_reported": "fail",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": false,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "fail",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass_with_local_simulation_label_gap",
+            "permission_deny_cancel": "partial_then_recovered",
+            "advanced_discovery": "pass_memory_page_opened"
+          },
+          "findings": [
+            "R20-A",
+            "R20-C"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r20/evidence/independent/android/actions.json",
+            "actions_sha256": "16a48e2b8e77496b45ad85b5b700989c7984c6e13d0fee7ec825a4c400116b26",
+            "actual_action_records": 23,
+            "reported_action_records": 23,
+            "explicit_action_outcomes": {
+              "blocked": 1
+            },
+            "action_records_without_explicit_outcome": 22,
+            "first_look_file": "rounds/r20/evidence/independent/android/first-look.json",
+            "first_look_sha256": "35b4a4adba9a64d376aa02cc9c8e101515eda6c6b3817c29b7c1effd78d3cdeb",
+            "reported_unique_screenshot_count": 19,
+            "reported_unique_screenshot_paths": [
+              "rounds/r20/evidence/independent/android/00-first-look.png",
+              "rounds/r20/evidence/independent/android/01-note-editor.png",
+              "rounds/r20/evidence/independent/android/03-note-saved.png",
+              "rounds/r20/evidence/independent/android/04-library-after-save.png",
+              "rounds/r20/evidence/independent/android/06-verified-note.png",
+              "rounds/r20/evidence/independent/android/07-ask-scoped.png",
+              "rounds/r20/evidence/independent/android/09-answer.png",
+              "rounds/r20/evidence/independent/android/10-citation.png",
+              "rounds/r20/evidence/independent/android/11-original.png",
+              "rounds/r20/evidence/independent/android/13-answer-returned.png",
+              "rounds/r20/evidence/independent/android/14-sources.png",
+              "rounds/r20/evidence/independent/android/15-source-catalog.png",
+              "rounds/r20/evidence/independent/android/16-screen-setup.png",
+              "rounds/r20/evidence/independent/android/17-permission-denied.png",
+              "rounds/r20/evidence/independent/android/18-cancel-blocked.png",
+              "rounds/r20/evidence/independent/android/19-toast-dismissed.png",
+              "rounds/r20/evidence/independent/android/20-setup-scrolled.png",
+              "rounds/r20/evidence/independent/android/21-setup-cancelled.png",
+              "rounds/r20/evidence/independent/android/23-memory-discovery.png"
+            ],
+            "action_screenshot_reference_count": 18,
+            "action_dom_reference_count": 23
+          }
+        }
+      },
+      "findings": [
+        {
+          "id": "R20-A",
+          "severity": "major",
+          "platforms": [
+            "android"
+          ],
+          "observation": "保存笔记的提示跨多页持续显示，遮挡屏幕权限设置底部取消按钮。正常点击等待30秒失败，点击记录显示 toast 与 bottom-nav 拦截。",
+          "impact": "取消权限设置需要先识别并关闭旧提示、再滚动，首轮正常退出路径受阻。",
+          "evidence": [
+            "evidence/independent/android/18-cancel-blocked.png",
+            "evidence/independent/android/actions.json",
+            "evidence/independent/android/21-setup-cancelled.png"
+          ],
+          "recovery": "关闭旧提示并向下滚动后，取消成功返回来源管理，屏幕仍尚未开启。",
+          "next_priority": "在导航后移除过时提示，并保证底部操作滚动至底栏上方；不要以强制点击掩盖。"
+        },
+        {
+          "id": "R20-B",
+          "severity": "major",
+          "platforms": [
+            "web"
+          ],
+          "observation": "Web 的屏幕采集设置直接显示授权、应用勾选与“保存范围并开始记录”，此页没有说明实际由哪台 Mac/Android 执行。",
+          "impact": "首屏说客户端采集，进入设置后平台责任消失，新手难判断自己正在授权浏览器还是管理某台设备。",
+          "evidence": [
+            "evidence/independent/web/16-screen-setup.png",
+            "evidence/independent/web/16-screen-setup.dom.json"
+          ],
+          "next_priority": "在 Web 设置页持续解释采集所在设备、当前目标和客户端下一步。"
+        },
+        {
+          "id": "R20-C",
+          "severity": "minor",
+          "platforms": [
+            "web",
+            "mac",
+            "android"
+          ],
+          "observation": "从刚保存的资料进入限定范围提问后，回答标题是“这份资料的要点”，正文没有贴近回答的“示例 / 未调用模型”说明。",
+          "impact": "全局原型条已说明演示，但 Android 滚动后它不可见；回答完成形态仍容易被单独理解为真实模型结果。",
+          "evidence": [
+            "evidence/independent/web/09-answer.png",
+            "evidence/independent/mac/09-answer.png",
+            "evidence/independent/android/09-answer.png"
+          ],
+          "next_priority": "所有回答分支就近标明模拟结果，不依赖全局条或折叠的演示状态。"
+        }
+      ],
+      "resolved_from_previous": [],
+      "next_priority": [
+        "Android: 解决旧提示/底栏阻挡取消，重走先保存→再设置的自然路径。",
+        "Web: 补齐屏幕采集执行设备与客户端责任说明。",
+        "三端: 限定资料回答紧邻说明模拟性质。"
+      ],
+      "equal_platform_mean_raw": 72.5,
+      "equal_platform_mean_display": "72.5",
+      "minimum_platform_score_raw": 68.75,
+      "minimum_platform_score_display": "68.8",
+      "action_records_total": 63,
+      "reported_screenshot_count_total": 51
+    },
+    {
+      "round": 21,
+      "report": "rounds/r21/reports/independent-evaluation.json",
+      "report_sha256": "4d2a285ff14a3f73ff5a60979702b9d3cc4fc47ea3229674dcdf6db7c3322318",
+      "manifest": "rounds/r21/manifest.json",
+      "manifest_sha256": "ff0bf8328eb8a4c9fafe484be5b791289914137fc0997ff4427c72e37788734a",
+      "frozen_at_utc": "2026-10-21T04:41:13.210689+00:00",
+      "evaluation_started_at_utc": "2026-10-21T04:41:33.392Z",
+      "evaluation_finished_at_utc": "2026-10-21T04:42:49.705Z",
+      "scope": "Current-round rendered HTML simulations and synthetic natural flows only; informed iterative evaluator, no implementation reads.",
+      "overall_gate_reported": "pass",
+      "platforms": {
+        "web": {
+          "candidate_sha256": "0a5326ff0284bdb6b83974f686bead6f4615d8e0d4d59b40e5f6e7bf2de58405",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.4
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 3,
+            "first_value_verify": 3,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 77.5,
+          "weighted_total_display": "77.5",
+          "newcomer_score_raw": 3.4,
+          "newcomer_score_display": "3.4",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "permission_deny_cancel": "pass",
+            "advanced_discovery": "pass_memory_page_opened"
+          },
+          "findings": [
+            "R21-A"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r21/evidence/independent/web/actions.json",
+            "actions_sha256": "1e546431b5383108a5e529eb42bdda63efa84798ee43a672c79fc8ea9d7af13b",
+            "actual_action_records": 20,
+            "reported_action_records": 20,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 20,
+            "first_look_file": "rounds/r21/evidence/independent/web/first-look.json",
+            "first_look_sha256": "8708ba73c4e32484e6ce8bce3fc51d58cd815226c305b800fdbfa175f5a4f71c",
+            "reported_unique_screenshot_count": 16,
+            "reported_unique_screenshot_paths": [
+              "rounds/r21/evidence/independent/web/00-first-look.png",
+              "rounds/r21/evidence/independent/web/01-note-editor.png",
+              "rounds/r21/evidence/independent/web/03-note-saved.png",
+              "rounds/r21/evidence/independent/web/04-library-after-save.png",
+              "rounds/r21/evidence/independent/web/06-verified-note.png",
+              "rounds/r21/evidence/independent/web/07-ask-scoped.png",
+              "rounds/r21/evidence/independent/web/09-answer.png",
+              "rounds/r21/evidence/independent/web/10-citation.png",
+              "rounds/r21/evidence/independent/web/11-original.png",
+              "rounds/r21/evidence/independent/web/13-answer-returned.png",
+              "rounds/r21/evidence/independent/web/14-sources.png",
+              "rounds/r21/evidence/independent/web/15-source-catalog.png",
+              "rounds/r21/evidence/independent/web/16-screen-setup.png",
+              "rounds/r21/evidence/independent/web/17-permission-denied.png",
+              "rounds/r21/evidence/independent/web/18-setup-cancelled.png",
+              "rounds/r21/evidence/independent/web/20-memory-discovery.png"
+            ],
+            "action_screenshot_reference_count": 15,
+            "action_dom_reference_count": 20
+          }
+        },
+        "mac": {
+          "candidate_sha256": "47d7152fa75c77d7a988ad68ab601bc0584a51d231784cf5567d091b817aec60",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.4
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 3,
+            "first_value_verify": 3,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 77.5,
+          "weighted_total_display": "77.5",
+          "newcomer_score_raw": 3.4,
+          "newcomer_score_display": "3.4",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "permission_deny_cancel": "pass",
+            "advanced_discovery": "pass_memory_page_opened"
+          },
+          "findings": [],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r21/evidence/independent/mac/actions.json",
+            "actions_sha256": "e7a395180f01c9a31ac7e61e71a12f94029b47a1188550ab2850e0440b952104",
+            "actual_action_records": 20,
+            "reported_action_records": 20,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 20,
+            "first_look_file": "rounds/r21/evidence/independent/mac/first-look.json",
+            "first_look_sha256": "367d5b5f78bd32e0b237f6060901d13c27fb30367ef2f610a8a4fb48efc72a37",
+            "reported_unique_screenshot_count": 16,
+            "reported_unique_screenshot_paths": [
+              "rounds/r21/evidence/independent/mac/00-first-look.png",
+              "rounds/r21/evidence/independent/mac/01-note-editor.png",
+              "rounds/r21/evidence/independent/mac/03-note-saved.png",
+              "rounds/r21/evidence/independent/mac/04-library-after-save.png",
+              "rounds/r21/evidence/independent/mac/06-verified-note.png",
+              "rounds/r21/evidence/independent/mac/07-ask-scoped.png",
+              "rounds/r21/evidence/independent/mac/09-answer.png",
+              "rounds/r21/evidence/independent/mac/10-citation.png",
+              "rounds/r21/evidence/independent/mac/11-original.png",
+              "rounds/r21/evidence/independent/mac/13-answer-returned.png",
+              "rounds/r21/evidence/independent/mac/14-sources.png",
+              "rounds/r21/evidence/independent/mac/15-source-catalog.png",
+              "rounds/r21/evidence/independent/mac/16-screen-setup.png",
+              "rounds/r21/evidence/independent/mac/17-permission-denied.png",
+              "rounds/r21/evidence/independent/mac/18-setup-cancelled.png",
+              "rounds/r21/evidence/independent/mac/20-memory-discovery.png"
+            ],
+            "action_screenshot_reference_count": 15,
+            "action_dom_reference_count": 20
+          }
+        },
+        "android": {
+          "candidate_sha256": "102cfeea35272941c89610a9777f3f73dc10ed93922f1176c1e9ab86611e574c",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.4
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 3,
+            "first_value_verify": 3,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 77.5,
+          "weighted_total_display": "77.5",
+          "newcomer_score_raw": 3.4,
+          "newcomer_score_display": "3.4",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "permission_deny_cancel": "pass",
+            "advanced_discovery": "pass_memory_page_opened"
+          },
+          "findings": [
+            "R21-B"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r21/evidence/independent/android/actions.json",
+            "actions_sha256": "34e4b8b0735e880efd82e971d8d23a2b8324737bcfbf65ba396b2a457b6a6b29",
+            "actual_action_records": 20,
+            "reported_action_records": 20,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 20,
+            "first_look_file": "rounds/r21/evidence/independent/android/first-look.json",
+            "first_look_sha256": "9f46bb099505103e132938473c87cc62000221c6a657fff6b6e56832471deec5",
+            "reported_unique_screenshot_count": 16,
+            "reported_unique_screenshot_paths": [
+              "rounds/r21/evidence/independent/android/00-first-look.png",
+              "rounds/r21/evidence/independent/android/01-note-editor.png",
+              "rounds/r21/evidence/independent/android/03-note-saved.png",
+              "rounds/r21/evidence/independent/android/04-library-after-save.png",
+              "rounds/r21/evidence/independent/android/06-verified-note.png",
+              "rounds/r21/evidence/independent/android/07-ask-scoped.png",
+              "rounds/r21/evidence/independent/android/09-answer.png",
+              "rounds/r21/evidence/independent/android/10-citation.png",
+              "rounds/r21/evidence/independent/android/11-original.png",
+              "rounds/r21/evidence/independent/android/13-answer-returned.png",
+              "rounds/r21/evidence/independent/android/14-sources.png",
+              "rounds/r21/evidence/independent/android/15-source-catalog.png",
+              "rounds/r21/evidence/independent/android/16-screen-setup.png",
+              "rounds/r21/evidence/independent/android/17-permission-denied.png",
+              "rounds/r21/evidence/independent/android/18-setup-cancelled.png",
+              "rounds/r21/evidence/independent/android/20-memory-discovery.png"
+            ],
+            "action_screenshot_reference_count": 15,
+            "action_dom_reference_count": 20
+          }
+        }
+      },
+      "findings": [
+        {
+          "id": "R21-A",
+          "severity": "minor",
+          "platforms": [
+            "web"
+          ],
+          "observation": "屏幕设置新增了Mac/Android执行责任说明，但文案说“所选设备”而当前空白来源状态没有具体设备名或选择器。",
+          "impact": "第一次连接的人仍要自行判断哪个设备将接收此范围；目前观察到的取消分支未受阻。",
+          "evidence": [
+            "evidence/independent/web/16-screen-setup.png",
+            "evidence/independent/web/16-screen-setup.dom.json"
+          ],
+          "next_priority": "在无设备状态给出明确的连接下一步；已有设备时显示目标名称。"
+        },
+        {
+          "id": "R21-B",
+          "severity": "minor",
+          "platforms": [
+            "android"
+          ],
+          "observation": "保存后的编辑页同时有顶部保存提示、按钮旁已保存状态和下方绿色结果区。",
+          "impact": "确认信息重复且占屏，新手找下一步要在多个完成提示间扫描。",
+          "evidence": [
+            "evidence/independent/android/03-note-saved.png"
+          ],
+          "next_priority": "合并为一个靠近保存位置、可直接打开结果的完成反馈。"
+        }
+      ],
+      "resolved_from_previous": [
+        "R20-A: Android normal cancel succeeds after preceding save and navigation.",
+        "R20-B: Web now explains native capture responsibility.",
+        "R20-C: Scoped answer now has a local 示例回答 badge."
+      ],
+      "next_priority": [
+        "在无设备状态给出明确的连接下一步；已有设备时显示目标名称。",
+        "合并为一个靠近保存位置、可直接打开结果的完成反馈。"
+      ],
+      "equal_platform_mean_raw": 77.5,
+      "equal_platform_mean_display": "77.5",
+      "minimum_platform_score_raw": 77.5,
+      "minimum_platform_score_display": "77.5",
+      "action_records_total": 60,
+      "reported_screenshot_count_total": 48
+    },
+    {
+      "round": 22,
+      "report": "rounds/r22/reports/independent-evaluation.json",
+      "report_sha256": "9e436c8d18e4debd974b2f3b8e60cd3c20115a2ec278c6ed38a36ea1c70b5672",
+      "manifest": "rounds/r22/manifest.json",
+      "manifest_sha256": "312cf7b48b8a16a785d30e3dae95a85b1d6fc932ac9cd9ee1d1c5b3a9f5ed7e6",
+      "frozen_at_utc": "2026-10-21T04:48:13.896724+00:00",
+      "evaluation_started_at_utc": "2026-10-21T04:48:25.003Z",
+      "evaluation_finished_at_utc": "2026-10-21T04:50:32.266Z",
+      "scope": "Current-round HTML simulations, synthetic data, visible controls and rendered screenshots. Informed iterative evaluator; no candidate implementation reads.",
+      "overall_gate_reported": "pass",
+      "platforms": {
+        "web": {
+          "candidate_sha256": "9c758c66a07fbedccee4f8b7ed648159bf9b742787da8827ca3cd94b67337433",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.8
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 80.0,
+          "weighted_total_display": "80.0",
+          "newcomer_score_raw": 3.8,
+          "newcomer_score_display": "3.8",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "permission_setup": "pass_device_handoff_and_extra_connection_cancel",
+            "advanced_discovery": "pass_memory_page_opened"
+          },
+          "findings": [],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r22/evidence/independent/web/actions.json",
+            "actions_sha256": "e38968c7790f18c91785777baa192b3c72f7ce82fc3e7099daf68083d8bcacd5",
+            "actual_action_records": 23,
+            "reported_action_records": 23,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 23,
+            "first_look_file": "rounds/r22/evidence/independent/web/first-look.json",
+            "first_look_sha256": "c9188c6b8d3f815011d5e3dbd151c220b929712ca59a45eeda60a3c919a48621",
+            "reported_unique_screenshot_count": 18,
+            "reported_unique_screenshot_paths": [
+              "rounds/r22/evidence/independent/web/00-first-look.png",
+              "rounds/r22/evidence/independent/web/01-note-editor.png",
+              "rounds/r22/evidence/independent/web/03-note-saved.png",
+              "rounds/r22/evidence/independent/web/04-library-after-save.png",
+              "rounds/r22/evidence/independent/web/06-verified-note.png",
+              "rounds/r22/evidence/independent/web/07-ask-scoped.png",
+              "rounds/r22/evidence/independent/web/09-answer.png",
+              "rounds/r22/evidence/independent/web/10-citation.png",
+              "rounds/r22/evidence/independent/web/11-original.png",
+              "rounds/r22/evidence/independent/web/13-answer-returned.png",
+              "rounds/r22/evidence/independent/web/14-sources.png",
+              "rounds/r22/evidence/independent/web/15-source-catalog.png",
+              "rounds/r22/evidence/independent/web/16-screen-setup.png",
+              "rounds/r22/evidence/independent/web/17-device-connect.png",
+              "rounds/r22/evidence/independent/web/18-device-confirm.png",
+              "rounds/r22/evidence/independent/web/19-device-state.png",
+              "rounds/r22/evidence/independent/web/21-connect-cancelled.png",
+              "rounds/r22/evidence/independent/web/23-memory-discovery.png"
+            ],
+            "action_screenshot_reference_count": 17,
+            "action_dom_reference_count": 23
+          }
+        },
+        "mac": {
+          "candidate_sha256": "04da8d84e9337654220cf625c71946d5c9ed12e584cdb75aa44f8f0f7a0f977c",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.6
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 3,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 78.75,
+          "weighted_total_display": "78.8",
+          "newcomer_score_raw": 3.6,
+          "newcomer_score_display": "3.6",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "permission_setup": "pass_denial_and_cancel",
+            "advanced_discovery": "pass_memory_page_opened"
+          },
+          "findings": [],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r22/evidence/independent/mac/actions.json",
+            "actions_sha256": "a20cfadc62e9655ece6dbebfff36dbf5c86d7e1ff98a0607ed249b9577fa47cf",
+            "actual_action_records": 20,
+            "reported_action_records": 20,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 20,
+            "first_look_file": "rounds/r22/evidence/independent/mac/first-look.json",
+            "first_look_sha256": "2f6648ffe6bac12213f613dedd068026df3a148a23a631cfb0b97bf7c1bcbd7f",
+            "reported_unique_screenshot_count": 16,
+            "reported_unique_screenshot_paths": [
+              "rounds/r22/evidence/independent/mac/00-first-look.png",
+              "rounds/r22/evidence/independent/mac/01-note-editor.png",
+              "rounds/r22/evidence/independent/mac/03-note-saved.png",
+              "rounds/r22/evidence/independent/mac/04-library-after-save.png",
+              "rounds/r22/evidence/independent/mac/06-verified-note.png",
+              "rounds/r22/evidence/independent/mac/07-ask-scoped.png",
+              "rounds/r22/evidence/independent/mac/09-answer.png",
+              "rounds/r22/evidence/independent/mac/10-citation.png",
+              "rounds/r22/evidence/independent/mac/11-original.png",
+              "rounds/r22/evidence/independent/mac/13-answer-returned.png",
+              "rounds/r22/evidence/independent/mac/14-sources.png",
+              "rounds/r22/evidence/independent/mac/15-source-catalog.png",
+              "rounds/r22/evidence/independent/mac/16-screen-setup.png",
+              "rounds/r22/evidence/independent/mac/17-permission-denied.png",
+              "rounds/r22/evidence/independent/mac/18-setup-cancelled.png",
+              "rounds/r22/evidence/independent/mac/20-memory-discovery.png"
+            ],
+            "action_screenshot_reference_count": 15,
+            "action_dom_reference_count": 20
+          }
+        },
+        "android": {
+          "candidate_sha256": "d636f0c97c917a98eed90cc049e6008f6e48cc5ea2653bd788840ede87cd9d08",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.8
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 80.0,
+          "weighted_total_display": "80.0",
+          "newcomer_score_raw": 3.8,
+          "newcomer_score_display": "3.8",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "permission_setup": "pass_denial_and_cancel",
+            "advanced_discovery": "pass_memory_page_opened",
+            "changed_folder_path": "pass_new_picker_named_source_pause_and_list_state"
+          },
+          "findings": [
+            "R22-A",
+            "R22-B"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r22/evidence/independent/android/actions.json",
+            "actions_sha256": "5de4cdbcbc3a20ee44618e90d4db5298cd1bf4e06d7345ef1c73a5284c0ec2f3",
+            "actual_action_records": 27,
+            "reported_action_records": 27,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 27,
+            "first_look_file": "rounds/r22/evidence/independent/android/first-look.json",
+            "first_look_sha256": "84ba8ae3a798098f9d4b1b32d974c4ad115e33507ce586388d9ee42b91db6846",
+            "reported_unique_screenshot_count": 22,
+            "reported_unique_screenshot_paths": [
+              "rounds/r22/evidence/independent/android/00-first-look.png",
+              "rounds/r22/evidence/independent/android/01-note-editor.png",
+              "rounds/r22/evidence/independent/android/03-note-saved.png",
+              "rounds/r22/evidence/independent/android/04-library-after-save.png",
+              "rounds/r22/evidence/independent/android/06-verified-note.png",
+              "rounds/r22/evidence/independent/android/07-ask-scoped.png",
+              "rounds/r22/evidence/independent/android/09-answer.png",
+              "rounds/r22/evidence/independent/android/10-citation.png",
+              "rounds/r22/evidence/independent/android/11-original.png",
+              "rounds/r22/evidence/independent/android/13-answer-returned.png",
+              "rounds/r22/evidence/independent/android/14-sources.png",
+              "rounds/r22/evidence/independent/android/15-source-catalog.png",
+              "rounds/r22/evidence/independent/android/16-screen-setup.png",
+              "rounds/r22/evidence/independent/android/17-permission-denied.png",
+              "rounds/r22/evidence/independent/android/18-setup-cancelled.png",
+              "rounds/r22/evidence/independent/android/19-folder-setup.png",
+              "rounds/r22/evidence/independent/android/20-folder-picker.png",
+              "rounds/r22/evidence/independent/android/21-folder-selected.png",
+              "rounds/r22/evidence/independent/android/23-folder-connected.png",
+              "rounds/r22/evidence/independent/android/24-folder-paused.png",
+              "rounds/r22/evidence/independent/android/25-folder-source-row.png",
+              "rounds/r22/evidence/independent/android/27-memory-discovery.png"
+            ],
+            "action_screenshot_reference_count": 21,
+            "action_dom_reference_count": 27
+          }
+        }
+      },
+      "findings": [
+        {
+          "id": "R22-A",
+          "severity": "minor",
+          "platforms": [
+            "android"
+          ],
+          "observation": "已暂停一个文件夹后，来源首屏的文件夹卡显示“已暂停接收”，主要动作仍是“连接一个文件夹”；该已连接来源的名称和管理动作位于下方。",
+          "impact": "想管理刚连接来源的人需要继续下滚或理解总览卡与具体来源行的区别。",
+          "evidence": [
+            "evidence/independent/android/25-folder-source-row.png",
+            "evidence/independent/android/25-folder-source-row.dom.json"
+          ]
+        },
+        {
+          "id": "R22-B",
+          "severity": "minor",
+          "platforms": [
+            "android"
+          ],
+          "observation": "来源连接完成后，顶部提示、设置已保存条、正在接收条、正在管理的来源块连续出现，实际目录与管理动作被推到下方。",
+          "impact": "第一条来源的确认信息重复，占用窄屏可用空间。",
+          "evidence": [
+            "evidence/independent/android/23-folder-connected.png"
+          ]
+        }
+      ],
+      "resolved_from_previous": [
+        "R21-A: Web有明确无设备路径和Mac示例设备目标，权限转至设备端。",
+        "R21-B: 首次笔记保存合并为单个结果区并提供打开/提问。"
+      ],
+      "next_priority": [
+        "Android可把已连接来源名称与管理入口带到本机总览卡，并合并来源完成后的重复状态提示。"
+      ],
+      "equal_platform_mean_raw": 79.58333333333333,
+      "equal_platform_mean_display": "79.6",
+      "minimum_platform_score_raw": 78.75,
+      "minimum_platform_score_display": "78.8",
+      "action_records_total": 70,
+      "reported_screenshot_count_total": 56
+    },
+    {
+      "round": 23,
+      "report": "rounds/r23/reports/independent-evaluation.json",
+      "report_sha256": "4a99fdccce038c717909e609ce434353c5193cd9fae9a3e4c72111086a71b92f",
+      "manifest": "rounds/r23/manifest.json",
+      "manifest_sha256": "c4912506678f4a80285222d7a6b14e3afb9fd7346103883bd74aed11100797ed",
+      "frozen_at_utc": "2026-10-21T04:56:23.384090+00:00",
+      "evaluation_started_at_utc": "2026-10-21T04:56:32.868Z",
+      "evaluation_finished_at_utc": "2026-10-21T04:57:43.672Z",
+      "scope": "Current-round HTML simulations, synthetic data, visible controls and rendered screenshots. Informed iterative evaluator; no candidate implementation reads.",
+      "overall_gate_reported": "pass",
+      "platforms": {
+        "web": {
+          "candidate_sha256": "bf4a6cd363f5ea7b3d50660892d79e7da724b8a67ca824826185b55620805d1c",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.8
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 80.0,
+          "weighted_total_display": "80.0",
+          "newcomer_score_raw": 3.8,
+          "newcomer_score_display": "3.8",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "permission_setup": "pass_device_handoff_and_extra_connection_cancel",
+            "advanced_discovery": "pass_memory_page_opened"
+          },
+          "findings": [],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r23/evidence/independent/web/actions.json",
+            "actions_sha256": "316fef4bbd4fedd2b54a70cdbc92d7fc81af07935db62accde0107bd586f6bb1",
+            "actual_action_records": 23,
+            "reported_action_records": 23,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 23,
+            "first_look_file": "rounds/r23/evidence/independent/web/first-look.json",
+            "first_look_sha256": "8b7bf3878e4a2816ae2a7f8f39c8ce1ba65df3ecaca8f578928a71128a264108",
+            "reported_unique_screenshot_count": 18,
+            "reported_unique_screenshot_paths": [
+              "rounds/r23/evidence/independent/web/00-first-look.png",
+              "rounds/r23/evidence/independent/web/01-note-editor.png",
+              "rounds/r23/evidence/independent/web/03-note-saved.png",
+              "rounds/r23/evidence/independent/web/04-library-after-save.png",
+              "rounds/r23/evidence/independent/web/06-verified-note.png",
+              "rounds/r23/evidence/independent/web/07-ask-scoped.png",
+              "rounds/r23/evidence/independent/web/09-answer.png",
+              "rounds/r23/evidence/independent/web/10-citation.png",
+              "rounds/r23/evidence/independent/web/11-original.png",
+              "rounds/r23/evidence/independent/web/13-answer-returned.png",
+              "rounds/r23/evidence/independent/web/14-sources.png",
+              "rounds/r23/evidence/independent/web/15-source-catalog.png",
+              "rounds/r23/evidence/independent/web/16-screen-setup.png",
+              "rounds/r23/evidence/independent/web/17-device-connect.png",
+              "rounds/r23/evidence/independent/web/18-device-target.png",
+              "rounds/r23/evidence/independent/web/19-device-state.png",
+              "rounds/r23/evidence/independent/web/21-connect-cancelled.png",
+              "rounds/r23/evidence/independent/web/23-memory-discovery.png"
+            ],
+            "action_screenshot_reference_count": 17,
+            "action_dom_reference_count": 23
+          }
+        },
+        "mac": {
+          "candidate_sha256": "14004a73cac728f425702449b8cacf30a79e1ed683cf64b7a2db89874f7dfb22",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.6
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 3,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 78.75,
+          "weighted_total_display": "78.8",
+          "newcomer_score_raw": 3.6,
+          "newcomer_score_display": "3.6",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "permission_setup": "pass_denial_and_cancel",
+            "advanced_discovery": "pass_memory_page_opened"
+          },
+          "findings": [],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r23/evidence/independent/mac/actions.json",
+            "actions_sha256": "c1afeb2814e1cec9e967f568af7aab7a50ef85e5906adfdf19daac74ac48091c",
+            "actual_action_records": 20,
+            "reported_action_records": 20,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 20,
+            "first_look_file": "rounds/r23/evidence/independent/mac/first-look.json",
+            "first_look_sha256": "ff5abbe1900edb28c2ecfe1131129fc80a19b76f23a6ee63da2c3fc35c993db4",
+            "reported_unique_screenshot_count": 16,
+            "reported_unique_screenshot_paths": [
+              "rounds/r23/evidence/independent/mac/00-first-look.png",
+              "rounds/r23/evidence/independent/mac/01-note-editor.png",
+              "rounds/r23/evidence/independent/mac/03-note-saved.png",
+              "rounds/r23/evidence/independent/mac/04-library-after-save.png",
+              "rounds/r23/evidence/independent/mac/06-verified-note.png",
+              "rounds/r23/evidence/independent/mac/07-ask-scoped.png",
+              "rounds/r23/evidence/independent/mac/09-answer.png",
+              "rounds/r23/evidence/independent/mac/10-citation.png",
+              "rounds/r23/evidence/independent/mac/11-original.png",
+              "rounds/r23/evidence/independent/mac/13-answer-returned.png",
+              "rounds/r23/evidence/independent/mac/14-sources.png",
+              "rounds/r23/evidence/independent/mac/15-source-catalog.png",
+              "rounds/r23/evidence/independent/mac/16-screen-setup.png",
+              "rounds/r23/evidence/independent/mac/17-permission-denied.png",
+              "rounds/r23/evidence/independent/mac/18-setup-cancelled.png",
+              "rounds/r23/evidence/independent/mac/20-memory-discovery.png"
+            ],
+            "action_screenshot_reference_count": 15,
+            "action_dom_reference_count": 20
+          }
+        },
+        "android": {
+          "candidate_sha256": "1ba1fa9cf5b8b648923b810570e9c095570f8c642628e8bdb216a202d1cb6225",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.8
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 80.0,
+          "weighted_total_display": "80.0",
+          "newcomer_score_raw": 3.8,
+          "newcomer_score_display": "3.8",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "permission_setup": "pass_denial_and_cancel",
+            "advanced_discovery": "pass_memory_page_opened",
+            "changed_folder_path": "pass_new_picker_named_source_pause_list_and_existing_management"
+          },
+          "findings": [
+            "R23-A"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r23/evidence/independent/android/actions.json",
+            "actions_sha256": "f01dac966fb0d524c4ff1297d759dd939cccbff6326d04121d43822b80f904dd",
+            "actual_action_records": 28,
+            "reported_action_records": 28,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 28,
+            "first_look_file": "rounds/r23/evidence/independent/android/first-look.json",
+            "first_look_sha256": "e5cb5475374990dceec524ebde4f64fb92d26d7ce005bbd1f781e22502047505",
+            "reported_unique_screenshot_count": 22,
+            "reported_unique_screenshot_paths": [
+              "rounds/r23/evidence/independent/android/00-first-look.png",
+              "rounds/r23/evidence/independent/android/01-note-editor.png",
+              "rounds/r23/evidence/independent/android/03-note-saved.png",
+              "rounds/r23/evidence/independent/android/04-library-after-save.png",
+              "rounds/r23/evidence/independent/android/06-verified-note.png",
+              "rounds/r23/evidence/independent/android/07-ask-scoped.png",
+              "rounds/r23/evidence/independent/android/09-answer.png",
+              "rounds/r23/evidence/independent/android/10-citation.png",
+              "rounds/r23/evidence/independent/android/11-original.png",
+              "rounds/r23/evidence/independent/android/13-answer-returned.png",
+              "rounds/r23/evidence/independent/android/14-sources.png",
+              "rounds/r23/evidence/independent/android/15-source-catalog.png",
+              "rounds/r23/evidence/independent/android/16-screen-setup.png",
+              "rounds/r23/evidence/independent/android/17-permission-denied.png",
+              "rounds/r23/evidence/independent/android/18-setup-cancelled.png",
+              "rounds/r23/evidence/independent/android/19-folder-setup.png",
+              "rounds/r23/evidence/independent/android/20-folder-picker.png",
+              "rounds/r23/evidence/independent/android/23-folder-connected.png",
+              "rounds/r23/evidence/independent/android/24-folder-paused.png",
+              "rounds/r23/evidence/independent/android/25-folder-source-row.png",
+              "rounds/r23/evidence/independent/android/26-existing-folder-management.png",
+              "rounds/r23/evidence/independent/android/28-memory-discovery.png"
+            ],
+            "action_screenshot_reference_count": 21,
+            "action_dom_reference_count": 28
+          }
+        }
+      },
+      "findings": [
+        {
+          "id": "R23-A",
+          "severity": "minor",
+          "platforms": [
+            "android"
+          ],
+          "observation": "新来源保存后，首屏仍依次显示保存提示、目录权限解释、接收状态和来源身份；目录字段只在屏幕底部出现，管理动作还需下滚。",
+          "impact": "信息已比R22精简，但完成后的“现在可做什么”仍被说明文字推后；既有来源再次进入也重复完整权限说明。",
+          "evidence": [
+            "evidence/independent/android/23-folder-connected.png",
+            "evidence/independent/android/26-existing-folder-management.dom.json"
+          ]
+        }
+      ],
+      "resolved_from_previous": [
+        "R22-A resolved: 已有文件夹概览显示来源名称和恢复/管理入口，点击进入正确来源。",
+        "R22-B partial: 少一个保存状态条，但窄屏连接完成页仍先呈现多个说明/状态块。"
+      ],
+      "next_priority": [
+        "可把已配置来源的摘要与暂停/恢复动作放在前面，将重复权限说明和可选内容关系按需展开；保留新建时完整范围说明。"
+      ],
+      "equal_platform_mean_raw": 79.58333333333333,
+      "equal_platform_mean_display": "79.6",
+      "minimum_platform_score_raw": 78.75,
+      "minimum_platform_score_display": "78.8",
+      "action_records_total": 71,
+      "reported_screenshot_count_total": 56
+    },
+    {
+      "round": 24,
+      "report": "rounds/r24/reports/independent-evaluation.json",
+      "report_sha256": "8342187f477fd98bdd7a830bcc02b9020ea032bb4e93d3ba8dbaf5e80556c6cf",
+      "manifest": "rounds/r24/manifest.json",
+      "manifest_sha256": "f0e398142ddca0feb7125887ad18e686bf746755e0a3d8aabd4093569b94fbc6",
+      "frozen_at_utc": "2026-10-21T05:01:39.425880+00:00",
+      "evaluation_started_at_utc": "2026-10-21T05:01:56.863Z",
+      "evaluation_finished_at_utc": "2026-10-21T05:05:31.605Z",
+      "scope": "Current-round HTML simulations, synthetic data, visible controls and rendered screenshots. Informed iterative evaluator; no candidate implementation reads.",
+      "overall_gate_reported": "pass",
+      "platforms": {
+        "web": {
+          "candidate_sha256": "c78b5ec5f7e3c4dd25f48ea26b8578031512a1f67eb32a9e567e748ff1a9b235",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.8
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 80.0,
+          "weighted_total_display": "80.0",
+          "newcomer_score_raw": 3.8,
+          "newcomer_score_display": "3.8",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "advanced_discovery": "pass_memory_page_opened",
+            "permission_setup": "pass_named_device_handoff_connection_authorization_does_not_grant_screen_permission_and_extra_connection_cancel"
+          },
+          "findings": [],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r24/evidence/independent/web/actions.json",
+            "actions_sha256": "a52d931d3721e73cc172b9667bf34146b5b40f188d1b06dde24702458dc5f6af",
+            "actual_action_records": 24,
+            "reported_action_records": 24,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 24,
+            "first_look_file": "rounds/r24/evidence/independent/web/first-look.json",
+            "first_look_sha256": "f5fea66befb3bd5fe97ab79fff00a137f6e11c6982434885a7e26c8598412f65",
+            "reported_unique_screenshot_count": 20,
+            "reported_unique_screenshot_paths": [
+              "rounds/r24/evidence/independent/web/00-first-look.png",
+              "rounds/r24/evidence/independent/web/01-note-editor.png",
+              "rounds/r24/evidence/independent/web/03-note-saved.png",
+              "rounds/r24/evidence/independent/web/04-library-after-save.png",
+              "rounds/r24/evidence/independent/web/06-verified-note.png",
+              "rounds/r24/evidence/independent/web/07-ask-scoped.png",
+              "rounds/r24/evidence/independent/web/09-answer.png",
+              "rounds/r24/evidence/independent/web/10-citation.png",
+              "rounds/r24/evidence/independent/web/11-original.png",
+              "rounds/r24/evidence/independent/web/13-answer-returned.png",
+              "rounds/r24/evidence/independent/web/14-sources.png",
+              "rounds/r24/evidence/independent/web/15-source-catalog.png",
+              "rounds/r24/evidence/independent/web/16-screen-setup.png",
+              "rounds/r24/evidence/independent/web/17-device-connect.png",
+              "rounds/r24/evidence/independent/web/18-device-connected.png",
+              "rounds/r24/evidence/independent/web/19-device-state.png",
+              "rounds/r24/evidence/independent/web/20-device-reauthorize.png",
+              "rounds/r24/evidence/independent/web/21-additional-device.png",
+              "rounds/r24/evidence/independent/web/22-device-cancel.png",
+              "rounds/r24/evidence/independent/web/24-memory.png"
+            ],
+            "action_screenshot_reference_count": 19,
+            "action_dom_reference_count": 24
+          }
+        },
+        "mac": {
+          "candidate_sha256": "7e48000a5856d2a56d1a7fc69b7cda6c7cec45cd120376187c5424d876457aa7",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.8
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 80.0,
+          "weighted_total_display": "80.0",
+          "newcomer_score_raw": 3.8,
+          "newcomer_score_display": "3.8",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "advanced_discovery": "pass_memory_page_opened",
+            "permission_setup": "pass_denial_cancel_finder_example_path_named_source_pause_and_additional_folder_cancel"
+          },
+          "findings": [
+            "R24-A"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r24/evidence/independent/mac/actions.json",
+            "actions_sha256": "eb9c516a8880959a262bc995120d6f6510be06de32eb4be5b0b4c49e01d3ee0c",
+            "actual_action_records": 29,
+            "reported_action_records": 29,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 29,
+            "first_look_file": "rounds/r24/evidence/independent/mac/first-look.json",
+            "first_look_sha256": "65e81838536e9c0c7968fffb9d3660dd97e6a29478a129678df3877e7daeae4b",
+            "reported_unique_screenshot_count": 24,
+            "reported_unique_screenshot_paths": [
+              "rounds/r24/evidence/independent/mac/00-first-look.png",
+              "rounds/r24/evidence/independent/mac/01-note-editor.png",
+              "rounds/r24/evidence/independent/mac/03-note-saved.png",
+              "rounds/r24/evidence/independent/mac/04-library-after-save.png",
+              "rounds/r24/evidence/independent/mac/06-verified-note.png",
+              "rounds/r24/evidence/independent/mac/07-ask-scoped.png",
+              "rounds/r24/evidence/independent/mac/09-answer.png",
+              "rounds/r24/evidence/independent/mac/10-citation.png",
+              "rounds/r24/evidence/independent/mac/11-original.png",
+              "rounds/r24/evidence/independent/mac/13-answer-returned.png",
+              "rounds/r24/evidence/independent/mac/14-sources.png",
+              "rounds/r24/evidence/independent/mac/15-source-catalog.png",
+              "rounds/r24/evidence/independent/mac/16-screen-setup.png",
+              "rounds/r24/evidence/independent/mac/17-screen-denied.png",
+              "rounds/r24/evidence/independent/mac/18-screen-cancelled.png",
+              "rounds/r24/evidence/independent/mac/19-folder-new.png",
+              "rounds/r24/evidence/independent/mac/20-folder-picker.png",
+              "rounds/r24/evidence/independent/mac/21-folder-chosen.png",
+              "rounds/r24/evidence/independent/mac/23-folder-connected.png",
+              "rounds/r24/evidence/independent/mac/24-folder-paused.png",
+              "rounds/r24/evidence/independent/mac/25-source-overview.png",
+              "rounds/r24/evidence/independent/mac/26-additional-folder.png",
+              "rounds/r24/evidence/independent/mac/27-additional-folder-cancel.png",
+              "rounds/r24/evidence/independent/mac/29-memory.png"
+            ],
+            "action_screenshot_reference_count": 23,
+            "action_dom_reference_count": 29
+          }
+        },
+        "android": {
+          "candidate_sha256": "5d8c2437578817a5385cab014b19258a8b609539abd476affb06376ac18936bd",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.8
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 80.0,
+          "weighted_total_display": "80.0",
+          "newcomer_score_raw": 3.8,
+          "newcomer_score_display": "3.8",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "advanced_discovery": "pass_memory_page_opened",
+            "permission_setup": "pass_denial_cancel_example_folder_named_source_pause_and_overview_verification"
+          },
+          "findings": [
+            "R24-A"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r24/evidence/independent/android/actions.json",
+            "actions_sha256": "5aac24074b625423c0050a0e5316dd0050eca1bb8f9afd66973f6d87fe12db4a",
+            "actual_action_records": 27,
+            "reported_action_records": 27,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 27,
+            "first_look_file": "rounds/r24/evidence/independent/android/first-look.json",
+            "first_look_sha256": "8ed1a143afbb8312c7ea20ff4b8967f2992fa47ca380ef299555f08b337c4e33",
+            "reported_unique_screenshot_count": 22,
+            "reported_unique_screenshot_paths": [
+              "rounds/r24/evidence/independent/android/00-first-look.png",
+              "rounds/r24/evidence/independent/android/01-note-editor.png",
+              "rounds/r24/evidence/independent/android/03-note-saved.png",
+              "rounds/r24/evidence/independent/android/04-library-after-save.png",
+              "rounds/r24/evidence/independent/android/06-verified-note.png",
+              "rounds/r24/evidence/independent/android/07-ask-scoped.png",
+              "rounds/r24/evidence/independent/android/09-answer.png",
+              "rounds/r24/evidence/independent/android/10-citation.png",
+              "rounds/r24/evidence/independent/android/11-original.png",
+              "rounds/r24/evidence/independent/android/13-answer-returned.png",
+              "rounds/r24/evidence/independent/android/14-sources.png",
+              "rounds/r24/evidence/independent/android/15-source-catalog.png",
+              "rounds/r24/evidence/independent/android/16-screen-setup.png",
+              "rounds/r24/evidence/independent/android/17-screen-denied.png",
+              "rounds/r24/evidence/independent/android/18-screen-cancelled.png",
+              "rounds/r24/evidence/independent/android/19-folder-new.png",
+              "rounds/r24/evidence/independent/android/20-folder-picker.png",
+              "rounds/r24/evidence/independent/android/21-folder-chosen.png",
+              "rounds/r24/evidence/independent/android/23-folder-connected.png",
+              "rounds/r24/evidence/independent/android/24-folder-paused.png",
+              "rounds/r24/evidence/independent/android/25-source-overview.png",
+              "rounds/r24/evidence/independent/android/27-memory.png"
+            ],
+            "action_screenshot_reference_count": 21,
+            "action_dom_reference_count": 27
+          }
+        }
+      },
+      "findings": [
+        {
+          "id": "R24-A",
+          "severity": "minor",
+          "platforms": [
+            "mac",
+            "android"
+          ],
+          "observation": "保存后的已有来源管理页仍把权限说明、接收状态、来源身份分别展开；暂停/浏览等日常动作位于路径、策略、名称和保存方式之后。",
+          "impact": "Android首屏只到目录字段；Mac首屏也未显示常用管理动作。确认已连接后仍需穿过较多新建说明，当前状态与下一步可进一步前置。",
+          "evidence": [
+            "evidence/independent/android/23-folder-connected.png",
+            "evidence/independent/mac/23-folder-connected.png",
+            "evidence/independent/mac/24-folder-paused.dom.json"
+          ]
+        }
+      ],
+      "resolved_from_previous": [
+        "本轮新增Web授权边界复核通过：设备连接更新不改变等待系统屏幕权限的采集状态。",
+        "本轮新增Mac目录复核通过：首次空路径、Finder示例、已保存路径和追加目录措辞一致。",
+        "R23-A仍存在，并在本轮Mac来源管理页也观察到相同密度问题。"
+      ],
+      "next_priority": [
+        "在已有来源页面先给出简洁来源摘要、当前接收状态与暂停/恢复动作，把重复权限说明和内容关系折叠为按需详情；新建时仍应保留范围解释。"
+      ],
+      "equal_platform_mean_raw": 80.0,
+      "equal_platform_mean_display": "80.0",
+      "minimum_platform_score_raw": 80.0,
+      "minimum_platform_score_display": "80.0",
+      "action_records_total": 80,
+      "reported_screenshot_count_total": 66
+    },
+    {
+      "round": 25,
+      "report": "rounds/r25/reports/independent-evaluation.json",
+      "report_sha256": "ce4287f7ec5ed60334828a5df889e88e3591bcd12287ce8d8aa20f0dd6b42ea9",
+      "manifest": "rounds/r25/manifest.json",
+      "manifest_sha256": "7a4ac331bcbcca2f27cb67f9fd7b8c03399456417ce6bdb2ec9f85a649a3cc52",
+      "frozen_at_utc": "2026-10-21T05:06:59.142816+00:00",
+      "evaluation_started_at_utc": "2026-10-21T05:07:13.147Z",
+      "evaluation_finished_at_utc": "2026-10-21T05:08:35.291Z",
+      "scope": "Current-round HTML simulations, synthetic data, visible controls and rendered screenshots. Informed iterative evaluator; no candidate implementation reads.",
+      "overall_gate_reported": "pass",
+      "platforms": {
+        "web": {
+          "candidate_sha256": "7cd1bdfdce2327deb85a52e8d3bc3b1dae31a1f6e78b1b39febcef23ab00c978",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.8
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 80.0,
+          "weighted_total_display": "80.0",
+          "newcomer_score_raw": 3.8,
+          "newcomer_score_display": "3.8",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "original_provenance": "pass_content_source_local_save_time_and_platform_visible",
+            "advanced_discovery": "pass_memory_page_opened",
+            "permission_setup": "pass_named_device_handoff_and_extra_connection_cancel"
+          },
+          "findings": [],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r25/evidence/independent/web/actions.json",
+            "actions_sha256": "eb702c252233aedbf450c8869530c223c4760ca581566b378a134383b52d2b52",
+            "actual_action_records": 23,
+            "reported_action_records": 23,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 23,
+            "first_look_file": "rounds/r25/evidence/independent/web/first-look.json",
+            "first_look_sha256": "3bce2ee4a05f2ad499f407acd64188568154af40dd383743982db9b46ee0cbb2",
+            "reported_unique_screenshot_count": 18,
+            "reported_unique_screenshot_paths": [
+              "rounds/r25/evidence/independent/web/00-first-look.png",
+              "rounds/r25/evidence/independent/web/01-note-editor.png",
+              "rounds/r25/evidence/independent/web/03-note-saved.png",
+              "rounds/r25/evidence/independent/web/04-library-after-save.png",
+              "rounds/r25/evidence/independent/web/06-verified-note.png",
+              "rounds/r25/evidence/independent/web/07-ask-scoped.png",
+              "rounds/r25/evidence/independent/web/09-answer.png",
+              "rounds/r25/evidence/independent/web/10-citation.png",
+              "rounds/r25/evidence/independent/web/11-original.png",
+              "rounds/r25/evidence/independent/web/13-answer-returned.png",
+              "rounds/r25/evidence/independent/web/14-sources.png",
+              "rounds/r25/evidence/independent/web/15-source-catalog.png",
+              "rounds/r25/evidence/independent/web/16-screen-setup.png",
+              "rounds/r25/evidence/independent/web/17-device-connect.png",
+              "rounds/r25/evidence/independent/web/18-device-connected.png",
+              "rounds/r25/evidence/independent/web/19-device-state.png",
+              "rounds/r25/evidence/independent/web/21-device-cancel.png",
+              "rounds/r25/evidence/independent/web/23-memory.png"
+            ],
+            "action_screenshot_reference_count": 17,
+            "action_dom_reference_count": 23
+          }
+        },
+        "mac": {
+          "candidate_sha256": "f331f41ffa8ce09db58b1d16536d1b513dff57a7fc753f52c070726247796d66",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.8
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 80.0,
+          "weighted_total_display": "80.0",
+          "newcomer_score_raw": 3.8,
+          "newcomer_score_display": "3.8",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "original_provenance": "pass_content_source_local_save_time_and_platform_visible",
+            "advanced_discovery": "pass_memory_page_opened",
+            "permission_setup": "pass_denial_select_disabled_allow_recovery_cancel_and_folder_selection_pause_overview"
+          },
+          "findings": [
+            "R25-A",
+            "R25-B"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r25/evidence/independent/mac/actions.json",
+            "actions_sha256": "916fc9af5593d6203518bdbef319e57b1a3ccad88a4b3f14581f027fbbc2c60e",
+            "actual_action_records": 29,
+            "reported_action_records": 29,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 29,
+            "first_look_file": "rounds/r25/evidence/independent/mac/first-look.json",
+            "first_look_sha256": "9356cb3601edfae9f4d94b5a95a331d044eb5556c7f566dcf7de62f371ec0039",
+            "reported_unique_screenshot_count": 24,
+            "reported_unique_screenshot_paths": [
+              "rounds/r25/evidence/independent/mac/00-first-look.png",
+              "rounds/r25/evidence/independent/mac/01-note-editor.png",
+              "rounds/r25/evidence/independent/mac/03-note-saved.png",
+              "rounds/r25/evidence/independent/mac/04-library-after-save.png",
+              "rounds/r25/evidence/independent/mac/06-verified-note.png",
+              "rounds/r25/evidence/independent/mac/07-ask-scoped.png",
+              "rounds/r25/evidence/independent/mac/09-answer.png",
+              "rounds/r25/evidence/independent/mac/10-citation.png",
+              "rounds/r25/evidence/independent/mac/11-original.png",
+              "rounds/r25/evidence/independent/mac/13-answer-returned.png",
+              "rounds/r25/evidence/independent/mac/14-sources.png",
+              "rounds/r25/evidence/independent/mac/15-source-catalog.png",
+              "rounds/r25/evidence/independent/mac/16-screen-setup.png",
+              "rounds/r25/evidence/independent/mac/17-screen-denied.png",
+              "rounds/r25/evidence/independent/mac/18-screen-selected-denied.png",
+              "rounds/r25/evidence/independent/mac/19-screen-allowed.png",
+              "rounds/r25/evidence/independent/mac/20-screen-cancelled.png",
+              "rounds/r25/evidence/independent/mac/21-folder-new.png",
+              "rounds/r25/evidence/independent/mac/22-folder-picker.png",
+              "rounds/r25/evidence/independent/mac/23-folder-chosen.png",
+              "rounds/r25/evidence/independent/mac/25-folder-connected.png",
+              "rounds/r25/evidence/independent/mac/26-folder-paused.png",
+              "rounds/r25/evidence/independent/mac/27-source-overview.png",
+              "rounds/r25/evidence/independent/mac/29-memory.png"
+            ],
+            "action_screenshot_reference_count": 23,
+            "action_dom_reference_count": 29
+          }
+        },
+        "android": {
+          "candidate_sha256": "9aebd07dace19fc60773b5d1462149efe0a6664541911b801aaf62d43dc50e87",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.8
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 80.0,
+          "weighted_total_display": "80.0",
+          "newcomer_score_raw": 3.8,
+          "newcomer_score_display": "3.8",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "original_provenance": "pass_content_source_local_save_time_and_platform_visible",
+            "advanced_discovery": "pass_memory_page_opened",
+            "permission_setup": "pass_denial_select_disabled_allow_recovery_cancel_and_folder_selection_pause_overview"
+          },
+          "findings": [
+            "R25-A",
+            "R25-B"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r25/evidence/independent/android/actions.json",
+            "actions_sha256": "edbfd01d9bf729c0b045bcb5c88dde5efe4598a6f31a72165df377cddf920820",
+            "actual_action_records": 29,
+            "reported_action_records": 29,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 29,
+            "first_look_file": "rounds/r25/evidence/independent/android/first-look.json",
+            "first_look_sha256": "aa652f1a5dd2e70d4432a25ba5ba9a20685c1074101f3ddab1e5f2438499ccd5",
+            "reported_unique_screenshot_count": 24,
+            "reported_unique_screenshot_paths": [
+              "rounds/r25/evidence/independent/android/00-first-look.png",
+              "rounds/r25/evidence/independent/android/01-note-editor.png",
+              "rounds/r25/evidence/independent/android/03-note-saved.png",
+              "rounds/r25/evidence/independent/android/04-library-after-save.png",
+              "rounds/r25/evidence/independent/android/06-verified-note.png",
+              "rounds/r25/evidence/independent/android/07-ask-scoped.png",
+              "rounds/r25/evidence/independent/android/09-answer.png",
+              "rounds/r25/evidence/independent/android/10-citation.png",
+              "rounds/r25/evidence/independent/android/11-original.png",
+              "rounds/r25/evidence/independent/android/13-answer-returned.png",
+              "rounds/r25/evidence/independent/android/14-sources.png",
+              "rounds/r25/evidence/independent/android/15-source-catalog.png",
+              "rounds/r25/evidence/independent/android/16-screen-setup.png",
+              "rounds/r25/evidence/independent/android/17-screen-denied.png",
+              "rounds/r25/evidence/independent/android/18-screen-selected-denied.png",
+              "rounds/r25/evidence/independent/android/19-screen-allowed.png",
+              "rounds/r25/evidence/independent/android/20-screen-cancelled.png",
+              "rounds/r25/evidence/independent/android/21-folder-new.png",
+              "rounds/r25/evidence/independent/android/22-folder-picker.png",
+              "rounds/r25/evidence/independent/android/23-folder-chosen.png",
+              "rounds/r25/evidence/independent/android/25-folder-connected.png",
+              "rounds/r25/evidence/independent/android/26-folder-paused.png",
+              "rounds/r25/evidence/independent/android/27-source-overview.png",
+              "rounds/r25/evidence/independent/android/29-memory.png"
+            ],
+            "action_screenshot_reference_count": 23,
+            "action_dom_reference_count": 29
+          }
+        }
+      },
+      "findings": [
+        {
+          "id": "R25-A",
+          "severity": "minor",
+          "platforms": [
+            "mac",
+            "android"
+          ],
+          "observation": "已有来源页面的“内容与你的关系”仍完整展开说明、关系选择、背景文本框与保存/放弃按钮。",
+          "impact": "顶部日常管理问题已经解决，但低频背景声明仍增加页面长度和后续认知负担，适合默认收起并保留摘要。",
+          "evidence": [
+            "evidence/independent/mac/25-folder-connected.dom.json",
+            "evidence/independent/android/26-folder-paused.dom.json"
+          ]
+        },
+        {
+          "id": "R25-B",
+          "severity": "minor",
+          "platforms": [
+            "mac",
+            "android"
+          ],
+          "observation": "屏幕权限已拒绝且已勾选浏览器后，保存范围按钮仍禁用；相邻提示仅说明有未保存修改，没有说明需先恢复系统权限。",
+          "impact": "顶部权限块和模拟允许仍可找到，实际恢复成功，因此不是死路；按钮附近可增加前往权限操作的提示以减少来回查找。",
+          "evidence": [
+            "evidence/independent/mac/18-screen-selected-denied.dom.json",
+            "evidence/independent/android/18-screen-selected-denied.png",
+            "evidence/independent/android/19-screen-allowed.dom.json"
+          ]
+        }
+      ],
+      "resolved_from_previous": [
+        "R24-A核心部分解决：Mac与Android现有来源的状态、暂停/浏览动作在首屏，权限说明已折叠。",
+        "原始笔记来源/时间/端在本轮三端实际原文模态框可见。"
+      ],
+      "next_priority": [
+        "把低频内容关系改为可展开设置；在禁用保存范围动作旁说明权限条件并提供明确恢复入口。"
+      ],
+      "equal_platform_mean_raw": 80.0,
+      "equal_platform_mean_display": "80.0",
+      "minimum_platform_score_raw": 80.0,
+      "minimum_platform_score_display": "80.0",
+      "action_records_total": 81,
+      "reported_screenshot_count_total": 66
+    },
+    {
+      "round": 26,
+      "report": "rounds/r26/reports/independent-evaluation.json",
+      "report_sha256": "322a0988225379da1d4fd45614e83ec5f3dd078114e23e99204ccb7451ba479f",
+      "manifest": "rounds/r26/manifest.json",
+      "manifest_sha256": "b1d388610ecfb06a8501bd48a582633d9e705aea95075ddef383bc6153d21943",
+      "frozen_at_utc": "2026-10-21T05:10:09.112947+00:00",
+      "evaluation_started_at_utc": "2026-10-21T05:10:24.811Z",
+      "evaluation_finished_at_utc": "2026-10-21T05:12:33.695Z",
+      "scope": "Current-round HTML simulations, synthetic data, visible controls and rendered screenshots. Informed iterative evaluator; no candidate implementation reads.",
+      "overall_gate_reported": "fail",
+      "platforms": {
+        "web": {
+          "candidate_sha256": "f096782a776ca34718d5c4f3fb404ad218be50b089964ce56abed4a8317555ca",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 2,
+            "new_user_friendliness": 3.4
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 2,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 72.5,
+          "weighted_total_display": "72.5",
+          "newcomer_score_raw": 3.4,
+          "newcomer_score_display": "3.4",
+          "gate_reported": "fail",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": false,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "fail",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "advanced_discovery": "pass_memory_page_opened",
+            "import_to_continuous_source": "pass_route",
+            "source_setup_control": "partial_saved_and_paused_but_target_unexplained_mac_without_selection"
+          },
+          "findings": [
+            "R26-A",
+            "R26-B",
+            "R26-C"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r26/evidence/independent/web/actions.json",
+            "actions_sha256": "9580913eabc229b18070da23744eea0bcc620372eb5cef82bf027f67dd675a10",
+            "actual_action_records": 22,
+            "reported_action_records": 22,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 22,
+            "first_look_file": "rounds/r26/evidence/independent/web/first-look.json",
+            "first_look_sha256": "846b463ac2f58995a7f96bd6acd0218bf5a2302c1fdc964d23e3efb9a7ce69da",
+            "reported_unique_screenshot_count": 19,
+            "reported_unique_screenshot_paths": [
+              "rounds/r26/evidence/independent/web/00-first-look.png",
+              "rounds/r26/evidence/independent/web/01-note-editor.png",
+              "rounds/r26/evidence/independent/web/03-note-saved.png",
+              "rounds/r26/evidence/independent/web/04-library-after-save.png",
+              "rounds/r26/evidence/independent/web/06-verified-note.png",
+              "rounds/r26/evidence/independent/web/07-ask-scoped.png",
+              "rounds/r26/evidence/independent/web/09-answer.png",
+              "rounds/r26/evidence/independent/web/10-citation.png",
+              "rounds/r26/evidence/independent/web/11-original.png",
+              "rounds/r26/evidence/independent/web/13-answer-returned.png",
+              "rounds/r26/evidence/independent/web/14-add-content.png",
+              "rounds/r26/evidence/independent/web/15-import-panel.png",
+              "rounds/r26/evidence/independent/web/16-continuous-folder-handoff.png",
+              "rounds/r26/evidence/independent/web/17-folder-named.png",
+              "rounds/r26/evidence/independent/web/18-folder-connected.png",
+              "rounds/r26/evidence/independent/web/19-folder-paused.png",
+              "rounds/r26/evidence/independent/web/20-source-overview.png",
+              "rounds/r26/evidence/independent/web/21-library-after-source.png",
+              "rounds/r26/evidence/independent/web/22-memory.png"
+            ],
+            "action_screenshot_reference_count": 18,
+            "action_dom_reference_count": 22
+          }
+        },
+        "mac": {
+          "candidate_sha256": "2b136bdd314c6af99d652642d105be24053ff2662f60e2cbff7909d2b8ee24c4",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.8
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 80.0,
+          "weighted_total_display": "80.0",
+          "newcomer_score_raw": 3.8,
+          "newcomer_score_display": "3.8",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "advanced_discovery": "pass_memory_page_opened",
+            "import_to_continuous_source": "pass_route",
+            "source_setup_control": "pass_example_folder_named_pause"
+          },
+          "findings": [
+            "R26-B",
+            "R26-C"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r26/evidence/independent/mac/actions.json",
+            "actions_sha256": "9379c3b5cffbb42abd6368817fd1668236cb6cccc4baaad34ca80664b3173718",
+            "actual_action_records": 24,
+            "reported_action_records": 24,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 24,
+            "first_look_file": "rounds/r26/evidence/independent/mac/first-look.json",
+            "first_look_sha256": "06deab2e3f74c1157e04c9bed38ca4e1ad7512e4c002319cbc78371c2aa4517a",
+            "reported_unique_screenshot_count": 20,
+            "reported_unique_screenshot_paths": [
+              "rounds/r26/evidence/independent/mac/00-first-look.png",
+              "rounds/r26/evidence/independent/mac/01-note-editor.png",
+              "rounds/r26/evidence/independent/mac/03-note-saved.png",
+              "rounds/r26/evidence/independent/mac/04-library-after-save.png",
+              "rounds/r26/evidence/independent/mac/06-verified-note.png",
+              "rounds/r26/evidence/independent/mac/07-ask-scoped.png",
+              "rounds/r26/evidence/independent/mac/09-answer.png",
+              "rounds/r26/evidence/independent/mac/10-citation.png",
+              "rounds/r26/evidence/independent/mac/11-original.png",
+              "rounds/r26/evidence/independent/mac/13-answer-returned.png",
+              "rounds/r26/evidence/independent/mac/14-add-content.png",
+              "rounds/r26/evidence/independent/mac/15-import-panel.png",
+              "rounds/r26/evidence/independent/mac/16-continuous-folder-handoff.png",
+              "rounds/r26/evidence/independent/mac/17-folder-picker.png",
+              "rounds/r26/evidence/independent/mac/18-folder-chosen.png",
+              "rounds/r26/evidence/independent/mac/20-folder-connected.png",
+              "rounds/r26/evidence/independent/mac/21-folder-paused.png",
+              "rounds/r26/evidence/independent/mac/22-source-overview.png",
+              "rounds/r26/evidence/independent/mac/23-library-after-source.png",
+              "rounds/r26/evidence/independent/mac/24-memory.png"
+            ],
+            "action_screenshot_reference_count": 19,
+            "action_dom_reference_count": 24
+          }
+        },
+        "android": {
+          "candidate_sha256": "8f0667c8ba244d458f8707747288af9b635f29e4b2918eb1983f75d7a0af56da",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.8
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 80.0,
+          "weighted_total_display": "80.0",
+          "newcomer_score_raw": 3.8,
+          "newcomer_score_display": "3.8",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "advanced_discovery": "pass_memory_page_opened",
+            "import_to_continuous_source": "pass_route",
+            "source_setup_control": "pass_example_folder_named_pause",
+            "changed_navigation": "pass_header_back_to_import_and_deep_scroll_library_top_reset"
+          },
+          "findings": [
+            "R26-B",
+            "R26-C"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r26/evidence/independent/android/actions.json",
+            "actions_sha256": "ad677e6520423a4a38f1971bd492463233c75aeb78cd3a9d597f4c6574f26e39",
+            "actual_action_records": 27,
+            "reported_action_records": 27,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 27,
+            "first_look_file": "rounds/r26/evidence/independent/android/first-look.json",
+            "first_look_sha256": "d18b7b6f3cf3e2be153826334f8d7251a8646437cfb41d77b5ace811dfab5985",
+            "reported_unique_screenshot_count": 23,
+            "reported_unique_screenshot_paths": [
+              "rounds/r26/evidence/independent/android/00-first-look.png",
+              "rounds/r26/evidence/independent/android/01-note-editor.png",
+              "rounds/r26/evidence/independent/android/03-note-saved.png",
+              "rounds/r26/evidence/independent/android/04-library-after-save.png",
+              "rounds/r26/evidence/independent/android/06-verified-note.png",
+              "rounds/r26/evidence/independent/android/07-ask-scoped.png",
+              "rounds/r26/evidence/independent/android/09-answer.png",
+              "rounds/r26/evidence/independent/android/10-citation.png",
+              "rounds/r26/evidence/independent/android/11-original.png",
+              "rounds/r26/evidence/independent/android/13-answer-returned.png",
+              "rounds/r26/evidence/independent/android/14-add-content.png",
+              "rounds/r26/evidence/independent/android/15-import-panel.png",
+              "rounds/r26/evidence/independent/android/16-continuous-folder-handoff.png",
+              "rounds/r26/evidence/independent/android/17-folder-picker.png",
+              "rounds/r26/evidence/independent/android/18-folder-chosen.png",
+              "rounds/r26/evidence/independent/android/20-folder-connected.png",
+              "rounds/r26/evidence/independent/android/21-back-after-completion.png",
+              "rounds/r26/evidence/independent/android/22-source-after-back.png",
+              "rounds/r26/evidence/independent/android/23-manage-after-back.png",
+              "rounds/r26/evidence/independent/android/24-folder-paused.png",
+              "rounds/r26/evidence/independent/android/25-deep-settings-scroll.png",
+              "rounds/r26/evidence/independent/android/26-library-after-source.png",
+              "rounds/r26/evidence/independent/android/27-memory.png"
+            ],
+            "action_screenshot_reference_count": 22,
+            "action_dom_reference_count": 27
+          }
+        }
+      },
+      "findings": [
+        {
+          "id": "R26-A",
+          "severity": "major",
+          "platforms": [
+            "web"
+          ],
+          "observation": "空白Web会话从导入转持续文件夹时，设置页只给原始路径字段与“本机指这台电脑”；没有设备/服务器目标说明或选择。保存/暂停后来源概览实际标为“Mac · /示例/青鸟R26”，而本轮从未选择或连接Mac。",
+          "impact": "用户无法从操作前后的界面理解由哪台设备持续接收目录变化。这是设置目标与结果的实质歧义，Clarity与新人设置评分下降；模拟标签阻止将其误报为真实系统动作。",
+          "evidence": [
+            "evidence/independent/web/16-continuous-folder-handoff.png",
+            "evidence/independent/web/18-folder-connected.dom.json",
+            "evidence/independent/web/20-source-overview.png"
+          ]
+        },
+        {
+          "id": "R26-B",
+          "severity": "minor",
+          "platforms": [
+            "web",
+            "mac",
+            "android"
+          ],
+          "observation": "新保存选项与帮助文字明确说清理Mote暂存副本、原目录文件保留，但下方仍残留“中央…本机…保存方式决定两处是否保留原件”的旧说明。",
+          "impact": "新旧术语混用，把已解释清楚的原文件与Mote副本边界再次模糊；可删除或同步改写旧句。Web首次连接时还说“另一个/现有来源”，与空账号不一致。",
+          "evidence": [
+            "evidence/independent/web/16-continuous-folder-handoff.png",
+            "evidence/independent/mac/16-continuous-folder-handoff.dom.json",
+            "evidence/independent/android/16-continuous-folder-handoff.dom.json"
+          ]
+        },
+        {
+          "id": "R26-C",
+          "severity": "minor",
+          "platforms": [
+            "web",
+            "mac",
+            "android"
+          ],
+          "observation": "已有来源的低频内容关系仍为全展开表单，Android实际滚动后看到完整说明、下拉、文本框和两项动作。",
+          "impact": "日常状态已前置，但长表单仍增加页面长度；保留R25-A的改进建议。",
+          "evidence": [
+            "evidence/independent/android/25-deep-settings-scroll.png",
+            "evidence/independent/mac/20-folder-connected.dom.json",
+            "evidence/independent/web/18-folder-connected.dom.json"
+          ]
+        }
+      ],
+      "resolved_from_previous": [
+        "导入页面现在区分单次保存与持续收集，三个平台实际跳转成功。",
+        "目录保存文案明确清理Mote待传副本，选定文件夹内原文件保留。",
+        "Android连接完成后的页头返回及深滚动后跨路由顶部复位均在本轮通过。",
+        "R25-A仍可观察；R25-B屏幕拒绝后的就地提示本轮未复测，保持历史未解决状态而不计为本轮执行。"
+      ],
+      "next_priority": [
+        "优先让Web文件夹接入先说明并确认具名设备或工作台服务器，结果必须显示同一目标；空账号使用首次连接语言。",
+        "统一原文件/Mote副本的存储说明，再完成低频关系设置折叠与历史权限恢复提示。"
+      ],
+      "equal_platform_mean_raw": 77.5,
+      "equal_platform_mean_display": "77.5",
+      "minimum_platform_score_raw": 72.5,
+      "minimum_platform_score_display": "72.5",
+      "action_records_total": 73,
+      "reported_screenshot_count_total": 62
+    },
+    {
+      "round": 27,
+      "report": "rounds/r27/reports/independent-evaluation.json",
+      "report_sha256": "593271139d3d8a27ef99620ca726213e0d4de07c287d1c7eb63944c18d635835",
+      "manifest": "rounds/r27/manifest.json",
+      "manifest_sha256": "b843446860dbd08b8946b749921baf844dead6459a9e6d24aa133e75a22de8a2",
+      "frozen_at_utc": "2026-10-21T05:16:46.564340+00:00",
+      "evaluation_started_at_utc": "2026-10-21T05:17:08.899Z",
+      "evaluation_finished_at_utc": "2026-10-21T05:19:53.632Z",
+      "scope": "Current-round HTML simulations, synthetic data, visible controls and rendered screenshots. Informed iterative evaluator; no candidate implementation reads.",
+      "overall_gate_reported": "pass",
+      "platforms": {
+        "web": {
+          "candidate_sha256": "a3b294294d57c5c6894fd71a101fc50f8bb8ba0a3758ebf62f9d586819d7c8e3",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.8
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 80.0,
+          "weighted_total_display": "80.0",
+          "newcomer_score_raw": 3.8,
+          "newcomer_score_display": "3.8",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "source_setup_control": "pass_named_target_example_folder_pause",
+            "advanced_discovery": "pass_memory_page_opened",
+            "server_target": "pass_setup_and_overview_both_workbench_server"
+          },
+          "findings": [
+            "R27-A"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r27/evidence/independent/web/actions.json",
+            "actions_sha256": "8e70bc3414faadc8a6ef9a5a3d46ffc8a538bc8eb4513db86880bf11d5a80800",
+            "actual_action_records": 23,
+            "reported_action_records": 23,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 23,
+            "first_look_file": "rounds/r27/evidence/independent/web/first-look.json",
+            "first_look_sha256": "5247c29b2f298cab5e874a6d8fd62c88014e4b92cad2846bc5c0ac64f5e2e1cb",
+            "reported_unique_screenshot_count": 17,
+            "reported_unique_screenshot_paths": [
+              "rounds/r27/evidence/independent/web/00-first-look.png",
+              "rounds/r27/evidence/independent/web/01-note-editor.png",
+              "rounds/r27/evidence/independent/web/03-note-saved.png",
+              "rounds/r27/evidence/independent/web/04-library-after-save.png",
+              "rounds/r27/evidence/independent/web/06-verified-note.png",
+              "rounds/r27/evidence/independent/web/07-ask-scoped.png",
+              "rounds/r27/evidence/independent/web/09-answer.png",
+              "rounds/r27/evidence/independent/web/10-citation.png",
+              "rounds/r27/evidence/independent/web/11-original.png",
+              "rounds/r27/evidence/independent/web/13-answer-returned.png",
+              "rounds/r27/evidence/independent/web/15-import-panel.png",
+              "rounds/r27/evidence/independent/web/16-continuous-folder-handoff.png",
+              "rounds/r27/evidence/independent/web/17-server-path.png",
+              "rounds/r27/evidence/independent/web/19-folder-connected.png",
+              "rounds/r27/evidence/independent/web/20-folder-paused.png",
+              "rounds/r27/evidence/independent/web/21-source-overview.png",
+              "rounds/r27/evidence/independent/web/23-memory.png"
+            ],
+            "action_screenshot_reference_count": 16,
+            "action_dom_reference_count": 23
+          }
+        },
+        "mac": {
+          "candidate_sha256": "4623a37adcfcf4b496ae83224adc2f5604b45be1d184ecb3c635f4d823214a9f",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 4.0
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 4
+          },
+          "weighted_total_raw": 81.25,
+          "weighted_total_display": "81.3",
+          "newcomer_score_raw": 4.0,
+          "newcomer_score_display": "4.0",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "source_setup_control": "pass_named_target_example_folder_pause",
+            "advanced_discovery": "pass_memory_page_opened",
+            "screen_permission_recovery": "pass_denied_selected_nearby_requirement_recovery_link_allow_cancel"
+          },
+          "findings": [],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r27/evidence/independent/mac/actions.json",
+            "actions_sha256": "8b8a9754d456669b2275d781017cda1c1ddd7bd27deb1e927355e13866d8ed71",
+            "actual_action_records": 30,
+            "reported_action_records": 30,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 30,
+            "first_look_file": "rounds/r27/evidence/independent/mac/first-look.json",
+            "first_look_sha256": "59e0211bf8ea757fbd00f247ce271888f89b35d64d7ce6c8930a3a87b3cc1525",
+            "reported_unique_screenshot_count": 22,
+            "reported_unique_screenshot_paths": [
+              "rounds/r27/evidence/independent/mac/00-first-look.png",
+              "rounds/r27/evidence/independent/mac/01-note-editor.png",
+              "rounds/r27/evidence/independent/mac/03-note-saved.png",
+              "rounds/r27/evidence/independent/mac/04-library-after-save.png",
+              "rounds/r27/evidence/independent/mac/06-verified-note.png",
+              "rounds/r27/evidence/independent/mac/07-ask-scoped.png",
+              "rounds/r27/evidence/independent/mac/09-answer.png",
+              "rounds/r27/evidence/independent/mac/10-citation.png",
+              "rounds/r27/evidence/independent/mac/11-original.png",
+              "rounds/r27/evidence/independent/mac/13-answer-returned.png",
+              "rounds/r27/evidence/independent/mac/15-import-panel.png",
+              "rounds/r27/evidence/independent/mac/16-continuous-folder-handoff.png",
+              "rounds/r27/evidence/independent/mac/17-folder-picker.png",
+              "rounds/r27/evidence/independent/mac/18-folder-chosen.png",
+              "rounds/r27/evidence/independent/mac/20-folder-connected.png",
+              "rounds/r27/evidence/independent/mac/21-folder-paused.png",
+              "rounds/r27/evidence/independent/mac/22-source-overview.png",
+              "rounds/r27/evidence/independent/mac/25-screen-selected-denied.png",
+              "rounds/r27/evidence/independent/mac/26-permission-recovery-link.png",
+              "rounds/r27/evidence/independent/mac/27-permission-recovered.png",
+              "rounds/r27/evidence/independent/mac/28-screen-cancel.png",
+              "rounds/r27/evidence/independent/mac/30-memory.png"
+            ],
+            "action_screenshot_reference_count": 21,
+            "action_dom_reference_count": 30
+          }
+        },
+        "android": {
+          "candidate_sha256": "b4c703a2d50efad4aa327ec8af1d501552446b30457b6b6db22a9b1d366cd58c",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 4,
+            "clarity": 3,
+            "new_user_friendliness": 4.0
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 4
+          },
+          "weighted_total_raw": 87.5,
+          "weighted_total_display": "87.5",
+          "newcomer_score_raw": 4.0,
+          "newcomer_score_display": "4.0",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "source_setup_control": "pass_named_target_example_folder_pause",
+            "advanced_discovery": "pass_memory_page_opened",
+            "screen_permission_recovery": "pass_denied_selected_nearby_requirement_recovery_link_allow_cancel",
+            "memory_correction_resize": {
+              "result": "pass_exact_text_preserved",
+              "viewport_sequence": [
+                "390x844",
+                "412x915",
+                "390x844"
+              ],
+              "expected_text": "白鹤R27修正：叶青负责周三前整理四份背景资料；校验串＝青铜风铃-27-A。只用于本轮合成验证。",
+              "observed_states": [
+                "draft_before_resize",
+                "draft_after_resize",
+                "saved_memory",
+                "reopened_editor",
+                "current_history_version2"
+              ],
+              "evidence": [
+                "evidence/independent/android/35-memory-correction-draft.dom.json",
+                "evidence/independent/android/36-memory-draft-after-resize.dom.json",
+                "evidence/independent/android/37-memory-correction-saved.dom.json",
+                "evidence/independent/android/39-memory-reopened.dom.json",
+                "evidence/independent/android/40-memory-history.png"
+              ]
+            }
+          },
+          "findings": [],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r27/evidence/independent/android/actions.json",
+            "actions_sha256": "e3785e8aa518aff27fbf3e07973c1724721cce042f67d21f801779dc74817ca1",
+            "actual_action_records": 41,
+            "reported_action_records": 41,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 41,
+            "first_look_file": "rounds/r27/evidence/independent/android/first-look.json",
+            "first_look_sha256": "6c8e530c90ed3eafd68bcaf3d2aebbcd3725b0b38e53160b932ae1ade47c563b",
+            "reported_unique_screenshot_count": 33,
+            "reported_unique_screenshot_paths": [
+              "rounds/r27/evidence/independent/android/00-first-look.png",
+              "rounds/r27/evidence/independent/android/01-note-editor.png",
+              "rounds/r27/evidence/independent/android/03-note-saved.png",
+              "rounds/r27/evidence/independent/android/04-library-after-save.png",
+              "rounds/r27/evidence/independent/android/06-verified-note.png",
+              "rounds/r27/evidence/independent/android/07-ask-scoped.png",
+              "rounds/r27/evidence/independent/android/09-answer.png",
+              "rounds/r27/evidence/independent/android/10-citation.png",
+              "rounds/r27/evidence/independent/android/11-original.png",
+              "rounds/r27/evidence/independent/android/13-answer-returned.png",
+              "rounds/r27/evidence/independent/android/15-import-panel.png",
+              "rounds/r27/evidence/independent/android/16-continuous-folder-handoff.png",
+              "rounds/r27/evidence/independent/android/17-folder-picker.png",
+              "rounds/r27/evidence/independent/android/18-folder-chosen.png",
+              "rounds/r27/evidence/independent/android/20-folder-connected.png",
+              "rounds/r27/evidence/independent/android/21-folder-paused.png",
+              "rounds/r27/evidence/independent/android/22-source-overview.png",
+              "rounds/r27/evidence/independent/android/25-screen-selected-denied.png",
+              "rounds/r27/evidence/independent/android/26-permission-recovery-link.png",
+              "rounds/r27/evidence/independent/android/27-permission-recovered.png",
+              "rounds/r27/evidence/independent/android/28-screen-cancel.png",
+              "rounds/r27/evidence/independent/android/30-memory.png",
+              "rounds/r27/evidence/independent/android/31-memory-generate-picker.png",
+              "rounds/r27/evidence/independent/android/32-memory-selection.png",
+              "rounds/r27/evidence/independent/android/33-memory-generated.png",
+              "rounds/r27/evidence/independent/android/34-memory-manage.png",
+              "rounds/r27/evidence/independent/android/35-memory-correction-draft.png",
+              "rounds/r27/evidence/independent/android/36-memory-draft-after-resize.png",
+              "rounds/r27/evidence/independent/android/37-memory-correction-saved.png",
+              "rounds/r27/evidence/independent/android/38-memory-baseline-viewport.png",
+              "rounds/r27/evidence/independent/android/39-memory-reopened.png",
+              "rounds/r27/evidence/independent/android/40-memory-history.png",
+              "rounds/r27/evidence/independent/android/41-memory-history-closed.png"
+            ],
+            "action_screenshot_reference_count": 32,
+            "action_dom_reference_count": 41
+          }
+        }
+      },
+      "findings": [
+        {
+          "id": "R27-A",
+          "severity": "minor",
+          "platforms": [
+            "web"
+          ],
+          "observation": "Web已连接服务器来源仍先显示目标说明、接收条、来源身份与完整可编辑表单；当前状态及暂停/浏览动作在表单之后。1440×1000截图仅在底边开始显示当前状态卡。",
+          "impact": "目标歧义已经解决，但日常暂停/浏览仍需越过设置内容；可将具名来源摘要、状态和常用动作前置，保持编辑设置可发现。",
+          "evidence": [
+            "evidence/independent/web/19-folder-connected.png",
+            "evidence/independent/web/20-folder-paused.dom.json"
+          ]
+        }
+      ],
+      "resolved_from_previous": [
+        "R26-A解决：服务器目标、路径与结果平台一致，未再无故出现Mac。",
+        "R26-B旧中央/两处原件文案已替换；说明将原文件与Mote副本区分。",
+        "R26-C/R25-A解决：内容关系与背景默认折叠，并表明选填及未声明仍可查询。",
+        "R25-B解决：禁用保存处有权限条件说明和可操作恢复入口，实际点击恢复成功。",
+        "外部提报的Android缩放后记忆修正丢失，本轮独立执行该特定路径未复现；没有把历史未测路径追认为通过。"
+      ],
+      "next_priority": [
+        "将Web服务器已有来源的状态与暂停/浏览放到设置之前，保持明确服务器目标和副本说明。"
+      ],
+      "equal_platform_mean_raw": 82.91666666666667,
+      "equal_platform_mean_display": "82.9",
+      "minimum_platform_score_raw": 80.0,
+      "minimum_platform_score_display": "80.0",
+      "action_records_total": 94,
+      "reported_screenshot_count_total": 72
+    },
+    {
+      "round": 28,
+      "report": "rounds/r28/reports/independent-evaluation.json",
+      "report_sha256": "f09dec3bc43d8ea5d1bbfea0fcca87ef2ad344a70ac14e26cb79662af5ff18d2",
+      "manifest": "rounds/r28/manifest.json",
+      "manifest_sha256": "05cd1823cc902fe1e83eca691d2c0e69766196fdb4a02ff8ca568562e6838f08",
+      "frozen_at_utc": "2026-10-21T05:21:44.617597+00:00",
+      "evaluation_started_at_utc": "2026-10-21T05:22:21.875Z",
+      "evaluation_finished_at_utc": "2026-10-21T05:27:16.803Z",
+      "scope": "Current-round HTML simulations, synthetic data, visible controls and rendered screenshots. Informed iterative evaluator; no candidate implementation reads.",
+      "overall_gate_reported": "pass",
+      "platforms": {
+        "web": {
+          "candidate_sha256": "0df7726986c38f42e3781c3a69c8ff931c482eb1d4cf65025d73b49351780e52",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 3.8
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 3
+          },
+          "weighted_total_raw": 80.0,
+          "weighted_total_display": "80.0",
+          "newcomer_score_raw": 3.8,
+          "newcomer_score_display": "3.8",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "source_setup_control": "pass_named_target_folder_save_pause",
+            "advanced_discovery": "pass_insights_opened_after_first_success",
+            "review_date_verification": {
+              "result": "pass_current_round",
+              "preview_dataset": "explicitly_switched_to_existing_synthetic_fixture_after_core_checks",
+              "range_label": "最近7天 / 10月14日–20日",
+              "basis": "资料存入日期",
+              "calendar_library_date": "2026-10-17",
+              "calendar_event_time": "10月22日14:00",
+              "observed_views": [
+                "generated_review_evidence",
+                "calendar_detail",
+                "original_content",
+                "returned_review"
+              ],
+              "return_preserved_range_and_six_evidence_items": true
+            }
+          },
+          "findings": [
+            "R28-A"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r28/evidence/independent/web/actions.json",
+            "actions_sha256": "ea9eff912a67ae3de7fe4e7823f823ce78856dad9bdd57e200951c2ed962cf65",
+            "actual_action_records": 29,
+            "reported_action_records": 29,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 29,
+            "first_look_file": "rounds/r28/evidence/independent/web/first-look.json",
+            "first_look_sha256": "6c37874789b76385070884425d1b2a42d35131e6089d29840efe8b9544c6aaf3",
+            "reported_unique_screenshot_count": 22,
+            "reported_unique_screenshot_paths": [
+              "rounds/r28/evidence/independent/web/00-first-look.png",
+              "rounds/r28/evidence/independent/web/01-note-editor.png",
+              "rounds/r28/evidence/independent/web/03-note-saved.png",
+              "rounds/r28/evidence/independent/web/04-library-after-save.png",
+              "rounds/r28/evidence/independent/web/06-verified-note.png",
+              "rounds/r28/evidence/independent/web/07-ask-scoped.png",
+              "rounds/r28/evidence/independent/web/09-answer.png",
+              "rounds/r28/evidence/independent/web/10-citation.png",
+              "rounds/r28/evidence/independent/web/11-original.png",
+              "rounds/r28/evidence/independent/web/13-answer-returned.png",
+              "rounds/r28/evidence/independent/web/15-folder-setup.png",
+              "rounds/r28/evidence/independent/web/16-server-path.png",
+              "rounds/r28/evidence/independent/web/18-folder-connected.png",
+              "rounds/r28/evidence/independent/web/19-folder-paused.png",
+              "rounds/r28/evidence/independent/web/21-insights.png",
+              "rounds/r28/evidence/independent/web/22-seeded-fixture-for-dates.png",
+              "rounds/r28/evidence/independent/web/23-fixture-insights.png",
+              "rounds/r28/evidence/independent/web/24-weekly-review-generated.png",
+              "rounds/r28/evidence/independent/web/25-calendar-evidence-row.png",
+              "rounds/r28/evidence/independent/web/26-calendar-detail.png",
+              "rounds/r28/evidence/independent/web/27-calendar-original.png",
+              "rounds/r28/evidence/independent/web/29-review-returned.png"
+            ],
+            "action_screenshot_reference_count": 21,
+            "action_dom_reference_count": 29
+          }
+        },
+        "mac": {
+          "candidate_sha256": "af1556f96771d4b96354e4241b0525030d7d58946a8d2ad113c824f1088d8db5",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 4.0
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 4
+          },
+          "weighted_total_raw": 81.25,
+          "weighted_total_display": "81.3",
+          "newcomer_score_raw": 4.0,
+          "newcomer_score_display": "4.0",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "source_setup_control": "pass_named_target_folder_save_pause",
+            "advanced_discovery": "pass_insights_opened_after_first_success",
+            "review_date_verification": {
+              "result": "pass_current_round",
+              "preview_dataset": "explicitly_switched_to_existing_synthetic_fixture_after_core_checks",
+              "range_label": "最近7天 / 10月14日–20日",
+              "basis": "资料存入日期",
+              "calendar_library_date": "2026-10-17",
+              "calendar_event_time": "10月22日14:00",
+              "observed_views": [
+                "generated_review_evidence",
+                "calendar_detail",
+                "original_content",
+                "returned_review"
+              ],
+              "return_preserved_range_and_six_evidence_items": true
+            }
+          },
+          "findings": [],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r28/evidence/independent/mac/actions.json",
+            "actions_sha256": "8c99991b43e20274b7622ec0b27711530b4bd8ca0e85b54274f34391d57bc9ed",
+            "actual_action_records": 30,
+            "reported_action_records": 30,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 30,
+            "first_look_file": "rounds/r28/evidence/independent/mac/first-look.json",
+            "first_look_sha256": "c12b62c1307e93ef7baa95ec79e1b6805efcffdabc960efb150426f3e9818153",
+            "reported_unique_screenshot_count": 23,
+            "reported_unique_screenshot_paths": [
+              "rounds/r28/evidence/independent/mac/00-first-look.png",
+              "rounds/r28/evidence/independent/mac/01-note-editor.png",
+              "rounds/r28/evidence/independent/mac/03-note-saved.png",
+              "rounds/r28/evidence/independent/mac/04-library-after-save.png",
+              "rounds/r28/evidence/independent/mac/06-verified-note.png",
+              "rounds/r28/evidence/independent/mac/07-ask-scoped.png",
+              "rounds/r28/evidence/independent/mac/09-answer.png",
+              "rounds/r28/evidence/independent/mac/10-citation.png",
+              "rounds/r28/evidence/independent/mac/11-original.png",
+              "rounds/r28/evidence/independent/mac/13-answer-returned.png",
+              "rounds/r28/evidence/independent/mac/15-folder-setup.png",
+              "rounds/r28/evidence/independent/mac/16-folder-picker.png",
+              "rounds/r28/evidence/independent/mac/17-folder-chosen.png",
+              "rounds/r28/evidence/independent/mac/19-folder-connected.png",
+              "rounds/r28/evidence/independent/mac/20-folder-paused.png",
+              "rounds/r28/evidence/independent/mac/22-insights.png",
+              "rounds/r28/evidence/independent/mac/23-seeded-fixture-for-dates.png",
+              "rounds/r28/evidence/independent/mac/24-fixture-insights.png",
+              "rounds/r28/evidence/independent/mac/25-weekly-review-generated.png",
+              "rounds/r28/evidence/independent/mac/26-calendar-evidence-row.png",
+              "rounds/r28/evidence/independent/mac/27-calendar-detail.png",
+              "rounds/r28/evidence/independent/mac/28-calendar-original.png",
+              "rounds/r28/evidence/independent/mac/30-review-returned.png"
+            ],
+            "action_screenshot_reference_count": 22,
+            "action_dom_reference_count": 30
+          }
+        },
+        "android": {
+          "candidate_sha256": "75352e8a07c6ae20f5bfd7dfd784b654a93306f46cfec0ba53a4b5bb90b7add1",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 4,
+            "clarity": 3,
+            "new_user_friendliness": 4.0
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 4
+          },
+          "weighted_total_raw": 87.5,
+          "weighted_total_display": "87.5",
+          "newcomer_score_raw": 4.0,
+          "newcomer_score_display": "4.0",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass",
+            "ask_citation_original_return": "pass",
+            "source_setup_control": "pass_named_target_folder_save_pause",
+            "advanced_discovery": "pass_insights_opened_after_first_success",
+            "review_date_verification": {
+              "result": "pass_current_round",
+              "preview_dataset": "explicitly_switched_to_existing_synthetic_fixture_after_core_checks",
+              "range_label": "最近7天 / 10月14日–20日",
+              "basis": "资料存入日期",
+              "calendar_library_date": "2026-10-17",
+              "calendar_event_time": "10月22日14:00",
+              "observed_views": [
+                "generated_review_evidence",
+                "calendar_detail",
+                "original_content",
+                "returned_review"
+              ],
+              "return_preserved_range_and_six_evidence_items": true
+            },
+            "first_folder_picker": "pass_picker_clicked_before_manual_path_entry",
+            "memory_correction_resize": {
+              "current_round": "not_reexecuted",
+              "historical_round": "R27",
+              "historical_candidate_sha256": "b4c703a2d50efad4aa327ec8af1d501552446b30457b6b6db22a9b1d366cd58c",
+              "historical_report": "../r27/reports/independent-evaluation.json",
+              "role": "score_calibration_only_not_current_execution"
+            }
+          },
+          "findings": [],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r28/evidence/independent/android/actions.json",
+            "actions_sha256": "fd3583568386ae8ef03039a210a3678aa0279811110a8d261ecaee3b54dee652",
+            "actual_action_records": 30,
+            "reported_action_records": 30,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 30,
+            "first_look_file": "rounds/r28/evidence/independent/android/first-look.json",
+            "first_look_sha256": "032a1a868cefe4d69c1bcb404667325332d4eb6feac89fd4c75a15fd5bb5197e",
+            "reported_unique_screenshot_count": 23,
+            "reported_unique_screenshot_paths": [
+              "rounds/r28/evidence/independent/android/00-first-look.png",
+              "rounds/r28/evidence/independent/android/01-note-editor.png",
+              "rounds/r28/evidence/independent/android/03-note-saved.png",
+              "rounds/r28/evidence/independent/android/04-library-after-save.png",
+              "rounds/r28/evidence/independent/android/06-verified-note.png",
+              "rounds/r28/evidence/independent/android/07-ask-scoped.png",
+              "rounds/r28/evidence/independent/android/09-answer.png",
+              "rounds/r28/evidence/independent/android/10-citation.png",
+              "rounds/r28/evidence/independent/android/11-original.png",
+              "rounds/r28/evidence/independent/android/13-answer-returned.png",
+              "rounds/r28/evidence/independent/android/15-folder-setup.png",
+              "rounds/r28/evidence/independent/android/16-folder-picker.png",
+              "rounds/r28/evidence/independent/android/17-folder-chosen.png",
+              "rounds/r28/evidence/independent/android/19-folder-connected.png",
+              "rounds/r28/evidence/independent/android/20-folder-paused.png",
+              "rounds/r28/evidence/independent/android/22-insights.png",
+              "rounds/r28/evidence/independent/android/23-seeded-fixture-for-dates.png",
+              "rounds/r28/evidence/independent/android/24-fixture-insights.png",
+              "rounds/r28/evidence/independent/android/25-weekly-review-generated.png",
+              "rounds/r28/evidence/independent/android/26-calendar-evidence-row.png",
+              "rounds/r28/evidence/independent/android/27-calendar-detail.png",
+              "rounds/r28/evidence/independent/android/28-calendar-original.png",
+              "rounds/r28/evidence/independent/android/30-review-returned.png"
+            ],
+            "action_screenshot_reference_count": 22,
+            "action_dom_reference_count": 30
+          }
+        }
+      },
+      "findings": [
+        {
+          "id": "R28-A",
+          "severity": "minor",
+          "platforms": [
+            "web"
+          ],
+          "observation": "Web已有服务器来源仍先呈现目标说明、接收状态条、来源身份与完整设置表单；1440×1000的已保存截图仅在底边开始出现当前状态卡，暂停/浏览仍在表单之后。",
+          "impact": "延续R27-A：日常管理需越过低频设置；将具名来源、当前状态和常用操作前置，同时保留服务器目标与编辑入口。",
+          "evidence": [
+            "evidence/independent/web/18-folder-connected.png",
+            "evidence/independent/web/19-folder-paused.dom.json"
+          ]
+        }
+      ],
+      "resolved_from_previous": [
+        "本轮针对日期歧义：报告明确按资料存入日期纳入，事件时间另列；详情及原始内容一致。",
+        "Android首次连接文件夹的主操作先提供选择器，手动路径位于其后；实际选择与保存完成。"
+      ],
+      "next_priority": [
+        "优先解决Web已有来源的操作顺序；本轮执行到的日期核对和Android首次选择路径未发现新的实质问题。"
+      ],
+      "equal_platform_mean_raw": 82.91666666666667,
+      "equal_platform_mean_display": "82.9",
+      "minimum_platform_score_raw": 80.0,
+      "minimum_platform_score_display": "80.0",
+      "action_records_total": 89,
+      "reported_screenshot_count_total": 68
+    },
+    {
+      "round": 29,
+      "report": "rounds/r29/reports/independent-evaluation.json",
+      "report_sha256": "24b8425db516b1050be65c7a0c9a114fab2675e7a105ab43fe844fa72dff7adc",
+      "manifest": "rounds/r29/manifest.json",
+      "manifest_sha256": "c1e7c0ea6b84d7e5dd8247fc0f6710ce80b391183804dacffe27657e7f0f721c",
+      "frozen_at_utc": "2026-10-21T05:30:53.553488+00:00",
+      "evaluation_started_at_utc": "2026-10-21T05:31:05.188Z",
+      "evaluation_finished_at_utc": "2026-10-21T05:34:56.161Z",
+      "scope": "Current-round HTML simulations, synthetic data, visible controls and rendered screenshots. Informed iterative evaluator; no candidate implementation reads.",
+      "overall_gate_reported": "pass",
+      "platforms": {
+        "web": {
+          "candidate_sha256": "058c5a9227df5acbe94ac54ed5b95d37cff54cffff0f3248aaf49e1f2000db5e",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 3,
+            "clarity": 3,
+            "new_user_friendliness": 4.0
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 4
+          },
+          "weighted_total_raw": 81.25,
+          "weighted_total_display": "81.3",
+          "newcomer_score_raw": 4.0,
+          "newcomer_score_display": "4.0",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass_current_round",
+            "ask_citation_original_return": "pass_current_round",
+            "source_setup_control": "pass_server_save_pause_and_named_overview",
+            "advanced_discovery": "pass_memory_opened_after_first_success",
+            "management_priority": {
+              "result": "pass_status_pause_browse_before_settings",
+              "evidence": [
+                "evidence/independent/web/17-folder-connected.png",
+                "evidence/independent/web/18-folder-paused.png"
+              ]
+            }
+          },
+          "findings": [],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r29/evidence/independent/web/actions.json",
+            "actions_sha256": "e490fcd905dbb5af1499779442c6b461b8ced30d3d59ad70f28b79182bb34679",
+            "actual_action_records": 21,
+            "reported_action_records": 21,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 21,
+            "first_look_file": "rounds/r29/evidence/independent/web/first-look.json",
+            "first_look_sha256": "42d9e6a40193ecb2d4af04119b7077a81e567aae11b385a83dba40ece3f9369b",
+            "reported_unique_screenshot_count": 15,
+            "reported_unique_screenshot_paths": [
+              "rounds/r29/evidence/independent/web/00-first-look.png",
+              "rounds/r29/evidence/independent/web/01-note-editor.png",
+              "rounds/r29/evidence/independent/web/03-note-saved.png",
+              "rounds/r29/evidence/independent/web/04-library-after-save.png",
+              "rounds/r29/evidence/independent/web/06-verified-note.png",
+              "rounds/r29/evidence/independent/web/07-ask-scoped.png",
+              "rounds/r29/evidence/independent/web/09-answer.png",
+              "rounds/r29/evidence/independent/web/10-citation.png",
+              "rounds/r29/evidence/independent/web/11-original.png",
+              "rounds/r29/evidence/independent/web/13-answer-returned.png",
+              "rounds/r29/evidence/independent/web/15-folder-setup.png",
+              "rounds/r29/evidence/independent/web/17-folder-connected.png",
+              "rounds/r29/evidence/independent/web/18-folder-paused.png",
+              "rounds/r29/evidence/independent/web/19-source-overview-paused.png",
+              "rounds/r29/evidence/independent/web/21-memory-discovered.png"
+            ],
+            "action_screenshot_reference_count": 14,
+            "action_dom_reference_count": 21
+          }
+        },
+        "mac": {
+          "candidate_sha256": "ca9330a6e66cad8a04a5bda6393632f7a578a6031afe31359f620078c7c706a8",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 4,
+            "clarity": 3,
+            "new_user_friendliness": 4.0
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 4
+          },
+          "weighted_total_raw": 87.5,
+          "weighted_total_display": "87.5",
+          "newcomer_score_raw": 4.0,
+          "newcomer_score_display": "4.0",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass_current_round",
+            "ask_citation_original_return": "pass_current_round",
+            "source_setup_control": "pass_picker_cancel_reselect_save_noncontinuous_state",
+            "advanced_discovery": "pass_memory_opened_after_first_success",
+            "picker_draft_preservation": {
+              "result": "pass_current_round",
+              "original_path": "~/Documents/雪燕草稿29",
+              "source_name": "雪燕R29-mac草稿",
+              "continuous": false,
+              "retention_label": "仅保存文件引用",
+              "after_cancel": "all_four_fields_preserved",
+              "after_choice": "only_path_changed_to_selected_reading_folder",
+              "evidence": [
+                "evidence/independent/mac/picker-field-observations.json",
+                "evidence/independent/mac/18-picker-cancelled-draft.png",
+                "evidence/independent/mac/20-picker-chosen-draft.png"
+              ]
+            },
+            "noncontinuous_status": {
+              "result": "pass_observed_labels",
+              "views": [
+                "management",
+                "source_overview",
+                "Mac_menu_bar"
+              ],
+              "observed": "已连接 · 未持续接收",
+              "numeric_count": "not_separately_observed"
+            }
+          },
+          "findings": [],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r29/evidence/independent/mac/actions.json",
+            "actions_sha256": "4d8823365ff8b9f173db48a21abb7d83d55aac9c6c6bfbf21b7332ee8a9ebd15",
+            "actual_action_records": 26,
+            "reported_action_records": 26,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 26,
+            "first_look_file": "rounds/r29/evidence/independent/mac/first-look.json",
+            "first_look_sha256": "486585c0b554dd936718f09fdd4f0ff49e9255dc1713650c43db2f034f59b3cd",
+            "reported_unique_screenshot_count": 19,
+            "reported_unique_screenshot_paths": [
+              "rounds/r29/evidence/independent/mac/00-first-look.png",
+              "rounds/r29/evidence/independent/mac/01-note-editor.png",
+              "rounds/r29/evidence/independent/mac/03-note-saved.png",
+              "rounds/r29/evidence/independent/mac/04-library-after-save.png",
+              "rounds/r29/evidence/independent/mac/06-verified-note.png",
+              "rounds/r29/evidence/independent/mac/07-ask-scoped.png",
+              "rounds/r29/evidence/independent/mac/09-answer.png",
+              "rounds/r29/evidence/independent/mac/10-citation.png",
+              "rounds/r29/evidence/independent/mac/11-original.png",
+              "rounds/r29/evidence/independent/mac/13-answer-returned.png",
+              "rounds/r29/evidence/independent/mac/15-folder-setup.png",
+              "rounds/r29/evidence/independent/mac/16-folder-draft-before-picker.png",
+              "rounds/r29/evidence/independent/mac/17-picker-open-with-draft.png",
+              "rounds/r29/evidence/independent/mac/18-picker-cancelled-draft.png",
+              "rounds/r29/evidence/independent/mac/20-picker-chosen-draft.png",
+              "rounds/r29/evidence/independent/mac/21-folder-connected-noncontinuous.png",
+              "rounds/r29/evidence/independent/mac/22-source-overview-noncontinuous.png",
+              "rounds/r29/evidence/independent/mac/24-memory-discovered.png",
+              "rounds/r29/evidence/independent/mac/25-collection-status-noncontinuous.png"
+            ],
+            "action_screenshot_reference_count": 18,
+            "action_dom_reference_count": 26
+          }
+        },
+        "android": {
+          "candidate_sha256": "825dd27870384f721a4ab01a75b6c2134225781d3fa06272cf6518b55b447a15",
+          "dimension_scores_raw": {
+            "design": 3,
+            "originality": 3,
+            "craft": 3,
+            "functionality": 4,
+            "clarity": 3,
+            "new_user_friendliness": 4.0
+          },
+          "newcomer_subscores_raw": {
+            "purpose": 4,
+            "first_action": 4,
+            "permissions_setup": 4,
+            "first_value_verify": 4,
+            "progressive_disclosure": 4
+          },
+          "weighted_total_raw": 87.5,
+          "weighted_total_display": "87.5",
+          "newcomer_score_raw": 4.0,
+          "newcomer_score_display": "4.0",
+          "gate_reported": "pass",
+          "gate_conditions_from_record": {
+            "functionality_at_least_3": true,
+            "clarity_at_least_3": true,
+            "new_user_friendliness_at_least_3": true,
+            "no_observed_critical_blocker": true
+          },
+          "gate_derived_from_record": "pass",
+          "gate_agrees_with_recorded_conditions": true,
+          "tasks": {
+            "save_find_verify": "pass_current_round",
+            "ask_citation_original_return": "pass_current_round",
+            "source_setup_control": "pass_picker_cancel_reselect_save_noncontinuous_state",
+            "advanced_discovery": "pass_memory_opened_after_first_success",
+            "picker_draft_preservation": {
+              "result": "pass_current_round",
+              "original_path": "Documents/雪燕草稿29",
+              "source_name": "雪燕R29-android草稿",
+              "continuous": false,
+              "retention_label": "仅保存文件引用",
+              "after_cancel": "all_four_fields_preserved",
+              "after_choice": "only_path_changed_to_selected_reading_folder",
+              "evidence": [
+                "evidence/independent/android/picker-field-observations.json",
+                "evidence/independent/android/18-picker-cancelled-draft.png",
+                "evidence/independent/android/20-picker-chosen-draft.png"
+              ]
+            },
+            "noncontinuous_status": {
+              "result": "pass_observed_labels",
+              "views": [
+                "management",
+                "source_overview"
+              ],
+              "observed": "已连接 · 未持续接收",
+              "numeric_count": "not_separately_observed"
+            },
+            "memory_correction_resize": {
+              "result": "pass_current_candidate_exact_text_preserved",
+              "viewport_sequence": [
+                "390x844",
+                "412x915",
+                "390x844"
+              ],
+              "expected_text": "雪燕R29修正：叶青负责周三前整理四份背景资料；校验串＝碧蓝纸鹤-29-Z。仅用于最终轮合成验证。",
+              "observed_states": [
+                "draft_before_resize",
+                "draft_after_resize",
+                "saved_version2_card",
+                "reopened_editor",
+                "current_history_version2"
+              ],
+              "version1": "original_preserved_replaced",
+              "version2": "exact_correction_current",
+              "evidence": [
+                "evidence/independent/android/memory-exact-text-observations.json",
+                "evidence/independent/android/30-memory-draft-after-resize.png",
+                "evidence/independent/android/31-memory-correction-saved.png",
+                "evidence/independent/android/33-memory-reopened.dom.json",
+                "evidence/independent/android/34-memory-history.png"
+              ]
+            }
+          },
+          "findings": [
+            "R29-A"
+          ],
+          "browser_errors": [],
+          "evidence": {
+            "actions_file": "rounds/r29/evidence/independent/android/actions.json",
+            "actions_sha256": "bb4d8fc2ca793f59381f751ca81483ef2294cccd4839a731aed325f7d1c4f240",
+            "actual_action_records": 35,
+            "reported_action_records": 35,
+            "explicit_action_outcomes": {},
+            "action_records_without_explicit_outcome": 35,
+            "first_look_file": "rounds/r29/evidence/independent/android/first-look.json",
+            "first_look_sha256": "88fc63bb0af01b3da20454126bf0cb232f7280d9f677e8c87d90a4f590c46782",
+            "reported_unique_screenshot_count": 28,
+            "reported_unique_screenshot_paths": [
+              "rounds/r29/evidence/independent/android/00-first-look.png",
+              "rounds/r29/evidence/independent/android/01-note-editor.png",
+              "rounds/r29/evidence/independent/android/03-note-saved.png",
+              "rounds/r29/evidence/independent/android/04-library-after-save.png",
+              "rounds/r29/evidence/independent/android/06-verified-note.png",
+              "rounds/r29/evidence/independent/android/07-ask-scoped.png",
+              "rounds/r29/evidence/independent/android/09-answer.png",
+              "rounds/r29/evidence/independent/android/10-citation.png",
+              "rounds/r29/evidence/independent/android/11-original.png",
+              "rounds/r29/evidence/independent/android/13-answer-returned.png",
+              "rounds/r29/evidence/independent/android/15-folder-setup.png",
+              "rounds/r29/evidence/independent/android/16-folder-draft-before-picker.png",
+              "rounds/r29/evidence/independent/android/17-picker-open-with-draft.png",
+              "rounds/r29/evidence/independent/android/18-picker-cancelled-draft.png",
+              "rounds/r29/evidence/independent/android/20-picker-chosen-draft.png",
+              "rounds/r29/evidence/independent/android/21-folder-connected-noncontinuous.png",
+              "rounds/r29/evidence/independent/android/22-source-overview-noncontinuous.png",
+              "rounds/r29/evidence/independent/android/24-memory-discovered.png",
+              "rounds/r29/evidence/independent/android/25-memory-select-source.png",
+              "rounds/r29/evidence/independent/android/27-memory-generated.png",
+              "rounds/r29/evidence/independent/android/28-memory-editor-open.png",
+              "rounds/r29/evidence/independent/android/29-memory-correction-draft.png",
+              "rounds/r29/evidence/independent/android/30-memory-draft-after-resize.png",
+              "rounds/r29/evidence/independent/android/31-memory-correction-saved.png",
+              "rounds/r29/evidence/independent/android/32-memory-baseline-restored.png",
+              "rounds/r29/evidence/independent/android/33-memory-reopened.png",
+              "rounds/r29/evidence/independent/android/34-memory-history.png",
+              "rounds/r29/evidence/independent/android/35-memory-history-closed.png"
+            ],
+            "action_screenshot_reference_count": 27,
+            "action_dom_reference_count": 35
+          }
+        }
+      },
+      "findings": [
+        {
+          "id": "R29-A",
+          "severity": "minor",
+          "platforms": [
+            "android"
+          ],
+          "observation": "记忆历史的版本1关系行显示“初次整理 · 已由版本2”，缺少完成句义的“替代”；同条“已被替代”徽标和版本2“人工纠正，替代版本1”仍清楚。",
+          "impact": "不影响保存和历史核对，属于可在后续文案整理中修正的小问题。十轮在R29结束，不改写已冻结候选。",
+          "evidence": [
+            "evidence/independent/android/34-memory-history.png",
+            "evidence/independent/android/34-memory-history.dom.json"
+          ]
+        }
+      ],
+      "resolved_from_previous": [
+        "R28-A/R27-A解决：Web当前状态、暂停及浏览在完整设置之前，具名来源与服务器目标继续可见。",
+        "Mac/Android四字段草稿在选择器取消后保留；选取新目录仅替换路径，未覆盖名称、持续同步选择和保存方式。",
+        "Android保存修正后显示“已保存·版本2”；本轮精确修正跨缩放与重开、历史一致。"
+      ],
+      "next_priority": [
+        "后续可补全版本1关系文案；最终三端关键门槛在实际执行范围内均通过。真实系统能力及未执行分支仍需另行验证。"
+      ],
+      "equal_platform_mean_raw": 85.41666666666667,
+      "equal_platform_mean_display": "85.4",
+      "minimum_platform_score_raw": 81.25,
+      "minimum_platform_score_display": "81.3",
+      "action_records_total": 82,
+      "reported_screenshot_count_total": 62
+    }
+  ],
+  "fresh_review_evidence": [
+    {
+      "name": "fresh-android-advanced-r25",
+      "report": "reports/fresh-android-advanced-r25/report.md",
+      "first_look_files": [
+        "reports/fresh-android-advanced-r25/first-look.md"
+      ],
+      "action_artifacts": [
+        {
+          "path": "reports/fresh-android-advanced-r25/rawtrace.json",
+          "bytes": 212380,
+          "sha256": "c32107f4063d95953ec2bf8f19b15a999efc46b94dd79c5c2f9b1d6278d7d4a5",
+          "serialized_record_entries": 38
+        },
+        {
+          "path": "reports/fresh-android-advanced-r25/actions.md",
+          "bytes": 4581,
+          "sha256": "d865e9a5acf7f64b424324ae2f5cdc6b04273dcaed5403922ad1f280b591f30b"
+        }
+      ],
+      "png_file_count": 28,
+      "trace_archives": [
+        {
+          "path": "reports/fresh-android-advanced-r25/browser-trace.zip",
+          "bytes": 4457535,
+          "sha256": "70942af75af173f49e92870674be42f0d31f0a5c237667716ee9104cb21b74c0"
+        }
+      ],
+      "scope": "Separate fresh-context review inventory; serialization and screenshot-file counts are retained as file counts."
+    },
+    {
+      "name": "fresh-android-r20",
+      "report": "reports/fresh-android-r20/report.md",
+      "first_look_files": [
+        "reports/fresh-android-r20/first-look.json"
+      ],
+      "action_artifacts": [],
+      "png_file_count": 22,
+      "trace_archives": [
+        {
+          "path": "reports/fresh-android-r20/trace.zip",
+          "bytes": 2150213,
+          "sha256": "fc91daff565f57a5420f8190fae8df43ab07d06a19a5186166b75c057d3afdb2"
+        }
+      ],
+      "scope": "Separate fresh-context review inventory; serialization and screenshot-file counts are retained as file counts."
+    },
+    {
+      "name": "fresh-mac-r23",
+      "report": "reports/fresh-mac-r23/report.md",
+      "first_look_files": [
+        "reports/fresh-mac-r23/first-look.json"
+      ],
+      "action_artifacts": [
+        {
+          "path": "reports/fresh-mac-r23/action-log.json",
+          "bytes": 4934,
+          "sha256": "e31caa1cc035a1854a8e4bcc8230e5e67eaa83813e8291bdbf347aa563bbdd45",
+          "serialized_record_entries": 19
+        }
+      ],
+      "png_file_count": 17,
+      "trace_archives": [
+        {
+          "path": "reports/fresh-mac-r23/raw-trace.zip",
+          "bytes": 5091890,
+          "sha256": "8b0820aece00c007977ae3f11ae5a53eb256c017c785fd3b1c1f58a627ce9639"
+        }
+      ],
+      "scope": "Separate fresh-context review inventory; serialization and screenshot-file counts are retained as file counts."
+    },
+    {
+      "name": "fresh-web-r22",
+      "report": "reports/fresh-web-r22/report.md",
+      "first_look_files": [
+        "reports/fresh-web-r22/first-look.json"
+      ],
+      "action_artifacts": [
+        {
+          "path": "reports/fresh-web-r22/actions.jsonl",
+          "bytes": 1318,
+          "sha256": "ccd233988496ed5561c4ef1c23c9b10222b58e55d5336ac7ab8b190fb32c0676",
+          "serialized_record_entries": 10
+        }
+      ],
+      "png_file_count": 9,
+      "trace_archives": [
+        {
+          "path": "reports/fresh-web-r22/trace.zip",
+          "bytes": 389292,
+          "sha256": "3ffa3b6a3a5fc5a4a2dde9dffb7858ef12981417a2813d58ba910b0411585354"
+        }
+      ],
+      "scope": "Separate fresh-context review inventory; serialization and screenshot-file counts are retained as file counts."
+    }
+  ]
+}

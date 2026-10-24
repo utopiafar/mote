@@ -1,0 +1,46 @@
+{
+  "reviewer": "blind-r18-c",
+  "candidate": "dist/r18.html",
+  "sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+  "sha256_verified": true,
+  "first_look_frozen_before_interaction": true,
+  "interaction_surface": {"viewport": {"width": 1440, "height": 1000}, "platform": "网页", "data": "已有资料", "appearance": "浅色"},
+  "goal": "就已有资料问一个有关让首次使用更容易理解的问题，核对引用原文，再回到同一对话。",
+  "question": "根据已有资料，怎样让新用户第一次使用 Mote 时更容易理解？请指出应该优先展示的信息和操作，并给出原文依据。",
+  "entry_navigation_count": 1,
+  "entry_navigation_limit": 5,
+  "entry_found": true,
+  "detours": 0,
+  "total_route_navigation_count": 3,
+  "total_clicks": 6,
+  "text_entry_actions": 1,
+  "count_definition": "入口导航数从资料库起点计到找到可提问页面。总路由导航为资料库→问一问、问一问→资料详情、资料详情→原对话；提交、模态框打开及关闭只计点击，不计路由导航。",
+  "steps": [
+    {"step": 1, "action": "点击主导航‘问一问’", "reason": "首屏用途明确提到资料提问，导航名称直接对应目标", "result": "进入含输入问题和提问按钮的页面", "evidence": "02-ask-entry"},
+    {"step": 2, "action": "输入关于首次使用清晰度的问题，保留默认全部资料范围", "result": "问题进入输入框", "evidence": "03-question-filled"},
+    {"step": 3, "action": "点击‘提问’", "result": "出现同一问题、示例回答和两个查看引用入口", "evidence": "04-answer"},
+    {"step": 4, "action": "点击‘产品评审记录 · 查看引用’", "reason": "最接近首次使用主题的引用，文字明确表示可以查看", "result": "进入‘产品评审 · 让第一步更清楚’资料详情，正文和返回对话入口可见", "evidence": "05-cited-original"},
+    {"step": 5, "action": "点击‘查看原始内容’", "reason": "核对引用对应的原始记录", "result": "原始内容对话框显示标题、来源和原始文本", "evidence": "06-original-content"},
+    {"step": 6, "action": "关闭原始内容对话框", "result": "回到资料详情，返回对话仍可见", "evidence": "07-original-closed"},
+    {"step": 7, "action": "点击‘返回对话’", "result": "回到同一问题、同一示例回答和同一引用列表", "evidence": "08-returned-same-conversation"}
+  ],
+  "original_content_check": {
+    "material_title": "产品评审 · 让第一步更清楚",
+    "source_label": "我写的记录",
+    "read_findings": [
+      "原文要求把一次导入文件与持续同步文件夹这两种输入方式说清楚。",
+      "原文要求已有资料随时可读，用户可以直接提问。",
+      "原文提到周四下午检查三端入口和文案。"
+    ],
+    "scope": "确认可阅读并核对原始文本；示例回答已标注演示流程，不据此评价真实检索或生成准确性。"
+  },
+  "returned_same_conversation": true,
+  "completion": "success",
+  "observed_ui_issue": {
+    "description": "自然输入的较长问题成为左侧对话标题后，没有在对话栏边界内截断或换行，越过竖向栏界进入主内容区域。",
+    "evidence": "04-answer.png",
+    "impact": "损害对话列表与主内容的视觉边界；本次未阻止提问、查看引用或返回。"
+  },
+  "stop_condition": "回到同一对话后立即停止交互并关闭浏览器；未扩展审计。",
+  "method_note": "仅使用指定首屏截图与渲染后的可见UI。读取了获准的 browser-session.cjs 以操作隔离浏览器，未阅读候选源码、功能清单、作者/其他评审报告或应用内部状态。首次启动因工具stdin关闭而在任何UI点击前重启，属于工具会话处理，不计为UI尝试。"
+}

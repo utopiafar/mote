@@ -1,0 +1,213 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/setup/folder/new",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · 交互原型\n演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n来源\n/\n接入设置\n工作台在线\n随手记\n添加内容\n连接新的文件夹\n\n为另一个文件夹建立独立来源，现有来源保持原样。\n\n返回来源\n文件夹位置\n此原型使用示例文件夹。\n持续同步后续变化\n这是连接后的同步方式。暂停时不接收新变化，已保存内容仍保留。\n来源名称\n保存方式\n中央保留原件，本机按需清理\n本机与中央都保留\n仅保存引用\n\n中央指你的 Mote 工作台存储；本机指这台电脑。保存方式决定两处是否保留原件。\n\n连接并保存\n取消",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回来源",
+      "label": "返回来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "folder-path",
+      "type": "text",
+      "text": "",
+      "label": "文件夹位置\n此原型使用示例文件夹。",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "continuous",
+      "type": "checkbox",
+      "text": "",
+      "label": "持续同步后续变化\n这是连接后的同步方式。暂停时不接收新变化，已保存内容仍保留。",
+      "value": "on",
+      "checked": true,
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "source-name",
+      "type": "text",
+      "text": "",
+      "label": "来源名称",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "save-mode",
+      "type": "select-one",
+      "text": "中央保留原件，本机按需清理\n本机与中央都保留\n仅保存引用",
+      "label": "保存方式\n中央保留原件，本机按需清理\n本机与中央都保留\n仅保存引用",
+      "value": "中央保留原件，本机按需清理",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "连接并保存",
+      "label": "连接并保存",
+      "action": "save-source",
+      "item": "folder",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "取消",
+      "label": "取消",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "连接新的文件夹"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state"
+}

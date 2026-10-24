@@ -1,0 +1,19 @@
+{
+  "reviewer": "/root/review_r31_r34/review_r34_central",
+  "round": "R34",
+  "frozen_at": "2026-10-23T03:41:42.895540+00:00",
+  "candidate_sha256": {
+    "web": "33d63d9f009693fab234ebb37179da858b403e8a71c7e59624d4c9dcbd13d000",
+    "mac": "80520ac7f5d12fc494b5ffd1853c2039aa4f9fa9b3b8ac14d74e06cfe602160a",
+    "android": "c4f9e515adc7159809536466a3bc02f107dadda56c68b6f73e79d22076fdebb4"
+  },
+  "files": {
+    "first-look.json": "3cd7f668b369935084149334e37bfadcd2c2b4f5c3190c459fa74349bc2cbe68",
+    "first-look.md": "2e752401424088709253f711bcdc400a36b7d0d8faded07bfa5f0a321f4ae4e8",
+    "observations.json": "3e68971e2bd84a5cbc1d7ed84af0b93fc39eec004a3182b6e9cc6c710d74f98a",
+    "observations.md": "a428e99978e90ad9e3b4d9ef4b51b40b0d90381f004c1e29a573c7eb05137ab1",
+    "harness-limitations.json": "bce784ff19134bf2558a8caac63d1ce89c65e4fa7e1466f35fa61a076d9d4a9f",
+    "evidence-manifest.json": "564affbf5a336bba81576a48c063ae1334381b0faf2d2ee79879a71e705e4136"
+  },
+  "note": "Independent bounded subreview frozen. No candidate changes or retroactive claim expansion."
+}

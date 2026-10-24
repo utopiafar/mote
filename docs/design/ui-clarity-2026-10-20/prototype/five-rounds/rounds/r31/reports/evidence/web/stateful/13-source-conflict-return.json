@@ -1,0 +1,264 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/setup/folder",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n来源\n/\n接入设置\n工作台在线\n随手记\n添加内容\n文件夹来源\n\n文件夹由 Mac 或 Android 采集端选择和同步。\n\n返回来源\n采集端 → 中央资料库\n在「我的 Mac」上选择文件夹\n\n打开对应设备的 Mote → 来源 → 文件夹。选择本机范围后，中央接收资料，供你阅读、查找和提问。\n\n研究资料\n\n设备上报：此来源正在接收选定内容。\n\n浏览已接收资料\n查看设备连接\n内容关系与背景\n已保存：第三方内容 · 已补充背景\n有未保存修改\n\n用于理解这个来源已有和未来的资料。修改不会自动重转写或重算历史记忆。\n\n中央已确认 · 版本 2\n第三方内容\n\n来源为供应商会议记录。第三方说“我保证交付”；这不是我的承诺。\nAsia/Shanghai，2026年10月。\n\n来源背景说明（选填）\n最多 12,000 字符。单份资料的声明优先于来源声明。\n内容与你的关系\n不声明\n我的表达或经历\n第三方内容\n混合内容\n归属未知\n不声明或归属未知也可以阅读、检索和整理。\n资料说明已有新版本，草稿已保留\n\n中央版本 3\n\n另一端保存的说明：访谈中的回答属于受访者，时间为 UTC+8。\n\n放弃修改并重新加载\n\n有未保存修改，离开后可继续。\n\n保存资料说明与归属\n放弃修改\n预览说明版本冲突\n模拟另一端更新了说明\n只想保存当前文件？ 一次导入资料",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回来源",
+      "label": "返回来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "浏览已接收资料",
+      "label": "浏览已接收资料",
+      "action": "focus-browse-device-source",
+      "item": "folder",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看设备连接",
+      "label": "查看设备连接",
+      "action": "go",
+      "page": "devices",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "内容关系与背景\n已保存：第三方内容 · 已补充背景\n有未保存修改",
+      "label": "内容关系与背景\n已保存：第三方内容 · 已补充背景\n有未保存修改",
+      "expanded": true
+    },
+    {
+      "tag": "textarea",
+      "id": "source-context-description",
+      "type": "textarea",
+      "text": "",
+      "label": "来源背景说明（选填）\n最多 12,000 字符。单份资料的声明优先于来源声明。",
+      "value": "未保存草稿：供应商承诺不是我的承诺。\n保留此文本以处理冲突。",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "source-relation",
+      "type": "select-one",
+      "text": "不声明\n我的表达或经历\n第三方内容\n混合内容\n归属未知",
+      "label": "内容与你的关系\n不声明\n我的表达或经历\n第三方内容\n混合内容\n归属未知\n不声明或归属未知也可以阅读、检索和整理。",
+      "value": "third_party",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "放弃修改并重新加载",
+      "label": "放弃修改并重新加载",
+      "action": "cx-context-reload",
+      "item": "folder",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存资料说明与归属",
+      "label": "保存资料说明与归属",
+      "action": "save-source-context",
+      "item": "folder",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "放弃修改",
+      "label": "放弃修改",
+      "action": "discard-source-context",
+      "item": "folder",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "预览说明版本冲突",
+      "label": "预览说明版本冲突",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "模拟另一端更新了说明",
+      "label": "模拟另一端更新了说明",
+      "action": "cx-context-conflict",
+      "item": "folder",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "一次导入资料",
+      "label": "一次导入资料",
+      "action": "go",
+      "page": "import",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "文件夹来源"
+    },
+    {
+      "level": "H2",
+      "text": "在「我的 Mac」上选择文件夹"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

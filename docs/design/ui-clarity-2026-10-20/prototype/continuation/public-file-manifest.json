@@ -1,0 +1,982 @@
+{
+  "scope": "Readable synthetic HTML design artifacts and evidence. Complete PNG screenshots and large raw traces remain in the downloadable package. No compressed archive upload.",
+  "groups": 10,
+  "large_files": [
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/independent/r17/natural-tasks.trace.json",
+      "local_path": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/independent/r17/natural-tasks.trace.json",
+      "sha256": "5757e5332eb9c51f0ca45ad8f734d649ed6a8f12baee0b3d03da7fc05fa3f04c"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/independent/r18/natural-tasks.compact.json",
+      "local_path": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/independent/r18/natural-tasks.compact.json",
+      "sha256": "3d6eb692ac7a7f274a7902c494a59ef8d07a32b2f8019b83a1f6c92b13c754ae"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/independent/r19/natural-tasks.trace.json",
+      "local_path": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/independent/r19/natural-tasks.trace.json",
+      "sha256": "0385072b88b87a9691fc006314ccf8873e5e764f77dbc409c56b97a9da1d90fb"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/independent-feature-review-r18.json",
+      "local_path": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/independent-feature-review-r18.json",
+      "sha256": "1415fa3cfaf72a1613c53b4d00e89a5162b091325d5a0168aa701d1edf249651"
+    }
+  ],
+  "files": [
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/README.md",
+      "bytes": 2048,
+      "sha256": "ed36ac5d56c98d3852fe846f06c2c5d354037193e6447822923260fa56057708",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/final-report.md",
+      "bytes": 26833,
+      "sha256": "3434477bcad77e3b59aa102d76917bf12a396860139287f336fb038a714876bd",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/README.md",
+      "bytes": 1840,
+      "sha256": "ae2f1f9101d414d12172c65a53eca83762c60b08a51acc961ffd109dd04b4356",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/delivery/final-report-template.md",
+      "bytes": 14509,
+      "sha256": "d350ea093f90859bcead9453cfac775e6bbb92f7e78cc950abf3f0c012082846",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/delivery/pr-body.md",
+      "bytes": 3222,
+      "sha256": "10b681f76a237b930c6e28d2bc9c3a4bd6641bd4cda5d60713e2a64b07fe2bde",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/delivery-result.json",
+      "bytes": 459,
+      "sha256": "8aaa4f3ca131e47770a1062b7a4eb16e1b4fad02a687282ddc00acbc8e8b4789",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/dist/review-r15-r18-relative.html",
+      "bytes": 12524,
+      "sha256": "108db52d5cd9a6dd5dd70b6a897a788b55fb7d950e949b4ea863bff240898173",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/dist/review.html",
+      "bytes": 12524,
+      "sha256": "436d3d11510b779512327ad6f63c48fadbbbc945d6c6be4b67c0fe513555d1eb",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-a/00-start.json",
+      "bytes": 10717,
+      "sha256": "5e4379608b0ab081515647f44d58e1256b2ab3a89468c6c5ff87816976afe3dc",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-a/01-note-entry.json",
+      "bytes": 4082,
+      "sha256": "9508eec0f9e135fb304faa46c2f8140d028dc7e8a45701c7c65214ebd0417b47",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-a/02-decision-filled.json",
+      "bytes": 4484,
+      "sha256": "186ffdfd4314964becf596c18cf914f235d8dfacad7cef67635cf5a0f6545b6a",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-a/03-saved.json",
+      "bytes": 5003,
+      "sha256": "9a780da468dc333925ab147b10d5aebec46c87c9e2789850f4b44028cc42319b",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-a/04-left-notes.json",
+      "bytes": 6305,
+      "sha256": "982e504e042bab70e94936e9d317c16a0a5fbb93d007ec2b57b44c0282117b28",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-a/05-returned-library.json",
+      "bytes": 11959,
+      "sha256": "452fb2e288249ab23982946501d408b6bc1b8b2fa44484638f079d0d1e29f6e2",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-a/06-keyword-results.json",
+      "bytes": 8571,
+      "sha256": "ed954f70c63ef7419c0952bfad04d94907fbb51f088050775327dcaa7c7ce9db",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-a/07-fulltext-opened.json",
+      "bytes": 5491,
+      "sha256": "315b571f5ef41ae02787cd26f85fdb64a8371201bbd4169e77e37cf13c0ab041",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-a/first-look.json",
+      "bytes": 1667,
+      "sha256": "4cf5bb82fa9e14d270e8dae8ee2782b405b68fc3f1d00209ef249364e3336396",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-a/harness-events.json",
+      "bytes": 593,
+      "sha256": "0aca6ec8470063e3fc9d6d1d34623548885b2eb65fcee34b08b9a181f86f0745",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-a/task-result.json",
+      "bytes": 4069,
+      "sha256": "faf5d9a8eadbc49e5754ef8f50fe53f4ee5885a6826da4189b37cd3f0d3b51c6",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-b/01-initial.json",
+      "bytes": 11839,
+      "sha256": "2a01687dbe897f736dbb8307145fde65839c0bd56ca35e3c06b37b2b45869708",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-b/02-sources.json",
+      "bytes": 6071,
+      "sha256": "18253e1ba2233db269defb0daab80136fc60a19402813f94c34e4ee5f9d4c9a4",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-b/03-source-picker.json",
+      "bytes": 10734,
+      "sha256": "a81375e699e819e69c491b249c35392f198fe4c87c9698d74f15f022ff80c87d",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-b/04-new-folder.json",
+      "bytes": 5724,
+      "sha256": "0d6feaf62dc898e0ff5bd9bc08a66943d87921b8d78a3e743931eebff85951e3",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-b/05-folder-filled.json",
+      "bytes": 5754,
+      "sha256": "a1e97c6112179df78170795c49bc9e7e6003530d05b02b87c9cbec1f5b8de0bd",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-b/06-folder-connected.json",
+      "bytes": 8906,
+      "sha256": "3d50b92db042c48f86d547494b96e8c622dd32cf6b453a9ed108d6e6d31f8d08",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-b/07-folder-paused.json",
+      "bytes": 8607,
+      "sha256": "1157a970d5e8018d45f36120dbf43b90a01a360836216bf131a57c4690996ac3",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-b/08-saved-history-destination.json",
+      "bytes": 9401,
+      "sha256": "6f72b9522b7c3dfea322ee4702a6966db91669830e7b73785e998441326d6b51",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-b/first-look.json",
+      "bytes": 2048,
+      "sha256": "fd449b030aa00db0854b71dea1f895b79aaa4dfe6b45ab0901d9643768487df1",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-b/task-result.json",
+      "bytes": 2747,
+      "sha256": "8c5972b491c5652c2bc964499757c92c632a0fba18ee76ea9268059355528b5c",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-c/01-initial-library.json",
+      "bytes": 11839,
+      "sha256": "2a01687dbe897f736dbb8307145fde65839c0bd56ca35e3c06b37b2b45869708",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-c/02-ask-entry.json",
+      "bytes": 6760,
+      "sha256": "cfb04b4bd9e238dd1b1ba41c976c3a52d003e967b69aac3e213b323557c701de",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-c/03-question-filled.json",
+      "bytes": 6913,
+      "sha256": "b008f7c1a06fead6f0b44e2b5cae95a1b87da15a5f0b9f5a9b227932c6351551",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-c/04-answer.json",
+      "bytes": 7447,
+      "sha256": "04af8fc9efefafdbf8fdaa9649732d4bef09b0816dde4cbf574eec4bcd2470c2",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-c/05-cited-original.json",
+      "bytes": 5966,
+      "sha256": "6c3fe3e7171d42d37953cc7398d77909c9b72ae86cf5b7980aec87ca5f364fca",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-c/06-original-content.json",
+      "bytes": 1905,
+      "sha256": "6780c3911ef7f3ad4566dad3f6f3811d1f6511a9a7093f63d080002f57a63127",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-c/07-original-closed.json",
+      "bytes": 5966,
+      "sha256": "6c3fe3e7171d42d37953cc7398d77909c9b72ae86cf5b7980aec87ca5f364fca",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-c/08-returned-same-conversation.json",
+      "bytes": 7447,
+      "sha256": "04af8fc9efefafdbf8fdaa9649732d4bef09b0816dde4cbf574eec4bcd2470c2",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-c/first-look.json",
+      "bytes": 3176,
+      "sha256": "1014e09cc914b8dea7e2fa7db73a90e96ccbd43b3ba53ef58875a5253e34d93e",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/blind-r18-c/task-result.json",
+      "bytes": 3908,
+      "sha256": "3b0d419e39b24e88220273bc345feb28b34f18016ef3618349f880b16b18e27e",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/independent/r17/natural-tasks.trace.json",
+      "bytes": 930577,
+      "sha256": "5757e5332eb9c51f0ca45ad8f734d649ed6a8f12baee0b3d03da7fc05fa3f04c",
+      "transport": "separate readable blob"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/independent/r17-supplement/natural-tasks.trace.json",
+      "bytes": 148007,
+      "sha256": "3be3018f239a253769ae81a9c7424a462c195922186ce430d3919cd20f25f441",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/independent/r18/mobile-visual-recheck.json",
+      "bytes": 26037,
+      "sha256": "b6913fe3ad002e2948880a196190c383a5a40ffcf8ff83417b920339827ddab2",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/independent/r18/natural-tasks.compact.json",
+      "bytes": 692537,
+      "sha256": "3d6eb692ac7a7f274a7902c494a59ef8d07a32b2f8019b83a1f6c92b13c754ae",
+      "transport": "separate readable blob"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/independent/r19/natural-tasks.trace.json",
+      "bytes": 299367,
+      "sha256": "0385072b88b87a9691fc006314ccf8873e5e764f77dbc409c56b97a9da1d90fb",
+      "transport": "separate readable blob"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/neutral-comparison/pine/library.json",
+      "bytes": 11592,
+      "sha256": "caf35b80feba7612e92a5ab1a6f2357a9fc50fe929d53550f4e7866e67521880",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/neutral-comparison/pine/memory-result.json",
+      "bytes": 5676,
+      "sha256": "b388b9882cb22a2e5a2e1c957264f7c3fe4806f599142044dc98ce5a40bbbb7f",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/neutral-comparison/pine/source-task.json",
+      "bytes": 5414,
+      "sha256": "3e83f4a64e72decfd6d2f6ea9aae4c0a495bf2609859be7c9fe2777b18f75f7e",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/neutral-comparison/reed/library.json",
+      "bytes": 11546,
+      "sha256": "01df7f277a81b58893e40cdf6ba7f6f16bab8e8ccfb6d5b78dcb7e6a9c205e86",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/neutral-comparison/reed/memory-result.json",
+      "bytes": 5637,
+      "sha256": "1d1a354914d5df5fdd0616ca68bac5fc2ac83195082715cdc2d93ceb321097bf",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/neutral-comparison/reed/source-task.json",
+      "bytes": 5414,
+      "sha256": "3e83f4a64e72decfd6d2f6ea9aae4c0a495bf2609859be7c9fe2777b18f75f7e",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/neutral-comparison/stone/library.json",
+      "bytes": 11851,
+      "sha256": "0c5f2d164b05b1f69d6035f960099725ddb371e1286f4bac7998cff5115116c0",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/neutral-comparison/stone/memory-result.json",
+      "bytes": 5676,
+      "sha256": "b388b9882cb22a2e5a2e1c957264f7c3fe4806f599142044dc98ce5a40bbbb7f",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/neutral-comparison/stone/source-task.json",
+      "bytes": 5475,
+      "sha256": "9247f27e3e7a7aaecb4067a936fc564607cfe04e452b98cbc2b4e600349110a9",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/comparison/build-metadata.json",
+      "bytes": 1574,
+      "sha256": "4e700d55bcd1d6ba663b8285e05f6a23f3f52195670fddc60ac8c6147e8cc633",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/comparison/comparison-smoke.json",
+      "bytes": 6223,
+      "sha256": "1dea9ec877e1a969a5cbe32543d2b4b9412ff2a5b3784c6dcf61a7debc40815f",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/feature-coverage-summary.json",
+      "bytes": 116699,
+      "sha256": "9c729c9dcb9334449d1e6dfb63011859abee8d11b48ff97ac60e15dd02521e47",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/focused/index.json",
+      "bytes": 1845,
+      "sha256": "9b8f961be2c94a12f0b326f9e6acde13d07f928ded2e00169bfb626a0b7f1aa7",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/memory-context/index.json",
+      "bytes": 731,
+      "sha256": "a75383aa89f2ce1f096352cb0ec2fe2dd4919e4fba48aa3f7cfd66a3461304f5",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/memory-notes-account/index.json",
+      "bytes": 621,
+      "sha256": "8cbc0f3f791673e2fa9bfd8b5ba13f29aea64589f85ca99153799080abc090a6",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/settings/capture-summary.json",
+      "bytes": 3110,
+      "sha256": "ff91713024ef53c30eea5927c3ac8650af38bbf99d97c9cdd536de7b0887915c",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/settings/settings-r18-dom.json",
+      "bytes": 2668,
+      "sha256": "1f93b4bedbbd829e8b11d1e4d519cd7cf25f33ecc838ca4f0bf08f27625d0fa3",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/source/device-filter-materials-and-raw.actions.json",
+      "bytes": 2788,
+      "sha256": "c4612f8a52be70b5e8c25c5d63a6fca9cec7c023e126b6fe3b6082bf5c0b4a8f",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/source/index.json",
+      "bytes": 1812,
+      "sha256": "acc5b9fd803033788c8c4163c9cdc5c29fbe6d71fb1b8094721dc2f24105ea77",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/source/screenshot-group-date-device-evidence.actions.json",
+      "bytes": 2840,
+      "sha256": "ddba7e26f63f263689984f324d5ff73fdf70838f0893ac601bba1a58e1841d13",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/source/send-pause-independent-scopes.actions.json",
+      "bytes": 4238,
+      "sha256": "ee773549acce6c760767773c7d12a026d9fcefa8c3bb7eefb74b639c9e4ce859",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/source/source-new-controls-english-content-preserved.actions.json",
+      "bytes": 3614,
+      "sha256": "5994796c7a0afb3bd62b7bb0f9759b13bb301d35baa00a09aa29545acfa999e8",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/source/source-relationship-save-reopen-scope.actions.json",
+      "bytes": 2716,
+      "sha256": "f0d4c5976b229bab860582bbf2b5328359bf68a99c84600034667f967812a8f2",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/source/source-task-count-and-recovery.actions.json",
+      "bytes": 2973,
+      "sha256": "688ec2b703f3a3676a1726ed182f0a60f3a25b54ed6530205c6acd12fbcd6337",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r18/visuals/index.json",
+      "bytes": 7057,
+      "sha256": "02480fd32e5943dcc79495a96ebb3da2e541456e7c18b448cf0133614d99eb99",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r19/comparison/build-metadata.json",
+      "bytes": 1574,
+      "sha256": "a8761e0a8a45b02f74b7072ddf38f1e19fd56cd9edaed2e9ed290f6e7bbd354b",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r19/comparison/comparison-smoke.json",
+      "bytes": 3051,
+      "sha256": "80fe2fdf31eda9238694779eb069c8b27e676aa4211209c17a110c4afbcdbd49",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r19/comparison/r18-archive-restoration.json",
+      "bytes": 585,
+      "sha256": "9b91cb65ffb325e2e103ee472f45d6f05d0f586bc3fcfb040010f6892c690e21",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/evidence/r19/visuals/index.json",
+      "bytes": 7057,
+      "sha256": "1e5b7b8a94ba2bfcd7e0e4cfe8cd0148ecfdd023fb96e604c5ea84af642b0ba7",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/final-report.md",
+      "bytes": 22003,
+      "sha256": "918ec191b475e4532d82139c636c7996f5e47993d9c7eac25eb85923e13f0b57",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/blind-r18-a-comparison.md",
+      "bytes": 8437,
+      "sha256": "d2200ea3a05054164726ea658219a542d72838773c790b971e36a0752baa96f4",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/blind-r18-a.md",
+      "bytes": 6133,
+      "sha256": "ca7c68b3a68ae63753bf763cfca62b0c0efb06367545dcae351d2c3d3a45e94c",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/blind-r18-b-comparison.md",
+      "bytes": 10157,
+      "sha256": "379e5cdb754ca238f1446047d316d9071768e4a3bb7448d04f3730fdf19daf49",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/blind-r18-b.md",
+      "bytes": 5988,
+      "sha256": "16f0af65265b6be7df84ab1134ce6aa6693d322b7c526129aa139483c46a53e1",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/blind-r18-c-comparison.md",
+      "bytes": 12260,
+      "sha256": "cc5fca08be28d969fc0c1feef5e927224f3e6a76f158198b4f1a23cc590bebcc",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/blind-r18-c.md",
+      "bytes": 6867,
+      "sha256": "de40ef508c4e6d490472dece38853fa8c515f541ca9589d5297656efceb3d020",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/comparison-smoke.json",
+      "bytes": 5419,
+      "sha256": "ab39a49b0332f9d6ac785f3b9e127c0e619cb3a8e695f73410d9c80539be3163",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/continuation-ledger.json",
+      "bytes": 15626,
+      "sha256": "438655a087ee9cc72d8d9faa9571c6c59bbfc0d9cdf6e84eb29e2aae42776810",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/english-actions-after.json",
+      "bytes": 25049,
+      "sha256": "06364cdde712f14747a1bcbbf64758973277deadafa16e2c12386e4f039db901",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/english-actions-inventory.json",
+      "bytes": 70046,
+      "sha256": "ce5e286767375d08fa0f6b687c946c904c98b4a4e1ebb1116f565499bd736326",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/english-after-initial.json",
+      "bytes": 20707,
+      "sha256": "a922892659fc74981da68b35de84eb1aa0c174275d8e6f0710274bcf5131f418",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/english-boundaries.json",
+      "bytes": 6337,
+      "sha256": "bc5856a49e495c34722264592c064b32687020bbef0d7b140f6cd3ca5b59a4c9",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/english-final-actions.json",
+      "bytes": 23702,
+      "sha256": "6c18c8e79708811f0307c8d3f8605cde0c7a300a2ecec852a4dd5b4863077b43",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/english-final-inventory.json",
+      "bytes": 20245,
+      "sha256": "246e7f28fd5b2ce286a683c3dd0c8e99ab66cc93912c865a3383842a288a5431",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/english-integration-inventory.json",
+      "bytes": 27446,
+      "sha256": "87f9f80249b9b5752139c1d68812a245867960159a114dee4436c43623a7c774",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/english-retained-content.json",
+      "bytes": 17010,
+      "sha256": "c7808ebe97d0018d73be5dedfe22ac991d651e8e361ea940aa546df97e971504",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/english-source-actions.json",
+      "bytes": 31550,
+      "sha256": "22f3f4cbc062ee4f5b27831e007d95b5fea64bb59696fe22242f40cef364c51f",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/english-source-inventory.json",
+      "bytes": 26197,
+      "sha256": "2d50a77e245cba72c02356677b9f874202872377be2e434b78830baeb17a11ef",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/english-ui.md",
+      "bytes": 6977,
+      "sha256": "64e0e8eecffc0c4a0078b8660707f4411b8c528b54a97f1671c89b9e29922675",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/fresh-first-look.md",
+      "bytes": 10984,
+      "sha256": "ee42d42ab797250341ec59ae757bb0e3da0883aa3501c5670775e476ec817f66",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/independent-criteria.md",
+      "bytes": 11752,
+      "sha256": "cc35d394a71e2c5bf4e3d6a61870a4777b474ab8705fd5b9bbd5e5b447808d6e",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/independent-feature-matrix-r17.md",
+      "bytes": 24762,
+      "sha256": "8646b7c5b19239074bf9b71721d714a8c0009e7e11b77453a51dd3a4ae119b1e",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/independent-feature-matrix-r18.md",
+      "bytes": 29234,
+      "sha256": "45c3532cb3395f8ce6b5017e2217418343e464387c5dff62c1ea6ca0f0157e68",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/independent-feature-preparation.md",
+      "bytes": 4528,
+      "sha256": "bf66d54f62ea97b9aebcf5fad02a8f3d04078febd45bf3a3b46dcd2bdf377609",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/independent-feature-review-r17.json",
+      "bytes": 192394,
+      "sha256": "f2a9a915a6ff862e3eca367166987877317bfb485a7c2a94e19e3cdbc746adec",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/independent-feature-review-r18.json",
+      "bytes": 226084,
+      "sha256": "1415fa3cfaf72a1613c53b4d00e89a5162b091325d5a0168aa701d1edf249651",
+      "transport": "separate readable blob"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/independent-review-r17.md",
+      "bytes": 14683,
+      "sha256": "596b4f47eb8635072661c070f98d70d8467dd9719942695a3b10b20ea4f9dd47",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/independent-review-r18.md",
+      "bytes": 8876,
+      "sha256": "41ceb2678284b9b31987fb5d48fb2670708b15a24f0aeb47fef51cd662d2120e",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/independent-review-r19.json",
+      "bytes": 11839,
+      "sha256": "aab02138eb6dd13466540b7722c1607fd70c24a2821eb120cbab0b1542e164ca",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/independent-review-r19.md",
+      "bytes": 4682,
+      "sha256": "7b1f913ac34e86885dceaf637d3ca09adb4fdca54f64bd1f6abd48f43dd87627",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/memory-context-r18-replacements.json",
+      "bytes": 21205,
+      "sha256": "33d38182e81ab4701a254ac56155e323d3ff57eace97373d29a4d5b2e00abc3a",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/neutral-comparison-mapping.json",
+      "bytes": 2031,
+      "sha256": "19d4197e72e35eb54f592a49776272d346d5a0bacb114d5bc6366295fd380094",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/r15-delivery-readme.md",
+      "bytes": 3536,
+      "sha256": "3c7070d696431d963ab0d35252ba4f50ea686dacfce30878cb3e4a2eaa247b0b",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/r15-function-map.json",
+      "bytes": 5416,
+      "sha256": "984f0f47776094580fa564d3e744ad89662f907b721232b5cb9e483a4008f131",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/r16-freeze.json",
+      "bytes": 435,
+      "sha256": "483bdf0d69546f8ae83161548d7ff493ced4eeab4d4fc29857a1876bd0a39b1d",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/r17-freeze.json",
+      "bytes": 624,
+      "sha256": "99aa3a2a699a3172a78fa4caf6993816ae118c89058ad83e3bbc0a562c2e5331",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/r18-evidence-inventory.json",
+      "bytes": 2763,
+      "sha256": "15e08127d5c278be2857777f4355c1a63a503fdf43bb9bda86188cdba102bade",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/r18-freeze.json",
+      "bytes": 10892,
+      "sha256": "ab7c408d11d9c327b7256d25e00e3675ff4361f9667bab7da54e78e5a82cefc4",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/r19-freeze.json",
+      "bytes": 1013,
+      "sha256": "07f40c5d53264dea2e007bb30ccf4c73ad231711b8d6271b38e90604d175102f",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/root-new-strings.json",
+      "bytes": 3217,
+      "sha256": "1c3fe4e5ef7d4e395c1e6cfc3f9a5d5c388fbfdb2704d9103e5d669ec1c8a204",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/root-replacements.json",
+      "bytes": 23765,
+      "sha256": "888cfd52c5ea99cc59d259c65caff649169e42217807bb32c95497fd5e6a1f76",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/settings-r18-dom.json",
+      "bytes": 2677,
+      "sha256": "e410aa0288f17085bda28c26ba92a78cbdbd2f55ecef81142cab3267b4de11b8",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/settings-r18-metadata.json",
+      "bytes": 255,
+      "sha256": "a9cd8f5df4a953c3295757bafa3d86f95a587ff6f7d30665baaf1b2938f5b08b",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/settings-r18-replacements.json",
+      "bytes": 21013,
+      "sha256": "12d82965028c4008de7702e6ff1e217162dfbfd20638191c7738be9b4fa4694a",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/settings-r18.md",
+      "bytes": 5651,
+      "sha256": "b51634a1153f7deeb4a788df4887b07f0763ee3a6fe37fbeb933086287463083",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/source-flow-new-strings.json",
+      "bytes": 38959,
+      "sha256": "49c2809e6bf059dddab2cd0cd47d26c799302bdce90f3d29645e01d61779e912",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/source-flow-replacements.json",
+      "bytes": 39793,
+      "sha256": "1fcb96062350ef8039e98d4e5857c18e32725b20683609bece3be2662c2c9baf",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/source-flows.md",
+      "bytes": 3771,
+      "sha256": "24725a3e5230f7dafc05c4c711cbf779915a43890c85020d7386bb595903c5d1",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/source-r18-new-strings.json",
+      "bytes": 5647,
+      "sha256": "317edcaf079594e9f59ea6a5761a38d14b3f40274762bd81df1c172866159377",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/reports/source-r18-replacements.json",
+      "bytes": 32327,
+      "sha256": "7bd49a53fe4887570d71cda6d0f17e835333adf69d11c92ee20ee96ecb1444e8",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/apply-english.py",
+      "bytes": 1597,
+      "sha256": "0edb57b32f4717f291dfdc0d33e6566d1fb1dfd571203df080bd1508c7f0d6d5",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/audit-english-actions.mjs",
+      "bytes": 3358,
+      "sha256": "174f02a30c8922db232891bbd457ab9b4f504041a97cf5567ae3a1438fa4ff23",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/audit-english.mjs",
+      "bytes": 2924,
+      "sha256": "68110ad6572335103a9bf211b912c9c4b6c66f7a441124093182b99cf826be65",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/browser-session.cjs",
+      "bytes": 4092,
+      "sha256": "dcc97b1e291e90f2df49d553f74b490af1ef6626e41bdcf204f89cab6c37bbb4",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/build-comparison.py",
+      "bytes": 16833,
+      "sha256": "a598219f1d2d6291c9880115db72cfb63dc42a3a03b5049167b994fe783e6f22",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/build-settings-r18.py",
+      "bytes": 5776,
+      "sha256": "7b826b7718c898721da3d65390b8a974e0571976f21a884cbf1138272df3f4b7",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/capture-comparison-evidence.cjs",
+      "bytes": 2281,
+      "sha256": "06ee4251b8c0a709dbc3f936bef6530c55aef03be3f9e0f15b144c2d6f73f416",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/capture-final.cjs",
+      "bytes": 5697,
+      "sha256": "bea11163923054abd89326de8ed4d5e906f86ce0d7cd2faffb1bf1f0f4f96cc3",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/capture-settings-r18.cjs",
+      "bytes": 2475,
+      "sha256": "2c0a443a33a8810c4b8309b42bf55275c15e5c53eb53c747ba75fa582c84e3e3",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/check-memory-context.cjs",
+      "bytes": 7436,
+      "sha256": "001d5e211d5369d99c523ca11de3141f937073be9b86606adf7c57cc40b6e484",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/check-root-flows.cjs",
+      "bytes": 9525,
+      "sha256": "e43f20b1c0c675441f76a751d494445de2aa5ab45aa557ba12932e8607f869c1",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/english-action-translations.tsv",
+      "bytes": 9683,
+      "sha256": "4c33b1b8c7e414563437a57e747f7323ac4431c865b8cfdd48df159470a81160",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/english-completion.js",
+      "bytes": 108960,
+      "sha256": "a59bbbe92190e624b4769b04f934dacfe910cc85b55ab23d3f19c7dfcde3080e",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/english-content-annotations.json",
+      "bytes": 787,
+      "sha256": "665b9d91f34e3b1710a30a3d334d6d5e7e753f6d2a7fd466bf7a8992ed91ad2d",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/english-extra.json",
+      "bytes": 11911,
+      "sha256": "dd9184502722db98d1673aebb6884f8dd11fca9ac46a0fb525c2bbcfa1f9703a",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/english-runtime.js",
+      "bytes": 7575,
+      "sha256": "18098e74ca90448ada1a4a614238ea2fe44b0b9ea7de3914990b84e8025eb102",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/english-translations.tsv",
+      "bytes": 40927,
+      "sha256": "a30d2f318c645d89e413f6b29afafaf06b32876fe8ed855e1839b994b36132b9",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/finish-chat-title.py",
+      "bytes": 1905,
+      "sha256": "b7a598c6de1cfee844a23f1514cc8dd385b68ab6c4458554f1e88ba5ddcf60d6",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/finish-memory-context.py",
+      "bytes": 5687,
+      "sha256": "95685f1238841b63e147d562cffc9b62be973e97c82dc125655205022745fce1",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/finish-memory-notes-account.py",
+      "bytes": 19448,
+      "sha256": "c378295f498727e72ba21837b490897a95b4aea1f99df2f323eec50604c76214",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/finish-report.py",
+      "bytes": 14073,
+      "sha256": "03b027a509b4b1bb2cbd996876169ca3526c11626ff575153a69c4aa2199a354",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/memory-context-ui.js",
+      "bytes": 12692,
+      "sha256": "9f3c34f281cd3c3c8359b05cb76a9d67af48e8fda57a1715e4fdd8b4ad04e6a2",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/merge-r18.py",
+      "bytes": 2001,
+      "sha256": "42662e512c589b5c09b65b37d2c5b3ffe681441cc29ca30ac62d8ab3eb4e1316",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/package-delivery.py",
+      "bytes": 2440,
+      "sha256": "915dbd75248365c64633118f321111ac971e8c5c976a255abf3fa99735e49a87",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/prepare-public-files.py",
+      "bytes": 3385,
+      "sha256": "8fdc90792414cd5a7f13e57132aacc4ef7e208938e96c88b547743f95a026440",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/repair-source-flows.py",
+      "bytes": 29238,
+      "sha256": "f6197ab7f12673fd4c43ecf834af74c1b06d37343df18f4bed6dc6aa7f065d4a",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/repair-source-r18.py",
+      "bytes": 31539,
+      "sha256": "ee2cbcb5d601337905c40f2f40b6af4121b5c3622ab8bc143a279fe7f2898805",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/run-focused-browser.cjs",
+      "bytes": 4737,
+      "sha256": "1bdeeec5050e7ce09c3abd5c05d2ad63925934463e39b203aadc5d084f2f7d78",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/settings-r18-additions.js",
+      "bytes": 10505,
+      "sha256": "d39180dc030ea041ad66bce3f5ce8c988317a2bb4e70e29a700eaad4633b0b3c",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/settings-r18-translations.json",
+      "bytes": 4332,
+      "sha256": "894dfb5268f1291a3c2eab04e885311102861575372e3a81cdb443e621395a49",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/verify-comparison.cjs",
+      "bytes": 8417,
+      "sha256": "c768c060f9a555d49277e5230f8ba3c5cb561899a3c62f53a05884f6517e4f01",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/verify-english-boundaries.mjs",
+      "bytes": 6198,
+      "sha256": "c9e1443525a20a0ee3a98d181dde82a408007a967d6e85858dc81def2445d62e",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/verify-settings-r18.mjs",
+      "bytes": 8035,
+      "sha256": "c3cab8ce5b9b1820f55770a56a6de66c58cfd1134c2239ca12361663bf263859",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/verify-source-flows.mjs",
+      "bytes": 7360,
+      "sha256": "4b05fec3ce002e96510f784d7fbfd056a810e21bdce950c1872ca47e77f531ba",
+      "transport": "readable tree entry"
+    },
+    {
+      "path": "docs/design/ui-clarity-2026-10-20/prototype/continuation/scripts/verify-source-r18.mjs",
+      "bytes": 11652,
+      "sha256": "7996fc5316fde37f9e2601e2e747259f3ca4f8022a26ea001e3178cdd2253502",
+      "transport": "readable tree entry"
+    }
+  ]
+}

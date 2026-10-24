@@ -1,0 +1,162 @@
+{
+  "platform": "mac",
+  "scope": "Generated native UI fixtures only; no operating-system or live upload validation",
+  "steps": [
+    {
+      "name": "01-source-state",
+      "url": "https://mote-prototype.invalid/?reset=1#/sources",
+      "evidence": [
+        "01-source-state.json",
+        "01-source-state.png"
+      ]
+    },
+    {
+      "name": "02-upload-initial",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-upload",
+      "evidence": [
+        "02-upload-initial.json",
+        "02-upload-initial.png"
+      ]
+    },
+    {
+      "name": "03-initial-send",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-upload",
+      "evidence": [
+        "03-initial-send.json",
+        "03-initial-send.png"
+      ]
+    },
+    {
+      "name": "04-queue-before",
+      "url": "https://mote-prototype.invalid/?reset=1#/activity/native-queue",
+      "evidence": [
+        "04-queue-before.json",
+        "04-queue-before.png"
+      ]
+    },
+    {
+      "name": "05-capture-preview",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-capture",
+      "evidence": [
+        "05-capture-preview.json",
+        "05-capture-preview.png"
+      ]
+    },
+    {
+      "name": "06-required-permission",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-permissions",
+      "evidence": [
+        "06-required-permission.json",
+        "06-required-permission.png"
+      ]
+    },
+    {
+      "name": "07-capture-running",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-capture",
+      "evidence": [
+        "07-capture-running.json",
+        "07-capture-running.png"
+      ]
+    },
+    {
+      "name": "08-privacy-saved",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-privacy",
+      "evidence": [
+        "08-privacy-saved.json",
+        "08-privacy-saved.png"
+      ]
+    },
+    {
+      "name": "09-held-before",
+      "url": "https://mote-prototype.invalid/?reset=1#/activity/native-review",
+      "evidence": [
+        "09-held-before.json",
+        "09-held-before.png"
+      ]
+    },
+    {
+      "name": "10-held-after-policy",
+      "url": "https://mote-prototype.invalid/?reset=1#/activity/native-review",
+      "evidence": [
+        "10-held-after-policy.json",
+        "10-held-after-policy.png"
+      ]
+    },
+    {
+      "name": "11-held-review",
+      "url": "https://mote-prototype.invalid/?reset=1#/activity/native-review",
+      "evidence": [
+        "11-held-review.json",
+        "11-held-review.png"
+      ]
+    },
+    {
+      "name": "12-held-released",
+      "url": "https://mote-prototype.invalid/?reset=1#/activity/native-review",
+      "evidence": [
+        "12-held-released.json",
+        "12-held-released.png"
+      ]
+    },
+    {
+      "name": "13-sending-paused",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-upload",
+      "evidence": [
+        "13-sending-paused.json",
+        "13-sending-paused.png"
+      ]
+    },
+    {
+      "name": "14-capture-during-send-pause",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-capture",
+      "evidence": [
+        "14-capture-during-send-pause.json",
+        "14-capture-during-send-pause.png"
+      ]
+    },
+    {
+      "name": "15-capture-paused",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-capture",
+      "evidence": [
+        "15-capture-paused.json",
+        "15-capture-paused.png"
+      ]
+    },
+    {
+      "name": "16-send-still-paused",
+      "url": "https://mote-prototype.invalid/?reset=1#/settings/native-upload",
+      "evidence": [
+        "16-send-still-paused.json",
+        "16-send-still-paused.png"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "label": "queue has generated record rather than empty-only fixture",
+      "observed": true
+    },
+    {
+      "label": "capture starts after explicit permission flow",
+      "observed": true
+    },
+    {
+      "label": "saved interval retained",
+      "observed": true
+    },
+    {
+      "label": "changing failure policy does not release held record",
+      "observed": true
+    },
+    {
+      "label": "capture continues while sending paused",
+      "observed": true
+    },
+    {
+      "label": "capture pause preserves send pause",
+      "observed": true
+    }
+  ],
+  "errors": [],
+  "browserErrors": []
+}

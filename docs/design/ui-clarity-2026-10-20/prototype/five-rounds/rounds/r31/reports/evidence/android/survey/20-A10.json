@@ -1,0 +1,290 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/catalog",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n连接资料来源\n\n选择内容来源，再确认范围。\n\n返回来源\n这台设备\n在这台 Android 上收集\n范围由你选择\n屏幕记录\n\n只记录选定应用，随时暂停。\n\n等待权限\n选择屏幕范围\n文件夹同步\n\n已连接：研究资料\n\n1 个正在接收\n管理此文件夹\n连接另一个文件夹\n\n保存后的内容进入资料库，可查找、提问并核对原文。\n\n手机与电脑\n文件夹同步\n由 Android 选择本机范围，持续同步变化\n屏幕与应用记录\n由 Mac / Android 选择范围与系统权限\nCoding Agent 会话\n由 Mac 采集 Claude Code、Codex 与 Kimi 会话\n文档、邮件与日历\n飞书文档与日历\n选择文档、文件夹和日历范围\nGmail\n保存邮件正文、发件人和时间\nGoogle Calendar\n只读归档所选日历\n录音与转写\n飞书录音\n单独授权录音与音频归档\n钉钉录音\n导入已有录音与厂商转写\n文件与其他资料服务\n一次导入资料\n选择文件、文件夹或 ZIP，并补充说明\nMCP 资料服务\n列出可读资源，选择后导入\n外部或 NAS 引用\n保留名称与位置，不自动读取正文\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回来源",
+      "label": "返回来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "选择屏幕范围",
+      "label": "选择屏幕范围",
+      "action": "go",
+      "page": "setup/screen",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "管理此文件夹",
+      "label": "管理此文件夹",
+      "action": "go",
+      "page": "setup/folder",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "连接另一个文件夹",
+      "label": "连接另一个文件夹",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "文件夹同步\n由 Android 选择本机范围，持续同步变化",
+      "label": "文件夹同步\n由 Android 选择本机范围，持续同步变化",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "屏幕与应用记录\n由 Mac / Android 选择范围与系统权限",
+      "label": "屏幕与应用记录\n由 Mac / Android 选择范围与系统权限",
+      "action": "go",
+      "page": "setup/screen",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Coding Agent 会话\n由 Mac 采集 Claude Code、Codex 与 Kimi 会话",
+      "label": "Coding Agent 会话\n由 Mac 采集 Claude Code、Codex 与 Kimi 会话",
+      "action": "go",
+      "page": "setup/coding",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "文档、邮件与日历",
+      "label": "文档、邮件与日历",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "飞书文档与日历\n选择文档、文件夹和日历范围",
+      "label": "飞书文档与日历\n选择文档、文件夹和日历范围",
+      "action": "go",
+      "page": "setup/lark",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Gmail\n保存邮件正文、发件人和时间",
+      "label": "Gmail\n保存邮件正文、发件人和时间",
+      "action": "go",
+      "page": "setup/gmail",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Google Calendar\n只读归档所选日历",
+      "label": "Google Calendar\n只读归档所选日历",
+      "action": "go",
+      "page": "setup/google",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "录音与转写",
+      "label": "录音与转写",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "飞书录音\n单独授权录音与音频归档",
+      "label": "飞书录音\n单独授权录音与音频归档",
+      "action": "go",
+      "page": "setup/feishu-recording",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "钉钉录音\n导入已有录音与厂商转写",
+      "label": "钉钉录音\n导入已有录音与厂商转写",
+      "action": "go",
+      "page": "setup/dingtalk-recording",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "文件与其他资料服务",
+      "label": "文件与其他资料服务",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "一次导入资料\n选择文件、文件夹或 ZIP，并补充说明",
+      "label": "一次导入资料\n选择文件、文件夹或 ZIP，并补充说明",
+      "action": "go",
+      "page": "import",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "MCP 资料服务\n列出可读资源，选择后导入",
+      "label": "MCP 资料服务\n列出可读资源，选择后导入",
+      "action": "go",
+      "page": "setup/mcp",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "外部或 NAS 引用\n保留名称与位置，不自动读取正文",
+      "label": "外部或 NAS 引用\n保留名称与位置，不自动读取正文",
+      "action": "go",
+      "page": "setup/nas",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "连接资料来源"
+    },
+    {
+      "level": "H2",
+      "text": "在这台 Android 上收集"
+    },
+    {
+      "level": "H3",
+      "text": "屏幕记录"
+    },
+    {
+      "level": "H3",
+      "text": "文件夹同步"
+    },
+    {
+      "level": "H2",
+      "text": "手机与电脑"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

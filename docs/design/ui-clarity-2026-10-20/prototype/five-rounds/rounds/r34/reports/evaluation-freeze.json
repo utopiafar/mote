@@ -1,0 +1,20 @@
+{
+  "evaluator": "/root/review_r31_r34",
+  "round": "R34",
+  "frozen_at_utc": "2026-10-23T03:51:39.267814+00:00",
+  "candidate_manifest_sha256": "36b8092a46a12fcedfa6df759244e81e519ed5145ebc3f08f7e6be07d20c3bd0",
+  "files": {
+    "decisions-independent.json": "03d153f8b5a2fb999273680aad7dcc95776e45024e77dd8bc9a5381ba23739a3",
+    "evidence-manifest.json": "2b81cc7cdb381ee51cadc5799ae1355e43d0998d7dbd522021db63200bcca253",
+    "feature-coverage.json": "8e69821b530c9164ed01ec301f69c7491444d9182db296985b2a3cf890d22d58",
+    "feature-coverage.md": "1628b169063232d77b9fda3ffcd4bda5a60a38cd2c79ffa953ac98edfd5deeac",
+    "independent-evaluation.json": "200e257a8df8d456dc7c245be2580549d9bb54414e7f1abcff1e1ceebd58ec64",
+    "independent-evaluation.md": "6d3f624d4fc53c441b1435e684adfbf1dc504ede8035337fd78a2978fd4d9e3d",
+    "journey-coverage.json": "65582ffcb5ba51ef55c42cdc17b4e69adde9419053e52ca2f6a720bab4b34249",
+    "journey-coverage.md": "82d8371480e5c1a91a70838cc07e2e7c9d3b75192cb56f4eafa5b79f4e619ff7",
+    "central-independent/subreview-freeze.json": "4b9cb7edef52df283589740e20336c828c1ed33f1b0fb653eec316e8ced8911e",
+    "evidence/first-look/first-look.json": "5c11605115838781d938a580ee8b33e70981548fffca2c85bcd001bcd9b8d652"
+  },
+  "scope_integrity": "HTML simulation only; current independent evidence; no generator self-check credit.",
+  "note": "Independent scores, judgments and evidence frozen. This completes R30\u2013R34 review cycles. No retrospective score changes or candidate repairs are incorporated."
+}

@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-10-21T04:56:52.215Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "14004a73cac728f425702449b8cacf30a79e1ed683cf64b7a2db89874f7dfb22",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "answers": {
+    "purpose": "从Mac汇集日常资料并复用。",
+    "input": "文字、文件和持续来源。",
+    "first_action": "写下第一条记录",
+    "expected_result": "回到资料库找到同一内容。",
+    "setup": "先记文字，来源随后按需连接。",
+    "unclear": "本机和中央语义仍须在操作页解释。",
+    "visual": "首屏稳定，笔记快捷入口可分辨。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

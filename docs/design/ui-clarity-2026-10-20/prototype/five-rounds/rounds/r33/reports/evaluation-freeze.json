@@ -1,0 +1,17 @@
+{
+  "evaluator": "/root/review_r31_r34",
+  "round": "R33",
+  "frozen_at_utc": "2026-10-23T03:28:48.407060+00:00",
+  "candidate_manifest_sha256": "d7fc8dbec09b90bf72cf890c052e56d479859f57407be1f66053aaef3b694da0",
+  "files": {
+    "decisions-independent.json": "2f5ded39e54b2a29e37b8485272911c1c241a37ea35ca8b05edf3ec64686e15f",
+    "evidence-manifest.json": "0de701b68cdbec5420ddd6345a289ada184916fdfcf96252ec2e55b392b2bede",
+    "feature-coverage.json": "08232cf1afc5447671e176e90527663abfdb65f256ed049fbfeb70409b8a0c8a",
+    "feature-coverage.md": "d97ea92c50652d6cd68ca137d6164cfec372cdafc20d3c849eb2bd19bdde3456",
+    "independent-evaluation.json": "2b61e0441d93880c28c07c814e463be06b6334894e020c0f87ca8cede1f8e686",
+    "independent-evaluation.md": "35c01efe89f792ed28a43fa4e20d5712c05b73d211654373b8ed95407aea9759",
+    "journey-coverage.json": "1ec1bcfb1d7510c0e7bff7a866cdedb725ecab8f2be1c2dc576be52e42a2714f",
+    "journey-coverage.md": "609354fecc7f82616660533009fe40681694fe342e2d082bd70f21ddaf09233a"
+  },
+  "note": "Independent scores, judgments and evidence frozen. Further repairs belong to R34; no retrospective score changes."
+}

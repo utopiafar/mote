@@ -1,0 +1,14 @@
+[
+  {
+    "file": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/dist/review-r15-r18.html",
+    "sha256": "f420a4bc5dc4989789b44bd0d7672d64629d527232600c7e72679d6d82ef3a2d",
+    "bytes": 972224,
+    "matches_r18_evidence": true
+  },
+  {
+    "file": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/dist/review-r15-r18-relative.html",
+    "sha256": "108db52d5cd9a6dd5dd70b6a897a788b55fb7d950e949b4ea863bff240898173",
+    "bytes": 12524,
+    "matches_r18_evidence": true
+  }
+]

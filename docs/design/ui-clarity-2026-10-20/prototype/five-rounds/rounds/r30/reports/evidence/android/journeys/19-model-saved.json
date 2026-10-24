@@ -1,0 +1,270 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/models",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R30\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n正在继续一项导入\n\n文件与说明已保留，配置后回到同一任务。\n\n返回这次导入\n模型设置已保存。\n×\n设置\n\n调整服务与资料管理方式，或管理当前登录。\n\n设置分类\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观\n模型与服务\n\n提问、图片、文件与语音处理\n\n提问模型\n示例模型 · 通用助手\n示例模型 · 本地处理\n图片与文件处理\n使用统一处理设置\n单独选择图片与语音模型\n原型使用预设回答和处理结果。\n保存设置\n分别管理连接、用途与处理方式\n模型连接\n\n先配置连接，再分配给提问、记忆与内容处理。\n\n按功能分配模型\n\n每个功能都能看到当前使用的连接与模型。\n\n图片识别与原图读取\n\n识别新图片和允许提问读取原图分别设置。\n\n历史图片补处理\n\n选择日期与来源，预览数量后安排处理。\n\n文件与语音处理\n\n管理正文提取、语音转写、规则与处理服务。\n\n执行并发与等待名额\n\n为提问和后台工作分配同时执行的容量。\n\n部署配置草稿\n\n准备检索与外部连接的配置，核对差异后交给部署机器应用。\n\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "empty",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回这次导入",
+      "label": "返回这次导入",
+      "action": "focus-return-import",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "×",
+      "label": "关闭提示",
+      "action": "dismiss-toast",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "compact-settings",
+      "type": "select-one",
+      "text": "账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观",
+      "label": "设置分类\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观",
+      "value": "models",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "model-choice",
+      "type": "select-one",
+      "text": "示例模型 · 通用助手\n示例模型 · 本地处理",
+      "label": "提问模型\n示例模型 · 通用助手\n示例模型 · 本地处理",
+      "value": "示例模型 · 通用助手",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "type": "select-one",
+      "text": "使用统一处理设置\n单独选择图片与语音模型",
+      "label": "图片与文件处理\n使用统一处理设置\n单独选择图片与语音模型",
+      "value": "使用统一处理设置",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存设置",
+      "label": "保存设置",
+      "action": "save-model",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "模型连接\n\n先配置连接，再分配给提问、记忆与内容处理。",
+      "label": "模型连接\n\n先配置连接，再分配给提问、记忆与内容处理。",
+      "action": "go",
+      "page": "settings/providers",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "按功能分配模型\n\n每个功能都能看到当前使用的连接与模型。",
+      "label": "按功能分配模型\n\n每个功能都能看到当前使用的连接与模型。",
+      "action": "go",
+      "page": "settings/assignments",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "图片识别与原图读取\n\n识别新图片和允许提问读取原图分别设置。",
+      "label": "图片识别与原图读取\n\n识别新图片和允许提问读取原图分别设置。",
+      "action": "go",
+      "page": "settings/images",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "历史图片补处理\n\n选择日期与来源，预览数量后安排处理。",
+      "label": "历史图片补处理\n\n选择日期与来源，预览数量后安排处理。",
+      "action": "go",
+      "page": "settings/image-history",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "文件与语音处理\n\n管理正文提取、语音转写、规则与处理服务。",
+      "label": "文件与语音处理\n\n管理正文提取、语音转写、规则与处理服务。",
+      "action": "go",
+      "page": "settings/file-processing",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "执行并发与等待名额\n\n为提问和后台工作分配同时执行的容量。",
+      "label": "执行并发与等待名额\n\n为提问和后台工作分配同时执行的容量。",
+      "action": "go",
+      "page": "settings/concurrency",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "部署配置草稿\n\n准备检索与外部连接的配置，核对差异后交给部署机器应用。",
+      "label": "部署配置草稿\n\n准备检索与外部连接的配置，核对差异后交给部署机器应用。",
+      "action": "go",
+      "page": "settings/advanced",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设置"
+    },
+    {
+      "level": "H2",
+      "text": "模型与服务"
+    },
+    {
+      "level": "H3",
+      "text": "分别管理连接、用途与处理方式"
+    },
+    {
+      "level": "H3",
+      "text": "模型连接"
+    },
+    {
+      "level": "H3",
+      "text": "按功能分配模型"
+    },
+    {
+      "level": "H3",
+      "text": "图片识别与原图读取"
+    },
+    {
+      "level": "H3",
+      "text": "历史图片补处理"
+    },
+    {
+      "level": "H3",
+      "text": "文件与语音处理"
+    },
+    {
+      "level": "H3",
+      "text": "执行并发与等待名额"
+    },
+    {
+      "level": "H3",
+      "text": "部署配置草稿"
+    }
+  ],
+  "viewport": {
+    "width": 412,
+    "height": 915
+  },
+  "pageWidth": 412,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

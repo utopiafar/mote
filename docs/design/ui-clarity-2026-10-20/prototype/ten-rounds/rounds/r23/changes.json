@@ -1,0 +1,16 @@
+{
+  "round": 23,
+  "parent": "R22",
+  "purpose": "让已有来源、当前暂停状态和搜索命中位置直接可见。",
+  "input_evaluation": "rounds/r22/reports/independent-evaluation.json",
+  "additional_input": "reports/fresh-android-r20/report.md",
+  "input_findings": ["R22-A 来源总览仍以连接新文件夹为主，已有来源管理在下方", "R22-B 来源完成反馈重复", "独立 Android 首访：暂停状态与已保存同步策略混淆", "保存后搜索结果未显露正文末段的命中词"],
+  "changes": [
+    "来源总览直接显示已有文件夹名称与管理或恢复入口，新建来源作为次级操作。",
+    "暂停或接收状态紧邻操作按钮，已保存同步策略与当前接收状态分别说明。",
+    "去掉来源设置的重复完成横幅，保留具体范围、状态和一次完成确认。",
+    "正文匹配的搜索结果展示带高亮的命中上下文，帮助用户判断应打开哪条资料。"
+  ],
+  "evaluation_focus": ["三端保存、搜索、提问及原文返回", "已有文件夹的管理可发现性", "暂停后状态与策略区分", "Android 来源页面的反馈密度"],
+  "scope": "HTML UI simulation with synthetic data"
+}

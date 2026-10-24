@@ -1,0 +1,233 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/activity",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R33\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nm\n活动\n活动\n\n查看目标、进度和下一步，沿工作回到对应资料。\n\n刷新工作\n这台设备的待发记录\n暂停发送、接收回执与本机冲突\n工作状态\n全部工作\n执行与等待\n需要处理\n最近完成\n来源 / 资料范围\n恢复飞书来源授权\n需要处理\n\n授权检查 · 0%\n\n飞书文档与日历\n\n工作详情\n打开原任务\n整理最近的研究资料\n进行中\n\n提取事实 · 66%\n\n研究资料\n\n工作详情\n打开原任务\n导入长期记忆系统调研笔记\n已完成\n\n正文已保存 · 100%\n\n研究资料\n\n工作详情\n打开原任务\n上一页\n第 1 / 3\n下一页\n技术记录与进度连接\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新工作",
+      "label": "刷新工作",
+      "action": "cs-work-refresh",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "这台设备的待发记录\n暂停发送、接收回执与本机冲突",
+      "label": "这台设备的待发记录\n暂停发送、接收回执与本机冲突",
+      "action": "go",
+      "page": "activity/native-queue",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs32-work-list-filter",
+      "type": "select-one",
+      "text": "全部工作\n执行与等待\n需要处理\n最近完成",
+      "label": "工作状态\n全部工作\n执行与等待\n需要处理\n最近完成",
+      "value": "all",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "来源 / 资料范围",
+      "label": "来源 / 资料范围",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "工作详情",
+      "label": "工作详情",
+      "action": "go",
+      "page": "activity/work/source-recovery",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开原任务",
+      "label": "打开原任务",
+      "action": "go",
+      "page": "setup/lark",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "工作详情",
+      "label": "工作详情",
+      "action": "go",
+      "page": "activity/work/memory-study",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开原任务",
+      "label": "打开原任务",
+      "action": "go",
+      "page": "memories",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "工作详情",
+      "label": "工作详情",
+      "action": "go",
+      "page": "activity/work/file-complete",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开原任务",
+      "label": "打开原任务",
+      "action": "go",
+      "page": "material/m2",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "上一页",
+      "label": "上一页",
+      "action": "cs-work-page",
+      "disabled": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "下一页",
+      "label": "下一页",
+      "action": "cs-work-page",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "技术记录与进度连接",
+      "label": "技术记录与进度连接",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "活动"
+    },
+    {
+      "level": "H2",
+      "text": "恢复飞书来源授权"
+    },
+    {
+      "level": "H2",
+      "text": "整理最近的研究资料"
+    },
+    {
+      "level": "H2",
+      "text": "导入长期记忆系统调研笔记"
+    }
+  ],
+  "viewport": {
+    "width": 412,
+    "height": 915
+  },
+  "pageWidth": 412,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

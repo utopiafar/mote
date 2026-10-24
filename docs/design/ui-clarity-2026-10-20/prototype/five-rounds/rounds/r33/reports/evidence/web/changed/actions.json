@@ -1,0 +1,525 @@
+[
+  {
+    "at": "2026-10-23T03:09:43.975Z",
+    "op": "open",
+    "file": "rounds/r33/web.html",
+    "evidenceDirectory": "rounds/r33/reports/evidence/web/changed",
+    "save": "01-empty-home"
+  },
+  {
+    "at": "2026-10-23T03:09:44.084Z",
+    "op": "select",
+    "selector": "#preview-state",
+    "value": "populated",
+    "save": "02-populated-library"
+  },
+  {
+    "at": "2026-10-23T03:09:44.228Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源",
+    "save": "03-sources"
+  },
+  {
+    "at": "2026-10-23T03:09:47.567Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接来源",
+    "save": "04-catalog"
+  },
+  {
+    "at": "2026-10-23T03:09:51.527Z",
+    "op": "click",
+    "text": "录音与转写",
+    "save": "05-recording-catalog"
+  },
+  {
+    "at": "2026-10-23T03:09:55.567Z",
+    "op": "click",
+    "selector": "button[data-page='setup/recordings/feishu-personal']",
+    "save": "06-feishu-entry"
+  },
+  {
+    "at": "2026-10-23T03:10:00.597Z",
+    "op": "click",
+    "role": "button",
+    "name": "填入演示连接"
+  },
+  {
+    "at": "2026-10-23T03:10:00.649Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存连接",
+    "save": "07-recording-connection"
+  },
+  {
+    "at": "2026-10-23T03:10:00.781Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择范围",
+    "save": "08-recording-scope"
+  },
+  {
+    "at": "2026-10-23T03:10:07.119Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接"
+  },
+  {
+    "at": "2026-10-23T03:10:07.167Z",
+    "op": "click",
+    "role": "button",
+    "name": "开始授权",
+    "save": "09-recording-auth-pending"
+  },
+  {
+    "at": "2026-10-23T03:10:07.294Z",
+    "op": "click",
+    "text": "预览授权回执"
+  },
+  {
+    "at": "2026-10-23T03:10:14.447Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟授权成功"
+  },
+  {
+    "at": "2026-10-23T03:10:14.508Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择范围",
+    "save": "10-recording-authorized-scope"
+  },
+  {
+    "at": "2026-10-23T03:10:22.163Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存范围并开始同步",
+    "save": "11-recording-unacked-blocked"
+  },
+  {
+    "at": "2026-10-23T03:10:22.262Z",
+    "op": "fill",
+    "selector": "#cn-context",
+    "value": "R33 独立审阅：周会发言为第三方观点；陈为主持人，不推断为我的承诺。"
+  },
+  {
+    "at": "2026-10-23T03:10:22.314Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存录音资料说明",
+    "save": "12-recording-context-ack"
+  },
+  {
+    "at": "2026-10-23T03:10:22.411Z",
+    "op": "fill",
+    "selector": "#cn-context",
+    "value": "R33 修订：周会发言为第三方观点。\n陈为主持人；请保留各说话人的边界。"
+  },
+  {
+    "at": "2026-10-23T03:10:22.446Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存范围并开始同步",
+    "save": "13-recording-dirty-blocked"
+  },
+  {
+    "at": "2026-10-23T03:10:27.280Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存录音资料说明",
+    "save": "14-recording-context-reack"
+  },
+  {
+    "at": "2026-10-23T03:10:27.368Z",
+    "op": "fill",
+    "selector": "#cn-start",
+    "value": "2026-10-10"
+  },
+  {
+    "at": "2026-10-23T03:10:27.380Z",
+    "op": "fill",
+    "selector": "#cn-end",
+    "value": "2026-10-20"
+  },
+  {
+    "at": "2026-10-23T03:10:27.432Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存范围并开始同步",
+    "save": "15-recording-stages"
+  },
+  {
+    "at": "2026-10-23T03:10:32.348Z",
+    "op": "click",
+    "role": "button",
+    "name": "阅读归档",
+    "save": "16-recording-text"
+  },
+  {
+    "at": "2026-10-23T03:10:32.446Z",
+    "op": "back",
+    "save": "17-recording-return"
+  },
+  {
+    "at": "2026-10-23T03:10:32.579Z",
+    "op": "click",
+    "role": "button",
+    "name": "重试此步骤",
+    "save": "18-recording-audio-retry"
+  },
+  {
+    "at": "2026-10-23T03:10:32.698Z",
+    "op": "click",
+    "role": "button",
+    "name": "继续下一页历史",
+    "save": "19-recording-history"
+  },
+  {
+    "at": "2026-10-23T03:10:37.029Z",
+    "op": "click",
+    "text": "已保存资料与检查点",
+    "save": "20-recording-checkpoint"
+  },
+  {
+    "at": "2026-10-23T03:10:37.177Z",
+    "op": "click",
+    "text": "预览结果状态",
+    "save": "21-recording-result-fixtures"
+  },
+  {
+    "at": "2026-10-23T03:10:51.861Z",
+    "op": "click",
+    "role": "button",
+    "name": "暂停接收",
+    "save": "22-recording-paused"
+  },
+  {
+    "at": "2026-10-23T03:10:51.978Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回来源"
+  },
+  {
+    "at": "2026-10-23T03:10:52.012Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接来源"
+  },
+  {
+    "at": "2026-10-23T03:10:52.059Z",
+    "op": "click",
+    "text": "录音与转写"
+  },
+  {
+    "at": "2026-10-23T03:10:57.097Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回来源"
+  },
+  {
+    "at": "2026-10-23T03:10:57.148Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接来源"
+  },
+  {
+    "at": "2026-10-23T03:10:57.197Z",
+    "op": "click",
+    "selector": "button[data-page='setup/google']",
+    "save": "24-google-entry"
+  },
+  {
+    "at": "2026-10-23T03:11:06.711Z",
+    "op": "click",
+    "role": "button",
+    "name": "填入演示连接"
+  },
+  {
+    "at": "2026-10-23T03:11:06.766Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存连接"
+  },
+  {
+    "at": "2026-10-23T03:11:06.813Z",
+    "op": "click",
+    "role": "button",
+    "name": "开始授权"
+  },
+  {
+    "at": "2026-10-23T03:11:06.858Z",
+    "op": "click",
+    "text": "预览授权回执"
+  },
+  {
+    "at": "2026-10-23T03:11:06.896Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟授权成功"
+  },
+  {
+    "at": "2026-10-23T03:11:06.952Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择范围",
+    "save": "25-google-scope"
+  },
+  {
+    "at": "2026-10-23T03:11:10.757Z",
+    "op": "click",
+    "role": "button",
+    "name": "同步所选日历",
+    "save": "26-google-empty-blocked"
+  },
+  {
+    "at": "2026-10-23T03:11:10.913Z",
+    "op": "click",
+    "role": "button",
+    "name": "读取可选日历",
+    "save": "27-google-calendars"
+  },
+  {
+    "at": "2026-10-23T03:11:16.907Z",
+    "op": "check",
+    "label": "工作日历",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T03:11:16.948Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存日历范围",
+    "save": "28-google-scope-saved"
+  },
+  {
+    "at": "2026-10-23T03:11:17.078Z",
+    "op": "click",
+    "role": "button",
+    "name": "同步所选日历",
+    "save": "29-google-synced"
+  },
+  {
+    "at": "2026-10-23T03:11:17.194Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择范围"
+  },
+  {
+    "at": "2026-10-23T03:11:17.245Z",
+    "op": "click",
+    "role": "button",
+    "name": "同步所选日历",
+    "save": "30-google-repeat"
+  },
+  {
+    "at": "2026-10-23T03:11:27.364Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回来源"
+  },
+  {
+    "at": "2026-10-23T03:11:27.413Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接来源"
+  },
+  {
+    "at": "2026-10-23T03:11:27.459Z",
+    "op": "click",
+    "text": "文件与其他资料服务",
+    "save": "31-other-catalog"
+  },
+  {
+    "at": "2026-10-23T03:11:27.639Z",
+    "op": "click",
+    "selector": "button[data-page='setup/mcp']:visible",
+    "save": "32-mcp-entry"
+  },
+  {
+    "at": "2026-10-23T03:11:31.789Z",
+    "op": "fill",
+    "selector": "#cn-title",
+    "value": "R33 独立 MCP"
+  },
+  {
+    "at": "2026-10-23T03:11:31.808Z",
+    "op": "fill",
+    "selector": "#cn-url",
+    "value": "https://review-resource.example.invalid/mcp"
+  },
+  {
+    "at": "2026-10-23T03:11:31.864Z",
+    "op": "click",
+    "role": "button",
+    "name": "列出可读资料",
+    "save": "33-mcp-resources"
+  },
+  {
+    "at": "2026-10-23T03:11:41.328Z",
+    "op": "click",
+    "role": "button",
+    "name": "导入所选资料",
+    "save": "34-mcp-first"
+  },
+  {
+    "at": "2026-10-23T03:11:41.480Z",
+    "op": "click",
+    "role": "button",
+    "name": "导入所选资料",
+    "save": "35-mcp-repeat"
+  },
+  {
+    "at": "2026-10-23T03:11:41.612Z",
+    "op": "click",
+    "role": "button",
+    "name": "今天",
+    "save": "36-today"
+  },
+  {
+    "at": "2026-10-23T03:11:50.893Z",
+    "op": "back"
+  },
+  {
+    "at": "2026-10-23T03:11:50.940Z",
+    "op": "check",
+    "selector": "input[type='checkbox']:visible",
+    "index": 0,
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T03:11:50.978Z",
+    "op": "click",
+    "role": "button",
+    "name": "导入所选资料",
+    "save": "37-mcp-selected-first"
+  },
+  {
+    "at": "2026-10-23T03:11:51.109Z",
+    "op": "click",
+    "role": "button",
+    "name": "导入所选资料",
+    "save": "38-mcp-selected-repeat"
+  },
+  {
+    "at": "2026-10-23T03:11:51.230Z",
+    "op": "click",
+    "role": "button",
+    "name": "今天"
+  },
+  {
+    "at": "2026-10-23T03:11:51.277Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看日程",
+    "save": "39-calendar-list"
+  },
+  {
+    "at": "2026-10-23T03:11:54.761Z",
+    "op": "click",
+    "role": "button",
+    "name": "发现设置",
+    "save": "40-discovery"
+  },
+  {
+    "at": "2026-10-23T03:12:00.789Z",
+    "op": "check",
+    "selector": "#ax-enabled",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T03:12:00.808Z",
+    "op": "fill",
+    "selector": "#ax-timezone",
+    "value": "Europe/London"
+  },
+  {
+    "at": "2026-10-23T03:12:00.856Z",
+    "op": "check",
+    "label": "我的 Mac",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T03:12:00.902Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存发现设置",
+    "save": "41-discovery-saved"
+  },
+  {
+    "at": "2026-10-23T03:12:01.043Z",
+    "op": "click",
+    "text": "预览授权变化",
+    "save": "42-discovery-recovery"
+  },
+  {
+    "at": "2026-10-23T03:12:05.182Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟审核设备被撤销",
+    "save": "43-discovery-revoked"
+  },
+  {
+    "at": "2026-10-23T03:12:05.330Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存发现设置",
+    "save": "44-discovery-stale-save"
+  },
+  {
+    "at": "2026-10-23T03:12:05.479Z",
+    "op": "click",
+    "role": "button",
+    "name": "刷新设备",
+    "save": "45-discovery-refreshed"
+  },
+  {
+    "at": "2026-10-23T03:12:05.633Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回日程建议"
+  },
+  {
+    "at": "2026-10-23T03:12:05.682Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对建议",
+    "save": "46-calendar-review"
+  },
+  {
+    "at": "2026-10-23T03:12:09.812Z",
+    "op": "click",
+    "role": "button",
+    "name": "核对原始资料",
+    "save": "47-calendar-evidence"
+  },
+  {
+    "at": "2026-10-23T03:12:09.946Z",
+    "op": "back"
+  },
+  {
+    "at": "2026-10-23T03:12:09.962Z",
+    "op": "fill",
+    "selector": "#ax-title",
+    "value": "R33 经核对的全天资料评审"
+  },
+  {
+    "at": "2026-10-23T03:12:10.040Z",
+    "op": "check",
+    "selector": "#ax-allDay",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T03:12:10.053Z",
+    "op": "fill",
+    "selector": "#ax-timezone",
+    "value": "Europe/London"
+  },
+  {
+    "at": "2026-10-23T03:12:10.094Z",
+    "op": "click",
+    "role": "button",
+    "name": "连接目标设备日历",
+    "save": "48-calendar-target"
+  }
+]

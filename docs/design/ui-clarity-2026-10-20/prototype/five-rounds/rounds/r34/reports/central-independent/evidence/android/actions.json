@@ -1,0 +1,47 @@
+[
+  {
+    "at": "2026-10-23T03:36:49.890Z",
+    "op": "open",
+    "file": "rounds/r34/android.html",
+    "evidenceDirectory": "rounds/r34/reports/central-independent/evidence/android",
+    "viewport": {
+      "width": 412,
+      "height": 915
+    },
+    "url": "https://mote-prototype.invalid/#/library"
+  },
+  {
+    "at": "2026-10-23T03:36:49.930Z",
+    "op": "select",
+    "label": "预览数据",
+    "value": "populated"
+  },
+  {
+    "at": "2026-10-23T03:36:49.995Z",
+    "op": "click",
+    "role": "button",
+    "name": "更多页面与设置"
+  },
+  {
+    "at": "2026-10-23T03:37:01.423Z",
+    "op": "click",
+    "role": "button",
+    "name": "设置 · 账号与服务"
+  },
+  {
+    "at": "2026-10-23T03:37:01.492Z",
+    "op": "click",
+    "role": "button",
+    "name": "用量与费用",
+    "exact": false,
+    "save": "01-usage-entry"
+  },
+  {
+    "at": "2026-10-23T03:37:01.604Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开运行",
+    "index": 1,
+    "save": "02-failed-unknown-run"
+  }
+]

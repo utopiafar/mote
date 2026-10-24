@@ -1,0 +1,52 @@
+/* Focused task surfaces share the existing warm neutral and purple system. */
+.focus-ui .main{max-width:1320px;margin-inline:auto;width:100%}
+.focus-ui .page-heading{margin-bottom:26px}.focus-ui .page-heading h1{font-size:30px;letter-spacing:-.7px}
+.focus-task{max-width:840px;margin:0 auto}.focus-task.reading{width:100%}
+.main:has(>.focus-task)>.page-heading{max-width:840px;margin-left:auto;margin-right:auto}
+.focus-zone{padding:0 0 24px;margin:0 0 24px;border-bottom:1px solid var(--line)}
+.focus-zone h2{font-size:18px;line-height:1.5}.focus-zone>p{font-size:13px;line-height:1.8;margin:10px 0}
+.focus-zone-title{display:flex;gap:10px;align-items:center;margin-bottom:16px}
+.focus-step{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;font-size:12px;background:var(--tint);color:var(--accent);font-weight:650}
+.focus-context em{font-size:11px;font-style:normal;font-weight:400;color:var(--muted);margin-left:5px}
+.focus-context textarea{min-height:112px;resize:vertical;line-height:1.8}.focus-context small{font-size:12px;line-height:1.75}
+.focus-character-count{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.focus-upload{text-align:center;padding:24px;border:1px dashed var(--line);border-radius:12px;background:var(--surface)}
+.focus-upload>span{display:block;color:var(--accent)}.focus-upload>span svg{width:24px;height:24px}
+.focus-upload p{font-size:13px;margin:10px 0 14px}.focus-upload small{display:block;color:var(--muted);font-size:11px;margin-top:12px}
+.focus-file-list{list-style:none;margin:0 0 12px;padding:0}.focus-file-list li{display:flex;gap:16px;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.focus-file-list li>span{display:flex;gap:10px;min-width:0}.focus-file-list strong{font-size:13px;display:block;overflow-wrap:anywhere}.focus-file-list small{display:block;font-size:11px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}
+.focus-demo-files{display:flex;flex-wrap:wrap;gap:8px}
+.focus-disclosure{border:1px solid var(--line);border-radius:9px;margin:14px 0;background:var(--surface);padding:0!important}
+.focus-disclosure>summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;padding:15px 16px;font-size:13px;font-weight:550;list-style:none}
+.focus-disclosure>summary::before{content:"›";font-size:18px;transition:transform .15s;font-weight:400;color:var(--muted)}
+.focus-disclosure[open]>summary::before{transform:rotate(90deg)}.focus-disclosure>summary small{font-weight:400;color:var(--muted);font-size:11px;margin-left:auto}
+.focus-disclosure-body{padding:3px 20px 20px}.focus-disclosure-body>.field{margin-top:15px}
+.focus-submit{display:flex;align-items:center;gap:12px;padding:8px 0 12px}.focus-submit .primary{min-height:44px;min-width:156px}
+.focus-task-foot{font-size:12px;color:var(--muted);line-height:1.8;max-width:840px;margin:14px auto}.focus-task-foot .btn{font-size:12px;padding:4px}
+.focus-status{display:flex;gap:14px;align-items:center;color:var(--muted);font-size:12px;margin-bottom:20px}
+.focus-preview{background:var(--surface);border-left:3px solid var(--accent);padding:18px 20px;margin:16px 0}
+.focus-preview h3{margin:8px 0}.focus-preview p{font-size:13px;line-height:1.8;margin-top:8px}
+.focus-speaker-preview{margin:15px 0}.focus-speaker-preview>p{border-top:1px solid var(--line);padding-top:10px}.focus-speaker-preview>p>span{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
+.focus-saved-context h3{font-size:14px;margin-bottom:10px}.focus-pre{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.9;font-size:14px;color:var(--ink)}
+.focus-saved-context .small{margin-top:12px;line-height:1.75}
+.focus-dl{display:grid;gap:12px;font-size:13px}.focus-dl>div{display:grid;grid-template-columns:130px 1fr;gap:10px}.focus-dl dt{color:var(--muted)}.focus-dl dd{margin:0;overflow-wrap:anywhere}
+.focus-progress{list-style:none;display:grid;grid-template-columns:repeat(4,1fr);padding:0;margin:20px 0;gap:8px}
+.focus-progress li{border-top:2px solid var(--line);font-size:11px;color:var(--muted);padding-top:10px;line-height:1.7}.focus-progress li.complete{border-color:var(--accent);color:var(--ink)}
+.focus-list-row{display:flex;width:100%;align-items:center;gap:14px;text-align:left;padding:20px 6px;background:transparent;border:0;border-bottom:1px solid var(--line);color:var(--ink)}
+.focus-list-row:hover{background:var(--surface)}.focus-list-row>span:nth-child(2){flex:1;min-width:0}.focus-list-row strong{display:block;font-size:14px;overflow-wrap:anywhere}.focus-list-row small{display:block;color:var(--muted);font-size:12px;margin-top:5px}.focus-list-icon{color:var(--accent)}
+.focus-file-outcome{display:grid;gap:5px;padding:12px 0;border-bottom:1px solid var(--line);font-size:12px}.focus-file-outcome>span{color:var(--muted)}.focus-file-outcome strong{overflow-wrap:anywhere}.focus-file-outcome .btn{justify-self:start}
+.focus-receipt{padding:16px;border:1px solid var(--line);border-radius:8px;margin-top:20px}.focus-receipt p{font-size:12px;color:var(--muted);line-height:1.8;margin:8px 0}
+body.mobile.focus-ui .main{padding:22px 20px 102px!important}
+body.mobile.focus-ui .page-heading{margin-bottom:22px}.mobile.focus-ui .page-heading h1{font-size:25px}
+body.mobile.focus-ui .focus-zone{padding-bottom:20px;margin-bottom:20px}.mobile.focus-ui .focus-upload{padding:20px 14px}
+body.mobile.focus-ui .focus-disclosure>summary{padding:14px;font-size:13px}.mobile.focus-ui .focus-disclosure>summary small{margin-left:20px;flex-basis:100%}
+body.mobile.focus-ui .focus-disclosure-body{padding:0 15px 16px}.mobile.focus-ui .focus-progress{grid-template-columns:repeat(2,1fr);gap:14px 10px}
+body.mobile.focus-ui .focus-submit .primary{flex:1}.mobile.focus-ui .focus-submit .btn{min-height:48px}
+body.mobile.focus-ui .focus-dl>div{grid-template-columns:96px 1fr}.mobile.focus-ui .focus-task-foot{margin-top:12px}
+@media(max-width:380px){body.mobile.focus-ui .main{padding-inline:16px!important}.focus-file-list li{gap:4px}.focus-zone h2{font-size:16px}}
+.focus-sources{max-width:920px}.focus-source-row{display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--line);padding:18px 0}.focus-source-row>div{flex:1;min-width:0}.focus-source-row strong{font-size:14px;overflow-wrap:anywhere}.focus-source-row p,.focus-source-row small{font-size:12px;color:var(--muted);line-height:1.7;margin-top:4px}.focus-source-symbol{width:38px;height:38px;border:1px solid var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--accent);flex:none}.focus-source-tools{display:flex;flex-wrap:wrap;gap:12px}.focus-sources .focus-zone>.muted{font-size:13px;margin:15px 0}
+.focus-context-ack{border-left:2px solid var(--accent);padding:10px 14px;margin:18px 0 22px;background:var(--surface)}.focus-context-ack>span{display:block;color:var(--muted);font-size:11px;margin-bottom:5px}.focus-context-ack strong{font-size:13px}.focus-context-ack p{font-size:12px;margin-top:8px;line-height:1.8}
+.focus-context-panel .field{margin:16px 0}.focus-context-panel>h2{font-size:18px}.focus-context-panel.card{border:0;box-shadow:none;padding:0;background:transparent}.focus-context-panel .notice p{overflow-wrap:anywhere}
+.focus-welcome .welcome-lead{grid-template-columns:1.3fr .9fr;gap:60px;padding-block:46px 56px}.focus-welcome h1{font-size:42px;line-height:1.4}.focus-welcome .welcome-description{font-size:15px;max-width:34em}.focus-welcome .welcome-example{padding:30px}.focus-welcome .example-top{font-size:10px;letter-spacing:.08em;color:var(--muted)}.focus-welcome-more{display:flex;align-items:center;justify-content:space-between;gap:20px;border-top:1px solid var(--line);padding-top:25px}.focus-welcome-more strong{font-size:14px}.focus-welcome-more p{font-size:12px;color:var(--muted);line-height:1.8;margin-top:6px}.focus-welcome-recall{font-size:11px;line-height:1.8;color:var(--muted);margin-top:22px}
+body.mobile.focus-ui .focus-source-row{gap:10px;align-items:flex-start;padding:18px 0}.mobile.focus-ui .focus-source-row>.btn{font-size:12px;min-height:44px;padding:8px 9px}.mobile.focus-ui .focus-source-symbol{width:32px;height:32px}.mobile.focus-ui .focus-source-row small{display:block}.mobile.focus-ui .focus-source-tools{gap:4px 10px}
+body.mobile.focus-ui .focus-welcome .welcome-lead{padding:0 0 26px;gap:24px}.mobile.focus-ui .focus-welcome h1{font-size:30px}.mobile.focus-ui .focus-welcome .welcome-description{font-size:14px}.mobile.focus-ui .focus-welcome .welcome-example{padding:21px}.mobile.focus-ui .focus-welcome-more{display:block;padding-top:22px}.mobile.focus-ui .focus-welcome-more>.btn{margin-top:15px;width:100%}

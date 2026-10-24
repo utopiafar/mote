@@ -1,0 +1,1386 @@
+{
+  "schema_version": 1,
+  "round": "R34",
+  "reviewer": "/root/review_r31_r34/review_r34_central",
+  "scope": "Bounded independent rendered-UI subreview; no scoring and no claim of 188-feature completion.",
+  "candidate_sha256": {
+    "web": "33d63d9f009693fab234ebb37179da858b403e8a71c7e59624d4c9dcbd13d000",
+    "mac": "80520ac7f5d12fc494b5ffd1853c2039aa4f9fa9b3b8ac14d74e06cfe602160a",
+    "android": "c4f9e515adc7159809536466a3bc02f107dadda56c68b6f73e79d22076fdebb4"
+  },
+  "contract_sha256": "316d7ac7ea6577c4a6d28c526f6e27ad56d33c7a9afd60db4b74466e88791572",
+  "journeys_sha256": "a30546c750bc7281177985b9e993c9f1f1a163c93dad9ebc077cac9ec1badf1b",
+  "rubric_sha256": "58826132bd1d4c70690567482902b7ef7dac89e32f7fc727a643ce3d213abb7c",
+  "evidence_path_prefix_when_merged": "central-independent/",
+  "first_look": "first-look.json",
+  "confirmed_product_defects": [],
+  "findings": [
+    {
+      "id": "R34-CENTRAL-OBS-01",
+      "classification": "observed_behavior",
+      "title": "Unknown cost and known failure cost remain separate",
+      "observation": "The failed October 22 filter shows 2 runs: usage-002 with USD unestimated and usage-003 with USD 0.001420. Known input/output 2100/250 are shown alongside 1 incomplete run. Unestimated is explicitly not described as free.",
+      "evidence": [
+        "evidence/web/01-usage.json",
+        "evidence/web/02-failed-unknown-run.json",
+        "evidence/web/03-failed-priced-run.json",
+        "evidence/web/08-usage-filters-quality.json",
+        "evidence/web/09-failed-filter.json",
+        "evidence/web/26-usage-page-two.json"
+      ]
+    },
+    {
+      "id": "R34-CENTRAL-OBS-02",
+      "classification": "observed_behavior",
+      "title": "Changing future prices preserves historical currency, rates and estimate",
+      "observation": "Changed all four per-million prices and currency for the existing demo-cloud/demo-text pair, saved revision 2, reloaded, and reopened usage-003. Current values were CNY 1.23/4.56/0.12/0.78; historical values remained USD 0.8/3.2/0.2/1 and estimate USD 0.001420. New provider/model ID entry and future-run generation were not exercised.",
+      "evidence": [
+        "evidence/web/03-failed-priced-run.json",
+        "evidence/web/04-pricing-before.json",
+        "evidence/web/05-pricing-saved.json",
+        "evidence/web/06-pricing-reloaded.json",
+        "evidence/web/25-historical-price-expanded.json"
+      ]
+    },
+    {
+      "id": "R34-CENTRAL-OBS-03",
+      "classification": "observed_behavior",
+      "title": "Agent directory, preview and retained input remain visibly distinct",
+      "observation": "Browsed source folder and material m2, expanded body from 80 to 94 characters, then previewed a custom question with mac and explicit UTC start/end. Preview stated zero model calls and zero memory clues and did not include the browsed body. Source had no acknowledged description; pending-save/ACK transition, memory evidence expansion and directory-list pagination were not tested. Selected trace-demo-partial, inspected retained initial context, model event, actual excerpt 80–170/320, failed read and truncated return across event pages 1–3. An explicit unknown run ID removed previous content and showed absence with the prerequisite for prior detailed logging. Editing current memory/material and toggling logging during this session were not exercised.",
+      "evidence": [
+        "evidence/web/18-agent-directory.json",
+        "evidence/web/19-agent-sources.json",
+        "evidence/web/20-agent-source-detail.json",
+        "evidence/web/21-agent-material.json",
+        "evidence/web/22-agent-material-complete.json",
+        "evidence/web/23-initial-context-form.json",
+        "evidence/web/24-initial-context-preview.json",
+        "evidence/web/12-agent-trace-entry.json",
+        "evidence/web/13-partial-trace.json",
+        "evidence/web/14-partial-trace-page-two.json",
+        "evidence/web/15-retained-read.json",
+        "evidence/web/16-partial-trace-page-three.json",
+        "evidence/web/17-missing-trace.json"
+      ]
+    },
+    {
+      "id": "R34-CENTRAL-OBS-04",
+      "classification": "visual_observation",
+      "title": "Mobile usage retains meaning but starts with a substantial header and filter region",
+      "observation": "At 412×915 the mobile usage first viewport fits the category selector, title, fixture explanation, dates and filter disclosure. The actual cost summary is below the first fold. No horizontal overflow or overlapping controls was observed. This is a density tradeoff, not a demonstrated blocked workflow.",
+      "evidence": [
+        "evidence/android/01-usage-entry.json",
+        "evidence/android/01-usage-entry.png",
+        "evidence/android/02-failed-unknown-run.json",
+        "evidence/android/02-failed-unknown-run.png"
+      ]
+    }
+  ],
+  "features": [
+    {
+      "feature_id": "UF-USAGE-ANALYSIS",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "Date/status filtering, known/unknown amounts, separate currencies, failed-run detail, clearing categorical filters and detail pagination were operated. Module/model/Agent/Skill filters, grouping/day drill-down and page-size variants were not exercised.",
+          "evidence": [
+            "evidence/web/01-usage.json",
+            "evidence/web/02-failed-unknown-run.json",
+            "evidence/web/03-failed-priced-run.json",
+            "evidence/web/08-usage-filters-quality.json",
+            "evidence/web/09-failed-filter.json",
+            "evidence/web/26-usage-page-two.json"
+          ],
+          "assertions": [
+            {
+              "key": "inputs:0",
+              "assertion": "Date range",
+              "status": "verified",
+              "observation": "Date/status filtering, known/unknown amounts, separate currencies, failed-run detail, clearing categorical filters and detail pagination were operated. Module/model/Agent/Skill filters, grouping/day drill-down and page-size variants were not exercised.",
+              "evidence": [
+                "evidence/web/01-usage.json",
+                "evidence/web/02-failed-unknown-run.json",
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/08-usage-filters-quality.json",
+                "evidence/web/09-failed-filter.json",
+                "evidence/web/26-usage-page-two.json"
+              ]
+            },
+            {
+              "key": "inputs:1",
+              "assertion": "Module",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:2",
+              "assertion": "Model",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:3",
+              "assertion": "Status",
+              "status": "verified",
+              "observation": "Date/status filtering, known/unknown amounts, separate currencies, failed-run detail, clearing categorical filters and detail pagination were operated. Module/model/Agent/Skill filters, grouping/day drill-down and page-size variants were not exercised.",
+              "evidence": [
+                "evidence/web/01-usage.json",
+                "evidence/web/02-failed-unknown-run.json",
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/08-usage-filters-quality.json",
+                "evidence/web/09-failed-filter.json",
+                "evidence/web/26-usage-page-two.json"
+              ]
+            },
+            {
+              "key": "inputs:4",
+              "assertion": "Agent/module/skill/model dimension",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:5",
+              "assertion": "Page size",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:0",
+              "assertion": "Filter",
+              "status": "verified",
+              "observation": "Date/status filtering, known/unknown amounts, separate currencies, failed-run detail, clearing categorical filters and detail pagination were operated. Module/model/Agent/Skill filters, grouping/day drill-down and page-size variants were not exercised.",
+              "evidence": [
+                "evidence/web/01-usage.json",
+                "evidence/web/02-failed-unknown-run.json",
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/08-usage-filters-quality.json",
+                "evidence/web/09-failed-filter.json",
+                "evidence/web/26-usage-page-two.json"
+              ]
+            },
+            {
+              "key": "actions:1",
+              "assertion": "Click group/day/model",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:2",
+              "assertion": "Clear",
+              "status": "partial",
+              "observation": "Date/status filtering, known/unknown amounts, separate currencies, failed-run detail, clearing categorical filters and detail pagination were operated. Module/model/Agent/Skill filters, grouping/day drill-down and page-size variants were not exercised.",
+              "evidence": [
+                "evidence/web/01-usage.json",
+                "evidence/web/02-failed-unknown-run.json",
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/08-usage-filters-quality.json",
+                "evidence/web/09-failed-filter.json",
+                "evidence/web/26-usage-page-two.json"
+              ]
+            },
+            {
+              "key": "actions:3",
+              "assertion": "Page details",
+              "status": "verified",
+              "observation": "Date/status filtering, known/unknown amounts, separate currencies, failed-run detail, clearing categorical filters and detail pagination were operated. Module/model/Agent/Skill filters, grouping/day drill-down and page-size variants were not exercised.",
+              "evidence": [
+                "evidence/web/01-usage.json",
+                "evidence/web/02-failed-unknown-run.json",
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/08-usage-filters-quality.json",
+                "evidence/web/09-failed-filter.json",
+                "evidence/web/26-usage-page-two.json"
+              ]
+            },
+            {
+              "key": "actions:4",
+              "assertion": "Open run",
+              "status": "verified",
+              "observation": "Date/status filtering, known/unknown amounts, separate currencies, failed-run detail, clearing categorical filters and detail pagination were operated. Module/model/Agent/Skill filters, grouping/day drill-down and page-size variants were not exercised.",
+              "evidence": [
+                "evidence/web/01-usage.json",
+                "evidence/web/02-failed-unknown-run.json",
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/08-usage-filters-quality.json",
+                "evidence/web/09-failed-filter.json",
+                "evidence/web/26-usage-page-two.json"
+              ]
+            },
+            {
+              "key": "results:0",
+              "assertion": "Input/output/cache/reasoning/request counts",
+              "status": "verified",
+              "observation": "Date/status filtering, known/unknown amounts, separate currencies, failed-run detail, clearing categorical filters and detail pagination were operated. Module/model/Agent/Skill filters, grouping/day drill-down and page-size variants were not exercised.",
+              "evidence": [
+                "evidence/web/01-usage.json",
+                "evidence/web/02-failed-unknown-run.json",
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/08-usage-filters-quality.json",
+                "evidence/web/09-failed-filter.json",
+                "evidence/web/26-usage-page-two.json"
+              ]
+            },
+            {
+              "key": "results:1",
+              "assertion": "Unknown usage stays unknown",
+              "status": "verified",
+              "observation": "Date/status filtering, known/unknown amounts, separate currencies, failed-run detail, clearing categorical filters and detail pagination were operated. Module/model/Agent/Skill filters, grouping/day drill-down and page-size variants were not exercised.",
+              "evidence": [
+                "evidence/web/01-usage.json",
+                "evidence/web/02-failed-unknown-run.json",
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/08-usage-filters-quality.json",
+                "evidence/web/09-failed-filter.json",
+                "evidence/web/26-usage-page-two.json"
+              ]
+            },
+            {
+              "key": "results:2",
+              "assertion": "Currency not combined",
+              "status": "verified",
+              "observation": "Date/status filtering, known/unknown amounts, separate currencies, failed-run detail, clearing categorical filters and detail pagination were operated. Module/model/Agent/Skill filters, grouping/day drill-down and page-size variants were not exercised.",
+              "evidence": [
+                "evidence/web/01-usage.json",
+                "evidence/web/02-failed-unknown-run.json",
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/08-usage-filters-quality.json",
+                "evidence/web/09-failed-filter.json",
+                "evidence/web/26-usage-page-two.json"
+              ]
+            },
+            {
+              "key": "results:3",
+              "assertion": "Success/latency only finished runs",
+              "status": "partial",
+              "observation": "Date/status filtering, known/unknown amounts, separate currencies, failed-run detail, clearing categorical filters and detail pagination were operated. Module/model/Agent/Skill filters, grouping/day drill-down and page-size variants were not exercised.",
+              "evidence": [
+                "evidence/web/01-usage.json",
+                "evidence/web/02-failed-unknown-run.json",
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/08-usage-filters-quality.json",
+                "evidence/web/09-failed-filter.json",
+                "evidence/web/26-usage-page-two.json"
+              ]
+            },
+            {
+              "key": "results:4",
+              "assertion": "Failures can still incur cost",
+              "status": "verified",
+              "observation": "Date/status filtering, known/unknown amounts, separate currencies, failed-run detail, clearing categorical filters and detail pagination were operated. Module/model/Agent/Skill filters, grouping/day drill-down and page-size variants were not exercised.",
+              "evidence": [
+                "evidence/web/01-usage.json",
+                "evidence/web/02-failed-unknown-run.json",
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/08-usage-filters-quality.json",
+                "evidence/web/09-failed-filter.json",
+                "evidence/web/26-usage-page-two.json"
+              ]
+            }
+          ]
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "No substantive Central journey for this family was independently operated on this platform in this bounded subreview.",
+          "evidence": [],
+          "assertions": [
+            {
+              "key": "inputs:0",
+              "assertion": "Date range",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:1",
+              "assertion": "Module",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:2",
+              "assertion": "Model",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:3",
+              "assertion": "Status",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:4",
+              "assertion": "Agent/module/skill/model dimension",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:5",
+              "assertion": "Page size",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:0",
+              "assertion": "Filter",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:1",
+              "assertion": "Click group/day/model",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:2",
+              "assertion": "Clear",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:3",
+              "assertion": "Page details",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:4",
+              "assertion": "Open run",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:0",
+              "assertion": "Input/output/cache/reasoning/request counts",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:1",
+              "assertion": "Unknown usage stays unknown",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:2",
+              "assertion": "Currency not combined",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:3",
+              "assertion": "Success/latency only finished runs",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:4",
+              "assertion": "Failures can still incur cost",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            }
+          ]
+        },
+        "android": {
+          "status": "partial",
+          "reason": "Reached usage through the ordinary mobile Settings entry and opened usage-002. It retains 900/50 reported tokens, 1/2 requests and USD unestimated. The summary separates USD/CNY. No mobile filter, price edit, grouping or paging transition was exercised.",
+          "evidence": [
+            "evidence/android/01-usage-entry.json",
+            "evidence/android/02-failed-unknown-run.json"
+          ],
+          "assertions": [
+            {
+              "key": "inputs:0",
+              "assertion": "Date range",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:1",
+              "assertion": "Module",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:2",
+              "assertion": "Model",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:3",
+              "assertion": "Status",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:4",
+              "assertion": "Agent/module/skill/model dimension",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:5",
+              "assertion": "Page size",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:0",
+              "assertion": "Filter",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:1",
+              "assertion": "Click group/day/model",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:2",
+              "assertion": "Clear",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:3",
+              "assertion": "Page details",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:4",
+              "assertion": "Open run",
+              "status": "verified",
+              "observation": "Reached usage through the ordinary mobile Settings entry and opened usage-002. It retains 900/50 reported tokens, 1/2 requests and USD unestimated. The summary separates USD/CNY. No mobile filter, price edit, grouping or paging transition was exercised.",
+              "evidence": [
+                "evidence/android/01-usage-entry.json",
+                "evidence/android/02-failed-unknown-run.json"
+              ]
+            },
+            {
+              "key": "results:0",
+              "assertion": "Input/output/cache/reasoning/request counts",
+              "status": "partial",
+              "observation": "Reached usage through the ordinary mobile Settings entry and opened usage-002. It retains 900/50 reported tokens, 1/2 requests and USD unestimated. The summary separates USD/CNY. No mobile filter, price edit, grouping or paging transition was exercised.",
+              "evidence": [
+                "evidence/android/01-usage-entry.json",
+                "evidence/android/02-failed-unknown-run.json"
+              ]
+            },
+            {
+              "key": "results:1",
+              "assertion": "Unknown usage stays unknown",
+              "status": "verified",
+              "observation": "Reached usage through the ordinary mobile Settings entry and opened usage-002. It retains 900/50 reported tokens, 1/2 requests and USD unestimated. The summary separates USD/CNY. No mobile filter, price edit, grouping or paging transition was exercised.",
+              "evidence": [
+                "evidence/android/01-usage-entry.json",
+                "evidence/android/02-failed-unknown-run.json"
+              ]
+            },
+            {
+              "key": "results:2",
+              "assertion": "Currency not combined",
+              "status": "verified",
+              "observation": "Reached usage through the ordinary mobile Settings entry and opened usage-002. It retains 900/50 reported tokens, 1/2 requests and USD unestimated. The summary separates USD/CNY. No mobile filter, price edit, grouping or paging transition was exercised.",
+              "evidence": [
+                "evidence/android/01-usage-entry.json",
+                "evidence/android/02-failed-unknown-run.json"
+              ]
+            },
+            {
+              "key": "results:3",
+              "assertion": "Success/latency only finished runs",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:4",
+              "assertion": "Failures can still incur cost",
+              "status": "partial",
+              "observation": "Reached usage through the ordinary mobile Settings entry and opened usage-002. It retains 900/50 reported tokens, 1/2 requests and USD unestimated. The summary separates USD/CNY. No mobile filter, price edit, grouping or paging transition was exercised.",
+              "evidence": [
+                "evidence/android/01-usage-entry.json",
+                "evidence/android/02-failed-unknown-run.json"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "feature_id": "UF-USAGE-PRICING",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "Changed all four per-million prices and currency for the existing demo-cloud/demo-text pair, saved revision 2, reloaded, and reopened usage-003. Current values were CNY 1.23/4.56/0.12/0.78; historical values remained USD 0.8/3.2/0.2/1 and estimate USD 0.001420. New provider/model ID entry and future-run generation were not exercised.",
+          "evidence": [
+            "evidence/web/03-failed-priced-run.json",
+            "evidence/web/04-pricing-before.json",
+            "evidence/web/05-pricing-saved.json",
+            "evidence/web/06-pricing-reloaded.json",
+            "evidence/web/25-historical-price-expanded.json"
+          ],
+          "assertions": [
+            {
+              "key": "inputs:0",
+              "assertion": "Provider/model IDs",
+              "status": "partial",
+              "observation": "Changed all four per-million prices and currency for the existing demo-cloud/demo-text pair, saved revision 2, reloaded, and reopened usage-003. Current values were CNY 1.23/4.56/0.12/0.78; historical values remained USD 0.8/3.2/0.2/1 and estimate USD 0.001420. New provider/model ID entry and future-run generation were not exercised.",
+              "evidence": [
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/04-pricing-before.json",
+                "evidence/web/05-pricing-saved.json",
+                "evidence/web/06-pricing-reloaded.json",
+                "evidence/web/25-historical-price-expanded.json"
+              ]
+            },
+            {
+              "key": "inputs:1",
+              "assertion": "Currency",
+              "status": "verified",
+              "observation": "Changed all four per-million prices and currency for the existing demo-cloud/demo-text pair, saved revision 2, reloaded, and reopened usage-003. Current values were CNY 1.23/4.56/0.12/0.78; historical values remained USD 0.8/3.2/0.2/1 and estimate USD 0.001420. New provider/model ID entry and future-run generation were not exercised.",
+              "evidence": [
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/04-pricing-before.json",
+                "evidence/web/05-pricing-saved.json",
+                "evidence/web/06-pricing-reloaded.json",
+                "evidence/web/25-historical-price-expanded.json"
+              ]
+            },
+            {
+              "key": "inputs:2",
+              "assertion": "Uncached input/output/cache read/cache write per-million prices",
+              "status": "verified",
+              "observation": "Changed all four per-million prices and currency for the existing demo-cloud/demo-text pair, saved revision 2, reloaded, and reopened usage-003. Current values were CNY 1.23/4.56/0.12/0.78; historical values remained USD 0.8/3.2/0.2/1 and estimate USD 0.001420. New provider/model ID entry and future-run generation were not exercised.",
+              "evidence": [
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/04-pricing-before.json",
+                "evidence/web/05-pricing-saved.json",
+                "evidence/web/06-pricing-reloaded.json",
+                "evidence/web/25-historical-price-expanded.json"
+              ]
+            },
+            {
+              "key": "actions:0",
+              "assertion": "Save price",
+              "status": "verified",
+              "observation": "Changed all four per-million prices and currency for the existing demo-cloud/demo-text pair, saved revision 2, reloaded, and reopened usage-003. Current values were CNY 1.23/4.56/0.12/0.78; historical values remained USD 0.8/3.2/0.2/1 and estimate USD 0.001420. New provider/model ID entry and future-run generation were not exercised.",
+              "evidence": [
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/04-pricing-before.json",
+                "evidence/web/05-pricing-saved.json",
+                "evidence/web/06-pricing-reloaded.json",
+                "evidence/web/25-historical-price-expanded.json"
+              ]
+            },
+            {
+              "key": "results:0",
+              "assertion": "Price pinned at run start",
+              "status": "verified",
+              "observation": "Changed all four per-million prices and currency for the existing demo-cloud/demo-text pair, saved revision 2, reloaded, and reopened usage-003. Current values were CNY 1.23/4.56/0.12/0.78; historical values remained USD 0.8/3.2/0.2/1 and estimate USD 0.001420. New provider/model ID entry and future-run generation were not exercised.",
+              "evidence": [
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/04-pricing-before.json",
+                "evidence/web/05-pricing-saved.json",
+                "evidence/web/06-pricing-reloaded.json",
+                "evidence/web/25-historical-price-expanded.json"
+              ]
+            },
+            {
+              "key": "results:1",
+              "assertion": "Historic cost preserved",
+              "status": "verified",
+              "observation": "Changed all four per-million prices and currency for the existing demo-cloud/demo-text pair, saved revision 2, reloaded, and reopened usage-003. Current values were CNY 1.23/4.56/0.12/0.78; historical values remained USD 0.8/3.2/0.2/1 and estimate USD 0.001420. New provider/model ID entry and future-run generation were not exercised.",
+              "evidence": [
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/04-pricing-before.json",
+                "evidence/web/05-pricing-saved.json",
+                "evidence/web/06-pricing-reloaded.json",
+                "evidence/web/25-historical-price-expanded.json"
+              ]
+            },
+            {
+              "key": "results:2",
+              "assertion": "Subscription actual charge not inferred",
+              "status": "verified",
+              "observation": "Changed all four per-million prices and currency for the existing demo-cloud/demo-text pair, saved revision 2, reloaded, and reopened usage-003. Current values were CNY 1.23/4.56/0.12/0.78; historical values remained USD 0.8/3.2/0.2/1 and estimate USD 0.001420. New provider/model ID entry and future-run generation were not exercised.",
+              "evidence": [
+                "evidence/web/03-failed-priced-run.json",
+                "evidence/web/04-pricing-before.json",
+                "evidence/web/05-pricing-saved.json",
+                "evidence/web/06-pricing-reloaded.json",
+                "evidence/web/25-historical-price-expanded.json"
+              ]
+            }
+          ]
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "No substantive Central journey for this family was independently operated on this platform in this bounded subreview.",
+          "evidence": [],
+          "assertions": [
+            {
+              "key": "inputs:0",
+              "assertion": "Provider/model IDs",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:1",
+              "assertion": "Currency",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:2",
+              "assertion": "Uncached input/output/cache read/cache write per-million prices",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:0",
+              "assertion": "Save price",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:0",
+              "assertion": "Price pinned at run start",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:1",
+              "assertion": "Historic cost preserved",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:2",
+              "assertion": "Subscription actual charge not inferred",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            }
+          ]
+        },
+        "android": {
+          "status": "untested",
+          "reason": "No substantive Central journey for this family was independently operated on this platform in this bounded subreview.",
+          "evidence": [],
+          "assertions": [
+            {
+              "key": "inputs:0",
+              "assertion": "Provider/model IDs",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:1",
+              "assertion": "Currency",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:2",
+              "assertion": "Uncached input/output/cache read/cache write per-million prices",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:0",
+              "assertion": "Save price",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:0",
+              "assertion": "Price pinned at run start",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:1",
+              "assertion": "Historic cost preserved",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:2",
+              "assertion": "Subscription actual charge not inferred",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "feature_id": "UF-AGENT-VIRTUAL-CONTEXT",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "Browsed source folder and material m2, expanded body from 80 to 94 characters, then previewed a custom question with mac and explicit UTC start/end. Preview stated zero model calls and zero memory clues and did not include the browsed body. Source had no acknowledged description; pending-save/ACK transition, memory evidence expansion and directory-list pagination were not tested.",
+          "evidence": [
+            "evidence/web/18-agent-directory.json",
+            "evidence/web/19-agent-sources.json",
+            "evidence/web/20-agent-source-detail.json",
+            "evidence/web/21-agent-material.json",
+            "evidence/web/22-agent-material-complete.json",
+            "evidence/web/23-initial-context-form.json",
+            "evidence/web/24-initial-context-preview.json"
+          ],
+          "assertions": [
+            {
+              "key": "inputs:0",
+              "assertion": "Device",
+              "status": "verified",
+              "observation": "Browsed source folder and material m2, expanded body from 80 to 94 characters, then previewed a custom question with mac and explicit UTC start/end. Preview stated zero model calls and zero memory clues and did not include the browsed body. Source had no acknowledged description; pending-save/ACK transition, memory evidence expansion and directory-list pagination were not tested.",
+              "evidence": [
+                "evidence/web/18-agent-directory.json",
+                "evidence/web/19-agent-sources.json",
+                "evidence/web/20-agent-source-detail.json",
+                "evidence/web/21-agent-material.json",
+                "evidence/web/22-agent-material-complete.json",
+                "evidence/web/23-initial-context-form.json",
+                "evidence/web/24-initial-context-preview.json"
+              ]
+            },
+            {
+              "key": "inputs:1",
+              "assertion": "Start/end time",
+              "status": "verified",
+              "observation": "Browsed source folder and material m2, expanded body from 80 to 94 characters, then previewed a custom question with mac and explicit UTC start/end. Preview stated zero model calls and zero memory clues and did not include the browsed body. Source had no acknowledged description; pending-save/ACK transition, memory evidence expansion and directory-list pagination were not tested.",
+              "evidence": [
+                "evidence/web/18-agent-directory.json",
+                "evidence/web/19-agent-sources.json",
+                "evidence/web/20-agent-source-detail.json",
+                "evidence/web/21-agent-material.json",
+                "evidence/web/22-agent-material-complete.json",
+                "evidence/web/23-initial-context-form.json",
+                "evidence/web/24-initial-context-preview.json"
+              ]
+            },
+            {
+              "key": "inputs:2",
+              "assertion": "Question for initial context preview",
+              "status": "verified",
+              "observation": "Browsed source folder and material m2, expanded body from 80 to 94 characters, then previewed a custom question with mac and explicit UTC start/end. Preview stated zero model calls and zero memory clues and did not include the browsed body. Source had no acknowledged description; pending-save/ACK transition, memory evidence expansion and directory-list pagination were not tested.",
+              "evidence": [
+                "evidence/web/18-agent-directory.json",
+                "evidence/web/19-agent-sources.json",
+                "evidence/web/20-agent-source-detail.json",
+                "evidence/web/21-agent-material.json",
+                "evidence/web/22-agent-material-complete.json",
+                "evidence/web/23-initial-context-form.json",
+                "evidence/web/24-initial-context-preview.json"
+              ]
+            },
+            {
+              "key": "actions:0",
+              "assertion": "Browse virtual directories",
+              "status": "verified",
+              "observation": "Browsed source folder and material m2, expanded body from 80 to 94 characters, then previewed a custom question with mac and explicit UTC start/end. Preview stated zero model calls and zero memory clues and did not include the browsed body. Source had no acknowledged description; pending-save/ACK transition, memory evidence expansion and directory-list pagination were not tested.",
+              "evidence": [
+                "evidence/web/18-agent-directory.json",
+                "evidence/web/19-agent-sources.json",
+                "evidence/web/20-agent-source-detail.json",
+                "evidence/web/21-agent-material.json",
+                "evidence/web/22-agent-material-complete.json",
+                "evidence/web/23-initial-context-form.json",
+                "evidence/web/24-initial-context-preview.json"
+              ]
+            },
+            {
+              "key": "actions:1",
+              "assertion": "Expand body/evidence",
+              "status": "partial",
+              "observation": "Browsed source folder and material m2, expanded body from 80 to 94 characters, then previewed a custom question with mac and explicit UTC start/end. Preview stated zero model calls and zero memory clues and did not include the browsed body. Source had no acknowledged description; pending-save/ACK transition, memory evidence expansion and directory-list pagination were not tested.",
+              "evidence": [
+                "evidence/web/18-agent-directory.json",
+                "evidence/web/19-agent-sources.json",
+                "evidence/web/20-agent-source-detail.json",
+                "evidence/web/21-agent-material.json",
+                "evidence/web/22-agent-material-complete.json",
+                "evidence/web/23-initial-context-form.json",
+                "evidence/web/24-initial-context-preview.json"
+              ]
+            },
+            {
+              "key": "actions:2",
+              "assertion": "Page",
+              "status": "partial",
+              "observation": "Browsed source folder and material m2, expanded body from 80 to 94 characters, then previewed a custom question with mac and explicit UTC start/end. Preview stated zero model calls and zero memory clues and did not include the browsed body. Source had no acknowledged description; pending-save/ACK transition, memory evidence expansion and directory-list pagination were not tested.",
+              "evidence": [
+                "evidence/web/18-agent-directory.json",
+                "evidence/web/19-agent-sources.json",
+                "evidence/web/20-agent-source-detail.json",
+                "evidence/web/21-agent-material.json",
+                "evidence/web/22-agent-material-complete.json",
+                "evidence/web/23-initial-context-form.json",
+                "evidence/web/24-initial-context-preview.json"
+              ]
+            },
+            {
+              "key": "actions:3",
+              "assertion": "Preview initial context",
+              "status": "verified",
+              "observation": "Browsed source folder and material m2, expanded body from 80 to 94 characters, then previewed a custom question with mac and explicit UTC start/end. Preview stated zero model calls and zero memory clues and did not include the browsed body. Source had no acknowledged description; pending-save/ACK transition, memory evidence expansion and directory-list pagination were not tested.",
+              "evidence": [
+                "evidence/web/18-agent-directory.json",
+                "evidence/web/19-agent-sources.json",
+                "evidence/web/20-agent-source-detail.json",
+                "evidence/web/21-agent-material.json",
+                "evidence/web/22-agent-material-complete.json",
+                "evidence/web/23-initial-context-form.json",
+                "evidence/web/24-initial-context-preview.json"
+              ]
+            },
+            {
+              "key": "results:0",
+              "assertion": "Accessible vs initially supplied vs actually read remain distinct",
+              "status": "verified",
+              "observation": "Browsed source folder and material m2, expanded body from 80 to 94 characters, then previewed a custom question with mac and explicit UTC start/end. Preview stated zero model calls and zero memory clues and did not include the browsed body. Source had no acknowledged description; pending-save/ACK transition, memory evidence expansion and directory-list pagination were not tested.",
+              "evidence": [
+                "evidence/web/18-agent-directory.json",
+                "evidence/web/19-agent-sources.json",
+                "evidence/web/20-agent-source-detail.json",
+                "evidence/web/21-agent-material.json",
+                "evidence/web/22-agent-material-complete.json",
+                "evidence/web/23-initial-context-form.json",
+                "evidence/web/24-initial-context-preview.json"
+              ]
+            },
+            {
+              "key": "results:1",
+              "assertion": "No host filesystem/raw coding-event package",
+              "status": "verified",
+              "observation": "Browsed source folder and material m2, expanded body from 80 to 94 characters, then previewed a custom question with mac and explicit UTC start/end. Preview stated zero model calls and zero memory clues and did not include the browsed body. Source had no acknowledged description; pending-save/ACK transition, memory evidence expansion and directory-list pagination were not tested.",
+              "evidence": [
+                "evidence/web/18-agent-directory.json",
+                "evidence/web/19-agent-sources.json",
+                "evidence/web/20-agent-source-detail.json",
+                "evidence/web/21-agent-material.json",
+                "evidence/web/22-agent-material-complete.json",
+                "evidence/web/23-initial-context-form.json",
+                "evidence/web/24-initial-context-preview.json"
+              ]
+            },
+            {
+              "key": "results:2",
+              "assertion": "Directory omission is not proof of absence",
+              "status": "verified",
+              "observation": "Browsed source folder and material m2, expanded body from 80 to 94 characters, then previewed a custom question with mac and explicit UTC start/end. Preview stated zero model calls and zero memory clues and did not include the browsed body. Source had no acknowledged description; pending-save/ACK transition, memory evidence expansion and directory-list pagination were not tested.",
+              "evidence": [
+                "evidence/web/18-agent-directory.json",
+                "evidence/web/19-agent-sources.json",
+                "evidence/web/20-agent-source-detail.json",
+                "evidence/web/21-agent-material.json",
+                "evidence/web/22-agent-material-complete.json",
+                "evidence/web/23-initial-context-form.json",
+                "evidence/web/24-initial-context-preview.json"
+              ]
+            }
+          ]
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "No substantive Central journey for this family was independently operated on this platform in this bounded subreview.",
+          "evidence": [],
+          "assertions": [
+            {
+              "key": "inputs:0",
+              "assertion": "Device",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:1",
+              "assertion": "Start/end time",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:2",
+              "assertion": "Question for initial context preview",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:0",
+              "assertion": "Browse virtual directories",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:1",
+              "assertion": "Expand body/evidence",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:2",
+              "assertion": "Page",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:3",
+              "assertion": "Preview initial context",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:0",
+              "assertion": "Accessible vs initially supplied vs actually read remain distinct",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:1",
+              "assertion": "No host filesystem/raw coding-event package",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:2",
+              "assertion": "Directory omission is not proof of absence",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            }
+          ]
+        },
+        "android": {
+          "status": "untested",
+          "reason": "No substantive Central journey for this family was independently operated on this platform in this bounded subreview.",
+          "evidence": [],
+          "assertions": [
+            {
+              "key": "inputs:0",
+              "assertion": "Device",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:1",
+              "assertion": "Start/end time",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "inputs:2",
+              "assertion": "Question for initial context preview",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:0",
+              "assertion": "Browse virtual directories",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:1",
+              "assertion": "Expand body/evidence",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:2",
+              "assertion": "Page",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:3",
+              "assertion": "Preview initial context",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:0",
+              "assertion": "Accessible vs initially supplied vs actually read remain distinct",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:1",
+              "assertion": "No host filesystem/raw coding-event package",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:2",
+              "assertion": "Directory omission is not proof of absence",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "feature_id": "UF-AGENT-ACTUAL-TRACE",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "Selected trace-demo-partial, inspected retained initial context, model event, actual excerpt 80–170/320, failed read and truncated return across event pages 1–3. An explicit unknown run ID removed previous content and showed absence with the prerequisite for prior detailed logging. Editing current memory/material and toggling logging during this session were not exercised.",
+          "evidence": [
+            "evidence/web/12-agent-trace-entry.json",
+            "evidence/web/13-partial-trace.json",
+            "evidence/web/14-partial-trace-page-two.json",
+            "evidence/web/15-retained-read.json",
+            "evidence/web/16-partial-trace-page-three.json",
+            "evidence/web/17-missing-trace.json"
+          ],
+          "assertions": [
+            {
+              "key": "inputs:0",
+              "assertion": "Run selection or run ID",
+              "status": "verified",
+              "observation": "Selected trace-demo-partial, inspected retained initial context, model event, actual excerpt 80–170/320, failed read and truncated return across event pages 1–3. An explicit unknown run ID removed previous content and showed absence with the prerequisite for prior detailed logging. Editing current memory/material and toggling logging during this session were not exercised.",
+              "evidence": [
+                "evidence/web/12-agent-trace-entry.json",
+                "evidence/web/13-partial-trace.json",
+                "evidence/web/14-partial-trace-page-two.json",
+                "evidence/web/15-retained-read.json",
+                "evidence/web/16-partial-trace-page-three.json",
+                "evidence/web/17-missing-trace.json"
+              ]
+            },
+            {
+              "key": "actions:0",
+              "assertion": "Open actual trace",
+              "status": "verified",
+              "observation": "Selected trace-demo-partial, inspected retained initial context, model event, actual excerpt 80–170/320, failed read and truncated return across event pages 1–3. An explicit unknown run ID removed previous content and showed absence with the prerequisite for prior detailed logging. Editing current memory/material and toggling logging during this session were not exercised.",
+              "evidence": [
+                "evidence/web/12-agent-trace-entry.json",
+                "evidence/web/13-partial-trace.json",
+                "evidence/web/14-partial-trace-page-two.json",
+                "evidence/web/15-retained-read.json",
+                "evidence/web/16-partial-trace-page-three.json",
+                "evidence/web/17-missing-trace.json"
+              ]
+            },
+            {
+              "key": "actions:1",
+              "assertion": "Inspect context/model/tool events",
+              "status": "verified",
+              "observation": "Selected trace-demo-partial, inspected retained initial context, model event, actual excerpt 80–170/320, failed read and truncated return across event pages 1–3. An explicit unknown run ID removed previous content and showed absence with the prerequisite for prior detailed logging. Editing current memory/material and toggling logging during this session were not exercised.",
+              "evidence": [
+                "evidence/web/12-agent-trace-entry.json",
+                "evidence/web/13-partial-trace.json",
+                "evidence/web/14-partial-trace-page-two.json",
+                "evidence/web/15-retained-read.json",
+                "evidence/web/16-partial-trace-page-three.json",
+                "evidence/web/17-missing-trace.json"
+              ]
+            },
+            {
+              "key": "actions:2",
+              "assertion": "Read/paginate content",
+              "status": "verified",
+              "observation": "Selected trace-demo-partial, inspected retained initial context, model event, actual excerpt 80–170/320, failed read and truncated return across event pages 1–3. An explicit unknown run ID removed previous content and showed absence with the prerequisite for prior detailed logging. Editing current memory/material and toggling logging during this session were not exercised.",
+              "evidence": [
+                "evidence/web/12-agent-trace-entry.json",
+                "evidence/web/13-partial-trace.json",
+                "evidence/web/14-partial-trace-page-two.json",
+                "evidence/web/15-retained-read.json",
+                "evidence/web/16-partial-trace-page-three.json",
+                "evidence/web/17-missing-trace.json"
+              ]
+            },
+            {
+              "key": "results:0",
+              "assertion": "Only retained recorded input shown",
+              "status": "partial",
+              "observation": "Selected trace-demo-partial, inspected retained initial context, model event, actual excerpt 80–170/320, failed read and truncated return across event pages 1–3. An explicit unknown run ID removed previous content and showed absence with the prerequisite for prior detailed logging. Editing current memory/material and toggling logging during this session were not exercised.",
+              "evidence": [
+                "evidence/web/12-agent-trace-entry.json",
+                "evidence/web/13-partial-trace.json",
+                "evidence/web/14-partial-trace-page-two.json",
+                "evidence/web/15-retained-read.json",
+                "evidence/web/16-partial-trace-page-three.json",
+                "evidence/web/17-missing-trace.json"
+              ]
+            },
+            {
+              "key": "results:1",
+              "assertion": "Missing/truncated/historical record cannot be reconstructed from current memory",
+              "status": "partial",
+              "observation": "Selected trace-demo-partial, inspected retained initial context, model event, actual excerpt 80–170/320, failed read and truncated return across event pages 1–3. An explicit unknown run ID removed previous content and showed absence with the prerequisite for prior detailed logging. Editing current memory/material and toggling logging during this session were not exercised.",
+              "evidence": [
+                "evidence/web/12-agent-trace-entry.json",
+                "evidence/web/13-partial-trace.json",
+                "evidence/web/14-partial-trace-page-two.json",
+                "evidence/web/15-retained-read.json",
+                "evidence/web/16-partial-trace-page-three.json",
+                "evidence/web/17-missing-trace.json"
+              ]
+            },
+            {
+              "key": "results:2",
+              "assertion": "Detailed logging prerequisite clear",
+              "status": "verified",
+              "observation": "Selected trace-demo-partial, inspected retained initial context, model event, actual excerpt 80–170/320, failed read and truncated return across event pages 1–3. An explicit unknown run ID removed previous content and showed absence with the prerequisite for prior detailed logging. Editing current memory/material and toggling logging during this session were not exercised.",
+              "evidence": [
+                "evidence/web/12-agent-trace-entry.json",
+                "evidence/web/13-partial-trace.json",
+                "evidence/web/14-partial-trace-page-two.json",
+                "evidence/web/15-retained-read.json",
+                "evidence/web/16-partial-trace-page-three.json",
+                "evidence/web/17-missing-trace.json"
+              ]
+            }
+          ]
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "No substantive Central journey for this family was independently operated on this platform in this bounded subreview.",
+          "evidence": [],
+          "assertions": [
+            {
+              "key": "inputs:0",
+              "assertion": "Run selection or run ID",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:0",
+              "assertion": "Open actual trace",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:1",
+              "assertion": "Inspect context/model/tool events",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:2",
+              "assertion": "Read/paginate content",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:0",
+              "assertion": "Only retained recorded input shown",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:1",
+              "assertion": "Missing/truncated/historical record cannot be reconstructed from current memory",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:2",
+              "assertion": "Detailed logging prerequisite clear",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            }
+          ]
+        },
+        "android": {
+          "status": "untested",
+          "reason": "No substantive Central journey for this family was independently operated on this platform in this bounded subreview.",
+          "evidence": [],
+          "assertions": [
+            {
+              "key": "inputs:0",
+              "assertion": "Run selection or run ID",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:0",
+              "assertion": "Open actual trace",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:1",
+              "assertion": "Inspect context/model/tool events",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "actions:2",
+              "assertion": "Read/paginate content",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:0",
+              "assertion": "Only retained recorded input shown",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:1",
+              "assertion": "Missing/truncated/historical record cannot be reconstructed from current memory",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            },
+            {
+              "key": "results:2",
+              "assertion": "Detailed logging prerequisite clear",
+              "status": "untested",
+              "observation": "Not operated to the required semantic assertion in this subreview.",
+              "evidence": []
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "journeys": [
+    {
+      "journey_id": "J-USAGE-ANALYSIS",
+      "platform": "web",
+      "status": "verified",
+      "observation": "Representative failed/partial/missing-price scenario: usage-002 shows one measured request out of two and no price; filtered failed totals retain one unknown estimate alongside usage-003 known failure cost. Full family filter/drill-down coverage remains partial.",
+      "evidence": [
+        "evidence/web/01-usage.json",
+        "evidence/web/02-failed-unknown-run.json",
+        "evidence/web/03-failed-priced-run.json",
+        "evidence/web/08-usage-filters-quality.json",
+        "evidence/web/09-failed-filter.json",
+        "evidence/web/26-usage-page-two.json"
+      ]
+    },
+    {
+      "journey_id": "J-USAGE-PRICING",
+      "platform": "web",
+      "status": "verified",
+      "observation": "Changed currency and four prices, saved and reloaded, then reopened the same earlier run and expanded its original USD price snapshot and unchanged estimate.",
+      "evidence": [
+        "evidence/web/03-failed-priced-run.json",
+        "evidence/web/04-pricing-before.json",
+        "evidence/web/05-pricing-saved.json",
+        "evidence/web/06-pricing-reloaded.json",
+        "evidence/web/25-historical-price-expanded.json"
+      ]
+    },
+    {
+      "journey_id": "J-AGENT-VIRTUAL-CONTEXT",
+      "platform": "web",
+      "status": "partial",
+      "observation": "Browsed source with no acknowledged description and paged a 94-character material, then generated a scoped initial preview. A nonempty acknowledged source description and long/evidence variants were not supplied.",
+      "evidence": [
+        "evidence/web/18-agent-directory.json",
+        "evidence/web/19-agent-sources.json",
+        "evidence/web/20-agent-source-detail.json",
+        "evidence/web/21-agent-material.json",
+        "evidence/web/22-agent-material-complete.json",
+        "evidence/web/23-initial-context-form.json",
+        "evidence/web/24-initial-context-preview.json"
+      ]
+    },
+    {
+      "journey_id": "J-AGENT-ACTUAL-TRACE",
+      "platform": "web",
+      "status": "partial",
+      "observation": "Retained partial trace and unknown-ID absence were verified. The exact scenario of a known run occurring before logging was enabled was not separately created.",
+      "evidence": [
+        "evidence/web/12-agent-trace-entry.json",
+        "evidence/web/13-partial-trace.json",
+        "evidence/web/14-partial-trace-page-two.json",
+        "evidence/web/15-retained-read.json",
+        "evidence/web/16-partial-trace-page-three.json",
+        "evidence/web/17-missing-trace.json"
+      ]
+    }
+  ],
+  "limits": [
+    "Reviewer inherited project history and read the inventory before current first-screen observation; this is not blind human testing.",
+    "Mac received first-screen observation only in this subreview. Android received first-screen observation and one usage-detail path only; Web findings do not verify shared native variants.",
+    "No live model, vendor service, backend, operating-system permission or real charge was used. All displayed ledger and trace data are marked synthetic.",
+    "Pending source description ACK exclusion was not tested by editing and submitting a pending description. The observed directory says the existing source has no acknowledged version and does not display description content.",
+    "Post-reload Web screenshots from 06 onward lost the harness-injected CJK font and contain glyph boxes. Their DOM remains semantic evidence; they cannot establish typography quality. First-look, Web 01–05, Android and supplemental web-visual capture retain the font.",
+    "One attempted next-page action followed Clear conditions while the one-day range remained; Next was correctly disabled. No 10-usage-page-two evidence exists. Seven-day pagination was subsequently operated and saved as 26-usage-page-two.",
+    "No final page of the partial trace, all grouping/daily/model drill-downs, new provider/model-ID configuration, memory mutation or logging toggle was exercised. Untested assertions remain explicit."
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:10:47.520Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "8f0667c8ba244d458f8707747288af9b635f29e4b2918eb1983f75d7a0af56da",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "answers": {
+    "purpose": "保存日常资料供以后找回、提问和核对。",
+    "first_action": "第一条记录主按钮在第一屏。",
+    "setup_expectation": "提示可先记录后按需连来源，未强制设置。",
+    "first_value_expectation": "首屏正文说明搜索提问和出处，例子在后续内容中。",
+    "advanced_discovery": "来源在底栏，更多在右上，持续收集在主动作下方。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

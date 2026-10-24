@@ -1,0 +1,149 @@
+{
+  "summary": "三端当前观察范围门槛通过。Web服务器目标在设置与结果中一致；Android记忆修正跨缩放保存并保留准确版本历史。",
+  "score_explanation": "Web恢复至80：Clarity回到3，设置子项回到4，依据是明确服务器目标与匹配的保存结果。Mac为81.25：低频关系折叠、权限就地恢复和进阶入口共同支持渐进展开4。Android为87.5：同样的渐进展开改善，加上本轮实际生成→独特修正→缩放→保存→重开→版本历史的精确结果，支持观察范围内Functionality4。未将作者的跨端验证算入独立证据；Web/Mac的记忆修正本轮未执行。",
+  "actual_work": "三端保存“白鹤R27”合成会议决定，以“紫色信标”搜索，限定提问、引用/原文核对并返回，最后发现记忆。三端经添加内容→导入→持续文件夹。Web选示例服务器目录/srv/mote/files/阅读资料、命名白鹤R27服务器、保存及暂停，概览正确显示工作台服务器。Mac/Android选收集夹示例并保存/暂停。两端屏幕权限拒绝后选择浏览器，实际点击新的就地“去查看屏幕权限”，模拟允许并取消未保存范围。Android额外从保存笔记整理记忆，输入精确修正文本，窗口390×844变为412×915后保存，恢复390×844重开并查看历史：输入文本完整保留，版本2为当前有效、版本1保留且被替代。",
+  "resolved_from_previous": [
+    "R26-A解决：服务器目标、路径与结果平台一致，未再无故出现Mac。",
+    "R26-B旧中央/两处原件文案已替换；说明将原文件与Mote副本区分。",
+    "R26-C/R25-A解决：内容关系与背景默认折叠，并表明选填及未声明仍可查询。",
+    "R25-B解决：禁用保存处有权限条件说明和可操作恢复入口，实际点击恢复成功。",
+    "外部提报的Android缩放后记忆修正丢失，本轮独立执行该特定路径未复现；没有把历史未测路径追认为通过。"
+  ],
+  "resolved_summary": "精确修正文本：“白鹤R27修正：叶青负责周三前整理四份背景资料；校验串＝青铜风铃-27-A。只用于本轮合成验证。”缩放前后输入框、保存后的记忆、重开输入框及版本2均一致。",
+  "findings": [
+    {
+      "id": "R27-A",
+      "severity": "minor",
+      "platforms": [
+        "web"
+      ],
+      "observation": "Web已连接服务器来源仍先显示目标说明、接收条、来源身份与完整可编辑表单；当前状态及暂停/浏览动作在表单之后。1440×1000截图仅在底边开始显示当前状态卡。",
+      "impact": "目标歧义已经解决，但日常暂停/浏览仍需越过设置内容；可将具名来源摘要、状态和常用动作前置，保持编辑设置可发现。",
+      "evidence": [
+        "evidence/independent/web/19-folder-connected.png",
+        "evidence/independent/web/20-folder-paused.dom.json"
+      ]
+    }
+  ],
+  "next_priority": [
+    "将Web服务器已有来源的状态与暂停/浏览放到设置之前，保持明确服务器目标和副本说明。"
+  ],
+  "platforms": {
+    "web": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 3
+      },
+      "score_reasons": {
+        "design": "服务器来源目标明确，但已有来源的日常状态与动作仍排在完整表单后。",
+        "originality": "资料、来源、依据和记忆的组织具有一致产品身份，维持3。",
+        "craft": "本轮所见排版和状态导航稳定；每端仍仅针对列明路径评分。",
+        "functionality": "本轮保存/找回、限定提问、引用原文返回、来源控制及记忆发现均完成。",
+        "clarity": "来源目标和完成结果一致；示例回答、权限、保存正文和原始依据状态可辨。",
+        "new_user_friendliness": "服务器目标和保存结果支持设置4；日常管理需越过完整表单，渐进展开保持3。"
+      },
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "source_setup_control": "pass_named_target_example_folder_pause",
+        "advanced_discovery": "pass_memory_page_opened",
+        "server_target": "pass_setup_and_overview_both_workbench_server"
+      }
+    },
+    "mac": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 4
+      },
+      "score_reasons": {
+        "design": "首次动作、资料内容和核对路径清楚，已有来源低频关系已收起。",
+        "originality": "资料、来源、依据和记忆的组织具有一致产品身份，维持3。",
+        "craft": "本轮所见排版和状态导航稳定；每端仍仅针对列明路径评分。",
+        "functionality": "本轮保存/找回、限定提问、引用原文返回、来源控制及记忆发现均完成。",
+        "clarity": "来源目标和完成结果一致；示例回答、权限、保存正文和原始依据状态可辨。",
+        "new_user_friendliness": "用途和首步无前置设置；来源范围、首次价值核对、低频设置折叠及进阶发现有直接证据。"
+      },
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "source_setup_control": "pass_named_target_example_folder_pause",
+        "advanced_discovery": "pass_memory_page_opened",
+        "screen_permission_recovery": "pass_denied_selected_nearby_requirement_recovery_link_allow_cancel"
+      }
+    },
+    "android": {
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 4,
+        "clarity": 3
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 4
+      },
+      "score_reasons": {
+        "design": "首次动作、资料内容和核对路径清楚，已有来源低频关系已收起。",
+        "originality": "资料、来源、依据和记忆的组织具有一致产品身份，维持3。",
+        "craft": "390×844与412×915的记忆编辑均可操作；两版历史在窄屏清楚呈现，仍保持整体Craft3。",
+        "functionality": "除核心路径与拒绝/恢复外，生成记忆的独特修正跨缩放保持、准确保存、重开和版本历史均有直接结果，达到本轮正常与相邻异常状态一致的4分锚点。",
+        "clarity": "来源目标和完成结果一致；示例回答、权限、保存正文和原始依据状态可辨。",
+        "new_user_friendliness": "用途和首步无前置设置；来源范围、首次价值核对、低频设置折叠及进阶发现有直接证据。"
+      },
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "source_setup_control": "pass_named_target_example_folder_pause",
+        "advanced_discovery": "pass_memory_page_opened",
+        "screen_permission_recovery": "pass_denied_selected_nearby_requirement_recovery_link_allow_cancel",
+        "memory_correction_resize": {
+          "result": "pass_exact_text_preserved",
+          "viewport_sequence": [
+            "390x844",
+            "412x915",
+            "390x844"
+          ],
+          "expected_text": "白鹤R27修正：叶青负责周三前整理四份背景资料；校验串＝青铜风铃-27-A。只用于本轮合成验证。",
+          "observed_states": [
+            "draft_before_resize",
+            "draft_after_resize",
+            "saved_memory",
+            "reopened_editor",
+            "current_history_version2"
+          ],
+          "evidence": [
+            "evidence/independent/android/35-memory-correction-draft.dom.json",
+            "evidence/independent/android/36-memory-draft-after-resize.dom.json",
+            "evidence/independent/android/37-memory-correction-saved.dom.json",
+            "evidence/independent/android/39-memory-reopened.dom.json",
+            "evidence/independent/android/40-memory-history.png"
+          ]
+        }
+      }
+    }
+  }
+}

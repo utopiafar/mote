@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-21T05:17:37.345Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "a3b294294d57c5c6894fd71a101fc50f8bb8ba0a3758ebf62f9d586819d7c8e3",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "answers": {
+    "purpose": "个人资料与记忆库，可存想法、文件与设备记录，之后搜索提问和核对出处。",
+    "first_action": "先点击写下第一条记录，预期打开简单编辑器。",
+    "setup_expectation": "无需先连设备；屏幕卡注明由Mac/Android采集，文件夹可能来自设备或工作台服务器。",
+    "first_value_expectation": "保存后可问过去讨论的决定，并点引用回看。",
+    "advanced_discovery": "来源和全部功能保留，起步区域没有配置表单。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

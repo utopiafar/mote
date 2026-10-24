@@ -1,0 +1,1316 @@
+{
+  "gallery": {
+    "url": "https://mote-review.invalid/index.html",
+    "title": "Mote · 三端 UI 评审",
+    "viewport": {
+      "width": 1680,
+      "height": 1050
+    },
+    "pageWidth": 1680,
+    "headings": [
+      {
+        "tag": "H1",
+        "text": "三个端，每一轮都能回看。",
+        "rect": {
+          "x": 30,
+          "y": 66,
+          "width": 1620,
+          "height": 51
+        }
+      }
+    ],
+    "controls": [
+      {
+        "tag": "SELECT",
+        "text": "R30\nR31\nR32\nR33\nR34",
+        "label": "迭代版本\nR30\nR31\nR32\nR33\nR34",
+        "href": null,
+        "value": "34",
+        "rect": {
+          "x": 30,
+          "y": 199,
+          "width": 150,
+          "height": 42
+        }
+      },
+      {
+        "tag": "SELECT",
+        "text": "新用户第一眼\n已有资料的资料库\n导入与资料说明\n来源与采集职责\n问一问\n待办与日程\n设置",
+        "label": "演示内容\n新用户第一眼\n已有资料的资料库\n导入与资料说明\n来源与采集职责\n问一问\n待办与日程\n设置",
+        "href": null,
+        "value": "todos",
+        "rect": {
+          "x": 200,
+          "y": 199,
+          "width": 162,
+          "height": 42
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "三端并排",
+        "label": "",
+        "href": null,
+        "rect": {
+          "x": 382,
+          "y": 196,
+          "width": 90,
+          "height": 46
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Web",
+        "label": "",
+        "href": null,
+        "rect": {
+          "x": 479,
+          "y": 196,
+          "width": 60,
+          "height": 46
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Mac",
+        "label": "",
+        "href": null,
+        "rect": {
+          "x": 546,
+          "y": 196,
+          "width": 58,
+          "height": 46
+        }
+      },
+      {
+        "tag": "BUTTON",
+        "text": "Android",
+        "label": "",
+        "href": null,
+        "rect": {
+          "x": 611,
+          "y": 196,
+          "width": 85,
+          "height": 46
+        }
+      },
+      {
+        "tag": "A",
+        "text": "独立 Git 分支 ↗",
+        "label": "",
+        "href": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r34-20261022",
+        "rect": {
+          "x": 1318,
+          "y": 331,
+          "width": 104,
+          "height": 26
+        }
+      },
+      {
+        "tag": "A",
+        "text": "独立评审报告",
+        "label": "",
+        "href": "rounds/r34/reports/independent-evaluation.md",
+        "rect": {
+          "x": 1440,
+          "y": 331,
+          "width": 90,
+          "height": 26
+        }
+      },
+      {
+        "tag": "A",
+        "text": "188 项功能清单",
+        "label": "",
+        "href": "contract/user-features.md",
+        "rect": {
+          "x": 1548,
+          "y": 331,
+          "width": 102,
+          "height": 26
+        }
+      },
+      {
+        "tag": "A",
+        "text": "单独打开 ↗",
+        "label": "",
+        "href": "rounds/r34/web.html?reset=1&state=populated#/todos/schedule",
+        "rect": {
+          "x": 570,
+          "y": 405,
+          "width": 63,
+          "height": 20
+        }
+      },
+      {
+        "tag": "A",
+        "text": "单独打开 ↗",
+        "label": "",
+        "href": "rounds/r34/mac.html?reset=1&state=populated#/todos/schedule",
+        "rect": {
+          "x": 1210,
+          "y": 405,
+          "width": 63,
+          "height": 20
+        }
+      },
+      {
+        "tag": "A",
+        "text": "单独打开 ↗",
+        "label": "",
+        "href": "rounds/r34/android.html?reset=1&state=populated#/todos/schedule",
+        "rect": {
+          "x": 1568,
+          "y": 405,
+          "width": 63,
+          "height": 20
+        }
+      }
+    ],
+    "activeElement": {
+      "tag": "BODY",
+      "id": ""
+    },
+    "skipLink": null,
+    "scope": "Viewport-visible rendered DOM only; captured before the viewport screenshot. No application state or localStorage inspection."
+  },
+  "frames": [
+    {
+      "platform": "web",
+      "url": "https://mote-review.invalid/rounds/r34/web.html?reset=1&state=populated#/todos/schedule",
+      "title": "Mote · 个人资料库",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "pageWidth": 1440,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "待办与日程",
+          "rect": {
+            "x": 404,
+            "y": 128,
+            "width": 224,
+            "height": 41
+          }
+        },
+        {
+          "tag": "H2",
+          "text": "待核对的安排",
+          "rect": {
+            "x": 404,
+            "y": 300,
+            "width": 156,
+            "height": 27
+          }
+        },
+        {
+          "tag": "H3",
+          "text": "项目资料评审",
+          "rect": {
+            "x": 404,
+            "y": 457,
+            "width": 742,
+            "height": 28
+          }
+        }
+      ],
+      "controls": [
+        {
+          "tag": "SELECT",
+          "text": "网页\nMac\nAndroid",
+          "label": "预览平台",
+          "href": null,
+          "value": "web",
+          "rect": {
+            "x": 1093,
+            "y": 12,
+            "width": 63,
+            "height": 19
+          }
+        },
+        {
+          "tag": "SELECT",
+          "text": "已有资料\n空白账号",
+          "label": "预览数据",
+          "href": null,
+          "value": "populated",
+          "rect": {
+            "x": 1193,
+            "y": 12,
+            "width": 68,
+            "height": 19
+          }
+        },
+        {
+          "tag": "SELECT",
+          "text": "浅色\n深色\n自动",
+          "label": "预览外观",
+          "href": null,
+          "value": "light",
+          "rect": {
+            "x": 1298,
+            "y": 12,
+            "width": 44,
+            "height": 19
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "重置演示",
+          "label": "",
+          "action": "reset",
+          "href": null,
+          "rect": {
+            "x": 1352,
+            "y": 9,
+            "width": 64,
+            "height": 26
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "m\nMote.",
+          "label": "Mote 资料库",
+          "action": "go",
+          "page": "library",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 68,
+            "width": 177,
+            "height": 66
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "资料库",
+          "label": "",
+          "action": "go",
+          "page": "library",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 164,
+            "width": 177,
+            "height": 37
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "问一问",
+          "label": "",
+          "action": "go",
+          "page": "ask",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 204,
+            "width": 177,
+            "height": 37
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "来源",
+          "label": "",
+          "action": "go",
+          "page": "sources",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 245,
+            "width": 177,
+            "height": 37
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "活动",
+          "label": "",
+          "action": "go",
+          "page": "activity",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 285,
+            "width": 177,
+            "height": 37
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "开始使用",
+          "label": "",
+          "action": "nu-help",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 759,
+            "width": 177,
+            "height": 36
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "今天",
+          "label": "",
+          "action": "go",
+          "page": "today",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 798,
+            "width": 177,
+            "height": 35
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "全部功能",
+          "label": "",
+          "action": "go",
+          "page": "guide",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 837,
+            "width": 177,
+            "height": 35
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "设置",
+          "label": "",
+          "action": "go",
+          "page": "settings",
+          "href": null,
+          "rect": {
+            "x": 15,
+            "y": 875,
+            "width": 177,
+            "height": 35
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "随手记",
+          "label": "",
+          "action": "go",
+          "page": "notes",
+          "href": null,
+          "rect": {
+            "x": 1239,
+            "y": 56,
+            "width": 61,
+            "height": 32
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "添加内容",
+          "label": "",
+          "action": "add",
+          "href": null,
+          "rect": {
+            "x": 1312,
+            "y": 55,
+            "width": 100,
+            "height": 33
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "回到今天",
+          "label": "",
+          "action": "go",
+          "page": "today",
+          "href": null,
+          "rect": {
+            "x": 1192,
+            "y": 147,
+            "width": 52,
+            "height": 32
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "我的待办",
+          "label": "",
+          "action": "go",
+          "page": "todos",
+          "href": null,
+          "rect": {
+            "x": 404,
+            "y": 224,
+            "width": 52,
+            "height": 33
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "日程建议",
+          "label": "",
+          "action": "go",
+          "page": "todos/schedule",
+          "href": null,
+          "rect": {
+            "x": 464,
+            "y": 224,
+            "width": 78,
+            "height": 33
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "发现设置",
+          "label": "",
+          "action": "go",
+          "page": "todos/discovery",
+          "href": null,
+          "rect": {
+            "x": 1192,
+            "y": 307,
+            "width": 52,
+            "height": 32
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "待确认",
+          "label": "",
+          "action": "ax-filter",
+          "href": null,
+          "rect": {
+            "x": 404,
+            "y": 347,
+            "width": 65,
+            "height": 33
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "待写入 / 核实",
+          "label": "",
+          "action": "ax-filter",
+          "href": null,
+          "rect": {
+            "x": 477,
+            "y": 347,
+            "width": 76,
+            "height": 33
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "全部",
+          "label": "",
+          "action": "ax-filter",
+          "href": null,
+          "rect": {
+            "x": 561,
+            "y": 347,
+            "width": 26,
+            "height": 33
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "核对建议",
+          "label": "",
+          "action": "go",
+          "page": "todos/review/suggestion-1",
+          "href": null,
+          "rect": {
+            "x": 1166,
+            "y": 457,
+            "width": 78,
+            "height": 33
+          }
+        },
+        {
+          "tag": "SUMMARY",
+          "text": "预览不同日程操作",
+          "label": "",
+          "href": null,
+          "rect": {
+            "x": 405,
+            "y": 594,
+            "width": 838,
+            "height": 60
+          }
+        }
+      ],
+      "activeElement": {
+        "tag": "BODY",
+        "id": ""
+      },
+      "skipLink": {
+        "x": 12,
+        "y": -100,
+        "width": 116,
+        "height": 43
+      },
+      "scope": "Viewport-visible rendered DOM only; captured before the viewport screenshot. No application state or localStorage inspection."
+    },
+    {
+      "platform": "mac",
+      "url": "https://mote-review.invalid/rounds/r34/mac.html?reset=1&state=populated#/todos/schedule",
+      "title": "Mote · 个人资料库",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "pageWidth": 1440,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "待办与日程",
+          "rect": {
+            "x": 405,
+            "y": 203,
+            "width": 224,
+            "height": 41
+          }
+        },
+        {
+          "tag": "H2",
+          "text": "待核对的安排",
+          "rect": {
+            "x": 405,
+            "y": 375,
+            "width": 156,
+            "height": 27
+          }
+        },
+        {
+          "tag": "H3",
+          "text": "项目资料评审",
+          "rect": {
+            "x": 405,
+            "y": 532,
+            "width": 742,
+            "height": 28
+          }
+        }
+      ],
+      "controls": [
+        {
+          "tag": "SELECT",
+          "text": "网页\nMac\nAndroid",
+          "label": "预览平台",
+          "href": null,
+          "value": "mac",
+          "rect": {
+            "x": 1093,
+            "y": 12,
+            "width": 63,
+            "height": 19
+          }
+        },
+        {
+          "tag": "SELECT",
+          "text": "已有资料\n空白账号",
+          "label": "预览数据",
+          "href": null,
+          "value": "populated",
+          "rect": {
+            "x": 1193,
+            "y": 12,
+            "width": 68,
+            "height": 19
+          }
+        },
+        {
+          "tag": "SELECT",
+          "text": "浅色\n深色\n自动",
+          "label": "预览外观",
+          "href": null,
+          "value": "light",
+          "rect": {
+            "x": 1298,
+            "y": 12,
+            "width": 44,
+            "height": 19
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "重置演示",
+          "label": "",
+          "action": "reset",
+          "href": null,
+          "rect": {
+            "x": 1352,
+            "y": 9,
+            "width": 64,
+            "height": 26
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "m\n收集状态",
+          "label": "Mote 菜单栏收集状态",
+          "action": "native-menu-toggle",
+          "href": null,
+          "rect": {
+            "x": 1275,
+            "y": 47,
+            "width": 84,
+            "height": 25
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "⌘ K",
+          "label": "搜索资料，快捷键 Command K",
+          "action": "native-search",
+          "href": null,
+          "rect": {
+            "x": 1306,
+            "y": 92,
+            "width": 100,
+            "height": 26
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "m\nMote.",
+          "label": "Mote 资料库",
+          "action": "go",
+          "page": "library",
+          "href": null,
+          "rect": {
+            "x": 34,
+            "y": 151,
+            "width": 179,
+            "height": 56
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "资料库",
+          "label": "",
+          "action": "go",
+          "page": "library",
+          "href": null,
+          "rect": {
+            "x": 34,
+            "y": 237,
+            "width": 179,
+            "height": 37
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "问一问",
+          "label": "",
+          "action": "go",
+          "page": "ask",
+          "href": null,
+          "rect": {
+            "x": 34,
+            "y": 277,
+            "width": 179,
+            "height": 37
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "来源",
+          "label": "",
+          "action": "go",
+          "page": "sources",
+          "href": null,
+          "rect": {
+            "x": 34,
+            "y": 317,
+            "width": 179,
+            "height": 37
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "活动",
+          "label": "",
+          "action": "go",
+          "page": "activity",
+          "href": null,
+          "rect": {
+            "x": 34,
+            "y": 357,
+            "width": 179,
+            "height": 37
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "写随手记\n⌘ N",
+          "label": "",
+          "action": "go",
+          "page": "notes",
+          "href": null,
+          "rect": {
+            "x": 34,
+            "y": 457,
+            "width": 179,
+            "height": 36
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "同步文件夹",
+          "label": "",
+          "action": "go",
+          "page": "setup/folder/new",
+          "href": null,
+          "rect": {
+            "x": 34,
+            "y": 493,
+            "width": 179,
+            "height": 36
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "开始使用",
+          "label": "",
+          "action": "nu-help",
+          "href": null,
+          "rect": {
+            "x": 34,
+            "y": 750,
+            "width": 179,
+            "height": 36
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "今天",
+          "label": "",
+          "action": "go",
+          "page": "today",
+          "href": null,
+          "rect": {
+            "x": 34,
+            "y": 789,
+            "width": 179,
+            "height": 35
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "全部功能",
+          "label": "",
+          "action": "go",
+          "page": "guide",
+          "href": null,
+          "rect": {
+            "x": 34,
+            "y": 828,
+            "width": 179,
+            "height": 35
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "设置",
+          "label": "",
+          "action": "go",
+          "page": "settings",
+          "href": null,
+          "rect": {
+            "x": 34,
+            "y": 866,
+            "width": 179,
+            "height": 35
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "随手记",
+          "label": "",
+          "action": "go",
+          "page": "notes",
+          "href": null,
+          "rect": {
+            "x": 1220,
+            "y": 135,
+            "width": 61,
+            "height": 32
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "添加内容",
+          "label": "",
+          "action": "add",
+          "href": null,
+          "rect": {
+            "x": 1293,
+            "y": 134,
+            "width": 100,
+            "height": 33
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "回到今天",
+          "label": "",
+          "action": "go",
+          "page": "today",
+          "href": null,
+          "rect": {
+            "x": 1193,
+            "y": 222,
+            "width": 52,
+            "height": 32
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "我的待办",
+          "label": "",
+          "action": "go",
+          "page": "todos",
+          "href": null,
+          "rect": {
+            "x": 405,
+            "y": 299,
+            "width": 52,
+            "height": 33
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "日程建议",
+          "label": "",
+          "action": "go",
+          "page": "todos/schedule",
+          "href": null,
+          "rect": {
+            "x": 465,
+            "y": 299,
+            "width": 78,
+            "height": 33
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "发现设置",
+          "label": "",
+          "action": "go",
+          "page": "todos/discovery",
+          "href": null,
+          "rect": {
+            "x": 1193,
+            "y": 382,
+            "width": 52,
+            "height": 32
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "待确认",
+          "label": "",
+          "action": "ax-filter",
+          "href": null,
+          "rect": {
+            "x": 405,
+            "y": 422,
+            "width": 65,
+            "height": 33
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "待写入 / 核实",
+          "label": "",
+          "action": "ax-filter",
+          "href": null,
+          "rect": {
+            "x": 478,
+            "y": 422,
+            "width": 76,
+            "height": 33
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "全部",
+          "label": "",
+          "action": "ax-filter",
+          "href": null,
+          "rect": {
+            "x": 562,
+            "y": 422,
+            "width": 26,
+            "height": 33
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "核对建议",
+          "label": "",
+          "action": "go",
+          "page": "todos/review/suggestion-1",
+          "href": null,
+          "rect": {
+            "x": 1167,
+            "y": 532,
+            "width": 78,
+            "height": 33
+          }
+        },
+        {
+          "tag": "SUMMARY",
+          "text": "预览不同日程操作",
+          "label": "",
+          "href": null,
+          "rect": {
+            "x": 406,
+            "y": 669,
+            "width": 838,
+            "height": 60
+          }
+        }
+      ],
+      "activeElement": {
+        "tag": "BODY",
+        "id": ""
+      },
+      "skipLink": {
+        "x": 12,
+        "y": -100,
+        "width": 116,
+        "height": 43
+      },
+      "scope": "Viewport-visible rendered DOM only; captured before the viewport screenshot. No application state or localStorage inspection."
+    },
+    {
+      "platform": "android",
+      "url": "https://mote-review.invalid/rounds/r34/android.html?reset=1&state=populated#/todos/schedule",
+      "title": "Mote · 个人资料库",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "pageWidth": 390,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "待办与日程",
+          "rect": {
+            "x": 20,
+            "y": 180,
+            "width": 350,
+            "height": 34
+          }
+        },
+        {
+          "tag": "H2",
+          "text": "待核对的安排",
+          "rect": {
+            "x": 20,
+            "y": 405,
+            "width": 156,
+            "height": 27
+          }
+        },
+        {
+          "tag": "H3",
+          "text": "项目资料评审",
+          "rect": {
+            "x": 20,
+            "y": 578,
+            "width": 256,
+            "height": 28
+          }
+        }
+      ],
+      "controls": [
+        {
+          "tag": "SELECT",
+          "text": "网页\nMac\nAndroid",
+          "label": "预览平台",
+          "href": null,
+          "value": "android",
+          "rect": {
+            "x": 34,
+            "y": 28,
+            "width": 73,
+            "height": 26
+          }
+        },
+        {
+          "tag": "SELECT",
+          "text": "已有资料\n空白账号",
+          "label": "预览数据",
+          "href": null,
+          "value": "populated",
+          "rect": {
+            "x": 139,
+            "y": 28,
+            "width": 76,
+            "height": 26
+          }
+        },
+        {
+          "tag": "SELECT",
+          "text": "浅色\n深色\n自动",
+          "label": "预览外观",
+          "href": null,
+          "value": "light",
+          "rect": {
+            "x": 247,
+            "y": 28,
+            "width": 48,
+            "height": 26
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "重置演示",
+          "label": "",
+          "action": "reset",
+          "href": null,
+          "rect": {
+            "x": 303,
+            "y": 28,
+            "width": 64,
+            "height": 26
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "",
+          "label": "返回上一页",
+          "action": "native-back",
+          "href": null,
+          "rect": {
+            "x": 14,
+            "y": 101,
+            "width": 48,
+            "height": 48
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "",
+          "label": "添加内容",
+          "action": "add",
+          "href": null,
+          "rect": {
+            "x": 270,
+            "y": 101,
+            "width": 48,
+            "height": 48
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "",
+          "label": "更多页面与设置",
+          "action": "compact-pages",
+          "href": null,
+          "rect": {
+            "x": 328,
+            "y": 101,
+            "width": 48,
+            "height": 48
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "回到今天",
+          "label": "",
+          "action": "go",
+          "page": "today",
+          "href": null,
+          "rect": {
+            "x": 20,
+            "y": 252,
+            "width": 80,
+            "height": 40
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "我的待办",
+          "label": "",
+          "action": "go",
+          "page": "todos",
+          "href": null,
+          "rect": {
+            "x": 20,
+            "y": 314,
+            "width": 170,
+            "height": 48
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "日程建议",
+          "label": "",
+          "action": "go",
+          "page": "todos/schedule",
+          "href": null,
+          "rect": {
+            "x": 198,
+            "y": 314,
+            "width": 172,
+            "height": 48
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "发现设置",
+          "label": "",
+          "action": "go",
+          "page": "todos/discovery",
+          "href": null,
+          "rect": {
+            "x": 290,
+            "y": 405,
+            "width": 80,
+            "height": 48
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "待确认",
+          "label": "",
+          "action": "ax-filter",
+          "href": null,
+          "rect": {
+            "x": 20,
+            "y": 453,
+            "width": 69,
+            "height": 48
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "待写入 / 核实",
+          "label": "",
+          "action": "ax-filter",
+          "href": null,
+          "rect": {
+            "x": 92,
+            "y": 453,
+            "width": 104,
+            "height": 48
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "全部",
+          "label": "",
+          "action": "ax-filter",
+          "href": null,
+          "rect": {
+            "x": 199,
+            "y": 453,
+            "width": 54,
+            "height": 48
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "核对建议",
+          "label": "",
+          "action": "go",
+          "page": "todos/review/suggestion-1",
+          "href": null,
+          "rect": {
+            "x": 288,
+            "y": 555,
+            "width": 82,
+            "height": 48
+          }
+        },
+        {
+          "tag": "SUMMARY",
+          "text": "预览不同日程操作",
+          "label": "",
+          "href": null,
+          "rect": {
+            "x": 21,
+            "y": 707,
+            "width": 348,
+            "height": 58
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "资料库",
+          "label": "",
+          "action": "go",
+          "page": "library",
+          "href": null,
+          "rect": {
+            "x": 18,
+            "y": 772,
+            "width": 70,
+            "height": 52
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "问一问",
+          "label": "",
+          "action": "go",
+          "page": "ask",
+          "href": null,
+          "rect": {
+            "x": 113,
+            "y": 772,
+            "width": 70,
+            "height": 52
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "来源",
+          "label": "",
+          "action": "go",
+          "page": "sources",
+          "href": null,
+          "rect": {
+            "x": 207,
+            "y": 772,
+            "width": 70,
+            "height": 52
+          }
+        },
+        {
+          "tag": "BUTTON",
+          "text": "活动",
+          "label": "",
+          "action": "go",
+          "page": "activity",
+          "href": null,
+          "rect": {
+            "x": 302,
+            "y": 772,
+            "width": 70,
+            "height": 52
+          }
+        }
+      ],
+      "activeElement": {
+        "tag": "BODY",
+        "id": ""
+      },
+      "skipLink": {
+        "x": 12,
+        "y": -100,
+        "width": 116,
+        "height": 43
+      },
+      "scope": "Viewport-visible rendered DOM only; captured before the viewport screenshot. No application state or localStorage inspection."
+    }
+  ]
+}

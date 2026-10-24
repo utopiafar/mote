@@ -1,0 +1,113 @@
+{
+  "scope": "Viewer version labels, embedded hashes, dual frames and local entry points only; no business journeys or repeated settings checks",
+  "browser": "Chromium headless",
+  "viewer_sha256": "7d61034bdb09c4d4a904118294cace3076eca0597acfa7dfeb0304b6c1ad20ad",
+  "candidates": [
+    {
+      "id": "r15",
+      "label": "R15 · 上轮交付",
+      "sha256": "65257ad350e155a01bd1e64c3241e812bff98c93fda593be70de2dae17bf32f9",
+      "recommended": false
+    },
+    {
+      "id": "r19",
+      "label": "R19 · 本次候选",
+      "sha256": "8cabb1d2c2914170a5b00dad56a7814bbb21e28fead38ecb59f894658cbcb7bf",
+      "recommended": true
+    }
+  ],
+  "records": [
+    {
+      "name": "Embedded originals match frozen input hashes",
+      "passed": true,
+      "actual": [
+        {
+          "id": "r15",
+          "sha256": "65257ad350e155a01bd1e64c3241e812bff98c93fda593be70de2dae17bf32f9"
+        },
+        {
+          "id": "r19",
+          "sha256": "8cabb1d2c2914170a5b00dad56a7814bbb21e28fead38ecb59f894658cbcb7bf"
+        }
+      ]
+    },
+    {
+      "name": "Offline file opens two interactive library frames",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/library",
+          "title": "资料库",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r15:r15-1:"
+        },
+        {
+          "hash": "#/library",
+          "title": "资料库",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r19:r19-1:"
+        }
+      ]
+    },
+    {
+      "name": "Panel labels and current recommendation match frozen metadata",
+      "passed": true,
+      "actual": {
+        "labels": [
+          "R15 · 上轮交付",
+          "R19 · 本次候选建议先看"
+        ],
+        "recommended": "r19"
+      }
+    },
+    {
+      "name": "Repository page resolves relative candidates",
+      "passed": true,
+      "actual": [
+        {
+          "hash": "#/library",
+          "title": "资料库",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r15:r15-1:"
+        },
+        {
+          "hash": "#/library",
+          "title": "资料库",
+          "width": 1440,
+          "classes": "",
+          "data": "populated",
+          "theme": "light",
+          "prefix": "mote-review:r19:r19-1:"
+        }
+      ]
+    },
+    {
+      "name": "Double-clicking the lightweight page opens offline companion",
+      "passed": true
+    },
+    {
+      "name": "Frozen input candidates remain byte-identical",
+      "passed": true,
+      "actual": [
+        "65257ad350e155a01bd1e64c3241e812bff98c93fda593be70de2dae17bf32f9",
+        "8cabb1d2c2914170a5b00dad56a7814bbb21e28fead38ecb59f894658cbcb7bf"
+      ]
+    },
+    {
+      "name": "No browser page errors",
+      "passed": true,
+      "actual": []
+    }
+  ],
+  "errors": [],
+  "status": "passed"
+}

@@ -1,0 +1,4873 @@
+{
+  "schema_version": 1,
+  "round": "R32",
+  "evaluator": "/root/review_r31_r34",
+  "source_sha": "81a73c0ec81af876d6eeef71451b75cd51684b34",
+  "candidate_sha256": {
+    "web": "e304b83e3a7eae2a8c11e79825c172149f540f6e7276615b8c2c360622281432",
+    "mac": "2f95ee6ba611735f12442fc8f5c1d9bb3b403463be5c29ffb6cfe8dc0b76f51e",
+    "android": "61216734c81fff072714deb9cdbb738b48a45b53a8fa6fb15701363387d18bfa"
+  },
+  "contract_sha256": "316d7ac7ea6577c4a6d28c526f6e27ad56d33c7a9afd60db4b74466e88791572",
+  "journeys_sha256": "a30546c750bc7281177985b9e993c9f1f1a163c93dad9ebc077cac9ec1badf1b",
+  "rubric_sha256": "58826132bd1d4c70690567482902b7ef7dac89e32f7fc727a643ce3d213abb7c",
+  "rubric_id": "mote-r30-r34-independent-v1",
+  "journeys": [
+    {
+      "journey_id": "J-PRODUCT-BOUNDARIES",
+      "feature_ids": [
+        "UF-PRODUCT-BOUNDARIES"
+      ],
+      "priority": "P0",
+      "scenario": "A new user on Central wants to sync a local folder: identify the collector route without a server directory field.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAVIGATION-STATE",
+      "feature_ids": [
+        "UF-NAVIGATION-STATE"
+      ],
+      "priority": "P0",
+      "scenario": "Open a filtered material, then its source and original, close the detail, and recover the same reading context.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ACCOUNT-LOGIN",
+      "feature_ids": [
+        "UF-ACCOUNT-LOGIN"
+      ],
+      "priority": "P0",
+      "scenario": "Start Ask while signed out, choose a duration, fail once, then sign in and return to the original destination.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ACCOUNT-SESSION",
+      "feature_ids": [
+        "UF-ACCOUNT-SESSION"
+      ],
+      "priority": "P0",
+      "scenario": "With a note draft in one account, switch accounts and verify the old account content is not shown as the new account.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ACCOUNT-ADMIN",
+      "feature_ids": [
+        "UF-ACCOUNT-ADMIN"
+      ],
+      "priority": "P1",
+      "scenario": "As a regular account inspect settings; administrator account management must not appear as a generally available capability.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-DEVICE-INVITATION",
+      "feature_ids": [
+        "UF-DEVICE-INVITATION"
+      ],
+      "priority": "P0",
+      "scenario": "Re-pair an existing Android device using a reachable HTTPS address; preserve device identity and do not describe the credential as full account login.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-DEVICE-INVITATION-DELIVERY",
+      "feature_ids": [
+        "UF-DEVICE-INVITATION-DELIVERY"
+      ],
+      "priority": "P0",
+      "scenario": "QR rendering fails; use JSON, then cancel the invitation and distinguish cancellation from simply closing the panel.",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "Reopen/expiry/cancellation and synthetic QR fallback were exercised, but output bytes and actual invalid-credential use were not.",
+          "evidence": [
+            "evidence/web/changed/08-invitation-reopen.json",
+            "evidence/web/changed/10-invitation-json.json",
+            "evidence/web/changed/11-invitation-qr-save.json",
+            "evidence/web/changed/12-invitation-expired.json",
+            "evidence/web/changed/13-invitation-cancelled.json"
+          ]
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-CLIENT-LOGIN-APPROVAL",
+      "feature_ids": [
+        "UF-CLIENT-LOGIN-APPROVAL"
+      ],
+      "priority": "P0",
+      "scenario": "Approve a collector request and verify it is not described as permission to browse private archives.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NOTE-DRAFT",
+      "feature_ids": [
+        "UF-NOTE-DRAFT"
+      ],
+      "priority": "P0",
+      "scenario": "Write an unsent note, navigate away, return, then lose network; text remains recoverable and the UI distinguishes local storage from Central acknowledgment.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NOTE-ATTACHMENTS",
+      "feature_ids": [
+        "UF-NOTE-ATTACHMENTS"
+      ],
+      "priority": "P0",
+      "scenario": "Save an audio-only note while transcription is unavailable; retain the original and show pending processing rather than declaring it fully searchable.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NOTE-OFFLINE-QUEUE",
+      "feature_ids": [
+        "UF-NOTE-OFFLINE-QUEUE"
+      ],
+      "priority": "P0",
+      "scenario": "Central received a note but its ACK was lost; local removal explains uncertainty and history can be refreshed to inspect the submitted original.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-IMPORT-SELECTION",
+      "feature_ids": [
+        "UF-IMPORT-SELECTION"
+      ],
+      "priority": "P0",
+      "scenario": "Select a folder with documents and attachments, remove one item, name the import, and verify the frozen submission contains precisely the remaining files.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-IMPORT-CONTEXT",
+      "feature_ids": [
+        "UF-IMPORT-CONTEXT"
+      ],
+      "priority": "P0",
+      "scenario": "Import mixed personal notes, a vendor quotation, and an AI reply; explain format, subject, author, Asia/Shanghai time, and which passages are yours; inspect the saved explanation exactly.",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/web/import-complete/journey.json",
+            "evidence/web/import-complete/15-detail-expanded.json",
+            "evidence/web/import-complete/22-model-recovered-confirmed.json"
+          ]
+        },
+        "mac": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/mac/import-complete/journey.json",
+            "evidence/mac/import-complete/15-detail-expanded.json",
+            "evidence/mac/import-complete/22-model-recovered-confirmed.json"
+          ]
+        },
+        "android": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/android/import-complete/journey.json",
+            "evidence/android/import-complete/15-detail-expanded.json",
+            "evidence/android/import-complete/22-model-recovered-confirmed.json"
+          ]
+        }
+      }
+    },
+    {
+      "journey_id": "J-IMPORT-CONTEXT-RECOVERY",
+      "feature_ids": [
+        "UF-IMPORT-CONTEXT-RECOVERY"
+      ],
+      "priority": "P0",
+      "scenario": "A preview treats an AI quote as personal belief; open the same import, revise ownership/time explanation, regenerate, inspect it before confirming.",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/web/import-complete/journey.json",
+            "evidence/web/import-complete/15-detail-expanded.json",
+            "evidence/web/import-complete/22-model-recovered-confirmed.json"
+          ]
+        },
+        "mac": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/mac/import-complete/journey.json",
+            "evidence/mac/import-complete/15-detail-expanded.json",
+            "evidence/mac/import-complete/22-model-recovered-confirmed.json"
+          ]
+        },
+        "android": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/android/import-complete/journey.json",
+            "evidence/android/import-complete/15-detail-expanded.json",
+            "evidence/android/import-complete/22-model-recovered-confirmed.json"
+          ]
+        }
+      }
+    },
+    {
+      "journey_id": "J-IMPORT-PARSER",
+      "feature_ids": [
+        "UF-IMPORT-PARSER"
+      ],
+      "priority": "P0",
+      "scenario": "Choose an installed Source Pack and add ownership prose; verify selecting a parser does not erase or replace the prose.",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/web/import-complete/journey.json",
+            "evidence/web/import-complete/15-detail-expanded.json",
+            "evidence/web/import-complete/22-model-recovered-confirmed.json"
+          ]
+        },
+        "mac": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/mac/import-complete/journey.json",
+            "evidence/mac/import-complete/15-detail-expanded.json",
+            "evidence/mac/import-complete/22-model-recovered-confirmed.json"
+          ]
+        },
+        "android": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/android/import-complete/journey.json",
+            "evidence/android/import-complete/15-detail-expanded.json",
+            "evidence/android/import-complete/22-model-recovered-confirmed.json"
+          ]
+        }
+      }
+    },
+    {
+      "journey_id": "J-IMPORT-IMAGE-PLAN",
+      "feature_ids": [
+        "UF-IMPORT-IMAGE-PLAN"
+      ],
+      "priority": "P0",
+      "scenario": "Select archive-only for a mixed image import and confirm that successful intake is not shown as image text being ready.",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/web/import-complete/journey.json",
+            "evidence/web/import-complete/15-detail-expanded.json",
+            "evidence/web/import-complete/22-model-recovered-confirmed.json"
+          ]
+        },
+        "mac": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/mac/import-complete/journey.json",
+            "evidence/mac/import-complete/15-detail-expanded.json",
+            "evidence/mac/import-complete/22-model-recovered-confirmed.json"
+          ]
+        },
+        "android": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/android/import-complete/journey.json",
+            "evidence/android/import-complete/15-detail-expanded.json",
+            "evidence/android/import-complete/22-model-recovered-confirmed.json"
+          ]
+        }
+      }
+    },
+    {
+      "journey_id": "J-IMPORT-UPLOAD-QUEUE",
+      "feature_ids": [
+        "UF-IMPORT-UPLOAD-QUEUE"
+      ],
+      "priority": "P0",
+      "scenario": "Pause a large upload, enqueue a second import, leave the page, return and resume; a failed item must not block or impersonate another task.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-IMPORT-PREVIEW-CONFIRM",
+      "feature_ids": [
+        "UF-IMPORT-PREVIEW-CONFIRM"
+      ],
+      "priority": "P0",
+      "scenario": "A multi-record chat export awaits confirmation; inspect samples, warnings, and attachment counts before confirming the same batch.",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/web/import-complete/journey.json",
+            "evidence/web/import-complete/15-detail-expanded.json",
+            "evidence/web/import-complete/22-model-recovered-confirmed.json"
+          ]
+        },
+        "mac": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/mac/import-complete/journey.json",
+            "evidence/mac/import-complete/15-detail-expanded.json",
+            "evidence/mac/import-complete/22-model-recovered-confirmed.json"
+          ]
+        },
+        "android": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/android/import-complete/journey.json",
+            "evidence/android/import-complete/15-detail-expanded.json",
+            "evidence/android/import-complete/22-model-recovered-confirmed.json"
+          ]
+        }
+      }
+    },
+    {
+      "journey_id": "J-IMPORT-DISPOSITIONS",
+      "feature_ids": [
+        "UF-IMPORT-DISPOSITIONS"
+      ],
+      "priority": "P0",
+      "scenario": "A ZIP includes a document, image, unsupported binary, and excluded file; inspect which became records, attachments, pipeline inputs, or preserved originals.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-IMPORT-RECOVERY",
+      "feature_ids": [
+        "UF-IMPORT-RECOVERY"
+      ],
+      "priority": "P0",
+      "scenario": "After an import reaches model-required state, inspect its originals, configure the needed module, then return and continue that import rather than start an unrelated one.",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/web/import-complete/journey.json",
+            "evidence/web/import-complete/15-detail-expanded.json",
+            "evidence/web/import-complete/22-model-recovered-confirmed.json"
+          ]
+        },
+        "mac": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/mac/import-complete/journey.json",
+            "evidence/mac/import-complete/15-detail-expanded.json",
+            "evidence/mac/import-complete/22-model-recovered-confirmed.json"
+          ]
+        },
+        "android": {
+          "status": "partial",
+          "reason": "Fresh three-platform stateful regression completed its exercised context/selection/review/model-return transitions. The contract includes additional adverse variations that remain untested.",
+          "evidence": [
+            "evidence/android/import-complete/journey.json",
+            "evidence/android/import-complete/15-detail-expanded.json",
+            "evidence/android/import-complete/22-model-recovered-confirmed.json"
+          ]
+        }
+      }
+    },
+    {
+      "journey_id": "J-IMPORT-STAGES",
+      "feature_ids": [
+        "UF-IMPORT-STAGES"
+      ],
+      "priority": "P0",
+      "scenario": "A completed audio import has failed transcription and disabled automatic memory; the UI must not show a single unqualified success state.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-IMPORT-ORIGINALS",
+      "feature_ids": [
+        "UF-IMPORT-ORIGINALS"
+      ],
+      "priority": "P0",
+      "scenario": "Open an import with two similar filenames in different folders and verify the right original and its published record can be distinguished.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-IMPORT-DELETE",
+      "feature_ids": [
+        "UF-IMPORT-DELETE"
+      ],
+      "priority": "P0",
+      "scenario": "Delete one of two imports sharing an original; confirmation must state shared retained data and cannot pretend all identical content is erased.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-SOURCE-CATALOG",
+      "feature_ids": [
+        "UF-SOURCE-CATALOG"
+      ],
+      "priority": "P0",
+      "scenario": "A user has a coding session, an NAS path, and a meeting recording; each reaches its correct supported intake, without inventing Central disk scanning.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-SOURCE-STATE",
+      "feature_ids": [
+        "UF-SOURCE-STATE"
+      ],
+      "priority": "P0",
+      "scenario": "Pause one source, open its already archived content, then resume; unrelated sources and device capture must not change.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-SOURCE-CONTEXT",
+      "feature_ids": [
+        "UF-SOURCE-CONTEXT"
+      ],
+      "priority": "P0",
+      "scenario": "Explain that a folder contains team transcripts about Project Q, not personal diary statements; save and verify the exact source description and acknowledgment.",
+      "platform_evidence": {
+        "web": {
+          "status": "verified",
+          "reason": "Exact third-party meeting-context prose is saved and acknowledged through ordinary controls.",
+          "evidence": [
+            "evidence/web/context/03-source-saved.json"
+          ]
+        },
+        "mac": {
+          "status": "verified",
+          "reason": "Exact third-party meeting-context prose is saved and acknowledged through ordinary controls.",
+          "evidence": [
+            "evidence/mac/context-central/03-source-saved.json"
+          ]
+        },
+        "android": {
+          "status": "verified",
+          "reason": "Exact third-party meeting-context prose is saved and acknowledged through ordinary controls.",
+          "evidence": [
+            "evidence/android/context-central/03-source-saved.json"
+          ]
+        }
+      }
+    },
+    {
+      "journey_id": "J-SOURCE-CONTEXT-CONFLICT",
+      "feature_ids": [
+        "UF-SOURCE-CONTEXT-CONFLICT"
+      ],
+      "priority": "P0",
+      "scenario": "Edit source context in two sessions; after the second saves, the first must show conflict and retain its draft until explicit reload/discard.",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "The supported remote-update fixture exercises draft preservation and explicit resolution; independent real-session concurrency and in-flight edits remain untested.",
+          "evidence": [
+            "evidence/web/context/04-source-conflict.json",
+            "evidence/web/context/05-conflicted-save.json",
+            "evidence/web/context/06-source-return.json",
+            "evidence/web/context/07-conflict-resolved.json"
+          ]
+        },
+        "mac": {
+          "status": "partial",
+          "reason": "The supported remote-update fixture exercises draft preservation and explicit resolution; independent real-session concurrency and in-flight edits remain untested.",
+          "evidence": [
+            "evidence/mac/context-central/04-source-conflict.json",
+            "evidence/mac/context-central/05-conflicted-save.json",
+            "evidence/mac/context-central/06-source-return.json",
+            "evidence/mac/context-central/07-conflict-resolved.json"
+          ]
+        },
+        "android": {
+          "status": "partial",
+          "reason": "The supported remote-update fixture exercises draft preservation and explicit resolution; independent real-session concurrency and in-flight edits remain untested.",
+          "evidence": [
+            "evidence/android/context-central/04-source-conflict.json",
+            "evidence/android/context-central/05-conflicted-save.json",
+            "evidence/android/context-central/06-source-return.json",
+            "evidence/android/context-central/07-conflict-resolved.json"
+          ]
+        }
+      }
+    },
+    {
+      "journey_id": "J-SOURCE-ATTRIBUTION",
+      "feature_ids": [
+        "UF-SOURCE-ATTRIBUTION"
+      ],
+      "priority": "P0",
+      "scenario": "Set a source to mixed, add prose naming the author and quoted speakers, then clear the declaration; prose and relation remain independent.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-LIBRARY-FILTERS",
+      "feature_ids": [
+        "UF-LIBRARY-FILTERS"
+      ],
+      "priority": "P0",
+      "scenario": "Filter a date with no results, clear it, find a partially processed material, and read available text without waiting for memory.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MATERIAL-BODY-REVISION",
+      "feature_ids": [
+        "UF-MATERIAL-BODY-REVISION"
+      ],
+      "priority": "P0",
+      "scenario": "Open a long historical material, continue beyond the first 4,000 characters, then compare its current revision without mixing the two bodies.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MATERIAL-PROVENANCE",
+      "feature_ids": [
+        "UF-MATERIAL-PROVENANCE"
+      ],
+      "priority": "P0",
+      "scenario": "A material has partial coverage and three originating records; inspect all members and do not call the missing portion already read.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MATERIAL-ATTRIBUTION",
+      "feature_ids": [
+        "UF-MATERIAL-ATTRIBUTION"
+      ],
+      "priority": "P0",
+      "scenario": "Source is owner-authored but one imported document is a third-party article; override only that material and inspect attribution basis/version.",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "Current material override and fallback are exercised; historical revision semantics remain untested.",
+          "evidence": [
+            "evidence/web/context/08-material-inherited.json",
+            "evidence/web/context/09-material-override.json",
+            "evidence/web/context/10-material-return.json",
+            "evidence/web/context/11-material-inherit-restored.json"
+          ]
+        },
+        "mac": {
+          "status": "partial",
+          "reason": "Current material override and fallback are exercised; historical revision semantics remain untested.",
+          "evidence": [
+            "evidence/mac/context-central/08-material-inherited.json",
+            "evidence/mac/context-central/09-material-override.json",
+            "evidence/mac/context-central/10-material-return.json",
+            "evidence/mac/context-central/11-material-inherit-restored.json"
+          ]
+        },
+        "android": {
+          "status": "partial",
+          "reason": "Current material override and fallback are exercised; historical revision semantics remain untested.",
+          "evidence": [
+            "evidence/android/context-central/08-material-inherited.json",
+            "evidence/android/context-central/09-material-override.json",
+            "evidence/android/context-central/10-material-return.json",
+            "evidence/android/context-central/11-material-inherit-restored.json"
+          ]
+        }
+      }
+    },
+    {
+      "journey_id": "J-MATERIAL-INDEX-RECOVERY",
+      "feature_ids": [
+        "UF-MATERIAL-INDEX-RECOVERY"
+      ],
+      "priority": "P0",
+      "scenario": "An index fails after body publication; continue reading and retry index without reimporting or retranscribing the original.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MATERIAL-EXACT-MEMORY",
+      "feature_ids": [
+        "UF-MATERIAL-EXACT-MEMORY"
+      ],
+      "priority": "P0",
+      "scenario": "Select one material from a broad time range; extraction confirms only its evidence, and a stale revision asks for reselection.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ORIGINAL-RECORDS",
+      "feature_ids": [
+        "UF-ORIGINAL-RECORDS"
+      ],
+      "priority": "P0",
+      "scenario": "Find an activity-only capture with no image beside an OCR-pending screenshot and identify what content was actually collected.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ORIGINAL-METADATA",
+      "feature_ids": [
+        "UF-ORIGINAL-METADATA"
+      ],
+      "priority": "P0",
+      "scenario": "An email quoted in a meeting transcript has a provider subject and a different observed date; verify provenance and authored/event dates are not replaced by import time.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ORIGINAL-DELETE",
+      "feature_ids": [
+        "UF-ORIGINAL-DELETE"
+      ],
+      "priority": "P0",
+      "scenario": "Open a record from an answer citation, request deletion, cancel, then inspect the same original still present.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-SOURCE-VERSIONS",
+      "feature_ids": [
+        "UF-SOURCE-VERSIONS"
+      ],
+      "priority": "P0",
+      "scenario": "A referenced NAS file is unavailable; show its location and no-body state without offering an invented remote read.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-CAPTURE-GROUPS",
+      "feature_ids": [
+        "UF-CAPTURE-GROUPS"
+      ],
+      "priority": "P0",
+      "scenario": "Two same-app screenshot groups have a long gap; inspect grouping and avoid treating it as continuous focus time.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ACTIVITY-TIME",
+      "feature_ids": [
+        "UF-ACTIVITY-TIME"
+      ],
+      "priority": "P0",
+      "scenario": "Two devices report overlapping foreground samples; read the explanation rather than interpreting their sum as unique work hours.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MEDIA-OBSERVATIONS",
+      "feature_ids": [
+        "UF-MEDIA-OBSERVATIONS"
+      ],
+      "priority": "P0",
+      "scenario": "A remote player reports paused media while the device is locked; the UI must not claim audio was recorded or that the track was fully listened to.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILES-FIND-ORIGINAL",
+      "feature_ids": [
+        "UF-FILES-FIND-ORIGINAL"
+      ],
+      "priority": "P0",
+      "scenario": "The phone deleted an archived audio file and browser playback fails; download its Central original and inspect processing separately.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILES-PROCESSING-STAGES",
+      "feature_ids": [
+        "UF-FILES-PROCESSING-STAGES"
+      ],
+      "priority": "P0",
+      "scenario": "Transcription succeeds but diarization fails; read the existing transcript and retry the failed step without treating all content as lost.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILES-RECOVERY",
+      "feature_ids": [
+        "UF-FILES-RECOVERY"
+      ],
+      "priority": "P0",
+      "scenario": "Lose the response after submitting a retry; use the same operation receipt, show uncertainty, and avoid silently launching another independent extraction.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILES-SPEAKER-CONFIG",
+      "feature_ids": [
+        "UF-FILES-SPEAKER-CONFIG"
+      ],
+      "priority": "P0",
+      "scenario": "Set a known two-to-four-person range for one recording; global strategy and another file remain unchanged.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILES-MANUAL-CORRECTION",
+      "feature_ids": [
+        "UF-FILES-MANUAL-CORRECTION"
+      ],
+      "priority": "P0",
+      "scenario": "Correct a proper name in one segment, cancel another edit, then reopen and distinguish corrected text from raw transcription.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILES-SPEAKER-NAME",
+      "feature_ids": [
+        "UF-FILES-SPEAKER-NAME"
+      ],
+      "priority": "P0",
+      "scenario": "Listen to an overlapping speaker segment and leave an unknown speaker unnamed; do not show model-inferred identity as confirmed.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILES-MODEL-REVIEW",
+      "feature_ids": [
+        "UF-FILES-MODEL-REVIEW"
+      ],
+      "priority": "P0",
+      "scenario": "Generate corrections, let the raw text change, then inspect stale suggestions; acceptance must not blindly apply them to the new revision.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILES-EXPORT",
+      "feature_ids": [
+        "UF-FILES-EXPORT"
+      ],
+      "priority": "P0",
+      "scenario": "Export metadata for retained historical recordings and verify it is not described as a full audio backup.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILES-FORGETTING",
+      "feature_ids": [
+        "UF-FILES-FORGETTING"
+      ],
+      "priority": "P1",
+      "scenario": "Delete an archived collector file while a task is still active; show pending cleanup and retained device original, then explicitly permit recollection.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ASK-COMPOSE",
+      "feature_ids": [
+        "UF-ASK-COMPOSE"
+      ],
+      "priority": "P0",
+      "scenario": "Compose a follow-up, switch its model for this request, and ensure the current conversation identity survives submission.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ASK-IMAGES",
+      "feature_ids": [
+        "UF-ASK-IMAGES"
+      ],
+      "priority": "P0",
+      "scenario": "Attach five images including an oversized one, correct selection, then send only the accepted attachments.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ASK-RUN-RECOVERY",
+      "feature_ids": [
+        "UF-ASK-RUN-RECOVERY"
+      ],
+      "priority": "P0",
+      "scenario": "Lose the submit response and then reconnect; the pending question and exact run remain inspectable rather than creating duplicate answers.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ASK-EVIDENCE-HISTORY",
+      "feature_ids": [
+        "UF-ASK-EVIDENCE-HISTORY"
+      ],
+      "priority": "P0",
+      "scenario": "Open a historical answer with a deleted source and a still-valid citation, inspect both, then return without losing the selected conversation.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ASK-DELETE",
+      "feature_ids": [
+        "UF-ASK-DELETE"
+      ],
+      "priority": "P0",
+      "scenario": "Cancel a conversation deletion, reopen its older turns, then confirm deletion only after reading the full-conversation scope.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-WORK-LIST",
+      "feature_ids": [
+        "UF-WORK-LIST"
+      ],
+      "priority": "P0",
+      "scenario": "A source has an unlinked older import plus a linked current failure; understand the limited related-activity scope and find all work.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-WORK-DETAIL",
+      "feature_ids": [
+        "UF-WORK-DETAIL"
+      ],
+      "priority": "P0",
+      "scenario": "A work item has one completed branch and one waiting-input branch; inspect its saved result without presenting the whole work as complete.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-WORK-CAUSE-RECOVERY",
+      "feature_ids": [
+        "UF-WORK-CAUSE-RECOVERY"
+      ],
+      "priority": "P0",
+      "scenario": "A failed file analysis uses a valid provider but missing module assignment; reach the correct module setting and return to that file task.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-WORK-TECHNICAL-STEPS",
+      "feature_ids": [
+        "UF-WORK-TECHNICAL-STEPS"
+      ],
+      "priority": "P0",
+      "scenario": "One optional step fails while required body publication succeeded; retry that step without resetting unrelated completed work.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MODEL-PROVIDER",
+      "feature_ids": [
+        "UF-MODEL-PROVIDER"
+      ],
+      "priority": "P0",
+      "scenario": "Choose a local provider whose model catalogue is unavailable; enter the actual model ID manually and save without presenting the catalogue failure as successful validation.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MODEL-CREDENTIALS",
+      "feature_ids": [
+        "UF-MODEL-CREDENTIALS"
+      ],
+      "priority": "P0",
+      "scenario": "Change a provider hostname while retaining its hidden key; explicitly replace/clear/approve reuse instead of silently sending to the new address.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MODEL-PERFORMANCE",
+      "feature_ids": [
+        "UF-MODEL-PERFORMANCE"
+      ],
+      "priority": "P0",
+      "scenario": "Choose a Codex model without Fast support and verify the unavailable setting is handled honestly rather than saved as effective.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MODEL-TEST-DRAFT",
+      "feature_ids": [
+        "UF-MODEL-TEST-DRAFT"
+      ],
+      "priority": "P0",
+      "scenario": "Test an edited connection successfully then leave without saving; effective settings must remain the saved version and the unsaved state must be clear.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MODEL-ASSIGNMENTS",
+      "feature_ids": [
+        "UF-MODEL-ASSIGNMENTS"
+      ],
+      "priority": "P0",
+      "scenario": "A working Chat model does not imply Import or Memory is configured; assign the missing module then continue the same blocked import.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MODEL-COPY-DELETE",
+      "feature_ids": [
+        "UF-MODEL-COPY-DELETE"
+      ],
+      "priority": "P0",
+      "scenario": "Try deleting a preset in use, change module assignment, then copy it without credentials and inspect the unconfigured copy.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-IMAGE-DEFAULTS-AUTH",
+      "feature_ids": [
+        "UF-IMAGE-DEFAULTS-AUTH"
+      ],
+      "priority": "P0",
+      "scenario": "Enable local OCR while refusing remote OCR and model access to originals; a query may use extracted text but must not imply it can see the image.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-IMAGE-HISTORY",
+      "feature_ids": [
+        "UF-IMAGE-HISTORY"
+      ],
+      "priority": "P0",
+      "scenario": "Preview only one source’s old images, choose fill-missing, then inspect progress without claiming all historical images were recomputed.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MEDIA-MODEL-INSTALL",
+      "feature_ids": [
+        "UF-MEDIA-MODEL-INSTALL"
+      ],
+      "priority": "P0",
+      "scenario": "Audio model is installed but FFmpeg/runtime is missing; show the actual readiness gap, retain the archived recording, and avoid another redundant upload.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILE-PROCESSING-DEFAULTS",
+      "feature_ids": [
+        "UF-FILE-PROCESSING-DEFAULTS"
+      ],
+      "priority": "P0",
+      "scenario": "Lower audio duration limit, save, and see an over-limit archived file as preserved-but-unprocessed rather than missing.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILE-TYPE-RULES",
+      "feature_ids": [
+        "UF-FILE-TYPE-RULES"
+      ],
+      "priority": "P0",
+      "scenario": "Use image/* plus an exact image/png rule and inspect which plan matches a PNG.",
+      "platform_evidence": {
+        "web": {
+          "status": "verified",
+          "reason": "Exact PNG archive-only rule wins over the existing image wildcard processing rule.",
+          "evidence": [
+            "evidence/web/changed/63-policy-saved.json",
+            "evidence/web/changed/64-exact-rule-match.json"
+          ]
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILE-PLAN-EDITOR",
+      "feature_ids": [
+        "UF-FILE-PLAN-EDITOR"
+      ],
+      "priority": "P0",
+      "scenario": "Copy an audio plan, disable summary in the copy, and verify original plan remains intact and referenced plans cannot disappear silently.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILE-SOURCE-OVERRIDE",
+      "feature_ids": [
+        "UF-FILE-SOURCE-OVERRIDE"
+      ],
+      "priority": "P0",
+      "scenario": "Archive images from one source while extracting images elsewhere; inspect the source override and global fallback.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILE-SERVICES",
+      "feature_ids": [
+        "UF-FILE-SERVICES"
+      ],
+      "priority": "P0",
+      "scenario": "An audio service has ASR ready but speaker separation unavailable; test the saved service and see both results.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-FILE-RULE-PREVIEW-REPROCESS",
+      "feature_ids": [
+        "UF-FILE-RULE-PREVIEW-REPROCESS"
+      ],
+      "priority": "P0",
+      "scenario": "Change a plan without saving, run rule preview, and verify it clearly uses saved configuration; then confirm a valid preview with known correction invalidation.",
+      "platform_evidence": {
+        "web": {
+          "status": "verified",
+          "reason": "Unsaved configuration cannot confirm a preview; reloaded saved settings produce a fresh bounded preview and an explicit queue receipt. Actual derived processing is outside this UI run.",
+          "evidence": [
+            "evidence/web/changed/67-dirty-policy-invalidates-preview.json",
+            "evidence/web/changed/68-current-preview.json",
+            "evidence/web/changed/69-reprocess-confirmed.json"
+          ]
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-EXECUTION-CAPACITY",
+      "feature_ids": [
+        "UF-EXECUTION-CAPACITY"
+      ],
+      "priority": "P0",
+      "scenario": "A regular account has queued work; distinguish capacity wait from failure and do not expose administrator mutation controls as usable.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-RETRIEVAL-CONNECTOR-CONFIG",
+      "feature_ids": [
+        "UF-RETRIEVAL-CONNECTOR-CONFIG"
+      ],
+      "priority": "P0",
+      "scenario": "Save a setting requiring restart and inspect the still-current effective value; do not show a completed restart or obsolete env-diff download as applied.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-EXTERNAL-REFERENCE",
+      "feature_ids": [
+        "UF-EXTERNAL-REFERENCE"
+      ],
+      "priority": "P0",
+      "scenario": "Save a NAS path then ask to inspect the body; the UI must explain that no body was collected and offer the collector route.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-GOOGLE-CONNECTION",
+      "feature_ids": [
+        "UF-GOOGLE-CONNECTION"
+      ],
+      "priority": "P1",
+      "scenario": "Create a Gmail connection, interrupt authorization, return and refresh; no false connected state and existing unrelated connection preserved.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-GOOGLE-CALENDAR-SCOPE",
+      "feature_ids": [
+        "UF-GOOGLE-CALENDAR-SCOPE"
+      ],
+      "priority": "P1",
+      "scenario": "Authorize Google, choose one calendar, sync, then disconnect; history persists and the UI never claims event creation.",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "Choose-one/sync/disconnect retains archive and read-only semantics; stale status copy makes the completed outcome ambiguous.",
+          "evidence": [
+            "evidence/web/changed/25-google-empty-sync.json",
+            "evidence/web/changed/27-google-scope-saved.json",
+            "evidence/web/changed/28-google-synced.json",
+            "evidence/web/changed/32-google-retained.json"
+          ]
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-GMAIL-PAGING",
+      "feature_ids": [
+        "UF-GMAIL-PAGING"
+      ],
+      "priority": "P1",
+      "scenario": "First Gmail sync is partial; continue pages and distinguish an attachment reference from downloaded attachment bytes.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MCP-RESOURCE-IMPORT",
+      "feature_ids": [
+        "UF-MCP-RESOURCE-IMPORT"
+      ],
+      "priority": "P1",
+      "scenario": "An MCP endpoint exposes tools but no resources; show that no direct resource import is available rather than fabricate imported memory.",
+      "platform_evidence": {
+        "web": {
+          "status": "verified",
+          "reason": "The tools-only service explicitly exposes no readable resources and cannot claim imported hidden memory.",
+          "evidence": [
+            "evidence/web/changed/42-mcp-no-resources.json"
+          ]
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-LARK-AUTH",
+      "feature_ids": [
+        "UF-LARK-AUTH"
+      ],
+      "priority": "P1",
+      "scenario": "CLI is missing; reach the actual deployment preparation instruction and then retry, without a fictitious browser installer.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-LARK-DOCUMENT-SCOPE",
+      "feature_ids": [
+        "UF-LARK-DOCUMENT-SCOPE"
+      ],
+      "priority": "P1",
+      "scenario": "Enable opened-document discovery but exclude one document; preview, confirm, then inspect one failed document independently from successful archives.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-LARK-CALENDAR-SCOPE",
+      "feature_ids": [
+        "UF-LARK-CALENDAR-SCOPE"
+      ],
+      "priority": "P1",
+      "scenario": "A previously selected calendar becomes unavailable; remove it without losing the remaining calendar selection or timezone.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-RECORDING-AUTH-SCOPE",
+      "feature_ids": [
+        "UF-RECORDING-AUTH-SCOPE"
+      ],
+      "priority": "P0",
+      "scenario": "Describe who speaks and what meetings cover, authorize recordings, choose initial range, and save; verify context is acknowledged before intake.",
+      "platform_evidence": {
+        "web": {
+          "status": "missing",
+          "reason": "Visible recording entry lacks the context/authorization prerequisites; this scenario cannot be completed there.",
+          "evidence": [
+            "evidence/web/changed/34-recording-entry.json",
+            "evidence/web/changed/38-dingtalk-entry.json"
+          ]
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-RECORDING-STAGES-RECOVERY",
+      "feature_ids": [
+        "UF-RECORDING-STAGES-RECOVERY"
+      ],
+      "priority": "P0",
+      "scenario": "Vendor transcript is archived while audio backup fails; open available text and retry only the failed backup path without declaring the entire recording complete.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-CODING-RECEIPTS",
+      "feature_ids": [
+        "UF-CODING-RECEIPTS"
+      ],
+      "priority": "P1",
+      "scenario": "A source received 500 events but only one partial material; open its body and inspect gaps instead of equating event count with conversation completeness.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MEMORY-BROWSE",
+      "feature_ids": [
+        "UF-MEMORY-BROWSE"
+      ],
+      "priority": "P1",
+      "scenario": "Search a historical as-of date and inspect a superseded memory without treating it as the current accepted conclusion.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MEMORY-CORRECT-DELETE-EXPORT",
+      "feature_ids": [
+        "UF-MEMORY-CORRECT-DELETE-EXPORT"
+      ],
+      "priority": "P1",
+      "scenario": "Correct a date-bound memory, inspect the superseded version, then export it; deleting the memory must not claim its original source was erased.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MEMORY-MANUAL-EXTRACTION",
+      "feature_ids": [
+        "UF-MEMORY-MANUAL-EXTRACTION"
+      ],
+      "priority": "P0",
+      "scenario": "Page is scoped to a month but one current material is selected; run extraction and verify it uses only the explicitly selected evidence.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MEMORY-TASK-CONTROLS",
+      "feature_ids": [
+        "UF-MEMORY-TASK-CONTROLS"
+      ],
+      "priority": "P1",
+      "scenario": "A memory run is paused with completed batches and an unknown external call; inspect saved results, confirm uncertainty if required, and retry its original range.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MEMORY-CLARIFICATION",
+      "feature_ids": [
+        "UF-MEMORY-CLARIFICATION"
+      ],
+      "priority": "P0",
+      "scenario": "Defer an authorship question, continue other work, return with an answer after source revision changes; show stale question and new scope.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MEMORY-INTEGRATE",
+      "feature_ids": [
+        "UF-MEMORY-INTEGRATE"
+      ],
+      "priority": "P1",
+      "scenario": "Start from one current memory, receive zero new memories, and show a completed valid result rather than inventing an output.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MEMORY-POLICY-RECIPES",
+      "feature_ids": [
+        "UF-MEMORY-POLICY-RECIPES"
+      ],
+      "priority": "P1",
+      "scenario": "Change screenshot recipes while a historical window runs; show new policy without claiming that running or completed historical evidence was recomputed.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-INSIGHT-CREATE",
+      "feature_ids": [
+        "UF-INSIGHT-CREATE"
+      ],
+      "priority": "P1",
+      "scenario": "Create a review for only the selected week with a custom focus, encounter missing model, and return to that same draft.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-INSIGHT-RECOVERY",
+      "feature_ids": [
+        "UF-INSIGHT-RECOVERY"
+      ],
+      "priority": "P1",
+      "scenario": "Disconnect the progress stream during a review, return and reconnect before deciding whether to cancel; no simulated completion.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-INSIGHT-EVIDENCE",
+      "feature_ids": [
+        "UF-INSIGHT-EVIDENCE"
+      ],
+      "priority": "P1",
+      "scenario": "Open an old report after source changes; show invalidation and coverage rather than treating the current archive as what the old report read.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-TODO",
+      "feature_ids": [
+        "UF-TODO"
+      ],
+      "priority": "P1",
+      "scenario": "Create a todo without a due date, complete it, reopen it, and verify no calendar confirmation or created event is implied.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ACTION-DISCOVERY",
+      "feature_ids": [
+        "UF-ACTION-DISCOVERY"
+      ],
+      "priority": "P1",
+      "scenario": "Enable discovery with one review device, revoke it elsewhere, then inspect the stale authorization warning before saving.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ACTION-REVIEW",
+      "feature_ids": [
+        "UF-ACTION-REVIEW"
+      ],
+      "priority": "P0",
+      "scenario": "Correct an all-day event timezone, choose the target device/calendar, freeze review, then change source version; stale review must require recheck.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ACTION-EXECUTION-RECOVERY",
+      "feature_ids": [
+        "UF-ACTION-EXECUTION-RECOVERY"
+      ],
+      "priority": "P0",
+      "scenario": "Device writes an event but its receipt is lost; recover by verifying the existing event, not creating a second event.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MCP-GRANT",
+      "feature_ids": [
+        "UF-MCP-GRANT"
+      ],
+      "priority": "P1",
+      "scenario": "Create a read-only connection with no source filter, then a write connection; write generation requires explicit sources.",
+      "platform_evidence": {
+        "web": {
+          "status": "verified",
+          "reason": "Both no-filter read and explicit-source write generation were exercised, including rejecting write with no source.",
+          "evidence": [
+            "evidence/web/changed/71-read-grant.json",
+            "evidence/web/changed/76-write-grant-no-source.json",
+            "evidence/web/changed/77-write-grant-scoped.json"
+          ]
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MCP-CREDENTIAL-DELIVERY",
+      "feature_ids": [
+        "UF-MCP-CREDENTIAL-DELIVERY"
+      ],
+      "priority": "P1",
+      "scenario": "Generate configuration, hide it, reopen the page, and ensure hidden old secret is not presented as recoverable.",
+      "platform_evidence": {
+        "web": {
+          "status": "verified",
+          "reason": "Hide and reopen retain the grant while the previous displayed secret remains unavailable.",
+          "evidence": [
+            "evidence/web/changed/74-grant-hidden.json",
+            "evidence/web/changed/75-grant-revisited.json"
+          ]
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-CONNECTION-REVOKE",
+      "feature_ids": [
+        "UF-CONNECTION-REVOKE"
+      ],
+      "priority": "P1",
+      "scenario": "Revoke one chatbot credential while another device remains connected; only the chosen grant changes.",
+      "platform_evidence": {
+        "web": {
+          "status": "partial",
+          "reason": "Only the selected grant is revoked; unrelated grants remain active. Native device connection was not rechecked in this Web session.",
+          "evidence": [
+            "evidence/web/changed/79-revoke-cancelled.json",
+            "evidence/web/changed/80-one-grant-revoked.json",
+            "evidence/web/changed/81-grants-refreshed.json"
+          ]
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-AUTO-MEMORY-PAUSE",
+      "feature_ids": [
+        "UF-AUTO-MEMORY-PAUSE"
+      ],
+      "priority": "P0",
+      "scenario": "Pause automatic memory during a run, import new files, then resume; show retained archives and do not claim automatic backfill of paused history.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-AUTO-MEMORY-STOP",
+      "feature_ids": [
+        "UF-AUTO-MEMORY-STOP"
+      ],
+      "priority": "P1",
+      "scenario": "Stop while an external call is unresolved; display pending outcome instead of claiming instantaneous remote termination.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-MEMORY-PLAN-MIGRATION",
+      "feature_ids": [
+        "UF-MEMORY-PLAN-MIGRATION"
+      ],
+      "priority": "P1",
+      "scenario": "Prepare a new plan, let validation fail, retry, then explicitly activate only after validation; current binding must remain old until final apply.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-PLUGIN-INSTALL",
+      "feature_ids": [
+        "UF-PLUGIN-INSTALL"
+      ],
+      "priority": "P1",
+      "scenario": "Preview a plugin that needs restart and install it; it must not appear active or automatically bound before required separate steps.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-PLUGIN-INSTANCE",
+      "feature_ids": [
+        "UF-PLUGIN-INSTANCE"
+      ],
+      "priority": "P1",
+      "scenario": "Edit an instance concurrently in two sessions; conflict must not silently overwrite the other configuration or activate it.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-PLUGIN-UNINSTALL",
+      "feature_ids": [
+        "UF-PLUGIN-UNINSTALL"
+      ],
+      "priority": "P1",
+      "scenario": "Try uninstalling the currently bound memory package; show why it is blocked and route to plan management.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-PLUGIN-CAPABILITY-AUDIT",
+      "feature_ids": [
+        "UF-PLUGIN-CAPABILITY-AUDIT"
+      ],
+      "priority": "P1",
+      "scenario": "Inspect a registered but unavailable UI extension; do not equate a registry entry with a usable complete user flow.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ARCHIVE-PORTABLE-EXPORT",
+      "feature_ids": [
+        "UF-ARCHIVE-PORTABLE-EXPORT"
+      ],
+      "priority": "P1",
+      "scenario": "Export as a regular account and confirm it is not described as a complete multiuser server backup.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ARCHIVE-PORTABLE-IMPORT",
+      "feature_ids": [
+        "UF-ARCHIVE-PORTABLE-IMPORT"
+      ],
+      "priority": "P1",
+      "scenario": "Refresh after partial portable import, reselect the same archive, and retry original operation rather than claim cross-account restore support.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-CONTENT-ENCRYPTION",
+      "feature_ids": [
+        "UF-CONTENT-ENCRYPTION"
+      ],
+      "priority": "P1",
+      "scenario": "Enable encryption with existing plaintext originals; reopen old files and distinguish future-write policy from full archive conversion.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-CONTENT-DECRYPT",
+      "feature_ids": [
+        "UF-CONTENT-DECRYPT"
+      ],
+      "priority": "P1",
+      "scenario": "Cancel after partial decryption, then restart; completed items remain converted and failures retain their originals.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-RETENTION-CAPACITY",
+      "feature_ids": [
+        "UF-RETENTION-CAPACITY"
+      ],
+      "priority": "P1",
+      "scenario": "Save a shorter retention draft after inspecting scope; distinguish requested policy from currently effective values where restart is required.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-INDEX-MAINTENANCE",
+      "feature_ids": [
+        "UF-INDEX-MAINTENANCE"
+      ],
+      "priority": "P1",
+      "scenario": "Lose a rebuild receipt and retry the original operation; do not enqueue duplicate rebuilds or imply originals were recreated.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-STORAGE-STATISTICS",
+      "feature_ids": [
+        "UF-STORAGE-STATISTICS"
+      ],
+      "priority": "P1",
+      "scenario": "Compare last 7 days to all storage and read the modified-date basis; do not interpret difference as net newly archived bytes.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-USAGE-ANALYSIS",
+      "feature_ids": [
+        "UF-USAGE-ANALYSIS"
+      ],
+      "priority": "P1",
+      "scenario": "Inspect a failed run with partial token reporting and missing price; totals must not treat missing data as zero cost.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-USAGE-PRICING",
+      "feature_ids": [
+        "UF-USAGE-PRICING"
+      ],
+      "priority": "P1",
+      "scenario": "Change a model price and reopen an earlier run; its recorded estimate remains based on the original price.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-AGENT-VIRTUAL-CONTEXT",
+      "feature_ids": [
+        "UF-AGENT-VIRTUAL-CONTEXT"
+      ],
+      "priority": "P1",
+      "scenario": "Inspect a source description and long material in Agent view, then preview initial context; do not claim everything browsable was supplied to a real answer.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-AGENT-ACTUAL-TRACE",
+      "feature_ids": [
+        "UF-AGENT-ACTUAL-TRACE"
+      ],
+      "priority": "P1",
+      "scenario": "Open a run recorded before detailed trace was enabled; report absent evidence rather than reconstruct a convincing but false input trace.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-DIAGNOSTIC-LOGS",
+      "feature_ids": [
+        "UF-DIAGNOSTIC-LOGS"
+      ],
+      "priority": "P1",
+      "scenario": "Export a 7-day diagnostic range with only one day retained; disclose coverage instead of implying deleted logs are recovered.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-DIAGNOSTIC-PREFERENCES",
+      "feature_ids": [
+        "UF-DIAGNOSTIC-PREFERENCES"
+      ],
+      "priority": "P1",
+      "scenario": "Disable detailed tracing, inspect old retained run and new recording preference separately, with no claim old trace was removed.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-HELP-VERSION",
+      "feature_ids": [
+        "UF-HELP-VERSION"
+      ],
+      "priority": "P1",
+      "scenario": "Web and server versions differ; show mismatch and real manual next step, not a simulated successful in-app update.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-LANGUAGE-APPEARANCE",
+      "feature_ids": [
+        "UF-LANGUAGE-APPEARANCE"
+      ],
+      "priority": "P1",
+      "scenario": "With unsaved source context open, switch to English and dark mode; the owner’s original prose and selected source must remain intact.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-ACCOUNT-DELETION",
+      "feature_ids": [
+        "UF-ACCOUNT-DELETION"
+      ],
+      "priority": "P1",
+      "scenario": "Delete an account with external work outstanding; show access revoked and unresolved cleanup separately.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-DEVICE-REPORTED-STATE",
+      "feature_ids": [
+        "UF-DEVICE-REPORTED-STATE"
+      ],
+      "priority": "P0",
+      "scenario": "A device has not contacted Central because it uses manual sync; do not label it stopped or offer a Central screen-capture switch.",
+      "platform_evidence": {
+        "web": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-001",
+      "feature_ids": [
+        "NAT-001"
+      ],
+      "priority": "P0",
+      "scenario": "Deny capture permission, save a file and note, verify both still work; start only after explicit confirmation.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-002",
+      "feature_ids": [
+        "NAT-002"
+      ],
+      "priority": "P0",
+      "scenario": "Pause sending while capture runs, then pause one source; resume sending must not enable that source.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-003",
+      "feature_ids": [
+        "NAT-003"
+      ],
+      "priority": "P0",
+      "scenario": "Select a folder offline, cancel once, then confirm; no network or broad file access before confirmation.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-004",
+      "feature_ids": [
+        "NAT-004"
+      ],
+      "priority": "P1",
+      "scenario": "Select audio preset then choose snapshot; original retention explanation must match the final choice.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-005",
+      "feature_ids": [
+        "NAT-005"
+      ],
+      "priority": "P0",
+      "scenario": "Import call recordings with speaker attribution and timezone explanation; return to edit and verify the entire description persists.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-006",
+      "feature_ids": [
+        "NAT-006"
+      ],
+      "priority": "P0",
+      "scenario": "Edit source description offline, concurrently change Central description, reconnect and select which version to keep.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "android": {
+          "status": "verified",
+          "reason": "Supported remote-conflict fixture plus offline keep-local preserves draft and holds affected files; after reconnect explicit resolution acknowledges and allows folder transmission.",
+          "evidence": [
+            "evidence/android/local/03-local-context-conflict.json",
+            "evidence/android/local/20-context-resolve-offline.json",
+            "evidence/android/local/24-queue-partial-send.json",
+            "evidence/android/local/25-context-resolved-online.json",
+            "evidence/android/local/26-folder-ack-after-context.json"
+          ]
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-007",
+      "feature_ids": [
+        "NAT-007"
+      ],
+      "priority": "P0",
+      "scenario": "Enter source attribution then rotate/reopen before saving; text and retention choices survive.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-008",
+      "feature_ids": [
+        "NAT-008"
+      ],
+      "priority": "P0",
+      "scenario": "Choose new-only and restart after partial scan; old entries must not silently become new imports.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-009",
+      "feature_ids": [
+        "NAT-009"
+      ],
+      "priority": "P0",
+      "scenario": "Choose reference and ensure no transcript or body is promised; switch to snapshot and show complete-file upload consequence.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-010",
+      "feature_ids": [
+        "NAT-010"
+      ],
+      "priority": "P1",
+      "scenario": "Exclude private subtree and oversized file; inspect skip reason without assuming deletion.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-011",
+      "feature_ids": [
+        "NAT-011"
+      ],
+      "priority": "P0",
+      "scenario": "Configure secret literal on mixed PDF+text source; preserve refusal state for unsupported redaction format.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-012",
+      "feature_ids": [
+        "NAT-012"
+      ],
+      "priority": "P0",
+      "scenario": "Temporarily detach a directory or deny access; incomplete scan must not appear as confirmed deletion.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-013",
+      "feature_ids": [
+        "NAT-013"
+      ],
+      "priority": "P0",
+      "scenario": "Pause failed folder while calendar continues; remove connection without deleting Central history.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-014",
+      "feature_ids": [
+        "NAT-014"
+      ],
+      "priority": "P0",
+      "scenario": "Deny permission, retry later, then choose hidden/empty provider and show actionable state.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-015",
+      "feature_ids": [
+        "NAT-015"
+      ],
+      "priority": "P0",
+      "scenario": "No compatible local sessions exist; report empty discovery without inventing setup success.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-016",
+      "feature_ids": [
+        "NAT-016"
+      ],
+      "priority": "P0",
+      "scenario": "Confirmed write loses response; verify saved result rather than silently creating duplicate calendar entry.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-017",
+      "feature_ids": [
+        "NAT-017"
+      ],
+      "priority": "P0",
+      "scenario": "Configure future apps default-off, allow one app, verify unknown or overlay windows do not bypass scope.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-018",
+      "feature_ids": [
+        "NAT-018"
+      ],
+      "priority": "P0",
+      "scenario": "Selected page adapter fails privacy: no screenshot fallback; unmatched app version may fallback only inside allowed scope.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-019",
+      "feature_ids": [
+        "NAT-019"
+      ],
+      "priority": "P1",
+      "scenario": "Import rule for a different app version; reject without widening authorized app scope.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-020",
+      "feature_ids": [
+        "NAT-020"
+      ],
+      "priority": "P0",
+      "scenario": "Preview and cancel; no permissions or screenshot collection initiated.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-021",
+      "feature_ids": [
+        "NAT-021"
+      ],
+      "priority": "P0",
+      "scenario": "Drag a mask then switch to numeric editing; both representations must agree and preserve values on save.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-022",
+      "feature_ids": [
+        "NAT-022"
+      ],
+      "priority": "P0",
+      "scenario": "Set allow after a record is held; old held record stays held until individually released.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-023",
+      "feature_ids": [
+        "NAT-023"
+      ],
+      "priority": "P0",
+      "scenario": "Network fails after release request; item remains visible with retry state, not false received status.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-024",
+      "feature_ids": [
+        "NAT-024"
+      ],
+      "priority": "P1",
+      "scenario": "Choose per-app latin engine, disable privacy gate; UI must not imply a searchable local OCR archive.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-025",
+      "feature_ids": [
+        "NAT-025"
+      ],
+      "priority": "P0",
+      "scenario": "Turn metadata off after pending records exist; do not promise retroactive removal or removal of source file timestamps.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-026",
+      "feature_ids": [
+        "NAT-026"
+      ],
+      "priority": "P1",
+      "scenario": "Enable notifications then exclude app; no body should be represented as still allowed.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-027",
+      "feature_ids": [
+        "NAT-027"
+      ],
+      "priority": "P1",
+      "scenario": "Disable screen capture but keep device events enabled; UI reflects distinct scope.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-028",
+      "feature_ids": [
+        "NAT-028"
+      ],
+      "priority": "P1",
+      "scenario": "Projection revoked while media active; show screen stopped and media state accurately, no all-or-nothing status.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-029",
+      "feature_ids": [
+        "NAT-029"
+      ],
+      "priority": "P0",
+      "scenario": "Lock phone after projection consent; return must offer reauthorize rather than claim ongoing capture.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-030",
+      "feature_ids": [
+        "NAT-030"
+      ],
+      "priority": "P1",
+      "scenario": "Enable launch at login and restart: no implicit collection start; previously queued data follows upload policy.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-031",
+      "feature_ids": [
+        "NAT-031"
+      ],
+      "priority": "P1",
+      "scenario": "Select aggressive mode; explanation must not claim lossless capture or reused OCR for all repeats.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-032",
+      "feature_ids": [
+        "NAT-032"
+      ],
+      "priority": "P2",
+      "scenario": "Adjust quality then leave preview without settings save; actual capture configuration remains unchanged.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-033",
+      "feature_ids": [
+        "NAT-033"
+      ],
+      "priority": "P0",
+      "scenario": "Deny permission and return; stay in original task with scope intact and accurate missing permission state.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-034",
+      "feature_ids": [
+        "NAT-034"
+      ],
+      "priority": "P1",
+      "scenario": "System disallows direct settings link; app retains task and gives fallback instead of losing setup.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-035",
+      "feature_ids": [
+        "NAT-035"
+      ],
+      "priority": "P0",
+      "scenario": "Paste invitation while offline; preview works without network; expired or other-account invitation cannot silently redirect queue.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-036",
+      "feature_ids": [
+        "NAT-036"
+      ],
+      "priority": "P0",
+      "scenario": "Lose final pairing receipt and reopen; recover same request/device rather than issue new identity or erase offline queue.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-037",
+      "feature_ids": [
+        "NAT-037"
+      ],
+      "priority": "P0",
+      "scenario": "Change server with pending old-bound records; preserve ownership and prevent accidental retargeting.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-038",
+      "feature_ids": [
+        "NAT-038"
+      ],
+      "priority": "P0",
+      "scenario": "Device connected but account signed out: save locally, show Ask login, preserve prior question after return.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-039",
+      "feature_ids": [
+        "NAT-039"
+      ],
+      "priority": "P0",
+      "scenario": "Choose manual, save note and add source; neither uploads until send-now; batch size hidden when irrelevant.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-040",
+      "feature_ids": [
+        "NAT-040"
+      ],
+      "priority": "P0",
+      "scenario": "Tap send-now on mobile data with Wi-Fi-only enabled; show waiting for allowed network, not failed/lost data.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-041",
+      "feature_ids": [
+        "NAT-041"
+      ],
+      "priority": "P0",
+      "scenario": "One corrupt/unreadable queue entry causes error, not empty queue success.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-042",
+      "feature_ids": [
+        "NAT-042"
+      ],
+      "priority": "P0",
+      "scenario": "Receipt says received while OCR queued; content detail must preserve separate processing state.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-043",
+      "feature_ids": [
+        "NAT-043"
+      ],
+      "priority": "P0",
+      "scenario": "Central has deleted item; reupload must keep local copy with conflict and not resurrect it.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-044",
+      "feature_ids": [
+        "NAT-044"
+      ],
+      "priority": "P0",
+      "scenario": "One file conflicts and another uploads: show separate outcomes and retain conflicted original.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-045",
+      "feature_ids": [
+        "NAT-045"
+      ],
+      "priority": "P0",
+      "scenario": "Switch local to Central while signed out; retain browse context and offer account sign-in instead of empty archive.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-046",
+      "feature_ids": [
+        "NAT-046"
+      ],
+      "priority": "P0",
+      "scenario": "Open a large pending file offline: paginate available body or export local original; do not label it Central-searchable.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-047",
+      "feature_ids": [
+        "NAT-047"
+      ],
+      "priority": "P0",
+      "scenario": "Interrupt after local queue commit but before schedule success; retry preserves original submission identity and text.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "partial",
+          "reason": "Failure/retry/idempotent repeated save are exercised; the exact post-commit scheduling interruption described by the contract was not simulated.",
+          "evidence": [
+            "evidence/android/local/13-note-failed.json",
+            "evidence/android/local/16-note-recovered.json",
+            "evidence/android/local/17-note-repeat-save.json",
+            "evidence/android/local/18-note-original.json"
+          ]
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-048",
+      "feature_ids": [
+        "NAT-048"
+      ],
+      "priority": "P1",
+      "scenario": "Tap attachments while disconnected; explain Central requirement without losing local note draft.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "verified",
+          "reason": "Offline attachment handoff explains Central requirement and preserves the native text draft.",
+          "evidence": [
+            "evidence/android/local/10-offline-attachment-handoff.json",
+            "evidence/android/local/12-note-failure-controls.json"
+          ]
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-049",
+      "feature_ids": [
+        "NAT-049"
+      ],
+      "priority": "P0",
+      "scenario": "Set retention zero with one pending record: only confirmed copy eligible for cleanup.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-050",
+      "feature_ids": [
+        "NAT-050"
+      ],
+      "priority": "P0",
+      "scenario": "Remove external medium during migration; no success message until verified, preserve recoverable original.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-051",
+      "feature_ids": [
+        "NAT-051"
+      ],
+      "priority": "P1",
+      "scenario": "A statistics read fails: show unknown/incomplete, never zero or fabricated focus time.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-052",
+      "feature_ids": [
+        "NAT-052"
+      ],
+      "priority": "P1",
+      "scenario": "Cancel scan halfway; show incomplete result, not full archive deduped.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-053",
+      "feature_ids": [
+        "NAT-053"
+      ],
+      "priority": "P0",
+      "scenario": "Restore pending candidates while sync manual; original local processing resumes but does not ignore sync policy.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-054",
+      "feature_ids": [
+        "NAT-054"
+      ],
+      "priority": "P0",
+      "scenario": "Import same backup twice after partial failure; original records remain and no duplicates or automatic upload.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-055",
+      "feature_ids": [
+        "NAT-055"
+      ],
+      "priority": "P1",
+      "scenario": "Paired collector without account session requests export; request account login, not substitute device-only data.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-056",
+      "feature_ids": [
+        "NAT-056"
+      ],
+      "priority": "P1",
+      "scenario": "Turn off diagnostics, perform note upload: operation statistics still present without captured content in support bundle.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-057",
+      "feature_ids": [
+        "NAT-057"
+      ],
+      "priority": "P2",
+      "scenario": "Switch language with large font; no clipped essential labels or hidden back/save actions.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-058",
+      "feature_ids": [
+        "NAT-058"
+      ],
+      "priority": "P1",
+      "scenario": "Cancel download or reject system installation: preserve current app/data and show honest state.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-059",
+      "feature_ids": [
+        "NAT-059"
+      ],
+      "priority": "P2",
+      "scenario": "No browser available; show recovery instead of silent button.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "journey_id": "J-NAT-060",
+      "feature_ids": [
+        "NAT-060"
+      ],
+      "priority": "P0",
+      "scenario": "From Ask open connection, edit settings, back: choose continue/discard and return to Ask rather than unrelated overview.",
+      "platform_evidence": {
+        "web": {
+          "status": "not_applicable",
+          "reason": "No applicable feature on this platform.",
+          "evidence": []
+        },
+        "mac": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        },
+        "android": {
+          "status": "untested",
+          "reason": "Not completed to the required scenario in this round.",
+          "evidence": []
+        }
+      }
+    }
+  ]
+}

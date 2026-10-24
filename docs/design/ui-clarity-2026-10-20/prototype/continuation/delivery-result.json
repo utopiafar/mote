@@ -1,0 +1,9 @@
+{
+  "archive": "docs/design/ui-clarity-2026-10-20/prototype/continuation/dist/mote-ui-final-evidence.zip",
+  "bytes": 49627365,
+  "sha256": "cfb538a8340118de4c7df7ca5541555dd9597c347b2a87f2264101a1dd8389b2",
+  "archive_entries": 1194,
+  "manifest_entries": 1192,
+  "final_candidate_sha256": "8cabb1d2c2914170a5b00dad56a7814bbb21e28fead38ecb59f894658cbcb7bf",
+  "scope": "Downloadable local evidence package. Not uploaded as a compressed archive to GitHub."
+}

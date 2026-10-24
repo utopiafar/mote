@@ -1,0 +1,41 @@
+{
+  "round": "r20",
+  "began": "2026-10-21T04:35:16.155Z",
+  "ended": "2026-10-21T04:39:18.843Z",
+  "browser": "133.0.6943.16",
+  "hashes_before": {
+    "web": "225a723e4f9df6c348f0e72fdc1b7f0d2116e009ea634cd264dd179037333c65",
+    "android": "828b76a01226ae036e7484fcf99cae4482bdb8be3efb3a9c46581ade6d56caa6",
+    "mac": "0bd4fe3d76af1e189d562c36aa47b7eb5f74458dadd2083d03036f609e7f0e6e"
+  },
+  "hashes_after": {
+    "web": "225a723e4f9df6c348f0e72fdc1b7f0d2116e009ea634cd264dd179037333c65",
+    "mac": "0bd4fe3d76af1e189d562c36aa47b7eb5f74458dadd2083d03036f609e7f0e6e",
+    "android": "828b76a01226ae036e7484fcf99cae4482bdb8be3efb3a9c46581ade6d56caa6"
+  },
+  "viewports": {
+    "web": {
+      "width": 1440,
+      "height": 1000
+    },
+    "mac": {
+      "width": 1280,
+      "height": 900
+    },
+    "android": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "action_counts": {
+    "web": 20,
+    "mac": 20,
+    "android": 23
+  },
+  "browser_errors": {
+    "web": [],
+    "mac": [],
+    "android": []
+  },
+  "harness_issue": "Initial hash variable collided with Node global Web Crypto before any candidate open; corrected to hashApi."
+}

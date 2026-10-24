@@ -1,0 +1,319 @@
+{
+  "url": "https://mote-prototype.invalid/#/settings/agent-events",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R34\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n设置\n工作台在线\n随手记\n添加内容\n设置\n\n调整服务与资料管理方式，或管理当前登录。\n\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观\n实际输入与读取轨迹\n\n只查看已保留的输入与工具返回。\n\n当前账号的后续输入追踪已关闭。已保留轨迹仍可阅读，旧运行不会自动补录。管理个人追踪偏好\n可访问目录与首次预览\n以下是预先保留的合成输入记录，不代表原型发生了模型调用。缺失、截断或过期的记录不能由当前目录、记忆或预览补造。\n保留的运行记录\n全部保留事件\n2026-10-20T09:25:00Z · trace-memory-study-body\n2026-10-20T09:25:00Z · trace-memory-study-memory\n2026-10-20T09:25:00Z · trace-file-complete-published\n2026-10-20T09:25:00Z · trace-demo-partial\n或输入运行 ID\n打开实际轨迹\n刷新保留记录\n当前读取的运行\nr34-review-unrecorded-run\n保留模型 / 时间\n没有保留记录\n没有此运行的详细记录。需要事先启用详细 Agent 记录；缺失、截断或过期内容不能从当前记忆补造。\n返回第一页\n上一页内容\n1 / 1\n下一页内容",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "账号与设备",
+      "label": "账号与设备",
+      "action": "go",
+      "page": "settings/account",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "模型与服务",
+      "label": "模型与服务",
+      "action": "go",
+      "page": "settings/models",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "采集与隐私",
+      "label": "采集与隐私",
+      "action": "go",
+      "page": "settings/privacy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "自动记忆与插件",
+      "label": "自动记忆与插件",
+      "action": "go",
+      "page": "settings/plugins",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "存储与备份",
+      "label": "存储与备份",
+      "action": "go",
+      "page": "settings/storage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "对外授权",
+      "label": "对外授权",
+      "action": "go",
+      "page": "settings/access",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "用量与费用",
+      "label": "用量与费用",
+      "action": "go",
+      "page": "settings/usage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "帮助与诊断",
+      "label": "帮助与诊断",
+      "action": "go",
+      "page": "settings/diagnostics",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "语言与外观",
+      "label": "语言与外观",
+      "action": "go",
+      "page": "settings/appearance",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "管理个人追踪偏好",
+      "label": "管理个人追踪偏好",
+      "action": "go",
+      "page": "settings/diagnostic-preferences",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "可访问目录与首次预览",
+      "label": "可访问目录与首次预览",
+      "action": "go",
+      "page": "settings/agent-scope",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs32-trace-run",
+      "type": "select-one",
+      "text": "全部保留事件\n2026-10-20T09:25:00Z · trace-memory-study-body\n2026-10-20T09:25:00Z · trace-memory-study-memory\n2026-10-20T09:25:00Z · trace-file-complete-published\n2026-10-20T09:25:00Z · trace-demo-partial",
+      "label": "保留的运行记录\n全部保留事件\n2026-10-20T09:25:00Z · trace-memory-study-body\n2026-10-20T09:25:00Z · trace-memory-study-memory\n2026-10-20T09:25:00Z · trace-file-complete-published\n2026-10-20T09:25:00Z · trace-demo-partial",
+      "value": "trace-demo-partial",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs32-trace-requested",
+      "type": "text",
+      "text": "",
+      "label": "或输入运行 ID",
+      "value": "r34-review-unrecorded-run",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开实际轨迹",
+      "label": "打开实际轨迹",
+      "action": "cs-trace-open",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新保留记录",
+      "label": "刷新保留记录",
+      "action": "cs-trace-refresh",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回第一页",
+      "label": "返回第一页",
+      "action": "cs-trace-first",
+      "disabled": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "上一页内容",
+      "label": "上一页内容",
+      "action": "cs-trace-page",
+      "disabled": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "下一页内容",
+      "label": "下一页内容",
+      "action": "cs-trace-page",
+      "disabled": true
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设置"
+    },
+    {
+      "level": "H2",
+      "text": "实际输入与读取轨迹"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

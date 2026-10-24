@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-10-21T04:36:04.824Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "225a723e4f9df6c348f0e72fdc1b7f0d2116e009ea634cd264dd179037333c65",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "answers": {
+    "purpose": "个人资料库，保存文件、想法和设备记录，以后找回、提问并沿出处核对。",
+    "input": "文件、文字想法、设备记录、以后可连接的来源。",
+    "first_action": "写下第一条记录",
+    "expected_result": "先保存一条合成记录，再到资料库核对原文。",
+    "setup": "此刻看起来可以先写，不需先连接来源；具体保存位置尚未说明。",
+    "unclear": "个人资料与记忆库中的记忆尚未解释，但不妨碍第一步。",
+    "visual": "主文案和深色写入按钮突出，示例说明用途；来源卡片在其下。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed evaluator; read baseline inventory and independent R15/R19 reports."
+}

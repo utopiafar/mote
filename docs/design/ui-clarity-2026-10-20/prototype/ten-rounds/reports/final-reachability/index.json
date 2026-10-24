@@ -1,0 +1,33 @@
+{
+  "round": 29,
+  "created_at": "2026-10-21T05:37:21.940Z",
+  "scope": "Author verification of 78 directory entries and visible destinations on each HTML surface. Records actual visible DOM and selected screenshots.",
+  "platforms": [
+    {
+      "surface": "web",
+      "candidate_sha256": "058c5a9227df5acbe94ac54ed5b95d37cff54cffff0f3248aaf49e1f2000db5e",
+      "total": 78,
+      "reachable": 78,
+      "browser_errors": [],
+      "report": "web/feature-reachability.json"
+    },
+    {
+      "surface": "mac",
+      "candidate_sha256": "ca9330a6e66cad8a04a5bda6393632f7a578a6031afe31359f620078c7c706a8",
+      "total": 78,
+      "reachable": 78,
+      "browser_errors": [],
+      "report": "mac/feature-reachability.json"
+    },
+    {
+      "surface": "android",
+      "candidate_sha256": "825dd27870384f721a4ab01a75b6c2134225781d3fa06272cf6518b55b447a15",
+      "total": 78,
+      "reachable": 78,
+      "browser_errors": [],
+      "report": "android/feature-reachability.json"
+    }
+  ],
+  "total": 234,
+  "reachable": 234
+}

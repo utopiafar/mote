@@ -1,0 +1,248 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/import/details/focus-import-1792722271054",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n资料库\n/\n导入资料\n工作台在线\n随手记\n添加内容\n导入详情\n\n北岸研究 · mac\n\n返回导入记录\n记录已保存\n3 个文件\n原件已归档\n理解与核对\n记录可阅读\n记忆单独整理\n\n原件和正文已保留；索引和记忆的进度单独显示。\n\n阅读导入结果\n本次导入说明\n\n格式：聊天导出与我的笔记混合，标题为“北岸研究”。\n作者：我、供应商和 AI。供应商说“我承诺周五交付”，这不是我的承诺；AI 的建议也不是我的观点。\n时间：2026-10-19 09:30，Asia/Shanghai。\n背景：比较三份方案，保留原作者与引用关系。\n更正：录音里的“我”指供应商，不是账户持有人。\n\n说明只在声明的范围内生效，第三方和 AI 引文不会整批归为你的表达。\n\n原件与文件解析情况\n这次导入的记录\n解析、图片与处理进度\n更多操作\n预览不同处理状态",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "mac",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "empty",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\n收集状态",
+      "label": "Mote 菜单栏收集状态",
+      "action": "native-menu-toggle",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "⌘ K",
+      "label": "搜索资料，快捷键 Command K",
+      "action": "native-search",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "写随手记\n⌘ N",
+      "label": "写随手记\n⌘ N",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "同步文件夹",
+      "label": "同步文件夹",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回导入记录",
+      "label": "返回导入记录",
+      "action": "go",
+      "page": "imports",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "阅读导入结果",
+      "label": "阅读导入结果",
+      "action": "go",
+      "page": "material/focus-material-focus-import-1792722271054-0",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "原件与文件解析情况",
+      "label": "原件与文件解析情况",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "这次导入的记录",
+      "label": "这次导入的记录",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "解析、图片与处理进度",
+      "label": "解析、图片与处理进度",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "更多操作",
+      "label": "更多操作",
+      "expanded": false
+    },
+    {
+      "tag": "summary",
+      "text": "预览不同处理状态",
+      "label": "预览不同处理状态",
+      "expanded": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "导入详情"
+    },
+    {
+      "level": "H2",
+      "text": "记录已保存"
+    },
+    {
+      "level": "H3",
+      "text": "本次导入说明"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

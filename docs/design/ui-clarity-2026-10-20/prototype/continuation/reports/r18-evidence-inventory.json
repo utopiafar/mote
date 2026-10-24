@@ -1,0 +1,110 @@
+{
+  "candidate_sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+  "scope": "Index of fresh evidence files for R18; historical R15 and author candidates are separate. File byte hashes do not imply semantic acceptance.",
+  "indexes": [
+    {
+      "path": "evidence/r18/source/index.json",
+      "sha256": "acc5b9fd803033788c8c4163c9cdc5c29fbe6d71fb1b8094721dc2f24105ea77",
+      "bytes": 1812,
+      "keys": [
+        "scope",
+        "journeys"
+      ]
+    },
+    {
+      "path": "evidence/r18/focused/index.json",
+      "sha256": "9b8f961be2c94a12f0b326f9e6acde13d07f928ded2e00169bfb626a0b7f1aa7",
+      "bytes": 1845,
+      "keys": [
+        "candidate",
+        "sha256",
+        "created_at",
+        "browser",
+        "scope",
+        "scenarios",
+        "all_passed"
+      ]
+    },
+    {
+      "path": "evidence/r18/memory-context/index.json",
+      "sha256": "a75383aa89f2ce1f096352cb0ec2fe2dd4919e4fba48aa3f7cfd66a3461304f5",
+      "bytes": 731,
+      "keys": [
+        "candidate",
+        "sha256",
+        "browser",
+        "scope",
+        "created_at",
+        "scenarios",
+        "all_passed"
+      ]
+    },
+    {
+      "path": "evidence/r18/memory-notes-account/index.json",
+      "sha256": "8cbc0f3f791673e2fa9bfd8b5ba13f29aea64589f85ca99153799080abc090a6",
+      "bytes": 621,
+      "keys": [
+        "scope",
+        "candidate",
+        "sha256",
+        "browser",
+        "created_at",
+        "scenarios",
+        "all_passed"
+      ]
+    },
+    {
+      "path": "evidence/r18/settings/settings-r18-dom.json",
+      "sha256": "1f93b4bedbbd829e8b11d1e4d519cd7cf25f33ecc838ca4f0bf08f27625d0fa3",
+      "bytes": 2668,
+      "keys": [
+        "input",
+        "sha256",
+        "scope",
+        "checks",
+        "errors",
+        "status"
+      ]
+    },
+    {
+      "path": "evidence/r18/settings/capture-summary.json",
+      "sha256": "ff91713024ef53c30eea5927c3ac8650af38bbf99d97c9cdd536de7b0887915c",
+      "bytes": 3110,
+      "keys": [
+        "input",
+        "sha256",
+        "scope",
+        "records",
+        "errors",
+        "status"
+      ]
+    },
+    {
+      "path": "evidence/r18/visuals/index.json",
+      "sha256": "02480fd32e5943dcc79495a96ebb3da2e541456e7c18b448cf0133614d99eb99",
+      "bytes": 7057,
+      "keys": [
+        "candidate",
+        "sha256",
+        "created_at",
+        "browser",
+        "scope",
+        "cases"
+      ]
+    },
+    {
+      "path": "evidence/r18/comparison/comparison-smoke.json",
+      "sha256": "1dea9ec877e1a969a5cbe32543d2b4b9412ff2a5b3784c6dcf61a7debc40815f",
+      "bytes": 6223,
+      "keys": [
+        "scope",
+        "browser",
+        "viewer_sha256",
+        "candidates",
+        "records",
+        "errors",
+        "status"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "schema": "mote-ui-offline-context-v1",
+  "copied_at_utc": "2026-10-21T05:07:50.734950+00:00",
+  "source_repository": "https://github.com/utopiafar/mote",
+  "inventory_code_baseline": "2c78ca8d52a7d17fae20962cf68d09a717ffc73a",
+  "canonical_documents": "docs/design/ui-clarity-2026-10-20/feature-inventory.md and feature-manifest.json",
+  "files": [
+    {
+      "path": "context/feature-inventory.md",
+      "canonical_repository_path": "docs/design/ui-clarity-2026-10-20/feature-inventory.md",
+      "bytes": 25422,
+      "sha256": "022edb4c411d95448fc645c27dbb4c4030878995250bd1c18638b36d0bc837f4",
+      "byte_exact_copy": true,
+      "direct_local_markdown_links": []
+    },
+    {
+      "path": "context/feature-manifest.json",
+      "canonical_repository_path": "docs/design/ui-clarity-2026-10-20/feature-manifest.json",
+      "bytes": 102522,
+      "sha256": "17519e82e200a06692fafee7d08fcb5f4facc5029bc0acbaca6858ddb9866aef",
+      "byte_exact_copy": true,
+      "direct_local_markdown_links": []
+    }
+  ]
+}

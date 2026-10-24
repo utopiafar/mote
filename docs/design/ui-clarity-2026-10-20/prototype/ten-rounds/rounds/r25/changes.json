@@ -1,0 +1,16 @@
+{
+  "round": 25,
+  "parent": "R24",
+  "purpose": "把已有来源的日常管理放在前面，让原文依据包含可见时间。",
+  "input_evaluation": "rounds/r24/reports/independent-evaluation.json",
+  "additional_input": ["rounds/r23/reports/independent-evaluation.json", "reports/fresh-mac-r23/report.md"],
+  "input_findings": ["R23-A 已连接来源仍先展示重复说明，管理操作在下方", "独立 Mac 首访：原文窗口说明包含时间，但随手记没有显示时间"],
+  "changes": [
+    "已有 Mac 与 Android 来源先展示当前接收或暂停状态、已保存范围和管理操作。",
+    "重复连接说明折叠为可展开帮助，首次连接仍完整展示；未授予的屏幕权限保持可见。",
+    "随手记保留本次模拟保存时间，原文窗口展示来源、记录或保存时间、保存端。",
+    "来源管理显示已保存范围，和仍可修改的表单值分开。"
+  ],
+  "evaluation_focus": ["Android 首屏能否直接管理已有来源", "暂停与恢复后状态连贯", "原文内容、来源与时间核对", "三端主要旅程与权限恢复"],
+  "scope": "HTML UI simulation with synthetic data"
+}

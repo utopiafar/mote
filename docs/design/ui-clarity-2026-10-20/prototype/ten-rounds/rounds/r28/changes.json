@@ -1,0 +1,16 @@
+{
+  "round": 28,
+  "parent": "R27",
+  "purpose": "让阶段回顾的纳入日期可核对，并把小屏首次目录选择提前。",
+  "input_evaluation": "rounds/r27/reports/independent-evaluation.json",
+  "additional_input": ["reports/fresh-android-advanced-r25/report.md", "rounds/r26/author/language-theme/android-folder.png"],
+  "input_findings": ["独立 Android 首访：10 月 14–20 日回顾含 10 月 22 日事件，但原文只显示事件时间，无法核对保存日期", "360×740 英文手机视口中首次文件夹选择按钮在底栏附近，需要滚动才能完整看到"],
+  "changes": [
+    "回顾依据逐项显示存入资料库日期，日程同时显示事件时间，并说明纳入使用存入日期。",
+    "资料详情与原文窗口分别标明保存日期和事件或记录时间。",
+    "新建随手记显式记录存入日期，使显示日期与回顾筛选依据一致。",
+    "Android 首次连接把目录选择器放在手工路径之前，突出合适的首个动作。"
+  ],
+  "evaluation_focus": ["周回顾与日程原文能否核对同一保存日期", "保存日期和事件时间的区分", "小屏英文首次目录选择", "三端主要旅程及 R27 修复保持"],
+  "scope": "HTML UI simulation with synthetic data"
+}

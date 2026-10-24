@@ -1,0 +1,278 @@
+{
+  "schema_version": "1.0",
+  "round": "R22",
+  "evaluator": "/root/r20_29_independent_evaluator",
+  "rubric": "../../../rubric-independent.json",
+  "started_at_utc": "2026-10-21T04:48:25.003Z",
+  "finished_at_utc": "2026-10-21T04:50:32.266Z",
+  "report_written_at_utc": "2026-10-21T04:52:45.935905+00:00",
+  "candidate_sha256": {
+    "mac": "04da8d84e9337654220cf625c71946d5c9ed12e584cdb75aa44f8f0f7a0f977c",
+    "web": "9c758c66a07fbedccee4f8b7ed648159bf9b742787da8827ca3cd94b67337433",
+    "android": "d636f0c97c917a98eed90cc049e6008f6e48cc5ea2653bd788840ede87cd9d08"
+  },
+  "hashes_after": {
+    "web": "9c758c66a07fbedccee4f8b7ed648159bf9b742787da8827ca3cd94b67337433",
+    "mac": "04da8d84e9337654220cf625c71946d5c9ed12e584cdb75aa44f8f0f7a0f977c",
+    "android": "d636f0c97c917a98eed90cc049e6008f6e48cc5ea2653bd788840ede87cd9d08"
+  },
+  "candidate_unchanged": true,
+  "browser": "133.0.6943.16",
+  "viewports": {
+    "web": {
+      "width": 1440,
+      "height": 1000
+    },
+    "mac": {
+      "width": 1280,
+      "height": 900
+    },
+    "android": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "weights": {
+    "design": 15,
+    "originality": 5,
+    "craft": 10,
+    "functionality": 25,
+    "clarity": 20,
+    "new_user_friendliness": 25
+  },
+  "scope": "Current-round HTML simulations, synthetic data, visible controls and rendered screenshots. Informed iterative evaluator; no candidate implementation reads.",
+  "platforms": {
+    "web": {
+      "candidate_sha256": "9c758c66a07fbedccee4f8b7ed648159bf9b742787da8827ca3cd94b67337433",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3,
+        "new_user_friendliness": 3.8
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 3
+      },
+      "weighted_total": 80.0,
+      "critical_gate": "pass",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "首屏与当前任务布局清楚；Android源管理完成信息仍重复。",
+        "originality": "个人资料、来源与原文核对的组织一致，保持3。",
+        "craft": "实际点击和返回可靠，无旧提示覆盖；手机来源页仍有可缩减冗余。",
+        "functionality": "本轮核心路径完整；没有扩大成真实采集/同步。",
+        "clarity": "示例回答、原文来源、权限职责与结果范围可辨认。",
+        "new_user_friendliness": "用途与第一步明确；统一完成反馈支持首值核对。Web/Android新增设置路径补足范围解释。"
+      },
+      "findings": [],
+      "actions_file": "evidence/independent/web/actions.json",
+      "first_look_file": "evidence/independent/web/first-look.json",
+      "screenshots": [
+        "evidence/independent/web/00-first-look.png",
+        "evidence/independent/web/01-note-editor.png",
+        "evidence/independent/web/03-note-saved.png",
+        "evidence/independent/web/04-library-after-save.png",
+        "evidence/independent/web/06-verified-note.png",
+        "evidence/independent/web/07-ask-scoped.png",
+        "evidence/independent/web/09-answer.png",
+        "evidence/independent/web/10-citation.png",
+        "evidence/independent/web/11-original.png",
+        "evidence/independent/web/13-answer-returned.png",
+        "evidence/independent/web/14-sources.png",
+        "evidence/independent/web/15-source-catalog.png",
+        "evidence/independent/web/16-screen-setup.png",
+        "evidence/independent/web/17-device-connect.png",
+        "evidence/independent/web/18-device-confirm.png",
+        "evidence/independent/web/19-device-state.png",
+        "evidence/independent/web/21-connect-cancelled.png",
+        "evidence/independent/web/23-memory-discovery.png"
+      ],
+      "actual_action_records": 23,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "permission_setup": "pass_device_handoff_and_extra_connection_cancel",
+        "advanced_discovery": "pass_memory_page_opened"
+      },
+      "browser_errors": []
+    },
+    "mac": {
+      "candidate_sha256": "04da8d84e9337654220cf625c71946d5c9ed12e584cdb75aa44f8f0f7a0f977c",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3,
+        "new_user_friendliness": 3.6
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 3,
+        "first_value_verify": 4,
+        "progressive_disclosure": 3
+      },
+      "weighted_total": 78.75,
+      "critical_gate": "pass",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "首屏与当前任务布局清楚；Android源管理完成信息仍重复。",
+        "originality": "个人资料、来源与原文核对的组织一致，保持3。",
+        "craft": "实际点击和返回可靠，无旧提示覆盖；手机来源页仍有可缩减冗余。",
+        "functionality": "本轮核心路径完整；没有扩大成真实采集/同步。",
+        "clarity": "示例回答、原文来源、权限职责与结果范围可辨认。",
+        "new_user_friendliness": "用途与第一步明确；统一完成反馈支持首值核对。Web/Android新增设置路径补足范围解释。"
+      },
+      "findings": [],
+      "actions_file": "evidence/independent/mac/actions.json",
+      "first_look_file": "evidence/independent/mac/first-look.json",
+      "screenshots": [
+        "evidence/independent/mac/00-first-look.png",
+        "evidence/independent/mac/01-note-editor.png",
+        "evidence/independent/mac/03-note-saved.png",
+        "evidence/independent/mac/04-library-after-save.png",
+        "evidence/independent/mac/06-verified-note.png",
+        "evidence/independent/mac/07-ask-scoped.png",
+        "evidence/independent/mac/09-answer.png",
+        "evidence/independent/mac/10-citation.png",
+        "evidence/independent/mac/11-original.png",
+        "evidence/independent/mac/13-answer-returned.png",
+        "evidence/independent/mac/14-sources.png",
+        "evidence/independent/mac/15-source-catalog.png",
+        "evidence/independent/mac/16-screen-setup.png",
+        "evidence/independent/mac/17-permission-denied.png",
+        "evidence/independent/mac/18-setup-cancelled.png",
+        "evidence/independent/mac/20-memory-discovery.png"
+      ],
+      "actual_action_records": 20,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "permission_setup": "pass_denial_and_cancel",
+        "advanced_discovery": "pass_memory_page_opened"
+      },
+      "browser_errors": []
+    },
+    "android": {
+      "candidate_sha256": "d636f0c97c917a98eed90cc049e6008f6e48cc5ea2653bd788840ede87cd9d08",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3,
+        "new_user_friendliness": 3.8
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 3
+      },
+      "weighted_total": 80.0,
+      "critical_gate": "pass",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "首屏与当前任务布局清楚；Android源管理完成信息仍重复。",
+        "originality": "个人资料、来源与原文核对的组织一致，保持3。",
+        "craft": "实际点击和返回可靠，无旧提示覆盖；手机来源页仍有可缩减冗余。",
+        "functionality": "本轮核心路径完整；没有扩大成真实采集/同步。",
+        "clarity": "示例回答、原文来源、权限职责与结果范围可辨认。",
+        "new_user_friendliness": "用途与第一步明确；统一完成反馈支持首值核对。Web/Android新增设置路径补足范围解释。"
+      },
+      "findings": [
+        "R22-A",
+        "R22-B"
+      ],
+      "actions_file": "evidence/independent/android/actions.json",
+      "first_look_file": "evidence/independent/android/first-look.json",
+      "screenshots": [
+        "evidence/independent/android/00-first-look.png",
+        "evidence/independent/android/01-note-editor.png",
+        "evidence/independent/android/03-note-saved.png",
+        "evidence/independent/android/04-library-after-save.png",
+        "evidence/independent/android/06-verified-note.png",
+        "evidence/independent/android/07-ask-scoped.png",
+        "evidence/independent/android/09-answer.png",
+        "evidence/independent/android/10-citation.png",
+        "evidence/independent/android/11-original.png",
+        "evidence/independent/android/13-answer-returned.png",
+        "evidence/independent/android/14-sources.png",
+        "evidence/independent/android/15-source-catalog.png",
+        "evidence/independent/android/16-screen-setup.png",
+        "evidence/independent/android/17-permission-denied.png",
+        "evidence/independent/android/18-setup-cancelled.png",
+        "evidence/independent/android/19-folder-setup.png",
+        "evidence/independent/android/20-folder-picker.png",
+        "evidence/independent/android/21-folder-selected.png",
+        "evidence/independent/android/23-folder-connected.png",
+        "evidence/independent/android/24-folder-paused.png",
+        "evidence/independent/android/25-folder-source-row.png",
+        "evidence/independent/android/27-memory-discovery.png"
+      ],
+      "actual_action_records": 27,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "permission_setup": "pass_denial_and_cancel",
+        "advanced_discovery": "pass_memory_page_opened",
+        "changed_folder_path": "pass_new_picker_named_source_pause_and_list_state"
+      },
+      "browser_errors": []
+    }
+  },
+  "findings": [
+    {
+      "id": "R22-A",
+      "severity": "minor",
+      "platforms": [
+        "android"
+      ],
+      "observation": "已暂停一个文件夹后，来源首屏的文件夹卡显示“已暂停接收”，主要动作仍是“连接一个文件夹”；该已连接来源的名称和管理动作位于下方。",
+      "impact": "想管理刚连接来源的人需要继续下滚或理解总览卡与具体来源行的区别。",
+      "evidence": [
+        "evidence/independent/android/25-folder-source-row.png",
+        "evidence/independent/android/25-folder-source-row.dom.json"
+      ]
+    },
+    {
+      "id": "R22-B",
+      "severity": "minor",
+      "platforms": [
+        "android"
+      ],
+      "observation": "来源连接完成后，顶部提示、设置已保存条、正在接收条、正在管理的来源块连续出现，实际目录与管理动作被推到下方。",
+      "impact": "第一条来源的确认信息重复，占用窄屏可用空间。",
+      "evidence": [
+        "evidence/independent/android/23-folder-connected.png"
+      ]
+    }
+  ],
+  "resolved_from_previous": [
+    "R21-A: Web有明确无设备路径和Mac示例设备目标，权限转至设备端。",
+    "R21-B: 首次笔记保存合并为单个结果区并提供打开/提问。"
+  ],
+  "actions_and_screens": "evidence/independent/",
+  "unverified": [
+    "真实后端/模型",
+    "原生权限/采集",
+    "上传/外部授权/同步",
+    "跨刷新持久化",
+    "未执行分支与全部78单元",
+    "键盘/辅助技术完整检查"
+  ],
+  "next_priority": [
+    "Android可把已连接来源名称与管理入口带到本机总览卡，并合并来源完成后的重复状态提示。"
+  ],
+  "equal_platform_mean": 79.58333333333333,
+  "minimum_platform_score": 78.75,
+  "critical_gate": "pass"
+}

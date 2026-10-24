@@ -1,0 +1,329 @@
+{
+  "schema_version": "1.0",
+  "round": "R28",
+  "evaluator": "/root/r20_29_independent_evaluator",
+  "rubric": "../../../rubric-independent.json",
+  "started_at_utc": "2026-10-21T05:22:21.875Z",
+  "finished_at_utc": "2026-10-21T05:27:16.803Z",
+  "report_written_at_utc": "2026-10-21T05:28:35.638069+00:00",
+  "candidate_sha256": {
+    "mac": "af1556f96771d4b96354e4241b0525030d7d58946a8d2ad113c824f1088d8db5",
+    "web": "0df7726986c38f42e3781c3a69c8ff931c482eb1d4cf65025d73b49351780e52",
+    "android": "75352e8a07c6ae20f5bfd7dfd784b654a93306f46cfec0ba53a4b5bb90b7add1"
+  },
+  "hashes_after": {
+    "web": "0df7726986c38f42e3781c3a69c8ff931c482eb1d4cf65025d73b49351780e52",
+    "mac": "af1556f96771d4b96354e4241b0525030d7d58946a8d2ad113c824f1088d8db5",
+    "android": "75352e8a07c6ae20f5bfd7dfd784b654a93306f46cfec0ba53a4b5bb90b7add1"
+  },
+  "candidate_unchanged": true,
+  "browser": "133.0.6943.16",
+  "viewports": {
+    "web": {
+      "width": 1440,
+      "height": 1000
+    },
+    "mac": {
+      "width": 1280,
+      "height": 900
+    },
+    "android": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "weights": {
+    "design": 15,
+    "originality": 5,
+    "craft": 10,
+    "functionality": 25,
+    "clarity": 20,
+    "new_user_friendliness": 25
+  },
+  "scope": "Current-round HTML simulations, synthetic data, visible controls and rendered screenshots. Informed iterative evaluator; no candidate implementation reads.",
+  "platforms": {
+    "web": {
+      "candidate_sha256": "0df7726986c38f42e3781c3a69c8ff931c482eb1d4cf65025d73b49351780e52",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3,
+        "new_user_friendliness": 3.8
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 3
+      },
+      "weighted_total": 80.0,
+      "critical_gate": "pass",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "用途、首次写入和核对路径明确；Web已有来源操作仍在长表单后。",
+        "originality": "资料、来源和证据的组织延续一致产品身份；本轮没有足够新的独创性证据改变评分。",
+        "craft": "当前视口下关键操作、日期行、原文弹窗和返回状态可见；未做全面响应式或辅助技术检查。",
+        "functionality": "本轮重新完成保存/找回、限定问答/原文往返、来源保存/暂停，以及回顾证据→详情→原文→报告往返。",
+        "clarity": "回顾按存入日期纳入，日历事件时间独立标注；报告、详情、原文数值一致。整体仍按3分校准，不由单一新增分支直接升至4。",
+        "new_user_friendliness": "首屏用途与首步清楚，写入后能找回和核对；来源目标明确，但日常管理仍需穿过设置，渐进展开保持3。"
+      },
+      "findings": [
+        "R28-A"
+      ],
+      "actions_file": "evidence/independent/web/actions.json",
+      "first_look_file": "evidence/independent/web/first-look.json",
+      "screenshots": [
+        "evidence/independent/web/00-first-look.png",
+        "evidence/independent/web/01-note-editor.png",
+        "evidence/independent/web/03-note-saved.png",
+        "evidence/independent/web/04-library-after-save.png",
+        "evidence/independent/web/06-verified-note.png",
+        "evidence/independent/web/07-ask-scoped.png",
+        "evidence/independent/web/09-answer.png",
+        "evidence/independent/web/10-citation.png",
+        "evidence/independent/web/11-original.png",
+        "evidence/independent/web/13-answer-returned.png",
+        "evidence/independent/web/15-folder-setup.png",
+        "evidence/independent/web/16-server-path.png",
+        "evidence/independent/web/18-folder-connected.png",
+        "evidence/independent/web/19-folder-paused.png",
+        "evidence/independent/web/21-insights.png",
+        "evidence/independent/web/22-seeded-fixture-for-dates.png",
+        "evidence/independent/web/23-fixture-insights.png",
+        "evidence/independent/web/24-weekly-review-generated.png",
+        "evidence/independent/web/25-calendar-evidence-row.png",
+        "evidence/independent/web/26-calendar-detail.png",
+        "evidence/independent/web/27-calendar-original.png",
+        "evidence/independent/web/29-review-returned.png"
+      ],
+      "actual_action_records": 29,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "source_setup_control": "pass_named_target_folder_save_pause",
+        "advanced_discovery": "pass_insights_opened_after_first_success",
+        "review_date_verification": {
+          "result": "pass_current_round",
+          "preview_dataset": "explicitly_switched_to_existing_synthetic_fixture_after_core_checks",
+          "range_label": "最近7天 / 10月14日–20日",
+          "basis": "资料存入日期",
+          "calendar_library_date": "2026-10-17",
+          "calendar_event_time": "10月22日14:00",
+          "observed_views": [
+            "generated_review_evidence",
+            "calendar_detail",
+            "original_content",
+            "returned_review"
+          ],
+          "return_preserved_range_and_six_evidence_items": true
+        }
+      },
+      "browser_errors": []
+    },
+    "mac": {
+      "candidate_sha256": "af1556f96771d4b96354e4241b0525030d7d58946a8d2ad113c824f1088d8db5",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3,
+        "new_user_friendliness": 4.0
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 4
+      },
+      "weighted_total": 81.25,
+      "critical_gate": "pass",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "用途、首次写入、阅读与核对层级稳定；已连接来源优先展示状态和控制。",
+        "originality": "资料、来源和证据的组织延续一致产品身份；本轮没有足够新的独创性证据改变评分。",
+        "craft": "当前视口下关键操作、日期行、原文弹窗和返回状态可见；未做全面响应式或辅助技术检查。",
+        "functionality": "本轮重新完成保存/找回、限定问答/原文往返、来源保存/暂停，以及回顾证据→详情→原文→报告往返。",
+        "clarity": "回顾按存入日期纳入，日历事件时间独立标注；报告、详情、原文数值一致。整体仍按3分校准，不由单一新增分支直接升至4。",
+        "new_user_friendliness": "首屏不用前置设置即可完成首值；来源范围可理解，日常管理与低频设置分开；成功后可发现洞察并核对依据。"
+      },
+      "findings": [],
+      "actions_file": "evidence/independent/mac/actions.json",
+      "first_look_file": "evidence/independent/mac/first-look.json",
+      "screenshots": [
+        "evidence/independent/mac/00-first-look.png",
+        "evidence/independent/mac/01-note-editor.png",
+        "evidence/independent/mac/03-note-saved.png",
+        "evidence/independent/mac/04-library-after-save.png",
+        "evidence/independent/mac/06-verified-note.png",
+        "evidence/independent/mac/07-ask-scoped.png",
+        "evidence/independent/mac/09-answer.png",
+        "evidence/independent/mac/10-citation.png",
+        "evidence/independent/mac/11-original.png",
+        "evidence/independent/mac/13-answer-returned.png",
+        "evidence/independent/mac/15-folder-setup.png",
+        "evidence/independent/mac/16-folder-picker.png",
+        "evidence/independent/mac/17-folder-chosen.png",
+        "evidence/independent/mac/19-folder-connected.png",
+        "evidence/independent/mac/20-folder-paused.png",
+        "evidence/independent/mac/22-insights.png",
+        "evidence/independent/mac/23-seeded-fixture-for-dates.png",
+        "evidence/independent/mac/24-fixture-insights.png",
+        "evidence/independent/mac/25-weekly-review-generated.png",
+        "evidence/independent/mac/26-calendar-evidence-row.png",
+        "evidence/independent/mac/27-calendar-detail.png",
+        "evidence/independent/mac/28-calendar-original.png",
+        "evidence/independent/mac/30-review-returned.png"
+      ],
+      "actual_action_records": 30,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "source_setup_control": "pass_named_target_folder_save_pause",
+        "advanced_discovery": "pass_insights_opened_after_first_success",
+        "review_date_verification": {
+          "result": "pass_current_round",
+          "preview_dataset": "explicitly_switched_to_existing_synthetic_fixture_after_core_checks",
+          "range_label": "最近7天 / 10月14日–20日",
+          "basis": "资料存入日期",
+          "calendar_library_date": "2026-10-17",
+          "calendar_event_time": "10月22日14:00",
+          "observed_views": [
+            "generated_review_evidence",
+            "calendar_detail",
+            "original_content",
+            "returned_review"
+          ],
+          "return_preserved_range_and_six_evidence_items": true
+        }
+      },
+      "browser_errors": []
+    },
+    "android": {
+      "candidate_sha256": "75352e8a07c6ae20f5bfd7dfd784b654a93306f46cfec0ba53a4b5bb90b7add1",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 4,
+        "clarity": 3,
+        "new_user_friendliness": 4.0
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 4
+      },
+      "weighted_total": 87.5,
+      "critical_gate": "pass",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "用途、首次写入、阅读与核对层级稳定；已连接来源优先展示状态和控制。",
+        "originality": "资料、来源和证据的组织延续一致产品身份；本轮没有足够新的独创性证据改变评分。",
+        "craft": "当前视口下关键操作、日期行、原文弹窗和返回状态可见；未做全面响应式或辅助技术检查。",
+        "functionality": "本轮核心路径、文件夹选择/保存/暂停和报告证据往返均完成。4分沿用R27独立的记忆修正跨缩放/重开/版本历史校准；本轮未重复该异常路径，未将历史结果算作当前执行。",
+        "clarity": "回顾按存入日期纳入，日历事件时间独立标注；报告、详情、原文数值一致。整体仍按3分校准，不由单一新增分支直接升至4。",
+        "new_user_friendliness": "首屏不用前置设置即可完成首值；来源范围可理解，日常管理与低频设置分开；成功后可发现洞察并核对依据。"
+      },
+      "findings": [],
+      "actions_file": "evidence/independent/android/actions.json",
+      "first_look_file": "evidence/independent/android/first-look.json",
+      "screenshots": [
+        "evidence/independent/android/00-first-look.png",
+        "evidence/independent/android/01-note-editor.png",
+        "evidence/independent/android/03-note-saved.png",
+        "evidence/independent/android/04-library-after-save.png",
+        "evidence/independent/android/06-verified-note.png",
+        "evidence/independent/android/07-ask-scoped.png",
+        "evidence/independent/android/09-answer.png",
+        "evidence/independent/android/10-citation.png",
+        "evidence/independent/android/11-original.png",
+        "evidence/independent/android/13-answer-returned.png",
+        "evidence/independent/android/15-folder-setup.png",
+        "evidence/independent/android/16-folder-picker.png",
+        "evidence/independent/android/17-folder-chosen.png",
+        "evidence/independent/android/19-folder-connected.png",
+        "evidence/independent/android/20-folder-paused.png",
+        "evidence/independent/android/22-insights.png",
+        "evidence/independent/android/23-seeded-fixture-for-dates.png",
+        "evidence/independent/android/24-fixture-insights.png",
+        "evidence/independent/android/25-weekly-review-generated.png",
+        "evidence/independent/android/26-calendar-evidence-row.png",
+        "evidence/independent/android/27-calendar-detail.png",
+        "evidence/independent/android/28-calendar-original.png",
+        "evidence/independent/android/30-review-returned.png"
+      ],
+      "actual_action_records": 30,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "source_setup_control": "pass_named_target_folder_save_pause",
+        "advanced_discovery": "pass_insights_opened_after_first_success",
+        "review_date_verification": {
+          "result": "pass_current_round",
+          "preview_dataset": "explicitly_switched_to_existing_synthetic_fixture_after_core_checks",
+          "range_label": "最近7天 / 10月14日–20日",
+          "basis": "资料存入日期",
+          "calendar_library_date": "2026-10-17",
+          "calendar_event_time": "10月22日14:00",
+          "observed_views": [
+            "generated_review_evidence",
+            "calendar_detail",
+            "original_content",
+            "returned_review"
+          ],
+          "return_preserved_range_and_six_evidence_items": true
+        },
+        "first_folder_picker": "pass_picker_clicked_before_manual_path_entry",
+        "memory_correction_resize": {
+          "current_round": "not_reexecuted",
+          "historical_round": "R27",
+          "historical_candidate_sha256": "b4c703a2d50efad4aa327ec8af1d501552446b30457b6b6db22a9b1d366cd58c",
+          "historical_report": "../r27/reports/independent-evaluation.json",
+          "role": "score_calibration_only_not_current_execution"
+        }
+      },
+      "browser_errors": []
+    }
+  },
+  "findings": [
+    {
+      "id": "R28-A",
+      "severity": "minor",
+      "platforms": [
+        "web"
+      ],
+      "observation": "Web已有服务器来源仍先呈现目标说明、接收状态条、来源身份与完整设置表单；1440×1000的已保存截图仅在底边开始出现当前状态卡，暂停/浏览仍在表单之后。",
+      "impact": "延续R27-A：日常管理需越过低频设置；将具名来源、当前状态和常用操作前置，同时保留服务器目标与编辑入口。",
+      "evidence": [
+        "evidence/independent/web/18-folder-connected.png",
+        "evidence/independent/web/19-folder-paused.dom.json"
+      ]
+    }
+  ],
+  "resolved_from_previous": [
+    "本轮针对日期歧义：报告明确按资料存入日期纳入，事件时间另列；详情及原始内容一致。",
+    "Android首次连接文件夹的主操作先提供选择器，手动路径位于其后；实际选择与保存完成。"
+  ],
+  "actions_and_screens": "evidence/independent/",
+  "unverified": [
+    "真实后端/模型",
+    "原生权限/采集",
+    "上传/外部授权/同步",
+    "跨刷新持久化",
+    "未执行分支与全部78单元",
+    "键盘/辅助技术完整检查"
+  ],
+  "next_priority": [
+    "优先解决Web已有来源的操作顺序；本轮执行到的日期核对和Android首次选择路径未发现新的实质问题。"
+  ],
+  "equal_platform_mean": 82.91666666666667,
+  "minimum_platform_score": 80.0,
+  "critical_gate": "pass"
+}

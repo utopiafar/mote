@@ -1,0 +1,3165 @@
+{
+  "candidate": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/dist/r18.html",
+  "sha256": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+  "created_at": "2026-10-21T02:40:04.938Z",
+  "browser": "Chromium 133.0.6943.16",
+  "executor": "Chrome rendered DOM",
+  "network": "Every request intercepted locally",
+  "internal_state_read": false,
+  "total": 78,
+  "reachable": 78,
+  "errors": [],
+  "scope": "Derived compact index of actual rendered entry observations. Raw visible DOM remains in feature-coverage.json. Reachability is separate from semantic and interaction acceptance.",
+  "units": [
+    {
+      "id": "C12",
+      "title": "随手记下文字",
+      "purpose": "保存快速笔记，保留本地草稿，并查看离线待同步或已经保存的记录。",
+      "priority": "core",
+      "group": "随手记与已有附件",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "notes",
+        "href": "#/library/notes",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "随手记",
+        "path": "资料库工具 → 随手记",
+        "where": "笔记编辑器下方查看草稿、待同步队列和历史。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "随手记下文字\n\n保存快速笔记，保留本地草稿，并查看离线待同步或已经保存的记录。\n\n资料库 → 随手记\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/notes",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "随手记"
+        }
+      ]
+    },
+    {
+      "id": "C13",
+      "title": "上传已有图片或音频附件",
+      "purpose": "随文字上传已有图片或音频文件，也可以只保存附件。",
+      "priority": "core",
+      "group": "随手记与已有附件",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "notes",
+        "href": "#/library/notes",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "随手记",
+        "path": "资料库工具 → 随手记 → 图片与语音附件",
+        "where": "在编辑器附件入口选择已有图片或音频文件；保存后从历史或资料库打开证据。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "上传已有图片或音频附件\n\n随文字上传已有图片或音频文件，也可以只保存附件。\n\n资料库 → 随手记\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/notes",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "随手记"
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "title": "导入已有文档、文件夹和媒体",
+      "purpose": "把已有聊天导出、文档、笔记和附件提交到独立导入队列，并补充背景。",
+      "priority": "core",
+      "group": "导入文档、文件夹和媒体",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "imports",
+        "href": "#/library/import",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "导入",
+        "path": "资料库 → 导入资料；资料库工具 → 导入",
+        "where": "选择文件、文件夹或拖入；填写资料说明后加入队列。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "导入已有文档、文件夹和媒体\n\n把已有聊天导出、文档、笔记和附件提交到独立导入队列，并补充背景。\n\n资料库 → 导入资料\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/import",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "导入资料"
+        },
+        {
+          "level": "H2",
+          "text": "选择需要导入的资料"
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "title": "查看并处理导入进度",
+      "purpose": "分清原件归档、解析预览、记录发布和记忆整理，处理需要确认或重试的步骤。",
+      "priority": "core",
+      "group": "导入文档、文件夹和媒体",
+      "condition": "操作随所选导入的状态出现；没有导入记录时先提交文件。",
+      "source_primary_target": {
+        "pageId": "imports",
+        "href": "#/library/import",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "导入",
+        "path": "资料库工具 → 导入 → 导入详情",
+        "where": "选择一条本地队列或中央导入记录，查看详情与状态对应的操作。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "查看并处理导入进度\n\n分清原件归档、解析预览、记录发布和记忆整理，处理需要确认或重试的步骤。\n\n资料库 → 上传与处理\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/imports",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "上传与处理"
+        },
+        {
+          "level": "H2",
+          "text": "研究资料.md"
+        },
+        {
+          "level": "H2",
+          "text": "会议录音.wav"
+        },
+        {
+          "level": "H2",
+          "text": "资料归档.zip"
+        }
+      ]
+    },
+    {
+      "id": "C11",
+      "title": "删除整次导入",
+      "purpose": "确认移除一次导入及不再被其他资料使用的依赖内容。",
+      "priority": "core",
+      "group": "导入文档、文件夹和媒体",
+      "condition": "只有已有中央导入记录才有此操作；进行中的接收会禁用删除。",
+      "source_primary_target": {
+        "pageId": "imports",
+        "href": "#/library/import",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "导入",
+        "path": "资料库工具 → 导入 → 导入详情 → 删除这次导入",
+        "where": "选中中央导入记录后，在详情底部查看「删除这次导入」。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "删除整次导入\n\n确认移除一次导入及不再被其他资料使用的依赖内容。\n\n资料库 → 上传与处理\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/imports",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "上传与处理"
+        },
+        {
+          "level": "H2",
+          "text": "研究资料.md"
+        },
+        {
+          "level": "H2",
+          "text": "会议录音.wav"
+        },
+        {
+          "level": "H2",
+          "text": "资料归档.zip"
+        }
+      ]
+    },
+    {
+      "id": "A01",
+      "title": "从中央机器的目录导入",
+      "purpose": "让中央节点复制其机器上可读取的目录内容进入归档。",
+      "priority": "advanced",
+      "group": "导入文档、文件夹和媒体",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "imports",
+        "href": "#/library/import",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "导入",
+        "path": "资料库工具 → 导入 → 服务器目录",
+        "where": "切换到服务器目录方式，填写「中央服务器上的目录」。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "从中央机器的目录导入\n\n让中央节点复制其机器上可读取的目录内容进入归档。\n\n资料库 → 导入资料\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/import",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "导入资料"
+        },
+        {
+          "level": "H2",
+          "text": "选择需要导入的资料"
+        }
+      ]
+    },
+    {
+      "id": "A02",
+      "title": "选择导入解析器和图片处理方案",
+      "purpose": "为当前导入选择已安装的来源解析器，或调整其图片处理方案。",
+      "priority": "advanced",
+      "group": "导入文档、文件夹和媒体",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "imports",
+        "href": "#/library/import",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "导入",
+        "path": "资料库工具 → 导入 → 解析方式 / 修改图片处理",
+        "where": "提交表单中的解析方式，以及导入详情里的图片处理方案。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "选择导入解析器和图片处理方案\n\n为当前导入选择已安装的来源解析器，或调整其图片处理方案。\n\n资料库 → 导入资料\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/import",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "导入资料"
+        },
+        {
+          "level": "H2",
+          "text": "选择需要导入的资料"
+        }
+      ]
+    },
+    {
+      "id": "A03",
+      "title": "恢复被中断的本地上传",
+      "purpose": "在上传队列继续、重试或丢弃尚未完成的本地提交。",
+      "priority": "advanced",
+      "group": "导入文档、文件夹和媒体",
+      "condition": "需要未完成或失败的本地上传队列项。",
+      "source_primary_target": {
+        "pageId": "imports",
+        "href": "#/library/import",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "导入",
+        "path": "资料库工具 → 导入 → 本地上传队列",
+        "where": "查看本地队列卡片；控制按钮随上传状态出现。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "恢复被中断的本地上传\n\n在上传队列继续、重试或丢弃尚未完成的本地提交。\n\n资料库 → 上传与处理\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/imports",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "上传与处理"
+        },
+        {
+          "level": "H2",
+          "text": "研究资料.md"
+        },
+        {
+          "level": "H2",
+          "text": "会议录音.wav"
+        },
+        {
+          "level": "H2",
+          "text": "资料归档.zip"
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "title": "选择要加入的来源",
+      "purpose": "按需加入文件、引用或外部服务，找到每种来源的授权和选择范围。",
+      "priority": "core",
+      "group": "接入来源、飞书与录音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "sourceCatalog",
+        "href": "#/connections/add",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "新增数据源",
+        "path": "采集与设备 → 新增数据源",
+        "where": "先选择录音、设备、导入文件或在线资料卡片；管理已有来源使用「管理已接入来源」。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "选择要加入的来源\n\n按需加入文件、引用或外部服务，找到每种来源的授权和选择范围。\n\n来源 → 连接来源\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/catalog",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "连接资料来源"
+        },
+        {
+          "level": "H2",
+          "text": "电脑上的内容"
+        },
+        {
+          "level": "H3",
+          "text": "同步文件夹"
+        },
+        {
+          "level": "H3",
+          "text": "记录屏幕"
+        },
+        {
+          "level": "H3",
+          "text": "Coding Agent 会话"
+        },
+        {
+          "level": "H2",
+          "text": "文档、邮件与日历"
+        },
+        {
+          "level": "H3",
+          "text": "飞书文档与日历"
+        },
+        {
+          "level": "H3",
+          "text": "Gmail 邮件"
+        },
+        {
+          "level": "H3",
+          "text": "Google Calendar"
+        },
+        {
+          "level": "H2",
+          "text": "已有录音与转写"
+        },
+        {
+          "level": "H3",
+          "text": "飞书录音 / 妙记"
+        },
+        {
+          "level": "H3",
+          "text": "钉钉录音 / 闪记"
+        },
+        {
+          "level": "H2",
+          "text": "一次导入与外部位置"
+        },
+        {
+          "level": "H3",
+          "text": "导入文件"
+        },
+        {
+          "level": "H3",
+          "text": "MCP 资料服务"
+        },
+        {
+          "level": "H3",
+          "text": "外部文件 / NAS 引用"
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "title": "管理来源接收与内容关系",
+      "purpose": "暂停或恢复一个来源的接收，查看同步情况，并说明内容与你的关系。",
+      "priority": "core",
+      "group": "接入来源、飞书与录音",
+      "condition": "需要已有来源；部分服务的同步控制随连接状态出现。",
+      "source_primary_target": {
+        "pageId": "sources",
+        "href": "#/connections",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "来源",
+        "path": "采集与设备 → 来源与连接 → 来源 → 已连接来源",
+        "where": "选择已连接来源，查看状态、内容关系和归档入口。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "管理来源接收与内容关系\n\n暂停或恢复一个来源的接收，查看同步情况，并说明内容与你的关系。\n\n采集与设备 → 来源与连接 → 来源 → 已连接来源\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/sources",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "来源管理"
+        },
+        {
+          "level": "H2",
+          "text": "已连接来源"
+        }
+      ]
+    },
+    {
+      "id": "A04",
+      "title": "保存外部或 NAS 引用",
+      "purpose": "记录资料名称和位置，便于以后从能读取它的客户端提交正文快照。",
+      "priority": "advanced",
+      "group": "接入来源、飞书与录音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "sources",
+        "href": "#/connections?setup=reference",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "来源",
+        "path": "新增数据源 → 外部文件 / NAS 引用",
+        "where": "从「新增数据源」选择「外部文件 / NAS 引用」，在来源设置中完成该服务的配置。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "保存外部或 NAS 引用\n\n记录资料名称和位置，便于以后从能读取它的客户端提交正文快照。\n\n来源 → 外部文件与 NAS 引用\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/setup/nas",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "外部文件 / NAS 引用"
+        }
+      ]
+    },
+    {
+      "id": "A05",
+      "title": "只读归档 Google 日历",
+      "purpose": "授权 Google 后选择日历，把选中的日程同步到资料库供回顾。",
+      "priority": "advanced",
+      "group": "接入来源、飞书与录音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "sources",
+        "href": "#/connections?setup=google",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "来源",
+        "path": "新增数据源 → Google Calendar",
+        "where": "从「新增数据源」选择「Google Calendar」，在来源设置中完成该服务的配置。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "只读归档 Google 日历\n\n授权 Google 后选择日历，把选中的日程同步到资料库供回顾。\n\n来源 → Google 日历\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/setup/google",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "Google Calendar"
+        }
+      ]
+    },
+    {
+      "id": "A06",
+      "title": "只读归档 Gmail 邮件",
+      "purpose": "授权 Google 后归档邮件正文、发件人和时间，持续同步或继续分页。",
+      "priority": "advanced",
+      "group": "接入来源、飞书与录音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "sources",
+        "href": "#/connections?setup=gmail",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "来源",
+        "path": "新增数据源 → Gmail 邮件",
+        "where": "从「新增数据源」选择「Gmail 邮件」，在来源设置中完成该服务的配置。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "只读归档 Gmail 邮件\n\n授权 Google 后归档邮件正文、发件人和时间，持续同步或继续分页。\n\n来源 → Gmail 邮件\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/setup/gmail",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "Gmail 邮件"
+        }
+      ]
+    },
+    {
+      "id": "A07",
+      "title": "从远程 MCP 选择资源导入",
+      "purpose": "查看远程 MCP 服务公开的资源列表，选择资源一次性加入归档。",
+      "priority": "advanced",
+      "group": "接入来源、飞书与录音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "sources",
+        "href": "#/connections?setup=mcp",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "来源",
+        "path": "新增数据源 → MCP 资料服务",
+        "where": "从「新增数据源」选择「MCP 资料服务」，在来源设置中完成该服务的配置。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "从远程 MCP 选择资源导入\n\n查看远程 MCP 服务公开的资源列表，选择资源一次性加入归档。\n\n来源 → MCP 资料导入\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/setup/mcp",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "MCP 资料服务"
+        },
+        {
+          "level": "H3",
+          "text": "选择要导入的资源"
+        }
+      ]
+    },
+    {
+      "id": "A09",
+      "title": "连接飞书文档和日历",
+      "purpose": "在中央节点授权飞书，归档你创建、编辑或打开的文档及活动线索，也可持续跟踪指定范围和日历。",
+      "priority": "advanced",
+      "group": "接入来源、飞书与录音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "lark",
+        "href": "#/connections/lark",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "飞书",
+        "path": "新增数据源 → 飞书文档与日历",
+        "where": "选择「飞书文档与日历」卡片，再按 CLI、应用、账号授权和内容选择的步骤设置。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "连接飞书文档和日历\n\n在中央节点授权飞书，归档你创建、编辑或打开的文档及活动线索，也可持续跟踪指定范围和日历。\n\n新增数据源 → 飞书文档与日历\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/setup/lark",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "飞书文档与日历"
+        },
+        {
+          "level": "H2",
+          "text": "内容与你的关系"
+        },
+        {
+          "level": "H3",
+          "text": "已保存的来源关系"
+        }
+      ]
+    },
+    {
+      "id": "A10",
+      "title": "归档厂商录音和转写",
+      "purpose": "连接中央节点已授权的录音账号，选择首次历史范围及是否继续后台同步。",
+      "priority": "advanced",
+      "group": "接入来源、飞书与录音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "recordings",
+        "href": "#/connections/recordings",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "录音归档",
+        "path": "新增数据源 → 录音与转写 → 录音厂商",
+        "where": "先选择飞书录音 / 妙记或钉钉录音 / 闪记卡片，再查看该厂商的首次授权、历史范围和同步设置。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "归档厂商录音和转写\n\n连接中央节点已授权的录音账号，选择首次历史范围及是否继续后台同步。\n\n新增数据源 → 录音与转写 → 录音厂商\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/catalog",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "连接资料来源"
+        },
+        {
+          "level": "H2",
+          "text": "电脑上的内容"
+        },
+        {
+          "level": "H3",
+          "text": "同步文件夹"
+        },
+        {
+          "level": "H3",
+          "text": "记录屏幕"
+        },
+        {
+          "level": "H3",
+          "text": "Coding Agent 会话"
+        },
+        {
+          "level": "H2",
+          "text": "文档、邮件与日历"
+        },
+        {
+          "level": "H3",
+          "text": "飞书文档与日历"
+        },
+        {
+          "level": "H3",
+          "text": "Gmail 邮件"
+        },
+        {
+          "level": "H3",
+          "text": "Google Calendar"
+        },
+        {
+          "level": "H2",
+          "text": "已有录音与转写"
+        },
+        {
+          "level": "H3",
+          "text": "飞书录音 / 妙记"
+        },
+        {
+          "level": "H3",
+          "text": "钉钉录音 / 闪记"
+        },
+        {
+          "level": "H2",
+          "text": "一次导入与外部位置"
+        },
+        {
+          "level": "H3",
+          "text": "导入文件"
+        },
+        {
+          "level": "H3",
+          "text": "MCP 资料服务"
+        },
+        {
+          "level": "H3",
+          "text": "外部文件 / NAS 引用"
+        }
+      ]
+    },
+    {
+      "id": "A11",
+      "title": "查看来源版本和原位置",
+      "purpose": "查看一个来源的当前或历史版本，以及原位置和元数据。",
+      "priority": "advanced",
+      "group": "接入来源、飞书与录音",
+      "condition": "需要已归档的来源版本；版本详情随所选来源显示。",
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=sources",
+        "collectionId": "sources",
+        "categoryId": null,
+        "label": "来源资料",
+        "path": "资料库 → 来源资料",
+        "where": "选中来源后展开版本和证据。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "查看来源版本和原位置\n\n查看一个来源的当前或历史版本，以及原位置和元数据。\n\n资料库 → 资料出处\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/library/sources",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "资料库"
+        },
+        {
+          "level": "H2",
+          "text": "资料"
+        },
+        {
+          "level": "H2",
+          "text": "整理与回顾"
+        },
+        {
+          "level": "H2",
+          "text": "原始记录"
+        },
+        {
+          "level": "H2",
+          "text": "导入管理"
+        },
+        {
+          "level": "H2",
+          "text": "资料出处"
+        },
+        {
+          "level": "H3",
+          "text": "产品评审 · 让第一步更清楚"
+        },
+        {
+          "level": "H3",
+          "text": "长期记忆系统调研笔记"
+        },
+        {
+          "level": "H3",
+          "text": "Mote / 来源目录整理"
+        },
+        {
+          "level": "H3",
+          "text": "周四设计评审"
+        },
+        {
+          "level": "H3",
+          "text": "项目讨论录音 · 本周计划"
+        },
+        {
+          "level": "H3",
+          "text": "文章摘录 · 渐进式披露"
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "title": "从今天开始整理资料",
+      "purpose": "查看已有资料和最近洞察，找到连接设备、导入资料或配置问答的第一步。",
+      "priority": "core",
+      "group": "连接设备与查看采集",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "overview",
+        "href": "#/today",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "今天",
+        "path": "今天",
+        "where": "初次使用指引、最近资料和最近洞察；具体入口随资料库状态显示。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "从今天开始整理资料\n\n查看已有资料和最近洞察，找到连接设备、导入资料或配置问答的第一步。\n\n今天\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/today",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "今天"
+        },
+        {
+          "level": "H2",
+          "text": "需要你继续"
+        },
+        {
+          "level": "H3",
+          "text": "补充录音里的一个背景"
+        },
+        {
+          "level": "H3",
+          "text": "飞书来源需要重新授权"
+        },
+        {
+          "level": "H2",
+          "text": "我的待办"
+        },
+        {
+          "level": "H2",
+          "text": "待核对的日程建议"
+        },
+        {
+          "level": "H2",
+          "text": "最近保存的资料"
+        },
+        {
+          "level": "H2",
+          "text": "最近洞察"
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "title": "查看设备上报的采集与同步状态",
+      "purpose": "了解每台设备最后联系、最后采集以及待上传、受阻和已保留的内容。",
+      "priority": "core",
+      "group": "连接设备与查看采集",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "devices",
+        "href": "#/connections/devices",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "采集与设备",
+        "path": "采集与设备 → 设备",
+        "where": "查看设备卡片，展开详细信息。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "查看设备上报的采集与同步状态\n\n了解每台设备最后联系、最后采集以及待上传、受阻和已保留的内容。\n\n来源 → 设备与记录状态\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/devices",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设备与记录状态"
+        },
+        {
+          "level": "H2",
+          "text": "我的 Mac"
+        },
+        {
+          "level": "H3",
+          "text": "采集状态"
+        },
+        {
+          "level": "H3",
+          "text": "同步状态"
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "title": "连接或重新授权设备",
+      "purpose": "生成一次性邀请，让原生客户端确认中央节点地址后连接。",
+      "priority": "core",
+      "group": "连接设备与查看采集",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "connections",
+        "href": "#/connections/access",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "对外授权",
+        "path": "采集与设备 → 连接设备 → 对外授权 → 连接设备",
+        "where": "选择「连接设备」，填写地址、名称和设备身份。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "连接或重新授权设备\n\n生成一次性邀请，让原生客户端确认中央节点地址后连接。\n\n来源 → 连接设备\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/setup/device",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "手机与电脑"
+        },
+        {
+          "level": "H2",
+          "text": "连接一台设备"
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "title": "检查和撤销已发出的连接权限",
+      "purpose": "查看每个连接的名称、权限和状态，撤销不再使用的访问。",
+      "priority": "core",
+      "group": "连接设备与查看采集",
+      "condition": "已有授权连接时才能选择一条连接并撤销。",
+      "source_primary_target": {
+        "pageId": "connections",
+        "href": "#/connections/access",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "对外授权",
+        "path": "采集与设备 → 来源与连接 → 对外授权 → 已授权连接",
+        "where": "页面下方「已授权连接」列表。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "检查和撤销已发出的连接权限\n\n查看每个连接的名称、权限和状态，撤销不再使用的访问。\n\n采集与设备 → 来源与连接 → 对外授权 → 已授权连接\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/access",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "对外授权"
+        },
+        {
+          "level": "H2",
+          "text": "个人助手"
+        }
+      ]
+    },
+    {
+      "id": "A08",
+      "title": "让其他 Chatbot 使用 Mote MCP",
+      "purpose": "为支持 HTTP MCP 的客户端生成独立的只读或指定来源写入配置。",
+      "priority": "advanced",
+      "group": "连接设备与查看采集",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "connections",
+        "href": "#/connections/access",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "对外授权",
+        "path": "采集与设备 → 来源与连接 → 对外授权 → 连接 Chatbot",
+        "where": "切换到「连接 Chatbot」，查看 MCP 访问权限与配置。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "让其他 Chatbot 使用 Mote MCP\n\n为支持 HTTP MCP 的客户端生成独立的只读或指定来源写入配置。\n\n采集与设备 → 来源与连接 → 对外授权 → 连接 Chatbot\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/access",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "对外授权"
+        },
+        {
+          "level": "H2",
+          "text": "个人助手"
+        }
+      ]
+    },
+    {
+      "id": "C14",
+      "title": "浏览已经发布的资料正文",
+      "purpose": "按来源、类型、设备和日期筛选正式资料，打开可读正文。",
+      "priority": "core",
+      "group": "阅读正文与原始证据",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=materials",
+        "collectionId": "materials",
+        "categoryId": null,
+        "label": "全部资料",
+        "path": "资料库 → 全部资料",
+        "where": "默认分类为「全部资料」；使用筛选后选中资料。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "浏览已经发布的资料正文\n\n按来源、类型、设备和日期筛选正式资料，打开可读正文。\n\n资料库 → 全部资料\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/library",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "资料库"
+        },
+        {
+          "level": "H2",
+          "text": "资料"
+        },
+        {
+          "level": "H2",
+          "text": "整理与回顾"
+        },
+        {
+          "level": "H2",
+          "text": "原始记录"
+        },
+        {
+          "level": "H2",
+          "text": "导入管理"
+        },
+        {
+          "level": "H2",
+          "text": "全部资料"
+        }
+      ]
+    },
+    {
+      "id": "C15",
+      "title": "核对资料正文、来源与处理状态",
+      "purpose": "阅读当前或获准查看的历史正文，追溯原件，并了解哪些派生产物还在处理。",
+      "priority": "core",
+      "group": "阅读正文与原始证据",
+      "condition": "需要已发布资料；索引重试只在失败状态并提供控制时出现。",
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=materials",
+        "collectionId": "materials",
+        "categoryId": null,
+        "label": "全部资料",
+        "path": "资料库 → 全部资料 → 资料详情",
+        "where": "选中一份资料，查看正文及「来源与处理」。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "核对资料正文、来源与处理状态\n\n阅读当前或获准查看的历史正文，追溯原件，并了解哪些派生产物还在处理。\n\n资料库 → 资料详情\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/material/m1",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "产品评审 · 让第一步更清楚"
+        },
+        {
+          "level": "H2",
+          "text": "来源与原始资料"
+        }
+      ]
+    },
+    {
+      "id": "C16",
+      "title": "说明单份资料关系并提取记忆",
+      "purpose": "为一份资料覆盖来源的内容关系，并从它当前可用的正文提取记忆。",
+      "priority": "core",
+      "group": "阅读正文与原始证据",
+      "condition": "记忆入口仅对当前、输入已就绪的正式资料提供。",
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=materials",
+        "collectionId": "materials",
+        "categoryId": null,
+        "label": "全部资料",
+        "path": "资料库 → 全部资料 → 资料详情 → 来源与处理 / 记忆入口",
+        "where": "先选中资料，在「来源与处理」中声明关系；符合条件时使用记忆提取入口。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "说明单份资料关系并提取记忆\n\n为一份资料覆盖来源的内容关系，并从它当前可用的正文提取记忆。\n\n资料库 → 资料详情\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/material/m1",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "产品评审 · 让第一步更清楚"
+        },
+        {
+          "level": "H2",
+          "text": "来源与原始资料"
+        }
+      ]
+    },
+    {
+      "id": "C17",
+      "title": "查看原始采集证据",
+      "purpose": "按日期、设备或内容类型查找原始记录，打开图像、文本和附件核对。",
+      "priority": "core",
+      "group": "阅读正文与原始证据",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=records",
+        "collectionId": "records",
+        "categoryId": null,
+        "label": "原始采集记录",
+        "path": "资料库 → 原始采集记录 → 记录 → 完整详情",
+        "where": "选中记录后打开完整证据详情。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "查看原始采集证据\n\n按日期、设备或内容类型查找原始记录，打开图像、文本和附件核对。\n\n资料库 → 原始采集记录\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/library/raw",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "资料库"
+        },
+        {
+          "level": "H2",
+          "text": "资料"
+        },
+        {
+          "level": "H2",
+          "text": "整理与回顾"
+        },
+        {
+          "level": "H2",
+          "text": "原始记录"
+        },
+        {
+          "level": "H2",
+          "text": "导入管理"
+        },
+        {
+          "level": "H2",
+          "text": "原始采集记录"
+        },
+        {
+          "level": "H3",
+          "text": "文章摘录 · 渐进式披露"
+        }
+      ]
+    },
+    {
+      "id": "C18",
+      "title": "删除一条原始记录",
+      "purpose": "核对影响后移除原始记录，让依赖它的证据失效。",
+      "priority": "core",
+      "group": "阅读正文与原始证据",
+      "condition": "需要先打开一条可删除的原始记录。",
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=records",
+        "collectionId": "records",
+        "categoryId": null,
+        "label": "原始采集记录",
+        "path": "资料库 → 原始采集记录 → 完整详情 → 删除这条记录",
+        "where": "打开一条记录的完整详情，在删除操作前核对依赖影响。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "删除一条原始记录\n\n核对影响后移除原始记录，让依赖它的证据失效。\n\n资料库 → 原始采集记录\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/library/raw",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "资料库"
+        },
+        {
+          "level": "H2",
+          "text": "资料"
+        },
+        {
+          "level": "H2",
+          "text": "整理与回顾"
+        },
+        {
+          "level": "H2",
+          "text": "原始记录"
+        },
+        {
+          "level": "H2",
+          "text": "导入管理"
+        },
+        {
+          "level": "H2",
+          "text": "原始采集记录"
+        },
+        {
+          "level": "H3",
+          "text": "文章摘录 · 渐进式披露"
+        }
+      ]
+    },
+    {
+      "id": "C20",
+      "title": "围绕归档资料提问",
+      "purpose": "开始或继续对话，让问答模型检索已归档证据，阅读答案并打开引用。",
+      "priority": "core",
+      "group": "提问与回看对话",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "ask",
+        "href": "#/ask",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "问一问",
+        "path": "问一问",
+        "where": "在对话输入区提问；答案中的引用可打开证据。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "围绕归档资料提问\n\n开始或继续对话，让问答模型检索已归档证据，阅读答案并打开引用。\n\n问一问\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/ask",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "问一问"
+        },
+        {
+          "level": "H2",
+          "text": "对话"
+        },
+        {
+          "level": "H2",
+          "text": "你想从资料中了解什么？"
+        }
+      ]
+    },
+    {
+      "id": "C21",
+      "title": "回看和管理对话历史",
+      "purpose": "继续过去对话，查看更多轮次，核对引用、用量和读取记录，或删除整段对话。",
+      "priority": "core",
+      "group": "提问与回看对话",
+      "condition": "删除和轮次详情需要已有对话；读取轨迹依记录存在情况显示。",
+      "source_primary_target": {
+        "pageId": "ask",
+        "href": "#/ask",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "问一问",
+        "path": "问一问 → 对话历史",
+        "where": "在对话历史选中记录；具体轮次的用量和轨迹在该轮详情。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "回看和管理对话历史\n\n继续过去对话，查看更多轮次，核对引用、用量和读取记录，或删除整段对话。\n\n问一问 → 对话历史\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/ask",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "问一问"
+        },
+        {
+          "level": "H2",
+          "text": "对话"
+        },
+        {
+          "level": "H2",
+          "text": "你想从资料中了解什么？"
+        }
+      ]
+    },
+    {
+      "id": "C22",
+      "title": "随问题提交图片",
+      "purpose": "直接为当前问题选择图片，并在发送前移除不需要的附件。",
+      "priority": "core",
+      "group": "提问与回看对话",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "ask",
+        "href": "#/ask",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "问一问",
+        "path": "问一问 → 输入区 → 添加图片",
+        "where": "使用对话输入区的图片入口，发送后在该轮查看附件信息。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "随问题提交图片\n\n直接为当前问题选择图片，并在发送前移除不需要的附件。\n\n问一问 → 附加图片\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/ask",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "问一问"
+        },
+        {
+          "level": "H2",
+          "text": "对话"
+        },
+        {
+          "level": "H2",
+          "text": "你想从资料中了解什么？"
+        }
+      ]
+    },
+    {
+      "id": "C23",
+      "title": "浏览有证据的记忆",
+      "purpose": "搜索已保存的记忆，核对结论、适用边界、状态和支持它的原始资料。",
+      "priority": "core",
+      "group": "查看、纠正与整理记忆",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=memories",
+        "collectionId": "memories",
+        "categoryId": null,
+        "label": "记忆",
+        "path": "资料库 → 记忆",
+        "where": "在「记忆」视图筛选并打开卡片。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "浏览有证据的记忆\n\n搜索已保存的记忆，核对结论、适用边界、状态和支持它的原始资料。\n\n资料库 → 记忆\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/memories",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "记忆"
+        },
+        {
+          "level": "H2",
+          "text": "产品设计偏好"
+        }
+      ]
+    },
+    {
+      "id": "C24",
+      "title": "纠正、删除或导出一条记忆",
+      "purpose": "把自己的纠正保存为替代版本，或删除结论、下载文本。",
+      "priority": "core",
+      "group": "查看、纠正与整理记忆",
+      "condition": "需要已有记忆；被替代版本不提供当前纠正操作。",
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=memories",
+        "collectionId": "memories",
+        "categoryId": null,
+        "label": "记忆",
+        "path": "资料库 → 记忆 → 记忆详情",
+        "where": "选中记忆，在详情使用「纠正记忆」「删除记忆」或「下载文本」。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "纠正、删除或导出一条记忆\n\n把自己的纠正保存为替代版本，或删除结论、下载文本。\n\n资料库 → 记忆\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/memories",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "记忆"
+        },
+        {
+          "level": "H2",
+          "text": "产品设计偏好"
+        }
+      ]
+    },
+    {
+      "id": "C25",
+      "title": "手动提取记忆",
+      "purpose": "从当前范围或明确选中的资料启动提取，选择模型与配方并跟踪结果。",
+      "priority": "core",
+      "group": "查看、纠正与整理记忆",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=memories",
+        "collectionId": "memories",
+        "categoryId": null,
+        "label": "记忆",
+        "path": "资料库 → 记忆 → 提取记忆；原始或正式资料详情 → 记忆提取",
+        "where": "在记忆视图使用手动提取；也可从满足条件的资料详情启动单份提取。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "手动提取记忆\n\n从当前范围或明确选中的资料启动提取，选择模型与配方并跟踪结果。\n\n资料库 → 记忆\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/memories",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "记忆"
+        },
+        {
+          "level": "H2",
+          "text": "产品设计偏好"
+        }
+      ]
+    },
+    {
+      "id": "C26",
+      "title": "回答需要你澄清的问题",
+      "purpose": "在相关工作或资料中补充信息，帮助 Mote 处理这份输入的疑问。",
+      "priority": "core",
+      "group": "查看、纠正与整理记忆",
+      "condition": "只有实际产生澄清问题时才出现；没有固定独立的全局问题页面。",
+      "source_primary_target": {
+        "pageId": "ask",
+        "href": "#/ask",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "问一问",
+        "path": "问一问中的待澄清问题；活动详情 / 资料来源上下文 → 需要你补充",
+        "where": "在问一问历史、活动详情或资料上下文查找「需要你补充」的问题入口。具体问题链接由现有对象提供。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "回答需要你澄清的问题\n\n在相关工作或资料中补充信息，帮助 Mote 处理这份输入的疑问。\n\n问一问 → 待你澄清\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/ask/clarifications",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "待你澄清的问题"
+        },
+        {
+          "level": "H2",
+          "text": "“第一轮设计”指的是哪个阶段？"
+        }
+      ]
+    },
+    {
+      "id": "A16",
+      "title": "核对记忆的历史和有效时间",
+      "purpose": "查看某一时间有效的记忆、旧版本和替代或矛盾关系。",
+      "priority": "advanced",
+      "group": "查看、纠正与整理记忆",
+      "condition": "历史关联、审核和生成记录依所选记忆存在情况显示。",
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=memories",
+        "collectionId": "memories",
+        "categoryId": null,
+        "label": "记忆",
+        "path": "资料库 → 记忆 → 历史 / 截至时间筛选 → 记忆详情",
+        "where": "在记忆筛选区切换历史或截至时间，然后打开卡片。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "核对记忆的历史和有效时间\n\n查看某一时间有效的记忆、旧版本和替代或矛盾关系。\n\n资料库 → 记忆\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/memories",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "记忆"
+        },
+        {
+          "level": "H2",
+          "text": "产品设计偏好"
+        }
+      ]
+    },
+    {
+      "id": "A17",
+      "title": "从一条当前记忆继续整理",
+      "purpose": "以一条已发布整理记忆为起点，使用整合配方生成进一步整理结果。",
+      "priority": "advanced",
+      "group": "查看、纠正与整理记忆",
+      "condition": "只在当前、已发布且满足整合条件的整理记忆详情出现。",
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=memories",
+        "collectionId": "memories",
+        "categoryId": null,
+        "label": "记忆",
+        "path": "资料库 → 记忆 → 可用记忆详情 → 从这条记忆开始整理",
+        "where": "选择符合条件的当前整理记忆，点击「从这条记忆开始整理」。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "从一条当前记忆继续整理\n\n以一条已发布整理记忆为起点，使用整合配方生成进一步整理结果。\n\n资料库 → 记忆 → 继续整理\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/memories",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "记忆"
+        },
+        {
+          "level": "H2",
+          "text": "产品设计偏好"
+        }
+      ]
+    },
+    {
+      "id": "A18",
+      "title": "调整记忆策略和回顾节奏",
+      "purpose": "设置提取历史窗口、整合与回顾节奏，以及默认、截图和来源的配方组合。",
+      "priority": "advanced",
+      "group": "查看、纠正与整理记忆",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "settings",
+        "href": "#/system/models?category=model",
+        "collectionId": null,
+        "categoryId": "model",
+        "label": "模块与模型",
+        "path": "设置 → 模型与服务 → 模块与模型 → 记忆与洞察节奏",
+        "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "调整记忆策略和回顾节奏\n\n设置提取历史窗口、整合与回顾节奏，以及默认、截图和来源的配方组合。\n\n设置 → 记忆策略与回顾节奏\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/memory-strategy",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "记忆策略与回顾节奏"
+        }
+      ]
+    },
+    {
+      "id": "C27",
+      "title": "生成并回看有证据的洞察",
+      "purpose": "按自选方向或默认回顾生成报告，核对引用并重访已保存结果。",
+      "priority": "core",
+      "group": "生成洞察与回顾",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "insights",
+        "href": "#/library/insights",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "洞察",
+        "path": "资料库工具 → 洞察；问一问 → 查看洞察；今天 → 最近洞察",
+        "where": "在洞察页选择方向、范围和模型；已有报告列于历史。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "生成并回看有证据的洞察\n\n按自选方向或默认回顾生成报告，核对引用并重访已保存结果。\n\n资料库 → 洞察\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/insights",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "洞察"
+        }
+      ]
+    },
+    {
+      "id": "C28",
+      "title": "查看正在做的工作和结果",
+      "purpose": "集中查看 Mote 的工作、需要关注的问题、执行分支和完成结果。",
+      "priority": "core",
+      "group": "跟进工作与失败恢复",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "activity",
+        "href": "#/activity",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "活动",
+        "path": "活动；资料库 → 处理任务",
+        "where": "选择一项工作，查看进度、结果及相关操作。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "查看正在做的工作和结果\n\n集中查看 Mote 的工作、需要关注的问题、执行分支和完成结果。\n\n活动；资料库 → 处理任务\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/activity",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "活动"
+        },
+        {
+          "level": "H2",
+          "text": "恢复飞书来源授权"
+        },
+        {
+          "level": "H2",
+          "text": "整理最近的研究资料"
+        },
+        {
+          "level": "H2",
+          "text": "导入长期记忆系统调研笔记"
+        },
+        {
+          "level": "H2",
+          "text": "项目讨论录音 · 记忆整理"
+        }
+      ]
+    },
+    {
+      "id": "A25",
+      "title": "检查技术步骤并恢复可重试工作",
+      "purpose": "深入查看任务依赖、尝试和失败原因，找到负责该工作的设置或恢复入口。",
+      "priority": "advanced",
+      "group": "跟进工作与失败恢复",
+      "condition": "步骤详情和重试依已有技术任务及其失败状态显示。",
+      "source_primary_target": {
+        "pageId": "processing",
+        "href": "#/system/processing",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "技术执行记录",
+        "path": "活动 → 高级 / 工作详情 → 技术执行记录",
+        "where": "活动的高级入口，或工作详情中的技术记录；也可由插件运行记录进入。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "检查技术步骤并恢复可重试工作\n\n深入查看任务依赖、尝试和失败原因，找到负责该工作的设置或恢复入口。\n\n活动 → 需要处理 → 工作详情\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/activity/details",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "工作详情"
+        },
+        {
+          "level": "H2",
+          "text": "飞书文档与日历"
+        },
+        {
+          "level": "H3",
+          "text": "当前结果"
+        },
+        {
+          "level": "H2",
+          "text": "这次读取的范围"
+        },
+        {
+          "level": "H3",
+          "text": "处理记录"
+        }
+      ]
+    },
+    {
+      "id": "C29",
+      "title": "记录和完成普通待办",
+      "purpose": "添加标题和可选到期时间，管理完成、取消或重新打开的待办。",
+      "priority": "core",
+      "group": "待办与日程建议",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "actions",
+        "href": "#/actions",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "行动",
+        "path": "今天 → 行动建议 → 待办",
+        "where": "进入行动页的待办区域。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "记录和完成普通待办\n\n添加标题和可选到期时间，管理完成、取消或重新打开的待办。\n\n今天 → 我的待办\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/todos",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "待办与日程"
+        }
+      ]
+    },
+    {
+      "id": "C30",
+      "title": "审核日程建议并交给设备执行",
+      "purpose": "查看有证据的日程建议，核对内容和目标日历后确认，跟踪设备的执行结果。",
+      "priority": "core",
+      "group": "待办与日程建议",
+      "condition": "审核需要已有建议；目标日历需要设备端已提供可写日历。",
+      "source_primary_target": {
+        "pageId": "actions",
+        "href": "#/actions",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "行动",
+        "path": "今天 → 行动建议",
+        "where": "行动页中开启建议发现；选中建议打开审核，选择已有设备日历。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "审核日程建议并交给设备执行\n\n查看有证据的日程建议，核对内容和目标日历后确认，跟踪设备的执行结果。\n\n今天 → 日程建议与安排\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/todos/schedule",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "待办与日程"
+        },
+        {
+          "level": "H2",
+          "text": "建议：周四设计评审"
+        }
+      ]
+    },
+    {
+      "id": "C19",
+      "title": "按内容类型查看资料库",
+      "purpose": "在同一资料库切换分类，找到片段、来源、文件、活动、记忆和处理视图。",
+      "priority": "core",
+      "group": "按分类回看与查看时间",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=materials",
+        "collectionId": "materials",
+        "categoryId": null,
+        "label": "全部资料",
+        "path": "资料库 → 分类",
+        "where": "使用资料库分类切换视图；导入、随手记和洞察属于「资料库工具」。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "按内容类型查看资料库\n\n在同一资料库切换分类，找到片段、来源、文件、活动、记忆和处理视图。\n\n资料库 → 全部资料 → 类型筛选\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/library",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "资料库"
+        },
+        {
+          "level": "H2",
+          "text": "资料"
+        },
+        {
+          "level": "H2",
+          "text": "整理与回顾"
+        },
+        {
+          "level": "H2",
+          "text": "原始记录"
+        },
+        {
+          "level": "H2",
+          "text": "导入管理"
+        },
+        {
+          "level": "H2",
+          "text": "全部资料"
+        }
+      ]
+    },
+    {
+      "id": "A12",
+      "title": "按截图片段或应用相册回看",
+      "purpose": "按日期和设备查看连续会话或应用分组，打开组内采集证据。",
+      "priority": "advanced",
+      "group": "按分类回看与查看时间",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=segments",
+        "collectionId": "segments",
+        "categoryId": null,
+        "label": "片段",
+        "path": "资料库 → 片段",
+        "where": "选择日期、设备和分组方式，再打开片段。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "按截图片段或应用相册回看\n\n按日期和设备查看连续会话或应用分组，打开组内采集证据。\n\n资料库 → 截图片段\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/library/snippets",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "资料库"
+        },
+        {
+          "level": "H2",
+          "text": "资料"
+        },
+        {
+          "level": "H2",
+          "text": "整理与回顾"
+        },
+        {
+          "level": "H2",
+          "text": "原始记录"
+        },
+        {
+          "level": "H2",
+          "text": "导入管理"
+        },
+        {
+          "level": "H2",
+          "text": "截图片段"
+        },
+        {
+          "level": "H3",
+          "text": "连续会话 1 · 浏览器"
+        },
+        {
+          "level": "H3",
+          "text": "文章摘录 · 渐进式披露"
+        }
+      ]
+    },
+    {
+      "id": "A13",
+      "title": "查看测得的应用活动时间",
+      "purpose": "查看采样得到的各应用时长和占比，理解其统计范围。",
+      "priority": "advanced",
+      "group": "按分类回看与查看时间",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=activity",
+        "collectionId": "activity",
+        "categoryId": null,
+        "label": "应用活动",
+        "path": "资料库 → 应用活动",
+        "where": "查看应用时长汇总。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "查看测得的应用活动时间\n\n查看采样得到的各应用时长和占比，理解其统计范围。\n\n资料库 → 应用使用记录\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/application",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "应用使用记录"
+        },
+        {
+          "level": "H2",
+          "text": "采样时间与设备"
+        },
+        {
+          "level": "H3",
+          "text": "采样时段"
+        },
+        {
+          "level": "H3",
+          "text": "来源设备"
+        },
+        {
+          "level": "H2",
+          "text": "应用时长与占比"
+        },
+        {
+          "level": "H2",
+          "text": "未采集区间"
+        }
+      ]
+    },
+    {
+      "id": "A14",
+      "title": "查看媒体播放观测",
+      "purpose": "查看播放器、标题、状态和播放进度，核对按设备统计的播放观测。",
+      "priority": "advanced",
+      "group": "按分类回看与查看时间",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=media",
+        "collectionId": "media",
+        "categoryId": null,
+        "label": "媒体播放",
+        "path": "资料库 → 媒体播放",
+        "where": "查看媒体汇总并展开记录信息。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "查看媒体播放观测\n\n查看播放器、标题、状态和播放进度，核对按设备统计的播放观测。\n\n资料库 → 媒体播放\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/media",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "媒体播放"
+        },
+        {
+          "level": "H2",
+          "text": "研究播客 · 上下文与记忆"
+        }
+      ]
+    },
+    {
+      "id": "A15",
+      "title": "查看 Coding 会话接收与同步状态",
+      "purpose": "在处理任务中核对 Coding 增量接收、会话发布、索引与记忆进度，再打开已发布正文。",
+      "priority": "advanced",
+      "group": "按分类回看与查看时间",
+      "condition": "具体进度依已接收来源显示；没有来源时会显示客户端接入步骤。",
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=work-activity",
+        "collectionId": "work-activity",
+        "categoryId": null,
+        "label": "处理任务",
+        "path": "资料库 → 处理任务 → Coding 会话接收状态",
+        "where": "在处理任务中的「Coding 会话接收状态」摘要展开「查看接收、发布、索引与记忆进度」。",
+        "requiredCollectionIds": [
+          "coding-status"
+        ],
+        "requires": [
+          "http:GET:/api/coding/uploads"
+        ]
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "查看 Coding 会话接收与同步状态\n\n在处理任务中核对 Coding 增量接收、会话发布、索引与记忆进度，再打开已发布正文。\n\n来源 → Coding Agent 会话 → 查看同步状态\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/activity/coding",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "Coding 会话同步状态"
+        },
+        {
+          "level": "H2",
+          "text": "Mote / 来源目录整理"
+        }
+      ]
+    },
+    {
+      "id": "C39",
+      "title": "导入导出归档并找到完整备份",
+      "purpose": "导出可携带的资料或元数据，合并当前归档，检查索引并找到离线备份方式。",
+      "priority": "core",
+      "group": "备份、存储、索引与费用",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "vault",
+        "href": "#/system/storage",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "存储、加密与备份",
+        "path": "设置 → 存储、加密与备份 → 导入与导出 / 索引与 Agent",
+        "where": "查看「导入与导出」「大资料库适合使用离线备份」以及索引区域。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "导入导出归档并找到完整备份\n\n导出可携带的资料或元数据，合并当前归档，检查索引并找到离线备份方式。\n\n设置 → 存储、加密与备份 → 导入与导出 / 索引与 Agent\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/storage",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "存储与备份"
+        },
+        {
+          "level": "H3",
+          "text": "已有加密内容"
+        },
+        {
+          "level": "H3",
+          "text": "备份、索引与空间"
+        }
+      ]
+    },
+    {
+      "id": "C40",
+      "title": "查看保留、容量和内容存储政策",
+      "purpose": "查看实际空间和保留情况，控制未来文件加密，并找到部署层保留与容量配置。",
+      "priority": "core",
+      "group": "备份、存储、索引与费用",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "vault",
+        "href": "#/system/storage",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "存储、加密与备份",
+        "path": "设置 → 存储、加密与备份 → 内容存储 / 数据与备份",
+        "where": "查看内容存储政策和数据概览；保留与容量修改位于模型与服务。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "查看保留、容量和内容存储政策\n\n查看实际空间和保留情况，控制未来文件加密，并找到部署层保留与容量配置。\n\n设置 → 存储、加密与备份 → 内容存储 / 数据与备份\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/storage",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "存储与备份"
+        },
+        {
+          "level": "H3",
+          "text": "已有加密内容"
+        },
+        {
+          "level": "H3",
+          "text": "备份、索引与空间"
+        }
+      ]
+    },
+    {
+      "id": "C41",
+      "title": "核对模型用量和估算费用",
+      "purpose": "按日期、模块、模型和状态查看请求、Token、缓存、耗时及费用明细。",
+      "priority": "core",
+      "group": "备份、存储、索引与费用",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "usage",
+        "href": "#/system/usage",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "用量与费用",
+        "path": "设置 → 用量与费用",
+        "where": "设置筛选，查看汇总、趋势和运行明细。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "核对模型用量和估算费用\n\n按日期、模块、模型和状态查看请求、Token、缓存、耗时及费用明细。\n\n设置 → 用量与费用\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/usage",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "用量与费用"
+        },
+        {
+          "level": "H3",
+          "text": "按维度汇总"
+        },
+        {
+          "level": "H3",
+          "text": "请求明细"
+        }
+      ]
+    },
+    {
+      "id": "A31",
+      "title": "把已有加密文件转为明文",
+      "purpose": "关闭未来加密后，按需安排已有内容对象解密，并查看后台转换进度。",
+      "priority": "advanced",
+      "group": "备份、存储、索引与费用",
+      "condition": "有可转换的加密对象，且未来写入加密已关闭时才能执行。",
+      "source_primary_target": {
+        "pageId": "vault",
+        "href": "#/system/storage",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "存储、加密与备份",
+        "path": "设置 → 存储、加密与备份 → 内容存储",
+        "where": "关闭加密后查看已有文件的批量解密入口。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "把已有加密文件转为明文\n\n关闭未来加密后，按需安排已有内容对象解密，并查看后台转换进度。\n\n设置 → 存储与备份 → 已有加密内容\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/storage",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "存储与备份"
+        },
+        {
+          "level": "H3",
+          "text": "已有加密内容"
+        },
+        {
+          "level": "H3",
+          "text": "备份、索引与空间"
+        }
+      ]
+    },
+    {
+      "id": "A32",
+      "title": "查看运行状态与空间",
+      "purpose": "按类型和日期查看中央机器可访问文件的字节与数量，并进入模型用量。",
+      "priority": "advanced",
+      "group": "备份、存储、索引与费用",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "statistics",
+        "href": "#/system",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "运行状态与空间",
+        "path": "设置 → 运行状态与空间",
+        "where": "在「运行状态与空间」查看中央节点磁盘统计，或打开用量与费用。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "查看运行状态与空间\n\n按类型和日期查看中央机器可访问文件的字节与数量，并进入模型用量。\n\n设置 → 存储与备份 → 运行状态与空间\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/system",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "运行状态与空间"
+        },
+        {
+          "level": "H3",
+          "text": "中央可访问文件 · 按类型"
+        },
+        {
+          "level": "H3",
+          "text": "处理状态"
+        }
+      ]
+    },
+    {
+      "id": "A33",
+      "title": "维护估价并追查用量明细",
+      "purpose": "按 Agent、模块、技能或模型汇总，逐层筛选请求，并维护后续请求使用的价格。",
+      "priority": "advanced",
+      "group": "备份、存储、索引与费用",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "usage",
+        "href": "#/system/usage",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "用量与费用",
+        "path": "设置 → 用量与费用 → 汇总 / 价格",
+        "where": "切换汇总方式并点击数据行；展开价格设置。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "维护估价并追查用量明细\n\n按 Agent、模块、技能或模型汇总，逐层筛选请求，并维护后续请求使用的价格。\n\n设置 → 用量与费用 → 维护模型估价\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/usage",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "用量与费用"
+        },
+        {
+          "level": "H3",
+          "text": "按维度汇总"
+        },
+        {
+          "level": "H3",
+          "text": "请求明细"
+        }
+      ]
+    },
+    {
+      "id": "C31",
+      "title": "配置或检查模型连接（Provider）",
+      "purpose": "查看或保存模型连接的地址、凭据和模型，再核对实际生效配置。",
+      "priority": "core",
+      "group": "模型、图片、文件与语音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "settings",
+        "href": "#/system/models?category=providers",
+        "collectionId": null,
+        "categoryId": "providers",
+        "label": "模型连接（Provider）",
+        "path": "设置 → 模型与服务 → 模型连接（Provider）",
+        "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "配置或检查模型连接（Provider）\n\n查看或保存模型连接的地址、凭据和模型，再核对实际生效配置。\n\n设置 → 模型连接\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/providers",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "模型连接"
+        },
+        {
+          "level": "H3",
+          "text": "当前预设 · 示例模型服务"
+        },
+        {
+          "level": "H3",
+          "text": "自定义副本"
+        }
+      ]
+    },
+    {
+      "id": "C32",
+      "title": "检查或分配功能使用的模型",
+      "purpose": "检查问答、记忆、回顾等功能当前用的连接和模型，按需为要使用的模块分配。",
+      "priority": "core",
+      "group": "模型、图片、文件与语音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "settings",
+        "href": "#/system/models?category=model",
+        "collectionId": null,
+        "categoryId": "model",
+        "label": "模块与模型",
+        "path": "设置 → 模型与服务 → 模块与模型",
+        "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "检查或分配功能使用的模型\n\n检查问答、记忆、回顾等功能当前用的连接和模型，按需为要使用的模块分配。\n\n设置 → 按功能分配模型\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/assignments",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "按功能分配模型"
+        }
+      ]
+    },
+    {
+      "id": "C36",
+      "title": "控制新图片识别与原图授权",
+      "purpose": "为截图、上传、同步和笔记图片设置识字、理解方式，并单独决定问答模型能否读原图。",
+      "priority": "core",
+      "group": "模型、图片、文件与语音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "settings",
+        "href": "#/system/models?category=images",
+        "collectionId": null,
+        "categoryId": "images",
+        "label": "图片",
+        "path": "设置 → 模型与服务 → 图片",
+        "where": "在「图片」查看统一处理与授权，历史任务位于「处理已有图片」。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "控制新图片识别与原图授权\n\n为截图、上传、同步和笔记图片设置识字、理解方式，并单独决定问答模型能否读原图。\n\n设置 → 图片识别与原图读取\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/images",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "图片识别与原图读取"
+        },
+        {
+          "level": "H3",
+          "text": "问一问读取原图"
+        }
+      ]
+    },
+    {
+      "id": "C37",
+      "title": "查看文件或录音的内容提取和恢复",
+      "purpose": "核对原件、正文、转写及摘要状态，下载或播放原件，处理可取消或重试的阶段。",
+      "priority": "core",
+      "group": "模型、图片、文件与语音",
+      "condition": "恢复操作依文件处理状态和处理器能力显示。",
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=files",
+        "collectionId": "files",
+        "categoryId": null,
+        "label": "文件与录音",
+        "path": "资料库 → 文件与录音 → 文件详情；导入 → 媒体详情",
+        "where": "选择一个文件或录音，查看原件、文本与处理控制。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "查看文件或录音的内容提取和恢复\n\n核对原件、正文、转写及摘要状态，下载或播放原件，处理可取消或重试的阶段。\n\n资料库 → 文件与录音\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/library/files",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "资料库"
+        },
+        {
+          "level": "H2",
+          "text": "资料"
+        },
+        {
+          "level": "H2",
+          "text": "整理与回顾"
+        },
+        {
+          "level": "H2",
+          "text": "原始记录"
+        },
+        {
+          "level": "H2",
+          "text": "导入管理"
+        },
+        {
+          "level": "H2",
+          "text": "文件与录音"
+        },
+        {
+          "level": "H3",
+          "text": "长期记忆系统调研笔记"
+        },
+        {
+          "level": "H3",
+          "text": "项目讨论录音 · 本周计划"
+        }
+      ]
+    },
+    {
+      "id": "C38",
+      "title": "配置文件与语音处理",
+      "purpose": "启用中央处理，安装所需本地语音模型，并按文件类型选择处理方案。",
+      "priority": "core",
+      "group": "模型、图片、文件与语音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "settings",
+        "href": "#/system/models?category=file-processing",
+        "collectionId": null,
+        "categoryId": "file-processing",
+        "label": "文件与语音",
+        "path": "设置 → 模型与服务 → 文件与语音",
+        "where": "在「文件与语音」查看模型安装、规则、方案与服务，具体操作在对应区域。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "配置文件与语音处理\n\n启用中央处理，安装所需本地语音模型，并按文件类型选择处理方案。\n\n设置 → 文件与语音处理\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/file-processing",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "文件与语音处理"
+        },
+        {
+          "level": "H3",
+          "text": "本地语音模型"
+        }
+      ]
+    },
+    {
+      "id": "A19",
+      "title": "调整模型性能和协议细节",
+      "purpose": "在预设中调整推理、速度、超时及协议参数，并确认敏感地址或凭据变更。",
+      "priority": "advanced",
+      "group": "模型、图片、文件与语音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "settings",
+        "href": "#/system/models?category=providers",
+        "collectionId": null,
+        "categoryId": "providers",
+        "label": "模型连接（Provider）",
+        "path": "设置 → 模型与服务 → 模型连接（Provider） → 预设编辑 → 高级",
+        "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "调整模型性能和协议细节\n\n在预设中调整推理、速度、超时及协议参数，并确认敏感地址或凭据变更。\n\n设置 → 模型连接\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/providers",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "模型连接"
+        },
+        {
+          "level": "H3",
+          "text": "当前预设 · 示例模型服务"
+        },
+        {
+          "level": "H3",
+          "text": "自定义副本"
+        }
+      ]
+    },
+    {
+      "id": "A20",
+      "title": "复制或删除模型预设",
+      "purpose": "复用已有连接设置，或清理未使用的自定义预设。",
+      "priority": "advanced",
+      "group": "模型、图片、文件与语音",
+      "condition": "删除仅对允许删除且未被使用的自定义预设提供。",
+      "source_primary_target": {
+        "pageId": "settings",
+        "href": "#/system/models?category=providers",
+        "collectionId": null,
+        "categoryId": "providers",
+        "label": "模型连接（Provider）",
+        "path": "设置 → 模型与服务 → 模型连接（Provider） → 选中预设",
+        "where": "在「模型连接（Provider）」创建或选择预设，选中后查看编辑器与高级设置。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "复制或删除模型预设\n\n复用已有连接设置，或清理未使用的自定义预设。\n\n设置 → 模型连接\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/providers",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "模型连接"
+        },
+        {
+          "level": "H3",
+          "text": "当前预设 · 示例模型服务"
+        },
+        {
+          "level": "H3",
+          "text": "自定义副本"
+        }
+      ]
+    },
+    {
+      "id": "A21",
+      "title": "补处理或重算历史图片",
+      "purpose": "明确选择历史日期与来源，预览数量后安排补齐或重新计算。",
+      "priority": "advanced",
+      "group": "模型、图片、文件与语音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "settings",
+        "href": "#/system/models?category=images",
+        "collectionId": null,
+        "categoryId": "images",
+        "label": "图片",
+        "path": "设置 → 模型与服务 → 图片 → 处理已有图片",
+        "where": "在「图片」查看统一处理与授权，历史任务位于「处理已有图片」。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "补处理或重算历史图片\n\n明确选择历史日期与来源，预览数量后安排补齐或重新计算。\n\n设置 → 历史图片补处理\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/image-history",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "历史图片补处理"
+        }
+      ]
+    },
+    {
+      "id": "A22",
+      "title": "配置文件规则、方案和处理服务",
+      "purpose": "为文件类型或特定来源选择处理方案，设置模型、摘要和服务连接。",
+      "priority": "advanced",
+      "group": "模型、图片、文件与语音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "settings",
+        "href": "#/system/models?category=file-processing",
+        "collectionId": null,
+        "categoryId": "file-processing",
+        "label": "文件与语音",
+        "path": "设置 → 模型与服务 → 文件与语音",
+        "where": "在「文件与语音」查看模型安装、规则、方案与服务，具体操作在对应区域。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "配置文件规则、方案和处理服务\n\n为文件类型或特定来源选择处理方案，设置模型、摘要和服务连接。\n\n设置 → 文件与语音处理\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/file-processing",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "文件与语音处理"
+        },
+        {
+          "level": "H3",
+          "text": "本地语音模型"
+        }
+      ]
+    },
+    {
+      "id": "A23",
+      "title": "预览文件规则并重新处理已有原件",
+      "purpose": "用已保存规则试算 MIME 匹配，选择已有原件，核对预览后排队。",
+      "priority": "advanced",
+      "group": "模型、图片、文件与语音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "settings",
+        "href": "#/system/models?category=file-processing",
+        "collectionId": null,
+        "categoryId": "file-processing",
+        "label": "文件与语音",
+        "path": "设置 → 模型与服务 → 文件与语音 → 规则试算与已有文件",
+        "where": "在「文件与语音」查看模型安装、规则、方案与服务，具体操作在对应区域。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "预览文件规则并重新处理已有原件\n\n用已保存规则试算 MIME 匹配，选择已有原件，核对预览后排队。\n\n设置 → 文件与语音处理\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/file-processing",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "文件与语音处理"
+        },
+        {
+          "level": "H3",
+          "text": "本地语音模型"
+        }
+      ]
+    },
+    {
+      "id": "A24",
+      "title": "纠正转写并确认说话人",
+      "purpose": "手动校正文段、试听说话人样本，或让模型建议修改后逐项确认。",
+      "priority": "advanced",
+      "group": "模型、图片、文件与语音",
+      "condition": "需要已有转写；说话人、试听和模型复核按文件产物及处理能力出现。",
+      "source_primary_target": {
+        "pageId": "archive",
+        "href": "#/library?view=files",
+        "collectionId": "files",
+        "categoryId": null,
+        "label": "文件与录音",
+        "path": "资料库 → 文件与录音 → 文件详情 → 文段 / 说话人试听与命名 / 复核",
+        "where": "打开有转写的文件详情，查看文段、说话人和复核入口。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "纠正转写并确认说话人\n\n手动校正文段、试听说话人样本，或让模型建议修改后逐项确认。\n\n资料库 → 文件与录音\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/library/files",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "资料库"
+        },
+        {
+          "level": "H2",
+          "text": "资料"
+        },
+        {
+          "level": "H2",
+          "text": "整理与回顾"
+        },
+        {
+          "level": "H2",
+          "text": "原始记录"
+        },
+        {
+          "level": "H2",
+          "text": "导入管理"
+        },
+        {
+          "level": "H2",
+          "text": "文件与录音"
+        },
+        {
+          "level": "H3",
+          "text": "长期记忆系统调研笔记"
+        },
+        {
+          "level": "H3",
+          "text": "项目讨论录音 · 本周计划"
+        }
+      ]
+    },
+    {
+      "id": "A29",
+      "title": "设置执行并发和查看等待名额",
+      "purpose": "调整问答和后台执行的同时工作数量，了解哪些工作在排队。",
+      "priority": "advanced",
+      "group": "模型、图片、文件与语音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "settings",
+        "href": "#/system/models?category=model",
+        "collectionId": null,
+        "categoryId": "model",
+        "label": "模块与模型",
+        "path": "设置 → 模型与服务 → 模块与模型 → 执行并发",
+        "where": "在「模块与模型」查看模型分配，向下查找执行并发、记忆节奏与配方。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "设置执行并发和查看等待名额\n\n调整问答和后台执行的同时工作数量，了解哪些工作在排队。\n\n设置 → 执行并发与等待名额\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/concurrency",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "执行并发与等待名额"
+        }
+      ]
+    },
+    {
+      "id": "A30",
+      "title": "配置检索和外部连接的部署草稿",
+      "purpose": "准备向量检索、来源间隔、MCP 和 OAuth 的配置差异，交给部署机器应用。",
+      "priority": "advanced",
+      "group": "模型、图片、文件与语音",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "settings",
+        "href": "#/system/models?category=embedding",
+        "collectionId": null,
+        "categoryId": "embedding",
+        "label": "检索索引",
+        "path": "设置 → 模型与服务 → 检索索引 / 来源与外部应用",
+        "where": "在「检索索引」编辑并校验部署草稿，核对当前生效值。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "配置检索和外部连接的部署草稿\n\n准备向量检索、来源间隔、MCP 和 OAuth 的配置差异，交给部署机器应用。\n\n设置 → 部署配置草稿\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/advanced",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "部署配置草稿"
+        }
+      ]
+    },
+    {
+      "id": "C33",
+      "title": "暂停或立即停止自动记忆",
+      "purpose": "控制全局新自动记忆的接收，并区分继续收尾与立即撤销旧工作。",
+      "priority": "core",
+      "group": "自动记忆与可信插件方案",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "extensions",
+        "href": "#/system/plugins?tab=memory",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "自动记忆与插件",
+        "path": "设置 → 自动记忆与插件 → 记忆方案 → 自动记忆",
+        "where": "在当前记忆方案中查看「自动记忆」的状态和控制。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "暂停或立即停止自动记忆\n\n控制全局新自动记忆的接收，并区分继续收尾与立即撤销旧工作。\n\n设置 → 自动记忆与插件 → 记忆方案 → 自动记忆\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/plugins",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "自动记忆与插件"
+        },
+        {
+          "level": "H2",
+          "text": "自动整理记忆"
+        },
+        {
+          "level": "H2",
+          "text": "当前记忆方案"
+        }
+      ]
+    },
+    {
+      "id": "C34",
+      "title": "核对和替换整套记忆方案",
+      "purpose": "查看当前运行的整套记忆实现，准备和验证替换，再单独应用已验证方案。",
+      "priority": "core",
+      "group": "自动记忆与可信插件方案",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "extensions",
+        "href": "#/system/plugins?tab=memory",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "自动记忆与插件",
+        "path": "设置 → 自动记忆与插件 → 记忆方案",
+        "where": "查看当前方案；选择替换目标后依次预览、准备、验证和应用。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "核对和替换整套记忆方案\n\n查看当前运行的整套记忆实现，准备和验证替换，再单独应用已验证方案。\n\n设置 → 自动记忆与插件 → 记忆方案\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/plugins",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "自动记忆与插件"
+        },
+        {
+          "level": "H2",
+          "text": "自动整理记忆"
+        },
+        {
+          "level": "H2",
+          "text": "当前记忆方案"
+        }
+      ]
+    },
+    {
+      "id": "C35",
+      "title": "管理可信记忆插件",
+      "purpose": "从支持的固定版本发现、安装和配置实例，检查后启用或绑定方案。",
+      "priority": "core",
+      "group": "自动记忆与可信插件方案",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "extensions",
+        "href": "#/system/plugins",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "自动记忆与插件",
+        "path": "设置 → 自动记忆与插件 → 已安装 / 发现",
+        "where": "在「发现」选受支持发布；在「已安装」查看实例、配置、验证和启用。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "管理可信记忆插件\n\n从支持的固定版本发现、安装和配置实例，检查后启用或绑定方案。\n\n设置 → 自动记忆与插件 → 已安装 / 发现\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/plugins",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "自动记忆与插件"
+        },
+        {
+          "level": "H2",
+          "text": "自动整理记忆"
+        },
+        {
+          "level": "H2",
+          "text": "当前记忆方案"
+        }
+      ]
+    },
+    {
+      "id": "C01",
+      "title": "登录并管理当前会话",
+      "purpose": "确认正在使用哪个中央节点，选择浏览器保留登录的时间，或退出当前会话。",
+      "priority": "core",
+      "group": "登录、语言与页面入口",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "about",
+        "href": "#/preferences",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "设置",
+        "path": "设置 → 当前服务（中央节点）",
+        "where": "页面下方的「当前服务（中央节点）」和「登录会话有效期」；未登录时由目标页进入登录。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "登录并管理当前会话\n\n确认正在使用哪个中央节点，选择浏览器保留登录的时间，或退出当前会话。\n\n设置 → 账号与设备\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/account",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "账号与设备"
+        },
+        {
+          "level": "H2",
+          "text": "林同学"
+        },
+        {
+          "level": "H2",
+          "text": "当前服务与中央节点"
+        },
+        {
+          "level": "H3",
+          "text": "当前服务"
+        },
+        {
+          "level": "H3",
+          "text": "中央节点"
+        },
+        {
+          "level": "H2",
+          "text": "浏览器登录保留"
+        },
+        {
+          "level": "H2",
+          "text": "已连接设备"
+        },
+        {
+          "level": "H3",
+          "text": "我的 Mac"
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "title": "找到常用页面和所属工具",
+      "purpose": "从五个主入口进入日常工作，再到各自的工具或设置继续操作。",
+      "priority": "core",
+      "group": "登录、语言与页面入口",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "overview",
+        "href": "#/today",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "今天",
+        "path": "主导航 → 今天 / 资料库 / 问一问 / 活动 / 采集与设备；设置",
+        "where": "主导航切换工作区；资料库的「资料库工具」、采集与设备的「来源与连接」选择框进入所属工具。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "找到常用页面和所属工具\n\n从主要导航入口进入日常工作，再到各自的工具或设置继续操作。\n\n主导航 → 今天 / 资料库 / 问一问 / 活动 / 采集与设备；设置\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/today",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "今天"
+        },
+        {
+          "level": "H2",
+          "text": "需要你继续"
+        },
+        {
+          "level": "H3",
+          "text": "补充录音里的一个背景"
+        },
+        {
+          "level": "H3",
+          "text": "飞书来源需要重新授权"
+        },
+        {
+          "level": "H2",
+          "text": "我的待办"
+        },
+        {
+          "level": "H2",
+          "text": "待核对的日程建议"
+        },
+        {
+          "level": "H2",
+          "text": "最近保存的资料"
+        },
+        {
+          "level": "H2",
+          "text": "最近洞察"
+        }
+      ]
+    },
+    {
+      "id": "C42",
+      "title": "找到帮助、版本和维护方式",
+      "purpose": "查找问题反馈入口，核对网页与中央版本，以及中央节点的手动升级说明。",
+      "priority": "core",
+      "group": "帮助、诊断与 Agent 视角",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "help",
+        "href": "#/help",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "帮助与反馈",
+        "path": "设置 → 帮助与反馈",
+        "where": "查看反馈链接；版本也在设置的「版本与更新」或「诊断与更新」。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "找到帮助、版本和维护方式\n\n查找问题反馈入口，核对网页与中央版本，以及中央节点的手动升级说明。\n\n设置 → 帮助与诊断 → 帮助与版本\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/help",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "帮助与版本"
+        },
+        {
+          "level": "H3",
+          "text": "你的个人资料库"
+        },
+        {
+          "level": "H3",
+          "text": "反馈与诊断支持"
+        },
+        {
+          "level": "H3",
+          "text": "中央工作台的维护"
+        },
+        {
+          "level": "H3",
+          "text": "键盘操作"
+        }
+      ]
+    },
+    {
+      "id": "A26",
+      "title": "查看 Agent 当前能读取的上下文",
+      "purpose": "只读浏览 Agent 的虚拟目录，并为一个问题预览首次上下文，不必调用模型。",
+      "priority": "advanced",
+      "group": "帮助、诊断与 Agent 视角",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "agentView",
+        "href": "#/agent",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "Agent 能看到什么",
+        "path": "今天 → 更多上下文视图 → Agent 视角；设置 → Agent 能看到什么",
+        "where": "打开 Agent 视角，在目录、范围和首次上下文预览中核对。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "查看 Agent 当前能读取的上下文\n\n只读浏览 Agent 的虚拟目录，并为一个问题预览首次上下文，不必调用模型。\n\n设置 → 对外授权 → 助手可读取的范围\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/agent-scope",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "助手可读取的范围"
+        },
+        {
+          "level": "H2",
+          "text": "内容目录"
+        },
+        {
+          "level": "H3",
+          "text": "资料 / 6 项"
+        },
+        {
+          "level": "H3",
+          "text": "记忆 / 1 项"
+        },
+        {
+          "level": "H3",
+          "text": "洞察 / 0 项"
+        },
+        {
+          "level": "H2",
+          "text": "为一个问题预览首次上下文"
+        }
+      ]
+    },
+    {
+      "id": "A27",
+      "title": "查看已记录的实际模型输入和工具读取",
+      "purpose": "按运行查阅当时保存的上下文、模型和工具事件，核对真实记录。",
+      "priority": "advanced",
+      "group": "帮助、诊断与 Agent 视角",
+      "condition": "只有已保留的详细运行记录可查；没有记录时只能理解设置与边界。",
+      "source_primary_target": {
+        "pageId": "agentView",
+        "href": "#/agent",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "Agent 能看到什么",
+        "path": "Agent 视角 → 实际输入与读取过程",
+        "where": "切换实际输入与读取过程，选择已有运行；详细记录开关在诊断偏好。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "查看已记录的实际模型输入和工具读取\n\n按运行查阅当时保存的上下文、模型和工具事件，核对真实记录。\n\n设置 → 对外授权 → 读取记录\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/agent-events",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "读取记录"
+        },
+        {
+          "level": "H2",
+          "text": "这周有哪些值得跟进的事？"
+        }
+      ]
+    },
+    {
+      "id": "A28",
+      "title": "核对实际注册的插件能力",
+      "purpose": "查看服务端与网页实际加载的能力、版本、状态和当前模块绑定。",
+      "priority": "advanced",
+      "group": "帮助、诊断与 Agent 视角",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "extensions",
+        "href": "#/system/plugins",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "自动记忆与插件",
+        "path": "设置 → 自动记忆与插件 → 高级 → 已注册能力清单",
+        "where": "在插件页高级区域展开已注册能力清单。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "核对实际注册的插件能力\n\n查看服务端与网页实际加载的能力、版本、状态和当前模块绑定。\n\n设置 → 自动记忆与插件 → 已加载能力\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/plugins",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "自动记忆与插件"
+        },
+        {
+          "level": "H2",
+          "text": "自动整理记忆"
+        },
+        {
+          "level": "H2",
+          "text": "当前记忆方案"
+        }
+      ]
+    },
+    {
+      "id": "A34",
+      "title": "查阅运行日志并导出支持包",
+      "purpose": "按文件、阶段和时间范围查看保留的日志，导出诊断资料用于排查。",
+      "priority": "advanced",
+      "group": "帮助、诊断与 Agent 视角",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "developer",
+        "href": "#/system/diagnostics",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "诊断与更新",
+        "path": "设置 → 诊断与更新 → 运行诊断",
+        "where": "使用日志筛选和导出入口；以实际保留范围为准。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "查阅运行日志并导出支持包\n\n按文件、阶段和时间范围查看保留的日志，导出诊断资料用于排查。\n\n设置 → 诊断与更新 → 运行诊断\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/diagnostics",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "帮助与诊断"
+        },
+        {
+          "level": "H3",
+          "text": "今后的诊断记录"
+        },
+        {
+          "level": "H3",
+          "text": "当前生效值 · 示例工作台"
+        },
+        {
+          "level": "H3",
+          "text": "记录问题描述"
+        }
+      ]
+    },
+    {
+      "id": "A35",
+      "title": "设置诊断记录并查看部署生效值",
+      "purpose": "调整今后的日志和详细过程记录，核对中央节点实际使用的目录和配置。",
+      "priority": "advanced",
+      "group": "帮助、诊断与 Agent 视角",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "developer",
+        "href": "#/system/diagnostics",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "诊断与更新",
+        "path": "设置 → 诊断与更新 → 诊断偏好 / 部署与全部生效配置",
+        "where": "查看「诊断偏好」，展开「部署与全部生效配置」。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "设置诊断记录并查看部署生效值\n\n调整今后的日志和详细过程记录，核对中央节点实际使用的目录和配置。\n\n设置 → 帮助与诊断 → 今后的诊断记录\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings/diagnostics",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "帮助与诊断"
+        },
+        {
+          "level": "H3",
+          "text": "今后的诊断记录"
+        },
+        {
+          "level": "H3",
+          "text": "当前生效值 · 示例工作台"
+        },
+        {
+          "level": "H3",
+          "text": "记录问题描述"
+        }
+      ]
+    },
+    {
+      "id": "A36",
+      "title": "切换界面语言",
+      "purpose": "按当前使用习惯选择中文或 English 界面。",
+      "priority": "advanced",
+      "group": "帮助、诊断与 Agent 视角",
+      "condition": null,
+      "source_primary_target": {
+        "pageId": "about",
+        "href": "#/preferences",
+        "collectionId": null,
+        "categoryId": null,
+        "label": "设置",
+        "path": "设置 → 语言",
+        "where": "设置入口顶部的语言选择器。"
+      },
+      "scope": "Directory reachability and visible destination only; not all feature operations.",
+      "entry": "切换界面语言\n\n按当前使用习惯选择中文或 English 界面。\n\n设置 → 语言\n打开",
+      "entry_action": "打开",
+      "reachable": true,
+      "target_url": "https://mote-prototype.invalid/?reset=1#/settings",
+      "headings": [
+        {
+          "level": "H1",
+          "text": "设置"
+        },
+        {
+          "level": "H2",
+          "text": "账号与设备"
+        },
+        {
+          "level": "H2",
+          "text": "模型与服务"
+        },
+        {
+          "level": "H2",
+          "text": "采集与隐私"
+        },
+        {
+          "level": "H2",
+          "text": "自动记忆与插件"
+        },
+        {
+          "level": "H2",
+          "text": "存储与备份"
+        },
+        {
+          "level": "H2",
+          "text": "对外授权"
+        },
+        {
+          "level": "H2",
+          "text": "用量与费用"
+        },
+        {
+          "level": "H2",
+          "text": "帮助与诊断"
+        },
+        {
+          "level": "H2",
+          "text": "语言与外观"
+        }
+      ]
+    }
+  ]
+}

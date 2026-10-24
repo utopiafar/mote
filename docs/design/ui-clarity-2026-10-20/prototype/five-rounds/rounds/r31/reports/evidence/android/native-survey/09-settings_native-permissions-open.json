@@ -1,0 +1,240 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/native-permissions",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n系统权限\n\n仅在相关任务需要时请求。拒绝后仍可保存本机文字与已选文件。\n\n返回\n无障碍服务\n\n页面与应用隐私范围\n\n未授权\n打开系统设置示例\n通知使用权\n\n通知、媒体与设备事件\n\n未授权\n打开系统设置示例\n使用情况访问\n\n应用活动观测\n\n未授权\n打开系统设置示例\n投屏录制\n\n每次投屏会话单独确认\n\n未授权\n打开系统设置示例\n所选文件范围\n\n只访问选择器授予的目录\n\n未授权\n打开系统设置示例\n日历读取\n\n只读取选定日历\n\n未授权\n打开系统设置示例\n后台运行设置\n\n电池优化、自启动与受限设置由系统和设备厂商控制。返回后保留原任务；不保证所有机型长时间运行。\n\n电池优化\n自启动\n受限设置\n刷新权限状态\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回",
+      "label": "返回",
+      "action": "go",
+      "page": "settings/native-privacy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开系统设置示例",
+      "label": "打开系统设置示例",
+      "action": "ns-permission",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开系统设置示例",
+      "label": "打开系统设置示例",
+      "action": "ns-permission",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开系统设置示例",
+      "label": "打开系统设置示例",
+      "action": "ns-permission",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开系统设置示例",
+      "label": "打开系统设置示例",
+      "action": "ns-permission",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开系统设置示例",
+      "label": "打开系统设置示例",
+      "action": "ns-permission",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开系统设置示例",
+      "label": "打开系统设置示例",
+      "action": "ns-permission",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "后台运行设置",
+      "label": "后台运行设置",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "电池优化",
+      "label": "电池优化",
+      "action": "ns-background",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "自启动",
+      "label": "自启动",
+      "action": "ns-background",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "受限设置",
+      "label": "受限设置",
+      "action": "ns-background",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新权限状态",
+      "label": "刷新权限状态",
+      "action": "ns-permission-refresh",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "系统权限"
+    },
+    {
+      "level": "H2",
+      "text": "无障碍服务"
+    },
+    {
+      "level": "H2",
+      "text": "通知使用权"
+    },
+    {
+      "level": "H2",
+      "text": "使用情况访问"
+    },
+    {
+      "level": "H2",
+      "text": "投屏录制"
+    },
+    {
+      "level": "H2",
+      "text": "所选文件范围"
+    },
+    {
+      "level": "H2",
+      "text": "日历读取"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

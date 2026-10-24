@@ -1,0 +1,10 @@
+[
+  {
+    "event": "session_restart_before_first_ui_action",
+    "reason": "The initial exec session was launched without tty=true, so write_stdin reported that stdin was closed. The attempted click was never delivered to the browser.",
+    "ui_actions_completed_before_restart": 0,
+    "app_failure": false,
+    "recovery": "Restart the same local UI helper with tty=true. Preserve the openCandidate event in operations.jsonl.",
+    "cleanup": "The initial helper PID was checked. A subsequent targeted termination found the process had already ended; no UI action had been delivered."
+  }
+]

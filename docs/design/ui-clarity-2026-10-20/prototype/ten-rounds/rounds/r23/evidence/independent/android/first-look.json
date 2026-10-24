@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-10-21T04:56:52.215Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "1ba1fa9cf5b8b648923b810570e9c095570f8c642628e8bdb216a202d1cb6225",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "answers": {
+    "purpose": "记录内容以备找回、提问和核对。",
+    "input": "文件、想法和所选来源。",
+    "first_action": "写下第一条记录",
+    "expected_result": "打开已保存记录看原文。",
+    "setup": "没有立即权限门槛。",
+    "unclear": "连接后的管理方式要后续观察。",
+    "visual": "主任务和持续来源同在首屏，未见横向溢出。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

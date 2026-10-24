@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-10-21T04:49:03.420Z",
+  "before_any_product_action": true,
+  "candidate_sha256": "d636f0c97c917a98eed90cc049e6008f6e48cc5ea2653bd788840ede87cd9d08",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "answers": {
+    "purpose": "保存日常资料并在之后找回、询问和核对。",
+    "input": "文件、想法和设备记录。",
+    "first_action": "写下第一条记录",
+    "expected_result": "能从资料库打开的记录。",
+    "setup": "可先写，无立即权限要求。",
+    "unclear": "更深入的来源与记忆职责在后续查看。",
+    "visual": "首屏主动作与持续来源都可发现，底栏稳定。"
+  },
+  "screenshot": "00-first-look.png",
+  "prior_knowledge": "Informed iterative evaluator; previous rounds already reviewed."
+}

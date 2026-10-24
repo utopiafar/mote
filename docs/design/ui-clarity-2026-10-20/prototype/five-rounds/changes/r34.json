@@ -1,0 +1,21 @@
+{
+  "round": 34,
+  "basedOn": "R33 independent rendered-UI findings and the unchanged 188-feature semantic contract",
+  "changes": [
+    {"finding": "R33 archived recording has no openable original", "change": "Completed audio recovery now opens a distinct retained audio detail from both results and saved materials. The explicitly synthetic WAV can be played and downloaded, returns to the exact independent transcript, and retains one archive identity across retry, re-sync and disconnection."},
+    {"finding": "Inventory browser-local upload recovery", "change": "A named local upload queue preserves per-file bytes, submission identity and exact interpretation context through pause, retry, missing-file reselection and Central receipt. Wrong files are rejected without losing context. Removing a local queue entry preserves received Central originals and import records; unfinished local uploads no longer claim their originals are archived."},
+    {"finding": "R33 task notices appear on unrelated pages", "change": "Calendar and todo notices are scoped to their originating task page. Final calendar approval also rechecks target-device availability and preserves the draft if authorization changed."},
+    {"finding": "New-user context comprehension", "change": "The import field is labeled Material context with a plain-language prompt to describe the content and background. The same optional multiline 12000-character field, parser/image settings, review, correction and saved-detail path remain intact."},
+    {"finding": "Native saved-file screen repeats information and implies another scan", "change": "The selected-file page uses one compact saved summary. One-time completion and empty or filtered tasks no longer promise a future scan; explicitly continuous sources still show their next scan. Selected-file retention says files rather than directories."},
+    {"finding": "Inventory usage and historical price interpretation", "change": "Focused usage and pricing pages provide scoped filters, grouping, pagination, separate currency totals, unknown measurements and immutable historical price receipts. Saved current prices do not rewrite historical estimates."},
+    {"finding": "Inventory Agent read-only context and retained evidence", "change": "Agent catalog, new-conversation preview and retained historical input are separate read-only tasks. Scoped virtual directories, paged bodies and captured evidence distinguish uncertainty, failed reads and truncation. A source description awaiting Central acknowledgement is omitted from received Agent context."}
+  ],
+  "authorVerification": {
+    "root": "The final assembled R34 HTML passed the normal import/context and collector-boundary journey, local upload-recovery journey, and fixed calendar review/stale-evidence/uncertain-result/revoked-target journey on Web, Mac and Android, with zero page errors in these checks.",
+    "native": "14 focused native assertions plus 3 targeted selected-file copy assertions. The native layer was checked with frozen R33 companion layers before final root integration.",
+    "recording": "42 focused rendered-control assertions across all three platforms, including actual generated WAV playback/download and stable archive identity. A final current-assembly Android viewport-only check also resolved the full-page screenshot skip-link artifact without a product change.",
+    "central": "15 bounded rendered-control journeys, including language/theme, shared Mac/Android pages, locally pending context omission and empty-account history. Companion layers were frozen R33 before root integration.",
+    "limits": "Author checks do not establish independent acceptance or comprehensive 188-feature coverage. Independent scores and unresolved assertions are preserved in this round's separately owned evaluation."
+  },
+  "boundary": "HTML simulation with synthetic data. No production application, backend, model, real OAuth, native collection, real calendar, vendor audio or actual device permission was executed."
+}

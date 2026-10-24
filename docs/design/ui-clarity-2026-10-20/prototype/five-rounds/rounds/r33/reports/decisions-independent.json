@@ -1,0 +1,2158 @@
+{
+  "round": "R33",
+  "evaluator": "/root/review_r31_r34",
+  "platforms": {
+    "web": {
+      "scores": {
+        "new_user": {
+          "value": 3,
+          "reason": "Fresh empty-home and populated primary-page evidence clearly identifies the first action and device-owned collection. The evaluated native file confirmation and Web recording/calendar/maintenance tasks explain prerequisites, scope and next steps. Unchanged first-import and other exceptional journeys were not repeated this round."
+        },
+        "functionality": {
+          "value": 2.5,
+          "reason": "Changed-family journeys preserve meaningful state and several R32 defects are repaired, but the independent full contract remains incomplete. Required assertions outside this focused round stay untested; observed families still contain unoperated branches. Functionality therefore remains below the complete-semantic anchor of 3."
+        },
+        "simplicity": {
+          "value": 3,
+          "reason": "The populated Library keeps search and records central. Recording connection, scope and results are separate steps; calendar editing and fixed review are separate states. Central maintenance has named task pages, although the repeated settings header and several expanded disclosures can still make long pages."
+        },
+        "clarity": {
+          "value": 2.75,
+          "reason": "Google scope/result copy and MCP per-attempt counts now match the operated states. However an archived audio backup has no visible audio opening control in the exercised result, and calendar-device success notices persist into unrelated task pages. These keep the score below fully consistent state clarity."
+        },
+        "design": {
+          "value": 3,
+          "reason": "Fresh desktop Library, home and task screenshots show coherent typography, spacing, a restrained accent and clear action hierarchy. Mac has a distinct menu/window frame; calendar fixed review is a readable focused document."
+        },
+        "craft": {
+          "value": 2.75,
+          "reason": "No page exception or horizontal document overflow was observed in current evidence. Ordinary selection, file export/import and recovery controls function, but missing audio opening and task-external notices remain interaction defects. Full keyboard and screen-reader testing was not repeated."
+        },
+        "originality": {
+          "value": 3,
+          "reason": "Source explanation acknowledgment, exact fixed calendar review, original-event verification, collector-owned file range and separate receipt/body states express Mote-specific tasks using familiar controls."
+        }
+      },
+      "central_collection_gate": "pass"
+    },
+    "mac": {
+      "scores": {
+        "new_user": {
+          "value": 3,
+          "reason": "Fresh empty-home and populated primary-page evidence clearly identifies the first action and device-owned collection. The evaluated native file confirmation and Web recording/calendar/maintenance tasks explain prerequisites, scope and next steps. Unchanged first-import and other exceptional journeys were not repeated this round."
+        },
+        "functionality": {
+          "value": 2.5,
+          "reason": "Changed-family journeys preserve meaningful state and several R32 defects are repaired, but the independent full contract remains incomplete. Required assertions outside this focused round stay untested; observed families still contain unoperated branches. Functionality therefore remains below the complete-semantic anchor of 3."
+        },
+        "simplicity": {
+          "value": 3,
+          "reason": "The populated Library keeps search and records central. Recording connection, scope and results are separate steps; calendar editing and fixed review are separate states. Central maintenance has named task pages, although the repeated settings header and several expanded disclosures can still make long pages."
+        },
+        "clarity": {
+          "value": 3,
+          "reason": "Mac capture stop now replaces the prior started notice. Capture pause and sending pause remain separate. Selected files, local originals, pending reception, exact receipt identity and body processing have distinct states; both date-window boundaries filter correctly."
+        },
+        "design": {
+          "value": 3,
+          "reason": "Fresh desktop Library, home and task screenshots show coherent typography, spacing, a restrained accent and clear action hierarchy. Mac has a distinct menu/window frame; calendar fixed review is a readable focused document."
+        },
+        "craft": {
+          "value": 3,
+          "reason": "No observed page exception or horizontal document overflow. Evaluated ordinary controls, modal closure, dirty-draft guard, file confirmation and record return preserve their context. Full keyboard, screen-reader and operating-system integration were not tested."
+        },
+        "originality": {
+          "value": 3,
+          "reason": "Source explanation acknowledgment, exact fixed calendar review, original-event verification, collector-owned file range and separate receipt/body states express Mote-specific tasks using familiar controls."
+        }
+      },
+      "central_collection_gate": "pass"
+    },
+    "android": {
+      "scores": {
+        "new_user": {
+          "value": 3,
+          "reason": "Fresh empty-home and populated primary-page evidence clearly identifies the first action and device-owned collection. The evaluated native file confirmation and Web recording/calendar/maintenance tasks explain prerequisites, scope and next steps. Unchanged first-import and other exceptional journeys were not repeated this round."
+        },
+        "functionality": {
+          "value": 2.5,
+          "reason": "Changed-family journeys preserve meaningful state and several R32 defects are repaired, but the independent full contract remains incomplete. Required assertions outside this focused round stay untested; observed families still contain unoperated branches. Functionality therefore remains below the complete-semantic anchor of 3."
+        },
+        "simplicity": {
+          "value": 3.25,
+          "reason": "The Android Library removes its repeated content title, leaving one app-bar title and moving the first row to about 490 pixels at 412 by 915. Named type and filter disclosures keep the list central. Single-file capture and its confirmation have one task each. This is a modest improvement beyond the clear-hierarchy anchor, not evidence of complete semantic coverage."
+        },
+        "clarity": {
+          "value": 3,
+          "reason": "The selected-file workflow explicitly remains local while unconnected. Its saved description awaits Central confirmation, and local-original, reception and processing states remain separate. The saved-file description wording still refers to a selected directory, a minor scope-copy defect."
+        },
+        "design": {
+          "value": 3.25,
+          "reason": "The narrow Library has one title, stable bottom navigation, legible rows and a clearer ratio of content to framing. Fresh empty-home and file-review screens retain the same typography and restrained accent. This supports a quarter-point improvement above the coherent platform-adaptation anchor."
+        },
+        "craft": {
+          "value": 3,
+          "reason": "No observed page exception or horizontal document overflow. Evaluated ordinary controls, modal closure, dirty-draft guard, file confirmation and record return preserve their context. Full keyboard, screen-reader and operating-system integration were not tested."
+        },
+        "originality": {
+          "value": 3,
+          "reason": "Source explanation acknowledgment, exact fixed calendar review, original-event verification, collector-owned file range and separate receipt/body states express Mote-specific tasks using familiar controls."
+        }
+      },
+      "central_collection_gate": "pass"
+    }
+  },
+  "feature_observations": {
+    "UF-PRODUCT-BOUNDARIES": {
+      "web": {
+        "status": "partial",
+        "reason": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested.",
+        "evidence": [
+          "evidence/web/changed/01-empty-home.json",
+          "evidence/web/major/library.json",
+          "evidence/web/major/sources.json",
+          "evidence/web/major/ask.json",
+          "evidence/web/major/activity.json"
+        ],
+        "assertions": {
+          "results:0": {
+            "status": "verified",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          },
+          "actions:0": {
+            "status": "partial",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          },
+          "actions:1": {
+            "status": "partial",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          },
+          "results:2": {
+            "status": "partial",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          }
+        }
+      },
+      "mac": {
+        "status": "partial",
+        "reason": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested.",
+        "evidence": [
+          "evidence/mac/files/01-empty-home.json",
+          "evidence/mac/major/library.json",
+          "evidence/mac/major/sources.json",
+          "evidence/mac/major/ask.json",
+          "evidence/mac/major/activity.json"
+        ],
+        "assertions": {
+          "results:0": {
+            "status": "verified",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          },
+          "actions:0": {
+            "status": "partial",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          },
+          "actions:1": {
+            "status": "partial",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          },
+          "results:2": {
+            "status": "partial",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          }
+        }
+      },
+      "android": {
+        "status": "partial",
+        "reason": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested.",
+        "evidence": [
+          "evidence/android/files/01-empty-home.json",
+          "evidence/android/major/library.json",
+          "evidence/android/major/sources.json",
+          "evidence/android/major/ask.json",
+          "evidence/android/major/activity.json"
+        ],
+        "assertions": {
+          "results:0": {
+            "status": "verified",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          },
+          "actions:0": {
+            "status": "partial",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          },
+          "actions:1": {
+            "status": "partial",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          },
+          "results:2": {
+            "status": "partial",
+            "observation": "Fresh four-workspace and empty-home evidence separates Central archive/search from Mac/Android local collection. No evaluated Web source surface offers Central-local watched roots. Optional-model behavior across all tasks was not retested."
+          }
+        }
+      }
+    },
+    "UF-NAVIGATION-STATE": {
+      "web": {
+        "status": "partial",
+        "reason": "Calendar evidence changes retain the exact draft; portable-import refresh/retry and activity return preserve one operation identity. General workspace filters and unavailable-entry fallback remain untested.",
+        "evidence": [
+          "evidence/web/calendar/08-review-stale.json",
+          "evidence/web/calendar/10-refixed-v2.json",
+          "evidence/web/calendar/11-calendar-approved.json",
+          "evidence/web/maintenance-reload/04-reload-no-reset.json",
+          "evidence/web/maintenance-reload/06-retry-same-operation.json",
+          "evidence/web/maintenance-reload/08-import-activity-receipt.json",
+          "evidence/web/maintenance-reload/09-import-original-return.json"
+        ],
+        "assertions": {
+          "actions:0": {
+            "status": "verified",
+            "observation": "Calendar evidence changes retain the exact draft; portable-import refresh/retry and activity return preserve one operation identity. General workspace filters and unavailable-entry fallback remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "Calendar evidence changes retain the exact draft; portable-import refresh/retry and activity return preserve one operation identity. General workspace filters and unavailable-entry fallback remain untested."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "Calendar evidence changes retain the exact draft; portable-import refresh/retry and activity return preserve one operation identity. General workspace filters and unavailable-entry fallback remain untested."
+          },
+          "results:0": {
+            "status": "partial",
+            "observation": "Calendar evidence changes retain the exact draft; portable-import refresh/retry and activity return preserve one operation identity. General workspace filters and unavailable-entry fallback remain untested."
+          }
+        }
+      },
+      "mac": {
+        "status": "partial",
+        "reason": "The selected local record and source identity survive detail closure and return; Mac additionally preserves receipt-1 and its seven-day filter through actual-content navigation. Unsupported-entry fallback remains untested.",
+        "evidence": [
+          "evidence/mac/files/11-file-source-records.json",
+          "evidence/mac/files/12-file-record-original.json",
+          "evidence/mac/files/15-exact-file-source-return.json",
+          "evidence/mac/files/29-return-exact-receipt.json",
+          "evidence/mac/files/30-return-filtered-list.json"
+        ],
+        "assertions": {
+          "actions:0": {
+            "status": "verified",
+            "observation": "The selected local record and source identity survive detail closure and return; Mac additionally preserves receipt-1 and its seven-day filter through actual-content navigation. Unsupported-entry fallback remains untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "The selected local record and source identity survive detail closure and return; Mac additionally preserves receipt-1 and its seven-day filter through actual-content navigation. Unsupported-entry fallback remains untested."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "The selected local record and source identity survive detail closure and return; Mac additionally preserves receipt-1 and its seven-day filter through actual-content navigation. Unsupported-entry fallback remains untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "The selected local record and source identity survive detail closure and return; Mac additionally preserves receipt-1 and its seven-day filter through actual-content navigation. Unsupported-entry fallback remains untested."
+          }
+        }
+      },
+      "android": {
+        "status": "partial",
+        "reason": "The selected local record and source identity survive detail closure and return; Mac additionally preserves receipt-1 and its seven-day filter through actual-content navigation. Unsupported-entry fallback remains untested.",
+        "evidence": [
+          "evidence/android/files/13-file-queue.json",
+          "evidence/android/files/14-file-original.json",
+          "evidence/android/files/15-exact-file-return.json"
+        ],
+        "assertions": {
+          "actions:0": {
+            "status": "verified",
+            "observation": "The selected local record and source identity survive detail closure and return; Mac additionally preserves receipt-1 and its seven-day filter through actual-content navigation. Unsupported-entry fallback remains untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "The selected local record and source identity survive detail closure and return; Mac additionally preserves receipt-1 and its seven-day filter through actual-content navigation. Unsupported-entry fallback remains untested."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "The selected local record and source identity survive detail closure and return; Mac additionally preserves receipt-1 and its seven-day filter through actual-content navigation. Unsupported-entry fallback remains untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "The selected local record and source identity survive detail closure and return; Mac additionally preserves receipt-1 and its seven-day filter through actual-content navigation. Unsupported-entry fallback remains untested."
+          }
+        }
+      }
+    },
+    "UF-RECORDING-AUTH-SCOPE": {
+      "web": {
+        "status": "partial",
+        "reason": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested.",
+        "evidence": [
+          "evidence/web/changed/05-recording-catalog.json",
+          "evidence/web/changed/06-feishu-entry.json",
+          "evidence/web/changed/07-recording-connection.json",
+          "evidence/web/changed/08-recording-scope.json",
+          "evidence/web/changed/10-recording-authorized-scope.json",
+          "evidence/web/changed/11-recording-unacked-blocked.json",
+          "evidence/web/changed/12-recording-context-ack.json",
+          "evidence/web/changed/13-recording-dirty-blocked.json",
+          "evidence/web/changed/14-recording-context-reack.json",
+          "evidence/web/changed/15-recording-stages.json",
+          "evidence/web/changed/22-recording-paused.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          },
+          "inputs:2": {
+            "status": "verified",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          },
+          "inputs:3": {
+            "status": "verified",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          },
+          "inputs:4": {
+            "status": "verified",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          },
+          "actions:3": {
+            "status": "verified",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          },
+          "results:3": {
+            "status": "verified",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          },
+          "inputs:1": {
+            "status": "partial",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          },
+          "inputs:5": {
+            "status": "partial",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          },
+          "actions:4": {
+            "status": "partial",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          },
+          "results:2": {
+            "status": "partial",
+            "observation": "The ordinary Feishu catalog entry now opens connection ID, vendor and independent authorization. A supplied app fixture authorizes; unacknowledged and subsequently dirty exact context both block intake. Version 2 is acknowledged before the selected date range starts; pause retains results. DingTalk was not successfully completed in this round, and other vendors, background intervals and disconnect remain untested."
+          }
+        }
+      }
+    },
+    "UF-RECORDING-STAGES-RECOVERY": {
+      "web": {
+        "status": "partial",
+        "reason": "The text archive opens while audio backup is failed. Retrying only the failed audio step changes audio count 0 to 1 and clears failure; the history checkpoint advances. The resulting audio row and expanded saved-items disclosure have no audio detail/original opening control, only the transcript link. Empty/unsupported, exhausted retry, cancellation, unknown submission and actual vendor-deletion variations were not exercised.",
+        "evidence": [
+          "evidence/web/changed/15-recording-stages.json",
+          "evidence/web/changed/16-recording-text.json",
+          "evidence/web/changed/18-recording-audio-retry.json",
+          "evidence/web/changed/19-recording-history.json",
+          "evidence/web/changed/20-recording-checkpoint.json",
+          "evidence/web/changed/21-recording-result-fixtures.json"
+        ],
+        "assertions": {
+          "actions:0": {
+            "status": "verified",
+            "observation": "The text archive opens while audio backup is failed. Retrying only the failed audio step changes audio count 0 to 1 and clears failure; the history checkpoint advances. The resulting audio row and expanded saved-items disclosure have no audio detail/original opening control, only the transcript link. Empty/unsupported, exhausted retry, cancellation, unknown submission and actual vendor-deletion variations were not exercised."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "The text archive opens while audio backup is failed. Retrying only the failed audio step changes audio count 0 to 1 and clears failure; the history checkpoint advances. The resulting audio row and expanded saved-items disclosure have no audio detail/original opening control, only the transcript link. Empty/unsupported, exhausted retry, cancellation, unknown submission and actual vendor-deletion variations were not exercised."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "The text archive opens while audio backup is failed. Retrying only the failed audio step changes audio count 0 to 1 and clears failure; the history checkpoint advances. The resulting audio row and expanded saved-items disclosure have no audio detail/original opening control, only the transcript link. Empty/unsupported, exhausted retry, cancellation, unknown submission and actual vendor-deletion variations were not exercised."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "The text archive opens while audio backup is failed. Retrying only the failed audio step changes audio count 0 to 1 and clears failure; the history checkpoint advances. The resulting audio row and expanded saved-items disclosure have no audio detail/original opening control, only the transcript link. Empty/unsupported, exhausted retry, cancellation, unknown submission and actual vendor-deletion variations were not exercised."
+          },
+          "actions:3": {
+            "status": "partial",
+            "observation": "The text archive opens while audio backup is failed. Retrying only the failed audio step changes audio count 0 to 1 and clears failure; the history checkpoint advances. The resulting audio row and expanded saved-items disclosure have no audio detail/original opening control, only the transcript link. Empty/unsupported, exhausted retry, cancellation, unknown submission and actual vendor-deletion variations were not exercised."
+          },
+          "results:2": {
+            "status": "partial",
+            "observation": "The text archive opens while audio backup is failed. Retrying only the failed audio step changes audio count 0 to 1 and clears failure; the history checkpoint advances. The resulting audio row and expanded saved-items disclosure have no audio detail/original opening control, only the transcript link. Empty/unsupported, exhausted retry, cancellation, unknown submission and actual vendor-deletion variations were not exercised."
+          },
+          "results:3": {
+            "status": "partial",
+            "observation": "The text archive opens while audio backup is failed. Retrying only the failed audio step changes audio count 0 to 1 and clears failure; the history checkpoint advances. The resulting audio row and expanded saved-items disclosure have no audio detail/original opening control, only the transcript link. Empty/unsupported, exhausted retry, cancellation, unknown submission and actual vendor-deletion variations were not exercised."
+          }
+        }
+      }
+    },
+    "UF-GOOGLE-CONNECTION": {
+      "web": {
+        "status": "partial",
+        "reason": "The ordinary calendar entry saves a generated connection and authorizes through an explicit synthetic receipt before choosing scope. Independent credentials, cancellation, disconnection, connection isolation and management branches were not repeated.",
+        "evidence": [
+          "evidence/web/changed/24-google-entry.json",
+          "evidence/web/changed/25-google-scope.json",
+          "evidence/web/changed/26-google-empty-blocked.json",
+          "evidence/web/changed/28-google-scope-saved.json",
+          "evidence/web/changed/29-google-synced.json"
+        ],
+        "assertions": {
+          "actions:1": {
+            "status": "verified",
+            "observation": "The ordinary calendar entry saves a generated connection and authorizes through an explicit synthetic receipt before choosing scope. Independent credentials, cancellation, disconnection, connection isolation and management branches were not repeated."
+          },
+          "inputs:0": {
+            "status": "partial",
+            "observation": "The ordinary calendar entry saves a generated connection and authorizes through an explicit synthetic receipt before choosing scope. Independent credentials, cancellation, disconnection, connection isolation and management branches were not repeated."
+          },
+          "inputs:1": {
+            "status": "partial",
+            "observation": "The ordinary calendar entry saves a generated connection and authorizes through an explicit synthetic receipt before choosing scope. Independent credentials, cancellation, disconnection, connection isolation and management branches were not repeated."
+          },
+          "inputs:3": {
+            "status": "partial",
+            "observation": "The ordinary calendar entry saves a generated connection and authorizes through an explicit synthetic receipt before choosing scope. Independent credentials, cancellation, disconnection, connection isolation and management branches were not repeated."
+          },
+          "actions:0": {
+            "status": "partial",
+            "observation": "The ordinary calendar entry saves a generated connection and authorizes through an explicit synthetic receipt before choosing scope. Independent credentials, cancellation, disconnection, connection isolation and management branches were not repeated."
+          },
+          "actions:2": {
+            "status": "partial",
+            "observation": "The ordinary calendar entry saves a generated connection and authorizes through an explicit synthetic receipt before choosing scope. Independent credentials, cancellation, disconnection, connection isolation and management branches were not repeated."
+          },
+          "results:1": {
+            "status": "partial",
+            "observation": "The ordinary calendar entry saves a generated connection and authorizes through an explicit synthetic receipt before choosing scope. Independent credentials, cancellation, disconnection, connection isolation and management branches were not repeated."
+          },
+          "results:2": {
+            "status": "partial",
+            "observation": "The ordinary calendar entry saves a generated connection and authorizes through an explicit synthetic receipt before choosing scope. Independent credentials, cancellation, disconnection, connection isolation and management branches were not repeated."
+          }
+        }
+      }
+    },
+    "UF-GOOGLE-CALENDAR-SCOPE": {
+      "web": {
+        "status": "partial",
+        "reason": "No-scope sync is blocked. Only Work is selected and saved, and successful synchronization now displays authorized with archived results without the obsolete pre-sync notice. Repeat sync shows connection totals new 1 / duplicate 1, with a single archive row. Disconnect was not repeated and the totals do not explicitly distinguish cumulative from per-attempt counts.",
+        "evidence": [
+          "evidence/web/changed/25-google-scope.json",
+          "evidence/web/changed/26-google-empty-blocked.json",
+          "evidence/web/changed/27-google-calendars.json",
+          "evidence/web/changed/28-google-scope-saved.json",
+          "evidence/web/changed/29-google-synced.json",
+          "evidence/web/changed/30-google-repeat.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "No-scope sync is blocked. Only Work is selected and saved, and successful synchronization now displays authorized with archived results without the obsolete pre-sync notice. Repeat sync shows connection totals new 1 / duplicate 1, with a single archive row. Disconnect was not repeated and the totals do not explicitly distinguish cumulative from per-attempt counts."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "No-scope sync is blocked. Only Work is selected and saved, and successful synchronization now displays authorized with archived results without the obsolete pre-sync notice. Repeat sync shows connection totals new 1 / duplicate 1, with a single archive row. Disconnect was not repeated and the totals do not explicitly distinguish cumulative from per-attempt counts."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "No-scope sync is blocked. Only Work is selected and saved, and successful synchronization now displays authorized with archived results without the obsolete pre-sync notice. Repeat sync shows connection totals new 1 / duplicate 1, with a single archive row. Disconnect was not repeated and the totals do not explicitly distinguish cumulative from per-attempt counts."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "No-scope sync is blocked. Only Work is selected and saved, and successful synchronization now displays authorized with archived results without the obsolete pre-sync notice. Repeat sync shows connection totals new 1 / duplicate 1, with a single archive row. Disconnect was not repeated and the totals do not explicitly distinguish cumulative from per-attempt counts."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "No-scope sync is blocked. Only Work is selected and saved, and successful synchronization now displays authorized with archived results without the obsolete pre-sync notice. Repeat sync shows connection totals new 1 / duplicate 1, with a single archive row. Disconnect was not repeated and the totals do not explicitly distinguish cumulative from per-attempt counts."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "No-scope sync is blocked. Only Work is selected and saved, and successful synchronization now displays authorized with archived results without the obsolete pre-sync notice. Repeat sync shows connection totals new 1 / duplicate 1, with a single archive row. Disconnect was not repeated and the totals do not explicitly distinguish cumulative from per-attempt counts."
+          },
+          "results:1": {
+            "status": "partial",
+            "observation": "No-scope sync is blocked. Only Work is selected and saved, and successful synchronization now displays authorized with archived results without the obsolete pre-sync notice. Repeat sync shows connection totals new 1 / duplicate 1, with a single archive row. Disconnect was not repeated and the totals do not explicitly distinguish cumulative from per-attempt counts."
+          }
+        }
+      }
+    },
+    "UF-MCP-RESOURCE-IMPORT": {
+      "web": {
+        "status": "partial",
+        "reason": "A custom name and URL list generated resources. Selecting one creates a URI-backed material; repeating it now reports this-attempt new 0 / duplicate 1. Optional Bearer credentials and no-resource variants remain untested this round.",
+        "evidence": [
+          "evidence/web/changed/32-mcp-entry.json",
+          "evidence/web/changed/33-mcp-resources.json",
+          "evidence/web/changed/37-mcp-selected-first.json",
+          "evidence/web/changed/38-mcp-selected-repeat.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "A custom name and URL list generated resources. Selecting one creates a URI-backed material; repeating it now reports this-attempt new 0 / duplicate 1. Optional Bearer credentials and no-resource variants remain untested this round."
+          },
+          "inputs:2": {
+            "status": "verified",
+            "observation": "A custom name and URL list generated resources. Selecting one creates a URI-backed material; repeating it now reports this-attempt new 0 / duplicate 1. Optional Bearer credentials and no-resource variants remain untested this round."
+          },
+          "inputs:3": {
+            "status": "verified",
+            "observation": "A custom name and URL list generated resources. Selecting one creates a URI-backed material; repeating it now reports this-attempt new 0 / duplicate 1. Optional Bearer credentials and no-resource variants remain untested this round."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "A custom name and URL list generated resources. Selecting one creates a URI-backed material; repeating it now reports this-attempt new 0 / duplicate 1. Optional Bearer credentials and no-resource variants remain untested this round."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "A custom name and URL list generated resources. Selecting one creates a URI-backed material; repeating it now reports this-attempt new 0 / duplicate 1. Optional Bearer credentials and no-resource variants remain untested this round."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "A custom name and URL list generated resources. Selecting one creates a URI-backed material; repeating it now reports this-attempt new 0 / duplicate 1. Optional Bearer credentials and no-resource variants remain untested this round."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "A custom name and URL list generated resources. Selecting one creates a URI-backed material; repeating it now reports this-attempt new 0 / duplicate 1. Optional Bearer credentials and no-resource variants remain untested this round."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "A custom name and URL list generated resources. Selecting one creates a URI-backed material; repeating it now reports this-attempt new 0 / duplicate 1. Optional Bearer credentials and no-resource variants remain untested this round."
+          }
+        }
+      }
+    },
+    "UF-ACTION-DISCOVERY": {
+      "web": {
+        "status": "partial",
+        "reason": "Discovery, Europe/London and the existing Mac review device save explicitly. A simulated device revocation preserves the draft and rejects save until devices are refreshed. Model scope and the local-only/no-calendar-write boundary are displayed. Failed analysis retry and a real model request remain untested.",
+        "evidence": [
+          "evidence/web/changed/40-discovery.json",
+          "evidence/web/changed/41-discovery-saved.json",
+          "evidence/web/changed/43-discovery-revoked.json",
+          "evidence/web/changed/44-discovery-stale-save.json",
+          "evidence/web/changed/45-discovery-refreshed.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Discovery, Europe/London and the existing Mac review device save explicitly. A simulated device revocation preserves the draft and rejects save until devices are refreshed. Model scope and the local-only/no-calendar-write boundary are displayed. Failed analysis retry and a real model request remain untested."
+          },
+          "inputs:1": {
+            "status": "verified",
+            "observation": "Discovery, Europe/London and the existing Mac review device save explicitly. A simulated device revocation preserves the draft and rejects save until devices are refreshed. Model scope and the local-only/no-calendar-write boundary are displayed. Failed analysis retry and a real model request remain untested."
+          },
+          "inputs:2": {
+            "status": "verified",
+            "observation": "Discovery, Europe/London and the existing Mac review device save explicitly. A simulated device revocation preserves the draft and rejects save until devices are refreshed. Model scope and the local-only/no-calendar-write boundary are displayed. Failed analysis retry and a real model request remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Discovery, Europe/London and the existing Mac review device save explicitly. A simulated device revocation preserves the draft and rejects save until devices are refreshed. Model scope and the local-only/no-calendar-write boundary are displayed. Failed analysis retry and a real model request remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "Discovery, Europe/London and the existing Mac review device save explicitly. A simulated device revocation preserves the draft and rejects save until devices are refreshed. Model scope and the local-only/no-calendar-write boundary are displayed. Failed analysis retry and a real model request remain untested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "Discovery, Europe/London and the existing Mac review device save explicitly. A simulated device revocation preserves the draft and rejects save until devices are refreshed. Model scope and the local-only/no-calendar-write boundary are displayed. Failed analysis retry and a real model request remain untested."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "Discovery, Europe/London and the existing Mac review device save explicitly. A simulated device revocation preserves the draft and rejects save until devices are refreshed. Model scope and the local-only/no-calendar-write boundary are displayed. Failed analysis retry and a real model request remain untested."
+          },
+          "results:3": {
+            "status": "verified",
+            "observation": "Discovery, Europe/London and the existing Mac review device save explicitly. A simulated device revocation preserves the draft and rejects save until devices are refreshed. Model scope and the local-only/no-calendar-write boundary are displayed. Failed analysis retry and a real model request remain untested."
+          },
+          "results:0": {
+            "status": "partial",
+            "observation": "Discovery, Europe/London and the existing Mac review device save explicitly. A simulated device revocation preserves the draft and rejects save until devices are refreshed. Model scope and the local-only/no-calendar-write boundary are displayed. Failed analysis retry and a real model request remain untested."
+          }
+        }
+      }
+    },
+    "UF-ACTION-REVIEW": {
+      "web": {
+        "status": "partial",
+        "reason": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested.",
+        "evidence": [
+          "evidence/web/changed/47-calendar-evidence.json",
+          "evidence/web/calendar/01-target-device.json",
+          "evidence/web/calendar/02-device-calendar-authorized.json",
+          "evidence/web/calendar/04-review-edited.json",
+          "evidence/web/calendar/05-invalid-all-day-range.json",
+          "evidence/web/calendar/06-fixed-review.json",
+          "evidence/web/calendar/08-review-stale.json",
+          "evidence/web/calendar/10-refixed-v2.json",
+          "evidence/web/calendar/11-calendar-approved.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          },
+          "inputs:1": {
+            "status": "verified",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          },
+          "inputs:2": {
+            "status": "verified",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          },
+          "inputs:3": {
+            "status": "verified",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          },
+          "inputs:4": {
+            "status": "verified",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          },
+          "inputs:5": {
+            "status": "verified",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          },
+          "inputs:6": {
+            "status": "verified",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          },
+          "actions:3": {
+            "status": "verified",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          },
+          "actions:4": {
+            "status": "verified",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          },
+          "results:3": {
+            "status": "verified",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          },
+          "actions:5": {
+            "status": "partial",
+            "observation": "A distinct write-calendar authorization exposes an existing Mac work calendar. Custom title, all-day date range, Europe/London, location and notes appear verbatim in fixed review with evidence/version/target. Equal all-day dates are rejected; a later evidence version removes the old approval and keeps the draft. Suggestion filters, ignore and update/cancel/mark-complete variants remain untested."
+          }
+        }
+      }
+    },
+    "UF-ACTION-EXECUTION-RECOVERY": {
+      "web": {
+        "status": "partial",
+        "reason": "Approval waits for the target device. The lost-receipt fixture exposes synthetic-event-suggestion-1; Verify existing event returns the same event and operation IDs with no recreate action. On Web, Open target sync explains the native handoff. Running and update/cancel original-target variants were not exercised.",
+        "evidence": [
+          "evidence/web/calendar/11-calendar-approved.json",
+          "evidence/web/calendar/12-device-sync.json",
+          "evidence/web/calendar/14-calendar-uncertain.json",
+          "evidence/web/calendar/15-calendar-approved-evidence.json",
+          "evidence/web/calendar/16-calendar-verified-original.json"
+        ],
+        "assertions": {
+          "actions:1": {
+            "status": "verified",
+            "observation": "Approval waits for the target device. The lost-receipt fixture exposes synthetic-event-suggestion-1; Verify existing event returns the same event and operation IDs with no recreate action. On Web, Open target sync explains the native handoff. Running and update/cancel original-target variants were not exercised."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "Approval waits for the target device. The lost-receipt fixture exposes synthetic-event-suggestion-1; Verify existing event returns the same event and operation IDs with no recreate action. On Web, Open target sync explains the native handoff. Running and update/cancel original-target variants were not exercised."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "Approval waits for the target device. The lost-receipt fixture exposes synthetic-event-suggestion-1; Verify existing event returns the same event and operation IDs with no recreate action. On Web, Open target sync explains the native handoff. Running and update/cancel original-target variants were not exercised."
+          },
+          "actions:0": {
+            "status": "partial",
+            "observation": "Approval waits for the target device. The lost-receipt fixture exposes synthetic-event-suggestion-1; Verify existing event returns the same event and operation IDs with no recreate action. On Web, Open target sync explains the native handoff. Running and update/cancel original-target variants were not exercised."
+          },
+          "results:0": {
+            "status": "partial",
+            "observation": "Approval waits for the target device. The lost-receipt fixture exposes synthetic-event-suggestion-1; Verify existing event returns the same event and operation IDs with no recreate action. On Web, Open target sync explains the native handoff. Running and update/cancel original-target variants were not exercised."
+          }
+        }
+      }
+    },
+    "UF-TODO": {
+      "web": {
+        "status": "partial",
+        "reason": "A custom todo without a due date is added, completed, found in the completed filter and reopened as the same task. UI feedback keeps it independent of calendar writes. Due-date editing, cancellation, evidence opening and pagination remain untested.",
+        "evidence": [
+          "evidence/web/calendar/18-todos.json",
+          "evidence/web/calendar/19-todo-added.json",
+          "evidence/web/calendar/20-todo-completed.json",
+          "evidence/web/calendar/21-todo-completed-filter.json",
+          "evidence/web/calendar/23-todo-reopened.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "A custom todo without a due date is added, completed, found in the completed filter and reopened as the same task. UI feedback keeps it independent of calendar writes. Due-date editing, cancellation, evidence opening and pagination remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "A custom todo without a due date is added, completed, found in the completed filter and reopened as the same task. UI feedback keeps it independent of calendar writes. Due-date editing, cancellation, evidence opening and pagination remain untested."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "A custom todo without a due date is added, completed, found in the completed filter and reopened as the same task. UI feedback keeps it independent of calendar writes. Due-date editing, cancellation, evidence opening and pagination remain untested."
+          },
+          "actions:4": {
+            "status": "verified",
+            "observation": "A custom todo without a due date is added, completed, found in the completed filter and reopened as the same task. UI feedback keeps it independent of calendar writes. Due-date editing, cancellation, evidence opening and pagination remain untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "A custom todo without a due date is added, completed, found in the completed filter and reopened as the same task. UI feedback keeps it independent of calendar writes. Due-date editing, cancellation, evidence opening and pagination remain untested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "A custom todo without a due date is added, completed, found in the completed filter and reopened as the same task. UI feedback keeps it independent of calendar writes. Due-date editing, cancellation, evidence opening and pagination remain untested."
+          },
+          "inputs:1": {
+            "status": "partial",
+            "observation": "A custom todo without a due date is added, completed, found in the completed filter and reopened as the same task. UI feedback keeps it independent of calendar writes. Due-date editing, cancellation, evidence opening and pagination remain untested."
+          },
+          "actions:1": {
+            "status": "partial",
+            "observation": "A custom todo without a due date is added, completed, found in the completed filter and reopened as the same task. UI feedback keeps it independent of calendar writes. Due-date editing, cancellation, evidence opening and pagination remain untested."
+          }
+        }
+      }
+    },
+    "UF-ARCHIVE-PORTABLE-IMPORT": {
+      "web": {
+        "status": "partial",
+        "reason": "A downloadable synthetic portable3 JSON is selected through the visible file input; changing its userId is rejected. With the correct file, source-stage completion survives failure and a genuine reload without reset. Retry requires the same file fingerprint and continues operation 38b8874e-7cc9-4d49-869c-9343f3847f32 at attempt 2, then returns from activity to that operation. Wrong deployment, v2, cancellation, paging and baseline settings/secret comparisons remain untested.",
+        "evidence": [
+          "evidence/web/maintenance/01-sample-downloaded.json",
+          "evidence/web/maintenance/02-wrong-account-rejected.json",
+          "evidence/web/maintenance/03-same-account-selected.json",
+          "evidence/web/maintenance/04-file-read-settled.json",
+          "evidence/web/maintenance-reload/01-import-created.json",
+          "evidence/web/maintenance-reload/02-import-partial.json",
+          "evidence/web/maintenance-reload/03-import-failed.json",
+          "evidence/web/maintenance-reload/04-reload-no-reset.json",
+          "evidence/web/maintenance-reload/05-retry-without-file-blocked.json",
+          "evidence/web/maintenance-reload/06-retry-same-operation.json",
+          "evidence/web/maintenance-reload/07-import-materials-finished.json",
+          "evidence/web/maintenance-reload/08-import-activity-receipt.json",
+          "evidence/web/maintenance-reload/09-import-original-return.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "A downloadable synthetic portable3 JSON is selected through the visible file input; changing its userId is rejected. With the correct file, source-stage completion survives failure and a genuine reload without reset. Retry requires the same file fingerprint and continues operation 38b8874e-7cc9-4d49-869c-9343f3847f32 at attempt 2, then returns from activity to that operation. Wrong deployment, v2, cancellation, paging and baseline settings/secret comparisons remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "A downloadable synthetic portable3 JSON is selected through the visible file input; changing its userId is rejected. With the correct file, source-stage completion survives failure and a genuine reload without reset. Retry requires the same file fingerprint and continues operation 38b8874e-7cc9-4d49-869c-9343f3847f32 at attempt 2, then returns from activity to that operation. Wrong deployment, v2, cancellation, paging and baseline settings/secret comparisons remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "A downloadable synthetic portable3 JSON is selected through the visible file input; changing its userId is rejected. With the correct file, source-stage completion survives failure and a genuine reload without reset. Retry requires the same file fingerprint and continues operation 38b8874e-7cc9-4d49-869c-9343f3847f32 at attempt 2, then returns from activity to that operation. Wrong deployment, v2, cancellation, paging and baseline settings/secret comparisons remain untested."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "A downloadable synthetic portable3 JSON is selected through the visible file input; changing its userId is rejected. With the correct file, source-stage completion survives failure and a genuine reload without reset. Retry requires the same file fingerprint and continues operation 38b8874e-7cc9-4d49-869c-9343f3847f32 at attempt 2, then returns from activity to that operation. Wrong deployment, v2, cancellation, paging and baseline settings/secret comparisons remain untested."
+          },
+          "actions:4": {
+            "status": "verified",
+            "observation": "A downloadable synthetic portable3 JSON is selected through the visible file input; changing its userId is rejected. With the correct file, source-stage completion survives failure and a genuine reload without reset. Retry requires the same file fingerprint and continues operation 38b8874e-7cc9-4d49-869c-9343f3847f32 at attempt 2, then returns from activity to that operation. Wrong deployment, v2, cancellation, paging and baseline settings/secret comparisons remain untested."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "A downloadable synthetic portable3 JSON is selected through the visible file input; changing its userId is rejected. With the correct file, source-stage completion survives failure and a genuine reload without reset. Retry requires the same file fingerprint and continues operation 38b8874e-7cc9-4d49-869c-9343f3847f32 at attempt 2, then returns from activity to that operation. Wrong deployment, v2, cancellation, paging and baseline settings/secret comparisons remain untested."
+          },
+          "results:3": {
+            "status": "verified",
+            "observation": "A downloadable synthetic portable3 JSON is selected through the visible file input; changing its userId is rejected. With the correct file, source-stage completion survives failure and a genuine reload without reset. Retry requires the same file fingerprint and continues operation 38b8874e-7cc9-4d49-869c-9343f3847f32 at attempt 2, then returns from activity to that operation. Wrong deployment, v2, cancellation, paging and baseline settings/secret comparisons remain untested."
+          },
+          "actions:5": {
+            "status": "partial",
+            "observation": "A downloadable synthetic portable3 JSON is selected through the visible file input; changing its userId is rejected. With the correct file, source-stage completion survives failure and a genuine reload without reset. Retry requires the same file fingerprint and continues operation 38b8874e-7cc9-4d49-869c-9343f3847f32 at attempt 2, then returns from activity to that operation. Wrong deployment, v2, cancellation, paging and baseline settings/secret comparisons remain untested."
+          },
+          "results:0": {
+            "status": "partial",
+            "observation": "A downloadable synthetic portable3 JSON is selected through the visible file input; changing its userId is rejected. With the correct file, source-stage completion survives failure and a genuine reload without reset. Retry requires the same file fingerprint and continues operation 38b8874e-7cc9-4d49-869c-9343f3847f32 at attempt 2, then returns from activity to that operation. Wrong deployment, v2, cancellation, paging and baseline settings/secret comparisons remain untested."
+          },
+          "results:1": {
+            "status": "partial",
+            "observation": "A downloadable synthetic portable3 JSON is selected through the visible file input; changing its userId is rejected. With the correct file, source-stage completion survives failure and a genuine reload without reset. Retry requires the same file fingerprint and continues operation 38b8874e-7cc9-4d49-869c-9343f3847f32 at attempt 2, then returns from activity to that operation. Wrong deployment, v2, cancellation, paging and baseline settings/secret comparisons remain untested."
+          }
+        }
+      }
+    },
+    "UF-INDEX-MAINTENANCE": {
+      "web": {
+        "status": "partial",
+        "reason": "A shared-index operation is distinct from original content. Simulated pre-publication authorization failure blocks publication; explicit recheck and retry preserve operation 6a8adfdd-3ec0-439e-a9dd-5a9f4634ec0e and increment attempt 1 to 2. Cancellation is observed. The file named 17-index-unknown actually records waiting at attempt 2: the next-submission fixture did not produce an unknown result on this retry, so unknown-receipt recovery is not credited.",
+        "evidence": [
+          "evidence/web/maintenance-reload/11-index-maintenance.json",
+          "evidence/web/maintenance-reload/12-index-started.json",
+          "evidence/web/maintenance-reload/14-index-auth-invalid.json",
+          "evidence/web/maintenance-reload/15-index-publication-blocked.json",
+          "evidence/web/maintenance-reload/16-index-auth-rechecked.json",
+          "evidence/web/maintenance-reload/17-index-unknown.json",
+          "evidence/web/maintenance-reload/19-index-cancelled.json"
+        ],
+        "assertions": {
+          "actions:0": {
+            "status": "verified",
+            "observation": "A shared-index operation is distinct from original content. Simulated pre-publication authorization failure blocks publication; explicit recheck and retry preserve operation 6a8adfdd-3ec0-439e-a9dd-5a9f4634ec0e and increment attempt 1 to 2. Cancellation is observed. The file named 17-index-unknown actually records waiting at attempt 2: the next-submission fixture did not produce an unknown result on this retry, so unknown-receipt recovery is not credited."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "A shared-index operation is distinct from original content. Simulated pre-publication authorization failure blocks publication; explicit recheck and retry preserve operation 6a8adfdd-3ec0-439e-a9dd-5a9f4634ec0e and increment attempt 1 to 2. Cancellation is observed. The file named 17-index-unknown actually records waiting at attempt 2: the next-submission fixture did not produce an unknown result on this retry, so unknown-receipt recovery is not credited."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "A shared-index operation is distinct from original content. Simulated pre-publication authorization failure blocks publication; explicit recheck and retry preserve operation 6a8adfdd-3ec0-439e-a9dd-5a9f4634ec0e and increment attempt 1 to 2. Cancellation is observed. The file named 17-index-unknown actually records waiting at attempt 2: the next-submission fixture did not produce an unknown result on this retry, so unknown-receipt recovery is not credited."
+          },
+          "actions:3": {
+            "status": "verified",
+            "observation": "A shared-index operation is distinct from original content. Simulated pre-publication authorization failure blocks publication; explicit recheck and retry preserve operation 6a8adfdd-3ec0-439e-a9dd-5a9f4634ec0e and increment attempt 1 to 2. Cancellation is observed. The file named 17-index-unknown actually records waiting at attempt 2: the next-submission fixture did not produce an unknown result on this retry, so unknown-receipt recovery is not credited."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "A shared-index operation is distinct from original content. Simulated pre-publication authorization failure blocks publication; explicit recheck and retry preserve operation 6a8adfdd-3ec0-439e-a9dd-5a9f4634ec0e and increment attempt 1 to 2. Cancellation is observed. The file named 17-index-unknown actually records waiting at attempt 2: the next-submission fixture did not produce an unknown result on this retry, so unknown-receipt recovery is not credited."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "A shared-index operation is distinct from original content. Simulated pre-publication authorization failure blocks publication; explicit recheck and retry preserve operation 6a8adfdd-3ec0-439e-a9dd-5a9f4634ec0e and increment attempt 1 to 2. Cancellation is observed. The file named 17-index-unknown actually records waiting at attempt 2: the next-submission fixture did not produce an unknown result on this retry, so unknown-receipt recovery is not credited."
+          },
+          "results:1": {
+            "status": "partial",
+            "observation": "A shared-index operation is distinct from original content. Simulated pre-publication authorization failure blocks publication; explicit recheck and retry preserve operation 6a8adfdd-3ec0-439e-a9dd-5a9f4634ec0e and increment attempt 1 to 2. Cancellation is observed. The file named 17-index-unknown actually records waiting at attempt 2: the next-submission fixture did not produce an unknown result on this retry, so unknown-receipt recovery is not credited."
+          }
+        }
+      }
+    },
+    "UF-DIAGNOSTIC-LOGS": {
+      "web": {
+        "status": "partial",
+        "reason": "An older log page remains selected after refresh. The rotated file explicitly has no recoverable content. A requested seven-day export contains 126 ordered retained events from October 22 and actual/requested coverage with partial=true; content, credentials, private traces and native queues are excluded. Stage/page-size/wrap/auto-refresh and clipboard operations were not exercised.",
+        "evidence": [
+          "evidence/web/maintenance-reload/20-diagnostics.json",
+          "evidence/web/maintenance-reload/21-log-older.json",
+          "evidence/web/maintenance-reload/22-log-refresh-preserves-page.json",
+          "evidence/web/maintenance-reload/23-log-rotated-gap.json",
+          "evidence/web/maintenance-reload/24-diagnostic-export-controls.json",
+          "evidence/web/maintenance-reload/25-diagnostic-week-export.json",
+          "evidence/web/maintenance-reload/diagnostics-week.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "An older log page remains selected after refresh. The rotated file explicitly has no recoverable content. A requested seven-day export contains 126 ordered retained events from October 22 and actual/requested coverage with partial=true; content, credentials, private traces and native queues are excluded. Stage/page-size/wrap/auto-refresh and clipboard operations were not exercised."
+          },
+          "inputs:3": {
+            "status": "verified",
+            "observation": "An older log page remains selected after refresh. The rotated file explicitly has no recoverable content. A requested seven-day export contains 126 ordered retained events from October 22 and actual/requested coverage with partial=true; content, credentials, private traces and native queues are excluded. Stage/page-size/wrap/auto-refresh and clipboard operations were not exercised."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "An older log page remains selected after refresh. The rotated file explicitly has no recoverable content. A requested seven-day export contains 126 ordered retained events from October 22 and actual/requested coverage with partial=true; content, credentials, private traces and native queues are excluded. Stage/page-size/wrap/auto-refresh and clipboard operations were not exercised."
+          },
+          "actions:3": {
+            "status": "verified",
+            "observation": "An older log page remains selected after refresh. The rotated file explicitly has no recoverable content. A requested seven-day export contains 126 ordered retained events from October 22 and actual/requested coverage with partial=true; content, credentials, private traces and native queues are excluded. Stage/page-size/wrap/auto-refresh and clipboard operations were not exercised."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "An older log page remains selected after refresh. The rotated file explicitly has no recoverable content. A requested seven-day export contains 126 ordered retained events from October 22 and actual/requested coverage with partial=true; content, credentials, private traces and native queues are excluded. Stage/page-size/wrap/auto-refresh and clipboard operations were not exercised."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "An older log page remains selected after refresh. The rotated file explicitly has no recoverable content. A requested seven-day export contains 126 ordered retained events from October 22 and actual/requested coverage with partial=true; content, credentials, private traces and native queues are excluded. Stage/page-size/wrap/auto-refresh and clipboard operations were not exercised."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "An older log page remains selected after refresh. The rotated file explicitly has no recoverable content. A requested seven-day export contains 126 ordered retained events from October 22 and actual/requested coverage with partial=true; content, credentials, private traces and native queues are excluded. Stage/page-size/wrap/auto-refresh and clipboard operations were not exercised."
+          },
+          "inputs:2": {
+            "status": "partial",
+            "observation": "An older log page remains selected after refresh. The rotated file explicitly has no recoverable content. A requested seven-day export contains 126 ordered retained events from October 22 and actual/requested coverage with partial=true; content, credentials, private traces and native queues are excluded. Stage/page-size/wrap/auto-refresh and clipboard operations were not exercised."
+          },
+          "actions:2": {
+            "status": "partial",
+            "observation": "An older log page remains selected after refresh. The rotated file explicitly has no recoverable content. A requested seven-day export contains 126 ordered retained events from October 22 and actual/requested coverage with partial=true; content, credentials, private traces and native queues are excluded. Stage/page-size/wrap/auto-refresh and clipboard operations were not exercised."
+          },
+          "results:3": {
+            "status": "partial",
+            "observation": "An older log page remains selected after refresh. The rotated file explicitly has no recoverable content. A requested seven-day export contains 126 ordered retained events from October 22 and actual/requested coverage with partial=true; content, credentials, private traces and native queues are excluded. Stage/page-size/wrap/auto-refresh and clipboard operations were not exercised."
+          }
+        }
+      }
+    },
+    "UF-DIAGNOSTIC-PREFERENCES": {
+      "web": {
+        "status": "partial",
+        "reason": "Personal detailed-input capture is enabled and then disabled with saved versions. Current effective state says stopped; an existing synthetic trace remains readable. Runtime log-level/debug mutation, restore and deployment details remain untested.",
+        "evidence": [
+          "evidence/web/maintenance-reload/26-diagnostic-preferences.json",
+          "evidence/web/maintenance-reload/27-trace-on.json",
+          "evidence/web/maintenance-reload/28-trace-off.json",
+          "evidence/web/maintenance-reload/29-retained-trace.json",
+          "evidence/web/maintenance-reload/30-old-trace-retained.json"
+        ],
+        "assertions": {
+          "inputs:3": {
+            "status": "verified",
+            "observation": "Personal detailed-input capture is enabled and then disabled with saved versions. Current effective state says stopped; an existing synthetic trace remains readable. Runtime log-level/debug mutation, restore and deployment details remain untested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "Personal detailed-input capture is enabled and then disabled with saved versions. Current effective state says stopped; an existing synthetic trace remains readable. Runtime log-level/debug mutation, restore and deployment details remain untested."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "Personal detailed-input capture is enabled and then disabled with saved versions. Current effective state says stopped; an existing synthetic trace remains readable. Runtime log-level/debug mutation, restore and deployment details remain untested."
+          },
+          "results:3": {
+            "status": "verified",
+            "observation": "Personal detailed-input capture is enabled and then disabled with saved versions. Current effective state says stopped; an existing synthetic trace remains readable. Runtime log-level/debug mutation, restore and deployment details remain untested."
+          },
+          "actions:0": {
+            "status": "partial",
+            "observation": "Personal detailed-input capture is enabled and then disabled with saved versions. Current effective state says stopped; an existing synthetic trace remains readable. Runtime log-level/debug mutation, restore and deployment details remain untested."
+          },
+          "results:0": {
+            "status": "partial",
+            "observation": "Personal detailed-input capture is enabled and then disabled with saved versions. Current effective state says stopped; an existing synthetic trace remains readable. Runtime log-level/debug mutation, restore and deployment details remain untested."
+          }
+        }
+      }
+    },
+    "UF-AGENT-ACTUAL-TRACE": {
+      "web": {
+        "status": "partial",
+        "reason": "An existing selected trace displays pre-recorded context/model data with explicit synthetic provenance. After requesting an unknown run ID, the prior trace is cleared and absence is stated rather than reconstructed. Pagination, tool events and truncation variations remain untested.",
+        "evidence": [
+          "evidence/web/maintenance-reload/29-retained-trace.json",
+          "evidence/web/maintenance-reload/30-old-trace-retained.json",
+          "evidence/web/maintenance-reload/31-unknown-trace-absent.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "An existing selected trace displays pre-recorded context/model data with explicit synthetic provenance. After requesting an unknown run ID, the prior trace is cleared and absence is stated rather than reconstructed. Pagination, tool events and truncation variations remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "An existing selected trace displays pre-recorded context/model data with explicit synthetic provenance. After requesting an unknown run ID, the prior trace is cleared and absence is stated rather than reconstructed. Pagination, tool events and truncation variations remain untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "An existing selected trace displays pre-recorded context/model data with explicit synthetic provenance. After requesting an unknown run ID, the prior trace is cleared and absence is stated rather than reconstructed. Pagination, tool events and truncation variations remain untested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "An existing selected trace displays pre-recorded context/model data with explicit synthetic provenance. After requesting an unknown run ID, the prior trace is cleared and absence is stated rather than reconstructed. Pagination, tool events and truncation variations remain untested."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "An existing selected trace displays pre-recorded context/model data with explicit synthetic provenance. After requesting an unknown run ID, the prior trace is cleared and absence is stated rather than reconstructed. Pagination, tool events and truncation variations remain untested."
+          },
+          "actions:1": {
+            "status": "partial",
+            "observation": "An existing selected trace displays pre-recorded context/model data with explicit synthetic provenance. After requesting an unknown run ID, the prior trace is cleared and absence is stated rather than reconstructed. Pagination, tool events and truncation variations remain untested."
+          },
+          "actions:2": {
+            "status": "partial",
+            "observation": "An existing selected trace displays pre-recorded context/model data with explicit synthetic provenance. After requesting an unknown run ID, the prior trace is cleared and absence is stated rather than reconstructed. Pagination, tool events and truncation variations remain untested."
+          }
+        }
+      }
+    },
+    "NAT-001": {
+      "mac": {
+        "status": "partial",
+        "reason": "Saved scope and 45-second interval survive the synthetic permission handoff; capture starts and stops independently of sending. Stopping now replaces the prior started notice with a paused notice. Other source classes and actual OS capture remain untested.",
+        "evidence": [
+          "evidence/mac/native/05-capture-preview.json",
+          "evidence/mac/native/06-required-permission.json",
+          "evidence/mac/native/07-capture-running.json",
+          "evidence/mac/native/14-capture-during-send-pause.json",
+          "evidence/mac/native/15-capture-paused.json",
+          "evidence/mac/native/16-send-still-paused.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Saved scope and 45-second interval survive the synthetic permission handoff; capture starts and stops independently of sending. Stopping now replaces the prior started notice with a paused notice. Other source classes and actual OS capture remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Saved scope and 45-second interval survive the synthetic permission handoff; capture starts and stops independently of sending. Stopping now replaces the prior started notice with a paused notice. Other source classes and actual OS capture remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "Saved scope and 45-second interval survive the synthetic permission handoff; capture starts and stops independently of sending. Stopping now replaces the prior started notice with a paused notice. Other source classes and actual OS capture remain untested."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "Saved scope and 45-second interval survive the synthetic permission handoff; capture starts and stops independently of sending. Stopping now replaces the prior started notice with a paused notice. Other source classes and actual OS capture remain untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "Saved scope and 45-second interval survive the synthetic permission handoff; capture starts and stops independently of sending. Stopping now replaces the prior started notice with a paused notice. Other source classes and actual OS capture remain untested."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "Saved scope and 45-second interval survive the synthetic permission handoff; capture starts and stops independently of sending. Stopping now replaces the prior started notice with a paused notice. Other source classes and actual OS capture remain untested."
+          },
+          "results:1": {
+            "status": "partial",
+            "observation": "Saved scope and 45-second interval survive the synthetic permission handoff; capture starts and stops independently of sending. Stopping now replaces the prior started notice with a paused notice. Other source classes and actual OS capture remain untested."
+          }
+        }
+      }
+    },
+    "NAT-002": {
+      "mac": {
+        "status": "partial",
+        "reason": "All-send pause leaves capture running; subsequent capture stop leaves the send pause intact. Resume remains untested.",
+        "evidence": [
+          "evidence/mac/native/13-sending-paused.json",
+          "evidence/mac/native/14-capture-during-send-pause.json",
+          "evidence/mac/native/15-capture-paused.json",
+          "evidence/mac/native/16-send-still-paused.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "All-send pause leaves capture running; subsequent capture stop leaves the send pause intact. Resume remains untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "All-send pause leaves capture running; subsequent capture stop leaves the send pause intact. Resume remains untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "All-send pause leaves capture running; subsequent capture stop leaves the send pause intact. Resume remains untested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "All-send pause leaves capture running; subsequent capture stop leaves the send pause intact. Resume remains untested."
+          }
+        }
+      }
+    },
+    "NAT-017": {
+      "mac": {
+        "status": "partial",
+        "reason": "Safari activity-only saves. Default/manual app policy, removal and actual mixed-window capture remain untested.",
+        "evidence": [
+          "evidence/mac/native/08-privacy-saved.json"
+        ],
+        "assertions": {
+          "inputs:1": {
+            "status": "verified",
+            "observation": "Safari activity-only saves. Default/manual app policy, removal and actual mixed-window capture remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Safari activity-only saves. Default/manual app policy, removal and actual mixed-window capture remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "Safari activity-only saves. Default/manual app policy, removal and actual mixed-window capture remain untested."
+          },
+          "actions:3": {
+            "status": "verified",
+            "observation": "Safari activity-only saves. Default/manual app policy, removal and actual mixed-window capture remain untested."
+          },
+          "results:0": {
+            "status": "partial",
+            "observation": "Safari activity-only saves. Default/manual app policy, removal and actual mixed-window capture remain untested."
+          }
+        }
+      }
+    },
+    "NAT-020": {
+      "mac": {
+        "status": "partial",
+        "reason": "Generated scope/destination preview precedes explicit capture confirmation. Cancellation and real screen capture remain untested.",
+        "evidence": [
+          "evidence/mac/native/05-capture-preview.json",
+          "evidence/mac/native/07-capture-running.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Generated scope/destination preview precedes explicit capture confirmation. Cancellation and real screen capture remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Generated scope/destination preview precedes explicit capture confirmation. Cancellation and real screen capture remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "Generated scope/destination preview precedes explicit capture confirmation. Cancellation and real screen capture remain untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "Generated scope/destination preview precedes explicit capture confirmation. Cancellation and real screen capture remain untested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "Generated scope/destination preview precedes explicit capture confirmation. Cancellation and real screen capture remain untested."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "Generated scope/destination preview precedes explicit capture confirmation. Cancellation and real screen capture remain untested."
+          }
+        }
+      }
+    },
+    "NAT-022": {
+      "mac": {
+        "status": "partial",
+        "reason": "Enabled gate, exact strings and failure=allow save without releasing the already held record. Other failure/discard branches remain untested.",
+        "evidence": [
+          "evidence/mac/native/09-held-before.json",
+          "evidence/mac/native/10-held-after-policy.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Enabled gate, exact strings and failure=allow save without releasing the already held record. Other failure/discard branches remain untested."
+          },
+          "inputs:1": {
+            "status": "verified",
+            "observation": "Enabled gate, exact strings and failure=allow save without releasing the already held record. Other failure/discard branches remain untested."
+          },
+          "inputs:2": {
+            "status": "verified",
+            "observation": "Enabled gate, exact strings and failure=allow save without releasing the already held record. Other failure/discard branches remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Enabled gate, exact strings and failure=allow save without releasing the already held record. Other failure/discard branches remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "Enabled gate, exact strings and failure=allow save without releasing the already held record. Other failure/discard branches remain untested."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "Enabled gate, exact strings and failure=allow save without releasing the already held record. Other failure/discard branches remain untested."
+          },
+          "results:1": {
+            "status": "partial",
+            "observation": "Enabled gate, exact strings and failure=allow save without releasing the already held record. Other failure/discard branches remain untested."
+          }
+        }
+      }
+    },
+    "NAT-023": {
+      "mac": {
+        "status": "partial",
+        "reason": "The specific held record requires explicit individual release; retry/error/discard variants remain untested.",
+        "evidence": [
+          "evidence/mac/native/10-held-after-policy.json",
+          "evidence/mac/native/11-held-review.json",
+          "evidence/mac/native/12-held-released.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "The specific held record requires explicit individual release; retry/error/discard variants remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "The specific held record requires explicit individual release; retry/error/discard variants remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "The specific held record requires explicit individual release; retry/error/discard variants remain untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "The specific held record requires explicit individual release; retry/error/discard variants remain untested."
+          },
+          "results:1": {
+            "status": "partial",
+            "observation": "The specific held record requires explicit individual release; retry/error/discard variants remain untested."
+          }
+        }
+      }
+    },
+    "NAT-030": {
+      "mac": {
+        "status": "partial",
+        "reason": "The 45-second interval saves and survives permission return. Startup capture is stopped; idle/power constraints remain untested.",
+        "evidence": [
+          "evidence/mac/native/01-source-state.json",
+          "evidence/mac/native/05-capture-preview.json",
+          "evidence/mac/native/07-capture-running.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "The 45-second interval saves and survives permission return. Startup capture is stopped; idle/power constraints remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "The 45-second interval saves and survives permission return. Startup capture is stopped; idle/power constraints remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "The 45-second interval saves and survives permission return. Startup capture is stopped; idle/power constraints remain untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "The 45-second interval saves and survives permission return. Startup capture is stopped; idle/power constraints remain untested."
+          }
+        }
+      }
+    },
+    "NAT-033": {
+      "mac": {
+        "status": "partial",
+        "reason": "Explicit synthetic system-settings permission return preserves the originating capture task and saved interval. Other categories and real OS behavior remain untested.",
+        "evidence": [
+          "evidence/mac/native/06-required-permission.json",
+          "evidence/mac/native/07-capture-running.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Explicit synthetic system-settings permission return preserves the originating capture task and saved interval. Other categories and real OS behavior remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Explicit synthetic system-settings permission return preserves the originating capture task and saved interval. Other categories and real OS behavior remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "Explicit synthetic system-settings permission return preserves the originating capture task and saved interval. Other categories and real OS behavior remain untested."
+          }
+        }
+      }
+    },
+    "NAT-039": {
+      "mac": {
+        "status": "partial",
+        "reason": "Manual strategy saves separately from all-send pause. Schedule, packing and cleanup variants remain untested.",
+        "evidence": [
+          "evidence/mac/native/02-upload-initial.json",
+          "evidence/mac/native/13-sending-paused.json",
+          "evidence/mac/native/16-send-still-paused.json"
+        ],
+        "assertions": {
+          "inputs:3": {
+            "status": "verified",
+            "observation": "Manual strategy saves separately from all-send pause. Schedule, packing and cleanup variants remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Manual strategy saves separately from all-send pause. Schedule, packing and cleanup variants remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "Manual strategy saves separately from all-send pause. Schedule, packing and cleanup variants remain untested."
+          },
+          "results:0": {
+            "status": "partial",
+            "observation": "Manual strategy saves separately from all-send pause. Schedule, packing and cleanup variants remain untested."
+          },
+          "results:1": {
+            "status": "partial",
+            "observation": "Manual strategy saves separately from all-send pause. Schedule, packing and cleanup variants remain untested."
+          },
+          "results:2": {
+            "status": "partial",
+            "observation": "Manual strategy saves separately from all-send pause. Schedule, packing and cleanup variants remain untested."
+          },
+          "results:3": {
+            "status": "partial",
+            "observation": "Manual strategy saves separately from all-send pause. Schedule, packing and cleanup variants remain untested."
+          }
+        }
+      }
+    },
+    "NAT-003": {
+      "mac": {
+        "status": "partial",
+        "reason": "Mac selects two explicit generated files after a picker cancel. Review lists exact files, one-time collection and local-only destination; confirmation creates two independent pending sources. An unconnected send is blocked. Continuous-mode and folder variants remain untested.",
+        "evidence": [
+          "evidence/mac/files/05-native-file-picker.json",
+          "evidence/mac/files/06-file-picker-cancelled.json",
+          "evidence/mac/files/08-files-draft-preserved.json",
+          "evidence/mac/files/09-files-review.json",
+          "evidence/mac/files/10-files-committed.json",
+          "evidence/mac/files/13-two-files-queued.json",
+          "evidence/mac/files/14-unconnected-send-blocked.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Mac selects two explicit generated files after a picker cancel. Review lists exact files, one-time collection and local-only destination; confirmation creates two independent pending sources. An unconnected send is blocked. Continuous-mode and folder variants remain untested."
+          },
+          "inputs:2": {
+            "status": "verified",
+            "observation": "Mac selects two explicit generated files after a picker cancel. Review lists exact files, one-time collection and local-only destination; confirmation creates two independent pending sources. An unconnected send is blocked. Continuous-mode and folder variants remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Mac selects two explicit generated files after a picker cancel. Review lists exact files, one-time collection and local-only destination; confirmation creates two independent pending sources. An unconnected send is blocked. Continuous-mode and folder variants remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "Mac selects two explicit generated files after a picker cancel. Review lists exact files, one-time collection and local-only destination; confirmation creates two independent pending sources. An unconnected send is blocked. Continuous-mode and folder variants remain untested."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "Mac selects two explicit generated files after a picker cancel. Review lists exact files, one-time collection and local-only destination; confirmation creates two independent pending sources. An unconnected send is blocked. Continuous-mode and folder variants remain untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "Mac selects two explicit generated files after a picker cancel. Review lists exact files, one-time collection and local-only destination; confirmation creates two independent pending sources. An unconnected send is blocked. Continuous-mode and folder variants remain untested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "Mac selects two explicit generated files after a picker cancel. Review lists exact files, one-time collection and local-only destination; confirmation creates two independent pending sources. An unconnected send is blocked. Continuous-mode and folder variants remain untested."
+          },
+          "actions:3": {
+            "status": "verified",
+            "observation": "Mac selects two explicit generated files after a picker cancel. Review lists exact files, one-time collection and local-only destination; confirmation creates two independent pending sources. An unconnected send is blocked. Continuous-mode and folder variants remain untested."
+          },
+          "inputs:1": {
+            "status": "partial",
+            "observation": "Mac selects two explicit generated files after a picker cancel. Review lists exact files, one-time collection and local-only destination; confirmation creates two independent pending sources. An unconnected send is blocked. Continuous-mode and folder variants remain untested."
+          },
+          "results:2": {
+            "status": "partial",
+            "observation": "Mac selects two explicit generated files after a picker cancel. Review lists exact files, one-time collection and local-only destination; confirmation creates two independent pending sources. An unconnected send is blocked. Continuous-mode and folder variants remain untested."
+          }
+        }
+      },
+      "android": {
+        "status": "partial",
+        "reason": "Android offers one-file radio selection. Its review identifies exact file, one-time intake and unconnected local destination; confirmation creates a pending source. Later continuous sync and picker cancellation remain untested.",
+        "evidence": [
+          "evidence/android/files/04-picker.json",
+          "evidence/android/files/07-file-selected.json",
+          "evidence/android/files/09-draft-preserved.json",
+          "evidence/android/files/10-file-review.json",
+          "evidence/android/files/11-file-committed.json",
+          "evidence/android/files/13-file-queue.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Android offers one-file radio selection. Its review identifies exact file, one-time intake and unconnected local destination; confirmation creates a pending source. Later continuous sync and picker cancellation remain untested."
+          },
+          "inputs:2": {
+            "status": "verified",
+            "observation": "Android offers one-file radio selection. Its review identifies exact file, one-time intake and unconnected local destination; confirmation creates a pending source. Later continuous sync and picker cancellation remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Android offers one-file radio selection. Its review identifies exact file, one-time intake and unconnected local destination; confirmation creates a pending source. Later continuous sync and picker cancellation remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "Android offers one-file radio selection. Its review identifies exact file, one-time intake and unconnected local destination; confirmation creates a pending source. Later continuous sync and picker cancellation remain untested."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "Android offers one-file radio selection. Its review identifies exact file, one-time intake and unconnected local destination; confirmation creates a pending source. Later continuous sync and picker cancellation remain untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "Android offers one-file radio selection. Its review identifies exact file, one-time intake and unconnected local destination; confirmation creates a pending source. Later continuous sync and picker cancellation remain untested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "Android offers one-file radio selection. Its review identifies exact file, one-time intake and unconnected local destination; confirmation creates a pending source. Later continuous sync and picker cancellation remain untested."
+          },
+          "inputs:1": {
+            "status": "partial",
+            "observation": "Android offers one-file radio selection. Its review identifies exact file, one-time intake and unconnected local destination; confirmation creates a pending source. Later continuous sync and picker cancellation remain untested."
+          },
+          "results:2": {
+            "status": "partial",
+            "observation": "Android offers one-file radio selection. Its review identifies exact file, one-time intake and unconnected local destination; confirmation creates a pending source. Later continuous sync and picker cancellation remain untested."
+          }
+        }
+      }
+    },
+    "NAT-007": {
+      "mac": {
+        "status": "partial",
+        "reason": "Back raises the unsaved guard; Continue editing retains the selected range and archive mode, plus Android multiline explanation, before explicit confirmation. Reopening after process interruption, encrypted storage and failed-save retry are untested.",
+        "evidence": [
+          "evidence/mac/files/07-file-unsaved-back.json",
+          "evidence/mac/files/08-files-draft-preserved.json",
+          "evidence/mac/files/09-files-review.json",
+          "evidence/mac/files/10-files-committed.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Back raises the unsaved guard; Continue editing retains the selected range and archive mode, plus Android multiline explanation, before explicit confirmation. Reopening after process interruption, encrypted storage and failed-save retry are untested."
+          },
+          "actions:0": {
+            "status": "partial",
+            "observation": "Back raises the unsaved guard; Continue editing retains the selected range and archive mode, plus Android multiline explanation, before explicit confirmation. Reopening after process interruption, encrypted storage and failed-save retry are untested."
+          },
+          "actions:1": {
+            "status": "partial",
+            "observation": "Back raises the unsaved guard; Continue editing retains the selected range and archive mode, plus Android multiline explanation, before explicit confirmation. Reopening after process interruption, encrypted storage and failed-save retry are untested."
+          },
+          "results:0": {
+            "status": "partial",
+            "observation": "Back raises the unsaved guard; Continue editing retains the selected range and archive mode, plus Android multiline explanation, before explicit confirmation. Reopening after process interruption, encrypted storage and failed-save retry are untested."
+          },
+          "results:1": {
+            "status": "partial",
+            "observation": "Back raises the unsaved guard; Continue editing retains the selected range and archive mode, plus Android multiline explanation, before explicit confirmation. Reopening after process interruption, encrypted storage and failed-save retry are untested."
+          }
+        }
+      },
+      "android": {
+        "status": "partial",
+        "reason": "Back raises the unsaved guard; Continue editing retains the selected range and archive mode, plus Android multiline explanation, before explicit confirmation. Reopening after process interruption, encrypted storage and failed-save retry are untested.",
+        "evidence": [
+          "evidence/android/files/08-unsaved-guard.json",
+          "evidence/android/files/09-draft-preserved.json",
+          "evidence/android/files/10-file-review.json",
+          "evidence/android/files/11-file-committed.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Back raises the unsaved guard; Continue editing retains the selected range and archive mode, plus Android multiline explanation, before explicit confirmation. Reopening after process interruption, encrypted storage and failed-save retry are untested."
+          },
+          "actions:0": {
+            "status": "partial",
+            "observation": "Back raises the unsaved guard; Continue editing retains the selected range and archive mode, plus Android multiline explanation, before explicit confirmation. Reopening after process interruption, encrypted storage and failed-save retry are untested."
+          },
+          "actions:1": {
+            "status": "partial",
+            "observation": "Back raises the unsaved guard; Continue editing retains the selected range and archive mode, plus Android multiline explanation, before explicit confirmation. Reopening after process interruption, encrypted storage and failed-save retry are untested."
+          },
+          "results:0": {
+            "status": "partial",
+            "observation": "Back raises the unsaved guard; Continue editing retains the selected range and archive mode, plus Android multiline explanation, before explicit confirmation. Reopening after process interruption, encrypted storage and failed-save retry are untested."
+          },
+          "results:1": {
+            "status": "partial",
+            "observation": "Back raises the unsaved guard; Continue editing retains the selected range and archive mode, plus Android multiline explanation, before explicit confirmation. Reopening after process interruption, encrypted storage and failed-save retry are untested."
+          },
+          "inputs:1": {
+            "status": "partial",
+            "observation": "Back raises the unsaved guard; Continue editing retains the selected range and archive mode, plus Android multiline explanation, before explicit confirmation. Reopening after process interruption, encrypted storage and failed-save retry are untested."
+          }
+        }
+      }
+    },
+    "NAT-008": {
+      "mac": {
+        "status": "partial",
+        "reason": "The one-time selected-file task includes current contents and creates a concrete local original. Directory initial-inventory and new-only baseline branches remain untested.",
+        "evidence": [
+          "evidence/mac/files/09-files-review.json",
+          "evidence/mac/files/12-file-record-original.json"
+        ],
+        "assertions": {
+          "results:1": {
+            "status": "verified",
+            "observation": "The one-time selected-file task includes current contents and creates a concrete local original. Directory initial-inventory and new-only baseline branches remain untested."
+          }
+        }
+      },
+      "android": {
+        "status": "partial",
+        "reason": "The one-time selected-file task includes current contents and creates a concrete local original. Directory initial-inventory and new-only baseline branches remain untested.",
+        "evidence": [
+          "evidence/android/files/10-file-review.json",
+          "evidence/android/files/14-file-original.json"
+        ],
+        "assertions": {
+          "results:1": {
+            "status": "verified",
+            "observation": "The one-time selected-file task includes current contents and creates a concrete local original. Directory initial-inventory and new-only baseline branches remain untested."
+          }
+        }
+      }
+    },
+    "NAT-009": {
+      "mac": {
+        "status": "partial",
+        "reason": "Archive original+content is selected and appears in scope confirmation; local original availability is explicit. Snapshot cleanup, reference-only, full offline body and actual Central parsing remain untested. Shared copy still incorrectly refers to a selected directory on the selected-file task.",
+        "evidence": [
+          "evidence/mac/files/08-files-draft-preserved.json",
+          "evidence/mac/files/09-files-review.json",
+          "evidence/mac/files/12-file-record-original.json"
+        ],
+        "assertions": {
+          "inputs:1": {
+            "status": "verified",
+            "observation": "Archive original+content is selected and appears in scope confirmation; local original availability is explicit. Snapshot cleanup, reference-only, full offline body and actual Central parsing remain untested. Shared copy still incorrectly refers to a selected directory on the selected-file task."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Archive original+content is selected and appears in scope confirmation; local original availability is explicit. Snapshot cleanup, reference-only, full offline body and actual Central parsing remain untested. Shared copy still incorrectly refers to a selected directory on the selected-file task."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "Archive original+content is selected and appears in scope confirmation; local original availability is explicit. Snapshot cleanup, reference-only, full offline body and actual Central parsing remain untested. Shared copy still incorrectly refers to a selected directory on the selected-file task."
+          },
+          "results:0": {
+            "status": "partial",
+            "observation": "Archive original+content is selected and appears in scope confirmation; local original availability is explicit. Snapshot cleanup, reference-only, full offline body and actual Central parsing remain untested. Shared copy still incorrectly refers to a selected directory on the selected-file task."
+          },
+          "results:2": {
+            "status": "partial",
+            "observation": "Archive original+content is selected and appears in scope confirmation; local original availability is explicit. Snapshot cleanup, reference-only, full offline body and actual Central parsing remain untested. Shared copy still incorrectly refers to a selected directory on the selected-file task."
+          }
+        }
+      },
+      "android": {
+        "status": "partial",
+        "reason": "Archive original+content is selected and appears in scope confirmation; local original availability is explicit. Snapshot cleanup, reference-only, full offline body and actual Central parsing remain untested. Shared copy still incorrectly refers to a selected directory on the selected-file task.",
+        "evidence": [
+          "evidence/android/files/09-draft-preserved.json",
+          "evidence/android/files/10-file-review.json",
+          "evidence/android/files/14-file-original.json"
+        ],
+        "assertions": {
+          "inputs:1": {
+            "status": "verified",
+            "observation": "Archive original+content is selected and appears in scope confirmation; local original availability is explicit. Snapshot cleanup, reference-only, full offline body and actual Central parsing remain untested. Shared copy still incorrectly refers to a selected directory on the selected-file task."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Archive original+content is selected and appears in scope confirmation; local original availability is explicit. Snapshot cleanup, reference-only, full offline body and actual Central parsing remain untested. Shared copy still incorrectly refers to a selected directory on the selected-file task."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "Archive original+content is selected and appears in scope confirmation; local original availability is explicit. Snapshot cleanup, reference-only, full offline body and actual Central parsing remain untested. Shared copy still incorrectly refers to a selected directory on the selected-file task."
+          },
+          "results:0": {
+            "status": "partial",
+            "observation": "Archive original+content is selected and appears in scope confirmation; local original availability is explicit. Snapshot cleanup, reference-only, full offline body and actual Central parsing remain untested. Shared copy still incorrectly refers to a selected directory on the selected-file task."
+          },
+          "results:2": {
+            "status": "partial",
+            "observation": "Archive original+content is selected and appears in scope confirmation; local original availability is explicit. Snapshot cleanup, reference-only, full offline body and actual Central parsing remain untested. Shared copy still incorrectly refers to a selected directory on the selected-file task."
+          }
+        }
+      }
+    },
+    "NAT-060": {
+      "mac": {
+        "status": "partial",
+        "reason": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated.",
+        "evidence": [
+          "evidence/mac/files/07-file-unsaved-back.json",
+          "evidence/mac/files/08-files-draft-preserved.json",
+          "evidence/mac/files/09-files-review.json",
+          "evidence/mac/files/10-files-committed.json",
+          "evidence/mac/native/06-required-permission.json",
+          "evidence/mac/native/07-capture-running.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated."
+          },
+          "actions:3": {
+            "status": "partial",
+            "observation": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated."
+          },
+          "results:1": {
+            "status": "partial",
+            "observation": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated."
+          },
+          "results:2": {
+            "status": "partial",
+            "observation": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated."
+          }
+        }
+      },
+      "android": {
+        "status": "partial",
+        "reason": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated.",
+        "evidence": [
+          "evidence/android/files/08-unsaved-guard.json",
+          "evidence/android/files/09-draft-preserved.json",
+          "evidence/android/files/10-file-review.json",
+          "evidence/android/files/11-file-committed.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated."
+          },
+          "actions:3": {
+            "status": "partial",
+            "observation": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated."
+          },
+          "results:1": {
+            "status": "partial",
+            "observation": "Unsaved edits trigger Save/Continue/Discard choices. Continue preserves the current draft, followed by explicit save and owning-task return. Mac capture permission also returns to its originating task. Explicit Discard and Save-and-leave branches were not operated."
+          }
+        }
+      }
+    },
+    "NAT-041": {
+      "mac": {
+        "status": "partial",
+        "reason": "Selected-file queue has a concrete pending record with retained original and reception/processing distinction. Mac source filter changes from file-1 to all to show both selected files and an unconnected send is blocked. Other filters, paging, refresh and unreadable-queue failure remain untested.",
+        "evidence": [
+          "evidence/mac/files/11-file-source-records.json",
+          "evidence/mac/files/12-file-record-original.json",
+          "evidence/mac/files/13-two-files-queued.json",
+          "evidence/mac/files/14-unconnected-send-blocked.json"
+        ],
+        "assertions": {
+          "actions:0": {
+            "status": "verified",
+            "observation": "Selected-file queue has a concrete pending record with retained original and reception/processing distinction. Mac source filter changes from file-1 to all to show both selected files and an unconnected send is blocked. Other filters, paging, refresh and unreadable-queue failure remain untested."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "Selected-file queue has a concrete pending record with retained original and reception/processing distinction. Mac source filter changes from file-1 to all to show both selected files and an unconnected send is blocked. Other filters, paging, refresh and unreadable-queue failure remain untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "Selected-file queue has a concrete pending record with retained original and reception/processing distinction. Mac source filter changes from file-1 to all to show both selected files and an unconnected send is blocked. Other filters, paging, refresh and unreadable-queue failure remain untested."
+          },
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Selected-file queue has a concrete pending record with retained original and reception/processing distinction. Mac source filter changes from file-1 to all to show both selected files and an unconnected send is blocked. Other filters, paging, refresh and unreadable-queue failure remain untested."
+          },
+          "actions:3": {
+            "status": "verified",
+            "observation": "Selected-file queue has a concrete pending record with retained original and reception/processing distinction. Mac source filter changes from file-1 to all to show both selected files and an unconnected send is blocked. Other filters, paging, refresh and unreadable-queue failure remain untested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "Selected-file queue has a concrete pending record with retained original and reception/processing distinction. Mac source filter changes from file-1 to all to show both selected files and an unconnected send is blocked. Other filters, paging, refresh and unreadable-queue failure remain untested."
+          }
+        }
+      },
+      "android": {
+        "status": "partial",
+        "reason": "Selected-file queue has a concrete pending record with retained original and reception/processing distinction. Mac source filter changes from file-1 to all to show both selected files and an unconnected send is blocked. Other filters, paging, refresh and unreadable-queue failure remain untested.",
+        "evidence": [
+          "evidence/android/files/13-file-queue.json",
+          "evidence/android/files/14-file-original.json"
+        ],
+        "assertions": {
+          "actions:0": {
+            "status": "verified",
+            "observation": "Selected-file queue has a concrete pending record with retained original and reception/processing distinction. Mac source filter changes from file-1 to all to show both selected files and an unconnected send is blocked. Other filters, paging, refresh and unreadable-queue failure remain untested."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "Selected-file queue has a concrete pending record with retained original and reception/processing distinction. Mac source filter changes from file-1 to all to show both selected files and an unconnected send is blocked. Other filters, paging, refresh and unreadable-queue failure remain untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "Selected-file queue has a concrete pending record with retained original and reception/processing distinction. Mac source filter changes from file-1 to all to show both selected files and an unconnected send is blocked. Other filters, paging, refresh and unreadable-queue failure remain untested."
+          }
+        }
+      }
+    },
+    "NAT-046": {
+      "mac": {
+        "status": "partial",
+        "reason": "Exact source/record identity, original availability and separate reception/body processing are shown. Mac also advances the retained receipt record to the next labeled text range. Metadata, images, Central navigation and Android full-original export remain untested.",
+        "evidence": [
+          "evidence/mac/files/12-file-record-original.json",
+          "evidence/mac/files/26-receipt-record.json",
+          "evidence/mac/files/28-receipt-record-next.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Exact source/record identity, original availability and separate reception/body processing are shown. Mac also advances the retained receipt record to the next labeled text range. Metadata, images, Central navigation and Android full-original export remain untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "Exact source/record identity, original availability and separate reception/body processing are shown. Mac also advances the retained receipt record to the next labeled text range. Metadata, images, Central navigation and Android full-original export remain untested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "Exact source/record identity, original availability and separate reception/body processing are shown. Mac also advances the retained receipt record to the next labeled text range. Metadata, images, Central navigation and Android full-original export remain untested."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "Exact source/record identity, original availability and separate reception/body processing are shown. Mac also advances the retained receipt record to the next labeled text range. Metadata, images, Central navigation and Android full-original export remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Exact source/record identity, original availability and separate reception/body processing are shown. Mac also advances the retained receipt record to the next labeled text range. Metadata, images, Central navigation and Android full-original export remain untested."
+          },
+          "results:3": {
+            "status": "verified",
+            "observation": "Exact source/record identity, original availability and separate reception/body processing are shown. Mac also advances the retained receipt record to the next labeled text range. Metadata, images, Central navigation and Android full-original export remain untested."
+          }
+        }
+      },
+      "android": {
+        "status": "partial",
+        "reason": "Exact source/record identity, original availability and separate reception/body processing are shown. Mac also advances the retained receipt record to the next labeled text range. Metadata, images, Central navigation and Android full-original export remain untested.",
+        "evidence": [
+          "evidence/android/files/14-file-original.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Exact source/record identity, original availability and separate reception/body processing are shown. Mac also advances the retained receipt record to the next labeled text range. Metadata, images, Central navigation and Android full-original export remain untested."
+          },
+          "results:0": {
+            "status": "verified",
+            "observation": "Exact source/record identity, original availability and separate reception/body processing are shown. Mac also advances the retained receipt record to the next labeled text range. Metadata, images, Central navigation and Android full-original export remain untested."
+          },
+          "results:1": {
+            "status": "verified",
+            "observation": "Exact source/record identity, original availability and separate reception/body processing are shown. Mac also advances the retained receipt record to the next labeled text range. Metadata, images, Central navigation and Android full-original export remain untested."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "Exact source/record identity, original availability and separate reception/body processing are shown. Mac also advances the retained receipt record to the next labeled text range. Metadata, images, Central navigation and Android full-original export remain untested."
+          }
+        }
+      }
+    },
+    "NAT-005": {
+      "android": {
+        "status": "partial",
+        "reason": "Exact multiline source description survives the unsaved guard and confirmation. The saved source explicitly waits for Central acknowledgment. The nested saved-description editor was not reopened to inspect exact post-save text; future context use and edit-existing semantics remain untested.",
+        "evidence": [
+          "evidence/android/files/09-draft-preserved.json",
+          "evidence/android/files/10-file-review.json",
+          "evidence/android/files/11-file-committed.json",
+          "evidence/android/files/12-file-context-pending.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "Exact multiline source description survives the unsaved guard and confirmation. The saved source explicitly waits for Central acknowledgment. The nested saved-description editor was not reopened to inspect exact post-save text; future context use and edit-existing semantics remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "Exact multiline source description survives the unsaved guard and confirmation. The saved source explicitly waits for Central acknowledgment. The nested saved-description editor was not reopened to inspect exact post-save text; future context use and edit-existing semantics remain untested."
+          },
+          "actions:1": {
+            "status": "partial",
+            "observation": "Exact multiline source description survives the unsaved guard and confirmation. The saved source explicitly waits for Central acknowledgment. The nested saved-description editor was not reopened to inspect exact post-save text; future context use and edit-existing semantics remain untested."
+          },
+          "results:0": {
+            "status": "partial",
+            "observation": "Exact multiline source description survives the unsaved guard and confirmation. The saved source explicitly waits for Central acknowledgment. The nested saved-description editor was not reopened to inspect exact post-save text; future context use and edit-existing semantics remain untested."
+          }
+        }
+      }
+    },
+    "NAT-042": {
+      "mac": {
+        "status": "partial",
+        "reason": "A real generated queue send produces receipt-1. End date before October 20 excludes it; the October 21-27 seven-day interval also excludes it; October 20-26 includes it. Its exact local-101 item opens with received/body-pending distinction, then returns to receipt-1 and the preserved date filters. Source/outcome filtering and actual nonzero retry accounting remain untested.",
+        "evidence": [
+          "evidence/mac/files/21-receipt-list.json",
+          "evidence/mac/files/22-receipt-after-end-excluded.json",
+          "evidence/mac/files/23-receipt-before-start-excluded.json",
+          "evidence/mac/files/24-receipt-boundary-included.json",
+          "evidence/mac/files/25-receipt-detail.json",
+          "evidence/mac/files/26-receipt-record.json",
+          "evidence/mac/files/28-receipt-record-next.json",
+          "evidence/mac/files/29-return-exact-receipt.json",
+          "evidence/mac/files/30-return-filtered-list.json"
+        ],
+        "assertions": {
+          "inputs:0": {
+            "status": "verified",
+            "observation": "A real generated queue send produces receipt-1. End date before October 20 excludes it; the October 21-27 seven-day interval also excludes it; October 20-26 includes it. Its exact local-101 item opens with received/body-pending distinction, then returns to receipt-1 and the preserved date filters. Source/outcome filtering and actual nonzero retry accounting remain untested."
+          },
+          "inputs:1": {
+            "status": "verified",
+            "observation": "A real generated queue send produces receipt-1. End date before October 20 excludes it; the October 21-27 seven-day interval also excludes it; October 20-26 includes it. Its exact local-101 item opens with received/body-pending distinction, then returns to receipt-1 and the preserved date filters. Source/outcome filtering and actual nonzero retry accounting remain untested."
+          },
+          "actions:0": {
+            "status": "verified",
+            "observation": "A real generated queue send produces receipt-1. End date before October 20 excludes it; the October 21-27 seven-day interval also excludes it; October 20-26 includes it. Its exact local-101 item opens with received/body-pending distinction, then returns to receipt-1 and the preserved date filters. Source/outcome filtering and actual nonzero retry accounting remain untested."
+          },
+          "actions:1": {
+            "status": "verified",
+            "observation": "A real generated queue send produces receipt-1. End date before October 20 excludes it; the October 21-27 seven-day interval also excludes it; October 20-26 includes it. Its exact local-101 item opens with received/body-pending distinction, then returns to receipt-1 and the preserved date filters. Source/outcome filtering and actual nonzero retry accounting remain untested."
+          },
+          "actions:2": {
+            "status": "verified",
+            "observation": "A real generated queue send produces receipt-1. End date before October 20 excludes it; the October 21-27 seven-day interval also excludes it; October 20-26 includes it. Its exact local-101 item opens with received/body-pending distinction, then returns to receipt-1 and the preserved date filters. Source/outcome filtering and actual nonzero retry accounting remain untested."
+          },
+          "actions:3": {
+            "status": "verified",
+            "observation": "A real generated queue send produces receipt-1. End date before October 20 excludes it; the October 21-27 seven-day interval also excludes it; October 20-26 includes it. Its exact local-101 item opens with received/body-pending distinction, then returns to receipt-1 and the preserved date filters. Source/outcome filtering and actual nonzero retry accounting remain untested."
+          },
+          "actions:4": {
+            "status": "verified",
+            "observation": "A real generated queue send produces receipt-1. End date before October 20 excludes it; the October 21-27 seven-day interval also excludes it; October 20-26 includes it. Its exact local-101 item opens with received/body-pending distinction, then returns to receipt-1 and the preserved date filters. Source/outcome filtering and actual nonzero retry accounting remain untested."
+          },
+          "results:2": {
+            "status": "verified",
+            "observation": "A real generated queue send produces receipt-1. End date before October 20 excludes it; the October 21-27 seven-day interval also excludes it; October 20-26 includes it. Its exact local-101 item opens with received/body-pending distinction, then returns to receipt-1 and the preserved date filters. Source/outcome filtering and actual nonzero retry accounting remain untested."
+          },
+          "results:0": {
+            "status": "partial",
+            "observation": "A real generated queue send produces receipt-1. End date before October 20 excludes it; the October 21-27 seven-day interval also excludes it; October 20-26 includes it. Its exact local-101 item opens with received/body-pending distinction, then returns to receipt-1 and the preserved date filters. Source/outcome filtering and actual nonzero retry accounting remain untested."
+          },
+          "results:1": {
+            "status": "partial",
+            "observation": "A real generated queue send produces receipt-1. End date before October 20 excludes it; the October 21-27 seven-day interval also excludes it; October 20-26 includes it. Its exact local-101 item opens with received/body-pending distinction, then returns to receipt-1 and the preserved date filters. Source/outcome filtering and actual nonzero retry accounting remain untested."
+          }
+        }
+      }
+    }
+  },
+  "journey_observations": {
+    "J-RECORDING-AUTH-SCOPE": {
+      "web": {
+        "status": "verified",
+        "reason": "The ordinary Feishu workflow acknowledges revised speaker/background prose before intake; both missing acknowledgment and a later dirty description block the start.",
+        "evidence": [
+          "evidence/web/changed/11-recording-unacked-blocked.json",
+          "evidence/web/changed/13-recording-dirty-blocked.json",
+          "evidence/web/changed/14-recording-context-reack.json",
+          "evidence/web/changed/15-recording-stages.json"
+        ]
+      }
+    },
+    "J-RECORDING-STAGES-RECOVERY": {
+      "web": {
+        "status": "verified",
+        "reason": "Text is readable while audio fails; retry operates the failed audio step and reports its separate result. The separate required audio-opening capability remains partial in feature coverage.",
+        "evidence": [
+          "evidence/web/changed/15-recording-stages.json",
+          "evidence/web/changed/16-recording-text.json",
+          "evidence/web/changed/18-recording-audio-retry.json"
+        ]
+      }
+    },
+    "J-ACTION-DISCOVERY": {
+      "web": {
+        "status": "verified",
+        "reason": "Enabled with one review device, then simulated revocation blocks stale save and asks for refresh.",
+        "evidence": [
+          "evidence/web/changed/41-discovery-saved.json",
+          "evidence/web/changed/43-discovery-revoked.json",
+          "evidence/web/changed/44-discovery-stale-save.json",
+          "evidence/web/changed/45-discovery-refreshed.json"
+        ]
+      }
+    },
+    "J-ACTION-REVIEW": {
+      "web": {
+        "status": "verified",
+        "reason": "Custom all-day timezone and actual target are frozen; changed evidence invalidates approval and preserves the edited draft for a new review.",
+        "evidence": [
+          "evidence/web/calendar/06-fixed-review.json",
+          "evidence/web/calendar/08-review-stale.json",
+          "evidence/web/calendar/10-refixed-v2.json"
+        ]
+      }
+    },
+    "J-ACTION-EXECUTION-RECOVERY": {
+      "web": {
+        "status": "verified",
+        "reason": "Lost device receipt resolves by verifying the same synthetic event/operation, not by creating another event.",
+        "evidence": [
+          "evidence/web/calendar/14-calendar-uncertain.json",
+          "evidence/web/calendar/16-calendar-verified-original.json"
+        ]
+      }
+    },
+    "J-TODO": {
+      "web": {
+        "status": "verified",
+        "reason": "No-due todo completes and reopens without a calendar confirmation or event-creation implication.",
+        "evidence": [
+          "evidence/web/calendar/19-todo-added.json",
+          "evidence/web/calendar/20-todo-completed.json",
+          "evidence/web/calendar/21-todo-completed-filter.json",
+          "evidence/web/calendar/23-todo-reopened.json"
+        ]
+      }
+    },
+    "J-ARCHIVE-PORTABLE-IMPORT": {
+      "web": {
+        "status": "verified",
+        "reason": "Actual page reload retains the partial original operation; original-file re-selection resumes it without re-merging the completed source stage.",
+        "evidence": [
+          "evidence/web/maintenance-reload/02-import-partial.json",
+          "evidence/web/maintenance-reload/03-import-failed.json",
+          "evidence/web/maintenance-reload/04-reload-no-reset.json",
+          "evidence/web/maintenance-reload/05-retry-without-file-blocked.json",
+          "evidence/web/maintenance-reload/06-retry-same-operation.json",
+          "evidence/web/maintenance-reload/07-import-materials-finished.json"
+        ]
+      }
+    },
+    "J-DIAGNOSTIC-LOGS": {
+      "web": {
+        "status": "verified",
+        "reason": "The downloaded seven-day request truthfully identifies its much shorter retained coverage and does not reconstruct rotated logs.",
+        "evidence": [
+          "evidence/web/maintenance-reload/23-log-rotated-gap.json",
+          "evidence/web/maintenance-reload/25-diagnostic-week-export.json",
+          "evidence/web/maintenance-reload/diagnostics-week.json"
+        ]
+      }
+    },
+    "J-AGENT-ACTUAL-TRACE": {
+      "web": {
+        "status": "partial",
+        "reason": "An unknown requested run shows absent detailed evidence. The specific historical-before-tracing run variant was not available in this run, so that whole scenario remains partial.",
+        "evidence": [
+          "evidence/web/maintenance-reload/30-old-trace-retained.json",
+          "evidence/web/maintenance-reload/31-unknown-trace-absent.json"
+        ]
+      }
+    },
+    "J-DIAGNOSTIC-PREFERENCES": {
+      "web": {
+        "status": "verified",
+        "reason": "Disabling later input capture does not remove the already retained trace; personal preference and historical evidence remain separate.",
+        "evidence": [
+          "evidence/web/maintenance-reload/27-trace-on.json",
+          "evidence/web/maintenance-reload/28-trace-off.json",
+          "evidence/web/maintenance-reload/30-old-trace-retained.json"
+        ]
+      }
+    },
+    "J-NAT-042": {
+      "mac": {
+        "status": "verified",
+        "reason": "The received receipt opens its exact original while body processing is still pending, and returns to that same receipt.",
+        "evidence": [
+          "evidence/mac/files/25-receipt-detail.json",
+          "evidence/mac/files/26-receipt-record.json",
+          "evidence/mac/files/29-return-exact-receipt.json"
+        ]
+      }
+    }
+  },
+  "findings": [
+    {
+      "id": "R33-01",
+      "title": "An archived recording audio backup still has no visible opening control",
+      "observed": "The ordinary Feishu catalog entry is repaired. Its transcript can be read while audio backup fails; retry succeeds and displays one archived audio backup. The audio result row and expanded saved-items/checkpoint disclosure still provide no audio detail or original opening control. Only transcript links are available in the exercised flow.",
+      "correction": "Give the actual archived audio item a named opening/download path with its source, original availability and processing state; verify it from the ordinary catalog flow.",
+      "evidence": [
+        "evidence/web/changed/15-recording-stages.json",
+        "evidence/web/changed/16-recording-text.json",
+        "evidence/web/changed/18-recording-audio-retry.json",
+        "evidence/web/changed/20-recording-checkpoint.json",
+        "evidence/web/changed/21-recording-result-fixtures.json"
+      ]
+    },
+    {
+      "id": "R33-02",
+      "title": "Calendar task notices leak into other action pages",
+      "observed": "After refreshing revoked review-device authorization, the device-refresh notice appears on a separate suggestion review. After verifying an uncertain calendar event, the same-event verification notice appears on the ordinary todo page. The underlying state transitions remain sound, but the message is detached from its owning task.",
+      "correction": "Scope transient action notices to their originating task and clear them when navigating to a different action workspace.",
+      "evidence": [
+        "evidence/web/changed/45-discovery-refreshed.json",
+        "evidence/web/changed/46-calendar-review.json",
+        "evidence/web/calendar/16-calendar-verified-original.json",
+        "evidence/web/calendar/18-todos.json"
+      ]
+    },
+    {
+      "id": "R33-03",
+      "title": "Selected-file retention copy still says selected directory",
+      "observed": "Mac and Android selected-file tasks explicitly restrict authorization to named files and exclude the containing directory. Their retention explanation still says the original files in the selected directory are retained, including in the confirmation. This is a minor wording inconsistency on an otherwise working selected-file flow.",
+      "correction": "Use selected-file wording on this task while keeping directory wording on folder collection.",
+      "evidence": [
+        "evidence/mac/files/04-native-selected-files.json",
+        "evidence/mac/files/09-files-review.json",
+        "evidence/android/files/03-file-task.json",
+        "evidence/android/files/10-file-review.json"
+      ]
+    },
+    {
+      "id": "R33-04",
+      "title": "The named R32 status defects have current regression evidence",
+      "observed": "Google Calendar now reports a saved range and archived results without the obsolete no-scope/pre-sync message. MCP repeats report new 0 / duplicate 1 for that attempt. Mac capture stop now displays a stopped/paused notice while preserving sending pause. The Feishu ordinary recording entry includes independent authorization and source acknowledgment. DingTalk completion was not independently credited in this focused round.",
+      "correction": "Preserve these observed transitions while repairing the remaining audio and task-notice defects.",
+      "evidence": [
+        "evidence/web/changed/28-google-scope-saved.json",
+        "evidence/web/changed/29-google-synced.json",
+        "evidence/web/changed/38-mcp-selected-repeat.json",
+        "evidence/web/changed/13-recording-dirty-blocked.json",
+        "evidence/web/changed/14-recording-context-reack.json",
+        "evidence/mac/native/15-capture-paused.json",
+        "evidence/mac/native/16-send-still-paused.json"
+      ]
+    },
+    {
+      "id": "R33-05",
+      "title": "Fixed calendar review binds real choices and recovers the original event",
+      "observed": "Custom all-day dates, timezone, location, notes and target calendar survive fixed review. A changed evidence version withdraws old approval and keeps the edited draft. After new approval, a lost receipt is resolved by verifying the same synthetic event and operation IDs. Ordinary no-due todos complete and reopen separately.",
+      "correction": "Keep the precise fixed-review and existing-event recovery pattern; other action kinds and native shared variants remain explicitly untested.",
+      "evidence": [
+        "evidence/web/calendar/05-invalid-all-day-range.json",
+        "evidence/web/calendar/06-fixed-review.json",
+        "evidence/web/calendar/08-review-stale.json",
+        "evidence/web/calendar/10-refixed-v2.json",
+        "evidence/web/calendar/14-calendar-uncertain.json",
+        "evidence/web/calendar/16-calendar-verified-original.json",
+        "evidence/web/calendar/23-todo-reopened.json"
+      ]
+    },
+    {
+      "id": "R33-06",
+      "title": "Scoped maintenance has meaningful file, operation and retained-evidence behavior",
+      "observed": "A downloaded portable3 fixture is rejected after changing its account; the correct file resumes the same partially completed operation after browser reload and re-selection. Index publication stops on failed authorization recheck. A seven-day diagnostic export truthfully contains only October 22 retained events with partial coverage. Turning off detailed trace capture preserves old traces; an unknown run shows no trace.",
+      "correction": "Preserve the scoped results and original-operation recovery. Cancellation/paging variants and untouched encryption, decryption, retention, statistics and export families remain untested.",
+      "evidence": [
+        "evidence/web/maintenance/03-same-account-selected.json",
+        "evidence/web/maintenance-reload/04-reload-no-reset.json",
+        "evidence/web/maintenance-reload/05-retry-without-file-blocked.json",
+        "evidence/web/maintenance-reload/06-retry-same-operation.json",
+        "evidence/web/maintenance-reload/15-index-publication-blocked.json",
+        "evidence/web/maintenance-reload/25-diagnostic-week-export.json",
+        "evidence/web/maintenance-reload/28-trace-off.json",
+        "evidence/web/maintenance-reload/30-old-trace-retained.json",
+        "evidence/web/maintenance-reload/31-unknown-trace-absent.json"
+      ]
+    },
+    {
+      "id": "R33-07",
+      "title": "Native selected files, receipts and mobile hierarchy improve without proving completeness",
+      "observed": "Mac selects two independent files, confirms a local-only task and blocks unconnected sending. Android selects one file and holds it pending context acknowledgment. Dirty drafts remain on Continue editing. Mac receipt date filters obey both endpoints, and actual-content navigation returns to the same receipt. Fresh three-platform primary pages render without horizontal overflow; mobile Library removes its repeated title. Full 188-feature completeness remains unverified.",
+      "correction": "Retain these focused transitions and the simpler mobile title; do not convert route availability or untested variants into feature passes.",
+      "evidence": [
+        "evidence/mac/files/09-files-review.json",
+        "evidence/mac/files/13-two-files-queued.json",
+        "evidence/mac/files/14-unconnected-send-blocked.json",
+        "evidence/mac/files/22-receipt-after-end-excluded.json",
+        "evidence/mac/files/23-receipt-before-start-excluded.json",
+        "evidence/mac/files/24-receipt-boundary-included.json",
+        "evidence/mac/files/29-return-exact-receipt.json",
+        "evidence/mac/files/30-return-filtered-list.json",
+        "evidence/android/files/09-draft-preserved.json",
+        "evidence/android/files/11-file-committed.json",
+        "evidence/android/files/14-file-original.json",
+        "evidence/android/major/library.png"
+      ]
+    }
+  ],
+  "screen_inspection": {
+    "scope": "Fresh first-use and populated Library/Ask/Sources/Activity on all three platforms. Changed Web source/calendar/portable-import/index/diagnostic paths; Mac capture/privacy/sending and selected-file/receipt paths; Android selected-file/context-pending path. Other shared native variants are untested.",
+    "viewports": {
+      "web": "1440x1000",
+      "mac": "1440x1000",
+      "android": "412x915"
+    },
+    "runtime": "Google Chrome for Testing 134.0.6998.165 with fixed Noto Sans SC; isolated synthetic origin; external requests blocked",
+    "dom_snapshots": 180,
+    "viewport_pngs": 180,
+    "horizontal_overflows_observed": 0,
+    "page_exceptions_observed": 0,
+    "harness_notes": [
+      "The first portable-import reload used the helper reset=1 URL and reset the synthetic account by design. It is not product-loss evidence. The authoritative refresh/retry journey is maintenance-reload with no reset query.",
+      "MCP label whitespace, hidden duplicate desktop labels and route changes caused selector timeouts. Corrected visible selectors and later saved states establish the evidence; timeouts are not scored as product failures.",
+      "Android uses one-file radio selection, unlike Mac multi-file checkboxes. The initially replayed checkbox commands failed; subsequent visible radio selection and confirmation are authoritative. The retention option was reselected visibly before scored confirmation.",
+      "A stale calendar approval button was absent as expected after evidence changed; attempting its former label timed out. The saved stale state and new review establish the guard.",
+      "The next-index-submit failure fixture did not produce an unknown receipt when retrying an existing operation; that branch is untested. Filename 17-index-unknown is historical and the report follows its actual waiting-state DOM.",
+      "Asynchronous file reading caused a snapshot with the prior account-rejection notice before the correct-file state settled; settled selection and original-operation evidence are used for outcomes.",
+      "The DingTalk selector hit a collapsed catalog disclosure and timed out; no DingTalk workflow completion is credited."
+    ]
+  },
+  "limits": [
+    "Only frozen R33 HTML is evaluated. Candidate bytes are read solely for hashing; candidate implementation, hidden app state and storage are not scoring evidence.",
+    "The unchanged independently audited 188-feature contract, 188 representative journeys and frozen weights are authoritative. Every applicable unmentioned assertion remains untested.",
+    "This is the requested bounded changed-family review. R31/R32 observations are not silently copied as current-round passes; full import, model, attribution, invitation and other unchanged journeys were not repeated.",
+    "Current Web Central checks do not establish the equivalent shared native workflows. Current native selected-file checks do not establish physical-device permissions or real filesystem access.",
+    "No backend, live model, live OAuth, real calendar write, real native permission or real archive service was used. All content and exported files are explicitly synthetic fixtures.",
+    "A portable3 fixture and a diagnostic bundle were actually downloaded and inspected as user-visible outputs; an account-mismatched synthetic copy was supplied via the ordinary file input. No hidden application data was read or changed.",
+    "No page exception or document-width overflow was observed in the exercised current evidence. Full keyboard, screen-reader, localization, dark-mode and every disclosure coverage were not repeated.",
+    "The no-Central-local-collection result is supported by evaluated home/source/catalog/storage surfaces and collector-owned file confirmations; it does not claim an exhaustive unchanged-route survey.",
+    "Zero complete feature passes in a focused round, if produced by the assertion table, reflects untested or partial required branches and is not a claim that all untested functionality is absent."
+  ],
+  "next_corrections": [
+    "Open the actually archived recording audio from its result item.",
+    "Scope calendar/action notices to their owning task.",
+    "Replace selected-directory copy on selected-file tasks.",
+    "Recheck changed risks in R34 without treating untested contract branches as complete."
+  ]
+}

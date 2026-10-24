@@ -1,0 +1,187 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/import",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R30\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n导入资料\n\n保存这次选定的文件，让以后查找和提问有据可依。\n\n导入记录\n1\n选择资料\n\n文档、图片、音频、ZIP 或文件夹\n\n选择文件\n也可以拖放文件；本次导入不跟踪后续变化。\n2\n补充理解资料所需的信息\n格式、作者与归属说明 选填\n帮助 Agent 理解资料的格式、时间、作者和背景。第三方与 AI 引文保留原角色。\n0 / 12,000\n名称、解析与图片处理\n默认格式处理或模型解析 · 跟随默认设置\n上传并查看预览\n稍后继续\n\n想持续收集文件夹变化？ 到采集端设置\n\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "empty",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "导入记录",
+      "label": "导入记录",
+      "action": "go",
+      "page": "imports",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "选择文件",
+      "label": "选择文件",
+      "action": "focus-choose-files",
+      "disabled": false
+    },
+    {
+      "tag": "textarea",
+      "id": "focus-import-instruction",
+      "type": "textarea",
+      "text": "",
+      "label": "格式、作者与归属说明 选填\n帮助 Agent 理解资料的格式、时间、作者和背景。第三方与 AI 引文保留原角色。\n0 / 12,000",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "名称、解析与图片处理\n默认格式处理或模型解析 · 跟随默认设置",
+      "label": "名称、解析与图片处理\n默认格式处理或模型解析 · 跟随默认设置",
+      "expanded": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "上传并查看预览",
+      "label": "上传并查看预览",
+      "action": "focus-submit-import",
+      "disabled": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "稍后继续",
+      "label": "稍后继续",
+      "action": "go",
+      "page": "imports",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "到采集端设置",
+      "label": "到采集端设置",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "导入资料"
+    },
+    {
+      "level": "H2",
+      "text": "选择资料"
+    },
+    {
+      "level": "H2",
+      "text": "补充理解资料所需的信息"
+    }
+  ],
+  "viewport": {
+    "width": 412,
+    "height": 915
+  },
+  "pageWidth": 412,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

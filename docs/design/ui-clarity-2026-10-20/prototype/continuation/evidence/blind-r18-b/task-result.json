@@ -1,0 +1,65 @@
+{
+  "candidate": "r18.html",
+  "sha256_verified": "9009f6bb9d2ee17e250c395be9bed21aab4a26670ffe9bebca13f934c2817095",
+  "task": "持续保存电脑一个新项目文件夹的变化，建立对应来源，然后暂停，并确认历史资料去向",
+  "scope": "只评估可见 UI、入口理解和交互结果；不验证真实文件系统、同步后端或原件保留",
+  "first_look_frozen_before_interaction": true,
+  "initial_runtime_surface": "网页，浅色，已有资料，1440×1000；运行默认状态，与提供的桌面空账号截图不同",
+  "navigation_before_correct_entry_is_visible": 2,
+  "navigation_including_entering_new_folder_configuration": 3,
+  "wrong_turns": 0,
+  "clicks_to_complete_task": 6,
+  "text_fields_filled": 2,
+  "steps": [
+    {
+      "step": 1,
+      "action": "资料库 → 来源",
+      "reason": "持续收集应属于来源；来源页说明可随时暂停",
+      "evidence": "02-sources"
+    },
+    {
+      "step": 2,
+      "action": "连接来源",
+      "reason": "要建立一个新文件夹来源",
+      "evidence": "03-source-picker"
+    },
+    {
+      "step": 3,
+      "action": "同步文件夹",
+      "reason": "卡片明确写连接新的文件夹、持续保存后续变化",
+      "evidence": "04-new-folder"
+    },
+    {
+      "step": 4,
+      "action": "填写文件夹位置 ~/Documents/新项目，来源名称 新项目",
+      "reason": "持续同步已勾选，保存方式保持默认",
+      "evidence": "05-folder-filled"
+    },
+    {
+      "step": 5,
+      "action": "连接并保存",
+      "result": "管理文件夹来源；正在管理新项目；此来源正在接收选定内容",
+      "evidence": "06-folder-connected"
+    },
+    {
+      "step": 6,
+      "action": "暂停此来源",
+      "result": "此来源已暂停接收新内容，已保存资料仍可阅读；按钮变为恢复此来源",
+      "evidence": "07-folder-paused"
+    },
+    {
+      "step": 7,
+      "action": "浏览此来源的资料",
+      "result": "资料库限定当前来源新项目；显示已暂停、已保存资料仍可阅读；0 份资料且说明这个来源还没有已保存资料",
+      "evidence": "08-saved-history-destination"
+    }
+  ],
+  "completion": {
+    "new_source_created_in_ui": true,
+    "paused_in_ui": true,
+    "history_destination_understood": true,
+    "actual_history_items_created_or_required": false
+  },
+  "history_understanding": "历史已保存资料留在资料库，此来源的资料入口自动带入新项目筛选；暂停只停止接收新内容。新来源目前尚无已保存资料，并不表示资料被暂停动作删除。",
+  "stop_condition_met": "到达新项目来源范围的资料库后停止；未扩展其他功能审计。"
+}

@@ -1,0 +1,63 @@
+{
+  "round": "R34",
+  "reviewer": "/root/review_r31_r34/review_r34_central",
+  "recorded_before_deeper_interaction": true,
+  "recorded_at": "2026-10-23T03:31:21.354323+00:00",
+  "method": "Independent current first-screen observation. Reviewer had inherited project history and read the frozen inventory; this is not blinded human usability testing. Fresh isolated reset context per platform, no controls operated before observation; DOM before viewport capture.",
+  "platforms": {
+    "web": {
+      "evidence": [
+        "evidence/first-look/web.json",
+        "evidence/first-look/web.png"
+      ],
+      "purpose": "The headline and supporting paragraph communicate saving personal material and later searching/asking with a route back to originals.",
+      "expected_first_action": "Import the first material; writing a note is an immediately visible secondary action. Neither action is visually gated by a model/provider setup step.",
+      "visible_primary_areas": [
+        "资料库",
+        "问一问",
+        "来源",
+        "活动"
+      ],
+      "collection_owner": "The first screen explicitly says Mac/Android collect on their own devices and Central receives/organizes them. No Central-local folder collection control is shown.",
+      "density_and_hierarchy": "Spacious two-column onboarding, one dominant import action, secondary note and example/source actions. Persistent navigation is separate from the main task.",
+      "friction_or_uncertainty": "Several entry names overlap (top 添加内容/随手记, main import/note, and sidebar shortcuts on Mac); the dominant first action remains clear. “工作台在线” does not by itself explain device connection or authorization.",
+      "limits": "This first screen alone does not prove permission, source configuration, import completion, model optionality across all tasks, or all subsequent newcomer journeys."
+    },
+    "mac": {
+      "evidence": [
+        "evidence/first-look/mac.json",
+        "evidence/first-look/mac.png"
+      ],
+      "purpose": "The headline and supporting paragraph communicate saving personal material and later searching/asking with a route back to originals.",
+      "expected_first_action": "Import the first material; writing a note is an immediately visible secondary action. Neither action is visually gated by a model/provider setup step.",
+      "visible_primary_areas": [
+        "资料库",
+        "问一问",
+        "来源",
+        "活动"
+      ],
+      "collection_owner": "The explanatory section says select scope on this device and later aggregate into Central. The sidebar separately labels local shortcuts and exposes folder sync there.",
+      "density_and_hierarchy": "Spacious two-column onboarding, one dominant import action, secondary note and example/source actions. Persistent navigation is separate from the main task.",
+      "friction_or_uncertainty": "Several entry names overlap (top 添加内容/随手记, main import/note, and sidebar shortcuts on Mac); the dominant first action remains clear. “工作台在线” does not by itself explain device connection or authorization.",
+      "limits": "This first screen alone does not prove permission, source configuration, import completion, model optionality across all tasks, or all subsequent newcomer journeys."
+    },
+    "android": {
+      "evidence": [
+        "evidence/first-look/android.json",
+        "evidence/first-look/android.png"
+      ],
+      "purpose": "The headline and supporting paragraph communicate saving personal material and later searching/asking with a route back to originals.",
+      "expected_first_action": "Import the first material; writing a note is an immediately visible secondary action. Neither action is visually gated by a model/provider setup step.",
+      "visible_primary_areas": [
+        "资料库",
+        "问一问",
+        "来源",
+        "活动"
+      ],
+      "collection_owner": "The explanatory section says select scope on this device and later aggregate into Central. The source action is visible in the first viewport, below the main onboarding and example sections.",
+      "density_and_hierarchy": "A single-column reading order keeps purpose and both first actions above the example. Four bottom destinations remain visible; content fits 412px without horizontal overflow.",
+      "friction_or_uncertainty": "Settings and secondary workspaces use an unlabeled three-dot visual affordance (accessible name 更多页面与设置). First import/note actions are explicit, so that does not block the expected start. The small prototype preview toolbar adds visible test-only chrome.",
+      "limits": "This first screen alone does not prove permission, source configuration, import completion, model optionality across all tasks, or all subsequent newcomer journeys."
+    }
+  }
+}

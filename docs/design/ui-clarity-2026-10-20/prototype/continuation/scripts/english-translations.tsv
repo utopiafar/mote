@@ -1,0 +1,941 @@
+0	Skip to main content
+4	Prototype preview controls
+5	Preview platform
+6	Preview data
+7	Preview appearance
+8	Mote library
+9	Main navigation
+10	Workspace
+11	Dismiss notification
+12	Find the operations and settings supported by each feature.
+13	78 features · Organized by task
+14	Collect and capture
+15	Quick notes and existing attachments
+16	Write a quick note
+17	Save a quick note, keep a local draft, and review notes waiting to sync or already saved.
+18	Library → Quick note
+19	Open
+20	Attach existing images or audio
+21	Upload an existing image or audio file with your note, or save the attachment on its own.
+22	Import documents, folders and media
+23	Import existing documents, folders and media
+24	Add exported chats, documents, notes and attachments to a separate import queue, with optional context.
+25	Library → Import materials
+26	Track and manage imports
+27	Distinguish archiving, parsing previews, publishing content and creating memories. Confirm or retry the steps that need attention.
+28	Library → Uploads and processing
+29	Delete an entire import
+30	Review and remove an import and dependent content that no other material uses.
+31	Import a folder on the central machine
+32	Copy a directory that the central node can access into the archive.
+33	Choose an import parser and image processing method
+34	Choose an installed source parser or adjust image processing for this import.
+35	Resume an interrupted local upload
+36	Resume, retry or discard unfinished local submissions in the upload queue.
+37	Connect sources, Lark and recordings
+38	Choose a source to add
+39	Add files, references or external services as needed, then authorize and choose the scope for each source.
+40	Sources → Connect a source
+41	Manage source intake and content relationships
+42	Pause or resume a source, review its sync status, and describe how its content relates to you.
+43	Capture and devices → Sources and connections → Sources → Connected sources
+44	Save an external or NAS reference
+45	Record the material name and location so a client with access can submit a content snapshot later.
+46	Sources → External files and NAS references
+47	Archive Google Calendar with read-only access
+48	Authorize Google, choose calendars, and sync selected events into the library for review.
+49	Sources → Google Calendar
+50	Archive Gmail with read-only access
+51	Authorize Google to archive email content, senders and dates, then keep syncing or load more pages.
+52	Sources → Gmail
+53	Select remote MCP resources to import
+54	Browse resources exposed by a remote MCP service and import selected items once.
+55	Sources → MCP material import
+56	Connect Lark documents and calendars
+57	Authorize Lark on the central node to archive documents you create, edit or open and their activity context. Optionally keep tracking selected scopes and calendars.
+58	Add a source → Lark documents and calendars
+59	Archive recordings and existing transcripts
+60	Connect a recording account already authorized on the central node, then choose the initial history range and whether to keep syncing.
+61	Add a source → Recordings and transcripts → Recording provider
+62	View source versions and original locations
+63	Review a source's current or past versions, original location and metadata.
+64	Library → Browse by source
+65	Connect devices and review capture
+66	Start organizing your materials today
+67	Review existing materials and recent insights, then connect a device, import materials or configure questions.
+68	Review capture and sync status reported by devices
+69	Check each device's last contact, last capture, pending uploads, blocked items and retained content.
+70	Sources → Devices and recording status
+71	Connect or reauthorize a device
+72	Create a one-time invitation so a native client can verify the central node's address and connect.
+73	Sources → Connect a device
+74	Review and revoke connection permissions
+75	Review each connection's name, permissions and status, and revoke access you no longer use.
+76	Capture and devices → Sources and connections → External access → Authorized connections
+77	Use Mote MCP with another chatbot
+78	Create a separate read-only or source-specific write configuration for an HTTP MCP client.
+79	Capture and devices → Sources and connections → External access → Connect a chatbot
+80	Read and use
+81	Read content and original evidence
+82	Browse published material content
+83	Filter published materials by source, type, device and date, then open readable content.
+84	Library → All materials
+85	Check material content, provenance and processing status
+86	Read current or permitted historical content, trace its original, and see which derived results are still processing.
+87	Library → Material details
+88	Describe a material's relationship and extract memories
+89	Override the source-level relationship for one material and extract memories from its available content.
+90	View original capture evidence
+91	Find raw records by date, device or content type, then open images, text and attachments to verify them.
+92	Library → Capture records
+93	Delete a raw record
+94	Review the impact before removing a raw record and invalidating evidence that depends on it.
+95	Ask questions and revisit conversations
+96	Ask about archived materials
+97	Start or continue a conversation, let the question model retrieve archived evidence, then read answers and open citations.
+98	Review and manage conversation history
+99	Continue an earlier conversation, load more turns, check citations, usage and read records, or delete the conversation.
+100	Ask → Conversation history
+101	Attach an image to a question
+102	Choose images for this question and remove unwanted attachments before sending.
+103	Ask → Attach image
+104	Review, correct and organize memories
+105	Browse memories with evidence
+106	Search saved memories and check their conclusions, limits, status and supporting original materials.
+107	Library → Memories
+108	Correct, delete or export a memory
+109	Save a correction as a replacement version, delete the conclusion, or download its text.
+110	Extract memories manually
+111	Start extraction from the current scope or selected materials, choose a model and recipe, and track the result.
+112	Answer a question needing clarification
+113	Add information from the related task or material to help Mote resolve uncertainty about that input.
+114	Ask → Needs clarification
+115	Check memory history and effective dates
+116	Review the memory effective at a chosen time, earlier versions, and replacement or conflicting relationships.
+117	Continue organizing from a current memory
+118	Use a published memory as the starting point for a further result with a consolidation recipe.
+119	Library → Memories → Continue organizing
+120	Adjust memory policy and review frequency
+121	Set the history window, consolidation and review frequency, and default, screenshot and source-specific recipes.
+122	Settings → Memory policy and review frequency
+123	Generate insights and reviews
+124	Generate and revisit evidence-based insights
+125	Create a report for your question or the default review, verify citations and revisit saved results.
+126	Library → Insights
+127	Follow up and manage
+128	Follow work and recover from failures
+129	Review ongoing work and results
+130	See Mote's tasks, issues needing attention, execution branches and completed results in one place.
+131	Activity; Library → Processing tasks
+132	Inspect technical steps and resume retryable work
+133	Review task dependencies, attempts and failure causes, then find the relevant settings or recovery action.
+134	Activity → Needs attention → Task details
+135	Tasks and calendar suggestions
+136	Record and complete tasks
+137	Add a title and optional due date, then complete, cancel or reopen tasks.
+138	Today → My tasks
+139	Review calendar suggestions and send them to a device
+140	Check an evidence-based calendar suggestion and target calendar, confirm it, and track the device's result.
+141	Today → Calendar suggestions
+142	Browse categories and review time
+143	Browse the library by content type
+144	Switch views in the same library to find snippets, sources, files, activity, memories and processing.
+145	Library → All materials → Type filter
+146	Browse screen sessions or app albums
+147	Review continuous sessions or app groups by date and device, then open their capture evidence.
+148	Library → Screen snippets
+149	Review measured app activity time
+150	Review sampled time and proportions for each app, with the limits of those measurements.
+151	Library → App activity
+152	Review media playback observations
+153	Review player, title, status and playback progress, including observations grouped by device.
+154	Library → Media playback
+155	Review coding-session intake and sync status
+156	Check incremental intake, publication, indexing and memory progress, then open the published session.
+157	Sources → Coding Agent sessions → Sync status
+158	Backup, storage, indexing and costs
+159	Import or export an archive and find full backups
+160	Export portable materials or metadata, merge the archive, check the index and find offline backup instructions.
+161	Settings → Storage, encryption and backup → Import and export / Index and Agent
+162	Review retention, capacity and content storage policy
+163	Review actual space and retention, control encryption for future files, and find deployment-level retention and capacity settings.
+164	Settings → Storage, encryption and backup → Content storage / Data and backup
+165	Check model usage and estimated costs
+166	Review requests, tokens, cache, duration and estimated cost by date, module, model and status.
+167	Settings → Usage and cost
+168	Decrypt existing encrypted files
+169	After disabling future encryption, optionally schedule decryption of existing content objects and track the conversion.
+170	Settings → Storage and backup → Existing encrypted content
+171	Review runtime status and storage space
+172	Review bytes and file counts accessible to the central machine by type and date, then open model usage.
+173	Settings → Storage and backup → Runtime status and space
+174	Maintain prices and investigate usage details
+175	Group by Agent, module, skill or model, drill into requests, and maintain prices for later requests.
+176	Settings → Usage and cost → Maintain model pricing
+177	Settings and maintenance
+178	Models, images, files and speech
+179	Configure or inspect a model provider
+180	Review or save the provider address, credentials and model, then verify the effective configuration.
+181	Settings → Model connections
+182	Inspect or assign models by function
+183	Check which provider and model each function uses, including questions, memories and reviews, and assign them as needed.
+184	Settings → Assign models by function
+185	Control new-image recognition and original-image access
+186	Set text and image understanding for screenshots, uploads, sync and note attachments. Separately decide whether questions can read original images.
+187	Settings → Image recognition and original-image access
+188	Review extraction and recovery for files or recordings
+189	Check the original, content, transcript and summary status. Download or play the original, and cancel or retry supported stages.
+190	Library → Files and recordings
+191	Configure file and speech processing
+192	Enable central processing, install required local speech models, and choose a processing method by file type.
+193	Settings → File and speech processing
+194	Adjust model performance and protocol details
+195	Adjust reasoning, speed, timeout and protocol options in a preset, and confirm changes to sensitive addresses or credentials.
+196	Copy or delete a model preset
+197	Reuse connection settings or remove unused custom presets.
+198	Process or recalculate historical images
+199	Choose historical dates and sources, preview the count, then schedule missing results or recalculation.
+200	Settings → Historical image processing
+201	Configure file rules, recipes and processing services
+202	Choose processing recipes by file type or source, and set models, summaries and service connections.
+203	Preview file rules and reprocess existing originals
+204	Check MIME matching against saved rules, choose existing originals, review the preview and queue processing.
+205	Correct transcripts and confirm speakers
+206	Correct transcript sections manually, listen to speaker samples, or review model suggestions individually.
+207	Set concurrency and review waiting slots
+208	Adjust simultaneous question and background work capacity and see which tasks are waiting.
+209	Settings → Concurrency and waiting slots
+210	Prepare deployment settings for retrieval and connections
+211	Prepare changes for vector retrieval, source intervals, MCP and OAuth, then apply them on the deployment machine.
+212	Settings → Deployment configuration draft
+213	Automatic memory and trusted plugins
+214	Pause or immediately stop automatic memory
+215	Control intake of new automatic memory work, and distinguish letting existing work finish from stopping it immediately.
+216	Settings → Automatic memory and plugins → Memory implementation → Automatic memory
+217	Review and replace a complete memory implementation
+218	Review the active implementation, prepare and validate a replacement, then apply it in a separate step.
+219	Settings → Automatic memory and plugins → Memory implementation
+220	Manage trusted memory plugins
+221	Discover, install and configure supported pinned versions, then enable an instance or bind an implementation after checking it.
+222	Settings → Automatic memory and plugins → Installed / Discover
+223	Sign-in, language and navigation
+224	Sign in and manage the current session
+225	Confirm the central node, choose how long the browser keeps the session, or sign out.
+226	Settings → Account and devices
+227	Find common pages and their tools
+228	Use the main navigation for daily tasks, then continue in the relevant tools or settings.
+229	Main navigation → Today / Library / Ask / Activity / Capture and devices; Settings
+230	Help, diagnostics and the Agent's view
+231	Find help, versions and maintenance instructions
+232	Find feedback, compare web and central versions, and read manual central-node upgrade instructions.
+233	Settings → Help and diagnostics → Help and versions
+234	Review context currently readable by an Agent
+235	Browse the Agent's virtual directory read-only and preview initial context for a question without calling a model.
+236	Settings → External access → Readable scope
+237	Review recorded model input and tool reads
+238	Inspect stored context, model events and tool events for a run to verify what was recorded.
+239	Settings → External access → Read records
+240	Check registered plugin capabilities
+241	Review capabilities, versions, status and module bindings actually loaded on the server and web interface.
+242	Settings → Automatic memory and plugins → Loaded capabilities
+243	Read runtime logs and export a support package
+244	Review retained logs by file, stage and time range, and export diagnostic material for investigation.
+245	Settings → Diagnostics and updates → Runtime diagnostics
+246	Configure diagnostic recording and review effective values
+247	Adjust future logs and detailed traces, then check the central node's actual directories and configuration.
+248	Settings → Help and diagnostics → Future diagnostic recording
+249	Switch interface language
+250	Choose a Chinese or English interface.
+251	Settings → Language
+252	Search features
+253	Search features, sources or settings
+332	Write a note, with optional existing images or audio.
+333	Note history
+334	Content
+335	The draft is kept in this prototype session.
+336	Image and audio attachments
+337	Your draft is kept as you edit
+338	What would you like to remember?
+339	Save existing files once. To keep collecting later changes, connect a folder source.
+340	View uploads and processing
+341	Files on this computer
+342	Central directory
+343	Choose materials to import
+344	Documents, images, audio, folders and ZIP files are supported
+345	Choose an example file
+346	Storage method
+347	Keep originals and readable content
+348	Keep content only
+349	Material name
+350	Parser
+351	Detect automatically
+352	Documents and notes
+353	Chat export
+354	Audio and transcripts
+355	Folders and archives
+356	Keep automatic detection if you are unsure of the format.
+357	Start import
+358	Need ongoing folder sync?
+359	Defaults to the file name
+360	Follow each import's progress, confirmations and readable results.
+361	Import new materials
+362	Archive originals → Parse and confirm → Read materials → Create memories. Read as soon as the content is ready.
+363	View all background work
+365	1 material · Original saved and content readable; memory creation is tracked separately.
+366	Open import result
+367	Delete this import
+369	Confirmation needed
+370	1 material · Original saved; confirm context and speakers after parsing.
+371	Review and continue
+373	Upload paused
+374	4 materials · 68% uploaded. Resume where the upload stopped.
+375	Resume upload
+376	Choose where content comes from, then confirm its scope and storage method.
+377	Back to source management
+378	Content on your computer
+379	Keep saving selected content. Pause or change its scope whenever needed.
+380	Keep archiving later changes
+381	Choose apps and capture scope
+382	Coding Agent sessions
+383	Revisit coding conversations from Claude Code, Codex and Kimi.
+384	View client connection and sync status
+385	Connect another phone or computer
+386	Documents, email and calendars
+387	Lark documents and calendars
+388	Choose document or calendar scopes and keep archiving later changes.
+389	Open settings
+390	Gmail
+391	Save email content, senders and dates within the chosen scope.
+392	Sync calendars you allow access to and revisit scheduled events.
+393	Existing recordings and transcripts
+394	Lark recordings / Minutes
+395	Archive existing provider transcripts and preserve recording provenance.
+396	DingTalk recordings / Flash Notes
+397	Choose a history range and keep receiving recordings and transcripts.
+398	One-time imports and external locations
+399	Save files, images, audio, folders or ZIP archives.
+400	MCP material service
+401	Choose materials offered by an external service and import them into Mote.
+402	External files / NAS references
+403	Save an external original's location and return to its source when needed.
+404	Just want to write a note?
+405	· Want another assistant to use your materials?
+406	Manage external access
+407	Source management
+408	Connect sources for ongoing collection, adjust recording scope, or pause whenever needed.
+409	Connect a source
+410	Sources bring content into Mote
+411	Find saved content in the Library. To let another assistant read it, use External access.
+412	Connected sources
+413	Devices and recording scope
+416	Syncing
+419	Recording
+420	Work materials · Read-only sync · 12 materials
+421	Reauthorization needed
+422	Connection setup
+423	Back to sources
+424	Reference name
+425	Original location
+426	Save the original location and description. External files stay where they are. Use Import files to copy originals into Mote.
+427	Material description
+428	Save external reference
+429	Source name
+430	Example account
+431	Read-only connection · Preserves source, original time and provenance.
+432	Work calendar
+433	Personal calendar
+434	All authorized calendars
+435	Archive starting from
+436	Connect and save
+437	Email scope
+438	Inbox
+439	Starred emails
+440	All authorized emails
+441	Service name
+442	Service address
+443	Import selected resources from an external MCP service into Mote. To let another assistant read Mote, use External access.
+444	Choose resources to import
+446	Text resource · Example resource catalog
+447	Preview selected resources
+448	Import selected resources
+449	Authorization expired. Saved materials remain readable; reauthorize to resume intake.
+450	Documents and calendars
+451	Selected documents and work calendar
+452	Documents only
+453	Work calendar only
+454	Reauthorize and continue
+455	Pause this source
+456	Browse this source's materials
+457	Review material versions and original locations. Manage connections and pauses in Sources.
+458	Codex sessions
+459	Google Calendar
+460	Lark recordings
+462	Quick note · My own note
+463	Current version · Today 09:12
+464	Versions and original location
+465	Read content
+468	Current version · Yesterday 18:34
+471	Current version · Yesterday 16:20
+474	Current version · Oct 22, 14:00
+477	Current version · Oct 18, 15:30
+479	Mac screen · Screen recording / Browser
+480	Current version · Oct 18, 11:08
+481	Materials and reviews
+482	Library categories
+483	Filter by source
+484	Filter by type
+485	All background work
+486	Add context to a recording
+488	Add clarification
+489	Lark source needs reauthorization
+490	Saved materials remain readable.
+491	Recover this source
+492	Manage tasks and calendar
+495	Calendar suggestion to review
+497	View calendar event
+498	Quick note · Today 09:12
+500	No review yet. Use “Review this week” above to summarize changes and next steps from this week's materials.
+501	Write a next step
+502	Device status
+503	Devices and recording status
+504	Review device-reported capture scope, sync progress and items needing attention.
+505	The workspace gathers your materials. Each device controls which local content it captures; source management controls how each content type enters Mote.
+507	Online
+508	Mac · Last reported just now
+509	Capture status
+510	Screen: scope selected
+511	Folders: intake follows each source's settings
+512	Sync status
+513	0 pending uploads · Last received just now
+514	Material content is readable; memory creation proceeds separately.
+515	Adjust screen and app scope
+516	Manage folder sources
+517	Reauthorize this device
+518	Phones and computers
+519	Connect devices to collect selected local screens, files and records.
+520	Connect to this workspace from a Mac or Android client. Set capture scope on the relevant device.
+521	Connect a device
+522	Choose a device platform and confirm the connection request.
+523	Connect an example Mac device
+524	Connect an example Android device
+525	After confirmation, check the platform, intake and capture scope in device status.
+526	View connected devices
+527	Let other assistants read materials within the scope you choose.
+528	Sources bring content into Mote; external access determines who may read it.
+530	Scope: Materials and memories · Original materials cannot be modified
+531	View connection information
+532	Revoke this access
+533	6 materials
+535	Today 09:12
+537	Yesterday 18:34
+539	Yesterday 16:20
+541	Central
+542	Oct 22, 14:00
+544	Oct 18, 15:30
+546	Oct 18, 11:08
+547	Material details
+548	My own note
+549	Preserve captured content, app and time so the original evidence can be checked.
+550	1 record · Browser · Oct 18
+551	Adjust recording scope
+552	Oct 18, 11:08 · Mac · Browser
+553	Browser page text
+555	Open original content
+556	Read organized material
+557	Delete this raw record
+558	Find answers in your materials and follow citations to their sources.
+559	Needs clarification · 1
+560	Conversation
+563	What would you like to know from your materials?
+564	Choose a scope and enter your question. Follow citations to check each answer.
+565	Summarize my recently saved research materials
+566	What conclusions came from the source catalog discussion?
+567	Simulate an unconfigured model
+568	Question scope
+569	All edit records
+571	Personal preference
+573	View evidence · Product review record
+574	Continue organizing
+575	More actions
+576	Materials preserve original content; memories extract lasting information; insights review changes over time.
+577	Generate a review
+578	Add information only you know, then continue the original work.
+579	Back to Ask
+581	Your clarification is needed
+582	From memory processing of “项目讨论录音 · 本周计划”.
+584	Check original
+585	Your clarification
+586	Save clarification and continue
+587	Handle later
+588	For example: first review the entry points and material categories
+589	Memory policy and review frequency
+590	Choose which historical content to organize and how often to consolidate and review it.
+591	Extraction history window
+592	All authorized history
+593	Memory consolidation frequency
+594	Daily
+595	Weekly
+596	Manual only
+597	Insight review frequency
+598	Monthly
+599	Enable working memory
+600	Default material recipe
+601	Fact extraction + Original references
+602	Fact extraction + Period summary
+603	Screenshot recipe
+604	Text recognition + Fact extraction
+605	Image understanding + Fact extraction
+606	Online source recipe
+607	Source content + Fact extraction
+608	Source content + Period summary
+609	Resume stopped extraction
+610	Review progress, changes and next steps for a chosen period.
+611	By material save date: Oct 14–20
+612	Each report keeps the question, scope and material list used to create it. After changing the fields above, select Generate insight to create a new report.
+613	Background work
+614	Review Mote's background work and handle items needing your attention.
+615	My app activity
+616	Restore Lark source authorization
+617	Authorization expired, so later content is not syncing. Saved materials remain readable.
+618	View saved materials
+619	Organize recent research materials
+620	Extracting facts from materials. The completed result will link to original evidence.
+621	Cancel this processing
+622	Import research notes on long-term memory systems
+623	Content is saved. Read it or ask questions about this material.
+624	View import result
+625	Recording · Memory processing
+626	Waiting for your clarification
+627	Please clarify which stage “第一轮设计” refers to.
+628	Background work status
+629	Progress 66%
+630	Lark source sync · Review input, status and recovery options.
+631	Back to Activity
+632	Last read: Today 09:20 · The 12 archived materials remain readable.
+633	Current result
+634	Source authorization expired. This read stopped at the connection check. Reauthorize to continue.
+635	Retry connection check
+636	Scope of this read
+637	Selected Lark documents and work calendar · Source and original time are preserved.
+638	View source settings
+639	09:20 Sync request received
+640	09:20 Read scope checked
+641	09:20 Authorization expired; waiting for action
+642	Complete your next steps and review suggestions before adding them to the calendar.
+643	Back to Today
+644	Review calendar suggestion
+645	Add a task
+647	Needs your review
+648	Oct 22, 14:00–15:00 · From the product review record
+649	Review and add to calendar
+650	Ignore this suggestion
+651	Browse screen snippets by time and app.
+652	Screen snippet
+653	Review foreground apps you used, separately from Mote's background work.
+654	Mote background work
+655	Today's app activity
+656	Editor
+657	2 hr 18 min
+658	Browser
+659	1 hr 06 min
+660	Notes
+661	32 min
+662	Review playback observations, progress and original evidence by device.
+663	Devices with playback records
+664	Playback observations
+667	Paused
+668	System media session · Audio
+669	Check original playback observation
+670	View distribution by device
+671	Device
+672	Player
+673	Observations
+674	Latest status
+675	Podcast / System media session
+676	Paused · 16:20
+677	Playback progress 68%
+678	Coding session sync status
+679	Track one source through intake, content publication, indexing and memory creation.
+680	Manage coding sources
+681	Local client source
+683	Content readable
+684	Events received
+685	Bytes received
+686	Stage
+687	Current status
+688	Related object
+689	Incremental intake
+690	18 events received
+691	Content publication
+692	1 session published
+693	Retrieval index
+694	Ready
+695	Current session
+696	Long-term memory
+697	Waiting for the next automatic processing run
+698	Uses the authorized memory policy
+699	Open this session's content
+700	Check memory policy
+701	Storage method, retention, import and export
+702	Default storage method
+703	Keep originals centrally
+704	Keep both local and central copies
+705	Keep references only
+706	Local content retention
+707	Configured separately for each source
+708	Keep for 30 days
+709	Encrypt content saved from now on
+710	This setting does not convert existing files.
+711	Save storage settings
+712	Current: Keep originals centrally · Configured per source · Future encryption on
+713	Existing encrypted content
+714	The example contains 3 encrypted content objects. Conversion preserves materials and provenance.
+715	First turn off and save future encryption, then convert existing content if needed.
+716	Backups, index and storage space
+717	Export materials
+718	Preview backup restoration
+719	Rebuild retrieval index
+720	Runtime status and space
+721	Example usage ledger · Amounts are fictional USD estimates. This prototype makes 0 real model calls.
+722	Date range
+723	Module
+724	Model
+725	Example cloud model
+726	Example local model
+727	Request status
+728	Succeeded
+729	Failed
+730	Clear filters
+731	Maintain model pricing
+732	Requests / Succeeded
+733	Input / Output tokens
+734	Cached tokens
+735	48.5 sec
+736	Total duration
+737	Estimated cost
+738	Group totals
+739	Group by
+740	Skill
+741	Requests
+742	Cost in USD
+743	Daily trend · Select a date to filter
+744	Date
+745	Estimated cost in USD
+746	Request details
+747	Request and date
+748	Module / Model
+749	Status
+750	Duration
+751	Ask / Example cloud model
+752	2.4 sec
+753	Memory / Example cloud model
+754	6.8 sec
+755	Previous
+756	Page 1 / 3
+757	Next
+758	Review workspace, processing and storage status
+759	Workspace online · Last checked: Today 09:30
+760	Statistics date range
+761	Files accessible centrally · By type
+762	Type
+763	File count
+764	Bytes used
+765	File content
+766	Original recordings
+767	File counts and bytes by date
+768	New files
+769	Bytes
+770	Processing status
+771	Connected sources: 3 · Readable materials: 6
+772	View background work
+773	View model usage
+774	Check again
+775	Adjust storage and retention
+776	View diagnostic records
+777	Configure a connection first, then assign it to questions, memories and content processing.
+778	Current preset · Example model service
+779	Copy preset
+780	Preset name
+781	Provider and protocol
+782	OpenAI-compatible protocol
+783	Anthropic protocol
+784	Local service
+785	Model name
+786	Credential handling
+787	Keep existing credentials
+788	Replace with new credentials
+789	Clear credentials
+790	New credentials
+791	Demo input only; no real service connection.
+792	Performance, protocol and address changes
+793	Reasoning effort
+794	Default
+795	Low
+796	High
+797	Timeout in seconds
+798	Maximum output length
+799	Additional request headers
+800	Allow an unauthenticated local service
+801	Confirm reuse of existing credentials after changing the address
+802	Test example connection
+803	Assign to functions
+804	Custom copies
+805	Remove function assignments before deleting a preset that is in use.
+806	Assign models by function
+807	Each function shows its current connection and model.
+808	Example model service / General assistant
+809	Local service / Local processing
+810	Unassigned
+811	Memory extraction and consolidation
+812	Insights and period reviews
+813	Working memory
+814	Image understanding
+815	Audio transcription
+816	Manage connections and models
+817	Image recognition and original-image access
+818	Configure new-image recognition separately from permission to read originals in questions.
+819	Automatically process new images
+820	Applies to screenshots, uploads, synced images and note attachments.
+821	Text recognition method
+822	Local OCR
+823	Remote OCR
+824	Keep original images only
+825	Enable image understanding
+826	Allow remote OCR to read images
+827	Effective: Local OCR · Ready
+828	View model assignments
+829	Original images in Ask
+830	Allow the question model to read archived original images
+831	Authorized separately from automatic recognition above.
+832	Process historical images
+833	Read extracted content, correct transcripts or reprocess originals.
+834	Check file content, transcripts and speakers here.
+835	Adjust file processing rules
+836	Content extraction complete · 研究资料
+837	Read result
+838	Reprocess
+839	Transcript complete · 2 speakers · Lark recordings
+840	Correct transcript and speakers
+841	File and speech processing
+842	Manage content extraction, speech transcription, rules and processing services.
+843	Enable central file processing
+844	Local speech model
+845	Not installed · Install to use local transcription
+846	Install example local speech model
+847	Maximum file duration in minutes
+848	Audio processing timeout in minutes
+849	Text and document recipe
+850	Extract content and summary
+851	Extract content only
+852	Keep originals
+853	Audio recipe
+854	Local speech transcription
+855	Existing provider transcript
+856	Remote speech service
+857	Type rules, source overrides and processing services
+858	MIME rule
+859	Processor
+860	Document extraction
+861	Image recognition
+862	Processing model
+863	Generate summaries
+864	Source override
+865	All sources
+866	File import
+867	Service connection
+868	Service credentials
+869	Preview rules and reprocess
+870	Historical image processing
+871	Choose dates and sources, preview the count and schedule processing.
+872	Start date
+873	End date
+874	All image sources
+875	Quick note attachments
+876	Processing method
+877	Process missing images only
+878	Recalculate selected images
+879	Preview count
+880	Concurrency and waiting slots
+881	Allocate simultaneous execution capacity for questions and background work.
+882	Currently running: 2 / Waiting: 1 · View waiting work in
+883	Question concurrency
+884	Background Agent concurrency
+885	Harness concurrency
+886	Memory processing concurrency
+887	Deployment configuration draft
+888	Prepare retrieval and external connection settings, review the differences, then apply them on the deployment machine.
+889	This prepares a deployment draft only. Saving does not change the running node. Refresh effective values after applying the draft.
+890	Vector retrieval model
+891	Vector service address
+892	Source sync interval in minutes
+893	Allow read-only MCP retrieval
+894	Allow MCP writes
+895	Allowed sources
+896	OAuth callback
+897	Validate and review configuration differences
+898	Refresh effective values
+899	Automatic processing, implementations and trusted plugins
+900	Automatic memory processing
+901	New materials are processed using the active implementation, preserving original evidence.
+902	Pause new tasks
+903	Running
+904	Waiting to process
+905	Saved checkpoints
+906	Stop existing work immediately
+907	View task details
+908	Current memory implementation
+909	Built-in implementation
+910	Extract facts, link originals and preserve edit history.
+911	Preview a replacement implementation
+912	Manage trusted plugins
+913	Check loaded capabilities
+914	View created memories
+915	Sign-in, devices and sessions
+916	Personal workspace · Current session
+917	Preview sign-out
+918	Connected devices
+919	Online just now · Sending selected content
+920	Instructions, current versions and feedback
+921	Your personal library
+922	Collect materials, search, ask questions and verify the original content.
+923	The version status below is an example.
+924	Component
+925	Version
+926	Web
+927	Central workspace
+928	Different from web version; check release notes
+929	Add your first material
+930	View all features
+931	Feedback and diagnostic support
+932	Include the symptoms, component versions and diagnostic summary to help reproduce the issue.
+933	Report an issue on GitHub
+934	Export diagnostics
+935	Diagnostic recording settings
+936	Central workspace maintenance
+937	The web and central components are released separately. Upgrade the central component manually on its machine.
+938	View DEV release downloads
+939	View manual central upgrade instructions
+940	Check versions again
+941	Keyboard controls
+942	Tab moves between controls · Escape closes dialogs · Ctrl / ⌘ + Enter saves a note or sends a question
+943	Assistant-readable scope
+944	Read-only directory of materials, memories and insights
+945	Context an assistant can read
+946	Review archived content and its provenance read-only. Manage the allowed scope in the relevant assistant connection.
+947	Content directory
+948	Materials / 6 items
+949	Content, source, time and original location
+950	Preview content
+951	Memories / 1 item
+952	Processed facts that can be corrected
+953	Insights / 0 items
+954	Period reviews and their evidence
+955	Check read records
+956	Read records
+957	Check materials used by an assistant
+958	Review which materials an assistant used to verify the basis of its answer.
+959	Read-only request complete
+960	Today 09:25 · 个人助手 · Read 2 materials and 1 memory
+961	View the read process
+962	View readable scope
+963	View error records
+964	Future diagnostic recording
+965	Record runtime logs
+966	Minimum log level
+967	Error
+968	Warning
+969	Info
+970	Debug
+971	Enable debugging information
+972	Keep detailed Agent traces
+973	Save diagnostic settings
+974	Effective values · Example workspace
+975	Logs: On · Level: Info · Debug: Off · Detailed traces: Off
+976	View deployment directories and all settings
+977	Setting
+978	Effective value (example)
+979	Environment file
+980	Data directory
+981	Base directory
+982	Log recording
+983	Log level
+984	Detailed Agent traces
+985	Record an issue description
+986	Issue description
+987	Save feedback draft
+988	Questions, images, files and speech processing
+989	Recording scope, filters and local permissions
+990	Let another Agent use Mote materials
+991	Screen capture
+992	Choose which apps and scope may be recorded.
+993	This source is receiving selected content.
+994	Screen recording permission: Not authorized
+995	Choose the apps to record, then start capture.
+996	Simulate allow
+997	Simulate deny
+998	Record selected windows only
+999	Messaging
+1000	Start recording
+1001	Choose a local folder and sync method.
+1002	Folder location
+1003	This prototype uses an example folder.
+1004	Keep syncing later changes
+1005	New and modified content will continue to be archived.
+1006	Keep originals centrally; clean up local copies as needed
+1007	Save references only
+1008	Central means your Mote workspace storage; local means this computer. The storage method determines whether each location retains originals.
+1009	Revisit earlier questions with their original scope and images.
+1010	No imports yet
+1011	Start with one file. Its progress and result will remain here.
+1012	Connect once and keep saving later content
+1013	Start with a folder, screen recordings, or your documents, email and calendars.
+1014	Choose a source to connect
+1015	0 materials
+1016	Start with one material
+1017	Save files, notes, screen recordings and online materials. Later, search and ask questions, create lasting memories and generate reviews.
+1018	Import a file
+1019	Explore available sources
+1020	Save content → Revisit it in the Library → Ask and check sources
+1021	Save something worth keeping
+1022	Files and notes go into your Library. Later, ask questions, check originals or review a week's content.
+1023	Connect an ongoing source
+1024	Nothing needs your attention right now.
+1025	Record a next step and come back to mark it complete.
+1026	Your first saved material will appear here.
+1027	No connected devices yet
+1028	Connect a Mac or Android device and choose the local content you want to save.
+1029	No external access granted yet
+1030	Create a read-only connection when another assistant needs to search your materials.
+1031	This material is not in the current list
+1032	It may have been removed.
+1033	No conversation history yet
+1034	No materials are available for an answer yet
+1035	Save content first. Later answers can link back to its source.
+1036	No memories created yet
+1037	Save materials first, then organize lasting information from their content.
+1038	Save your first material
+1039	No questions need clarification right now.
+1040	No work in this state
+1041	View all work or check again later.
+1042	View all work
+1043	No tasks yet
+1044	Record a next step, or add a suggestion from an insight review.
+1045	Generate a review
+1046	No calendar suggestions yet
+1047	Save materials containing scheduled events, then return to review suggestions.
+1048	Review apps and recording periods on the selected device.
+1049	No app activity yet
+1050	No media playback records yet
+1051	Enable the relevant recording on a connected device to see playback observations here.
+1052	This source has not received any sessions yet
+1053	Enable Codex on your device. Intake, content, index and memory status will appear here.
+1054	Back to source settings
+1055	0.0 sec
+1056	No requests match the current filters
+1057	No files available for statistics yet.
+1058	Connected sources: 0 · Readable materials: 0
+1059	Materials / 0 items
+1060	Memories / 0 items
+1061	No read records yet
+1062	After an external assistant uses your authorized materials, check its read process here.
+1063	Continue here after asking your first question.

@@ -1,0 +1,16 @@
+{
+  "round": 29,
+  "parent": "R28",
+  "purpose": "完成三端日常来源管理与草稿状态一致性的最后修订。",
+  "input_evaluation": "rounds/r28/reports/independent-evaluation.json",
+  "additional_input": ["rounds/r27/reports/independent-evaluation.json", "rounds/r27/author/native-checks/folder-draft-repro-result.json", "rounds/r28/author/native-checks/receiving-state-repro-result.json", "rounds/r27/author/native-checks/android-memory-corrected.png"],
+  "input_findings": ["R27-A Web 已有服务器来源的管理操作仍在完整表单下方", "Mac/Android 重新选择目录后，未保存的持续接收和保存方式选项被重置", "关闭持续接收后，总览仍统计为正在接收，与来源行不一致", "记忆已纠正后，卡片仍标为刚刚整理，缺少当前保存版本提示"],
+  "changes": [
+    "Web 已有服务器目录优先展示当前状态、已保存范围、暂停和浏览操作。",
+    "目录选择器保留路径、名称、持续接收和保存方式四项草稿，说明文字随当前草稿更新。",
+    "来源总览与 Mac 菜单栏按已保存的持续接收策略和暂停状态统计接收数量。",
+    "纠正后的记忆卡片显示已保存及当前版本编号，与历史记录对应。"
+  ],
+  "evaluation_focus": ["Web 服务器来源第一屏管理与目标身份", "目录选择前后四项草稿及保存后的策略一致", "总览、菜单栏和来源行状态一致", "三端固定主要旅程、完整目录入口保留和最终查看器"],
+  "scope": "HTML UI simulation with synthetic data"
+}

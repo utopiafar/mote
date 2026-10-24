@@ -1,0 +1,11 @@
+{
+  "round": 17,
+  "frozen_at": "2026-10-21T02:05:55.032018+00:00",
+  "candidate": "dist/r17.html",
+  "bytes": 483977,
+  "sha256": "290534ad7b054e1349ca836e13e7c30d3913860964479517052c8523031d7c6c",
+  "base_sha256": "a9528188ef5703a9b368ace47e44632ab472f0ec31c7e661b0d7c0201400dad6",
+  "status": "frozen_for_independent_review",
+  "changes_since_r16": "Only the English localization block: dynamic import deletion labels, memory scheme/status labels and saved price fields; revision/session namespace updated to 17.",
+  "scope": "HTML UI only, generated demo data; no live account, model, collector or backend validation"
+}

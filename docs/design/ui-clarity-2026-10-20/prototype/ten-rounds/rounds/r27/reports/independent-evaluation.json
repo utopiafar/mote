@@ -1,0 +1,309 @@
+{
+  "schema_version": "1.0",
+  "round": "R27",
+  "evaluator": "/root/r20_29_independent_evaluator",
+  "rubric": "../../../rubric-independent.json",
+  "started_at_utc": "2026-10-21T05:17:08.899Z",
+  "finished_at_utc": "2026-10-21T05:19:53.632Z",
+  "report_written_at_utc": "2026-10-21T05:21:11.026572+00:00",
+  "candidate_sha256": {
+    "mac": "4623a37adcfcf4b496ae83224adc2f5604b45be1d184ecb3c635f4d823214a9f",
+    "android": "b4c703a2d50efad4aa327ec8af1d501552446b30457b6b6db22a9b1d366cd58c",
+    "web": "a3b294294d57c5c6894fd71a101fc50f8bb8ba0a3758ebf62f9d586819d7c8e3"
+  },
+  "hashes_after": {
+    "web": "a3b294294d57c5c6894fd71a101fc50f8bb8ba0a3758ebf62f9d586819d7c8e3",
+    "mac": "4623a37adcfcf4b496ae83224adc2f5604b45be1d184ecb3c635f4d823214a9f",
+    "android": "b4c703a2d50efad4aa327ec8af1d501552446b30457b6b6db22a9b1d366cd58c"
+  },
+  "candidate_unchanged": true,
+  "browser": "133.0.6943.16",
+  "viewports": {
+    "web": {
+      "width": 1440,
+      "height": 1000
+    },
+    "mac": {
+      "width": 1280,
+      "height": 900
+    },
+    "android": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "weights": {
+    "design": 15,
+    "originality": 5,
+    "craft": 10,
+    "functionality": 25,
+    "clarity": 20,
+    "new_user_friendliness": 25
+  },
+  "scope": "Current-round HTML simulations, synthetic data, visible controls and rendered screenshots. Informed iterative evaluator; no candidate implementation reads.",
+  "platforms": {
+    "web": {
+      "candidate_sha256": "a3b294294d57c5c6894fd71a101fc50f8bb8ba0a3758ebf62f9d586819d7c8e3",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3,
+        "new_user_friendliness": 3.8
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 3
+      },
+      "weighted_total": 80.0,
+      "critical_gate": "pass",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "服务器来源目标明确，但已有来源的日常状态与动作仍排在完整表单后。",
+        "originality": "资料、来源、依据和记忆的组织具有一致产品身份，维持3。",
+        "craft": "本轮所见排版和状态导航稳定；每端仍仅针对列明路径评分。",
+        "functionality": "本轮保存/找回、限定提问、引用原文返回、来源控制及记忆发现均完成。",
+        "clarity": "来源目标和完成结果一致；示例回答、权限、保存正文和原始依据状态可辨。",
+        "new_user_friendliness": "服务器目标和保存结果支持设置4；日常管理需越过完整表单，渐进展开保持3。"
+      },
+      "findings": [
+        "R27-A"
+      ],
+      "actions_file": "evidence/independent/web/actions.json",
+      "first_look_file": "evidence/independent/web/first-look.json",
+      "screenshots": [
+        "evidence/independent/web/00-first-look.png",
+        "evidence/independent/web/01-note-editor.png",
+        "evidence/independent/web/03-note-saved.png",
+        "evidence/independent/web/04-library-after-save.png",
+        "evidence/independent/web/06-verified-note.png",
+        "evidence/independent/web/07-ask-scoped.png",
+        "evidence/independent/web/09-answer.png",
+        "evidence/independent/web/10-citation.png",
+        "evidence/independent/web/11-original.png",
+        "evidence/independent/web/13-answer-returned.png",
+        "evidence/independent/web/15-import-panel.png",
+        "evidence/independent/web/16-continuous-folder-handoff.png",
+        "evidence/independent/web/17-server-path.png",
+        "evidence/independent/web/19-folder-connected.png",
+        "evidence/independent/web/20-folder-paused.png",
+        "evidence/independent/web/21-source-overview.png",
+        "evidence/independent/web/23-memory.png"
+      ],
+      "actual_action_records": 23,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "source_setup_control": "pass_named_target_example_folder_pause",
+        "advanced_discovery": "pass_memory_page_opened",
+        "server_target": "pass_setup_and_overview_both_workbench_server"
+      },
+      "browser_errors": []
+    },
+    "mac": {
+      "candidate_sha256": "4623a37adcfcf4b496ae83224adc2f5604b45be1d184ecb3c635f4d823214a9f",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 3,
+        "clarity": 3,
+        "new_user_friendliness": 4.0
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 4
+      },
+      "weighted_total": 81.25,
+      "critical_gate": "pass",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "首次动作、资料内容和核对路径清楚，已有来源低频关系已收起。",
+        "originality": "资料、来源、依据和记忆的组织具有一致产品身份，维持3。",
+        "craft": "本轮所见排版和状态导航稳定；每端仍仅针对列明路径评分。",
+        "functionality": "本轮保存/找回、限定提问、引用原文返回、来源控制及记忆发现均完成。",
+        "clarity": "来源目标和完成结果一致；示例回答、权限、保存正文和原始依据状态可辨。",
+        "new_user_friendliness": "用途和首步无前置设置；来源范围、首次价值核对、低频设置折叠及进阶发现有直接证据。"
+      },
+      "findings": [],
+      "actions_file": "evidence/independent/mac/actions.json",
+      "first_look_file": "evidence/independent/mac/first-look.json",
+      "screenshots": [
+        "evidence/independent/mac/00-first-look.png",
+        "evidence/independent/mac/01-note-editor.png",
+        "evidence/independent/mac/03-note-saved.png",
+        "evidence/independent/mac/04-library-after-save.png",
+        "evidence/independent/mac/06-verified-note.png",
+        "evidence/independent/mac/07-ask-scoped.png",
+        "evidence/independent/mac/09-answer.png",
+        "evidence/independent/mac/10-citation.png",
+        "evidence/independent/mac/11-original.png",
+        "evidence/independent/mac/13-answer-returned.png",
+        "evidence/independent/mac/15-import-panel.png",
+        "evidence/independent/mac/16-continuous-folder-handoff.png",
+        "evidence/independent/mac/17-folder-picker.png",
+        "evidence/independent/mac/18-folder-chosen.png",
+        "evidence/independent/mac/20-folder-connected.png",
+        "evidence/independent/mac/21-folder-paused.png",
+        "evidence/independent/mac/22-source-overview.png",
+        "evidence/independent/mac/25-screen-selected-denied.png",
+        "evidence/independent/mac/26-permission-recovery-link.png",
+        "evidence/independent/mac/27-permission-recovered.png",
+        "evidence/independent/mac/28-screen-cancel.png",
+        "evidence/independent/mac/30-memory.png"
+      ],
+      "actual_action_records": 30,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "source_setup_control": "pass_named_target_example_folder_pause",
+        "advanced_discovery": "pass_memory_page_opened",
+        "screen_permission_recovery": "pass_denied_selected_nearby_requirement_recovery_link_allow_cancel"
+      },
+      "browser_errors": []
+    },
+    "android": {
+      "candidate_sha256": "b4c703a2d50efad4aa327ec8af1d501552446b30457b6b6db22a9b1d366cd58c",
+      "dimension_scores": {
+        "design": 3,
+        "originality": 3,
+        "craft": 3,
+        "functionality": 4,
+        "clarity": 3,
+        "new_user_friendliness": 4.0
+      },
+      "newcomer_subscores": {
+        "purpose": 4,
+        "first_action": 4,
+        "permissions_setup": 4,
+        "first_value_verify": 4,
+        "progressive_disclosure": 4
+      },
+      "weighted_total": 87.5,
+      "critical_gate": "pass",
+      "observed_critical_blocker": false,
+      "score_reasons": {
+        "design": "首次动作、资料内容和核对路径清楚，已有来源低频关系已收起。",
+        "originality": "资料、来源、依据和记忆的组织具有一致产品身份，维持3。",
+        "craft": "390×844与412×915的记忆编辑均可操作；两版历史在窄屏清楚呈现，仍保持整体Craft3。",
+        "functionality": "除核心路径与拒绝/恢复外，生成记忆的独特修正跨缩放保持、准确保存、重开和版本历史均有直接结果，达到本轮正常与相邻异常状态一致的4分锚点。",
+        "clarity": "来源目标和完成结果一致；示例回答、权限、保存正文和原始依据状态可辨。",
+        "new_user_friendliness": "用途和首步无前置设置；来源范围、首次价值核对、低频设置折叠及进阶发现有直接证据。"
+      },
+      "findings": [],
+      "actions_file": "evidence/independent/android/actions.json",
+      "first_look_file": "evidence/independent/android/first-look.json",
+      "screenshots": [
+        "evidence/independent/android/00-first-look.png",
+        "evidence/independent/android/01-note-editor.png",
+        "evidence/independent/android/03-note-saved.png",
+        "evidence/independent/android/04-library-after-save.png",
+        "evidence/independent/android/06-verified-note.png",
+        "evidence/independent/android/07-ask-scoped.png",
+        "evidence/independent/android/09-answer.png",
+        "evidence/independent/android/10-citation.png",
+        "evidence/independent/android/11-original.png",
+        "evidence/independent/android/13-answer-returned.png",
+        "evidence/independent/android/15-import-panel.png",
+        "evidence/independent/android/16-continuous-folder-handoff.png",
+        "evidence/independent/android/17-folder-picker.png",
+        "evidence/independent/android/18-folder-chosen.png",
+        "evidence/independent/android/20-folder-connected.png",
+        "evidence/independent/android/21-folder-paused.png",
+        "evidence/independent/android/22-source-overview.png",
+        "evidence/independent/android/25-screen-selected-denied.png",
+        "evidence/independent/android/26-permission-recovery-link.png",
+        "evidence/independent/android/27-permission-recovered.png",
+        "evidence/independent/android/28-screen-cancel.png",
+        "evidence/independent/android/30-memory.png",
+        "evidence/independent/android/31-memory-generate-picker.png",
+        "evidence/independent/android/32-memory-selection.png",
+        "evidence/independent/android/33-memory-generated.png",
+        "evidence/independent/android/34-memory-manage.png",
+        "evidence/independent/android/35-memory-correction-draft.png",
+        "evidence/independent/android/36-memory-draft-after-resize.png",
+        "evidence/independent/android/37-memory-correction-saved.png",
+        "evidence/independent/android/38-memory-baseline-viewport.png",
+        "evidence/independent/android/39-memory-reopened.png",
+        "evidence/independent/android/40-memory-history.png",
+        "evidence/independent/android/41-memory-history-closed.png"
+      ],
+      "actual_action_records": 41,
+      "tasks": {
+        "save_find_verify": "pass",
+        "ask_citation_original_return": "pass",
+        "source_setup_control": "pass_named_target_example_folder_pause",
+        "advanced_discovery": "pass_memory_page_opened",
+        "screen_permission_recovery": "pass_denied_selected_nearby_requirement_recovery_link_allow_cancel",
+        "memory_correction_resize": {
+          "result": "pass_exact_text_preserved",
+          "viewport_sequence": [
+            "390x844",
+            "412x915",
+            "390x844"
+          ],
+          "expected_text": "白鹤R27修正：叶青负责周三前整理四份背景资料；校验串＝青铜风铃-27-A。只用于本轮合成验证。",
+          "observed_states": [
+            "draft_before_resize",
+            "draft_after_resize",
+            "saved_memory",
+            "reopened_editor",
+            "current_history_version2"
+          ],
+          "evidence": [
+            "evidence/independent/android/35-memory-correction-draft.dom.json",
+            "evidence/independent/android/36-memory-draft-after-resize.dom.json",
+            "evidence/independent/android/37-memory-correction-saved.dom.json",
+            "evidence/independent/android/39-memory-reopened.dom.json",
+            "evidence/independent/android/40-memory-history.png"
+          ]
+        }
+      },
+      "browser_errors": []
+    }
+  },
+  "findings": [
+    {
+      "id": "R27-A",
+      "severity": "minor",
+      "platforms": [
+        "web"
+      ],
+      "observation": "Web已连接服务器来源仍先显示目标说明、接收条、来源身份与完整可编辑表单；当前状态及暂停/浏览动作在表单之后。1440×1000截图仅在底边开始显示当前状态卡。",
+      "impact": "目标歧义已经解决，但日常暂停/浏览仍需越过设置内容；可将具名来源摘要、状态和常用动作前置，保持编辑设置可发现。",
+      "evidence": [
+        "evidence/independent/web/19-folder-connected.png",
+        "evidence/independent/web/20-folder-paused.dom.json"
+      ]
+    }
+  ],
+  "resolved_from_previous": [
+    "R26-A解决：服务器目标、路径与结果平台一致，未再无故出现Mac。",
+    "R26-B旧中央/两处原件文案已替换；说明将原文件与Mote副本区分。",
+    "R26-C/R25-A解决：内容关系与背景默认折叠，并表明选填及未声明仍可查询。",
+    "R25-B解决：禁用保存处有权限条件说明和可操作恢复入口，实际点击恢复成功。",
+    "外部提报的Android缩放后记忆修正丢失，本轮独立执行该特定路径未复现；没有把历史未测路径追认为通过。"
+  ],
+  "actions_and_screens": "evidence/independent/",
+  "unverified": [
+    "真实后端/模型",
+    "原生权限/采集",
+    "上传/外部授权/同步",
+    "跨刷新持久化",
+    "未执行分支与全部78单元",
+    "键盘/辅助技术完整检查"
+  ],
+  "next_priority": [
+    "将Web服务器已有来源的状态与暂停/浏览放到设置之前，保持明确服务器目标和副本说明。"
+  ],
+  "equal_platform_mean": 82.91666666666667,
+  "minimum_platform_score": 80.0,
+  "critical_gate": "pass"
+}

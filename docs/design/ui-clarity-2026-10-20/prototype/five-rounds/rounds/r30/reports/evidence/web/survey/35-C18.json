@@ -1,0 +1,359 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/library/raw",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Web · R30\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n资料库\n/\n原始采集记录\n工作台在线\n随手记\n添加内容\nMote · 你的个人资料库\n资料库\n\n汇集文件、随手记和各个来源，随时查找、提问并核对原文。\n\n资料保留原文，记忆整理长期信息，洞察回顾一段时间的变化。\n\n资料\n全部资料\n随手记\n资料出处\n文件与录音\n整理与回顾\n记忆\n洞察\n原始记录\n原始采集记录\n截图片段\n应用使用记录\n媒体播放\nCoding 会话\n导入管理\n上传与处理\n原始采集记录\n\n保留采集时的内容、应用与时间，便于核对原始证据。\n\n全部来源\n研究资料\nMac 屏幕\n飞书文档与日历\n随手记\nCodex 会话\nGoogle 日历\n飞书录音\n全部设备\n网页\nMac\n中央\n全部类型\n随手记\n文件\n录音\n屏幕记录\nCoding 会话\n日历\n保存时间\n全部时间\n今天\n最近 7 天\n\n1 条记录\n\n调整记录范围\n文章摘录 · 渐进式披露\n原始记录\n\n2026-10-18 11:08 · Mac · 浏览器\n\n采集到的原始文字\n\n界面可以首先呈现少量高频任务，再让用户按需探索更多能力。 来源：示例浏览器页面的屏幕记录。 记录中保留原始时间、应用和来源。\n\n打开原始内容\n阅读整理后的资料\n删除这条原始记录",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "web",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "全部资料",
+      "label": "全部资料",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料出处",
+      "label": "资料出处",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "文件与录音",
+      "label": "文件与录音",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "记忆",
+      "label": "记忆",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "洞察",
+      "label": "洞察",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "原始采集记录",
+      "label": "原始采集记录",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "截图片段",
+      "label": "截图片段",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "应用使用记录",
+      "label": "应用使用记录",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "媒体播放",
+      "label": "媒体播放",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "Coding 会话",
+      "label": "Coding 会话",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "上传与处理",
+      "label": "上传与处理",
+      "action": "filter",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "material-search",
+      "type": "text",
+      "text": "",
+      "label": "搜索资料",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "source-filter",
+      "type": "select-one",
+      "text": "全部来源\n研究资料\nMac 屏幕\n飞书文档与日历\n随手记\nCodex 会话\nGoogle 日历\n飞书录音",
+      "label": "按来源筛选",
+      "value": "all",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "device-filter",
+      "type": "select-one",
+      "text": "全部设备\n网页\nMac\n中央",
+      "label": "按设备筛选",
+      "value": "all",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "type-filter",
+      "type": "select-one",
+      "text": "全部类型\n随手记\n文件\n录音\n屏幕记录\nCoding 会话\n日历",
+      "label": "按类型筛选",
+      "value": "all",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "date-filter",
+      "type": "select-one",
+      "text": "全部时间\n今天\n最近 7 天",
+      "label": "保存时间\n全部时间\n今天\n最近 7 天",
+      "value": "全部时间",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "调整记录范围",
+      "label": "调整记录范围",
+      "action": "go",
+      "page": "setup/screen",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开原始内容",
+      "label": "打开原始内容",
+      "action": "original",
+      "item": "m6",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "阅读整理后的资料",
+      "label": "阅读整理后的资料",
+      "action": "open-material",
+      "item": "m6",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "删除这条原始记录",
+      "label": "删除这条原始记录",
+      "action": "delete-record",
+      "item": "m6",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "资料库"
+    },
+    {
+      "level": "H2",
+      "text": "资料"
+    },
+    {
+      "level": "H2",
+      "text": "整理与回顾"
+    },
+    {
+      "level": "H2",
+      "text": "原始记录"
+    },
+    {
+      "level": "H2",
+      "text": "导入管理"
+    },
+    {
+      "level": "H2",
+      "text": "原始采集记录"
+    },
+    {
+      "level": "H3",
+      "text": "文章摘录 · 渐进式披露"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

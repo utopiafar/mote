@@ -1,0 +1,48 @@
+[
+  {
+    "file": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/dist/mote-ui-review.html",
+    "bytes": 972514,
+    "sha256": "7d61034bdb09c4d4a904118294cace3076eca0597acfa7dfeb0304b6c1ad20ad",
+    "candidates": [
+      {
+        "id": "r15",
+        "label": "R15 · 上轮交付",
+        "path": "../../dist/rounds/r15.html",
+        "recommended": false,
+        "sha256": "65257ad350e155a01bd1e64c3241e812bff98c93fda593be70de2dae17bf32f9",
+        "bytes": 355392
+      },
+      {
+        "id": "r19",
+        "label": "R19 · 本次候选",
+        "path": "./r19.html",
+        "recommended": true,
+        "sha256": "8cabb1d2c2914170a5b00dad56a7814bbb21e28fead38ecb59f894658cbcb7bf",
+        "bytes": 530254
+      }
+    ]
+  },
+  {
+    "file": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/continuation/dist/review.html",
+    "bytes": 12524,
+    "sha256": "436d3d11510b779512327ad6f63c48fadbbbc945d6c6be4b67c0fe513555d1eb",
+    "candidates": [
+      {
+        "id": "r15",
+        "label": "R15 · 上轮交付",
+        "path": "../../dist/rounds/r15.html",
+        "recommended": false,
+        "sha256": "65257ad350e155a01bd1e64c3241e812bff98c93fda593be70de2dae17bf32f9",
+        "bytes": 355392
+      },
+      {
+        "id": "r19",
+        "label": "R19 · 本次候选",
+        "path": "./r19.html",
+        "recommended": true,
+        "sha256": "8cabb1d2c2914170a5b00dad56a7814bbb21e28fead38ecb59f894658cbcb7bf",
+        "bytes": 530254
+      }
+    ]
+  }
+]

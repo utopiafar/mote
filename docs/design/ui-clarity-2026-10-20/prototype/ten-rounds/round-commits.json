@@ -1,0 +1,59 @@
+{
+  "schema": "mote-ui-r20-r29-git-commits-v1",
+  "repository": "https://github.com/utopiafar/mote",
+  "pull_request": "https://github.com/utopiafar/mote/pull/185",
+  "branch": "codex/ui-clarity-15-rounds-20261020",
+  "scope": "Each commit preserves one frozen three-platform HTML candidate set, source snapshot, changes and independent report. Complete browser evidence is in the downloadable package.",
+  "rounds": [
+    {
+      "round": 20,
+      "commit_sha": "1c5522ef72fe9c6b92c55ed29044d75823b22426",
+      "url": "https://github.com/utopiafar/mote/commit/1c5522ef72fe9c6b92c55ed29044d75823b22426"
+    },
+    {
+      "round": 21,
+      "commit_sha": "6a419de65b90d038a108e8792520391f55a34d8e",
+      "url": "https://github.com/utopiafar/mote/commit/6a419de65b90d038a108e8792520391f55a34d8e"
+    },
+    {
+      "round": 22,
+      "commit_sha": "86053935dbe1eb6775e2ec1f15255d6b76e7cfec",
+      "url": "https://github.com/utopiafar/mote/commit/86053935dbe1eb6775e2ec1f15255d6b76e7cfec"
+    },
+    {
+      "round": 23,
+      "commit_sha": "647b7cb511a4e3e498dae9a94d8447c2b8ba930d",
+      "url": "https://github.com/utopiafar/mote/commit/647b7cb511a4e3e498dae9a94d8447c2b8ba930d"
+    },
+    {
+      "round": 24,
+      "commit_sha": "35f89a3e77982e9e97cdcecc4022e0bbafa0356e",
+      "url": "https://github.com/utopiafar/mote/commit/35f89a3e77982e9e97cdcecc4022e0bbafa0356e"
+    },
+    {
+      "round": 25,
+      "commit_sha": "e5546a26cf265116cf9136315717b44cce3fa400",
+      "url": "https://github.com/utopiafar/mote/commit/e5546a26cf265116cf9136315717b44cce3fa400"
+    },
+    {
+      "round": 26,
+      "commit_sha": "193989d6e8d64b96e62d3a76ac18f1763e14e4fb",
+      "url": "https://github.com/utopiafar/mote/commit/193989d6e8d64b96e62d3a76ac18f1763e14e4fb"
+    },
+    {
+      "round": 27,
+      "commit_sha": "30f9f8070bdc9f3884f2400fc4887e6d0b29d66d",
+      "url": "https://github.com/utopiafar/mote/commit/30f9f8070bdc9f3884f2400fc4887e6d0b29d66d"
+    },
+    {
+      "round": 28,
+      "commit_sha": "54606b5b52c199b760ce138ed333066402f10d5e",
+      "url": "https://github.com/utopiafar/mote/commit/54606b5b52c199b760ce138ed333066402f10d5e"
+    },
+    {
+      "round": 29,
+      "commit_sha": "9aec3d55d9e6af391c0cc5c2b1dbca8b2936a0e1",
+      "url": "https://github.com/utopiafar/mote/commit/9aec3d55d9e6af391c0cc5c2b1dbca8b2936a0e1"
+    }
+  ]
+}

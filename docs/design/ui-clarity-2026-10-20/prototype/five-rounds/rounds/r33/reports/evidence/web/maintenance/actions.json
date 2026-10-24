@@ -1,0 +1,96 @@
+[
+  {
+    "at": "2026-10-23T03:14:19.608Z",
+    "op": "open",
+    "file": "rounds/r33/web.html",
+    "evidenceDirectory": "rounds/r33/reports/evidence/web/maintenance"
+  },
+  {
+    "at": "2026-10-23T03:14:19.653Z",
+    "op": "select",
+    "selector": "#preview-state",
+    "value": "populated"
+  },
+  {
+    "at": "2026-10-23T03:14:19.715Z",
+    "op": "click",
+    "role": "button",
+    "name": "设置"
+  },
+  {
+    "at": "2026-10-23T03:14:19.758Z",
+    "op": "click",
+    "selector": "button[data-page='settings/storage']:visible"
+  },
+  {
+    "at": "2026-10-23T03:14:19.808Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择归档"
+  },
+  {
+    "at": "2026-10-23T03:14:19.857Z",
+    "op": "download",
+    "role": "button",
+    "name": "下载同账号示例文件",
+    "path": "rounds/r33/reports/evidence/web/maintenance/portable3-sample.json",
+    "save": "01-sample-downloaded"
+  },
+  {
+    "at": "2026-10-23T03:14:36.942Z",
+    "op": "file",
+    "selector": "#cs33-portable-file",
+    "path": "rounds/r33/reports/evidence/web/maintenance/portable3-wrong-account.json",
+    "save": "02-wrong-account-rejected"
+  },
+  {
+    "at": "2026-10-23T03:14:37.058Z",
+    "op": "file",
+    "selector": "#cs33-portable-file",
+    "path": "rounds/r33/reports/evidence/web/maintenance/portable3-sample.json",
+    "save": "03-same-account-selected"
+  },
+  {
+    "at": "2026-10-23T03:14:41.509Z",
+    "op": "observe",
+    "save": "04-file-read-settled"
+  },
+  {
+    "at": "2026-10-23T03:14:46.540Z",
+    "op": "click",
+    "role": "button",
+    "name": "导入所选归档",
+    "save": "05-import-running"
+  },
+  {
+    "at": "2026-10-23T03:14:52.616Z",
+    "op": "click",
+    "text": "原型：导入阶段与恢复",
+    "save": "06-import-stage-controls"
+  },
+  {
+    "at": "2026-10-23T03:14:52.750Z",
+    "op": "click",
+    "text": "覆盖范围与处理状态",
+    "save": "07-import-scope"
+  },
+  {
+    "at": "2026-10-23T03:14:56.764Z",
+    "op": "click",
+    "role": "button",
+    "name": "推进一个合成阶段",
+    "save": "08-import-partial"
+  },
+  {
+    "at": "2026-10-23T03:14:56.905Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟当前阶段失败",
+    "save": "09-import-failed"
+  },
+  {
+    "at": "2026-10-23T03:14:57.114Z",
+    "op": "reload",
+    "save": "10-import-after-reload"
+  }
+]

@@ -1,0 +1,134 @@
+{
+  "platform": "android",
+  "scope": "Rendered UI only; generated fixture",
+  "steps": [
+    {
+      "name": "01-sources",
+      "url": "https://mote-prototype.invalid/?reset=1#/sources",
+      "evidence": [
+        "01-sources.json",
+        "01-sources.png"
+      ]
+    },
+    {
+      "name": "02-source-context",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/context/folder",
+      "evidence": [
+        "02-source-context.json",
+        "02-source-context.png"
+      ]
+    },
+    {
+      "name": "03-source-saved",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/context/folder",
+      "evidence": [
+        "03-source-saved.json",
+        "03-source-saved.png"
+      ]
+    },
+    {
+      "name": "04-source-conflict",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/context/folder",
+      "evidence": [
+        "04-source-conflict.json",
+        "04-source-conflict.png"
+      ]
+    },
+    {
+      "name": "05-conflicted-save",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/context/folder",
+      "evidence": [
+        "05-conflicted-save.json",
+        "05-conflicted-save.png"
+      ]
+    },
+    {
+      "name": "06-source-return",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/context/folder",
+      "evidence": [
+        "06-source-return.json",
+        "06-source-return.png"
+      ]
+    },
+    {
+      "name": "07-conflict-resolved",
+      "url": "https://mote-prototype.invalid/?reset=1#/setup/context/folder",
+      "evidence": [
+        "07-conflict-resolved.json",
+        "07-conflict-resolved.png"
+      ]
+    },
+    {
+      "name": "08-material-inherited",
+      "url": "https://mote-prototype.invalid/?reset=1#/material/m2",
+      "evidence": [
+        "08-material-inherited.json",
+        "08-material-inherited.png"
+      ]
+    },
+    {
+      "name": "09-material-override",
+      "url": "https://mote-prototype.invalid/?reset=1#/material/m2",
+      "evidence": [
+        "09-material-override.json",
+        "09-material-override.png"
+      ]
+    },
+    {
+      "name": "10-material-return",
+      "url": "https://mote-prototype.invalid/?reset=1#/material/m2",
+      "evidence": [
+        "10-material-return.json",
+        "10-material-return.png"
+      ]
+    },
+    {
+      "name": "11-material-inherit-restored",
+      "url": "https://mote-prototype.invalid/?reset=1#/material/m2",
+      "evidence": [
+        "11-material-inherit-restored.json",
+        "11-material-inherit-restored.png"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "label": "saved exact source prose",
+      "observed": true
+    },
+    {
+      "label": "conflict retains local draft",
+      "observed": true
+    },
+    {
+      "label": "save does not silently discard conflict draft",
+      "observed": true
+    },
+    {
+      "label": "conflict draft survives navigation",
+      "observed": true
+    },
+    {
+      "label": "explicit keep-local saves exact prose",
+      "observed": true
+    },
+    {
+      "label": "source relation visible on material",
+      "observed": true
+    },
+    {
+      "label": "override basis shown",
+      "observed": true
+    },
+    {
+      "label": "override survives source roundtrip",
+      "observed": true
+    },
+    {
+      "label": "follow source restores effective third-party",
+      "observed": true
+    }
+  ],
+  "errors": [],
+  "browserErrors": []
+}

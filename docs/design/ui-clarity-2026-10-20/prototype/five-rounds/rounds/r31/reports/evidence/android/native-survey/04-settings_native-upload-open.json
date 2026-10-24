@@ -1,0 +1,306 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/native-upload",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n发送到 Central\n\n屏幕、随手记与本机来源共用此策略。暂停采集不会暂停已有队列。\n\n返回\n未连接 Central，内容留在本机\n目的地：仅保存在本机，连接后再确认发送范围\n暂停全部发送\n发送方式\n实时\n定时\n积攒一批\n仅手动\n仅手动不会自动发送；休眠或系统调度可能延迟计划。逐条收到 ACK 后才按保留策略清理本机副本。\n间隔与打包\n间隔 / 最长等待（分钟）\n每批记录数\n打包上传，逐条确认\n无图状态 JSONL 合并窗口（分钟）\n网络与电源条件\n仅非计费 Wi-Fi\n仅充电时发送\n系统低电量时暂停\n\n立即发送与全量补传也遵守已保存的条件。\n\n保存设置\n还原修改\n立即发送\n\n当前显示已保存的设置。\n\n待发送记录\n按来源与结果查看，接收和处理分别显示\n检查两端与补传\n仅补传仍保留的本机记录\n演示连接条件\n模拟离线\n切为计费网络\n模拟未充电\n模拟低电量\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "返回",
+      "label": "返回",
+      "action": "go",
+      "page": "settings/native",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "暂停全部发送",
+      "label": "暂停全部发送",
+      "action": "ns-send-toggle",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "ns-upload-mode",
+      "type": "select-one",
+      "text": "实时\n定时\n积攒一批\n仅手动",
+      "label": "发送方式\n实时\n定时\n积攒一批\n仅手动\n仅手动不会自动发送；休眠或系统调度可能延迟计划。逐条收到 ACK 后才按保留策略清理本机副本。",
+      "value": "realtime",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "间隔与打包",
+      "label": "间隔与打包",
+      "expanded": true
+    },
+    {
+      "tag": "input",
+      "id": "ns-upload-interval",
+      "type": "number",
+      "text": "",
+      "label": "间隔 / 最长等待（分钟）",
+      "value": "15",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-upload-batch",
+      "type": "number",
+      "text": "",
+      "label": "每批记录数",
+      "value": "20",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-upload-packed",
+      "type": "checkbox",
+      "text": "",
+      "label": "打包上传，逐条确认",
+      "value": "on",
+      "checked": false,
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-upload-window",
+      "type": "number",
+      "text": "",
+      "label": "无图状态 JSONL 合并窗口（分钟）",
+      "value": "10",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "网络与电源条件",
+      "label": "网络与电源条件",
+      "expanded": true
+    },
+    {
+      "tag": "input",
+      "id": "ns-upload-wifi",
+      "type": "checkbox",
+      "text": "",
+      "label": "仅非计费 Wi-Fi",
+      "value": "on",
+      "checked": true,
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-upload-charging",
+      "type": "checkbox",
+      "text": "",
+      "label": "仅充电时发送",
+      "value": "on",
+      "checked": false,
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "ns-upload-battery",
+      "type": "checkbox",
+      "text": "",
+      "label": "系统低电量时暂停",
+      "value": "on",
+      "checked": true,
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存设置",
+      "label": "保存设置",
+      "action": "ns-save",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "还原修改",
+      "label": "还原修改",
+      "action": "ns-discard",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "立即发送",
+      "label": "立即发送",
+      "action": "ns-send-now",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "待发送记录\n按来源与结果查看，接收和处理分别显示",
+      "label": "待发送记录\n按来源与结果查看，接收和处理分别显示",
+      "action": "go",
+      "page": "activity/native-queue",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "检查两端与补传\n仅补传仍保留的本机记录",
+      "label": "检查两端与补传\n仅补传仍保留的本机记录",
+      "action": "go",
+      "page": "activity/native-reconcile",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "演示连接条件",
+      "label": "演示连接条件",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "模拟离线",
+      "label": "模拟离线",
+      "action": "ns-environment",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "切为计费网络",
+      "label": "切为计费网络",
+      "action": "ns-environment",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "模拟未充电",
+      "label": "模拟未充电",
+      "action": "ns-environment",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "模拟低电量",
+      "label": "模拟低电量",
+      "action": "ns-environment",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "发送到 Central"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

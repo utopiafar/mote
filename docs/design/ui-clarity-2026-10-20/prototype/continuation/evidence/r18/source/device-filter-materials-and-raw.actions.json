@@ -1,0 +1,141 @@
+[
+  {
+    "type": "assertCount",
+    "selector": ".material-list .material-row",
+    "count": 6
+  },
+  {
+    "type": "select",
+    "selector": "#device-filter",
+    "value": "mac"
+  },
+  {
+    "type": "assertCount",
+    "selector": ".material-list .material-row",
+    "count": 3
+  },
+  {
+    "type": "assertNotText",
+    "selector": ".material-list",
+    "text": "产品评审 · 让第一步更清楚"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"open-material\"][data-id=\"m2\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": ".reading-body",
+    "text": "原始资料保留出处"
+  },
+  {
+    "type": "click",
+    "selector": ".detail-top [data-action=\"go\"]"
+  },
+  {
+    "type": "assertValue",
+    "selector": "#device-filter",
+    "value": "mac"
+  },
+  {
+    "type": "assertCount",
+    "selector": ".material-list .material-row",
+    "count": 3
+  },
+  {
+    "type": "select",
+    "selector": "#device-filter",
+    "value": "central"
+  },
+  {
+    "type": "assertCount",
+    "selector": ".material-list .material-row",
+    "count": 2
+  },
+  {
+    "type": "assertText",
+    "selector": ".material-list",
+    "text": "项目讨论录音"
+  },
+  {
+    "type": "select",
+    "selector": "#device-filter",
+    "value": "web"
+  },
+  {
+    "type": "assertCount",
+    "selector": ".material-list .material-row",
+    "count": 1
+  },
+  {
+    "type": "assertText",
+    "selector": ".material-list",
+    "text": "产品评审"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"clear-filters\"]"
+  },
+  {
+    "type": "assertCount",
+    "selector": ".material-list .material-row",
+    "count": 6
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"filter\"][data-filter=\"raw\"]"
+  },
+  {
+    "type": "select",
+    "selector": "#device-filter",
+    "value": "web"
+  },
+  {
+    "type": "assertCount",
+    "selector": "[data-capture-id]",
+    "count": 0
+  },
+  {
+    "type": "assertText",
+    "selector": ".empty",
+    "text": "这个范围没有原始记录"
+  },
+  {
+    "type": "select",
+    "selector": "#device-filter",
+    "value": "mac"
+  },
+  {
+    "type": "assertCount",
+    "selector": "[data-capture-id]",
+    "count": 1
+  },
+  {
+    "type": "assertText",
+    "selector": "[data-capture-id=\"m6\"]",
+    "text": "2026-10-18 11:08"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"original\"][data-id=\"m6\"]"
+  },
+  {
+    "type": "assertText",
+    "selector": "[role=\"dialog\"]",
+    "text": "文章摘录 · 渐进式披露"
+  },
+  {
+    "type": "assertText",
+    "selector": "[role=\"dialog\"]",
+    "text": "采集时间： 2026-10-18 11:08"
+  },
+  {
+    "type": "assertText",
+    "selector": "[role=\"dialog\"]",
+    "text": "设备： Mac"
+  },
+  {
+    "type": "click",
+    "selector": "[data-action=\"close-modal\"]"
+  }
+]

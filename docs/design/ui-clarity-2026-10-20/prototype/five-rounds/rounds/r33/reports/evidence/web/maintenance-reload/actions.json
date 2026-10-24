@@ -1,0 +1,305 @@
+[
+  {
+    "at": "2026-10-23T03:15:21.786Z",
+    "op": "open",
+    "file": "rounds/r33/web.html",
+    "url": "https://mote-prototype.invalid/#/library",
+    "evidenceDirectory": "rounds/r33/reports/evidence/web/maintenance-reload"
+  },
+  {
+    "at": "2026-10-23T03:15:21.824Z",
+    "op": "select",
+    "selector": "#preview-state",
+    "value": "populated"
+  },
+  {
+    "at": "2026-10-23T03:15:21.881Z",
+    "op": "click",
+    "role": "button",
+    "name": "设置"
+  },
+  {
+    "at": "2026-10-23T03:15:21.920Z",
+    "op": "click",
+    "selector": "button[data-page='settings/storage']:visible"
+  },
+  {
+    "at": "2026-10-23T03:15:21.971Z",
+    "op": "click",
+    "role": "button",
+    "name": "选择归档"
+  },
+  {
+    "at": "2026-10-23T03:15:21.984Z",
+    "op": "file",
+    "selector": "#cs33-portable-file",
+    "path": "rounds/r33/reports/evidence/web/maintenance/portable3-sample.json"
+  },
+  {
+    "at": "2026-10-23T03:15:21.997Z",
+    "op": "waitForText",
+    "role": "button",
+    "name": "导入所选归档"
+  },
+  {
+    "at": "2026-10-23T03:15:22.038Z",
+    "op": "click",
+    "role": "button",
+    "name": "导入所选归档",
+    "save": "01-import-created"
+  },
+  {
+    "at": "2026-10-23T03:15:22.164Z",
+    "op": "click",
+    "text": "原型：导入阶段与恢复"
+  },
+  {
+    "at": "2026-10-23T03:15:22.203Z",
+    "op": "click",
+    "role": "button",
+    "name": "推进一个合成阶段",
+    "save": "02-import-partial"
+  },
+  {
+    "at": "2026-10-23T03:15:22.339Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟当前阶段失败",
+    "save": "03-import-failed"
+  },
+  {
+    "at": "2026-10-23T03:15:22.498Z",
+    "op": "reload",
+    "save": "04-reload-no-reset"
+  },
+  {
+    "at": "2026-10-23T03:15:34.774Z",
+    "op": "click",
+    "role": "button",
+    "name": "使用原文件重试原操作",
+    "save": "05-retry-without-file-blocked"
+  },
+  {
+    "at": "2026-10-23T03:15:34.871Z",
+    "op": "file",
+    "selector": "#cs33-portable-file",
+    "path": "rounds/r33/reports/evidence/web/maintenance/portable3-sample.json"
+  },
+  {
+    "at": "2026-10-23T03:15:39.933Z",
+    "op": "click",
+    "role": "button",
+    "name": "使用原文件重试原操作",
+    "save": "06-retry-same-operation"
+  },
+  {
+    "at": "2026-10-23T03:15:40.088Z",
+    "op": "click",
+    "role": "button",
+    "name": "推进一个合成阶段",
+    "save": "07-import-materials-finished"
+  },
+  {
+    "at": "2026-10-23T03:15:40.232Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开活动回执",
+    "save": "08-import-activity-receipt"
+  },
+  {
+    "at": "2026-10-23T03:15:54.433Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开原任务",
+    "save": "09-import-original-return"
+  },
+  {
+    "at": "2026-10-23T03:15:54.582Z",
+    "op": "click",
+    "role": "button",
+    "name": "存储与备份"
+  },
+  {
+    "at": "2026-10-23T03:15:54.630Z",
+    "op": "click",
+    "text": "管理员：实例保留与维护",
+    "save": "10-admin-maintenance-menu"
+  },
+  {
+    "at": "2026-10-23T03:15:58.313Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开维护",
+    "save": "11-index-maintenance"
+  },
+  {
+    "at": "2026-10-23T03:16:03.461Z",
+    "op": "click",
+    "role": "button",
+    "name": "重建全文索引",
+    "save": "12-index-started"
+  },
+  {
+    "at": "2026-10-23T03:16:03.579Z",
+    "op": "click",
+    "text": "原型：索引恢复状态",
+    "save": "13-index-recovery-controls"
+  },
+  {
+    "at": "2026-10-23T03:16:08.326Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟发布前授权失效",
+    "save": "14-index-auth-invalid"
+  },
+  {
+    "at": "2026-10-23T03:16:08.463Z",
+    "op": "click",
+    "role": "button",
+    "name": "推进合成索引阶段",
+    "save": "15-index-publication-blocked"
+  },
+  {
+    "at": "2026-10-23T03:16:08.596Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟重新核验通过",
+    "save": "16-index-auth-rechecked"
+  },
+  {
+    "at": "2026-10-23T03:16:13.462Z",
+    "op": "click",
+    "role": "button",
+    "name": "下次提交模拟回执丢失"
+  },
+  {
+    "at": "2026-10-23T03:16:13.525Z",
+    "op": "click",
+    "role": "button",
+    "name": "重试原操作",
+    "save": "17-index-unknown"
+  },
+  {
+    "at": "2026-10-23T03:16:18.647Z",
+    "op": "click",
+    "role": "button",
+    "name": "取消索引重建",
+    "save": "19-index-cancelled"
+  },
+  {
+    "at": "2026-10-23T03:16:18.805Z",
+    "op": "click",
+    "role": "button",
+    "name": "帮助与诊断",
+    "save": "20-diagnostics"
+  },
+  {
+    "at": "2026-10-23T03:16:31.565Z",
+    "op": "click",
+    "role": "button",
+    "name": "较旧",
+    "save": "21-log-older"
+  },
+  {
+    "at": "2026-10-23T03:16:31.731Z",
+    "op": "click",
+    "role": "button",
+    "name": "刷新诊断",
+    "save": "22-log-refresh-preserves-page"
+  },
+  {
+    "at": "2026-10-23T03:16:31.835Z",
+    "op": "select",
+    "selector": "#cs33-diagnostic-log-file",
+    "value": "2",
+    "save": "23-log-rotated-gap"
+  },
+  {
+    "at": "2026-10-23T03:16:31.979Z",
+    "op": "click",
+    "text": "导出诊断包",
+    "save": "24-diagnostic-export-controls"
+  },
+  {
+    "at": "2026-10-23T03:16:36.198Z",
+    "op": "select",
+    "selector": "#cs33-diagnostic-log-hours",
+    "value": "168"
+  },
+  {
+    "at": "2026-10-23T03:16:36.275Z",
+    "op": "download",
+    "role": "button",
+    "name": "导出合成诊断包",
+    "path": "rounds/r33/reports/evidence/web/maintenance-reload/diagnostics-week.json",
+    "save": "25-diagnostic-week-export"
+  },
+  {
+    "at": "2026-10-23T03:16:36.416Z",
+    "op": "click",
+    "role": "button",
+    "name": "诊断偏好",
+    "save": "26-diagnostic-preferences"
+  },
+  {
+    "at": "2026-10-23T03:16:41.661Z",
+    "op": "check",
+    "selector": "#cs33-trace-preferences-enabled",
+    "checked": true
+  },
+  {
+    "at": "2026-10-23T03:16:41.753Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存个人输入追踪",
+    "save": "27-trace-on"
+  },
+  {
+    "at": "2026-10-23T03:16:41.878Z",
+    "op": "check",
+    "selector": "#cs33-trace-preferences-enabled",
+    "checked": false
+  },
+  {
+    "at": "2026-10-23T03:16:41.951Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存个人输入追踪",
+    "save": "28-trace-off"
+  },
+  {
+    "at": "2026-10-23T03:16:42.097Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看已保留轨迹",
+    "save": "29-retained-trace"
+  },
+  {
+    "at": "2026-10-23T03:16:46.397Z",
+    "op": "select",
+    "selector": "#cs32-trace-run",
+    "value": {
+      "label": "trace-memory-study-body"
+    }
+  },
+  {
+    "at": "2026-10-23T03:16:46.461Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开实际轨迹",
+    "save": "30-old-trace-retained"
+  },
+  {
+    "at": "2026-10-23T03:16:46.550Z",
+    "op": "fill",
+    "selector": "#cs32-trace-requested",
+    "value": "review-unknown-run-R33"
+  },
+  {
+    "at": "2026-10-23T03:16:46.610Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开实际轨迹",
+    "save": "31-unknown-trace-absent"
+  }
+]

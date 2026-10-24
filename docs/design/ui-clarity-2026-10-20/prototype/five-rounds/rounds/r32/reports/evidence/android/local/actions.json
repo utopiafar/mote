@@ -1,0 +1,265 @@
+[
+  {
+    "at": "2026-10-23T02:53:55.339Z",
+    "op": "open",
+    "file": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/five-rounds/rounds/r32/android.html",
+    "evidenceDirectory": "/workspace/scratch/580b4cdfd36e/mote-ui-work/docs/design/ui-clarity-2026-10-20/prototype/five-rounds/rounds/r32/reports/evidence/android/local",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  {
+    "at": "2026-10-23T02:53:55.382Z",
+    "op": "select",
+    "label": "预览数据",
+    "value": "populated"
+  },
+  {
+    "at": "2026-10-23T02:53:55.435Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-23T02:53:55.479Z",
+    "op": "click",
+    "selector": "button[data-page=\"setup/folder\"]"
+  },
+  {
+    "at": "2026-10-23T02:53:55.516Z",
+    "op": "click",
+    "text": "内容关系与背景",
+    "exact": false,
+    "save": "01-local-context"
+  },
+  {
+    "at": "2026-10-23T02:54:07.019Z",
+    "op": "fill",
+    "selector": "#source-context-description",
+    "value": "本机说明：第三方访谈，不代表我的经历。Asia/Shanghai。"
+  },
+  {
+    "at": "2026-10-23T02:54:07.082Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存来源说明",
+    "save": "02-local-context-saved"
+  },
+  {
+    "at": "2026-10-23T02:54:07.153Z",
+    "op": "fill",
+    "selector": "#source-context-description",
+    "value": "本机未保存修订：引文中的我属于受访者。"
+  },
+  {
+    "at": "2026-10-23T02:54:07.199Z",
+    "op": "click",
+    "text": "预览说明版本冲突"
+  },
+  {
+    "at": "2026-10-23T02:54:07.242Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟另一端更新了说明",
+    "save": "03-local-context-conflict"
+  },
+  {
+    "at": "2026-10-23T02:54:07.357Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看本机待发记录",
+    "save": "04-local-queue-conflict"
+  },
+  {
+    "at": "2026-10-23T02:54:19.842Z",
+    "op": "click",
+    "role": "button",
+    "name": "立即发送",
+    "save": "05-conflict-blocked-send"
+  },
+  {
+    "at": "2026-10-23T02:54:19.959Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回"
+  },
+  {
+    "at": "2026-10-23T02:54:20.001Z",
+    "op": "click",
+    "text": "演示连接条件"
+  },
+  {
+    "at": "2026-10-23T02:54:20.056Z",
+    "op": "click",
+    "role": "button",
+    "name": "模拟离线",
+    "save": "06-offline"
+  },
+  {
+    "at": "2026-10-23T02:54:20.157Z",
+    "op": "click",
+    "role": "button",
+    "name": "添加内容",
+    "save": "07-add-menu"
+  },
+  {
+    "at": "2026-10-23T02:54:37.827Z",
+    "op": "observe",
+    "save": "08-native-note"
+  },
+  {
+    "at": "2026-10-23T02:54:47.020Z",
+    "op": "click",
+    "selector": "button[data-page=\"notes\"]:visible",
+    "save": "09-native-note"
+  },
+  {
+    "at": "2026-10-23T02:55:11.184Z",
+    "op": "fill",
+    "selector": "#ns-local-note",
+    "value": "离线审阅笔记 R32：原文必须保留。\n这不是我本人的承诺；仅为第三方引文。"
+  },
+  {
+    "at": "2026-10-23T02:55:11.235Z",
+    "op": "click",
+    "role": "button",
+    "name": "到 Central 添加图片与语音",
+    "save": "10-offline-attachment-handoff"
+  },
+  {
+    "at": "2026-10-23T02:55:18.854Z",
+    "op": "click",
+    "role": "button",
+    "name": "继续本机文字记录"
+  },
+  {
+    "at": "2026-10-23T02:55:18.897Z",
+    "op": "click",
+    "text": "本机保存失败示例",
+    "save": "12-note-failure-controls"
+  },
+  {
+    "at": "2026-10-23T02:55:46.664Z",
+    "op": "click",
+    "role": "button",
+    "name": "下次保存模拟失败"
+  },
+  {
+    "at": "2026-10-23T02:55:46.719Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存本机笔记",
+    "save": "13-note-failed"
+  },
+  {
+    "at": "2026-10-23T02:55:56.798Z",
+    "op": "click",
+    "role": "button",
+    "name": "重试保存本机笔记",
+    "save": "16-note-recovered"
+  },
+  {
+    "at": "2026-10-23T02:56:18.382Z",
+    "op": "click",
+    "role": "button",
+    "name": "保存本机笔记",
+    "save": "17-note-repeat-save"
+  },
+  {
+    "at": "2026-10-23T02:56:18.485Z",
+    "op": "click",
+    "role": "button",
+    "name": "打开已保存记录",
+    "save": "18-note-original"
+  },
+  {
+    "at": "2026-10-23T02:56:33.563Z",
+    "op": "click",
+    "role": "button",
+    "name": "关闭对话框"
+  },
+  {
+    "at": "2026-10-23T02:56:33.646Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-23T02:56:33.686Z",
+    "op": "click",
+    "selector": "button[data-page=\"setup/folder\"]:visible",
+    "save": "19-local-context-return"
+  },
+  {
+    "at": "2026-10-23T02:56:45.816Z",
+    "op": "click",
+    "role": "button",
+    "name": "保留本机说明并保存",
+    "save": "20-context-resolve-offline"
+  },
+  {
+    "at": "2026-10-23T02:56:45.915Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看本机待发记录",
+    "save": "21-queue-offline-pending"
+  },
+  {
+    "at": "2026-10-23T02:56:51.881Z",
+    "op": "click",
+    "role": "button",
+    "name": "返回"
+  },
+  {
+    "at": "2026-10-23T02:56:51.934Z",
+    "op": "click",
+    "role": "button",
+    "name": "恢复网络",
+    "save": "22-online"
+  },
+  {
+    "at": "2026-10-23T02:56:52.030Z",
+    "op": "click",
+    "role": "button",
+    "name": "立即发送",
+    "save": "23-unrelated-note-sent"
+  },
+  {
+    "at": "2026-10-23T02:56:52.129Z",
+    "op": "click",
+    "selector": "button[data-page=\"activity/native-queue\"]:visible",
+    "save": "24-queue-partial-send"
+  },
+  {
+    "at": "2026-10-23T02:57:01.848Z",
+    "op": "click",
+    "role": "button",
+    "name": "来源"
+  },
+  {
+    "at": "2026-10-23T02:57:01.900Z",
+    "op": "click",
+    "selector": "button[data-page=\"setup/folder\"]:visible"
+  },
+  {
+    "at": "2026-10-23T02:57:01.955Z",
+    "op": "click",
+    "role": "button",
+    "name": "保留本机说明并保存",
+    "save": "25-context-resolved-online"
+  },
+  {
+    "at": "2026-10-23T02:57:02.065Z",
+    "op": "click",
+    "role": "button",
+    "name": "查看本机待发记录"
+  },
+  {
+    "at": "2026-10-23T02:57:02.113Z",
+    "op": "click",
+    "role": "button",
+    "name": "立即发送",
+    "save": "26-folder-ack-after-context"
+  }
+]

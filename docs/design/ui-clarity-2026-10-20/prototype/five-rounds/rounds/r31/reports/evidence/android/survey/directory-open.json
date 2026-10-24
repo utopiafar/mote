@@ -1,0 +1,1256 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/guide",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n全部功能\n\n按功能目录查找当前支持的操作与设置。\n\n78 项功能 · 按任务分组\n接入与记录\n随手记与已有附件\n随手记下文字\n\n保存快速笔记，保留本地草稿，并查看离线待同步或已经保存的记录。\n\n资料库 → 随手记\n打开\n上传已有图片或音频附件\n\n随文字上传已有图片或音频文件，也可以只保存附件。\n\n资料库 → 随手记\n打开\n导入文档、文件夹和媒体\n导入已有文档、文件夹和媒体\n\n把已有聊天导出、文档、笔记和附件提交到独立导入队列，并补充背景。\n\n资料库 → 导入资料\n打开\n查看并处理导入进度\n\n分清原件归档、解析预览、记录发布和记忆整理，处理需要确认或重试的步骤。\n\n资料库 → 上传与处理\n打开\n删除整次导入\n\n确认移除一次导入及不再被其他资料使用的依赖内容。\n\n资料库 → 上传与处理\n打开\n一次导入浏览器所选文件夹\n\n选择文件夹上传本次内容。持续同步在采集端设置。\n\n资料库 → 导入资料\n打开\n选择导入解析器和图片处理方案\n\n为当前导入选择已安装的来源解析器，或调整其图片处理方案。\n\n资料库 → 导入资料\n打开\n恢复被中断的本地上传\n\n在上传队列继续、重试或丢弃尚未完成的本地提交。\n\n资料库 → 上传与处理\n打开\n接入来源、飞书与录音\n选择要加入的来源\n\n按需加入文件、引用或外部服务，找到每种来源的授权和选择范围。\n\n来源 → 连接来源\n打开\n管理来源接收与内容关系\n\n暂停或恢复一个来源的接收，查看同步情况，并说明内容与你的关系。\n\n采集与设备 → 来源与连接 → 来源 → 已连接来源\n打开\n保存外部或 NAS 引用\n\n记录资料名称和位置，便于以后从能读取它的客户端提交正文快照。\n\n来源 → 外部文件与 NAS 引用\n打开\n只读归档 Google 日历\n\n授权 Google 后选择日历，把选中的日程同步到资料库供回顾。\n\n来源 → Google 日历\n打开\n只读归档 Gmail 邮件\n\n授权 Google 后归档邮件正文、发件人和时间，持续同步或继续分页。\n\n来源 → Gmail 邮件\n打开\n从远程 MCP 选择资源导入\n\n查看远程 MCP 服务公开的资源列表，选择资源一次性加入归档。\n\n来源 → MCP 资料导入\n打开\n连接飞书文档和日历\n\n在中央节点授权飞书，归档你创建、编辑或打开的文档及活动线索，也可持续跟踪指定范围和日历。\n\n新增数据源 → 飞书文档与日历\n打开\n归档厂商录音和转写\n\n连接中央节点已授权的录音账号，选择首次历史范围及是否继续后台同步。\n\n新增数据源 → 录音与转写 → 录音厂商\n打开\n查看来源版本和原位置\n\n查看一个来源的当前或历史版本，以及原位置和元数据。\n\n资料库 → 资料出处\n打开\n连接设备与查看采集\n从今天开始整理资料\n\n查看已有资料和最近洞察，找到连接设备、导入资料或配置问答的第一步。\n\n今天\n打开\n查看设备上报的采集与同步状态\n\n了解每台设备最后联系、最后采集以及待上传、受阻和已保留的内容。\n\n来源 → 设备与记录状态\n打开\n连接或重新授权设备\n\n生成一次性邀请，让原生客户端确认中央节点地址后连接。\n\n来源 → 连接设备\n打开\n检查和撤销已发出的连接权限\n\n查看每个连接的名称、权限和状态，撤销不再使用的访问。\n\n采集与设备 → 来源与连接 → 对外授权 → 已授权连接\n打开\n让其他 Chatbot 使用 Mote MCP\n\n为支持 HTTP MCP 的客户端生成独立的只读或指定来源写入配置。\n\n采集与设备 → 来源与连接 → 对外授权 → 连接 Chatbot\n打开\n阅读与使用\n阅读正文与原始证据\n浏览已经发布的资料正文\n\n按来源、类型、设备和日期筛选正式资料，打开可读正文。\n\n资料库 → 全部资料\n打开\n核对资料正文、来源与处理状态\n\n阅读当前或获准查看的历史正文，追溯原件，并了解哪些派生产物还在处理。\n\n资料库 → 资料详情\n打开\n说明单份资料关系并提取记忆\n\n为一份资料覆盖来源的内容关系，并从它当前可用的正文提取记忆。\n\n资料库 → 资料详情\n打开\n查看原始采集证据\n\n按日期、设备或内容类型查找原始记录，打开图像、文本和附件核对。\n\n资料库 → 原始采集记录\n打开\n删除一条原始记录\n\n核对影响后移除原始记录，让依赖它的证据失效。\n\n资料库 → 原始采集记录\n打开\n提问与回看对话\n围绕归档资料提问\n\n开始或继续对话，让问答模型检索已归档证据，阅读答案并打开引用。\n\n问一问\n打开\n回看和管理对话历史\n\n继续过去对话，查看更多轮次，核对引用、用量和读取记录，或删除整段对话。\n\n问一问 → 对话历史\n打开\n随问题提交图片\n\n直接为当前问题选择图片，并在发送前移除不需要的附件。\n\n问一问 → 附加图片\n打开\n查看、纠正与整理记忆\n浏览有证据的记忆\n\n搜索已保存的记忆，核对结论、适用边界、状态和支持它的原始资料。\n\n资料库 → 记忆\n打开\n纠正、删除或导出一条记忆\n\n把自己的纠正保存为替代版本，或删除结论、下载文本。\n\n资料库 → 记忆\n打开\n手动提取记忆\n\n从当前范围或明确选中的资料启动提取，选择模型与配方并跟踪结果。\n\n资料库 → 记忆\n打开\n回答需要你澄清的问题\n\n在相关工作或资料中补充信息，帮助 Mote 处理这份输入的疑问。\n\n问一问 → 待你澄清\n打开\n核对记忆的历史和有效时间\n\n查看某一时间有效的记忆、旧版本和替代或矛盾关系。\n\n资料库 → 记忆\n打开\n从一条当前记忆继续整理\n\n以一条已发布整理记忆为起点，使用整合配方生成进一步整理结果。\n\n资料库 → 记忆 → 继续整理\n打开\n调整记忆策略和回顾节奏\n\n设置提取历史窗口、整合与回顾节奏，以及默认、截图和来源的配方组合。\n\n设置 → 记忆策略与回顾节奏\n打开\n生成洞察与回顾\n生成并回看有证据的洞察\n\n按自选方向或默认回顾生成报告，核对引用并重访已保存结果。\n\n资料库 → 洞察\n打开\n跟进与管理\n跟进工作与失败恢复\n查看正在做的工作和结果\n\n集中查看 Mote 的工作、需要关注的问题、执行分支和完成结果。\n\n活动；资料库 → 处理任务\n打开\n检查技术步骤并恢复可重试工作\n\n深入查看任务依赖、尝试和失败原因，找到负责该工作的设置或恢复入口。\n\n活动 → 需要处理 → 工作详情\n打开\n待办与日程建议\n记录和完成普通待办\n\n添加标题和可选到期时间，管理完成、取消或重新打开的待办。\n\n今天 → 我的待办\n打开\n审核日程建议并交给设备执行\n\n查看有证据的日程建议，核对内容和目标日历后确认，跟踪设备的执行结果。\n\n今天 → 日程建议与安排\n打开\n按分类回看与查看时间\n按内容类型查看资料库\n\n在同一资料库切换分类，找到片段、来源、文件、活动、记忆和处理视图。\n\n资料库 → 全部资料 → 类型筛选\n打开\n按截图片段或应用相册回看\n\n按日期和设备查看连续会话或应用分组，打开组内采集证据。\n\n资料库 → 截图片段\n打开\n查看测得的应用活动时间\n\n查看采样得到的各应用时长和占比，理解其统计范围。\n\n资料库 → 应用使用记录\n打开\n查看媒体播放观测\n\n查看播放器、标题、状态和播放进度，核对按设备统计的播放观测。\n\n资料库 → 媒体播放\n打开\n查看 Coding 会话接收与同步状态\n\n在处理任务中核对 Coding 增量接收、会话发布、索引与记忆进度，再打开已发布正文。\n\n来源 → Coding Agent 会话 → 查看同步状态\n打开\n备份、存储、索引与费用\n导入导出归档并找到完整备份\n\n导出可携带的资料或元数据，合并当前归档，检查索引并找到离线备份方式。\n\n设置 → 存储、加密与备份 → 导入与导出 / 索引与 Agent\n打开\n查看保留、容量和内容存储政策\n\n查看实际空间和保留情况，控制未来文件加密，并找到部署层保留与容量配置。\n\n设置 → 存储、加密与备份 → 内容存储 / 数据与备份\n打开\n核对模型用量和估算费用\n\n按日期、模块、模型和状态查看请求、Token、缓存、耗时及费用明细。\n\n设置 → 用量与费用\n打开\n把已有加密文件转为明文\n\n关闭未来加密后，按需安排已有内容对象解密，并查看后台转换进度。\n\n设置 → 存储与备份 → 已有加密内容\n打开\n查看运行状态与空间\n\n按类型和日期查看中央机器可访问文件的字节与数量，并进入模型用量。\n\n设置 → 存储与备份 → 运行状态与空间\n打开\n维护估价并追查用量明细\n\n按 Agent、模块、技能或模型汇总，逐层筛选请求，并维护后续请求使用的价格。\n\n设置 → 用量与费用 → 维护模型估价\n打开\n设置与维护\n模型、图片、文件与语音\n配置或检查模型连接（Provider）\n\n查看或保存模型连接的地址、凭据和模型，再核对实际生效配置。\n\n设置 → 模型连接\n打开\n检查或分配功能使用的模型\n\n检查问答、记忆、回顾等功能当前用的连接和模型，按需为要使用的模块分配。\n\n设置 → 按功能分配模型\n打开\n控制新图片识别与原图授权\n\n为截图、上传、同步和笔记图片设置识字、理解方式，并单独决定问答模型能否读原图。\n\n设置 → 图片识别与原图读取\n打开\n查看文件或录音的内容提取和恢复\n\n核对原件、正文、转写及摘要状态，下载或播放原件，处理可取消或重试的阶段。\n\n资料库 → 文件与录音\n打开\n配置文件与语音处理\n\n启用中央处理，安装所需本地语音模型，并按文件类型选择处理方案。\n\n设置 → 文件与语音处理\n打开\n调整模型性能和协议细节\n\n在预设中调整推理、速度、超时及协议参数，并确认敏感地址或凭据变更。\n\n设置 → 模型连接\n打开\n复制或删除模型预设\n\n复用已有连接设置，或清理未使用的自定义预设。\n\n设置 → 模型连接\n打开\n补处理或重算历史图片\n\n明确选择历史日期与来源，预览数量后安排补齐或重新计算。\n\n设置 → 历史图片补处理\n打开\n配置文件规则、方案和处理服务\n\n为文件类型或特定来源选择处理方案，设置模型、摘要和服务连接。\n\n设置 → 文件与语音处理\n打开\n预览文件规则并重新处理已有原件\n\n用已保存规则试算 MIME 匹配，选择已有原件，核对预览后排队。\n\n设置 → 文件与语音处理\n打开\n纠正转写并确认说话人\n\n手动校正文段、试听说话人样本，或让模型建议修改后逐项确认。\n\n资料库 → 文件与录音\n打开\n设置执行并发和查看等待名额\n\n调整问答和后台执行的同时工作数量，了解哪些工作在排队。\n\n设置 → 执行并发与等待名额\n打开\n配置检索和外部连接的部署草稿\n\n准备向量检索、来源间隔、MCP 和 OAuth 的配置差异，交给部署机器应用。\n\n设置 → 部署配置草稿\n打开\n自动记忆与可信插件方案\n暂停或立即停止自动记忆\n\n控制全局新自动记忆的接收，并区分继续收尾与立即撤销旧工作。\n\n设置 → 自动记忆与插件 → 记忆方案 → 自动记忆\n打开\n核对和替换整套记忆方案\n\n查看当前运行的整套记忆实现，准备和验证替换，再单独应用已验证方案。\n\n设置 → 自动记忆与插件 → 记忆方案\n打开\n管理可信记忆插件\n\n从支持的固定版本发现、安装和配置实例，检查后启用或绑定方案。\n\n设置 → 自动记忆与插件 → 已安装 / 发现\n打开\n登录、语言与页面入口\n登录并管理当前会话\n\n确认正在使用哪个中央节点，选择浏览器保留登录的时间，或退出当前会话。\n\n设置 → 账号与设备\n打开\n找到常用页面和所属工具\n\n从主要导航入口进入日常工作，再到各自的工具或设置继续操作。\n\n主导航 → 今天 / 资料库 / 问一问 / 活动 / 采集与设备；设置\n打开\n帮助、诊断与 Agent 视角\n找到帮助、版本和维护方式\n\n查找问题反馈入口，核对网页与中央版本，以及中央节点的手动升级说明。\n\n设置 → 帮助与诊断 → 帮助与版本\n打开\n查看 Agent 当前能读取的上下文\n\n只读浏览 Agent 的虚拟目录，并为一个问题预览首次上下文，不必调用模型。\n\n设置 → 对外授权 → 助手可读取的范围\n打开\n查看已记录的实际模型输入和工具读取\n\n按运行查阅当时保存的上下文、模型和工具事件，核对真实记录。\n\n设置 → 对外授权 → 读取记录\n打开\n核对实际注册的插件能力\n\n查看服务端与网页实际加载的能力、版本、状态和当前模块绑定。\n\n设置 → 自动记忆与插件 → 已加载能力\n打开\n查阅运行日志并导出支持包\n\n按文件、阶段和时间范围查看保留的日志，导出诊断资料用于排查。\n\n设置 → 诊断与更新 → 运行诊断\n打开\n设置诊断记录并查看部署生效值\n\n调整今后的日志和详细过程记录，核对中央节点实际使用的目录和配置。\n\n设置 → 帮助与诊断 → 今后的诊断记录\n打开\n切换界面语言\n\n按当前使用习惯选择中文或 English 界面。\n\n设置 → 语言\n打开\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "guide-search",
+      "type": "text",
+      "text": "",
+      "label": "搜索功能",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "随手记与已有附件",
+      "label": "随手记与已有附件",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开随手记下文字",
+      "action": "open-feature",
+      "item": "C12",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开上传已有图片或音频附件",
+      "action": "open-feature",
+      "item": "C13",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "导入文档、文件夹和媒体",
+      "label": "导入文档、文件夹和媒体",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开导入已有文档、文件夹和媒体",
+      "action": "open-feature",
+      "item": "C09",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开查看并处理导入进度",
+      "action": "open-feature",
+      "item": "C10",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开删除整次导入",
+      "action": "open-feature",
+      "item": "C11",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开一次导入浏览器所选文件夹",
+      "action": "open-feature",
+      "item": "A01",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开选择导入解析器和图片处理方案",
+      "action": "open-feature",
+      "item": "A02",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开恢复被中断的本地上传",
+      "action": "open-feature",
+      "item": "A03",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "接入来源、飞书与录音",
+      "label": "接入来源、飞书与录音",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开选择要加入的来源",
+      "action": "open-feature",
+      "item": "C07",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开管理来源接收与内容关系",
+      "action": "open-feature",
+      "item": "C08",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开保存外部或 NAS 引用",
+      "action": "open-feature",
+      "item": "A04",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开只读归档 Google 日历",
+      "action": "open-feature",
+      "item": "A05",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开只读归档 Gmail 邮件",
+      "action": "open-feature",
+      "item": "A06",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开从远程 MCP 选择资源导入",
+      "action": "open-feature",
+      "item": "A07",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开连接飞书文档和日历",
+      "action": "open-feature",
+      "item": "A09",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开归档厂商录音和转写",
+      "action": "open-feature",
+      "item": "A10",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开查看来源版本和原位置",
+      "action": "open-feature",
+      "item": "A11",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "连接设备与查看采集",
+      "label": "连接设备与查看采集",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开从今天开始整理资料",
+      "action": "open-feature",
+      "item": "C03",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开查看设备上报的采集与同步状态",
+      "action": "open-feature",
+      "item": "C04",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开连接或重新授权设备",
+      "action": "open-feature",
+      "item": "C05",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开检查和撤销已发出的连接权限",
+      "action": "open-feature",
+      "item": "C06",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开让其他 Chatbot 使用 Mote MCP",
+      "action": "open-feature",
+      "item": "A08",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "阅读正文与原始证据",
+      "label": "阅读正文与原始证据",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开浏览已经发布的资料正文",
+      "action": "open-feature",
+      "item": "C14",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开核对资料正文、来源与处理状态",
+      "action": "open-feature",
+      "item": "C15",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开说明单份资料关系并提取记忆",
+      "action": "open-feature",
+      "item": "C16",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开查看原始采集证据",
+      "action": "open-feature",
+      "item": "C17",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开删除一条原始记录",
+      "action": "open-feature",
+      "item": "C18",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "提问与回看对话",
+      "label": "提问与回看对话",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开围绕归档资料提问",
+      "action": "open-feature",
+      "item": "C20",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开回看和管理对话历史",
+      "action": "open-feature",
+      "item": "C21",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开随问题提交图片",
+      "action": "open-feature",
+      "item": "C22",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "查看、纠正与整理记忆",
+      "label": "查看、纠正与整理记忆",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开浏览有证据的记忆",
+      "action": "open-feature",
+      "item": "C23",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开纠正、删除或导出一条记忆",
+      "action": "open-feature",
+      "item": "C24",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开手动提取记忆",
+      "action": "open-feature",
+      "item": "C25",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开回答需要你澄清的问题",
+      "action": "open-feature",
+      "item": "C26",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开核对记忆的历史和有效时间",
+      "action": "open-feature",
+      "item": "A16",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开从一条当前记忆继续整理",
+      "action": "open-feature",
+      "item": "A17",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开调整记忆策略和回顾节奏",
+      "action": "open-feature",
+      "item": "A18",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "生成洞察与回顾",
+      "label": "生成洞察与回顾",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开生成并回看有证据的洞察",
+      "action": "open-feature",
+      "item": "C27",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "跟进工作与失败恢复",
+      "label": "跟进工作与失败恢复",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开查看正在做的工作和结果",
+      "action": "open-feature",
+      "item": "C28",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开检查技术步骤并恢复可重试工作",
+      "action": "open-feature",
+      "item": "A25",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "待办与日程建议",
+      "label": "待办与日程建议",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开记录和完成普通待办",
+      "action": "open-feature",
+      "item": "C29",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开审核日程建议并交给设备执行",
+      "action": "open-feature",
+      "item": "C30",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "按分类回看与查看时间",
+      "label": "按分类回看与查看时间",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开按内容类型查看资料库",
+      "action": "open-feature",
+      "item": "C19",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开按截图片段或应用相册回看",
+      "action": "open-feature",
+      "item": "A12",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开查看测得的应用活动时间",
+      "action": "open-feature",
+      "item": "A13",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开查看媒体播放观测",
+      "action": "open-feature",
+      "item": "A14",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开查看 Coding 会话接收与同步状态",
+      "action": "open-feature",
+      "item": "A15",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "备份、存储、索引与费用",
+      "label": "备份、存储、索引与费用",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开导入导出归档并找到完整备份",
+      "action": "open-feature",
+      "item": "C39",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开查看保留、容量和内容存储政策",
+      "action": "open-feature",
+      "item": "C40",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开核对模型用量和估算费用",
+      "action": "open-feature",
+      "item": "C41",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开把已有加密文件转为明文",
+      "action": "open-feature",
+      "item": "A31",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开查看运行状态与空间",
+      "action": "open-feature",
+      "item": "A32",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开维护估价并追查用量明细",
+      "action": "open-feature",
+      "item": "A33",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "模型、图片、文件与语音",
+      "label": "模型、图片、文件与语音",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开配置或检查模型连接（Provider）",
+      "action": "open-feature",
+      "item": "C31",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开检查或分配功能使用的模型",
+      "action": "open-feature",
+      "item": "C32",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开控制新图片识别与原图授权",
+      "action": "open-feature",
+      "item": "C36",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开查看文件或录音的内容提取和恢复",
+      "action": "open-feature",
+      "item": "C37",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开配置文件与语音处理",
+      "action": "open-feature",
+      "item": "C38",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开调整模型性能和协议细节",
+      "action": "open-feature",
+      "item": "A19",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开复制或删除模型预设",
+      "action": "open-feature",
+      "item": "A20",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开补处理或重算历史图片",
+      "action": "open-feature",
+      "item": "A21",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开配置文件规则、方案和处理服务",
+      "action": "open-feature",
+      "item": "A22",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开预览文件规则并重新处理已有原件",
+      "action": "open-feature",
+      "item": "A23",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开纠正转写并确认说话人",
+      "action": "open-feature",
+      "item": "A24",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开设置执行并发和查看等待名额",
+      "action": "open-feature",
+      "item": "A29",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开配置检索和外部连接的部署草稿",
+      "action": "open-feature",
+      "item": "A30",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "自动记忆与可信插件方案",
+      "label": "自动记忆与可信插件方案",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开暂停或立即停止自动记忆",
+      "action": "open-feature",
+      "item": "C33",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开核对和替换整套记忆方案",
+      "action": "open-feature",
+      "item": "C34",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开管理可信记忆插件",
+      "action": "open-feature",
+      "item": "C35",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "登录、语言与页面入口",
+      "label": "登录、语言与页面入口",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开登录并管理当前会话",
+      "action": "open-feature",
+      "item": "C01",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开找到常用页面和所属工具",
+      "action": "open-feature",
+      "item": "C02",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "帮助、诊断与 Agent 视角",
+      "label": "帮助、诊断与 Agent 视角",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开找到帮助、版本和维护方式",
+      "action": "open-feature",
+      "item": "C42",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开查看 Agent 当前能读取的上下文",
+      "action": "open-feature",
+      "item": "A26",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开查看已记录的实际模型输入和工具读取",
+      "action": "open-feature",
+      "item": "A27",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开核对实际注册的插件能力",
+      "action": "open-feature",
+      "item": "A28",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开查阅运行日志并导出支持包",
+      "action": "open-feature",
+      "item": "A34",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开设置诊断记录并查看部署生效值",
+      "action": "open-feature",
+      "item": "A35",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "打开",
+      "label": "打开切换界面语言",
+      "action": "open-feature",
+      "item": "A36",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "全部功能"
+    },
+    {
+      "level": "H2",
+      "text": "接入与记录"
+    },
+    {
+      "level": "H3",
+      "text": "随手记下文字"
+    },
+    {
+      "level": "H3",
+      "text": "上传已有图片或音频附件"
+    },
+    {
+      "level": "H3",
+      "text": "导入已有文档、文件夹和媒体"
+    },
+    {
+      "level": "H3",
+      "text": "查看并处理导入进度"
+    },
+    {
+      "level": "H3",
+      "text": "删除整次导入"
+    },
+    {
+      "level": "H3",
+      "text": "一次导入浏览器所选文件夹"
+    },
+    {
+      "level": "H3",
+      "text": "选择导入解析器和图片处理方案"
+    },
+    {
+      "level": "H3",
+      "text": "恢复被中断的本地上传"
+    },
+    {
+      "level": "H3",
+      "text": "选择要加入的来源"
+    },
+    {
+      "level": "H3",
+      "text": "管理来源接收与内容关系"
+    },
+    {
+      "level": "H3",
+      "text": "保存外部或 NAS 引用"
+    },
+    {
+      "level": "H3",
+      "text": "只读归档 Google 日历"
+    },
+    {
+      "level": "H3",
+      "text": "只读归档 Gmail 邮件"
+    },
+    {
+      "level": "H3",
+      "text": "从远程 MCP 选择资源导入"
+    },
+    {
+      "level": "H3",
+      "text": "连接飞书文档和日历"
+    },
+    {
+      "level": "H3",
+      "text": "归档厂商录音和转写"
+    },
+    {
+      "level": "H3",
+      "text": "查看来源版本和原位置"
+    },
+    {
+      "level": "H3",
+      "text": "从今天开始整理资料"
+    },
+    {
+      "level": "H3",
+      "text": "查看设备上报的采集与同步状态"
+    },
+    {
+      "level": "H3",
+      "text": "连接或重新授权设备"
+    },
+    {
+      "level": "H3",
+      "text": "检查和撤销已发出的连接权限"
+    },
+    {
+      "level": "H3",
+      "text": "让其他 Chatbot 使用 Mote MCP"
+    },
+    {
+      "level": "H2",
+      "text": "阅读与使用"
+    },
+    {
+      "level": "H3",
+      "text": "浏览已经发布的资料正文"
+    },
+    {
+      "level": "H3",
+      "text": "核对资料正文、来源与处理状态"
+    },
+    {
+      "level": "H3",
+      "text": "说明单份资料关系并提取记忆"
+    },
+    {
+      "level": "H3",
+      "text": "查看原始采集证据"
+    },
+    {
+      "level": "H3",
+      "text": "删除一条原始记录"
+    },
+    {
+      "level": "H3",
+      "text": "围绕归档资料提问"
+    },
+    {
+      "level": "H3",
+      "text": "回看和管理对话历史"
+    },
+    {
+      "level": "H3",
+      "text": "随问题提交图片"
+    },
+    {
+      "level": "H3",
+      "text": "浏览有证据的记忆"
+    },
+    {
+      "level": "H3",
+      "text": "纠正、删除或导出一条记忆"
+    },
+    {
+      "level": "H3",
+      "text": "手动提取记忆"
+    },
+    {
+      "level": "H3",
+      "text": "回答需要你澄清的问题"
+    },
+    {
+      "level": "H3",
+      "text": "核对记忆的历史和有效时间"
+    },
+    {
+      "level": "H3",
+      "text": "从一条当前记忆继续整理"
+    },
+    {
+      "level": "H3",
+      "text": "调整记忆策略和回顾节奏"
+    },
+    {
+      "level": "H3",
+      "text": "生成并回看有证据的洞察"
+    },
+    {
+      "level": "H2",
+      "text": "跟进与管理"
+    },
+    {
+      "level": "H3",
+      "text": "查看正在做的工作和结果"
+    },
+    {
+      "level": "H3",
+      "text": "检查技术步骤并恢复可重试工作"
+    },
+    {
+      "level": "H3",
+      "text": "记录和完成普通待办"
+    },
+    {
+      "level": "H3",
+      "text": "审核日程建议并交给设备执行"
+    },
+    {
+      "level": "H3",
+      "text": "按内容类型查看资料库"
+    },
+    {
+      "level": "H3",
+      "text": "按截图片段或应用相册回看"
+    },
+    {
+      "level": "H3",
+      "text": "查看测得的应用活动时间"
+    },
+    {
+      "level": "H3",
+      "text": "查看媒体播放观测"
+    },
+    {
+      "level": "H3",
+      "text": "查看 Coding 会话接收与同步状态"
+    },
+    {
+      "level": "H3",
+      "text": "导入导出归档并找到完整备份"
+    },
+    {
+      "level": "H3",
+      "text": "查看保留、容量和内容存储政策"
+    },
+    {
+      "level": "H3",
+      "text": "核对模型用量和估算费用"
+    },
+    {
+      "level": "H3",
+      "text": "把已有加密文件转为明文"
+    },
+    {
+      "level": "H3",
+      "text": "查看运行状态与空间"
+    },
+    {
+      "level": "H3",
+      "text": "维护估价并追查用量明细"
+    },
+    {
+      "level": "H2",
+      "text": "设置与维护"
+    },
+    {
+      "level": "H3",
+      "text": "配置或检查模型连接（Provider）"
+    },
+    {
+      "level": "H3",
+      "text": "检查或分配功能使用的模型"
+    },
+    {
+      "level": "H3",
+      "text": "控制新图片识别与原图授权"
+    },
+    {
+      "level": "H3",
+      "text": "查看文件或录音的内容提取和恢复"
+    },
+    {
+      "level": "H3",
+      "text": "配置文件与语音处理"
+    },
+    {
+      "level": "H3",
+      "text": "调整模型性能和协议细节"
+    },
+    {
+      "level": "H3",
+      "text": "复制或删除模型预设"
+    },
+    {
+      "level": "H3",
+      "text": "补处理或重算历史图片"
+    },
+    {
+      "level": "H3",
+      "text": "配置文件规则、方案和处理服务"
+    },
+    {
+      "level": "H3",
+      "text": "预览文件规则并重新处理已有原件"
+    },
+    {
+      "level": "H3",
+      "text": "纠正转写并确认说话人"
+    },
+    {
+      "level": "H3",
+      "text": "设置执行并发和查看等待名额"
+    },
+    {
+      "level": "H3",
+      "text": "配置检索和外部连接的部署草稿"
+    },
+    {
+      "level": "H3",
+      "text": "暂停或立即停止自动记忆"
+    },
+    {
+      "level": "H3",
+      "text": "核对和替换整套记忆方案"
+    },
+    {
+      "level": "H3",
+      "text": "管理可信记忆插件"
+    },
+    {
+      "level": "H3",
+      "text": "登录并管理当前会话"
+    },
+    {
+      "level": "H3",
+      "text": "找到常用页面和所属工具"
+    },
+    {
+      "level": "H3",
+      "text": "找到帮助、版本和维护方式"
+    },
+    {
+      "level": "H3",
+      "text": "查看 Agent 当前能读取的上下文"
+    },
+    {
+      "level": "H3",
+      "text": "查看已记录的实际模型输入和工具读取"
+    },
+    {
+      "level": "H3",
+      "text": "核对实际注册的插件能力"
+    },
+    {
+      "level": "H3",
+      "text": "查阅运行日志并导出支持包"
+    },
+    {
+      "level": "H3",
+      "text": "设置诊断记录并查看部署生效值"
+    },
+    {
+      "level": "H3",
+      "text": "切换界面语言"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

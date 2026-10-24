@@ -1,0 +1,389 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/providers",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n设置\n\n调整服务与资料管理方式，或管理当前登录。\n\n设置分类\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观\n模型连接\n\n先配置连接，再分配给提问、记忆与内容处理。\n\n当前连接\n个人示例连接\n新建连接\n个人连接。测试使用当前草稿，保存后才会用于新任务。\n预设名称\n提供商类型\n兼容服务\nOpenAI\nAnthropic\n本机服务\nCodex 管理\n协议\nOpenAI 兼容\nAnthropic Messages\nBase URL\n默认模型 / 手动模型 ID\n刷新可用模型目录\n\n目录：demo-text · demo-vision\n\n目录可见不代表模型支持工具调用。实际兼容性需要真实环境验证。\n\n凭据与高级参数\nAPI Key 操作\n保留已有\n替换\n清除\n新 API Key（仅示例）\n保存后清空输入；已保存值不回显。\n请求头操作\n保留已有\n替换 JSON\n清除\n新请求头 JSON\n高级参数操作\n保留已有\n替换 JSON\n清除\n新高级参数 JSON\n地址变更后仍允许复用已有凭据\n能力、速度与超时\n推理强度\n默认\n低\n中\n高\n服务速度\nStandard\nFast（需模型支持）\n单次请求超时（秒）\nAgent 总执行超时（秒）\n排队等待时间不计入执行超时。\n输出 Token 预算\n预算不是固定回答长度。Codex 管理的请求与输出选项不可在这里更改。\n允许无认证的 loopback 本机服务\n保存并应用\n测试当前草稿\n恢复已保存值\n当前生效值与预设管理\n已保存版本\n1\n默认模型\ndemo-text\nBase URL\nhttps://example.invalid/v1\n凭据 / 请求头 / 高级参数\n未配置 / 未配置 / 未配置\n复制为独立预设删除此预设预览版本冲突\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "compact-settings",
+      "type": "select-one",
+      "text": "账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观",
+      "label": "设置分类\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观",
+      "value": "models",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs-provider-choice-id",
+      "type": "select-one",
+      "text": "个人示例连接",
+      "label": "当前连接\n个人示例连接",
+      "value": "personal-demo",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "新建连接",
+      "label": "新建连接",
+      "action": "cs-provider-new",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-provider-name",
+      "type": "text",
+      "text": "",
+      "label": "预设名称",
+      "value": "个人示例连接",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs-provider-type",
+      "type": "select-one",
+      "text": "兼容服务\nOpenAI\nAnthropic\n本机服务\nCodex 管理",
+      "label": "提供商类型\n兼容服务\nOpenAI\nAnthropic\n本机服务\nCodex 管理",
+      "value": "compatible",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs-provider-protocol",
+      "type": "select-one",
+      "text": "OpenAI 兼容\nAnthropic Messages",
+      "label": "协议\nOpenAI 兼容\nAnthropic Messages",
+      "value": "openai",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-provider-url",
+      "type": "url",
+      "text": "",
+      "label": "Base URL",
+      "value": "https://example.invalid/v1",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-provider-model",
+      "type": "text",
+      "text": "",
+      "label": "默认模型 / 手动模型 ID",
+      "value": "demo-text",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "刷新可用模型目录",
+      "label": "刷新可用模型目录",
+      "action": "cs-provider-catalog",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "凭据与高级参数",
+      "label": "凭据与高级参数",
+      "expanded": true
+    },
+    {
+      "tag": "select",
+      "id": "cs-provider-keyMode",
+      "type": "select-one",
+      "text": "保留已有\n替换\n清除",
+      "label": "API Key 操作\n保留已有\n替换\n清除",
+      "value": "keep",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-provider-key",
+      "type": "password",
+      "text": "",
+      "label": "新 API Key（仅示例）\n保存后清空输入；已保存值不回显。",
+      "value": "[redacted]",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs-provider-headerMode",
+      "type": "select-one",
+      "text": "保留已有\n替换 JSON\n清除",
+      "label": "请求头操作\n保留已有\n替换 JSON\n清除",
+      "value": "keep",
+      "disabled": false
+    },
+    {
+      "tag": "textarea",
+      "id": "cs-provider-headers",
+      "type": "textarea",
+      "text": "",
+      "label": "新请求头 JSON",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs-provider-paramMode",
+      "type": "select-one",
+      "text": "保留已有\n替换 JSON\n清除",
+      "label": "高级参数操作\n保留已有\n替换 JSON\n清除",
+      "value": "keep",
+      "disabled": false
+    },
+    {
+      "tag": "textarea",
+      "id": "cs-provider-params",
+      "type": "textarea",
+      "text": "",
+      "label": "新高级参数 JSON",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-provider-reuse",
+      "type": "checkbox",
+      "text": "",
+      "label": "地址变更后仍允许复用已有凭据",
+      "value": "on",
+      "checked": false,
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "能力、速度与超时",
+      "label": "能力、速度与超时",
+      "expanded": true
+    },
+    {
+      "tag": "select",
+      "id": "cs-provider-reasoning",
+      "type": "select-one",
+      "text": "默认\n低\n中\n高",
+      "label": "推理强度\n默认\n低\n中\n高",
+      "value": "default",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "cs-provider-speed",
+      "type": "select-one",
+      "text": "Standard\nFast（需模型支持）",
+      "label": "服务速度\nStandard\nFast（需模型支持）",
+      "value": "standard",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-provider-requestTimeout",
+      "type": "number",
+      "text": "",
+      "label": "单次请求超时（秒）",
+      "value": "120",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-provider-totalTimeout",
+      "type": "number",
+      "text": "",
+      "label": "Agent 总执行超时（秒）\n排队等待时间不计入执行超时。",
+      "value": "600",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-provider-output",
+      "type": "number",
+      "text": "",
+      "label": "输出 Token 预算\n预算不是固定回答长度。Codex 管理的请求与输出选项不可在这里更改。",
+      "value": "8192",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-provider-local",
+      "type": "checkbox",
+      "text": "",
+      "label": "允许无认证的 loopback 本机服务",
+      "value": "on",
+      "checked": false,
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存并应用",
+      "label": "保存并应用",
+      "action": "cs-provider-save",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "测试当前草稿",
+      "label": "测试当前草稿",
+      "action": "cs-provider-test",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "恢复已保存值",
+      "label": "恢复已保存值",
+      "action": "cs-provider-restore",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "当前生效值与预设管理",
+      "label": "当前生效值与预设管理",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "复制为独立预设",
+      "label": "复制为独立预设",
+      "action": "cs-provider-copy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "删除此预设",
+      "label": "删除此预设",
+      "action": "cs-provider-delete",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "预览版本冲突",
+      "label": "预览版本冲突",
+      "action": "cs-provider-conflict",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设置"
+    },
+    {
+      "level": "H2",
+      "text": "模型连接"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

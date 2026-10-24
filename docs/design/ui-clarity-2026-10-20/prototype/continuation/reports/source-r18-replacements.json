@@ -1,0 +1,214 @@
+{
+  "base": "dist/r17.html",
+  "base_sha256": "290534ad7b054e1349ca836e13e7c30d3913860964479517052c8523031d7c6c",
+  "target": "work/source-r18.html",
+  "target_sha256": "17a9b7cd74e0f8c61729f0b9da9a4fb18f59430cc49a808a3f28dca5c645c69e",
+  "apply": "sequential; each old must match once",
+  "replacements": [
+    {
+      "purpose": "Independent defaults; preserve the initial state and merge anchor",
+      "old": "const initialDefaults=JSON.parse(JSON.stringify(state));",
+      "new": "Object.assign(state,{deviceFilter:'all',captureDateFilter:'all',snippetGrouping:'session',sourceContextDrafts:{},sendPaused:false});\nconst initialDefaults=JSON.parse(JSON.stringify(state));"
+    },
+    {
+      "purpose": "Explicit synthetic capture metadata on the existing m6 record; no extra material or reassigned source",
+      "old": "{id:'m6',sourceId:'screen',title:",
+      "new": "{id:'m6',sourceId:'screen',capturedAt:'2026-10-18T11:08:00',captureSessionId:'screen-session-1',captureApplication:'browser',title:"
+    },
+    {
+      "purpose": "One stable source identity for the existing authorization task",
+      "old": "function sourceMaterialCount(id){",
+      "new": "const sourceSyncTask={id:'source-lark-sync',sourceId:'lark'};\nfunction sourceTaskTitle(){return state.sources.find(s=>s.id===sourceSyncTask.sourceId)?.title||sourceChoices.find(s=>s.id===sourceSyncTask.sourceId)?.title||sourceSyncTask.sourceId;}\nfunction sourceMaterialCount(id){"
+    },
+    {
+      "purpose": "Expose stable task/source identity on the existing activity card",
+      "old": "'<div class=\"task-row\"><span class=\"task-state\">'+icon(state.taskRetried?'check':'sources')",
+      "new": "'<div class=\"task-row\" data-task-id=\"'+sourceSyncTask.id+'\" data-task-source-id=\"'+sourceSyncTask.sourceId+'\"><span class=\"task-state\">'+icon(state.taskRetried?'check':'sources')"
+    },
+    {
+      "purpose": "Show the actual source name and saved material count in activity",
+      "old": "'</div><p>'+(state.taskRetried?'授权恢复已完成。来源已恢复同步，后续内容会继续保存。'",
+      "new": "'</div><p>当前来源：'+sourceUserText(sourceTaskTitle())+'</p><p data-task-source-count>'+sourceMaterialCount(sourceSyncTask.sourceId)+' 份已保存资料</p><p>'+(state.taskRetried?'授权恢复已完成。来源已恢复同步，后续内容会继续保存。'"
+    },
+    {
+      "purpose": "Keep both pre-authorization and recovery activity links inside their source",
+      "old": "button('重新授权并继续','authorize-task','','primary')+goButton('查看已保存资料','library','text'):goButton('查看资料','library','text')",
+      "new": "button('重新授权并继续','authorize-task','','primary')+button('查看已保存资料','browse-source','data-id=\"'+sourceSyncTask.sourceId+'\"','text'):button('查看资料','browse-source','data-id=\"'+sourceSyncTask.sourceId+'\"','text')"
+    },
+    {
+      "purpose": "Derive task detail from the same stable source identity",
+      "old": "function taskDetailPage(){\n return heading('工作详情','飞书来源同步 · 查看输入、状态与恢复方式。'",
+      "new": "function taskDetailPage(){\n const sourceId=sourceSyncTask.sourceId,count=sourceMaterialCount(sourceId);\n return heading('工作详情','来源同步 · 查看输入、状态与恢复方式。'"
+    },
+    {
+      "purpose": "Protect the current source name while retaining task structure",
+      "old": "'<div class=\"grid two\"><section class=\"card\"><div class=\"flex-spread\"><h2>飞书文档与日历</h2>'+tag(state.taskRetried?'授权已恢复'",
+      "new": "'<div class=\"grid two\" data-task-source-id=\"'+sourceId+'\"><section class=\"card\"><div class=\"flex-spread\"><h2 data-user-content>'+esc(sourceTaskTitle())+'</h2>'+tag(state.taskRetried?'授权已恢复'"
+    },
+    {
+      "purpose": "Replace fabricated archived count with the actual material collection",
+      "old": "'</div><p>最近一次读取：今天 09:20 · 已归档的 12 份资料仍可阅读。</p><div class=\"divider\"></div><h3>当前结果</h3><p>'",
+      "new": "'</div><p>最近一次读取：今天 09:20</p><p data-task-source-count>'+count+' 份已保存资料</p>'+(count?'<p>这些资料保留在此来源范围内，可以继续阅读。</p>':'<p>此来源尚无已保存资料。其他来源的内容保持各自范围。</p>')+'<div class=\"divider\"></div><h3>当前结果</h3><p>'"
+    },
+    {
+      "purpose": "Task detail view and settings both use the same source",
+      "old": "goButton('查看来源设置','setup/lark','text')+goButton('查看已保存资料','library','text')",
+      "new": "goButton('查看来源设置',sourceSetupRoute(sourceId),'text')+button('查看已保存资料','browse-source','data-id=\"'+sourceId+'\"','text')"
+    },
+    {
+      "purpose": "Keep authorization and the adjoining source browse action aligned",
+      "old": "if(action==='authorize-task'){state.sourceReturn=state.page;return go('setup/lark');}",
+      "new": "if(action==='authorize-task'){state.sourceReturn=state.page;return go(sourceSetupRoute(sourceSyncTask.sourceId));}"
+    },
+    {
+      "purpose": "Device filter uses actual record/device identities, not source-name heuristics",
+      "old": "function filteredMaterials(){",
+      "new": "function materialDeviceId(m){return m.deviceId||({Mac:'mac',Android:'android','网页':'web','中央':'central','工作台':'central'})[m.device]||m.device||'unknown';}\nfunction materialDeviceLabel(id){return ({mac:'Mac',android:'Android',web:'网页',central:'中央',unknown:'设备未注明'})[id]||state.devices.find(d=>d.id===id)?.name||state.materials.find(m=>materialDeviceId(m)===id)?.device||id;}\nfunction materialDeviceFilter(){\n const ids=[...new Set([...state.materials.map(materialDeviceId),...state.devices.map(d=>d.id)])];\n return '<select id=\"device-filter\" class=\"field-input\" aria-label=\"按设备筛选\"><option value=\"all\">全部设备</option>'+ids.map(id=>'<option '+(!['mac','android','web','central','unknown'].includes(id)?'data-user-content ':'')+'value=\"'+esc(id)+'\" '+(state.deviceFilter===id?'selected':'')+'>'+esc(materialDeviceLabel(id))+'</option>').join('')+'</select>';\n}\nfunction captureDate(m){return (m.capturedAt||materialSavedDate(m)).slice(0,10);}\nfunction filteredMaterials(){"
+    },
+    {
+      "purpose": "Apply device scope consistently to all material and raw views",
+      "old": "m=>(!state.sourceScopeId||m.sourceId===state.sourceScopeId)&&(state.dateFilter==='全部时间'",
+      "new": "m=>(!state.sourceScopeId||m.sourceId===state.sourceScopeId)&&(state.deviceFilter==='all'||materialDeviceId(m)===state.deviceFilter)&&(state.filter!=='snippets'||state.captureDateFilter==='all'||captureDate(m)===state.captureDateFilter)&&(state.dateFilter==='全部时间'"
+    },
+    {
+      "purpose": "Include device and capture date in visible filter scope",
+      "old": "state.dateFilter!=='全部时间'?esc(state.dateFilter):''].filter(Boolean).join(' · ');}",
+      "new": "state.dateFilter!=='全部时间'?esc(state.dateFilter):'',state.deviceFilter!=='all'?'<span>'+esc(materialDeviceLabel(state.deviceFilter))+'</span>':'',state.filter==='snippets'&&state.captureDateFilter!=='all'?'采集日期：'+sourceUserText(state.captureDateFilter):''].filter(Boolean).join(' · ');}"
+    },
+    {
+      "purpose": "Compact filter summary preserves the new scopes",
+      "old": "state.dateFilter!=='全部时间'?state.dateFilter:''].filter(Boolean).join(' · ');}",
+      "new": "state.dateFilter!=='全部时间'?state.dateFilter:'',state.deviceFilter!=='all'?materialDeviceLabel(state.deviceFilter):'',state.filter==='snippets'&&state.captureDateFilter!=='all'?state.captureDateFilter:''].filter(Boolean).join(' · ');}"
+    },
+    {
+      "purpose": "Show empty/filter feedback whenever the new controls narrow results",
+      "old": "const rows=filteredMaterials(),filtering=!!state.sourceScopeId||!!state.search||state.sourceFilter!=='all'||state.typeFilter!=='all'||state.dateFilter!=='全部时间',desc=",
+      "new": "const rows=filteredMaterials(),filtering=!!state.sourceScopeId||!!state.search||state.sourceFilter!=='all'||state.typeFilter!=='all'||state.dateFilter!=='全部时间'||state.deviceFilter!=='all'||state.filter==='snippets'&&state.captureDateFilter!=='all',desc="
+    },
+    {
+      "purpose": "Explain the actual grouping and filter axes",
+      "old": "snippets:'按时间和应用回看屏幕中的片段。'",
+      "new": "snippets:'按采集日期、设备、连续会话或应用相册回看屏幕片段。'"
+    },
+    {
+      "purpose": "Add a device control beside the existing source and type controls",
+      "old": "'+sourceFilterOptions()+'</select><select id=\"type-filter\"",
+      "new": "'+sourceFilterOptions()+'</select>'+materialDeviceFilter()+'<select id=\"type-filter\""
+    },
+    {
+      "purpose": "Source-empty advice covers the active device filter",
+      "old": "可以清除关键词、类型或时间筛选。",
+      "new": "可以清除关键词、设备、类型或时间筛选。"
+    },
+    {
+      "purpose": "Group existing screenshot evidence by explicit session or app plus date and device",
+      "old": "function libraryView(rows,filtering){",
+      "new": "function captureApplicationLabel(m){return ({browser:'浏览器',editor:'编辑器',messaging:'即时通讯'})[m.captureApplication]||'应用未注明';}\nfunction captureTime(m){return m.capturedAt?m.capturedAt.slice(11,16):(m.date.match(/\\d{1,2}:\\d{2}/)?.[0]||'');}\nfunction captureRecordCard(m,kind='raw'){\n return '<article class=\"card section\" data-capture-id=\"'+esc(m.id)+'\"><div class=\"flex-spread\"><h3 data-user-content>'+esc(m.title)+'</h3>'+tag(kind==='raw'?'原始记录':'屏幕片段','purple')+'</div><p><time datetime=\"'+esc(m.capturedAt||captureDate(m))+'\">'+esc(captureDate(m)+' '+captureTime(m))+'</time> · <span>'+esc(materialDeviceLabel(materialDeviceId(m)))+'</span> · <span>'+esc(captureApplicationLabel(m))+'</span></p><div class=\"evidence-box section\"><strong>采集到的原始文字</strong><p data-user-content>'+esc(m.body)+'</p></div><div class=\"actions card-foot\">'+button('打开原始内容','original','data-id=\"'+m.id+'\"','primary')+button('阅读整理后的资料','open-material','data-id=\"'+m.id+'\"','text')+button('删除这条原始记录','delete-record','data-id=\"'+m.id+'\"','text')+'</div></article>';\n}\nfunction snippetLibraryView(records){\n const dates=[...new Set(state.materials.filter(m=>m.type==='screen'&&!state.deletedRecords.includes(m.id)).map(captureDate))].sort().reverse(),groups=new Map();\n records.forEach(m=>{const key=[captureDate(m),materialDeviceId(m),state.snippetGrouping==='application'?(m.captureApplication||'unknown'):(m.captureSessionId||m.id)].join('|');if(!groups.has(key))groups.set(key,[]);groups.get(key).push(m);});\n const controls='<div class=\"grid two section\"><label class=\"field\"><span>采集日期</span><select id=\"capture-date-filter\" class=\"field-input\"><option value=\"all\">全部采集日期</option>'+dates.map(date=>'<option value=\"'+esc(date)+'\" '+(state.captureDateFilter===date?'selected':'')+'>'+esc(date)+'</option>').join('')+'</select></label><label class=\"field\"><span>片段分组</span><select id=\"snippet-grouping\" class=\"field-input\"><option value=\"session\" '+(state.snippetGrouping==='session'?'selected':'')+'>连续会话</option><option value=\"application\" '+(state.snippetGrouping==='application'?'selected':'')+'>应用相册</option></select></label></div>';\n const header='<div class=\"section-head\"><p role=\"status\" data-snippet-count>'+groups.size+' 组 · '+records.length+' 条片段</p>'+goButton('调整记录范围','setup/screen','text')+'</div>';\n return controls+header+(records.length?[...groups].map(([key,items],index)=>{const first=items[0],times=items.map(captureTime).filter(Boolean).sort(),range=times[0]===times[times.length-1]?times[0]:times[0]+'–'+times[times.length-1];return '<section class=\"card section\" data-capture-group=\"'+esc(key)+'\" data-grouping=\"'+state.snippetGrouping+'\"><div class=\"flex-spread\"><h3><span>'+(state.snippetGrouping==='session'?'连续会话 '+(index+1):'应用相册')+'</span> · <span>'+esc(captureApplicationLabel(first))+'</span></h3>'+tag(items.length+' 条片段','purple')+'</div><p><time>'+esc(captureDate(first))+'</time> · <span>'+esc(materialDeviceLabel(materialDeviceId(first)))+'</span> · <span>'+esc(range)+'</span></p><p class=\"small muted\">'+(state.snippetGrouping==='session'?'同一设备上连续会话内的记录按时间排列。':'同一日期、设备与应用的记录放在一个相册中。')+'</p>'+items.map(m=>captureRecordCard(m,'snippet')).join('')+'</section>';}).join(''):'<div class=\"empty\"><h2>这个范围没有截图片段</h2><p>调整采集日期、设备或其他筛选后再查看。</p>'+button('清除筛选','clear-filters','','subtle')+'</div>');\n}\nfunction libraryView(rows,filtering){"
+    },
+    {
+      "purpose": "Raw records share real metadata and evidence links without a hardcoded list date/app",
+      "old": " if(['raw','snippets'].includes(state.filter)){\n  const records=rows.filter(m=>m.type==='screen'&&!state.deletedRecords.includes(m.id));\n  return '<div class=\"section-head\"><p>'+records.length+' 条记录 · 浏览器 · 10月18日</p>'+goButton('调整记录范围','setup/screen','text')+'</div>'+(records.length?records.map(m=>'<div class=\"card\"><div class=\"flex-spread\"><h3>'+esc(m.title)+'</h3>'+tag(state.filter==='raw'?'原始记录':'屏幕片段','purple')+'</div><p>'+esc(m.date)+' · '+esc(m.device)+' · 浏览器</p><div class=\"evidence-box section\"><strong>浏览器页面文字</strong><p>'+esc(m.body)+'</p></div><div class=\"actions card-foot\">'+button('打开原始内容','original','data-id=\"'+m.id+'\"','primary')+goButton('阅读整理后的资料','material/'+m.id,'text')+button('删除这条原始记录','delete-record','data-id=\"'+m.id+'\"','text')+'</div></div>').join(''):'<div class=\"empty\"><h2>这个范围没有原始记录</h2><p>可更改筛选，或连接屏幕记录来源。</p></div>');\n }",
+      "new": "  if(['raw','snippets'].includes(state.filter)){\n   const records=rows.filter(m=>m.type==='screen'&&!state.deletedRecords.includes(m.id));\n   if(state.filter==='snippets')return snippetLibraryView(records);\n   return '<div class=\"section-head\"><p role=\"status\">'+records.length+' 条记录</p>'+goButton('调整记录范围','setup/screen','text')+'</div>'+(records.length?records.map(m=>captureRecordCard(m)).join(''):'<div class=\"empty\"><h2>这个范围没有原始记录</h2><p>可更改设备、来源或时间筛选，或连接屏幕记录来源。</p>'+button('清除筛选','clear-filters','','subtle')+'</div>');\n  }"
+    },
+    {
+      "purpose": "Original evidence displays the exact capture metadata and protects its content",
+      "old": "body='<div class=\"evidence-box\"><strong>'+esc(state.original?.title||'原始资料')+'</strong><p>'+esc(state.original?.origin||'示例来源')+'</p><p>'+esc(state.original?.body||'')+'</p></div>';}",
+      "new": "body='<div class=\"evidence-box\"><strong data-user-content>'+esc(state.original?.title||'原始资料')+'</strong><p data-user-content>'+esc(state.original?.origin||'示例来源')+'</p>'+(state.original?.type==='screen'?'<p><span>采集时间：</span><time>'+esc(captureDate(state.original)+' '+captureTime(state.original))+'</time></p><p><span>设备：</span><span>'+esc(materialDeviceLabel(materialDeviceId(state.original)))+'</span> · <span>'+esc(captureApplicationLabel(state.original))+'</span></p>':'')+'<p data-user-content>'+esc(state.original?.body||'')+'</p></div>';}"
+    },
+    {
+      "purpose": "Independent source-level relationship editor with saved context and resumable drafts",
+      "old": "function connectedSourceFields(id,choice,cfg){",
+      "new": "const sourceRelationOptions=[['','不声明'],['owner','我的表达或经历'],['third_party','第三方内容'],['mixed','混合内容'],['unknown','归属未知']];\nfunction savedSourceContext(id){const cfg=state.sourceConfigs?.[id]||{};return {ownerRelation:cfg.ownerRelation||'',contextDescription:cfg.contextDescription||''};}\nfunction sourceContextDraft(id){return state.sourceContextDrafts[id]||savedSourceContext(id);}\nfunction sourceContextDirty(id){return JSON.stringify(sourceContextDraft(id))!==JSON.stringify(savedSourceContext(id));}\nfunction sourceRelationshipFields(id){\n const saved=savedSourceContext(id),draft=sourceContextDraft(id),dirty=sourceContextDirty(id);\n return '<section class=\"card section\" data-source-context-id=\"'+esc(id)+'\"><h2>内容与你的关系</h2><p class=\"small muted\">声明帮助模型区分你的表达、第三方内容和混合引用；归属未知也能查询和整理。</p><p class=\"small muted\">来源声明应用于已有和新资料；单份资料的声明优先。修改说明不会自动重新转写或重算历史记忆。</p><div class=\"evidence-box section\" data-source-context-saved><h3>已保存的来源关系</h3><p>'+esc(sourceRelationOptions.find(([value])=>value===saved.ownerRelation)?.[1]||'不声明')+'</p>'+(saved.contextDescription?'<p data-user-content>'+esc(saved.contextDescription)+'</p>':'<p class=\"small muted\">尚未填写来源背景说明。</p>')+'</div><label class=\"field section\"><span>内容关系</span><select id=\"source-relation\" class=\"field-input\">'+sourceRelationOptions.map(([value,label])=>'<option value=\"'+value+'\" '+(draft.ownerRelation===value?'selected':'')+'>'+label+'</option>').join('')+'</select></label><label class=\"field\"><span>来源背景说明（选填）</span><textarea id=\"source-context-description\" class=\"field-input\" rows=\"3\" data-user-content>'+esc(draft.contextDescription)+'</textarea><small>可说明格式、时间、作者，以及哪些内容属于你。</small></label><p role=\"status\" data-source-context-status>'+(dirty?'关系修改尚未保存，离开后可以回来继续。':'当前关系与已保存设置一致。')+'</p><div class=\"actions card-foot\">'+button('保存内容关系','save-source-context','data-id=\"'+esc(id)+'\" '+(dirty?'':'disabled'),'primary')+button('放弃关系修改','discard-source-context','data-id=\"'+esc(id)+'\" '+(dirty?'':'disabled'),'text')+'</div></section>';\n}\nfunction updateSourceContextDraft(target){\n if(!['source-relation','source-context-description'].includes(target.id))return;\n const panel=target.closest('[data-source-context-id]');if(!panel)return;\n const id=panel.dataset.sourceContextId;\n state.sourceContextDrafts[id]={ownerRelation:panel.querySelector('#source-relation').value,contextDescription:panel.querySelector('#source-context-description').value};\n const dirty=sourceContextDirty(id),label=dirty?'关系修改尚未保存，离开后可以回来继续。':'当前关系与已保存设置一致。';\n panel.querySelector('[data-source-context-status]').textContent=state.language==='en'?translateUI(label):label;\n panel.querySelectorAll('[data-action=\"save-source-context\"],[data-action=\"discard-source-context\"]').forEach(button=>button.disabled=!dirty);\n persist();\n}\nfunction connectedSourceFields(id,choice,cfg){"
+    },
+    {
+      "purpose": "Expose the relation editor for each exact connected source",
+      "old": "+(kind==='folder'&&existing?'<div class=\"section\">'+goButton('连接另一个文件夹','setup/folder/new','text')+'</div>':'')+'</div>';",
+      "new": "+(kind==='folder'&&existing?'<div class=\"section\">'+goButton('连接另一个文件夹','setup/folder/new','text')+'</div>':'')+(existing?sourceRelationshipFields(id):'')+'</div>';"
+    },
+    {
+      "purpose": "New folder setup describes connection policy; existing folders describe recovery policy",
+      "old": "<span>持续同步后续变化<small>这是恢复接收后的策略。暂停时不接收新变化，已保存内容仍保留。</small>",
+      "new": "<span>持续同步后续变化<small>'+(creating?'这是连接后的同步方式。':'这是恢复接收后的策略。')+'暂停时不接收新变化，已保存内容仍保留。</small>"
+    },
+    {
+      "purpose": "Save/discard context independently of source intake, authorization and screen scope",
+      "old": " if(action==='discard-screen-draft')",
+      "new": " if(action==='save-source-context'){\n  const id=el.dataset.id,draft=sourceContextDraft(id);if(!state.sources.some(s=>s.id===id))return;\n  state.sourceConfigs={...state.sourceConfigs,[id]:{...(state.sourceConfigs?.[id]||{}),...draft}};delete state.sourceContextDrafts[id];persist();return notify('这个来源的内容关系已保存。');\n }\n if(action==='discard-source-context'){delete state.sourceContextDrafts[el.dataset.id];persist();return render();}\n if(action==='discard-screen-draft')"
+    },
+    {
+      "purpose": "Persist only source-context inputs without rerendering or losing cursor/focus",
+      "old": "document.addEventListener('input',e=>{if(state.page==='setup/folder/new'",
+      "new": "document.addEventListener('input',e=>updateSourceContextDraft(e.target));\ndocument.addEventListener('input',e=>{if(state.page==='setup/folder/new'"
+    },
+    {
+      "purpose": "Separate global send scope from screen capture and per-source intake",
+      "old": "function devicesPage(){",
+      "new": "function sendPauseStatus(showActive=false){\n if(!state.sendPaused&&!showActive)return '';\n return '<section class=\"notice '+(state.sendPaused?'warn':'good')+' section\" data-send-status=\"'+(state.sendPaused?'paused':'active')+'\"><div><strong>'+(state.sendPaused?'本机继续保留，向中央发送已暂停':'向中央发送已开启')+'</strong><p>'+(state.sendPaused?'各设备继续按本机设置保留内容，待发送内容会在恢复后继续同步。':'允许发送的本机内容会按各来源的设置同步到中央。')+'</p><p>屏幕采集、单个来源接收、向中央发送分别控制，状态独立保留。</p><div class=\"actions\">'+button(state.sendPaused?'恢复全部发送':'暂停全部发送',state.sendPaused?'resume-all':'pause-all','','subtle')+'</div></div></section>';\n}\nfunction devicesPage(){"
+    },
+    {
+      "purpose": "Persistently expose paused transport and recovery in sources",
+      "old": "button(icon('plus')+' 连接来源','source-add','','primary'))+'<div class=\"notice\">",
+      "new": "button(icon('plus')+' 连接来源','source-add','','primary'))+sendPauseStatus()+'<div class=\"notice\">"
+    },
+    {
+      "purpose": "Persistently expose paused transport and recovery in devices",
+      "old": "goButton('连接设备','setup/device','primary'))+'<div class=\"notice\"><div>工作台是资料汇集的位置。",
+      "new": "goButton('连接设备','setup/device','primary'))+sendPauseStatus()+'<div class=\"notice\"><div>工作台是资料汇集的位置。"
+    },
+    {
+      "purpose": "Device sync state reflects transport pause without changing capture status or mock pending count",
+      "old": "<h3>同步状态</h3><p>待发送 '+d.pending+' 项 · 最近接收刚刚<br>资料正文可阅读，记忆整理单独进行。</p>",
+      "new": "<h3>同步状态</h3><p>'+(state.sendPaused?'向中央发送已暂停':'向中央发送已开启')+'</p><p>待发送 '+d.pending+' 项</p><p>资料正文可阅读，记忆整理单独进行。</p>"
+    },
+    {
+      "purpose": "Privacy displays current send state and the appropriate pause/resume action",
+      "old": "+button('暂停全部发送','pause-all','','subtle')+'</div>';",
+      "new": "+'</div>'+sendPauseStatus(true);"
+    },
+    {
+      "purpose": "Replace generic-save with confirmed, persistent send pause and explicit recovery",
+      "old": " if(action==='pause-all')return showInfo('暂停全部发送','各端继续保留本机内容，恢复发送后再同步。',button('暂停发送演示','generic-save','','primary'));",
+      "new": " if(action==='pause-all')return showInfo('暂停全部发送','各端继续保留本机内容，恢复发送后再同步。','<p>屏幕采集、单个来源接收、向中央发送分别控制，状态独立保留。</p><div class=\"form-actions\">'+button('确认暂停全部发送','confirm-pause-all','','primary')+button('取消','close-modal','','subtle')+'</div>');\n if(action==='confirm-pause-all'){state.sendPaused=true;state.modal='';persist();return notify('向中央发送已暂停，本机内容继续保留。');}\n if(action==='resume-all'){state.sendPaused=false;persist();return notify('向中央发送已恢复。屏幕采集和各来源接收保持原有状态。');}"
+    },
+    {
+      "purpose": "Clear new scopes through clear-filters",
+      "old": "if(action==='clear-filters'){",
+      "new": "if(action==='clear-filters'){state.deviceFilter='all';state.captureDateFilter='all';"
+    },
+    {
+      "purpose": "Clear new scopes through browse-source",
+      "old": "if(action==='browse-source'){",
+      "new": "if(action==='browse-source'){state.deviceFilter='all';state.captureDateFilter='all';"
+    },
+    {
+      "purpose": "Clear new scopes through clear-source-scope",
+      "old": "if(action==='clear-source-scope'){",
+      "new": "if(action==='clear-source-scope'){state.deviceFilter='all';state.captureDateFilter='all';"
+    },
+    {
+      "purpose": "Clear new scopes through clear-source-filters",
+      "old": "if(action==='clear-source-filters'){",
+      "new": "if(action==='clear-source-filters'){state.deviceFilter='all';state.captureDateFilter='all';"
+    },
+    {
+      "purpose": "Collection switch resets device and capture-date scope consistently",
+      "old": "state.sourceScopeId='';return go('library/'+f);",
+      "new": "state.sourceScopeId='';state.deviceFilter='all';state.captureDateFilter='all';return go('library/'+f);"
+    },
+    {
+      "purpose": "Wire the three actual filter/group controls using stable values",
+      "old": "if(id==='source-filter'){state.sourceScopeId=",
+      "new": "if(id==='device-filter'){state.deviceFilter=v;persist();render();}if(id==='capture-date-filter'){state.captureDateFilter=v;persist();render();}if(id==='snippet-grouping'){state.snippetGrouping=v;persist();render();}if(id==='source-filter'){state.sourceScopeId="
+    },
+    {
+      "purpose": "Static English labels for source, device, capture grouping and send scope",
+      "old": "function translateUI(text,depth=0){",
+      "new": "Object.assign(englishLabels,{\"来源同步 · 查看输入、状态与恢复方式。\":\"Source sync · Review inputs, status, and recovery options.\",\"最近一次读取：今天 09:20\":\"Last read: Today at 09:20\",\"这些资料保留在此来源范围内，可以继续阅读。\":\"These materials remain readable within this source.\",\"此来源尚无已保存资料。其他来源的内容保持各自范围。\":\"This source has no saved materials yet. Other sources retain their own material scopes.\",\"按设备筛选\":\"Filter by device\",\"全部设备\":\"All devices\",\"设备未注明\":\"Device unspecified\",\"网页\":\"Web\",\"中央\":\"Central\",\"采集日期：\":\"Capture date: \",\"采集时间：\":\"Captured at: \",\"设备：\":\"Device: \",\"按采集日期、设备、连续会话或应用相册回看屏幕片段。\":\"Review screen snippets by capture date, device, continuous session, or app album.\",\"可以清除关键词、设备、类型或时间筛选。\":\"Clear the keyword, device, type, or time filters.\",\"应用未注明\":\"App unspecified\",\"采集到的原始文字\":\"Original captured text\",\"采集日期\":\"Capture date\",\"全部采集日期\":\"All capture dates\",\"片段分组\":\"Group snippets\",\"连续会话\":\"Continuous sessions\",\"应用相册\":\"App albums\",\"同一设备上连续会话内的记录按时间排列。\":\"Records from a continuous session on one device are ordered by time.\",\"同一日期、设备与应用的记录放在一个相册中。\":\"Records from the same date, device, and app appear in one album.\",\"这个范围没有截图片段\":\"No screenshot snippets in this scope\",\"调整采集日期、设备或其他筛选后再查看。\":\"Adjust the capture date, device, or other filters to see snippets.\",\"可更改设备、来源或时间筛选，或连接屏幕记录来源。\":\"Change the device, source, or time filters, or connect a screen recording source.\",\"不声明\":\"No declaration\",\"我的表达或经历\":\"My expression or experience\",\"第三方内容\":\"Third-party content\",\"混合内容\":\"Mixed content\",\"归属未知\":\"Ownership unknown\",\"内容与你的关系\":\"How this content relates to you\",\"声明帮助模型区分你的表达、第三方内容和混合引用；归属未知也能查询和整理。\":\"A declaration helps models distinguish your expression, third-party content, and mixed quotations. Content with unknown ownership remains available for questions and organization.\",\"来源声明应用于已有和新资料；单份资料的声明优先。修改说明不会自动重新转写或重算历史记忆。\":\"Source declarations apply to existing and new materials; a material-specific declaration takes precedence. Editing this description does not automatically transcribe content again or rebuild earlier memories.\",\"已保存的来源关系\":\"Saved source relationship\",\"尚未填写来源背景说明。\":\"No source background description has been saved.\",\"内容关系\":\"Content relationship\",\"来源背景说明（选填）\":\"Source background description (optional)\",\"可说明格式、时间、作者，以及哪些内容属于你。\":\"Describe the format, time, author, and which content is yours.\",\"关系修改尚未保存，离开后可以回来继续。\":\"Relationship changes are not saved yet. You can leave and return to continue.\",\"当前关系与已保存设置一致。\":\"The current relationship matches the saved settings.\",\"保存内容关系\":\"Save content relationship\",\"放弃关系修改\":\"Discard relationship changes\",\"这个来源的内容关系已保存。\":\"The content relationship for this source has been saved.\",\"这是连接后的同步方式。暂停时不接收新变化，已保存内容仍保留。\":\"This is the sync policy after connecting. While paused, no new changes are received and saved content is retained.\",\"本机继续保留，向中央发送已暂停\":\"Content stays on the device; sending to Central is paused\",\"向中央发送已开启\":\"Sending to Central is enabled\",\"向中央发送已暂停\":\"Sending to Central is paused\",\"各设备继续按本机设置保留内容，待发送内容会在恢复后继续同步。\":\"Each device keeps content according to its local settings. Pending content will sync after sending resumes.\",\"允许发送的本机内容会按各来源的设置同步到中央。\":\"Local content allowed for sending syncs to Central according to each source’s settings.\",\"屏幕采集、单个来源接收、向中央发送分别控制，状态独立保留。\":\"Screen capture, intake from each source, and sending to Central have separate controls and retain independent states.\",\"恢复全部发送\":\"Resume all sending\",\"确认暂停全部发送\":\"Confirm pause for all sending\",\"向中央发送已暂停，本机内容继续保留。\":\"Sending to Central is paused. Local content is retained.\",\"向中央发送已恢复。屏幕采集和各来源接收保持原有状态。\":\"Sending to Central has resumed. Screen capture and source intake retain their previous states.\"});\nfunction translateUI(text,depth=0){"
+    },
+    {
+      "purpose": "English templates for computed group, session and evidence counts",
+      "old": " let m;\n",
+      "new": " let m;\n  if((m=key.match(/^(\\d+) 组 · (\\d+) 条片段$/)))return m[1]+' group'+(m[1]==='1'?'':'s')+' · '+m[2]+' snippet'+(m[2]==='1'?'':'s');\n  if((m=key.match(/^连续会话 (\\d+)$/)))return 'Continuous session '+m[1];\n  if((m=key.match(/^(\\d+) 条片段$/)))return m[1]+' snippet'+(m[1]==='1'?'':'s');\n"
+    }
+  ]
+}

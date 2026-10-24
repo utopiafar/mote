@@ -1,0 +1,250 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/diagnostics",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Android · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n9:41\n84%\nMote\n设置\n\n调整服务与资料管理方式，或管理当前登录。\n\n设置分类\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观\n本机诊断与更新\n只影响当前设备\n帮助与诊断\n\n错误信息、日志、功能与更新\n\n帮助与版本\n查看错误记录\n导出诊断信息\n今后的诊断记录\n记录运行日志\n最低记录级别\n错误\n警告\n信息\n调试\n开启调试信息\n保留详细 Agent 过程\n保存诊断设置\n当前生效值 · 示例工作台\n\n日志：开启 · 级别：信息 · 调试：关闭 · 详细过程：关闭\n\n查看部署目录和全部配置\n配置\t实际生效值（示例）\n环境文件\t/demo/mote/app.env\n数据目录\t/demo/mote/data\n基准目录\t/demo/mote\n日志记录\ttrue\n日志级别\t信息\n调试\tfalse\n详细 Agent 过程\tfalse\n记录问题描述\n问题描述\n保存反馈草稿\n资料库\n问一问\n来源\n活动",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "android",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "返回上一页",
+      "action": "native-back",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "",
+      "label": "更多页面与设置",
+      "action": "compact-pages",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "compact-settings",
+      "type": "select-one",
+      "text": "账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观",
+      "label": "设置分类\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观",
+      "value": "diagnostics",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "本机诊断与更新\n只影响当前设备",
+      "label": "本机诊断与更新\n只影响当前设备",
+      "action": "go",
+      "page": "settings/native-diagnostics",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "帮助与版本",
+      "label": "帮助与版本",
+      "action": "go",
+      "page": "settings/help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看错误记录",
+      "label": "查看错误记录",
+      "action": "diagnostic-log",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "导出诊断信息",
+      "label": "导出诊断信息",
+      "action": "export-diagnostics",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "diagnostic-enabled",
+      "type": "checkbox",
+      "text": "",
+      "label": "记录运行日志",
+      "value": "on",
+      "checked": true,
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "diagnostic-level",
+      "type": "select-one",
+      "text": "错误\n警告\n信息\n调试",
+      "label": "最低记录级别\n错误\n警告\n信息\n调试",
+      "value": "信息",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "diagnostic-debug",
+      "type": "checkbox",
+      "text": "",
+      "label": "开启调试信息",
+      "value": "on",
+      "checked": false,
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "diagnostic-detail",
+      "type": "checkbox",
+      "text": "",
+      "label": "保留详细 Agent 过程",
+      "value": "on",
+      "checked": false,
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存诊断设置",
+      "label": "保存诊断设置",
+      "action": "save-diagnostic",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "查看部署目录和全部配置",
+      "label": "查看部署目录和全部配置",
+      "expanded": true
+    },
+    {
+      "tag": "input",
+      "id": "feedback",
+      "type": "text",
+      "text": "",
+      "label": "问题描述",
+      "value": "来源同步需要重新授权",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存反馈草稿",
+      "label": "保存反馈草稿",
+      "action": "feedback-save",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设置"
+    },
+    {
+      "level": "H2",
+      "text": "帮助与诊断"
+    },
+    {
+      "level": "H3",
+      "text": "今后的诊断记录"
+    },
+    {
+      "level": "H3",
+      "text": "当前生效值 · 示例工作台"
+    },
+    {
+      "level": "H3",
+      "text": "记录问题描述"
+    }
+  ],
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "pageWidth": 390,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

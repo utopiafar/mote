@@ -1,0 +1,463 @@
+{
+  "url": "https://mote-prototype.invalid/?reset=1#/settings/account",
+  "title": "Mote · 个人资料库",
+  "text": "跳到主要内容\nMote · Mac · R31\n交互原型 · 演示数据\n界面 \n网页\nMac\nAndroid\n数据 \n已有资料\n空白账号\n外观 \n浅色\n深色\n自动\n重置演示\n◈\nMote\n文件\n显示\nm\n收集状态\n09:41\nMote · 个人资料库\n⌘ K\nm\nMote.\n个人资料库\n资料库\n问一问\n来源\n活动\n本机快捷操作\n写随手记\n⌘ N\n同步文件夹\n开始使用\n今天\n全部功能\n设置\n林\n林同学\n个人工作台\n工作台\n/\n设置\n工作台在线\n随手记\n添加内容\n设置\n\n调整服务与资料管理方式，或管理当前登录。\n\n账号与设备\n模型与服务\n采集与隐私\n自动记忆与插件\n存储与备份\n对外授权\n用量与费用\n帮助与诊断\n语言与外观\n连接这台采集设备\n只影响当前设备\n账号与设备\n\n登录、设备连接与会话\n\n林同学\n\n管理员\n\n切换账号\nCentral\nhttps://mote.example.invalid\n会话到期\n2026/11/21 12:00:00 UTC\n退出登录\n更改密码\n当前密码\n新密码\n保存新密码\n会话与客户端批准\n\n会话绑定当前 Central 和账号。切换账号后，原账号的资料与草稿不会显示在新账号里。\n\n预览会话过期查看客户端批准请求\n账号管理\n林同学\n管理员 · 已启用\n禁用\n重置密码\nreviewer\n普通账号 · 已启用\n禁用\n重置密码\n创建账号\n新用户名\n初始密码\n管理员\n创建账号\n设备连接\n\n设备邀请只授权采集与同步。浏览私人资料仍需单独登录。\n\n连接或重新授权设备查看设备报告",
+  "controls": [
+    {
+      "tag": "a",
+      "text": "跳到主要内容",
+      "label": "跳到主要内容",
+      "action": "skip-main"
+    },
+    {
+      "tag": "select",
+      "id": "preview-surface",
+      "type": "select-one",
+      "text": "网页\nMac\nAndroid",
+      "label": "预览平台",
+      "value": "mac",
+      "disabled": true
+    },
+    {
+      "tag": "select",
+      "id": "preview-state",
+      "type": "select-one",
+      "text": "已有资料\n空白账号",
+      "label": "预览数据",
+      "value": "populated",
+      "disabled": false
+    },
+    {
+      "tag": "select",
+      "id": "preview-theme",
+      "type": "select-one",
+      "text": "浅色\n深色\n自动",
+      "label": "预览外观",
+      "value": "light",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置演示",
+      "label": "重置演示",
+      "action": "reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\n收集状态",
+      "label": "Mote 菜单栏收集状态",
+      "action": "native-menu-toggle",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "⌘ K",
+      "label": "搜索资料，快捷键 Command K",
+      "action": "native-search",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "m\nMote.",
+      "label": "Mote 资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "资料库",
+      "label": "资料库",
+      "action": "go",
+      "page": "library",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "问一问",
+      "label": "问一问",
+      "action": "go",
+      "page": "ask",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "来源",
+      "label": "来源",
+      "action": "go",
+      "page": "sources",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "活动",
+      "label": "活动",
+      "action": "go",
+      "page": "activity",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "写随手记\n⌘ N",
+      "label": "写随手记\n⌘ N",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "同步文件夹",
+      "label": "同步文件夹",
+      "action": "go",
+      "page": "setup/folder/new",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "开始使用",
+      "label": "开始使用",
+      "action": "nu-help",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "今天",
+      "label": "今天",
+      "action": "go",
+      "page": "today",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "全部功能",
+      "label": "全部功能",
+      "action": "go",
+      "page": "guide",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "设置",
+      "label": "设置",
+      "action": "go",
+      "page": "settings",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "随手记",
+      "label": "随手记",
+      "action": "go",
+      "page": "notes",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "添加内容",
+      "label": "添加内容",
+      "action": "add",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "账号与设备",
+      "label": "账号与设备",
+      "action": "go",
+      "page": "settings/account",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "模型与服务",
+      "label": "模型与服务",
+      "action": "go",
+      "page": "settings/models",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "采集与隐私",
+      "label": "采集与隐私",
+      "action": "go",
+      "page": "settings/privacy",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "自动记忆与插件",
+      "label": "自动记忆与插件",
+      "action": "go",
+      "page": "settings/plugins",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "存储与备份",
+      "label": "存储与备份",
+      "action": "go",
+      "page": "settings/storage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "对外授权",
+      "label": "对外授权",
+      "action": "go",
+      "page": "settings/access",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "用量与费用",
+      "label": "用量与费用",
+      "action": "go",
+      "page": "settings/usage",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "帮助与诊断",
+      "label": "帮助与诊断",
+      "action": "go",
+      "page": "settings/diagnostics",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "语言与外观",
+      "label": "语言与外观",
+      "action": "go",
+      "page": "settings/appearance",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "submit",
+      "text": "连接这台采集设备\n只影响当前设备",
+      "label": "连接这台采集设备\n只影响当前设备",
+      "action": "go",
+      "page": "settings/native-connection",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "切换账号",
+      "label": "切换账号",
+      "action": "cs-switch-account",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "退出登录",
+      "label": "退出登录",
+      "action": "cs-sign-out",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "更改密码",
+      "label": "更改密码",
+      "expanded": true
+    },
+    {
+      "tag": "input",
+      "id": "cs-password-current",
+      "type": "password",
+      "text": "",
+      "label": "当前密码",
+      "value": "[redacted]",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-password-next",
+      "type": "password",
+      "text": "",
+      "label": "新密码",
+      "value": "[redacted]",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "保存新密码",
+      "label": "保存新密码",
+      "action": "cs-password-save",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "会话与客户端批准",
+      "label": "会话与客户端批准",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "预览会话过期",
+      "label": "预览会话过期",
+      "action": "cs-expire-session",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看客户端批准请求",
+      "label": "查看客户端批准请求",
+      "action": "go",
+      "page": "settings/client-approval",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "账号管理",
+      "label": "账号管理",
+      "expanded": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "禁用",
+      "label": "禁用",
+      "action": "cs-account-toggle",
+      "disabled": true
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置密码",
+      "label": "重置密码",
+      "action": "cs-account-reset",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "禁用",
+      "label": "禁用",
+      "action": "cs-account-toggle",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "重置密码",
+      "label": "重置密码",
+      "action": "cs-account-reset",
+      "disabled": false
+    },
+    {
+      "tag": "summary",
+      "text": "创建账号",
+      "label": "创建账号",
+      "expanded": true
+    },
+    {
+      "tag": "input",
+      "id": "cs-admin-name",
+      "type": "text",
+      "text": "",
+      "label": "新用户名",
+      "value": "",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-admin-password",
+      "type": "password",
+      "text": "",
+      "label": "初始密码",
+      "value": "[redacted]",
+      "disabled": false
+    },
+    {
+      "tag": "input",
+      "id": "cs-admin-admin",
+      "type": "checkbox",
+      "text": "",
+      "label": "管理员",
+      "value": "on",
+      "checked": false,
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "创建账号",
+      "label": "创建账号",
+      "action": "cs-account-create",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "连接或重新授权设备",
+      "label": "连接或重新授权设备",
+      "action": "go",
+      "page": "setup/device",
+      "disabled": false
+    },
+    {
+      "tag": "button",
+      "type": "button",
+      "text": "查看设备报告",
+      "label": "查看设备报告",
+      "action": "go",
+      "page": "devices",
+      "disabled": false
+    }
+  ],
+  "headings": [
+    {
+      "level": "H1",
+      "text": "设置"
+    },
+    {
+      "level": "H2",
+      "text": "账号与设备"
+    },
+    {
+      "level": "H3",
+      "text": "林同学"
+    },
+    {
+      "level": "H3",
+      "text": "设备连接"
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pageWidth": 1440,
+  "scope": "Rendered DOM and visible controls only; no internal application state",
+  "screenshot_scope": "Current viewport; DOM observed before screenshot to avoid resize-related disclosure changes"
+}

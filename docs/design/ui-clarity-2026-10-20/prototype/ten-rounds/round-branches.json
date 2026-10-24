@@ -1,0 +1,118 @@
+{
+  "schema": "mote-ui-r20-r29-round-branches-v1",
+  "repository": "https://github.com/utopiafar/mote",
+  "created_on": "2026-10-21",
+  "timezone": "Asia/Shanghai",
+  "aggregate_branch": "codex/ui-clarity-15-rounds-20261020",
+  "pull_request": "https://github.com/utopiafar/mote/pull/185",
+  "policy": "Each round branch is a snapshot at that round's original commit. Keep snapshot content unchanged; further iterations use new rounds. Existing round commits form a cumulative linear chain.",
+  "verification": {
+    "round_count": 10,
+    "remote_ref_sha_matches": 10,
+    "candidate_count": 30,
+    "independent_report_count": 10,
+    "all_rounds_completed": true
+  },
+  "rounds": [
+    {
+      "round": 20,
+      "branch": "codex/mote-ui-r20-20261021",
+      "commit_sha": "1c5522ef72fe9c6b92c55ed29044d75823b22426",
+      "tree_sha": "6eef8f7b725bd953207251de9a556ebdaca2a6ad",
+      "branch_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r20-20261021",
+      "candidates_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r20-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r20",
+      "report_url": "https://github.com/utopiafar/mote/blob/codex/mote-ui-r20-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r20/reports/independent-evaluation.md",
+      "verified_ref_matches_commit": true
+    },
+    {
+      "round": 21,
+      "branch": "codex/mote-ui-r21-20261021",
+      "commit_sha": "6a419de65b90d038a108e8792520391f55a34d8e",
+      "tree_sha": "6c4c05917df34bcea0a0575c99f03c49034e0112",
+      "branch_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r21-20261021",
+      "candidates_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r21-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r21",
+      "report_url": "https://github.com/utopiafar/mote/blob/codex/mote-ui-r21-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r21/reports/independent-evaluation.md",
+      "verified_ref_matches_commit": true
+    },
+    {
+      "round": 22,
+      "branch": "codex/mote-ui-r22-20261021",
+      "commit_sha": "86053935dbe1eb6775e2ec1f15255d6b76e7cfec",
+      "tree_sha": "4ab5789bf46291731a490c5eb7fe05d57662a2d3",
+      "branch_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r22-20261021",
+      "candidates_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r22-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r22",
+      "report_url": "https://github.com/utopiafar/mote/blob/codex/mote-ui-r22-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r22/reports/independent-evaluation.md",
+      "verified_ref_matches_commit": true
+    },
+    {
+      "round": 23,
+      "branch": "codex/mote-ui-r23-20261021",
+      "commit_sha": "647b7cb511a4e3e498dae9a94d8447c2b8ba930d",
+      "tree_sha": "2cfc886423ff0e5df984749dacc7e6228c5ed194",
+      "branch_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r23-20261021",
+      "candidates_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r23-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r23",
+      "report_url": "https://github.com/utopiafar/mote/blob/codex/mote-ui-r23-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r23/reports/independent-evaluation.md",
+      "verified_ref_matches_commit": true
+    },
+    {
+      "round": 24,
+      "branch": "codex/mote-ui-r24-20261021",
+      "commit_sha": "35f89a3e77982e9e97cdcecc4022e0bbafa0356e",
+      "tree_sha": "66cf85ea228014129c4ceebd8cb520da78269807",
+      "branch_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r24-20261021",
+      "candidates_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r24-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r24",
+      "report_url": "https://github.com/utopiafar/mote/blob/codex/mote-ui-r24-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r24/reports/independent-evaluation.md",
+      "verified_ref_matches_commit": true
+    },
+    {
+      "round": 25,
+      "branch": "codex/mote-ui-r25-20261021",
+      "commit_sha": "e5546a26cf265116cf9136315717b44cce3fa400",
+      "tree_sha": "dbde9f80b791581d477fc64328ec3718fdef181f",
+      "branch_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r25-20261021",
+      "candidates_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r25-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r25",
+      "report_url": "https://github.com/utopiafar/mote/blob/codex/mote-ui-r25-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r25/reports/independent-evaluation.md",
+      "verified_ref_matches_commit": true
+    },
+    {
+      "round": 26,
+      "branch": "codex/mote-ui-r26-20261021",
+      "commit_sha": "193989d6e8d64b96e62d3a76ac18f1763e14e4fb",
+      "tree_sha": "f3dd8850ce2bcfcd93d5ef8a0331aa1eb09e719c",
+      "branch_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r26-20261021",
+      "candidates_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r26-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r26",
+      "report_url": "https://github.com/utopiafar/mote/blob/codex/mote-ui-r26-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r26/reports/independent-evaluation.md",
+      "verified_ref_matches_commit": true
+    },
+    {
+      "round": 27,
+      "branch": "codex/mote-ui-r27-20261021",
+      "commit_sha": "30f9f8070bdc9f3884f2400fc4887e6d0b29d66d",
+      "tree_sha": "d44044e2f915339dfa44355126c97a4e8d1041a0",
+      "branch_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r27-20261021",
+      "candidates_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r27-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r27",
+      "report_url": "https://github.com/utopiafar/mote/blob/codex/mote-ui-r27-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r27/reports/independent-evaluation.md",
+      "verified_ref_matches_commit": true
+    },
+    {
+      "round": 28,
+      "branch": "codex/mote-ui-r28-20261021",
+      "commit_sha": "54606b5b52c199b760ce138ed333066402f10d5e",
+      "tree_sha": "47774424933a6f1a229175d5ee0b1e49d424c016",
+      "branch_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r28-20261021",
+      "candidates_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r28-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r28",
+      "report_url": "https://github.com/utopiafar/mote/blob/codex/mote-ui-r28-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r28/reports/independent-evaluation.md",
+      "verified_ref_matches_commit": true
+    },
+    {
+      "round": 29,
+      "branch": "codex/mote-ui-r29-20261021",
+      "commit_sha": "9aec3d55d9e6af391c0cc5c2b1dbca8b2936a0e1",
+      "tree_sha": "fa6d703cb7485f272383792fa24fd8b5133e9b0a",
+      "branch_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r29-20261021",
+      "candidates_url": "https://github.com/utopiafar/mote/tree/codex/mote-ui-r29-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r29",
+      "report_url": "https://github.com/utopiafar/mote/blob/codex/mote-ui-r29-20261021/docs/design/ui-clarity-2026-10-20/prototype/ten-rounds/rounds/r29/reports/independent-evaluation.md",
+      "verified_ref_matches_commit": true
+    }
+  ]
+}
