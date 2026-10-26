@@ -8766,5 +8766,20 @@ export const english: Readonly<Record<string, string>> = {
   "已加载 {0} 条资料": "{0} items loaded",
   "收集/更新时间": "Collected / updated date",
   "衍生内容范围：{0}–{1} / {2} 字符": "Derived content range: {0}–{1} / {2} characters",
-  "返回衍生内容开头": "Return to the beginning of derived content"
+  "返回衍生内容开头": "Return to the beginning of derived content",
+  "已保存账号绑定": "Account binding saved",
+  "尚未绑定账号": "No account binding",
+  "来源接入已暂停": "Source intake is paused",
+  "录音同步状态暂不可用": "Recording sync status is unavailable",
+  "此来源未绑定当前录音账号": "This source is not bound to the current recording account",
+  "运行环境需要处理": "Runtime needs attention",
+  "授权需要处理": "Authorization needs attention",
+  "录音同步未启用": "Recording sync is not enabled",
+  "有同步步骤待处理": "Sync steps are pending",
+  "自动同步已启用": "Automatic sync is enabled",
+  "允许接收资料": "Intake allowed",
+  "已暂停接收资料": "Intake paused",
+  "恢复接入仅允许接收资料；录音同步需在录音同步设置中确认范围并启用。": "Resuming intake only allows this source to receive material. Confirm the range and enable recording sync in Recording sync settings.",
+  "录音同步设置": "Recording sync settings",
+  "已保存账号绑定不代表当前登录或读取权限有效。“重新检测”检查中央运行环境；请结合授权结果与同步步骤确认账号权限。": "A saved account binding does not confirm a valid login or read permissions. Recheck inspects the central runtime; confirm account permissions from authorization results and sync steps."
 };
