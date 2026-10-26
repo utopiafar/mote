@@ -753,18 +753,20 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
     if(material.schemaVersion<CODING_DIALOGUE_SCHEMA_VERSION)throw new ExecutionFailure('blocked','coding_dialogue_not_clean');
     const pages=materials.conversationInputs(material.ref,input.ranges);
     const configuration=input.job.configuration!;
+    return withQueryModelAuthority({question:'',traceContext:{jobId:input.job.id,batchId:input.parentGrant.stepId},signal:input.signal},'memories',async signal=>{
     const jobs=workflows.enqueue([{name:'conversation',processor:'mote.coding-conversation-understanding',materialInputs:pages,
       config:{memoryPreparation:true,modelFingerprint:configuration.fingerprint,profileId:configuration.profileId,modelOverride:configuration.model,
         contextTime:input.job.contextTime,timeZone:input.job.timeZone,language:input.job.language,generationContract:input.generationContract,processingMaterialInputs:input.materialInputs.map(pin=>({materialId:pin.materialId,required:pin.required,fingerprint:pin.fingerprint,evidenceIds:pin.evidenceIds.filter(id=>input.ranges.some(range=>range.id===id))}))}}],input.parentGrant);
     linkOperationParent(store,'memory:'+input.job.id,executor.get(jobs.conversation)!.operationId);
-    const abort=()=>executor.abortLocal(jobs.conversation);input.signal.addEventListener('abort',abort,{once:true});
-    try{await executor.drain([jobs.conversation]);input.signal.throwIfAborted();}
-    finally{input.signal.removeEventListener('abort',abort);}
+    const abort=()=>executor.abortLocal(jobs.conversation);signal.addEventListener('abort',abort,{once:true});
+    try{await executor.drain([jobs.conversation]);signal.throwIfAborted();}
+    finally{signal.removeEventListener('abort',abort);}
     const step=executor.get(jobs.conversation)!;
     if(step.state==='waiting'||step.state==='running')throw new ExecutionFailure('waiting',step.error??'semantic_processing_pending',step.availableAt>Date.now()?Math.max(1000,step.availableAt-Date.now()):5000);
     if(step.state!=='succeeded')throw new ExecutionFailure(step.state==='stale'?'stale':step.state==='failed'?'permanent':'blocked',step.state==='blocked'?'semantic_processing_blocked':step.error??'semantic_processing_failed');
     const row=store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(jobs.conversation)!;
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
+    });
   };
   const memoryPublication=new MemoryPublication(store,memories,memoryBindings,executor);
   memoryPublication.revokeEvidence=ids=>memoryAdapters.erasePreparedEvidence(ids);
