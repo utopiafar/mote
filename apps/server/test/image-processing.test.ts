@@ -334,6 +334,9 @@ for(const timing of ['before preparation','while OCR runs'] as const)test('corre
  assert.equal(f.store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='text-recognition'").get(id)!.state,'succeeded');
  assert.equal(f.store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='interpretation'").get(id)!.state,'cancelled');
  assert.equal(f.store.db.prepare("SELECT count(*) n FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(id)!.n,1);
+ const completed=f.materials.get(material.id)!;
+ assert.equal(completed.artifacts!.find(artifact=>artifact.key==='extracted-text')!.state,'ready','OCR readiness follows its product kind, independently of the recipe step name or withdrawn interpretation');
+ assert.equal(f.materials.input(material.id,['extracted-text'])!.ready,true,'Memory can select the completed named OCR output');
 });
 
 test('corrected input with missing pinned recipe remains semantically withdrawn after reinstall until explicit retry',async t=>{
