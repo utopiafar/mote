@@ -512,6 +512,8 @@
   "已刷新。范围授权内的日程由设备执行，其余建议仍需确认。": "Refreshed. The device executes events within authorized scopes; other suggestions still need confirmation.",
   "范围授权行动": "Scope-authorized action",
   "连接日历以执行已授权行动": "Connect calendar for authorized actions",
+  "连接并同步已授权日程": "Connect and sync authorized calendar actions",
+  "同步已暂停，请恢复同步后重试。": "Sync is paused. Resume sync and try again.",
   "仅声明本机可写日历；在中央行动设置确认插件、来源范围和目标后，设备才会执行。": "This only declares writable calendars on this device. Execution starts after you authorize the plugin, input scope and destination in Central action settings.",
   "从上传资料和持续采集中发现安排。每条由你核对，写入已有日历并带上 #Mote 来源标记。": "Discover plans in uploads and collected context. Review each suggestion before adding it to an existing calendar with a #Mote source tag.",
   "发现设置与设备授权": "Discovery and device access",

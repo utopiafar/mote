@@ -14,6 +14,10 @@ const executionQueues=new Map<unknown,Promise<unknown>>();
 export class CalendarActions {
  constructor(private config:Pick<Config,'deviceId'|'deviceName'>,private io:CalendarActionIO,private queueKey:unknown=io){}
  connect(){return this.serial(async()=>{const value=await this.io.native('calendar-permission');await publishCalendarCapability(this.config.deviceId,value,this.io.request);if(value.permission!=='granted')throw Error(moteText("请允许日历访问后重试"));if((await this.io.request('/api/connections/self')).credential?.scope!=='collector')await this.io.request('/api/actions/targets',{deviceId:this.config.deviceId,deviceName:this.config.deviceName,calendars:value.calendars.filter((c:any)=>c.writable===true).map((c:any)=>({id:c.id,title:c.title}))});await this.io.write('enabled','1');return {deviceId:this.config.deviceId};});}
+ async connectAndDeliver(syncPaused:()=>boolean){
+  const check=()=>{if(syncPaused())throw Error(moteText('同步已暂停，请恢复同步后重试。'));};
+  check();const result=await this.connect();check();await this.deliver();return result;
+ }
  private serial<T>(fn:()=>Promise<T>):Promise<T>{const task=(executionQueues.get(this.queueKey)??Promise.resolve()).catch(()=>{}).then(fn);executionQueues.set(this.queueKey,task);void task.finally(()=>{if(executionQueues.get(this.queueKey)===task)executionQueues.delete(this.queueKey);}).catch(()=>{});return task;}
  async deliver(){
   if(await this.io.read('enabled')!=='1')return;
