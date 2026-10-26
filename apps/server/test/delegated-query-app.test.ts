@@ -15,7 +15,13 @@ const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'
 const scope={deviceId:'generated-selected-device',after:'2026-09-20T00:00:00Z',before:'2026-09-21T00:00:00Z',timeZone:'Asia/Shanghai'};
 const original={id:'00000000-0000-4000-8000-000000000101',deviceId:scope.deviceId,deviceName:'Generated fixture',platform:'import',source:'note' as const,capturedAt:'2026-09-20T01:00:00Z',durationMs:0,ocrText:'Generated original: the sample project chose a local archive.'};
 const plain=(answer='Generated answer'):QueryResult=>({answer,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}});
-async function until<T>(read:()=>T|undefined):Promise<T>{for(let attempt=0;attempt<240;attempt++){const value=read();if(value!==undefined)return value;await new Promise(resolve=>setTimeout(resolve,50));}throw Error('Generated fixture did not settle');}
+async function until<T>(read:()=>T|undefined,describe?:()=>unknown):Promise<T>{for(let attempt=0;attempt<240;attempt++){const value=read();if(value!==undefined)return value;await new Promise(resolve=>setTimeout(resolve,50));}throw Error('Generated fixture did not settle'+(describe?': '+JSON.stringify(describe()):''));}
+
+function snapshot(node:Awaited<ReturnType<typeof buildApp>>,id:string){
+ const run=node.featureServices.queryRuns.get(id),work=node.featureServices.delegation.get('query:'+id);
+ return {run:{status:run.status,error:run.error,execution:run.execution},work:{status:work.status,revision:work.revision,units:work.units.map(unit=>({status:unit.status,attempts:unit.attempts,error:unit.error}))},pool:node.executor.poolSnapshot('delegated-agents'),gate:node.featureServices.agentGate.snapshot(),steps:node.store.db.prepare('SELECT e.id,e.state,e.error,a.work_id FROM execution_steps e LEFT JOIN background_model_step_authority a ON a.step_id=e.id WHERE e.operation_id=?').all('query:'+id)};
+}
+
 
 for(const restart of [false,true])test(`full app delegation ${restart?'resumes after restart without repeating a successful child':'yields its only slot and saves an answer citing the original receipt'}`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-delegated-query-app-')),id=randomUUID();
@@ -25,6 +31,8 @@ for(const restart of [false,true])test(`full app delegation ${restart?'resumes a
   active++;maxActive=Math.max(maxActive,active);observed.push(input);
   try{
    if(!input.hostControlChannel){
+    // Finish the child after the parent's yielded fragment has really committed.
+   await until(()=>node.featureServices.delegation.get('query:'+id).status==='waiting'&&node.executor.get('query:'+id+':coordinator:1')?.state==='succeeded'?true:undefined,()=>snapshot(node,id));
     childCalls++;order.push('child');assert.equal(input.question,'Inspect the generated original');assert.equal(input.deviceId,scope.deviceId);assert.equal(input.after,scope.after);assert.equal(input.before,scope.before);
     assert.equal(input.conversation,undefined);assert.equal(input.taskContext,undefined);assert.equal(input.openingMemories,undefined);assert.equal(input.directImages,undefined);
     const records=await node.featureServices.archiveReader.evidence({ids:[original.id],deviceId:input.deviceId,after:input.after,before:input.before});assert.equal(records.length,1);
@@ -56,12 +64,16 @@ for(const restart of [false,true])test(`full app delegation ${restart?'resumes a
  node=await buildApp(config(directory),{agent:fixtureAgent(restart),backgroundWorker:false});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  await node.store.ingest(original);
- const accepted=await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Research the generated project choice',...scope}}});assert.equal(accepted.statusCode,202,accepted.body);
+ // Admit through owner HTTP, then pump from an ordinary worker context.
+ // A timer must not accidentally borrow the HTTP caller's model authority.
+ const scheduled=t.mock.method(node.executor,'tick',async()=>{});
+ const accepted=await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Research the generated project choice',...scope}}});scheduled.mock.restore();assert.equal(accepted.statusCode,202,accepted.body);
+ void node.executor.tick();
  if(restart){
   await until(()=>heldResume?true:undefined);assert.equal(childCalls,1);assert.equal(node.featureServices.delegation.artifactMetadata('query:'+id).length,1);
   await node.app.close();node=await buildApp(config(directory),{agent:fixtureAgent(false),backgroundWorker:false});
  }
- const run=await until(()=>{const receipt=node.featureServices.queryRuns.get(id);return receipt.status==='completed'?receipt:undefined;});
+ const run=await until(()=>{const receipt=node.featureServices.queryRuns.get(id);return receipt.status==='completed'?receipt:undefined;},()=>snapshot(node,id));
  assert.equal(childCalls,1);assert.equal(maxActive,1);assert.equal(readCalls,1);assert.equal(coordinatorCalls,restart?3:2);assert.deepEqual(order.slice(0,3),['coordinator','child','coordinator']);
  const conversation=(await node.app.inject({url:'/api/conversations/'+run.conversationId,headers})).json();assert.equal(conversation.turnCount,1);assert.equal(conversation.turns[0].result.citations[0].id,original.id);assert.equal(conversation.turns[0].result.citations[0].excerpt,original.ocrText);
  const work=node.featureServices.delegation.get('query:'+id);assert.equal(work.status,'succeeded');assert.equal(work.units.length,1);assert.equal(work.units[0].attempts,1);assert.equal(work.events.filter(event=>event.type==='branch.completed').length,1);
