@@ -2,15 +2,66 @@ name: Checks
 on:
   # Full integration checks remain manual; component-checks.yml handles affected PR inputs.
   workflow_dispatch:
+    inputs:
+      revision:
+        description: 'Exact commit SHA to validate (blank uses the selected workflow ref)'
+        type: string
+      suite:
+        description: 'Explicit heavy validation; no push or schedule trigger'
+        type: choice
+        options: [integration, docker, scale, recovery, benchmark, all]
+        default: integration
+      scope:
+        description: 'all, or scale: memory/query/intake/admission; recovery: replay/process/arrivals/shutdown; benchmark: architecture/directory/sync/harness/file-commit/review-retrieval/guards'
+        type: string
+        default: all
+env:
+  CHECK_RUNNER_REVISION: ${{ github.sha }}
 permissions:
   contents: read
 jobs:
+  selection:
+    runs-on: ubuntu-24.04
+    outputs:
+      revision: ${{ steps.selection.outputs.revision }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - name: Preserve the selected workflow's runner before checking out the candidate
+        run: |
+          mkdir -p "$RUNNER_TEMP/mote-ci"
+          cp -R scripts/ci scripts/release "$RUNNER_TEMP/mote-ci/"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with: { node-version: '24' }
+      - id: selection
+        env:
+          CHECK_REVISION: ${{ inputs.revision }}
+          CHECK_SUITE: ${{ inputs.suite }}
+          CHECK_SCOPE: ${{ inputs.scope }}
+        run: node "$RUNNER_TEMP/mote-ci/ci/manual-selection.mjs"
   protocol-and-app-tests:
+    needs: selection
+    if: inputs.suite == 'integration' || inputs.suite == 'all'
     runs-on: ubuntu-latest
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - name: Preserve the selected workflow's runner before checking out the candidate
+        run: |
+          mkdir -p "$RUNNER_TEMP/mote-ci"
+          cp -R scripts/ci scripts/release "$RUNNER_TEMP/mote-ci/"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.selection.outputs.revision }}
+      - name: Record exact checked revision
+        run: git rev-parse HEAD >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
@@ -26,7 +77,7 @@ jobs:
       - name: Verify byte-sliced desktop uploads against generated central HTTP
         run: npx tsc -p apps/desktop/tsconfig.json && node scripts/test-upload-fairness.cjs
       - run: node --import tsx scripts/test-live-metadata.ts --prepare-only --out .mote/ci-metadata-fixture
-      - run: npm test
+      - run: node "$RUNNER_TEMP/mote-ci/ci/run.mjs" --task integration-units
       - run: node --test scripts/check-dependencies-tests.mjs
       - run: npm run test:privacy
       - run: npm run test:e2e
@@ -42,10 +93,23 @@ jobs:
       - run: python3 -m unittest discover -s scripts -p "test_mote_audio.py"
       - run: python3 -m unittest discover -s scripts -p "test_mote_ocr.py"
   docker-integration:
+    needs: selection
+    if: inputs.suite == 'docker' || inputs.suite == 'all'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - name: Preserve the selected workflow's runner before checking out the candidate
+        run: |
+          mkdir -p "$RUNNER_TEMP/mote-ci"
+          cp -R scripts/ci scripts/release "$RUNNER_TEMP/mote-ci/"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.selection.outputs.revision }}
+      - name: Record exact checked revision
+        run: git rev-parse HEAD >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
@@ -55,3 +119,34 @@ jobs:
         run: node scripts/test-profiles-container.mjs
       - name: Verify Cloudflare image flags, private secrets and connector lifecycle without network
         run: node scripts/test-tunnel-container.mjs
+  specialist:
+    needs: selection
+    if: contains(fromJSON('["scale", "recovery", "benchmark", "all"]'), inputs.suite)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ inputs.suite == 'all' && fromJSON('["scale", "recovery", "benchmark"]') || fromJSON(format('["{0}"]', inputs.suite)) }}
+    env: { ELECTRON_SKIP_BINARY_DOWNLOAD: '1' }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - name: Preserve the selected workflow's runner before checking out the candidate
+        run: |
+          mkdir -p "$RUNNER_TEMP/mote-ci"
+          cp -R scripts/ci scripts/release "$RUNNER_TEMP/mote-ci/"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.selection.outputs.revision }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with: { node-version: '24', cache: npm }
+      - run: npm ci --ignore-scripts
+      - run: npm rebuild better-sqlite3
+      - run: npm run build:libs
+      - name: Run the selected specialist suite at its original scale
+        env:
+          CHECK_SUITE: ${{ matrix.suite }}
+          CHECK_SCOPE: ${{ inputs.scope }}
+        run: node "$RUNNER_TEMP/mote-ci/ci/run.mjs" --suite "$CHECK_SUITE" --scope "$CHECK_SCOPE"

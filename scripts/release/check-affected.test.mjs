@@ -6,24 +6,19 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { checkPlan, runChecks } from './check-affected.mjs';
+import { selectScopes } from '../ci/select.mjs';
 import { changedPaths } from './affected-components.mjs';
 
 const cli = fileURLToPath(new URL('check-affected.mjs', import.meta.url));
-const tests = ['scripts/release/affected-components.test.mjs'];
-const npmChecks = affected => checkPlan(affected, tests).filter(step => step.command === 'npm').map(step => step.args[1]);
-
-test('local plans select components, include Android, and retain broad integration checks', () => {
-  assert.deepEqual(checkPlan({}, tests), []);
-  assert.deepEqual(npmChecks({ central: true }), ['check:i18n', 'check:central']);
-  assert.deepEqual(npmChecks({ desktop: true }), ['check:i18n', 'check:desktop']);
-  const android = checkPlan({ android: true, tooling: true }, tests);
-  assert.deepEqual(npmChecks({ android: true }), ['check:i18n']);
-  assert.equal(android[1].command, process.execPath);
-  assert.equal(android.at(-1).command, 'apps/android/gradlew');
-  assert.ok(android.at(-1).args.includes(':app:testDebugUnitTest'));
-  assert.deepEqual(npmChecks({ central: true, desktop: true, android: true }), ['check:local']);
-  assert.equal(checkPlan({ central: true, desktop: true, android: true }, tests).at(-1).command, 'apps/android/gradlew');
-  assert.deepEqual(checkPlan({ tooling: true }, tests), [{ command: process.execPath, args: ['--test', ...tests] }]);
+test('local checks use independent light scopes, never broad component or heavy commands', () => {
+  assert.deepEqual(checkPlan(selectScopes([])), []);
+  const web = checkPlan(selectScopes(['apps/web/src/App.tsx']));
+  assert.ok(web.some(step => step.args.includes('@mote/web')));
+  assert.ok(!web.some(step => step.args.includes('@mote/server') || step.args.includes('@mote/agent')));
+  assert.ok(!web.some(step => step.args.some(arg => /check:(?:central|local)|benchmark|query-large-lineage/.test(arg))));
+  const android = checkPlan(selectScopes(['apps/android/new.kt'])).at(-1);
+  assert.equal(android.command, 'apps/android/gradlew');
+  assert.ok(android.args.includes(':app:testDebugUnitTest'));
 });
 
 function repository(t) {
@@ -39,6 +34,9 @@ function repository(t) {
   git('config', 'user.email', 'fixture@example.invalid');
   for (const component of ['server', 'web', 'desktop']) write(`apps/${component}/package.json`, JSON.stringify({ name: `@mote/${component}` }));
   mkdirSync(join(directory, 'packages'));
+  for (const dir of ['apps/server/test', 'packages/agent/test', 'scripts/ci']) mkdirSync(join(directory, dir), { recursive: true });
+  write('apps/server/test/generated.test.ts');
+  write('packages/agent/test/generated.test.mjs');
   mkdirSync(join(directory, 'scripts/release'), { recursive: true });
   write('README.md');
   write('apps/desktop/src/old.ts');
@@ -64,11 +62,11 @@ test('actual CLI includes committed, staged, unstaged and untracked inputs; expl
   const result = dryRun();
   assert.equal(result.status, 0, result.stderr);
   const local = JSON.parse(result.stdout);
-  assert.equal(local.affected.android, true);
-  assert.equal(local.affected.desktop, true);
+  assert.ok(local.affected.scopes.includes('android'));
+  assert.ok(local.affected.scopes.includes('desktop'));
   const committed = dryRun('--head', 'HEAD');
   assert.equal(committed.status, 0, committed.stderr);
-  assert.deepEqual(JSON.parse(committed.stdout).affected, { central: true, desktop: false, android: false, protocol: false, tooling: false });
+  assert.deepEqual(JSON.parse(committed.stdout).affected, { scopes: ['server', 'i18n'], fallback: [], serverGroups: ['all'] });
 });
 
 test('documentation-only CLI skips builds, while moving runtime code into docs retains the old consumer', t => {
@@ -83,7 +81,7 @@ test('documentation-only CLI skips builds, while moving runtime code into docs r
   assert.ok(changedPaths({ base, directory }).includes('apps/desktop/src/old.ts'));
   result = dryRun();
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(JSON.parse(result.stdout).affected.desktop, true);
+  assert.ok(JSON.parse(result.stdout).affected.scopes.includes('desktop'));
   git('commit', '-m', 'move runtime fixture into docs');
   assert.ok(changedPaths({ base, directory, head: 'HEAD' }).includes('apps/desktop/src/old.ts'));
 });
@@ -105,7 +103,7 @@ test('opposite staged and working edits to the same file cannot hide a consumer'
   write('apps/desktop/src/old.ts');
   assert.equal(git('diff', 'HEAD', '--name-only'), '');
   assert.ok(changedPaths({ base, directory }).includes('apps/desktop/src/old.ts'));
-  assert.equal(JSON.parse(dryRun().stdout).affected.desktop, true);
+  assert.ok(JSON.parse(dryRun().stdout).affected.scopes.includes('desktop'));
 });
 
 test('invalid revisions and options fail instead of reporting no checks', t => {
@@ -123,7 +121,7 @@ test('actual tooling-only CLI executes regression checks without invoking applic
   delete env.NODE_TEST_CONTEXT;
   const result = spawnSync(process.execPath, [cli, '--base', base], { cwd: directory, encoding: 'utf8', env });
   assert.equal(result.status, 0, result.stderr);
-  assert.ok(result.stdout.includes('"tooling": true'));
+  assert.ok(result.stdout.includes('"tooling"'));
   assert.ok(!result.stdout.includes('"command": "npm"'));
   assert.ok(existsSync(marker), result.stdout);
   assert.equal(readFileSync(marker, 'utf8'), 'passed');

@@ -47,7 +47,7 @@ jobs:
         run: npm run build:central
       - name: Verify central workspaces and generated fixtures
         if: needs.version.outputs.profile == 'prod' || vars.MOTE_PRE_RELEASE_CHECKS == 'true'
-        run: npm run check:central
+        run: node scripts/ci/run.mjs --task central-units
       - name: Package committed central source and verify archive metadata
         run: node scripts/release/source-package.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
