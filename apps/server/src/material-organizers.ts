@@ -403,6 +403,12 @@ const sourceItem:MaterialOrganizer={
     if(file.attachmentsTruncated)body.limitations.add('attachment_limit');
     if(file.providerTranscript&&chunks.length>=19991)body.limitations.add('recording_segment_limit');
     const artifact=file.extraction??chunks[0]?.artifact;
+    // OCR publishes an independent product: a later visual interpretation can
+    // fail without invalidating that completed extraction. Other file recipes
+    // may replace intermediate text (for example ASR followed by alignment).
+    const extractionState=file.image
+      ?file.image.jobs.find(product=>product.name==='ocr')?.state??'unavailable'
+      :job?.state==='succeeded'?'ready':['waiting','running'].includes(job?.state??'waiting')?'pending':['blocked','failed','cancelled'].includes(job?.state??'')?'failed':'unavailable';
     let state:'complete'|'pending'|'partial'='complete',reason:string|undefined;
     if(file.processingRequired){
       if(['waiting','running'].includes(job?.state??'waiting')){state='pending';reason='processing_pending';}
@@ -427,7 +433,7 @@ const sourceItem:MaterialOrganizer={
       // A complete intermediate ASR artifact can still be replaced by dialogue
       // alignment/turn grouping. Do not consume the raw input's one Memory grant
       // until the selected file recipe has finished publishing its output.
-      ...(file.processingRequired?[{key:'extracted-text',blockIds:extractedBlocks,state:job?.state==='succeeded'&&artifact&&artifact.complete!==false&&artifact.coverage!=='partial'?'ready' as const:['waiting','running'].includes(job?.state??'waiting')?'pending' as const:['blocked','failed','cancelled'].includes(job?.state??'')?'failed' as const:'unavailable' as const,...(!artifact&&job?.error?{reason:job.error}:{})}]:[]),
+      ...(file.processingRequired?[{key:'extracted-text',blockIds:extractedBlocks,state:extractionState==='ready'?artifact&&artifact.complete!==false&&artifact.coverage!=='partial'?'ready' as const:'unavailable' as const:extractionState,...(!artifact&&job?.error?{reason:job.error}:{})}]:[]),
       ...imageArtifacts,
       ...attachedArtifacts,
     ];
