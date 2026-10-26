@@ -11,18 +11,33 @@ class UploadOriginalActivity : MoteActivity() {
     private val task by lazy { UiTask(this) }
     private lateinit var body: LinearLayout
     private lateinit var status: TextView
+    private var resumed = false
+    private var readGeneration = 0L
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         body = moteDetailPage(primary = MotePrimaryTab.SOURCES, title = MoteI18n.text("查看原件"))
     }
-    override fun onResume() { super.onResume(); load() }
-    override fun onPause() { body.removeAllViews(); super.onPause() }
+    override fun onResume() { super.onResume(); resumed = true; load() }
+    override fun onPause() { resumed = false; readGeneration++; body.removeAllViews(); super.onPause() }
     private fun find(): HistoryItem = UploadHistoryModel.read(applicationContext).single { it.id == intent.getStringExtra("batchId") }.items.single { it.key == intent.getStringExtra("itemKey") }
     private fun load() {
-        body.removeAllViews(); status = TextView(this).also(body::addView)
-        task.start(MoteI18n.text("正在读取原文…"), { status.text = it }, {
-            val item = find(); item to HistoryOriginal.read(applicationContext, item)
-        }) { result -> result.onSuccess { (item, content) ->
+        val generation = ++readGeneration
+        val batchId = intent.getStringExtra("batchId"); val itemKey = intent.getStringExtra("itemKey")
+        body.removeAllViews(); status = TextView(this).apply { text = MoteI18n.text("正在读取原文…") }.also(body::addView)
+        // UiTask retains a paused completion. Its invalidated callback will start the fresh read.
+        if (task.busy) return
+        val access = CentralAccess.resolve(applicationContext)
+        val scope = CaptureUploadReceipt.scope(access.server, Settings(this).deviceId)
+        fun current(): Boolean = resumed && generation == readGeneration &&
+            intent.getStringExtra("batchId") == batchId && intent.getStringExtra("itemKey") == itemKey &&
+            CentralAccess.resolve(applicationContext).let { it.server == access.server && it.generation == access.generation }
+        task.start(MoteI18n.text("正在读取原文…"), { if (resumed && generation == readGeneration) status.text = it }, {
+            val item = find()
+            check(item.key == itemKey && item.identity?.scope == scope && item.identity.origin == access.server)
+            item to HistoryOriginal.read(applicationContext, item)
+        }) { result ->
+            if (!current()) { if (resumed) load(); return@start }
+            result.onSuccess { (_, content) ->
             status.text = content
             body.addView(Button(this).apply { text = MoteI18n.text("保存原件"); setOnClickListener {
                 startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/octet-stream").putExtra(Intent.EXTRA_TITLE, "mote-original"), 812)
@@ -39,7 +54,7 @@ class UploadOriginalActivity : MoteActivity() {
         task.start(MoteI18n.text("正在读取原文…"), {}, {
             val item = find()
             contentResolver.openOutputStream(uri)?.use { HistoryOriginal.export(applicationContext,item,it) } ?: error("Destination unavailable")
-        }) { result -> Toast.makeText(this, if(result.isSuccess) MoteI18n.text("已保存") else MoteI18n.text("历史版本暂不可读取：原件可能已更新、不可用或当前离线。请重试。"), Toast.LENGTH_LONG).show() }
+        }) { result -> Toast.makeText(this, if(result.isSuccess) MoteI18n.text("已保存") else MoteI18n.text("历史版本暂不可读取：原件可能已更新、不可用或当前离线。请重试。"), Toast.LENGTH_LONG).show(); if (resumed) load() }
     }
 }
 
