@@ -58,7 +58,7 @@ internal class LibraryCaptureView(
             }
         }
         selector("资料类型", types, source) { if (source != it) { source = it; resetFilter() } }
-        selector("资料位置", listOf("" to "全部位置", "local" to "本机可读", "central" to "中央可读"), location) { if (location != it) { location = it; render() } }
+        selector("资料位置", listOf("" to "全部位置", "local" to "本机", "central" to "中央可读"), location) { if (location != it) { location = it; render() } }
         parent.addView(TextView(activity).apply { text = MoteI18n.text("收集/更新时间"); MoteUi.type(this, NativeFontRole.META) })
         val date = Button(activity).apply {
             text = day.ifBlank { MoteI18n.text("选择日期") }
