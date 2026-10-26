@@ -140,6 +140,16 @@ export class BackgroundModelAuthorization {
   manual(id:string,kind:'manual'|'probe',identities:readonly string[]=[],connections=this.available()){
     return this.transaction(()=>{const roots=[...new Set(identities)].sort(),prior=this.saved(id);if(prior){if(prior.kind!==kind||!same(prior.roots,roots))throw new StoreError('Manual model scope changed',409);return id;}this.save({id,kind,epoch:0,roots,connections:structuredClone(connections),scope:{sourceIds:null,dataKinds:['text','image','audio','conversation']}});return id;});
   }
+  /** Synchronous owner commands persist admission and their domain writes in
+   * one transaction. Never hold the SQLite transaction across asynchronous work. */
+  manualCommand<T>(id:string,identities:readonly string[],connections:ModelConnection[],task:()=>T):T{
+    return this.transaction(()=>{
+      this.manual(id,'manual',identities,connections);const work=this.saved(id)!;this.assert(work);
+      const authority:Authority={work,controller:new AbortController()};this.active.add(authority);
+      try{return this.context.run(authority,()=>{const result=task();if(result&&typeof (result as {then?:unknown}).then==='function')throw Error('Owner command must be synchronous');this.assert(work);return result;});}
+      finally{this.active.delete(authority);}
+    });
+  }
   async run<T>(id:string,task:(signal:AbortSignal)=>Promise<T>,signal?:AbortSignal):Promise<T>{
     const work=this.saved(id);if(!work)throw pending();this.assert(work);
     const stepId=this.stepContext.getStore();if(stepId)this.bindStep(stepId,id);
