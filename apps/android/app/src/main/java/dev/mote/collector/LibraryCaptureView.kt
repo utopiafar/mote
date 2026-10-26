@@ -35,6 +35,8 @@ internal class LibraryCaptureView(
     private var remoteMore = true
     private var stamp = 0
     private var refreshPending = false
+    private var activeFilter = ""
+    private var activeDay = ""
     private var session: Pair<String, Long>? = null
     private var files = emptyList<JSONObject>()
     private var remoteNotice = ""
@@ -87,6 +89,10 @@ internal class LibraryCaptureView(
         if (session != (current.server to current.generation)) refresh()
     }
     fun refresh() {
+        val current = CentralAccess.resolve(activity)
+        if (task.busy && session == current.server to current.generation && activeFilter == source && activeDay == day) {
+            refreshPending = true; sourceView.refresh(source, day); return
+        }
         if (pages > 0) {
             val saved = saveState(); anchor = saved.getString("anchor"); anchorTop = saved.getInt("anchorTop"); restorePages = pages
         }
@@ -103,7 +109,7 @@ internal class LibraryCaptureView(
         val identity = selection.server to selection.generation
         if (session != identity) { session = identity; projection.clear(); localCursor = null; remoteCursor = null; localMore = true; remoteMore = true; pages = 0 }
         val generation = stamp
-        val filter = source; val selectedDay = day; val bound = before
+        val filter = source; val selectedDay = day; activeFilter = filter; activeDay = selectedDay; val bound = before
         val after = selectedDay.takeIf(String::isNotBlank)?.let { LocalDate.parse(it).atStartOfDay(ZoneId.systemDefault()).toInstant().toString() } ?: "1970-01-01T00:00:00Z"
         val until = selectedDay.takeIf(String::isNotBlank)?.let { LocalDate.parse(it).plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toString() } ?: bound
         val nextLocal = localCursor; val nextRemote = remoteCursor

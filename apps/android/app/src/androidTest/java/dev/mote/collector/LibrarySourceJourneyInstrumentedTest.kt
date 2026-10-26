@@ -26,7 +26,7 @@ class LibrarySourceJourneyInstrumentedTest {
     private fun views(root: View): List<View> = listOf(root) + if(root is ViewGroup) (0 until root.childCount).flatMap { views(root.getChildAt(it)) } else emptyList()
     private fun waitFor(label: String, condition: () -> Boolean) { val until=SystemClock.elapsedRealtime()+30000; while(!condition()) { check(SystemClock.elapsedRealtime()<until) { label }; Thread.sleep(60) } }
     private fun guard() { require(Build.FINGERPRINT.contains("emu64a") && context.packageName.endsWith(".dev") && InstrumentationRegistry.getArguments().getString("recordEditorFixture")=="true"); require(!Settings(context).enabled && !ProjectionService.running) }
-    private fun api(): CentralClient { val args=InstrumentationRegistry.getArguments(); val server=requireNotNull(args.getString("uiJourneyServer")); require(java.net.URI(server).host=="10.0.2.2"); return CentralClient(server,requireNotNull(args.getString("uiJourneyToken"))) }
+    private fun api(): CentralClient { val args=InstrumentationRegistry.getArguments(); val server=requireNotNull(args.getString("uiJourneyServer")); require(java.net.URI(server).host in setOf("10.0.2.2","127.0.0.1")); return CentralClient(server,requireNotNull(args.getString("uiJourneyToken"))) }
     @Test fun actualFileUploadVersionsMaterialReadDenialAndNativeRestore() {
         guard(); val args=InstrumentationRegistry.getArguments(); val api=api(); val settings=Settings(context)
         context.localSources().sources().filter { it.id.startsWith("generated-b1-") }.forEach { context.fileArchives().remove(it.id); context.localSources().remove(it.id) }
@@ -129,6 +129,19 @@ class LibrarySourceJourneyInstrumentedTest {
         // Original bodies, pending versions and receipt fields must remain byte-identical.
         fun retainedState() = store.state(source.id).apply { remove("status"); remove("statusAt") }.toString()
         val before=retainedState()
+        // A slow Central must not hold the local first page or local pagination hostage.
+        api().post("/api/fixture/library-denial",JSONObject().put("mode","none").put("delayMs",3000))
+        try {
+            val started=SystemClock.elapsedRealtime()
+            ActivityScenario.launch<MainActivity>(Intent(context,MainActivity::class.java).putExtra("page","LIBRARY")).awaitMainUi().use { scenario ->
+                fun count():Int { var count=0;scenario.onActivity { count=views(it.window.decorView).filterIsInstance<TextView>().count { view->view.isShown && view.text.startsWith("Generated source ") } };return count }
+                waitFor("local first page before delayed Central") { count()>=20 }
+                assertTrue("local first page waited for Central",SystemClock.elapsedRealtime()-started<2500)
+                scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>().first { it.isEnabled && it.text.toString()==MoteI18n.text("加载更多来源资料") }.performClick() }
+                waitFor("local second page while Central is still pending") { count()==25 }
+                assertTrue("local pagination waited for Central",SystemClock.elapsedRealtime()-started<3000)
+            }
+        } finally { api().post("/api/fixture/library-denial",JSONObject().put("mode","none")) }
         val page=LibraryLocalSources.page(context,"1970-01-01T00:00:00Z",Instant.now().plusSeconds(1).toString(),null,"source",source.id)
         val next=LibraryLocalSources.page(context,"1970-01-01T00:00:00Z",Instant.now().plusSeconds(1).toString(),page.cursor,"source",source.id)
         assertEquals(20,page.items.size);assertEquals(5,next.items.size);assertNull(next.cursor);assertEquals(before,retainedState())
@@ -159,7 +172,9 @@ class LibrarySourceJourneyInstrumentedTest {
             waitFor("retained exact original after restart") { shown("Generated B1 newer saved original bytes version three") }
             scenario.recreate();waitFor("pending reader Activity restored") { shown("Generated B1 newer saved original bytes version three") }
             scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>().first { it.text.toString()==MoteI18n.text("导出本机保存的完整原件") }.performClick() }
-            instrumentation.waitForIdleSync()
+            waitFor("system export picker is foreground before cancellation") {
+                instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()?.let { it.contains("documentsui") } == true
+            }
             instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_BACK").close()
             waitFor("cancel returns to retained original") { shown("Generated B1 newer saved original bytes version three") }
             assertEquals(revision,context.fileArchives().row(source,external).getJSONObject("pending").getJSONObject("manifest").getJSONObject("item").getString("revision"))

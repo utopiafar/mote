@@ -76,6 +76,7 @@ class LibrarySourceReaderActivity : MoteActivity() {
             result.onSuccess { data ->
                 text(data.item.optString("title", data.item.optString("windowTitle")), NativeFontRole.TITLE_MOBILE)
                 text(MoteI18n.text(if (key("type") == "material") "整理资料" else "原文与出处"), NativeFontRole.SECTION)
+                if (key("type") == "material") text(LocalContentPresentation.centralStatus(null, data.item))
                 text(data.text.ifBlank { MoteI18n.text("此版本没有保存正文。") })
                 data.item.optString("sourceDescription").takeIf(String::isNotBlank)?.let(::text)
                 data.item.optJSONObject("attributionContext")?.let { context ->
