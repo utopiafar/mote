@@ -11,10 +11,10 @@ internal data class CaptureUploadAttempt(val id: String, val batchId: String, va
         .put("startedAt", startedAt).put("bodyBytes", bodyBytes).put("captures", captures).put("state", state)
         .put("status", status).put("acknowledged", acknowledged).put("reason", reason).put("results", results)
     companion object {
-        fun create(batchId: String, scope: String, process: String, events: List<JSONObject>, bytes: Long, now: Long): CaptureUploadAttempt {
+        fun create(batchId: String, scope: String, process: String, events: List<JSONObject>, bytes: Long, now: Long, originals: List<JSONObject> = events): CaptureUploadAttempt {
             require(events.isNotEmpty() && bytes >= 0 && now > 0); UUID.fromString(batchId)
             return CaptureUploadAttempt(UUID.randomUUID().toString(), batchId, scope, process, now, bytes,
-                JSONArray(events.map { JSONObject().put("id", it.getString("id")).put("version", CaptureUploadVersion.of(it)) }))
+                JSONArray(events.map { JSONObject().put("id", it.getString("id")).put("version", CaptureUploadVersion.of(it)).put("queueVersion", CaptureUploadVersion.of(originals.single { original -> original.getString("id") == it.getString("id") })) }))
         }
         fun parse(value: JSONObject) = CaptureUploadAttempt(value.getString("id"), value.getString("batchId"), value.getString("scope"), value.getString("process"),
             value.getLong("startedAt"), value.getLong("bodyBytes"), value.getJSONArray("captures"), value.getString("state"), value.getInt("status"), value.getInt("acknowledged"), value.getString("reason"), value.getJSONObject("results"))
@@ -29,8 +29,8 @@ internal interface CaptureAttemptStore {
  * Request body size is known; this is never labeled total wire/network usage. */
 internal class CaptureUploadAttempts(private val store: CaptureAttemptStore, private val batchId: String, private val scope: String,
     private val process: String, private val now: () -> Long = System::currentTimeMillis) {
-    fun send(events: List<JSONObject>, bytes: Long, individual: Boolean, send: () -> Pair<Int, JSONObject?>): Pair<Int, JSONObject?> {
-        val attempt = CaptureUploadAttempt.create(batchId, scope, process, events, bytes, now())
+    fun send(events: List<JSONObject>, bytes: Long, individual: Boolean, originals: List<JSONObject> = events, send: () -> Pair<Int, JSONObject?>): Pair<Int, JSONObject?> {
+        val attempt = CaptureUploadAttempt.create(batchId, scope, process, events, bytes, now(), originals)
         store.saveAttempt(attempt) // If history cannot start, do not begin a request we cannot account for.
         var status = 0
         var validated = false

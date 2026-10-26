@@ -193,14 +193,14 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 val response: Pair<Int, JSONObject?> = if (individual) {
                     wireBytes = sent.first().toString().toByteArray(Charsets.UTF_8).size.toLong()
                     SyncSchedule.requireConditions(applicationContext, config)
-                    attempts.send(sent, wireBytes, individual = true) {
+                    attempts.send(sent, wireBytes, individual = true, originals = events) {
                         CollectorHttp(applicationContext).post("${config.server}/api/captures", sent.first(), config.connectionToken())
                     }
                 } else {
                     val result = UploadNegotiation.sendShrinking(sent) { batch ->
                         val bundle = CaptureBundle.encode(batch); wireBytes += bundle.size
                         SyncSchedule.requireConditions(applicationContext, config)
-                        attempts.send(batch, bundle.size.toLong(), individual = false) {
+                        attempts.send(batch, bundle.size.toLong(), individual = false, originals = events) {
                             CollectorHttp(applicationContext).postBytes("${config.server}/api/captures/bundle", bundle, config.connectionToken(), CaptureBundle.CONTENT_TYPE)
                         }
                     }
