@@ -42,7 +42,8 @@ test('actual fresh Memory publication schedules durable topics under its origina
  const step=f.node.store.db.prepare("SELECT id,input FROM execution_steps WHERE kind='memory.topics'").get()!;assert.ok(step);
  const parent=JSON.parse(String(step.input)).parentId;
  assert.equal(f.node.modelAuthorization.stepAuthority(String(step.id)),f.node.modelAuthorization.stepAuthority(parent));
- assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='memory'").get()!.n,1);
+ const claims=f.node.store.db.prepare('SELECT work_id,purpose FROM background_model_trigger_claims').all();
+ assert.equal(claims.length,1);assert.equal(claims[0].work_id,f.node.modelAuthorization.stepAuthority(String(step.id)));assert.match(String(claims[0].purpose),/^memory:recipe\//);
  const before=f.node.memories.list().length;
  const catalog=await f.node.app.inject({url:'/api/context-trees',headers:f.headers});assert.equal(catalog.statusCode,200,catalog.body);assert.match(catalog.body,/Generated quiet work/);
  await f.restart();await f.settle();assert.equal(f.calls,1);assert.equal(f.node.memories.list().length,before);
@@ -61,7 +62,8 @@ test('interrupted topic work resumes after restart and pause with its original a
  const step=f.node.store.db.prepare("SELECT id FROM execution_steps WHERE kind='memory.topics'").get()!,admission=f.node.modelAuthorization.stepAuthority(String(step.id));assert.ok(admission);
  await f.command('pause');await f.restart();held.release();await f.settle();
  assert.equal(f.calls,2);assert.equal(f.node.modelAuthorization.stepAuthority(String(step.id)),admission);
- assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='memory'").get()!.n,1);
+ const claims=f.node.store.db.prepare('SELECT work_id,purpose FROM background_model_trigger_claims').all();
+ assert.equal(claims.length,1);assert.equal(claims[0].work_id,f.node.modelAuthorization.stepAuthority(String(step.id)));assert.match(String(claims[0].purpose),/^memory:recipe\//);
  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,1);
  assert.match((await f.node.app.inject({url:'/api/context-trees',headers:f.headers})).body,/Generated quiet work/);
 });
