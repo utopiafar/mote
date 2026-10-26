@@ -336,7 +336,7 @@ function imageBlocks(body:MaterialBody,record:CaptureRecord,image:ImageMaterialP
     const start=body.blocks.length;body.text(`${prefix}:ocr`,record.ocrText,record.id,'plain',undefined,undefined,evidenceContext(record,'other'));
     originals.push({key:`${prefix}/ocr`,state:'ready',blockIds:body.blocks.slice(start).map(block=>block.id)});
   }
-  return [...originals,...image.jobs.filter(job=>job.name!=='ocr').map(job=>{
+  return [...originals,...image.jobs.filter(job=>job.kind&&job.kind!=='ocr').map(job=>{
     const product=image.products.find(p=>p.name===job.name),start=body.blocks.length;
     if(product?.text)body.text(`${prefix}:${job.name}`,JSON.stringify({imageInterpretation:product.text,regions:product.regions,originalEvidence:product.evidence,productVersion:product.revision,
       evidenceKind:'model_interpretation',attribution:'Preserve the depicted author and uncertainty; this is not a verbatim original or an owner statement.'}),record.id,'json',
@@ -347,7 +347,7 @@ function imageBlocks(body:MaterialBody,record:CaptureRecord,image:ImageMaterialP
 
 /** A source item keeps its own identity; a coding session is assembled separately. */
 const sourceItem:MaterialOrganizer={
-  id:'mote.source-item',version:'14',slot:'source-item',
+  id:'mote.source-item',version:'15',slot:'source-item',
   select:r=>r.provenance&&!r.provenance.document?.coding?{sourceId:r.provenance.sourceId,externalId:r.provenance.externalId}:undefined,
   identity:g=>materialId(g.sourceId,g.externalId),
   build(reader,g){
@@ -407,9 +407,14 @@ const sourceItem:MaterialOrganizer={
     // fail without invalidating that completed extraction. Other file recipes
     // may replace intermediate text (for example ASR followed by alignment).
     const fileState:NonNullable<MaterialDraft['artifacts']>[number]['state']=job?.state==='succeeded'?'ready':['waiting','running'].includes(job?.state??'waiting')?'pending':['blocked','failed','cancelled'].includes(job?.state??'')?'failed':'unavailable';
+    const imageOcr=file.image?.jobs.find(product=>product.kind==='ocr');
+    // A fully typed plan without OCR never scheduled text extraction. Missing
+    // kinds still mean preparation/admission may be blocked, not absent OCR.
+    const imagePlanKnown=file.image?.jobs.every(product=>Boolean(product.kind));
     const extractionState:NonNullable<MaterialDraft['artifacts']>[number]['state']=file.image
-      ?file.image.products.some(product=>product.kind==='ocr')?'ready':file.image.jobs.find(product=>product.kind==='ocr')?.state??(file.image.archiveOnly?'unavailable':fileState)
+      ?file.image.products.some(product=>product.kind==='ocr')?'ready':imageOcr?.state??(file.image.archiveOnly||imagePlanKnown?'unavailable':fileState)
       :fileState;
+    const extractionError=file.image?imageOcr?.reason??(!file.image.archiveOnly&&!imagePlanKnown?job?.error:undefined):job?.error;
     let state:'complete'|'pending'|'partial'='complete',reason:string|undefined;
     if(file.processingRequired){
       if(['waiting','running'].includes(job?.state??'waiting')){state='pending';reason='processing_pending';}
@@ -434,7 +439,7 @@ const sourceItem:MaterialOrganizer={
       // A complete intermediate ASR artifact can still be replaced by dialogue
       // alignment/turn grouping. Do not consume the raw input's one Memory grant
       // until the selected file recipe has finished publishing its output.
-      ...(file.processingRequired?[{key:'extracted-text',blockIds:extractedBlocks,state:extractionState==='ready'?artifact&&artifact.complete!==false&&artifact.coverage!=='partial'?'ready' as const:'unavailable' as const:extractionState,...(!artifact&&job?.error?{reason:job.error}:{})}]:[]),
+      ...(file.processingRequired?[{key:'extracted-text',blockIds:extractedBlocks,state:extractionState==='ready'?artifact&&artifact.complete!==false&&artifact.coverage!=='partial'?'ready' as const:'unavailable' as const:extractionState,...(!artifact&&extractionError?{reason:extractionError}:{})}]:[]),
       ...imageArtifacts,
       ...attachedArtifacts,
     ];

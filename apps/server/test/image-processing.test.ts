@@ -118,6 +118,7 @@ test('policy is pinned at intake; source and item overrides precede future defau
  const inherited=await f.upload(),overridden=await f.upload('generated-sync'),archive=await f.upload('generated-import','archive');await f.images.tick();
  const profile=(id:string)=>JSON.parse(String(f.store.db.prepare('SELECT policy_json FROM image_inputs WHERE capture_id=?').get(id)!.policy_json)).profile.id;
  assert.equal(profile(old),'central-image');assert.equal(profile(inherited),'alternate-image');assert.equal(profile(overridden),'central-image');assert.equal(profile(archive),'archive');
+ await f.organize();assert.equal(f.materials.get(materialId('generated-import',f.files.detail(archive).item.externalId))!.artifacts!.find(a=>a.key==='extracted-text')!.state,'unavailable');
  assert.equal(f.files.detail(archive).job!.stage,'archive');assert.equal(f.store.db.prepare('SELECT count(*) n FROM image_products WHERE capture_id=?').get(archive)!.n,0);
 });
 
@@ -166,6 +167,50 @@ test('a declared non-screen source and recipe stage extend processing without co
  assert.equal(f.materials.get(materialId('generated-scanner',f.files.detail(id).item.externalId))!.artifacts!.find(a=>a.key==='image-receipt')!.state,'ready');
 });
 
+
+for(const named of [false,true])test(`unprepared and disabled OCR remain distinct from absent OCR${named?' with named steps':''}`,async t=>{
+ const f=await fixture(t),recipe={id:'fixture.blocked-text',version:'1'};
+ if(named){
+  f.processing.runtime.imageRecipes.registerRecipe({...recipe,steps:[{name:'recognize-text',stage:{id:'mote.image-ocr',version:'1'},dependsOn:[]}]});
+  const view=f.processing.view(),policy=structuredClone(view.policy);
+  policy.profiles.push({...policy.profiles.find(p=>p.id==='central-image')!,id:'blocked-text',name:'Generated blocked text',imageRecipe:recipe});
+  f.processing.update({revision:view.revision,settings:view.settings,policy});
+ }
+ const id=await f.upload('generated-import',named?'blocked-text':undefined),read=()=>f.materials.get(materialId('generated-import',f.files.detail(id).item.externalId))!.artifacts!.find(a=>a.key==='extracted-text')!;
+ await f.organize();assert.equal(read().state,'pending');
+ f.images.configure({...f.images.settings(),enabled:false});await f.images.tick();await f.organize();
+ assert.equal(read().state,'failed');assert.equal(read().reason,'processing_disabled');assert.deepEqual(f.calls(),{ocr:0,visual:0});
+});
+
+test('a named successful OCR stays ready after visual failure and withdrawal',async t=>{
+ const f=await fixture(t),recipe={id:'fixture.named-text',version:'1'};
+ f.processing.runtime.imageRecipes.registerRecipe({...recipe,steps:[{name:'recognize-text',stage:{id:'mote.image-ocr',version:'1'},dependsOn:[]},{name:'interpretation',stage:{id:'mote.image-understanding',version:'1'},dependsOn:['recognize-text']}]});
+ const view=f.processing.view(),policy=structuredClone(view.policy);
+ policy.profiles.push({...policy.profiles.find(p=>p.id==='central-image')!,id:'named-text',name:'Generated named text',imageRecipe:recipe});f.processing.update({revision:view.revision,settings:view.settings,policy});
+ f.empty();f.failVisual();const id=await f.upload('generated-import','named-text');await f.images.tick();await f.organize();
+ const read=()=>f.materials.get(materialId('generated-import',f.files.detail(id).item.externalId))!;
+ const material=read(),text=material.artifacts!.find(a=>a.key==='extracted-text')!;assert.equal(text.state,'ready');assert.deepEqual(text.blockIds,[]);assert.equal(material.artifacts!.find(a=>a.key==='image-interpretation')!.state,'failed');
+ assert.equal(material.artifacts!.some(a=>a.key==='image-recognize-text'),false,'OCR is not an interpretation even under a custom step name');
+ const ocr=f.store.db.prepare("SELECT * FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(id);
+ f.materials.correctContext(material.id,material.revision,'third_party');await f.organize();
+ assert.equal(read().artifacts!.find(a=>a.key==='extracted-text')!.state,'ready');assert.equal(read().artifacts!.find(a=>a.key==='image-interpretation')!.state,'unavailable');
+ assert.deepEqual(f.store.db.prepare("SELECT * FROM image_products WHERE capture_id=? AND kind='ocr' AND current=1").get(id),ocr);
+});
+
+for(const kind of ['understanding','derived'] as const)for(const failed of [false,true])test(`a ${kind}-only recipe keeps extracted text unavailable when interpretation ${failed?'fails':'succeeds'}`,async t=>{
+ const f=await fixture(t),recipe={id:'fixture.visual-only',version:'1'};
+ // Deliberately call a non-OCR step 'ocr': names do not declare capability.
+ f.processing.runtime.imageRecipes.registerStage({id:'fixture.visual-only-stage',version:'1',kind,run:async()=>{if(failed)throw Error('Generated visual-only failure');return {text:'Generated visual-only observation',regions:[]};}});
+ f.processing.runtime.imageRecipes.registerRecipe({...recipe,steps:[{name:'ocr',stage:{id:'fixture.visual-only-stage',version:'1'},dependsOn:[]}]});
+ const view=f.processing.view(),policy=structuredClone(view.policy);
+ policy.profiles.push({...policy.profiles.find(p=>p.id==='central-image')!,id:'visual-only',name:'Generated visual only',imageRecipe:recipe});
+ f.processing.update({revision:view.revision,settings:view.settings,policy});
+ const id=await f.upload('generated-import','visual-only');await f.images.tick();await f.organize();
+ const material=f.materials.get(materialId('generated-import',f.files.detail(id).item.externalId))!,text=material.artifacts!.find(a=>a.key==='extracted-text')!;
+ assert.equal(text.state,'unavailable','a recipe with no OCR cannot fail text extraction');assert.deepEqual(text.blockIds,[]);assert.equal(text.reason,undefined,'visual errors do not belong to text extraction');
+ assert.equal(material.artifacts!.find(a=>a.key==='image-ocr')!.state,failed?'failed':'ready');
+ assert.equal(f.store.db.prepare("SELECT count(*) n FROM image_products WHERE capture_id=? AND kind='ocr'").get(id)!.n,0);assert.equal(f.calls().ocr,0);
+});
 
 for(const named of [false,true])test(`OCR failure stays visible while pixel understanding runs${named?' with named steps':''}`,async t=>{
  const f=await fixture(t);f.processing.runtime.registry.get('image.http').process=async()=>({durationMs:1,segments:[]});
