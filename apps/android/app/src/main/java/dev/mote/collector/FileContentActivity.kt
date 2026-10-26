@@ -173,10 +173,10 @@ class FileContentActivity : MoteActivity() {
             detail.material?.let { material -> button(MoteI18n.text("原始依据")) {
                 LibrarySourceReaderActivity.open(this, detail.access.server, "material", material.getString("id"), "", "", material.getString("revision"))
             } }
-            detail.total?.let { text(MoteI18n.text("原文范围：{0}–{1} / {2} 字符", offset, offset + original.length, it), 12f) }
+            detail.total?.let { text(MoteI18n.text("衍生内容范围：{0}–{1} / {2} 字符", offset, offset + detail.read.length, it), 12f) }
             detail.nextOffset?.let { next -> button(MoteI18n.text("继续展开")) { offset = next; load() } }
         }
-        if (offset > 0) button(MoteI18n.text("返回原文开头")) { offset = 0; load() }
+        if (offset > 0) button(MoteI18n.text(if (detail.read.isNullOrBlank()) "返回原文开头" else "返回衍生内容开头")) { offset = 0; load() }
         if (row.optJSONObject("pending")?.optJSONObject("manifest")?.has("sha256") == true) button(MoteI18n.text("导出本机保存的完整原件")) {
             exportVersion = Triple(detail.source.id, item.getString("externalId"), item.getString("revision"))
             @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(item.optString("mimeType", "application/octet-stream")).putExtra(Intent.EXTRA_TITLE, item.optString("title", "Mote")), 801)

@@ -112,6 +112,28 @@ class LibrarySourceJourneyInstrumentedTest {
         val third=prepare("Generated B1 newer saved original bytes version three")
         saved.put("pendingRevision",third.getJSONObject("pending").getJSONObject("manifest").getJSONObject("item").getString("revision"));File(context.filesDir,"generated-b1-keys.json").writeText(saved.toString())
     }
+    @Test fun fileDerivedRangeTracksDisplayedBodyAcrossPages() {
+        guard();val api=api();val settings=Settings(context);MoteI18n.select(context,"zh-CN")
+        val config=settings.read();val source=LocalSource(id="generated-b1-range-"+System.nanoTime(),name="Generated range file",kind="local-files",uri="content://generated/range.txt",retention="archive",tree=false,syncContinuously=false,allowRead=true)
+        context.localSources().save(source);api.post("/api/sources",source.registration(settings.deviceId))
+        val original="Generated short original";val queue=context.fileArchives();val external=requireNotNull(source.uri)
+        val item=JSONObject().put("externalId",external).put("uri",external).put("title","Generated range.txt").put("kind","file").put("layer","original").put("text","").put("mimeType","text/plain").put("observedAt",Instant.now().toString()).put("metadata",JSONObject().put("version",1).put("file",JSONObject().put("sizeBytes",original.toByteArray().size)))
+        queue.observe(source,item,queue.configure(source).getString("generation"),0)
+        queue.prepare(source,{ByteArrayInputStream(original.toByteArray())},{true},captureImmediately=true)
+        var tries=0;while(!FileUpload.sync(context,source,config){true})check(tries++<10)
+        val row=queue.row(source.id,external)
+        val material=api.post("/api/fixture/library-material",JSONObject().put("sourceId",source.id).put("externalId",external).put("captureId",row.getString("captureId")).put("text","Generated derived body differs from original. ".repeat(140)))
+        val path="/api/materials/"+material.getString("id")+"/read?revision="+material.getString("revision")+"&length=4000&offset="
+        val first=api.get(path+"0");val next=first.getJSONObject("textRange").getInt("nextOffset");val second=api.get(path+next)
+        assertNotEquals(original.length,first.getString("text").length)
+        ActivityScenario.launch<FileContentActivity>(Intent(context,FileContentActivity::class.java).putExtra("sourceId",source.id).putExtra("externalId",external).putExtra("sourceRevision",row.getString("revision"))).use { scenario ->
+            fun shown(text:String):Boolean { var found=false;scenario.onActivity { found=views(it.window.decorView).filterIsInstance<TextView>().any { view->view.isShown && view.text.toString()==text } };return found }
+            fun range(page:JSONObject,start:Int)=MoteI18n.text("衍生内容范围：{0}–{1} / {2} 字符",start,start+page.getString("text").length,page.getJSONObject("textRange").getInt("total"))
+            waitFor("displayed derived body has its own range") { shown(first.getString("text")) && shown(range(first,0)) }
+            scenario.onActivity { activity -> assertFalse(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.startsWith("原文范围：") });views(activity.window.decorView).filterIsInstance<TextView>().first { it.text.toString()==MoteI18n.text("继续展开") }.performClick() }
+            waitFor("next derived page keeps accurate range and return label") { shown(second.getString("text")) && shown(range(second,next)) && shown(MoteI18n.text("返回衍生内容开头")) }
+        }
+    }
     @Test fun mismatchedPinnedVersionNeverFallsBackToAnotherOriginal() {
         guard();val saved=JSONObject(File(context.filesDir,"generated-b1-keys.json").readText());val access=CentralAccess.resolve(context)
         val intent=Intent(context,LibrarySourceReaderActivity::class.java).putExtra("origin",access.server).putExtra("type","original").putExtra("source",saved.getString("source")).putExtra("external",saved.getString("external")).putExtra("device",Settings(context).deviceId).putExtra("revision","generated-wrong-revision").putExtra("capture",saved.getString("firstId"))

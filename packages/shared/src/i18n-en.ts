@@ -8687,5 +8687,7 @@ export const english: Readonly<Record<string, string>> = {
   "尚无自动主题；仍可浏览全部记忆和已有维度。": "No automatic topics yet. You can still browse all memories and existing views.",
   "此主题已不可用，请返回全部记忆。": "This topic is no longer available. Return to all memories.",
   "自动主题整理未完成；已有记忆仍可浏览。": "Automatic topic organization did not finish. Existing memories remain available.",
-  "自动主题服务尚未就绪；已有记忆仍可浏览。": "Automatic topics are not ready. Existing memories remain available."
+  "自动主题服务尚未就绪；已有记忆仍可浏览。": "Automatic topics are not ready. Existing memories remain available.",
+  "衍生内容范围：{0}–{1} / {2} 字符": "Derived content range: {0}\u2013{1} / {2} characters",
+  "返回衍生内容开头": "Return to the beginning of derived content"
 };
