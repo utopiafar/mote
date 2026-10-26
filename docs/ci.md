@@ -10,7 +10,7 @@ Main uses the affected light contracts for web, Agent, server and desktop, plus 
 
 `Required checks` runs with `always()`. It requires successful selection and every selected job to succeed; only unselected jobs may be skipped. A selector failure, failed/cancelled selected job or unexpected skip cannot become an empty green result. The job name does not imply any change to GitHub branch protection.
 
-The runner retains bounded correctness even in files named `performance` or `migration`. It selects the one large Memory context-grant case and the large query-lineage file separately under manual `scale`; shorter Memory authorization/cancellation guards remain in the automatic partitions. The inventory checks file/case partition coverage. Moving a known failure to manual selection does not repair it.
+The runner retains bounded correctness even in files named `performance` or `migration`. Explicit behavioral inventories in `scripts/ci/partitions.mjs` select large Memory/import/query/admission correctness and mass-shutdown recovery separately; shorter authorization/cancellation/recovery guards remain in the automatic partitions. The inventory validates file coverage and unique literal case names, including mixed files whose short cases stay automatic. Moving a known failure to manual selection does not repair it.
 
 ## Local light commands
 
@@ -27,7 +27,7 @@ npm run check:affected -- --all --dry-run
 
 Without `--head`, selection includes staged, unstaged and untracked working changes as well as committed changes since the merge base. With `--head`, it checks the committed comparison only. Invalid revisions/diff errors fail rather than returning an empty plan. `check:affected` uses the local/PR light plan; it does not query the successful-main baseline or reproduce main's contract-only selection. `check:local`, `check:central`, `check:desktop` and the root/full-glob `npm test` remain broad commands, outside the automatic entrypoint; they are not substitutes for the light selector.
 
-For an individual implemented CI task, `node scripts/ci/run.mjs --task web --dry-run` prints the task's exact commands; omit `--dry-run` only when selecting that execution. The runner validates its inventory, including TypeScript-parsed Memory case names, so dependencies must be available even for its dry-run. A dry-run is not a passing runtime check.
+For an individual implemented CI task, `node scripts/ci/run.mjs --task web --dry-run` prints the task's exact commands; omit `--dry-run` only when selecting that execution. The runner validates its inventory, including TypeScript-parsed partition case names, so dependencies must be available even for its dry-run. A dry-run is not a passing runtime check.
 
 ## Explicit manual workflow
 
@@ -43,8 +43,8 @@ In GitHub Actions choose **Checks → Run workflow** on a workflow ref containin
 | --- | --- | --- |
 | `integration` | `all` | Generated app/protocol units and integration fixtures, E2E/media, profiles/tunnel and related checks; specialist suites remain separate |
 | `docker` | `all` | Temporary container, profile/backup/rollback and tunnel-container integration |
-| `scale` | `all`, `memory`, `query` | Original large Memory context-grant case or large query-lineage correctness coverage |
-| `recovery` | `all`, `replay`, `process`, `arrivals` | Generated heldout Memory replays, Central process lifecycle, or material-arrival/recovery fixtures |
+| `scale` | `all`, `memory`, `query`, `intake`, `admission` | Large Memory context-grants/imports, query lineage, interrupted ZIP intake or pending-query admission correctness |
+| `recovery` | `all`, `replay`, `process`, `arrivals`, `shutdown` | Generated heldout Memory replays, Central process lifecycle, material-arrival/recovery fixtures or mass model-wait shutdown/restart |
 | `benchmark` | `all`, `architecture`, `directory`, `sync`, `harness`, `file-commit`, `review-retrieval` | The selected generated performance measurement |
 | `all` | `all` | All five suites above, including benchmarks; select this scope deliberately |
 
