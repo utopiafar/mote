@@ -336,10 +336,13 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
     }
     input.signal?.throwIfAborted();
   });
+  // Owner inspection and external read-only clients do not send to our model.
+  // The same reader enforces model disclosure scope inside an admitted model run.
+  const readingForModel=()=>Boolean(modelContext.getStore()||modelAuthorization.currentId);
   const agentFeatures=await installAgentFeatures(backendContext,evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
-    exposurePolicy:new EvidenceExposurePolicy([],context=>modelAuthorization.allowsDisclosure({sourceId:context.sourceId??'device:'+context.deviceId,dataKind:context.representation==='image'?'image':'text'})),
-    assertSources:(ids,kind='text')=>modelAuthorization.assertDisclosure(ids.map(sourceId=>({sourceId,dataKind:kind}))),
-    assertEvidence:(ids,kind)=>modelAuthorizationHost.assertEvidence(ids,kind),
+    exposurePolicy:new EvidenceExposurePolicy([],context=>!readingForModel()||modelAuthorization.allowsDisclosure({sourceId:context.sourceId??'device:'+context.deviceId,dataKind:context.representation==='image'?'image':'text'})),
+    assertSources:(ids,kind='text')=>{if(readingForModel())modelAuthorization.assertDisclosure(ids.map(sourceId=>({sourceId,dataKind:kind})));},
+    assertEvidence:(ids,kind)=>{if(readingForModel())modelAuthorizationHost.assertEvidence(ids,kind);},
     currentOperation:()=>modelContext.getStore()?.responseMode==='memory-extraction'?'memory':'query',
     currentContextTime:()=>modelContext.getStore()?.contextTime,
     currentGrantContext:()=>modelContext.getStore(),currentProcessingEvidence:()=>modelContext.getStore()?.processingEvidence,currentMaterialInputs:()=>modelContext.getStore()?.processingMaterialInputs}));
