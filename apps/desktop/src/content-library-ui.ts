@@ -3,9 +3,10 @@ import type {DesktopApi,Status} from './contracts';
 import type {ContentItem,ContentDetail} from './content-library';
 import type {SyncContent} from './sync-content';
 /** Home and Content share one evidence reader; no markup from evidence becomes UI. */
-export function createContentLibraryUi(api:DesktopApi){
+export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void){
   const el=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
   const dialog=el<HTMLDialogElement>('content-detail-dialog');
+  document.getElementById('content-memories')?.addEventListener('click',()=>openMemories?.());
   let generation=0,detailGeneration=0,status:Status|undefined,localOffset=0,remoteCursor:string|undefined,localMore=false,remoteMore=false;
   let archiveGeneration=0,archiveAuthorizationDenied=false,detailIsCentral=false;
   let items:ContentItem[]=[],selected:ContentItem|undefined,selectedButton:HTMLElement|undefined,chunkOffset=0,centralId:string|undefined;

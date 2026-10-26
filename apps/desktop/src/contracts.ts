@@ -133,6 +133,10 @@ export interface DesktopApi {
   selectSourceFiles(mode: 'files' | 'directory'): Promise<{canceled:boolean;selectionId?:string;names?:string[]}>;
   confirmSourceFiles(selectionId:string, options: import('./source-types').SourceOptions): Promise<void>;
   cancelSourceFiles(selectionId:string): Promise<void>;
+  memoryTopics(): Promise<import('./memory-topics').TopicDirectory>;
+  memoryTopicPage(input?:import('./memory-topics').TopicQuery): Promise<import('./memory-topics').TopicPage>;
+  memoryTopicEvidence(memoryId:string,evidenceId:string): Promise<import('./memory-topics').TopicEvidence>;
+  memoryTopicDetail(id:string): Promise<import('./memory-topics').TopicMemory>;
   centralContent(cursor?:string): Promise<import('./content-library').CentralContentPage>;
   centralContentDetail(id:string,offset?:number,image?:boolean): Promise<import('./sync-content').SyncContent>;
   localContent(offset?:number): Promise<import('./content-library').LocalContentPage>;
