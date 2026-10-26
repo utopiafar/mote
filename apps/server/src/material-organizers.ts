@@ -406,9 +406,10 @@ const sourceItem:MaterialOrganizer={
     // OCR publishes an independent product: a later visual interpretation can
     // fail without invalidating that completed extraction. Other file recipes
     // may replace intermediate text (for example ASR followed by alignment).
+    const fileState:NonNullable<MaterialDraft['artifacts']>[number]['state']=job?.state==='succeeded'?'ready':['waiting','running'].includes(job?.state??'waiting')?'pending':['blocked','failed','cancelled'].includes(job?.state??'')?'failed':'unavailable';
     const extractionState:NonNullable<MaterialDraft['artifacts']>[number]['state']=file.image
-      ?file.image.products.some(product=>product.kind==='ocr')?'ready':file.image.jobs.find(product=>product.kind==='ocr')?.state??(file.image.archiveOnly?'unavailable':'pending')
-      :job?.state==='succeeded'?'ready':['waiting','running'].includes(job?.state??'waiting')?'pending':['blocked','failed','cancelled'].includes(job?.state??'')?'failed':'unavailable';
+      ?file.image.products.some(product=>product.kind==='ocr')?'ready':file.image.jobs.find(product=>product.kind==='ocr')?.state??(file.image.archiveOnly?'unavailable':fileState)
+      :fileState;
     let state:'complete'|'pending'|'partial'='complete',reason:string|undefined;
     if(file.processingRequired){
       if(['waiting','running'].includes(job?.state??'waiting')){state='pending';reason='processing_pending';}
