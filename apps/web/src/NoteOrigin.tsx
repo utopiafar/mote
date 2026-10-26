@@ -27,6 +27,7 @@ function ConversationOrigin({api,conversationId,turnId,text,onOpen}:{api:Api;con
  const matched=turn?.result&&text===turn.question+'\n\n'+turn.result.answer;
  return <>{matched?<><h4>{moteText('用户问题')}</h4><pre>{turn.question}</pre><h4>{moteText('AI 回答')}</h4><pre>{turn.result!.answer}</pre></>:<pre>{text}</pre>}
  {!current?<p role="status">{moteText('正在读取原始对话…')}</p>:current.failed?<p role="status">{moteText('原始对话或轮次暂不可读，可能已删除、权限已变更或连接中断。已保存的引用未改变。')} <button className="text-button" onClick={()=>retry(value=>value+1)}>{moteText('重试')}</button></p>:<>
+ {turn?.evidenceStale&&<p className="notice" role="status">{moteText("这是历史版本，当前资料已更新。")}</p>}
  <a className="text-button" href={conversationTurnRoute(conversationId,turnId)}>{moteText('查看原始对话与轮次')}</a>
  {!matched?<p role="status">{moteText('原始轮次与保存的引用不同；请打开原始对话核对，保存的引用未改变。')}</p>:<nav aria-label={moteText('引用来源')}>{turn.result!.citations.map((cite,index)=><button className="text-button" key={index+':'+cite.id} onClick={()=>onOpen(formatEvidenceRef('capture',cite.id))}>{moteText('查看原文依据')} [{index+1}]</button>)}</nav>}
  </>}
