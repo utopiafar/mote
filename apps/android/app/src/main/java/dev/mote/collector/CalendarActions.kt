@@ -51,14 +51,17 @@ class CalendarActions(private val context: Context, private val foreground: Bool
         } ?: error(MoteI18n.text("无法读取已有日历"))
         return result
     }
+    private fun declareCapability(available: JSONArray?) = CalendarCapabilityPublisher(settings.deviceId, ::request).publish(available)
     fun connect(): JSONArray = ConnectionGuard.sync {
         val calendars = calendars()
+        declareCapability(calendars)
         request("/api/actions/targets", JSONObject().put("deviceId", settings.deviceId).put("deviceName", settings.read().deviceName).put("calendars", calendars))
         CalendarActionWorker.schedule(context)
         calendars
     } ?: error(MoteI18n.text("连接正在切换"))
     fun deliver() {
-        if (!permissions()) return
+        val ready = ConnectionGuard.sync { val available = if (permissions()) calendars() else null; declareCapability(available); available != null } ?: return
+        if (!ready) return
         val data = ConnectionGuard.sync { request("/api/actions/deliveries?deviceId=${java.net.URLEncoder.encode(settings.deviceId, "UTF-8")}") } ?: return
         val items = data.getJSONArray("items")
         for (i in 0 until items.length()) execute(items.getJSONObject(i).getString("id"))

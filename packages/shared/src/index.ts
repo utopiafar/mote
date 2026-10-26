@@ -200,3 +200,4 @@ export type {PluginAction,CapabilityState,PluginCapability,PluginSource,PluginCo
 export * from './appearance.js';
 
 export * from './http-failure.js';
+export * from './action-capabilities.js';

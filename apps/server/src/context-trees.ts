@@ -1,4 +1,6 @@
 import {z} from 'zod';
+import {AutomaticTopics} from './automatic-topics.js';
+import type {Store} from './store.js';
 import {moteText} from './i18n.js';
 import type {FastifyInstance} from 'fastify';
 import type {EvidenceReader} from './evidence-reader.js';
@@ -19,8 +21,10 @@ const positionSchema=z.object({signature:z.string(),start:z.string().nullable(),
 export class ContextTreeRegistry {
   private readonly trees=new Map<string,ContextTree>();
   private revision=0;
+  automatic?:AutomaticTopics;
+  initializeAutomatic(store:Store,reader:EvidenceReader){return this.automatic??=new AutomaticTopics(store,reader);}
   register(raw:ContextTree){
-    const tree=treeSchema.parse(raw),ids=new Set(tree.nodes.map(node=>node.id));
+    const tree=treeSchema.parse(raw);if(tree.id.startsWith('auto.'))throw new StoreError('Automatic topic namespace is reserved');const ids=new Set(tree.nodes.map(node=>node.id));
     if(this.trees.has(tree.id)||ids.size!==tree.nodes.length)throw new StoreError('Duplicate context tree identity');
     for(const node of tree.nodes){
       const seen=new Set([node.id]);let parent=node.parentId;
@@ -29,9 +33,10 @@ export class ContextTreeRegistry {
     this.trees.set(tree.id,tree);this.revision++;let removed=false;
     return ()=>{if(!removed){removed=true;this.trees.delete(tree.id);this.revision++;}};
   }
-  catalog(){return {items:[...this.trees.values()].map(tree=>({...tree,label:moteText(tree.label),nodes:tree.nodes.map(({select:_,...node})=>({...node,label:moteText(node.label)}))}))};}
+  async catalog(){return {classification:this.automatic?.state()??{state:'unavailable'},items:[...(await this.automatic?.trees()??[]),...this.trees.values()].map(tree=>({...tree,label:moteText(tree.label),nodes:tree.nodes.map(({select:_,...node})=>({...node,label:moteText(node.label)}))}))};}
   async page(reader:EvidenceReader,treeId:string,nodeId:string,raw:unknown,ownerArchive=true){
-    const tree=this.trees.get(treeId),node=tree?.nodes.find(value=>value.id===nodeId);
+    const automatic=treeId.startsWith('auto.');
+    const tree=automatic?(await this.automatic?.trees())?.find(tree=>tree.id===treeId):this.trees.get(treeId),node=tree?.nodes.find(value=>value.id===nodeId);
     if(!tree||!node)throw new StoreError('Context tree node not found',404);
     const {cursor,limit,...scope}=querySchema.parse(raw);
     const snapshot=reader.memoryBindings?.retainSnapshot();
@@ -56,7 +61,7 @@ export class ContextTreeRegistry {
         start=page.nextCursor;offset=0;
       }
       return {items,nextCursor:encode('')};
-    }finally{snapshot?.release();}
+    }finally{snapshot?.release();if(automatic&&!(await this.automatic?.trees())?.some(current=>JSON.stringify(current)===JSON.stringify(tree)))throw new StoreError('Automatic topic inputs changed; restart browsing',409);}
   }
 }
 export function createContextTrees(){

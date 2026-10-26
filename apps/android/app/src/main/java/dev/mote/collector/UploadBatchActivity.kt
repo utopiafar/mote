@@ -20,7 +20,7 @@ class UploadBatchActivity : MoteActivity() {
                 batch.items.forEach { item -> rows.addView(MoteUi.button(Button(this).apply {
                     text = MoteI18n.text("查看原件") + " · " + if (item.received) MoteI18n.text("已确认") else MoteI18n.text("未确认")
                     tag = "history-original-${item.captureId}"
-                    setOnClickListener { startActivity(Intent(this@UploadBatchActivity, CaptureRecordsActivity::class.java).putExtra("recordId", item.captureId).putExtra("recordVersion", item.originalVersion)) }
+                    setOnClickListener { startActivity(Intent(this@UploadBatchActivity, CaptureRecordsActivity::class.java).putExtra("recordId", item.captureId).putExtra("historyOriginalVersion", item.originalVersion)) }
                 })) }
                 batch.attempts.forEach { attempt -> rows.addView(TextView(this).apply {
                     text = java.time.Instant.ofEpochMilli(attempt.startedAt).toString() + "\n" +
