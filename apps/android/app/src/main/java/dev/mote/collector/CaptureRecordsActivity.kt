@@ -150,7 +150,7 @@ class CaptureRecordsActivity : MoteActivity() {
         MoteUi.styleTree(body)
         updateRecordHeading()
         load()
-        val reader = if (savedInstanceState == null) intent.getStringExtra("recordId")?.let { ReaderRequest(it, false) }
+        val reader = if (savedInstanceState == null) intent.getStringExtra("recordId")?.let { ReaderRequest(it, intent.getBooleanExtra("recordRemote", false)) }
             else savedInstanceState.getString("readerId")?.let { ReaderRequest(it, savedInstanceState.getBoolean("readerRemote")) }
         reader?.let { detail(it.id, it.remote, null, generation) }
     }
@@ -431,11 +431,20 @@ class CaptureRecordsActivity : MoteActivity() {
             try {
                 val readerClient = if (remote && client == null) {
                     val settings = Settings(this)
-                    CaptureRecordClient(settings.read(), settings.deviceId, CentralAccess.resolve(this).client)
+                    val selection = CentralAccess.resolve(this)
+                    val expected = intent.getStringExtra("recordOrigin").orEmpty()
+                    check(expected.isBlank() || expected == selection.server) { MoteI18n.text("访问凭据已失效，请重新连接。") }
+                    CaptureRecordClient(settings.read(), settings.deviceId, requireNotNull(selection.client) { MoteI18n.text("请先登录中央节点，各页面会共用这次登录。") })
                 } else client
                 val record = if (remote) requireNotNull(readerClient).detail(id)
                     else queue().capture(id) ?: error(MoteI18n.text("本机记录已同步并清理，请切换到中央归档查看"))
                 runOnUiThread { if (dialog.isShowing && CapturePreview.hasImage(record)) message.text = MoteI18n.text("记录已读取，正在加载图片…") }
+                if (remote && intent.getStringExtra("recordDeviceId").orEmpty().isNotBlank())
+                    check(record.getString("deviceId") == intent.getStringExtra("recordDeviceId"))
+                if (remote && intent.getStringExtra("recordVersion").orEmpty().isNotBlank())
+                    check(record.optString("libraryVersion") == intent.getStringExtra("recordVersion")) { MoteI18n.text("分页内容已变化或游标无效，请返回第一页重新读取。") }
+                if (remote && intent.hasExtra("recordObservationCount"))
+                    check(LibraryCaptureProjection.observations(record) == intent.getIntExtra("recordObservationCount", -1)) { MoteI18n.text("分页内容已变化或游标无效，请返回第一页重新读取。") }
                 require(record.getString("id") == id); Instant.parse(record.getString("capturedAt"))
                 val bytes = if (CapturePreview.hasImage(record)) if (remote) requireNotNull(readerClient).image(id, false) else queue().image(id) else null
                 val bitmap = bytes?.let { CapturePreview.decode(it, 1600) }

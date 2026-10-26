@@ -49,6 +49,14 @@ export class AssetStore {
  }
  private directories(){privateDirectory(this.store.directory);privateDirectory(join(this.store.directory,'files'));privateDirectory(this.directory);}
  get(hash:string):Asset{if(!/^[a-f0-9]{64}$/.test(hash))throw new StoreError('Invalid asset hash');const row=this.store.db.prepare('SELECT * FROM assets WHERE hash=?').get(hash);if(!row)throw new StoreError('Asset unavailable',404);if(row.format!=='chunks'||!Number.isSafeInteger(row.bytes)||Number(row.bytes)<0||Number(row.bytes)>FILE_MAX_BYTES||!Number.isSafeInteger(row.parts)||Number(row.parts)<0||Number(row.parts)>128)throw new StoreError('Invalid asset metadata',500);return row as Asset;}
+ /** Host-only availability projection. No payload read, checksum claim or new grant.
+  * The original reader still decrypts and validates bytes when the owner opens it. */
+ retained(hash:string){
+  const asset=this.get(hash);
+  if(asset.parts!==Math.ceil(asset.bytes/FILE_PART_BYTES))return false;
+  for(let part=0;part<asset.parts;part++)if(!this.store.contentEncryption.exists(join(this.directory,hash,String(part))))return false;
+  return true;
+ }
  hold(hash:string){const id=randomUUID();this.store.db.prepare('INSERT INTO asset_pins VALUES(?,?,?)').run(id,hash,Date.now()+86400000);return ()=>{this.store.db.prepare('DELETE FROM asset_pins WHERE id=?').run(id);};}
  put(bytes:Buffer){return this.putParts([bytes],bytes.length);}
  /** Prepare immutable upload parts outside the event loop and outside SQLite.

@@ -28,7 +28,7 @@ test('revocation and deletion remove cached evidence while transport failures re
 });
 test('operation changes invalidate the shared domain resources without touching unrelated settings',async()=>{
  const {affectedResource}=await import('../src/operation-feed.js');
- const kinds={memory:['/api/memories?limit=30','/api/memory-jobs/x'],file:['/api/files/id','/api/source-items?sourceId=x'],capture:['/api/capture-browser/id','/api/captures?limit=30'],import:['/api/imports/id','/api/memories?limit=30'],query:['/api/query-runs/id','/api/conversations/id'],insight:['/api/insight-runs/id','/api/insights']};
+ const kinds={memory:['/api/memories?limit=30','/api/memory-jobs/x'],file:['/api/files/id','/api/source-items?sourceId=x'],capture:['/api/capture-browser/id','/api/captures?limit=30','/api/insights?limit=30','/api/insights/saved-result'],import:['/api/imports/id','/api/memories?limit=30'],query:['/api/query-runs/id','/api/conversations/id'],insight:['/api/insight-runs/id','/api/insights']};
  for(const [kind,paths] of Object.entries(kinds)){for(const path of paths)assert.equal(affectedResource(path,new Set([kind+':x']),false),true,path);assert.equal(affectedResource('/api/model-settings',new Set([kind+':x']),false),false);}
  assert.equal(affectedResource('/api/memories',new Set(['query:x']),false),false);assert.equal(affectedResource('/api/memory-jobs/x',new Set(),true),true);
 });

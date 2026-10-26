@@ -94,7 +94,7 @@ test('archive import validates checksums and rolls back all entries on a late co
 test('deletion respects shared blobs and invalidates derived insights',async t=>{
   const store=vault(t);const a=await fixture(),b={...a,id:randomUUID()};await store.ingest(a);await store.ingest(b);
   store.saveInsight({answer:'fixture'},randomUUID());store.delete(a.id);
-  assert.equal((store.stats() as {blobs:number}).blobs,1);assert.equal(store.insights().length,0);
+  assert.equal((store.stats() as {blobs:number}).blobs,1);assert.equal(store.insights().items.length,0);
   store.delete(b.id);assert.equal((store.stats() as {blobs:number}).blobs,0);assert.equal(readdirSync(store.assets.directory).length,0);assert.equal(store.search({query:'Mote'}).length,0);
 });
 test('sampled intervals clip to range, do not overlap within a device, and keep device time separate',async t=>{

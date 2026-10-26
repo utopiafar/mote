@@ -12,7 +12,7 @@ import {webFeatures} from '../src/features/registry';
 import {featuresReady} from '../src/features/runtime';
 import {readPage} from '../src/navigation';
 import {primaryDestination} from '../src/WorkspaceNavigation';
-import type {Api, Answer, Status} from '../src/api';
+import {ApiError, type Api, type Answer, type Status} from '../src/api';
 import type {PageProps} from '../src/features/types';
 import {modelView} from './fixtures/model-settings';
 
@@ -55,7 +55,10 @@ test('a Home finding opens that exact report, reaches its evidence and does not 
   const other: Answer = {runId: 'newer-unrelated', answer: 'Generated unrelated report', trace: [], citations: []};
   const api = apiWith((path, init) => {
     if (init?.method && init.method !== 'GET') writes.push(path);
-    if (path === '/api/insights') return {items: [other, report]};
+    if (path === '/api/insights?limit=30') return {items: [other, report],nextCursor:null};
+    if(path==='/api/insights/chosen-report')return report;
+    if(path==='/api/insights/newer-unrelated')return other;
+    if(path==='/api/insights/unavailable')throw new ApiError('Generated report unavailable',404);
     if (path === '/api/insight-runs') return {items: [{id: 'background-run', status: 'running', scope: {}, createdAt: when, updatedAt: when, events: []}]};
     if (path === '/api/insight-runs/background-run') return background;
     if (path === '/api/connections') return {items: []};
