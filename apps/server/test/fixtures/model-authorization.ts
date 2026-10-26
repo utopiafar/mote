@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {TOPIC_CLASSIFICATION_INSTRUCTION} from '../../src/automatic-topics.js';
 import {randomUUID} from 'node:crypto';
 import type {buildApp} from '../../src/app.js';
 import type {ModelConnection,ModelDataScope} from '../../src/background-model-authorization.js';
@@ -19,4 +20,12 @@ export async function authorizeFixtureModels(node:Node,scope:ModelDataScope={sou
  * its enqueue when applicable. Never wrap background ticks or all fixture work. */
 export function withFixtureOwnerModelWork<T>(node:Node,task:()=>Promise<T>,options:{connections?:ModelConnection[];identities?:readonly string[]}={}){
  return node.modelAuthorizationHost.manual('fixture-owner:'+randomUUID(),options.connections??node.featureServices.availableModelConnections(),task,undefined,'manual',options.identities??[]);
+}
+
+/** Opt-in generated response for suites testing extraction/review rather than
+ * topic quality. Check this before business-phase counters; never suppress the
+ * production classifier, its admission, transport fence or persisted outcome. */
+export function fixtureTopicResult(input:import('@mote/agent').QueryInput):import('@mote/shared').QueryResult|undefined{
+ if(!input.question.startsWith(TOPIC_CLASSIFICATION_INSTRUCTION+'\n'))return;
+ return {answer:'{"trees":[]}',citations:[],trace:[],runId:randomUUID()};
 }
