@@ -123,6 +123,8 @@ test('manual-only inventory rejects newly unclassified it, imported/variable ali
     `let assigned; assigned=test; assigned('new assigned alias',()=>{});`,
     `test.only('new only',()=>{});`,
     `runner.it('new namespace test',()=>{});`,
+    `runner.default('new namespace default test',()=>{});`,
+    `import { default as defaultAlias } from 'node:test'; defaultAlias('new named default test',()=>{});`,
     `const {it: other}=runner; other('new destructured alias',()=>{});`,
   ]) {
     writeFileSync(join(root, file), `import test,{it,test as check} from 'node:test';import * as runner from 'node:test';test('${known}',()=>{});${extra}`);

@@ -84,7 +84,7 @@ export function testNames(file, root = '.') {
   const ts = createRequire(resolve(root, 'package.json'))('typescript');
   const source = ts.createSourceFile(file, readFileSync(resolve(root, file), 'utf8'), ts.ScriptTarget.Latest, true);
   const bindings = new Map(), namespaces = new Set(), tests = [];
-  const runnerKind = name => ['test', 'it'].includes(name) ? 'test' : ['describe', 'suite'].includes(name) ? 'suite' : null;
+  const runnerKind = name => ['test', 'it', 'default'].includes(name) ? 'test' : ['describe', 'suite'].includes(name) ? 'suite' : null;
   for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement) || statement.moduleSpecifier.text !== 'node:test') continue;
     const clause = statement.importClause;
