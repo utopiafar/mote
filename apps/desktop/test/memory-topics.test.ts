@@ -20,11 +20,14 @@ it('refuses cyclic or duplicate topic ancestry but preserves untrusted labels as
  delete (value.items[0].nodes[1] as {parentId?:string}).parentId;expect((await centralMemoryTopics(config)).items[0].label).toContain('<script>');
 });
 
-it('evidence reads require membership and check the session after both requests',async()=>{
+it('uses only the Memory-scoped evidence route and rejects absent members, denial and changed sessions',async()=>{
  const id='11111111-1111-4111-8111-111111111111',evidence='22222222-2222-4222-8222-222222222222';
- const fetch=vi.fn(async(url:string)=>new Response(JSON.stringify(url.includes('/api/memories/')?{id,title:'Memory',status:'published',evidenceIds:[evidence]}:{id:evidence,ocrText:'generated original'})));vi.stubGlobal('fetch',fetch);
- const fence=vi.fn();expect((await centralMemoryTopicEvidence(config,id,evidence,fence)).text).toBe('generated original');expect(fence).toHaveBeenCalledTimes(2);
- fetch.mockClear();await expect(centralMemoryTopicEvidence(config,id,id,fence)).rejects.toThrow('not a member');expect(fetch).toHaveBeenCalledOnce();
+ const fetch=vi.fn(async()=>new Response(JSON.stringify({status:'published',items:[{id:evidence,ocrText:'generated original'}]})));vi.stubGlobal('fetch',fetch);
+ const fence=vi.fn();expect((await centralMemoryTopicEvidence(config,id,evidence,fence)).text).toBe('generated original');expect(fence).toHaveBeenCalledOnce();
+ expect(fetch.mock.calls[0][0]).toBe('http://127.0.0.1:9999/api/memories/'+id+'/evidence');
+ fetch.mockImplementation(async()=>new Response(JSON.stringify({status:'published',items:[]})));
+ fetch.mockClear();await expect(centralMemoryTopicEvidence(config,id,evidence,fence)).rejects.toThrow('not a member');expect(fetch).toHaveBeenCalledOnce();
+ fetch.mockImplementation(async()=>new Response(JSON.stringify({status:'published',items:[{id:evidence,ocrText:'generated original'}]})));
  fetch.mockClear();await expect(centralMemoryTopicEvidence(config,id,evidence,()=>{throw Error('changed session');})).rejects.toThrow('changed session');expect(fetch).toHaveBeenCalledOnce();
- let checks=0;await expect(centralMemoryTopicEvidence(config,id,evidence,()=>{if(++checks===2)throw Error('changed after body');})).rejects.toThrow('changed after body');
+ fetch.mockImplementation(async()=>new Response('{}',{status:403}));fetch.mockClear();await expect(centralMemoryTopicEvidence(config,id,evidence,fence)).rejects.toThrow();expect(fetch).toHaveBeenCalledOnce();
 });

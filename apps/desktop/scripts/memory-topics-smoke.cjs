@@ -25,6 +25,20 @@ app.on('browser-window-created',(_event,window)=>{if(main)return;main=window;win
  const shot=async(name)=>writeFileSync(join(out,name+'.png'),(await window.webContents.capturePage()).toPNG());
  await wait(`Boolean(window.mote)&&!document.querySelector('#settings-fields').disabled`,'ready');
  await js(`document.querySelector('[data-nav="records"]').click();document.querySelector('#content-memories').click()`);await count(30);
+ if(process.env.MOTE_TOPICS_DETAIL_REVIEW==='1'){
+  const pick=async(f)=>{await click('全部记忆');await count(30);await click('下一页');await count(2);await js(`document.querySelector('[data-memory="${f.firstMemory}"]').click()`);await wait(`document.querySelector('#memory-topics-dialog').textContent.includes('查看原文依据 1')`,'detail');};
+  const memoryGet=async(id)=>{const response=await fetch(url+'/api/memories/'+id,{headers:{authorization:'Bearer '+token}});assert.equal(response.status,200);return response.json();};
+  const correct=async(id)=>{const row=await memoryGet(id);const response=await fetch(url+'/api/memories/'+id+'/correct',{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({version:row.version,title:'Synthetic replacement',statement:'Synthetic changed statement',uncertainty:'Fixture'})});assert.equal(response.status,200);};
+  await pick(fixture);await click('查看原文依据 1');await wait(`document.querySelector('#memory-topics-dialog pre')?.textContent.includes('Synthetic native topic original 0')`,'single-route original');
+  await post('invalidate');await wait(`Boolean(document.querySelector('#memory-topics-dialog [role=alert]'))`,'deleted original clears');assert(!(await js(`document.querySelector('#memory-topics-dialog').textContent`)).includes('Synthetic native topic original 0'));
+  for(const change of ['denied','version']){
+   const f=await post('reset');await click('全部记忆');await count(30);await pick(f);
+   if(change==='denied')await post('detail-mode',{mode:'denied'});else await correct(f.firstMemory);
+   await wait(`!document.querySelector('#memory-topics-dialog').textContent.includes('查看原文依据 1')`,'selected '+change+' clears');
+   assert(!(await js(`document.querySelector('#memory-topics-dialog').textContent`)).includes('Synthetic topic memory 0'));
+  }
+  await shot('detail-invalidation');console.log('PASS selected Memory delete/403/version with live directory and single-route original');clearTimeout(timeout);app.exit(0);return;
+ }
  if(process.env.MOTE_TOPICS_LAYOUT_ONLY==='1'){
   window.setSize(820,620);await shot('compact-final');
   assert(await js('document.documentElement.scrollWidth<=innerWidth'));
