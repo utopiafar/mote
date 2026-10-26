@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -55,7 +56,7 @@ test('incomplete history fails closed and queued derived dialogue rechecks sourc
  const gate=f.node.featureServices.agentGate,limit=gate.snapshot().limit;
  let release!:()=>void,entered!:()=>void,n=0;const held=new Promise<void>(resolve=>release=resolve),full=new Promise<void>(resolve=>entered=resolve);
  const occupying=Array.from({length:limit},()=>gate.run(async()=>{if(++n===limit)entered();await held;}));await full;
- const queued=f.node.agent.query({question:'Generated queued history',conversation:context});
+ const queued=withFixtureOwnerModelWork(f.node,()=>f.node.agent.query({question:'Generated queued history',conversation:context}));
  // Preparation now yields while checking lineage; revoke only once this
  // generated query has actually reached the occupied admission queue.
  for(let attempt=0;attempt<100&&gate.snapshot().waiting===0;attempt++)await new Promise<void>(resolve=>setImmediate(resolve));
