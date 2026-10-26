@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -116,7 +117,8 @@ test('media API allows full client reads and writes with explicit device filters
   const directory=mkdtempSync(join(tmpdir(),'mote-media-api-')),token='generated-media-owner-token';
   const config:Config={dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
   let reader:ContextReader|undefined;
-  const {app}=await buildApp(config,{createModelAgent:async(_settings,value)=>{reader=value;return {configured:false,query:async()=>{throw new Error('No live model');},close:async()=>{}};}});
+  const node=await buildApp(config,{createModelAgent:async(_settings,value)=>{reader=value;return {configured:false,query:async()=>{throw new Error('No live model');},close:async()=>{}};}});
+  const {app}=node;
   t.after(async()=>{await app.close();rmSync(directory,{recursive:true,force:true});});
   const owner={authorization:`Bearer ${token}`};
   const invitation=(await app.inject({method:'POST',url:'/api/connections/invitations',headers:owner,payload:{serverUrl:'https://fixture.invalid',label:'Generated phone'}})).json();
@@ -132,7 +134,7 @@ test('media API allows full client reads and writes with explicit device filters
   assert.equal((await app.inject({url:'/api/capture-browser?source=media',headers:collector})).json().items[0].media.sessions[0].title,'虚构海边故事');
   for(const query of ['screenLocked=maybe','after=bad','appVisibility=guess','after='+at(20)+'&before='+at(10)])assert.equal((await app.inject({url:'/api/media-activity?'+query,headers:owner})).statusCode,400);
   assert.equal((await app.inject({url:'/api/media-activity?screenLocked=false',headers:owner})).json().totalDurationMs,0);
-  const {disclosureDependencies,...agentResult}=await reader!.mediaActivity!({deviceId:'phone'});
+  const {disclosureDependencies,...agentResult}=await withFixtureOwnerModelWork(node,()=>reader!.mediaActivity!({deviceId:'phone'}));
   assert.deepEqual(agentResult,scoped);
   assert.deepEqual(disclosureDependencies,{version:1,complete:true,ids:[own.id]});
   await app.inject({method:'DELETE',url:'/api/connections/'+paired.credentialId,headers:owner});

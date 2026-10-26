@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import {fixtureMemoryResult,fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -119,7 +120,7 @@ test('Memory API rejects raw source-item chunks while file evidence and deletion
   assert.equal(explicit.statusCode,409,explicit.body);
   const automatic=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{deviceId:'fixture-phone'}});
   assert.equal(automatic.statusCode,409,automatic.body);
-  const current=await reader.fileChunks!({id:parent.id,offset:0});assert.equal(current[0].revisionState,'current');
+  const current=await withFixtureOwnerModelWork(node,()=>reader.fileChunks!({id:parent.id,offset:0}));assert.equal(current[0].revisionState,'current');
   const citation=await node.app.inject({url:'/api/captures/'+ids[0],headers});assert.equal(citation.json().fileEvidence.captureId,parent.id);
   const memory=node.memories.extract(fixtureMemoryResult(node.memories,result(ids[0])),'fixture').items[0];
   const removed=await node.app.inject({method:'DELETE',url:'/api/captures/'+ids[0],headers});assert.equal(removed.statusCode,200,removed.body);

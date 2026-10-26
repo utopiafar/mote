@@ -17,9 +17,11 @@ import type {MemoryLifecycle} from './memory-lifecycle.js';
 import type {EvidenceReader} from './evidence-reader.js';
 import type {FileStore} from './files.js';
 import {StoreError,type Store} from './store.js';
+import type {ModelAuthorizationHost} from './model-authorization-host.js';
+import type {ModelConnection} from './background-model-authorization.js';
 import {EvidenceExposurePolicy} from './evidence-exposure.js';
 import type {ManualMemoryInputPlanRequest} from './memory-input-plans.js';
-export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSettings,memoryRecipeSettings,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{memoryIntegrationSettings:MemoryIntegrationSettings;memoryRecipeSettings:MemoryRecipeSettings;store:Store;files:FileStore;evidenceReader:EvidenceReader;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult,strategy?:import('./memory-strategy-contract.js').MemoryReviewStrategy,draftOrigin?:import('./memory-review.js').MemoryDraftOrigin)=>Promise<QueryResult>}){
+export function registerMemoryRoutes(app:FastifyInstance,{modelAuthorizationHost,availableModelConnections,memoryIntegrationSettings,memoryRecipeSettings,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{modelAuthorizationHost:ModelAuthorizationHost;availableModelConnections:()=>ModelConnection[];memoryIntegrationSettings:MemoryIntegrationSettings;memoryRecipeSettings:MemoryRecipeSettings;store:Store;files:FileStore;evidenceReader:EvidenceReader;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult,strategy?:import('./memory-strategy-contract.js').MemoryReviewStrategy,draftOrigin?:import('./memory-review.js').MemoryDraftOrigin)=>Promise<QueryResult>}){
  const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
   app.post('/api/memories/:id/publish',async req=>{const body=z.object({version:z.number().int().positive().optional()}).strict().parse(req.body??{});return memoryPipeline.publication?memoryPipeline.publication.withOwnerWork(()=>memoryPipeline.publication!.publish((req.params as {id:string}).id,body.version)):memories.publish((req.params as {id:string}).id,body.version);});
   app.post('/api/memories/:id/correct',async req=>memoryPipeline.publication?memoryPipeline.publication.withOwnerWork(()=>memoryPipeline.publication!.correct((req.params as {id:string}).id,req.body)):memories.correct((req.params as {id:string}).id,req.body));
@@ -56,7 +58,7 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
   app.get('/api/memory-integration-settings',async()=>memoryIntegrationSettings.view());
   app.put('/api/memory-integration-settings',{bodyLimit:4096},async req=>memoryIntegrationSettings.configure(req.body));
   app.post('/api/memory-integrations',{bodyLimit:8192},async(req,reply)=>{
-    try{const result=requestMemoryIntegration(req.body,{lifecycle,memories,pipeline:memoryPipeline});void lifecycle.tick().catch(()=>{});return reply.code(202).send(result);}
+    try{const result=requestMemoryIntegration(req.body,{lifecycle,memories,pipeline:memoryPipeline});modelAuthorizationHost.control.manual('owner-integration:'+result.id,'manual',[],availableModelConnections());void lifecycle.tick().catch(()=>{});return reply.code(202).send(result);}
     catch(error){if(error instanceof MemoryIntegrationSelectionError)return reply.code(error.statusCode).send({error:error.code,message:error.message,requestId:req.id});throw error;}
   });
   app.post('/api/memory-integrations/:id/cancel',async req=>lifecycle.cancel('consolidation',jobId(req.params)));
@@ -73,10 +75,10 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
     const profile=modelSettings.select('memory',scope.modelProfileId);
     const policy=new EvidenceExposurePolicy();
     const bindings=scope.recipes?.map(ref=>{try{return memoryPipeline.strategies.resolve(ref).binding;}catch{throw new StoreError('Memory recipe is unavailable',409);}});
-    const create=(ids:string[],manualPlans?:ManualMemoryInputPlanRequest[],selection?:unknown)=>{
+    const create=(ids:string[],manualPlans?:ManualMemoryInputPlanRequest[],selection?:unknown)=>modelAuthorizationHost.manual('owner-memory:'+randomUUID(),availableModelConnections(),async()=>{
       const job=memoryPipeline.create({contextTime:scope.contextTime,recipes:scope.recipes,evidenceIds:ids,...(manualPlans?.length?{manualPlans}:{}),timeZone:scope.timeZone,batchCharacters:lifecycle.settings().batchCharacters,modelProfileId:profile.id,modelOverride:scope.modelProfileId?undefined:modelSettings.view().defaultModels?.memory});
       void memoryPipeline.run(job.id).catch(()=>{});return reply.code(202).send({...job,...(selection?{selection}:{})});
-    };
+    });
     if(bindings&&!scope.evidenceIds){
       const selected=evidenceReader.memoryPlanSelection(scope,bindings,policy);
       if(!selected.evidenceIds.length&&!selected.manualPlans.length)throw new StoreError('No evidence in this range',409);
@@ -140,6 +142,6 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
       memoryPipeline.publication?.assert(publication,result);const saved=memories.extract(result,profile.settings.model,{...options,prepared:publication?.prepared});memoryPipeline.publication?.committed(publication);return saved;
     },profile.id);
     }catch(error){memoryPipeline.abandonEngineDraft(context);throw error;}
-    };return memoryPipeline.publication?memoryPipeline.publication.withOwnerWork(execute):execute();
+    };return modelAuthorizationHost.manual('owner-extract:'+randomUUID(),availableModelConnections(),()=>memoryPipeline.publication?memoryPipeline.publication.withOwnerWork(execute):execute());
   });
 }

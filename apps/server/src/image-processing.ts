@@ -20,6 +20,7 @@ import {MEDIA_CATALOG,type MediaAssets} from './media-assets.js';
 import {requestLocalJson,isLoopback} from './local-http.js';
 import type {MediaExecutionCall} from './media-execution-facts.js';
 import {ProcessorAdmission} from './processor-admission.js';
+import type {ModelProcessingAuthority} from './model-processing-authority.js';
 import type {MaterialStore} from './materials.js';
 import {APPLEDOUBLE_REASON,isAppleDouble} from './appledouble.js';
 
@@ -41,8 +42,8 @@ export class ImageProcessing {
  private attachments:ImageAttachmentIntake;private closed=false;private workerReady=false;private checkedAt=0;private probe?:Promise<void>;
  private readonly processorAdmission:ProcessorAdmission;
  private prepareCursor=0;private readonly media:MediaRuntimeSettings;private savedSettings:PerceptionConfiguration;
- private previews=new Map<string,{expires:number;watermark:number;query:z.infer<typeof historicalSchema>}>();
- constructor(private store:Store,private processing:FileProcessing,engine:ExecutionEngine,private options:{understanding?:ImageUnderstanding;mediaAssets?:MediaAssets;media?:Partial<MediaRuntimeSettings>;configService?:ConfigService;configuration?:PerceptionConfiguration;materials?:MaterialStore;probeOcr?:()=>Promise<boolean>}={}){
+ private previews=new Map<string,{expires:number;watermark:number;query:z.infer<typeof historicalSchema>;captureIds?:string[]}>();
+ constructor(private store:Store,private processing:FileProcessing,engine:ExecutionEngine,private options:{modelAuthority?:ModelProcessingAuthority;understanding?:ImageUnderstanding;mediaAssets?:MediaAssets;media?:Partial<MediaRuntimeSettings>;configService?:ConfigService;configuration?:PerceptionConfiguration;materials?:MaterialStore;probeOcr?:()=>Promise<boolean>}={}){
   this.media=mediaRuntimeSettings(options.media);this.processorAdmission=new ProcessorAdmission(store);
   this.savedSettings=perceptionConfigurationSchema.parse(options.configService?.current<PerceptionConfiguration>('perception')??options.configuration??defaultPerceptionConfiguration());
   this.publishSettings();
@@ -56,6 +57,7 @@ export class ImageProcessing {
   this.attachments=new ImageAttachmentIntake(store,processing.files);
   const db=store.db;
   db.exec(`CREATE TABLE IF NOT EXISTS image_backfills(id TEXT PRIMARY KEY,query TEXT NOT NULL,watermark INTEGER NOT NULL,cursor INTEGER NOT NULL DEFAULT 0,queued INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL DEFAULT 'waiting');`);
+  db.exec(`CREATE TABLE IF NOT EXISTS image_backfill_items(batch_id TEXT NOT NULL REFERENCES image_backfills(id) ON DELETE CASCADE,position INTEGER NOT NULL,capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,intent_id TEXT,PRIMARY KEY(batch_id,position));`);
   db.exec(`CREATE TABLE IF NOT EXISTS image_exclusions(capture_id TEXT PRIMARY KEY REFERENCES image_inputs(capture_id) ON DELETE CASCADE,hash TEXT NOT NULL,reason TEXT NOT NULL);`);
   this.unregister.push(engine.register({kind:'images.excluded',pool:'images.excluded',concurrency:()=>1,policy:EXECUTION_POLICIES.deterministic,timeoutMs:300000,
    validate:step=>this.exclusion(String(step.input.captureId))===step.input.reason,
@@ -74,6 +76,7 @@ export class ImageProcessing {
  }
  owns(id:string){return Boolean(this.store.db.prepare('SELECT 1 FROM image_inputs WHERE capture_id=?').get(id));}
  mediaCallCurrent(call:MediaExecutionCall){const step=this.engine.get(call.stepId);return Boolean(step&&String(step.input.fingerprint)===call.generation&&this.valid(step));}
+ modelConnections(){return this.processing.modelConnections().filter(connection=>connection.id.endsWith(':image.http'));}
  private row(id:string){return this.store.db.prepare('SELECT * FROM image_inputs WHERE capture_id=?').get(id) as ImageInputRow|undefined;}
  private exclusion(id:string){return this.store.db.prepare('SELECT x.reason FROM image_exclusions x JOIN image_inputs i ON i.capture_id=x.capture_id AND i.hash=x.hash WHERE x.capture_id=?').get(id)?.reason as string|undefined;}
  /** Old imports and new synchronized files share this byte-format admission gate. */
@@ -198,7 +201,7 @@ export class ImageProcessing {
  private product(id:string,name:string){return this.store.db.prepare('SELECT * FROM image_products WHERE capture_id=? AND name=? AND current=1 ORDER BY rowid DESC LIMIT 1').get(id,name);}
  private semanticWithdrawn(id:string){return Boolean(this.row(id)?.semantic_withdrawn);}
  private valid(step:ExecutionStep){
-  if(this.closed||this.exclusion(String(step.input.captureId)))return false;if(step.kind!=='images.ocr'&&this.semanticWithdrawn(String(step.input.captureId)))return false;const row=this.row(String(step.input.captureId));if(!row||row.hash!==step.input.hash||row.generation!==step.input.generation||!this.store.isCurrentEvidence(row.capture_id))return false;
+  if(this.closed||this.exclusion(String(step.input.captureId)))return false;if(step.kind!=='images.ocr'&&this.semanticWithdrawn(String(step.input.captureId)))return false;const row=this.row(String(step.input.captureId));if(!row||row.hash!==step.input.hash||row.generation!==step.input.generation||step.input.ownerIntentId!==this.processing.modelIntent(row.capture_id,'image')||!this.store.isCurrentEvidence(row.capture_id))return false;
   try{const plan=this.recipe(row),stage=plan.steps.find(s=>s.name===step.input.name);return Boolean(stage&&this.fingerprint(row,stage)===step.input.fingerprint&&this.inputs.get(row.adapter)?.version===step.input.adapterVersion);}catch{return false;}
  }
  private processorEndpoint(step:ExecutionStep){
@@ -283,7 +286,7 @@ export class ImageProcessing {
      if(['succeeded','cancelled'].includes(job.state)||job.attempts>=4||job.available_at>Date.now())continue;
      if(!settingsSchema.parse(this.settings()).enabled){db.prepare("UPDATE perception_jobs SET state='blocked',error='processing_disabled' WHERE capture_id=? AND kind=?").run(row.capture_id,stage.name);continue;}
      if(!stage.dependsOn.every(name=>{const dependency=db.prepare('SELECT state FROM perception_jobs WHERE capture_id=? AND kind=?').get(row.capture_id,name);return dependency?.state==='succeeded'||stage.optionalDependencies?.includes(name)&&['blocked','failed','cancelled'].includes(String(dependency?.state));})){db.prepare("UPDATE perception_jobs SET state='blocked',error='dependency_failed' WHERE capture_id=? AND kind=?").run(row.capture_id,stage.name);continue;}
-     const fingerprint=this.fingerprint(row,stage),input={captureId:row.capture_id,hash:row.hash,name:stage.name,generation:row.generation,fingerprint,adapterVersion:this.inputs.get(row.adapter)?.version??'',stage:stage.stage};
+     const fingerprint=this.fingerprint(row,stage),ownerIntentId=this.processing.modelIntent(row.capture_id,'image'),input={captureId:row.capture_id,...(ownerIntentId?{ownerIntentId}:{}),hash:row.hash,name:stage.name,generation:row.generation,fingerprint,adapterVersion:this.inputs.get(row.adapter)?.version??'',stage:stage.stage};
      linkOperationParent(this.store,(row.adapter==='mote.file-image'?'file:':'capture:')+row.capture_id,'image:'+row.capture_id);
      const stepId=this.engine.enqueue('image:'+row.capture_id,'images.'+stage.kind,input,{generation:{slot:stage.name,version:sha256(JSON.stringify([row.generation,fingerprint]))}}),step=this.engine.get(stepId)!;
      if(['blocked','stale','cancelled'].includes(step.state)&&!this.admit(step))this.engine.retry(stepId,false);
@@ -296,6 +299,15 @@ export class ImageProcessing {
  }
  async tick(){await this.attachments.prepare();await this.refreshWorker();for(let i=0;i<32;i++){const ids=this.prepare();if(!ids.length)break;const before=ids.map(id=>this.engine.get(id)?.state);await this.engine.drain(ids);if(ids.every((id,index)=>this.engine.get(id)?.state===before[index]))break;}}
  private async execute(step:ExecutionStep,signal:AbortSignal){
+  const row=this.row(String(step.input.captureId))!,plan=this.recipe(row),stage=plan.steps.find(s=>s.name===step.input.name)!;
+  // A stored byte-only result is a deterministic reuse, not a new model send.
+  const cached=row.reuse_allowed?this.store.db.prepare('SELECT json,id,capture_id FROM image_products WHERE fingerprint=? AND current=1 LIMIT 1').get(String(step.input.fingerprint)):undefined;
+  if(cached)return {...JSON.parse(String(cached.json)),reuse:{productId:cached.id,captureId:cached.capture_id}};
+  if(stage.kind!=='ocr'&&stage.kind!=='understanding')return this.executeAuthorized(step,signal,()=>signal.throwIfAborted());
+  const processor=this.processing.runtime.registry.get(plan.binding.applied.profile.processorId),connection=stage.kind==='ocr'?this.processing.mediaConnection(processor,plan.binding.applied,plan.binding.settings):undefined;
+  return this.processing.runModelStage({operationId:step.operationId,captureId:row.capture_id,stage:stage.kind==='ocr'?'ocr':'image-understanding',dataKind:'image',connection,ownerIntentId:this.processing.modelIntent(row.capture_id,'image')},signal,(authorizedSignal,assertCurrent)=>this.executeAuthorized(step,authorizedSignal,assertCurrent),this.options.modelAuthority);
+ }
+ private async executeAuthorized(step:ExecutionStep,signal:AbortSignal,assertCurrent:()=>void){
   const fence=String(this.store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(step.id)?.fence??'');
   const row=this.row(String(step.input.captureId))!,original=this.original(row)!;
   const cached=row.reuse_allowed?this.store.db.prepare('SELECT json,id,capture_id FROM image_products WHERE fingerprint=? AND current=1 LIMIT 1').get(String(step.input.fingerprint)):undefined;
@@ -303,11 +315,13 @@ export class ImageProcessing {
   const plan=this.recipe(row),stage=this.processing.runtime.imageRecipes.get(step.input.stage as {id:string;version:string}),rawRecord=this.store.evidence([row.capture_id])[0];
   const record={...rawRecord,attributionContext:this.materials()?.contextForEvidence(rawRecord)??unknownAttributionContext()};
   const dependencies=Object.fromEntries(plan.steps.find(s=>s.name===step.input.name)!.dependsOn.map(name=>[name,this.product(row.capture_id,name)?JSON.parse(String(this.product(row.capture_id,name)!.json)).payload:undefined]));
-  const readImage=async(input:Omit<import('@mote/shared').ImageReadInput,'id'>)=>{signal.throwIfAborted();const bytes:Buffer[]=[];for await(const part of original.read())bytes.push(part);return imageOutput(Buffer.concat(bytes),original.mimeType,{...input,id:row.capture_id},()=>this.valid(step));};
+  const guardedOriginal=()=>({async *[Symbol.asyncIterator](){const iterator=original.read()[Symbol.asyncIterator]();try{for(;;){signal.throwIfAborted();assertCurrent();const next=await iterator.next();if(next.done)return;signal.throwIfAborted();assertCurrent();yield next.value;}}finally{await iterator.return?.();}}});
+  const readImage=async(input:Omit<import('@mote/shared').ImageReadInput,'id'>)=>{signal.throwIfAborted();assertCurrent();const bytes:Buffer[]=[];for await(const part of guardedOriginal())bytes.push(part);return imageOutput(Buffer.concat(bytes),original.mimeType,{...input,id:row.capture_id},()=>this.valid(step));};
   const payload=await stage.run({record,hash:original.hash,mimeType:original.mimeType,dependencies,signal,readImage,
-   ocr:async()=>{const processor=this.processing.runtime.registry.get(plan.binding.applied.profile.processorId),endpoint=this.processorEndpoint(step),run=()=>this.processing.runImageProcessor(row.capture_id,'image-product:'+String(step.input.fingerprint),signal,request=>processor.process({file:{id:record.id,title:record.windowTitle||record.appName||'Image',mimeType:original.mimeType,sizeBytes:original.sizeBytes},parameters:effectiveProcessorParameters(processor,plan.binding.applied.profile.parameters),settings:plan.binding.settings,maxAudioMs:0,signal,request,readOriginal:()=>original.read()}),processor.id==='image.http'?{step,generation:String(step.input.fingerprint),endpoint:plan.binding.settings.imageEndpoint,apiKey:plan.binding.settings.apiKey??'',assert:()=>{signal.throwIfAborted();if(!this.valid(step)||!this.engine.isCurrentGrant(step.id,fence))throw new ExecutionFailure('stale','input_changed');}}:undefined);const raw=await(endpoint?this.processorAdmission.run(endpoint,run):run());return processor.output?this.processing.runtime.outputs.decode(processor.output,raw).transcript:transcriptSchema.parse(raw);},
-   understand:async()=>{if(!this.options.understanding)throw new ExecutionFailure('blocked','model_unconfigured');return this.options.understanding.run({record,original,ocr:dependencies.ocr as Transcript|undefined,signal,readImage:input=>readImage(input),assertContextAuthority:()=>{signal.throwIfAborted();if(!this.valid(step))throw new ProviderFailure({category:'permanent',code:'context_evidence_restricted'});},operationId:step.operationId,service:plan.binding.settings.analysisModel});},
+   ocr:async()=>{const processor=this.processing.runtime.registry.get(plan.binding.applied.profile.processorId),endpoint=this.processorEndpoint(step),run=()=>this.processing.runImageProcessor(row.capture_id,'image-product:'+String(step.input.fingerprint),signal,request=>processor.process({file:{id:record.id,title:record.windowTitle||record.appName||'Image',mimeType:original.mimeType,sizeBytes:original.sizeBytes},parameters:effectiveProcessorParameters(processor,plan.binding.applied.profile.parameters),settings:plan.binding.settings,maxAudioMs:0,signal,request,authorizeModel:assertCurrent,readOriginal:guardedOriginal}),processor.id==='image.http'?{step,generation:String(step.input.fingerprint),endpoint:plan.binding.settings.imageEndpoint,apiKey:plan.binding.settings.apiKey??'',assert:()=>{signal.throwIfAborted();if(!this.valid(step)||!this.engine.isCurrentGrant(step.id,fence))throw new ExecutionFailure('stale','input_changed');}}:undefined);const raw=await(endpoint?this.processorAdmission.run(endpoint,run):run());return processor.output?this.processing.runtime.outputs.decode(processor.output,raw).transcript:transcriptSchema.parse(raw);},
+   understand:async()=>{if(!this.options.understanding)throw new ExecutionFailure('blocked','model_unconfigured');return this.options.understanding.run({record,original,ocr:dependencies.ocr as Transcript|undefined,signal,readImage:input=>readImage(input),assertContextAuthority:()=>{signal.throwIfAborted();assertCurrent();if(!this.valid(step))throw new ProviderFailure({category:'permanent',code:'context_evidence_restricted'});},operationId:step.operationId,service:plan.binding.settings.analysisModel});},
   });
+  signal.throwIfAborted();assertCurrent();
   if(stage.kind==='ocr'){const transcript=transcriptSchema.parse(payload);if(transcript.durationMs!==0||transcript.segments.map(s=>s.text).join('\n').length>100000)throw new StoreError('Invalid image OCR output',422);return {payload:transcript,kind:'ocr'};}
   const interpretation=imageInterpretationSchema.parse(payload),metadata=await readImage({view:'metadata'}),imageView=metadata.imageView!;
   if(interpretation.regions.some(r=>r.x+r.width>imageView.original.width||r.y+r.height>imageView.original.height))throw new StoreError('Image interpretation region is outside the original',422);
@@ -337,14 +351,17 @@ export class ImageProcessing {
  }
  cancellation(id:string){return {canCancel:Boolean(this.store.db.prepare("SELECT 1 FROM perception_jobs WHERE capture_id=? AND state IN ('waiting','running','blocked','failed')").get(id)),wait:this.processing.imageProcessorWait(id)};}
  cancel(id:string,releaseInput=true){if(!this.owns(id))throw new StoreError('Image not found',404);if(this.exclusion(id))return {state:'skipped'};for(const step of this.engine.list({operationId:'image:'+id,limit:100}).items)if(!['succeeded','stale','cancelled'].includes(step.state))this.engine.cancel(step.id);this.store.db.prepare("UPDATE perception_jobs SET state='cancelled',error='cancelled' WHERE capture_id=? AND state!='succeeded'").run(id);this.projectFile(this.row(id)!);if(releaseInput&&this.row(id)!.adapter==='mote.file-image')this.processing.files.releaseSnapshotInput(id);return {state:'cancelled'};}
- retry(id:string,recompute=true,confirmUnknown=false){
+ retry(id:string,recompute=true,confirmUnknown=false){return this.retryImage(id,recompute,confirmUnknown,true);}
+ private retryImage(id:string,recompute:boolean,confirmUnknown:boolean,rememberIntent:boolean){
   const row=this.row(id);if(!row||!this.store.isCurrentEvidence(id))throw new StoreError('Image not found',404);
   if(this.excludeMetadata(row))return {queued:false};
-  const wait=this.processing.imageProcessorWait(id);if(wait==='running'||wait==='unknown'&&!confirmUnknown)throw new StoreError('Previous image processing has not finished or its completion is unknown',409);if(confirmUnknown)this.processing.clearImageProcessorWait(id);
-  this.cancel(id,false);this.store.db.prepare('UPDATE image_inputs SET semantic_withdrawn=0 WHERE capture_id=?').run(id);this.store.db.prepare('UPDATE image_inputs SET auto_eligible=1,generation=generation+?,reuse_allowed=?,policy_json=NULL,understanding_enabled=? WHERE capture_id=?').run(Number(recompute),Number(!recompute),Number(this.settings().understandingEnabled),id);
+  const wait=this.processing.imageProcessorWait(id);if(wait==='running'||wait==='unknown'&&(!confirmUnknown||!this.processing.ownerCanConfirmUnknown(id,this.options.modelAuthority)))throw new StoreError('Previous image processing has not finished or its completion is unknown',409);if(confirmUnknown)this.processing.clearImageProcessorWait(id);
+  const intentChanged=rememberIntent?this.processing.rememberModelIntent(id,'image',this.options.modelAuthority):Boolean(this.processing.modelIntent(id,'image'));
+  if(intentChanged){for(const step of this.engine.list({operationId:'image:'+id,limit:100}).items)if(['waiting','running','blocked'].includes(step.state))this.engine.cancel(step.id);}else this.cancel(id,false);
+  this.store.db.prepare('UPDATE image_inputs SET semantic_withdrawn=0 WHERE capture_id=?').run(id);this.store.db.prepare('UPDATE image_inputs SET auto_eligible=1,generation=generation+?,reuse_allowed=?,policy_json=NULL,understanding_enabled=? WHERE capture_id=?').run(Number(recompute||intentChanged),Number(!recompute),Number(this.settings().understandingEnabled),id);
   // Explicit completion grants a fresh budget to the unfinished current plan.
   // Successful OCR and superseded generations keep their existing receipts.
-  if(!recompute)for(const pending of this.store.db.prepare("SELECT e.id FROM execution_steps e JOIN execution_operation_steps o ON o.step_id=e.id WHERE o.operation_id=? AND o.active=1 AND json_extract(e.input,'$.generation')=? AND e.state='cancelled'").all('image:'+id,row.generation))this.engine.retry(String(pending.id),true);
+  if(!recompute&&!intentChanged)for(const pending of this.store.db.prepare("SELECT e.id FROM execution_steps e JOIN execution_operation_steps o ON o.step_id=e.id WHERE o.operation_id=? AND o.active=1 AND json_extract(e.input,'$.generation')=? AND e.state='cancelled'").all('image:'+id,row.generation))this.engine.retry(String(pending.id),true);
   this.store.db.prepare("UPDATE perception_jobs SET state='waiting',attempts=0,available_at=0,error=NULL,auto_eligible=1 WHERE capture_id=? AND (?=1 OR state!='succeeded')").run(id,Number(recompute));return {queued:true};
  }
  previewHistoricalOcr(raw:unknown={}){
@@ -353,11 +370,38 @@ export class ImageProcessing {
   this.previews.set(token,{query,watermark,expires:now+600000});return {token,count,bounded:false,mode:query.mode};
  }
  private historicalFilter(query:z.infer<typeof historicalSchema>){const values:(string|number)[]=[],clauses:string[]=[];if(query.after){clauses.push('c.captured_at>=?');values.push(query.after);}if(query.before){clauses.push('c.captured_at<?');values.push(query.before);}if(query.sourceId){clauses.push('i.source_id=?');values.push(query.sourceId);}if(query.mode==='complete')clauses.push("(i.auto_eligible=0 OR NOT EXISTS(SELECT 1 FROM perception_jobs j WHERE j.capture_id=i.capture_id) OR EXISTS(SELECT 1 FROM perception_jobs j WHERE j.capture_id=i.capture_id AND j.state!='succeeded'))");return {sql:clauses.length?'AND '+clauses.join(' AND '):'',values};}
- processHistoricalOcr(raw:unknown){const {token}=z.object({token:z.string().uuid()}).strict().parse(raw),preview=this.previews.get(token);if(!preview||preview.expires<Date.now())throw new StoreError('Image preview expired; refresh before processing',409);const id=randomUUID();this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(preview.query))+512);this.store.db.prepare('INSERT INTO image_backfills(id,query,watermark) VALUES(?,?,?)').run(id,JSON.stringify(preview.query),preview.watermark);this.previews.delete(token);return {queued:true,jobId:id};}
+ /** Freeze the confirmation's targets before the host opens its manual scope.
+  * This returns IDs, never authority; background work cannot call it to grant work. */
+ historicalOcrTargets(raw:unknown):readonly string[]{
+  const {token}=z.object({token:z.string().uuid()}).strict().parse(raw),preview=this.previews.get(token);
+  if(!preview||preview.expires<Date.now())throw new StoreError('Image preview expired; refresh before processing',409);
+  if(!preview.captureIds){const filter=this.historicalFilter(preview.query);preview.captureIds=this.store.db.prepare(`SELECT i.capture_id FROM image_inputs i JOIN captures c ON c.id=i.capture_id WHERE i.rowid<=? ${filter.sql} ORDER BY i.rowid`).all(preview.watermark,...filter.values).map(row=>String(row.capture_id));}
+  return [...preview.captureIds];
+ }
+ processHistoricalOcr(raw:unknown){
+  const captureIds=this.historicalOcrTargets(raw),{token}=z.object({token:z.string().uuid()}).strict().parse(raw),preview=this.previews.get(token)!,id=randomUUID(),db=this.store.db;
+  const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+  try{
+   this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(preview.query))+512);
+   db.prepare('INSERT INTO image_backfills(id,query,watermark) VALUES(?,?,?)').run(id,JSON.stringify(preview.query),captureIds.length);
+   const insert=db.prepare('INSERT INTO image_backfill_items VALUES(?,?,?,?)');
+   for(const [position,captureId] of captureIds.entries()){
+    if(!this.store.isCurrentEvidence(captureId))continue;
+    this.processing.rememberModelIntent(captureId,'image',this.options.modelAuthority,Boolean(this.options.modelAuthority||this.processing.modelAuthorityEnabled()));
+    const intent=this.processing.modelIntent(captureId,'image');this.store.reserveMetadata(Buffer.byteLength(id+captureId+(intent??''))+128);
+    insert.run(id,position+1,captureId,intent??null);
+   }
+   if(own)db.exec('COMMIT');
+  }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
+  this.previews.delete(token);return {queued:true,jobId:id};
+ }
  private backfillBatch(){
   for(const batch of this.store.db.prepare("SELECT * FROM image_backfills WHERE state='waiting' ORDER BY rowid LIMIT 1").all()){
-   const query=historicalSchema.parse(JSON.parse(String(batch.query))),filter=this.historicalFilter(query),rows=this.store.db.prepare(`SELECT i.rowid position,i.capture_id FROM image_inputs i JOIN captures c ON c.id=i.capture_id WHERE i.rowid>? AND i.rowid<=? ${filter.sql} ORDER BY i.rowid LIMIT 200`).all(batch.cursor,batch.watermark,...filter.values),db=this.store.db;
-   db.exec('BEGIN IMMEDIATE');try{let queued=0;for(const item of rows){if(!this.store.isCurrentEvidence(String(item.capture_id)))continue;try{if(this.retry(String(item.capture_id),query.mode==='recompute').queued)queued++;}catch(error){if(!(error instanceof StoreError&&error.statusCode===409))throw error;db.prepare('UPDATE image_inputs SET auto_eligible=1 WHERE capture_id=?').run(item.capture_id);}}db.prepare('UPDATE image_backfills SET cursor=?,queued=queued+?,state=? WHERE id=?').run(rows.at(-1)?.position??batch.watermark,queued,rows.length<200?'succeeded':'waiting',batch.id);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
+   const query=historicalSchema.parse(JSON.parse(String(batch.query))),rows=this.store.db.prepare('SELECT position,capture_id,intent_id FROM image_backfill_items WHERE batch_id=? AND position>? ORDER BY position LIMIT 200').all(batch.id,batch.cursor),db=this.store.db;
+   db.exec('BEGIN IMMEDIATE');try{let queued=0;for(const item of rows){
+    const id=String(item.capture_id);if(!this.store.isCurrentEvidence(id)||this.processing.modelIntent(id,'image')!==(item.intent_id===null?undefined:String(item.intent_id)))continue;
+    try{if(this.retryImage(id,query.mode==='recompute',false,false).queued)queued++;}catch(error){if(!(error instanceof StoreError&&error.statusCode===409))throw error;}
+   }db.prepare('UPDATE image_backfills SET cursor=?,queued=queued+?,state=? WHERE id=?').run(rows.at(-1)?.position??batch.watermark,queued,rows.length<200?'succeeded':'waiting',batch.id);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
   }
  }
  async close(){if(this.closed)return;this.closed=true;this.processing.imageControl=undefined;await this.attachments.close();await Promise.all(this.unregister.splice(0).map(dispose=>dispose()));this.disposeInputs();await this.probe;}

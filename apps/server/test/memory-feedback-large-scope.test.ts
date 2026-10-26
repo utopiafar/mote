@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -75,7 +76,7 @@ test('a large reviewed needs-context batch recovers through the real coordinator
  const ids=node.materials.input(material.ref,['source-body'])!.evidenceIds;targetIds=ids.slice(0,80);contextIds=ids.slice(80);
  const job=node.memoryPipeline.create({evidenceIds:ids,evidenceRanges:targetIds.map((id,index)=>({id,offset:0,length:texts[index].length})),contextEvidenceRanges:contextIds.map((id,index)=>({id,offset:0,length:texts[index+80].length})),recipes:[{id:'mote.personal-memory',version:'5'}]});
  assert.equal(job.totalBatches,1);assert.equal(job.authorizedChunks!.length,160);
- const done=await node.memoryPipeline.run(job.id);
+ const done=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(job.id));
  assert.equal(done.status,'completed',JSON.stringify({jobId:done.id,errorCode:done.errorCode,failureReceipt:done.failureReceipt,batches:done.batches.map(batch=>({id:batch.id,status:batch.status,errorCode:batch.errorCode,failureReceipt:batch.failureReceipt}))}));assert.equal(requests.length,1);
  assert.equal(calls.filter(input=>input.traceContext?.phase==='extract').length,2);assert.equal(calls.filter(input=>input.traceContext?.phase==='review').length,2);
  const restored=done.batches.filter(batch=>batch.replanRound===1);assert.equal(restored.length,1,'the model-selected context handoff does not introduce automatic subdivisions');

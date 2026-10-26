@@ -66,6 +66,7 @@ export function registerMemoryIntegration({lifecycle,memories,pipeline,settings,
     };
     assertInputs();
     const all=state.inputs.map(input=>memories.get(input.id));
+    return pipeline.withIntegrationAuthority(window.id,Boolean(window.manual),[...new Set(all.flatMap(card=>card.evidenceIds))],async()=>{
     const failures:unknown[]=[];
     for(const profile of ['personal','coding'] as const){
       if(state.completed.includes(profile))continue;
@@ -121,7 +122,7 @@ export function registerMemoryIntegration({lifecycle,memories,pipeline,settings,
       // Staging may write to the provider, but never grants publication. Each
       // boundary retains the same lifecycle lease, exact input and privacy proof.
       const assertAuthority=()=>{
-        const assert=()=>{assertInputs();pipeline.assertAdmissibleEvidence(evidenceIds);assertReadInput();};
+        const assert=()=>{pipeline.assertIntegrationAuthority();assertInputs();pipeline.assertAdmissibleEvidence(evidenceIds);assertReadInput();};
         if(execution)execution.commit(assert);else assert();
       };
       assertAuthority();assertReadInput();assertDelivered(delivery);
@@ -129,7 +130,7 @@ export function registerMemoryIntegration({lifecycle,memories,pipeline,settings,
       if(nativePin&&pipeline.publication?.retainedOutput(operationId))await pipeline.settleEngineDraft(nativePin);
       const publication=await pipeline.publication?.stageExtract(operationId,result,generationModel,extractOptions,assertAuthority,!window.manual);
       const commit=()=>{
-        assertInputs();assertReadInput();
+        pipeline.assertIntegrationAuthority();assertInputs();assertReadInput();
         pipeline.withAdmissibleEvidence(evidenceIds,()=>{
           pipeline.publication?.assert(publication,result);
           memories.extract(result,generationModel,{
@@ -144,6 +145,7 @@ export function registerMemoryIntegration({lifecycle,memories,pipeline,settings,
     }
     if(failures.length)throw failures[0];
     checkpoint('completed');
+    });
   }});
   settings.onApplied=through=>lifecycle.retirePending('consolidation',through);
   lifecycle.retirePending('consolidation',settings.selection().afterSequence);

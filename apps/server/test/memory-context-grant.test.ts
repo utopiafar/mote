@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -41,7 +42,7 @@ test('a persisted manual target difference keeps more than 64 full originals as 
   }finally{await bridge.close();}
  });
  const job=f.node.memoryPipeline.create({evidenceIds:selected.ids,evidenceRanges:ranges,contextEvidenceRanges:context,recipes:[{id:'mote.personal-memory',version:'5'}],timeZone:'Asia/Shanghai'});assert.equal(job.totalBatches,1);assert.deepEqual(job.batches[0].evidenceRanges,ranges);assert.equal(job.authorizedChunks!.length,83,'the target suffix and all full original grants are retained separately');
- const done=await f.node.memoryPipeline.run(job.id);if(f.failures.length)throw f.failures[0];assert.equal(done.status,'completed');assert.equal(contextReads,2,'extractor and independent reviewer both use the real read-only bridge');assert.equal(done.batches[0].coverage!.length,1);assert.equal(done.memoryCount,0);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,1,'reading context never completes additional targets');assert.deepEqual(done.batches[0].evidenceRanges,ranges);
+ const done=await withFixtureOwnerModelWork(f.node,()=>f.node.memoryPipeline.run(job.id));if(f.failures.length)throw f.failures[0];assert.equal(done.status,'completed');assert.equal(contextReads,2,'extractor and independent reviewer both use the real read-only bridge');assert.equal(done.batches[0].coverage!.length,1);assert.equal(done.memoryCount,0);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,1,'reading context never completes additional targets');assert.deepEqual(done.batches[0].evidenceRanges,ranges);
 });
 
 test('manual context reads reject unselected IDs, out-of-body ranges and split UTF-16 boundaries',async t=>{
@@ -67,7 +68,7 @@ for(const change of ['cancel','delete'] as const)test(`an admitted Memory query 
  },signal,key);
  const records=f.node.featureServices.evidenceReader.memories.readEvidence(selected.ids);
  const input:QueryInput={question:'Generated Memory scheduling boundary',responseMode:'memory-extraction',signal:abort.signal,evidenceIds:selected.ids,evidenceRanges:selected.ids.map((id,index)=>({id,offset:0,length:selected.texts[index].length})),processingEvidence:Object.fromEntries(records.map(record=>[record.id,memoryEvidenceFingerprint(record)])),processingMaterialInputs:[f.node.materials.input(selected.value.ref,['source-body'])!]};
- const outcome=await f.node.featureServices.queryAgent(input)
+ const outcome=await withFixtureOwnerModelWork(f.node,()=>f.node.featureServices.queryAgent(input))
   .then(result=>({result,error:undefined}),error=>({result:undefined,error}));
  await new Promise<void>(resolve=>setImmediate(resolve));
  assert.equal(entered,1);assert.equal(callsAtSuspension,0,'the admitted callback must suspend before disclosure');
@@ -76,7 +77,7 @@ for(const change of ['cancel','delete'] as const)test(`an admitted Memory query 
  assert.equal(gate.snapshot().active,0,'a denied admitted query releases its execution slot');
  if(change==='cancel'){
   gate.run=run;
-  const later=await f.node.featureServices.queryAgent({...input,signal:new AbortController().signal});
+  const later=await withFixtureOwnerModelWork(f.node,()=>f.node.featureServices.queryAgent({...input,signal:new AbortController().signal}));
   assert.deepEqual(JSON.parse(later.answer),{memories:[]});assert.equal(f.calls.length,1,'a cancelled preparation turn cannot block a later query');
  }
 });

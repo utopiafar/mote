@@ -1,3 +1,4 @@
+import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -39,11 +40,12 @@ for(const stage of ['semantic grouping','summary'] as const)test(`the real Centr
    calls++;const {items}=await reader.timeline({limit:20});
    return {answer:stage==='semantic grouping'?JSON.stringify({groups:[[0]]}):'Generated file summary',citations:items.map(record=>({id:record.id,capturedAt:'2026-01-01T00:00:00.000Z',appName:'Generated file',excerpt:'Generated audio evidence'})),trace:[],runId:randomUUID()};
  },input.signal)})});
- await node.app.ready();node.featureHost.stop();
+ await node.app.ready();
  const audio=node.processing.runtime.registry.register({id:'fixture.queue-audio',name:'Generated audio',version:'1',stage:'extract',serviceKind:'asr',localOnly:true,dialogue:stage==='semantic grouping',mediaTypes:['audio/'],parameters:[{key:'semanticTurns',label:'Generated semantic grouping',type:'boolean',default:false}],async process(){asrCalls++;return {durationMs:1000,segments:[{startMs:0,endMs:1000,text:'Generated audio evidence'}]};}});
  const diarizer=node.processing.runtime.registry.register({id:'fixture.queue-diarizer',name:'Generated diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(){diarizeCalls++;return {durationMs:1000,engine:'generated',expectedSpeakers:null,observedSpeakers:1,overlapDetection:'unknown',segments:[{startMs:0,endMs:1000,speaker:'SPEAKER_0'}],samples:[]};}});
  const settings={...node.processing.currentSettings(),enabled:true,audioProcessor:'fixture.queue-audio',diarizationProcessor:'fixture.queue-diarizer',semanticTurns:stage==='semantic grouping',summarize:stage==='summary',timeoutMs:1000};
  await node.processing.save({revision:node.processing.view().revision,settings,policy:fixtureFilePolicy(settings,node.processing.runtime.registry)});
+ await authorizeFixtureModels(node);node.featureHost.stop();
  node.sources.register({id:'generated-file-queue',name:'Generated file queue',kind:'local-files',deviceId:'generated-file-queue',platform:'android',retention:'archive'});
  const bytes=Buffer.alloc(76);bytes.write('RIFF');bytes.writeUInt32LE(bytes.length-8,4);bytes.write('WAVEfmt ',8);bytes.writeUInt32LE(16,16);bytes.writeUInt16LE(1,20);bytes.writeUInt16LE(1,22);bytes.writeUInt32LE(16000,24);bytes.writeUInt32LE(32000,28);bytes.writeUInt16LE(2,32);bytes.writeUInt16LE(16,34);bytes.write('data',36);bytes.writeUInt32LE(32,40);
  const upload=node.files.begin({sourceId:'generated-file-queue',item:{externalId:'generated.wav',revision:'1',observedAt:new Date().toISOString(),title:'Generated queued audio',kind:'file',layer:'original',text:'',mimeType:'audio/wav',deleted:false},sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});

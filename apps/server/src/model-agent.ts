@@ -6,14 +6,15 @@ import {deploymentModelSettingsSchema,type PreparedModelSettings} from './model-
 
 /** Trusted adapters must retain the host's admission and fresh transport fence. */
 export type ModelAgentHostHooks=Readonly<Pick<AgentOptions,'runModel'|'authorizeModelRequest'>>;
-export type ModelAgentFactory = (settings: ModelSettings, reader: ContextReader,host?:ModelAgentHostHooks) => Promise<QueryAgent>;
+export type ModelAgentIdentity={kind:'profile'|'file-service'|'probe';id:string};
+export type ModelAgentFactory = (settings: ModelSettings, reader: ContextReader,host?:ModelAgentHostHooks,identity?:ModelAgentIdentity) => Promise<QueryAgent>;
 export const createModelAgent = async (settings:ModelSettings, reader:ContextReader, codex?:AgentOptions['codex'],runModel?:AgentOptions['runModel'],authorizeModelRequest?:AgentOptions['authorizeModelRequest']):Promise<QueryAgent> => createAgent({ ...settings, reader, runModel, authorizeModelRequest, requestTimeoutMs: settings.modelRequestTimeoutMs, agentTimeoutMs: settings.agentTimeoutMs, codex });
 
 /** A registry generation is immutable. ReloadableAgent leases it for the entire query. */
 export async function createModelRegistry(profiles:ModelProfile[], reader:ContextReader, factory:ModelAgentFactory, initial?:QueryAgent,defaultProfileId=DEPLOYMENT_MODEL_PROFILE_ID):Promise<QueryAgent> {
   const agents=new Map<string,QueryAgent>();
   try {
-    for(const profile of profiles)agents.set(profile.id,profile.id===defaultProfileId&&initial?initial:await factory(profile.settings,reader));
+    for(const profile of profiles)agents.set(profile.id,profile.id===defaultProfileId&&initial?initial:await factory(profile.settings,reader,undefined,{kind:'profile',id:profile.id}));
   } catch(error) {await Promise.allSettled([...agents.values()].map(agent=>agent.close()));throw error;}
   return {
     configured:[...agents.values()].some(agent=>agent.configured),
@@ -23,7 +24,7 @@ export async function createModelRegistry(profiles:ModelProfile[], reader:Contex
       if(!agent||!profile||!agent.configured)throw new AgentNotConfiguredError();
       const {modelProfileId:_,modelOverride,...request}=input;
       const model=modelOverride??profile.settings.model;
-      const temporary=model!==profile.settings.model?await factory({...profile.settings,model},reader):undefined;
+      const temporary=model!==profile.settings.model?await factory({...profile.settings,model},reader,undefined,{kind:'profile',id:profile.id}):undefined;
       try {
         const result=await (temporary??agent).query(request);
         return {...result,modelSelection:{profileId:id,profileName:profile.name,provider:profile.settings.provider,model}};

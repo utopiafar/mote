@@ -14,6 +14,7 @@ export type MemoryInputGrant={scope:string;binding?:MemoryRecipeBinding;contextT
 /** A host receipt authorizes one automatic job per explicitly enabled scope.
  * No source timestamp, derived revision or retry can issue or renew this grant. */
 export class MemoryInputAuthorization {
+  onOriginalInput?: (input:Identity,automatic:boolean)=>void;
   constructor(private readonly store:Store,private readonly enabled=()=>false,private readonly now=Date.now,private readonly recipes?:MemoryRecipeSettings){
     store.db.exec(`CREATE TABLE IF NOT EXISTS memory_input_authorizations(
       source_id TEXT NOT NULL REFERENCES source_connections(id) ON DELETE CASCADE,
@@ -26,6 +27,7 @@ export class MemoryInputAuthorization {
    * Persist denied receipts too: a duplicate ACK must not acquire a later grant. */
   receive(raw:Identity,automatic=true):void {
     if(!this.store.db.isTransaction)throw Error('Memory input authorization requires the receive transaction');
+    this.onOriginalInput?.(identity.parse(raw),automatic);
     if(raw.scope===undefined&&this.recipes){
       // New scopes can only be minted by this original receipt, never duplicate
       // delivery, publication, activation or an installed plugin version.

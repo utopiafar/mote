@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -185,8 +186,10 @@ test('revoking an owner during recovery assembly prevents commit and releases it
 
 test('reference retention revokes an in-flight snapshot and cannot publish or retain temporary content',async t=>{
  const f=await fixture(t),bytes=Buffer.from('Generated reference-revoked audio'),input=manifest(bytes);input.item.mimeType='audio/wav';input.item.document!.fileIndex!.allowRead=true;
- const {ack}=await f.upload(input,bytes);await f.node.processing.runtime.ready;
+ await f.node.processing.runtime.ready;
  const settings={...f.node.processing.view().settings,audioProcessor:'audio.http'};await f.node.processing.save({revision:f.node.processing.view().revision,settings,policy:fixtureFilePolicy(settings,f.node.processing.runtime.registry)});
+ await authorizeFixtureModels(f.node);
+ const {ack}=await f.upload(input,bytes);
  let started!:()=>void,release!:(value:any)=>void;const begun=new Promise<void>(resolve=>started=resolve);
  f.node.processing.runtime.registry.get('audio.http').process=async()=>{started();return new Promise(resolve=>release=resolve);};
  const pending=f.node.processing.tick();await begun;f.node.sources.update(input.sourceId,{retention:'reference'});f.node.files.sweep();
@@ -206,14 +209,14 @@ test('reference retention revokes previously granted snapshot text ranges and sw
 test('HTTP snapshot range reads use only central retained text without device polling',async t=>{
  const f=await fixture(t),bytes=Buffer.from('Generated central range evidence 🌱'),input=manifest(bytes);input.item.document!.fileIndex!.allowRead=true;input.item.uri='file:///generated-range.txt';
  const {ack}=await f.upload(input,bytes),reader=f.node.featureServices.archiveReader;
- const page=await reader.sourceItems!({sourceId:input.sourceId});assert.ok(page.items.some(item=>item.id===ack.id));
- const before=await Promise.race([reader.readFileEvidence!({id:ack.id,offset:0,length:9}),new Promise<never>((_,reject)=>setImmediate(()=>reject(Error('A missing central interpretation must return without a polling turn'))))]);
+ const page=await withFixtureOwnerModelWork(f.node,()=>reader.sourceItems!({sourceId:input.sourceId}));assert.ok(page.items.some(item=>item.id===ack.id));
+ const before=await Promise.race([withFixtureOwnerModelWork(f.node,()=>reader.readFileEvidence!({id:ack.id,offset:0,length:9})),new Promise<never>((_,reject)=>setImmediate(()=>reject(Error('A missing central interpretation must return without a polling turn'))))]);
  assert.deepEqual(before,{status:'unavailable',reason:'central_text_unavailable',location:input.item.uri});
  assert.equal(f.node.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='file_read_requests'").get(),undefined);
  assert.equal((await f.request('GET',`/api/sources/${input.sourceId}/read-requests`)).statusCode,404);
  assert.equal((await f.request('PUT',`/api/sources/${input.sourceId}/read-requests/${randomUUID()}`,{})).statusCode,404);
- await f.node.processing.tick();const result=await reader.readFileEvidence!({id:ack.id,offset:0,length:9});assert.equal(result.status,'ready');assert.equal(result.record!.ocrText,'Generated');
- const emojiOffset=bytes.toString().indexOf('🌱'),emoji=await reader.readFileEvidence!({id:ack.id,offset:emojiOffset,length:2});assert.equal(emoji.record!.ocrText,'🌱');assert.equal(emoji.record!.provenance!.document!.fileIndex!.length,2);
+ await f.node.processing.tick();const result=await withFixtureOwnerModelWork(f.node,()=>reader.readFileEvidence!({id:ack.id,offset:0,length:9}));assert.equal(result.status,'ready');assert.equal(result.record!.ocrText,'Generated');
+ const emojiOffset=bytes.toString().indexOf('🌱'),emoji=await withFixtureOwnerModelWork(f.node,()=>reader.readFileEvidence!({id:ack.id,offset:emojiOffset,length:2}));assert.equal(emoji.record!.ocrText,'🌱');assert.equal(emoji.record!.provenance!.document!.fileIndex!.length,2);
  assert.deepEqual({...f.node.store.db.prepare('SELECT parent_id,capture_id FROM file_evidence_links WHERE capture_id=?').get(result.record!.id)},{parent_id:ack.id,capture_id:result.record!.id});
- f.node.sources.update(input.sourceId,{enabled:false});await assert.rejects(reader.readFileEvidence!({id:ack.id,offset:0,length:9}),{statusCode:409});
+ f.node.sources.update(input.sourceId,{enabled:false});await assert.rejects(withFixtureOwnerModelWork(f.node,()=>reader.readFileEvidence!({id:ack.id,offset:0,length:9})),{statusCode:409});
 });

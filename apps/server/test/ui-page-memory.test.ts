@@ -1,3 +1,4 @@
+import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import {structuredObject} from './fixtures/structured-page.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -41,7 +42,7 @@ async function fixture(t:TestContext,history?:CaptureInput){
       admission:{layer:'observation',reason:'A bounded event for daily recall',scope:'Generated device at the capture time',attribution:'observed'},evidenceIds:[first.id],evidence:[{id:first.id,quote,offset:range?.offset??0}]}];
     return {answer:generatedMemoryOutput(input,memories),citations:memories.length?[{id:first.id,capturedAt:first.capturedAt,appName:first.appName,excerpt:quote}]:[],trace:[],runId:randomUUID()};
   }})};
-  let node=await buildApp(config,dependencies);await node.app.ready();
+  let node=await buildApp(config,dependencies);await node.app.ready();await authorizeFixtureModels(node);
   // Isolate the original intake contract; dedicated daily-event journeys exercise the new default.
   const selected=await node.app.inject({method:'PUT',url:'/api/memory-recipe-settings',headers,payload:{scope:'capture',recipes:[personal]}});assert.equal(selected.statusCode,200,selected.body);
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});

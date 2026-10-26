@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {readAgentCredential} from './login-fixture.js';
 import {fixtureMemoryPlan,fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import test from 'node:test';
@@ -21,6 +22,7 @@ async function fixture(t:import('node:test').TestContext){
   const calls:QueryInput[]=[],control:{failCoding:boolean;emptyResults?:boolean;duringReview?:(input:QueryInput)=>Promise<void>}={failCoding:false};
   let node:Awaited<ReturnType<typeof buildApp>>;
   const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
+    const topic=fixtureTopicResult(input);if(topic)return topic;
     const plan=await fixtureMemoryPlan(input);if(plan)return plan;
     calls.push(input);const evidence=node.memories.readEvidence(input.evidenceIds!)[0],id=evidence.id;
     const common={uncertainty:'Generated session only.',admission:{layer:'memory',reason:'Generated fixture personal experience or evidenced retry decision',scope:'Generated prototype',attribution:'user'},evidenceIds:[id],evidence:[{id,quote:evidence.ocrText.trim()}]};
@@ -35,7 +37,7 @@ async function fixture(t:import('node:test').TestContext){
     const range=input.evidenceRanges?.find(range=>range.id===id),quote=range?evidence.ocrText.slice(range.offset,range.offset+Math.min(range.length,120)):evidence.ocrText.slice(0,120);
     return fixtureMemoryWorkResult(input,{answer:JSON.stringify(understanding(input)?{summary:'Generated bounded conversation interpretation',evidence:[{id,quote,offset:range?.offset??0}],workRecords:[],events:[],memoryCandidates:control.emptyResults?[]:values,actionCues:[]}:{memories:control.emptyResults?[]:values}),citations:[{id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}],trace:[],runId:randomUUID()});
   }}};
-  node=await buildApp(config,dependencies);await node.app.ready();
+  node=await buildApp(config,dependencies);await node.app.ready();await authorizeFixtureModels(node);
   const configure=async(recipes:typeof personal[]|null,sourceId?:string)=>{
     const r=await node.app.inject({method:'PUT',url:'/api/memory-recipe-settings',headers:{authorization:'Bearer '+config.token},payload:{recipes,...(sourceId?{sourceId}:{})}});
     assert.equal(r.statusCode,200,r.body);return r.json();
@@ -170,7 +172,7 @@ test('receipt pins scopes before publication; later enablement, version replacem
   await f.add('diary','fresh');await f.publish();await f.run();assert.equal(f.count('extract'),2);assert.equal(f.count('review'),3);
   const disabledMaterial=f.node.materials.list({sourceId:'diary'}).items.find(m=>m.origin.externalId==='disabled')!;
   const explicit=f.node.memoryPipeline.create({evidenceIds:f.node.materials.evidenceIds(disabledMaterial.ref),recipes:[personal]});
-  assert.equal((await f.node.memoryPipeline.run(explicit.id)).status,'completed','explicit owner work may process the otherwise unauthorized history');
+  assert.equal((await withFixtureOwnerModelWork(f.node,()=>f.node.memoryPipeline.run(explicit.id))).status,'completed','explicit owner work may process the otherwise unauthorized history');
 });
 
 test('one automatic reviewer failure preserves the other product and retries only the failed review after restart',async t=>{

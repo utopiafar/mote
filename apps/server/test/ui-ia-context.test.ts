@@ -1,3 +1,4 @@
+import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -11,10 +12,11 @@ import {sha256} from '../src/store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import type {TranscriptionProvider} from '../src/file-processing.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
-async function fixture(t:TestContext,transcriptionProvider?:TranscriptionProvider){
+async function fixture(t:TestContext,transcriptionProvider?:TranscriptionProvider,processAudio=false){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-ui-ia-context-'));
  const config:Config={dataDir,token:'generated-ui-ia-owner-token-1234567890',tokenPath:'fixture-only',host:'127.0.0.1',port:47832,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
  const result=await buildApp(config,{backgroundWorker:false,transcriptionProvider,agent:{configured:false,query:async()=>{throw Error('No live model in generated fixture');},close:async()=>{}}});
+ if(processAudio){const settings={...result.processing.view().settings,enabled:true,audioProcessor:'audio.http'};await result.processing.save({revision:result.processing.view().revision,settings,policy:fixtureFilePolicy(settings,result.processing.runtime.registry)});await authorizeFixtureModels(result);}
  t.after(async()=>{await result.app.close();rmSync(dataDir,{recursive:true,force:true});});return {...result,headers:{authorization:`Bearer ${config.token}`}};
 }
 const when='2026-10-01T10:00:00.000Z';
@@ -84,7 +86,7 @@ test('context trees project same model IDs across dimensions with scoped paginat
 
 test('late attachment processing cannot restore deleted source content through an existing note material',async t=>{
  let started!:()=>void,release!:(value:any)=>void;const begun=new Promise<void>(done=>{started=done;});
- const {app,headers,store,sources,files,processing,materialOrganizer,materials}=await fixture(t,{transcribe:async()=>{started();return new Promise(done=>{release=done;});}});
+ const {app,headers,store,sources,files,processing,materialOrganizer,materials}=await fixture(t,{transcribe:async()=>{started();return new Promise(done=>{release=done;});}},true);
  sources.register({id:'generated-late-audio',name:'Generated audio',kind:'local-files',deviceId:'generated-owner-device',platform:'android',retention:'archive'});
  const bytes=Buffer.from('Generated audio original retained for delayed processor');
  const session=files.begin({sourceId:'generated-late-audio',previousRevision:null,item:{externalId:'generated-audio',revision:'1',observedAt:when,title:'Generated audio.wav',kind:'file',layer:'original',text:'',mimeType:'audio/wav'},relativePath:'generated/audio.wav',sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});
@@ -103,7 +105,7 @@ test('late attachment processing cannot restore deleted source content through a
 });
 
 test('partial attachment extraction stays visibly partial on the parent note material',async t=>{
- const {app,headers,store,sources,files,processing,materialOrganizer,materials}=await fixture(t);
+ const {app,headers,store,sources,files,processing,materialOrganizer,materials}=await fixture(t,undefined,true);
  sources.register({id:'generated-partial-audio',name:'Generated partial audio',kind:'local-files',deviceId:'generated-owner-device',platform:'android',retention:'archive'});
  const bytes=Buffer.from('Generated partial audio fixture');const session=files.begin({sourceId:'generated-partial-audio',previousRevision:null,item:{externalId:'partial-audio',revision:'1',observedAt:when,title:'Generated partial.wav',kind:'file',layer:'original',text:'',mimeType:'audio/wav'},relativePath:'partial.wav',sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});
  files.part(session.uploadId,0,bytes,()=>{});const ack=await files.commit(session.uploadId,()=>{});

@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionHandler} from '../src/execution-engine.js';
 import {EXECUTION_POLICIES} from '../src/execution-policy.js';
 import {Store} from '../src/store.js';
@@ -72,11 +73,11 @@ test('real app Memory reader keeps its result and original failure, leaves Ask u
  const originalRead=boundary.evidenceById.bind(boundary);
  boundary.evidenceById=(...args)=>{calls++;Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,110);if(fail)throw original;return originalRead(...args);};
  const input={question:secret,responseMode:'memory-extraction' as const,evidenceIds:[],traceContext:{jobId,batchId,attempt:1,phase:'extract'}};
- const result=await node.featureServices.queryAgent(input,'query','memories');assert.equal(result.answer,'{"memories":[]}');
+ const result=await withFixtureOwnerModelWork(node,()=>node.featureServices.queryAgent(input,'query','memories'));assert.equal(result.answer,'{"memories":[]}');
  let reads=observationEvents(node.diagnostics).filter(event=>event.name==='reader_evidence');assert.equal(reads.length,1);assert.equal(reads[0].state,'completed');assert.equal(reads[0].jobId,jobId);assert.equal(reads[0].batchId,batchId);assert.equal(reads[0].phase,'extract');assert.ok(reads[0].durationMs!>=100);
- fail=true;await assert.rejects(node.featureServices.queryAgent(input,'query','memories'),error=>error===original);
+ fail=true;await assert.rejects(withFixtureOwnerModelWork(node,()=>node.featureServices.queryAgent(input,'query','memories')),error=>error===original);
  reads=observationEvents(node.diagnostics).filter(event=>event.name==='reader_evidence');assert.equal(reads.length,2);assert.equal(reads[1].state,'failed');assert.equal(reads[1].level,'warn');
- fail=false;await node.featureServices.queryAgent({question:secret},'query','conversations');assert.equal(calls,3);assert.equal(observationEvents(node.diagnostics).filter(event=>event.name==='reader_evidence').length,2,'Ask uses the same reader without Memory observations');
+ fail=false;await withFixtureOwnerModelWork(node,()=>node.featureServices.queryAgent({question:secret},'query','conversations'));assert.equal(calls,3);assert.equal(observationEvents(node.diagnostics).filter(event=>event.name==='reader_evidence').length,2,'Ask uses the same reader without Memory observations');
  assert.ok(!JSON.stringify(observationEvents(node.diagnostics)).includes(secret));
  const observer=executionObservability(node.diagnostics)!;assert.equal(observer.enabled(),true);await node.app.close();assert.equal(observer.enabled(),false);
 });

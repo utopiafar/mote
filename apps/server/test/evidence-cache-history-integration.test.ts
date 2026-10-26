@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -44,7 +45,7 @@ for(const operation of ['replacement','eviction','parent-cascade'] as const)test
  }
  const after=await history();assert.deepEqual(after.turns[0].result,before.turns[0].result);assert.equal(after.turns[0].evidenceDeleted,undefined);assert.equal(after.turns[0].evidenceStale,true);assert.ok(after.revision>before.revision);
  assert.equal(f.node.working.get(f.node.featureServices.conversations.get(f.conversationId)),undefined);
- const calls=f.calls();await assert.rejects(f.node.featureServices.queryAgent({question:'Generated frozen replay',conversation:frozen}),/Conversation changed/);assert.equal(f.calls(),calls,'expired snapshots never enter the provider');
+ const calls=f.calls();await assert.rejects(withFixtureOwnerModelWork(f.node,()=>f.node.featureServices.queryAgent({question:'Generated frozen replay',conversation:frozen})),/Conversation changed/);assert.equal(f.calls(),calls,'expired snapshots never enter the provider');
  f.setIds([]);await f.restart();const followup=await f.request('/api/query',{conversationId:f.conversationId,question:'Discuss the earlier proposal'});assert.equal(followup.status,200,JSON.stringify(followup.body));assert.equal(f.seen.at(-1)!.conversation!.turns[0].evidenceStale,true);
  f.node.store.delete(f.original);const erased=await history();assert.ok(erased.turns.every((turn:any)=>turn.evidenceDeleted));assert.doesNotMatch(JSON.stringify(erased),/Generated answer based/);
 });

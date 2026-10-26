@@ -6,6 +6,8 @@ import type {HindsightEngine} from '../../src/hindsight-engine.js';
 export function generatedNativeAdapter(node:Awaited<ReturnType<typeof buildApp>>,engine:Pick<HindsightEngine,'prepare'>){
   const bindings=node.memoryBindings!,view=bindings.view(),binding=bindings.binding();
   const namespace={ownerId:'mote-owner',instanceId:'generated-native-input-handoff',bindingRevision:binding.generation};
+  const instanceView=node.pluginCenter.instanceView.bind(node.pluginCenter);
+  node.pluginCenter.instanceView=id=>id===namespace.instanceId?{id,packageId:'generated-native',name:'Generated native engine',revision:1,scope:'owner',configurationSchema:[],configuration:{modelProfileId:node.modelSettings.select('memory').id},secretStatus:{},capabilities:[],desired:true,observed:'ready',issues:[],allowedActions:[]}:instanceView(id);
   bindings.binding=()=>({...binding,namespace});
   bindings.view=()=>({...view,mode:'engine'});
   bindings.accepting=()=>true;

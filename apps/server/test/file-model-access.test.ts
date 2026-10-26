@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,7 +21,8 @@ test('local file outputs are available to remote and local models across every e
  const config:Config={dataDir:directory,token:'generated-content-policy-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-remote',modelBaseUrl:'https://synthetic.invalid',apiKey:'fixture',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  let inspect:(reader:ContextReader)=>Promise<Record<string,unknown>>=async()=>({});
  const calls:{model:string;views:Record<string,unknown>}[]=[];
- const node=await buildApp(config,{createModelAgent:async(settings,reader)=>({configured:true,close:async()=>{},query:async()=>{
+ const node=await buildApp(config,{createModelAgent:async(settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
+  const topic=fixtureTopicResult(input);if(topic)return topic;
   const views=await inspect(reader);calls.push({model:settings.model,views});return {answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()};
  }})});
  const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});
@@ -52,20 +54,20 @@ test('local file outputs are available to remote and local models across every e
  };
  const localSettings={...node.modelSettings.current(),provider:'custom' as const,protocol:'openai-completions' as const,baseUrl:'http://127.0.0.1:1234/v1',model:'fixture-local',reasoningEffort:'auto' as const,apiKey:'',allowUnauthenticatedLocal:true};
  await node.modelSettings.updateProfile('local',{revision:node.modelSettings.view().revision,name:'Generated local model',settings:localSettings});
- await Promise.all([node.agent.query({question:'Generated read check',modelProfileId:'env:deployment'}),node.agent.query({question:'Generated read check',modelProfileId:'local'})]);
+ await withFixtureOwnerModelWork(node,()=>Promise.all([node.agent.query({question:'Generated read check',modelProfileId:'env:deployment'}),node.agent.query({question:'Generated read check',modelProfileId:'local'})]));
  const remote=calls.find(c=>c.model==='fixture-remote')!.views,local=calls.find(c=>c.model==='fixture-local')!.views;
  assert.deepEqual(remote,local,'model location does not change content access');
  for(const key of ['raw','chunks','materialEvidence','catalog','search','timeline','memories','segments','items','history','excerpt'])assert.ok(Number(remote[key])>0,key);
  assert.match(String(remote.materialText),/GENERATED_ANCHOR/);
  assert.ok(node.featureServices.evidenceReader.memorySelection().evidenceIds.includes(record.id));
  for(const modelProfileId of ['env:deployment','local']){
-  const job=node.memoryPipeline.create({evidenceIds:anchors,modelProfileId});assert.ok(job.totalBatches>0);node.memoryPipeline.cancel(job.id);
+  const job=await withFixtureOwnerModelWork(node,async()=>node.memoryPipeline.create({evidenceIds:anchors,modelProfileId}));assert.ok(job.totalBatches>0);node.memoryPipeline.cancel(job.id);
  }
- await node.agent.query({question:'Generated fixed evidence',evidenceIds:[record.id]});assert.ok(Number(calls.at(-1)!.views.materialEvidence)>0);
+ await withFixtureOwnerModelWork(node,()=>node.agent.query({question:'Generated fixed evidence',evidenceIds:[record.id]}));assert.ok(Number(calls.at(-1)!.views.materialEvidence)>0);
  const owner=await node.app.inject({url:'/api/captures/'+chunk,headers:{authorization:'Bearer '+config.token}});assert.equal(owner.statusCode,200);assert.equal(owner.json().ocrText,text);
  let enter!:()=>void,release!:()=>void;const entered=new Promise<void>(resolve=>enter=resolve),held=new Promise<void>(resolve=>release=resolve);
  inspect=async()=>{enter();await held;return {};};
- const inFlight=node.memoryPipeline.create({evidenceIds:anchors}),running=node.memoryPipeline.run(inFlight.id);await entered;
+ const {inFlight,running}=await withFixtureOwnerModelWork(node,async()=>{const inFlight=node.memoryPipeline.create({evidenceIds:anchors});return {inFlight,running:node.memoryPipeline.run(inFlight.id)};});await entered;
  node.store.delete(parent.id);release();
  const finished=await running;assert.notEqual(finished.status,'completed');assert.equal(finished.memoryIds.length,0);
  assert.equal(node.store.db.prepare('SELECT COUNT(*) n FROM memory_checkpoints').get()!.n,0);
@@ -91,6 +93,7 @@ test('native local dialogue routes grouping and summaries through the configured
  const view=node.processing.view(),policy=view.policy,profile=policy.profiles.find(p=>p.processorId==='audio.local-dialogue')!;
  profile.parameters={speakerCount:2,semanticTurns:true};profile.diarizationProcessor='fixture.central-diarize';profile.summarize=true;policy.services.find(s=>s.id==='asr-local')!.endpoint='http://127.0.0.1:19009/transcribe';
  await node.processing.save({revision:view.revision,settings:view.settings,policy});
+ await authorizeFixtureModels(node);
  node.sources.register({id:'generated-native',name:'Generated audio',kind:'local-files',deviceId:'generated',platform:'import',retention:'archive'});
  const bytes=Buffer.from('Generated audio fixture'),upload=node.files.begin({sourceId:'generated-native',item:{externalId:'audio',revision:'1',observedAt:'2026-10-06T00:00:00Z',kind:'file',layer:'original',text:'',mimeType:'audio/wav'},sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});
  node.files.part(upload.uploadId,0,bytes,()=>{});const original=await node.files.commit(upload.uploadId,()=>{});
@@ -113,13 +116,14 @@ for(const stage of ['summary','semantic grouping'] as const)test(`file ${stage} 
  });
  await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
  const config:Config={dataDir:directory,token:'generated-summary-repair-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-summary',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(provider.address() as {port:number}).port}/v1`,apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTimeoutMs:20000};
- const node=await buildApp(config,{backgroundWorker:false});await node.app.ready();node.featureHost.stop();
+ const node=await buildApp(config,{backgroundWorker:false});await node.app.ready();
  t.after(async()=>{await node.app.close();provider.closeAllConnections();await new Promise<void>(resolve=>provider.close(()=>resolve()));rmSync(directory,{recursive:true,force:true});});
  if(stage==='semantic grouping'){
   node.processing.runtime.registry.register({id:'fixture.repair-audio',version:'1',name:'Generated audio',stage:'extract',serviceKind:'asr',localOnly:true,dialogue:true,mediaTypes:['audio/'],parameters:[{key:'semanticTurns',label:'Generated grouping',type:'boolean',default:false}],process:async()=>({durationMs:1000,segments:[{startMs:0,endMs:1000,text:'Generated audio grouping evidence'}]})});
   node.processing.runtime.registry.register({id:'fixture.repair-diarizer',version:'1',name:'Generated diarization',stage:'diarize',localOnly:true,mediaTypes:['audio/'],process:async()=>({durationMs:1000,engine:'generated',expectedSpeakers:null,observedSpeakers:1,overlapDetection:'unknown',segments:[{startMs:0,endMs:1000,speaker:'SPEAKER_0'}],samples:[]})});
  }
  const settings={...node.processing.currentSettings(),enabled:true,summarize:stage==='summary',...(stage==='semantic grouping'?{audioProcessor:'fixture.repair-audio',diarizationProcessor:'fixture.repair-diarizer',semanticTurns:true}:{})};await node.processing.save({revision:node.processing.view().revision,settings,policy:fixtureFilePolicy(settings,node.processing.runtime.registry)});
+ await authorizeFixtureModels(node);node.featureHost.stop();
  node.sources.register({id:'generated-summary-repair',name:'Generated summary repair',kind:'local-files',deviceId:'generated',platform:'import',retention:'archive'});
  const bytes=Buffer.from('Generated cited summary evidence'),upload=node.files.begin({sourceId:'generated-summary-repair',item:{externalId:stage==='summary'?'generated.txt':'generated.wav',revision:'1',observedAt:'2026-10-15T00:00:00Z',kind:'file',layer:'original',text:'',mimeType:stage==='summary'?'text/plain':'audio/wav'},sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});
  node.files.part(upload.uploadId,0,bytes,()=>{});const original=await node.files.commit(upload.uploadId,()=>{});

@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -54,7 +55,7 @@ for(const strategy of ['base','review','research-writer','both'] as QueryQuality
   assert.equal(run.status,'completed',JSON.stringify(run));assert.equal(run.conversationId,firstValue.conversationId);assert.equal(run.operationUsage.total.runs,stages);assert.equal(run.operationUsage.total.totalTokens,10*stages);assert.equal(run.operationUsage.items.length,stages);
   assert.ok(calls.slice(stages).every(input=>input.conversation?.turns.length===1));assert.ok(calls.every(input=>input.contextTime===scope.contextTime));
   const hiddenMode=await api('POST','/api/query',{question:'Generated',qualityStrategy:'review'});assert.equal(hiddenMode.statusCode,400,'trusted experiment selection never becomes a user HTTP setting');
-  await assert.rejects(node.featureServices.queryAgent({question:'Generated background',traceContext:{operationId:'memory:generated'}},'query','memories'),/background model work/);
+  await assert.rejects(withFixtureOwnerModelWork(node,()=>node.featureServices.queryAgent({question:'Generated background',traceContext:{operationId:'memory:generated'}},'query','memories')),/background model work/);
 });
 
 test('durable quality stages resume the interrupted writer without repeating completed research',async t=>{

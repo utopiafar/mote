@@ -1,3 +1,4 @@
+import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -16,7 +17,7 @@ test('owner immediate stop cancels the default automatic lifecycle failed child 
   const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxStorageBytes:30*1024*1024,maxExportBytes:1024*1024,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-only',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpWriteEnabled:false}};
   let calls=0;
   const agent={configured:true,async query(){calls++;throw new ProviderFailure({category:'permanent',code:'generated_provider_failure'});},async close(){}};
-  let node=await buildApp(config,{backgroundWorker:false,agent});
+  let node=await buildApp(config,{backgroundWorker:false,agent});await authorizeFixtureModels(node);
   t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
   const headers={authorization:'Bearer '+owner},sourceId=randomUUID(),text='Generated source with no personal data.';
   const received=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id:sourceId,deviceId:'generated-device',deviceName:'Generated',platform:'import',capturedAt:new Date().toISOString(),text}});

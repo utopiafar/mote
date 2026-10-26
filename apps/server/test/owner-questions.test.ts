@@ -9,6 +9,8 @@ import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {OwnerQuestions} from '../src/owner-questions.js';
+import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
+import {ModelAuthorizationHost} from '../src/model-authorization-host.js';
 import {register} from '../src/features/owner-questions.js';
 import type {OwnerQuestionCreate,OwnerQuestionProvider,OwnerQuestionReply} from '../src/owner-question-contract.js';
 
@@ -33,15 +35,16 @@ test('structural identity survives restart and never guesses from prose or retur
 });
 
 test('owner HTTP lifecycle keeps one question through defer, unknown, clarification and authored choice',async t=>{
- const {questions,provider,input}=await fixture(t);const seen:OwnerQuestionReply[]=[];let effects=0;
+ const {store,questions,provider,input}=await fixture(t);const seen:OwnerQuestionReply[]=[];let effects=0;
  provider.answer=(_record,reply)=>{seen.push(reply);return reply.action==='unknown'?{kind:'closed',outcome:'Unknown retained.'}:reply.choiceId?{kind:'continued',continuationId:'fixture:continuation',outcome:'Scope-specific work queued.'}:{kind:'followup',prompt:'Which exact speaker is you?',choices:input.choices};};
  provider.commit=()=>{effects++;};questions.register(provider);let current=questions.create(provider,input);
- const app=Fastify();t.after(()=>app.close());app.setErrorHandler((error,_request,reply)=>reply.code(error.name==='ZodError'?400:(error as {statusCode?:number}).statusCode??500).send({error:error.message}));register(app,{ownerQuestions:questions,credential:req=>req.headers.authorization==='Bearer collector'});
+ const authority=new BackgroundModelAuthorization(store,()=>[]),modelAuthorizationHost=new ModelAuthorizationHost(authority,store,new MaterialStore(store));t.after(()=>authority.close());
+ const app=Fastify();t.after(()=>app.close());app.setErrorHandler((error,_request,reply)=>reply.code(error.name==='ZodError'?400:(error as {statusCode?:number}).statusCode??500).send({error:error.message}));register(app,{ownerQuestions:questions,modelAuthorizationHost,availableModelConnections:()=>[],credential:req=>req.headers.authorization==='Bearer collector'});
  for(const url of ['/api/owner-questions','/api/owner-questions/'+current.id])assert.equal((await app.inject({url,headers:{authorization:'Bearer collector'}})).statusCode,403);
  const replyUrl='/api/owner-questions/'+current.id+'/reply';assert.equal((await app.inject({url:replyUrl,method:'POST',headers:{authorization:'Bearer collector'},payload:{}})).statusCode,403);
  const deferred=await app.inject({url:replyUrl,method:'POST',payload:{requestId:randomUUID(),expectedRevision:current.revision,action:'defer'}});assert.equal(deferred.statusCode,200);current=deferred.json();assert.equal(current.state,'deferred');assert.equal(current.messages.at(-1)?.role,'user');assert.equal(current.messages.at(-1)?.text,'稍后再说');assert.equal(seen.length,0);
  const closed=await app.inject({url:replyUrl,method:'POST',payload:{requestId:randomUUID(),expectedRevision:current.revision,action:'unknown'}});assert.equal(closed.statusCode,200);current=closed.json();assert.equal(current.state,'closed');assert.equal(current.messages.at(-1)?.text,'我也不知道，结束这次追问');assert.equal(questions.page({state:['open','deferred']}).items.length,0);
- const followup=await app.inject({url:replyUrl,method:'POST',payload:answer(current.revision)});assert.equal(followup.statusCode,200);current=followup.json();assert.equal(current.state,'open');assert.equal(current.messages.at(-2)?.text,'  Exact owner answer.  ');assert.equal(current.messages.at(-1)?.text,'Which exact speaker is you?');assert.equal(questions.page().items.length,1,'follow-up remains the same durable question');
+ const followup=await app.inject({url:replyUrl,method:'POST',payload:answer(current.revision)});assert.equal(followup.statusCode,200,followup.body);current=followup.json();assert.equal(current.state,'open');assert.equal(current.messages.at(-2)?.text,'  Exact owner answer.  ');assert.equal(current.messages.at(-1)?.text,'Which exact speaker is you?');assert.equal(questions.page().items.length,1,'follow-up remains the same durable question');
  const continued=await app.inject({url:replyUrl,method:'POST',payload:{requestId:randomUUID(),expectedRevision:current.revision,action:'answer',choiceId:'first'}});assert.equal(continued.statusCode,200);current=continued.json();assert.equal(current.state,'answered');assert.equal(current.continuationId,'fixture:continuation');assert.equal(seen.at(-1)?.answer,input.choices![0].answer);assert.equal(effects,3);
  assert.equal((await app.inject({url:'/api/owner-questions?state=open,deferred'})).json().items.length,0);
  assert.equal((await app.inject({url:replyUrl,method:'POST',payload:answer(current.revision)})).statusCode,409,'continued work cannot be spawned twice through a fresh request');
@@ -118,9 +121,10 @@ test('lazy validation skips retired first candidates without hiding a later pend
 });
 
 test('aggregated operation ID filters apply on the server before cursor pagination',async t=>{
- const {questions,provider,input}=await fixture(t);questions.register(provider);
+ const {store,questions,provider,input}=await fixture(t);questions.register(provider);
  for(let index=0;index<9;index++)questions.create(provider,{...input,key:'operation-range-'+index,operationId:['first-op','second-op','unrelated-op'][index%3]});
- const app=Fastify();t.after(()=>app.close());app.setErrorHandler((error,_request,reply)=>reply.code(error.name==='ZodError'?400:(error as {statusCode?:number}).statusCode??500).send({error:error.message}));register(app,{ownerQuestions:questions,credential:()=>false});
+ const authority=new BackgroundModelAuthorization(store,()=>[]),modelAuthorizationHost=new ModelAuthorizationHost(authority,store,new MaterialStore(store));t.after(()=>authority.close());
+ const app=Fastify();t.after(()=>app.close());app.setErrorHandler((error,_request,reply)=>reply.code(error.name==='ZodError'?400:(error as {statusCode?:number}).statusCode??500).send({error:error.message}));register(app,{ownerQuestions:questions,modelAuthorizationHost,availableModelConnections:()=>[],credential:()=>false});
  const ids:string[]=[];let cursor:string|undefined;do{const query=new URLSearchParams({operationIds:JSON.stringify(['first-op','second-op']),state:'open,deferred',limit:'2',...(cursor?{cursor}:{})});const response=await app.inject({url:'/api/owner-questions?'+query});assert.equal(response.statusCode,200);const page=response.json();assert.ok(page.items.every((question:{operationId:string})=>['first-op','second-op'].includes(question.operationId)));ids.push(...page.items.map((question:{id:string})=>question.id));cursor=page.nextCursor??undefined;}while(cursor);
  assert.equal(ids.length,6);assert.equal(new Set(ids).size,6);assert.equal((await app.inject({url:'/api/owner-questions?operationIds=invalid-json'})).statusCode,400);
 });

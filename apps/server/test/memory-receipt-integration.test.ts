@@ -1,3 +1,4 @@
+import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
@@ -23,7 +24,7 @@ test('denied receipts survive restart and duplicate ACK while new ordinary and C
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-receipt-')),cfg=config(directory);
   let calls=0;
   const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{const plan=await fixtureMemoryPlan(input);if(plan)return plan;calls++;return fixtureMemoryWorkResult(input,empty(input,node));}}};
-  let node=await buildApp(cfg,dependencies);await node.app.ready();
+  let node=await buildApp(cfg,dependencies);await node.app.ready();await authorizeFixtureModels(node);
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   assert.equal(node.lifecycle.settings().extraction.enabled,true);
   node.sources.register({id:'ordinary',name:'Generated diary',kind:'custom',deviceId:'fixture',platform:'import'});
@@ -92,7 +93,7 @@ test('fresh connector startup installs continuous processing before intake',asyn
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-startup-receipt-')),cfg=config(directory),modulePath=join(directory,'generated-connector.mjs');
   let calls=0;
   const dependencies={agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{calls++;return empty(input,node);}}};
-  let node=await buildApp(cfg,dependencies);await node.app.ready();
+  let node=await buildApp(cfg,dependencies);await node.app.ready();await authorizeFixtureModels(node);
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const settings=node.lifecycle.settings();
   writeFileSync(modulePath,`export default {apiVersion:1,id:'generated-startup',sourceKinds:['custom'],create:ctx=>({init:async()=>{
@@ -113,7 +114,7 @@ test('fresh connector startup installs continuous processing before intake',asyn
 for(const backgroundWorker of [false,undefined])test(`Memory timer ${backgroundWorker===false?'is isolated by the explicit test dependency':'runs continuously with production defaults'}`,{timeout:20000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-timer-')),cfg=config(directory);let calls=0;
  const node=await buildApp(cfg,{backgroundWorker,agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{const plan=await fixtureMemoryPlan(input);if(plan)return plan;calls++;return fixtureMemoryWorkResult(input,empty(input,node));}}});
- t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});await node.app.ready();
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});await node.app.ready();await authorizeFixtureModels(node);
  node.sources.register({id:'timer-source',name:'Generated timer source',kind:'custom',deviceId:'fixture',platform:'import'});
  await node.sources.upsert('timer-source',original('automatic-timer'));await node.materialOrganizer.tick();
  assert.equal(node.store.db.prepare("SELECT authorized FROM memory_input_authorizations WHERE source_id='timer-source'").get()!.authorized,1,'test scheduling never changes intake authority');

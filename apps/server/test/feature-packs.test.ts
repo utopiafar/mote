@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import {randomUUID} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import test from 'node:test';
@@ -44,14 +45,14 @@ test('small Coding upload flows through feature routes to pinned owner and real 
   assert.equal(snapshot.coverage.materialRecords,1);assert.equal(snapshot.coverage.measured.observedDurationMs,0);assert.ok(!snapshot.coverage.limitations.includes('no_records_in_scope'));
   const selection=node.featureServices.evidenceReader.memorySelection(scope);
   assert.ok(selection.evidenceIds.length>0);assert.ok(selection.evidenceIds.every(id=>node.materials.isCurrentEvidence(id)));
-  const bundle=await contextBundle(node.featureServices.evidenceReader,node.featureServices.archiveReader,{maxCharacters:1000,projectKey:'generated-project'});
+  const bundle=await withFixtureOwnerModelWork(node,()=>contextBundle(node.featureServices.evidenceReader,node.featureServices.archiveReader,{maxCharacters:1000,projectKey:'generated-project'}));
   assert.equal(bundle.recentSessions.length,1);assert.ok(JSON.stringify(bundle).length<=1000);
-  assert.equal((await contextBundle(node.featureServices.evidenceReader,node.featureServices.archiveReader,{projectKey:'other-project'})).recentSessions.length,0);
+  assert.equal((await withFixtureOwnerModelWork(node,()=>contextBundle(node.featureServices.evidenceReader,node.featureServices.archiveReader,{projectKey:'other-project'}))).recentSessions.length,0);
 
   const read=(await call('/api/agent-view/material-read?ref='+encodeURIComponent(material.ref))).json();assert.match(read.text,/Generated event 2/);
   assert.equal((await call('/api/agent-view/materials?deviceId=unrelated')).json().items.length,0);
   assert.equal((await call('/api/agent-view/material-read?ref='+encodeURIComponent(material.ref)+'&deviceId=unrelated')).statusCode,404);
-  assert.deepEqual((await call('/api/agent-view/materials')).json(),await node.featureServices.archiveReader.materialCatalog!({limit:12}));
+  assert.deepEqual((await call('/api/agent-view/materials')).json(),await withFixtureOwnerModelWork(node,()=>node.featureServices.archiveReader.materialCatalog!({limit:12})));
   const inventory=(await call('/api/features')).json();
   for(const surface of ['ingress','upload','data','command','agent'])assert.ok(inventory.capabilities.some((c:any)=>c.surface===surface),surface);
   assert.ok(inventory.capabilities.some((c:any)=>c.featureId==='mote.notes'&&c.id==='http:POST:/api/notes'));
@@ -97,7 +98,7 @@ test('Ask, Insight and Import disposal cancels owned execution and fences uncoop
  const node=await buildApp(config,{agent:{configured:true,close:async()=>{},query:async input=>{querySignal=input.signal;await held;return {answer:'Generated late answer',citations:[],trace:[],runId:randomUUID()};}},prepareImport:async input=>{importSignal=input.signal;entered();await held;throw Error('Generated late parser failure');}});
  t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});await node.app.ready();
  const queryId=randomUUID(),insightId=randomUUID();let insightSignal:AbortSignal|undefined;
- node.featureServices.queryRuns.start(queryId,{question:'Generated disposal query'});
+ await withFixtureOwnerModelWork(node,async()=>node.featureServices.queryRuns.start(queryId,{question:'Generated disposal query'}));
  node.insightRuns.start(insightId,{},async(_observe,signal)=>{insightSignal=signal;await held;return {runId:randomUUID(),answer:'Generated late report',citations:[],trace:[]};});
  const imported=await node.imports.create({files:[{name:'generated.txt',dataBase64:Buffer.from('Generated input').toString('base64')}],instruction:'Generate a preview',processing:'preview'});
  const preparing=node.imports.prepare(imported.id);await started;await new Promise(resolve=>setImmediate(resolve));

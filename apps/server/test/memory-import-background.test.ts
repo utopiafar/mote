@@ -1,3 +1,4 @@
+import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
@@ -32,7 +33,7 @@ test('HTTP import of a thousand generated originals rolls through bounded backgr
   assert.ok(work.members.every(member=>member.contextTime&&member.inputKey&&member.attributionContext));
   if(input.traceContext?.phase==='review'){reviews++;if(reviews===1){reviewBeforeImportComplete=node.imports.get(importId).status==='importing';releasePrefix();}}else extracts++;
   return {answer:generatedMemoryOutput(input),citations:[],trace:[],runId:'generated-background-'+extracts+'-'+reviews};
- }}});await node.app.ready();
+ }}});await node.app.ready();await authorizeFixtureModels(node);
  t.after(async()=>{releasePrefix();releaseTail();await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+config.token};
  const created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files:[{name:'generated.custom',dataBase64:Buffer.from('Generated parser input').toString('base64')}]}});assert.equal(created.statusCode,202,created.body);

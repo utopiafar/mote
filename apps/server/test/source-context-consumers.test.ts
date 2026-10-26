@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -44,6 +45,7 @@ test('HTTP file intake uses source description in summaries; changing it retires
  const first='Generated call recording: I participated, but anonymous speaker labels do not identify me.';
  const declared=await request('PATCH','/api/sources/generated-audio/context',{expectedVersion:0,description:first});assert.equal(declared.statusCode,200,declared.body);
  const settings={...node.processing.view().settings,enabled:true,audioProcessor:'audio.http',summarize:true};await node.processing.save({revision:node.processing.view().revision,settings,policy:fixtureFilePolicy(settings,node.processing.runtime.registry)});
+ await authorizeFixtureModels(node);
  const bytes=Buffer.from('Generated audio fixture bytes'),begun=await request('POST','/api/file-sync/v1/uploads',{sourceId:'generated-audio',item:{externalId:'generated.wav',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'original',title:'Generated audio',text:'',mimeType:'audio/wav'},sizeBytes:bytes.length,sha256:sha256(bytes)});assert.equal(begun.statusCode,200,begun.body);
  const uploadId=begun.json().uploadId;assert.equal((await request('PUT',`/api/file-sync/v1/uploads/${uploadId}/parts/0`,bytes,{'content-type':'application/octet-stream'})).statusCode,200);
  const committed=await request('POST',`/api/file-sync/v1/uploads/${uploadId}/commit`,{});assert.equal(committed.statusCode,200,committed.body);const id=committed.json().id;
@@ -52,8 +54,8 @@ test('HTTP file intake uses source description in summaries; changing it retires
  const changed=await request('PATCH','/api/sources/generated-audio/context',{expectedVersion:1,description:second});assert.equal(changed.statusCode,200,changed.body);assert.notEqual(fileSummaryInputFingerprint(node.files,id),priorFingerprint);
  assert.equal(node.files.detail(id).artifacts.some((item:any)=>item.kind==='summary'),false);assert.equal(node.files.detail(id).job.summary_state,'cancelled');assert.equal(node.files.chunks(id).length,10);
  await node.processing.tick();assert.equal(transcriptions,1,'context update must preserve ASR');assert.equal(summaryCalls,1,'context update is not historical paid-work authorization');
- node.processing.retry(id,'summary');await node.processing.tick();assert.equal(transcriptions,1);assert.equal(summaryCalls,2);assert.equal(seen[1],second);assert.ok(node.files.detail(id).artifacts.some((item:any)=>item.kind==='summary'));
- holdNext=true;node.processing.retry(id,'summary');const running=node.processing.tick();await heldStarted;
+ await withFixtureOwnerModelWork(node,async()=>node.processing.retry(id,'summary'),{identities:['capture:'+id]});await node.processing.tick();assert.equal(transcriptions,1);assert.equal(summaryCalls,2);assert.equal(seen[1],second);assert.ok(node.files.detail(id).artifacts.some((item:any)=>item.kind==='summary'));
+ holdNext=true;await withFixtureOwnerModelWork(node,async()=>node.processing.retry(id,'summary'),{identities:['capture:'+id]});const running=node.processing.tick();await heldStarted;
  const held=node.processing.engine.list({operationId:'file:'+id,kind:'files.summary'}).items.find(step=>step.state==='running')!;assert.ok(held);
  const third='Generated call recording belongs to a visitor using this handset; my identity is unknown.';
  const during=await request('PATCH','/api/sources/generated-audio/context',{expectedVersion:2,description:third});assert.equal(during.statusCode,200,during.body);releaseHeld();await running;await node.processing.tick();

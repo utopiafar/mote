@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -47,7 +48,7 @@ for(const removal of ['tombstone','capture-delete'] as const)test(`ordinary revi
  assert.ok(working.get(conversations.get(conversationId))!.evidenceDependencies!.ids.includes(original.id));
  const frozen=working.context(conversations.get(conversationId),defaultLifecycleSettings),callsBeforeDeletion=seen.length;
  if(removal==='tombstone')await node.sources.upsert('generated-history',item('3','',true));else node.store.delete(original.id);
- await assert.rejects(node.featureServices.queryAgent({question:'Replay a frozen dialogue',conversation:frozen}),/Conversation changed/);assert.equal(seen.length,callsBeforeDeletion,'a revoked frozen history must be refused before model entry');
+ await assert.rejects(withFixtureOwnerModelWork(node,()=>node.featureServices.queryAgent({question:'Replay a frozen dialogue',conversation:frozen})),/Conversation changed/);assert.equal(seen.length,callsBeforeDeletion,'a revoked frozen history must be refused before model entry');
  const erased=(await node.app.inject({url:`/api/conversations/${conversationId}`,headers})).json();
  assert.ok(erased.turns.every((turn:any)=>turn.evidenceDeleted));assert.doesNotMatch(JSON.stringify(erased),/paper glider|earlier second proposal/);
  assert.equal(working.get(conversations.get(conversationId)),undefined);

@@ -8,8 +8,9 @@ export {uiPageCaptureSource} from './capture-memory-source.js';
 
 /** Capture receipts share the source Memory queue. Only fresh durable intake
  * grants work; retries, portable restore and organizer rebuilds never do. */
-export function installCaptureMemoryIntake(store:Store,work:MaterialMemoryWork){
+export function installCaptureMemoryIntake(store:Store,work:MaterialMemoryWork,onOriginal?:(input:CaptureInput)=>void){
   const receive=(input:CaptureInput)=>{
+    onOriginal?.(input);
     const sourceId=input.imageBase64?screenImageSource(input.deviceId,sha256):
       input.source==='ui_page'&&input.metadata?.uiPage?.version===3?uiPageCaptureSource(input.deviceId):undefined;
     if(!sourceId)return;

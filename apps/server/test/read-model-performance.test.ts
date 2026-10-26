@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import {fixtureMemoryResult,fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -66,9 +67,10 @@ test('query embedding has a short deadline and lexical evidence remains usable',
 test('interactive admission stays available while the background agent lane is saturated',async t=>{
  const {buildApp}=await import('../src/app.js');const dir=mkdtempSync(join(tmpdir(),'mote-interactive-lane-'));
  let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});
- const {app,agent}=await buildApp({dataDir:dir,token:'synthetic-interactive-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30*1024*1024,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentConcurrency:1},{agent:{configured:true,close:async()=>{},query:async input=>{if(input.executionLane!=='interactive')await held;return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};}}});
- t.after(async()=>{release();await app.close();rmSync(dir,{recursive:true,force:true});});
- const background=agent.query({question:'Generated background work'});await new Promise(r=>setImmediate(r));
+ const node=await buildApp({dataDir:dir,token:'synthetic-interactive-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30*1024*1024,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentConcurrency:1},{agent:{configured:true,close:async()=>{},query:async input=>{if(input.executionLane!=='interactive')await held;return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};}}});
+ t.after(async()=>{release();await node.app.close();rmSync(dir,{recursive:true,force:true});});
+ const {app,agent}=node;
+ const background=withFixtureOwnerModelWork(node,()=>agent.query({question:'Generated background work'}));await new Promise(r=>setImmediate(r));
  const response=await Promise.race([app.inject({method:'POST',url:'/api/query',headers:{authorization:'Bearer synthetic-interactive-token'},payload:{question:'Generated foreground question'}}),new Promise<never>((_,reject)=>{const timer=setTimeout(()=>reject(Error('Foreground starved by background lane')),1500);timer.unref();})]);
  assert.equal(response.statusCode,200,response.body);release();await background;
 });
@@ -82,6 +84,7 @@ test('semantic boundary grants actual bounded lengths for more than eight repres
  const {buildApp}=await import('../src/app.js');const store=fixture(t);let ranges:{id:string;offset:number;length:number}[]=[];
  const runtime=await buildApp({dataDir:store.directory,token:'synthetic-semantic-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30*1024*1024,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{store,agent:{configured:true,close:async()=>{},query:async input=>{ranges=input.evidenceRanges??[];return {answer:JSON.stringify({summary:'Generated ten short observations',evidence:[],events:[],memoryCandidates:[],actionCues:[]}),citations:[],trace:[],runId:randomUUID()};}}});
  try{
+ await authorizeFixtureModels(runtime);
  const records=Array.from({length:10},(_,i)=>note('Generated short observation '+i));await store.ingestBatch(records);
  const id='c'.repeat(64),revision='d'.repeat(64);store.archive.save(id,id,revision,{kind:'segment',text:records.map(r=>r.ocrText).join('\n'),metadata:{complete:true}},records.map(r=>({id:r.id,fingerprint:store.archive.fingerprint(r.id)!})),'fixture','1','fixture');
  const job=runtime.workflows.enqueue([{name:'semantic',processor:'mote.segment-understanding',artifactInputs:[{id,revision}],config:{artifactId:id,modelFingerprint:modelConfiguration(runtime.modelSettings.select('memory').id,runtime.modelSettings.select('memory').settings,runtime.modelSettings.view().revision).fingerprint}}]).semantic;await runtime.workflows.tick();

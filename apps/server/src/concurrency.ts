@@ -1,3 +1,4 @@
+import {AsyncLocalStorage} from 'node:async_hooks';
 /** Bounded admission; FIFO by default, round-robin between explicit host operation keys. */
 export class ConcurrencyGate {
   private active=0;
@@ -15,8 +16,9 @@ export class ConcurrencyGate {
     if(this.closed)return Promise.reject(new Error('Execution queue closed'));
     if(signal?.aborted)return Promise.reject(signal.reason??new DOMException('Cancelled','AbortError'));
     return new Promise<T>((resolve,reject)=>{
+      const runInCallerContext=AsyncLocalStorage.snapshot();
       const entry={key,signal,reject,abort:()=>{const at=this.waiting.indexOf(entry);if(at>=0){this.waiting.splice(at,1);this.clean(key);reject(signal?.reason??new DOMException('Cancelled','AbortError'));}},start:()=>{
-        this.active++;if(key){this.served.set(key,++this.sequence);this.activeKeys.set(key,(this.activeKeys.get(key)??0)+1);}Promise.resolve().then(()=>{signal?.throwIfAborted();return task();}).then(resolve,reject).finally(()=>{this.active--;if(key){const remaining=this.activeKeys.get(key)!-1;if(remaining)this.activeKeys.set(key,remaining);else this.activeKeys.delete(key);this.clean(key);}this.drain();});
+        this.active++;if(key){this.served.set(key,++this.sequence);this.activeKeys.set(key,(this.activeKeys.get(key)??0)+1);}Promise.resolve().then(()=>{signal?.throwIfAborted();return runInCallerContext(task);}).then(resolve,reject).finally(()=>{this.active--;if(key){const remaining=this.activeKeys.get(key)!-1;if(remaining)this.activeKeys.set(key,remaining);else this.activeKeys.delete(key);this.clean(key);}this.drain();});
       }};
       signal?.addEventListener('abort',entry.abort,{once:true});this.waiting.push(entry);this.drain();
     });

@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -34,6 +35,7 @@ async function fixture(t:any){
   const config:Config={dataDir:join(directory,'vault'),token:'generated-strategy-test-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,connectors:{directory:join(directory,'connectors'),modules:[modulePath]}};
   const calls:QueryInput[]=[],control:{failCoding:boolean;duringExtract?:()=>void;duringReview?:()=>void}={failCoding:false};
   const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
+    const topic=fixtureTopicResult(input);if(topic)return topic;
     calls.push(input);if(input.traceContext?.phase==='extract')control.duringExtract?.();const id=input.evidenceIds![0],record=node.memories.readEvidence([id])[0];
     if(understanding(input))assert.ok(input.question.includes('GENERATED_EXTRACTION_1'),'the selected installed extractor also governs unified Coding candidates');
     const common={uncertainty:'Only the supplied generated source is known.',admission:{layer:'memory',reason:'Generated test claim',scope:'Generated session',attribution:'user'},evidenceIds:[id],evidence:[{id,quote:record.ocrText.trim()}]};
@@ -48,7 +50,7 @@ async function fixture(t:any){
     const range=input.evidenceRanges?.find(range=>range.id===id),quote=range?record.ocrText.slice(range.offset,range.offset+Math.min(range.length,120)):record.ocrText.slice(0,120);
     return fixtureMemoryWorkResult(input,{answer:JSON.stringify(understanding(input)?{summary:'Generated bounded conversation interpretation',evidence:[{id,quote,offset:range?.offset??0}],workRecords:[],events:[],memoryCandidates:memories,actionCues:[]}:{memories}),citations:[{id,capturedAt:record.capturedAt,appName:record.appName,excerpt:''}],trace:[],runId:randomUUID()});
   }}};
-  let node=await buildApp(config,dependencies);await node.app.ready();
+  let node=await buildApp(config,dependencies);await node.app.ready();await authorizeFixtureModels(node);
   const disable=async()=>{const settings=node.lifecycle.settings();await node.lifecycle.save({revision:node.configService.revision,settings:{...settings}});};await disable();
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const add=async(sourceId:string,coding=false,revision='1')=>{
@@ -106,7 +108,7 @@ test('one failed reviewer leaves the other product intact and retries only its n
   assert.equal(failed.completedBatches,1);assert.equal(failed.failedBatches,1);assert.equal(f.count('extract'),1);
   const preserved=failed.batches.find(b=>b.status==='completed')!;f.control.failCoding=false;
   await f.restart();
-  const resumed=await f.node.memoryPipeline.retry(failed.id);assert.equal(resumed.status,'completed');
+  const resumed=await withFixtureOwnerModelWork(f.node,()=>f.node.memoryPipeline.retry(failed.id));assert.equal(resumed.status,'completed');
   assert.equal(f.count('extract'),1,'restart reuses the shared validated extraction');
   assert.equal(f.count('review'),3);assert.deepEqual(resumed.batches.find(b=>b.id===preserved.id),preserved);
   const rawMemory=resumed.memoryIds.map(id=>f.node.memories.get(id));assert.equal(rawMemory.length,2);
@@ -163,31 +165,31 @@ test('removed strategies stop before billing and during commit; reinstall resume
   const f=await fixture(t),source=await f.add('diary'),definition=review('temporary-review','GENERATED_CODING');
   let remove=f.node.memoryStrategies.registerReview(definition);
   f.node.memoryStrategies.registerRecipe(recipe('temporary','extract','temporary-review'));
-  const queued=f.node.memoryPipeline.create({contextTime,evidenceIds:source.evidenceIds,recipes:[ref('temporary')]});remove();
-  const unavailable=await f.node.memoryPipeline.run(queued.id);assert.equal(unavailable.status,'failed');assert.equal(f.calls.length,0);
+  const queued=await withFixtureOwnerModelWork(f.node,async()=>f.node.memoryPipeline.create({contextTime,evidenceIds:source.evidenceIds,recipes:[ref('temporary')]}));remove();
+  const unavailable=await withFixtureOwnerModelWork(f.node,()=>f.node.memoryPipeline.run(queued.id));assert.equal(unavailable.status,'failed');assert.equal(f.calls.length,0);
   assert.equal(unavailable.batches[0].errorCode,'memory_strategy_unavailable');
   remove=f.node.memoryStrategies.registerReview(definition);
   f.control.duringReview=()=>{remove();f.control.duringReview=undefined;};
-  const interrupted=await f.node.memoryPipeline.retry(queued.id);assert.equal(interrupted.status,'failed');assert.equal(interrupted.memoryIds.length,0);
+  const interrupted=await withFixtureOwnerModelWork(f.node,()=>f.node.memoryPipeline.retry(queued.id));assert.equal(interrupted.status,'failed');assert.equal(interrupted.memoryIds.length,0);
   assert.equal(f.count('extract'),1);assert.equal(f.count('review'),1);
   f.node.memoryStrategies.registerReview(definition);
-  const recovered=await f.node.memoryPipeline.retry(queued.id);assert.equal(recovered.status,'completed');assert.equal(f.count('extract'),1);assert.equal(f.count('review'),2);
+  const recovered=await withFixtureOwnerModelWork(f.node,()=>f.node.memoryPipeline.retry(queued.id));assert.equal(recovered.status,'completed');assert.equal(f.count('extract'),1);assert.equal(f.count('review'),2);
 });
 
 test('a recipe pin cannot be replaced by different code under the same version after restart',async t=>{
   const f=await fixture(t),source=await f.add('diary');
-  const queued=f.node.memoryPipeline.create({contextTime,evidenceIds:source.evidenceIds,recipes:[ref('coding')]});
+  const queued=await withFixtureOwnerModelWork(f.node,async()=>f.node.memoryPipeline.create({contextTime,evidenceIds:source.evidenceIds,recipes:[ref('coding')]}));
   await f.restart(true);
-  const recovered=await f.node.memoryPipeline.run(queued.id);
+  const recovered=await withFixtureOwnerModelWork(f.node,()=>f.node.memoryPipeline.run(queued.id));
   assert.equal(recovered.status,'failed');assert.equal(recovered.batches[0].errorCode,'memory_strategy_unavailable');
   assert.equal(f.calls.length,0,'changed installed content cannot run an old pinned job');
 });
 
 for(const mutation of ['cancel','delete'] as const)test(`${mutation} during composed review fences late output and preserves only still-valid shared stages`,async t=>{
   const f=await fixture(t),source=await f.add('diary');
-  const job=f.node.memoryPipeline.create({contextTime,evidenceIds:source.evidenceIds,recipes:[ref('personal'),ref('coding')]});
+  const job=await withFixtureOwnerModelWork(f.node,async()=>f.node.memoryPipeline.create({contextTime,evidenceIds:source.evidenceIds,recipes:[ref('personal'),ref('coding')]}));
   f.control.duringReview=()=>{f.control.duringReview=undefined;if(mutation==='cancel')f.node.memoryPipeline.cancel(job.id);else f.node.store.delete(source.id);};
-  const result=await f.node.memoryPipeline.run(job.id);
+  const result=await withFixtureOwnerModelWork(f.node,()=>f.node.memoryPipeline.run(job.id));
   assert.equal(result.status,mutation==='cancel'?'cancelled':'failed');assert.equal(result.memoryIds.length,0);
   assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_extraction_drafts WHERE shared=1').get()!.n,mutation==='cancel'?1:0);
   assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
@@ -200,9 +202,9 @@ for(const mutation of ['cancel','delete'] as const)test(`${mutation} during comp
 });
 
 test('cancellation before extraction validation cannot populate shared drafts with late output',async t=>{
-  const f=await fixture(t),source=await f.add('diary'),job=f.node.memoryPipeline.create({contextTime,evidenceIds:source.evidenceIds,recipes:[ref('personal')]});
+  const f=await fixture(t),source=await f.add('diary'),job=await withFixtureOwnerModelWork(f.node,async()=>f.node.memoryPipeline.create({contextTime,evidenceIds:source.evidenceIds,recipes:[ref('personal')]}));
   f.control.duringExtract=()=>f.node.memoryPipeline.cancel(job.id);
-  assert.equal((await f.node.memoryPipeline.run(job.id)).status,'cancelled');
+  assert.equal((await withFixtureOwnerModelWork(f.node,()=>f.node.memoryPipeline.run(job.id))).status,'cancelled');
   assert.equal(f.count('extract'),1);assert.equal(f.count('review'),0);assert.equal(f.node.memories.list().length,0);
   assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_extraction_drafts').get()!.n,0);
   assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
@@ -210,8 +212,8 @@ test('cancellation before extraction validation cannot populate shared drafts wi
 
 test('an explicitly changed evaluation time cannot hit a prior recipe completion checkpoint',async t=>{
   const f=await fixture(t),source=await f.add('diary');await f.run(source.evidenceIds,['personal']);
-  const changed=f.node.memoryPipeline.create({contextTime:'2026-09-02T12:00:00Z',evidenceIds:source.evidenceIds,recipes:[ref('personal')]});
+  const changed=await withFixtureOwnerModelWork(f.node,async()=>f.node.memoryPipeline.create({contextTime:'2026-09-02T12:00:00Z',evidenceIds:source.evidenceIds,recipes:[ref('personal')]}));
   assert.equal(changed.batches.length,1);
-  assert.equal((await f.node.memoryPipeline.run(changed.id)).status,'completed');assert.equal(f.count('extract'),2);assert.equal(f.count('review'),2);
+  assert.equal((await withFixtureOwnerModelWork(f.node,()=>f.node.memoryPipeline.run(changed.id))).status,'completed');assert.equal(f.count('extract'),2);assert.equal(f.count('review'),2);
   assert.equal((await f.run(source.evidenceIds,['personal'])).batches.length,0,'the unchanged explicit evaluation still reuses its own checkpoint');
 });

@@ -46,6 +46,10 @@ async function fixture(t:TestContext){
  };
  const client=()=>new CalendarActions({deviceId:'generated-device',deviceName:'Generated device'},io);await client().connect();
  await request('/api/sources',{id:'generated-source',kind:'custom',name:'Generated source',deviceId:'generated-input',platform:'import'});
+ // Model processing consent and calendar write consent remain separate owner decisions.
+ const authorization=await request('/api/model-authorization');
+ assert.equal(authorization.authorization.state,'unapproved');
+ await request('/api/model-authorization/commands',{revision:authorization.authorization.revision,operationId:randomUUID(),action:'authorize',connections:authorization.connections,scope:{sourceIds:['generated-source'],dataKinds:['text']}});
  const settings=await request('/api/actions');await request('/api/actions/settings',{revision:settings.revision,authorizationRevision:settings.authorizationRevision,settings:{enabled:true,timeZone:'UTC',reviewDeviceIds:[]}},owner,'PUT');
  const add=async(id=randomUUID())=>{const record=await node.sources.upsert('generated-source',{externalId:id,revision:'1',observedAt:'2026-01-01T00:00:00Z',text,title:'Generated original',kind:'message',layer:'original'});await node.actions.tick();const action=node.actions.list().find(value=>value.evidence.some(e=>e.id===record.id));assert.ok(action,'real extraction host publishes a validated proposal');return action;};
  const grant=async(existingArchived=true,futureInputs=true)=>{const inventory=await request('/api/action-capabilities'),draft=await request('/api/action-capability-drafts',{...command(0),id:randomUUID(),capability:{id:'calendar.create',version:1},target:{deviceId:'generated-device',calendarId:'generated-calendar',declarationRevision:inventory.declarations[0].revision},inputs:{sources:[{sourceId:'generated-source',kind:'custom',deviceId:'generated-input',platform:'import'}],existingArchived,futureInputs}},owner,'PUT');return request('/api/action-capability-grants',{...command(0),id:randomUUID(),draftId:draft.id,draftRevision:draft.revision,plugin:inventory.providers[0].identity,acknowledgeCalendarWrites:true},owner,'PUT');};
@@ -107,6 +111,9 @@ test('overlapping grants retain manual review and multi-source evidence cannot e
  const f=await fixture(t),first=await f.grant(),second=await f.grant(),a=await f.add();await f.client().deliver();assert.equal(f.nativeCalls,0);assert.equal(f.node.actions.get(a.id).status,'proposed');
  await f.request('/api/action-capability-grants/'+second.id+'/revoke',command(second.revision));
  await f.request('/api/sources',{id:'generated-outside',kind:'custom',name:'Outside fixture',deviceId:'generated-input',platform:'import'});
+ // Authorize model reading of both generated sources, while calendar write grants stay on generated-source only.
+ const authorization=await f.request('/api/model-authorization');
+ await f.request('/api/model-authorization/commands',{revision:authorization.authorization.revision,operationId:randomUUID(),action:'authorize',connections:authorization.connections,scope:{sourceIds:['generated-source','generated-outside'],dataKinds:['text']}});
  const outside=await f.node.sources.upsert('generated-outside',{externalId:'outside',revision:'1',observedAt:'2026-01-01T00:00:00Z',text,title:'Generated outside',kind:'message',layer:'original'});
  // A validated multi-source proposal is the input to the deterministic permission gate.
  // Keep the original real extraction and append a current fixture evidence snapshot.

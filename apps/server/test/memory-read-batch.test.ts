@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -94,7 +95,14 @@ test('three actual Memory jobs prepare large context grants through the bridge w
    assert.equal(new Set(bridge.seedEvidence.map(record=>record.id)).size,80);assert.equal(bridge.deliveredRanges.length,80,'the unread context catalog never becomes initial evidence');
    input.signal!.throwIfAborted();return {runId:randomUUID(),answer:JSON.stringify({memories:[],coverage:work.members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]}))}),citations:[],trace:[],evidenceReadRanges:bridge.deliveredRanges,evidenceDependencies:bridge.evidenceDependencies};
   }finally{await bridge.close();}
- }})});await node.app.ready();
+ }})});await node.app.ready();await authorizeFixtureModels(node);
+ // An admitted fragment must not synchronously resolve the complete original
+ // catalog again: slow metadata here can starve the real lease renewal timer.
+ const triggers=node.modelAuthorizationHost.evidenceTriggers.bind(node.modelAuthorizationHost);
+ t.mock.method(node.modelAuthorizationHost,'evidenceTriggers',(ids:readonly string[])=>{
+  assert.ok(!node.modelAuthorization.currentId||ids.length!==4097,'admitted Memory must reuse its authority instead of reparsing all original triggers');
+  return triggers(ids);
+ });
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  // Use the product organizer lifecycle for this declared generated source
  // shape. Settling intake before granting work excludes revision drift from
@@ -113,8 +121,8 @@ test('three actual Memory jobs prepare large context grants through the bridge w
  const transitions:{kind:string;state:string;attempts:number;error?:string}[]=[],project=node.executor.project.bind(node.executor);
  node.executor.project=id=>{const step=node.executor.get(id);if(step?.kind==='memory.batch')transitions.push({kind:step.kind,state:step.state,attempts:step.attempts,error:step.error});return project(id);};
  const ids=node.materials.input(material.ref,['source-body'])!.evidenceIds;
- const jobs=Array.from({length:3},(_,index)=>node.memoryPipeline.create({evidenceIds:ids,evidenceRanges:ids.slice(index*80,index*80+80).map((id,offset)=>({id,offset:0,length:texts[index*80+offset].length})),contextEvidenceRanges:ids.map((id,offset)=>({id,offset:0,length:texts[offset].length})),recipes:[{id:'mote.personal-memory',version:'5'}]}));
- const done=await Promise.all(jobs.map(job=>node.memoryPipeline.run(job.id)));
+ const jobs=await Promise.all(Array.from({length:3},(_,index)=>withFixtureOwnerModelWork(node,async()=>node.memoryPipeline.create({evidenceIds:ids,evidenceRanges:ids.slice(index*80,index*80+80).map((id,offset)=>({id,offset:0,length:texts[index*80+offset].length})),contextEvidenceRanges:ids.map((id,offset)=>({id,offset:0,length:texts[offset].length})),recipes:[{id:'mote.personal-memory',version:'5'}]}))));
+ const done=await Promise.all(jobs.map(job=>withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(job.id))));
  assert.equal(node.materials.get(material.id)!.ref,material.ref,'no organizer revision drift occurred after admission');
  assert.ok(done.every(job=>job.status==='completed'),JSON.stringify(done.map(job=>({status:job.status,error:job.errorCode,batches:job.batches.map(batch=>({status:batch.status,error:batch.errorCode}))}))));assert.equal(calls.length,6,'each exact job extracts and independently reviews once; transitions='+JSON.stringify(transitions));
  for(const job of done){assert.equal(job.totalBatches,1);assert.equal(job.batches[0].attempts,1);assert.equal(job.batches[0].coverage!.length,80);}

@@ -76,13 +76,13 @@ test('execution entrypoints attribute insight, memory and isolated file analysis
   const dir=mkdtempSync(join(tmpdir(),'mote-attribution-entrypoints-'));let failFile=false,closedFiles=0;
   const emit=(input:Parameters<QueryAgent['query']>[0])=>input.onUsage?.({requests:1,reportedRequests:1,inputTokens:30,outputTokens:10,totalTokens:40,cacheReadTokens:20,cacheWriteTokens:0});
   const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{emit(input);return {answer:input.skill==='memory-extraction'?JSON.stringify({memories:[]}):input.skill==='personal-insight'?JSON.stringify({title:'Generated report',markdown:'Generated report',html:'<p>Generated report</p>'}):'Generated report',citations:[],trace:[],runId:randomUUID()};}};
-  const {app,processing,store}=await buildApp(config(dir),{agent,createModelAgent:async()=>({configured:true,close:async()=>{closedFiles++;},query:async input=>{emit(input);if(failFile)throw Error('Generated model failure');return {answer:'Generated file summary',citations:[],trace:[],runId:randomUUID()};}})});
+  const {app,processing,store,featureServices}=await buildApp(config(dir),{agent,createModelAgent:async(_settings,_reader,_host,identity)=>{assert.ok(identity);assert.equal(identity.kind,'profile');return {configured:true,close:async()=>{closedFiles++;},query:async input=>{emit(input);if(failFile)throw Error('Generated model failure');return {answer:'Generated file summary',citations:[],trace:[],runId:randomUUID()};}};}});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
   const insight=await app.inject({method:'POST',url:'/api/insights',headers,payload:{}});assert.equal(insight.statusCode,200,insight.body);
   await store.ingest({id:randomUUID(),deviceId:'generated-memory',deviceName:'Generated',platform:'import',source:'note',capturedAt:new Date().toISOString(),durationMs:0,ocrText:'Generated attribution evidence'});
   const memory=await app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{}});assert.equal(memory.statusCode,200,memory.body);
-  await processing.analyze('generated-file-id',[],'Generated prompt mentioning unrelated skills and agents');
-  failFile=true;await assert.rejects(processing.analyze('generated-file-id',[],'Generated failure'));assert.equal(closedFiles,2);
+  await featureServices.withMediaOwnerIntent('generated-file-id',()=>processing.analyze('generated-file-id',[],'Generated prompt mentioning unrelated skills and agents'));
+  failFile=true;await assert.rejects(featureServices.withMediaOwnerIntent('generated-file-id',()=>processing.analyze('generated-file-id',[],'Generated failure')));assert.equal(closedFiles,2);
   const today=new Date().toISOString().slice(0,10),summary=(await app.inject({url:`/api/usage?from=${today}&to=${today}&groupBy=module`,headers})).json();
   assert.equal(summary.total.runs,4);assert.equal(summary.total.failed,1);assert.equal(summary.total.totalTokens,160);
   assert.deepEqual(summary.items.map((r:any)=>({agentId:r.attribution.agentId,moduleId:r.attribution.moduleId,skillId:r.attribution.skillId})).sort((a:any,b:any)=>a.moduleId.localeCompare(b.moduleId)),[

@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -29,7 +30,7 @@ for(const transition of ['create-only','activated-restart','cancelled-restart','
  const material=node.materials.publish({id:materialId(sourceId,'generated'),kind:'mote.note',schemaVersion:1,title:'Generated activation original',origin:{sourceId,externalId:'generated',deviceId:'generated'},members:[{id,kind:'capture',ref:'capture:'+id}],blocks:[{id:'body',kind:'text',format:'plain',text:'Generated original for explicit Memory activation.',memberIds:[id]}],artifacts:[{key:'source-body',state:'ready',blockIds:['body']}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}});
  const job=node.memoryPipeline.create({evidenceIds:node.materials.input(material.ref,['source-body'])!.evidenceIds,recipes:[{id:'mote.personal-memory',version:'5'}]});assert.equal(job.activationRequired,true);
  let interrupted:Promise<unknown>|undefined;
- if(transition!=='create-only'){interrupted=node.memoryPipeline.run(job.id);await started;assert.equal(node.memoryPipeline.get(job.id).activationRequired,false,'explicit start persists activation before provider work');}
+ if(transition!=='create-only'){interrupted=withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(job.id)).catch(error=>{assert.equal(error.name,'AbortError','closing the app interrupts the active owner model operation');});await started;assert.equal(node.memoryPipeline.get(job.id).activationRequired,false,'explicit start persists activation before provider work');}
  const api=(method:'GET'|'POST'|'DELETE',url:string)=>node.app.inject({method,url,headers:{authorization:'Bearer '+config.token},...(method==='POST'?{payload:{}}:{})});
  if(transition==='cancelled-restart')assert.equal((await api('POST','/api/memory-jobs/'+job.id+'/cancel')).statusCode,200);
  if(transition==='deleted-restart')assert.equal((await api('DELETE','/api/captures/'+id)).statusCode,200);
@@ -38,7 +39,7 @@ for(const transition of ['create-only','activated-restart','cancelled-restart','
   await delay(30);assert.equal(calls.length,0);assert.equal(node.memoryPipeline.get(job.id).activationRequired,true);
   const start=await api('POST','/api/memory-jobs/'+job.id+'/resume');assert.equal(start.statusCode,200);
   assert.equal(calls.length,0,'resume is not a grant to activate a never-started queued task');
-  const done=await node.memoryPipeline.run(job.id);assert.equal(done.status,'completed');assert.equal(done.activationRequired,false);assert.deepEqual(calls,['extract','review']);return;
+  const done=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(job.id));assert.equal(done.status,'completed');assert.equal(done.activationRequired,false);assert.deepEqual(calls,['extract','review']);return;
  }
  if(transition==='activated-restart'){
   const done=await node.memoryPipeline.run(job.id);assert.equal(done.status,'completed');assert.equal(done.activationRequired,false);assert.equal(calls.length,before+2);assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,1);return;

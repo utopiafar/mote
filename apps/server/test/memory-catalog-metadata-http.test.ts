@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
@@ -73,7 +74,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.pa
  // This is the same formal host entry used by the explicitly authorized
  // continuation helper; no raw original or unselected source is added.
  const job=node.memoryPipeline.create({evidenceIds:ranges.map(range=>range.id),evidenceRanges:[ranges[0]],contextEvidenceRanges:ranges,recipes:[{id:'mote.personal-memory',version:'5'}]});
- const done=await node.memoryPipeline.run(job.id);await pendingMutation;assert.equal(assembled,true);
+ const done=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(job.id));await pendingMutation;assert.equal(assembled,true);
  if(adapter==='codex'){
   const sent=existsSync(turns)?readFileSync(turns,'utf8').trim().split('\n').map(line=>JSON.parse(line)):[];starts=sent.length;
   assert.ok(sent.every(row=>row.hadTarget&&!row.hadUnread&&!row.hadPrivate));

@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -51,6 +52,7 @@ test('central UI APIs complete original import → exact Memory → cited static
     writeFileSync(join(workspace,'dispositions.json'),JSON.stringify({items:inputPaths.map(path=>({path,status:'parsed',reason:'synthetic plain text'}))}));
     return {summary:'识别到一条合成原始日记；记录时间来自原始字段。'};
   },agent:{configured:true,close:async()=>{},query:async input=>{
+    const topic=fixtureTopicResult(input);if(topic)return topic;
     queries.push(input);
     if(input.responseMode==='memory-extraction'){
       if(failMemory){failMemory=false;throw Error('Synthetic transient failure');}
@@ -108,8 +110,9 @@ test('an import with historical revisions completes and extracts only the newly 
   const node=await buildApp(cfg,{prepareImport:async({workspace,inputPaths})=>{
     writeFileSync(join(workspace,'records.jsonl'),[1,2].map(revision=>JSON.stringify({item:{externalId:'same-object',revision:String(revision),observedAt:`2020-01-0${revision}T00:00:00Z`,kind:'file',layer:'original',text:`合成资料版本 ${revision}`},evidencePaths:inputPaths})).join('\n'));
     return {summary:'同一原始对象的两个历史版本。'};
-  },agent:{configured:true,close:async()=>{},query:async input=>{seen.push(input);return {answer:JSON.stringify({summary:'Synthetic current revision',evidence:[]}),citations:[],trace:[],runId:randomUUID()};}}});
+  },agent:{configured:true,close:async()=>{},query:async input=>{const topic=fixtureTopicResult(input);if(topic)return topic;seen.push(input);return {answer:JSON.stringify({summary:'Synthetic current revision',evidence:[]}),citations:[],trace:[],runId:randomUUID()};}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+  await authorizeFixtureModels(node);
   const headers={authorization:`Bearer ${cfg.token}`};
   const uploaded=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files:[{name:'history.json',dataBase64:Buffer.from('synthetic history').toString('base64')}]}});
   const id=uploaded.json().id;await until(async()=>node.imports.get(id),job=>job.status==='awaiting_confirmation');

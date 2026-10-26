@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,11 +28,11 @@ function event(id:string,role:string,text:string):SourceItem{return {externalId:
  document:{recordedAt,timeBasis:'recorded',contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',projectName:'Generated project',projectIdentity:'workspace',sessionId:'generated-session',eventId:id,role,...(role==='assistant'?{channel:'final'}:{}),attribution:role==='user'?'human':role==='assistant'?'agent':'unknown',part:0,parts:1}}};}
 async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,automatic=false){
  const directory=mkdtempSync(join(tmpdir(),'mote-coding-understanding-e2e-'));
- const node=await buildApp(config(directory),{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>fixtureMemoryWorkResult(input,await query(input,reader))})});
+ const node=await buildApp(config(directory),{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>fixtureTopicResult(input)??fixtureMemoryWorkResult(input,await query(input,reader))})});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const settings=node.lifecycle.settings();await node.lifecycle.save({revision:node.configService.revision,settings:{...settings,consolidation:{...settings.consolidation,enabled:false},insights:{...settings.insights,enabled:false},working:{...settings.working,enabled:false}}});
  node.sources.register({id:'coding',kind:'coding-agent',name:'Generated coding',deviceId:'fixture',platform:'macos'});
- node.sourcePipelines.configure('coding',{settleSeconds:0});await node.app.ready();
+ node.sourcePipelines.configure('coding',{settleSeconds:0});await node.app.ready();await authorizeFixtureModels(node);
  return node;
 }
 async function receive(node:Node){
@@ -62,14 +63,14 @@ function preparationConfig(node:Node){const rows=node.store.db.prepare("SELECT j
 test('large Coding work metadata resolves from a generation handle while transport retains its existing bound',{timeout:15000},async t=>{
  const workPackage={id:'generated-large-coding-package',goal:'Generated goal '+'.'.repeat(1900),instruction:'Generated instruction '+'.'.repeat(3900)};let understanding=0,resolvedSize=0;
  let node!:Node;node=await appFixture(t,async(input,reader)=>{const originals=await supplied(input,reader);if(isUnderstanding(input)){understanding++;const work=input.taskContext?.memoryWork as any;assert.equal(work.package.goal,workPackage.goal);assert.equal(work.package.instruction,workPackage.instruction);assert.ok(work.members.length);assert.ok(work.authorizedMembers.length);assert.ok(Array.isArray(work.history));const [config]=preparationConfig(node),preparation=node.memoryPipeline.conversationPreparation(config.generationContract);assert.deepEqual({...work,instruction:preparation.memoryWork!.instruction},preparation.memoryWork,'candidate-field projection preserves all private work metadata');assert.match(work.instruction,/Return \{memoryCandidates:/);assert.doesNotMatch(work.instruction,/Return \{memories:/);resolvedSize=JSON.stringify(preparation).length;return response(originals[0].id,owner,products(originals[0].id,false));}return response(originals[0].id,owner,input.taskContext!.untrustedMemoryDraft);});
- const source=await receive(node),job=await node.memoryPipeline.run(manualJob(node,source.ids,workPackage).id);assert.equal(job.status,'completed');assert.equal(understanding,1);assert.ok(resolvedSize>16000,'large policy/work payload exceeds the transport bound without enlarging it');preparationConfig(node);
+ const source=await receive(node),job=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(manualJob(node,source.ids,workPackage).id));assert.equal(job.status,'completed');assert.equal(understanding,1);assert.ok(resolvedSize>16000,'large policy/work payload exceeds the transport bound without enlarging it');preparationConfig(node);
  assert.throws(()=>node.memoryPipeline.conversationPreparation('f'.repeat(64)),error=>error instanceof StoreError&&error.statusCode===409);
 });
 
 for(const change of ['cancel','source-revision'] as const)test(`Coding preparation handle refuses ${change} authority while model output is still in flight`,{timeout:15000},async t=>{
  const started=deferred(),release=deferred();t.after(()=>release.resolve());
  const node=await appFixture(t,async(input,reader)=>{assert.ok(isUnderstanding(input));const originals=await supplied(input,reader);started.resolve();await release.promise;return response(originals[0].id,owner,products(originals[0].id,false));});
- const source=await receive(node),created=manualJob(node,source.ids),running=node.memoryPipeline.run(created.id);await started.promise;const [config]=preparationConfig(node);assert.ok(node.memoryPipeline.conversationPreparation(config.generationContract).memoryWork);
+ const source=await receive(node),created=manualJob(node,source.ids),running=withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(created.id));await started.promise;const [config]=preparationConfig(node);assert.ok(node.memoryPipeline.conversationPreparation(config.generationContract).memoryWork);
  if(change==='cancel')node.memoryPipeline.cancel(created.id);else {await node.sources.upsert('coding',{...event('owner','user','Generated corrected owner expression.'),revision:'2'});await node.sourcePipelines.tick();}
  assert.throws(()=>node.memoryPipeline.conversationPreparation(config.generationContract),error=>error instanceof StoreError&&error.statusCode===409);release.resolve();const stopped=await running;assert.notEqual(stopped.status,'completed');assert.equal(node.store.archive.page({kind:'semantic'}).items.length,0);assert.equal(node.memories.list().length,0);
 });
@@ -87,7 +88,7 @@ test('clean Coding material runs one authorized understanding and reuses its can
   }
   extraction++;throw Error('Candidate reuse must avoid a second extraction model call');
  });
- const fixture=await receive(node),job=await node.memoryPipeline.run(manualJob(node,fixture.ids).id);
+ const fixture=await receive(node),job=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(manualJob(node,fixture.ids).id));
  assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,1);assert.equal(understanding,1);assert.equal(review,1);assert.equal(extraction,0);
  const card=node.memories.get(job.memoryIds[0]);assert.equal(card.status,'published');assert.equal(card.reviewReceipt?.decision,'independent');assert.equal(card.reviewReceipt?.contextTime,contextTime);
  const artifact=node.store.archive.page({kind:'semantic'}).items[0];assert.ok(artifact);const full=node.store.archive.get(artifact.id)!;
@@ -103,7 +104,7 @@ for(const failure of ['provider','post-query-parse'] as const)test(`Coding ${fai
  let calls=0;const node=await appFixture(t,async input=>{calls++;assert.ok(isUnderstanding(input));input.onUsage?.(tokens(47,3,failure!=='provider'));if(failure==='provider')throw Error('Generated provider failure');return {answer:'Invalid generated unified output',citations:[],trace:[],runId:randomUUID()};});
  // An unclassified provider exception has no evidence that repeating the same
  // call is safe or useful. The producer must retain its one actual-call receipt.
- const fixture=await receive(node),job=await node.memoryPipeline.run(manualJob(node,fixture.ids).id);assert.equal(job.status,'failed');assert.equal(calls,1);const receipts=usage(node);assert.equal(receipts.length,calls,'each actual provider attempt has exactly one producer-owned receipt');assert.ok(receipts.every(receipt=>receipt.operation==='coding-conversation-understanding'&&receipt.status==='failed'&&receipt.tokens?.totalTokens===50&&receipt.tokens.complete===(failure!=='provider')));assert.equal(node.store.archive.page({kind:'semantic'}).items.length,0);assert.equal(node.memories.list().length,0);
+ const fixture=await receive(node),job=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(manualJob(node,fixture.ids).id));assert.equal(job.status,'failed');assert.equal(calls,1);const receipts=usage(node);assert.equal(receipts.length,calls,'each actual provider attempt has exactly one producer-owned receipt');assert.ok(receipts.every(receipt=>receipt.operation==='coding-conversation-understanding'&&receipt.status==='failed'&&receipt.tokens?.totalTokens===50&&receipt.tokens.complete===(failure!=='provider')));assert.equal(node.store.archive.page({kind:'semantic'}).items.length,0);assert.equal(node.memories.list().length,0);
 });
 
 test('an explicit Memory HTTP retry reopens its failed Coding preparation while background observation leaves it terminal',async t=>{
@@ -113,7 +114,7 @@ test('an explicit Memory HTTP retry reopens its failed Coding preparation while 
   if(isUnderstanding(input)){understanding++;if(fail)throw Error('Generated unknown preparation failure');return response(originals[0].id,owner,products(originals[0].id,false));}
   review++;return response(originals[0].id,owner,input.taskContext!.untrustedMemoryDraft);
  });
- const fixture=await receive(node),created=manualJob(node,fixture.ids),failed=await node.memoryPipeline.run(created.id);
+ const fixture=await receive(node),created=manualJob(node,fixture.ids),failed=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(created.id));
  assert.equal(failed.status,'failed');assert.equal(understanding,1);
  const child=node.store.db.prepare("SELECT id FROM processing_jobs WHERE json_extract(json,'$.processor')='mote.coding-conversation-understanding'").get()!;
  assert.equal(node.executor.get(String(child.id))?.state,'failed');
@@ -130,7 +131,7 @@ test('an explicit Memory HTTP retry reopens its failed Coding preparation while 
 
 test('empty Coding candidates publish work/events and receive independent review without a second extraction',{timeout:15000},async t=>{
  let calls=0;const node=await appFixture(t,async(input,reader)=>{calls++;const originals=await supplied(input,reader);if(!isUnderstanding(input)){assert.equal(input.traceContext?.phase,'review');return response(originals[0].id,owner,input.taskContext!.untrustedMemoryDraft);}return response(originals[0].id,owner,products(originals[0].id,false));});
- const fixture=await receive(node),job=await node.memoryPipeline.run(manualJob(node,fixture.ids).id);
+ const fixture=await receive(node),job=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(manualJob(node,fixture.ids).id));
  assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,0);assert.equal(calls,2);const artifacts=node.store.archive.page({kind:'semantic'}).items;
  assert.equal(artifacts.length,1);const artifact=node.store.archive.get(artifacts[0].id)!;assert.deepEqual(artifact.metadata.memoryCandidates,[]);assert.ok((artifact.metadata.workRecords as unknown[]).length);assert.ok((artifact.metadata.events as unknown[]).length);
 });
@@ -144,7 +145,7 @@ test('revoking the parent Memory grant during understanding prevents semantic an
   const meter=startUsage(...args);if(args[2]!=='coding-conversation-understanding')return meter;
   const finish=meter.finish;meter.finish=status=>{const receipt=finish(status);producerSettled.resolve();return receipt;};return meter;
  };
- const fixture=await receive(node),created=manualJob(node,fixture.ids),running=node.memoryPipeline.run(created.id);
+ const fixture=await receive(node),created=manualJob(node,fixture.ids),running=withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(created.id));
  await started.promise;node.memoryPipeline.cancel(created.id);release.resolve();const job=await running;
  assert.equal(job.status,'cancelled');await node.workflows.tick();
  assert.equal(node.store.archive.page({kind:'semantic'}).items.length,0);assert.equal(node.memories.list().length,0);assert.equal(calls,1);
@@ -179,7 +180,7 @@ test('long Coding conversations cover every original character through bounded i
  const long=owner+'\n'+('Generated bounded passage with Unicode 😀.\n').repeat(400)+'\nGenerated final correction: device checks are still unknown.';
  await node.sources.upsertBatch('coding',[...Array.from({length:4},(_,i)=>event('owner-'+i,'user',long.slice(i*5000,(i+1)*5000))).filter(item=>item.text),event('tool','tool_result',toolSecret)]);await node.sourcePipelines.tick();
  const material=node.materials.list({kind:'mote.coding-session'}).items[0],ids=node.materials.evidenceIds(material.ref),originals=node.materials.evidence(ids);
- const job=await node.memoryPipeline.run(manualJob(node,ids).id);assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,0);assert.ok(job.totalBatches>1);assert.equal(calls,job.totalBatches*2);
+ const job=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(manualJob(node,ids).id));assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,0);assert.ok(job.totalBatches>1);assert.equal(calls,job.totalBatches*2);
  for(const original of originals){
   const ranges=covered.filter(range=>range.id===original.id).sort((a,b)=>a.offset-b.offset);let cursor=0;
   for(const range of ranges){assert.equal(range.offset,cursor);cursor+=range.length;}
@@ -204,7 +205,7 @@ test('600k process text, unknown replies and host summaries never reach any mode
  for(const secret of ['PRIVATE_PROCESS','PRIVATE_HOST_SUMMARY','PRIVATE_UNKNOWN','PRIVATE_OVERSIZED']){
   assert.equal(node.materials.list({query:secret}).items.length,0);
  }
- const job=await node.memoryPipeline.run(manualJob(node,node.materials.evidenceIds(material.ref)).id);
+ const job=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(manualJob(node,node.materials.evidenceIds(material.ref)).id));
  assert.equal(job.status,'completed');assert.equal(calls,2);
  assert.equal(node.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='coding_conversation_contexts'").get(),undefined);
 });
@@ -216,7 +217,7 @@ test('a child queued behind the semantic pool retains authority after its Memory
  node.workflows.registry.register({id:'generated.pool-holder',version:'1',lane:'semantic',async process(){entered.resolve();await release.promise;return [{kind:'semantic',text:'Generated holder',metadata:{complete:true}}];}});
  const holder=node.workflows.enqueue([{name:'holder',processor:'generated.pool-holder',materialInputs:[{ref:f.material.ref,offset:0,length:100}]}]);
  const holding=node.executor.drain([holder.holder]);await entered.promise;
- const created=manualJob(node,f.ids),running=node.memoryPipeline.run(created.id);
+ const created=manualJob(node,f.ids),running=withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(created.id));
  for(let n=0;n<100&&!node.store.db.prepare("SELECT 1 FROM processing_jobs WHERE json_extract(json,'$.processor')='mote.coding-conversation-understanding'").get();n++)await new Promise(r=>setTimeout(r,10));
  assert.equal(node.memoryPipeline.get(created.id).status,'queued');assert.equal(calls,0);
  const child=node.store.db.prepare("SELECT id FROM processing_jobs WHERE json_extract(json,'$.processor')='mote.coding-conversation-understanding'").get()!;

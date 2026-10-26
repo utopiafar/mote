@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {fixtureMemoryPlan,fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import test from 'node:test';
@@ -31,7 +32,7 @@ async function fixture(t:import('node:test').TestContext,remote=false){
       transcriptionProvider:{transcribe:async input=>{for await(const _ of input.body){}asrCalls++;if(control.failASR)throw Error('Generated ASR failure');const texts=control.segments??[control.transcript];return {durationMs:1000,segments:texts.map((text,i)=>({startMs:Math.floor(i*1000/texts.length),endMs:Math.floor((i+1)*1000/texts.length),text}))};}},
       createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
         const plan=await fixtureMemoryPlan(input);if(plan)return plan;
-        calls.push(input);
+        const topic=fixtureTopicResult(input);if(topic)return topic;calls.push(input);
         // The reader can serve explicitly authorized context originals. The
         // model-facing bridge separately restricts ordinary evidence to seeds.
         const visible=await reader.evidence({ids:input.evidenceIds!});assert.equal(visible.length,input.evidenceIds!.length,'named ready inputs reach the model-facing reader');
@@ -88,6 +89,7 @@ async function fixture(t:import('node:test').TestContext,remote=false){
   await start();
   const settings=node.processing.view();await node.processing.save({revision:settings.revision,settings:{...settings.settings,enabled:true,audioProcessor:'audio.http',endpoint:'http://127.0.0.1:1234/transcribe',summarize:false},policy:fixtureFilePolicy({...settings.settings,enabled:true,audioProcessor:'audio.http',endpoint:'http://127.0.0.1:1234/transcribe',summarize:false},node.processing.runtime.registry)});
   const selected=await node.app.inject({method:'PUT',url:'/api/memory-recipe-settings',headers:{authorization:'Bearer '+config.token},payload:{recipes:[bodyRecipe,extractedPersonal,extractedCoding]}});assert.equal(selected.statusCode,200,selected.body);
+  await authorizeFixtureModels(node);
   const upload=async(mime='audio/wav',sourceId='generated-audio')=>{
     node.sources.register({id:sourceId,name:'Generated '+sourceId,kind:mime==='audio/wav'?'local-files':'upload',deviceId:'fixture',platform:'import',retention:'archive'});
     const bytes=mime==='audio/wav'?wave:Buffer.from(transcript),item={externalId:'sample',revision:'1',observedAt:'2026-05-07T07:00:00Z',kind:'file',layer:'original',title:'Generated file',text:'',mimeType:mime,document:{contentRole:'authored',recordedAt:'2026-05-07T07:00:00Z'}};
@@ -114,17 +116,17 @@ test('ready record index survives failed media, restart and recovery; two waitin
   }finally{release();}
   assert.equal((await running).status,'completed');f.control.review=undefined;
   const saved=f.node.memoryPipeline.get(bodyJob.id).memoryIds[0];f.node.memories.publish(saved);const product=f.node.memories.get(saved);
-  await f.restart();assert.equal(f.node.processing.cancellation(file.id).wait,'unknown');assert.throws(()=>f.node.processing.retry(file.id),{statusCode:409});f.control.failASR=false;f.node.processing.retry(file.id,'transcribe',false,true);await f.node.processing.tick();await f.organize();
+  await f.restart();assert.equal(f.node.processing.cancellation(file.id).wait,'unknown');assert.throws(()=>f.node.processing.retry(file.id),{statusCode:409});f.control.failASR=false;await withFixtureOwnerModelWork(f.node,async()=>f.node.processing.retry(file.id,'transcribe',false,true),{identities:['capture:'+file.id]});await f.node.processing.tick();await f.organize();
   assert.equal(f.asrCalls(),2);assert.equal(f.node.files.detail(file.id).job.state,'succeeded');
   f.control.failCoding=true;await f.run();jobs=f.node.memoryPipeline.list().map(j=>f.node.memoryPipeline.get(j.id));assert.equal(jobs.length,3);
   const failed=jobs.find(j=>j.recipes![0].id===extractedCoding.id)!;assert.equal(failed.status,'failed');
   assert.equal(jobs.find(j=>j.recipes![0].id===extractedPersonal.id)!.status,'completed');assert.deepEqual(f.node.memories.get(saved),product);
   assert.equal(f.count('extract'),2);assert.equal(f.count('review'),3);
   const artifacts=f.node.files.detail(file.id).artifacts.map((a:{id:string})=>a.id);
-  await f.restart();f.control.failCoding=false;assert.equal((await f.node.memoryPipeline.retry(failed.id)).status,'completed');
+  await f.restart();f.control.failCoding=false;assert.equal((await withFixtureOwnerModelWork(f.node,()=>f.node.memoryPipeline.retry(failed.id))).status,'completed');
   assert.equal(f.count('extract'),2);assert.equal(f.count('review'),4);assert.equal(f.asrCalls(),2);assert.deepEqual(f.node.files.detail(file.id).artifacts.map((a:{id:string})=>a.id),artifacts);
   assert.deepEqual(f.node.memories.get(saved),product);
-  f.control.transcript='A corrected generated account of testing a different retry mechanism.';f.node.processing.retry(file.id);await f.node.processing.tick();
+  f.control.transcript='A corrected generated account of testing a different retry mechanism.';await withFixtureOwnerModelWork(f.node,async()=>f.node.processing.retry(file.id),{identities:['capture:'+file.id]});await f.node.processing.tick();
   assert.deepEqual(f.node.memories.get(saved),product,'retired transcript dependencies do not invalidate the source record');
   await f.organize();await f.run();assert.equal(f.node.memoryPipeline.list().map(j=>f.node.memoryPipeline.get(j.id)).length,3,'explicit ASR retry does not authorize historical Memory replay');
   assert.deepEqual(f.node.memories.get(saved),product);assert.equal(f.count('extract'),2);
@@ -163,7 +165,7 @@ test('changing a required transcript fences its in-flight result while unrelated
   f.control.review=async input=>{if(input.traceContext!.jobId===target.id){enter();await held;}};
   const running=f.node.memoryPipeline.run(target.id);await entered;
   try{
-    f.control.transcript='A revised generated transcript with a different outcome.';f.node.processing.retry(file.id);await f.node.processing.tick();await f.organize();await f.queue();
+    f.control.transcript='A revised generated transcript with a different outcome.';await withFixtureOwnerModelWork(f.node,async()=>f.node.processing.retry(file.id),{identities:['capture:'+file.id]});await f.node.processing.tick();await f.organize();await f.queue();
     assert.deepEqual(f.node.memories.get(saved),record);assert.equal(f.node.materialMemoryWork.authorized(target),false);
   }finally{release();}
   const done=await running;assert.notEqual(done.status,'completed');assert.equal(done.memoryIds.length,0);
@@ -175,7 +177,7 @@ test('named ready outputs recheck original deletion before result commit',async 
   const ids=f.node.materials.input(file.materialId,['source-record'])!.evidenceIds;
   let enter!:()=>void,release!:()=>void;const entered=new Promise<void>(r=>enter=r),held=new Promise<void>(r=>release=r);
   f.control.review=async()=>{enter();await held;};
-  const job=f.node.memoryPipeline.create({evidenceIds:ids,recipes:[bodyRecipe]}),running=f.node.memoryPipeline.run(job.id);await entered;
+  const job=f.node.memoryPipeline.create({evidenceIds:ids,recipes:[bodyRecipe]}),running=withFixtureOwnerModelWork(f.node,()=>f.node.memoryPipeline.run(job.id));await entered;
   f.node.store.delete(file.id);release();
   const result=await running;assert.notEqual(result.status,'completed');assert.equal(result.memoryIds.length,0);
   assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
@@ -199,8 +201,8 @@ test('manual recipes persist independent waiting inputs and resume only the orig
   assert.equal(failed.status,'failed');assert.equal(failed.inputPlans?.blocked,1);assert.equal(failed.completedBatches,1);
   assert.deepEqual(f.node.memories.get(body.id),body);
   const later=await f.upload('text/plain','generated-later');await f.organize();
-  await f.restart();assert.equal(f.node.processing.cancellation(file.id).wait,'unknown');assert.throws(()=>f.node.processing.retry(file.id),{statusCode:409});f.control.failASR=false;f.node.processing.retry(file.id,'transcribe',false,true);await f.node.processing.tick();await f.organize();
-  const result=await f.node.memoryPipeline.retry(jobId);assert.equal(result.status,'completed');assert.equal(result.memoryIds.length,2);
+  await f.restart();assert.equal(f.node.processing.cancellation(file.id).wait,'unknown');assert.throws(()=>f.node.processing.retry(file.id),{statusCode:409});f.control.failASR=false;await withFixtureOwnerModelWork(f.node,async()=>f.node.processing.retry(file.id,'transcribe',false,true),{identities:['capture:'+file.id]});await f.node.processing.tick();await f.organize();
+  const result=await withFixtureOwnerModelWork(f.node,()=>f.node.memoryPipeline.retry(jobId));assert.equal(result.status,'completed');assert.equal(result.memoryIds.length,2);
   assert.equal(result.inputPlans?.total,2);assert.equal(result.inputPlans?.completed,2);
   assert.equal(result.batches.find(b=>b.id===bodyBatch.id)!.attempts,bodyBatch.attempts);
   assert.deepEqual(f.node.memories.get(body.id),body);assert.equal(result.batches.some(b=>b.strategy?.recipe.id===extractedCoding.id),false);

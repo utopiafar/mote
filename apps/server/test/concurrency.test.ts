@@ -1,3 +1,4 @@
+import {AsyncLocalStorage} from 'node:async_hooks';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {ConcurrencyGate} from '../src/concurrency.js';
@@ -12,3 +13,12 @@ test('capacity updates admit FIFO waiters, cancellation releases queue and lower
  release[2]();await c;await tick();assert.deepEqual(started,[0,2,3]);release[3]();await d;await tick();assert.equal(gate.snapshot().active,0);gate.close();await assert.rejects(gate.run(async()=>1));
 });
 test('rejected work releases a slot for the next task',async()=>{const gate=new ConcurrencyGate(1);const a=gate.run(async()=>{throw Error('fixture');}),b=gate.run(async()=>42);await assert.rejects(a);assert.equal(await b,42);gate.close();});
+
+test('queued tasks retain their own authority when another operation releases capacity',async()=>{
+ const gate=new ConcurrencyGate(1),context=new AsyncLocalStorage<string>();let release!:()=>void;
+ const first=context.run('first-owner',()=>gate.run(async()=>{await new Promise<void>(r=>release=r);return context.getStore();}));
+ await tick();
+ const second=context.run('second-owner',()=>gate.run(async()=>{await tick();return context.getStore();}));
+ assert.equal(gate.snapshot().waiting,1);release();
+ assert.equal(await first,'first-owner');assert.equal(await second,'second-owner');gate.close();
+});

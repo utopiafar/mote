@@ -1,3 +1,4 @@
+import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,7 +28,7 @@ for(const mode of ['failed','waiting','planner-failed'] as const)test(`import re
     if(members.length===1&&members[0].inputKey===badId&&mode==='failed')throw Error('Generated terminal model failure');
     return {runId:'generated-'+(input.taskContext?.untrustedMemoryDraft?'review':'draft'),trace:[],citations:[],answer:JSON.stringify({memories:[],coverage:members.map(member=>({key:member.key,state:members.length===1&&member.inputKey===badId&&mode!=='failed'?'needs_context':'no_candidates',candidateIndexes:[],...(members.length===1&&member.inputKey===badId&&mode!=='failed'?{reason:'Generated missing context',...(mode==='planner-failed'?{contextRefs:[contextId]}:{})}:{})}))})};
   }}});
-  await node.app.ready();t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+  await node.app.ready();await authorizeFixtureModels(node);t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   await node.lifecycle.save({revision:node.configService.revision,settings:{...node.lifecycle.settings(),batchCharacters:256}});
   node.sources.register({id:'generated',name:'Generated originals',kind:'custom',deviceId:'generated',platform:'import'});
   const ids:string[]=[];
@@ -60,7 +61,7 @@ test('one committed subrange never completes an original whose remaining range f
     if(members[0].offset>0&&failSecondHalf)throw Error('Generated failed second half');
     return {runId:'generated-range',trace:[],citations:[],answer:JSON.stringify({memories:[],coverage:members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]}))})};
   }}});
-  await node.app.ready();t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+  await node.app.ready();await authorizeFixtureModels(node);t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   await node.lifecycle.save({revision:node.configService.revision,settings:{...node.lifecycle.settings(),batchCharacters:1024}});
   node.sources.register({id:'generated',name:'Generated long original',kind:'custom',deviceId:'generated',platform:'import'});
   const {id}=await node.sources.upsert('generated',{externalId:'long',revision:'1',text:'Generated bounded source. '.repeat(80),observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original'});
@@ -76,7 +77,7 @@ test('one committed subrange never completes an original whose remaining range f
 test('legacy jobs keep whole-job import progress without package coverage metadata',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-import-memory-legacy-'));
   const node=await buildApp(config(directory),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>fixtureMemoryWorkResult(input,{runId:'generated-empty',trace:[],citations:[],answer:'{"memories":[]}'})}});
-  await node.app.ready();t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+  await node.app.ready();await authorizeFixtureModels(node);t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   node.sources.register({id:'generated',name:'Generated original',kind:'custom',deviceId:'generated',platform:'import'});
   const {id}=await node.sources.upsert('generated',{externalId:'legacy',revision:'1',text:'Generated legacy original',observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original'});
   await node.materialOrganizer.tick();await node.sourcePipelines.tick();

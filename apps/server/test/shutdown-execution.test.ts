@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -86,7 +87,7 @@ test('app.close interrupts a child, keeps completed extraction and unknown reque
   {id:'fixture.diarize',name:'Generated diarization',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(input){signal=input.signal;if(++diarizeCalls===1){entered.resolve();return response.promise;}return {durationMs:1000,engine:'fixture',expectedSpeakers:null,observedSpeakers:1,overlapDetection:'unknown',segments:[{startMs:0,endMs:1000,speaker:'SPEAKER_0'}],samples:[],warnings:[]};}},
  ]);
  const start=async()=>{const node=await f.start();node.featureServices.mediaAssets.ready=()=>true;return node;};
- const node=await start();await configure(node,{audioProcessor:'fixture.dialogue',diarizationProcessor:'fixture.diarize'});const id=await upload(node,'checkpoint.wav'),run=node.processing.tick();await entered.promise;
+ const node=await start();await configure(node,{audioProcessor:'fixture.dialogue',diarizationProcessor:'fixture.diarize'});await authorizeFixtureModels(node);const id=await upload(node,'checkpoint.wav'),run=node.processing.tick();await entered.promise;
  const extraction=node.files.detail(id).artifacts.find((artifact:any)=>artifact.kind==='transcript')!;
  await node.app.close();await run;
  assert.equal(signal.aborted,true);assert.equal(fileStep(node,id).state,'waiting');assert.equal(fileStep(node,id).error,'interrupted');assert.equal(node.files.detail(id).job.state,'waiting');
@@ -96,14 +97,14 @@ test('app.close interrupts a child, keeps completed extraction and unknown reque
  const next=await start();await next.processing.tick();assert.equal(diarizeCalls,1);assert.equal(next.processing.cancellation(id).wait,'unknown');assert.throws(()=>next.processing.retry(id,'diarize'),{statusCode:409});
  response.resolve({...transcript,segments:[{startMs:0,endMs:1000,text:'Late generated result must not publish'}]});await yieldTurn();
  assert.equal(next.processing.cancellation(id).wait,'unknown','a disposed runtime must not clear a durable unknown request');
- next.processing.retry(id,'diarize',false,true);await next.processing.tick();assert.equal(next.files.detail(id).job.state,'succeeded');
+ await withFixtureOwnerModelWork(next,async()=>next.processing.retry(id,'diarize',false,true),{identities:['capture:'+id]});await next.processing.tick();assert.equal(next.files.detail(id).job.state,'succeeded');
  assert.equal(asrCalls,1);assert.equal(diarizeCalls,2);assert.ok(next.files.detail(id).artifacts.some((artifact:any)=>artifact.id===extraction.id));assert.doesNotMatch(JSON.stringify(next.files.chunks(id)),/Late generated/);
 });
 
 test('app.close preserves durable query work while keeping user cancellation terminal',async t=>{
  const f=await fixture(t),held=deferred(),entered=deferred(),ids=Array.from({length:6},()=>randomUUID());
  const node=await f.start({configured:true,close:async()=>{},query:async input=>{entered.resolve();await Promise.race([held.promise,new Promise(resolve=>input.signal!.addEventListener('abort',resolve,{once:true}))]);return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};}});
- for(const id of ids)node.featureServices.queryRuns.start(id,{question:'Generated durable shutdown query'});
+ for(const id of ids)await withFixtureOwnerModelWork(node,async()=>node.featureServices.queryRuns.start(id,{question:'Generated durable shutdown query'}));
  await entered.promise;
  node.featureServices.queryRuns.cancel(ids[5]);await yieldTurn();assert.equal(node.featureServices.queryRuns.get(ids[4]).status,'running');
  await node.app.close();held.resolve();await yieldTurn();
