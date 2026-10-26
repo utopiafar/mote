@@ -1,4 +1,5 @@
-const base=require('node:path').resolve(__dirname,'..');require(base+'/scripts/fixture-background.cjs');require(base+'/scripts/fixture-language.cjs');
+require('./fixture-background.cjs');
+require('./fixture-language.cjs');
 const {app,BrowserWindow}=require('electron');const fs=require('node:fs');const {join}=require('node:path');const {tmpdir}=require('node:os');const {randomUUID}=require('node:crypto');const assert=require('node:assert/strict');
 const f=JSON.parse(fs.readFileSync(process.env.MOTE_J5_CONNECTION,'utf8')),out=process.env.MOTE_J5_OUTPUT;fs.mkdirSync(out,{recursive:true});const profile=fs.mkdtempSync(join(tmpdir(),'mote-j5-ui-'));app.setPath('userData',profile);app.on('window-all-closed',()=>{});let win;const headers={authorization:'Bearer '+f.token,'content-type':'application/json'};
 const request=async(path,body)=>{const r=await fetch(f.url+path,{headers,method:body?'POST':'GET',...(body?{body:JSON.stringify(body)}:{})});assert.ok(r.ok,path+' HTTP'+r.status);return r.json();};const notes=()=>request('/api/notes');const delay=ms=>new Promise(r=>setTimeout(r,ms));
