@@ -215,7 +215,7 @@ else {
     collector = new Collector(settings, queue, helperPath, encryptedStorageAvailable, updateUi, diagnostics, events, localSources,syncHistory,chromeCaptureBridge);
     let calendarDelivery:Promise<void>|undefined;
     const calendarTimer=setInterval(()=>{
-      if(calendarDelivery||!connectionToken(settings)||!settings.serverUrl||settings.syncMode==='manual'||process.platform!=='darwin')return;
+      if(calendarDelivery||settings.syncPaused||!connectionToken(settings)||!settings.serverUrl||settings.syncMode==='manual'||process.platform!=='darwin')return;
       calendarDelivery=nativeCalendarActions({...settings},helperPath,dataDirectory).deliver().catch(()=>{}).finally(()=>{calendarDelivery=undefined;});
     },60000);calendarTimer.unref();
     app.once('before-quit',()=>clearInterval(calendarTimer));
@@ -455,6 +455,7 @@ else {
     handle('mote:source-coding', (provider, options) => serialize(() => { if (provider !== 'claude' && provider !== 'codex' && provider !== 'kimi') throw new Error(moteText("不支持的 Coding Agent")); return localSources!.addCodingAgent(provider, options); }));
     handle('mote:sources', () => localSources!.status());
     handle('mote:source-sync', async () => { const scan = localSources!.sync(true); await collector.retry(); await scan; await collector.retry(); });
+    handle('mote:action-calendar-connect', () => serialize(() => nativeCalendarActions({...settings},helperPath,dataDirectory).connect()));
     handle('mote:calendar-authorize', () => serialize(() => localSources!.authorizeCalendar()));
     handle('mote:source-calendar', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error(moteText("日历选择无效")); await localSources!.addCalendar(id, options); }));
     handle('mote:source-update', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error(moteText("来源选择无效")); await localSources!.update(id, options); }));

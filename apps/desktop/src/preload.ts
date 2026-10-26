@@ -57,6 +57,7 @@ const api: DesktopApi = {
   localContent: offset => ipcRenderer.invoke('mote:content-local', offset),
   localContentDetail: (key, image) => ipcRenderer.invoke('mote:content-local-detail', key, image),
   chooseSourceFiles: (mode, options) => ipcRenderer.invoke('mote:source-files', mode, options),
+  connectActionCalendar: () => ipcRenderer.invoke('mote:action-calendar-connect'),
   authorizeCalendar: () => ipcRenderer.invoke('mote:calendar-authorize'),
   addCalendarSource: (id, options) => ipcRenderer.invoke('mote:source-calendar', id, options),
   updateSource: (id, options) => ipcRenderer.invoke('mote:source-update', id, options),

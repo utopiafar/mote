@@ -774,6 +774,7 @@ byId('source-agent-discover').addEventListener('click', () => void sourceAction(
 byId('source-agent-add').addEventListener('click', () => void sourceAction(() => desktopApi.addCodingAgent(readInput('source-agent-choice') as import('./coding-agents').CodingProvider, sourceOptions())));
 byId('source-calendar-add').addEventListener('click', () => void sourceAction(async () => { await desktopApi.addCalendarSource(readInput('source-calendar-choice'), sourceOptions()); }));
 byId('source-sync').addEventListener('click', () => void sourceAction(() => desktopApi.syncSources()));
+byId('calendar-actions-connect').addEventListener('click', () => void sourceAction(async()=>{await desktopApi.connectActionCalendar();await desktopApi.openCentral('actions');}));
 byId('source-calendar-permissions').addEventListener('click', () => void sourceAction(() => desktopApi.openCalendarPermissions()));
 byId('source-cancel-edit').addEventListener('click', () => editSource());
 byId('source-save-edit').addEventListener('click', () => void sourceAction(async () => {

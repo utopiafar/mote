@@ -48,10 +48,10 @@ export async function openCentralWindow(config: Config): Promise<BrowserWindow> 
   ipcMain.on('mote:central-close', closeSession);
   const calendar=nativeCalendarActions(config,app.isPackaged?join(process.resourcesPath,'native','mote-helper'):join(__dirname,'..','native','bin','mote-helper'),app.getPath('userData'));
   const channel=`mote:calendar:${central.webContents.id}`;
-  ipcMain.handle(channel,async(event,command:string,id?:string)=>{
+  ipcMain.handle(channel,async(event,command:string,id?:string,operationId?:string)=>{
     if(central.isDestroyed()||event.sender!==central.webContents||event.senderFrame!==central.webContents.mainFrame||!centralRequestAllowed(event.senderFrame.url,origin))throw Error('Unauthorized calendar request');
     if(command==='connect')return calendar.connect();
-    if(command==='execute'&&typeof id==='string')return calendar.execute(id);
+    if(command==='execute'&&typeof id==='string'&&(operationId===undefined||typeof operationId==='string'))return calendar.execute(id,operationId);
     throw Error('Unsupported calendar request');
   });
   const calendarChannel=(event:Electron.IpcMainEvent)=>{if(event.sender===central.webContents&&event.senderFrame===central.webContents.mainFrame)event.returnValue=channel;};

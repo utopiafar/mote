@@ -138,6 +138,7 @@ export interface DesktopApi {
   localContent(offset?:number): Promise<import('./content-library').LocalContentPage>;
   localContentDetail(key:string, image?:boolean): Promise<import('./content-library').ContentDetail|import('./sync-content').SyncContent>;
   chooseSourceFiles(mode: 'files' | 'directory', options: import('./source-types').SourceOptions): Promise<{ canceled: boolean }>;
+  connectActionCalendar(): Promise<{deviceId:string}>;
   authorizeCalendar(): Promise<import('./source-types').CalendarChoice[]>;
   addCalendarSource(id: string, options: import('./source-types').SourceOptions): Promise<void>;
   updateSource(id: string, options: import('./source-types').SourceOptions & { enabled: boolean }): Promise<void>;

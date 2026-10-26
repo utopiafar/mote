@@ -73,6 +73,7 @@ export class StorageLedger {
     expressions.memory_publication_retirements='length(CAST(operation_id AS BLOB))+64';
     expressions.plugin_center='144';
     expressions.action_device_capabilities='length(CAST(json AS BLOB))+length(CAST(device_id AS BLOB))+128';
+    expressions.action_capability_grants='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+256';
     expressions.action_capability_drafts='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128';
     expressions.action_capability_commands='length(CAST(receipt AS BLOB))+length(CAST(id AS BLOB))+length(CAST(fingerprint AS BLOB))+128';
     expressions.activity_memory_batches='length(CAST(id AS BLOB))+length(CAST(job_id AS BLOB))+64';
