@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {test,type TestContext} from 'node:test';
@@ -32,9 +33,14 @@ const realTime=(value:string|undefined,start:number)=>{assert.ok(value);assert.o
 async function disabled(node:Node){const s=node.lifecycle.settings();await node.lifecycle.save({revision:node.configService.revision,settings:{...s,consolidation:{...s.consolidation,enabled:false},insights:{...s.insights,enabled:false},working:{...s.working,enabled:false}}});}
 async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,clock?:()=>string){
   const directory=mkdtempSync(join(tmpdir(),'mote-semantic-clock-'));
-  const node=await buildApp(config(directory),{backgroundWorker:false,semanticContextTime:clock,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{const result=await query(input,reader);return input.responseMode==='memory-extraction'?fixtureMemoryWorkResult(input,result):result;}})});
+  const node=await buildApp(config(directory),{backgroundWorker:false,semanticContextTime:clock,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{const topic=fixtureTopicResult(input);if(topic)return topic;const result=await query(input,reader);return input.responseMode==='memory-extraction'?fixtureMemoryWorkResult(input,result):result;}})});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
-  await disabled(node);await node.app.ready();return {node,directory};
+  await disabled(node);await node.app.ready();await authorizeFixtureModels(node);return {node,directory};
+}
+async function queueIntegration(node:Node,input:Parameters<typeof requestMemoryIntegration>[0]){
+  const queued=requestMemoryIntegration(input,{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});
+  // The HTTP owner route persists this same authority for its deferred lifecycle work.
+  return node.modelAuthorizationHost.manual('owner-integration:'+queued.id,node.featureServices.availableModelConnections(),async()=>queued);
 }
 async function note(node:Node,text:string){
   const id=randomUUID();await node.store.ingest({id,deviceId:'generated',deviceName:'Generated device',platform:'import',source:'note',capturedAt:'2000-12-01T00:00:00Z',durationMs:0,ocrText:text});return node.store.evidence([id])[0];
@@ -71,14 +77,14 @@ test('five stub calls share frozen generation/review/Ask times and preserve real
   record=await note(node,'Generated dial alpha. Generated access expires at '+expiry+'. Generated dial beta replaces alpha.');
   realTime(record.receivedAt,start);
   const request={evidenceIds:[record.id],recipes:[{id:'mote.personal-memory',version:'2'}],contextTime:early};
-  const job=await node.memoryPipeline.run(node.memoryPipeline.create(request).id);
+  const job=await withFixtureOwnerModelWork(node,async()=>node.memoryPipeline.run(node.memoryPipeline.create(request).id));
   assert.equal(job.status,'completed');assert.equal(job.totalBatches,1);assert.equal(calls.length,2);assert.equal(samples,0);
   const cards=job.memoryIds.map(id=>node.memories.get(id));oldId=cards.find(m=>m.title==='Generated alpha')!.id;timedId=cards.find(m=>m.title==='Generated access')!.id;
   for(const card of cards){assert.equal(card.reviewReceipt?.contextTime,early);realTime(card.reviewReceipt?.checkedAt,start);realTime(card.createdAt,start);}
   assert.equal(node.memoryPipeline.create(request).totalBatches,0,'same semantic checkpoint is reusable');
   const different=node.memoryPipeline.create({...request,contextTime:later});assert.equal(different.totalBatches,1,'a different context time is a different checkpoint');node.memoryPipeline.cancel(different.id);
   semantic=later;
-  requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,inputs:[{id:oldId,version:node.memories.get(oldId).version,fingerprint:node.memories.get(oldId).fingerprint}]},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});
+  await queueIntegration(node,{recipe:defaultMemoryIntegrationRecipe,inputs:[{id:oldId,version:node.memories.get(oldId).version,fingerprint:node.memories.get(oldId).fingerprint}]});
   assert.equal(samples,1);
   const state=JSON.parse(String(node.store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='consolidation'").get()!.json));
   assert.equal(state.active.contextTime,later);assert.ok(state.active.startedAt>=start);
@@ -92,7 +98,7 @@ test('five stub calls share frozen generation/review/Ask times and preserve real
   assert.equal(samples,2);assert.deepEqual(calls.map(input=>input.contextTime),[early,early,later,later,later]);
   await node.app.close();
   const db=new DatabaseSync(join(f.directory,'mote.sqlite'),{readOnly:true});
-  try{const usage=db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String(row.json)));assert.equal(usage.length,5);assert.ok(usage.every(row=>row.status==='completed'));for(const row of usage)realTime(row.createdAt,start);}finally{db.close();}
+  try{const usage=db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String(row.json)));const topics=usage.filter(row=>row.attribution?.moduleId==='memories'&&row.attribution?.skillId===null);assert.equal(usage.length-topics.length,5,'generation, review, integration and Ask retain their five real receipts');assert.equal(topics.length,1,'the admitted Memory publication also records its independent topic classifier');assert.ok(usage.every(row=>row.status==='completed'));for(const row of usage)realTime(row.createdAt,start);}finally{db.close();}
 });
 
 test('simultaneous Ask sessions isolate default Memory and catalog times',{timeout:15000},async t=>{
@@ -174,7 +180,7 @@ for(const manual of [false,true])test(`${manual?'manual':'automatic'} lifecycle 
 test('integration windows missing their frozen clock are refused without sampling a new clock',async t=>{
   let samples=0;const calls:QueryInput[]=[];
   const {node}=await appFixture(t,async input=>{calls.push(input);return empty('{"memories":[]}');},()=>{samples++;return later;});
-  const card=await timedCard(node);requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,inputs:[{id:card.id,version:card.version,fingerprint:card.fingerprint}]},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});assert.equal(samples,1);
+  const card=await timedCard(node);await queueIntegration(node,{recipe:defaultMemoryIntegrationRecipe,inputs:[{id:card.id,version:card.version,fingerprint:card.fingerprint}]});assert.equal(samples,1);
   node.store.db.prepare("UPDATE memory_lifecycle_state SET json=json_set(json_remove(json,'$.active.contextTime'),'$.active.startedAt',?) WHERE id='consolidation'").run(Date.parse(early));
   await assert.rejects(node.lifecycle.tick(),/Unsupported lifecycle window/);assert.equal(samples,1);assert.equal(calls.length,0);
 });
@@ -182,9 +188,9 @@ test('integration windows missing their frozen clock are refused without samplin
 test('a queued integration survives closing and reopening its SQLite vault without resampling',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-reopened-clock-')),calls:QueryInput[]=[];let semantic=early,samples=0;
   const dependencies={backgroundWorker:false,semanticContextTime:()=>{samples++;return semantic;},agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{calls.push(input);return empty('{"memories":[]}');}}};
-  let node=await buildApp(config(directory),dependencies);await disabled(node);
+  let node=await buildApp(config(directory),dependencies);await disabled(node);await authorizeFixtureModels(node);
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
-  const card=await timedCard(node),queued=requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,inputs:[{id:card.id,version:card.version,fingerprint:card.fingerprint}]},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});
+  const card=await timedCard(node),queued=await queueIntegration(node,{recipe:defaultMemoryIntegrationRecipe,inputs:[{id:card.id,version:card.version,fingerprint:card.fingerprint}]});
   assert.equal(samples,1);await node.app.close();semantic=later;
   node=await buildApp(config(directory),dependencies);
   assert.equal(node.lifecycle.view().extensions.find(e=>e.id==='consolidation')!.active?.id,queued.id);
