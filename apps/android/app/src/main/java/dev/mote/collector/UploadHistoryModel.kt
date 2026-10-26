@@ -21,7 +21,7 @@ internal object UploadHistoryModel {
                 val item = attempt.captures.getJSONObject(i); val id = item.getString("id")
                 val key = id + ":" + item.getString("version")
                 val received = attempt.results.optInt(id) in setOf(200, 201)
-                items[key] = HistoryItem(key, id, received || items[key]?.received == true, item.getString("version"))
+                items[key] = HistoryItem(key, id, received || items[key]?.received == true, item.getString("queueVersion"))
             } }
             confirmed.forEach { receipt ->
                 val key = receipt.captureId + ":" + receipt.transportVersion
