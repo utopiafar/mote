@@ -128,3 +128,12 @@ test('host-retained media references validate without readable bytes but cannot 
  write(record);writeFileSync(join(workspace,'dispositions.json'),JSON.stringify({items:[...dispositions.items,{path:mediaPath,status:'parsed',reason:'Invented media extraction'}]}));
  assert.equal((await validateRecords('records.jsonl')).valid,false);assert.throws(()=>validateImportManifest(task),/outside the supplied inputs/);
 });
+
+test('helper serializes literal path names without interpreting template markers or replacement syntax',async t=>{
+ const {workspace,inputPaths,api}=await helper(t,{'inputs/__MOTE_HOST_ATTACHMENT_PATHS__-$&.md':'Generated literal path'});
+ assert.equal((await api.extractFile(inputPaths[0])).text,'Generated literal path');
+ const mediaPath=join(workspace,'inputs/__MOTE_INPUT_PATHS__-$&.png');
+ const prepared=prepareImportInput({workspace,inputPaths,hostMedia:[{path:mediaPath,relativePath:'literal.png',mimeType:'image/png',contentAvailable:false,processing:'after_confirmation'}],instruction:''});
+ const hosted=await import(pathToFileURL(prepared.helperPath).href+'?literal');
+ assert.equal((await hosted.extractFile(inputPaths[0])).text,'Generated literal path');
+});

@@ -17,8 +17,8 @@ export function prepareImportInput(input:ImportPreparation){
   for(const [placeholder,specifier]of Object.entries(dependencies))helper=helper.replaceAll(JSON.stringify(placeholder),JSON.stringify(import.meta.resolve(specifier)));
   helper=helper.replaceAll('"__IMPORT_CONTRACT__"',JSON.stringify(new URL('./import-disposition-validation.mjs',import.meta.url).href));
   helper=helper.replaceAll('"__PDF_STANDARD_FONTS__"',JSON.stringify(join(dirname(fileURLToPath(import.meta.resolve('pdfjs-dist/package.json'))),'standard_fonts')+sep));
-  helper=helper.replace('__MOTE_INPUT_PATHS__',JSON.stringify(input.inputPaths));
-  helper=helper.replace('__MOTE_HOST_ATTACHMENT_PATHS__',JSON.stringify((input.hostMedia??[]).map(item=>item.path)));
+  const paths={__MOTE_INPUT_PATHS__:input.inputPaths,__MOTE_HOST_ATTACHMENT_PATHS__:(input.hostMedia??[]).map(item=>item.path)};
+  helper=helper.replace(/__MOTE_(?:INPUT_PATHS|HOST_ATTACHMENT_PATHS)__/g,placeholder=>JSON.stringify(paths[placeholder as keyof typeof paths]));
   const helperPath=join(input.workspace,'mote-files.mjs');privateFile(helperPath,true);writeFileSync(helperPath,helper,{mode:0o600});
   const manifestSchema=zodToJsonSchema(importRecordSchema,{name:'ImportRecord',$refStrategy:'root'});
   const schemaPath=join(input.workspace,'manifest-schema.json');privateFile(schemaPath,true);writeFileSync(schemaPath,JSON.stringify(manifestSchema,null,2)+'\n',{mode:0o600});
