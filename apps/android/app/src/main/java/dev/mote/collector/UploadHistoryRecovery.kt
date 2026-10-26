@@ -22,11 +22,13 @@ internal object UploadHistoryRecovery {
         ConnectionGuard.sync {
             val latest = settings.read()
             val history = context.captureUploadHistory()
-            history.prune(UploadHistoryRetention.read(context))
+            UploadHistoryRetention.prune(context, UploadHistoryRetention.read(context))
             if (latest.hasSyncConnection()) {
                 val scope = CaptureUploadReceipt.scope(latest.server, settings.deviceId)
                 history.recoverInterrupted(scope, LoginProcess.id)
                 CaptureReceiptFinalizer(history).recover(queue, scope)
+                ItemUploadSession(context, latest, lane = "source").restore(false)
+                ItemUploadSession(context, latest, lane = "capture").restore(false)
             }
             available()
         } != null

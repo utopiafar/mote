@@ -20,7 +20,7 @@ internal class UploadHistoryPanel(private val activity: Activity, private val bo
     private val next = Button(activity)
     init {
         body.addView(status)
-        body.addView(TextView(activity).apply { text = MoteI18n.text("采集与随手记的上传批次；其他上传结果可在采集与存储详情查看。") })
+        body.addView(TextView(activity).apply { text = MoteI18n.text("采集、随手记、来源、文件与附件的上传批次。") })
         filter.tag = "history-result-filter"
         filter.adapter = MoteUi.choiceAdapter(activity, listOf(MoteI18n.text("全部结果"), MoteI18n.text("有已确认记录"), MoteI18n.text("有未确认记录")))
         filter.setSelection(resultFilter); body.addView(filter)

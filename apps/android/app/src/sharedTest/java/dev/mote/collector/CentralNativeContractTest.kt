@@ -92,6 +92,12 @@ class CentralNativeContractTest {
         restored.acknowledge(note.getString("id"), JSONObject().put("id", note.getString("id")))
         assertEquals(0, restored.read().getJSONArray("pending").length())
     }
+    private fun fileAck(manifest: JSONObject, id: String): JSONObject {
+        val item = manifest.getJSONObject("item")
+        val ack = JSONObject().put("id",id).put("captureId",id).put("sourceId",manifest.getString("sourceId")).put("externalId",item.getString("externalId")).put("revision",item.getString("revision")).put("sha256",manifest.getString("sha256")).put("sizeBytes",manifest.getLong("sizeBytes"))
+        return ack.put("receipt",JSONObject(ack.toString()).put("version",2).put("kind","file-revision").put("state","received").put("duplicate",false))
+    }
+    private fun partAck(part: Int, bytes: ByteArray) = JSONObject().put("part",part).put("bytes",bytes.size).put("hash",java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) })
     @Test fun attachmentRetryPreservesManifestAndSkipsDurableParts() = temporary { root ->
         val file = File(root, "generated-image").apply { writeBytes(ByteArray(4 * 1024 * 1024 + 3) { (it % 251).toByte() }) }
         val uploadId = UUID.randomUUID().toString(); val captureId = UUID.randomUUID().toString()
@@ -101,10 +107,10 @@ class CentralNativeContractTest {
                 url.endsWith("/api/sources") -> 200 to JSONObject()
                 url.endsWith("/uploads") -> {
                     manifests.add(String(bytes!!)); attempt++
-                    200 to JSONObject().put("uploadId", uploadId).put("parts", if (attempt == 1) JSONArray() else JSONArray().put(JSONObject().put("part", 0)))
+                    200 to JSONObject().put("uploadId", uploadId).put("parts", if (attempt == 1) JSONArray() else JSONArray().put(partAck(0,file.readBytes().copyOfRange(0,4*1024*1024))))
                 }
-                url.contains("/parts/") -> { parts.add(url); 200 to JSONObject() }
-                else -> if (attempt == 1) throw java.io.IOException("Generated lost response") else 200 to JSONObject().put("captureId", captureId)
+                url.contains("/parts/") -> { parts.add(url); 200 to partAck(url.substringAfterLast('/').toInt(),bytes!!) }
+                else -> if (attempt == 1) throw java.io.IOException("Generated lost response") else 200 to fileAck(JSONObject(manifests.last()),captureId)
             }
         })
         assertThrows(java.io.IOException::class.java) { CentralAttachments.upload(client, file, "fixture.png", "image/png", "fixture-phone", { 1000L }) }

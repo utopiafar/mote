@@ -64,6 +64,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
             config.validate(); config.validateConnection(); val target = SourceRules.target(config.server, config.token)
             SyncSchedule.waitingReason(applicationContext, config)?.let { settings.syncStatus("waiting", it); return Result.retry() }
             settings.syncStatus("uploading", MoteI18n.text("正在同步来源记录"))
+            val itemHistory = ItemUploadSession(applicationContext, config, lane = "source").also { it.restore() }
             val rotation = applicationContext.getSharedPreferences("source-upload-turns", Context.MODE_PRIVATE)
             val after = if (rotation.getString("target", null) == target) rotation.getString("after", null) else null
             val dispatch = UploadSlice(maxBytes = 8L * 1024 * 1024, maxRequests = 128)
@@ -113,7 +114,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         }
                         var finished = false
                         while (submitted < 20 && !slice.exhausted) {
-                            finished = FileUpload.sync(applicationContext, source, config, slice, ::stillSelected); submitted++
+                            finished = FileUpload.sync(applicationContext, source, config, slice, ::stillSelected, itemHistory); submitted++
                             if (finished || !applicationContext.fileArchives().transportReady(source.id)) break
                         }
                         if (!finished) { more = true; if (applicationContext.fileArchives().transportReady(source.id)) readyMore = true }
@@ -127,7 +128,10 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         val body = store.next(source.id, target) ?: break
                         if (!slice.admit(body.toString().toByteArray(Charsets.UTF_8).size)) break
                         SyncSchedule.requireConditions(applicationContext, config)
-                        val (code, ack) = CollectorHttp(applicationContext).request("PUT", "${config.server}/api/sources/${source.id}/items", body, config.connectionToken())
+                        val identity = itemHistory.identity("source-item", source.id, body)
+                        val (code, ack) = itemHistory.send(identity, "item", body.toString().toByteArray(Charsets.UTF_8).size.toLong(), { code, ack -> if (code in 200..299 && SourceRules.validAck(source.id, body, ack)) "received" else "unknown" }) {
+                            CollectorHttp(applicationContext).request("PUT", "${config.server}/api/sources/${source.id}/items", body, config.connectionToken())
+                        }
                         if (code == 409 || code == 410) {
                             Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.HTTP, httpStatus = code)
                             val paused = code == 409 && runCatching {
@@ -142,7 +146,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         if (code !in 200..299 || !SourceRules.validAck(source.id, body, ack)) {
                             store.status(source.id, "ack"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, Operations.httpReason(code), httpStatus = code); SupportEvents.record(applicationContext, EventStage.SOURCE, EventJournal.httpFailure(code), httpStatus = code); failed = true; break
                         }
-                        store.acknowledge(source.id, target, body.getString("externalId"), body.getString("revision")); submitted++
+                        itemHistory.received(identity, ack!!.getString("id")); submitted++
                         settings.syncStatus("uploading", MoteI18n.text("正在同步来源记录"), uploaded = true)
                         Operations.record(applicationContext, OperationKind.SOURCE_ACK, httpStatus = code)
                         SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.OK, httpStatus = code, sourceId = source.id)
@@ -160,6 +164,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                     }.getOrElse { if (it is SyncConditionsUnavailable) throw it else false }
                     store.status(source.id, if (paused) "paused" else "ack")
                     if (!paused) blocked = true
+                } catch (e: UploadHistoryUnavailable) { UploadHistoryRecovery.report(applicationContext); failed = true
                 } catch (e: Exception) { store.status(source.id, "offline"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.NETWORK); SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.NETWORK, errorName = EventJournal.errorName(e), sourceId = source.id); failed = true }
                 finally { dispatch.record(slice.bytes, slice.requests) }
             }
@@ -177,6 +182,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
         } catch (error: SyncConditionsUnavailable) {
             settings.syncStatus("waiting", error.waitingReason)
             Result.retry()
+        } catch (e: UploadHistoryUnavailable) { UploadHistoryRecovery.report(applicationContext); Result.retry()
         } catch (e: Exception) { SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.CONFIG_INVALID, errorName = EventJournal.errorName(e)); failure() }
     }
 }

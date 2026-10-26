@@ -1,5 +1,12 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "原件版本已核验，可保存原件。": "The original version has been verified. You can save the original.",
+  "历史版本暂不可读取：原件可能已更新、不可用或当前离线。请重试。": "This historical version cannot be read: the original may have changed, be unavailable, or be offline. Please retry.",
+  "请求已完成，等待原件确认": "Request completed; awaiting original confirmation",
+  "文件清单": "File manifest",
+  "完成确认": "Final confirmation",
+  "文件块": "File part",
+  "采集、随手记、来源、文件与附件的上传批次。": "Upload batches for captures, notes, sources, files and attachments.",
   "发现历史": "Discovery history",
   "查看依据": "View evidence",
   "报告暂不可读取，请重试。": "The report could not be read. Please retry.",
@@ -8673,5 +8680,6 @@ export const english: Readonly<Record<string, string>> = {
   "发送中": "Sending",
   "查看原件": "View original",
   "历史版本不可用：本机原件已更新或清理，不能将当前内容作为这次上传的原文。": "Historical version unavailable: the local original has changed or been cleared. Current content cannot represent the original from this upload.",
-  "采集与随手记的上传批次；其他上传结果可在采集与存储详情查看。": "Upload batches for captures and quick notes. Other upload results remain available in capture and storage details."
+  "采集与随手记的上传批次；其他上传结果可在采集与存储详情查看。": "Upload batches for captures and quick notes. Other upload results remain available in capture and storage details.",
+  "目标或原件已变化，已保留上传确认，请稍后重试。": "The destination or original has changed. The upload confirmation is retained; retry later."
 };

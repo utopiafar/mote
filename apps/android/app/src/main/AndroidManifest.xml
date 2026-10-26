@@ -42,6 +42,7 @@
         <activity android:configChanges="uiMode" android:name=".ActivityStatsActivity" android:exported="false" />
         <activity android:configChanges="uiMode" android:name=".BackupActivity" android:exported="false" />
         <activity android:configChanges="uiMode" android:name=".UploadHistorySettingsActivity" android:exported="false" />
+        <activity android:configChanges="uiMode" android:name=".UploadOriginalActivity" android:exported="false" />
         <activity android:configChanges="uiMode" android:name=".UploadBatchActivity" android:exported="false" />
         <activity android:configChanges="uiMode" android:name=".SyncQueueActivity" android:exported="false" />
         <activity android:configChanges="uiMode" android:name=".SyncRecoveryActivity" android:exported="false" />

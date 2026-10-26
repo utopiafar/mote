@@ -134,6 +134,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             UploadHistoryRecovery.available()
             // Each actual worker execution has its own batch identity, including a WorkManager retry.
             val batchId = java.util.UUID.randomUUID().toString()
+            val itemHistory = ItemUploadSession(applicationContext, config, batchId, "capture").also { it.restore() }
             val attempts = CaptureUploadAttempts(history, batchId, CaptureUploadReceipt.scope(config.server, settings.deviceId), LoginProcess.id)
             settings.syncStatus("uploading", MoteI18n.text("正在同步本机记录"))
             if (!inputData.getBoolean("continuation", false)) SourceWork.enqueueUpload(applicationContext, config, explicit)
@@ -169,7 +170,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 for (event in events) {
                     pendingRecordId = event.getString("id")
                     try {
-                        prepared.add(RecordAttachmentSync.prepare(applicationContext, config, event))
+                        prepared.add(RecordAttachmentSync.prepare(applicationContext, config, event, itemHistory))
                         if (!config.packedUpload) break
                     } catch (error: SyncConditionsUnavailable) { throw error
                     } catch (error: java.io.InterruptedIOException) { throw error

@@ -113,10 +113,15 @@ internal object UploadHistoryRetention {
     val choices = listOf(7, 30, 90, 365)
     fun validate(days: Int) { require(days in choices) }
     fun read(context: Context): Int = context.getSharedPreferences("upload-history", Context.MODE_PRIVATE).getInt("days", DEFAULT_DAYS).also(::validate)
+    fun prune(context: Context, days: Int) {
+        val capture = runCatching { context.captureUploadHistory().prune(days) }
+        val items = runCatching { context.itemUploadHistory().prune(days) }
+        capture.getOrThrow(); items.getOrThrow()
+    }
     fun save(context: Context, days: Int) {
         validate(days)
         check(context.getSharedPreferences("upload-history", Context.MODE_PRIVATE).edit().putInt("days", days).commit())
-        context.captureUploadHistory().prune(days)
+        prune(context, days)
     }
 }
 

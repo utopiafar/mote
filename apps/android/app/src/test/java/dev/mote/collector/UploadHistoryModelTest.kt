@@ -7,6 +7,41 @@ import java.time.ZoneId
 import java.util.UUID
 
 class UploadHistoryModelTest {
+    @Test fun itemPhasesAndCaptureRequestsShareBatchButNeverInflateConfirmedCount() {
+        val batch=UUID.randomUUID().toString(); val capture=event()
+        val original=UploadHistoryModel.batches(listOf(CaptureUploadAttempt.create(batch,"scope","process",listOf(capture),10,1000)),emptyList())
+        val identity=ItemUploadIdentity("file","scope","source","https://generated.example","device","target","source","external","revision","fingerprint")
+        val attempt=ItemUploadAttempt(UUID.randomUUID().toString(),batch,"process",identity,"manifest",1100,100,state="transferred")
+        val phase=attempt.copy(id=UUID.randomUUID().toString(),phase="part")
+        val commit=attempt.copy(id=UUID.randomUUID().toString(),phase="commit",state="received")
+        val receipt=ItemUploadReceipt(identity,batch,UUID.randomUUID().toString(),1200)
+        val rows=UploadHistoryModel.merge(original,listOf(attempt,phase,commit),listOf(receipt))
+        assertEquals(2,rows.single().items.size); assertEquals(1,rows.single().received); assertEquals(3,rows.single().itemAttempts.size)
+        val retry=attempt.copy(id=UUID.randomUUID().toString(),batchId=UUID.randomUUID().toString(),state="unknown")
+        val replay=UploadHistoryModel.merge(original,listOf(attempt,phase,commit,retry),listOf(receipt))
+        assertEquals(0,replay.single { it.id==retry.batchId }.received)
+        assertEquals(receipt.captureId,replay.single { it.id==retry.batchId }.items.single().captureId)
+    }
+    @Test fun originalReaderDoesNotOfferUnavailableOrWrongBinaryOriginal() {
+        val identity=ItemUploadIdentity("file","scope","source","https://generated.example","device","target","source","external","revision","fingerprint","hash",3)
+        val id=UUID.randomUUID().toString(); val file=JSONObject().put("captureId",id).put("sourceId","source").put("item",JSONObject().put("externalId","external").put("revision","revision")).put("hasOriginal",true).put("sha256","hash").put("sizeBytes",3)
+        HistoryOriginal.verifyFile(identity,id,file)
+        assertThrows(IllegalStateException::class.java) { HistoryOriginal.verifyFile(identity,id,JSONObject(file.toString()).put("hasOriginal",false)) }
+        assertThrows(IllegalStateException::class.java) { HistoryOriginal.verifyFile(identity,id,JSONObject(file.toString()).put("sha256","changed")) }
+    }
+    @Test fun originalReaderRejectsNewRevisionAndWrongCentralIdentity() {
+        val body=JSONObject().put("externalId","external").put("revision","first").put("text","Generated old")
+        val identity=ItemUploadIdentity("source-item","scope","source","https://generated.example","device","target","source","external","first",SourceRules.hash(SourceRules.canonical(body)))
+        val state=JSONObject().put("current",JSONObject().put("external",JSONObject().put("body",body)))
+        assertEquals("Generated old",HistoryOriginal.exactBody(identity,state)!!.getString("text"))
+        body.put("revision","second").put("text","Generated new")
+        assertNull(HistoryOriginal.exactBody(identity,state))
+        val id=UUID.randomUUID().toString()
+        val remote=JSONObject().put("id",id).put("deviceId","device").put("provenance",JSONObject().put("sourceId","source").put("externalId","external").put("revision","first"))
+        HistoryOriginal.verify(identity,id,remote)
+        remote.getJSONObject("provenance").put("revision","second")
+        assertThrows(IllegalStateException::class.java) { HistoryOriginal.verify(identity,id,remote) }
+    }
     private fun event() = JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", "generated-device").put("source", "note").put("capturedAt", "2026-10-26T00:00:00Z").put("ocrText", "Generated original")
     @Test fun retriesNeverBecomeExtraItemsAndValidPartialCountsRemainVisible() {
         val batch = UUID.randomUUID().toString(); val first = event(); val second = event()

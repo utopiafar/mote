@@ -120,7 +120,7 @@ object FileUpload {
         return output.toByteArray()
     }
 
-    private fun request(context: Context, stage: EventStage, config: CollectorConfig, path: String, method: String, body: ByteArray? = null, binary: Boolean = false): JSONObject {
+    private fun request(context: Context, stage: EventStage, config: CollectorConfig, path: String, method: String, body: ByteArray? = null, binary: Boolean = false): Pair<Int, JSONObject> {
         val started = android.os.SystemClock.elapsedRealtime()
         SupportEvents.record(context, stage, EventCode.STARTED)
         val connection = URL(config.server.trimEnd('/') + path).openConnection() as HttpURLConnection
@@ -136,14 +136,14 @@ object FileUpload {
             status = connection.responseCode
             requireAccepted(status)
             val bytes = connection.inputStream.use { readResponse(it) }
-            return JSONObject(String(bytes, Charsets.UTF_8)).also { SupportEvents.record(context, stage, EventCode.OK, android.os.SystemClock.elapsedRealtime() - started, status) }
+            return status to JSONObject(String(bytes, Charsets.UTF_8)).also { SupportEvents.record(context, stage, EventCode.OK, android.os.SystemClock.elapsedRealtime() - started, status) }
         } catch (error: Exception) { SupportEvents.record(context, stage, status?.takeIf { it !in 200..299 }?.let { EventJournal.httpFailure(it) } ?: EventJournal.failure(error, stage), android.os.SystemClock.elapsedRealtime() - started, status, errorName = EventJournal.errorName(error)); throw error } finally { HttpJson.untrack(connection); connection.disconnect() }
     }
     /** Originals yield between acknowledged parts; a yield never spends a failure attempt. */
     fun sync(context: Context, source: LocalSource, config: CollectorConfig, stillSelected: () -> Boolean): Boolean = sync(context, source, config, UploadSlice(), stillSelected)
-    internal fun sync(context: Context, source: LocalSource, config: CollectorConfig, slice: UploadSlice, stillSelected: () -> Boolean): Boolean = try { syncSlice(context, source, config, slice, stillSelected) } catch (_: SliceYield) { false }
+    internal fun sync(context: Context, source: LocalSource, config: CollectorConfig, slice: UploadSlice, stillSelected: () -> Boolean, history: ItemUploadSession = ItemUploadSession(context, config, lane = "source")): Boolean = try { syncSlice(context, source, config, slice, stillSelected, history) } catch (_: SliceYield) { false }
     private class SliceYield : RuntimeException()
-    private fun syncSlice(context: Context, source: LocalSource, config: CollectorConfig, slice: UploadSlice, stillSelected: () -> Boolean): Boolean {
+    private fun syncSlice(context: Context, source: LocalSource, config: CollectorConfig, slice: UploadSlice, stillSelected: () -> Boolean, history: ItemUploadSession): Boolean {
         require(source.retention != "snapshot" || source.centralProcessingConsent) { MoteI18n.text("请编辑来源并确认完整文件上传到中央处理，处理后不保留中央原件。") }
         val queue = context.fileArchives()
         val owner = Any(); val transferKey = queue.transferKey(source.id)
@@ -162,7 +162,15 @@ object FileUpload {
                 check(stillSelected())
                 selectedRow?.let { context.fileArchives().assertCurrent(source, it) }
                 observedRow?.let { queue.clearFailure(source.id, it) }
-                return request(context, stage, config, path, method, body, binary)
+                val manifest = selectedRow?.optJSONObject("pending")?.optJSONObject("manifest")
+                if (manifest == null || method == "GET") return request(context, stage, config, path, method, body, binary).second
+                val identity = history.identity("file", source.id, manifest.getJSONObject("item"), manifest)
+                val phase = if (binary) "part" else if (path.endsWith("/commit")) "commit" else "manifest"
+                return history.send(identity, phase, (body?.size ?: 0).toLong(), { _, ack ->
+                    if (binary) FileUploadConfirmation.part(checkNotNull(ack), path.substringAfterLast('/').toInt(), checkNotNull(body))
+                    val final = ack?.optJSONObject("ack") ?: ack?.takeIf { it.has("receipt") }
+                    if (final != null) { FileUploadConfirmation.canonicalId(source.id, manifest, final); "received" } else "transferred"
+                }) { request(context, stage, config, path, method, body, binary) }.second!!
             }
             queue.configure(source); val row = queue.next(source.id) ?: FileSources(context).prepare(source, onSelected = { observe(it, FileSyncPhase.PREPARING) }) { external ->
                 check(stillSelected())
@@ -178,14 +186,17 @@ object FileUpload {
             checkSelection()
             val pending = row.getJSONObject("pending"); val manifest = pending.getJSONObject("manifest"); val item = manifest.getJSONObject("item")
             if (!manifest.has("sha256")) {
-                val ack = send(EventStage.FILE_UPLOAD, "/api/file-sync/v1/revisions", "PUT", manifest.toString().toByteArray(Charsets.UTF_8)); checkSelection(); queue.acknowledge(source.id, row, ack); return queue.pendingCount(source.id) == 0
+                val ack = send(EventStage.FILE_UPLOAD, "/api/file-sync/v1/revisions", "PUT", manifest.toString().toByteArray(Charsets.UTF_8)); checkSelection(); history.received(history.identity("file", source.id, item, manifest), FileUploadConfirmation.canonicalId(source.id, manifest, ack)); return queue.pendingCount(source.id) == 0
             }
             val recoveryCaptureId = row.getJSONObject("pending").optString("recoveryCaptureId")
             val begun = send(EventStage.FILE_UPLOAD, if (recoveryCaptureId.isNotBlank()) "/api/file-sync/v1/recovery/$recoveryCaptureId/uploads" else "/api/file-sync/v1/uploads", "POST", (if (recoveryCaptureId.isNotBlank()) "{}" else manifest.toString()).toByteArray(Charsets.UTF_8))
+
+            begun.optJSONObject("ack")?.let { ack -> checkSelection(); history.received(history.identity("file", source.id, item, manifest), FileUploadConfirmation.canonicalId(source.id, manifest, ack)); return queue.pendingCount(source.id) == 0 }
             val uploadId = begun.getString("uploadId"); check(uploadId.matches(Regex("[a-fA-F0-9-]{36}"))); check(begun.getInt("partBytes") == FileArchiveQueue.PART_BYTES)
-            begun.optJSONObject("ack")?.let { ack -> checkSelection(); queue.acknowledge(source.id, row, ack); return queue.pendingCount(source.id) == 0 }
             val parts = begun.getJSONArray("parts"); val received = (0 until parts.length()).map { parts.getJSONObject(it).getInt("part") }.toSet()
             val total = ((manifest.getLong("sizeBytes") + FileArchiveQueue.PART_BYTES - 1) / FileArchiveQueue.PART_BYTES).toInt()
+            check(received.size == parts.length())
+            for (index in 0 until parts.length()) { val entry = parts.getJSONObject(index); val part = entry.getInt("part"); check(part in 0 until total); FileUploadConfirmation.part(entry, part, queue.part(source.id, part)) }
             for (part in 0 until total) if (part !in received) {
                 if (slice.exhausted) return false
                 checkSelection(); val bytes = queue.part(source.id, part)
@@ -193,7 +204,7 @@ object FileUpload {
                 val hash = MessageDigestCompat.hash(bytes)
                 check(ack.getInt("part") == part && ack.getInt("bytes") == bytes.size && ack.getString("hash") == hash) { MoteI18n.text("文件块确认不匹配") }
             }
-            checkSelection(); val ack = send(EventStage.FILE_COMMIT, "/api/file-sync/v1/uploads/$uploadId/commit", "POST", "{}".toByteArray()); checkSelection(); queue.acknowledge(source.id, row, ack)
+            checkSelection(); val ack = send(EventStage.FILE_COMMIT, "/api/file-sync/v1/uploads/$uploadId/commit", "POST", "{}".toByteArray()); checkSelection(); history.received(history.identity("file", source.id, item, manifest), FileUploadConfirmation.canonicalId(source.id, manifest, ack))
             return queue.pendingCount(source.id) == 0
         } catch (error: Exception) {
             if (error !is SliceYield && error !is SyncConditionsUnavailable && stillSelected()) observedRow?.let {
