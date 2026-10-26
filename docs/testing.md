@@ -30,15 +30,17 @@ For a large requirement, connect one shortest real journey early: actual entrypo
 
 At a meaningful stage completion and before release, one owner completes the full relevant acceptance scope for the converged candidate. Select heavy E2E, expensive scale correctness and live-model checks explicitly and manually when relevant. Stage/release acceptance is not a reason to run heavy suites on every push, every small PR or every handoff. Performance benchmarks follow their own triggers in the table above; historical performance targets do not automatically become current gates.
 
-Inspect the available affected plan before running it:
+On a revision containing the balanced CI scripts, inspect the affected light plan before selecting execution:
 
 ```sh
 npm run check:affected -- --dry-run
-# Explicit comparison for a recovery branch:
+# Explicit committed comparison for a recovery branch:
 npm run check:affected -- --base origin/main --head HEAD --dry-run
+# Run the selected light plan when relevant:
+npm run check:affected -- --base origin/main --head HEAD
 ```
 
-The dry-run describes the commands in the checked-out revision; it is not runtime evidence. Inspect their scope before selecting execution. Broad component commands and `check:local` are manual integration tools, not daily feedback or permission to run benchmarks implicitly. Exact fast/manual suite entrypoints must match the implemented scripts and [CI](ci.md).
+The dry-run describes the commands in the checked-out revision; it is not runtime evidence. `check:affected` selects light checks only; `--all` expands to all light scopes, never heavy suites. Without `--head`, it also includes working changes. Broad component commands and `check:local` remain manual integration tools. Exact task commands, manual `suite/scope/revision` inputs and the distinction between workflow and local specialist entrypoints are in [CI](ci.md). A local light plan does not replace the relevant manually selected acceptance.
 
 After a fix rerun checks invalidated by source, dependency, fixture, configuration or environment changes. Reuse unchanged successful results without another run. Never reuse failed, interrupted or uncertain-cleanup results. Diagnose repeated failures rather than endlessly replaying the same test. A known failure remains a failure until repaired and verified; moving it to a manual suite does not resolve it.
 
