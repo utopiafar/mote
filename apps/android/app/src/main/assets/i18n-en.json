@@ -8742,5 +8742,13 @@
   "完成确认": "Final confirmation",
   "文件块": "File part",
   "采集、随手记、来源、文件与附件的上传批次。": "Upload batches for captures, notes, sources, files and attachments.",
-  "目标或原件已变化，已保留上传确认，请稍后重试。": "The destination or original has changed. The upload confirmation is retained; retry later."
+  "目标或原件已变化，已保留上传确认，请稍后重试。": "The destination or original has changed. The upload confirmation is retained; retry later.",
+  "用户问题": "User question",
+  "AI 回答": "AI answer",
+  "正在读取原始对话…": "Reading the original conversation…",
+  "原始对话或轮次暂不可读，可能已删除、权限已变更或连接中断。已保存的引用未改变。": "The original conversation or turn is unavailable. It may have been deleted, access may have changed, or the connection may be offline. The saved quote is unchanged.",
+  "查看原始对话与轮次": "View original conversation and turn",
+  "原始轮次与保存的引用不同；请打开原始对话核对，保存的引用未改变。": "The original turn differs from the saved quote. Open the original conversation to check; the saved quote is unchanged.",
+  "引用来源": "Citation sources",
+  "原始轮次暂不可读。": "The original turn is unavailable."
 }
