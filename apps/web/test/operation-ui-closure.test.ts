@@ -15,6 +15,7 @@ const button=(d:Document,label:string)=>Array.from(d.querySelectorAll<HTMLButton
 test('calendar confirmation pins the reviewed version and requires a new review after another client updates it',async t=>{
  const {root,d}=await fixture(t);let version=1,title='Generated original schedule';const writes:{version:number;event:{title:string}}[]=[];
  const api={request:async(path:string,options?:{body?:string})=>{
+  if(path==='/api/action-capabilities')return {providers:[],declarations:[],sources:[],drafts:[],grants:[]};
   if(path.startsWith('/api/operations/changes'))return new Promise(()=>{});
   if(path.endsWith('/confirm')){writes.push(JSON.parse(options!.body!));return {status:'approved'};}
   if(path.startsWith('/api/actions?'))return {items:[{id:'generated',version,kind:'calendar.update',status:'proposed',event:{title,start:'2099-01-01T10:00:00Z',end:'2099-01-01T11:00:00Z',timeZone:'UTC',allDay:false,location:'',description:''},related:{event:{title:'Generated prior',start:null,end:null},target:{deviceId:'fixture',calendarId:'generated'}},evidence:[]}],total:1,nextCursor:null,targets:[],settings:{enabled:false,timeZone:'UTC',reviewDeviceIds:[]},progress:{configured:true,running:false,jobs:[],error:null}};
@@ -36,7 +37,7 @@ test('calendar confirmation pins the reviewed version and requires a new review 
 });
 test('Actions consumes operation changes through the shared resource and explains blocked/cancelled analysis safely',async t=>{
  const {root,d}=await fixture(t);let resolve!:(value:unknown)=>void,reads=0,changed=false;const change=new Promise(r=>{resolve=r;});
- const api={request:async(path:string)=>{if(path.startsWith('/api/operations/changes'))return change;if(path.startsWith('/api/actions?')){reads++;return {items:[],total:0,nextCursor:null,targets:[],settings:{enabled:true,timeZone:'UTC',reviewDeviceIds:[]},progress:{configured:true,running:false,jobs:changed?[{status:'blocked',count:3},{status:'cancelled',count:2}]:[{status:'pending',count:5}],error:changed?'PRIVATE ENGINE RAW ERROR':null,errorCode:changed?'action_analysis_failed':null}};}return {items:[],nextCursor:null};},setAgentTimeout:()=>{}} as Api;
+ const api={request:async(path:string)=>{if(path==='/api/action-capabilities')return {providers:[],declarations:[],sources:[],drafts:[],grants:[]};if(path.startsWith('/api/operations/changes'))return change;if(path.startsWith('/api/actions?')){reads++;return {items:[],total:0,nextCursor:null,targets:[],settings:{enabled:true,timeZone:'UTC',reviewDeviceIds:[]},progress:{configured:true,running:false,jobs:changed?[{status:'blocked',count:3},{status:'cancelled',count:2}]:[{status:'pending',count:5}],error:changed?'PRIVATE ENGINE RAW ERROR':null,errorCode:changed?'action_analysis_failed':null}};}return {items:[],nextCursor:null};},setAgentTimeout:()=>{}} as Api;
  await act(async()=>root.render(React.createElement(Actions,{api,onOpen:()=>{}})));assert.equal(reads,1);assert.match(d.body.textContent!,/待分析 5 批/);
  changed=true;await act(async()=>resolve({ids:['workflow:actions:generated'],cursor:1,reset:false,hasMore:false}));assert.equal(reads,2);assert.match(d.body.textContent!,/等待条件满足 3 批.*已停止分析 2 批/);assert.match(d.body.textContent!,/日程分析未完成，请查看批次状态后重试/);assert.doesNotMatch(d.body.textContent!,/PRIVATE ENGINE RAW ERROR|blocked|cancelled/);
 });

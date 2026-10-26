@@ -648,6 +648,18 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         require(hash.matches(Regex("[a-f0-9]{64}")))
         cipher.open(File(dir, "$hash.blob").readBytes())
     }
+    /** Resolve a history link and its image from the same exact retained version. */
+    internal fun captureExactVersion(id: String, version: String): Pair<JSONObject, ByteArray?>? = guarded {
+        val file = File(dir, "${UUID.fromString(id)}.event")
+        if (!file.exists()) return@guarded null
+        val event = read(file)
+        if (CaptureUploadVersion.of(event) != version) return@guarded null
+        val hash = event.optString("_blob")
+        val image = if (hash.isBlank()) null else verifiedBlob(hash, readBytes = true)
+        // Later Central processing must not replace the confirmed original's body.
+        event.remove("_centralDerived")
+        display(event) to image
+    }
     fun capture(id: String): JSONObject? = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return null

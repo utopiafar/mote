@@ -1,10 +1,11 @@
+import {createMemoryTopicsUi} from './memory-topics-ui';
 import {desktopAppearance} from './appearance';
 import {createContentLibraryUi} from './content-library-ui';
 import {createSyncHistoryUi} from './sync-history-ui';
 import {createDesktopPresentation} from './presentation';
 import {createWorkActivityUi} from './work-activity-ui';
 import {nativeStatusSummary} from './native-status';
-import { renderAskAnswer, renderAskCitation } from './ask-presentation';
+import { renderAskAnswer, renderAskCitation, renderAskScope } from './ask-presentation';
 import {prependConversationTurns} from './ask-conversation';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import {builtinUiRules} from '@mote/shared';
@@ -37,7 +38,8 @@ let pageRevision = 0;
 let pageEnteredAt = Date.now();
 const pageScroll = new Map<Page, number>();
 const settingsPages = new Set<Page>(['connection', 'sync', 'capture', 'privacy', 'developer']);
-const libraryUi=createContentLibraryUi(desktopApi);
+const memoryTopicsUi=createMemoryTopicsUi(desktopApi,document.getElementById('memory-topics-dialog') as HTMLDialogElement);
+const libraryUi=createContentLibraryUi(desktopApi,()=>memoryTopicsUi.open());
 function refreshContent():Promise<void>{return libraryUi.refresh();}
 const syncHistoryUi = createSyncHistoryUi(desktopApi, page => showPage(page));
 const workActivityUi=createWorkActivityUi(desktopApi,page=>showPage(page));
@@ -357,10 +359,10 @@ function renderOperations(jobs:NonNullable<import('./contracts').Status['operati
   byId('background-progress').textContent = operations.map(job => `${job.message}${job.total !== undefined ? ` · ${job.completed ?? 0}/${job.total}` : ''}${job.state === 'running' ? moteText(" · 已用 {0} 秒", Math.floor((Date.now() - job.startedAt) / 1000)) : ''}`).join('；');
 }
 function render(status: import('./contracts').Status): void {
-  syncHistoryUi.update(status);libraryUi.update(status);workActivityUi.update(status);
+  syncHistoryUi.update(status);libraryUi.update(status);memoryTopicsUi.update(status);workActivityUi.update(status);
   if(currentStatus&&(currentStatus.authorizationGeneration!==status.authorizationGeneration||currentStatus.config.serverUrl!==status.config.serverUrl||currentStatus.config.tokenConfigured!==status.config.tokenConfigured||currentStatus.config.authSignedOut!==status.config.authSignedOut||currentStatus.config.authExpiresAt!==status.config.authExpiresAt)){
     recordsRevision++;closeRecordDetail();byId('records-grid').replaceChildren();byId('record-detail-title').textContent='';byId('record-detail-meta').textContent='';byId('record-detail-text').textContent='';
-    askGeneration++;clearTimeout(askTimer);askRun=undefined;askConversation=undefined;askPendingInput=undefined;byId('ask-history').replaceChildren();renderAsk();setText('ask-login-status','');
+    askGeneration++;clearTimeout(askTimer);askRun=undefined;askConversation=undefined;askScopeUnavailable=false;askPendingInput=undefined;byId('ask-history').replaceChildren();renderAsk();setText('ask-login-status','');
   }
   currentStatus = status; renderStorage();appCaptureUi.setStatus(status);
   askConnectionState();
@@ -752,10 +754,10 @@ async function refreshSources(): Promise<void> {
 }
 async function sourceAction(action: () => Promise<void>): Promise<void> {
   if (sourceBusy) return; sourceBusy = true; byId('source-feedback').textContent = moteText("正在处理，请稍候…");
-  for (const id of ['source-agent-discover', 'source-agent-add', 'source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-save-edit', 'source-sync', 'source-confirm']) byId<HTMLButtonElement>(id).disabled = true;
+  for (const id of ['calendar-actions-connect', 'source-agent-discover', 'source-agent-add', 'source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-save-edit', 'source-sync', 'source-confirm']) byId<HTMLButtonElement>(id).disabled = true;
   try { await action(); byId('source-feedback').textContent = moteText("已处理，下面显示各来源的当前同步状态。"); }
   catch (error) { byId('source-feedback').textContent = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : moteText("操作未完成，请检查权限与配置后重试"); }
-  finally { sourceBusy = false; for (const id of ['source-agent-discover', 'source-agent-add', 'source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-save-edit', 'source-sync', 'source-confirm']) byId<HTMLButtonElement>(id).disabled = false; await refreshSources().catch(() => {}); }
+  finally { sourceBusy = false; for (const id of ['calendar-actions-connect', 'source-agent-discover', 'source-agent-add', 'source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-save-edit', 'source-sync', 'source-confirm']) byId<HTMLButtonElement>(id).disabled = false; await refreshSources().catch(() => {}); }
 }
 for (const mode of ['files','directory'] as const)byId('source-'+mode).addEventListener('click',()=>void beginSourceSelection(mode));
 byId('source-calendar-connect').addEventListener('click', () => void sourceAction(async () => {
@@ -775,6 +777,7 @@ byId('source-agent-discover').addEventListener('click', () => void sourceAction(
 byId('source-agent-add').addEventListener('click', () => void sourceAction(() => desktopApi.addCodingAgent(readInput('source-agent-choice') as import('./coding-agents').CodingProvider, sourceOptions())));
 byId('source-calendar-add').addEventListener('click', () => void sourceAction(async () => { await desktopApi.addCalendarSource(readInput('source-calendar-choice'), sourceOptions()); }));
 byId('source-sync').addEventListener('click', () => void sourceAction(() => desktopApi.syncSources()));
+byId('calendar-actions-connect').addEventListener('click', () => void sourceAction(async()=>{await desktopApi.connectActionCalendar();await desktopApi.openCentral('actions');}));
 byId('source-calendar-permissions').addEventListener('click', () => void sourceAction(() => desktopApi.openCalendarPermissions()));
 byId('source-cancel-edit').addEventListener('click', () => editSource());
 byId('source-save-edit').addEventListener('click', () => void sourceAction(async () => {
@@ -1132,10 +1135,18 @@ byId('review-refresh').addEventListener('click', async()=>{
 });
 let askRun: import('./ask').AskRun | undefined;
 let askConversation: import('./ask').AskConversation | undefined;
+let askScopeUnavailable = false;
 let askBusy = false, askGeneration = 0, askCursor: string | undefined;
 let askPendingInput: {id: string; question: string; conversationId?: string} | undefined;
 let askTimer: ReturnType<typeof setTimeout> | undefined;
-const askCall = <T>(command: import('./ask').AskCommand, input?: Parameters<typeof desktopApi.ask>[1]) => desktopApi.ask(command, input) as Promise<T>;
+const askCall = async <T>(command: import('./ask').AskCommand, input?: Parameters<typeof desktopApi.ask>[1]): Promise<T> => {
+  const generation = askGeneration;
+  try { return await desktopApi.ask(command, input) as T; }
+  catch (error) {
+    if (generation === askGeneration && ['conversation', 'history', 'runs', 'run'].includes(command)) { askScopeUnavailable = true; renderAsk(); }
+    throw error;
+  }
+};
 function askControls(): void {
   const running = askRun?.status === 'running';
   byId<HTMLButtonElement>('ask-send').disabled = askBusy || running;
@@ -1148,6 +1159,7 @@ function askControls(): void {
   for (const button of Array.from(byId('ask-history').querySelectorAll('button'))) button.disabled = askBusy || running;
 }
 function renderAsk(): void {
+  byId('ask-scope').replaceChildren(renderAskScope(document, askConversation?.scope, id => void askAction(() => desktopApi.openCentral('ask', id)), askScopeUnavailable));
   const messages = byId('ask-messages'); messages.replaceChildren();
   for (const turn of askConversation?.turns ?? []) {
     const article = document.createElement('article'), question = document.createElement('h3');
@@ -1170,14 +1182,16 @@ async function loadAskConversation(id: string): Promise<void> {
   const generation = askGeneration;
   const conversation = await askCall<import('./ask').AskConversation>('conversation', {id});
   if (generation !== askGeneration) return;
-  askConversation = conversation; renderAsk();
+  askConversation = conversation; askScopeUnavailable = false; renderAsk();
 }
 async function olderAskTurns(): Promise<void> {
   const current = askConversation, generation = askGeneration;
   if (!current?.nextCursor) return;
   const page = await askCall<import('./ask').AskConversation>('conversation', {id: current.id, cursor: current.nextCursor});
   if (generation !== askGeneration || askConversation !== current) return;
-  askConversation = prependConversationTurns(current, page); renderAsk();
+  try { askConversation = prependConversationTurns(current, page); }
+  catch (error) { askScopeUnavailable = true; renderAsk(); throw error; }
+  askScopeUnavailable = false; renderAsk();
 }
 async function askHistory(append = false): Promise<void> {
   const generation = askGeneration;
@@ -1186,7 +1200,7 @@ async function askHistory(append = false): Promise<void> {
   const history = byId('ask-history'); if (!append) history.replaceChildren();
   for (const item of page.items) {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary'; button.textContent = item.title;
-    button.addEventListener('click', () => { if (!askBusy && askRun?.status !== 'running') void askAction(async () => { askConversation = undefined; askRun = undefined; renderAsk(); await loadAskConversation(item.id); }); });
+    button.addEventListener('click', () => { if (!askBusy && askRun?.status !== 'running') void askAction(async () => { askConversation = undefined; askScopeUnavailable = false; askRun = undefined; renderAsk(); await loadAskConversation(item.id); }); });
     history.append(button);
   }
   askCursor = page.nextCursor; byId('ask-more').hidden = !askCursor; askControls();
@@ -1232,7 +1246,7 @@ function scheduleAskPoll(): void {
       if (generation !== askGeneration) return; askRun = run;
       if (run.status !== 'running' && run.conversationId) {
         const conversation = await askCall<import('./ask').AskConversation>('conversation', {id: run.conversationId});
-        if (generation !== askGeneration) return; askConversation = conversation; await askHistory();
+        if (generation !== askGeneration) return; askConversation = conversation; askScopeUnavailable = false; await askHistory();
       }
       setText('ask-error', ''); renderAsk();
       if (run.status === 'running') scheduleAskPoll();
@@ -1254,9 +1268,9 @@ byId('ask-refresh').addEventListener('click', () => void refreshAsk());
 byId('ask-more').addEventListener('click', () => void askAction(() => askHistory(true)));
 byId('ask-turns-more').addEventListener('click', () => void askAction(olderAskTurns));
 byId('ask-stop').addEventListener('click', () => void askAction(async () => { if (askRun) { askRun = await askCall('cancel', {id: askRun.id}); renderAsk(); scheduleAskPoll(); } }));
-byId('ask-new').addEventListener('click', () => { if (askBusy || askRun?.status === 'running') return; askGeneration++; clearTimeout(askTimer); askRun = undefined; askConversation = undefined; renderAsk(); });
-byId('ask-login').addEventListener('click', () => { const token = readInput('ask-token'); byId<HTMLInputElement>('ask-token').value = ''; void askAction(async () => { setText('ask-login-status', moteText('正在连接中央节点…')); try { await askCall('login', {token,durationMs:Number(readInput('ask-lifetime'))}); } catch (error) { setText('ask-login-status', moteText('请先登录中央节点，各页面会共用这次登录。')); throw error; } setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl)); askGeneration++; askRun = undefined; askConversation = undefined; renderAsk(); await askHistory(); }); });
+byId('ask-new').addEventListener('click', () => { if (askBusy || askRun?.status === 'running') return; askGeneration++; clearTimeout(askTimer); askRun = undefined; askConversation = undefined; askScopeUnavailable = false; renderAsk(); });
+byId('ask-login').addEventListener('click', () => { const token = readInput('ask-token'); byId<HTMLInputElement>('ask-token').value = ''; void askAction(async () => { setText('ask-login-status', moteText('正在连接中央节点…')); try { await askCall('login', {token,durationMs:Number(readInput('ask-lifetime'))}); } catch (error) { setText('ask-login-status', moteText('请先登录中央节点，各页面会共用这次登录。')); throw error; } setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl)); askGeneration++; askRun = undefined; askConversation = undefined; askScopeUnavailable = false; renderAsk(); await askHistory(); }); });
 byId('ask-browser-login').addEventListener('click',()=>void askAction(async()=>{await askCall('login-browser',{durationMs:Number(readInput('ask-lifetime'))});await askHistory();setText('ask-login-status',moteText('已登录 · {0}',currentStatus.config.serverUrl));}));
-byId('ask-logout').addEventListener('click', () => void askAction(async () => { await askCall('logout'); setText('ask-login-status', moteText('已退出中央登录')); askGeneration++; clearTimeout(askTimer); askRun = undefined; askConversation = undefined; byId('ask-history').replaceChildren(); renderAsk(); }));
+byId('ask-logout').addEventListener('click', () => void askAction(async () => { await askCall('logout'); setText('ask-login-status', moteText('已退出中央登录')); askGeneration++; clearTimeout(askTimer); askRun = undefined; askConversation = undefined; byId('ask-history').replaceChildren(); askScopeUnavailable = false; renderAsk(); }));
 
 byId('chrome-setup').addEventListener('click',()=>void perform(async()=>{const result=await desktopApi.setupChromeCapture();byId('chrome-setup-result').textContent=moteText('扩展目录：{0}；扩展 ID：{1}',result.extensionDirectory,result.extensionId);feedback(moteText('本机桥接已准备。请在 Chrome 扩展程序中加载该目录，并在扩展中授权所选站点。'),true);}));

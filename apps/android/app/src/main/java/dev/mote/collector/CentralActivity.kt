@@ -15,6 +15,7 @@ open class CentralActivity : MoteActivity() {
         super.onCreate(state)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         content = CentralContent(this, state, intent.getStringExtra("page") ?: "ask")
+        if (state == null) intent.getStringExtra("insightId")?.let(content::openInsight)
         content.root.moteInsets()
         setContentView(content.root)
         if (state == null && intent.getBooleanExtra("featureGuide", false)) content.showFeatureGuide()
@@ -24,7 +25,7 @@ open class CentralActivity : MoteActivity() {
     override fun onPause() { content.pause(); super.onPause() }
     override fun onDestroy() { content.close(); super.onDestroy() }
     override fun onSaveInstanceState(state: Bundle) { content.saveState(state); super.onSaveInstanceState(state) }
-    override fun onNewIntent(next: Intent) { super.onNewIntent(next); intent = next; next.getStringExtra("page")?.let(content::navigate) }
+    override fun onNewIntent(next: Intent) { super.onNewIntent(next); intent = next; next.getStringExtra("insightId")?.let(content::openInsight) ?: next.getStringExtra("page")?.let(content::navigate) }
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Deprecated("Native back navigation") override fun onBackPressed() { navigateBack() }
     private fun navigateBack() { if (!content.back()) finish() }
