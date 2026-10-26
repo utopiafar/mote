@@ -13,7 +13,7 @@ const label=z.string().trim().min(1).max(100);
 export const topicClassificationSchema=z.object({trees:z.array(z.object({id,label,nodes:z.array(z.object({id,label,parentId:id.optional(),memoryIds:z.array(z.string().uuid()).min(1).max(100)}).strict()).min(1).max(100)}).strict()).max(20)}).strict();
 type Classification=z.infer<typeof topicClassificationSchema>;
 type Dependency={id:string;version:number;fingerprint:string;digest:string};
-type Batch={operationId:string;admissionId:string;classifierId:string;classifierVersion:string;dependencies:Dependency[];result:Classification};
+type Batch={snapshotKey:string;operationId:string;admissionId:string;classifierId:string;classifierVersion:string;dependencies:Dependency[];result:Classification};
 export type TopicClassifier={id:string;version:string;classify:(input:{memories:readonly Memory[];signal:AbortSignal})=>Promise<unknown>};
 /** Supplied only by the host's original admitted task, including during recovery.
  * The closure fences the exact model connection and original admission epoch.
@@ -27,8 +27,9 @@ export class AutomaticTopics {
   private classifiers=new Map<string,TopicClassifier>();
   private active=new Set<string>();
   private failed=false;
+  private activeSnapshots=new Set<string>();
   constructor(private store:Store,private reader:EvidenceReader){
-    store.db.exec(`CREATE TABLE IF NOT EXISTS context_topic_batches (operation_id TEXT PRIMARY KEY, json TEXT NOT NULL)`);
+    store.db.exec(`CREATE TABLE IF NOT EXISTS context_topic_batches (operation_id TEXT PRIMARY KEY, json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS context_topic_heads (snapshot_key TEXT PRIMARY KEY, operation_id TEXT NOT NULL)`);
   }
   register(classifier:TopicClassifier){
     id.parse(classifier.id);z.string().min(1).max(100).parse(classifier.version);
@@ -67,7 +68,7 @@ export class AutomaticTopics {
     const fence=()=>{authority.signal.throwIfAborted();authority.assertCurrent();if(this.classifiers.get(classifier.id)!==classifier)throw new StoreError('Topic classifier was removed',409);};
     fence();
     if(this.active.has(operationId))throw new StoreError('Topic classification is already running',409);
-    this.active.add(operationId);
+    this.active.add(operationId);let heldSnapshot:string|undefined;
     try{
       const memories=await this.read([...ids].sort()),dependencies=memories.map(dependency);
       fence();
@@ -76,6 +77,9 @@ export class AutomaticTopics {
         if(batch.admissionId!==authority.admissionId||batch.classifierId!==classifier.id||batch.classifierVersion!==classifier.version||!equal(batch.dependencies,dependencies))throw new StoreError('Topic operation identity conflict',409);
         this.failed=false;return {state:'completed' as const};
       }
+      const snapshotKey=sha256(JSON.stringify({classifierId:classifier.id,classifierVersion:classifier.version,dependencies}));
+      if(this.activeSnapshots.has(snapshotKey))throw new StoreError('This topic input snapshot is already being classified',409);
+      this.activeSnapshots.add(snapshotKey);heldSnapshot=snapshotKey;
       // This trusted adapter must call the host-fenced model transport. It must
       // not infer intent from source instructions or promote attribution to fact.
       const raw=await classifier.classify({memories:structuredClone(memories),signal:authority.signal});
@@ -91,24 +95,29 @@ export class AutomaticTopics {
           while(parent){if(!nodes.has(parent)||seen.has(parent))throw new StoreError('Invalid model topic ancestry');seen.add(parent);parent=nodes.get(parent)!.parentId;}
         }
       }
-      const batch:Batch={operationId,admissionId:authority.admissionId,classifierId:classifier.id,classifierVersion:classifier.version,dependencies,result};
+      const batch:Batch={snapshotKey,operationId,admissionId:authority.admissionId,classifierId:classifier.id,classifierVersion:classifier.version,dependencies,result};
       const json=JSON.stringify(batch);
       // Synchronous publication: no await between the final fences and commit.
       fence();this.assertInputs(memories);this.store.reserveMetadata(Buffer.byteLength(json));
-      this.store.db.prepare('INSERT INTO context_topic_batches VALUES (?,?)').run(operationId,json);
+      this.store.db.exec('SAVEPOINT context_topic_publish');
+      try{
+        this.store.db.prepare('INSERT INTO context_topic_batches VALUES (?,?)').run(operationId,json);
+        this.store.db.prepare('INSERT INTO context_topic_heads VALUES (?,?) ON CONFLICT(snapshot_key) DO UPDATE SET operation_id=excluded.operation_id').run(snapshotKey,operationId);
+        this.store.db.exec('RELEASE context_topic_publish');
+      }catch(error){this.store.db.exec('ROLLBACK TO context_topic_publish; RELEASE context_topic_publish');throw error;}
       this.failed=false;return {state:'completed' as const};
-    }catch(error){if(!authority.signal.aborted)this.failed=true;throw error;}finally{this.active.delete(operationId);}
+    }catch(error){if(!authority.signal.aborted)this.failed=true;throw error;}finally{this.active.delete(operationId);if(heldSnapshot)this.activeSnapshots.delete(heldSnapshot);}
   }
   async trees():Promise<ContextTree[]>{
     const trees:Array<{tree:ContextTree;memories:Memory[]}>=[];
-    for(const row of this.store.db.prepare('SELECT json FROM context_topic_batches ORDER BY operation_id').all()){
+    for(const row of this.store.db.prepare('SELECT b.json FROM context_topic_batches b JOIN context_topic_heads h ON h.operation_id=b.operation_id ORDER BY h.snapshot_key').all()){
       const batch=JSON.parse(String(row.json)) as Batch;
       const classifier=this.classifiers.get(batch.classifierId);
       if(!classifier||classifier.version!==batch.classifierVersion)continue;
       const memories=await this.current(batch);if(!memories)continue;
       // Batch namespace keeps independently generated labels and their complete
       // provenance inseparable; never merge two labels by guessed semantics.
-      const prefix='auto.'+sha256(batch.operationId).slice(0,24);
+      const prefix='auto.'+batch.snapshotKey.slice(0,24);
       for(const tree of batch.result.trees)trees.push({memories,tree:{id:prefix+'.'+sha256(tree.id).slice(0,16),version:'1',label:tree.label,nodes:tree.nodes.map(node=>({id:node.id,label:node.label,parentId:node.parentId,select:{memoryIds:node.memoryIds}}))}});
     }
     // Earlier asynchronous provider reads do not retain an old permission.

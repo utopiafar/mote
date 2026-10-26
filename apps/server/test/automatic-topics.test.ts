@@ -94,3 +94,15 @@ test('pagination preserves exact membership; correction invalidates labels and u
  assert.deepEqual(await service.trees(),[]);
  assert.equal((await f.n.app.inject({url:base+'&cursor='+encodeURIComponent(first.nextCursor),headers:f.headers})).statusCode,404);
 });
+
+
+test('new operation for the exact classifier/input atomically replaces references; replay cannot revive old labels',async t=>{
+ const f=await fixture(t),a=await f.seed('Synthetic replacement'),service=f.n.featureServices.contextTrees.automatic!;let empty=false;
+ service.register({id:'fixture',version:'1',classify:async()=>empty?{trees:[]}:output([a.id])});
+ const input={operationId:'original',classifierId:'fixture',memoryIds:[a.id]};await service.classify(input,authority());const original=await service.trees();assert.equal(original.length,2);
+ empty=true;await service.classify({...input,operationId:'replacement'},authority());assert.deepEqual(await service.trees(),[]);
+ await service.classify(input,authority());assert.deepEqual(await service.trees(),[],'lost ACK retry must not restore original labels');
+ empty=false;await service.classify({...input,operationId:'next'},authority());assert.deepEqual(await service.trees(),original,'same input restores stable tree identities without duplicates');
+ assert.equal(f.n.store.db.prepare('SELECT count(*) n FROM context_topic_heads').get()!.n,1);
+ assert.equal(f.n.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,3);
+});
