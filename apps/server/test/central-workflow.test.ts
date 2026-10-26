@@ -46,7 +46,9 @@ test('legacy denied source history stays searchable and supports an explicit HTT
 test('central UI APIs complete original import → exact Memory → cited static insight with recoverable jobs',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-central-workflow-')),cfg=config(directory),queries:QueryInput[]=[];
   let failMemory=true,evidenceId='';
-  const node=await buildApp(cfg,{prepareImport:async({workspace,inputPaths})=>{
+  // This journey explicitly drives manual Memory recovery; the periodic
+  // automatic drain must not start a second job when the fixture runs slowly.
+  const node=await buildApp(cfg,{backgroundWorker:false,prepareImport:async({workspace,inputPaths})=>{
     writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:{externalId:'journal:42',revision:'fixture-revision',observedAt:'2026-09-16T00:00:00Z',title:'观测计划',text:original,kind:'file',layer:'original',document:{recordedAt:'2020-02-03T04:05:00Z',timeBasis:'recorded',contentRole:'authored',originalMetadata:{providerId:42,tags:['合成资料']}}},evidencePaths:inputPaths}));
     writeFileSync(join(workspace,'dispositions.json'),JSON.stringify({items:inputPaths.map(path=>({path,status:'parsed',reason:'synthetic plain text'}))}));
     return {summary:'识别到一条合成原始日记；记录时间来自原始字段。'};
