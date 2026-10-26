@@ -96,21 +96,21 @@ test('restart reconciles an injected current configuration change but requires a
 });
 
 const generatedModel=(model:string):ModelSettings=>({provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:9080',model,reasoningEffort:'auto',maxTokens:1000,modelRequestTimeoutMs:30000,agentTimeoutMs:60000,allowUnauthenticatedLocal:true,apiKey:'generated-model-secret',headers:{},extraBody:{}});
-for(const changed of [false,true])test(`summary model snapshot ${changed?'fences a changed model':'survives an unrelated profile save'} across multiple batches`,async t=>{
- let model=generatedModel('model-one'),revision=1,begin!:()=>void,finish!:()=>void;
+for(const changed of [false,true,'identity'] as const)test(`summary model snapshot ${changed==='identity'?'fences a changed profile identity':changed?'fences a changed model':'survives an unrelated profile save'} across multiple batches`,async t=>{
+ let model=generatedModel('model-one'),profileId='generated-file-profile',revision=1,begin!:()=>void,finish!:()=>void;
  const started=new Promise<void>(r=>begin=r),gate=new Promise<void>(r=>finish=r),seen:string[]=[];
- const f=await fixture(t,{analysisSnapshot:()=>model,analysisRevision:()=>revision,analyze:async(records,_prompt,settings)=>{
-  seen.push(settings.modelSnapshot!.model);if(seen.length===1){begin();await gate;}
+ const f=await fixture(t,{analysisSnapshot:()=>({settings:model,identity:{kind:'profile',id:profileId}}),analysisRevision:()=>revision,analyze:async(records,_prompt,settings)=>{
+  assert.deepEqual(settings.modelIdentity,{kind:'profile',id:profileId});seen.push(settings.modelSnapshot!.model);if(seen.length===1){begin();await gate;}
   return {answer:'Generated bounded summary',citations:[{id:records[0].id}]};
  }},41);t.after(()=>finish());
  f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,summarize:true},policy:fixtureFilePolicy({...f.processing.view().settings,summarize:true},f.processing.runtime.registry)});
  f.finish();const running=f.processing.tick();await started;
- revision++;if(changed)model=generatedModel('model-two');
+ revision++;if(changed==='identity')profileId='generated-other-profile';else if(changed)model=generatedModel('model-two');
  if(changed){await f.processing.tick();assert.equal(seen.length,1,'new summary waits until the old raw analysis returns');}
  finish();await running;
  for(const until=Date.now()+5000;Date.now()<until&&f.files.detail(f.id).job.summary_state!=='succeeded';){await f.processing.tick();if(f.files.detail(f.id).job.summary_state!=='succeeded')await new Promise(r=>setTimeout(r,25));}
  assert.equal(f.files.detail(f.id).job.summary_state,'succeeded');assert.equal(f.calls.length,1,'model settings must not repeat ASR');
- assert.deepEqual(seen,changed?['model-one','model-two','model-two','model-two']:['model-one','model-one','model-one']);
+ assert.deepEqual(seen,changed==='identity'?['model-one','model-one','model-one','model-one']:changed?['model-one','model-two','model-two','model-two']:['model-one','model-one','model-one']);
  const summaries=f.processing.engine.list({operationId:'file:'+f.id,kind:'files.summary'}).items;
  assert.equal(summaries.filter(s=>s.state==='succeeded').length,1);assert.equal(summaries.length,changed?2:1);
  assert.ok(!JSON.stringify(f.processing.explain(f.id)).includes('generated-model-secret'));
