@@ -305,10 +305,16 @@ export class ExecutionEngine {
     if(!this.isCurrentGrant(row.id,fence)){db.exec('ROLLBACK');return;}
     if(!handler.validate(step))throw new ExecutionFailure('stale','input_changed');
     this.modelAuthority?.assertStep(step);
-    if(this.modelAuthority)this.modelAuthority.commitStep(step,()=>handler.commit(step,result));else handler.commit(step,result);
-    const at=this.now();
-    if(!db.prepare("UPDATE execution_steps SET state='succeeded',fence=NULL,error=NULL,updated_at=? WHERE id=? AND fence=? AND state='running' AND lease_until>?").run(at,row.id,fence,at).changes){db.exec('ROLLBACK');return;}
-    this.project(row.id);db.exec('COMMIT');
+    const commit=()=>{
+     handler.commit(step,result);
+     const at=this.now();
+     if(!db.prepare("UPDATE execution_steps SET state='succeeded',fence=NULL,error=NULL,updated_at=? WHERE id=? AND fence=? AND state='running' AND lease_until>?").run(at,row.id,fence,at).changes)return false;
+     // Terminal projection may enqueue a dependent continuation. It must retain
+     // this step's admission, independent of whichever caller woke the executor.
+     this.project(row.id);return true;
+    };
+    if(!(this.modelAuthority?this.modelAuthority.commitStep(step,commit):commit())){db.exec('ROLLBACK');return;}
+    db.exec('COMMIT');
    }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
   }catch(error){
    const classified=error instanceof ExecutionFailure?error:error instanceof ProviderFailure?new ExecutionFailure(error.details.category,error.details.code,error.details.retryAfterMs):handler.classify?.(error)??new ExecutionFailure('permanent','processor_failed');

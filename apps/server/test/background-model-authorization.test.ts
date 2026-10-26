@@ -122,3 +122,15 @@ test('independent recipe scopes consume once each without allowing repeated jobs
  await f.control.run('coding',async()=>f.control.assertCurrent(f.connection));
  f.command('stop');await assert.rejects(f.control.run('personal',async()=>{}));await assert.rejects(f.control.run('coding',async()=>{}));
 });
+
+test('successful step projection cannot lose its admission or inherit the executor wake caller',async t=>{
+ const f=fixture(t),engine=new ExecutionEngine(f.store);engine.bindModelAuthority(f.control);t.after(()=>engine.close());
+ f.command('authorize');f.receive('input');f.control.automatic('parent',['input']);f.control.manual('unrelated','manual');
+ engine.register({kind:'project-parent',pool:'fixture',concurrency:()=>1,validate:()=>true,execute:async()=>({}),commit:()=>{},project:step=>{if(step.state==='succeeded')engine.enqueue('operation','project-child',{}, {id:'project-child'});}});
+ let observed:string|undefined;
+ engine.register({kind:'project-child',pool:'fixture',concurrency:()=>1,validate:()=>true,execute:async()=>{observed=f.control.currentId;return {};},commit:()=>{}});
+ await f.control.run('parent',async()=>{engine.enqueue('operation','project-parent',{}, {id:'project-parent'});});
+ await f.control.run('unrelated',()=>engine.drain(['project-parent']));
+ assert.equal(f.control.stepAuthority('project-child'),'parent');
+ await engine.drain(['project-child']);assert.equal(observed,'parent');
+});
