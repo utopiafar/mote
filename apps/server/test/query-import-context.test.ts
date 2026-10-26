@@ -17,6 +17,8 @@ test('HTTP-imported maximum notes remain readable through native Ask and current
   let node:Awaited<ReturnType<typeof buildApp>>,verified=0,phase:'original'|'during'|'current'='original',correctedId:string|undefined;
   node=await buildApp(config,{backgroundWorker:false,
     prepareImport:async({workspace,inputPaths})=>{
+      // Preparation may outlive the former one-second status polling window.
+      await setTimeout(1500);
       writeFileSync(join(workspace,'records.jsonl'),[1,2].map(index=>JSON.stringify({item:{externalId:'entry-'+index,revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',title:'Generated diary '+index,text:'I planned a walk. A visitor preferred staying home.'},evidencePaths:inputPaths})).join('\n')+'\n');
       return {summary:'Generated independent diary entries'};
     },
@@ -64,10 +66,24 @@ test('HTTP-imported maximum notes remain readable through native Ask and current
   const created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{instruction,files:[{name:'generated.custom',dataBase64:Buffer.from('Generated independent diary fixture').toString('base64')}]}});
   assert.equal(created.statusCode,202,created.body);
   const importId=created.json().id;
-  for(let i=0;i<100&&node.imports.get(importId).status!=='awaiting_confirmation';i++)await setTimeout(10);
+  // Await the task admitted by HTTP, including orchestration cleanup before confirm.
+  // A missing task means it already settled; the status assertions below still apply.
+  const waitForImportTask=async()=>{
+    const task=node.featureServices.importTasks.get(importId);if(!task)return;
+    let timer:ReturnType<typeof globalThis.setTimeout>|undefined;
+    try{
+      await Promise.race([task,new Promise<never>((_,reject)=>{
+        timer=globalThis.setTimeout(()=>{
+          const job=node.imports.get(importId);
+          reject(new Error(`Import task did not settle: ${job.status}; ${job.error??'no reported error'}`));
+        },30000);
+      })]);
+    }finally{if(timer)globalThis.clearTimeout(timer);}
+  };
+  await waitForImportTask();
   assert.equal(node.imports.get(importId).status,'awaiting_confirmation');
   const confirmed=await node.app.inject({method:'POST',url:'/api/imports/'+importId+'/confirm',headers});assert.equal(confirmed.statusCode,202,confirmed.body);
-  for(let i=0;i<100&&node.imports.get(importId).status!=='completed';i++)await setTimeout(10);
+  await waitForImportTask();
   assert.equal(node.imports.get(importId).status,'completed');
   await node.materialOrganizer.tick(100);await node.sourcePipelines.tick(100);
   const answer=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Inspect generated diary context'}});

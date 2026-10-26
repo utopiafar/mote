@@ -36,3 +36,9 @@
 - `UploadOriginalSessionInstrumentedTest` 以合成 HTTP 响应和现有 UiTask executor 的 FIFO 屏障，证明后台读取/会话核验已经完成而页面暂停尚未投递；随后从 A 换到 B 再恢复。旧代码实际显示 A 正文；修后丢弃旧结果并重读当前历史绑定，显示不可用。修改局限原件页：页面代次、显示前节点/会话 generation、历史 batch/key/scope 校验；不改全局 UiTask。已有保存流程完成后恢复读者刷新。
 
 本批实际执行仅两个新增原生回归（2/2）、开发/测试 APK 构建及静态翻译/差异检查；复用此前 SQLite、真实503、导出和其他 UI 证据。默认图形后端模拟器两次异常退出不计测试结果，改用工具支持的 SwiftShader 后在专用5584完成；仍非真机/真实模型证据。
+
+## 与已合入主干的整合
+
+在 `88d6fca1` 上整合 main `7f1d1ace`。实际冲突限于原件 Activity 注册、三个上传历史 UI/投影文件、对应投影测试及设计说明；均保留已独审的全类型扩展，既有 capture queueVersion 与远端 reader 的版本参数保持独立，main 既有投影测试全部保留。`UploadOriginalActivity`、`UploadWorker`、`UploadHistoryModel`、`UploadBatchActivity` 解冲突后与 `88d6fca1` 字节一致，未重写刚修复的两条边界。
+
+组合验证：UploadHistoryModel 6项、CaptureUploadAttempt 5项、AttachmentAttemptOriginal 1项全部通过；Development Kotlin 编译通过，8744双语文案与调用点检查通过。两条新增原生故障/恢复反例复用 owner 的 `88d6fca1` 红绿证据，不冒称本次重新跑模拟器。最终整合 SHA 以 PR 冻结 head 为准，仍须独立增量审查与精确 CI。

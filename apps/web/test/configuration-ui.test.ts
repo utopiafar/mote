@@ -1,3 +1,4 @@
+import {ActionCapabilitySettings} from '../src/ActionCapabilitySettings.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React, {act} from 'react';
@@ -136,9 +137,11 @@ test('image settings submit the shared revision and retain their original draft 
 });
 
 const actionView=(revision:number,authorizationRevision:number,enabled=false,reviewDeviceIds:string[]=['generated-phone'])=>({revision,authorizationRevision,items:[],total:0,nextCursor:null,targets:[],settings:{enabled,timeZone:'UTC',reviewDeviceIds},progress:{configured:true,running:false,jobs:[],error:null}});
+const emptyCapabilities=()=>({providers:[],declarations:[],sources:[],drafts:[],grants:[]});
 function actionApi(read:(path:string,init?:RequestInit)=>unknown):Api {
   return {request:async(path:string,init?:RequestInit)=>{
     if(path.startsWith('/api/operations/changes'))return new Promise(()=>{});
+    if(path==='/api/action-capabilities')return emptyCapabilities();
     if(path==='/api/devices')return {items:[{deviceId:'generated-phone',deviceName:'Generated phone'}]};
     if(path.startsWith('/api/todos?'))return {items:[],nextCursor:null};
     return read(path,init);
@@ -149,14 +152,14 @@ test('Actions settings read and submit both configuration and device-authorizati
   const api=actionApi((_path,init)=>{if(init?.method==='PUT'){const body=JSON.parse(String(init.body));writes.push(body);enabled=body.settings.enabled;revision++;}return actionView(revision,authorizationRevision,enabled);});
   await act(async()=>root.render(React.createElement(Actions,{api,onOpen:()=>{}})));
   revision=4;authorizationRevision=3;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/actions?')));
-  await act(async()=>d.querySelector<HTMLInputElement>('.action-settings input[type="checkbox"]')!.click());
+  await act(async()=>d.querySelector<HTMLInputElement>('.action-discovery-settings input[type="checkbox"]')!.click());
   assert.deepEqual(writes,[{revision:4,authorizationRevision:3,settings:{enabled:true,timeZone:'UTC',reviewDeviceIds:['generated-phone']}}]);
 });
 test('Actions displays actual permission withdrawal after a failed runtime save and reloads both revisions',async t=>{
   const {root,d}=await fixture(t),writes:any[]=[];let authorizationRevision=2,reviewDeviceIds=['generated-phone'];
   const api=actionApi((_path,init)=>{if(init?.method==='PUT'){writes.push(JSON.parse(String(init.body)));reviewDeviceIds=[];authorizationRevision++;throw new ApiError('Generated runtime save failed',503,undefined,'config_unavailable');}return actionView(3,authorizationRevision,false,reviewDeviceIds);});
   await act(async()=>root.render(React.createElement(Actions,{api,onOpen:()=>{}})));
-  const phone=()=>d.querySelectorAll<HTMLInputElement>('.action-settings input[type="checkbox"]')[1];
+  const phone=()=>d.querySelectorAll<HTMLInputElement>('.action-discovery-settings input[type="checkbox"]')[1];
   assert.equal(phone().checked,true);await act(async()=>phone().click());
   assert.equal(writes[0].authorizationRevision,2);assert.deepEqual(writes[0].settings.reviewDeviceIds,[]);
   assert.equal(phone().checked,false);assert.match(d.body.textContent!,/所选设备授权已撤销/);assert.match(d.body.textContent!,/所需服务暂不可用/);
@@ -188,4 +191,18 @@ test('a non-conflict 409 preserves its provider recovery reason and the edited c
  await act(async()=>{retention.value='90';retention.dispatchEvent(new window.Event('change',{bubbles:true}));});
  await act(async()=>button(d,'保存并应用').click());
  assert.match(d.body.textContent!,/额度不足/);assert.doesNotMatch(d.body.textContent!,/PRIVATE|其他会话更新|配置或相关操作状态已变化/);assert.equal(retention.value,'90');
+});
+
+
+test('malformed calendar inventory reports a recoverable error without rendering grant controls or a false empty state',async t=>{
+ const {root,d}=await fixture(t);let payload:unknown={},writes=0;
+ const api={request:async(_path:string,init?:RequestInit)=>{if(init?.method)writes++;return payload;}} as Api;
+ await act(async()=>root.render(React.createElement(ActionCapabilitySettings,{api})));
+ for(const invalid of [{items:[]},{...emptyCapabilities(),declarations:null},{...emptyCapabilities(),declarations:[{deviceId:'generated',connectionActive:true,permission:'granted',revision:1,calendars:null}]},{...emptyCapabilities(),drafts:[{id:'broken'}]}]){
+  payload=invalid;await act(async()=>resources(api).get('/api/action-capabilities').refresh());
+  assert.match(d.querySelector('[role=alert]')!.textContent!,/中央响应格式无效/);
+  assert.equal(d.querySelector('fieldset'),null);assert.doesNotMatch(d.body.textContent!,/暂无已连接的可写日历|尚未授予日程执行权限/);
+ }
+ payload=emptyCapabilities();await act(async()=>button(d,'刷新').click());
+ assert.equal(d.querySelector('[role=alert]'),null);assert.match(d.body.textContent!,/暂无已连接的可写日历/);assert.equal(writes,0);
 });

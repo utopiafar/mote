@@ -76,6 +76,7 @@ class MainActivity : MoteActivity() {
     private lateinit var homeSourceList: LinearLayout
     private lateinit var homeRecentList: LinearLayout
     private val homeTask by lazy { UiTask(this) }
+    private var homeDiscovery: HomeDiscoveryView? = null
     private var libraryView: LibraryCaptureView? = null
     private var libraryState: Bundle? = null
     private var libraryRecordsRevision = -1L
@@ -289,7 +290,10 @@ class MainActivity : MoteActivity() {
         homeRecentList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "home-recent-content" }
         content.addView(homeRecentList)
         button(MoteI18n.text("查看全部内容")) { showPage(Page.LIBRARY) }
-        button(MoteI18n.text("发现与洞察")) { openCentral("insights") }
+        homeDiscovery?.close()
+        homeDiscovery = HomeDiscoveryView(this) { id ->
+            startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "insights").apply { id?.let { putExtra("insightId", it) } })
+        }.also(content::addView)
 
         val summary = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         content.addView(summary, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
@@ -363,6 +367,7 @@ class MainActivity : MoteActivity() {
     }
 
     private fun loadHomeContent() {
+        if (currentPage == Page.OVERVIEW) homeDiscovery?.refresh()
         if (!::homeSourceList.isInitialized || homeTask.busy || currentPage != Page.OVERVIEW) return
         homeTask.start("", {}, {
             val store = applicationContext.localSources()
@@ -1443,6 +1448,7 @@ class MainActivity : MoteActivity() {
     }
     override fun onPause() {
         resumed = false
+        homeDiscovery?.pause()
         centralContent?.pause()
         activityContent?.pause()
         localStateJob?.cancel(); localStateJob = null
@@ -1451,7 +1457,7 @@ class MainActivity : MoteActivity() {
         super.onPause()
     }
     override fun onStop() { super.onStop() }
-    override fun onDestroy() { libraryView?.close(); centralContent?.close(); activityContent?.close(); statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
+    override fun onDestroy() { homeDiscovery?.close(); libraryView?.close(); centralContent?.close(); activityContent?.close(); statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)
 
     private fun help(title: String, message: String) {
@@ -1515,6 +1521,7 @@ class MainActivity : MoteActivity() {
     }
 
     private fun showPage(page: Page, discardConfirmed: Boolean = false, connectionEntryOrigin: ConnectionOrigin? = null) {
+        if (page != Page.OVERVIEW) homeDiscovery?.pause()
         if (page == Page.DEVELOPER && !RuntimeProfile.current.developerTools) {
             showPage(Page.SETTINGS, discardConfirmed, connectionEntryOrigin)
             return
