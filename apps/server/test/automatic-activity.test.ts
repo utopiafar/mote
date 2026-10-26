@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -32,7 +33,7 @@ async function fixture(t:TestContext){const dataDir=mkdtempSync(join(tmpdir(),'m
     });
     return {answer:JSON.stringify({activities,coverage:'complete',limitation:'Only this generated visible window.'}),citations:records.map(record=>({id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText})),trace:[],runId:randomUUID()};
   }})};
-  let node=await buildApp(config,dependencies);await node.app.ready();
+  let node=await buildApp(config,dependencies);await node.app.ready();await authorizeFixtureModels(node);
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
   const save=async(enabled:boolean,profileId:string|null=DEPLOYMENT_MODEL_PROFILE_ID)=>{const view=await node.app.inject({url:'/api/processing/activity',headers});return node.app.inject({method:'PUT',url:'/api/processing/activity',headers,payload:{revision:view.json().revision,settings:{enabled,modelProfileId:profileId}}});};
   const ingest=(payload:unknown,auth=headers)=>node.app.inject({method:'POST',url:'/api/captures',headers:auth,payload});
@@ -58,10 +59,10 @@ test('real prospective HTTP intake survives restart, publishes incremental Activ
   assert.equal(activities[0].blockCount,2,'new observations append without rewriting earlier state');
   const material=activities[0],raw=await f.node.app.inject({url:'/api/capture-browser/'+first.id,headers});assert.equal(raw.statusCode,200);assert.equal(raw.json().ocrText,first.ocrText);
   const found=f.node.materials.list({query:'GENERATED-ORDER-41',kind:'mote.activity'}).items;assert.equal(found[0]?.id,material.id);
-  const evidenceIds=f.node.materials.evidenceIds(material.ref),records=await f.node.featureServices.archiveReader.evidence({ids:evidenceIds});assert.ok(records.some(record=>record.ocrText.includes('GENERATED-ORDER-41')),'real query reader discovers the exact derived evidence');
+  const evidenceIds=f.node.materials.evidenceIds(material.ref),records=await withFixtureOwnerModelWork(f.node,()=>f.node.featureServices.archiveReader.evidence({ids:evidenceIds}));assert.ok(records.some(record=>record.ocrText.includes('GENERATED-ORDER-41')),'real query reader discovers the exact derived evidence');
   const deleted=await f.node.app.inject({method:'DELETE',url:'/api/captures/'+first.id,headers});assert.equal(deleted.statusCode,200);
   assert.equal(f.node.materials.get(material.id),undefined,'deleting an original removes its dependent Activity in the deletion transaction');
-  assert.deepEqual(await f.node.featureServices.archiveReader.evidence({ids:evidenceIds}),[]);
+  assert.deepEqual(await withFixtureOwnerModelWork(f.node,()=>f.node.featureServices.archiveReader.evidence({ids:evidenceIds})),[]);
   await f.restart();assert.equal(f.node.materials.list({kind:'mote.activity'}).items.length,0);assert.equal(f.calls.length,2,'restart cannot revive consumed or deleted inputs');
 });
 
@@ -118,6 +119,7 @@ test('correlated screenshot and structured partial deliveries coalesce across re
 test('screenshot-only Activity waits for configured image products and consumes an actual pixel-backed interpretation even with empty OCR',async t=>{
   const f=await fixture(t);assert.equal((await f.save(true)).statusCode,200);
   await f.node.processing.saveImageDefault({endpoint:'http://127.0.0.1:9011/generated-ocr'});
+  await authorizeFixtureModels(f.node); // The newly configured OCR endpoint needs its own exact approval, before intake.
   f.node.processing.runtime.registry.get('image.http').process=async()=>({durationMs:0,segments:[]});
   const image=await sharp({create:{width:20,height:20,channels:3,background:'#ff8800'}}).png().toBuffer(),base=observation();
   const screen={...base,source:'screen',ocrText:'',ocr:{status:'pending'},imageBase64:image.toString('base64'),imageMime:'image/png',metadata:{version:1,observedAt:base.capturedAt}};

@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -46,7 +47,7 @@ test('host review deadline reaches the Memory pipeline as provider_timeout witho
   const id=randomUUID();await f.store.ingest({id,deviceId:'generated-device',deviceName:'Generated device',platform:'import',capturedAt:'2026-01-01T00:00:00Z',source:'note',ocrText:'Generated activity proposed.',durationMs:0});
   // This deadline regression keeps its original pinned extraction contract;
   // selection and target accounting are covered by the public Memory journeys.
-  const job=f.memoryPipeline.create({evidenceIds:[id],recipes:[{id:'mote.personal-memory',version:'2'}]}),failed=await f.memoryPipeline.run(job.id);
+  const failed=await withFixtureOwnerModelWork(f,async()=>{const job=f.memoryPipeline.create({evidenceIds:[id],recipes:[{id:'mote.personal-memory',version:'2'}]});return f.memoryPipeline.run(job.id);});
   assert.equal(calls,2);assert.equal(failed.status,'failed');assert.equal(failed.batches[0].phase,'review');
   assert.equal(failed.batches[0].errorCode,'provider_timeout');assert.ok(reviewReason instanceof AgentTimeoutError);
   assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
@@ -61,7 +62,7 @@ test('ordinary query host rejects a late successful result with its typed timeou
     calls++;await untilAborted(input.signal!);hostReason=input.signal!.reason;
     await new Promise<void>(resolve=>setImmediate(resolve));return answer();
   });
-  await assert.rejects(f.featureServices.queryAgent({question:'Generated deadline question'}),AgentTimeoutError);
+  await assert.rejects(withFixtureOwnerModelWork(f,()=>f.featureServices.queryAgent({question:'Generated deadline question'})),AgentTimeoutError);
   assert.ok(hostReason instanceof AgentTimeoutError);
   assert.equal(calls,1);const receipts=f.receipts();assert.equal(receipts.length,1);assert.equal(receipts[0].status,'failed');assert.equal(receipts[0].estimatedCost,null);
 });
@@ -88,7 +89,7 @@ test('an earlier caller cancellation keeps its exact reason through the real hos
     calls++;observed=input.signal;parent.abort(reason);
     await new Promise<void>(resolve=>setImmediate(resolve));return answer();
   });
-  await assert.rejects(f.featureServices.queryAgent({question:'Generated cancellation question',signal:parent.signal}),error=>error===reason);
+  await assert.rejects(withFixtureOwnerModelWork(f,()=>f.featureServices.queryAgent({question:'Generated cancellation question',signal:parent.signal})),error=>error===reason);
   assert.equal(observed!.reason,reason);assert.equal(calls,1);
   assert.equal(getEventListeners(parent.signal,'abort').length,0);
   const receipts=f.receipts();assert.equal(receipts.length,1);assert.equal(receipts[0].status,'failed');
@@ -97,7 +98,7 @@ test('an earlier caller cancellation keeps its exact reason through the real hos
 test('completed host queries detach their caller listener without aborting a successful signal',async t=>{
   const parent=new AbortController();let observed:AbortSignal|undefined;
   const f=await fixture(t,async input=>{observed=input.signal;return answer();});
-  await f.featureServices.queryAgent({question:'Generated success question',signal:parent.signal});
+  await withFixtureOwnerModelWork(f,()=>f.featureServices.queryAgent({question:'Generated success question',signal:parent.signal}));
   assert.equal(getEventListeners(parent.signal,'abort').length,0);assert.equal(observed!.aborted,false);
   parent.abort(new Error('Generated later cancellation'));assert.equal(observed!.aborted,false);
   const receipts=f.receipts();assert.equal(receipts.length,1);assert.equal(receipts[0].status,'completed');
