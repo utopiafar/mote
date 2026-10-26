@@ -30,6 +30,7 @@ function serverUrl(value:unknown){
 // Registered route templates, not URL prefixes: new API routes are denied by default.
 const collectorRoutes=new Set([
   'POST /api/devices/heartbeat',
+  'GET /api/managed-calendar-deliveries','POST /api/managed-calendar/:id/claim','POST /api/managed-calendar/:id/receipt',
   'GET /api/device-action-capabilities','POST /api/device-action-capabilities',
   'POST /api/notes','POST /api/captures','POST /api/captures/batch','POST /api/captures/bundle',
   'POST /api/capture-browser/reconcile',

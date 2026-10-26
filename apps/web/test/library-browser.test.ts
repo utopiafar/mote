@@ -26,7 +26,7 @@ async function fixture(t:any){
   t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of previous){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
   return {root,d:dom.window.document,w:dom.window};
 }
-function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{
+function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/actions/by-evidence/'))return {items:[],hasMore:false};
   if(path==='/api/library/descriptor')return {schemaVersion:1,revision:1,types:[]};
   if(path==='/api/features')return {schemaVersion:1,revision:1,features:[],capabilities:['/api/capture-browser','/api/library/catalog','/api/coding/uploads'].map(path=>({id:'http:GET:'+path,version:'1',state:'active'}))};
   const result=await read(path,init);return path.startsWith('/api/library/catalog?')?{schemaVersion:1,types:[],sources:[],...result as object}:result;

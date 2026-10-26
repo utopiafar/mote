@@ -76,6 +76,7 @@ class MainActivity : MoteActivity() {
     private lateinit var homeSourceList: LinearLayout
     private lateinit var homeRecentList: LinearLayout
     private val homeTask by lazy { UiTask(this) }
+    private var homeDiscovery: HomeDiscoveryView? = null
     private var libraryView: LibraryCaptureView? = null
     private var libraryState: Bundle? = null
     private var libraryRecordsRevision = -1L
@@ -289,7 +290,10 @@ class MainActivity : MoteActivity() {
         homeRecentList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "home-recent-content" }
         content.addView(homeRecentList)
         button(MoteI18n.text("查看全部内容")) { showPage(Page.LIBRARY) }
-        button(MoteI18n.text("发现与洞察")) { openCentral("insights") }
+        homeDiscovery?.close()
+        homeDiscovery = HomeDiscoveryView(this) { id ->
+            startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "insights").apply { id?.let { putExtra("insightId", it) } })
+        }.also(content::addView)
 
         val summary = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         content.addView(summary, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
@@ -363,6 +367,7 @@ class MainActivity : MoteActivity() {
     }
 
     private fun loadHomeContent() {
+        if (currentPage == Page.OVERVIEW) homeDiscovery?.refresh()
         if (!::homeSourceList.isInitialized || homeTask.busy || currentPage != Page.OVERVIEW) return
         homeTask.start("", {}, {
             val store = applicationContext.localSources()
@@ -638,6 +643,7 @@ class MainActivity : MoteActivity() {
     private fun buildStorage(config: CollectorConfig) {
         page(Page.STORAGE, MoteI18n.text("保留你需要回看的本机副本"))
         menu(MoteI18n.text("图片保存位置"), MoteI18n.text("选择应用存储空间并迁移已有记录"), "folder") { startActivity(Intent(this, StorageActivity::class.java)) }
+        menu(MoteI18n.text("上传历史保存时长"), MoteI18n.text("默认30天，仅清理历史，不删除资料"), "history") { startActivity(Intent(this, UploadHistorySettingsActivity::class.java)) }
         uploadedRetention = presetNumber(MoteI18n.text("上传后本机保留 / 天（0 为立即清理）"), config.uploadedRetentionDays, "7", 0..365, listOf(0, 1, 7, 14, 30, 90, 365))
         maxQueue = presetNumber(MoteI18n.text("本机存储上限 / MiB"), config.maxQueueMiB, "256", 8..4096, listOf(64, 128, 256, 512, 1024, 2048, 4096))
         text(MoteI18n.text("中央确认上传后开始计时，到期自动清理本机副本；中央归档继续保留。未上传和冲突记录不会自动删除。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
@@ -1442,6 +1448,7 @@ class MainActivity : MoteActivity() {
     }
     override fun onPause() {
         resumed = false
+        homeDiscovery?.pause()
         centralContent?.pause()
         activityContent?.pause()
         localStateJob?.cancel(); localStateJob = null
@@ -1450,7 +1457,7 @@ class MainActivity : MoteActivity() {
         super.onPause()
     }
     override fun onStop() { super.onStop() }
-    override fun onDestroy() { libraryView?.close(); centralContent?.close(); activityContent?.close(); statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
+    override fun onDestroy() { homeDiscovery?.close(); libraryView?.close(); centralContent?.close(); activityContent?.close(); statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)
 
     private fun help(title: String, message: String) {
@@ -1514,6 +1521,7 @@ class MainActivity : MoteActivity() {
     }
 
     private fun showPage(page: Page, discardConfirmed: Boolean = false, connectionEntryOrigin: ConnectionOrigin? = null) {
+        if (page != Page.OVERVIEW) homeDiscovery?.pause()
         if (page == Page.DEVELOPER && !RuntimeProfile.current.developerTools) {
             showPage(Page.SETTINGS, discardConfirmed, connectionEntryOrigin)
             return

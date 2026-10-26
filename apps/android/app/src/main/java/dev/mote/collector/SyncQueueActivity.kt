@@ -18,6 +18,8 @@ class SyncQueueActivity : MoteActivity() {
     private lateinit var categories: Spinner
     private lateinit var currentTab: Button
     private lateinit var historyTab: Button
+    private lateinit var historyBody: LinearLayout
+    private lateinit var historyPanel: UploadHistoryPanel
     private var history = false
     private var refreshPending = false
     private var sources = emptyList<LocalSource>()
@@ -47,6 +49,8 @@ class SyncQueueActivity : MoteActivity() {
         previous = Button(this).apply { text = MoteI18n.text("上一页"); setOnClickListener { offset = (offset - pageSize).coerceAtLeast(0); load() } }.also { paging.addView(it, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = moteDp(6) }) }
         next = Button(this).apply { text = MoteI18n.text("下一页"); setOnClickListener { offset += pageSize; load() } }.also { paging.addView(it, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = moteDp(6) }) }
         body.addView(Button(this).apply { text = MoteI18n.text("同步与恢复"); setOnClickListener { startActivity(Intent(this@SyncQueueActivity, SyncRecoveryActivity::class.java)) } })
+        historyBody = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }.also(body::addView)
+        historyPanel = UploadHistoryPanel(this, historyBody, state)
         MoteUi.styleTree(body)
         updateTabs()
         task.start(MoteI18n.text("正在读取来源…"), { summary.text = it }, { localSources().sources() }) { result ->
@@ -64,6 +68,7 @@ class SyncQueueActivity : MoteActivity() {
         }
     }
     override fun onSaveInstanceState(outState: Bundle) {
+        historyPanel.save(outState)
         outState.putBoolean("history", history); outState.putInt("offset", offset)
         super.onSaveInstanceState(outState)
     }
@@ -74,6 +79,10 @@ class SyncQueueActivity : MoteActivity() {
     private fun updateTabs() {
         currentTab.isSelected = !history; historyTab.isSelected = history
         MoteUi.button(currentTab, primary = !history); MoteUi.button(historyTab, primary = history)
+        historyBody.visibility = if (history) android.view.View.VISIBLE else android.view.View.GONE
+        rows.visibility = if (history) android.view.View.GONE else android.view.View.VISIBLE
+        summary.visibility = if (history) android.view.View.GONE else android.view.View.VISIBLE
+        if (history) paging.visibility = android.view.View.GONE
         categories.visibility = if (history) android.view.View.GONE else android.view.View.VISIBLE
         speed.visibility = if (history) android.view.View.GONE else android.view.View.VISIBLE
     }
@@ -120,38 +129,5 @@ class SyncQueueActivity : MoteActivity() {
             if (refreshPending) { refreshPending = false; load() }
         }
     }
-    private fun loadHistory() {
-        previous.isEnabled = false; next.isEnabled = false
-        task.start(MoteI18n.text("正在读取…"), { summary.text = it }, {
-            UploadHistoryPresentation.events(Operations.ledger(applicationContext).read())
-        }) { result ->
-            if (!history) { refreshPending = false; load(); return@start }
-            rows.removeAllViews()
-            result.onSuccess { events ->
-                summary.text = MoteI18n.text("仅显示本机保留的最近上传结果；中央接收不代表已完成处理。")
-                previous.isEnabled = offset > 0; next.isEnabled = offset + pageSize < events.size
-                paging.visibility = if (events.size > pageSize || offset > 0) android.view.View.VISIBLE else android.view.View.GONE
-                if (events.isEmpty()) rows.addView(TextView(this).apply { text = MoteI18n.text("暂无上传历史"); setPadding(0, moteDp(24), 0, moteDp(24)) })
-                events.drop(offset).take(pageSize).forEach { event ->
-                    val kind = OperationKind.valueOf(event.getString("kind"))
-                    rows.addView(MoteUi.button(Button(this).apply {
-                        text = java.time.Instant.ofEpochMilli(event.getLong("atMs")).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm:ss")) + " · " + ActivityStatsActivity.kind(kind)
-                        tag = "sync-history-result"
-                        setOnClickListener {
-                            val detail = buildString {
-                                append(ActivityStatsActivity.kind(kind))
-                                append("\n" + ActivityStatsActivity.reason(OperationReason.valueOf(event.getString("reason"))))
-                                append("\n" + MoteI18n.text("记录字节：{0}", event.getLong("bytes")))
-                                if (event.has("elapsedMs")) append("\n" + MoteI18n.text("耗时：{0} ms", event.getLong("elapsedMs")))
-                                if (event.has("httpStatus")) append("\nHTTP " + event.getInt("httpStatus"))
-                            }
-                            MoteDialogBuilder(this@SyncQueueActivity).setTitle(MoteI18n.text("上传结果详情")).setMessage(detail)
-                                .setPositiveButton(MoteI18n.text("关闭"), null).show()
-                        }
-                    }), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(8) })
-                }
-            }.onFailure { summary.text = MoteI18n.text("上传历史暂不可读取，请刷新重试。") }
-            if (refreshPending) { refreshPending = false; load() }
-        }
-    }
+    private fun loadHistory() { historyPanel.load() }
 }

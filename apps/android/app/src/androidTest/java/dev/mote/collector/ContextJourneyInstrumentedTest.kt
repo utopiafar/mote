@@ -124,7 +124,7 @@ class ContextJourneyInstrumentedTest {
                 capture("memory-connection-required")
                 main { activity().finish() }
                 clickTag("primary:HOME")
-                main { shown().filterIsInstance<TextView>().single { it.isClickable && it.text.toString() == "发现与洞察" }.performClick() }
+                main { shown().filterIsInstance<TextView>().single { it.isClickable && it.text.toString() == "发现历史" }.performClick() }
                 until("Discovery resolves to the existing Central insights page") { main { activity() is CentralActivity && activity().intent.getStringExtra("page") == "insights" } }
                 main { activity().finish() }
             }
