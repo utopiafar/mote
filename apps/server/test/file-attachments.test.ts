@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {readAgentCredential} from './login-fixture.js';
@@ -24,6 +25,7 @@ async function fixture(t:import('node:test').TestContext){
  let node:Awaited<ReturnType<typeof buildApp>>,ocrCalls=0;const modelCalls:QueryInput[]=[],failed=new Set<string>();
  const start=async()=>{
   node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
+   const topic=fixtureTopicResult(input);if(topic)return topic;
    modelCalls.push(input);const visible=await reader.evidence({ids:input.evidenceIds!});assert.equal(visible.length,input.evidenceIds!.length);
    const text=visible.map(r=>r.ocrText).join('\n');assert.ok(text.includes(caption)&&text.includes(words),'both strategies receive actual caption and attachment evidence');
    const evidence=visible.map(r=>({id:r.id,quote:r.ocrText.trim()})),common={uncertainty:'Generated fixture; speaker identity and owner implementation are unknown.',admission:{layer:'memory',reason:'Generated supported record',scope:'Generated discussion',attribution:'user'},evidenceIds:visible.map(r=>r.id),evidence};
@@ -36,6 +38,7 @@ async function fixture(t:import('node:test').TestContext){
   await node.perception.save({revision:node.configService.revision,settings:{...node.perception.settings(),allowQueryImages:true,understandingEnabled:false}});await node.app.ready();
  };
  await start();await node.processing.save({revision:node.processing.view().revision,settings:{...node.processing.view().settings,enabled:true,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/ocr',summarize:false},policy:fixtureFilePolicy({...node.processing.view().settings,enabled:true,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/ocr',summarize:false},node.processing.runtime.registry)});
+ await authorizeFixtureModels(node);
  const bytes=await sharp({create:{width:8,height:8,channels:3,background:'#abcdef'}}).png().toBuffer();
  for(const sourceId of ['generated-images','generated-notes'])node.sources.register({id:sourceId,name:sourceId,kind:'upload',deviceId:'generated-attachments',platform:'import',retention:'archive'});
  const upload=async(key:string)=>{const begun=node.files.begin({sourceId:'generated-images',item:{externalId:key,revision:'1',observedAt:'2026-09-27T00:00:00Z',kind:'file',layer:'original',title:key,mimeType:'image/png',text:''},sha256:sha256(bytes),sizeBytes:bytes.length},()=>{});node.files.part(begun.uploadId,0,bytes,()=>{});return (await node.files.commit(begun.uploadId,()=>{})).id as string;};
@@ -68,10 +71,10 @@ test('an archived image reuses one extraction and composes with its caption for 
  const artifact=f.node.files.detail(child).artifacts.find((a:any)=>a.kind==='image-text')!;assert.equal((artifact as any).reuse.captureId,donor);
  const recipes=[{id:'fixture.attachment-personal',version:'1'},{id:'fixture.attachment-coding',version:'1'}];
  for(const [i,recipe] of recipes.entries())f.node.memoryStrategies.registerRecipe({...recipe,requires:['source-body',requirement],extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:i?'mote.coding-review':'mote.personal-review',version:'2'}});
- const job=f.node.memoryPipeline.create({evidenceIds:pin.evidenceIds,recipes});const done=await f.node.memoryPipeline.run(job.id);assert.equal(done.status,'completed',JSON.stringify(f.node.memoryPipeline.get(job.id)));
+ const {job,running}=await withFixtureOwnerModelWork(f.node,async()=>{const job=f.node.memoryPipeline.create({evidenceIds:pin.evidenceIds,recipes});return {job,running:f.node.memoryPipeline.run(job.id)};});const done=await running;assert.equal(done.status,'completed',JSON.stringify(f.node.memoryPipeline.get(job.id)));
  assert.equal(done.memoryIds.length,2);assert.equal(f.modelCalls.filter(c=>c.traceContext?.phase==='extract').length,1);assert.equal(f.modelCalls.filter(c=>c.traceContext?.phase==='review').length,2);assert.equal(f.ocrCalls(),1);
- const reader=f.node.featureServices.archiveReader,result=await reader.timeline({after:'2026-04-13T00:00:00+08:00',before:'2026-04-14T00:00:00+08:00'}),found=Array.isArray(result)?result:result.items;assert.equal(found.length,1);
- assert.equal((await reader.readImage!({id:found[0].id,attachmentId:image.id})).data,f.bytes.toString('base64'));
+ const reader=f.node.featureServices.archiveReader,result=await withFixtureOwnerModelWork(f.node,()=>reader.timeline({after:'2026-04-13T00:00:00+08:00',before:'2026-04-14T00:00:00+08:00'})),found=Array.isArray(result)?result:result.items;assert.equal(found.length,1);
+ assert.equal((await withFixtureOwnerModelWork(f.node,()=>reader.readImage!({id:found[0].id,attachmentId:image.id}))).data,f.bytes.toString('base64'));
  await f.restart();await f.organize();await f.node.processing.tick();assert.equal(f.ocrCalls(),1);assert.equal(f.node.memoryPipeline.list().length,1);
  f.node.store.delete(authored.id);await f.organize();assert.equal(f.node.memories.list({includeStale:true}).length,0);
  assert.equal(f.node.files.version(donor).object_hash,sha256(f.bytes),'independently retained original survives removal of the caption');
@@ -112,8 +115,9 @@ test('content reuse is opt-in and exact processor settings and versions are requ
  await f.upload('first');await f.node.processing.tick();await f.upload('second');await f.node.processing.tick();assert.equal(f.ocrCalls(),2);
  processor.reuseByContent=true;await f.upload('third');await f.node.processing.tick();assert.equal(f.ocrCalls(),3,'a processor declared context-sensitive cannot retroactively share its prior products');
  await f.node.processing.save({revision:f.node.processing.view().revision,settings:{...f.node.processing.view().settings,imageEndpoint:'http://127.0.0.1:9008/changed'},policy:fixtureFilePolicy({...f.node.processing.view().settings,imageEndpoint:'http://127.0.0.1:9008/changed'},f.node.processing.runtime.registry)});
+ await authorizeFixtureModels(f.node);
  await f.upload('different-settings');await f.node.processing.tick();assert.equal(f.ocrCalls(),4);
- processor.version='generated-next-version';await f.upload('different-version');await f.node.processing.tick();assert.equal(f.ocrCalls(),5);
+ processor.version='generated-next-version';await authorizeFixtureModels(f.node);await f.upload('different-version');await f.node.processing.tick();assert.equal(f.ocrCalls(),5);
 });
 
 test('retaining attachments and restarting never admits historical extraction automatically',async t=>{
