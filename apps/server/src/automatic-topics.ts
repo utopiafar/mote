@@ -98,7 +98,10 @@ export class AutomaticTopics {
       const batch:Batch={snapshotKey,operationId,admissionId:authority.admissionId,classifierId:classifier.id,classifierVersion:classifier.version,dependencies,result};
       const json=JSON.stringify(batch);
       // Synchronous publication: no await between the final fences and commit.
-      fence();this.assertInputs(memories);this.store.reserveMetadata(Buffer.byteLength(json));
+      fence();this.assertInputs(memories);
+      const previousHead=this.store.db.prepare('SELECT operation_id FROM context_topic_heads WHERE snapshot_key=?').get(snapshotKey);
+      const headGrowth=previousHead?Math.max(0,Buffer.byteLength(operationId)-Buffer.byteLength(String(previousHead.operation_id))):Buffer.byteLength(snapshotKey)+Buffer.byteLength(operationId)+128;
+      this.store.reserveMetadata(Buffer.byteLength(json)+Buffer.byteLength(operationId)+128+headGrowth);
       this.store.db.exec('SAVEPOINT context_topic_publish');
       try{
         this.store.db.prepare('INSERT INTO context_topic_batches VALUES (?,?)').run(operationId,json);
@@ -109,7 +112,7 @@ export class AutomaticTopics {
     }catch(error){if(!authority.signal.aborted)this.failed=true;throw error;}finally{this.active.delete(operationId);if(heldSnapshot)this.activeSnapshots.delete(heldSnapshot);}
   }
   async trees():Promise<ContextTree[]>{
-    const trees:Array<{tree:ContextTree;memories:Memory[]}>=[];
+    const trees:Array<{tree:ContextTree;memories:Memory[];batch:Batch;classifier:TopicClassifier}>=[];
     for(const row of this.store.db.prepare('SELECT b.json FROM context_topic_batches b JOIN context_topic_heads h ON h.operation_id=b.operation_id ORDER BY h.snapshot_key').all()){
       const batch=JSON.parse(String(row.json)) as Batch;
       const classifier=this.classifiers.get(batch.classifierId);
@@ -118,10 +121,10 @@ export class AutomaticTopics {
       // Batch namespace keeps independently generated labels and their complete
       // provenance inseparable; never merge two labels by guessed semantics.
       const prefix='auto.'+batch.snapshotKey.slice(0,24);
-      for(const tree of batch.result.trees)trees.push({memories,tree:{id:prefix+'.'+sha256(tree.id).slice(0,16),version:'1',label:tree.label,nodes:tree.nodes.map(node=>({id:node.id,label:node.label,parentId:node.parentId,select:{memoryIds:node.memoryIds}}))}});
+      for(const tree of batch.result.trees)trees.push({memories,batch,classifier,tree:{id:prefix+'.'+sha256(tree.id).slice(0,16),version:'1',label:tree.label,nodes:tree.nodes.map(node=>({id:node.id,label:node.label,parentId:node.parentId,select:{memoryIds:node.memoryIds}}))}});
     }
     // Earlier asynchronous provider reads do not retain an old permission.
-    return trees.filter(({memories})=>{try{this.assertInputs(memories);return true;}catch(error){if(error instanceof StoreError&&[404,409].includes(error.statusCode))return false;throw error;}}).map(({tree})=>tree);
+    return trees.filter(({memories,batch,classifier})=>{if(this.classifiers.get(classifier.id)!==classifier||this.store.db.prepare('SELECT operation_id FROM context_topic_heads WHERE snapshot_key=?').get(batch.snapshotKey)?.operation_id!==batch.operationId)return false;try{this.assertInputs(memories);return true;}catch(error){if(error instanceof StoreError&&[404,409].includes(error.statusCode))return false;throw error;}}).map(({tree})=>tree);
   }
   state(){return {state:this.active.size?'running':this.classifiers.size?(this.failed?'failed':'ready'):'unavailable'} as const;}
 }

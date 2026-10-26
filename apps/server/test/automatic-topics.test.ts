@@ -18,7 +18,7 @@ async function fixture(t:TestContext){
  const seed=async(text:string)=>{const id=randomUUID();assert.equal((await n.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'fixture',deviceName:'Generated',platform:'android',capturedAt:at,text}})).statusCode,201);
  const r=fixtureMemoryResult(n.memories,{answer:JSON.stringify({memories:[{title:text,statement:text+' ['+id+']',uncertainty:'Synthetic evidence, not a user fact',evidenceIds:[id]}]}),citations:[{id,capturedAt:at,appName:'Generated',excerpt:text}],trace:[],runId:randomUUID()});const saved=n.memories.extract(r,'fixture').items[0];return n.memories.publish(saved.id);};
  const api=async(path:string)=>{const r=await n.app.inject({url:path,headers});assert.equal(r.statusCode,200,r.body);return r.json();};
- return {get n(){return n;},seed,api,headers,restart:async()=>{await n.app.close();n=await start();}};
+ return {get n(){return n;},seed,api,headers,restart:async(maxBytes?:number)=>{if(maxBytes!==undefined)await n.configService.update('storage',{maxStorageBytes:maxBytes},n.configService.revision);await n.app.close();n=await start();}};
 }
 const authority=(controller=new AbortController()):TopicAuthority=>({admissionId:'original-generated-admission',signal:controller.signal,assertCurrent:()=>{controller.signal.throwIfAborted();}});
 const output=(ids:string[])=>({trees:[{id:'projects',label:'Generated project topics',nodes:[{id:'planning',label:'Generated planning',memoryIds:ids},{id:'review',label:'Generated review',memoryIds:ids.slice(0,1)}]},{id:'practices',label:'Generated practice topics',nodes:[{id:'checklists',label:'Generated checklists',memoryIds:ids.slice(0,1)}]}]});
@@ -78,7 +78,7 @@ test('concurrent duplicate work, unavailable classifiers and invalid original ad
  let release!:(value:unknown)=>void,started!:()=>void,calls=0;const begun=new Promise<void>(r=>started=r);
  service.register({id:'fixture',version:'1',classify:async()=>{calls++;started();return new Promise(r=>release=r);}});
  await assert.rejects(service.classify(input,{...authority(),assertCurrent:()=>{throw Error('epoch revoked');}}),/epoch revoked/);
- const run=service.classify(input,authority());await begun;await assert.rejects(service.classify(input,authority()),/already running/);release(output([a.id]));await run;assert.equal(calls,1);
+ const run=service.classify(input,authority());await begun;await assert.rejects(service.classify(input,authority()),/already running/);await assert.rejects(service.classify({...input,operationId:'other-concurrent'},authority()),/snapshot is already/);release(output([a.id]));await run;assert.equal(calls,1);
 });
 
 
@@ -105,4 +105,28 @@ test('new operation for the exact classifier/input atomically replaces reference
  empty=false;await service.classify({...input,operationId:'next'},authority());assert.deepEqual(await service.trees(),original,'same input restores stable tree identities without duplicates');
  assert.equal(f.n.store.db.prepare('SELECT count(*) n FROM context_topic_heads').get()!.n,1);
  assert.equal(f.n.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,3);
+});
+
+
+test('classifier removal during asynchronous directory read cannot publish its old labels',async t=>{
+ const f=await fixture(t),a=await f.seed('Synthetic plugin withdrawal'),service=f.n.featureServices.contextTrees.automatic!;
+ const dispose=service.register({id:'fixture',version:'1',classify:async()=>output([a.id])});
+ await service.classify({operationId:'remove-during-read',classifierId:'fixture',memoryIds:[a.id]},authority());
+ const reading=service.trees();dispose();assert.deepEqual(await reading,[]);
+});
+
+
+test('topic payloads count toward quota and a failed replacement preserves the previous visible head',async t=>{
+ const f=await fixture(t),a=await f.seed('Synthetic quota input');
+ const classifier={id:'fixture',version:'1',classify:async()=>output([a.id])};f.n.featureServices.contextTrees.automatic!.register(classifier);
+ const input={operationId:'quota-original',classifierId:'fixture',memoryIds:[a.id]};await f.n.featureServices.contextTrees.automatic!.classify(input,authority());
+ const original=await f.n.featureServices.contextTrees.automatic!.trees(),row=f.n.store.db.prepare('SELECT json FROM context_topic_batches').get()!;
+ f.n.store.stats();
+ assert.equal(f.n.store.db.prepare("SELECT bytes FROM storage_ledger WHERE name='context_topic_batches'").get()!.bytes,Buffer.byteLength(String(row.json))+Buffer.byteLength(input.operationId)+128);
+ for(let index=0;index<12;index++){const response=await f.n.app.inject({method:'POST',url:'/api/notes',headers:f.headers,payload:{id:randomUUID(),deviceId:'fixture-padding',deviceName:'Generated quota filler',platform:'android',capturedAt:at,text:'Synthetic quota padding '.repeat(4000)}});assert.equal(response.statusCode,201,response.body);}
+ const ceiling=f.n.store.stats().logicalBytes+64;await f.restart(ceiling);f.n.featureServices.contextTrees.automatic!.register(classifier);
+ await assert.rejects(f.n.featureServices.contextTrees.automatic!.classify({...input,operationId:'quota-replacement'},authority()),(e:any)=>e.statusCode===507);
+ assert.deepEqual(await f.n.featureServices.contextTrees.automatic!.trees(),original);
+ assert.equal(f.n.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,1);
+ assert.equal(f.n.store.db.prepare('SELECT operation_id FROM context_topic_heads').get()!.operation_id,input.operationId);
 });
