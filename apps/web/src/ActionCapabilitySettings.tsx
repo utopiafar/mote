@@ -1,3 +1,5 @@
+import {z} from 'zod';
+import {actionPluginIdentitySchema,actionSourceIdentitySchema} from '@mote/shared';
 import React,{useEffect,useState} from 'react';
 import type {ActionCapabilityDraft,ActionDeviceCapability,ActionGrant,ActionPluginProvider} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
@@ -5,12 +7,24 @@ import {createApi,errorMessage} from './api';
 import {useResource} from './useResource';
 import {useUnsavedChanges} from './unsaved';
 type Inventory={providers:ActionPluginProvider[];grants:(ActionGrant&{available:boolean})[];declarations:ActionDeviceCapability[];drafts:ActionCapabilityDraft[];sources:(ActionCapabilityDraft['inputs']['sources'][number]&{name:string})[]};
+// Validate the fields rendered/selected here. A malformed response is an error,
+// never an empty inventory or permission to submit a partial grant.
+const targetView=z.object({deviceId:z.string(),calendarId:z.string(),declarationRevision:z.number().int().positive()});
+const inputView=z.object({sources:z.array(actionSourceIdentitySchema),existingArchived:z.boolean(),futureInputs:z.boolean()});
+const draftView=z.object({id:z.string(),revision:z.number().int().positive(),target:targetView,inputs:inputView,state:z.enum(['draft','revoked']),updatedAt:z.string()});
+const inventoryView=z.object({
+ providers:z.array(z.object({identity:actionPluginIdentitySchema,name:z.string()})),
+ declarations:z.array(z.object({deviceId:z.string(),connectionActive:z.boolean(),permission:z.enum(['granted','required','unavailable']),revision:z.number().int().positive(),calendars:z.array(z.object({id:z.string(),title:z.string()}))})),
+ sources:z.array(actionSourceIdentitySchema.extend({name:z.string()})),drafts:z.array(draftView),
+ grants:z.array(draftView.omit({state:true}).extend({plugin:actionPluginIdentitySchema,state:z.enum(['active','revoked']),available:z.boolean()})),
+});
 const pendingCommands=new WeakMap<object,Map<string,unknown>>();
 const scopes=new WeakMap<object,number>();let nextScope=0;
 const edits=new WeakMap<object,{target:string;sources:string[];existing:boolean;future:boolean;saved?:ActionCapabilityDraft;plugin:string;dirty:boolean}>();
 export function ActionCapabilitySettings({api}:{api:ReturnType<typeof createApi>}){if(!scopes.has(api))scopes.set(api,++nextScope);return <ScopedSettings key={scopes.get(api)} api={api}/>;}
 function ScopedSettings({api}:{api:ReturnType<typeof createApi>}){
- const read=useResource<Inventory>(api,'/api/action-capabilities',15000),data=read.data;
+ const read=useResource<Inventory>(api,'/api/action-capabilities',15000),parsed=inventoryView.safeParse(read.data),malformed=read.data!==undefined&&!parsed.success;
+ const data=read.error===undefined&&parsed.success?read.data:undefined;
  const prior=edits.get(api);
  const [target,setTarget]=useState(prior?.target??''),[sources,setSources]=useState<string[]>(prior?.sources??[]),[existing,setExisting]=useState(prior?.existing??false),[future,setFuture]=useState(prior?.future??true),[saved,setSaved]=useState<ActionCapabilityDraft|undefined>(prior?.saved),[plugin,setPlugin]=useState(prior?.plugin??''),[ack,setAck]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[dirty,setDirty]=useState(prior?.dirty??false);
  useEffect(()=>{edits.set(api,{target,sources,existing,future,saved,plugin,dirty});},[api,target,sources,existing,future,saved,plugin,dirty]);
@@ -23,7 +37,7 @@ function ScopedSettings({api}:{api:ReturnType<typeof createApi>}){
  const choices=data?.declarations.filter(d=>d.connectionActive&&d.permission==='granted').flatMap(d=>d.calendars.map(c=>({value:JSON.stringify({deviceId:d.deviceId,calendarId:c.id,declarationRevision:d.revision}),label:d.deviceId+' · '+c.title})))??[];
  return <details className="panel action-settings"><summary>{moteText('日程执行范围授权')}</summary>
  <p>{moteText('授权后，范围内明确且未过期的新建日程可由指定设备执行。不会邀请参与人、更新或删除日程；范围外建议仍需逐条确认。')}</p>
- {read.loading&&!data&&<p role="status">{moteText('正在读取…')}</p>}{(!!error||read.error!==undefined)&&<p role="alert">{error||errorMessage(read.error)}</p>}
+ {read.loading&&!data&&<p role="status">{moteText('正在读取…')}</p>}{(!!error||read.error!==undefined||malformed)&&<p role="alert">{error||(read.error!==undefined?errorMessage(read.error):moteText('中央响应格式无效，请刷新后重试。'))}</p>}
  <button className="button" disabled={busy} onClick={()=>read.refresh()}>{moteText('刷新')}</button>
  {data&&<><p>{moteText('先在设备连接日历，并在插件中心安装、检查和启用声明日历能力的插件。安装和升级不会自动授予执行权限。')}</p>
  {!data.providers.length&&<p role="status">{moteText('暂无已检查并启用的日历能力插件。')}</p>}{!choices.length&&<p role="status">{moteText('暂无已连接的可写日历。')}</p>}
