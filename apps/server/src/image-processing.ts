@@ -42,7 +42,7 @@ export class ImageProcessing {
  private attachments:ImageAttachmentIntake;private closed=false;private workerReady=false;private checkedAt=0;private probe?:Promise<void>;
  private readonly processorAdmission:ProcessorAdmission;
  private prepareCursor=0;private readonly media:MediaRuntimeSettings;private savedSettings:PerceptionConfiguration;
- private previews=new Map<string,{expires:number;watermark:number;query:z.infer<typeof historicalSchema>}>();
+ private previews=new Map<string,{expires:number;watermark:number;query:z.infer<typeof historicalSchema>;captureIds?:string[]}>();
  constructor(private store:Store,private processing:FileProcessing,engine:ExecutionEngine,private options:{modelAuthority?:ModelProcessingAuthority;understanding?:ImageUnderstanding;mediaAssets?:MediaAssets;media?:Partial<MediaRuntimeSettings>;configService?:ConfigService;configuration?:PerceptionConfiguration;materials?:MaterialStore;probeOcr?:()=>Promise<boolean>}={}){
   this.media=mediaRuntimeSettings(options.media);this.processorAdmission=new ProcessorAdmission(store);
   this.savedSettings=perceptionConfigurationSchema.parse(options.configService?.current<PerceptionConfiguration>('perception')??options.configuration??defaultPerceptionConfiguration());
@@ -57,6 +57,7 @@ export class ImageProcessing {
   this.attachments=new ImageAttachmentIntake(store,processing.files);
   const db=store.db;
   db.exec(`CREATE TABLE IF NOT EXISTS image_backfills(id TEXT PRIMARY KEY,query TEXT NOT NULL,watermark INTEGER NOT NULL,cursor INTEGER NOT NULL DEFAULT 0,queued INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL DEFAULT 'waiting');`);
+  db.exec(`CREATE TABLE IF NOT EXISTS image_backfill_items(batch_id TEXT NOT NULL REFERENCES image_backfills(id) ON DELETE CASCADE,position INTEGER NOT NULL,capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,intent_id TEXT,PRIMARY KEY(batch_id,position));`);
   db.exec(`CREATE TABLE IF NOT EXISTS image_exclusions(capture_id TEXT PRIMARY KEY REFERENCES image_inputs(capture_id) ON DELETE CASCADE,hash TEXT NOT NULL,reason TEXT NOT NULL);`);
   this.unregister.push(engine.register({kind:'images.excluded',pool:'images.excluded',concurrency:()=>1,policy:EXECUTION_POLICIES.deterministic,timeoutMs:300000,
    validate:step=>this.exclusion(String(step.input.captureId))===step.input.reason,
@@ -350,11 +351,12 @@ export class ImageProcessing {
  }
  cancellation(id:string){return {canCancel:Boolean(this.store.db.prepare("SELECT 1 FROM perception_jobs WHERE capture_id=? AND state IN ('waiting','running','blocked','failed')").get(id)),wait:this.processing.imageProcessorWait(id)};}
  cancel(id:string,releaseInput=true){if(!this.owns(id))throw new StoreError('Image not found',404);if(this.exclusion(id))return {state:'skipped'};for(const step of this.engine.list({operationId:'image:'+id,limit:100}).items)if(!['succeeded','stale','cancelled'].includes(step.state))this.engine.cancel(step.id);this.store.db.prepare("UPDATE perception_jobs SET state='cancelled',error='cancelled' WHERE capture_id=? AND state!='succeeded'").run(id);this.projectFile(this.row(id)!);if(releaseInput&&this.row(id)!.adapter==='mote.file-image')this.processing.files.releaseSnapshotInput(id);return {state:'cancelled'};}
- retry(id:string,recompute=true,confirmUnknown=false){
+ retry(id:string,recompute=true,confirmUnknown=false){return this.retryImage(id,recompute,confirmUnknown,true);}
+ private retryImage(id:string,recompute:boolean,confirmUnknown:boolean,rememberIntent:boolean){
   const row=this.row(id);if(!row||!this.store.isCurrentEvidence(id))throw new StoreError('Image not found',404);
   if(this.excludeMetadata(row))return {queued:false};
   const wait=this.processing.imageProcessorWait(id);if(wait==='running'||wait==='unknown'&&(this.options.modelAuthority||this.processing.modelAuthorityEnabled()||!confirmUnknown))throw new StoreError('Previous image processing has not finished or its completion is unknown',409);if(confirmUnknown)this.processing.clearImageProcessorWait(id);
-  const intentChanged=this.processing.rememberModelIntent(id,'image',this.options.modelAuthority);
+  const intentChanged=rememberIntent?this.processing.rememberModelIntent(id,'image',this.options.modelAuthority):Boolean(this.processing.modelIntent(id,'image'));
   if(intentChanged){for(const step of this.engine.list({operationId:'image:'+id,limit:100}).items)if(['waiting','running','blocked'].includes(step.state))this.engine.cancel(step.id);}else this.cancel(id,false);
   this.store.db.prepare('UPDATE image_inputs SET semantic_withdrawn=0 WHERE capture_id=?').run(id);this.store.db.prepare('UPDATE image_inputs SET auto_eligible=1,generation=generation+?,reuse_allowed=?,policy_json=NULL,understanding_enabled=? WHERE capture_id=?').run(Number(recompute||intentChanged),Number(!recompute),Number(this.settings().understandingEnabled),id);
   // Explicit completion grants a fresh budget to the unfinished current plan.
@@ -368,11 +370,38 @@ export class ImageProcessing {
   this.previews.set(token,{query,watermark,expires:now+600000});return {token,count,bounded:false,mode:query.mode};
  }
  private historicalFilter(query:z.infer<typeof historicalSchema>){const values:(string|number)[]=[],clauses:string[]=[];if(query.after){clauses.push('c.captured_at>=?');values.push(query.after);}if(query.before){clauses.push('c.captured_at<?');values.push(query.before);}if(query.sourceId){clauses.push('i.source_id=?');values.push(query.sourceId);}if(query.mode==='complete')clauses.push("(i.auto_eligible=0 OR NOT EXISTS(SELECT 1 FROM perception_jobs j WHERE j.capture_id=i.capture_id) OR EXISTS(SELECT 1 FROM perception_jobs j WHERE j.capture_id=i.capture_id AND j.state!='succeeded'))");return {sql:clauses.length?'AND '+clauses.join(' AND '):'',values};}
- processHistoricalOcr(raw:unknown){const {token}=z.object({token:z.string().uuid()}).strict().parse(raw),preview=this.previews.get(token);if(!preview||preview.expires<Date.now())throw new StoreError('Image preview expired; refresh before processing',409);const id=randomUUID();this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(preview.query))+512);this.store.db.prepare('INSERT INTO image_backfills(id,query,watermark) VALUES(?,?,?)').run(id,JSON.stringify(preview.query),preview.watermark);this.previews.delete(token);return {queued:true,jobId:id};}
+ /** Freeze the confirmation's targets before the host opens its manual scope.
+  * This returns IDs, never authority; background work cannot call it to grant work. */
+ historicalOcrTargets(raw:unknown):readonly string[]{
+  const {token}=z.object({token:z.string().uuid()}).strict().parse(raw),preview=this.previews.get(token);
+  if(!preview||preview.expires<Date.now())throw new StoreError('Image preview expired; refresh before processing',409);
+  if(!preview.captureIds){const filter=this.historicalFilter(preview.query);preview.captureIds=this.store.db.prepare(`SELECT i.capture_id FROM image_inputs i JOIN captures c ON c.id=i.capture_id WHERE i.rowid<=? ${filter.sql} ORDER BY i.rowid`).all(preview.watermark,...filter.values).map(row=>String(row.capture_id));}
+  return [...preview.captureIds];
+ }
+ processHistoricalOcr(raw:unknown){
+  const captureIds=this.historicalOcrTargets(raw),{token}=z.object({token:z.string().uuid()}).strict().parse(raw),preview=this.previews.get(token)!,id=randomUUID(),db=this.store.db;
+  const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+  try{
+   this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(preview.query))+512);
+   db.prepare('INSERT INTO image_backfills(id,query,watermark) VALUES(?,?,?)').run(id,JSON.stringify(preview.query),captureIds.length);
+   const insert=db.prepare('INSERT INTO image_backfill_items VALUES(?,?,?,?)');
+   for(const [position,captureId] of captureIds.entries()){
+    if(!this.store.isCurrentEvidence(captureId))continue;
+    this.processing.rememberModelIntent(captureId,'image',this.options.modelAuthority,Boolean(this.options.modelAuthority||this.processing.modelAuthorityEnabled()));
+    const intent=this.processing.modelIntent(captureId,'image');this.store.reserveMetadata(Buffer.byteLength(id+captureId+(intent??''))+128);
+    insert.run(id,position+1,captureId,intent??null);
+   }
+   if(own)db.exec('COMMIT');
+  }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
+  this.previews.delete(token);return {queued:true,jobId:id};
+ }
  private backfillBatch(){
   for(const batch of this.store.db.prepare("SELECT * FROM image_backfills WHERE state='waiting' ORDER BY rowid LIMIT 1").all()){
-   const query=historicalSchema.parse(JSON.parse(String(batch.query))),filter=this.historicalFilter(query),rows=this.store.db.prepare(`SELECT i.rowid position,i.capture_id FROM image_inputs i JOIN captures c ON c.id=i.capture_id WHERE i.rowid>? AND i.rowid<=? ${filter.sql} ORDER BY i.rowid LIMIT 200`).all(batch.cursor,batch.watermark,...filter.values),db=this.store.db;
-   db.exec('BEGIN IMMEDIATE');try{let queued=0;for(const item of rows){if(!this.store.isCurrentEvidence(String(item.capture_id)))continue;try{if(this.retry(String(item.capture_id),query.mode==='recompute').queued)queued++;}catch(error){if(!(error instanceof StoreError&&error.statusCode===409))throw error;db.prepare('UPDATE image_inputs SET auto_eligible=1 WHERE capture_id=?').run(item.capture_id);}}db.prepare('UPDATE image_backfills SET cursor=?,queued=queued+?,state=? WHERE id=?').run(rows.at(-1)?.position??batch.watermark,queued,rows.length<200?'succeeded':'waiting',batch.id);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
+   const query=historicalSchema.parse(JSON.parse(String(batch.query))),rows=this.store.db.prepare('SELECT position,capture_id,intent_id FROM image_backfill_items WHERE batch_id=? AND position>? ORDER BY position LIMIT 200').all(batch.id,batch.cursor),db=this.store.db;
+   db.exec('BEGIN IMMEDIATE');try{let queued=0;for(const item of rows){
+    const id=String(item.capture_id);if(!this.store.isCurrentEvidence(id)||this.processing.modelIntent(id,'image')!==(item.intent_id===null?undefined:String(item.intent_id)))continue;
+    try{if(this.retryImage(id,query.mode==='recompute',false,false).queued)queued++;}catch(error){if(!(error instanceof StoreError&&error.statusCode===409))throw error;}
+   }db.prepare('UPDATE image_backfills SET cursor=?,queued=queued+?,state=? WHERE id=?').run(rows.at(-1)?.position??batch.watermark,queued,rows.length<200?'succeeded':'waiting',batch.id);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
   }
  }
  async close(){if(this.closed)return;this.closed=true;this.processing.imageControl=undefined;await this.attachments.close();await Promise.all(this.unregister.splice(0).map(dispose=>dispose()));this.disposeInputs();await this.probe;}

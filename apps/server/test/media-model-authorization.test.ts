@@ -25,7 +25,7 @@ async function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-media-authority-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources);
  new ArchivedFileStore(store);
  const requests:{path:string;bytes:Buffer}[]=[],seen:ModelProcessingRequest[]=[];
- let hold:Promise<void>|undefined,summaryCalls=0,release:()=>void=()=>{},arrived:()=>void=()=>{};
+ let hold:Promise<void>|undefined,summaryCalls=0,ownerIntentCalls=0,release:()=>void=()=>{},arrived:()=>void=()=>{};
  const service=createServer(async(req,res)=>{const chunks:Buffer[]=[];for await(const part of req)chunks.push(Buffer.from(part));requests.push({path:req.url!,bytes:Buffer.concat(chunks)});arrived();await hold;res.setHeader('Content-Type','application/json');res.setHeader('X-Mote-Execution','local');res.end(JSON.stringify(req.url==='/ocr'?{durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated yellow orchard.'}]}:req.url==='/diarize'?{durationMs:3000,engine:'generated',expectedSpeakers:null,observedSpeakers:1,overlapDetection:'unknown',segments:[{startMs:0,endMs:3000,speaker:'SPEAKER_0'}],samples:[]}:transcript));});
  await new Promise<void>(resolve=>service.listen(0,'127.0.0.1',resolve));const address=service.address();assert.ok(address&&typeof address!=='string');const url='http://127.0.0.1:'+address.port;
  sources.register({id:'phone',name:'Generated phone',kind:'local-files',deviceId:'generated-phone',platform:'android',retention:'archive'});
@@ -36,17 +36,17 @@ async function fixture(t:import('node:test').TestContext){
   if(!request.ownerIntentId&&!control.currentId)control.automatic(id,[request.captureId],'file');
   return control.run(id,async authorizedSignal=>{const check=()=>{authorizedSignal.throwIfAborted();control.assertCurrent(request.connection);control.assertDisclosure([{sourceId:files.version(request.captureId).source_id,dataKind:request.dataKind}]);};check();const result=await task(authorizedSignal,check);check();return result;},signal);
  };
- authority.ownerIntent=captureId=>{const id=control.currentId;if(id&&control.currentKind==='manual'){control.assertOwnerIntent(id,captureId);return id;}return undefined;};
+ authority.ownerIntent=captureId=>{ownerIntentCalls++;const id=control.currentId;if(id&&control.currentKind==='manual'){control.assertOwnerIntent(id,captureId);return id;}return undefined;};
  let configuration:ReturnType<FileProcessing['configurationSnapshot']>|undefined;
  const create=async()=>{control=new BackgroundModelAuthorization(store,()=>processing?.modelConnections()??[]);engine=new ExecutionEngine(store);engine.bindModelAuthority(control);processing=new FileProcessing(files,undefined,undefined,{modelAuthority:authority,executor:engine,configuration,analyze:async(records,prompt)=>{summaryCalls++;return {answer:prompt.includes('groups')?JSON.stringify({groups:records.map((_r,i)=>[i])}):'Generated summary',citations:records.map(r=>({id:r.id}))};}});await processing.runtime.ready;if(!configuration){const settings={...processing.view().settings,enabled:true,audioProcessor:'audio.http',imageProcessor:'image.http',endpoint:url+'/transcribe',localEndpoint:url+'/transcribe',imageEndpoint:url+'/ocr',summarize:false};processing.update({revision:processing.view().revision,settings,policy:fixtureFilePolicy(settings,processing.runtime.registry)});}store.captureInputReceived=input=>control.receive(input.id,{sourceId:input.provenance?.sourceId??input.deviceId,dataKind:input.provenance?.mimeType?.startsWith('image/')?'image':input.provenance?.mimeType?.startsWith('audio/')?'audio':'text'});};
  await create();
  t.after(async()=>{release();service.closeAllConnections();await new Promise<void>(resolve=>service.close(()=>resolve()));await images?.close();await processing.close();await engine.close();control.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
  const upload=async(bytes=audio,mimeType='audio/wav')=>{const begun=files.begin({sourceId:'phone',item:{externalId:randomUUID(),revision:'1',observedAt:new Date().toISOString(),title:'Generated original',kind:'file',layer:'original',text:'',mimeType,deleted:false},sha256:sha256(bytes),sizeBytes:bytes.length},()=>{});files.part(begun.uploadId,0,bytes,()=>{});return (await files.commit(begun.uploadId,()=>{})).id;};
  const command=(action:'authorize'|'pause'|'stop',dataKinds=['text','image','audio'])=>control.command({action,revision:control.view().revision,operationId:randomUUID(),...(action==='authorize'?{connections:processing.modelConnections(),scope:{sourceIds:['phone'],dataKinds}}:{})});
- return {store,files,sources,requests,seen,url,get processing(){return processing;},get engine(){return engine;},get control(){return control;},upload,command,get summaryCalls(){return summaryCalls;},
-  async manual(id:string,run:()=>unknown){const work='generated-manual:'+randomUUID();control.manual(work,'manual',[id]);await control.run(work,async()=>{run();});return work;},
+ return {store,files,sources,requests,seen,url,get processing(){return processing;},get engine(){return engine;},get control(){return control;},upload,command,get summaryCalls(){return summaryCalls;},get ownerIntentCalls(){return ownerIntentCalls;},
+  async manual(id:string|string[],run:()=>unknown){const work='generated-manual:'+randomUUID();control.manual(work,'manual',typeof id==='string'?[id]:id);await control.run(work,async()=>{run();});return work;},
   hold(){let notify!:()=>void;const started=new Promise<void>(resolve=>notify=resolve);arrived=notify;hold=new Promise<void>(resolve=>release=resolve);return {started,release:()=>release()};},
-  async restart(){configuration=processing.configurationSnapshot();await processing.close();await engine.close();control.close();await create();},
+  async restart(){configuration=processing.configurationSnapshot();await images?.close();images=undefined;await processing.close();await engine.close();control.close();await create();},
   async imageProcessor(understanding?:ImageUnderstanding){images=new ImageProcessing(store,processing,engine,{modelAuthority:authority,understanding,probeOcr:async()=>true});images.configure({...images.settings(),enabled:true,understandingEnabled:Boolean(understanding)});return images;},
  };
 }
@@ -129,4 +129,50 @@ for(const action of ['pause','stop'] as const)test(`${action} during VLM pixel p
  assert.equal(images.detail(id).products.some(product=>product.kind==='understanding'),action==='pause');
  await images.tick();assert.equal(calls,1,'refresh must neither resend a completed VLM job nor resurrect stopped work');
  const gapBytes=await sharp({create:{width:4,height:4,channels:3,background:'#994488'}}).png().toBuffer(),gap=await f.upload(gapBytes,'image/png');await images.tick();assert.equal(calls,1);assert.equal(f.files.detail(gap).hasOriginal,true);
+});
+
+
+test('historical confirmation freezes membership and durable intents survive restart without fresh authority',async t=>{
+ const f=await fixture(t);let images=await f.imageProcessor();const ids:string[]=[];
+ for(const color of ['#101011','#202022','#303033'])ids.push(await f.upload(await sharp({create:{width:4,height:4,channels:3,background:color}}).png().toBuffer(),'image/png'));
+ images.prepare();f.store.db.prepare("UPDATE perception_jobs SET state='succeeded' WHERE capture_id=?").run(ids[2]);
+ const preview=images.previewHistoricalOcr({sourceId:'phone'}),targets=images.historicalOcrTargets({token:preview.token});assert.deepEqual(targets,ids.slice(0,2));
+ // This old image becomes eligible after confirmation selection; it must not join the batch.
+ f.store.db.prepare('UPDATE image_inputs SET auto_eligible=0 WHERE capture_id=?').run(ids[2]);assert.deepEqual(images.historicalOcrTargets({token:preview.token}),targets);
+ const work=await f.manual([...targets],()=>images.processHistoricalOcr({token:preview.token}));
+ for(const id of targets)assert.equal(f.processing.modelIntent(id,'image'),work);
+ assert.throws(()=>images.processHistoricalOcr({token:preview.token}),{statusCode:409});const calls=f.ownerIntentCalls;
+ await f.restart();images=await f.imageProcessor();
+ for(const until=Date.now()+5000;Date.now()<until&&targets.some(id=>!images.detail(id).products.some(product=>product.kind==='ocr'));){await images.tick();await new Promise(resolve=>setTimeout(resolve,10));}
+ assert.equal(f.ownerIntentCalls,calls,'background restart must not request owner authority');assert.equal(f.requests.length,2,JSON.stringify({batch:f.store.db.prepare('SELECT * FROM image_backfills').all(),items:f.store.db.prepare('SELECT * FROM image_backfill_items').all(),jobs:f.store.db.prepare('SELECT * FROM perception_jobs').all(),seen:f.seen}));
+ for(const id of targets)assert.ok(images.detail(id).products.some(p=>p.kind==='ocr'));
+ assert.equal(f.processing.modelIntent(ids[2],'image'),undefined);assert.equal(images.detail(ids[2]).products.length,0);
+ await images.tick();assert.equal(f.requests.length,2);assert.equal(f.ownerIntentCalls,calls);
+});
+
+test('historical confirmation rolls back missing item authority and keeps the preview retryable',async t=>{
+ const f=await fixture(t),images=await f.imageProcessor(),ids:string[]=[];
+ for(const color of ['#415161','#718191'])ids.push(await f.upload(await sharp({create:{width:4,height:4,channels:3,background:color}}).png().toBuffer(),'image/png'));
+ images.prepare();const preview=images.previewHistoricalOcr({sourceId:'phone'});assert.deepEqual(images.historicalOcrTargets({token:preview.token}),ids);
+ assert.throws(()=>images.processHistoricalOcr({token:preview.token}),{statusCode:409});
+ await assert.rejects(f.manual(ids[0],()=>images.processHistoricalOcr({token:preview.token})));
+ assert.equal(f.store.db.prepare('SELECT count(*) n FROM image_backfills').get()!.n,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM image_backfill_items').get()!.n,0);
+ for(const id of ids)assert.equal(f.processing.modelIntent(id,'image'),undefined);
+ assert.equal(f.requests.length,0);await f.manual(ids,()=>images.processHistoricalOcr({token:preview.token}));const calls=f.ownerIntentCalls;await images.tick();assert.equal(f.requests.length,2);assert.equal(f.ownerIntentCalls,calls);
+});
+
+test('historical preview alone and an empty confirmed selection do not send or acquire authority',async t=>{
+ const f=await fixture(t),images=await f.imageProcessor(),preview=images.previewHistoricalOcr({sourceId:'phone'});
+ assert.deepEqual(images.historicalOcrTargets({token:preview.token}),[]);images.processHistoricalOcr({token:preview.token});await images.tick();assert.equal(f.requests.length,0);assert.equal(f.ownerIntentCalls,0);
+ const id=await f.upload(await sharp({create:{width:4,height:4,channels:3,background:'#aabbcc'}}).png().toBuffer(),'image/png');images.prepare();images.previewHistoricalOcr({sourceId:'phone'});await images.tick();
+ assert.equal(f.requests.length,0);assert.equal(f.processing.modelIntent(id,'image'),undefined);assert.equal(f.files.detail(id).hasOriginal,true);assert.equal(f.ownerIntentCalls,0);
+});
+
+
+test('a newer single-image intent supersedes a confirmed historical batch without duplicate sends',async t=>{
+ const f=await fixture(t),images=await f.imageProcessor(),id=await f.upload(await sharp({create:{width:4,height:4,channels:3,background:'#314159'}}).png().toBuffer(),'image/png');
+ images.prepare();const preview=images.previewHistoricalOcr({sourceId:'phone'});const old=await f.manual(id,()=>images.processHistoricalOcr({token:preview.token}));
+ const current=await f.manual(id,()=>images.retry(id,false));assert.notEqual(current,old);const calls=f.ownerIntentCalls;await images.tick();
+ assert.equal(f.processing.modelIntent(id,'image'),current);assert.equal(f.requests.length,1);assert.equal(f.ownerIntentCalls,calls);
+ assert.equal(f.store.db.prepare('SELECT queued FROM image_backfills').get()!.queued,0);assert.ok(images.detail(id).products.some(p=>p.kind==='ocr'));
 });

@@ -122,8 +122,8 @@ export class FileProcessing {
     const row=this.files.store.db.prepare('SELECT intent_id FROM media_model_intents WHERE capture_id=? AND phase=?').get(id,phase);
     return row?String(row.intent_id):phase==='summary'?this.modelIntent(id,'pipeline'):undefined;
   }
-  rememberModelIntent(id:string,phase:'pipeline'|'summary'|'image',authority=this.options.modelAuthority){
-    const intent=authority?.ownerIntent?.(id);if(!intent||intent===this.modelIntent(id,phase))return false;
+  rememberModelIntent(id:string,phase:'pipeline'|'summary'|'image',authority=this.options.modelAuthority,required=false){
+    const intent=authority?.ownerIntent?.(id);if(required&&!intent)throw new StoreError('Explicit model processing intent is required',409);if(!intent||intent===this.modelIntent(id,phase))return false;
     const prior=this.files.store.db.prepare('SELECT intent_id FROM media_model_intents WHERE capture_id=? AND phase=?').get(id,phase);
     this.files.store.reserveMetadata(prior?Math.max(0,Buffer.byteLength(intent)-Buffer.byteLength(String(prior.intent_id))):Buffer.byteLength(id)+Buffer.byteLength(phase)+Buffer.byteLength(intent)+128);
     this.files.store.db.prepare('INSERT INTO media_model_intents VALUES(?,?,?) ON CONFLICT(capture_id,phase) DO UPDATE SET intent_id=excluded.intent_id').run(id,phase,intent);
