@@ -1,6 +1,6 @@
 # Android 上传历史扩展：独立合同审查
 
-基线：7f3f17b1；分支 codex/android-upload-history-ui。待审范围仅限下述持久化与完成顺序；当前未实施。UI 及纯投影测试可先行。
+基线：7f3f17b1；实现分支 codex/android-upload-history-items 从独立 UI PR252 的 a0ed9f1a 起步。独立审查已 APPROVE 持久化/完成顺序/恢复标记/双库过期边界（reviewer task-13/mote-ui-technical-review.md，已审 SHA 7a7c9de6f37c1cbeb415b087a962a24abfe6835a3141f12f70d98b1787583857）。本次仅规范 ACK 定位符 delta 待快速确认；其余已批部分可实施。
 
 ## 保留与改变
 
@@ -17,6 +17,14 @@ CHANGE：新增独立当前格式的 ItemUploadHistory SQLite 文件（不是旧
 - attachment 去重键：origin + device + parent note ID + attachment ID + content SHA256；CentralAttachments 现有稳定 identityScope/source/revision 保留；只读核查发现目前 begin/commit 只取 captureId，未做完整 ACK 身份校验。本批须在返回成功前用 IngressV2Protocol.validFile 校验 sourceId/externalId/revision 与 ACK，并核 sha256/sizeBytes；part ACK 核 part/bytes/hash，不能把外来或格式不全的 ACK 写入历史或草稿 map。此补强属于本方案待审范围。上传后的 Central capture ID 进入历史与现有草稿 ACK map；草稿附件不被历史过期删除。
 
 有效最终 ACK 为 received；部分批次按独立 identity 计数。HTTP 5xx/丢包/格式错/不匹配 ACK 为 unknown，不能推断 Central 未收。取消发送条件为 cancelled；已发送后条件变化不得伪造未送达。文件块请求成功标为 transferred，最终资料仍须最终 ACK。进程重启把旧 sending 变 unknown；同进程恢复只由各独占 worker 对所属 lane 执行，避免误伤并发通道。
+
+## ACK 规范 ID 修正（独审 delta）
+
+最终 ACK 必须先经现有 receipt 校验，明确 ack.id == receipt.id 且为合法 UUID。历史 Central 定位符、最小 completion marker、本机文件完成、附件草稿 ACK map 全部只使用这个已验证的 ack.id。若响应含 captureId，必须为相同字符串；不同合法 UUID、缺少规范 id/receipt 或任何身份/hash/size 不匹配都在 received 与本机完成之前拒绝。begin 返回最终 ACK 与 commit 返回最终 ACK 共用同一验证/完成入口。不会保留或使用未验证的 captureId。
+
+生成回归：分别在 begin/commit 返回正确 source/externalId/revision/hash/size、正确 receipt.id==ack.id，但 captureId 为另一个合法 UUID；历史、marker、文件状态与附件草稿 map 均不被确认。匹配 ID 的两条路径照常完成。恢复也只能使用已验证白名单里的规范 ID，不从任意响应补读 locator。
+
+补充实现约束（已批合同的落地）：恢复/完成必须在各本机存储的锁内重新读取并比对 exact target/version/hash；LocalSourceStore 的静默 target mismatch 和 RecordDraftStore 单纯 UUID 写入不能当作完成证明。恢复的 part entries 和新 part ACK 都核 expected part/bytes/hash。此处不新增产品政策。
 
 ## 完成顺序与恢复
 

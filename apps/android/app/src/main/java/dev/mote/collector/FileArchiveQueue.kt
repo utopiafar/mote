@@ -270,12 +270,22 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     fun part(id: String, part: Int): ByteArray = synchronized(lock) { require(part >= 0); cipher.open(File(File(root(id), "spool"), part.toString()).readBytes()) }
     fun acknowledge(id: String, row: JSONObject, ack: JSONObject) = synchronized(lock) {
         val pending = row.getJSONObject("pending"); val manifest = pending.getJSONObject("manifest"); val item = manifest.getJSONObject("item")
-        check(IngressV2Protocol.validFile(id, item, ack)) { MoteI18n.text("中央归档确认不匹配") }
-        if (manifest.has("sha256")) check(ack.optString("sha256") == manifest.getString("sha256") && ack.optLong("sizeBytes", -1) == manifest.getLong("sizeBytes")) { MoteI18n.text("中央原件校验确认不匹配") }
+        val canonicalId = FileUploadConfirmation.canonicalId(id, manifest, ack)
         val current = read(itemFile(id, item.getString("externalId")))
         check(current.optJSONObject("pending")?.getJSONObject("manifest")?.getJSONObject("item")?.getString("revision") == item.getString("revision"))
-        current.put("captureId", ack.optString("captureId", ack.getString("id"))).put("acknowledgedAt", Instant.now().toString()).put("signature", pending.getString("signature")).put("revision", item.getString("revision")).apply { remove("pending"); remove("syncFailure"); remove("nextPrepareAt") }
+        current.put("captureId", canonicalId).put("acknowledgedAt", Instant.now().toString()).put("signature", pending.getString("signature")).put("revision", item.getString("revision")).apply { remove("pending"); remove("syncFailure"); remove("nextPrepareAt") }
         saveRow(id, current); saveState(id, state(id).put("lastAcknowledgedAt", Instant.now().toString())); File(root(id), "spool").deleteRecursively()
+    }
+    internal fun acknowledgeExact(source: LocalSource, identity: ItemUploadIdentity, captureId: String): Boolean = synchronized(lock) {
+        val row = read(itemFile(source.id,identity.externalId))
+        if (row.length()==0) return@synchronized true
+        val pending = row.optJSONObject("pending")
+        if (pending==null) return@synchronized row.optString("revision")==identity.revision && row.optString("captureId")==captureId
+        val manifest = pending.getJSONObject("manifest")
+        if (SourceRules.hash(SourceRules.canonical(manifest))!=identity.fingerprint) return@synchronized false
+        assertCurrent(source,row)
+        acknowledge(source.id,row,FileUploadConfirmation.envelope(identity,captureId))
+        true
     }
     /** Preview/export only the immutable saved version, never the provider's current URI. */
     fun pendingPreview(id: String, external: String, revision: String): Pair<String, Boolean>? = synchronized(lock) {

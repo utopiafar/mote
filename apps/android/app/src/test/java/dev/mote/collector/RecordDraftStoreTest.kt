@@ -15,6 +15,23 @@ class RecordDraftStoreTest {
         override fun open(bytes: ByteArray) = seal(bytes)
     }
     private fun event(draft: JSONObject) = JSONObject().put("id", UUID.randomUUID().toString()).put("source", "note").put("ocrText", draft.getString("text")).put("capturedAt", "2026-10-25T00:00:00Z").put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none"))
+    @Test fun historyCompletionRequiresOriginalAttachmentHashAndKeepsDraft() {
+        val store=RecordDraftStore(folder.newFolder(),cipher); val bytes=byteArrayOf(1,2,3)
+        val attachment=store.stage(bytes,"generated.bin","application/octet-stream")
+        store.edit("Generated draft",JSONArray().put(attachment),JSONObject().put("kind","manual"))
+        val record=store.prepare("https://generated.example",::event)
+        val hash=java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        val identity=ItemUploadIdentity("attachment","scope","capture","https://generated.example","device","target","source","external","revision","fingerprint",hash,3,record.getString("id"),attachment.getString("id"))
+        val id=UUID.randomUUID().toString()
+        assertFalse(store.acknowledgeExact(identity.copy(sha256="wrong"),id))
+        assertFalse(store.acknowledgeExact(identity.copy(origin="https://other.example"),id))
+        assertEquals(0,store.record(record.getString("id"))!!.getJSONObject("acks").length())
+        assertTrue(store.acknowledgeExact(identity,id))
+        assertFalse(store.acknowledgeExact(identity,UUID.randomUUID().toString()))
+        assertEquals(id,store.record(record.getString("id"))!!.getJSONObject("acks").getString(attachment.getString("id")))
+        assertEquals("Generated draft",store.draft().getString("text")); assertArrayEquals(bytes,store.bytes(attachment.getString("id")))
+    }
+
     @Test fun `offline combined record survives restart and lost enqueue confirmation without duplication`() {
         val directory = folder.newFolder(); val store = RecordDraftStore(directory, cipher)
         val attachment = store.stage("generated original attachment".toByteArray(), "fixture.txt", "text/plain")

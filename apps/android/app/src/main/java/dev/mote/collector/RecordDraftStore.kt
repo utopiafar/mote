@@ -55,6 +55,20 @@ internal class RecordDraftStore(private val directory: File, private val cipher:
         UUID.fromString(captureId); val state = state(); val record = state.getJSONObject("records").getJSONObject(id)
         record.getJSONObject("acks").put(attachment, captureId); write(state)
     }
+    @Synchronized internal fun acknowledgeExact(identity: ItemUploadIdentity, captureId: String): Boolean {
+        UUID.fromString(captureId)
+        val state = state(); val record = state.getJSONObject("records").optJSONObject(identity.recordId) ?: return true
+        val bound = record.getString("server")
+        if (bound.isNotBlank() && bound != identity.origin) return false
+        val items = record.getJSONArray("attachments")
+        if ((0 until items.length()).none { items.getJSONObject(it).getString("id")==identity.attachmentId }) return false
+        val content = bytes(identity.attachmentId)
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(content).joinToString("") { "%02x".format(it) }
+        if (hash != identity.sha256 || content.size.toLong() != identity.sizeBytes) return false
+        val acks = record.getJSONObject("acks")
+        if (acks.has(identity.attachmentId)) return acks.getString(identity.attachmentId)==captureId
+        acks.put(identity.attachmentId,captureId); write(state); return true
+    }
     fun bytes(id: String): ByteArray { UUID.fromString(id); return cipher.open(File(directory, "$id.enc").readBytes()) }
     @Synchronized fun prune(retained: (String) -> Boolean) {
         val state = state(); val records = state.getJSONObject("records"); val draft = state.getJSONObject("draft")

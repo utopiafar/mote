@@ -9,6 +9,20 @@ import java.io.ByteArrayInputStream
 import java.util.UUID
 
 class FileArchiveQueueTest {
+    @Test fun historyCompletionRejectsMismatchedLocatorAndFingerprintBeforeRemovingSpool() {
+        val queue=FileArchiveQueue(folder.newFolder(),cipher); val source=source(); val bytes="Generated history original".toByteArray()
+        queue.observe(source,item(size=bytes.size.toLong()),queue.configure(source).getString("generation"),0)
+        val row=queue.prepare(source,{ByteArrayInputStream(bytes)},{true},61000)!!
+        val ack=ack(row); val canonical=ack.getString("id")
+        assertThrows(IllegalStateException::class.java) { queue.acknowledge(source.id,row,JSONObject(ack.toString()).put("captureId",UUID.randomUUID().toString())) }
+        assertArrayEquals(bytes,queue.part(source.id,0))
+        val manifest=row.getJSONObject("pending").getJSONObject("manifest"); val item=manifest.getJSONObject("item")
+        val identity=ItemUploadIdentity("file","scope","source","https://generated.example","device","target",source.id,item.getString("externalId"),item.getString("revision"),SourceRules.hash(SourceRules.canonical(manifest)),manifest.getString("sha256"),manifest.getLong("sizeBytes"))
+        assertFalse(queue.acknowledgeExact(source,identity.copy(fingerprint="changed"),canonical)); assertNotNull(queue.next(source.id))
+        assertTrue(queue.acknowledgeExact(source,identity,canonical)); assertNull(queue.next(source.id))
+        assertTrue(queue.acknowledgeExact(source,identity,canonical))
+        assertFalse(queue.acknowledgeExact(source,identity,UUID.randomUUID().toString()))
+    }
     @Test fun contextEditsDoNotResetCapturedImportOrReuploadItsOriginalBytes() {
         val store = LocalSourceStore(folder.newFolder(), cipher); val queue = FileArchiveQueue(folder.newFolder(), cipher)
         val original = source("snapshot").copy(tree = false, syncContinuously = false, centralProcessingConsent = true)

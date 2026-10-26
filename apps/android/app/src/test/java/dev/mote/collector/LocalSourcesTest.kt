@@ -15,6 +15,21 @@ class LocalSourcesTest {
     }
     private val at = "2026-09-14T00:00:00Z"
     private fun source() = LocalSource(name = "合成文件", kind = "local-files", uri = "content://fixture/document/root")
+    @Test fun historyCompletionChecksExactTargetAndBodyWithoutClearingNewerRevision() {
+        val store=LocalSourceStore(folder.newFolder(),cipher); val source=source(); store.save(source); store.selectTarget(source.id,"target")
+        store.scan(source,SourceScan(listOf(body()),true,at))
+        val old=store.next(source.id,"target")!!
+        val identity=ItemUploadIdentity("source-item","scope","source","https://generated.example","device","target",source.id,old.getString("externalId"),old.getString("revision"),SourceRules.hash(SourceRules.canonical(old)))
+        store.scan(source,SourceScan(listOf(body().put("text","Generated newer revision")),true,at))
+        assertEquals(2,store.state(source.id).getJSONArray("pending").length())
+        assertFalse(store.acknowledgeExact(identity.copy(target="other")))
+        assertFalse(store.acknowledgeExact(identity.copy(fingerprint="wrong")))
+        assertEquals(2,store.state(source.id).getJSONArray("pending").length())
+        assertTrue(store.acknowledgeExact(identity))
+        assertEquals(1,store.state(source.id).getJSONArray("pending").length())
+        assertNotEquals(old.getString("revision"),store.next(source.id,"target")!!.getString("revision"))
+    }
+
     @Test fun legacySourceSettingsStayExactAndNeverSendAnImplicitContextClear() {
         val existing = source().copy(enabled = false, retention = "archive", extensions = "wav", excluded = "private/*", intervalMinutes = 127, initialSync = "new_only", maxFileMiB = 31, allowRead = true)
         val legacy = existing.json().apply { listOf("description", "contextVersion", "contextDirty", "contextTarget").forEach(::remove) }

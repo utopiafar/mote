@@ -262,6 +262,17 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
         if (next.length() < old.length()) state.put("lastAcknowledgedAt", java.time.Instant.now().toString())
         state.put("pending", next); write(file(id), state)
     }
+    internal fun acknowledgeExact(identity: ItemUploadIdentity): Boolean = synchronized(lock) {
+        if (sources().none { it.id==identity.sourceId && it.enabled }) return@synchronized false
+        val state = state(identity.sourceId)
+        if (state.optString("target") != identity.target) return@synchronized false
+        val pending = state.optJSONArray("pending") ?: JSONArray()
+        val matching = (0 until pending.length()).map { pending.getJSONObject(it) }.filter { it.optString("externalId")==identity.externalId && it.optString("revision")==identity.revision }
+        if (matching.any { SourceRules.hash(SourceRules.canonical(it)) != identity.fingerprint }) return@synchronized false
+        // Absence proves no such pending revision remains at this exact target; newer revisions stay untouched.
+        if (matching.isNotEmpty()) acknowledge(identity.sourceId,identity.target,identity.externalId,identity.revision)
+        true
+    }
     private fun identity(value: JSONObject) = value.getString("externalId") + "\u0000" + value.getString("revision")
     private fun file(id: String): File { require(id.matches(Regex("[A-Za-z0-9_.:-]{1,128}"))); return File(directory, "source-$id.enc") }
     private fun read(file: File) = if (file.exists()) JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8)) else JSONObject()
