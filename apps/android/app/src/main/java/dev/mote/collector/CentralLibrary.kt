@@ -450,28 +450,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             if (returnTo != null) ui.scheduleMemoryTopicsPoll()
         }
     }
-    private fun insights() {
-        val prompt = ui.field(MoteI18n.text("洞察要求（可选）"), multiline = true)
-        ui.button(MoteI18n.text("生成洞察"), true) {
-            val instruction = prompt.text.toString().trim()
-            val api = client
-            ui.work(MoteI18n.text("正在生成洞察…"), {
-                try { api.post("/api/insight-runs", screens.insightRequest(instruction)).also { screens.insightAccepted() } }
-                catch (error: CentralFailure) {
-                    if (error.status in setOf(400, 404, 409, 422)) screens.insightAccepted()
-                    throw error
-                }
-            }) { run -> CentralAdmin(screens).run("/api/insight-runs", run.getString("id")) }
-        }
-        paged("/api/insight-runs", ui.card()) { row, card ->
-            ui.button(row.optString("status") + " · " + row.optString("createdAt"), parent = card) { CentralAdmin(screens).run("/api/insight-runs", row.getString("id")) }
-        }
-        paged("/api/insights", ui.card()) { row, card ->
-            ui.text(row.optString("answer"), parent = card)
-            val citations = row.optJSONArray("citations") ?: JSONArray()
-            for (i in 0 until citations.length()) ui.button(MoteI18n.text("查看原文依据"), parent = card) { captureEvidence(citations.getJSONObject(i).getString("id")) }
-        }
-    }
+    private fun insights() = screens.showInsights()
     private fun image(path: String, parent: LinearLayout) {
         val api = client
         ui.work(MoteI18n.text("正在读取原图…"), {

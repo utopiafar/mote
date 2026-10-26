@@ -1,3 +1,4 @@
+import {centralMemoryTopics,centralMemoryTopicPage,centralMemoryTopicDetail,centralMemoryTopicEvidence} from './memory-topics';
 import {ChromeCaptureBridge} from './chrome-bridge';
 import {registerChromeNativeHost} from './chrome-registration';
 import {appearancePreference,resolveColorScheme,linearUiTheme,type AppearancePreference} from '@mote/shared';
@@ -476,6 +477,10 @@ else {
       while(paths.length) { await localSources!.addFiles(paths[0],options); paths.shift(); }
       sourceSelections.delete(id as string);
     }));
+    handle('mote:memory-topics',()=>browseWithConnection(centralMemoryTopics));
+    handle('mote:memory-topic-page',input=>browseWithConnection(config=>centralMemoryTopicPage(config,input as import('./memory-topics').TopicQuery)));
+    handle('mote:memory-topic-evidence',(memoryId,evidenceId)=>browseWithConnection(config=>centralMemoryTopicEvidence(config,memoryId as string,evidenceId as string,()=>{if(settings!==config)throw Error(moteText('连接已改变，请刷新采集记录'));})));
+    handle('mote:memory-topic-detail',id=>browseWithConnection(config=>centralMemoryTopicDetail(config,id as string)));
     handle('mote:content-central', cursor => browseWithConnection(config=>centralContentPage(config,cursor as string|undefined)));
     handle('mote:content-central-detail',(id,offset,image)=>browseWithConnection(config=>{if(typeof id!=='string'||!/^[a-f0-9-]{36}$/i.test(id)||offset!==undefined&&(!Number.isSafeInteger(offset)||Number(offset)<0))throw Error('Invalid content reference');return readCentralContent(config,{key:id,captureId:id,source:'file',title:'',observedAt:'',outcome:'received',firstReceipt:false},Number(offset??0),image===true);}));
     handle('mote:content-local', offset => localContentPage(queue,localSources!,offset as number|undefined));
