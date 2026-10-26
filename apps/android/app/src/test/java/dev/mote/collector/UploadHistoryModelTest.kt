@@ -27,6 +27,7 @@ class UploadHistoryModelTest {
         val result = UploadHistoryModel.batches(listOf(attempt, later), listOf(receipt)).single()
         assertEquals(2, result.items.size); assertEquals(1, result.received); assertEquals(1, result.unconfirmed)
         assertEquals(3000L, result.at)
+        assertEquals(receipt.queueVersion, result.items.single { it.received }.originalVersion)
     }
     @Test fun batchesKeepAllRequestsAndUseLocalDateAcrossMidnight() {
         val event = event(); val first = CaptureUploadAttempt.create(UUID.randomUUID().toString(), "scope", "process", listOf(event), 10, 1800000000000)

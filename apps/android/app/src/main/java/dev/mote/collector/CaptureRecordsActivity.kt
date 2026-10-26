@@ -57,7 +57,7 @@ class CaptureRecordsActivity : MoteActivity() {
     private val recordSources = listOf("screen", "media", "notification", "device_event", "note", "activity", "ui_page")
     private var recordSource = "screen"
     private var sessionGrouping = true
-    private data class ReaderRequest(val id: String, val remote: Boolean)
+    private data class ReaderRequest(val id: String, val remote: Boolean, val version: String? = null)
     private var openReader: ReaderRequest? = null
     private var readerDialog: AlertDialog? = null
     private var readerTeardown = false
@@ -150,9 +150,9 @@ class CaptureRecordsActivity : MoteActivity() {
         MoteUi.styleTree(body)
         updateRecordHeading()
         load()
-        val reader = if (savedInstanceState == null) intent.getStringExtra("recordId")?.let { ReaderRequest(it, false) }
-            else savedInstanceState.getString("readerId")?.let { ReaderRequest(it, savedInstanceState.getBoolean("readerRemote")) }
-        reader?.let { detail(it.id, it.remote, null, generation) }
+        val reader = if (savedInstanceState == null) intent.getStringExtra("recordId")?.let { ReaderRequest(it, false, intent.getStringExtra("recordVersion")) }
+            else savedInstanceState.getString("readerId")?.let { ReaderRequest(it, savedInstanceState.getBoolean("readerRemote"), savedInstanceState.getString("readerVersion")) }
+        reader?.let { detail(it.id, it.remote, null, generation, it.version) }
     }
     private fun updateRecordHeading() {
         val title = when (recordSource) {
@@ -410,9 +410,9 @@ class CaptureRecordsActivity : MoteActivity() {
         item.optString("textPreview").takeIf(String::isNotBlank)?.let { text(labels, it.take(if (grid) 48 else 100), MoteTheme.fontMeta.toFloat()) }
         return image
     }
-    private fun detail(id: String, remote: Boolean, client: CaptureRecordClient?, stamp: Int) {
+    private fun detail(id: String, remote: Boolean, client: CaptureRecordClient?, stamp: Int, version: String? = null) {
         readerDialog?.dismiss()
-        openReader = ReaderRequest(id, remote)
+        openReader = ReaderRequest(id, remote, version)
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(18), moteDp(10), moteDp(18), moteDp(16)) }
         val message = text(content, MoteI18n.text("正在读取详情…"), MoteTheme.fontBody.toFloat())
         val loading = ProgressBar(this); content.addView(loading)
@@ -433,11 +433,15 @@ class CaptureRecordsActivity : MoteActivity() {
                     val settings = Settings(this)
                     CaptureRecordClient(settings.read(), settings.deviceId, CentralAccess.resolve(this).client)
                 } else client
-                val record = if (remote) requireNotNull(readerClient).detail(id)
+                val exact = if (version != null) {
+                    check(!remote)
+                    queue().captureExactVersion(id, version) ?: error(MoteI18n.text("历史版本不可用：本机原件已更新或清理，不能将当前内容作为这次上传的原文。"))
+                } else null
+                val record = exact?.first ?: if (remote) requireNotNull(readerClient).detail(id)
                     else queue().capture(id) ?: error(MoteI18n.text("本机记录已同步并清理，请切换到中央归档查看"))
                 runOnUiThread { if (dialog.isShowing && CapturePreview.hasImage(record)) message.text = MoteI18n.text("记录已读取，正在加载图片…") }
                 require(record.getString("id") == id); Instant.parse(record.getString("capturedAt"))
-                val bytes = if (CapturePreview.hasImage(record)) if (remote) requireNotNull(readerClient).image(id, false) else queue().image(id) else null
+                val bytes = if (exact != null) exact.second else if (CapturePreview.hasImage(record)) if (remote) requireNotNull(readerClient).image(id, false) else queue().image(id) else null
                 val bitmap = bytes?.let { CapturePreview.decode(it, 1600) }
                 runOnUiThread {
                     if (isDestroyed || stamp != generation || !dialog.isShowing) { bitmap?.recycle(); if (dialog.isShowing) dialog.dismiss(); return@runOnUiThread }
@@ -497,7 +501,7 @@ class CaptureRecordsActivity : MoteActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("grid", grid); outState.putBoolean("sessionGrouping", sessionGrouping); outState.putString("date", date.toString()); outState.putString("album", album?.toString()); outState.putBoolean("central", central); outState.putString("recordSource", recordSource)
         val reader = openReader.takeIf { readerDialog?.isShowing == true }
-        outState.putString("readerId", reader?.id); outState.putBoolean("readerRemote", reader?.remote ?: false)
+        outState.putString("readerVersion", reader?.version); outState.putString("readerId", reader?.id); outState.putBoolean("readerRemote", reader?.remote ?: false)
         super.onSaveInstanceState(outState)
     }
     override fun onDestroy() {

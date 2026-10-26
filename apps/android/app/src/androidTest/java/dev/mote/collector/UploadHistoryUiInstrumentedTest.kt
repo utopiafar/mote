@@ -53,6 +53,13 @@ class UploadHistoryUiInstrumentedTest {
             val attempt = CaptureUploadAttempt.create(batch,receipt.scope,LoginProcess.id,listOf(event),100,at)
             store.saveAttempt(attempt.copy(state="received",acknowledged=1,results=JSONObject().put(event.getString("id"),201)))
             CaptureReceiptFinalizer(store).received(context.queue(),receipt)
+            val observed = JSONObject(event.toString()).put("id",UUID.randomUUID().toString()).put("source","activity").put("appId","generated.history").put("appName","Generated history").apply { remove("ocrText") }
+                .put("durationMs",5000).put("privacy",JSONObject().put("excluded",false).put("collection","activity"))
+                .put("metadata",JSONObject().put("version",1).put("state",JSONObject().put("idleSeconds",0)))
+            context.queue().enqueue(observed,null,100000)
+            val observedOriginal = context.queue().archiveRecord(observed.getString("id"))!!.first
+            val observedReceipt = CaptureUploadReceipt.create(origin,settings.deviceId,observedOriginal,observedOriginal,batch,at,30)
+            store.received(observedReceipt); store.completed(observedReceipt.itemKey)
             repeat(12) { n ->
                 val pending = JSONObject(event.toString()).put("id",UUID.randomUUID().toString())
                 store.saveAttempt(CaptureUploadAttempt.create(UUID.randomUUID().toString(),receipt.scope,LoginProcess.id,listOf(pending),100,at-1000-n).copy(state="unknown"))
@@ -63,13 +70,26 @@ class UploadHistoryUiInstrumentedTest {
             until("later page excludes first batch") { main { visible().none { it.tag == "history-batch-$batch" } } }
             click("previous whole batch page") { it is Button && it.text.toString()==MoteI18n.text("上一页") }
             click("batch") { it.tag == "history-batch-$batch" }
-            until("batch details") { text(MoteI18n.text("上传批次详情")) && text(MoteI18n.text("已确认 {0} · 未确认 {1}",1,0)) }
+            until("batch details") { text(MoteI18n.text("上传批次详情")) && text(MoteI18n.text("已确认 {0} · 未确认 {1}",2,0)) }
             click("original") { it.tag == "history-original-${event.getString("id")}" }
             until("original body") { text("Generated history UI original") }
             click("close original dialog") { it is Button && it.text.toString() == MoteI18n.text("关闭详情") }
             until("reader returned") { main { activityOrNull() is CaptureRecordsActivity } }
             main { activity().finish() }
             until("batch returned") { main { activityOrNull() is UploadBatchActivity } }
+            val changed = JSONObject(observed.toString()).put("id",UUID.randomUUID().toString()).put("capturedAt",java.time.Instant.ofEpochMilli(at+5000).toString())
+            changed.getJSONObject("metadata").getJSONObject("state").put("idleSeconds",5)
+            context.queue().enqueue(changed,null,100000)
+            assertEquals(2,context.queue().archiveRecord(observed.getString("id"))!!.first.getJSONObject("stateSeries").getJSONArray("samples").length())
+            click("historical original after same-ID update") { it.tag == "history-original-${observed.getString("id")}" }
+            until("historical version unavailable") { text(MoteI18n.text("历史版本不可用：本机原件已更新或清理，不能将当前内容作为这次上传的原文。")) }
+            assertFalse(text(MoteI18n.text("相同状态合并为 {0} 次观察，最近一次：{1}。统计逐次使用实测时长，观察间隙不计为连续使用。",2,java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(at+5000)))))
+            main { activity().recreate() }
+            until("historical version constraint restored") { text(MoteI18n.text("历史版本不可用：本机原件已更新或清理，不能将当前内容作为这次上传的原文。")) }
+            assertFalse(text(MoteI18n.text("相同状态合并为 {0} 次观察，最近一次：{1}。统计逐次使用实测时长，观察间隙不计为连续使用。",2,java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(at+5000)))))
+            click("close unavailable original") { it is Button && it.text.toString() == MoteI18n.text("关闭详情") }
+            main { activity().finish() }
+            until("batch restored after unavailable original") { main { activityOrNull() is UploadBatchActivity } }
             main { activity().finish() }
             until("history returned") { main { activityOrNull() is SyncQueueActivity } }
             until("expanded date retained") { main { visible().any { it.tag == "history-batch-$batch" } } }

@@ -4,7 +4,7 @@ import android.content.Context
 import java.time.Instant
 import java.time.ZoneId
 
-internal data class HistoryItem(val key: String, val captureId: String, val received: Boolean)
+internal data class HistoryItem(val key: String, val captureId: String, val received: Boolean, val originalVersion: String)
 internal data class HistoryBatch(val id: String, val at: Long, val attempts: List<CaptureUploadAttempt>, val items: List<HistoryItem>) {
     val received get() = items.count { it.received }
     val unconfirmed get() = items.size - received
@@ -21,11 +21,11 @@ internal object UploadHistoryModel {
                 val item = attempt.captures.getJSONObject(i); val id = item.getString("id")
                 val key = id + ":" + item.getString("version")
                 val received = attempt.results.optInt(id) in setOf(200, 201)
-                items[key] = HistoryItem(key, id, received || items[key]?.received == true)
+                items[key] = HistoryItem(key, id, received || items[key]?.received == true, item.getString("version"))
             } }
             confirmed.forEach { receipt ->
                 val key = receipt.captureId + ":" + receipt.transportVersion
-                items[key] = HistoryItem(key, receipt.captureId, true)
+                items[key] = HistoryItem(key, receipt.captureId, true, receipt.queueVersion)
             }
             HistoryBatch(batch, (sent.map { it.startedAt } + confirmed.map { it.receivedAt }).max(), sent.sortedBy { it.startedAt }, items.values.toList())
         }.sortedWith(compareByDescending<HistoryBatch> { it.at }.thenBy { it.id })

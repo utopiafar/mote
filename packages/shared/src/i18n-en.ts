@@ -8671,5 +8671,7 @@ export const english: Readonly<Record<string, string>> = {
   "请求被拒绝": "Request rejected",
   "请求体字节：{0}": "Request body bytes: {0}",
   "发送中": "Sending",
-  "查看原件": "View original"
+  "查看原件": "View original",
+  "历史版本不可用：本机原件已更新或清理，不能将当前内容作为这次上传的原文。": "Historical version unavailable: the local original has changed or been cleared. Current content cannot represent the original from this upload.",
+  "采集与随手记的上传批次；其他上传结果可在采集与存储详情查看。": "Upload batches for captures and quick notes. Other upload results remain available in capture and storage details."
 };

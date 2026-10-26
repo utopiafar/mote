@@ -20,6 +20,7 @@ internal class UploadHistoryPanel(private val activity: Activity, private val bo
     private val next = Button(activity)
     init {
         body.addView(status)
+        body.addView(TextView(activity).apply { text = MoteI18n.text("采集与随手记的上传批次；其他上传结果可在采集与存储详情查看。") })
         filter.tag = "history-result-filter"
         filter.adapter = MoteUi.choiceAdapter(activity, listOf(MoteI18n.text("全部结果"), MoteI18n.text("有已确认记录"), MoteI18n.text("有未确认记录")))
         filter.setSelection(resultFilter); body.addView(filter)
@@ -35,6 +36,7 @@ internal class UploadHistoryPanel(private val activity: Activity, private val bo
         next.text = MoteI18n.text("下一页"); next.setOnClickListener { page++; scroll = 0; render() }
         paging.addView(previous, LinearLayout.LayoutParams(0, -2, 1f)); paging.addView(next, LinearLayout.LayoutParams(0, -2, 1f))
         body.addView(Button(activity).apply { text = MoteI18n.text("上传历史保存时长"); setOnClickListener { activity.startActivity(Intent(activity, UploadHistorySettingsActivity::class.java)) } })
+        body.addView(Button(activity).apply { text = MoteI18n.text("采集与存储详情"); setOnClickListener { activity.startActivity(Intent(activity, ActivityStatsActivity::class.java)) } })
         MoteUi.styleTree(body)
     }
     private fun scroller(): ScrollView? { var p = body.parent; while (p != null) { if (p is ScrollView) return p; p = p.parent }; return null }
