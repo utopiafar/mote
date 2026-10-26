@@ -103,3 +103,22 @@ test('a shared executor restores only its step authority and prevents stopped la
   f.command('stop');release();await running;
   assert.equal(receivedAbort,true);assert.equal(published,false);assert.notEqual(engine.get('step')!.state,'succeeded');
 });
+
+test('committed dependent steps retain the parent admission while unrelated executor callers cannot supply it',async t=>{
+ const f=fixture(t),engine=new ExecutionEngine(f.store);engine.bindModelAuthority(f.control);t.after(()=>engine.close());
+ f.command('authorize');f.receive('input');f.control.automatic('parent',['input']);f.control.manual('unrelated','manual');
+ engine.register({kind:'parent',pool:'fixture',concurrency:()=>1,validate:()=>true,execute:async()=>({}),commit:()=>{engine.enqueue('operation','child',{}, {id:'child'});}});
+ let observed:string|undefined;
+ engine.register({kind:'child',pool:'fixture',concurrency:()=>1,validate:()=>true,execute:async()=>{observed=f.control.currentId;return {};},commit:()=>{}});
+ await f.control.run('parent',async()=>{engine.enqueue('operation','parent',{}, {id:'parent-step'});});
+ await f.control.run('unrelated',()=>engine.drain(['parent-step']));
+ assert.equal(f.control.stepAuthority('child'),'parent');
+ f.command('pause');await engine.drain(['child']);assert.equal(observed,'parent');assert.equal(engine.get('child')!.state,'succeeded');
+});
+test('independent recipe scopes consume once each without allowing repeated jobs or stop to reuse receipts',async t=>{
+ const f=fixture(t);f.command('authorize');f.receive('input');
+ f.control.automatic('personal',['input'],'memory:recipe/personal');f.control.automatic('coding',['input'],'memory:recipe/coding');
+ assert.throws(()=>f.control.automatic('coding-retry-new-id',['input'],'memory:recipe/coding'));
+ await f.control.run('coding',async()=>f.control.assertCurrent(f.connection));
+ f.command('stop');await assert.rejects(f.control.run('personal',async()=>{}));await assert.rejects(f.control.run('coding',async()=>{}));
+});

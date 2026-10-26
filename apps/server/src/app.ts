@@ -640,7 +640,12 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
     const job=row?JSON.parse(String(row.json)) as import('./memory-pipeline.js').MemoryJob:undefined;
     const grants=job?.automaticGrants??(job?.automaticGrant?[job.automaticGrant]:[]);
     const candidates=grants.length?grants.map(grant=>sourceModelIdentity(grant.sourceId,grant.inputKey)):job?modelAuthorizationHost.evidenceTriggers(job.evidenceIds):modelAuthorizationHost.queryTriggers(input);
-    const purpose:AutomaticModelPurpose=moduleId==='activity'?'activity':moduleId==='actions'?'actions':moduleId==='insights'?'insight':moduleId==='memories'?'memory':moduleId==='semantic'?'semantic':'working';
+    // Each owner-selected recipe is an independent prospective consumer. Its
+    // immutable input grant scope prevents one sibling from consuming another's
+    // trigger, without letting retries mint a new purpose from their job ID.
+    const memoryScope=grants[0]?.scope;
+    if(memoryScope&&grants.some(grant=>grant.scope!==memoryScope))throw new StoreError('Memory job mixes recipe authorization scopes',409);
+    const purpose:AutomaticModelPurpose=moduleId==='memories'&&memoryScope?`memory:${memoryScope}`:moduleId==='activity'?'activity':moduleId==='actions'?'actions':moduleId==='insights'?'insight':moduleId==='memories'?'memory':moduleId==='semantic'?'semantic':'working';
     const id=job?'automatic-memory:'+job.id:'automatic-'+moduleId+':'+(input.traceContext?.operationId??randomUUID());
     return modelAuthorizationHost.automatic(id,purpose,candidates,signal=>{
       const batch=input.traceContext?.batchId?executor.get(input.traceContext.batchId):undefined;

@@ -52,7 +52,7 @@ const interrupted=new Error('Execution interrupted');
 
 /** The host owns admission, retry, cancellation, leases and commit fences. */
 export class ExecutionEngine {
- private modelAuthority?:{captureStep(step:ExecutionStep):void;assertStep(step:ExecutionStep):void;runStep<T>(step:ExecutionStep,task:(signal:AbortSignal)=>Promise<T>,signal:AbortSignal):Promise<T>};
+ private modelAuthority?:{captureStep(step:ExecutionStep):void;assertStep(step:ExecutionStep):void;commitStep<T>(step:ExecutionStep,task:()=>T):T;runStep<T>(step:ExecutionStep,task:(signal:AbortSignal)=>Promise<T>,signal:AbortSignal):Promise<T>};
  bindModelAuthority(authority:NonNullable<ExecutionEngine['modelAuthority']>){if(this.modelAuthority)throw Error('Model authority is already installed');this.modelAuthority=authority;}
  private programs=new Map<string,Promise<unknown>>();
  private handlers=new Map<string,ExecutionHandler>();
@@ -305,7 +305,7 @@ export class ExecutionEngine {
     if(!this.isCurrentGrant(row.id,fence)){db.exec('ROLLBACK');return;}
     if(!handler.validate(step))throw new ExecutionFailure('stale','input_changed');
     this.modelAuthority?.assertStep(step);
-    handler.commit(step,result);
+    if(this.modelAuthority)this.modelAuthority.commitStep(step,()=>handler.commit(step,result));else handler.commit(step,result);
     const at=this.now();
     if(!db.prepare("UPDATE execution_steps SET state='succeeded',fence=NULL,error=NULL,updated_at=? WHERE id=? AND fence=? AND state='running' AND lease_until>?").run(at,row.id,fence,at).changes){db.exec('ROLLBACK');return;}
     this.project(row.id);db.exec('COMMIT');

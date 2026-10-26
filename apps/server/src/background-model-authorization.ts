@@ -15,7 +15,7 @@ export type ModelDataScope=z.infer<typeof scopeSchema>;
 export type ModelDisclosure={sourceId:string;dataKind:ModelDataKind};
 export type ModelAuthorityView={revision:number;epoch:number;state:'unapproved'|'enabled'|'paused'|'stopped';connections:ModelConnection[];scope:ModelDataScope;acceptedThrough:number};
 type State=ModelAuthorityView&{lastOperation?:string;lastCommand?:string};
-export type AutomaticModelPurpose='memory'|'working'|'insight'|'activity'|'actions'|'image'|'file'|'embedding'|'semantic'|'integration';
+export type AutomaticModelPurpose=`memory:${string}`|'memory'|'working'|'insight'|'activity'|'actions'|'image'|'file'|'embedding'|'semantic'|'integration';
 type Work={id:string;kind:'manual'|'automatic'|'probe';purpose?:AutomaticModelPurpose;epoch:number;roots:string[];connections:ModelConnection[];scope:ModelDataScope};
 type Authority={work:Work;controller:AbortController};
 const command=z.object({revision:z.number().int().nonnegative(),operationId:z.string().uuid(),action:z.enum(['authorize','pause','stop']),connections:z.array(z.object({id:z.string().min(1).max(256),fingerprint:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).max(100).optional(),scope:scopeSchema.optional()}).strict();
@@ -177,6 +177,13 @@ export class BackgroundModelAuthorization {
   bindCurrentStep(step:ExecutionStep){return this.transaction(()=>this.captureStep(step));}
   captureStep(step:ExecutionStep){const id=this.currentId;if(id)this.bindStep(step.id,id);}
   assertStep(step:ExecutionStep){for(const row of this.store.db.prepare('SELECT work_id FROM background_model_step_authority WHERE step_id=?').all(step.id)){const work=this.saved(String(row.work_id));if(!work)throw pending();this.assert(work);}}
+  commitStep<T>(step:ExecutionStep,task:()=>T):T{
+    this.assertStep(step);
+    const id=this.stepAuthority(step.id),work=id&&this.saved(id);
+    if(!work)return this.context.run(undefined,task);
+    const authority:Authority={work,controller:new AbortController()};
+    return this.context.run(authority,()=>{this.assert(work);const result=task();this.assert(work);return result;});
+  }
   async runStep<T>(step:ExecutionStep,task:(signal:AbortSignal)=>Promise<T>,signal:AbortSignal):Promise<T>{
     this.assertStep(step);
     const row=this.store.db.prepare('SELECT work_id FROM background_model_step_authority WHERE step_id=?').get(step.id);
