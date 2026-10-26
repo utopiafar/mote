@@ -1,3 +1,4 @@
+import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {readAgentCredential} from './login-fixture.js';
 import test from 'node:test';
@@ -41,7 +42,7 @@ async function fixture(t:any){
   return {answer:JSON.stringify({memories:control.reject?[]:[claim]}),citations:records.map(r=>({id:r.id,capturedAt:r.capturedAt,appName:r.appName,excerpt:''})),trace:[],runId:randomUUID()};
  }}};
  const nodeDependencies={...dependencies,createModelAgent:async()=>dependencies.agent};
- let node=await buildApp(config,nodeDependencies);await node.app.ready();
+ let node=await buildApp(config,nodeDependencies);await node.app.ready();await authorizeFixtureModels(node);
  const disable=async()=>{const s=node.lifecycle.settings();await node.lifecycle.save({revision:node.configService.revision,settings:{...s,consolidation:{...s.consolidation,enabled:false,minChanges:1},insights:{...s.insights,enabled:false},working:{...s.working,enabled:false}}});};await disable();
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const api=(method:'GET'|'PUT'|'POST',url:string,payload?:any,token=config.token)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+token}});
@@ -56,7 +57,11 @@ async function fixture(t:any){
   return {source,products};
  };
  const pins=(ids:string[])=>ids.map(id=>{const m=node.memories.get(id);return {id,version:m.version!,fingerprint:m.fingerprint};});
- const queue=(ids:string[],recipe='base')=>requestMemoryIntegration({recipe:ref(recipe),inputs:pins(ids)},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});
+ const queue=async(ids:string[],recipe='base')=>{
+  const queued=requestMemoryIntegration({recipe:ref(recipe),inputs:pins(ids)},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});
+  // Match the owner HTTP route's durable authorization before a later lifecycle tick.
+  return node.modelAuthorizationHost.manual('owner-integration:'+queued.id,node.featureServices.availableModelConnections(),async()=>queued);
+ };
  return {get node(){return node;},control,calls,add,api,queue,pins,async restart(changed=false){let selectedModule=modulePath;if(changed){selectedModule=join(directory,'changed-integrator.mjs');writeFileSync(selectedModule,readFileSync(modulePath,'utf8').replace('GENERATED_INTEGRATOR_1','Changed without a version'));}await node.configService.update('connectors',{modules:[selectedModule]},node.configService.revision);await node.app.close();node=await buildApp(config,nodeDependencies);await node.app.ready();},products:()=>node.memories.list().map(m=>node.memories.get(m.id)).filter(m=>m.tier==='consolidated'),view:()=>node.lifecycle.view().extensions.find(e=>e.id==='consolidation')!};
 }
 
@@ -82,13 +87,13 @@ test('manual integration atomically admits only the selected version and fingerp
  const unpinned=await f.api('POST','/api/memory-integrations',{recipe:ref('base'),memoryIds:ids});assert.equal(unpinned.statusCode,400,unpinned.body);assert.equal(f.view().active,undefined);
  const request=f.node.lifecycle.request.bind(f.node.lifecycle);let locked=false;
  f.node.lifecycle.request=(...args)=>{locked=f.node.store.db.isTransaction;return request(...args);};
- f.queue(ids);assert.equal(locked,true,'selection reads and lifecycle admission share the write lock');assert.equal(f.node.store.db.isTransaction,false);
+ await f.queue(ids);assert.equal(locked,true,'selection reads and lifecycle admission share the write lock');assert.equal(f.node.store.db.isTransaction,false);
  await f.node.lifecycle.tick();assert.equal(f.products().length,1);assert.equal(f.view().error,undefined);
 });
 
 test('reviewed integration automatically supersedes both domains without invalidating its own checkpoint',async t=>{
  const f=await fixture(t),{products}=await f.add('automatic-relations',true);f.control.relation=true;
- f.queue(products.map(m=>m.id));await f.node.lifecycle.tick();assert.equal(f.view().error,undefined);assert.equal(f.products().length,2);
+ await f.queue(products.map(m=>m.id));await f.node.lifecycle.tick();assert.equal(f.view().error,undefined);assert.equal(f.products().length,2);
  for(const old of products){const current=f.node.memories.get(old.id),replacement=f.products().find(m=>m.domain===old.domain)!;assert.equal(current.supersededBy,replacement.id);assert.equal(replacement.status,'published');}
  const calls=f.calls.length;await f.restart();await f.node.lifecycle.tick();assert.equal(f.calls.length,calls);
 });
@@ -105,18 +110,18 @@ test('selection changes process only subsequent events; disable preserves produc
  const s=f.node.lifecycle.settings();await f.node.lifecycle.save({revision:f.node.configService.revision,settings:{...s,consolidation:{...s.consolidation,enabled:true}}});await f.node.lifecycle.tick();assert.equal(f.calls.length,0);
  const next=await f.add('next');await f.node.lifecycle.tick();assert.equal(f.calls.length,2);assert.deepEqual(f.products()[0].relatedMemoryIds,next.products.map(m=>m.id));
  await f.api('PUT','/api/memory-integration-settings',{recipe:null});await f.add('disabled');await f.node.lifecycle.tick();assert.equal(f.calls.length,2);assert.equal(f.products().length,1);
- f.queue(old.products.map(m=>m.id));await f.node.lifecycle.tick();assert.equal(f.calls.length,4);assert.equal(f.products().length,2,'explicit history is a separate authorization');
+ await f.queue(old.products.map(m=>m.id));await f.node.lifecycle.tick();assert.equal(f.calls.length,4);assert.equal(f.products().length,2,'explicit history is a separate authorization');
  await f.restart();await f.node.lifecycle.tick();assert.equal(f.calls.length,4);assert.equal(f.node.memoryIntegrationSettings.view().binding,null);
 });
 
 test('pinned plugin content cannot change under a queued manual task across restart',async t=>{
- const f=await fixture(t),{products}=await f.add('diary');const queued=f.queue(products.map(m=>m.id));
+ const f=await fixture(t),{products}=await f.add('diary');const queued=await f.queue(products.map(m=>m.id));
  await f.restart(true);await f.node.lifecycle.tick();assert.equal(f.calls.length,0);assert.equal(f.products().length,0);assert.equal(f.view().error,'workflow_409');
  await f.restart();f.node.lifecycle.retry('consolidation',queued.id);await f.node.lifecycle.tick();assert.equal(f.calls.length,2);assert.equal(f.products().length,1);
 });
 
 test('failed review resumes only unfinished domain after restart and preserves its completed sibling',async t=>{
- const f=await fixture(t),{products}=await f.add('diary',true);f.control.failCoding=true;const queued=f.queue(products.map(m=>m.id));
+ const f=await fixture(t),{products}=await f.add('diary',true);f.control.failCoding=true;const queued=await f.queue(products.map(m=>m.id));
  await f.node.lifecycle.tick();assert.equal(f.products().length,1);assert.equal(f.products()[0].domain,'personal');assert.equal(f.calls.length,4);const preserved=JSON.stringify(f.products()[0]);
  f.control.failCoding=false;await f.restart();f.node.lifecycle.retry('consolidation',queued.id);await f.node.lifecycle.tick();
  assert.equal(f.calls.length,6,'open retrieval generation is repeated for the failed domain only');assert.equal(f.products().length,2);assert.ok(f.products().some(m=>JSON.stringify(m)===preserved));
@@ -128,7 +133,7 @@ for(const mutation of ['cancel','delete','parent-version','selection'] as const)
  if(mutation==='selection'){
   await f.api('PUT','/api/memory-integration-settings',{recipe:ref('base')});
   const s=f.node.lifecycle.settings();await f.node.lifecycle.save({revision:f.node.configService.revision,settings:{...s,consolidation:{...s.consolidation,enabled:true}}});f.node.memories.publish(products[0].id);
- }else queued=f.queue(products.map(m=>m.id));
+ }else queued=await f.queue(products.map(m=>m.id));
  f.control.duringQuery=input=>{if(input.traceContext?.phase!=='review')return;f.control.duringQuery=undefined;
   if(mutation==='cancel')f.node.lifecycle.cancel('consolidation',queued!.id);
   else if(mutation==='delete')f.node.store.delete(source.id);
@@ -138,12 +143,12 @@ for(const mutation of ['cancel','delete','parent-version','selection'] as const)
  await f.node.lifecycle.tick();assert.equal(f.products().length,0);assert.equal(f.calls.length,2);
  if(mutation==='cancel'){
   assert.equal(f.view().status,'cancelled');await f.node.lifecycle.tick();assert.equal(f.calls.length,2);
-  const next=f.queue(products.map(m=>m.id));assert.notEqual(next.id,queued!.id);await f.node.lifecycle.tick();assert.equal(f.products().length,1,'owner can start another task after cancellation');
+  const next=await f.queue(products.map(m=>m.id));assert.notEqual(next.id,queued!.id);await f.node.lifecycle.tick();assert.equal(f.products().length,1,'owner can start another task after cancellation');
  }
 });
 
 for(const invalid of ['quote','relation'] as const)test(`plugin output cannot bypass host ${invalid} validation`,async t=>{
- const f=await fixture(t),{products}=await f.add('diary');f.control.badQuote=invalid==='quote';f.control.relation=invalid==='relation';f.control.badRelation=invalid==='relation';f.queue(products.map(m=>m.id));await f.node.lifecycle.tick();assert.equal(f.products().length,0);assert.ok(f.view().error);assert.equal(f.node.memories.get(products[0].id).supersededBy,undefined);
+ const f=await fixture(t),{products}=await f.add('diary');f.control.badQuote=invalid==='quote';f.control.relation=invalid==='relation';f.control.badRelation=invalid==='relation';await f.queue(products.map(m=>m.id));await f.node.lifecycle.tick();assert.equal(f.products().length,0);assert.ok(f.view().error);assert.equal(f.node.memories.get(products[0].id).supersededBy,undefined);
 });
 
 test('query agents cannot select policies, trigger paid history or control integration tasks',async t=>{
@@ -159,26 +164,26 @@ test('integration pins are immutable, missing components never fall back and per
 });
 
 test('a failed first domain does not block a successful later domain; retry keeps its existing product',async t=>{
- const f=await fixture(t),{products}=await f.add('diary',true);f.control.failPersonal=true;const queued=f.queue(products.map(m=>m.id));await f.node.lifecycle.tick();
+ const f=await fixture(t),{products}=await f.add('diary',true);f.control.failPersonal=true;const queued=await f.queue(products.map(m=>m.id));await f.node.lifecycle.tick();
  assert.equal(f.products().length,1);assert.equal(f.products()[0].domain,'coding');assert.equal(f.calls.length,4);const preserved=f.products()[0].id;
  f.control.failPersonal=false;f.node.lifecycle.retry('consolidation',queued.id);await f.node.lifecycle.tick();assert.equal(f.calls.length,6);assert.equal(f.products().length,2);assert.ok(f.products().some(m=>m.id===preserved));
 });
 
 for(const phase of ['queued','review'] as const)test(`model configuration change while ${phase} cannot continue under another profile`,async t=>{
- const f=await fixture(t),{products}=await f.add('diary');f.queue(products.map(m=>m.id));
+ const f=await fixture(t),{products}=await f.add('diary');await f.queue(products.map(m=>m.id));
  const change=async()=>{const {apiKey:_apiKey,headers:_headers,extraBody:_extraBody,...settings}=f.node.modelSettings.current();await f.node.modelSettings.update({revision:f.node.modelSettings.view().revision,settings:{...settings,baseUrl:'http://127.0.0.1:9/v1',model:'changed-generated-model'}});};
  if(phase==='queued')await change();else f.control.duringQuery=async input=>{if(input.traceContext?.phase==='review'){f.control.duringQuery=undefined;await change();}};
  await f.node.lifecycle.tick();assert.equal(f.products().length,0);assert.equal(f.calls.length,phase==='queued'?0:2);assert.equal(f.view().error,'workflow_409');
 });
 
 test('an integration that actually received originals may complete with no new relation and no replay',async t=>{
- const f=await fixture(t),{products}=await f.add('diary');f.control.reject=true;f.queue(products.map(m=>m.id));await f.node.lifecycle.tick();assert.equal(f.calls.length,1);assert.equal(f.products().length,0);assert.equal(f.view().active,undefined);await f.node.lifecycle.tick();assert.equal(f.calls.length,1);
+ const f=await fixture(t),{products}=await f.add('diary');f.control.reject=true;await f.queue(products.map(m=>m.id));await f.node.lifecycle.tick();assert.equal(f.calls.length,1);assert.equal(f.products().length,0);assert.equal(f.view().active,undefined);await f.node.lifecycle.tick();assert.equal(f.calls.length,1);
 });
 
 test('unsupported native input remains an explicit integration failure without automatic model replay after restart',async t=>{
  const f=await fixture(t),{products}=await f.add('generated-native-unsupported');let preparations=0;
  f.node.memoryPipeline.engineDraft=async()=>{preparations++;throw new MemoryProviderError('unsupported_input','Generated unsupported native visual parent');};
- f.queue(products.map(memory=>memory.id));await f.node.lifecycle.tick();
+ await f.queue(products.map(memory=>memory.id));await f.node.lifecycle.tick();
  assert.equal(preparations,1);assert.equal(f.calls.length,0);assert.equal(f.view().error,'memory_provider_unsupported_input');assert.equal(f.view().manualRetryRequired,true);assert.equal(f.view().retryAt,undefined);assert.equal(f.products().length,0);
  assert.equal(f.node.executor.get('lifecycle:'+f.view().active!.id)?.error,'memory_provider_unsupported_input','the executor keeps the same typed cause');
  await f.node.lifecycle.tick();assert.equal(preparations,1);await f.restart();await f.node.lifecycle.tick();assert.equal(f.calls.length,0,'restart preserves the permanent input failure instead of silently switching to the built-in model');assert.equal(f.view().error,'memory_provider_unsupported_input');assert.equal(f.view().manualRetryRequired,true);
@@ -191,6 +196,6 @@ test('maximum declared strategy and card inputs fit the Agent question contract 
  f.node.memoryStrategies.registerIntegration({...integrate,...ref('long-integrator'),prompt:'G'.repeat(16000)});
  f.node.memoryStrategies.registerReview({...review,...ref('long-review'),policy:'R'.repeat(16000)});
  f.node.memoryStrategies.registerIntegrationRecipe({...ref('long'),integrate:ref('long-integrator'),review:ref('long-review')});
- const s=f.node.lifecycle.settings();await f.node.lifecycle.save({revision:f.node.configService.revision,settings:{...s,consolidation:{...s.consolidation,maxItems:50}}});f.queue(ids,'long');await f.node.lifecycle.tick();
+ const s=f.node.lifecycle.settings();await f.node.lifecycle.save({revision:f.node.configService.revision,settings:{...s,consolidation:{...s.consolidation,maxItems:50}}});await f.queue(ids,'long');await f.node.lifecycle.tick();
  assert.equal(f.calls.length,2);assert.equal(f.view().error,undefined);assert.ok(f.calls.every(c=>c.question.length<=20000),f.calls.map(c=>c.question.length).join(','));
 });

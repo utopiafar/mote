@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm,mkdir,writeFile,readFile} from 'node:fs/promises';
@@ -36,11 +37,12 @@ async function fixture(t:import('node:test').TestContext,createProvider?:(direct
  const config:Config={dataDir:directory,token:'generated-recording-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
  let node:Awaited<ReturnType<typeof buildApp>>;
  const deps={backgroundWorker:false,connectorTesting:{recordings:[activeProvider]},agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{
+  const topic=fixtureTopicResult(input);if(topic)return topic;
   if(await planGeneratedMemory(input))return {answer:'Generated packages submitted.',citations:[],trace:[],runId:randomUUID()};
   models.push(input);if(input.traceContext?.phase===state.modelFailurePhase){state.modelEntered?.();if(state.modelHeld)await state.modelHeld;if(state.modelFailures>0){state.modelFailures--;throw new ProviderFailure({category:'transient',code:'provider_network',retryAfterMs:0});}}const evidence=node.memories.readEvidence(input.evidenceIds!)[0],id=evidence.id;
   return {answer:generatedMemoryOutput(input,[{domain:'personal',title:'Generated pride',statement:`Felt proud of a generated prototype [${id}]`,uncertainty:'Generated evidence only; speaker label unverified.',admission:{layer:'memory',reason:'Generated personal experience',scope:'Generated diary',attribution:'user'},evidenceIds:[id],evidence:[{id,quote:evidence.ocrText.trim()}]}]),citations:[{id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}],trace:[],runId:randomUUID()};
  }}};
- node=await buildApp(config,deps);await node.app.ready();
+ node=await buildApp(config,deps);await node.app.ready();await authorizeFixtureModels(node);
  const request=async(method:'GET'|'POST'|'PUT'|'DELETE',suffix='',payload?:unknown)=>{const res=await node.app.inject({method,url:'/api/connectors/'+activeProvider.id+'-recordings'+suffix,headers:{authorization:'Bearer '+config.token},...(payload?{payload}:{})});assert.equal(res.statusCode,200,res.body);return res.json();};
  const flush=async()=>{for(let n=0;n<30;n++){const steps=node.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE ? AND state IN ('waiting','running') AND available_at<=? LIMIT 100").all('recording.'+activeProvider.id+'.%',Date.now()) as {id:string}[];if(!steps.length)break;await node.executor.drain(steps.map(s=>s.id));}await node.materialOrganizer.tick(100);await node.sourcePipelines.tick(100);};
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
