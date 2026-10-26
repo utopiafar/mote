@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
@@ -205,12 +206,12 @@ test('HTTP import publishes a fully declared prefix before completion; restart d
   const dependencies={backgroundWorker:true,prepareImport:async({workspace,inputPaths}:{workspace:string;inputPaths:string[]})=>{
     writeFileSync(join(workspace,'records.jsonl'),['generated-prefix','generated-tail'].map(externalId=>JSON.stringify({item:{...original,externalId},evidencePaths:inputPaths})).join('\n')+'\n');return {summary:'Generated independent original items'};
   },agent:{configured:true,close:async()=>{},query:async(input:import('@mote/agent').QueryInput)=>{
-    calls++;const members=(input.taskContext?.memoryWork as {members?:MemoryWorkMember[]}|undefined)?.members;assert.ok(members?.length);
+    const topic=fixtureTopicResult(input);if(topic)return topic;calls++;const members=(input.taskContext?.memoryWork as {members?:MemoryWorkMember[]}|undefined)?.members;assert.ok(members?.length);
     for(const member of members){const context=member.attributionContext;assert.equal(context.ownerRelation,'unknown');assert.equal(context.basis,'default');assert.equal(context.importStatements?.[0].instruction,instruction);assert.deepEqual(context.importStatements?.[0].captureIds,[member.inputKey]);}
     if(input.traceContext?.phase==='review'&&!reviewedPrefix){reviewedPrefix=true;assert.equal(node.imports.get(importId).status,'importing');release();}
     return {answer:generatedMemoryOutput(input),citations:[],trace:[],runId:'generated-context-'+calls};
   }}};
-  node=await buildApp(config,dependencies);await node.app.ready();t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
+  node=await buildApp(config,dependencies);await node.app.ready();await authorizeFixtureModels(node);t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const headers={authorization:'Bearer '+config.token},created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{instruction,files:[{name:'generated.custom',dataBase64:Buffer.from(original.text).toString('base64')}]}});
   assert.equal(created.statusCode,202,created.body);importId=created.json().id;
   for(let i=0;i<200&&node.imports.get(importId).status!=='awaiting_confirmation';i++)await setTimeout(20);

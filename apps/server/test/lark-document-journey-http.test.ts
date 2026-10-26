@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -18,6 +19,7 @@ test('all nine generated document journeys use owner HTTP intake, automatic revi
   // This provider is an explicit fixture: it verifies lifecycle and proof wiring,
   // not semantic interpretation or real Feishu coverage. Live quality is separate.
   const dependencies={backgroundWorker:false,connectorTesting:{lark:upstream.runner},createModelAgent:async(_settings:unknown,reader:ContextReader)=>({configured:true,close:async()=>{},query:async(input:QueryInput)=>{
+    const topic=fixtureTopicResult(input);if(topic)return topic;
     const plan=await fixtureMemoryPlan(input);if(plan)return plan;
     calls.push(input);
     const records=await reader.evidence({ids:input.evidenceIds??[]}),candidates=[];
@@ -31,7 +33,7 @@ test('all nine generated document journeys use owner HTTP intake, automatic revi
     }
     return {answer:generatedMemoryOutput(input,candidates),citations:records.map(record=>({id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:''})),trace:[],runId:randomUUID()};
   }})};
-  let node=await buildApp(config,dependencies);await node.app.ready();t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+  let node=await buildApp(config,dependencies);await node.app.ready();await authorizeFixtureModels(node);t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const request=async(method:'GET'|'POST'|'PUT'|'PATCH',url:string,payload?:Record<string,unknown>)=>{
     const response=await node.app.inject({method,url,headers,...(payload?{payload}:{})});assert.ok(response.statusCode>=200&&response.statusCode<300,response.body);return response.json();
   };

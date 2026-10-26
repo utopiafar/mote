@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -19,6 +20,7 @@ async function fixture(t:TestContext){
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async()=>{calls++;throw new ProviderFailure({category:'permanent',code:'generated_semantic_failure'});}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const settings=node.lifecycle.settings();for(const id of ['consolidation','insights','working'] as const)settings[id].enabled=false;settings.extraction.minChanges=1;await node.lifecycle.save({revision:node.configService.revision,settings});
+  await authorizeFixtureModels(node);
   const recordId=randomUUID();await node.store.ingest({id:recordId,deviceId:'fixture',deviceName:'Generated',platform:'import',capturedAt:'2026-09-27T00:00:00Z',source:'note',ocrText:text,durationMs:0});
   const save=(kind:'segment'|'semantic')=>{const id=kind==='segment'?'a'.repeat(64):'b'.repeat(64);node.store.archive.save(id,id,id,{kind,text,metadata:{complete:true,...(kind==='semantic'?{evidenceRanges:[{id:recordId,offset:0,length:text.length}]}:{})}},[{id:recordId,fingerprint:node.store.archive.fingerprint(recordId)!}],'fixture','1','fixture');return id;};
   const extraction=()=>node.lifecycle.view().extensions.find(extension=>extension.id==='extraction')!;
@@ -32,7 +34,7 @@ test('a terminal semantic child counts once and owner retry executes only its li
   for(let i=0;i<3;i++)await f.node.lifecycle.tick();assert.equal(f.calls(),1);assert.equal(f.extraction().failures,1,'polling a terminal child is not another model attempt');
   const unrelated='c'.repeat(64);f.node.store.archive.save(unrelated,unrelated,unrelated,{kind:'segment',text,metadata:{complete:true}},[{id:f.recordId,fingerprint:f.node.store.archive.fingerprint(f.recordId)!}],'fixture','1','fixture');
   const selected=f.node.modelSettings.select('memory'),fingerprint=modelConfiguration(selected.id,selected.settings,f.node.modelSettings.view().revision).fingerprint;
-  const foreign=f.node.workflows.enqueue([{name:'semantic',processor:'mote.segment-understanding',inputs:[],artifactInputs:[{id:unrelated,revision:f.node.store.archive.revision(unrelated)!}],config:{artifactId:unrelated,modelFingerprint:fingerprint}}]).semantic;
+  const foreign=await withFixtureOwnerModelWork(f.node,async()=>f.node.workflows.enqueue([{name:'semantic',processor:'mote.segment-understanding',inputs:[],artifactInputs:[{id:unrelated,revision:f.node.store.archive.revision(unrelated)!}],config:{artifactId:unrelated,modelFingerprint:fingerprint}}]).semantic);
   await f.node.workflows.tick();assert.equal(f.node.workflows.view().jobs.find(job=>job.id===foreign)?.state,'failed');const before=f.calls();assert.equal(before,2);
   const status=await f.node.app.inject({method:'GET',url:'/api/memory-settings',headers:f.owner});assert.equal(status.json().extensions.find((item:{id:string})=>item.id==='extraction').status,'failed');
   const url='/api/memory-settings/extraction/'+stopped.active!.id+'/retry';
