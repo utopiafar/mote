@@ -69,6 +69,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     private val library = CentralLibrary(this)
     private val admin = CentralAdmin(this)
     private val activity = CentralWorkActivity(this)
+    private val insights = CentralInsights(this)
 
     fun show(page: String) {
         currentPage = page; detailBack = null; question = null; messages = null; noteText = null; noteMood = null
@@ -84,19 +85,26 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     fun back(): Boolean = detailBack?.let { detailBack = null; it(); true } ?: false
     fun setBack(action: () -> Unit) { ui.enterDetail(); detailBack = action; question = null; messages = null; close() }
     fun clearBack() { detailBack = null }
-    fun resume() { if (currentPage in setOf("plugins", "extensions")) admin.resume(); if (currentPage == "activity") ui.scheduleActivityPoll() }
+    fun resume() { if (currentPage in setOf("plugins", "extensions")) admin.resume(); if (currentPage == "activity") ui.scheduleActivityPoll(); if (currentPage == "insights") insights.resume() }
+    fun showInsights() = insights.show()
+    fun selectInsight(id: String) = insights.select(id)
+    fun pollInsight() = insights.poll()
+    fun pauseInsights() = insights.pause()
+    fun saveInsightState(out: android.os.Bundle) = insights.save(out)
+    fun restoreInsightState(value: android.os.Bundle) = insights.restore(value)
     fun pollWorkActivity() { if (currentPage == "activity") activity.poll() }
     fun saveWorkState(out: android.os.Bundle) = activity.saveState(out)
     fun restoreWorkState(value: android.os.Bundle) = activity.restoreState(value)
     fun openWorkEvidence(ref: String) = library.evidence(CentralEvidenceReference.normalize(ref))
-    fun clearPrivateState() { askState = JSONObject(); question = null; messages = null; noteText = null; noteMood = null; admin.clearPrivateState(); activity.clearPrivateState(); body.removeAllViews() }
-    fun refresh() { ui.navigate(currentPage) }
+    fun clearPrivateState() { askState = JSONObject(); question = null; messages = null; noteText = null; noteMood = null; admin.clearPrivateState(); activity.clearPrivateState(); insights.clear(); body.removeAllViews() }
+    fun refresh() { if (currentPage == "insights") insights.returnFromEvidence(); ui.navigate(currentPage) }
     fun insightRequest(prompt: String): JSONObject = CentralDraftWrites.barrier {
         val saved = insightStore.read()
         if (saved.has("requestId")) saved else JSONObject().put("requestId", UUID.randomUUID().toString())
             .put("timeZone", java.time.ZoneId.systemDefault().id).apply { if (prompt.isNotBlank()) put("prompt", prompt) }
             .also(insightStore::write)
     }
+    fun pendingInsightRequest(): JSONObject = CentralDraftWrites.barrier { insightStore.read() }
     fun insightAccepted() = CentralDraftWrites.barrier { insightStore.write(JSONObject()) }
     fun askAbout(id: String) {
         UUID.fromString(id)

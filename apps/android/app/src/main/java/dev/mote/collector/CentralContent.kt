@@ -34,6 +34,7 @@ internal class CentralContent(
     private val handler = Handler(Looper.getMainLooper())
     private val session by lazy { CentralSession.get(this) }
     private lateinit var body: LinearLayout
+    private lateinit var scroll: ScrollView
     private lateinit var addAction: TextView
     private lateinit var status: TextView
     private lateinit var title: TextView
@@ -60,6 +61,9 @@ internal class CentralContent(
     private var screens: CentralScreens? = null
     private var restoredWorkState = state?.getBundle("workActivity")
     private val restoredWorkOrigin = state?.getString("workActivityOrigin")
+    private var restoredInsightState = state?.getBundle("insightState")
+    private val restoredInsightOrigin = state?.getString("insightOrigin")
+    private var pendingInsightId = state?.getString("insightId")
     private var pickerOrigin: String? = null
     private var pickerChat = false
     private var pickerGeneration = -1L
@@ -67,7 +71,7 @@ internal class CentralContent(
     private var downloadPath: String? = null
     private var downloadOrigin: String? = null
     private var downloadGeneration = -1L
-    private val refreshRun = Runnable { if (resumed) when (page) { "ask" -> screens?.pollAsk(); "activity" -> screens?.pollWorkActivity() } }
+    private val refreshRun = Runnable { if (resumed) when (page) { "ask" -> screens?.pollAsk(); "activity" -> screens?.pollWorkActivity(); "insights" -> screens?.pollInsight() } }
 
     private val refreshLogin = object : Runnable {
         override fun run() {
@@ -142,7 +146,7 @@ internal class CentralContent(
         }; shell.header(status)
         collectionBar = LinearLayout(this).apply { tag = "central-collection-scope"; orientation = LinearLayout.VERTICAL; visibility = View.GONE; setPadding(moteDp(16), 0, moteDp(16), moteDp(8)) }
         shell.header(collectionBar)
-        val scroll = ScrollView(this).apply { isFillViewport = true }
+        scroll = ScrollView(this).apply { isFillViewport = true }
         body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(16), moteDp(12), moteDp(16), moteDp(24)) }
         scroll.addView(body); shell.content(scroll)
         if (openLocalPage == null) navigation = MotePrimaryNavigation(activity) { destination ->
@@ -187,6 +191,11 @@ internal class CentralContent(
             if (endpoint == restoredWorkOrigin) restoredWorkState?.let { screens?.restoreWorkState(it) }
             restoredWorkState = null
         }
+        if (client != null) {
+            if (endpoint == restoredInsightOrigin) restoredInsightState?.let { screens?.restoreInsightState(it) }
+            restoredInsightState = null
+            pendingInsightId?.let { screens?.selectInsight(it) }; pendingInsightId = null
+        }
         if (client == null) { screens?.clearPrivateState(); login() }
         else if (changed || authenticated || sessionChanged || body.childCount == 0) navigate(page) else if (page == "ask") scheduleAskPoll() else if (page == "activity") scheduleActivityPoll()
     }
@@ -194,7 +203,7 @@ internal class CentralContent(
         accessReady = true
         pendingResult?.let { (request, result, data) -> pendingResult = null; activityResult(request, result, data) }
     }
-    fun pause() { resumed = false; foregroundRevision++; accessReady = false; pending.clear(); handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); screens?.close() }
+    fun pause() { resumed = false; foregroundRevision++; accessReady = false; pending.clear(); handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); screens?.pauseInsights(); screens?.close() }
     fun close() { pause(); pending.clear() }
     fun saveState(state: Bundle) {
         state.putLong("browserDurationMs", browserDurationMs)
@@ -206,6 +215,8 @@ internal class CentralContent(
         state.putString("downloadOrigin", downloadOrigin); state.putLong("downloadGeneration", downloadGeneration)
         state.putString("workActivityOrigin", server)
         state.putBundle("workActivity", Bundle().also { screens?.saveWorkState(it) })
+        state.putString("insightId", pendingInsightId); state.putString("insightOrigin", server)
+        state.putBundle("insightState", Bundle().also { screens?.saveInsightState(it) ?: restoredInsightState?.let(it::putAll) })
     }
     fun back(): Boolean {
         if (screens?.back() == true) { updateBackButton(); return true }
@@ -227,6 +238,13 @@ internal class CentralContent(
         if (client == null) { if (server.isBlank()) disconnected() else login(); return }
         screens?.show(next)
     }
+    internal fun openInsight(id: String) {
+        if (!InsightPresentation.validId(id)) { notice(MoteI18n.text("请求的资源不存在或已删除。")); return }
+        if (client == null || screens == null) pendingInsightId = id else screens?.selectInsight(id)
+        navigate("insights")
+    }
+    internal fun contentScroll() = scroll.scrollY
+    internal fun restoreContentScroll(position: Int) { val stamp = revision; scroll.post { if (stamp == revision) scroll.scrollTo(0, position.coerceAtLeast(0)) } }
     internal fun openWorkDestination(page: String) {
         if (openLocalPage != null && page == "ask") localPage("ASK")
         else if (openLocalPage != null && page == "sources") localPage("SOURCES")
@@ -410,6 +428,7 @@ internal class CentralContent(
     }
     internal fun scheduleAskPoll(delay: Long = 1500) { handler.removeCallbacks(refreshRun); if (resumed && page == "ask") handler.postDelayed(refreshRun, delay) }
     internal fun scheduleActivityPoll() { handler.removeCallbacks(refreshRun); if (resumed && page == "activity") handler.postDelayed(refreshRun, 3000) }
+    internal fun scheduleInsightPoll(delay: Long = 5000) { handler.removeCallbacks(refreshRun); if (resumed && page == "insights") handler.postDelayed(refreshRun, delay) }
     private data class WorkValue<T>(val value: T, val generation: Long)
     internal fun <T> work(label: String, job: (UiTask.Progress) -> T, done: (T) -> Unit) = work(label, job, false, done)
     private fun <T> work(label: String, job: (UiTask.Progress) -> T, allowSessionChange: Boolean, done: (T) -> Unit) {

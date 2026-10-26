@@ -1,5 +1,9 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "生成任务": "Generation tasks",
+  "查看发现": "View discovery",
+  "上次提交结果尚未确认；先重试原要求，当前草稿会保留。": "The previous submission is not confirmed. Retry its original request first; your current draft will be kept.",
+  "重试上次提交": "Retry previous submission",
   "发现历史": "Discovery history",
   "查看依据": "View evidence",
   "报告暂不可读取，请重试。": "The report could not be read. Please retry.",
