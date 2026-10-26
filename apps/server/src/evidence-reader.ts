@@ -166,7 +166,7 @@ export class EvidenceReader {
         // Source-wide policy still applies to every ancestor; raw-representation
         // denials do not revoke its separately permitted canonical Material.
         const sourceKind=p?.document?.coding?'coding-agent':this.sourceKind(p?.sourceId,record.source);
-        if(!exposure.policy.allows({sourceKind,sourceId:p?.sourceId,representation:'material',operation:exposure.operation,phase:'complete'}))return false;
+        if(!exposure.policy.allows({sourceKind,sourceId:p?.sourceId,deviceId:record.deviceId,representation:'material',operation:exposure.operation,phase:'complete'}))return false;
       }
     }
     return true;
@@ -705,7 +705,7 @@ export class EvidenceReader {
     }
     const sourceKind=record.source==='screen'||record.source==='ui_page'?'screen':provenance?.document?.coding?'coding-agent':this.sourceKind(provenance?.sourceId,record.source);
     const phase:EvidencePhase=record.ocr?.status==='pending'?'pending':record.ocr?.status==='failed'?'partial':'complete';
-    return this.exposureAllows({sourceKind,sourceId:provenance?.sourceId,representation,operation,phase},policy,screenOriginalGrant);
+    return this.exposureAllows({sourceKind,sourceId:provenance?.sourceId,deviceId:record.deviceId,representation,operation,phase},policy,screenOriginalGrant);
   }
   /** The built-in authored organizer binds a logical Material to one current
    * owner capture. A string prefix alone is never an authorization claim. */
@@ -1019,7 +1019,7 @@ export class EvidenceReader {
     }
     return {items,nextCursor:cursor??null};
   }
-  agent(options:{diagnostics:ServerDiagnostics;allowQueryImages?:()=>boolean;exposurePolicy?:EvidenceExposurePolicy;currentOperation?:()=> 'query'|'memory';currentContextTime?:()=>string|undefined;currentGrantContext?:()=>object|undefined;currentProcessingEvidence?:()=>Readonly<Record<string,string>>|undefined;currentMaterialInputs?:()=>readonly MaterialInputPin[]|undefined}):ContextReader {
+  agent(options:{assertSources?:(ids:readonly string[],kind?:'text'|'image')=>void;assertEvidence?:(ids:readonly string[],kind?:'text'|'image')=>void;diagnostics:ServerDiagnostics;allowQueryImages?:()=>boolean;exposurePolicy?:EvidenceExposurePolicy;currentOperation?:()=> 'query'|'memory';currentContextTime?:()=>string|undefined;currentGrantContext?:()=>object|undefined;currentProcessingEvidence?:()=>Readonly<Record<string,string>>|undefined;currentMaterialInputs?:()=>readonly MaterialInputPin[]|undefined}):ContextReader {
     const {store,sources}=this,{diagnostics}=options;
     const policy=options.exposurePolicy??defaultEvidenceExposurePolicy;
     const operation=(normal:'discover'|'expand'):EvidenceOperation=>options.currentOperation?.()==='memory'?'memory':normal;
@@ -1078,7 +1078,7 @@ export class EvidenceReader {
         try{
           const page=await contextIndexAsync(this.store,{page:scope=>this.memoryPageAsync({...scope,asOf:scope?.asOf??options.currentContextTime?.()},false,pin.snapshot,{policy,operation:operation('discover')})},this.sources,args,scope=>this.agentSegments(scope,policy,operation('discover'))),ids=new Set<string>();let complete=true;
           for(const value of page.entries){const entry=value as {layer?:string;id?:string;revision?:string};
-            if(entry.layer==='source'||!entry.id)continue;
+            if(entry.layer==='source'){if(entry.id)options.assertSources?.([entry.id]);continue;}if(!entry.id)continue;
             if(entry.layer==='memory'){
               const dependencies=this.store.db.prepare('SELECT evidence_id FROM memory_dependencies WHERE memory_id=?').all(entry.id);if(!dependencies.length){complete=false;continue;}
               ids.add(entry.id);for(const row of dependencies)for(const id of this.memories.dependencyIds(String(row.evidence_id)))ids.add(id);
@@ -1111,6 +1111,7 @@ export class EvidenceReader {
       },
       readImage:async (input)=>{
         const {id,attachmentId}=input;
+        options.assertEvidence?.([id],'image');
         if(!options.allowQueryImages?.())throw new ContextToolError('image_disclosure_disabled','Original-image access for queries is off. The owner must enable on-demand image access in Central Perception settings before a new query. Do not repeat this image request.','stop');
         const context=options.currentGrantContext?.() as {processingImages?:readonly MemoryImageGrant[]}|undefined;
         if(context?.processingImages?.length){
@@ -1142,11 +1143,12 @@ export class EvidenceReader {
       },
       readFileEvidence:async args=>{const id=z.string().uuid().parse(args.id),original=this.evidenceById([id],args)[0];if(!original||!this.captureExposure(original,operation('expand'),policy))return {status:'unavailable'};return this.readFileEvidence({...args,id:formatEvidenceRef('capture',id)});},
       fileChunks:async args=>{const parsed=z.string().uuid().safeParse(args.id);if(!parsed.success||!this.files)return [];const id=parsed.data,parent=this.evidenceById([this.files.version(id).capture_id],args)[0];if(!parent||!this.captureExposure(parent,operation('expand'),policy))return [];return this.chunks({...args,id:formatEvidenceRef('capture',id)}).filter(record=>this.captureExposure(record,operation('expand'),policy));},
-      mediaActivity:async args=>diagnostics.measure('source','activity',()=>{const ids=new Set<string>(),result=store.mediaActivity(args,id=>ids.add(id));return {...result,disclosureDependencies:{version:1 as const,complete:true,ids:[...ids]}};},result=>({count:result.observations})),
+      mediaActivity:async args=>diagnostics.measure('source','activity',()=>{const ids=new Set<string>(),result=store.mediaActivity(args,id=>ids.add(id));options.assertEvidence?.([...ids]);return {...result,disclosureDependencies:{version:1 as const,complete:true,ids:[...ids]}};},result=>({count:result.observations})),
       sourceHistory:async args=>this.sourceHistory({...args,id:formatEvidenceRef('capture',z.string().uuid().parse(args.id))}).filter(record=>this.captureExposure(record,operation('expand'),policy)),
-      sources:async args=>browseSourceContexts(store,sources,args),
+      sources:async args=>{const page=browseSourceContexts(store,sources,args);options.assertSources?.(page.items.map(item=>item.id));return page;},
       sourceContext:async args=>{
         const pin=parseSourceContextRef(args.sourceContextRef);if(!pin)throw new StoreError('Invalid source context reference');
+        options.assertSources?.([pin.sourceId]);
         const source=sources.getSource(pin.sourceId);if(args.deviceId&&source.deviceId!==args.deviceId)throw new StoreError('Source context is outside the selected scope',404);
         const contexts=new SourceContextStore(store),current=contexts.identity(pin.sourceId);
         if(!current||current.version!==pin.version||current.fingerprint!==pin.fingerprint)throw new ContextToolError('attribution_context_changed','The source description changed. Discover its current sourceContextRef and restart; do not combine versions.','correct_arguments');
@@ -1200,7 +1202,7 @@ export class EvidenceReader {
         };
         return this.materials?this.materials.withReadMetadata(read):read();
       },rows=>({count:rows.length})),
-      activity:async args=>diagnostics.measure('source','activity',()=>{const ids=new Set<string>(),result=store.activity(args,id=>ids.add(id));return {...result,disclosureDependencies:{version:1 as const,complete:true,ids:[...ids]}};},result=>({count:result.captures})),
-      devices:async()=>diagnostics.measure('source','devices',()=>({items:store.devices(),observedAt:new Date().toISOString(),disclosureDependencies:{version:1 as const,complete:true,ids:[]}}),page=>({count:page.items.length}))};
+      activity:async args=>diagnostics.measure('source','activity',()=>{const ids=new Set<string>(),result=store.activity(args,id=>ids.add(id));options.assertEvidence?.([...ids]);return {...result,disclosureDependencies:{version:1 as const,complete:true,ids:[...ids]}};},result=>({count:result.captures})),
+      devices:async()=>diagnostics.measure('source','devices',()=>{const items=store.devices();options.assertSources?.(items.map(item=>'device:'+item.deviceId));return {items,observedAt:new Date().toISOString(),disclosureDependencies:{version:1 as const,complete:true,ids:[]}};},page=>({count:page.items.length}))};
   }
 }

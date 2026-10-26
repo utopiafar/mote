@@ -21,6 +21,15 @@ export class StorageLedger {
     expressions.memory_phase_outputs='length(CAST(json AS BLOB))+256';
     expressions.media_execution_calls='length(CAST(input AS BLOB))+coalesce(length(CAST(fact AS BLOB)),0)+1024';
     expressions.media_execution_instance='length(CAST(nonce AS BLOB))+128';
+    expressions.background_model_authorization='length(CAST(json AS BLOB))+128';
+    expressions.background_model_receipts='length(CAST(identity AS BLOB))+128';
+    expressions.background_model_lineage='length(CAST(identity AS BLOB))+length(CAST(original AS BLOB))+64';
+    expressions.background_model_work='length(CAST(id AS BLOB))+length(CAST(json AS BLOB))+128';
+    expressions.background_model_trigger_claims='length(CAST(original AS BLOB))+length(CAST(purpose AS BLOB))+length(CAST(work_id AS BLOB))+64';
+    expressions.background_model_connections_used='length(CAST(work_id AS BLOB))+length(CAST(id AS BLOB))+length(CAST(fingerprint AS BLOB))+64';
+    expressions.background_model_step_authority='length(CAST(step_id AS BLOB))+length(CAST(work_id AS BLOB))+64';
+    expressions.image_backfill_items='length(CAST(batch_id AS BLOB))+length(CAST(capture_id AS BLOB))+coalesce(length(CAST(intent_id AS BLOB)),0)+128';
+    expressions.media_model_intents='length(CAST(capture_id AS BLOB))+length(CAST(phase AS BLOB))+length(CAST(intent_id AS BLOB))+128';
     expressions.owner_questions='length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+length(CAST(identity AS BLOB))+256';
     expressions.owner_question_dependencies='length(CAST(question_id AS BLOB))+length(CAST(evidence_id AS BLOB))+64';
     expressions.owner_question_replies='length(CAST(question_id AS BLOB))+length(CAST(request_id AS BLOB))+length(CAST(request_hash AS BLOB))+128';

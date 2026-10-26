@@ -15,6 +15,7 @@ type Failure = {code:string;message:string};
 
 /** Owner-only conversations share the vault's private SQLite backup and quota. */
 export class Conversations {
+  onTurnReceived?:(turnId:string,conversationId:string)=>void;
   private readonly sourceContexts:SourceContextStore;
   constructor(private readonly store:Store) {
     this.sourceContexts=new SourceContextStore(store);
@@ -98,6 +99,7 @@ export class Conversations {
       this.store.reserveMetadata(size+512);
       this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at,json=excluded.json').run(id,title,previous?.createdAt??now,now,JSON.stringify({scope:turn.scope,turnCount:count+1,status:turn.status,bytes:(meta?.bytes??0)+size,revision:(meta?.revision??0)+1}));
       this.store.db.prepare('INSERT INTO conversation_turns VALUES(?,?,?,?)').run(id,count,turn.id,json);
+      this.onTurnReceived?.(turn.id,id);
       if(own)this.store.db.exec('COMMIT');
     }catch(error){if(own&&this.store.db.isTransaction)this.store.db.exec('ROLLBACK');throw error;}
     return {conversationId:id,turnId:turn.id};

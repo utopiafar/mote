@@ -4,6 +4,7 @@ import { registerExecutionSettingsRoutes } from '../execution-settings-routes.js
 import type { FeatureServices } from '../feature-services.js';
 import { moteText } from '../i18n.js';
 import { registerModelSettingsRoutes } from '../model-settings-routes.js';
+import {registerModelAuthorizationRoutes} from '../model-authorization-routes.js';
 import {z} from 'zod';
 import {ModelSettingsError,type ModelDomain} from '../model-settings.js';
 
@@ -32,8 +33,9 @@ function checkModelCredentialReuse(saved:ModelDomain,patch:Record<string,unknown
 }
 
 /** models: owns its transport, data and command contributions. */
-export function register(app:FastifyInstance,{agentGate,codex,config,configService,diagnostics,executor,interactiveGate,interactiveModelGate,lifecycle,llmGate,maintenanceWorker,memoryPipeline,modelSettings,providerAdmission,runtimeSettings}:Pick<FeatureServices,"agentGate"|"codex"|"config"|"configService"|"diagnostics"|"executor"|"interactiveGate"|"interactiveModelGate"|"lifecycle"|"llmGate"|"maintenanceWorker"|"memoryPipeline"|"modelSettings"|"providerAdmission"|"runtimeSettings">){
+export function register(app:FastifyInstance,{modelAuthorization,availableModelConnections,credential,agentGate,codex,config,configService,diagnostics,executor,interactiveGate,interactiveModelGate,lifecycle,llmGate,maintenanceWorker,memoryPipeline,modelSettings,providerAdmission,runtimeSettings}:Pick<FeatureServices,'modelAuthorization'|'availableModelConnections'|'credential'|"agentGate"|"codex"|"config"|"configService"|"diagnostics"|"executor"|"interactiveGate"|"interactiveModelGate"|"lifecycle"|"llmGate"|"maintenanceWorker"|"memoryPipeline"|"modelSettings"|"providerAdmission"|"runtimeSettings">){
 registerModelSettingsRoutes(app,modelSettings,codex);
+registerModelAuthorizationRoutes(app,modelAuthorization,availableModelConnections,credential);
 const configurationView=()=>{const d=runtimeSettings.diagnostics(),view=serverConfiguration({...config,...runtimeSettings.execution(),diagnosticsEnabled:d.enabled,diagnosticsDebug:d.debug,agentTraceEnabled:d.traceEnabled,logLevel:d.level},{modelSource:modelSettings.view().source,service:configService.view()}),policy=lifecycle.settings().insights,field=view.groups.flatMap(g=>g.fields).find(f=>f.key==='insightIntervalHours');if(field){field.value=policy.enabled?policy.intervalHours:0;field.source='derived';field.description=moteText("已保存的洞察策略：周期到达并且至少 {0} 次增量变化时运行。在记忆设置中直接修改。", policy.minChanges);delete field.envVar;}return view;};
 app.get('/api/configuration',async()=>configurationView());
 app.put('/api/configuration/:id',{bodyLimit:1048576},async req=>{const {id}=z.object({id:z.string().min(1).max(128)}).parse(req.params),body=z.object({revision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),value:z.record(z.unknown()),allowCredentialReuse:z.boolean().optional()}).strict().parse(req.body);if(id==='models')checkModelCredentialReuse(configService.saved<ModelDomain>('models'),body.value,body.allowCredentialReuse===true);await configService.update(id,body.value,body.revision);return configurationView();});

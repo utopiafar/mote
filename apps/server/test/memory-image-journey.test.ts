@@ -96,6 +96,8 @@ async function fixture(t:import('node:test').TestContext,scenario:Scenario){
  await node.processing.saveImageDefault({endpoint:'http://127.0.0.1:9011/generated-ocr'});
  node.processing.runtime.registry.get('image.http').process=async()=>{if(scenario.ocr==='failed')throw new StoreError('Generated unsupported OCR response',422);return {durationMs:0,segments:scenario.ocr==='empty'?[]:[{startMs:0,endMs:0,text:'GENERATED_OCR_TEXT: the article author resigned.'}]};};
  await node.perception.save({revision:node.configService.revision,settings:{...node.perception.settings(),allowQueryImages:!scenario.denied}});
+ const authorization=(await node.app.inject({url:'/api/model-authorization',headers:{authorization:'Bearer '+token}})).json();
+ const consent=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers:{authorization:'Bearer '+token},payload:{revision:authorization.authorization.revision,operationId:randomUUID(),action:'authorize',connections:authorization.connections,scope:{sourceIds:null,dataKinds:['text','image','audio','conversation']}}});assert.equal(consent.statusCode,200,consent.body);
  node.sources.register({id:'generated-memory-image',name:'Generated images',kind:'upload',deviceId:'generated-device',platform:'import',retention:'archive'});
  if(scenario.automatic){node.memoryRecipeSettings.configure({sourceId:'generated-memory-image',recipes:[{id:'mote.personal-memory',version:'5'}]});const settings=node.lifecycle.settings();settings.extraction.enabled=true;await node.lifecycle.save({revision:node.configService.revision,settings});}
  const bytes=await sharp({create:{width:16,height:16,channels:3,background:'#ff0000'}}).png().toBuffer();

@@ -22,7 +22,8 @@ import {fixtureFilePolicy} from './fixtures/file-policy.js';
 const audio=Buffer.from('Generated audio fixture bytes, not a microphone recording.');
 const transcript={durationMs:3000,segments:[{startMs:0,endMs:1000,text:'Generated orchard transcript.'}]};
 async function fixture(t:import('node:test').TestContext){
- const directory=mkdtempSync(join(tmpdir(),'mote-media-authority-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources);
+ const quota:{maxStorageBytes?:number}={};
+ const directory=mkdtempSync(join(tmpdir(),'mote-media-authority-')),store=new Store(directory,quota),sources=new SourceStore(store),files=new FileStore(store,sources);
  new ArchivedFileStore(store);
  const requests:{path:string;bytes:Buffer}[]=[],seen:ModelProcessingRequest[]=[];
  let hold:Promise<void>|undefined,summaryCalls=0,ownerIntentCalls=0,release:()=>void=()=>{},arrived:()=>void=()=>{};
@@ -43,7 +44,7 @@ async function fixture(t:import('node:test').TestContext){
  t.after(async()=>{release();service.closeAllConnections();await new Promise<void>(resolve=>service.close(()=>resolve()));await images?.close();await processing.close();await engine.close();control.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
  const upload=async(bytes=audio,mimeType='audio/wav')=>{const begun=files.begin({sourceId:'phone',item:{externalId:randomUUID(),revision:'1',observedAt:new Date().toISOString(),title:'Generated original',kind:'file',layer:'original',text:'',mimeType,deleted:false},sha256:sha256(bytes),sizeBytes:bytes.length},()=>{});files.part(begun.uploadId,0,bytes,()=>{});return (await files.commit(begun.uploadId,()=>{})).id;};
  const command=(action:'authorize'|'pause'|'stop',dataKinds=['text','image','audio'])=>control.command({action,revision:control.view().revision,operationId:randomUUID(),...(action==='authorize'?{connections:processing.modelConnections(),scope:{sourceIds:['phone'],dataKinds}}:{})});
- return {store,files,sources,requests,seen,url,get processing(){return processing;},get engine(){return engine;},get control(){return control;},upload,command,get summaryCalls(){return summaryCalls;},get ownerIntentCalls(){return ownerIntentCalls;},
+ return {store,files,sources,requests,seen,url,setQuota:(bytes?:number)=>{quota.maxStorageBytes=bytes;},get processing(){return processing;},get engine(){return engine;},get control(){return control;},upload,command,get summaryCalls(){return summaryCalls;},get ownerIntentCalls(){return ownerIntentCalls;},
   async manual(id:string|string[],run:()=>unknown){const work='generated-manual:'+randomUUID();control.manual(work,'manual',typeof id==='string'?[id]:id);await control.run(work,async()=>{run();});return work;},
   hold(){let notify!:()=>void;const started=new Promise<void>(resolve=>notify=resolve);arrived=notify;hold=new Promise<void>(resolve=>release=resolve);return {started,release:()=>release()};},
   async restart(){configuration=processing.configurationSnapshot();await images?.close();images=undefined;await processing.close();await engine.close();control.close();await create();},
@@ -175,4 +176,20 @@ test('a newer single-image intent supersedes a confirmed historical batch withou
  const current=await f.manual(id,()=>images.retry(id,false));assert.notEqual(current,old);const calls=f.ownerIntentCalls;await images.tick();
  assert.equal(f.processing.modelIntent(id,'image'),current);assert.equal(f.requests.length,1);assert.equal(f.ownerIntentCalls,calls);
  assert.equal(f.store.db.prepare('SELECT queued FROM image_backfills').get()!.queued,0);assert.ok(images.detail(id).products.some(p=>p.kind==='ocr'));
+});
+
+
+test('historical item ledger persists exact bytes and quota failure rolls back the batch without consuming preview',async t=>{
+ const f=await fixture(t),images=await f.imageProcessor();
+ const ids=[];for(const color of ['#112233','#445566'])ids.push(await f.upload(await sharp({create:{width:4,height:4,channels:3,background:color}}).png().toBuffer(),'image/png'));
+ images.prepare();const preview=images.previewHistoricalOcr({sourceId:'phone'});
+ await assert.rejects(f.manual(ids,()=>{f.setQuota(f.store.logicalBytes()+600);images.processHistoricalOcr({token:preview.token});}),{statusCode:507});
+ f.setQuota();assert.equal(f.store.db.prepare('SELECT count(*) n FROM image_backfills').get()!.n,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM image_backfill_items').get()!.n,0);
+ for(const id of ids)assert.equal(f.processing.modelIntent(id,'image'),undefined);
+ assert.deepEqual(images.historicalOcrTargets({token:preview.token}),ids);assert.equal(f.requests.length,0);
+ await f.manual(ids,()=>images.processHistoricalOcr({token:preview.token}));f.store.logicalBytes();
+ const rows=f.store.db.prepare('SELECT * FROM image_backfill_items').all();assert.equal(rows.length,2);
+ const expected=rows.reduce((sum,row)=>sum+Buffer.byteLength(String(row.batch_id)+String(row.capture_id)+String(row.intent_id??''))+128,0);
+ assert.equal(f.store.db.prepare("SELECT bytes FROM storage_ledger WHERE name='image_backfill_items'").get()!.bytes,expected);
+ await f.restart();assert.equal(f.store.db.prepare("SELECT bytes FROM storage_ledger WHERE name='image_backfill_items'").get()!.bytes,expected);
 });

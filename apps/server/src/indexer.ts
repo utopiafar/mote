@@ -24,16 +24,16 @@ export class Indexer {
   private closing=false;
   private abort=new AbortController();
   readonly engine:ExecutionEngine;private owned:boolean;private unregister:(()=>void)[]=[];
-  constructor(private store:Store,private config:Pick<Config,'embeddingModel'|'embeddingBaseUrl'|'embeddingApiKey'>,private diagnostics?:ServerDiagnostics,private files?:FileStore,private admission?:(input:{bytes:number;operationId?:string})=>{finish:(usage?:TokenUsage,failed?:boolean)=>void},private options:{executor?:ExecutionEngine;operationId?:()=>string|undefined}={}) {
+  constructor(private store:Store,private config:Pick<Config,'embeddingModel'|'embeddingBaseUrl'|'embeddingApiKey'>,private diagnostics?:ServerDiagnostics,private files?:FileStore,private admission?:(input:{bytes:number;operationId?:string})=>{finish:(usage?:TokenUsage,failed?:boolean)=>void},private options:{executor?:ExecutionEngine;operationId?:()=>string|undefined;authorize?:<T>(evidenceId:string,signal:AbortSignal,task:(signal:AbortSignal)=>Promise<T>)=>Promise<T>;assertModel?:()=>void}={}) {
     this.engine=options.executor??new ExecutionEngine(store);this.owned=!options.executor;
     for(const kind of ['capture','file'] as const)this.unregister.push(this.engine.register({kind:'embedding.'+kind,pool:'embedding',concurrency:()=>2,policy:EXECUTION_POLICIES.modelCall,timeoutMs:300000,
       validate:step=>this.valid(step),admit:()=>this.closing?new ExecutionFailure('blocked','indexer_closed'):!this.configured?new ExecutionFailure('blocked','embedding_not_configured'):undefined,
-      execute:async(step,signal)=>{const combined=AbortSignal.any([signal,this.abort.signal]);return withExecutionCancellation(combined,async()=>{const text=this.inputText(step);return this.performEmbedding(text,45000,combined,step.operationId);});},
+      execute:async(step,signal)=>{const combined=AbortSignal.any([signal,this.abort.signal]),task=(authorizedSignal:AbortSignal)=>withExecutionCancellation(authorizedSignal,async()=>{const text=this.inputText(step);return this.performEmbedding(text,45000,authorizedSignal,step.operationId);});return this.options.authorize?this.options.authorize(String(step.input.evidenceId),combined,task):task(combined);},
       commit:(step,result)=>{const id=String(step.input.evidenceId);if(kind==='capture')this.store.indexed(id,result as number[],this.config.embeddingModel);else this.files!.indexed(id,result as number[],this.config.embeddingModel);},
       project:step=>this.project(step),classify:error=>this.closing?new ExecutionFailure('waiting','interrupted'):new ExecutionFailure('permanent','embedding_invalid'),
     }));
   }
-  private modelFingerprint(){return sha256(JSON.stringify([this.config.embeddingModel,this.config.embeddingBaseUrl]));}
+  private modelFingerprint(){return sha256(JSON.stringify([this.config.embeddingModel,this.config.embeddingBaseUrl,this.config.embeddingApiKey]));}
   private fileInput(id:string){if(!this.files?.isCurrentEvidence(id))return;const row=this.store.db.prepare('SELECT c.id,c.capture_id,c.text,c.metadata,c.start_ms,c.end_ms,v.revision FROM file_chunks c JOIN file_versions v ON v.capture_id=c.capture_id JOIN file_jobs j ON j.capture_id=c.capture_id WHERE c.id=?').get(id);if(!row)return;return {id,captureId:String(row.capture_id),text:String(row.text),fingerprint:sha256(JSON.stringify([row.capture_id,row.text,row.metadata,row.start_ms,row.end_ms,row.revision]))};}
   private valid(step:ExecutionStep){if(step.input.modelFingerprint!==this.modelFingerprint())return false;const id=String(step.input.evidenceId);return step.kind==='embedding.file'?this.fileInput(id)?.fingerprint===step.input.fingerprint:this.store.archive.fingerprint(id)===step.input.fingerprint;}
   private inputText(step:ExecutionStep){const id=String(step.input.evidenceId);if(step.kind==='embedding.file')return this.fileInput(id)!.text;const item=this.store.evidence([id])[0];return [item.appName,item.windowTitle,item.ocrText,...(item.mood===undefined?[]:[`User-provided mood: ${item.mood}`])].join('\n');}
@@ -72,8 +72,9 @@ export class Indexer {
   }
   private async performEmbedding(text:string,timeoutMs:number,signal:AbortSignal,operationId:string):Promise<number[]>{
     const task=async()=>{
+    this.options.assertModel?.();
     const receipt=this.admission?.({bytes:Buffer.byteLength(text.slice(0,EMBEDDING_INPUT_CODE_UNITS)),operationId});
-    try{const result=await this.requestEmbedding(text,timeoutMs,signal);receipt?.finish(result.usage);return result.vector;}catch(error){receipt?.finish(undefined,true);throw error;}
+    try{const result=await this.requestEmbedding(text,timeoutMs,signal);this.options.assertModel?.();receipt?.finish(result.usage);return result.vector;}catch(error){receipt?.finish(undefined,true);throw error;}
     };
     return this.diagnostics?this.diagnostics.measure('index','embedding',task,()=>({count:1})):task();
   }
@@ -125,7 +126,7 @@ export class Indexer {
       const signal=AbortSignal.any([controller.signal,this.abort.signal,...(args.signal?[args.signal]:[])]);
       let scanning=false;
       try{
-        const key=this.config.embeddingModel+"\n"+args.query,cached=this.queryCache.get(key);
+        const key=sha256(JSON.stringify([this.config.embeddingModel,this.config.embeddingBaseUrl,this.config.embeddingApiKey]))+"\n"+args.query,cached=this.queryCache.get(key);
         const vector=cached&&Date.now()-cached.at<60000?cached.vector:await this.embed(args.query,1200,signal);
         if(!cached||cached.vector!==vector){if(this.queryCache.size>=128)this.queryCache.delete(this.queryCache.keys().next().value!);this.queryCache.set(key,{at:Date.now(),vector});}
         const captureQuery=this.store.vectorQuery(this.config.embeddingModel,args),fileQuery=this.files?.vectorQuery(this.config.embeddingModel,args);

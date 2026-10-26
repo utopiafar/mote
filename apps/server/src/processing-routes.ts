@@ -6,7 +6,7 @@ import type {ImageProcessing} from './image-processing.js';
 import type {MediaAssets} from './media-assets.js';
 import {mediaRuntimeSettings,type MediaRuntimeSettings} from './media-configuration.js';
 /** Routes admit work; the shared execution engine remains the only executor. */
-export function registerProcessingRoutes(app:FastifyInstance,{store,workflows,perception,mediaAssets,media:mediaInput,semanticFingerprint}:{store:Store;workflows:ProcessingRuntime;perception:ImageProcessing;mediaAssets:MediaAssets;media?:Partial<MediaRuntimeSettings>;semanticFingerprint:()=>string}){
+export function registerProcessingRoutes(app:FastifyInstance,{store,workflows,perception,mediaAssets,media:mediaInput,semanticFingerprint,withOwnerIntent=async(_id,task)=>task(),withOwnerBatch=async(_ids,task)=>task()}:{store:Store;workflows:ProcessingRuntime;perception:ImageProcessing;mediaAssets:MediaAssets;media?:Partial<MediaRuntimeSettings>;semanticFingerprint:()=>string;withOwnerBatch?:<T>(ids:readonly string[],task:()=>T|Promise<T>)=>Promise<T>;withOwnerIntent?:<T>(id:string,task:()=>T|Promise<T>)=>Promise<T>}){
   const media=mediaRuntimeSettings(mediaInput);
   app.get('/api/processing',async req=>{const q=z.object({state:z.enum(['waiting','running','blocked','failed','cancelled','succeeded','stale']).optional(),cursor:z.coerce.number().int().positive().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);return {archive:store.archive.stats(),...workflows.view(q)};});
   app.put('/api/processing/settings',async req=>workflows.save(req.body));
@@ -16,11 +16,11 @@ export function registerProcessingRoutes(app:FastifyInstance,{store,workflows,pe
   app.get('/api/perception',async()=>perception.view());
   app.get('/api/images/:id',async req=>perception.detail(z.object({id:z.string().uuid()}).parse(req.params).id));
   app.post('/api/images/:id/cancel',async req=>perception.cancel(z.object({id:z.string().uuid()}).parse(req.params).id));
-  app.post('/api/images/:id/retry',async req=>{const {mode,confirmUnknown}=z.object({mode:z.enum(['complete','recompute']).default('complete'),confirmUnknown:z.boolean().default(false)}).strict().parse(req.body??{});return perception.retry(z.object({id:z.string().uuid()}).parse(req.params).id,mode==='recompute',confirmUnknown);});
+  app.post('/api/images/:id/retry',async req=>{const {mode,confirmUnknown}=z.object({mode:z.enum(['complete','recompute']).default('complete'),confirmUnknown:z.boolean().default(false)}).strict().parse(req.body??{});const id=z.object({id:z.string().uuid()}).parse(req.params).id;return withOwnerIntent(id,()=>perception.retry(id,mode==='recompute',confirmUnknown));});
   app.put('/api/perception',async req=>perception.save(req.body));
-  app.post('/api/perception/:id/retry',async req=>{const {id}=z.object({id:z.string().uuid()}).parse(req.params);z.object({kind:z.literal('ocr')}).strict().parse(req.body);return perception.retry(id);});
+  app.post('/api/perception/:id/retry',async req=>{const {id}=z.object({id:z.string().uuid()}).parse(req.params);z.object({kind:z.literal('ocr')}).strict().parse(req.body);return withOwnerIntent(id,()=>perception.retry(id));});
   app.post('/api/perception/ocr/historical-preview',async req=>perception.previewHistoricalOcr(req.body??{}));
-  app.post('/api/perception/ocr/historical-process',async req=>perception.processHistoricalOcr(req.body));
+  app.post('/api/perception/ocr/historical-process',async req=>withOwnerBatch(perception.historicalOcrTargets(req.body),()=>perception.processHistoricalOcr(req.body)));
   app.get('/api/media-models',async()=>{
     const status=mediaAssets.statuses(),token=media.workerToken;
     const probe=async(url:string)=>{if(!token)return null;try{const response=await fetch(url,{headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(1200)});return response.ok?await response.json():null;}catch{return null;}};

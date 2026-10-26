@@ -52,6 +52,8 @@ const interrupted=new Error('Execution interrupted');
 
 /** The host owns admission, retry, cancellation, leases and commit fences. */
 export class ExecutionEngine {
+ private modelAuthority?:{captureStep(step:ExecutionStep):void;assertStep(step:ExecutionStep):void;runStep<T>(step:ExecutionStep,task:(signal:AbortSignal)=>Promise<T>,signal:AbortSignal):Promise<T>};
+ bindModelAuthority(authority:NonNullable<ExecutionEngine['modelAuthority']>){if(this.modelAuthority)throw Error('Model authority is already installed');this.modelAuthority=authority;}
  private programs=new Map<string,Promise<unknown>>();
  private handlers=new Map<string,ExecutionHandler>();
  private admissions=new Map<string,ExecutionPoolAdmission>();
@@ -113,6 +115,7 @@ export class ExecutionEngine {
    const existing=db.prepare('SELECT 1 FROM execution_steps WHERE id=?').get(id);
    if(!existing){this.store.reserveMetadata(Buffer.byteLength(json)+1024);db.prepare("INSERT INTO execution_steps(id,operation_id,kind,pool,input,state,created_at,updated_at) VALUES(?,?,?,?,?,'waiting',?,?)").run(id,operationId,kind,handler.pool,json,now,now);}
    const step=this.get(id)!;if(step.kind!==kind||JSON.stringify(step.input)!==json)throw new StoreError('Execution identity conflict',409);
+   if(!existing)this.modelAuthority?.captureStep(step);
    if(options.initial&&!existing){const seed=options.initial;db.prepare('UPDATE execution_steps SET state=?,attempts=?,available_at=?,error=? WHERE id=?').run(seed.state==='running'?'waiting':seed.state,seed.attempts,seed.availableAt,seed.state==='running'?'interrupted':seed.error??null,id);}
    for(const key of new Set(handler.resourceKeys?.(step)??[]))if(!db.prepare('SELECT 1 FROM execution_resources WHERE step_id=? AND resource_key=?').get(id,key)){this.store.reserveMetadata(Buffer.byteLength(key)+64);db.prepare('INSERT INTO execution_resources VALUES(?,?)').run(id,key);}
    for(const dep of options.dependencies??[])db.prepare('INSERT OR IGNORE INTO execution_dependencies VALUES(?,?)').run(id,dep);
@@ -287,6 +290,7 @@ export class ExecutionEngine {
     if(signal.aborted)throw new ExecutionFailure('stale','grant_revoked');
     if(!this.isCurrentGrant(row.id,fence))throw new ExecutionFailure('stale','grant_revoked');
     if(!handler.validate(step))throw new ExecutionFailure('stale','input_changed');
+    this.modelAuthority?.assertStep(step);
    };
    const grant:ExecutionGrant=Object.freeze({assert:assertGrant,commit:<T>(write:()=>T):T=>{
     if(db.isTransaction)throw new Error('Execution grant commit requires its own transaction');
@@ -294,12 +298,13 @@ export class ExecutionEngine {
     try{assertGrant();const result=write();assertGrant();db.exec('COMMIT');return result;}
     catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
    }});
-   const result=await withExecutionCancellation(signal,()=>handler.execute(step,signal,grant));
+   const result=await withExecutionCancellation(signal,()=>this.modelAuthority?this.modelAuthority.runStep(step,authorizedSignal=>handler.execute(step,authorizedSignal,grant),signal):handler.execute(step,signal,grant));
    signal.throwIfAborted();
    db.exec('BEGIN IMMEDIATE');
    try{
     if(!this.isCurrentGrant(row.id,fence)){db.exec('ROLLBACK');return;}
     if(!handler.validate(step))throw new ExecutionFailure('stale','input_changed');
+    this.modelAuthority?.assertStep(step);
     handler.commit(step,result);
     const at=this.now();
     if(!db.prepare("UPDATE execution_steps SET state='succeeded',fence=NULL,error=NULL,updated_at=? WHERE id=? AND fence=? AND state='running' AND lease_until>?").run(at,row.id,fence,at).changes){db.exec('ROLLBACK');return;}
