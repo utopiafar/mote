@@ -84,14 +84,14 @@ test('an archived image reuses one extraction and composes with its caption for 
 test('processing one selected attachment does not block its caption or another ready attachment',async t=>{
  const f=await fixture(t),authored=await f.author('two-images',2),one=await f.prepare(authored.id,authored.originals[0].id),two=await f.prepare(authored.id,authored.originals[1].id);
  // Explicit forced processing bypasses the shared extraction cache.
- f.node.processing.retry(two);f.failed.add(two);await f.organize();const body=f.node.materials.input(authored.materialId,['source-body'])!;
+ await withFixtureOwnerModelWork(f.node,async()=>f.node.processing.retry(two),{identities:['capture:'+two]});f.failed.add(two);await f.organize();const body=f.node.materials.input(authored.materialId,['source-body'])!;
  await f.node.processing.tick();await f.organize();assert.equal(f.node.files.detail(one).job.state,'succeeded');assert.equal(f.node.files.detail(two).job.state,'failed');
  assert.equal(f.node.materials.input(authored.materialId,['source-body'])!.fingerprint,body.fingerprint);
  const ready=`attachment/${authored.originals[0].id}/text`,waiting=`attachment/${authored.originals[1].id}/text`;
  assert.equal(f.node.materials.input(authored.materialId,['source-body',ready])!.ready,true);assert.equal(f.node.materials.input(authored.materialId,[waiting])!.ready,false);
  const before=f.node.materials.input(authored.materialId,[ready])!.fingerprint;
  assert.equal(f.node.processing.cancellation(two).wait,'unknown');assert.throws(()=>f.node.processing.retry(two,'transcribe',true),{statusCode:409});
- f.failed.delete(two);f.node.processing.retry(two,'transcribe',true,true);await f.node.processing.tick();await f.organize();
+ f.failed.delete(two);await withFixtureOwnerModelWork(f.node,async()=>f.node.processing.retry(two,'transcribe',true,true),{identities:['capture:'+two]});await f.node.processing.tick();await f.organize();
  assert.equal(f.node.materials.input(authored.materialId,[waiting])!.ready,true);assert.equal(f.node.materials.input(authored.materialId,[ready])!.fingerprint,before);assert.equal(f.ocrCalls(),2,'recovery reuses the already valid independent image extraction');
 });
 
