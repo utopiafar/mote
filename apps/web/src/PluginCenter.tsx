@@ -1,18 +1,20 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {Check,ChevronRight,Download,Package,RefreshCw,Settings2,ShieldCheck,X} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
-import type {MemoryBindingView,MemoryPlanView,PluginCenterView,PluginConfigurationField,PluginInstanceView,PluginPackageView,PluginReleasePreview} from '@mote/shared';
-import type {ModelSettingsView} from '@mote/shared/models';
+import type {MemoryBindingView,MemoryPlanView,PluginCenterView,PluginInstanceView,PluginPackageView,PluginReleasePreview} from '@mote/shared';
 import {ApiError,errorMessage,type Api} from './api';
 import {FeatureInventory} from './FeatureInventory';
 import {containDialogFocus} from './dialog-focus';
 import {resources} from './resource-cache';
 import {confirmNavigation,useUnsavedChanges} from './unsaved';
 import {useResource} from './useResource';
-import {capabilityLabel,configurationValid,memoryAdmissionLabel,moduleLabel,packageStateLabel,preparationLabel} from './plugin-center-presentation';
+import {capabilityLabel,memoryAdmissionLabel,moduleLabel,packageStateLabel,preparationLabel} from './plugin-center-presentation';
 import {useHashChoice} from './useHashChoice';
 import {pluginTabFromHash} from './route-query';
 import type {Page} from './navigation';
+import {PluginConfiguration} from './PluginConfiguration';
+import {PluginQuickAdd} from './PluginQuickAdd';
+import {clearQuickAdd} from './plugin-quick-add';
 
 const pluginsPath='/api/plugins',bindingPath='/api/memory-spaces/default/binding';
 type Intent={path:string;method:string;body:Record<string,unknown>;after?:(value:unknown)=>void};
@@ -32,35 +34,8 @@ function Modal({title,close,opener,children,busy}:{title:string;close:()=>void;o
 function Capabilities({items}:{items:PluginReleasePreview['capabilities']}){
  return <ul className="plugin-capabilities">{items.map(item=><li key={item.id}><span>{item.id}</span><span className={'badge '+(item.state==='verified'?'green':'muted')}>{capabilityLabel(item.state)}</span>{item.reason&&<small>{item.reason}</small>}</li>)}</ul>;
 }
-function Configuration({api,item,instance,busy,onSave}:{api:Api;item:PluginPackageView;instance?:PluginInstanceView;busy:boolean;onSave:(body:Record<string,unknown>)=>void}){
- const fields=instance?.configurationSchema??item.configurationSchema??[];
- const [name,setName]=useState(instance?.name??item.name),[scope,setScope]=useState(instance?.scope??'default'),[values,setValues]=useState<Record<string,string|number|boolean>>({...instance?.configuration});
- const baseline=JSON.stringify({name:instance?.name??item.name,scope:instance?.scope??'default',values:instance?.configuration??{}});
- const dirty=JSON.stringify({name,scope,values})!==baseline;
- useUnsavedChanges(dirty);
- const models=useResource<ModelSettingsView>(api,fields.some(field=>field.type==='model-profile')?'/api/model-settings':null);
- function fieldControl(field:PluginConfigurationField){
-  const value=values[field.id];
-  const update=(next:string|number|boolean)=>setValues(current=>({...current,[field.id]:next}));
-  if(field.type==='boolean')return <input type="checkbox" checked={value===true} onChange={event=>update(event.target.checked)} disabled={busy}/>;
-  if(field.type==='select'||field.type==='model-profile'){
-   const options=field.type==='model-profile'?(models.data?.profiles.map(profile=>({value:profile.id,label:profile.name}))??[]):field.options??[];
-   return <select value={typeof value==='string'?value:''} required={field.required} disabled={busy||Boolean(field.type==='model-profile'&&models.loading)} onChange={event=>update(event.target.value)}><option value="">{moteText('请选择')}</option>{options.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select>;
-  }
-  return <input type={field.type==='number'?'number':'text'} value={typeof value==='boolean'?'':value??''} required={field.required} disabled={busy} autoComplete="off" onChange={event=>update(field.type==='number'&&event.target.value!==''?Number(event.target.value):event.target.value)}/>;
- }
- return <form onSubmit={event=>{event.preventDefault();if(name.trim()&&scope.trim()&&configurationValid(fields,values))onSave({name:name.trim(),scope:scope.trim(),configuration:values});}}>
-  <p>{moteText('配置实例与资料范围，再单独启用。启用不会自动替换当前记忆方案。')}</p>
-  <div className="plugin-fields"><label className="preference-field">{moteText('实例名称')}<input value={name} required maxLength={100} disabled={busy} onChange={event=>setName(event.target.value)}/></label><label className="preference-field">{moteText('资料范围')}<input value={scope} required disabled={busy} onChange={event=>setScope(event.target.value)}/><small>{moteText('由中央节点核验授权范围；填写范围不会授予新的数据权限。')}</small></label>
-   {fields.map(field=><label className="preference-field" key={field.id}>{field.label}{fieldControl(field)}{field.description&&<small>{field.description}</small>}{field.type==='secret-reference'&&<small>{moteText('仅填写服务器保存的凭据引用，不填写凭据本身。')}{instance?.secretStatus[field.id]?' '+moteText('服务器已配置凭据。'):''}</small>}</label>)}
-  </div>
-  {!instance&&!item.configurationSchema&&<p className="notice">{moteText('先创建实例，中央节点返回此插件的配置字段。')}</p>}
-  {models.error!==undefined&&<p className="notice error" role="alert">{errorMessage(models.error)}</p>}
-  <div className="plugin-footer"><button className="button primary" disabled={busy||!name.trim()||!scope.trim()||!configurationValid(fields,values)}>{busy?moteText('正在保存…'):instance?moteText('保存配置'):moteText('创建实例')}</button></div>
- </form>;
-}
 
-export function PluginCenter({api,onPage}:{api:Api;onPage:(page:Page)=>void}){
+export function PluginCenter({api,onPage,viewScope}:{api:Api;onPage:(page:Page)=>void;viewScope?:string}){
  const pluginResource=useResource<PluginCenterView>(api,pluginsPath,3000),bindingResource=useResource<MemoryBindingView>(api,bindingPath,3000);
  const view=pluginResource.data,binding=bindingResource.data;
  const [tab,setTab]=useHashChoice('tab',pluginTabFromHash),[selected,setSelected]=useState<string>(),[dialog,setDialog]=useState<Dialog>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[retry,setRetry]=useState<Intent>();
@@ -70,9 +45,11 @@ export function PluginCenter({api,onPage}:{api:Api;onPage:(page:Page)=>void}){
  useEffect(()=>{
   const denied=[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
   if(!denied)return;
+  clearQuickAdd();
   controller.current?.abort();busyRef.current=false;setBusy(false);setDialog(undefined);setRetry(undefined);setNotice('');
  },[pluginResource.error,bindingResource.error]);
  const currentPackage=view?.packages.find(item=>item.id===selected)??view?.packages[0];
+ const privateDenied=[pluginResource.error,bindingResource.error].some(cause=>cause instanceof ApiError&&[401,403,404,410].includes(cause.status));
  const latestInstance=dialog?.kind==='configure'&&dialog.instance?view?.instances.find(instance=>instance.id===dialog.instance!.id):undefined;
  function open(next:Dialog,event?:HTMLElement){if(!confirmNavigation())return;opener.current=event??document.activeElement as HTMLElement;setDialog(next);setScope('default');setFee(false);setError('');setNotice('');setRetry(undefined);}
  function close(){if(!busy&&confirmNavigation())setDialog(undefined);}
@@ -125,6 +102,7 @@ export function PluginCenter({api,onPage}:{api:Api;onPage:(page:Page)=>void}){
     {!view.instances.some(instance=>instance.packageId===currentPackage.id)&&<p className="plugin-empty">{moteText('此安装包尚无配置实例；没有运行，也没有绑定到记忆方案。')}</p>}
    </section>}</div></div>}
   </>}
+  {tab==='discover'&&!privateDenied&&<PluginQuickAdd api={api} viewScope={viewScope} view={view} binding={binding} refresh={refresh} onManage={id=>{setSelected(id);setTab('installed');}}/>}
   {tab==='discover'&&<section className="panel plugin-discovery"><div className="section-heading"><h2>{moteText('从 GitHub 添加')}</h2><Download size={20}/></div><p>{moteText('读取兼容发布包，预览版本、能力与访问范围后安装。GitHub 数据连接器仍在资料来源中管理。')}</p>
    {view&&!view.installation.supported&&<p className="notice">{view.installation.reason??moteText('当前节点不支持在线安装。')}</p>}
    <form className="plugin-fields" onSubmit={event=>{event.preventDefault();void resolve();}}><label className="preference-field">{moteText('GitHub 仓库')}<input value={repository} onChange={event=>setRepository(event.target.value)} placeholder="https://github.com/owner/repository" required disabled={busy}/></label><label className="preference-field">{moteText('发布标签（可选）')}<input value={tag} onChange={event=>setTag(event.target.value)} disabled={busy}/></label><div className="plugin-footer"><button className="button primary" disabled={busy||!repository.trim()||!view?.installation.supported}>{busy?moteText('正在解析…'):moteText('预览发布包')}</button></div></form>
@@ -157,7 +135,7 @@ export function PluginCenter({api,onPage}:{api:Api;onPage:(page:Page)=>void}){
   {dialog&&<Modal title={dialog.kind==='install'?moteText('安装预览'):dialog.kind==='configure'?moteText('配置实例'):dialog.kind==='prepare'?moteText('更换方案预览'):dialog.kind==='uninstall'?moteText('卸载安装包'):moteText('立即停止自动记忆')} close={close} busy={busy} opener={opener.current}>
    {error&&<p className="notice error" role="alert">{error}{retry&&<button className="text-button" disabled={busy} onClick={()=>void execute(retry)}>{moteText('重试同一请求')}</button>}</p>}
    {dialog.kind==='configure'&&latestInstance&&dialog.instance&&latestInstance.revision!==dialog.instance.revision&&<p className="notice">{moteText('配置已被其他会话更新；当前草稿尚未覆盖服务器。')}<button className="text-button" disabled={busy} onClick={()=>{if(confirmNavigation())setDialog({...dialog,instance:latestInstance});}}>{moteText('重新读取配置并丢弃草稿')}</button></p>}
-   {dialog.kind==='configure'&&<Configuration key={dialog.instance?dialog.instance.id+':'+dialog.instance.revision:'create:'+dialog.package.id} api={api} item={dialog.package} instance={dialog.instance} busy={busy} onSave={body=>command(dialog.instance?'/api/plugin-instances/'+encodeURIComponent(dialog.instance.id):'/api/plugin-instances',dialog.instance?.revision??view!.revision,{...body,...(!dialog.instance?{packageId:dialog.package.id}:{})},value=>{if(dialog.instance||dialog.package.configurationSchema)setDialog(undefined);else setDialog({kind:'configure',package:dialog.package,instance:value as PluginInstanceView});},dialog.instance?'PATCH':'POST')}/>}
+   {dialog.kind==='configure'&&<PluginConfiguration key={dialog.instance?dialog.instance.id+':'+dialog.instance.revision:'create:'+dialog.package.id} api={api} item={dialog.package} instance={dialog.instance} busy={busy} onSave={body=>command(dialog.instance?'/api/plugin-instances/'+encodeURIComponent(dialog.instance.id):'/api/plugin-instances',dialog.instance?.revision??view!.revision,{...body,...(!dialog.instance?{packageId:dialog.package.id}:{})},value=>{if(dialog.instance||dialog.package.configurationSchema)setDialog(undefined);else setDialog({kind:'configure',package:dialog.package,instance:value as PluginInstanceView});},dialog.instance?'PATCH':'POST')}/>}
    {dialog.kind==='install'&&<><h3>{dialog.preview.name} · {dialog.preview.version}</h3><dl className="plugin-facts"><div><dt>{moteText('来源')}</dt><dd>{dialog.preview.source.repository}</dd></div><div><dt>{moteText('固定版本')}</dt><dd>{dialog.preview.source.tag} · {dialog.preview.source.commit}</dd></div><div><dt>{moteText('完整性摘要')}</dt><dd>{dialog.preview.source.digest}</dd></div><div><dt>{moteText('运行位置')}</dt><dd>{dialog.preview.runtime==='worker'?moteText('中央 Worker'):moteText('独立服务')}{dialog.preview.restartRequired?' · '+moteText('安装后需重启'):''}</dd></div><div><dt>{moteText('访问声明')}</dt><dd>{dialog.preview.access.length?dialog.preview.access.join(' · '):moteText('没有访问声明')}</dd></div><div><dt>{moteText('依赖')}</dt><dd>{dialog.preview.dependencies.join(' · ')||moteText('无声明依赖')}</dd></div></dl><Capabilities items={dialog.preview.capabilities}/><p className="notice">{moteText('可信插件代码拥有中央宿主权限；访问声明不是沙箱隔离。安装完成后仍需配置、启用与绑定。')}</p>{dialog.preview.issues.map((issue,index)=><p className="notice" key={index}>{issue}</p>)}<div className="plugin-footer"><button className="button primary" disabled={busy||!dialog.preview.installable||!view?.installation.supported} onClick={()=>command('/api/plugins/install',view!.revision,{previewId:dialog.preview.id},value=>{const installed=(value as PluginCenterView).packages.find(item=>item.source.commit===dialog.preview.source.commit&&item.source.repository===dialog.preview.source.repository);setSelected(installed?.id);setTab('installed');setDialog(undefined);})}>{busy?moteText('正在安装…'):moteText('安装此版本')}</button><button className="button subtle" disabled={busy} onClick={close}>{moteText('取消')}</button></div></>}
    {dialog.kind==='prepare'&&<form onSubmit={event=>{event.preventDefault();if(fee&&scope.trim())memoryCommand('prepare',{targetPlanId:dialog.plan.id,scope:scope.trim(),feeAcknowledged:true},()=>setDialog(undefined));}}><h3>{binding?.activePlan.name} → {dialog.plan.name}</h3><p>{moteText('更换正文权威时须迁移记忆正文、修正与删除标记，再准备索引。同一正文权威只更换检索时可重建索引。准备完成不会自动生效。')}</p><p>{moteText('迁移全部 Mote 保留记忆正文及更正/替代状态。外部原生审计历史和引擎图保留在旧实例及运行备份中，不承诺跨引擎迁移。')}</p><Capabilities items={dialog.plan.capabilities}/><label className="preference-field">{moteText('历史授权范围')}<input value={scope} onChange={event=>setScope(event.target.value)} required disabled={busy}/><small>{moteText('范围必须已获授权；准备不包含未授权历史或暂停期间的新提取。')}</small></label><label className="plugin-confirm"><input type="checkbox" checked={fee} onChange={event=>setFee(event.target.checked)} disabled={busy}/><span>{moteText('已确认范围。真实接入可能产生模型与 Embedding 费用，费用以实际服务用量为准。')}</span></label><p>{moteText('生效前会冻结旧方案新增写入，排空并核对尾部任务，验证新绑定；既有查询仍读取固定旧版本。')}</p><div className="plugin-footer"><button className="button primary" disabled={busy||!fee||!scope.trim()}>{busy?moteText('正在登记…'):moteText('开始准备')}</button><button className="button subtle" type="button" disabled={busy} onClick={close}>{moteText('取消')}</button></div></form>}
    {dialog.kind==='uninstall'&&<><h3>{dialog.package.name} · {dialog.package.version}</h3><p>{moteText('移除此安装包。已绑定、仍有历史读者或正在排空的包不能卸载，中央节点会再次核验。')}</p><div className="plugin-footer"><button className="button primary" disabled={busy||!view?.packages.find(item=>item.id===dialog.package.id)?.allowedActions.includes('uninstall')} onClick={()=>command('/api/plugins/'+encodeURIComponent(dialog.package.id)+'/uninstall',view!.revision,{},()=>{setSelected(undefined);setDialog(undefined);})}>{moteText('确认卸载')}</button><button className="button subtle" disabled={busy} onClick={close}>{moteText('取消')}</button></div></>}

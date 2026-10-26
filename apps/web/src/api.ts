@@ -134,6 +134,8 @@ export interface Answer {
   id?: string;
   artifact?: { id: string; title: string; html: string; createdAt: string; skillId: string; skillVersion: string };
 }
+export interface InsightPage {items:Answer[];nextCursor:string|null}
+export const INSIGHT_HISTORY_PATH='/api/insights?limit=30';
 export interface Range {
   after?: string;
   before?: string;

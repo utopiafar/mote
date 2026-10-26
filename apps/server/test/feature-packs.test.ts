@@ -110,7 +110,7 @@ test('Ask, Insight and Import disposal cancels owned execution and fences uncoop
  for(const path of ['/api/query-runs','/api/insight-runs','/api/imports'])assert.equal((await node.app.inject({url:path,headers})).statusCode,503);
  assert.equal((await node.app.inject({url:'/api/devices',headers})).statusCode,200,'unrelated feature remains live');
  release();await preparing;await new Promise(resolve=>setImmediate(resolve));
- assert.equal(node.store.insights().length,0);assert.equal(node.insightRuns.get(insightId).status,'cancelled');assert.equal(node.imports.get(imported.id).status,'cancelled');
+ assert.equal(node.store.insights().items.length,0);assert.equal(node.insightRuns.get(insightId).status,'cancelled');assert.equal(node.imports.get(imported.id).status,'cancelled');
 });
 
 test('Import scope cancels initial container expansion and removes late temporary output while retaining the original',async t=>{

@@ -35,8 +35,11 @@ async function endpoint(dropFirstAck = false) {
   servers.push(server); await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   return { url: 'http://127.0.0.1:' + (server.address() as { port: number }).port, items, registered, loseNextAck: () => { dropNext = true; },recoverLast:()=>{const m=[...sessions.values()].at(-1);expect(m).toBeDefined();recoveries=[{captureId:'b67c1b84-f2cd-4e59-bf67-215545a882dc',externalId:m.item.externalId,revision:m.item.revision,sha256:m.sha256,sizeBytes:m.sizeBytes,observedAt:m.item.observedAt}];} };
 }
-async function manager(url: string, token = 'synthetic-source-token', adapters?:SourceAdapterRegistry) {
+async function manager(url: string, token = 'synthetic-source-token', adapters?:SourceAdapterRegistry, controlledWatcher = false) {
   const value = new LocalSourceManager(join(directory, 'private-state'), { serverUrl: url, token, deviceId: 'synthetic-device' }, '/must-not-be-invoked-calendar-helper',false,undefined,adapters);
+  // Fault/restart cases control reconciliation explicitly. Delayed native setup
+  // events must not turn the single deliberately lost ACK into a successful retry.
+  if (controlledWatcher) vi.spyOn((value as any).watcher, 'setTargets').mockResolvedValue(undefined);
   managers.push(value); await value.initialize(); return value;
 }
 describe('native source lifecycle with local HTTP fixtures', () => {
@@ -79,15 +82,15 @@ describe('native source lifecycle with local HTTP fixtures', () => {
 
 it('loads paused durable pending bodies before permitting a connection change and holds background sync', async () => {
   const endpointValue = await endpoint(true), file = join(directory, 'pending.md'); await writeFile(file, 'synthetic queued body');
-  let value = await manager(endpointValue.url); await value.addFiles(file, DEFAULT_SOURCE_OPTIONS); await value.sync();
+  let value = await manager(endpointValue.url, undefined, undefined, true); await value.addFiles(file, DEFAULT_SOURCE_OPTIONS); await value.sync();
   const source = value.status()[0].source; await value.update(source.id, { ...source, enabled: false }); await value.sync(); await value.close();
-  value = await manager(endpointValue.url); await value.sync(); expect(value.connectionActivity().pending).toBe(1);
+  value = await manager(endpointValue.url, undefined, undefined, true); await value.sync(); expect(value.connectionActivity().pending).toBe(1);
   const release = await value.holdConnection(); await value.sync(true); expect(value.connectionActivity()).toEqual({ pending: 1, inFlight: false }); release();
 });
 
 it('checkpoints pending source bodies before credential persistence and recovers identical revisions after restart', async () => {
   const server = await endpoint(true), file = join(directory, 'pending-reauth.md'); await writeFile(file, 'unchanged synthetic pending original');
-  let value = await manager(server.url); await value.addFiles(file, DEFAULT_SOURCE_OPTIONS); await value.sync();
+  let value = await manager(server.url, undefined, undefined, true); await value.addFiles(file, DEFAULT_SOURCE_OPTIONS); await value.sync();
   expect(value.connectionActivity().pending).toBe(1); const oldBody = structuredClone(server.items[0]);
   const replacement = { serverUrl: server.url, token: 'synthetic-replacement-token', deviceId: 'synthetic-device' };
   await expect(value.prepareReauthorization(replacement)).rejects.toThrow('同一节点');
@@ -96,7 +99,7 @@ it('checkpoints pending source bodies before credential persistence and recovers
   await expect(value.prepareReauthorization({ ...replacement, deviceId: 'another-device' })).rejects.toThrow();
   await value.prepareReauthorization(replacement); expect(value.connectionActivity().pending).toBe(1);
   // Simulate exit after new config was saved but before changeConnection updated in-memory state.
-  release(); await value.close(); value = await manager(server.url, replacement.token); await value.sync();
+  release(); await value.close(); value = await manager(server.url, replacement.token, undefined, true); await value.sync();
   expect(value.connectionActivity().pending).toBe(0); expect(server.items).toHaveLength(2); expect(server.items[1]).toEqual(oldBody);
 });
 
@@ -117,7 +120,7 @@ it('a manual sync overlapping an automatic scan waits for one coalesced forced f
 it('flushes durable pending source versions while watcher scans are still running', async () => {
   const server = await endpoint(true), file = join(directory, 'watcher-rerun.md');
   await writeFile(file, 'Generated pending source body');
-  const app = await manager(server.url);
+  const app = await manager(server.url, undefined, undefined, true);
   await app.addFiles(file, DEFAULT_SOURCE_OPTIONS);
   await app.sync(true);
   expect(app.pendingStats().pendingRecords).toBe(1);
@@ -159,10 +162,10 @@ it('flushes durable pending source versions while watcher scans are still runnin
 
 it('an existing snapshot source with no central upload consent stays held across restart and ordinary sync',async()=>{
  const server=await endpoint(true),path=join(directory,'generated-consent.txt');await writeFile(path,'Generated private input');
- let app=await manager(server.url);await app.addFiles(path,DEFAULT_SOURCE_OPTIONS);await app.sync();await app.close();
+ let app=await manager(server.url, undefined, undefined, true);await app.addFiles(path,DEFAULT_SOURCE_OPTIONS);await app.sync();await app.close();
  const configPath=join(directory,'private-state','sources.json'),config=JSON.parse(await readFile(configPath,'utf8'));
  delete config.sources[0].centralProcessingConsent;await writeFile(configPath,JSON.stringify(config));
- const before=server.items.length;app=await manager(server.url);await app.sync();await app.flushPending(new AbortController().signal);
+ const before=server.items.length;app=await manager(server.url, undefined, undefined, true);await app.sync();await app.flushPending(new AbortController().signal);
  expect(server.items).toHaveLength(before);expect(app.status()[0]).toMatchObject({state:'paused',source:{centralProcessingConsent:false}});
  await app.update(app.status()[0].source.id,{...app.status()[0].source,centralProcessingConsent:true});await app.sync();
  expect(server.items.length).toBeGreaterThan(before);expect(app.status()[0].source.centralProcessingConsent).toBe(true);

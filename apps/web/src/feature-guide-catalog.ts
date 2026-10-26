@@ -1647,12 +1647,12 @@ export const guideSections:GuideSection[] = [
             },
             "otherTargets": [
               {
-                "pageId": "archive",
-                "href": "#/library?view=work-activity",
-                "collectionId": "work-activity",
+                "pageId": "activity",
+                "href": "#/activity",
+                "collectionId": null,
                 "categoryId": null,
-                "label": "处理任务",
-                "path": "资料库 → 处理任务",
+                "label": "活动",
+                "path": "活动",
                 "where": "进入后按页面中的名称操作。"
               }
             ],
@@ -1887,12 +1887,12 @@ export const guideSections:GuideSection[] = [
                 "where": "进入后按页面中的名称操作。"
               },
               {
-                "pageId": "archive",
-                "href": "#/library?view=work-activity",
-                "collectionId": "work-activity",
+                "pageId": "activity",
+                "href": "#/activity",
+                "collectionId": null,
                 "categoryId": null,
-                "label": "处理任务",
-                "path": "资料库 → 处理任务",
+                "label": "活动",
+                "path": "活动",
                 "where": "查看产品工作，并展开 Coding 会话接收状态。"
               }
             ],
@@ -1999,12 +1999,12 @@ export const guideSections:GuideSection[] = [
             ],
             "target": {
               "pageId": "archive",
-              "href": "#/library?view=work-activity",
-              "collectionId": "work-activity",
+              "href": "#/library?view=coding-status",
+              "collectionId": "coding-status",
               "categoryId": null,
-              "label": "处理任务",
-              "path": "资料库 → 处理任务 → Coding 会话接收状态",
-              "where": "在处理任务中的「Coding 会话接收状态」摘要展开「查看接收、发布、索引与记忆进度」。",
+              "label": "Coding 会话同步状态",
+              "path": "新增数据源 → Coding Agent 会话",
+              "where": "分别核对正文发布、索引和记忆状态",
               "requiredCollectionIds": ["coding-status"],
               "requires": [
                 "http:GET:/api/coding/uploads"

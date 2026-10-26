@@ -31,7 +31,7 @@ import {ContentEncryption,replaceContentFile} from './content-encryption.js';
 
 export class StoreError extends Error { constructor(message:string, public statusCode=400) {super(message);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
-export type Range = {sourceId?:string;projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string;includeTotal?:boolean;after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string;ocrStatus?:OcrState['status']};
+export type Range = {capturedOrder?:boolean;sources?:CaptureInput['source'][];sourceId?:string;projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string;includeTotal?:boolean;after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string;ocrStatus?:OcrState['status']};
 type Prepared = {input:CaptureInput;bytes?:Buffer;hash:string|null;fingerprint:string;receivedAt?:string};
 type Row = {id:string;json:string;received_at:string;blob_hash:string|null;mime:string|null;index_status:CaptureRecord['indexingStatus'];summary:string|null};
 // Media evidence is searchable without rewriting the original screenshot OCR.
@@ -173,8 +173,8 @@ export class EvidenceStore {
   }
   private clauses(range:Range={}) {
     const clauses:string[]=["(NOT EXISTS(SELECT 1 FROM source_versions v WHERE v.capture_id=captures.id) OR EXISTS(SELECT 1 FROM source_heads h WHERE h.capture_id=captures.id AND h.deleted=0) OR id IN (SELECT capture_id FROM file_heads))"]; const values:(string|number)[]=[];
-    if(range.after) {clauses.push('context_end >= ?');values.push(new Date(range.after).toISOString());}
-    if(range.before) {clauses.push('context_at < ?');values.push(new Date(range.before).toISOString());}
+    if(range.after) {clauses.push(range.capturedOrder?'captured_at >= ?':'context_end >= ?');values.push(new Date(range.after).toISOString());}
+    if(range.before) {clauses.push(range.capturedOrder?'captured_at < ?':'context_at < ?');values.push(new Date(range.before).toISOString());}
     if(range.deviceId) {clauses.push('device_id = ?');values.push(range.deviceId);}
     for(const [key,path] of [['sourceId','sourceId'],['projectKey','document.coding.projectKey'],['repositoryKey','document.coding.repositoryKey'],['provider','document.coding.provider'],['sessionId','document.coding.sessionId']] as const)if(range[key]){clauses.push("json_extract(json,'$.provenance."+path+"') = ?");values.push(range[key]!);}
 
@@ -182,6 +182,7 @@ export class EvidenceStore {
       clauses.push("((json_extract(json,'$.source') != 'media' AND json_extract(json,'$.appId') = ?) OR (json_extract(json,'$.source') = 'media' AND EXISTS (SELECT 1 FROM json_each(captures.json,'$.metadata.media.sessions') AS session WHERE json_extract(session.value,'$.appId') = ?)))");
       values.push(range.appId,range.appId);
     }
+    if(range.sources){clauses.push("json_extract(json,'$.source') IN (SELECT value FROM json_each(?))");values.push(JSON.stringify(range.sources));}
     if(range.source) {clauses.push("json_extract(json,'$.source') = ?");values.push(range.source);}
     if(range.ocrStatus) {
       clauses.push("(CASE WHEN EXISTS (SELECT 1 FROM perception_results pr WHERE pr.capture_id=captures.id AND pr.kind='ocr' AND pr.current=1) THEN 'completed' WHEN mote_ocr_status(json)='disabled' AND json_extract(json,'$.ocrText')='' AND EXISTS (SELECT 1 FROM perception_jobs pj WHERE pj.capture_id=captures.id AND pj.kind='ocr') THEN (SELECT mote_central_ocr_status(pj.state,pj.error,COALESCE((SELECT json_extract(value,'$.enabled') FROM settings WHERE key='perception-effective'),1)) FROM perception_jobs pj WHERE pj.capture_id=captures.id AND pj.kind='ocr') ELSE mote_ocr_status(json) END) = ?");
@@ -373,12 +374,13 @@ export class EvidenceStore {
     const {cursor:_cursor,...scope}=range;const {where,values}=this.clauses(scope);const limit=Math.min(200,Math.max(1,range.limit??50));
     let position:{t:string;id:string}|undefined;
     if(range.cursor){try{position=z.object({t:z.string().datetime(),id:z.string().uuid()}).strict().parse(JSON.parse(Buffer.from(range.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid capture cursor');}}
-    const seek=position?`${where?' AND ':' WHERE '}(context_at<? OR (context_at=? AND id<?))`:'';
-    const rows=this.db.prepare(`SELECT * FROM captures${where}${seek} ORDER BY context_at DESC,id DESC LIMIT ?`).all(...values,...(position?[position.t,position.t,position.id]:[]),limit+1) as unknown as Row[];
+    const time=range.capturedOrder?'captured_at':'context_at';
+    const seek=position?`${where?' AND ':' WHERE '}(${time}<? OR (${time}=? AND id<?))`:'';
+    const rows=this.db.prepare(`SELECT * FROM captures${where}${seek} ORDER BY ${time} DESC,id DESC LIMIT ?`).all(...values,...(position?[position.t,position.t,position.id]:[]),limit+1) as unknown as Row[];
     const totalScope=this.clauses(scope);
     const totalCount=range.includeTotal===false?undefined:Number((this.db.prepare(`SELECT COUNT(*) AS count FROM captures${totalScope.where}`).get(...totalScope.values) as {count:number}).count);
     const more=rows.length>limit;const items=rows.slice(0,limit).map(r=>this.record(r));const last=items.at(-1);
-    return {items,nextCursor:more&&last?Buffer.from(JSON.stringify({t:new Date(sourceContentTime(last)).toISOString(),id:last.id})).toString('base64url'):null,totalCount};
+    return {items,nextCursor:more&&last?Buffer.from(JSON.stringify({t:new Date(range.capturedOrder?last.capturedAt:sourceContentTime(last)).toISOString(),id:last.id})).toString('base64url'):null,totalCount};
   }
   evidence(ids:string[]) {return ids.map(id=>this.db.prepare('SELECT * FROM captures WHERE id=?').get(id) as Row|undefined).filter((x):x is Row=>Boolean(x)).map(r=>this.record(r));}
   /** Host authorization only. Preserve permission/processing metadata without
@@ -774,6 +776,22 @@ export class EvidenceStore {
   }
   deletionRevision() {return Number((this.db.prepare("SELECT COALESCE(MAX(seq),0) AS n FROM changes WHERE operation IN ('delete','supersede')").get() as {n:number}).n);}
   saveInsight(result:unknown,id:string) {this.db.prepare('INSERT INTO insights(id,created_at,json) VALUES(?,?,?)').run(id,new Date().toISOString(),JSON.stringify(result));}
-  insights() {return (this.db.prepare('SELECT id,created_at,json FROM insights ORDER BY created_at DESC LIMIT 30').all() as {id:string;created_at:string;json:string}[]).map(r=>({id:r.id,createdAt:r.created_at,...JSON.parse(r.json)}));}
+  insights(raw:unknown={}) {
+    const {limit,cursor}=z.object({limit:z.coerce.number().int().min(1).max(100).default(30),cursor:z.string().max(2048).optional()}).strict().parse(raw);
+    const revision=this.deletionRevision();let position:{at:string;id:string;revision:number}|undefined;
+    if(cursor){
+      try{position=z.object({at:z.string().datetime(),id:z.string().min(1).max(128),revision:z.number().int().nonnegative()}).strict().parse(JSON.parse(Buffer.from(cursor,'base64url').toString()));}
+      catch{throw new StoreError('Invalid insight cursor');}
+      if(position.revision!==revision)throw new StoreError('Insight history changed; restart browsing',409);
+    }
+    const rows=(position?this.db.prepare('SELECT id,created_at,json FROM insights WHERE created_at<? OR (created_at=? AND id<?) ORDER BY created_at DESC,id DESC LIMIT ?').all(position.at,position.at,position.id,limit+1):this.db.prepare('SELECT id,created_at,json FROM insights ORDER BY created_at DESC,id DESC LIMIT ?').all(limit+1)) as {id:string;created_at:string;json:string}[];
+    const page=rows.slice(0,limit),last=page.at(-1);
+    return {items:page.map(row=>({...JSON.parse(row.json),id:row.id,createdAt:row.created_at})),nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({at:last.created_at,id:last.id,revision})).toString('base64url'):null};
+  }
+  insight(id:string) {
+    const row=this.db.prepare('SELECT id,created_at,json FROM insights WHERE id=?').get(id) as {id:string;created_at:string;json:string}|undefined;
+    if(!row)throw new StoreError('Insight not found',404);
+    return {...JSON.parse(row.json),id:row.id,createdAt:row.created_at};
+  }
   close() {this.db.close();}
 }

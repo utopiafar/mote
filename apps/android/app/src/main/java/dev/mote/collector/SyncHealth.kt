@@ -5,6 +5,7 @@ import android.content.Context
 /** Completion describes retained exceptions as well as runnable work, across both upload lanes. */
 internal object SyncHealth {
     fun finish(context: Context) {
+        if (UploadHistoryRecovery.unavailable) { Settings(context).syncStatus("error", UploadHistoryRecovery.message()); return }
         val inventory = context.queue().syncInventory()
         val pending = SyncSchedule.pending(context)
         val blocked = inventory.getInt("blocked")

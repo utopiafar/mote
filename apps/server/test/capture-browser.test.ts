@@ -1,3 +1,4 @@
+import {captureLibraryVersion} from '../src/capture-library-version.js';
 import {fixtureCaptureRefs} from './fixtures/evidence-refs.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import test,{type TestContext} from 'node:test';
@@ -290,4 +291,52 @@ test('UUID resource paths keep permissions and filters; typed refs are rejected 
  await app.inject({method:'DELETE',url:`/api/connections/${phone.credentialId}`,headers:auth()});
  assert.equal((await app.inject({url,headers:auth(phone.token)})).statusCode,401);
  assert.deepEqual((await app.inject({url:`/api/captures/${ref}/image`,headers:auth()})).rawPayload,image);
+});
+
+
+test('device library reads exact capture identities across pages without granting collectors global access',async t=>{
+ const {app,capture,store}=await fixture(t);
+ const at='2026-09-13T12:00:00.000Z';
+ const records=[capture('phone'),capture('other'),{...capture('phone'),source:'note',imageMime:undefined,imageBase64:undefined,ocr:undefined,ocrText:'Generated authored comment',metadata:{version:1,observedAt:at,noteOrigin:{kind:'share',text:'Generated quoted original',url:'https://generated.invalid/original'}}}];
+ for(const record of records){const res=await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:record});assert.equal(res.statusCode,201,res.body);}
+ const body={after:'2026-09-13T00:00:00.000Z',before:'2026-09-14T00:00:00.000Z',limit:1,candidates:[{deviceId:'phone',id:records[0].id},{deviceId:'wrong',id:records[0].id},{deviceId:'phone',id:randomUUID()}]};
+ const ids:string[]=[];let cursor:string|undefined;
+ do {const res=await app.inject({method:'POST',url:'/api/library/device-view',headers:auth(),payload:{...body,...(cursor?{cursor}:{})}});assert.equal(res.statusCode,200,res.body);const page=res.json();assert.equal(page.coverage,'captures');assert.equal(page.totalCount,undefined);assert.deepEqual(page.matches.map((v:any)=>v.state),['readable','unavailable','unavailable']);
+  ids.push(...page.items.map((v:any)=>v.id));page.items.forEach((v:any)=>assert.equal(v.sortAt,at));cursor=page.nextCursor;
+ }while(cursor);
+ assert.deepEqual(new Set(ids),new Set(records.map(r=>r.id)));assert.equal(ids.length,3);
+ const first=await app.inject({method:'POST',url:'/api/library/device-view',headers:auth(),payload:body});
+ const changed=await app.inject({method:'POST',url:'/api/library/device-view',headers:auth(),payload:{...body,source:'note',cursor:first.json().nextCursor}});assert.equal(changed.statusCode,409);
+ const notes=await app.inject({method:'POST',url:'/api/library/device-view',headers:auth(),payload:{...body,source:'note'}});assert.equal(notes.json().items.length,1);assert.deepEqual(notes.json().items[0].metadata.noteOrigin,records[2].metadata!.noteOrigin);
+ const count=store.list().totalCount;
+ const invitation=await app.inject({method:'POST',url:'/api/connections/collector-invitations',headers:auth(),payload:{serverUrl:'https://generated.invalid',label:'Generated collector'}});
+ const redeemed=await app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invitation.json().invitation.code,deviceId:'collector',deviceName:'Generated collector',platform:'android'}});
+ const denied=await app.inject({method:'POST',url:'/api/library/device-view',headers:auth(redeemed.json().token),payload:body});assert.equal(denied.statusCode,403);
+ assert.equal((await app.inject({method:'POST',url:'/api/library/device-view',payload:body})).statusCode,401);
+ assert.equal(store.list().totalCount,count,'library reads never acknowledge or alter source records');
+});
+
+test('device library distinguishes append-only observation versions for the same capture ID',async t=>{
+ const {app}=await fixture(t),id=randomUUID(),at='2026-09-13T12:00:00.000Z';
+ const original={id,deviceId:'phone',deviceName:'Generated phone',platform:'android',capturedAt:at,durationMs:1000,appId:'generated.app',appName:'Generated app',windowTitle:'',source:'activity',ocrText:'',metadata:{version:1,observedAt:at},privacy:{collection:'activity',mode:'none'},stateSeries:{version:1,samples:[{at,durationMs:1000}]}};
+ const send=async(payload:unknown)=>{const result=await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload});assert.ok([200,201].includes(result.statusCode),result.body);};
+ await send(original);
+ const input={after:'2026-09-13T00:00:00.000Z',before:'2026-09-14T00:00:00.000Z',candidates:[{deviceId:'phone',id}]};
+ const read=async()=>{const result=await app.inject({method:'POST',url:'/api/library/device-view',headers:auth(),payload:input});assert.equal(result.statusCode,200,result.body);return result.json();};
+ const first=await read();assert.equal(first.matches[0].observationCount,1);
+ await send({...original,metadata:{...original.metadata,observedAt:'2026-09-13T12:00:01.000Z'}});
+ const metadataOnly=await read();assert.equal(metadataOnly.matches[0].observationCount,1);assert.notEqual(metadataOnly.matches[0].libraryVersion,first.matches[0].libraryVersion);
+ assert.equal((await app.inject({url:'/api/capture-browser/'+id,headers:auth()})).json().libraryVersion,metadataOnly.matches[0].libraryVersion);
+ await send({...original,stateSeries:{version:1,samples:[...original.stateSeries.samples,{at:'2026-09-13T12:01:00.000Z',durationMs:2000}]}});
+ const expanded=await read();assert.equal(expanded.items[0].observationCount,2);assert.equal(expanded.matches[0].observationCount,2);assert.equal(expanded.items.length,1);
+ await send(original);assert.equal((await read()).matches[0].observationCount,2);
+});
+
+
+test('library original digest agrees with Android golden and changes for metadata-only revisions',()=>{
+ const value={id:'11111111-1111-4111-8111-111111111111',deviceId:'phone',deviceName:'Generated',platform:'android',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,source:'note',ocrText:'Generated </ original 🐾\n',metadata:{version:1,observedAt:'2026-10-01T00:00:00Z',state:{batteryPercent:50.5}}};
+ assert.equal(captureLibraryVersion(value),'c62a6b39ace357a1adadb71c8e271ae69b935b84c4ad56e6f063c0571131b53b');
+ assert.equal(captureLibraryVersion({...value,capturedAt:'2026-10-01T00:00:00.000Z'}),captureLibraryVersion(value));
+ assert.notEqual(captureLibraryVersion({...value,metadata:{...value.metadata,observedAt:'2026-10-01T00:00:01Z'}}),captureLibraryVersion(value));
+ assert.notEqual(captureLibraryVersion(value,'42'.repeat(32)),captureLibraryVersion(value));
 });

@@ -107,7 +107,8 @@ test('merging a newer source version invalidates old memories and retains as-of 
  const archive=origin.exportArchive(1_000_000);await destination.importArchive(archive);
  assert.equal(local.getItem('generated-source',first.externalId)?.revision,'r2');
  assert.equal(memories.get(memory.id).status,'stale');
- assert.equal(destination.insights().length,1,'a superseded source keeps its historical insight version');
+ assert.equal(destination.insights().items.length,1,'a superseded source keeps its historical insight version');
+ assert.equal(destination.insight('generated-import-insight').answer,'合成旧洞察','exact reads retain the same historical report after source revision');
  assert.ok(destination.deletionRevision()>before,'active readers must see the superseded evidence revision');
  const revision=destination.deletionRevision();await destination.importArchive(archive);
  assert.equal(destination.deletionRevision(),revision,'an identical archive retry must not create another supersession');
