@@ -6,7 +6,7 @@ import {createImportAgent} from '../dist/import-agent.js';
 import {AgentTimeoutError,AgentResponseError,AgentProviderError} from '../dist/index.js';
 
 const options={model:'synthetic-model',apiKey:'synthetic-test-key',baseUrl:'http://127.0.0.1:9/v1'};
-const input={workspace:process.cwd(),inputPaths:[],instruction:'Generated lifecycle fixture',helperPath:'generated-only',manifestSchema:{}};
+const input={workspace:process.cwd(),inputPaths:[],hostMedia:[{path:'inputs/photo.png',relativePath:'photo.png',mimeType:'image/png',contentAvailable:false,processing:'after_confirmation'}],instruction:'Generated lifecycle fixture',helperPath:'generated-only',manifestSchema:{}};
 const marker='SYNTHETIC_PRIVATE_STDERR_OR_PROVIDER_TEXT';
 
 test('import cleanup preserves typed primary errors and sanitizes cleanup-only failures',async t=>{
@@ -49,6 +49,7 @@ test('import repairs final formatting with a bounded budget in the same session 
   const result=await agent.prepare(input,notification=>{events.push(notification);throw Error('Synthetic observer failed');});
   assert.equal(result.recordsPath,'records.jsonl');assert.equal(calls.length,2);assert.equal(calls[0].sessionId,calls[1].sessionId);assert.equal(events.length,2);
   assert.equal(calls[0].prompt.requiredSkill,'document-import');assert.match(calls[1].prompt.instruction,/Do not repeat analysis/);assert.ok(!('observer'in calls[0].prompt));
+  assert.deepEqual(calls[0].prompt.hostMedia,input.hostMedia);
   alwaysInvalid=true;await assert.rejects(agent.prepare(input),error=>error instanceof AgentResponseError);assert.equal(calls.length,6,'Initial output plus at most three formatting corrections per preparation');
 });
 

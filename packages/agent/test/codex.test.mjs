@@ -285,10 +285,12 @@ test('Codex close drains concurrent startup and import uses a separate writable 
   const starting=session.start('Generated test',codexContextTools);void starting.catch(()=>{});await session.close();await assert.rejects(starting,AgentProviderError);
   const workspace=join(root,'staging');await mkdir(workspace);
   const agent=createImportAgent({protocol:'codex-app-server',model:'fixture',serviceTier:'fast',codex:{executable:join(root,'fake-codex'),home:root}});t.after(()=>agent.close());
-  const result=await agent.prepare({workspace,inputPaths:[],instruction:'Synthetic import',helperPath:'fixture',manifestSchema:{}});
+  const hostMedia=[{path:join(workspace,'inputs/photo.png'),relativePath:'photo.png',mimeType:'image/png',contentAvailable:false,processing:'after_confirmation'}];
+  const result=await agent.prepare({workspace,inputPaths:[],hostMedia,instruction:'Synthetic import',helperPath:'fixture',manifestSchema:{}});
   assert.equal(result.summary,'Generated import preview');assert.equal(result.recordsPath,undefined);
   const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
   assert.equal(rpc.find(m=>m.method==='thread/start').params.serviceTier,'fast');
+  assert.deepEqual(JSON.parse(rpc.find(m=>m.method==='turn/start').params.input[0].text).hostMedia,hostMedia);
   await assert.rejects(access(await readFile(join(root,'runtime-home'),'utf8')),{code:'ENOENT'});
 });
 

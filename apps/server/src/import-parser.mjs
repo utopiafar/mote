@@ -10,6 +10,7 @@ import {createImportSchemas,dispositionRoles,validateDispositionReferences} from
 const MAX_BYTES=64*1024*1024,MAX_CHARS=2_000_000,MAX_ROWS=20000,MAX_COLUMNS=500;
 const workspace=dirname(fileURLToPath(import.meta.url));
 const inputPaths=new Set(__MOTE_INPUT_PATHS__.map(path=>resolve(workspace,path)));
+const hostAttachmentPaths=new Set(__MOTE_HOST_ATTACHMENT_PATHS__.map(path=>resolve(workspace,path)));
 const within=(root,path)=>{const part=relative(root,path);return part===''||(!part.startsWith(`..${sep}`)&&part!=='..'&&!isAbsolute(part));};
 const {recordSchema,dispositionsSchema:importDispositionsSchema}=createImportSchemas(z,sourceItemSchema);
 async function fileBytes(path,maximum=MAX_BYTES){
@@ -77,7 +78,7 @@ export async function validateRecords(input){
   try{
     const {bytes}=await fileBytes(resolve(workspace,'dispositions.json'),8*1024*1024);
     const dispositions=importDispositionsSchema.parse(JSON.parse(bytes.toString('utf8')));
-    roles=dispositionRoles(dispositions.items,inputPaths,workspace);
+    roles=dispositionRoles(dispositions.items,inputPaths,workspace,hostAttachmentPaths);
   }catch(error){
     errors.push({line:0,error:error.code==='ENOENT'?'The analysis did not provide dispositions.json. Write a per-file disposition list before validating.':String(error.message??error).slice(0,1000)});
   }
@@ -86,7 +87,8 @@ export async function validateRecords(input){
     try{
       const value=recordSchema.parse(JSON.parse(lines[index])),identity=JSON.stringify([value.item.externalId,value.item.revision]);
       if(seen.has(identity))throw Error('Duplicate externalId/revision');seen.add(identity);
-      for(const ref of [...value.evidencePaths,...value.attachments])if(!inputPaths.has(resolve(workspace,ref)))throw Error('References must point to a supplied input file');
+      for(const ref of value.evidencePaths)if(!inputPaths.has(resolve(workspace,ref)))throw Error('Evidence must point to a supplied parser input file');
+      for(const ref of value.attachments)if(!inputPaths.has(resolve(workspace,ref))&&!hostAttachmentPaths.has(resolve(workspace,ref)))throw Error('References must point to a supplied input file or host-managed attachment');
       if(roles)validateDispositionReferences(value,roles,workspace,index+1);
     }catch(error){errors.push({line:index+1,error:String(error.message??error).slice(0,1000)});if(errors.length>=100)break;}
   }

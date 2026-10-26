@@ -12,7 +12,7 @@ import {Readable} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {z} from 'zod';
-import {ProviderFailure,importRequestSchema,importReviewDecisionSchema,sourceItemSchema,type ArchivedFile,type ImportDispositions,type ImportJob,type ImportRequest,type ImportReviewDecision,type ImportReviewGate,type SourceItem} from '@mote/shared';
+import {ProviderFailure,importRequestSchema,importReviewDecisionSchema,sourceItemSchema,type ArchivedFile,type ImportDispositions,type ImportHostMedia,type ImportJob,type ImportRequest,type ImportReviewDecision,type ImportReviewGate,type SourceItem} from '@mote/shared';
 import {ArchivedFileStore,MAX_FILE_BYTES,archiveRelativePath} from './archived-files.js';
 import {privateDirectory,privateFile} from './private-storage.js';
 import {SourceStore} from './sources.js';
@@ -32,7 +32,7 @@ const MAX_INPUT_BYTES=256*1024*1024,MAX_EXPANDED_BYTES=512*1024*1024,MAX_FILES=4
 export class ImportInputError extends StoreError {
   constructor(public code:'import_directory_missing'|'import_directory_unreadable'|'import_directory_required',message:string){super(message,422);}
 }
-export type ImportPreparation={operationId?:string;signal?:AbortSignal;workspace:string;inputPaths:string[];instruction:string;previous?:{summary:string;error?:string}};
+export type ImportPreparation={operationId?:string;signal?:AbortSignal;workspace:string;inputPaths:string[];hostMedia?:ImportHostMedia[];instruction:string;previous?:{summary:string;error?:string}};
 export type ImportPreparationResult={summary:string;recordsPath?:string;warnings?:string[];reviewDecision?:ImportReviewDecision};
 export type ImportRuntime={executor?:ExecutionEngine;intake?:ImportIntakeRegistry;fileStore?:FileStore;prepare?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;sourcePacks?:ReadonlyMap<string,{revision:string;prepare:(input:ImportPreparation)=>Promise<ImportPreparationResult>}>;onImported?:(captureIds:string[],importJobId:string)=>Promise<{memoryJobId?:string}>};
 type InternalJob=ImportJob&{resourceWait?:'prepare'|'commit';excludedFiles?:{fileId:string;reason:string}[];containerIds?:string[];recordsProcessed:number;processing:'automatic'|'preview';sourcePackRevision?:string;archiveWarnings?:string[];createFingerprint?:string;preparationRevision:number;originalsPending?:boolean;expansion?:{originalIds:string[];completedIds:string[];pins?:Record<string,{id:string;version:string}>};parserMode?:'plain';workspace:string;inputs:{path:string;fileId:string}[];manifestHash?:string;failurePhase?:'prepare'|'import';memoryNotified?:boolean;blockedArchive?:boolean};
@@ -280,11 +280,16 @@ export class ImportStore {
     const fd=openSync(input.path,constants.O_WRONLY|constants.O_TRUNC|constants.O_NOFOLLOW);
     await pipeline(Readable.from(this.files.bytes(input.fileId)),createWriteStream(input.path,{fd,autoClose:true}));
   }
-  private validateManifest(job:InternalJob,path:string,output:string,signal?:AbortSignal,expectedHash?:string,dispositions=false){return formatWork({kind:'manifest',workspace:job.workspace,path,output,inputs:job.inputs.map(input=>({...input,file:this.files.get(input.fileId)})),expectedHash,dispositions},signal);}
-  private attempt(job:InternalJob):InternalJob {
+  private hostMedia(job:InternalJob):ImportHostMedia[]{
+    const media=new Map((job.media??[]).map(item=>[item.fileId,item]));
+    return job.inputs.filter(input=>media.has(input.fileId)).map(input=>({path:input.path,relativePath:this.files.get(input.fileId).relativePath,mimeType:media.get(input.fileId)!.format.mimeType,contentAvailable:false,processing:'after_confirmation'}));
+  }
+  private validateManifest(job:InternalJob,path:string,output:string,signal?:AbortSignal,expectedHash?:string,dispositions=false){return formatWork({kind:'manifest',workspace:job.workspace,path,output,inputs:job.inputs.map(input=>({...input,file:this.files.get(input.fileId)})),hostAttachmentPaths:this.hostMedia(job).map(item=>item.path),expectedHash,dispositions},signal);}
+  private attempt(job:InternalJob,includeMedia=false):InternalJob {
     const parent=join(job.workspace,'attempts');privateDirectory(parent);
     const workspace=join(parent,randomUUID());privateDirectory(workspace);privateDirectory(join(workspace,'inputs'));
-    return {...job,workspace,inputs:this.analysisInputs(job).map(input=>({fileId:input.fileId,
+    const selected=new Set([...this.analysisInputs(job).map(item=>item.fileId),...(includeMedia?(job.media??[]).map(item=>item.fileId):[])]);
+    return {...job,workspace,inputs:job.inputs.filter(input=>selected.has(input.fileId)).map(input=>({fileId:input.fileId,
       path:join(workspace,'inputs',archiveRelativePath(relative(join(job.workspace,'inputs'),input.path))) }))};
   }
   /** Parser output stays private to one worker until a fenced preview is published. */
@@ -378,12 +383,13 @@ export class ImportStore {
         job.archiveWarnings??=[...job.warnings];job.warnings=[...job.archiveWarnings];
         delete job.resourceWait;job.status='preparing';job.processingStatus='analyzing';job.error=undefined;job.preview=undefined;job.dispositions=undefined;job.reviewDecision=undefined;job.reviewGate=undefined;job.manifestHash=undefined;job.failurePhase='prepare';this.save(job);
       });
-      attempt=this.attempt(job);
-      // Restore model-readable copies so retries start from authoritative archived bytes.
-      for(const input of attempt.inputs)await this.materialize(input);
+      attempt=this.attempt(job,true);
+      // Media paths identify retained attachments; only parser inputs receive readable copies.
+      const analysisInputs=this.analysisInputs(attempt);
+      for(const input of analysisInputs)await this.materialize(input);
       // Fixed packs keep their parser contract. The owner's freeform note is
       // retained separately as capture-scoped context, not a parser override.
-      const result=responseSchema.parse(await prepare({operationId:`import:${id}`,signal,workspace:attempt.workspace,inputPaths:attempt.inputs.map(i=>i.path),instruction:pack?'':job.instruction,previous}));
+      const result=responseSchema.parse(await prepare({operationId:`import:${id}`,signal,workspace:attempt.workspace,inputPaths:analysisInputs.map(i=>i.path),hostMedia:this.hostMedia(attempt),instruction:pack?'':job.instruction,previous}));
       signal?.throwIfAborted();grant.assert();job.summary=result.summary;job.warnings=[...job.warnings,...(result.warnings??[])].slice(-200);
       const path=result.recordsPath??join(attempt.workspace,'records.jsonl');
       if(!existsSync(resolve(attempt.workspace,path)))return grant.commit(()=>{job.status='unsupported';job.processingStatus='blocked';job.error='Original files are archived. No validated records were produced; revise the instructions or retry with a suitable parser.';this.save(job);return this.public(job);});

@@ -12,6 +12,8 @@ export type ImportReviewGate={decision:'automatic'|'confirmation';reason:string}
 export type ImportMediaItem={fileId:string;format:{id:string;version:string;mimeType:string;reason:string};captureId?:string;
   processing?:{state:string;stage:string;error?:string};searchable?:boolean;
   memory?:{state:string;jobIds:string[]}};
+/** Archived media available for record attachment, with extraction owned by the host. */
+export type ImportHostMedia={path:string;relativePath:string;mimeType:string;contentAvailable:false;processing:'after_confirmation'};
 /** Counts original records, aggregating all receipt-selected recipes for each record. */
 export type ImportMemoryProgress={total:number;receipts:number;completed:number;pending:number;running:number;failed:number;waitingForModel:number;paused:number;cancelled:number;disabled:number;unavailable:number;jobIds:string[]};
 export type ImportJob={

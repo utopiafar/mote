@@ -104,3 +104,27 @@ test('helper and host agree on disposition failures and corrected previews, incl
  // Existing host compatibility remains: old parsers without dispositions need review.
  assert.ok(validateImportManifest(task).warnings.some(w=>w.includes('per-file disposition')));
 });
+
+test('host-retained media references validate without readable bytes but cannot become parsed evidence or hide missing attachments',async t=>{
+ const {workspace,inputPaths}=await helper(t,{'inputs/note.md':'![Generated](photo.png)'}),mediaPath=join(workspace,'inputs/photo.png');
+ const prepared=prepareImportInput({workspace,inputPaths,hostMedia:[{path:mediaPath,relativePath:'photo.png',mimeType:'image/png',contentAvailable:false,processing:'after_confirmation'}],instruction:'Generated media contract'});
+ const {validateRecords,extractFile}=await import(pathToFileURL(prepared.helperPath).href+'?host-media');
+ const file=(path:string,id:string,bytes:Buffer)=>({path,file:{id,hash:createHash('sha256').update(bytes).digest('hex'),name:id,relativePath:id,mimeType:'application/octet-stream',sizeBytes:bytes.length,createdAt:'2026-10-26T00:00:00Z'}});
+ const inputs=[file(inputPaths[0],'note.md',readFileSync(inputPaths[0])),file(mediaPath,'photo.png',Buffer.from('generated retained image'))];
+ const record={item:{externalId:'link-only',revision:'v1',observedAt:'2026-10-26T00:00:00Z',title:'Generated diary',text:'![Generated](photo.png)',kind:'file',layer:'original'},evidencePaths:inputPaths,attachments:[mediaPath]};
+ const task={kind:'manifest' as const,workspace,path:'records.jsonl',output:'prepared.jsonl',inputs,hostAttachmentPaths:[mediaPath],dispositions:true};
+ const dispositions={items:[{path:inputPaths[0],status:'parsed',reason:'Generated diary'}]};
+ writeFileSync(join(workspace,'dispositions.json'),JSON.stringify(dispositions));
+ const write=(value:unknown)=>writeFileSync(join(workspace,'records.jsonl'),JSON.stringify(value)+'\n');
+ write(record);assert.deepEqual(await validateRecords('records.jsonl'),{valid:true,count:1,errors:[]});
+ const valid=validateImportManifest(task);assert.equal(valid.count,1);assert.equal(valid.samples[0].attachmentCount,1);assert.equal(valid.dispositions?.items.length,1);
+ const stored=JSON.parse(readFileSync(join(workspace,'prepared.jsonl'),'utf8'));assert.equal(stored.item.document.attachments[0].id,'photo.png');
+ await assert.rejects(extractFile(mediaPath),/supplied input paths/);
+ write({...record,attachments:[join(workspace,'inputs/missing.png')]});
+ assert.equal((await validateRecords('records.jsonl')).valid,false);assert.throws(()=>validateImportManifest(task),/outside the supplied inputs/);
+ write({...record,evidencePaths:[mediaPath],attachments:[]});
+ assert.equal((await validateRecords('records.jsonl')).valid,false);assert.throws(()=>validateImportManifest(task),/cannot be claimed as parsed evidence/);
+ rmSync(join(workspace,'dispositions.json'));assert.throws(()=>validateImportManifest(task),/cannot be claimed as parsed evidence/);
+ write(record);writeFileSync(join(workspace,'dispositions.json'),JSON.stringify({items:[...dispositions.items,{path:mediaPath,status:'parsed',reason:'Invented media extraction'}]}));
+ assert.equal((await validateRecords('records.jsonl')).valid,false);assert.throws(()=>validateImportManifest(task),/outside the supplied inputs/);
+});
