@@ -15,7 +15,9 @@ export type ActionStatus='proposed'|'dismissed'|'approved'|'executing'|'succeede
 export interface ActionEvidence {id:string;quote:string;fingerprint:string;source:string;capturedAt:string}
 export type ActionKind='calendar.create'|'calendar.update'|'calendar.cancel'|'calendar.complete';
 export interface ActionRelation {operationId?:string;actionId:string;version:number;status:ActionStatus;event:CalendarDraft;target?:{deviceId:string;calendarId:string};externalId?:string}
-export interface ActionProposal {id:string;kind:ActionKind;related?:ActionRelation;resolution?:'cancelled'|'completed';version:number;status:ActionStatus;event:CalendarDraft;uncertainty:string;evidence:ActionEvidence[];createdAt:string;updatedAt:string;operationId?:string;nativeOperationId?:string;target?:{deviceId:string;calendarId:string};externalId?:string;error?:string}
+export type ManagedActionState='waiting_device'|'executing'|'cancel_requested'|'cancelled'|'succeeded'|'uncertain';
+export interface ManagedAction {cancelRequestedAt?:string;grantId:string;grantRevision:number;connectionId:string;state:ManagedActionState}
+export interface ActionProposal {managed?:ManagedAction;id:string;kind:ActionKind;related?:ActionRelation;resolution?:'cancelled'|'completed';version:number;status:ActionStatus;event:CalendarDraft;uncertainty:string;evidence:ActionEvidence[];createdAt:string;updatedAt:string;operationId?:string;nativeOperationId?:string;target?:{deviceId:string;calendarId:string};externalId?:string;error?:string}
 export interface ActionSettings {enabled:boolean;timeZone:string;reviewDeviceIds:string[]}
 export interface ActionTarget {deviceId:string;deviceName:string;calendars:CalendarChoice[];updatedAt:string}
 export const moteActionMarker=(id:string)=>`[Mote:${z.string().uuid().parse(id)}]`;

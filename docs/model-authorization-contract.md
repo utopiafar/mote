@@ -63,3 +63,10 @@ The affected selector expands to native platforms because the English catalog is
 ## Incremental review fixes
 
 Independent review of `3b07f4bf` requested two corrections. Both were reproduced by assembled HTTP fixtures before fixing: a new image with only image/text and its source approved never reached VLM, and a 507 historical-confirmation failure left one manual admission. Image evidence now uses `taskContext.imageEvidence` with no fabricated conversation turn. Historical confirmation uses `manualCommand`, a synchronous transaction covering admission, item intents and frozen members; asynchronous callbacks are rejected. The two regressions and the existing restart/frozen-membership HTTP journey pass after the fix. Quota is set before the HTTP command; repeated failure and database reopen preserve exact logical bytes and work count. Agent build and server typecheck passed.
+
+
+### Calendar/main integration validation
+
+After #257 merged, the only manual conflict was the `featureServices` declaration in `app.ts`. The resolved app file remains byte-identical to approved candidate `4b2b78c8`: both `pluginCenter` and every model authorization/owner-intent service are retained. Main's action grant storage-ledger expression is merged alongside existing model/media/topic accounting.
+
+The combined managed-calendar HTTP fixture now separately authorizes model reading of its generated text source through `/api/model-authorization/commands`; calendar write grants remain independent. The multi-source case explicitly authorizes model reading of the second generated source while preserving the narrower calendar write grant. No production gate was weakened. Initial loopback testing hit sandbox `listen EPERM`; the same generated HTTP test received normal execution approval. Then 8/9 managed-calendar cases passed; the sole multi-source fixture was updated and rerun successfully. The two focused image-understanding and historical-quota authorization cases passed, as did shared library build, Server/Web types and i18n. This is split focused evidence, not a new full-suite run or live calendar/model validation.

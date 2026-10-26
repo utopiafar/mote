@@ -36,7 +36,11 @@ class CalendarActions(private val context: Context, private val foreground: Bool
     private val settings = Settings(context)
     fun permissions() = listOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR).all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
     private fun request(path: String, body: JSONObject? = null): JSONObject {
+        if (path.startsWith("/api/managed-calendar") || path.startsWith("/api/device-action-capabilities")) return deviceRequest(path, body)
         if (foreground) CentralAccess.resolve(context).client?.let { return if (body == null) it.get(path) else it.post(path, body) }
+        return deviceRequest(path, body)
+    }
+    private fun deviceRequest(path: String, body: JSONObject? = null): JSONObject {
         val c = settings.read(); c.validateConnection()
         val (status, value) = HttpJson.request(if (body == null) "GET" else "POST", c.server.trimEnd('/') + path, body, c.connectionToken())
         if (status !in 200..299 || value == null) throw IllegalStateException(if (status == 403) MoteI18n.text("请在中央「行动」设置中授权此设备，或登录中央管理会话。") else MoteI18n.text("中央日程操作未完成（{0}），请刷新重试", status))
@@ -51,16 +55,28 @@ class CalendarActions(private val context: Context, private val foreground: Bool
         } ?: error(MoteI18n.text("无法读取已有日历"))
         return result
     }
-    private fun declareCapability(available: JSONArray?) = CalendarCapabilityPublisher(settings.deviceId, ::request).publish(available)
+    private fun declareCapability(available: JSONArray?) = CalendarCapabilityPublisher(settings.deviceId, ::deviceRequest).publish(available)
     fun connect(): JSONArray = ConnectionGuard.sync {
         val calendars = calendars()
         declareCapability(calendars)
-        request("/api/actions/targets", JSONObject().put("deviceId", settings.deviceId).put("deviceName", settings.read().deviceName).put("calendars", calendars))
+        if (request("/api/connections/self").getJSONObject("credential").optString("scope") != "collector") request("/api/actions/targets", JSONObject().put("deviceId", settings.deviceId).put("deviceName", settings.read().deviceName).put("calendars", calendars))
         CalendarActionWorker.schedule(context)
         calendars
     } ?: error(MoteI18n.text("连接正在切换"))
+    private fun journalRoot(): File = File(context.noBackupFilesDir, "calendar-actions/${SourceRules.hash(settings.read().server.trimEnd('/') + settings.deviceId)}").apply { mkdirs() }
+    private fun journalRead(key: String): String? { val file = File(journalRoot(), key); return if (file.exists()) String(context.secretBox().open(file.readBytes()), Charsets.UTF_8) else null }
+    private fun journalWrite(key: String, value: String) { val root = journalRoot(); val temp = File(root, "$key.tmp"); FileOutputStream(temp).use { it.write(context.secretBox().seal(value.toByteArray(Charsets.UTF_8))); it.fd.sync() }; check(temp.renameTo(File(root, key))) }
     fun deliver() {
         val ready = ConnectionGuard.sync { val available = if (permissions()) calendars() else null; declareCapability(available); available != null } ?: return
+        val paired = ConnectionGuard.sync { !deviceRequest("/api/connections/self").getJSONObject("credential").optString("deviceId", "").isEmpty() } ?: return
+        if (paired) {
+            val managed = ConnectionGuard.sync { request("/api/managed-calendar-deliveries") } ?: return
+            val items = managed.getJSONArray("items")
+            for (i in 0 until items.length()) { val item = items.getJSONObject(i); val operation = UUID.fromString(item.getString("operationId")).toString(); val retained = journalRead(operation)
+                if (ready || retained != null && retained != "attempting") execute(item.getString("id"), operation)
+            }
+            if (!managed.optBoolean("manualReviewAllowed", false)) return
+        }
         if (!ready) return
         val data = ConnectionGuard.sync { request("/api/actions/deliveries?deviceId=${java.net.URLEncoder.encode(settings.deviceId, "UTF-8")}") } ?: return
         val items = data.getJSONArray("items")
@@ -72,10 +88,15 @@ class CalendarActions(private val context: Context, private val foreground: Bool
         request("/api/actions/${action.getString("id")}/confirm", JSONObject().put("version", action.getInt("version")).put("event", event).put("target", target))
     } ?: error(MoteI18n.text("连接正在切换"))
     fun dismiss(action: JSONObject) = ConnectionGuard.sync { request("/api/actions/${action.getString("id")}/dismiss", JSONObject().put("version", action.getInt("version"))) }
-    fun execute(id: String) = synchronized(executionLock) { ConnectionGuard.sync {
+    fun execute(id: String, managedOperationId: String? = null) = synchronized(executionLock) { ConnectionGuard.sync {
         UUID.fromString(id)
-        check(permissions()) { MoteI18n.text("日历权限不可用，请先连接日历") }
-        val action = request("/api/actions/$id/claim", JSONObject().put("deviceId", settings.deviceId))
+        val route = if (managedOperationId == null) "actions" else "managed-calendar"
+        managedOperationId?.let { UUID.fromString(it) }
+        val journal = ManagedCalendarJournal(settings.deviceId, ::request, ::journalRead, ::journalWrite)
+        fun requirePermission() { check(permissions()) { MoteI18n.text("日历权限不可用，请先连接日历") } }
+        val action = if (managedOperationId != null) journal.claim(id, managedOperationId, ::requirePermission) ?: return@sync
+            else { requirePermission(); request("/api/actions/$id/claim", JSONObject().put("deviceId", settings.deviceId)) }
+        if (managedOperationId != null) require(action.getString("operationId") == managedOperationId && action.getString("kind") == "calendar.create")
         require(action.getString("id") == id && action.getString("kind") in listOf("calendar.create", "calendar.update", "calendar.cancel"))
         require(action.getJSONObject("target").getString("deviceId") == settings.deviceId)
         if (action.getString("status") == "succeeded") return@sync
@@ -85,11 +106,9 @@ class CalendarActions(private val context: Context, private val foreground: Bool
         val calendarId = action.getJSONObject("target").getString("calendarId").toLong()
         val availableCalendars = calendars()
         check((0 until availableCalendars.length()).any { availableCalendars.getJSONObject(it).getString("id") == calendarId.toString() }) { MoteI18n.text("目标日历已不可写") }
-        val origin = settings.read().server.trimEnd('/')
-        val root = File(context.noBackupFilesDir, "calendar-actions/${SourceRules.hash(origin + settings.deviceId)}").apply { mkdirs() }
-        val ledger = File(root, operation)
-        fun save(value: String) { val temp = File(root, "$operation.tmp"); FileOutputStream(temp).use { it.write(context.secretBox().seal(value.toByteArray(Charsets.UTF_8))); it.fd.sync() }; check(temp.renameTo(ledger)) }
-        val previous = if (ledger.exists()) String(context.secretBox().open(ledger.readBytes()), Charsets.UTF_8) else null
+        if (managedOperationId != null) journal.remember(action)
+        fun save(value: String) = journalWrite(operation, value)
+        val previous = journalRead(operation)
         try {
             var externalId = previous?.takeIf { it != "attempting" }
             if (externalId == null) {
@@ -152,9 +171,9 @@ class CalendarActions(private val context: Context, private val foreground: Bool
                 save(externalId!!)
                 }
             }
-            request("/api/actions/$id/receipt", JSONObject().put("deviceId", settings.deviceId).put("operationId", operation).put("status", "succeeded").put("externalId", externalId))
+            request("/api/$route/$id/receipt", JSONObject().put("deviceId", settings.deviceId).put("operationId", operation).put("status", "succeeded").put("externalId", externalId))
         } catch (e: Exception) {
-            runCatching { request("/api/actions/$id/receipt", JSONObject().put("deviceId", settings.deviceId).put("operationId", operation).put("status", "uncertain")) }
+            runCatching { request("/api/$route/$id/receipt", JSONObject().put("deviceId", settings.deviceId).put("operationId", operation).put("status", "uncertain")) }
             throw IllegalStateException(MoteI18n.text("日程保存结果待核实。检查日历和网络后再次同步；不会重复插入。"), e)
         }
     } ?: error(MoteI18n.text("连接正在切换")) }

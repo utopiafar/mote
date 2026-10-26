@@ -7,4 +7,4 @@ window.sessionStorage.setItem('mote.connection', JSON.stringify({ url: window.lo
 contextBridge.exposeInMainWorld('moteCentralSession', { close: () => ipcRenderer.send('mote:central-close') });
 
 const calendarChannel=ipcRenderer.sendSync('mote:calendar-channel');
-if(typeof calendarChannel==='string')contextBridge.exposeInMainWorld('moteCalendar',{connect:()=>ipcRenderer.invoke(calendarChannel,'connect'),execute:(id:string)=>ipcRenderer.invoke(calendarChannel,'execute',id)});
+if(typeof calendarChannel==='string')contextBridge.exposeInMainWorld('moteCalendar',{connect:()=>ipcRenderer.invoke(calendarChannel,'connect'),execute:(id:string,operationId?:string)=>ipcRenderer.invoke(calendarChannel,'execute',id,operationId)});

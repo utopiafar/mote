@@ -35,6 +35,34 @@ class CaptureUploadReceiptTest {
         override fun pending(scope: String) = unfinished.values.filter { it.scope == scope }
         override fun completed(itemKey: String) { check(!failCompletion); unfinished.remove(itemKey) }
     }
+    @Test fun historyReaderPinsOriginalAndImageAndRejectsClearedOriginal() {
+        val queue = queue(); val event = note(); val id = event.getString("id")
+        val oldImage = byteArrayOf(1, 2, 3, 4)
+        queue.enqueue(event, oldImage, 100000)
+        val version = CaptureUploadVersion.of(queue.archiveRecord(id)!!.first)
+        val snapshot = queue.captureExactVersion(id, version)!!
+        assertEquals(event.getString("ocrText"), snapshot.first.getString("ocrText"))
+        assertArrayEquals(oldImage, snapshot.second)
+        queue.acknowledge(id, retentionDays = 0)
+        assertNull(queue.captureExactVersion(id, version))
+        assertEquals(event.getString("ocrText"), snapshot.first.getString("ocrText"))
+        assertArrayEquals(oldImage, snapshot.second)
+        assertNull(queue.captureExactVersion(UUID.randomUUID().toString(), version))
+    }
+
+    @Test fun historyReaderRejectsSameIdAfterAnotherObservedSample() {
+        val queue = queue()
+        fun observed(at: String, idle: Int) = note().put("source", "activity").put("capturedAt", at).put("appId", "generated.history").put("appName", "Generated history").apply { remove("ocrText") }
+            .put("durationMs", 5000).put("privacy", JSONObject().put("excluded", false).put("collection", "activity"))
+            .put("metadata", JSONObject().put("version", 1).put("state", JSONObject().put("idleSeconds", idle)))
+        val first = observed("2026-10-26T00:00:00Z", 0); queue.enqueue(first, null, 100000)
+        val id = first.getString("id"); val version = CaptureUploadVersion.of(queue.archiveRecord(id)!!.first)
+        assertNotNull(queue.captureExactVersion(id, version))
+        queue.enqueue(observed("2026-10-26T00:00:05Z", 5), null, 100000)
+        assertEquals(2, queue.archiveRecord(id)!!.first.getJSONObject("stateSeries").getJSONArray("samples").length())
+        assertNull(queue.captureExactVersion(id, version))
+    }
+
     @Test fun storageFailureNeverDiscardsAnAcknowledgedOriginalFromOutbox() {
         val queue = queue(); val event = note(); queue.enqueue(event, null, 100000)
         val store = Store().apply { failBeforeSave = true }
