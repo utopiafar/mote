@@ -21,3 +21,11 @@ Merge these method fragments with the independent discovery/material owners; nev
 - Activity recreation is verified, not OS process-death restoration. No physical Android device, production classifier trigger, or live-model quality claim. Mac native consumer is a separate next slice.
 
 Fixture command: node --import tsx scripts/fixtures/native-topics.ts. Opt-in instrumentation requires topicsFixture=true and topicsPort=47894, a development application and an emulator. The fixture owns a fresh temporary data directory and exposes no real model.
+
+## Independent review follow-up
+
+Directory visibility no longer validates an open Memory. The rendered detail records its stable ID/version/status/fingerprint; polling separately re-reads that ID, including while its original is open. Deleted, denied, stale/superseded or changed details clear their original content and invalidate pending callbacks. The original reader rechecks the selected Memory before rendering its response. Existing Central session/view generations continue fencing callbacks.
+
+Only fields actually edited by the owner are retained separately under “Unsaved changes” when invalidation clears the original; the old-version save action is removed. An invalidated view does not automatically redraw over those edits on a later poll. Transport-only outages keep the existing correction form unchanged. No new persistence or authorization policy was added.
+
+Incremental validation: 2 new JVM detail-identity tests passed; development and instrumentation APK builds passed. Two actual emulator/HTTP regressions passed: all-memory view remains available through another Memory while selected detail is deleted, per-Memory denied or corrected; a held original response cannot restore withdrawn content. After adding edit preservation, only the affected first case was rerun, then rerun after the follow-up-poll guard with a further 6-second wait: passed, including retained actual owner edit and no old save action. The earlier successful journeys were not repeated. i18n 8675 and diff check passed. Fixture reset now also clears synthetic correction replacements so subsequent 32-record runs remain isolated.

@@ -1,6 +1,9 @@
 package dev.mote.collector
 
 import android.os.Bundle
+import android.view.View
+import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.ArrayAdapter
 import android.widget.ScrollView
 import android.widget.Spinner
@@ -11,18 +14,21 @@ internal class CentralMemoryTopics(
     private val screens: CentralScreens,
     private val controls: () -> Unit,
     private val statusLabel: (JSONObject) -> String,
-    private val openMemory: (String, () -> Unit) -> Unit,
+    private val openMemory: (String, () -> Unit, (JSONObject) -> Boolean) -> Unit,
 ) {
     private val ui get() = screens.ui
     private val body get() = screens.body
     private var navigation = MemoryTopicNavigation()
     private var catalog: MemoryTopicCatalog? = null
     private var generation = 0L
+    private val detail = MemoryTopicDetailGuard()
+    private var invalidated = false
     private fun scrollView() = body.parent as? ScrollView
-    fun clear() { generation++; navigation = MemoryTopicNavigation(); catalog = null }
+    fun clear() { invalidated = false; detail.clear(); generation++; navigation = MemoryTopicNavigation(); catalog = null }
     fun save(out: Bundle) { if (navigation.selectedMemory == null) navigation.scroll = scrollView()?.scrollY ?: 0; out.putString("navigation", navigation.save().toString()) }
     fun restore(value: Bundle) { runCatching { navigation.restore(JSONObject(value.getString("navigation") ?: "{}")) }.onFailure { clear() } }
     fun show() {
+        invalidated = false
         val stamp = ++generation; val api = screens.client
         ui.work(MoteI18n.text("正在读取…"), { runCatching { MemoryTopicCatalog.read(api.get("/api/context-trees")) } }) { result ->
             if (stamp != generation) return@work
@@ -30,17 +36,26 @@ internal class CentralMemoryTopics(
                 catalog = directory
                 if (!navigation.valid(directory)) unavailable()
                 else navigation.selectedMemory?.let { id ->
-                    openMemory(id) { navigation.returnToList(); screens.refresh() }
+                    openMemory(id, { detail.clear(); navigation.returnToList(); screens.refresh() }) { row ->
+                        if (stamp != generation || navigation.selectedMemory != id) false
+                        else if (detail.accept(id, row)) true else { detailUnavailable(); false }
+                    }
                 } ?: list(directory)
             }.onFailure(::failure)
             ui.scheduleMemoryTopicsPoll()
         }
     }
     fun poll() {
-        val stamp = generation; val api = screens.client
-        ui.work("", { runCatching { MemoryTopicCatalog.read(api.get("/api/context-trees")) } }) { result ->
+        if (invalidated) return
+        val stamp = generation; val api = screens.client; val selected = navigation.selectedMemory
+        ui.work("", { runCatching {
+            val directory = MemoryTopicCatalog.read(api.get("/api/context-trees"))
+            directory to selected?.let { api.get("/api/memories/" + it) }
+        } }) { result ->
             if (stamp != generation) return@work
-            result.onSuccess { directory ->
+            result.onSuccess { (directory, memory) ->
+                if (selected != navigation.selectedMemory) return@onSuccess
+                if (selected != null && memory != null && !detail.current(selected, memory)) { detailUnavailable(); return@onSuccess }
                 val changed = catalog != directory; catalog = directory
                 if (!navigation.valid(directory)) unavailable()
                 else if (changed && navigation.selectedMemory == null) { navigation.scroll = scrollView()?.scrollY ?: 0; list(directory) }
@@ -79,7 +94,7 @@ internal class CentralMemoryTopics(
                     val row = rows.getJSONObject(index); val id = row.getString("id"); val card = ui.card(target)
                     ui.text(row.getString("title"), NativeFontRole.SECTION, card)
                     ui.text(statusLabel(row) + " · " + row.optInt("evidenceCount", row.optJSONArray("evidenceIds")?.length() ?: 0) + " " + MoteI18n.text("条证据"), parent = card)
-                    ui.button(MoteI18n.text("查看详情"), parent = card) { navigation.scroll = scrollView()?.scrollY ?: 0; navigation.selectMemory(id); screens.refresh() }.tag = "topic-memory:$id"
+                    ui.button(MoteI18n.text("查看详情"), parent = card) { navigation.scroll = scrollView()?.scrollY ?: 0; detail.clear(); navigation.selectMemory(id); screens.refresh() }.tag = "topic-memory:$id"
                 }
                 if (navigation.canGoBack) ui.button(MoteI18n.text("上一页"), parent = target) { navigation.previous(); screens.refresh() }
                 CentralScreens.next(page)?.let { cursor -> ui.button(MoteI18n.text("下一页"), parent = target) { navigation.next(cursor); screens.refresh() } }
@@ -90,16 +105,33 @@ internal class CentralMemoryTopics(
             ui.scheduleMemoryTopicsPoll()
         }
     }
+    private fun edits(): List<Pair<MemoryTopicEdit, String>> {
+        fun children(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { children(view.getChildAt(it)) } else emptyList()
+        return children(body).filterIsInstance<EditText>().mapNotNull { field -> (field.tag as? MemoryTopicEdit)?.takeIf { it.initial != field.text.toString() }?.let { it to field.text.toString() } }
+    }
+    private fun preserveEdits(values: List<Pair<MemoryTopicEdit, String>>) {
+        if (values.isEmpty()) return
+        ui.text(MoteI18n.text("有未保存的更改"), NativeFontRole.SECTION)
+        values.forEach { (edit, value) -> ui.field(edit.label, value, multiline = true).tag = edit }
+    }
     private fun unavailable() {
+        val drafts = edits(); invalidated = true; generation++; detail.clear(); ui.enterDetail();
         body.removeAllViews(); navigation.returnToList(); screens.clearBack()
-        ui.text(MoteI18n.text("此主题已不可用，请返回全部记忆。"))
+        ui.text(MoteI18n.text("此主题已不可用，请返回全部记忆。")); preserveEdits(drafts)
+        ui.button(MoteI18n.text("全部记忆")) { navigation.choose("topics"); screens.refresh() }
+    }
+    private fun detailUnavailable() {
+        val drafts = edits(); invalidated = true; generation++; detail.clear(); navigation.returnToList(); ui.enterDetail(); body.removeAllViews(); screens.clearBack()
+        ui.text(MoteI18n.text("所选记忆已变化，请刷新后重新选择。")); preserveEdits(drafts)
         ui.button(MoteI18n.text("全部记忆")) { navigation.choose("topics"); screens.refresh() }
     }
     private fun failure(error: Throwable) {
         // A transport outage must not destroy an in-progress owner correction.
         if (navigation.selectedMemory != null && !(error is CentralFailure && error.status in setOf(401, 403, 404, 410))) { ui.notice(error.message ?: MoteI18n.text("操作失败")); return }
+        val drafts = edits(); invalidated = true; generation++; detail.clear(); ui.enterDetail(); screens.clearBack()
         body.removeAllViews(); ui.notice(error.message ?: MoteI18n.text("操作失败"))
         if (error is CentralFailure && error.status in setOf(401, 403, 404, 410)) { catalog = null; navigation.returnToList() }
+        preserveEdits(drafts)
         ui.button(MoteI18n.text("重试")) { screens.refresh() }
         ui.button(MoteI18n.text("全部记忆")) { navigation.choose("topics"); screens.refresh() }
     }

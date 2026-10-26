@@ -120,6 +120,39 @@ class MemoryTopicsJourneyInstrumentedTest {
             capture("empty")
         }
     }
+    @Test fun allMemoriesDetailDisappearsWhenOnlySelectedMemoryIsDeletedOrDenied() {
+        for (change in listOf("delete", "deny", "version")) {
+            if (change != "delete") fixture = api.post("/api/__fixture/reset", JSONObject())
+            open().use {
+                click("下一页")
+                clickTag("topic-memory:" + fixture.getString("firstMemory"))
+                until("selected detail") { main { settled() && text("查看原文依据 1") } }
+                main { shown().filterIsInstance<EditText>().first().setText("UNSAVED owner edit") }
+                when (change) {
+                    "delete" -> api.post("/api/__fixture/invalidate", JSONObject())
+                    "deny" -> api.post("/api/__fixture/detail-mode", JSONObject().put("mode", "denied"))
+                    else -> {
+                        val row = api.get("/api/memories/" + fixture.getString("firstMemory"))
+                        api.post("/api/memories/" + fixture.getString("firstMemory") + "/correct", JSONObject().put("version", row.getInt("version")).put("title", "Synthetic replacement").put("statement", "Synthetic updated statement").put("uncertainty", "Fixture only"))
+                    }
+                }
+                until("invalid selected detail clears despite available directory") { main { settled() && !text("查看原文依据 1") && !text("保存校正") && !text("Synthetic topic memory 0") } }
+                if (change == "version") Thread.sleep(6000)
+                assertTrue(main { text("UNSAVED owner edit") && text("有未保存的更改") })
+                assertTrue(api.get("/api/context-trees").getJSONArray("items").length() > 0)
+            }
+        }
+    }
+    @Test fun lateOriginalCannotRestoreWithdrawnMemoryContent() {
+        open().use {
+            click("下一页"); clickTag("topic-memory:" + fixture.getString("firstMemory"))
+            until("selected detail") { main { settled() && text("查看原文依据 1") } }
+            api.post("/api/__fixture/hold-original", JSONObject()); click("查看原文依据 1")
+            until("original response held") { state().optBoolean("held") }
+            api.post("/api/__fixture/invalidate", JSONObject()); api.post("/api/__fixture/release-detail", JSONObject())
+            until("withdrawn original and detail cleared") { main { settled() && !text("查看原文依据 1") && !text("保存校正") && !text("Synthetic native topic original 0") } }
+        }
+    }
     @Test fun offlineAndDeniedReadsClearOldMembersAndRetryActualNativeRoute() {
         open().use {
             chooseTree("合成项目"); topic("review"); until("selected member") { main { settled() && members() == 1 } }

@@ -8,14 +8,21 @@ const dataDir=mkdtempSync(join(tmpdir(),'mote-native-topics-'));
 const token='generated-native-topics-owner-token';
 const port=Number(process.env.MOTE_TOPICS_PORT??47894);
 const node=await buildApp({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port,maxStorageBytes:50_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No live model');},close:async()=>{}}});
+let detailMode='online';let holdNextDetail=false;let holdNextOriginal=false;let releaseDetail:(()=>void)|undefined;
 let mode='online';let state:any={};let ids:string[]=[];
 node.app.addHook('onRequest',async(req,reply)=>{if(req.url.startsWith('/api/context-trees')&&mode!=='online')return reply.code(mode==='denied'?403:503).send({error:mode==='denied'?'connection_scope_denied':'fixture_offline'});});
+node.app.addHook('onRequest',async(req,reply)=>{if(/^\/api\/memories\/[^/]+$/.test(req.url)&&detailMode==='denied')return reply.code(403).send({error:'fixture_memory_denied'});});
+node.app.addHook('onSend',async(req,_reply,payload)=>{if(holdNextDetail&&/^\/api\/memories\/[^/]+$/.test(req.url)||holdNextOriginal&&/^\/api\/capture-browser\/[^/]+$/.test(req.url)){holdNextDetail=false;holdNextOriginal=false;await new Promise<void>(resolve=>{releaseDetail=resolve;});}return payload;});
+node.app.post('/api/__fixture/detail-mode',async req=>{detailMode=String((req.body as any).mode);return {detailMode};});
+node.app.post('/api/__fixture/hold-original',async()=>{holdNextOriginal=true;return {ok:true};});
+node.app.post('/api/__fixture/hold-detail',async()=>{holdNextDetail=true;return {ok:true};});
+node.app.post('/api/__fixture/release-detail',async()=>{releaseDetail?.();releaseDetail=undefined;return {ok:true};});
 node.app.post('/api/__fixture/mode',async req=>{mode=String((req.body as any).mode);return {mode};});
-node.app.get('/api/__fixture/state',async()=>state);
+node.app.get('/api/__fixture/state',async()=>({...state,held:!!releaseDetail}));
 node.app.post('/api/__fixture/empty',async()=>{for(const id of ids)node.memories.delete(id);return {ok:true};});
 node.app.post('/api/__fixture/invalidate',async()=>{node.memories.delete(ids[0]);return {ok:true};});
 node.app.post('/api/__fixture/reset',async()=>{
- mode='online';for(const id of ids)try{node.memories.delete(id);}catch{}ids=[];
+ mode='online';detailMode='online';holdNextDetail=false;holdNextOriginal=false;releaseDetail?.();releaseDetail=undefined;for(const row of node.store.db.prepare('SELECT id FROM memories').all())try{node.memories.delete(String(row.id));}catch{}ids=[];
  const notes:string[]=[];const at=new Date().toISOString();
  for(let i=0;i<32;i++){
   const id=randomUUID(),text='Synthetic native topic original '+i;notes.push(id);
