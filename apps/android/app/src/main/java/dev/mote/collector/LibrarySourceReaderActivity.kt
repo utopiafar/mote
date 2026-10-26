@@ -117,7 +117,10 @@ class LibrarySourceReaderActivity : MoteActivity() {
         if (!ref.startsWith("capture:")) { open(this, access.server, "evidence", ref, "", "", ""); return }
         val stamp = generation
         task.start("", {}, { requireNotNull(access.client).get("/api/capture-browser/" + android.net.Uri.encode(ref.removePrefix("capture:"))) }) { result ->
-            if (stamp != generation || CentralAccess.resolve(this).generation != access.generation) return@start
+            if (stamp != generation || CentralAccess.resolve(this).let { it.generation != access.generation || it.server != access.server }) {
+                if (!isFinishing && !isDestroyed) load()
+                return@start
+            }
             result.onSuccess { record -> val p = record.optJSONObject("provenance")
                 if (p != null) open(this, access.server, "original", p.getString("sourceId"), p.getString("externalId"), record.getString("deviceId"), p.getString("revision"), record.getString("id"))
                 else startActivity(Intent(this, CaptureRecordsActivity::class.java).putExtra("recordId", record.getString("id")).putExtra("recordRemote", true).putExtra("recordOrigin", access.server).putExtra("recordDeviceId", record.getString("deviceId")).putExtra("recordVersion", record.getString("libraryVersion")).putExtra("recordSource", record.getString("source")))
@@ -133,7 +136,10 @@ class LibrarySourceReaderActivity : MoteActivity() {
         task.start("", {}, {
             val access = CentralAccess.resolve(this); check(access.generation == generation && access.server == origin)
             contentResolver.openOutputStream(destination)?.use { requireNotNull(access.client).download("/api/files/" + android.net.Uri.encode(key("capture")) + "/content", it) } ?: error("Destination unavailable")
-        }) { result -> Toast.makeText(this, MoteI18n.text(if (result.isSuccess) "本机原件已导出" else "原件导出未完成，请重新打开内容后重试"), Toast.LENGTH_LONG).show() }
+        }) { result ->
+            Toast.makeText(this, MoteI18n.text(if (result.isSuccess) "本机原件已导出" else "原件导出未完成，请重新打开内容后重试"), Toast.LENGTH_LONG).show()
+            if (!isFinishing && !isDestroyed) load()
+        }
     }
     private fun text(value: String, role: NativeFontRole = NativeFontRole.BODY) { body.addView(TextView(this).apply { text = value; setTextIsSelectable(true); MoteUi.type(this, role); MoteUi.textColor(this, NativeColorRole.INK); setPadding(0, moteDp(8), 0, moteDp(8)) }) }
     private fun button(value: String, action: () -> Unit) { body.addView(MoteUi.button(Button(this).apply { text = value; setOnClickListener { action() } })) }

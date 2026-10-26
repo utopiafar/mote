@@ -32,17 +32,25 @@ class FileContentActivity : MoteActivity() {
     private fun identity(row: JSONObject) = SourceRules.fileSignature(row.getJSONObject("candidate")) + ":" + row.optJSONObject("pending")?.optJSONObject("manifest")?.optJSONObject("item")?.optString("revision").orEmpty() + ":" + LocalContentPresentation.currentReceipt(row).orEmpty()
 
     private var offset = 0
+    // The offset belongs to this exact derived reader, not the latest Material head.
+    private var derivedReader: String? = null
+    private var derivedCapture: String? = null
+    private var derivedOrigin: String? = null
     private var exportVersion: Triple<String, String, String>? = null
     private data class Detail(val source: LocalSource, val row: JSONObject, val item: JSONObject, val access: CentralAccess.Selection,
         val capture: JSONObject?, val file: JSONObject?, val material: JSONObject?, val read: String?, val nextOffset: Int?,
-        val total: Int?, val localPreview: Pair<String, Boolean>?, val failed: Boolean, val retryRead: Boolean, val folderSummary: String)
+        val total: Int?, val selectedReader: String?, val localPreview: Pair<String, Boolean>?, val failed: Boolean, val retryRead: Boolean, val folderSummary: String)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         offset = savedInstanceState?.getInt("offset", 0) ?: 0
+        derivedReader = savedInstanceState?.getString("derivedReader")
+        derivedCapture = savedInstanceState?.getString("derivedCapture")
+        derivedOrigin = savedInstanceState?.getString("derivedOrigin")
         savedInstanceState?.getString("exportRevision")?.let { revision -> exportVersion = Triple(savedInstanceState.getString("exportSource", ""), savedInstanceState.getString("exportExternal", ""), revision) }
         content = moteDetailPage().apply { background = MoteUi.shape(this@FileContentActivity, NativeColorRole.SURFACE, NativeRadiusRole.READING) }
     }
     override fun onSaveInstanceState(state: Bundle) {
+        state.putString("derivedReader", derivedReader); state.putString("derivedCapture", derivedCapture); state.putString("derivedOrigin", derivedOrigin)
         state.putInt("offset", offset); exportVersion?.let { (source, external, revision) -> state.putString("exportSource", source); state.putString("exportExternal", external); state.putString("exportRevision", revision) }
         super.onSaveInstanceState(state)
     }
@@ -74,7 +82,7 @@ class FileContentActivity : MoteActivity() {
         val generation = ++viewGeneration
         val sourceId = intent.getStringExtra("sourceId") ?: return
         val external = intent.getStringExtra("externalId") ?: return
-        val pageOffset = offset
+        val pageOffset = offset; val pinnedReader = derivedReader; val pinnedCapture = derivedCapture; val pinnedOrigin = derivedOrigin
         if (!automatic) { content.removeAllViews(); text(MoteI18n.text("正在读取内容…")) }
         task.start(MoteI18n.text("正在读取内容…"), {}, {
             val source = localSources().sources().first { it.id == sourceId }
@@ -90,6 +98,8 @@ class FileContentActivity : MoteActivity() {
             var capture: JSONObject? = null; var file: JSONObject? = null; var material: JSONObject? = null; var read: String? = null; var next: Int? = null; var total: Int? = null; var failed = false; var retryRead = false
             // A pending newer version must not be represented by the previous version's receipt.
             val id = LocalContentPresentation.currentReceipt(row).orEmpty()
+            var selectedReader = pinnedReader
+            if (pinnedReader != null) check(id == pinnedCapture && access.server == pinnedOrigin) { MoteI18n.text("此版本已变化，请返回资料列表重新选择。") }
             if (id.isNotBlank() && access.client != null) {
                 runCatching {
                     val record = access.client.get("/api/capture-browser/" + android.net.Uri.encode(id))
@@ -98,20 +108,18 @@ class FileContentActivity : MoteActivity() {
                     capture = record
                     file = access.client.get("/api/files/" + android.net.Uri.encode(id))
                     check(file?.optString("captureId") == id)
-                    val ref = record.optString("memoryMaterialRef")
+                    val ref = pinnedReader ?: record.optString("memoryMaterialRef").takeIf { Regex("^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$").matches(it) } ?: "chunks"
+                    selectedReader = ref
                     val match = Regex("^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$").matchEntire(ref)
                     if (match != null) {
                         val materialId = match.groupValues[1]; val revision = match.groupValues[2]
-                        val head = access.client.get("/api/materials/" + android.net.Uri.encode(materialId))
-                        if (head.optString("ref") == ref) {
-                            material = head
-                            val page = access.client.get("/api/materials/" + android.net.Uri.encode(materialId) + "/read?offset=$pageOffset&length=4000&revision=" + android.net.Uri.encode(revision))
-                            check(page.getJSONObject("material").optString("ref") == ref)
-                            read = page.optString("text")
-                            page.optJSONObject("textRange")?.let { range -> total = range.optInt("total"); if (!range.isNull("nextOffset")) next = range.getInt("nextOffset") }
-                        }
+                        val page = access.client.get("/api/materials/" + android.net.Uri.encode(materialId) + "/read?offset=$pageOffset&length=4000&revision=" + android.net.Uri.encode(revision))
+                        check(page.getJSONObject("material").optString("ref") == ref)
+                        material = page.getJSONObject("material")
+                        read = page.optString("text")
+                        page.optJSONObject("textRange")?.let { range -> total = range.optInt("total"); if (!range.isNull("nextOffset")) next = range.getInt("nextOffset") }
                     }
-                    if (read == null) {
+                    if (ref == "chunks") {
                         val page = access.client.get("/api/files/" + android.net.Uri.encode(id) + "/chunks?offset=$pageOffset")
                         val chunks = page.optJSONArray("items") ?: org.json.JSONArray()
                         read = (0 until chunks.length()).joinToString("\n\n") { chunks.getJSONObject(it).optString("ocrText") }
@@ -123,10 +131,13 @@ class FileContentActivity : MoteActivity() {
                     if (error is CentralFailure && error.status in setOf(401, 403, 404, 409, 410)) { capture = null; file = null; material = null; read = null; next = null; total = null }
                 }
             }
-            Detail(source, row, item, access, capture, file, material, read, next, total, local, failed, retryRead, if (source.tree) LocalContentPresentation.folderStatus(this, source) else "")
+            Detail(source, row, item, access, capture, file, material, read, next, total, selectedReader, local, failed, retryRead, if (source.tree) LocalContentPresentation.folderStatus(this, source) else "")
         }) { result ->
             if (generation != viewGeneration || (result.isSuccess && CentralSession.get(this).generation != result.getOrThrow().access.generation)) { if (!isFinishing) load(); return@start }
             result.onSuccess { detail ->
+                if (detail.selectedReader != null) {
+                    derivedReader = detail.selectedReader; derivedCapture = LocalContentPresentation.currentReceipt(detail.row); derivedOrigin = detail.access.server
+                }
                 loadedIdentity = identity(detail.row)
                 lastCentralCheck = System.currentTimeMillis()
                 loadedAccessGeneration = detail.access.generation

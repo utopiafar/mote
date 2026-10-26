@@ -18,8 +18,10 @@ const value=await buildApp(config,{agent:{configured:false,query:async()=>{throw
 // Hold automatic organization so the explicit generated Material revision stays pinned.
 value.materialOrganizer.tick=async()=>0;
 let delayMs=0;
+let memberDelayMs=0,memberRequests=0;
 let denial:{status:401|403|503;code:string}|undefined;
 value.app.addHook('onRequest',async(req,reply)=>{
+  if(req.url.startsWith('/api/capture-browser/')&&memberDelayMs){memberRequests++;await new Promise(resolve=>setTimeout(resolve,memberDelayMs));}
   if(req.url==='/api/library/source-view'&&delayMs)await new Promise(resolve=>setTimeout(resolve,delayMs));
   if(denial&&['/api/library/device-view','/api/library/source-view'].includes(req.url))return reply.code(denial.status).send({error:denial.code});
 });
@@ -29,6 +31,8 @@ value.app.post('/api/fixture/library-denial',async req=>{
   denial=input.mode==='none'?undefined:input.mode==='offline'?{status:503,code:'fixture_offline'}:input.mode==='forbidden'?{status:403,code:'connection_scope_denied'}:{status:401,code:'connection_revoked'};
   return {mode:input.mode};
 });
+value.app.post('/api/fixture/library-member-delay',async req=>{memberDelayMs=z.object({delayMs:z.number().int().min(0).max(3000)}).strict().parse(req.body).delayMs;memberRequests=0;return {delayMs:memberDelayMs};});
+value.app.get('/api/fixture/library-member-delay',async()=>({requests:memberRequests}));
 // Test-only explicit organizer stand-in: generated text, actual Material store and readers.
 value.app.post('/api/fixture/library-material',async req=>{
   const q=z.object({sourceId:z.string().startsWith('generated-b1-'),externalId:z.string(),captureId:z.string().uuid(),text:z.string().max(10000)}).strict().parse(req.body);

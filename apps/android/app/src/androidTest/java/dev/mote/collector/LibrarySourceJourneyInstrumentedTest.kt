@@ -112,7 +112,7 @@ class LibrarySourceJourneyInstrumentedTest {
         val third=prepare("Generated B1 newer saved original bytes version three")
         saved.put("pendingRevision",third.getJSONObject("pending").getJSONObject("manifest").getJSONObject("item").getString("revision"));File(context.filesDir,"generated-b1-keys.json").writeText(saved.toString())
     }
-    @Test fun fileDerivedRangeTracksDisplayedBodyAcrossPages() {
+    private fun generatedReaderMaterial(): Triple<LocalSource,JSONObject,JSONObject> {
         guard();val api=api();val settings=Settings(context);MoteI18n.select(context,"zh-CN")
         val config=settings.read();val source=LocalSource(id="generated-b1-range-"+System.nanoTime(),name="Generated range file",kind="local-files",uri="content://generated/range.txt",retention="archive",tree=false,syncContinuously=false,allowRead=true)
         context.localSources().save(source);api.post("/api/sources",source.registration(settings.deviceId))
@@ -123,6 +123,10 @@ class LibrarySourceJourneyInstrumentedTest {
         var tries=0;while(!FileUpload.sync(context,source,config){true})check(tries++<10)
         val row=queue.row(source.id,external)
         val material=api.post("/api/fixture/library-material",JSONObject().put("sourceId",source.id).put("externalId",external).put("captureId",row.getString("captureId")).put("text","Generated derived body differs from original. ".repeat(140)))
+        return Triple(source,row,material)
+    }
+    @Test fun fileDerivedRangeTracksDisplayedBodyAcrossPages() {
+        val (source,row,material)=generatedReaderMaterial();val api=api();val external=requireNotNull(source.uri);val original="Generated short original"
         val path="/api/materials/"+material.getString("id")+"/read?revision="+material.getString("revision")+"&length=4000&offset="
         val first=api.get(path+"0");val next=first.getJSONObject("textRange").getInt("nextOffset");val second=api.get(path+next)
         assertNotEquals(original.length,first.getString("text").length)
@@ -130,8 +134,29 @@ class LibrarySourceJourneyInstrumentedTest {
             fun shown(text:String):Boolean { var found=false;scenario.onActivity { found=views(it.window.decorView).filterIsInstance<TextView>().any { view->view.isShown && view.text.toString()==text } };return found }
             fun range(page:JSONObject,start:Int)=MoteI18n.text("衍生内容范围：{0}–{1} / {2} 字符",start,start+page.getString("text").length,page.getJSONObject("textRange").getInt("total"))
             waitFor("displayed derived body has its own range") { shown(first.getString("text")) && shown(range(first,0)) }
+            val newer=api.post("/api/fixture/library-material",JSONObject().put("sourceId",source.id).put("externalId",external).put("captureId",row.getString("captureId")).put("text","New revision must not replace the pinned body. ".repeat(190)))
+            assertNotEquals(material.getString("revision"),newer.getString("revision"))
             scenario.onActivity { activity -> assertFalse(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.startsWith("原文范围：") });views(activity.window.decorView).filterIsInstance<TextView>().first { it.text.toString()==MoteI18n.text("继续展开") }.performClick() }
             waitFor("next derived page keeps accurate range and return label") { shown(second.getString("text")) && shown(range(second,next)) && shown(MoteI18n.text("返回衍生内容开头")) }
+            scenario.recreate();waitFor("saved Material revision survives recreation at nonzero offset") { shown(second.getString("text")) && shown(range(second,next)) }
+        }
+    }
+    @Test fun pausedMemberLookupRestoresPinnedMaterialInsteadOfBlankPage() {
+        val (_,row,material)=generatedReaderMaterial();val api=api();val ref="capture:"+row.getString("captureId")
+        val intent=Intent(context,LibrarySourceReaderActivity::class.java).putExtra("origin",Settings(context).read().server).putExtra("type","material").putExtra("source",material.getString("id")).putExtra("revision",material.getString("revision"))
+        ActivityScenario.launch<LibrarySourceReaderActivity>(intent).use { scenario ->
+            fun shown(text:String):Boolean { var found=false;scenario.onActivity { found=views(it.window.decorView).filterIsInstance<TextView>().any { view->view.isShown && view.text.toString()==text } };return found }
+            waitFor("actual pinned member available") { shown(ref) }
+            api.post("/api/fixture/library-member-delay",JSONObject().put("delayMs",2000))
+            try {
+                scenario.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>().first { it.text.toString()==ref }.performClick() }
+                waitFor("member request is held by fixture") { api.get("/api/fixture/library-member-delay").getInt("requests")>0 }
+                scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+                scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+                Thread.sleep(2400)
+                val deadline=SystemClock.elapsedRealtime()+4000
+                waitFor("discarded member navigation must restore pinned page") { check(SystemClock.elapsedRealtime()<deadline) { "Reader stayed blank after member request completed" };shown(ref) && shown("Generated B1 organized material") }
+            } finally { api.post("/api/fixture/library-member-delay",JSONObject().put("delayMs",0)) }
         }
     }
     @Test fun mismatchedPinnedVersionNeverFallsBackToAnotherOriginal() {
