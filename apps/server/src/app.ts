@@ -828,7 +828,7 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
     onImported:async()=>({}),
   });
   const launchOwnerImport=(id:string,task:()=>Promise<unknown>)=>{const work='owner-import:'+randomUUID();modelAuthorization.manual(work,'manual',['import:'+id],availableModelConnections());launchImport(id,()=>modelAuthorization.run(work,task));};
-  const withMediaOwnerBatch=<T>(ids:readonly string[],task:()=>Promise<T>|T)=>modelAuthorizationHost.manual('owner-media-batch:'+randomUUID(),availableModelConnections(),async()=>task(),undefined,'manual',ids.map(captureModelIdentity));
+  const withMediaOwnerBatch=async<T>(ids:readonly string[],task:()=>T)=>modelAuthorization.manualCommand('owner-media-batch:'+randomUUID(),ids.map(captureModelIdentity),availableModelConnections(),task);
   function launchImport(id:string,task:()=>Promise<unknown>){
     if(closing)throw new StoreError('Central node is shutting down',503);
     if(importTasks.has(id))return;

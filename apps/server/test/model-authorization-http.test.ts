@@ -1,7 +1,7 @@
 import test from 'node:test';
 import sharp from 'sharp';
 import {createServer} from 'node:http';
-import {sha256} from '../src/store.js';
+import {sha256,Store} from '../src/store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -12,12 +12,13 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
 import {readAgentCredential} from './login-fixture.js';
-async function fixture(t:import('node:test').TestContext,factory:ModelAgentFactory,overrides:Partial<Config>={}){
+async function fixture(t:import('node:test').TestContext,factory:ModelAgentFactory,overrides:Partial<Config>={},limits?:{maxStorageBytes:number}){
  const directory=await mkdtemp(join(tmpdir(),'mote-authorization-http-'));
  const config:Config={dataDir:directory,token:'generated-owner-only',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://fixture.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',...overrides};
- let node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory});const headers={authorization:'Bearer '+config.token};
- t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
- return {get node(){return node;},headers,async restart(){await node.app.close();node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory});},
+ let fixtureStore=limits?new Store(directory,limits):undefined;
+ let node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory,store:fixtureStore});const headers={authorization:'Bearer '+config.token};
+ t.after(async()=>{await node.app.close();fixtureStore?.close();await rm(directory,{recursive:true,force:true});});
+ return {get node(){return node;},headers,async restart(){await node.app.close();fixtureStore?.close();fixtureStore=limits?new Store(directory,limits):undefined;node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory,store:fixtureStore});},
  async intake(text:string){const id=randomUUID();const response=await node.app.inject({method:'POST',url:'/api/captures',headers,payload:{id,deviceId:'generated-device',deviceName:'Generated device',platform:'import',source:'note',capturedAt:new Date().toISOString(),durationMs:0,ocrText:text}});assert.equal(response.statusCode,201,response.body);return id;},
  async command(action:'authorize'|'pause'|'stop'){const view=(await node.app.inject({url:'/api/model-authorization',headers})).json();const response=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers,payload:{revision:view.authorization.revision,operationId:randomUUID(),action,...(action==='authorize'?{connections:view.connections,scope:{sourceIds:['device:generated-device'],dataKinds:['text']}}:{})}});assert.equal(response.statusCode,200,response.body);return response.json();}};
 }
@@ -102,4 +103,37 @@ test('historical image confirmation persists only frozen owner intents and execu
  await f.restart();await f.node.perception.tick();assert.equal(bodies.length,1);assert.deepEqual(bodies[0],old.bytes);
  assert.ok(f.node.perception.detail(old.id).products.some(product=>product.kind==='ocr'));assert.equal(f.node.perception.detail(later.id).products.length,0);
  assert.equal(f.node.modelAuthorization.view().state,'unapproved','manual batch never enables future background processing');
+});
+
+test('assembled image understanding publishes with image and text approval without conversation access',async t=>{
+ let calls=0,pixels=0;
+ const f=await fixture(t,async(_settings,reader,host)=>({configured:true,close:async()=>{},query:async input=>{
+  calls++;host?.authorizeModelRequest?.();input.assertContextAuthority?.();
+  const image=await reader.readImage!({id:input.directImages![0].id});assert.ok(image.data);pixels++;
+  return {answer:JSON.stringify({text:'Generated blue rectangle, attribution unknown.',regions:[]}),citations:[],trace:[],runId:randomUUID()};
+ }}));
+ await f.node.processing.saveImageDefault({endpoint:'http://127.0.0.1:1/generated-ocr'});
+ f.node.processing.runtime.registry.get('image.http').process=async()=>({durationMs:0,segments:[]});
+ await f.node.perception.save({revision:f.node.perception.view().revision,settings:{...f.node.perception.settings(),enabled:true,understandingEnabled:true}});
+ f.node.sources.register({id:'generated-vlm',name:'Generated VLM',kind:'local-files',deviceId:'generated-device',platform:'import',retention:'archive'});
+ const view=(await f.node.app.inject({url:'/api/model-authorization',headers:f.headers})).json();
+ const approval=await f.node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers:f.headers,payload:{revision:view.authorization.revision,operationId:randomUUID(),action:'authorize',connections:view.connections,scope:{sourceIds:['generated-vlm'],dataKinds:['image','text']}}});assert.equal(approval.statusCode,200,approval.body);
+ const bytes=await sharp({create:{width:4,height:4,channels:3,background:'#1122aa'}}).png().toBuffer(),begun=f.node.files.begin({sourceId:'generated-vlm',item:{externalId:randomUUID(),revision:'1',observedAt:new Date().toISOString(),kind:'file',layer:'original',text:'',mimeType:'image/png'},sha256:sha256(bytes),sizeBytes:bytes.length},()=>{});f.node.files.part(begun.uploadId,0,bytes,()=>{});const id=(await f.node.files.commit(begun.uploadId,()=>{})).id;
+ await f.node.perception.tick();
+ assert.equal(calls,1,JSON.stringify(f.node.perception.detail(id)));assert.equal(pixels,1);
+ assert.ok(f.node.perception.detail(id).products.some(product=>product.kind==='understanding'));
+});
+
+
+test('HTTP historical quota failures leave no manual admission or bytes across retry and restart',async t=>{
+ const limits={maxStorageBytes:20_000_000};const f=await fixture(t,async()=>({configured:true,close:async()=>{},query:async()=>{throw Error('No model expected');}}),{},limits);
+ f.node.sources.register({id:'generated-quota',name:'Generated quota',kind:'local-files',deviceId:'generated-device',platform:'import',retention:'archive'});
+ const bytes=await sharp({create:{width:4,height:4,channels:3,background:'#224466'}}).png().toBuffer(),begun=f.node.files.begin({sourceId:'generated-quota',item:{externalId:randomUUID(),revision:'1',observedAt:new Date().toISOString(),kind:'file',layer:'original',text:'',mimeType:'image/png'},sha256:sha256(bytes),sizeBytes:bytes.length},()=>{});f.node.files.part(begun.uploadId,0,bytes,()=>{});await f.node.files.commit(begun.uploadId,()=>{});f.node.perception.prepare();
+ const preview=await f.node.app.inject({method:'POST',url:'/api/perception/ocr/historical-preview',headers:f.headers,payload:{sourceId:'generated-quota'}});assert.equal(preview.statusCode,200,preview.body);
+ const before=f.node.store.logicalBytes(),count=f.node.store.db.prepare('SELECT count(*) n FROM background_model_work').get()!.n;
+ const connections=f.node.featureServices.availableModelConnections(),manualBytes=Buffer.byteLength(JSON.stringify({id:'owner-media-batch:'+randomUUID(),kind:'manual',epoch:0,roots:['capture:'+('0'.repeat(36))],connections,scope:{sourceIds:null,dataKinds:['text','image','audio','conversation']}}))+300;
+ limits.maxStorageBytes=before+manualBytes;
+ for(let i=0;i<2;i++){const response=await f.node.app.inject({method:'POST',url:'/api/perception/ocr/historical-process',headers:f.headers,payload:{token:preview.json().token}});assert.equal(response.statusCode,507,response.body);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM background_model_work').get()!.n,count);assert.equal(f.node.store.logicalBytes(),before);}
+ limits.maxStorageBytes=20_000_000;await f.restart();assert.equal(f.node.store.logicalBytes(),before);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM background_model_work').get()!.n,count);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM image_backfill_items').get()!.n,0);
+ const next=await f.node.app.inject({method:'POST',url:'/api/perception/ocr/historical-preview',headers:f.headers,payload:{sourceId:'generated-quota'}});const approved=await f.node.app.inject({method:'POST',url:'/api/perception/ocr/historical-process',headers:f.headers,payload:{token:next.json().token}});assert.equal(approved.statusCode,200,approved.body);
 });
