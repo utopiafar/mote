@@ -174,6 +174,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                         if (!config.packedUpload) break
                     } catch (error: SyncConditionsUnavailable) { throw error
                     } catch (error: java.io.InterruptedIOException) { throw error
+                    } catch (error: UploadHistoryUnavailable) { throw error
                     } catch (error: Exception) {
                         skippedAttachments++
                         Operations.record(applicationContext, OperationKind.UPLOAD_RETRY, Operations.failure(error, stage), recordId = pendingRecordId)
