@@ -30,6 +30,7 @@
         </activity>
         <activity android:configChanges="uiMode" android:name=".CentralActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:configChanges="uiMode" android:name=".CalendarActionsActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+        <activity android:configChanges="uiMode" android:name=".LibrarySourceReaderActivity" android:exported="false" />
         <activity android:configChanges="uiMode" android:name=".FileContentActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:configChanges="uiMode" android:name=".SourcesActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:configChanges="uiMode" android:name=".FileTaskActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />

@@ -23,6 +23,26 @@ class FileArchiveQueueTest {
         assertTrue(queue.acknowledgeExact(source,identity,canonical))
         assertFalse(queue.acknowledgeExact(source,identity,UUID.randomUUID().toString()))
     }
+    @Test fun libraryPaginationOrdersEquivalentOffsetsAndFractionalSecondsByInstant() {
+        val queue = FileArchiveQueue(folder.newFolder(), cipher); val source = source("snapshot"); val generation = queue.configure(source).getString("generation")
+        listOf("2026-10-01T00:00:00Z", "2026-10-01T00:00:00.001Z", "2026-10-01T01:00:00+01:00").forEachIndexed { index, at -> queue.observe(source, item("instant-$index", "snapshot", 10).put("observedAt", at), generation, 0) }
+        val first = queue.libraryRows(source, "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", null, 1)
+        assertEquals("2026-10-01T00:00:00.001Z", first.single().getJSONObject("candidate").getString("observedAt"))
+        val next = queue.libraryRows(source, "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", first.single().getJSONObject("candidate").getString("observedAt") to first.single().getString("libraryKey"), 20)
+        assertEquals(2, next.size)
+    }
+    @Test fun libraryPaginationReadsAllEqualTimeFilesWithoutMutatingReceipts() {
+        val queue = FileArchiveQueue(folder.newFolder(), cipher); val source = source("snapshot")
+        val generation = queue.configure(source).getString("generation")
+        repeat(25) { queue.observe(source, item("page-$it", "snapshot", 10).put("observedAt", "2026-10-01T00:00:00Z"), generation, 0) }
+        val before = queue.rows(source.id).associate { it.getJSONObject("candidate").getString("externalId") to it.toString() }
+        val first = queue.libraryRows(source, "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", null, 20)
+        val last = first.last()
+        val second = queue.libraryRows(source, "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", last.getJSONObject("candidate").getString("observedAt") to last.getString("libraryKey"), 20)
+        assertEquals(20, first.size); assertEquals(5, second.size)
+        assertEquals(25, (first + second).map { it.getJSONObject("candidate").getString("externalId") }.toSet().size)
+        assertEquals(before, queue.rows(source.id).associate { it.getJSONObject("candidate").getString("externalId") to it.toString() })
+    }
     @Test fun contextEditsDoNotResetCapturedImportOrReuploadItsOriginalBytes() {
         val store = LocalSourceStore(folder.newFolder(), cipher); val queue = FileArchiveQueue(folder.newFolder(), cipher)
         val original = source("snapshot").copy(tree = false, syncContinuously = false, centralProcessingConsent = true)

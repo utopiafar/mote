@@ -8750,5 +8750,20 @@
   "查看原始对话与轮次": "View original conversation and turn",
   "原始轮次与保存的引用不同；请打开原始对话核对，保存的引用未改变。": "The original turn differs from the saved quote. Open the original conversation to check; the saved quote is unchanged.",
   "引用来源": "Citation sources",
-  "原始轮次暂不可读。": "The original turn is unavailable."
+  "原始轮次暂不可读。": "The original turn is unavailable.",
+  "整理资料": "Organized material",
+  "仅目录信息": "Metadata only",
+  "加载更多来源资料": "Load more source materials",
+  "此版本没有保存正文。": "No body is stored for this version.",
+  "原始依据": "Original evidence",
+  "此依据暂不能在本机阅读。": "This evidence cannot currently be read on this device.",
+  "此版本已变化，请返回资料列表重新选择。": "This version changed. Return to the library and select it again.",
+  "提取的正文": "Extracted text",
+  "来源（已加载）": "Sources loaded so far",
+  "已选来源": "Selected source",
+  "未命名来源": "Unnamed source",
+  "已加载 {0} 条资料": "{0} items loaded",
+  "收集/更新时间": "Collected / updated date",
+  "衍生内容范围：{0}–{1} / {2} 字符": "Derived content range: {0}–{1} / {2} characters",
+  "返回衍生内容开头": "Return to the beginning of derived content"
 }

@@ -32,17 +32,25 @@ class FileContentActivity : MoteActivity() {
     private fun identity(row: JSONObject) = SourceRules.fileSignature(row.getJSONObject("candidate")) + ":" + row.optJSONObject("pending")?.optJSONObject("manifest")?.optJSONObject("item")?.optString("revision").orEmpty() + ":" + LocalContentPresentation.currentReceipt(row).orEmpty()
 
     private var offset = 0
+    // The offset belongs to this exact derived reader, not the latest Material head.
+    private var derivedReader: String? = null
+    private var derivedCapture: String? = null
+    private var derivedOrigin: String? = null
     private var exportVersion: Triple<String, String, String>? = null
     private data class Detail(val source: LocalSource, val row: JSONObject, val item: JSONObject, val access: CentralAccess.Selection,
         val capture: JSONObject?, val file: JSONObject?, val material: JSONObject?, val read: String?, val nextOffset: Int?,
-        val total: Int?, val localPreview: Pair<String, Boolean>?, val failed: Boolean, val retryRead: Boolean, val folderSummary: String)
+        val total: Int?, val selectedReader: String?, val localPreview: Pair<String, Boolean>?, val failed: Boolean, val retryRead: Boolean, val folderSummary: String)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         offset = savedInstanceState?.getInt("offset", 0) ?: 0
+        derivedReader = savedInstanceState?.getString("derivedReader")
+        derivedCapture = savedInstanceState?.getString("derivedCapture")
+        derivedOrigin = savedInstanceState?.getString("derivedOrigin")
         savedInstanceState?.getString("exportRevision")?.let { revision -> exportVersion = Triple(savedInstanceState.getString("exportSource", ""), savedInstanceState.getString("exportExternal", ""), revision) }
         content = moteDetailPage().apply { background = MoteUi.shape(this@FileContentActivity, NativeColorRole.SURFACE, NativeRadiusRole.READING) }
     }
     override fun onSaveInstanceState(state: Bundle) {
+        state.putString("derivedReader", derivedReader); state.putString("derivedCapture", derivedCapture); state.putString("derivedOrigin", derivedOrigin)
         state.putInt("offset", offset); exportVersion?.let { (source, external, revision) -> state.putString("exportSource", source); state.putString("exportExternal", external); state.putString("exportRevision", revision) }
         super.onSaveInstanceState(state)
     }
@@ -74,17 +82,24 @@ class FileContentActivity : MoteActivity() {
         val generation = ++viewGeneration
         val sourceId = intent.getStringExtra("sourceId") ?: return
         val external = intent.getStringExtra("externalId") ?: return
-        val pageOffset = offset
+        val pageOffset = offset; val pinnedReader = derivedReader; val pinnedCapture = derivedCapture; val pinnedOrigin = derivedOrigin
         if (!automatic) { content.removeAllViews(); text(MoteI18n.text("正在读取内容…")) }
         task.start(MoteI18n.text("正在读取内容…"), {}, {
             val source = localSources().sources().first { it.id == sourceId }
             val row = fileArchives().let { it.presentationRow(source, it.row(sourceId, external)) }
             val item = row.optJSONObject("pending")?.optJSONObject("manifest")?.optJSONObject("item") ?: row.getJSONObject("candidate")
+            intent.getStringExtra("sourceRevision")?.let { selected ->
+                val actual = row.optJSONObject("pending")?.optJSONObject("manifest")?.optJSONObject("item")?.optString("revision")
+                    ?: if (LocalContentPresentation.currentReceipt(row) != null) row.optString("revision") else "candidate:" + SourceRules.fileSignature(row.getJSONObject("candidate"))
+                check(selected == actual) { MoteI18n.text("此版本已变化，请返回资料列表重新选择。") }
+            }
             val local = if (row.has("pending")) runCatching { fileArchives().pendingPreview(sourceId, external, item.getString("revision")) }.getOrNull() else null
             val access = CentralAccess.resolve(this)
             var capture: JSONObject? = null; var file: JSONObject? = null; var material: JSONObject? = null; var read: String? = null; var next: Int? = null; var total: Int? = null; var failed = false; var retryRead = false
             // A pending newer version must not be represented by the previous version's receipt.
             val id = LocalContentPresentation.currentReceipt(row).orEmpty()
+            var selectedReader = pinnedReader
+            if (pinnedReader != null) check(id == pinnedCapture && access.server == pinnedOrigin) { MoteI18n.text("此版本已变化，请返回资料列表重新选择。") }
             if (id.isNotBlank() && access.client != null) {
                 runCatching {
                     val record = access.client.get("/api/capture-browser/" + android.net.Uri.encode(id))
@@ -93,20 +108,18 @@ class FileContentActivity : MoteActivity() {
                     capture = record
                     file = access.client.get("/api/files/" + android.net.Uri.encode(id))
                     check(file?.optString("captureId") == id)
-                    val ref = record.optString("memoryMaterialRef")
+                    val ref = pinnedReader ?: record.optString("memoryMaterialRef").takeIf { Regex("^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$").matches(it) } ?: "chunks"
+                    selectedReader = ref
                     val match = Regex("^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$").matchEntire(ref)
                     if (match != null) {
                         val materialId = match.groupValues[1]; val revision = match.groupValues[2]
-                        val head = access.client.get("/api/materials/" + android.net.Uri.encode(materialId))
-                        if (head.optString("ref") == ref) {
-                            material = head
-                            val page = access.client.get("/api/materials/" + android.net.Uri.encode(materialId) + "/read?offset=$pageOffset&length=4000&revision=" + android.net.Uri.encode(revision))
-                            check(page.getJSONObject("material").optString("ref") == ref)
-                            read = page.optString("text")
-                            page.optJSONObject("textRange")?.let { range -> total = range.optInt("total"); if (!range.isNull("nextOffset")) next = range.getInt("nextOffset") }
-                        }
+                        val page = access.client.get("/api/materials/" + android.net.Uri.encode(materialId) + "/read?offset=$pageOffset&length=4000&revision=" + android.net.Uri.encode(revision))
+                        check(page.getJSONObject("material").optString("ref") == ref)
+                        material = page.getJSONObject("material")
+                        read = page.optString("text")
+                        page.optJSONObject("textRange")?.let { range -> total = range.optInt("total"); if (!range.isNull("nextOffset")) next = range.getInt("nextOffset") }
                     }
-                    if (read == null) {
+                    if (ref == "chunks") {
                         val page = access.client.get("/api/files/" + android.net.Uri.encode(id) + "/chunks?offset=$pageOffset")
                         val chunks = page.optJSONArray("items") ?: org.json.JSONArray()
                         read = (0 until chunks.length()).joinToString("\n\n") { chunks.getJSONObject(it).optString("ocrText") }
@@ -115,13 +128,16 @@ class FileContentActivity : MoteActivity() {
                 }.onFailure { error ->
                     failed = true
                     retryRead = error !is CentralFailure || error.status !in setOf(401, 403)
-                    if (error is CentralFailure && error.status in setOf(401, 403)) { capture = null; file = null; material = null; read = null; next = null; total = null }
+                    if (error is CentralFailure && error.status in setOf(401, 403, 404, 409, 410)) { capture = null; file = null; material = null; read = null; next = null; total = null }
                 }
             }
-            Detail(source, row, item, access, capture, file, material, read, next, total, local, failed, retryRead, if (source.tree) LocalContentPresentation.folderStatus(this, source) else "")
+            Detail(source, row, item, access, capture, file, material, read, next, total, selectedReader, local, failed, retryRead, if (source.tree) LocalContentPresentation.folderStatus(this, source) else "")
         }) { result ->
             if (generation != viewGeneration || (result.isSuccess && CentralSession.get(this).generation != result.getOrThrow().access.generation)) { if (!isFinishing) load(); return@start }
             result.onSuccess { detail ->
+                if (detail.selectedReader != null) {
+                    derivedReader = detail.selectedReader; derivedCapture = LocalContentPresentation.currentReceipt(detail.row); derivedOrigin = detail.access.server
+                }
                 loadedIdentity = identity(detail.row)
                 lastCentralCheck = System.currentTimeMillis()
                 loadedAccessGeneration = detail.access.generation
@@ -155,17 +171,23 @@ class FileContentActivity : MoteActivity() {
         }
         text(MoteI18n.text("原文与出处"), MoteTheme.fontSection.toFloat())
         val local = detail.localPreview
-        val original = if (local != null) local.first.drop(offset).take(4000) else detail.read?.takeIf { it.isNotBlank() } ?: detail.capture?.optString("ocrText")?.takeIf { it.isNotBlank() } ?: item.optString("text")
+        val original = if (local != null) local.first.drop(offset).take(4000) else detail.capture?.optString("ocrText")?.takeIf { it.isNotBlank() } ?: item.optString("text")
         if (original.isNotBlank()) text(original, 16f)
         else text(MoteI18n.text("本机保留文件信息与待发原始字节；正文由中央整理后显示。"), MoteTheme.fontSupport.toFloat())
         if (local != null) {
             text(MoteI18n.text(if (local.second && offset + 4000 >= local.first.length) "已显示本机保存原文的最后一页" else "正在预览本机保存的原文，尚未显示完整内容"), 12f)
             if (offset + 4000 < local.first.length) button(MoteI18n.text("继续展开")) { offset += 4000; load() }
-        } else {
-            detail.total?.let { text(MoteI18n.text("原文范围：{0}–{1} / {2} 字符", offset, offset + original.length, it), 12f) }
+        }
+        if (!detail.read.isNullOrBlank()) {
+            text(MoteI18n.text(if (detail.material != null) "整理资料" else "提取的正文"), MoteTheme.fontSection.toFloat())
+            text(detail.read, 16f)
+            detail.material?.let { material -> button(MoteI18n.text("原始依据")) {
+                LibrarySourceReaderActivity.open(this, detail.access.server, "material", material.getString("id"), "", "", material.getString("revision"))
+            } }
+            detail.total?.let { text(MoteI18n.text("衍生内容范围：{0}–{1} / {2} 字符", offset, offset + detail.read.length, it), 12f) }
             detail.nextOffset?.let { next -> button(MoteI18n.text("继续展开")) { offset = next; load() } }
         }
-        if (offset > 0) button(MoteI18n.text("返回原文开头")) { offset = 0; load() }
+        if (offset > 0) button(MoteI18n.text(if (detail.read.isNullOrBlank()) "返回原文开头" else "返回衍生内容开头")) { offset = 0; load() }
         if (row.optJSONObject("pending")?.optJSONObject("manifest")?.has("sha256") == true) button(MoteI18n.text("导出本机保存的完整原件")) {
             exportVersion = Triple(detail.source.id, item.getString("externalId"), item.getString("revision"))
             @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(item.optString("mimeType", "application/octet-stream")).putExtra(Intent.EXTRA_TITLE, item.optString("title", "Mote")), 801)

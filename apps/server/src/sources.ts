@@ -111,20 +111,21 @@ export class SourceStore {
     },validate);
     return {receipts:receipts.map((ack,index)=>({id:ack.id,sourceId,externalId:items[index].externalId,revision:items[index].revision,duplicate:ack.duplicate}))};
   }
-  listItems(args:{sourceId?:string;deviceId?:string;kind?:string;after?:string;before?:string;limit?:number;cursor?:string;includeDeleted?:boolean}={}) {
+  listItems(args:{sourceId?:string;deviceId?:string;kind?:string;after?:string;before?:string;limit?:number;cursor?:string;includeDeleted?:boolean;collectedOrder?:boolean}={}) {
     const clauses=['c.id=h.capture_id'],values:(string|number)[]=[];
     if(args.sourceId){clauses.push('h.source_id=?');values.push(args.sourceId);}
     if(args.deviceId){clauses.push('c.device_id=?');values.push(args.deviceId);}
     if(!args.includeDeleted)clauses.push('h.deleted=0');
     if(args.kind){clauses.push("json_extract(c.json,'$.source')=?");values.push(args.kind);}
     // Calendars use planned time; documents use explicit authored time, otherwise observation time.
-    const start="COALESCE(json_extract(c.json,'$.provenance.calendar.start'),c.context_at)",end="COALESCE(json_extract(c.json,'$.provenance.calendar.end'),c.context_at)";
+    const sort=args.collectedOrder?"c.captured_at":"c.context_at";
+    const start=args.collectedOrder?sort:"COALESCE(json_extract(c.json,'$.provenance.calendar.start'),c.context_at)",end=args.collectedOrder?sort:"COALESCE(json_extract(c.json,'$.provenance.calendar.end'),c.context_at)";
     if(args.after){clauses.push(`julianday(${end})>=julianday(?)`);values.push(args.after);}
     if(args.before){clauses.push(`julianday(${start})<julianday(?)`);values.push(args.before);}
     let position:{at:string;id:string}|undefined;
-    if(args.cursor){try{position=z.object({at:z.string().datetime(),id:z.string().uuid()}).parse(JSON.parse(Buffer.from(args.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid source cursor');}clauses.push('(c.context_at<? OR (c.context_at=? AND c.id>?))');values.push(position.at,position.at,position.id);}
+    if(args.cursor){try{position=z.object({at:z.string().datetime(),id:z.string().uuid()}).parse(JSON.parse(Buffer.from(args.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid source cursor');}clauses.push(`(${sort}<? OR (${sort}=? AND c.id>?))`);values.push(position.at,position.at,position.id);}
     const limit=Math.max(1,Math.min(args.limit??50,200));
-    const rows=this.store.db.prepare(`SELECT c.id,c.context_at,h.deleted FROM captures c JOIN source_heads h ON c.id=h.capture_id WHERE ${clauses.join(' AND ')} ORDER BY c.context_at DESC,c.id LIMIT ?`).all(...values,limit+1) as {id:string;context_at:string;deleted:number}[];
+    const rows=this.store.db.prepare(`SELECT c.id,${sort} AS context_at,h.deleted FROM captures c JOIN source_heads h ON c.id=h.capture_id WHERE ${clauses.join(' AND ')} ORDER BY ${sort} DESC,c.id LIMIT ?`).all(...values,limit+1) as {id:string;context_at:string;deleted:number}[];
     const items=rows.slice(0,limit).flatMap(r=>this.store.evidence([r.id]).map(c=>({...this.item(c,true),deleted:Boolean(r.deleted)})));
     const last=rows.slice(0,limit).at(-1);return {items,nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({at:last.context_at,id:last.id})).toString('base64url'):null};
   }
