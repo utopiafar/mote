@@ -1,3 +1,4 @@
+import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -42,6 +43,7 @@ test('application action analysis usage and semantic children resolve to the adm
   if(node.executor.get(input.traceContext!.jobId!)?.kind==='context-dag.semantic'){const id=input.evidenceIds![0];return {...empty(),answer:JSON.stringify({summary:'Generated appointment',evidence:[{id,quote:text}],events:[],memoryCandidates:[],actionCues:[{kind:'calendar.create',event,uncertainty:'proposed',evidence:[{id,quote:text}]}]}),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:text}]};}
   assert.equal(input.skill,'calendar-extraction');assert.equal(node.executor.get('actions:'+input.traceContext!.jobId)?.operationId,input.traceContext!.operationId);return answer(input.evidenceIds![0]);
  }}});t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});assert.equal(node.actions.engine,node.executor);
+ await authorizeFixtureModels(node);
  node.sources.register({id:'fixture',kind:'custom',name:'Generated',deviceId:'fixture',platform:'import'});await node.sources.upsert('fixture',{externalId:'one',revision:'1',observedAt:'2026-01-01T00:00:00Z',kind:'message',layer:'original',text});await node.actions.saveSettings({revision:node.configService.revision,authorizationRevision:node.actions.authorizationRevision(),settings:{enabled:true,timeZone:'UTC',reviewDeviceIds:[]}});await node.actions.tick();assert.equal(node.actions.list().length,1);const step=node.store.db.prepare("SELECT operation_id FROM execution_steps WHERE kind='actions.extract'").get()!;const receipt=JSON.parse(String(node.store.db.prepare("SELECT json FROM model_usage WHERE json_extract(json,'$.attribution.moduleId')='actions'").get()!.json));assert.equal(receipt.attribution.operationId,step.operation_id);assert.ok(receipt.attribution.jobId);assert.ok(node.store.db.prepare('SELECT 1 FROM operation_parents WHERE parent_id=?').get(String(step.operation_id)));
 });
 

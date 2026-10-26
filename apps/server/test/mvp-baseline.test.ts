@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -45,7 +46,7 @@ test('current HTTP query timeout and cancellation fence uncooperative late answe
  const node=await buildApp(config(directory),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{signals.push(input.signal!);await held;return result();}}});
  t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const expired=randomUUID(),cancelled=randomUUID(),headers={authorization:'Bearer generated-mvp-owner'};
- node.featureServices.queryRuns.start(expired,{question:'Generated deadline'},{timeoutMs:5000});await until(()=>signals.length>0);await until(()=>node.featureServices.queryRuns.get(expired).status!=='running');
+ await withFixtureOwnerModelWork(node,async()=>node.featureServices.queryRuns.start(expired,{question:'Generated deadline'},{timeoutMs:5000}));await until(()=>signals.length>0);await until(()=>node.featureServices.queryRuns.get(expired).status!=='running');
  assert.equal(node.featureServices.queryRuns.get(expired).error?.code,'timeout');
  const accepted=await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id:cancelled,input:{question:'Generated cancel'}}});assert.equal(accepted.statusCode,202,accepted.body);
  assert.equal((await node.app.inject({method:'POST',url:'/api/query-runs/'+cancelled+'/cancel',headers})).json().status,'cancelled');

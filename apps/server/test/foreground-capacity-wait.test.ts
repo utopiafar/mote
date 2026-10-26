@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -48,13 +49,13 @@ test('a cooldown reported while the actual model gate is occupied creates no uni
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,_reader,host)=>({configured:true,close:async()=>{},query:input=>host.runModel!(async()=>{calls++;return answer(false);},input.signal)})});
  t.after(async()=>{release.resolve();await node.app.close();await rm(directory,{recursive:true,force:true});});
  const {llmGate,queryAgent,providerAdmission}=node.featureServices;llmGate.configure(1);
- const occupied=llmGate.run(()=>release.promise),pending=queryAgent({question:'Generated gate-race question'});
+ const occupied=llmGate.run(()=>release.promise),pending=withFixtureOwnerModelWork(node,()=>queryAgent({question:'Generated gate-race question'}));
  const rejection=assert.rejects(pending,(error:unknown)=>error instanceof ProviderFailure&&error.details.admissionWaiting===true);
  await until(()=>llmGate.snapshot().waiting,count=>count===1);
  await assert.rejects(providerAdmission.run(node.modelSettings.select('chat').settings,async()=>{throw new ProviderFailure({category:'transient',code:'provider_unavailable',retryAfterMs:1000});}),ProviderFailure);
  release.resolve();await occupied;await rejection;assert.equal(calls,0);assert.equal(node.store.db.prepare('SELECT count(*) n FROM model_usage').get()!.n,0);
  await delay(Math.max(0,providerAdmission.snapshot().nextEligibleAt!-Date.now())+20);
- await queryAgent({question:'Generated gate-race question after release'});assert.equal(calls,1);assert.equal(node.store.db.prepare("SELECT count(*) n FROM model_usage WHERE json_extract(json,'$.status')='completed'").get()!.n,1);
+ await withFixtureOwnerModelWork(node,()=>queryAgent({question:'Generated gate-race question after release'}));assert.equal(calls,1);assert.equal(node.store.db.prepare("SELECT count(*) n FROM model_usage WHERE json_extract(json,'$.status')='completed'").get()!.n,1);
 });
 
 test('cancelling while the actual model gate is occupied creates no unissued usage receipt',async t=>{
@@ -62,7 +63,7 @@ test('cancelling while the actual model gate is occupied creates no unissued usa
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,_reader,host)=>({configured:true,close:async()=>{},query:input=>host.runModel!(async()=>{calls++;return answer(false);},input.signal)})});
  t.after(async()=>{release.resolve();await node.app.close();await rm(directory,{recursive:true,force:true});});
  const {llmGate,queryAgent}=node.featureServices;llmGate.configure(1);
- const occupied=llmGate.run(()=>release.promise),pending=queryAgent({question:'Generated cancelled model queue',signal:controller.signal});
+ const occupied=llmGate.run(()=>release.promise),pending=withFixtureOwnerModelWork(node,()=>queryAgent({question:'Generated cancelled model queue',signal:controller.signal}));
  const rejection=assert.rejects(pending,(error:unknown)=>error instanceof DOMException&&error.name==='AbortError');
  await until(()=>llmGate.snapshot().waiting,count=>count===1);controller.abort();await rejection;
  assert.equal(calls,0);assert.equal(node.store.db.prepare('SELECT count(*) n FROM model_usage').get()!.n,0);
@@ -75,11 +76,11 @@ test('admission waiting preserves already reported partial usage, while a file-a
   calls++;if(partial){input.onUsage?.({measurement:'thread_cumulative',complete:false,requests:0,reportedRequests:0,inputTokens:19,outputTokens:3,totalTokens:22});throw new ProviderFailure({category:'transient',code:'provider_unavailable',admissionWaiting:true,executionStarted:false,retryAfterMs:1000});}return answer(false);
  }};
  const node=await buildApp(config,{backgroundWorker:false,agent:query,createModelAgent:async()=>query!});t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
- await assert.rejects(node.featureServices.queryAgent({question:'Generated partial model operation'}),ProviderFailure);
+ await assert.rejects(withFixtureOwnerModelWork(node,()=>node.featureServices.queryAgent({question:'Generated partial model operation'})),ProviderFailure);
  const receipts=node.store.db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String(row.json)));assert.equal(receipts.length,1);assert.equal(receipts[0].status,'failed');assert.equal(receipts[0].tokens.totalTokens,22);assert.equal(receipts[0].tokens.complete,false);
  partial=false;
  await assert.rejects(node.featureServices.providerAdmission.run(node.modelSettings.select('file').settings,async()=>{throw new ProviderFailure({category:'transient',code:'provider_unavailable',retryAfterMs:1000});}),ProviderFailure);
- await assert.rejects(node.processing.analyze('generated-file',[],'Generated file analysis'),ProviderFailure);assert.equal(calls,1);assert.equal(node.store.db.prepare('SELECT count(*) n FROM model_usage').get()!.n,1);
+ await assert.rejects(withFixtureOwnerModelWork(node,()=>node.processing.analyze('generated-file',[],'Generated file analysis')),ProviderFailure);assert.equal(calls,1);assert.equal(node.store.db.prepare('SELECT count(*) n FROM model_usage').get()!.n,1);
  await delay(Math.max(0,node.featureServices.providerAdmission.snapshot().nextEligibleAt!-Date.now())+20);
- await node.processing.analyze('generated-file',[],'Generated file analysis after release');assert.equal(calls,2);assert.equal(node.store.db.prepare("SELECT count(*) n FROM model_usage WHERE json_extract(json,'$.operation')='file-analysis'").get()!.n,1);
+ await withFixtureOwnerModelWork(node,()=>node.processing.analyze('generated-file',[],'Generated file analysis after release'));assert.equal(calls,2);assert.equal(node.store.db.prepare("SELECT count(*) n FROM model_usage WHERE json_extract(json,'$.operation')='file-analysis'").get()!.n,1);
 });

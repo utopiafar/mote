@@ -1,3 +1,4 @@
+import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp,open,readFile,readdir,rm,writeFile,stat } from 'node:fs/promises';
@@ -293,7 +294,8 @@ test('request correlation survives the per-query local HTTP tool bridge boundary
 
 test('background indexing records timings, queue state and only a fixed failure marker',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-index-'));const cfg={...config(directory),embeddingModel:'synthetic-model',embeddingBaseUrl:'http://127.0.0.1:1'};
-  const {app,indexer,store,diagnostics}=await buildApp(cfg,{agent:inactive});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
+  const node=await buildApp(cfg,{agent:inactive}),{app,indexer,store,diagnostics}=node;t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
+  await authorizeFixtureModels(node);
   let calls=0;t.mock.method(globalThis,'fetch',async()=>{calls++;throw new Error(marker);});
   const id=randomUUID();await store.ingest({id,deviceId:'fixture',deviceName:'fixture',platform:'import',capturedAt:'2020-01-01T00:00:00Z',source:'note',ocrText:marker,durationMs:0});await indexer.tick();
   assert.equal(calls,1);assert.equal(store.indexCounts().failed,1);const stored=store.db.prepare('SELECT index_error FROM captures WHERE id=?').get(id) as {index_error:string};assert.equal(stored.index_error,'embedding_transport');

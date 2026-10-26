@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -28,7 +29,7 @@ test('production app reserves Ask and inherited research capacity while backgrou
  t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
  await node.app.ready();
  node.featureServices.delegation.registerCoordinator({id:'generated.background',execute:async({signal})=>node.featureServices.queryAgent({question:'Generated background task',executionLane:'background',signal})});
- node.featureServices.delegation.start({id:'generated-background',profileId:'generated.background',goal:'Generated background workload',input:{executionLane:'interactive'},allowedCapabilities:[]});
+ await withFixtureOwnerModelWork(node,async()=>node.featureServices.delegation.start({id:'generated-background',profileId:'generated.background',goal:'Generated background workload',input:{executionLane:'interactive'},allowedCapabilities:[]}));
  await started;
  const id=randomUUID(),accepted=await node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated Ask research'}}});assert.equal(accepted.statusCode,202,accepted.body);
  await until(()=>node.featureServices.queryRuns.get(id).status==='completed'?true:undefined);
