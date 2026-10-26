@@ -1,6 +1,6 @@
 # CI responsibilities
 
-Test layers and selection rules live in [testing](testing.md). `component-checks.yml` is the automatic affected PR/main entrypoint; `checks.yml` has only `workflow_dispatch` for explicitly selected manual acceptance. The commands below require a revision containing the balanced CI scripts in `scripts/ci/`; a documentation-only branch does not supply those scripts.
+Test layers and selection rules live in [testing](testing.md). `component-checks.yml` is the automatic affected PR/main entrypoint; `checks.yml` has only `workflow_dispatch` for explicitly selected manual acceptance. The local commands below require a revision containing the balanced CI scripts in `scripts/ci/`; a documentation-only branch does not supply those scripts. The manual workflow can use its preserved runner to validate an older candidate revision.
 
 ## Automatic affected checks
 
@@ -45,7 +45,7 @@ In GitHub Actions choose **Checks → Run workflow** on a workflow ref containin
 | `docker` | `all` | Temporary container, profile/backup/rollback and tunnel-container integration |
 | `scale` | `all`, `memory`, `query`, `intake`, `admission` | Large Memory context-grants/imports, query lineage, interrupted ZIP intake or pending-query admission correctness |
 | `recovery` | `all`, `replay`, `process`, `arrivals`, `shutdown` | Generated heldout Memory replays, Central process lifecycle, material-arrival/recovery fixtures or mass model-wait shutdown/restart |
-| `benchmark` | `all`, `architecture`, `directory`, `sync`, `harness`, `file-commit`, `review-retrieval` | The selected generated performance measurement |
+| `benchmark` | `all`, `architecture`, `directory`, `sync`, `harness`, `file-commit`, `review-retrieval`, `guards` | The selected generated performance measurement or existing bounded-time guard cases |
 | `all` | `all` | All five suites above, including benchmarks; select this scope deliberately |
 
 The workflow preserves the runner from its selected workflow SHA before checking out the candidate. Selection validates suite/scope and the exact candidate SHA before the heavy jobs run; summaries record the candidate and runner revisions. These generated suites do not establish physical-device behavior or live-provider quality. Their triggers remain those in [testing](testing.md#test-layers).
