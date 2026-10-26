@@ -8656,5 +8656,10 @@
   "尚未设为当前记忆方案。": "Not selected as the current memory plan.",
   "查看已安装插件": "View installed plugins",
   "离开此引导不会撤销已登记的安装或核验。": "Leaving this guide does not undo an installation or verification already registered.",
-  "填写连接配置。保存不会运行核验、启用插件或更换记忆方案。": "Enter connection settings. Saving does not run verification, enable the plugin or change the memory plan."
+  "填写连接配置。保存不会运行核验、启用插件或更换记忆方案。": "Enter connection settings. Saving does not run verification, enable the plugin or change the memory plan.",
+  "当前范围暂不可用，请刷新后确认。": "The current scope is unavailable. Refresh to confirm it.",
+  "严格范围：只查询以下记录": "Strict scope: query only the following records",
+  "参考记录：可自动查找其他已授权内容": "Reference records: other authorized context may be retrieved automatically",
+  "未额外限定记录；仅查询已授权内容": "No additional record restriction; only authorized content is queried",
+  "其他查询条件：起始 {0}；结束 {1}；设备 {2}": "Other query filters: from {0}; until {1}; device {2}"
 }

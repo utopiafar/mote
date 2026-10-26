@@ -66,3 +66,24 @@ export function renderAskCitation(document: Document, citation: AskCitation, onO
   open.addEventListener('click', () => onOpen(citation.id)); evidence.append(title, open, excerpt);
   return evidence;
 }
+
+/** Current server snapshot only; citations and older turns do not define query scope. */
+export function renderAskScope(document: Document, scope: AskConversation['scope'], onOpen: (id: string) => void, unavailable = false): HTMLElement {
+  const root = document.createElement('section'); root.className = 'ask-scope';
+  root.setAttribute('aria-label', moteText('查询范围'));
+  const label = document.createElement('p'); root.append(label);
+  if (unavailable) { label.textContent = moteText('当前范围暂不可用，请刷新后确认。'); return root; }
+  const strict = Boolean(scope?.evidenceIds?.length);
+  const ids = strict ? scope!.evidenceIds! : scope?.anchorEvidenceIds ?? [];
+  label.textContent = strict ? moteText('严格范围：只查询以下记录') : ids.length ? moteText('参考记录：可自动查找其他已授权内容') : moteText('未额外限定记录；仅查询已授权内容');
+  for (const [index, id] of ids.entries()) {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary';
+    button.textContent = moteText('查看原文依据') + ' ' + (index + 1);
+    button.addEventListener('click', () => onOpen(id)); root.append(button);
+  }
+  if (scope?.after || scope?.before || scope?.deviceId) {
+    const filters = document.createElement('p'); filters.className = 'helper';
+    filters.textContent = moteText('其他查询条件：起始 {0}；结束 {1}；设备 {2}', scope.after ?? '—', scope.before ?? '—', scope.deviceId ?? '—'); root.append(filters);
+  }
+  return root;
+}
