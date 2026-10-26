@@ -10,7 +10,7 @@ Main uses the affected light contracts for web, Agent, server and desktop, plus 
 
 `Required checks` runs with `always()`. It requires successful selection and every selected job to succeed; only unselected jobs may be skipped. A selector failure, failed/cancelled selected job or unexpected skip cannot become an empty green result. The job name does not imply any change to GitHub branch protection.
 
-The runner retains bounded correctness even in files named `performance` or `migration`. Explicit behavioral inventories in `scripts/ci/partitions.mjs` select large Memory/import/query/admission correctness and mass-shutdown recovery separately; shorter authorization/cancellation/recovery guards remain in the automatic partitions. The inventory validates file coverage and unique literal case names, including mixed files whose short cases stay automatic. Moving a known failure to manual selection does not repair it.
+The runner retains bounded correctness even in files named `performance` or `migration`. Explicit behavioral inventories in `scripts/ci/partitions.mjs` select large Memory/import/query/admission correctness, mass-shutdown recovery and existing timing guards separately; shorter authorization/cancellation/recovery guards remain in the automatic partitions. The inventory validates file coverage and unique literal case names, including mixed files whose short cases stay automatic. Moving a known failure to manual selection does not repair it.
 
 ## Local light commands
 
@@ -43,9 +43,9 @@ In GitHub Actions choose **Checks → Run workflow** on a workflow ref containin
 | --- | --- | --- |
 | `integration` | `all` | Generated app/protocol units and integration fixtures, E2E/media, profiles/tunnel and related checks; specialist suites remain separate |
 | `docker` | `all` | Temporary container, profile/backup/rollback and tunnel-container integration |
-| `scale` | `all`, `memory`, `query`, `intake`, `admission` | Large Memory context-grants/imports, query lineage, interrupted ZIP intake or pending-query admission correctness |
+| `scale` | `all`, `memory`, `query`, `intake`, `admission` | Large Memory context-grants/imports and 45-day Persona, query lineage, interrupted ZIP intake or pending-query admission correctness |
 | `recovery` | `all`, `replay`, `process`, `arrivals`, `shutdown` | Generated heldout Memory replays, Central process lifecycle, material-arrival/recovery fixtures or mass model-wait shutdown/restart |
-| `benchmark` | `all`, `architecture`, `directory`, `sync`, `harness`, `file-commit`, `review-retrieval`, `guards` | The selected generated performance measurement or existing bounded-time guard cases |
+| `benchmark` | `all`, `architecture`, `directory`, `sync`, `harness`, `file-commit`, `review-retrieval`, `guards` | Generated performance measurements; `guards` runs existing literal-search and long-transcript revalidation timing regressions with their correctness assertions intact |
 | `all` | `all` | All five suites above, including benchmarks; select this scope deliberately |
 
 The workflow preserves the runner from its selected workflow SHA before checking out the candidate. Selection validates suite/scope and the exact candidate SHA before the heavy jobs run; summaries record the candidate and runner revisions. These generated suites do not establish physical-device behavior or live-provider quality. Their triggers remain those in [testing](testing.md#test-layers).
