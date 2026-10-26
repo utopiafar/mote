@@ -1,4 +1,4 @@
-import {MemoryTopics} from './MemoryTopics';
+import {MemoryTopics,type ContextTree} from './MemoryTopics';
 import {formatEvidenceRef} from '@mote/shared';
 import {currentMemoryMaterial,currentMemorySource,memoryMaterialId,memorySourceId,subscribeMemorySource} from './memory-source-route';
 import {useSyncExternalStore} from 'react';
@@ -75,14 +75,16 @@ export function Memories({api,range,rangeSelectionKey,onOpen,refreshVersion=0,em
   // Explicit filters and pagination still begin a separate visible read.
   const pageContinuity=rangeSelectionKey===undefined?undefined:JSON.stringify([rangeSelectionKey,range.deviceId,query,tier,layer,cursor,filter,history,asOf,treeId,nodeId]);
   const page=useResource<{items:Memory[];nextCursor:string|null}>(api,(nodeId?'/api/context-trees/'+encodeURIComponent(treeId)+'/nodes/'+encodeURIComponent(nodeId):'/api/memories')+'?'+new URLSearchParams({...range,includeStale:'true',includeHistory:String(history),...(asOf?{asOf:new Date(asOf).toISOString()}:{}),limit:'30',...(layer?{layer}:{}),...(query?{query}:{}),...(tier?{tier}:{}),...(cursor?{cursor}:{}),...(filter!=='all'?{status:filter}:{})}),undefined,refreshVersion,pageContinuity);
+  const topicCatalog=useResource<{items:ContextTree[]}>(api,treeId.startsWith('auto.')?'/api/context-trees':null);
+  const topicUnavailable=Boolean(nodeId&&treeId.startsWith('auto.')&&(topicCatalog.error||topicCatalog.data&&!topicCatalog.data.items.some(tree=>tree.id===treeId&&tree.nodes.some(node=>node.id===nodeId))));
   const jobList=useResource<{items:MemoryJob[]}>(api,'/api/memory-jobs',undefined,refreshVersion);
   // Keep a selected card in the scope in which the owner opened it. The shell
   // advances rolling endpoints on every poll; that does not change the choice.
   const selected=useResource<Memory>(api,selectedId?'/api/memories/'+encodeURIComponent(selectedId)+'?'+(selectedId===createdMemoryId?'':selectedReadScope):null,undefined,refreshVersion);
-  const detail=selected.data,items=page.data?.items??[],nextCursor=page.data?.nextCursor,jobs=jobList.data?.items??[],loading=page.loading&&page.data===undefined;
+  const detail=topicUnavailable?undefined:selected.data,items=topicUnavailable?[]:page.data?.items??[],nextCursor=topicUnavailable?undefined:page.data?.nextCursor,jobs=jobList.data?.items??[],loading=page.loading&&page.data===undefined;
   const error=mutationError||([page.error,selected.error,jobList.error].find(Boolean)?errorMessage([page.error,selected.error,jobList.error].find(Boolean)):'');
   useOperationUpdates(api);
-  function refresh(){resources(api).invalidate(key=>/^\/api\/(memories|memory-jobs)([/?]|$)/.test(key));}
+  function refresh(){resources(api).invalidate(key=>/^\/api\/(memories|memory-jobs|context-trees)([/?]|$)/.test(key));}
   useEffect(()=>{setJobId(current=>current??jobs.find(item=>['queued','running','pausing','paused','failed','waiting_for_model','waiting_for_input'].includes(item.status))?.id);},[jobList.data]);
   useEffect(()=>{const sameSession=selectionApi.current===api;selectionApi.current=api;setCursor(undefined);if(!(sameSession&&preserveSelection.current)){setSelectedId(null);setSelectedReadScope('');setCreatedMemoryId(undefined);}preserveSelection.current=false;},[api,selectionScope,query,tier,layer,filter,history,asOf,treeId,nodeId]);
   useEffect(()=>setMutationNotice(''),[api]);
