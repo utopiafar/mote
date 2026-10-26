@@ -29,3 +29,7 @@ Directory visibility no longer validates an open Memory. The rendered detail rec
 Only fields actually edited by the owner are retained separately under “Unsaved changes” when invalidation clears the original; the old-version save action is removed. An invalidated view does not automatically redraw over those edits on a later poll. Transport-only outages keep the existing correction form unchanged. No new persistence or authorization policy was added.
 
 Incremental validation: 2 new JVM detail-identity tests passed; development and instrumentation APK builds passed. Two actual emulator/HTTP regressions passed: all-memory view remains available through another Memory while selected detail is deleted, per-Memory denied or corrected; a held original response cannot restore withdrawn content. After adding edit preservation, only the affected first case was rerun, then rerun after the follow-up-poll guard with a further 6-second wait: passed, including retained actual owner edit and no old save action. The earlier successful journeys were not repeated. i18n 8675 and diff check passed. Fixture reset now also clears synthetic correction replacements so subsequent 32-record runs remain isolated.
+
+### First-poll ordering follow-up
+
+`current()` now pins the first valid snapshot through the same acceptance logic as detail rendering. A deterministic regression orders a newer poll before the initial old detail: it failed on d6618034 and passed after this fix; only that new test was run. No Mac, lifecycle, invalidation UI or draft code changed. Diff check passed.

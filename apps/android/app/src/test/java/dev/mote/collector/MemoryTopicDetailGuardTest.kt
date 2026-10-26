@@ -6,6 +6,14 @@ import org.junit.Test
 
 class MemoryTopicDetailGuardTest {
     private fun row() = JSONObject().put("id", "selected").put("version", 1).put("status", "published").put("fingerprint", "fixture")
+    @Test fun firstPollPinsNewVersionBeforeLateInitialDetail() {
+        val guard = MemoryTopicDetailGuard()
+        val initialDetail = row()
+        val newerPoll = row().put("version", 2)
+        assertTrue(guard.current("selected", newerPoll))
+        assertFalse(guard.accept("selected", initialDetail))
+        assertTrue(guard.accept("selected", newerPoll))
+    }
     @Test fun sameDirectoryCannotValidateChangedDetail() {
         val guard = MemoryTopicDetailGuard(); assertTrue(guard.accept("selected", row()))
         assertTrue(guard.current("selected", row()))

@@ -12,7 +12,8 @@ internal class MemoryTopicDetailGuard {
         snapshot = value
         return true
     }
-    fun current(id: String, row: JSONObject): Boolean = identity(id, row)?.let { snapshot == null || snapshot == it } ?: false
+    // A poll may finish before the initial detail; its first valid identity pins that view too.
+    fun current(id: String, row: JSONObject): Boolean = accept(id, row)
     private fun identity(id: String, row: JSONObject): String? {
         if (row.optString("id") != id || row.optInt("version", 0) < 1 || row.optString("status") !in setOf("published", "proposed") || !row.optString("supersededBy").let { it.isBlank() || it == "null" }) return null
         return listOf(id, row.getInt("version"), row.optString("status"), row.optString("fingerprint")).joinToString("\u0000")
