@@ -7,7 +7,9 @@ import {configureLocale} from '@mote/shared/i18n';
 import {FeatureGuide} from '../src/FeatureGuide.js';
 import {english} from '../../../packages/shared/src/i18n-en.js';
 import {guideSections,quickLinks,type GuideTarget} from '../src/feature-guide-catalog.js';
-import {settingsCategoryFromHash} from '../src/route-query.js';
+import {settingsCategoryFromHash,validatedReturnTarget} from '../src/route-query.js';
+import {featuresReady,webFeatures} from '../src/features/runtime.js';
+import {readWorkspaceRoute} from '../src/workspace-route.js';
 
 const groups=guideSections.flatMap(section=>section.groups);
 const units=groups.flatMap(group=>group.units);
@@ -74,7 +76,21 @@ test('guide targets carry explicit local destinations and matching collection or
   }
 });
 
-test('note attachments describe existing files and Coding progress keeps its specific requirement on the work-activity destination',()=>{
+test('every guide destination resolves through installed pages and collections to its declared view',async()=>{
+    await featuresReady;
+    const pages=webFeatures.pages(),collections=webFeatures.collections(),collectionIds=collections.map(entry=>entry.id);
+    const readPage=(hash:string)=>pages.find(entry=>[entry.route??entry.id,...entry.aliases??[]].includes(hash.replace(/^#\//,'').split('?')[0]))?.id??'overview';
+    for(const target of targets){
+      assert.equal(validatedReturnTarget(target.href,pages,collections),target.href,target.label+' must point to an installed destination');
+      const resolved=readWorkspaceRoute(target.href,readPage,collectionIds);
+      assert.equal(resolved.page,target.pageId,target.label+' must not redirect to a different page');
+      if(target.collectionId)assert.equal(resolved.collection,target.collectionId,target.label+' must retain the intended collection');
+      for(const id of target.requiredCollectionIds??[])assert.ok(collectionIds.includes(id),target.label+' needs '+id);
+    }
+});
+
+test('note attachments describe existing files and Coding progress uses the registered sync view with its specific requirement',async()=>{
+  await featuresReady;
   const attachments=units.find(unit=>unit.id==='C13');
   assert.ok(attachments);
   assert.equal(attachments.target.pageId,'notes');
@@ -83,9 +99,11 @@ test('note attachments describe existing files and Coding progress keeps its spe
   assert.ok(attachments.caveats.includes('随手记附件入口用于上传已有文件。'));
   const coding=units.find(unit=>unit.id==='A15');
   assert.ok(coding);
+  const collection=webFeatures.collections().find(entry=>entry.featureId==='mote.coding');
+  assert.ok(collection);
   assert.equal(coding.target.pageId,'archive');
-  assert.equal(coding.target.collectionId,'work-activity');
-  assert.equal(new URLSearchParams(coding.target.href.split('?')[1]).get('view'),'work-activity');
+  assert.equal(coding.target.collectionId,collection.id);
+  assert.equal(new URLSearchParams(coding.target.href.split('?')[1]).get('view'),collection.id);
   assert.deepEqual(coding.target.requires,['http:GET:/api/coding/uploads']);
   assert.ok(coding.otherTargets.some(target=>target.collectionId==='materials'),'published conversation content has an explicit destination');
 });

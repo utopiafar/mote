@@ -5,6 +5,7 @@ import {createDesktopPresentation} from './presentation';
 import {createWorkActivityUi} from './work-activity-ui';
 import {nativeStatusSummary} from './native-status';
 import { renderAskAnswer, renderAskCitation } from './ask-presentation';
+import {prependConversationTurns} from './ask-conversation';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import {builtinUiRules} from '@mote/shared';
 import {createAppCaptureUi} from './app-capture-ui';
@@ -1142,6 +1143,8 @@ function askControls(): void {
   byId<HTMLButtonElement>('ask-login').disabled = askBusy;
   byId<HTMLButtonElement>('ask-logout').disabled = askBusy;
   byId('ask-stop').hidden = !running;
+  byId<HTMLButtonElement>('ask-turns-more').disabled = askBusy || running;
+  byId('ask-turns-more').hidden = !askConversation?.nextCursor;
   for (const button of Array.from(byId('ask-history').querySelectorAll('button'))) button.disabled = askBusy || running;
 }
 function renderAsk(): void {
@@ -1163,6 +1166,19 @@ function renderAsk(): void {
   setText('ask-progress', !askRun ? '' : askRun.status === 'running' ? last?.message ?? (last?.tool ? `${moteText('正在读取资料')} · ${last.tool}` : moteText('中央节点正在回答…')) : askRun.status === 'cancelled' ? moteText('已停止回答') : askRun.status === 'failed' ? askRun.error?.message ?? moteText('回答未完成') : moteText('回答已完成'));
   askControls();
 }
+async function loadAskConversation(id: string): Promise<void> {
+  const generation = askGeneration;
+  const conversation = await askCall<import('./ask').AskConversation>('conversation', {id});
+  if (generation !== askGeneration) return;
+  askConversation = conversation; renderAsk();
+}
+async function olderAskTurns(): Promise<void> {
+  const current = askConversation, generation = askGeneration;
+  if (!current?.nextCursor) return;
+  const page = await askCall<import('./ask').AskConversation>('conversation', {id: current.id, cursor: current.nextCursor});
+  if (generation !== askGeneration || askConversation !== current) return;
+  askConversation = prependConversationTurns(current, page); renderAsk();
+}
 async function askHistory(append = false): Promise<void> {
   const generation = askGeneration;
   const page = await askCall<{items: {id: string; title: string}[]; nextCursor?: string}>('history', append && askCursor ? {cursor: askCursor} : undefined);
@@ -1170,7 +1186,7 @@ async function askHistory(append = false): Promise<void> {
   const history = byId('ask-history'); if (!append) history.replaceChildren();
   for (const item of page.items) {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary'; button.textContent = item.title;
-    button.addEventListener('click', () => { if (!askBusy && askRun?.status !== 'running') void askAction(async () => { askConversation = undefined; askRun = undefined; renderAsk(); askConversation = await askCall('conversation', {id: item.id}); renderAsk(); }); });
+    button.addEventListener('click', () => { if (!askBusy && askRun?.status !== 'running') void askAction(async () => { askConversation = undefined; askRun = undefined; renderAsk(); await loadAskConversation(item.id); }); });
     history.append(button);
   }
   askCursor = page.nextCursor; byId('ask-more').hidden = !askCursor; askControls();
@@ -1193,7 +1209,8 @@ async function refreshAsk(): Promise<void> {
     setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl));
     const page = await askCall<{items: import('./ask').AskRun[]}>('runs');
     askRun = page.items.find(item => item.status === 'running') ?? askRun;
-    if (askRun?.conversationId) askConversation = await askCall('conversation', {id: askRun.conversationId});
+    if (askRun?.conversationId) await loadAskConversation(askRun.conversationId);
+    else if (askConversation) await loadAskConversation(askConversation.id);
     renderAsk(); if (askRun?.status === 'running') scheduleAskPoll();
   });
 }
@@ -1235,6 +1252,7 @@ byId('ask-form').addEventListener('submit', event => {
 });
 byId('ask-refresh').addEventListener('click', () => void refreshAsk());
 byId('ask-more').addEventListener('click', () => void askAction(() => askHistory(true)));
+byId('ask-turns-more').addEventListener('click', () => void askAction(olderAskTurns));
 byId('ask-stop').addEventListener('click', () => void askAction(async () => { if (askRun) { askRun = await askCall('cancel', {id: askRun.id}); renderAsk(); scheduleAskPoll(); } }));
 byId('ask-new').addEventListener('click', () => { if (askBusy || askRun?.status === 'running') return; askGeneration++; clearTimeout(askTimer); askRun = undefined; askConversation = undefined; renderAsk(); });
 byId('ask-login').addEventListener('click', () => { const token = readInput('ask-token'); byId<HTMLInputElement>('ask-token').value = ''; void askAction(async () => { setText('ask-login-status', moteText('正在连接中央节点…')); try { await askCall('login', {token,durationMs:Number(readInput('ask-lifetime'))}); } catch (error) { setText('ask-login-status', moteText('请先登录中央节点，各页面会共用这次登录。')); throw error; } setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl)); askGeneration++; askRun = undefined; askConversation = undefined; renderAsk(); await askHistory(); }); });

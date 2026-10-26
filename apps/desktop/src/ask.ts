@@ -4,7 +4,7 @@ import type { Config } from './contracts';
 import { validateServerUrl } from './config';
 import { readResponseText } from './response-body';
 export interface AskRun { id: string; status: 'running' | 'completed' | 'failed' | 'cancelled'; conversationId?: string; events: { stage: string; message?: string; tool?: string }[]; error?: {message: string}; execution?: import('@mote/shared').ExecutionEnvelope }
-export interface AskConversation { id: string; title: string; turns: { question: string; status: string; error?: {message: string}; result?: { answer: string; citations: {id: string; appName: string; capturedAt: string; excerpt: string}[] } }[] }
+export interface AskConversation { id: string; title: string; revision?: number; nextCursor?: string | null; turns: { id: string; question: string; status: string; error?: {message: string}; result?: { answer: string; citations: {id: string; appName: string; capturedAt: string; excerpt: string}[] } }[] }
 export type AskCommand = 'history' | 'runs' | 'conversation' | 'run' | 'start' | 'cancel' | 'login' | 'logout' | 'login-browser';
 /** Fixed endpoints only. Owner credentials remain in the main process and are scoped to one origin. */
 export class AskClient {
@@ -17,7 +17,9 @@ export class AskClient {
     switch (command) {
       case 'history': path = '/api/conversations?limit=30' + (input.cursor ? '&cursor=' + encodeURIComponent(input.cursor.slice(0, 1000)) : ''); break;
       case 'runs': path = '/api/query-runs'; break;
-      case 'conversation': path = '/api/conversations/' + id(); break;
+      case 'conversation':
+        if (input.cursor !== undefined && !/^\d{1,9}$/.test(input.cursor)) throw Error('Invalid turn cursor');
+        path = '/api/conversations/' + id() + '?limit=20' + (input.cursor !== undefined ? '&cursor=' + input.cursor : ''); break;
       case 'run': path = '/api/query-runs/' + id(); break;
       case 'cancel': path = '/api/query-runs/' + id() + '/cancel'; body = '{}'; break;
       case 'start':

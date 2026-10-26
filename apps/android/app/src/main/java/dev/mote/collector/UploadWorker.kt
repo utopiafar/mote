@@ -109,6 +109,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
         return try {
             val config = settings.read()
             val explicit = inputData.getBoolean("manual", false)
+            if (UploadHistoryRecovery.unavailable && !UploadHistoryRecovery.restore(applicationContext, applicationContext.queue(), settings))
+                return if (config.syncMode == "manual") Result.failure() else Result.retry()
             if (config.syncPaused) { settings.syncStatus("paused", MoteI18n.text("已暂停全部发送 · 本机继续保存")); return Result.success() }
             if (!config.hasSyncConnection()) { settings.syncStatus("unconfigured", MoteI18n.text("仅保存在本机 · 尚未配置完整连接")); return Result.success() }
             if (config.syncMode == "manual" && !explicit) { settings.syncStatus("manual", MoteI18n.text("手动同步 · 记录持续保存在本机")); return Result.success() }
@@ -124,6 +126,15 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             }
             stage = EventStage.QUEUE
             val queue = applicationContext.queue()
+            val history = applicationContext.captureUploadHistory()
+            val finalizer = CaptureReceiptFinalizer(history)
+            history.prune(UploadHistoryRetention.read(applicationContext))
+            history.recoverInterrupted(CaptureUploadReceipt.scope(config.server, settings.deviceId), LoginProcess.id, includeCurrentProcess = true)
+            finalizer.recover(queue, CaptureUploadReceipt.scope(config.server, settings.deviceId))
+            UploadHistoryRecovery.available()
+            // Each actual worker execution has its own batch identity, including a WorkManager retry.
+            val batchId = java.util.UUID.randomUUID().toString()
+            val attempts = CaptureUploadAttempts(history, batchId, CaptureUploadReceipt.scope(config.server, settings.deviceId), LoginProcess.id)
             settings.syncStatus("uploading", MoteI18n.text("正在同步本机记录"))
             if (!inputData.getBoolean("continuation", false)) SourceWork.enqueueUpload(applicationContext, config, explicit)
             Diagnostics(applicationContext).add("uploadSessions")
@@ -182,12 +193,16 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 val response: Pair<Int, JSONObject?> = if (individual) {
                     wireBytes = sent.first().toString().toByteArray(Charsets.UTF_8).size.toLong()
                     SyncSchedule.requireConditions(applicationContext, config)
-                    CollectorHttp(applicationContext).post("${config.server}/api/captures", sent.first(), config.connectionToken())
+                    attempts.send(sent, wireBytes, individual = true) {
+                        CollectorHttp(applicationContext).post("${config.server}/api/captures", sent.first(), config.connectionToken())
+                    }
                 } else {
                     val result = UploadNegotiation.sendShrinking(sent) { batch ->
                         val bundle = CaptureBundle.encode(batch); wireBytes += bundle.size
                         SyncSchedule.requireConditions(applicationContext, config)
-                        CollectorHttp(applicationContext).postBytes("${config.server}/api/captures/bundle", bundle, config.connectionToken(), CaptureBundle.CONTENT_TYPE)
+                        attempts.send(batch, bundle.size.toLong(), individual = false) {
+                            CollectorHttp(applicationContext).postBytes("${config.server}/api/captures/bundle", bundle, config.connectionToken(), CaptureBundle.CONTENT_TYPE)
+                        }
                     }
                     sent = result.first; result.second
                 }
@@ -210,8 +225,9 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     val code = receipts[id]
                     when (code) {
                         200, 201 -> {
-                            val bytes = event.toString().toByteArray(Charsets.UTF_8).size.toLong()
-                            queue.acknowledge(id, bytes, config.uploadedRetentionDays, observations = event.optJSONObject("stateSeries")?.optJSONArray("samples")?.length() ?: 0)
+                            val original = events.single { it.getString("id") == id }
+                            finalizer.received(queue, CaptureUploadReceipt.create(config.server, settings.deviceId, original, event,
+                                batchId, System.currentTimeMillis(), config.uploadedRetentionDays))
                             acknowledged++
                             if (individual) SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = code)
                             settings.syncStatus("uploading", MoteI18n.text("已收到上传确认"), uploaded = true)
@@ -242,7 +258,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
         } catch (error: Exception) {
             SupportEvents.failure(applicationContext, stage, error)
             if (error !is RecordedHeartbeatFailure) Operations.record(applicationContext, OperationKind.UPLOAD_RETRY, Operations.failure(error, stage), recordId = pendingRecordId)
-            failed(MoteI18n.text("同步失败，请检查连接"))
+            if (error is UploadHistoryUnavailable) {
+                UploadHistoryRecovery.report(applicationContext)
+                if (manualOnly) Result.failure() else Result.retry()
+            } else failed(MoteI18n.text("同步失败，请检查连接"))
         }
     }
     private fun finishStatus() = SyncHealth.finish(applicationContext)
