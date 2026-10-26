@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +22,7 @@ import {FileRecipeRegistry,FileOutputRegistry,installFileRecipes} from '../src/f
 import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-planning.js';
 import {generatedAppleDouble} from './fixtures/appledouble.js';
 
-async function fixture(t:import('node:test').TestContext,modules:string[]=[],seed?:(directory:string)=>Promise<void>){
+async function fixture(t:import('node:test').TestContext,modules:string[]=[],seed?:(directory:string)=>Promise<void>,configureImage=false){
   // Advance durable workers explicitly, so wall-clock load cannot race assertions.
   t.mock.method(ServerFeatureScope.prototype,'every',()=>{});
   const directory=mkdtempSync(join(tmpdir(),'mote-media-import-'));
@@ -42,6 +43,7 @@ async function fixture(t:import('node:test').TestContext,modules:string[]=[],see
     }}});await node.app.ready();
   };
   await start();await node.processing.save({revision:node.processing.view().revision,settings:{...node.processing.view().settings,enabled:true,audioProcessor:'audio.http',summarize:false},policy:fixtureFilePolicy({...node.processing.view().settings,enabled:true,audioProcessor:'audio.http',summarize:false},node.processing.runtime.registry)});
+  if(!configureImage)await authorizeFixtureModels(node);
   const headers={authorization:'Bearer '+config.token};
   const create=async(files:{name:string;dataBase64:string}[],processing:'automatic'|'preview'='automatic')=>{
     const result=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files,processing}});assert.equal(result.statusCode,202,result.body);let job=result.json<ImportJob>();
@@ -54,21 +56,22 @@ async function fixture(t:import('node:test').TestContext,modules:string[]=[],see
 const entry=(name:string,bytes:Buffer|string)=>({name,dataBase64:Buffer.from(bytes).toString('base64')});
 
 test('ZIP AppleDouble members are retained and explicitly excluded by bytes while ._ named images still process',async t=>{
- const f=await fixture(t),metadata=generatedAppleDouble(),png=await sharp({create:{width:8,height:8,channels:3,background:'#abc'}}).png().toBuffer();let ocr=0;
+ const f=await fixture(t,[],undefined,true),metadata=generatedAppleDouble(),png=await sharp({create:{width:8,height:8,channels:3,background:'#abc'}}).png().toBuffer();let ocr=0;
  f.node.processing.runtime.registry.get('image.http').process=async()=>{ocr++;return {durationMs:0,segments:[]};};
  await f.node.processing.save({revision:f.node.processing.view().revision,settings:{...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'},policy:fixtureFilePolicy({...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'},f.node.processing.runtime.registry)});
+ await authorizeFixtureModels(f.node);
  const job=await f.create([entry('generated.zip',Buffer.from(zipSync({'__MACOSX/._photo.jpg':metadata,'._actual.png':png})))],'preview');
  assert.equal(job.status,'awaiting_confirmation',JSON.stringify(job));assert.equal(job.dispositions?.counts.excluded,1);assert.equal(job.dispositions?.counts.processing,1);
  const excluded=job.dispositions!.items.find(i=>i.status==='excluded')!;assert.match(excluded.reason,/AppleDouble/);
  assert.deepEqual(f.node.archivedFiles.read(excluded.fileId),metadata);assert.equal(job.media?.length,1);assert.equal(job.media![0].format.mimeType,'image/png');
- await f.node.imports.confirm(job.id);await f.node.processing.tick();assert.equal(ocr,1);assert.equal(f.calls.length,0);assert.equal(f.modelCalls.length,0);
+ await withFixtureOwnerModelWork(f.node,()=>f.node.imports.confirm(job.id));await f.node.processing.tick();assert.equal(ocr,1);assert.equal(f.calls.length,0);assert.equal(f.modelCalls.length,0);
  await f.restart();assert.deepEqual(f.node.archivedFiles.read(excluded.fileId),metadata);await f.node.processing.tick();assert.equal(f.calls.length,0);
 });
 
 test('a metadata-only original produces an accounted preview without a model or image job',async t=>{
  const f=await fixture(t),metadata=generatedAppleDouble(),job=await f.create([entry('looks-like-a-photo.jpg',metadata)]);
  assert.equal(job.status,'awaiting_confirmation',JSON.stringify(job));assert.equal(job.dispositions?.counts.excluded,1);assert.equal(job.media?.length,0);assert.equal(job.preview?.count,0);
- const confirmed=await f.node.imports.confirm(job.id);assert.equal(confirmed.status,'completed');assert.equal(confirmed.captureIds.length,0);
+ const confirmed=await withFixtureOwnerModelWork(f.node,()=>f.node.imports.confirm(job.id));assert.equal(confirmed.status,'completed');assert.equal(confirmed.captureIds.length,0);
  assert.deepEqual(f.node.archivedFiles.read(job.files[0].id),metadata);assert.equal(f.calls.length,0);assert.equal(f.modelCalls.length,0);
 });
 
@@ -103,9 +106,10 @@ test('one failed extraction is isolated, retries without reupload, then enters a
 });
 
 test('mixed image and text import uses separate native extraction and preserves original text',async t=>{
-  const f=await fixture(t),image=await sharp({create:{width:8,height:8,channels:3,background:'#abc'}}).png().toBuffer();let ocr=0;
+  const f=await fixture(t,[],undefined,true),image=await sharp({create:{width:8,height:8,channels:3,background:'#abc'}}).png().toBuffer();let ocr=0;
   f.node.processing.runtime.registry.get('image.http').process=async()=>{ocr++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated image text'}]};};
   await f.node.processing.save({revision:f.node.processing.view().revision,settings:{...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'},policy:fixtureFilePolicy({...f.node.processing.view().settings,imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/fixture'},f.node.processing.runtime.registry)});
+  await authorizeFixtureModels(f.node);
   const job=await f.create([entry('note.txt','Generated original note'),entry('image.png',image)]);assert.equal(job.status,'completed',JSON.stringify(job));assert.equal(job.media?.length,1);assert.equal(job.progress.imported,2);
   await f.node.processing.tick();assert.equal(ocr,1);assert.equal(f.modelCalls.length,0);assert.equal(f.node.files.chunks(job.media![0].captureId!)[0].ocrText,'Generated image text');
   assert.equal(f.node.store.search({query:'Generated original note'}).length,1);
@@ -144,6 +148,6 @@ test('retry recovers a retained zero-record import through media intake without 
     }finally{await imports?.stop();store.close();}
   });
   assert.equal(f.node.imports.get(legacyId).status,'unsupported');
-  const admitted=await f.node.imports.retry(legacyId);assert.equal(admitted.status,'completed');assert.equal(admitted.media![0].fileId,originalId);
+  const admitted=await withFixtureOwnerModelWork(f.node,()=>f.node.imports.retry(legacyId));assert.equal(admitted.status,'completed');assert.equal(admitted.media![0].fileId,originalId);
   await f.node.processing.tick();assert.equal(f.calls.length,1);assert.equal(f.node.imports.get(legacyId).media![0].searchable,true);
 });
