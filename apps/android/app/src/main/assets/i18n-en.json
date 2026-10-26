@@ -8656,5 +8656,19 @@
   "尚未设为当前记忆方案。": "Not selected as the current memory plan.",
   "查看已安装插件": "View installed plugins",
   "离开此引导不会撤销已登记的安装或核验。": "Leaving this guide does not undo an installation or verification already registered.",
-  "填写连接配置。保存不会运行核验、启用插件或更换记忆方案。": "Enter connection settings. Saving does not run verification, enable the plugin or change the memory plan."
+  "填写连接配置。保存不会运行核验、启用插件或更换记忆方案。": "Enter connection settings. Saving does not run verification, enable the plugin or change the memory plan.",
+  "上传历史保存时长": "Upload history retention",
+  "默认保存30天。到期只清理上传历史，不删除资料、待传原件或草稿。": "Keep 30 days by default. Expiration clears upload history only, never materials, pending originals or drafts.",
+  "默认30天，仅清理历史，不删除资料": "30 days by default; clears history only, never materials",
+  "保存未完成，请重试；资料和待传原件保留。": "Saving did not finish. Retry; materials and pending originals are retained.",
+  "有已确认记录": "Has confirmed items",
+  "有未确认记录": "Has unconfirmed items",
+  "已确认 {0} · 未确认 {1}": "Confirmed {0} · Unconfirmed {1}",
+  "上传批次详情": "Upload batch details",
+  "该批次不在当前节点保留的历史中。": "This batch is not in the retained history for the current node.",
+  "部分确认": "Partially confirmed",
+  "请求被拒绝": "Request rejected",
+  "请求体字节：{0}": "Request body bytes: {0}",
+  "发送中": "Sending",
+  "查看原件": "View original"
 }

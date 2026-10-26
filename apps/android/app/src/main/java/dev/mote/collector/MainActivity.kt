@@ -686,6 +686,7 @@ class MainActivity : MoteActivity() {
     private fun buildStorage(config: CollectorConfig) {
         page(Page.STORAGE, MoteI18n.text("保留你需要回看的本机副本"))
         menu(MoteI18n.text("图片保存位置"), MoteI18n.text("选择应用存储空间并迁移已有记录"), "folder") { startActivity(Intent(this, StorageActivity::class.java)) }
+        menu(MoteI18n.text("上传历史保存时长"), MoteI18n.text("默认30天，仅清理历史，不删除资料"), "history") { startActivity(Intent(this, UploadHistorySettingsActivity::class.java)) }
         uploadedRetention = presetNumber(MoteI18n.text("上传后本机保留 / 天（0 为立即清理）"), config.uploadedRetentionDays, "7", 0..365, listOf(0, 1, 7, 14, 30, 90, 365))
         maxQueue = presetNumber(MoteI18n.text("本机存储上限 / MiB"), config.maxQueueMiB, "256", 8..4096, listOf(64, 128, 256, 512, 1024, 2048, 4096))
         text(MoteI18n.text("中央确认上传后开始计时，到期自动清理本机副本；中央归档继续保留。未上传和冲突记录不会自动删除。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
