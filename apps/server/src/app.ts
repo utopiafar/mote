@@ -1,3 +1,4 @@
+import {MemoryTopicsHost} from './memory-topics-host.js';
 import {createContextTrees} from './context-trees.js';
 import type {ProcessingConfiguration} from './processing-configuration.js';
 import type {ModelProcessingAuthority} from './model-processing-authority.js';
@@ -638,7 +639,11 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
     const candidates=grants.length?grants.map(grant=>sourceModelIdentity(grant.sourceId,grant.inputKey)):job?modelAuthorizationHost.evidenceTriggers(job.evidenceIds):modelAuthorizationHost.queryTriggers(input);
     const purpose:AutomaticModelPurpose=moduleId==='activity'?'activity':moduleId==='actions'?'actions':moduleId==='insights'?'insight':moduleId==='memories'?'memory':moduleId==='semantic'?'semantic':'working';
     const id=job?'automatic-memory:'+job.id:'automatic-'+moduleId+':'+(input.traceContext?.operationId??randomUUID());
-    return modelAuthorizationHost.automatic(id,purpose,candidates,task,input.signal);
+    return modelAuthorizationHost.automatic(id,purpose,candidates,signal=>{
+      const batch=input.traceContext?.batchId?executor.get(input.traceContext.batchId):undefined;
+      if(job&&batch?.kind==='memory.batch'&&batch.input.jobId===job.id)modelAuthorization.bindCurrentStep(batch);
+      return task(signal);
+    },input.signal);
   }
   function queryAgent(input:QueryInput,operation:'query'|'insight'='query',moduleId='conversations',usageOwner:'query'|'caller'='query') {
     return withQueryModelAuthority(input,moduleId,signal=>queryAgentAuthorized({...input,signal},operation,moduleId,usageOwner));
@@ -755,7 +760,8 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
   };
   const memoryPublication=new MemoryPublication(store,memories,memoryBindings,executor);
   memoryPublication.revokeEvidence=ids=>memoryAdapters.erasePreparedEvidence(ids);
-  const memoryPipeline=new MemoryPipeline({assertIntegrationAuthority:()=>modelAuthorization.assertCurrent(),withIntegrationAuthority:(id,manual,evidenceIds,task)=>manual?modelAuthorization.run('owner-integration:'+id,task):modelAuthorizationHost.automatic('automatic-integration:'+id,'integration',modelAuthorizationHost.evidenceTriggers(evidenceIds),task),integrationReadInput:cards=>memoryIntegrationImageInputs(store,materials,cards.flatMap(card=>card.evidence)),assertIntegrationReadable:cards=>evidenceReader.assertMemoryReadable(cards),publication:memoryPublication,settleEngineDraft:async context=>{if(!context.provider)throw new StoreError('Native Memory cleanup has no pinned provider configuration',503);await memoryAdapters.discardPrepared({...context.provider,opId:context.opId,phase:context.phase});},assertNewManualWork:()=>memoryBindings.assertNewManualWork(),engineDraft:async(input,context)=>withQueryModelAuthority(input,'memories',async signal=>{input={...input,signal};const binding=memoryBindings.binding();if(memoryBindings.view().mode!=='engine')return;const namespace=binding.namespace!;context.provider={instanceId:namespace.instanceId,namespace,configurationIdentity:memoryAdapters.configurationIdentity(namespace.instanceId,namespace)};input.signal?.throwIfAborted();const originals=memories.readEvidence(context.evidenceIds);if(originals.length!==new Set(context.evidenceIds).size)throw new StoreError('Engine originals are unavailable',409);const evidence=input.evidenceRanges?.map(range=>{const record=originals.find(record=>record.id===range.id);if(!record)throw new StoreError('Engine original range is unavailable',409);return {record,offset:range.offset,length:range.length};})??originals;
+  let memoryTopics:MemoryTopicsHost|undefined;
+  const memoryPipeline=new MemoryPipeline({onPublished:(step,items,job)=>memoryTopics?.enqueue(step,items,job.configuration?.profileId??job.modelProfileId,job.configuration?.model??job.modelOverride),assertIntegrationAuthority:()=>modelAuthorization.assertCurrent(),withIntegrationAuthority:(id,manual,evidenceIds,task)=>manual?modelAuthorization.run('owner-integration:'+id,task):modelAuthorizationHost.automatic('automatic-integration:'+id,'integration',modelAuthorizationHost.evidenceTriggers(evidenceIds),task),integrationReadInput:cards=>memoryIntegrationImageInputs(store,materials,cards.flatMap(card=>card.evidence)),assertIntegrationReadable:cards=>evidenceReader.assertMemoryReadable(cards),publication:memoryPublication,settleEngineDraft:async context=>{if(!context.provider)throw new StoreError('Native Memory cleanup has no pinned provider configuration',503);await memoryAdapters.discardPrepared({...context.provider,opId:context.opId,phase:context.phase});},assertNewManualWork:()=>memoryBindings.assertNewManualWork(),engineDraft:async(input,context)=>withQueryModelAuthority(input,'memories',async signal=>{input={...input,signal};const binding=memoryBindings.binding();if(memoryBindings.view().mode!=='engine')return;const namespace=binding.namespace!;context.provider={instanceId:namespace.instanceId,namespace,configurationIdentity:memoryAdapters.configurationIdentity(namespace.instanceId,namespace)};input.signal?.throwIfAborted();const originals=memories.readEvidence(context.evidenceIds);if(originals.length!==new Set(context.evidenceIds).size)throw new StoreError('Engine originals are unavailable',409);const evidence=input.evidenceRanges?.map(range=>{const record=originals.find(record=>record.id===range.id);if(!record)throw new StoreError('Engine original range is unavailable',409);return {record,offset:range.offset,length:range.length};})??originals;
     const engineProfile=pluginCenter.instanceView(namespace.instanceId).configuration.modelProfileId;if(typeof engineProfile!=='string')throw new StoreError('Native Memory model profile is missing',409);
     const engineConnection=agentModelConnection({kind:'profile',id:engineProfile},modelSettings.select('memory',engineProfile).settings),assertAuthority=modelAuthorization.capture(engineConnection);
     const bindingIdentity=JSON.stringify(binding),pins=new Map(originals.map(record=>[record.id,memoryEvidenceFingerprint(record)]));
@@ -999,6 +1005,7 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
   const featureHost=new ServerFeatureHost(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));
   registerPluginRoutes(app,{plugins:pluginCenter,bindings:memoryBindings,automation:memoryAutomation,owner:request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);}});
   await installServerFeatures(featureHost,featureServices);
+  memoryTopics=new MemoryTopicsHost({store,memories,executor,control:modelAuthorization,host:modelAuthorizationHost,topics:contextTrees.initializeAutomatic(store,evidenceReader),assertReadable:cards=>evidenceReader.assertMemoryReadable(cards),select:(profileId,model)=>{const selected=modelSettings.select('memory',profileId),settings={...selected.settings,...(model?{model}:{})};return {profileId:selected.id,model:settings.model,connection:agentModelConnection({kind:'profile',id:selected.id},settings)};},query:input=>queryAgent(input,'query','memories')});
   await configService.startWatching();
   diagnostics.record('server.started');
   app.addHook('onReady',async()=>{
@@ -1017,6 +1024,7 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
     agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();
   });
   app.addHook('onClose',async()=>{
+    await memoryTopics?.close();
     modelAuthorization.close();
     disposeCaptureMemoryIntake();
     await featureHost.close();await delegation.close();

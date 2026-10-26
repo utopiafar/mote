@@ -169,6 +169,12 @@ export class BackgroundModelAuthorization {
    * authority in a closure, never in a serializable plugin argument. */
   capture(connection?:ModelConnection){const authority=this.context.getStore();if(!authority)throw pending();return ()=>this.assertConnection(authority,connection);}
   private bindStep(stepId:string,id:string){const prior=this.store.db.prepare('SELECT work_id FROM background_model_step_authority WHERE step_id=?').get(stepId);if(prior&&prior.work_id!==id)throw new StoreError('Execution step already has a different model authority',409);if(!prior){this.store.reserveMetadata(Buffer.byteLength(stepId+id)+64);this.store.db.prepare('INSERT INTO background_model_step_authority VALUES(?,?)').run(stepId,id);}}
+  stepAuthority(stepId:string){const row=this.store.db.prepare('SELECT work_id FROM background_model_step_authority WHERE step_id=?').get(stepId);return row?String(row.work_id):undefined;}
+  inheritStep(parentId:string,childId:string){
+    if(!this.store.db.isTransaction)throw Error('Dependent authority requires the publication transaction');
+    const id=this.stepAuthority(parentId),work=id&&this.saved(id);if(!id||!work)throw pending();this.assert(work);this.bindStep(childId,id);
+  }
+  bindCurrentStep(step:ExecutionStep){return this.transaction(()=>this.captureStep(step));}
   captureStep(step:ExecutionStep){const id=this.currentId;if(id)this.bindStep(step.id,id);}
   assertStep(step:ExecutionStep){for(const row of this.store.db.prepare('SELECT work_id FROM background_model_step_authority WHERE step_id=?').all(step.id)){const work=this.saved(String(row.work_id));if(!work)throw pending();this.assert(work);}}
   async runStep<T>(step:ExecutionStep,task:(signal:AbortSignal)=>Promise<T>,signal:AbortSignal):Promise<T>{
