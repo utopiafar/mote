@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -40,6 +41,7 @@ test('generated screenshot and field HTTP intake runs daily extraction/review, s
   const config:Config={dataDir:dir,token,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,maxStorageBytes:50_000_000,maxExportBytes:10_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   const calls:QueryInput[]=[];
   const dependencies={backgroundWorker:false,createModelAgent:async(_settings:unknown,reader:ContextReader)=>({configured:true,close:async()=>{},query:async(input:QueryInput)=>{
+    const topic=fixtureTopicResult(input);if(topic)return topic;
     calls.push(input);
     if(input.directImages){const id=input.directImages[0].id;await reader.readImage!({id});return {answer:JSON.stringify({text:data.ocr.get(id),regions:[]}),citations:[],trace:[],runId:randomUUID()};}
     const records=await reader.evidence({ids:input.evidenceIds!});assert.ok(records.length);
@@ -49,7 +51,7 @@ test('generated screenshot and field HTTP intake runs daily extraction/review, s
     return {answer:generatedMemoryOutput(input,candidates),citations:records.filter(record=>daily).map(record=>({id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:''})),trace:[],runId:randomUUID()};
   }})};
   let node=await buildApp(config,dependencies);await node.app.ready();t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
-  const setup=async()=>{await node.processing.saveImageDefault({endpoint:'http://127.0.0.1:9011/ocr'});node.processing.runtime.registry.get('image.http').process=async input=>({durationMs:0,segments:[{startMs:0,endMs:0,text:data.ocr.get(input.file.id)!}]});};await setup();
+  const setup=async()=>{await node.processing.saveImageDefault({endpoint:'http://127.0.0.1:9011/ocr'});node.processing.runtime.registry.get('image.http').process=async input=>({durationMs:0,segments:[{startMs:0,endMs:0,text:data.ocr.get(input.file.id)!}]});};await setup();await authorizeFixtureModels(node);
   const publish=async()=>{await node.perception.tick();for(let i=0;i<20;i++)if(await node.materialOrganizer.tick(100)===0)break;};
   const run=async()=>{node.store.db.prepare('UPDATE material_memory_requests SET ready_at=0').run();await node.sourcePipelines.drainMemory(node.memoryPipeline,true,100);for(const job of node.memoryPipeline.list())if(['queued','running','waiting_for_model'].includes(job.status))await node.memoryPipeline.run(job.id);};
   for(const value of data.all){const r=await node.app.inject({method:'POST',url:'/api/captures',headers,payload:value});assert.equal(r.statusCode,201,r.body);}

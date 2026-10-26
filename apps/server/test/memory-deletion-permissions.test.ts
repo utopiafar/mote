@@ -1,3 +1,4 @@
+import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -38,7 +39,7 @@ async function fixture(t:TestContext){
     pending.push(blocker);await started;
     // The private root is disclosed only through the deleted conclusion. It is
     // deliberately absent from the candidate's normal evidenceIds.
-    const query=node.featureServices.queryAgent({question:'Generated deletion review',signal:abort.signal,evidenceIds:[candidateId],derivedContextEvidenceIds:[privateId],taskContext:{turns:[],untrustedMemoryDraft:{deletion:{statement:'Generated private B-derived conclusion'}}}})
+    const query=withFixtureOwnerModelWork(node,()=>node.featureServices.queryAgent({question:'Generated deletion review',signal:abort.signal,evidenceIds:[candidateId],derivedContextEvidenceIds:[privateId],taskContext:{turns:[],untrustedMemoryDraft:{deletion:{statement:'Generated private B-derived conclusion'}}}}))
       .then(result=>({result,error:undefined}),error=>({result:undefined,error}));
     pending.push(query);
     try{
@@ -50,7 +51,7 @@ async function fixture(t:TestContext){
     }
     const outcome=await query;
     assert.equal(outcome.result,undefined);
-    assert.equal(outcome.error?.statusCode,409);
+    assert.equal(outcome.error?.statusCode,409,JSON.stringify(outcome.error));
     assert.match(outcome.error?.message??'',/Derived context evidence is no longer permitted/);
     assert.equal(modelCalls,0,'the denied deleted conclusion never reaches the model');
   }
