@@ -639,7 +639,7 @@ export async function buildApp(config:Config,dependencies?:{configService?:Confi
     const row=input.traceContext?.jobId?store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(input.traceContext.jobId):undefined;
     const job=row?JSON.parse(String(row.json)) as import('./memory-pipeline.js').MemoryJob:undefined;
     const grants=job?.automaticGrants??(job?.automaticGrant?[job.automaticGrant]:[]);
-    const candidates=grants.length?grants.map(grant=>sourceModelIdentity(grant.sourceId,grant.inputKey)):job?modelAuthorizationHost.evidenceTriggers(job.evidenceIds):modelAuthorizationHost.queryTriggers(input);
+    const candidates=()=>grants.length?grants.map(grant=>sourceModelIdentity(grant.sourceId,grant.inputKey)):job?modelAuthorizationHost.evidenceTriggers(job.evidenceIds):modelAuthorizationHost.queryTriggers(input);
     // Each owner-selected recipe is an independent prospective consumer. Its
     // immutable input grant scope prevents one sibling from consuming another's
     // trigger, without letting retries mint a new purpose from their job ID.

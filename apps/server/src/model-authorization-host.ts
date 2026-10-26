@@ -50,11 +50,13 @@ export class ModelAuthorizationHost {
     for(const member of task?.memoryWork?.catalog??[])roots.push(sourceModelIdentity(member.sourceId,member.inputKey));
     return [...new Set(roots)];
   }
-  async automatic<T>(id:string,purpose:AutomaticModelPurpose,candidates:readonly string[],task:(signal:AbortSignal)=>Promise<T>,signal?:AbortSignal):Promise<T>{
+  async automatic<T>(id:string,purpose:AutomaticModelPurpose,candidates:readonly string[]|(()=>readonly string[]),task:(signal:AbortSignal)=>Promise<T>,signal?:AbortSignal):Promise<T>{
     // Dependent work uses the exact accepted parent's authority. A new model
     // fragment is never permission to re-admit its complete input history.
     if(this.control.currentId)return this.control.run(this.control.currentId,task,signal);
-    const roots=this.control.automaticTriggers(id,purpose)??this.control.freshTriggers(candidates,purpose);
+    // Resolve original metadata only for first admission, never for a resumed
+    // or dependent fragment whose durable roots already exist.
+    const roots=this.control.automaticTriggers(id,purpose)??this.control.freshTriggers(typeof candidates==='function'?candidates():candidates,purpose);
     this.control.automatic(id,roots,purpose);
     return this.control.run(id,task,signal);
   }

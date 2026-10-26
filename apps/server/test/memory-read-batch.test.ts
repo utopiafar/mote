@@ -96,6 +96,13 @@ test('three actual Memory jobs prepare large context grants through the bridge w
    input.signal!.throwIfAborted();return {runId:randomUUID(),answer:JSON.stringify({memories:[],coverage:work.members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]}))}),citations:[],trace:[],evidenceReadRanges:bridge.deliveredRanges,evidenceDependencies:bridge.evidenceDependencies};
   }finally{await bridge.close();}
  }})});await node.app.ready();await authorizeFixtureModels(node);
+ // An admitted fragment must not synchronously resolve the complete original
+ // catalog again: slow metadata here can starve the real lease renewal timer.
+ const triggers=node.modelAuthorizationHost.evidenceTriggers.bind(node.modelAuthorizationHost);
+ t.mock.method(node.modelAuthorizationHost,'evidenceTriggers',(ids:readonly string[])=>{
+  assert.ok(!node.modelAuthorization.currentId||ids.length!==4097,'admitted Memory must reuse its authority instead of reparsing all original triggers');
+  return triggers(ids);
+ });
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  // Use the product organizer lifecycle for this declared generated source
  // shape. Settling intake before granting work excludes revision drift from

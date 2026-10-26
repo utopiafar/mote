@@ -137,3 +137,20 @@ test('HTTP historical quota failures leave no manual admission or bytes across r
  limits.maxStorageBytes=20_000_000;await f.restart();assert.equal(f.node.store.logicalBytes(),before);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM background_model_work').get()!.n,count);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM image_backfill_items').get()!.n,0);
  const next=await f.node.app.inject({method:'POST',url:'/api/perception/ocr/historical-preview',headers:f.headers,payload:{sourceId:'generated-quota'}});const approved=await f.node.app.inject({method:'POST',url:'/api/perception/ocr/historical-process',headers:f.headers,payload:{token:next.json().token}});assert.equal(approved.statusCode,200,approved.body);
 });
+
+
+test('lazy original admission resolves once and retains pause, restart and stop fences',async t=>{
+ const f=await fixture(t,async()=>({configured:true,close:async()=>{},query:async()=>({answer:'Generated',citations:[],trace:[],runId:'generated'})}));
+ await f.command('authorize');const id=await f.intake('Generated prospective original');let resolutions=0,runs=0;
+ const work='generated-lazy-admission';
+ const forbidden=():readonly string[]=>{assert.fail('existing admission must not resolve original metadata again');};
+ await f.node.modelAuthorizationHost.automatic(work,'memory',()=>{resolutions++;return f.node.modelAuthorizationHost.evidenceTriggers([id]);},async()=>{
+  runs++;
+  await f.node.modelAuthorizationHost.automatic('generated-dependent','memory',forbidden,async()=>{runs++;});
+ });
+ assert.equal(resolutions,1);await f.command('pause');await f.restart();
+ await f.node.modelAuthorizationHost.automatic(work,'memory',forbidden,async()=>{runs++;});
+ assert.equal(runs,3);await f.command('stop');
+ await assert.rejects(f.node.modelAuthorizationHost.automatic(work,'memory',forbidden,async()=>{runs++;}));
+ assert.equal(runs,3);assert.equal(resolutions,1);
+});
