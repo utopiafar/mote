@@ -160,7 +160,7 @@ internal class LibraryCaptureView(
                             projection.clearCentral(selection.server); remoteCursor = null
                         }
                         if (it is CentralFailure && it.status == 409) { refreshPending = true; pages = 0; restorePages = 1 }
-                        remoteNotice = it.message.orEmpty(); remoteMore = false
+                        remoteNotice = if (it is java.io.IOException) MoteI18n.text("中央暂不可用 · 保留本机状态，恢复连接后重试") else it.message.orEmpty(); remoteMore = false
                     }
                     if (filter in setOf("file", "source", "material")) remoteMore = false
                     pages++; render()

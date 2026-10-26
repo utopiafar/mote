@@ -111,7 +111,7 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
                 }.onFailure { error ->
                     projection.clearCentral(); originalCursor = null; materialCursor = null; originalMore = false; materialMore = false
                     if (error is CentralFailure && (error.status in setOf(401, 403) || error.code == "connection_revoked")) denied(access.server)
-                    sourceChoices = listOf("" to MoteI18n.text("全部来源")); notice = error.message.orEmpty(); changed()
+                    sourceChoices = listOf("" to MoteI18n.text("全部来源")); notice = if (error is java.io.IOException) MoteI18n.text("中央暂不可用 · 保留本机状态，恢复连接后重试") else error.message.orEmpty(); changed()
                     if (error is CentralFailure && error.status == 409) { restore = 1; pendingRefresh = true }
                 }
             } else { projection.clearCentral(); changed(); pendingRefresh = true }
