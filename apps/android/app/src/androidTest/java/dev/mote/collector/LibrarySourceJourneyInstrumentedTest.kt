@@ -125,10 +125,13 @@ class LibrarySourceJourneyInstrumentedTest {
         val source=LocalSource(id="generated-b1-calendar-"+System.nanoTime(),name="Generated B1 calendar",kind="local-calendar",calendarId=987654,description="Generated source description remains readable")
         store.save(source)
         val bodies=(0 until 25).map { index -> JSONObject().put("externalId","generated-calendar-$index").put("observedAt",at).put("title","Generated source $index").put("kind","calendar").put("layer","snapshot").put("text","Generated saved source body $index").put("calendar",JSONObject().put("start",at).put("end",at).put("allDay",false).put("status","confirmed")) }
-        store.scan(source,SourceScan(bodies,true,at));val before=store.state(source.id).toString()
+        store.scan(source,SourceScan(bodies,true,at));// A background permission probe may update diagnostics while the read runs.
+        // Original bodies, pending versions and receipt fields must remain byte-identical.
+        fun retainedState() = store.state(source.id).apply { remove("status"); remove("statusAt") }.toString()
+        val before=retainedState()
         val page=LibraryLocalSources.page(context,"1970-01-01T00:00:00Z",Instant.now().plusSeconds(1).toString(),null,"source",source.id)
         val next=LibraryLocalSources.page(context,"1970-01-01T00:00:00Z",Instant.now().plusSeconds(1).toString(),page.cursor,"source",source.id)
-        assertEquals(20,page.items.size);assertEquals(5,next.items.size);assertNull(next.cursor);assertEquals(before,store.state(source.id).toString())
+        assertEquals(20,page.items.size);assertEquals(5,next.items.size);assertNull(next.cursor);assertEquals(before,retainedState())
         val row=page.items.first();val intent=Intent(context,LibrarySourceReaderActivity::class.java).putExtra("type","original").putExtra("source",source.id).putExtra("external",row.getString("externalId")).putExtra("revision",row.getString("revision")).putExtra("local",true)
         ActivityScenario.launch<LibrarySourceReaderActivity>(intent).use { scenario ->
             fun shown(text:String):Boolean { var found=false;scenario.onActivity { found=views(it.window.decorView).filterIsInstance<TextView>().any { view->view.isShown && view.text.contains(text) } };return found }
@@ -145,7 +148,11 @@ class LibrarySourceJourneyInstrumentedTest {
         guard(); val saved=JSONObject(File(context.filesDir,"generated-b1-keys.json").readText());val source=saved.getString("source");val external=saved.getString("external");val revision=saved.getString("pendingRevision")
         assertEquals("Generated B1 newer saved original bytes version three",context.fileArchives().pendingPreview(source,external,revision)!!.first)
         ActivityScenario.launch<MainActivity>(Intent(context,MainActivity::class.java).putExtra("page","LIBRARY")).awaitMainUi().use { scenario ->
-            waitFor("real offline Central still renders local source original after process restart") { var found=false;scenario.onActivity { found=views(it.window.decorView).filterIsInstance<TextView>().any { view->view.isShown && view.text.toString()=="Generated B1 original.txt" } };found }
+            waitFor("real offline Central still renders local source original after process restart") { var found=false;scenario.onActivity { activity ->
+                val texts=views(activity.window.decorView).filterIsInstance<TextView>()
+                found=texts.any { view->view.isShown && view.text.toString()=="Generated B1 original.txt" }
+                if(!found)texts.firstOrNull { it.isShown && it.isEnabled && it.text.toString()==MoteI18n.text("加载更多来源资料") }?.performClick()
+            };found }
         }
         ActivityScenario.launch<FileContentActivity>(Intent(context,FileContentActivity::class.java).putExtra("sourceId",source).putExtra("externalId",external).putExtra("sourceRevision",revision)).use { scenario ->
             fun shown(text:String):Boolean { var found=false;scenario.onActivity { found=views(it.window.decorView).filterIsInstance<TextView>().any { view->view.isShown && view.text.contains(text) } };return found }

@@ -35,8 +35,8 @@ internal object LibraryLocalSources {
                         .put("kind", body.optString("kind")).put("localReadable", body.optString("layer") != "reference").put("localItem", body).put("sourceDescription", source.description)
                 }
             }
-        }.filter { val time = it.getString("sortAt"); val key = it.getString("libraryKey"); Instant.parse(time) >= Instant.parse(after) && Instant.parse(time) < Instant.parse(before) && (cursor == null || time < cursor.first || time == cursor.first && key > cursor.second) }
-            .sortedWith(compareByDescending<JSONObject> { it.getString("sortAt") }.thenBy { it.getString("libraryKey") })
+        }.filter { val time = it.getString("sortAt"); val key = it.getString("libraryKey"); Instant.parse(time) >= Instant.parse(after) && Instant.parse(time) < Instant.parse(before) && (cursor == null || Instant.parse(time) < Instant.parse(cursor.first) || Instant.parse(time) == Instant.parse(cursor.first) && key > cursor.second) }
+            .sortedWith(compareByDescending<JSONObject> { Instant.parse(it.getString("sortAt")) }.thenBy { it.getString("libraryKey") })
         val items = candidates.take(limit)
         return Page(items, if (candidates.size > limit) items.last().let { it.getString("sortAt") to it.getString("libraryKey") } else null)
     }

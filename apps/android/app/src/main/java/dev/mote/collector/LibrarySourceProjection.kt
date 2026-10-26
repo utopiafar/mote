@@ -15,6 +15,6 @@ internal class LibrarySourceProjection {
     fun local(origin: String, value: JSONObject) { val key = key(origin, value); rows[key] = (rows[key] ?: Row(key)).copy(local = value) }
     fun central(origin: String, value: JSONObject) { val key = key(origin, value); rows[key] = (rows[key] ?: Row(key)).copy(central = value) }
     fun clearCentral() { rows.keys.toList().forEach { key -> rows[key]?.let { if (it.local == null) rows.remove(key) else rows[key] = it.copy(central = null) } } }
-    fun visible(location: String) = rows.values.filter { when(location) { "local" -> it.local != null; "central" -> it.central != null; else -> true } }.sortedWith(compareByDescending<Row> { it.item.optString("sortAt") }.thenBy { it.key.toString() })
+    fun visible(location: String) = rows.values.filter { when(location) { "local" -> it.local != null; "central" -> it.central != null; else -> true } }.sortedWith(compareByDescending<Row> { java.time.Instant.parse(it.item.getString("sortAt")) }.thenBy { it.key.toString() })
     fun containsCapture(origin: String, item: JSONObject) = rows.values.any { row -> row.key.origin == origin && row.central?.let { it.optString("captureId") == item.optString("id") && it.optString("deviceId") == item.optString("deviceId") && it.optString("libraryVersion").isNotBlank() && it.optString("libraryVersion") == item.optString("libraryVersion") } == true }
 }
