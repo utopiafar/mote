@@ -347,7 +347,7 @@ function imageBlocks(body:MaterialBody,record:CaptureRecord,image:ImageMaterialP
 
 /** A source item keeps its own identity; a coding session is assembled separately. */
 const sourceItem:MaterialOrganizer={
-  id:'mote.source-item',version:'13',slot:'source-item',
+  id:'mote.source-item',version:'14',slot:'source-item',
   select:r=>r.provenance&&!r.provenance.document?.coding?{sourceId:r.provenance.sourceId,externalId:r.provenance.externalId}:undefined,
   identity:g=>materialId(g.sourceId,g.externalId),
   build(reader,g){
@@ -424,7 +424,10 @@ const sourceItem:MaterialOrganizer={
       {key:'source-body',blockIds:sourceBodyBlocks,state:reference||!hasSourceBody?'unavailable':'ready',
         ...(reference?{reason:'original_body_not_collected'}:!hasSourceBody?{reason:'source_body_empty'}:{})},
       ...(file.objectHash?[{key:'original',blockIds:body.blocks.filter(b=>b.id==='original').map(b=>b.id),state:'ready' as const,revision:file.objectHash}]:[]),
-      ...(file.processingRequired?[{key:'extracted-text',blockIds:extractedBlocks,state:artifact&&artifact.complete!==false&&artifact.coverage!=='partial'?'ready' as const:['waiting','running'].includes(job?.state??'waiting')?'pending' as const:['blocked','failed','cancelled'].includes(job?.state??'')?'failed' as const:'unavailable' as const,...(!artifact&&job?.error?{reason:job.error}:{})}]:[]),
+      // A complete intermediate ASR artifact can still be replaced by dialogue
+      // alignment/turn grouping. Do not consume the raw input's one Memory grant
+      // until the selected file recipe has finished publishing its output.
+      ...(file.processingRequired?[{key:'extracted-text',blockIds:extractedBlocks,state:job?.state==='succeeded'&&artifact&&artifact.complete!==false&&artifact.coverage!=='partial'?'ready' as const:['waiting','running'].includes(job?.state??'waiting')?'pending' as const:['blocked','failed','cancelled'].includes(job?.state??'')?'failed' as const:'unavailable' as const,...(!artifact&&job?.error?{reason:job.error}:{})}]:[]),
       ...imageArtifacts,
       ...attachedArtifacts,
     ];

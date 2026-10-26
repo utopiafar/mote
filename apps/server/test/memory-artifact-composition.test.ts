@@ -141,6 +141,44 @@ test('the same named-output recipes reuse a different source and deterministic t
   await f.restart();await f.organize();await f.run();assert.equal(f.calls.length,5);assert.equal(f.asrCalls(),0);
 });
 
+for(const revoke of [false,true])test(`dialogue intermediate transcript preserves the unused Memory receipt${revoke?' until recipe withdrawal':''}`,async t=>{
+  const f=await fixture(t);
+  let enter!:()=>void,release!:()=>void;
+  const entered=new Promise<void>(resolve=>enter=resolve),held=new Promise<void>(resolve=>release=resolve);
+  f.node.processing.runtime.registry.register({id:'fixture.held-diarizer',name:'Generated held diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(){
+    enter();await held;
+    return {durationMs:1000,engine:'generated',expectedSpeakers:1,observedSpeakers:1,overlapDetection:'unknown',segments:[{startMs:0,endMs:1000,speaker:'SPEAKER_0'}],samples:[]};
+  }});
+  const settings={...f.node.processing.view().settings,localEndpoint:'http://127.0.0.1:1234/transcribe',audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.held-diarizer',speakerCount:1};
+  await f.node.processing.save({revision:f.node.processing.view().revision,settings,policy:fixtureFilePolicy(settings,f.node.processing.runtime.registry)});
+  const file=await f.upload();await f.organize();await f.queue();
+  const processing=f.node.processing.tick();
+  await Promise.race([entered,processing.then(()=>{throw Error('Generated pipeline ended before diarization: '+JSON.stringify(f.node.files.detail(file.id).job));})]);
+  try{
+    await f.organize();
+    assert.equal(f.node.files.detail(file.id).job.state,'running');
+    assert.ok(f.node.files.detail(file.id).artifacts.some((artifact:{kind:string})=>artifact.kind==='transcript'),'the real extractor has committed its complete raw transcript');
+    const intermediate=f.node.materials.input(file.materialId,['extracted-text'])!;
+    assert.equal(intermediate.ready,false,'raw ASR is provisional while the selected dialogue recipe can replace its chunks');
+    await f.queue();
+    assert.equal(f.node.memoryPipeline.list().length,1,'only the independent source-record recipe may claim a job');
+    assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE job_id IS NOT NULL').get()!.n,1);
+    if(revoke)f.node.memoryRecipeSettings.configure({recipes:[bodyRecipe]});
+  }finally{release();await processing;}
+  await f.organize();
+  const final=f.node.materials.input(file.materialId,['extracted-text'])!;
+  assert.equal(final.ready,true);
+  await f.run();
+  const jobs=f.node.memoryPipeline.list().map(job=>f.node.memoryPipeline.get(job.id));
+  assert.equal(jobs.length,revoke?1:3);assert.ok(jobs.every(job=>job.status==='completed'));
+  assert.equal(f.asrCalls(),1);
+  for(const job of jobs.filter(job=>job.recipes![0].id!==bodyRecipe.id)){
+    assert.equal(job.workPackage!.inputs[0].fingerprint,final.fingerprint);
+    assert.deepEqual(job.automaticGrants?.map(grant=>grant.inputKey),[file.id]);
+  }
+  const count=f.calls.length;await f.organize();await f.run();assert.equal(f.calls.length,count,'republication cannot renew a consumed or withdrawn receipt');
+});
+
 test('authored body and record-index recipes share generation despite different names for the same blocks',async t=>{
   const f=await fixture(t),personal={id:'fixture.authored-memory',version:'1'};
   f.node.memoryStrategies.registerRecipe({...personal,requires:['source-body'],extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:'mote.personal-review',version:'2'}});
