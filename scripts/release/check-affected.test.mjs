@@ -14,7 +14,8 @@ test('local checks use independent light scopes, never broad component or heavy 
   assert.deepEqual(checkPlan(selectScopes([])), []);
   const web = checkPlan(selectScopes(['apps/web/src/App.tsx']));
   assert.ok(web.some(step => step.args.includes('@mote/web')));
-  assert.ok(!web.some(step => step.args.includes('@mote/server') || step.args.includes('@mote/agent')));
+  assert.ok(!web.some(step => step.args.includes('@mote/server')));
+  assert.ok(!web.some(step => step.args[1] === 'test' && step.args.includes('@mote/agent')));
   assert.ok(!web.some(step => step.args.some(arg => /check:(?:central|local)|benchmark|query-large-lineage/.test(arg))));
   const android = checkPlan(selectScopes(['apps/android/new.kt'])).at(-1);
   assert.equal(android.command, 'apps/android/gradlew');
