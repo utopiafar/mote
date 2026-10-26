@@ -63,6 +63,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
   const [items, setItems] = useState<ConversationSummary[]>([]), [cursor, setCursor] = useState<string | null>(null);
   const [clearedScope,setClearedScope]=useState<{owner:Api;id:string}|null>(null);
   const [selectedId,setSelectedId]=useState<string|null>(null),[older,setOlder]=useState<OlderTurns|null>(null),[pageRevoked,setPageRevoked]=useState(false);
+  const [targetTurn,setTargetTurn]=useState<string|null>(null);
   const [selectedOwnerQuestion,setSelectedOwnerQuestion]=useState<string|null>(()=>readOwnerQuestion(window.location.hash));
   const detail=useResource<Conversation>(api,selectedId?`/api/conversations/${encodeURIComponent(selectedId)}`:null);
   const currentOlder=older?.api===api&&older.id===detail.data?.id&&older.revision===detail.data?.revision?older:null;
@@ -106,7 +107,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
   }
   useEffect(()=>{selectionMade.current=false;setSelectedId(null);setOlder(null);setItems([]);setCursor(null);setRun(null);setBusy(false);setQuestion('');setAttachments([]);setUploading(false);setPendingQuestion('');setError('');setHistoryError('');setLoadingOlder(false);setLoadingPage(false);
     return()=>{operation.current?.abort();attachmentRequest.current?.abort();historyRequest.current?.abort();olderRequest.current?.abort();};},[api]);
-  useEffect(()=>{const changed=()=>{const draftQuery=new URLSearchParams(window.location.hash.split('?')[1]??'');const incoming=draftQuery.get('questionDraft');if(incoming!==null){selectionMade.current=true;setQuestion(incoming.slice(0,100000));draftQuery.delete('questionDraft');const route=window.location.hash.split('?')[0];window.history.replaceState(null,'',route+(draftQuery.size?'?'+draftQuery:''));window.dispatchEvent(new window.Event('mote:workspace-state'));}const questionId=readOwnerQuestion(window.location.hash);setSelectedOwnerQuestion(questionId);if(questionId)selectionMade.current=true;const next=new URLSearchParams(window.location.hash.split('?')[1]).get('conversation');if(next){selectionMade.current=true;setSelectedId(next);setRun(null);}};changed();window.addEventListener('hashchange',changed);return()=>window.removeEventListener('hashchange',changed);},[api]);
+  useEffect(()=>{const changed=()=>{const draftQuery=new URLSearchParams(window.location.hash.split('?')[1]??'');const incoming=draftQuery.get('questionDraft');if(incoming!==null){selectionMade.current=true;setQuestion(incoming.slice(0,100000));draftQuery.delete('questionDraft');const route=window.location.hash.split('?')[0];window.history.replaceState(null,'',route+(draftQuery.size?'?'+draftQuery:''));window.dispatchEvent(new window.Event('mote:workspace-state'));}const questionId=readOwnerQuestion(window.location.hash);setSelectedOwnerQuestion(questionId);if(questionId)selectionMade.current=true;const next=new URLSearchParams(window.location.hash.split('?')[1]).get('conversation');if(next){selectionMade.current=true;setTargetTurn(draftQuery.get('turn'));setSelectedId(next);setRun(null);}};changed();window.addEventListener('hashchange',changed);return()=>window.removeEventListener('hashchange',changed);},[api]);
   const detailRevoked=detail.error instanceof ApiError&&[401,403,404,410].includes(detail.error.status);
   useLayoutEffect(()=>{
     olderRequest.current?.abort();olderRequest.current=null;setLoadingOlder(false);setOlder(null);setPageRevoked(false);
@@ -117,7 +118,13 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
     const recent=recentRuns.data.items.find(r=>r.status==='running')??recentRuns.data.items[0];
     if(recent){setRun(recent);setBusy(recent.status==='running');setSelectedId(recent.conversationId??null);}
   },[recentRuns.data]);
-  useEffect(() => {if (conversation?.turns.length) end.current?.scrollIntoView({block: 'nearest'});}, [conversation?.id, conversation?.turns.length]);
+  useEffect(() => {if (!targetTurn&&conversation?.turns.length) end.current?.scrollIntoView({block: 'nearest'});}, [conversation?.id, conversation?.turns.length,targetTurn]);
+  useEffect(()=>{
+    if(!targetTurn||!conversation||opening||detail.error||error)return;
+    const element=document.getElementById('conversation-turn-'+targetTurn);
+    if(element){element.scrollIntoView({block:'center'});element.focus({preventScroll:true});}
+    else if(conversation.nextCursor)void loadOlderTurns();
+  },[targetTurn,conversation?.id,conversation?.turns.length,conversation?.nextCursor,opening,detail.error,error]);
 
   useEffect(()=>{
     if(!run)return;
@@ -148,11 +155,11 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
 
   function open(id: string) {
     if (busy) return;
-    setClearedScope(null);
+    setTargetTurn(null);setClearedScope(null);
     selectionMade.current=true;operation.current?.abort();operation.current=null;olderRequest.current?.abort();setLoadingOlder(false);
     setRun(null);setPollError('');setError('');setConfirmDelete(false);setQuestion('');setAttachments([]);setPendingQuestion('');
     setOlder(null);setSelectedId(id);setSelectedOwnerQuestion(null);
-    if(readOwnerQuestion(window.location.hash))window.location.hash='#/ask?'+new URLSearchParams({conversation:id});
+    window.location.hash='#/ask?'+new URLSearchParams({conversation:id});
   }
   async function loadOlderTurns(){
     if(!conversation?.nextCursor||opening)return;
@@ -167,10 +174,10 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
   }
   function startNew() {
     if (busy) return;
-    setClearedScope(null);
+    setTargetTurn(null);setClearedScope(null);
     selectionMade.current=true;operation.current?.abort();operation.current=null;olderRequest.current?.abort();setLoadingOlder(false);
     setRun(null);setPollError('');setSelectedId(null);setOlder(null);setQuestion('');setAttachments([]);setPendingQuestion('');setError('');setConfirmDelete(false);setSelectedOwnerQuestion(null);
-    if(readOwnerQuestion(window.location.hash))window.location.hash='#/ask';
+    window.location.hash='#/ask';
   }
   function retry(question: string) {
     if (busy || opening) return;
@@ -250,9 +257,10 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
       {Boolean(conversation?.scope.anchorEvidenceIds?.length)&&<nav className="filter-bar" aria-label={moteText('参考记录')}>{scopeCleared?<span>{moteText('全部资料')}</span>:<><span>{moteText('参考这条记录，自动查找相关上下文')}</span>{conversation!.scope.anchorEvidenceIds!.map((id,index)=><button className="text-button" key={id} onClick={()=>onOpen('capture:'+id)}>{moteText('查看原文依据')} {index+1}</button>)}<button className="text-button" disabled={busy||opening} onClick={()=>setClearedScope({owner:api,id:conversation!.id})}>{moteText('清除参考记录')}</button></>}</nav>}
       {confirmDelete && <div className="notice conversation-delete-confirm"><p>{moteText("删除此对话及全部问答记录？")}</p><div className="source-toolbar"><button className="button danger" disabled={busy} onClick={() => void remove()}>{moteText("确认删除对话")}</button><button className="button" disabled={busy} onClick={() => setConfirmDelete(false)}>{moteText("取消")}</button></div></div>}
       {opening && <p className="loading" role="status"><LoaderCircle size={16} className="spin"/>{moteText("正在打开对话…")}</p>}
+      {targetTurn&&conversation&&!opening&&!conversation.nextCursor&&!conversation.turns.some(turn=>turn.id===targetTurn)&&<p role="status">{moteText('原始轮次暂不可读。')}</p>}
       <div className="conversation-messages">
       {conversation?.nextCursor&&<button className="text-button" disabled={opening} onClick={()=>void loadOlderTurns()}>{moteText("加载更早的对话")}</button>}
-      {conversation?.turns.map(turn => <article className={`answer-panel conversation-turn ${turn.status === 'failed' ? 'failed' : ''}`} key={turn.id}>
+      {conversation?.turns.map(turn => <article className={`answer-panel conversation-turn ${turn.status === 'failed' ? 'failed' : ''}`} key={turn.id} id={'conversation-turn-'+turn.id} tabIndex={-1} data-source-turn={targetTurn===turn.id?'true':undefined}>
         <div className="asked-question"><MessageSquare size={16}/><span>{turn.question}{Boolean(turn.attachments?.length)&&<span className="chat-attached-images">{turn.attachments?.map(attachment=><span key={attachment.id}><ImagePlus size={13}/>{attachment.name}</span>)}</span>}</span></div>
         {turn.status === 'failed' || !turn.result ? <div className="failed-answer" role="alert"><div className="failed-answer-icon"><AlertCircle size={18}/></div><div><strong>{moteText("这次回答没有完成")}</strong><p>{failureMessage(turn.error)}</p><button className="button primary" disabled={busy || opening} onClick={() => retry(turn.question)}><RotateCcw size={14}/>{moteText("再次提问")}</button></div></div> : <>{turn.result.modelSelection&&<small className="model-used">{turn.result.modelSelection.profileName} · {turn.result.modelSelection.model}</small>}{turn.evidenceDeleted ? <p className="notice">{moteText("相关证据已删除，这条历史回答已清除。可以继续提问查阅现有记录。")}</p> : <>{turn.evidenceStale&&<p className="notice">{moteText("这是历史版本，当前资料已更新。")}</p>}{renderAnswer(turn.result)}<SaveConversationRecord api={api} conversationId={conversation.id} messageId={turn.id} question={turn.question} answer={turn.result.answer} onOpen={onOpen}/></>}</>}
       </article>)}

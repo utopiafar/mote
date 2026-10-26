@@ -479,7 +479,7 @@ export function EvidenceDialog({
               {capture.blobHash && <OriginalImage key={capture.id} api={api} capture={capture}/>}
               <div className="evidence-text"><EvidenceState compact/>
                 {capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span><p>{ocr.description}</p></div>}
-                <NoteOrigin capture={capture}/>{(!capture.metadata?.noteOrigin||capture.metadata.noteOrigin.kind==='manual'||Boolean(readableText))&&<><h3 className="evidence-body-heading">{capture.metadata?.noteOrigin?.kind!==undefined&&capture.metadata.noteOrigin.kind!=='manual'?moteText("我的补充"):presentation?.textLabel}</h3>
+                <NoteOrigin api={api} capture={capture} onOpen={onOpen}/>{(!capture.metadata?.noteOrigin||capture.metadata.noteOrigin.kind==='manual'||Boolean(readableText))&&<><h3 className="evidence-body-heading">{capture.metadata?.noteOrigin?.kind!==undefined&&capture.metadata.noteOrigin.kind!=='manual'?moteText("我的补充"):presentation?.textLabel}</h3>
                 {capture.metadata?.uiPage?.version === 3 ? <StructuredObservation page={capture.metadata.uiPage}/> : <pre>
                   {capture.source==='media'?mediaExplanation:capture.source === 'activity' ? activityExplanation : systemEventText(capture.metadata) || readableText || (capture.provenance?.deleted ? moteText("来源已报告删除；本次只保留来源元数据。") : capture.provenance?.layer === 'reference' ? moteText("此来源仅保留引用与元数据，未导入正文。") : presentation?.nativeFile&&capture.provenance?.layer==='original'?moteText("原件单独保存；转写与摘要见上方。"):capture.blobHash ? moteText("暂无文字。") : moteText("此记录没有正文。"))}
                 </pre>} </>}

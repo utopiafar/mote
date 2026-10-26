@@ -8674,5 +8674,13 @@ export const english: Readonly<Record<string, string>> = {
   "尚无自动主题；仍可浏览全部记忆和已有维度。": "No automatic topics yet. You can still browse all memories and existing views.",
   "此主题已不可用，请返回全部记忆。": "This topic is no longer available. Return to all memories.",
   "自动主题整理未完成；已有记忆仍可浏览。": "Automatic topic organization did not finish. Existing memories remain available.",
-  "自动主题服务尚未就绪；已有记忆仍可浏览。": "Automatic topics are not ready. Existing memories remain available."
+  "自动主题服务尚未就绪；已有记忆仍可浏览。": "Automatic topics are not ready. Existing memories remain available.",
+  "用户问题": "User question",
+  "AI 回答": "AI answer",
+  "正在读取原始对话…": "Reading the original conversation…",
+  "原始对话或轮次暂不可读，可能已删除、权限已变更或连接中断。已保存的引用未改变。": "The original conversation or turn is unavailable. It may have been deleted, access may have changed, or the connection may be offline. The saved quote is unchanged.",
+  "查看原始对话与轮次": "View original conversation and turn",
+  "原始轮次与保存的引用不同；请打开原始对话核对，保存的引用未改变。": "The original turn differs from the saved quote. Open the original conversation to check; the saved quote is unchanged.",
+  "引用来源": "Citation sources",
+  "原始轮次暂不可读。": "The original turn is unavailable."
 };
