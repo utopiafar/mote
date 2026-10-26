@@ -138,3 +138,16 @@ test('manual-only inventory rejects newly unclassified it, imported/variable ali
     assert.throws(() => testNames(file, root), /Unsupported/);
   }
 });
+
+test('Web regression preparation builds the Agent runtime needed by real Server fixtures before testing', () => {
+  const plan = taskPlan('web');
+  const build = workspace => plan.findIndex(step => step.command === 'npm' && step.args[0] === 'run' && step.args[1] === 'build' && step.args.includes(workspace));
+  const webTests = plan.findIndex(step => step.command === 'npm' && step.args[1] === 'test' && step.args.includes('@mote/web'));
+  assert.ok(build('@mote/shared') >= 0, 'Agent and Web build against Shared outputs');
+  assert.ok(build('@mote/agent') >= 0, 'Web fixtures import Server modules which load @mote/agent/dist');
+  assert.ok(build('@mote/shared') < build('@mote/agent'));
+  assert.ok(build('@mote/agent') < build('@mote/web'));
+  assert.ok(build('@mote/web') < webTests);
+  assert.ok(!plan.some(step => step.args.includes('test') && (step.args.includes('@mote/agent') || step.args.includes('@mote/server'))));
+  assert.deepEqual(taskPlan('web-contract').filter(step => step.command === 'npm').map(step => step.args), [['run', 'build', '-w', '@mote/shared']]);
+});
