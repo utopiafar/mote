@@ -58,6 +58,8 @@ internal class CentralContent(
     private var browserGeneration = -1L
     private var browserDurationMs = 2592000000L
     private var screens: CentralScreens? = null
+    private var restoredTopicsState = state?.getBundle("memoryTopics")
+    private val restoredTopicsOrigin = state?.getString("memoryTopicsOrigin")
     private var restoredWorkState = state?.getBundle("workActivity")
     private val restoredWorkOrigin = state?.getString("workActivityOrigin")
     private var pickerOrigin: String? = null
@@ -67,7 +69,7 @@ internal class CentralContent(
     private var downloadPath: String? = null
     private var downloadOrigin: String? = null
     private var downloadGeneration = -1L
-    private val refreshRun = Runnable { if (resumed) when (page) { "ask" -> screens?.pollAsk(); "activity" -> screens?.pollWorkActivity() } }
+    private val refreshRun = Runnable { if (resumed) when (page) { "ask" -> screens?.pollAsk(); "activity" -> screens?.pollWorkActivity(); "memories" -> screens?.pollMemoryTopics() } }
 
     private val refreshLogin = object : Runnable {
         override fun run() {
@@ -186,6 +188,8 @@ internal class CentralContent(
             screens = CentralScreens(this, body, File(noBackupFilesDir, "central-native/" + SourceRules.hash(endpoint)))
             if (endpoint == restoredWorkOrigin) restoredWorkState?.let { screens?.restoreWorkState(it) }
             restoredWorkState = null
+            if (endpoint == restoredTopicsOrigin) restoredTopicsState?.let { screens?.restoreMemoryTopics(it) }
+            restoredTopicsState = null
         }
         if (client == null) { screens?.clearPrivateState(); login() }
         else if (changed || authenticated || sessionChanged || body.childCount == 0) navigate(page) else if (page == "ask") scheduleAskPoll() else if (page == "activity") scheduleActivityPoll()
@@ -204,6 +208,8 @@ internal class CentralContent(
         state.putLong("pickerGeneration", pickerGeneration); state.putString("downloadPath", downloadPath)
         state.putString("pickerInstruction", pickerInstruction)
         state.putString("downloadOrigin", downloadOrigin); state.putLong("downloadGeneration", downloadGeneration)
+        state.putString("memoryTopicsOrigin", server)
+        state.putBundle("memoryTopics", Bundle().also { screens?.saveMemoryTopics(it) })
         state.putString("workActivityOrigin", server)
         state.putBundle("workActivity", Bundle().also { screens?.saveWorkState(it) })
     }
@@ -409,6 +415,7 @@ internal class CentralContent(
         }
     }
     internal fun scheduleAskPoll(delay: Long = 1500) { handler.removeCallbacks(refreshRun); if (resumed && page == "ask") handler.postDelayed(refreshRun, delay) }
+    internal fun scheduleMemoryTopicsPoll() { handler.removeCallbacks(refreshRun); if (resumed && page == "memories") handler.postDelayed(refreshRun, 5000) }
     internal fun scheduleActivityPoll() { handler.removeCallbacks(refreshRun); if (resumed && page == "activity") handler.postDelayed(refreshRun, 3000) }
     private data class WorkValue<T>(val value: T, val generation: Long)
     internal fun <T> work(label: String, job: (UiTask.Progress) -> T, done: (T) -> Unit) = work(label, job, false, done)

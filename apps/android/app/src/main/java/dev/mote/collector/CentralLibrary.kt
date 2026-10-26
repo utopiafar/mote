@@ -370,16 +370,16 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             }
         }
     }
-    private fun memories() {
+    private val topics by lazy { CentralMemoryTopics(screens, {
         memoryDeletionNotice?.takeIf { it.first === client }?.let { ui.text(it.second) }
         ui.button(MoteI18n.text("提取记忆")) { CentralAdmin(screens).memoryJobs() }
         ui.button(MoteI18n.text("记忆设置")) { CentralAdmin(screens).memorySettings() }
-        paged("/api/memories?limit=30", ui.card()) { row, card ->
-            ui.text(row.getString("title"), NativeFontRole.SECTION, card)
-            ui.text(memoryStatus(row) + " · " + row.getInt("evidenceCount") + " " + MoteI18n.text("条证据"), parent = card)
-            ui.button(MoteI18n.text("查看详情"), parent = card) { memory(row.getString("id")) }
-        }
-    }
+    }, ::memoryStatus) { id, back -> memory(id, back) } }
+    private fun memories() = topics.show()
+    fun saveTopics(out: android.os.Bundle) = topics.save(out)
+    fun restoreTopics(value: android.os.Bundle) = topics.restore(value)
+    fun pollTopics() = topics.poll()
+    fun clearTopics() = topics.clear()
     private fun memoryStatus(row: JSONObject): String = when (row.optString("status")) {
                 "proposed" -> MoteI18n.text("待重新处理")
                 "published" -> when {
@@ -392,10 +392,10 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 "stale" -> MoteI18n.text("需要重验")
                 else -> row.optString("status")
     }
-    private fun memory(id: String) {
+    private fun memory(id: String, returnTo: (() -> Unit)? = null) {
         val api = client
         ui.work(MoteI18n.text("正在读取记忆…"), { api.get("/api/memories/" + enc(id)) }) { row ->
-            body.removeAllViews(); screens.setBack { screens.refresh() }
+            body.removeAllViews(); screens.setBack { returnTo?.invoke() ?: screens.refresh() }
             val evidenceIds = row.optJSONArray("evidenceIds") ?: JSONArray()
             ui.text(row.getString("title"), NativeFontRole.TITLE_MOBILE)
             ui.text(memoryStatus(row) + " · " + evidenceIds.length() + " " + MoteI18n.text("条证据"))
@@ -424,7 +424,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             val uncertainty = ui.field(MoteI18n.text("不确定性"), row.optString("uncertainty"), multiline = true)
             ui.button(MoteI18n.text("保存校正"), true) {
                 val corrected = JSONObject().put("title", title.text.toString()).put("statement", statement.text.toString()).put("uncertainty", uncertainty.text.toString()).put("version", row.optInt("version", 1))
-                ui.work(MoteI18n.text("正在保存…"), { api.post("/api/memories/" + enc(id) + "/correct", corrected) }) { memory(id) }
+                ui.work(MoteI18n.text("正在保存…"), { api.post("/api/memories/" + enc(id) + "/correct", corrected) }) { memory(id, returnTo) }
             }
             ui.button(MoteI18n.text("删除记忆")) { screens.confirm(MoteI18n.text("删除记忆"), MoteI18n.text("删除后无法恢复。")) {
                 ui.work(MoteI18n.text("正在删除…"), { api.delete("/api/memories/" + enc(id)) }) { receipt ->
@@ -433,9 +433,10 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                         receipt.optString("externalErase") == "acknowledged" && !receipt.optBoolean("physicalEraseVerified") -> MoteI18n.text("记忆已禁止使用；外部已确认移除当前记录，物理擦除尚未核验。")
                         else -> MoteI18n.text("记忆已禁止使用。")
                     }
-                    memoryDeletionNotice = api to message; screens.refresh()
+                    memoryDeletionNotice = api to message; returnTo?.invoke() ?: screens.refresh()
                 }
             } }
+            if (returnTo != null) ui.scheduleMemoryTopicsPoll()
         }
     }
     private fun insights() {
