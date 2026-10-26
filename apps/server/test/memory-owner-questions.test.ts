@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {fixtureMemoryCapacity} from './fixtures/memory-planning.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -68,6 +69,7 @@ async function httpFixture(t:TestContext){
  const config:Config={dataDir:directory,token:'generated-owner-question-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
  const calls:QueryInput[]=[],anchors=new Map<string,string[]>(),control={replyDisposition:'resolved' as 'resolved'|'followup'|'unknown',ownerObservation:false,contextUnresolved:false};
  const generate=async(input:QueryInput):Promise<QueryResult>=>{
+  const topic=fixtureTopicResult(input);if(topic)return topic;
   calls.push(input);if(input.taskContext?.ownerClarificationReply)return {runId:'generated-answer-interpretation',answer:JSON.stringify({disposition:control.replyDisposition,...(control.replyDisposition==='followup'?{prompt:'Which utterance in this generated conversation belongs to you?'}:{})}),citations:[],trace:[]};if(input.traceContext?.phase==='feedback-planning'){const request=(input.taskContext!.memoryWork as {feedback:MemoryFeedbackRequest}).feedback,background=request.authorized.find(target=>node.memories.readEvidence([target.id])[0].ocrText.includes('Wholly generated independent record'))!;assert.ok(background);await input.hostControlChannel!.execute('delegation_submit',{units:[{id:'generated-context-only',capabilityId:'memory.feedback-group',title:'Inspect the generated missing background',goal:'Resolve only the actual evidence gap',input:{memberKeys:request.targets.map(target=>target.key),contextKeys:[background.key],instruction:'Use the specifically authorized background for this generated dependent range.'}}]});return {runId:'generated-context-plan',answer:'Generated scoped context plan submitted.',citations:[],trace:[]};}const plan=await fixtureMemoryPlan(input);if(plan)return plan;
   const members=(input.taskContext?.memoryWork as {members:MemoryWorkMember[]}|undefined)?.members;assert.ok(members,'production Memory must apply reviewed coverage to ordinary recipe jobs');
   const memories:any[]=[],coverage:any[]=[];
@@ -83,7 +85,7 @@ async function httpFixture(t:TestContext){
   return {runId:'generated-http-'+calls.length,answer:JSON.stringify({memories,coverage,...fixtureMemoryCapacity(input)}),citations:memories.flatMap(memory=>memory.evidenceIds.map((id:string)=>({id,capturedAt:'2026-09-01T00:00:00Z',appName:'Generated',excerpt:''}))),trace:[]};
  };
  const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:generate},createModelAgent:async()=>({configured:true,close:async()=>{},query:generate})};
- let node=await buildApp(config,dependencies);await node.app.ready();
+ let node=await buildApp(config,dependencies);await node.app.ready();await authorizeFixtureModels(node);
  const disable=async()=>{const settings=node.lifecycle.settings();for(const id of ['working','consolidation','insights'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});};await disable();
  const api=(method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});

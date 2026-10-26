@@ -1,3 +1,4 @@
+import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {fixtureMemoryCapacity} from './fixtures/memory-planning.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,6 +17,7 @@ async function fixture(t:import('node:test').TestContext){
  const config:Config={dataDir:directory,dataKey:'ab'.repeat(32),contentEncryptionEnabled:true,token:'generated-auto-question-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
  const control:{beforeDeclared?:(input:QueryInput)=>Promise<void>}={};
  const generate=async(input:QueryInput):Promise<QueryResult>=>{
+  const topic=fixtureTopicResult(input);if(topic)return topic;
   const members=(input.taskContext?.memoryWork as {members:MemoryWorkMember[]}|undefined)?.members;assert.ok(members,'the generated fixture exercises real extraction and independent review');
   if(members.some(member=>member.attributionContext?.ownerStatements?.length))await control.beforeDeclared?.(input);
   const memories:any[]=[],coverage=members.map(member=>{
@@ -24,7 +26,7 @@ async function fixture(t:import('node:test').TestContext){
   });
   return {runId:'generated-'+randomUUID(),citations:memories.flatMap(memory=>memory.evidenceIds.map((id:string)=>({id,capturedAt:'2026-09-01T00:00:00Z',appName:'Generated',excerpt:''}))),trace:[],answer:JSON.stringify({memories,coverage,...fixtureMemoryCapacity(input)})};
  };
- const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:generate},createModelAgent:async()=>({configured:true,close:async()=>{},query:generate})});await node.app.ready();
+ const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:generate},createModelAgent:async()=>({configured:true,close:async()=>{},query:generate})});await node.app.ready();await authorizeFixtureModels(node);
  const settings=node.lifecycle.settings();for(const id of ['working','consolidation','insights'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});
  const api=(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
